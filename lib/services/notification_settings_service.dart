@@ -25,9 +25,11 @@ class NotificationSettingKeys {
   static const String meetupCancelled = 'meetup_cancelled';
   static const String meetupParticipantJoined = 'meetup_participant_joined';
   static const String meetupParticipantLeft = 'meetup_participant_left';
+  static const String meetupCreated = 'meetup_created';
   static const String newComment = 'new_comment';
   static const String newLike = 'new_like';
   static const String postPrivate = 'post_private';
+  static const String postCreated = 'post_created';
   static const String friendRequest = 'friend_request';
   static const String adUpdates = 'ad_updates';
   
@@ -38,6 +40,7 @@ class NotificationSettingKeys {
       case meetupCancelled:
       case meetupParticipantJoined:
       case meetupParticipantLeft:
+      case meetupCreated:
         return meetupAlerts;
       
       case friendRequest:
@@ -46,6 +49,7 @@ class NotificationSettingKeys {
       case newComment:
       case newLike:
       case postPrivate:
+      case postCreated:
         return postInteractions;
       
       case dmReceived:

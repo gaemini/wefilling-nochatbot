@@ -1513,23 +1513,50 @@ class DMService {
       final unreadCount = Map<String, int>.from(convData['unreadCount'] ?? {});
       final prevMyUnread = unreadCount[currentUser.uid] ?? 0;
 
-      // 🔥 핵심 수정: unreadCount 필드 무시, 항상 실제 메시지 확인
-      // 읽지 않은 메시지 가져오기
-      // NOTE: Firestore의 !=(isNotEqualTo) 쿼리는 인덱스/정렬 제약으로 실패하거나
-      //       실시간 상황에서 반영이 늦어질 수 있다. 안정성을 위해 isRead=false만 서버에서
-      //       가져오고(senderId 필터는 클라이언트에서 처리) 읽음 처리한다.
-      final unreadSnap = await _firestore
-          .collection('conversations')
-          .doc(conversationId)
-          .collection('messages')
-          .where('isRead', isEqualTo: false)
-          .limit(200)
-          .get();
+      // unreadCount 필드만 믿지 않고 실제 메시지를 끝까지 확인한다.
+      // 과거 200개 제한은 장기간 미접속 계정에서 뒤쪽 메시지를 영원히
+      // 안 읽음으로 남길 수 있었다. 문서 ID 커서로 페이지를 순회하고,
+      // 각 페이지를 400개 이하 batch로 즉시 확정한다.
+      int actualReadCount = 0;
+      for (var pass = 0; pass < 2; pass++) {
+        int readInPass = 0;
+        DocumentSnapshot<Map<String, dynamic>>? cursor;
+        while (true) {
+          Query<Map<String, dynamic>> query = convDoc.reference
+              .collection('messages')
+              .where('isRead', isEqualTo: false)
+              .orderBy(FieldPath.documentId)
+              .limit(400);
+          if (cursor != null) query = query.startAfterDocument(cursor);
+          final page = await query.get();
+          if (page.docs.isEmpty) break;
 
-      final unreadIncomingDocs = unreadSnap.docs.where((d) {
-        final data = d.data() as Map<String, dynamic>;
-        return (data['senderId']?.toString() ?? '') != currentUser.uid;
-      }).toList();
+          final incoming = page.docs.where((doc) {
+            final senderId = (doc.data()['senderId'] ?? '').toString().trim();
+            return senderId.isNotEmpty && senderId != currentUser.uid;
+          }).toList(growable: false);
+          if (incoming.isNotEmpty) {
+            final batch = _firestore.batch();
+            final now = Timestamp.now();
+            for (final doc in incoming) {
+              batch.update(doc.reference, {
+                'isRead': true,
+                'readAt': now,
+              });
+            }
+            await batch.commit();
+            readInPass += incoming.length;
+            actualReadCount += incoming.length;
+          }
+
+          if (page.docs.length < 400) break;
+          cursor = page.docs.last;
+        }
+
+        // 두 번째 순회는 첫 순회 도중 도착한 메시지를 닫기 위한 것이다.
+        // 첫 순회에서 변경이 없었다면 불필요한 재스캔을 하지 않는다.
+        if (readInPass == 0) break;
+      }
 
       // 실제 메시지가 없으면 skip (정확한 확인)
       //
@@ -1539,7 +1566,7 @@ class DMService {
       //   실제 messages에는 isRead=false가 0개가 될 수 있다.
       // - 이 경우 조기 return을 해버리면 목록 배지가 "영원히" 남는다.
       // - 따라서 "실제 unread=0"이라도, 기존 unreadCount가 0이 아니면 0으로 강제 정합화한다.
-      if (unreadIncomingDocs.isEmpty) {
+      if (actualReadCount == 0) {
         if (prevMyUnread != 0) {
           final now = DateTime.now();
           Logger.log(
@@ -1567,25 +1594,8 @@ class DMService {
         }
         return;
       }
-      final actualReadCount = unreadIncomingDocs.length;
       Logger.log(
           '📖 [markAsRead] 읽음 처리 시작 - conversationId=$conversationId, count=$actualReadCount, prevMyUnread=$prevMyUnread');
-
-      final batch = _firestore.batch();
-      final now = DateTime.now();
-
-      for (final doc in unreadIncomingDocs) {
-        batch.update(doc.reference, {
-          'isRead': true,
-          'readAt': Timestamp.fromDate(now),
-        });
-      }
-
-      // unreadCount/dmUnreadTotal은 메시지의 false→true 전이를 보는
-      // Cloud Function이 한 번만 감소시킨다. 클라이언트에서 같이
-      // 감소하면 message-created 트리거와의 순서에 따라 1이 남거나
-      // 음수가 될 수 있어, 여기서는 읽음 상태만 원자적으로 저장한다.
-      await batch.commit();
       Logger.log(
           '✅ [markAsRead] 완료 - conversationId=$conversationId, count=$actualReadCount');
 

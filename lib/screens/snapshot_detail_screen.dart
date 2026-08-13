@@ -15,6 +15,7 @@ import '../snapshot/snapshot_strings.dart';
 import '../ui/snackbar/app_snackbar.dart';
 import '../utils/responsive_helper.dart';
 import 'dm_chat_screen.dart';
+import 'snapshot_viewers_screen.dart';
 
 /// 상세 화면에서도 작성 화면에서 합성한 전체 프레임을 보존한다.
 const BoxFit snapshotDetailImageFit = BoxFit.contain;
@@ -52,6 +53,7 @@ class _SnapshotDetailScreenState extends State<SnapshotDetailScreen>
   bool _isHolding = false;
   bool _isAppInactive = false;
   bool _isComposingComment = false;
+  bool _reactionSlotAvailable = true;
   bool _showFeedPosition = false;
   String? _mediaReadyId;
   double _horizontalDragDistance = 0;
@@ -81,6 +83,7 @@ class _SnapshotDetailScreenState extends State<SnapshotDetailScreen>
         Timer.periodic(const Duration(seconds: 20), (_) => _recheckExpiry());
     WidgetsBinding.instance.addPostFrameCallback((_) {
       _recheckExpiry();
+      _recordCurrentView();
       _restartPlayback();
       _preloadCurrentAndNext();
     });
@@ -167,7 +170,41 @@ class _SnapshotDetailScreenState extends State<SnapshotDetailScreen>
   void _handleMediaReady(String snapshotId) {
     if (!mounted || _current.id != snapshotId) return;
     _mediaReadyId = snapshotId;
+    // 첫 프레임 기록이 네트워크 문제로 지연된 경우 이미지 준비 시점에 한 번
+    // 더 합류한다. 서비스가 동일 요청을 단일 Future로 병합하므로 중복 쓰기는 없다.
+    _recordCurrentView();
     _resumePlaybackIfAllowed();
+  }
+
+  void _handleReactionAvailabilityChanged(
+    String snapshotId,
+    bool isAvailable,
+  ) {
+    if (!mounted || _current.id != snapshotId) return;
+    if (_reactionSlotAvailable == isAvailable) return;
+    setState(() => _reactionSlotAvailable = isAvailable);
+  }
+
+  void _recordCurrentView() {
+    if (!mounted || _items.isEmpty) return;
+    final item = _current;
+    if (FirebaseAuth.instance.currentUser?.uid == item.authorId) return;
+    unawaited(_service.recordView(item.id));
+  }
+
+  Future<void> _openViewers() async {
+    if (_items.isEmpty ||
+        FirebaseAuth.instance.currentUser?.uid != _current.authorId) {
+      return;
+    }
+    final snapshotId = _current.id;
+    _playbackController.stop();
+    await Navigator.of(context).push<void>(
+      MaterialPageRoute(
+        builder: (_) => SnapshotViewersScreen(snapshotId: snapshotId),
+      ),
+    );
+    if (mounted) _resumePlaybackIfAllowed();
   }
 
   Future<void> _warmImage(SnapshotItem item) async {
@@ -217,10 +254,13 @@ class _SnapshotDetailScreenState extends State<SnapshotDetailScreen>
           (index) => filtered[index].id == _items[index].id,
         ).every((same) => same);
     if (!contentsChanged && resolvedIndex == _index) return;
+    final currentChanged = filtered[resolvedIndex].id != currentId;
     setState(() {
       _items = filtered;
       _index = resolvedIndex;
+      if (currentChanged) _reactionSlotAvailable = true;
     });
+    _recordCurrentView();
     _restartPlayback();
     _preloadCurrentAndNext();
   }
@@ -236,7 +276,11 @@ class _SnapshotDetailScreenState extends State<SnapshotDetailScreen>
     setState(() {
       _index = targetIndex;
       _isSwitching = true;
+      // 새 스낵의 반응 여부를 확인하는 동안에는 하트 자리를 유지해
+      // 비동기 결과로 입력창이 겹치지 않도록 한다.
+      _reactionSlotAvailable = true;
     });
+    _recordCurrentView();
     _restartPlayback();
     _preloadCurrentAndNext();
     _showTransientFeedPosition();
@@ -433,8 +477,16 @@ class _SnapshotDetailScreenState extends State<SnapshotDetailScreen>
     final strings = SnapshotStrings.of(context);
     final keyboardInset = MediaQuery.viewInsetsOf(context).bottom;
     final isOwner = FirebaseAuth.instance.currentUser?.uid == _current.authorId;
-    final reactionExclusionHeight =
-        (isOwner ? 0 : context.rh(112, min: 104, max: 124)) + keyboardInset;
+    final horizontalInset = MediaQuery.sizeOf(context).width < 360
+        ? 12.0
+        : context.rs(16).clamp(14, 20).toDouble();
+    final reactionSlotWidth = context.rs(48).clamp(46, 52).toDouble();
+    final reserveReactionSlot = _reactionSlotAvailable && keyboardInset <= 0;
+    final ownerViewerEntryHeight = context.rh(66, min: 62, max: 72);
+    final reactionExclusionHeight = (isOwner
+            ? ownerViewerEntryHeight
+            : context.rh(112, min: 104, max: 124)) +
+        keyboardInset;
     return AnnotatedRegion<SystemUiOverlayStyle>(
       value: SystemUiOverlayStyle.light.copyWith(
         statusBarColor: Colors.transparent,
@@ -503,6 +555,8 @@ class _SnapshotDetailScreenState extends State<SnapshotDetailScreen>
                             snapshot: _current,
                             service: _service,
                             onMediaReady: _handleMediaReady,
+                            onReactionAvailabilityChanged:
+                                _handleReactionAvailabilityChanged,
                           ),
                         ),
                       ),
@@ -521,13 +575,12 @@ class _SnapshotDetailScreenState extends State<SnapshotDetailScreen>
                         ),
                       ),
                       if (!isOwner)
-                        Positioned(
-                          left: MediaQuery.sizeOf(context).width < 360
-                              ? 8
-                              : context.rs(12).clamp(10, 16).toDouble(),
-                          right: MediaQuery.sizeOf(context).width < 360
-                              ? 8
-                              : context.rs(12).clamp(10, 16).toDouble(),
+                        AnimatedPositioned(
+                          duration: const Duration(milliseconds: 180),
+                          curve: Curves.easeOutCubic,
+                          left: horizontalInset +
+                              (reserveReactionSlot ? reactionSlotWidth + 6 : 0),
+                          right: horizontalInset,
                           bottom: keyboardInset + 8,
                           child: _SnapshotCommentLayer(
                             key: ValueKey<String>(
@@ -539,11 +592,31 @@ class _SnapshotDetailScreenState extends State<SnapshotDetailScreen>
                             onFocusChanged: _setCommentComposerFocused,
                           ),
                         ),
+                      if (isOwner)
+                        Positioned(
+                          left: MediaQuery.sizeOf(context).width < 360
+                              ? 10
+                              : context.rs(14).clamp(12, 18).toDouble(),
+                          right: MediaQuery.sizeOf(context).width < 360
+                              ? 10
+                              : context.rs(14).clamp(12, 18).toDouble(),
+                          bottom: 4,
+                          child: _SnapshotViewerEntry(
+                            key: ValueKey<String>(
+                              'snapshot-viewers-${_current.id}',
+                            ),
+                            snapshotId: _current.id,
+                            service: _service,
+                            strings: strings,
+                            onTap: _openViewers,
+                          ),
+                        ),
                       if (_items.length > 1)
                         Positioned(
                           left: 16,
                           right: 16,
-                          bottom: keyboardInset + (isOwner ? 14 : 112),
+                          bottom: keyboardInset +
+                              (isOwner ? ownerViewerEntryHeight + 6 : 112),
                           child: IgnorePointer(
                             child: AnimatedOpacity(
                               duration: const Duration(milliseconds: 180),
@@ -574,10 +647,13 @@ class _SnapshotDetailPage extends StatefulWidget {
     required this.snapshot,
     required this.service,
     required this.onMediaReady,
+    required this.onReactionAvailabilityChanged,
   });
   final SnapshotItem snapshot;
   final SnapshotService service;
   final ValueChanged<String> onMediaReady;
+  final void Function(String snapshotId, bool isAvailable)
+      onReactionAvailabilityChanged;
 
   @override
   State<_SnapshotDetailPage> createState() => _SnapshotDetailPageState();
@@ -602,7 +678,7 @@ class _SnapshotDetailPageState extends State<_SnapshotDetailPage>
       widget.snapshot.id,
       initial: widget.snapshot,
     );
-    _reactionStatus = widget.service.hasReacted(widget.snapshot.id);
+    _refreshReactionStatus();
   }
 
   @override
@@ -613,11 +689,40 @@ class _SnapshotDetailPageState extends State<_SnapshotDetailPage>
         widget.snapshot.id,
         initial: widget.snapshot,
       );
-      _reactionStatus = widget.service.hasReacted(widget.snapshot.id);
       _submittingReaction = false;
       _reactedLocally = false;
+      _refreshReactionStatus();
       _heartBurstController.reset();
     }
+  }
+
+  void _reportReactionAvailability(String snapshotId, bool isAvailable) {
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!mounted || widget.snapshot.id != snapshotId) return;
+      widget.onReactionAvailabilityChanged(snapshotId, isAvailable);
+    });
+  }
+
+  void _refreshReactionStatus() {
+    final snapshotId = widget.snapshot.id;
+    final status = widget.service.hasReacted(snapshotId);
+    _reactionStatus = status;
+    unawaited(
+      status.then(
+        (hasReacted) {
+          if (!mounted || widget.snapshot.id != snapshotId) return;
+          _reportReactionAvailability(
+            snapshotId,
+            !hasReacted && !_reactedLocally,
+          );
+        },
+        onError: (_) {
+          // 상태를 확인하지 못하면 하트 입력도 열지 않는다. 코멘트 입력창은
+          // 불필요한 빈 슬롯 없이 사용할 수 있게 한다.
+          _reportReactionAvailability(snapshotId, false);
+        },
+      ),
+    );
   }
 
   @override
@@ -628,26 +733,36 @@ class _SnapshotDetailPageState extends State<_SnapshotDetailPage>
 
   Future<void> _submitReaction(String reaction) async {
     if (_submittingReaction || _reactedLocally) return;
-    setState(() => _submittingReaction = true);
+    final snapshotId = widget.snapshot.id;
+    setState(() {
+      _submittingReaction = true;
+      _reactedLocally = true;
+    });
+    _reportReactionAvailability(snapshotId, false);
+    if (reaction == '❤️') {
+      unawaited(HapticFeedback.mediumImpact());
+      unawaited(_heartBurstController.forward(from: 0));
+    } else {
+      unawaited(HapticFeedback.selectionClick());
+    }
     try {
-      await widget.service.reactOnce(widget.snapshot.id, reaction);
-      if (!mounted) return;
-      setState(() => _reactedLocally = true);
-      if (reaction == '❤️') {
-        unawaited(HapticFeedback.mediumImpact());
-        unawaited(_heartBurstController.forward(from: 0));
-      } else {
-        unawaited(HapticFeedback.selectionClick());
-      }
+      await widget.service.reactOnce(snapshotId, reaction);
     } catch (_) {
-      if (!mounted) return;
+      if (!mounted || widget.snapshot.id != snapshotId) return;
+      setState(() {
+        _reactedLocally = false;
+        _refreshReactionStatus();
+      });
+      _heartBurstController.reset();
       AppSnackBar.show(
         context,
         message: SnapshotStrings.of(context).reactionFailed,
         type: AppSnackBarType.error,
       );
     } finally {
-      if (mounted) setState(() => _submittingReaction = false);
+      if (mounted && widget.snapshot.id == snapshotId) {
+        setState(() => _submittingReaction = false);
+      }
     }
   }
 
@@ -692,9 +807,9 @@ class _SnapshotDetailPageState extends State<_SnapshotDetailPage>
             const IgnorePointer(child: _SnapshotStoryScrim()),
             if (!isOwner)
               Positioned(
-                left: horizontal - 4,
-                right: horizontal - 4,
-                bottom: keyboardInset + 60,
+                left: horizontal,
+                width: context.rs(48).clamp(46, 52).toDouble(),
+                bottom: keyboardInset + 8,
                 child: _SnapshotInteractionArea(
                   showReactions: !keyboardOpen,
                   reactionStatus: _reactionStatus,
@@ -917,6 +1032,158 @@ class _SnapshotTopRegion extends StatelessWidget {
   }
 }
 
+class _SnapshotViewerEntry extends StatefulWidget {
+  const _SnapshotViewerEntry({
+    super.key,
+    required this.snapshotId,
+    required this.service,
+    required this.strings,
+    required this.onTap,
+  });
+
+  final String snapshotId;
+  final SnapshotService service;
+  final SnapshotStrings strings;
+  final VoidCallback onTap;
+
+  @override
+  State<_SnapshotViewerEntry> createState() => _SnapshotViewerEntryState();
+}
+
+class _SnapshotViewerEntryState extends State<_SnapshotViewerEntry> {
+  late Stream<List<SnapshotViewer>> _viewersStream;
+
+  @override
+  void initState() {
+    super.initState();
+    _viewersStream = widget.service.watchViewers(widget.snapshotId);
+  }
+
+  @override
+  void didUpdateWidget(covariant _SnapshotViewerEntry oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (oldWidget.snapshotId != widget.snapshotId) {
+      _viewersStream = widget.service.watchViewers(widget.snapshotId);
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return StreamBuilder<List<SnapshotViewer>>(
+      stream: _viewersStream,
+      builder: (context, snapshot) {
+        final count = snapshot.data?.length;
+        final supportingText = snapshot.hasError
+            ? widget.strings.viewersLoadFailed
+            : count == null
+                ? widget.strings.viewersLoading
+                : count == 0
+                    ? widget.strings.noViewers
+                    : widget.strings.viewersCount(count);
+        return MediaQuery.withClampedTextScaling(
+          maxScaleFactor: 1.2,
+          child: Semantics(
+            button: true,
+            label: supportingText,
+            excludeSemantics: true,
+            child: Material(
+              color: Colors.transparent,
+              child: InkWell(
+                onTap: widget.onTap,
+                borderRadius: BorderRadius.circular(10),
+                child: SizedBox(
+                  height: context.rh(58, min: 54, max: 64),
+                  child: Padding(
+                    padding: const EdgeInsets.symmetric(horizontal: 4),
+                    child: Row(
+                      children: [
+                        SizedBox.square(
+                          dimension: 40,
+                          child: Icon(
+                            Icons.visibility_outlined,
+                            size: context.ri(23).clamp(21, 25).toDouble(),
+                            color: Colors.white,
+                            shadows: const [
+                              Shadow(color: Colors.black54, blurRadius: 6),
+                            ],
+                          ),
+                        ),
+                        SizedBox(
+                          width: context.rs(8).clamp(6, 10).toDouble(),
+                        ),
+                        Expanded(
+                          child: Column(
+                            mainAxisSize: MainAxisSize.min,
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              Text(
+                                widget.strings.viewers,
+                                maxLines: 1,
+                                overflow: TextOverflow.ellipsis,
+                                style: TextStyle(
+                                  fontFamily: 'Pretendard',
+                                  fontSize:
+                                      context.rf(14).clamp(13, 15).toDouble(),
+                                  fontWeight: FontWeight.w700,
+                                  color: Colors.white,
+                                  height: 1.15,
+                                  shadows: const [
+                                    Shadow(
+                                      color: Colors.black54,
+                                      blurRadius: 6,
+                                    ),
+                                  ],
+                                ),
+                              ),
+                              const SizedBox(height: 3),
+                              Text(
+                                supportingText,
+                                maxLines: 1,
+                                overflow: TextOverflow.ellipsis,
+                                style: TextStyle(
+                                  fontFamily: 'Pretendard',
+                                  fontSize: context
+                                      .rf(11.5)
+                                      .clamp(11, 12.5)
+                                      .toDouble(),
+                                  fontWeight: FontWeight.w500,
+                                  color: Colors.white.withValues(alpha: .78),
+                                  height: 1.15,
+                                  shadows: const [
+                                    Shadow(
+                                      color: Colors.black54,
+                                      blurRadius: 6,
+                                    ),
+                                  ],
+                                ),
+                              ),
+                            ],
+                          ),
+                        ),
+                        SizedBox.square(
+                          dimension: 40,
+                          child: Icon(
+                            Icons.chevron_right_rounded,
+                            size: context.ri(22).clamp(21, 24).toDouble(),
+                            color: Colors.white.withValues(alpha: .86),
+                            shadows: const [
+                              Shadow(color: Colors.black54, blurRadius: 6),
+                            ],
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                ),
+              ),
+            ),
+          ),
+        );
+      },
+    );
+  }
+}
+
 class _SnapshotFeedPositionToast extends StatelessWidget {
   const _SnapshotFeedPositionToast({required this.label});
 
@@ -1119,11 +1386,15 @@ class _SnapshotInteractionArea extends StatelessWidget {
               ? FutureBuilder<bool>(
                   future: reactionStatus,
                   builder: (context, reactionState) {
-                    final hasReacted = reactedLocally ||
-                        reactionState.hasError ||
-                        reactionState.data == true;
-                    if (reactionState.connectionState != ConnectionState.done ||
-                        hasReacted) {
+                    // 반응 여부가 확정되기 전에는 입력을 열지 않는다.
+                    // 이전에는 FutureBuilder의 초기 data(null)를 false처럼 처리해
+                    // 이미 반응한 스낵에도 하트가 한 프레임 노출될 수 있었다.
+                    final isStatusResolved =
+                        reactionState.connectionState == ConnectionState.done &&
+                            !reactionState.hasError;
+                    final hasReacted =
+                        reactedLocally || reactionState.data == true;
+                    if (!isStatusResolved || hasReacted) {
                       return const SizedBox.shrink();
                     }
 

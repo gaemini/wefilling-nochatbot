@@ -107,8 +107,8 @@ class _SnackChatFileConfirmationSheetState
                       ? '이 파일은 전송 후 24시간 동안 확인할 수 있습니다.'
                       : 'These files remain available for 24 hours after sending.')
                   : (isKorean
-                      ? '이 파일은 대화에 계속 보관됩니다.'
-                      : 'These files remain in the conversation.'),
+                      ? '이 파일은 전송 후 30일 동안 확인할 수 있습니다.'
+                      : 'These files remain available for 30 days after sending.'),
               style: const TextStyle(
                 fontFamily: 'Pretendard',
                 fontSize: 13,

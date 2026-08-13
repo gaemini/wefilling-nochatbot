@@ -3,6 +3,7 @@ import * as admin from 'firebase-admin';
 import {COL} from './firestore_paths';
 import {
   isActiveUserData,
+  resolveFriendNotificationAudience,
   resolveFrozenAudience,
   VISIBILITY_SCHEMA_VERSION,
 } from './frozen_audience';
@@ -70,10 +71,15 @@ export const createPostSecure = functions.runWith({timeoutSeconds: 120, memory: 
     const uid = requireUid(context);
     const data = object(raw);
     const postId = contentId(data.postId);
-    const categoryKey = text(data.categoryKey, 40, 'categoryKey');
-    if (!POST_CATEGORY_KEYS.has(categoryKey)) {
-      throw new functions.https.HttpsError('invalid-argument', 'Invalid category.');
+    const requestedCategoryKeys = stringList(data.categoryKeys, 10, 40);
+    const legacyCategoryKey = text(data.categoryKey, 40, 'categoryKey');
+    const categoryKeys = requestedCategoryKeys.length > 0
+      ? requestedCategoryKeys
+      : (legacyCategoryKey ? [legacyCategoryKey] : []);
+    if (categoryKeys.length === 0 || categoryKeys.some((key) => !POST_CATEGORY_KEYS.has(key))) {
+      throw new functions.https.HttpsError('invalid-argument', 'Invalid post tags.');
     }
+    const categoryKey = categoryKeys[0];
     const frozen = await resolveFrozenAudience(
       uid,
       data.visibility,
@@ -83,6 +89,9 @@ export const createPostSecure = functions.runWith({timeoutSeconds: 120, memory: 
     if (frozen.visibilityMode === 'friends') {
       throw new functions.https.HttpsError('invalid-argument', 'Unsupported post visibility.');
     }
+    const notificationAudienceUserIdsFrozen = frozen.visibilityMode === 'public'
+      ? await resolveFriendNotificationAudience(uid)
+      : frozen.audienceUserIdsFrozen.filter((userId) => userId !== uid);
     const user = await profile(uid);
     const now = admin.firestore.Timestamp.now();
     const type = text(data.type, 20, 'type') || 'text';
@@ -101,6 +110,7 @@ export const createPostSecure = functions.runWith({timeoutSeconds: 120, memory: 
       title: text(data.title, 200, 'title'),
       content,
       categoryKey,
+      categoryKeys,
       imageUrls: stringList(data.imageUrls, 10),
       createdAt: now,
       updatedAt: now,
@@ -110,6 +120,7 @@ export const createPostSecure = functions.runWith({timeoutSeconds: 120, memory: 
       visibilityMode: frozen.visibilityMode,
       audienceUserIdsFrozen: frozen.audienceUserIdsFrozen,
       sourceGroupIds: frozen.sourceGroupIds,
+      notificationAudienceUserIdsFrozen,
       visibilityLockedAt: now,
       visibilitySchemaVersion: VISIBILITY_SCHEMA_VERSION,
       isAnonymous: data.isAnonymous === true,
@@ -148,6 +159,9 @@ export const createMeetupSecure = functions.runWith({timeoutSeconds: 120, memory
       data.visibility,
       data.visibleToCategoryIds,
     );
+    const notificationAudienceUserIdsFrozen = frozen.visibilityMode === 'public'
+      ? await resolveFriendNotificationAudience(uid)
+      : frozen.audienceUserIdsFrozen.filter((userId) => userId !== uid);
     const user = await profile(uid);
     const dateMillis = integer(data.dateMillis, 0, 8640000000000000, 'date');
     const startsAtMillis = integer(data.startsAtMillis, 0, 8640000000000000, 'startsAt');
@@ -182,6 +196,7 @@ export const createMeetupSecure = functions.runWith({timeoutSeconds: 120, memory
       visibilityMode: frozen.visibilityMode,
       audienceUserIdsFrozen: frozen.audienceUserIdsFrozen,
       sourceGroupIds: frozen.sourceGroupIds,
+      notificationAudienceUserIdsFrozen,
       visibilityLockedAt: now,
       visibilitySchemaVersion: VISIBILITY_SCHEMA_VERSION,
       isConfirmed: false,

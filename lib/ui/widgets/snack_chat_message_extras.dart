@@ -14,12 +14,14 @@ class SnackChatStorageImage extends StatefulWidget {
     super.key,
     required this.storagePath,
     this.fit = BoxFit.contain,
+    this.imageBuilder,
     this.loading,
     this.error,
   });
 
   final String storagePath;
   final BoxFit fit;
+  final ImageWidgetBuilder? imageBuilder;
   final Widget? loading;
   final Widget? error;
 
@@ -93,7 +95,13 @@ class _SnackChatStorageImageState extends State<SnackChatStorageImage> {
       builder: (context, snapshot) {
         final data = snapshot.data;
         if (data != null) {
-          return Image.memory(data, fit: widget.fit, gaplessPlayback: true);
+          final imageProvider = MemoryImage(data);
+          return widget.imageBuilder?.call(context, imageProvider) ??
+              Image(
+                image: imageProvider,
+                fit: widget.fit,
+                gaplessPlayback: true,
+              );
         }
         if (snapshot.connectionState == ConnectionState.waiting) {
           return widget.loading ??
@@ -122,6 +130,121 @@ class _SnackChatStorageImageState extends State<SnackChatStorageImage> {
           ],
         );
       },
+    );
+  }
+}
+
+/// Sizes a Snack Chat image from its decoded aspect ratio instead of placing
+/// every attachment inside the same fixed rectangle.
+class SnackChatAdaptiveImage extends StatefulWidget {
+  const SnackChatAdaptiveImage({
+    super.key,
+    required this.imageProvider,
+    required this.maxWidth,
+    required this.maxHeight,
+    this.error,
+  });
+
+  final ImageProvider imageProvider;
+  final double maxWidth;
+  final double maxHeight;
+  final Widget? error;
+
+  @override
+  State<SnackChatAdaptiveImage> createState() => _SnackChatAdaptiveImageState();
+}
+
+class _SnackChatAdaptiveImageState extends State<SnackChatAdaptiveImage>
+    with SingleTickerProviderStateMixin {
+  ImageStream? _imageStream;
+  ImageStreamListener? _imageStreamListener;
+  double? _aspectRatio;
+
+  @override
+  void didChangeDependencies() {
+    super.didChangeDependencies();
+    _resolveImage();
+  }
+
+  @override
+  void didUpdateWidget(covariant SnackChatAdaptiveImage oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (oldWidget.imageProvider != widget.imageProvider) {
+      _aspectRatio = null;
+      _resolveImage();
+    }
+  }
+
+  void _resolveImage() {
+    final stream = widget.imageProvider.resolve(
+      createLocalImageConfiguration(context),
+    );
+    if (stream.key == _imageStream?.key) return;
+
+    _detachImageListener();
+    _imageStream = stream;
+    _imageStreamListener = ImageStreamListener(
+      (image, synchronousCall) {
+        final width = image.image.width.toDouble();
+        final height = image.image.height.toDouble();
+        if (width <= 0 || height <= 0 || !mounted) return;
+        final ratio = width / height;
+        if (_aspectRatio == ratio) return;
+        if (synchronousCall) {
+          _aspectRatio = ratio;
+        } else {
+          setState(() => _aspectRatio = ratio);
+        }
+      },
+    );
+    stream.addListener(_imageStreamListener!);
+  }
+
+  void _detachImageListener() {
+    final stream = _imageStream;
+    final listener = _imageStreamListener;
+    if (stream != null && listener != null) {
+      stream.removeListener(listener);
+    }
+    _imageStream = null;
+    _imageStreamListener = null;
+  }
+
+  Size _displaySize() {
+    // Use a compact loading frame, then animate to the decoded image ratio.
+    final ratio = _aspectRatio ?? 4 / 3;
+    final boundsRatio = widget.maxWidth / widget.maxHeight;
+    if (ratio >= boundsRatio) {
+      return Size(widget.maxWidth, widget.maxWidth / ratio);
+    }
+    return Size(widget.maxHeight * ratio, widget.maxHeight);
+  }
+
+  @override
+  void dispose() {
+    _detachImageListener();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final size = _displaySize();
+    return AnimatedSize(
+      duration: const Duration(milliseconds: 160),
+      curve: Curves.easeOutCubic,
+      alignment: Alignment.center,
+      child: SizedBox(
+        width: size.width,
+        height: size.height,
+        child: Image(
+          image: widget.imageProvider,
+          fit: BoxFit.contain,
+          gaplessPlayback: true,
+          errorBuilder: (_, __, ___) =>
+              widget.error ??
+              const Center(child: Icon(Icons.broken_image_outlined)),
+        ),
+      ),
     );
   }
 }

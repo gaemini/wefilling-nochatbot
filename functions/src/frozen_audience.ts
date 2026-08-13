@@ -64,7 +64,7 @@ async function existingUserIds(ids: Iterable<string>): Promise<string[]> {
   return valid;
 }
 
-async function friendIdsAtCreation(ownerId: string): Promise<string[]> {
+async function friendIdCandidatesAtCreation(ownerId: string): Promise<Set<string>> {
   const store = admin.firestore();
   const audience = new Set<string>([ownerId]);
   const [friendships, outgoing, incoming] = await Promise.all([
@@ -84,7 +84,29 @@ async function friendIdsAtCreation(ownerId: string): Promise<string[]> {
   }
   for (const document of outgoing.docs) audience.add(text(document.get('friendId')));
   for (const document of incoming.docs) audience.add(text(document.get('userId')));
-  return existingUserIds(audience);
+  return audience;
+}
+
+async function friendIdsAtCreation(ownerId: string): Promise<string[]> {
+  return existingUserIds(await friendIdCandidatesAtCreation(ownerId));
+}
+
+/**
+ * 공개 콘텐츠의 푸시는 전체 사용자가 아니라 생성 시점의 친구에게만 보낸다.
+ * 콘텐츠 공개 대상(public)과 알림 대상(friend snapshot)을 분리해 저장할 때 사용한다.
+ */
+export async function resolveFriendNotificationAudience(
+  ownerId: string,
+): Promise<string[]> {
+  // 알림 fan-out이 콘텐츠 생성 자체를 막지 않게 상한까지만 결정적으로
+  // 선택한다. 실제 친구 공개 범위(friends)는 위 strict 경로를 유지한다.
+  const candidates = Array.from(await friendIdCandidatesAtCreation(ownerId))
+    .filter((userId) => userId !== ownerId)
+    .sort()
+    .slice(0, MAX_FROZEN_AUDIENCE_SIZE);
+  return (await existingUserIds(candidates))
+    .filter((userId) => userId !== ownerId)
+    .sort();
 }
 
 async function groupIdsAtCreation(ownerId: string, sourceGroupIds: string[]): Promise<string[]> {

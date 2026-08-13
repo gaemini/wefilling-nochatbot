@@ -258,20 +258,8 @@ class SnackChatFileTransferService {
   }) async {
     final uid = _auth.currentUser?.uid;
     if (uid == null) throw StateError('로그인이 필요합니다.');
-    if (message.isFileExpired) {
-      await _removeCachedMessageFile(uid, message);
-      throw StateError('만료된 파일입니다.');
-    }
-    final storagePath = message.storagePath;
-    if (storagePath == null || storagePath.isEmpty) {
-      throw StateError('파일 정보를 확인할 수 없습니다.');
-    }
-    final room = await _chatService.getSnackChatFromServer(roomId);
-    if (room == null || !room.participantIds.contains(uid)) {
-      throw StateError('이 파일에 접근할 수 없습니다.');
-    }
-    if (message.isFileExpired) throw StateError('만료된 파일입니다.');
-
+    // 서버의 30일 보존 기간이 끝나도 사용자가 이미 내려받은 사본은 로컬
+    // 문서로 계속 열 수 있다. 서버 접근 검증은 새 다운로드에만 적용한다.
     final localSourcePath = message.localFilePath;
     if (localSourcePath != null && localSourcePath.isNotEmpty) {
       final localSource = File(localSourcePath);
@@ -289,6 +277,17 @@ class SnackChatFileTransferService {
       if (result.type != ResultType.done) throw StateError(result.message);
       return;
     }
+
+    if (message.isFileExpired) throw StateError('만료된 파일입니다.');
+    final storagePath = message.storagePath;
+    if (storagePath == null || storagePath.isEmpty) {
+      throw StateError('파일 정보를 확인할 수 없습니다.');
+    }
+    final room = await _chatService.getSnackChatFromServer(roomId);
+    if (room == null || !room.participantIds.contains(uid)) {
+      throw StateError('이 파일에 접근할 수 없습니다.');
+    }
+    if (message.isFileExpired) throw StateError('만료된 파일입니다.');
 
     final destination = await _cacheDestination(uid, message);
     await destination.parent.create(recursive: true);
@@ -323,7 +322,6 @@ class SnackChatFileTransferService {
         throw StateError('만료된 파일입니다.');
       }
       await _touchCache(uid, message, destination);
-      await _trimCache(uid);
       _events.add(SnackChatFileTransferEvent(
         roomId: roomId,
         message: message.copyWith(
@@ -355,14 +353,20 @@ class SnackChatFileTransferService {
     if (uid == null) return;
     final prefs = await SharedPreferences.getInstance();
     final index = _decodeCacheIndex(prefs.getString(_cacheIndexKey(uid)));
-    final now = DateTime.now().millisecondsSinceEpoch;
     var changed = false;
     for (final entry in Map<String, _CacheRecord>.from(index).entries) {
-      final expiresAt = entry.value.expiresAtMs;
-      if (expiresAt == null || now < expiresAt) continue;
-      await File(entry.value.path).delete().catchError((_) => File(''));
-      index.remove(entry.key);
-      changed = true;
+      // 구버전 인덱스에 서버 만료 시각이 기록돼 있더라도 다운로드 완료된
+      // 로컬 사본은 삭제하지 않고 영구 로컬 항목으로 승격한다.
+      final record = entry.value;
+      if (record.expiresAtMs != null) {
+        index[entry.key] = _CacheRecord(
+          path: record.path,
+          size: record.size,
+          lastAccessMs: record.lastAccessMs,
+          expiresAtMs: null,
+        );
+        changed = true;
+      }
     }
     if (changed) await _saveCacheIndex(prefs, uid, index);
   }
@@ -501,7 +505,8 @@ class SnackChatFileTransferService {
     final storagePath = (data['storagePath'] ?? '').toString();
     final retentionMode = (data['retentionMode'] ?? '').toString();
     if (storagePath.isEmpty ||
-        !<String>{'temporary24h', 'permanent'}.contains(retentionMode)) {
+        !<String>{'temporary24h', 'temporary30d', 'permanent'}
+            .contains(retentionMode)) {
       throw StateError('서버 파일 경로를 확인할 수 없습니다.');
     }
     return _PreparedUpload(
@@ -557,7 +562,7 @@ class SnackChatFileTransferService {
     }
     final fallbackExpiry = record.retentionMode == 'temporary24h'
         ? DateTime.now().add(const Duration(hours: 24))
-        : null;
+        : DateTime.now().add(const Duration(days: 30));
     var message = server ??
         record.toMessage().copyWith(
               sendStatus: MessageSendStatus.sent,
@@ -678,8 +683,8 @@ class SnackChatFileTransferService {
       message.storagePath ?? message.id;
 
   Future<Directory> _cacheDirectory(String uid) async {
-    final support = await getApplicationSupportDirectory();
-    return Directory(p.join(support.path, 'private_snack_chat_files', uid));
+    final documents = await getApplicationDocumentsDirectory();
+    return Directory(p.join(documents.path, 'private_snack_chat_files', uid));
   }
 
   Future<Directory> _stagingDirectory(String uid) async {
@@ -729,7 +734,6 @@ class SnackChatFileTransferService {
         }
       }
       await _touchCache(record.ownerUid, message, destination);
-      await _trimCache(record.ownerUid);
       return message.copyWith(localFilePath: destination.path);
     } catch (error) {
       if (await destination.exists()) {
@@ -758,13 +762,6 @@ class SnackChatFileTransferService {
     final index = _decodeCacheIndex(prefs.getString(_cacheIndexKey(uid)));
     final record = index[_cacheRecordKey(message)];
     if (record == null) return null;
-    if (record.expiresAtMs != null &&
-        DateTime.now().millisecondsSinceEpoch >= record.expiresAtMs!) {
-      await File(record.path).delete().catchError((_) => File(''));
-      index.remove(_cacheRecordKey(message));
-      await _saveCacheIndex(prefs, uid, index);
-      return null;
-    }
     final file = File(record.path);
     if (!await file.exists()) {
       index.remove(_cacheRecordKey(message));
@@ -785,35 +782,10 @@ class SnackChatFileTransferService {
       path: file.path,
       size: await file.length(),
       lastAccessMs: DateTime.now().millisecondsSinceEpoch,
-      expiresAtMs: message.expiresAt?.millisecondsSinceEpoch,
+      // Storage/Firestore 만료는 서버 사본에만 적용한다. 사용자가 직접
+      // 다운로드한 로컬 파일은 별도 만료 시간을 두지 않는다.
+      expiresAtMs: null,
     );
-    await _saveCacheIndex(prefs, uid, index);
-  }
-
-  Future<void> _removeCachedMessageFile(
-    String uid,
-    SnackChatMessage message,
-  ) async {
-    final prefs = await SharedPreferences.getInstance();
-    final index = _decodeCacheIndex(prefs.getString(_cacheIndexKey(uid)));
-    final removed = index.remove(_cacheRecordKey(message));
-    if (removed == null) return;
-    await File(removed.path).delete().catchError((_) => File(''));
-    await _saveCacheIndex(prefs, uid, index);
-  }
-
-  Future<void> _trimCache(String uid) async {
-    final prefs = await SharedPreferences.getInstance();
-    final index = _decodeCacheIndex(prefs.getString(_cacheIndexKey(uid)));
-    final ordered = index.entries.toList()
-      ..sort((a, b) => a.value.lastAccessMs.compareTo(b.value.lastAccessMs));
-    var total = ordered.fold<int>(0, (sum, entry) => sum + entry.value.size);
-    for (final entry in ordered) {
-      if (total <= SnackChatFilePolicy.maxLocalCacheBytes) break;
-      await File(entry.value.path).delete().catchError((_) => File(''));
-      total -= entry.value.size;
-      index.remove(entry.key);
-    }
     await _saveCacheIndex(prefs, uid, index);
   }
 

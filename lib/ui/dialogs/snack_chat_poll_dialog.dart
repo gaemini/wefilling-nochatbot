@@ -1,27 +1,15 @@
-import 'dart:math' as math;
-
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 
 import '../../models/snack_chat_message.dart';
+import '../../screens/snack_chat_poll_schedule_screen.dart';
 import '../../utils/responsive_helper.dart';
 
 Future<SnackChatPoll?> showSnackChatPollDialog(BuildContext context) {
-  final rootBottomInset = MediaQuery.viewPaddingOf(context).bottom;
-  return showModalBottomSheet<SnackChatPoll>(
-    context: context,
-    isScrollControlled: true,
-    useSafeArea: true,
-    backgroundColor: Colors.white,
-    barrierColor: Colors.black.withValues(alpha: 0.42),
-    elevation: 0,
-    showDragHandle: false,
-    constraints: const BoxConstraints(maxWidth: 600),
-    shape: const RoundedRectangleBorder(
-      borderRadius: BorderRadius.vertical(top: Radius.circular(24)),
-    ),
-    builder: (sheetContext) => SnackChatPollDialog(
-      rootBottomInset: rootBottomInset,
+  return Navigator.of(context).push<SnackChatPoll>(
+    MaterialPageRoute<SnackChatPoll>(
+      fullscreenDialog: true,
+      builder: (_) => const SnackChatPollDialog(),
     ),
   );
 }
@@ -32,6 +20,8 @@ class SnackChatPollDialog extends StatefulWidget {
     this.rootBottomInset = 0,
   });
 
+  // 이전 바텀시트 호출부와의 소스 호환을 위한 값이다. 전체 화면에서는
+  // Scaffold와 SafeArea가 시스템 하단 여백을 직접 처리한다.
   final double rootBottomInset;
 
   @override
@@ -115,27 +105,16 @@ class _SnackChatPollDialogState extends State<SnackChatPollDialog> {
     final initial = _closesAt != null && _closesAt!.isAfter(now)
         ? _closesAt!
         : now.add(const Duration(hours: 1));
-    final date = await showDatePicker(
-      context: context,
-      initialDate: DateUtils.dateOnly(initial),
-      firstDate: DateUtils.dateOnly(now),
-      lastDate: DateUtils.dateOnly(now.add(const Duration(days: 365))),
+    final selected = await Navigator.of(context).push<DateTime>(
+      MaterialPageRoute<DateTime>(
+        builder: (_) => SnackChatPollScheduleScreen(
+          initialDateTime: initial,
+          firstDate: DateUtils.dateOnly(now),
+          lastDate: DateUtils.dateOnly(now.add(const Duration(days: 365))),
+        ),
+      ),
     );
-    if (date == null || !mounted) return;
-
-    final time = await showTimePicker(
-      context: context,
-      initialTime: TimeOfDay.fromDateTime(initial),
-    );
-    if (time == null || !mounted) return;
-
-    final selected = DateTime(
-      date.year,
-      date.month,
-      date.day,
-      time.hour,
-      time.minute,
-    );
+    if (selected == null || !mounted) return;
     if (!selected.isAfter(DateTime.now())) {
       setState(() {
         _formError = _isKo
@@ -202,245 +181,235 @@ class _SnackChatPollDialogState extends State<SnackChatPollDialog> {
 
   @override
   Widget build(BuildContext context) {
-    final mediaQuery = MediaQuery.of(context);
-    final keyboardInset = mediaQuery.viewInsets.bottom;
-    final systemBottomInset = math.max(
-      widget.rootBottomInset,
-      mediaQuery.viewPadding.bottom,
-    );
-    final availableHeight = math.max(
-      0.0,
-      mediaQuery.size.height - keyboardInset - mediaQuery.viewPadding.top - 12,
-    );
-    final sheetHeight = math.min(
-      mediaQuery.size.height * 0.92,
-      availableHeight,
-    );
-    final horizontalPadding = mediaQuery.size.width < 360 ? 16.0 : 20.0;
-
-    return AnimatedPadding(
-      duration: const Duration(milliseconds: 180),
-      curve: Curves.easeOut,
-      padding: EdgeInsets.only(bottom: keyboardInset),
-      child: SafeArea(
-        top: false,
-        minimum: EdgeInsets.only(bottom: math.max(8.0, systemBottomInset)),
-        child: SizedBox(
-          height: sheetHeight,
-          child: sheetHeight < 132
-              ? SingleChildScrollView(
-                  child: _buildHeader(horizontalPadding),
-                )
-              : MediaQuery.withClampedTextScaling(
-                  maxScaleFactor: 1.3,
+    final screenWidth = MediaQuery.sizeOf(context).width;
+    final horizontalPadding = screenWidth < 360 ? 14.0 : 20.0;
+    return Scaffold(
+      backgroundColor: Colors.white,
+      resizeToAvoidBottomInset: true,
+      appBar: _buildAppBar(),
+      body: MediaQuery.withClampedTextScaling(
+        maxScaleFactor: 1.3,
+        child: SafeArea(
+          top: false,
+          child: Form(
+            key: _formKey,
+            child: SingleChildScrollView(
+              keyboardDismissBehavior: ScrollViewKeyboardDismissBehavior.onDrag,
+              padding: EdgeInsets.fromLTRB(
+                horizontalPadding,
+                context.rs(12).clamp(8, 16).toDouble(),
+                horizontalPadding,
+                context.rs(28).clamp(24, 36).toDouble(),
+              ),
+              child: Center(
+                child: ConstrainedBox(
+                  constraints: const BoxConstraints(maxWidth: 640),
                   child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
-                      _buildHeader(horizontalPadding),
-                      Expanded(
-                        child: Form(
-                          key: _formKey,
-                          child: SingleChildScrollView(
-                            keyboardDismissBehavior:
-                                ScrollViewKeyboardDismissBehavior.onDrag,
-                            padding: EdgeInsets.fromLTRB(
-                              horizontalPadding,
-                              4,
-                              horizontalPadding,
-                              context.rs(24).clamp(20, 30).toDouble(),
+                      _buildSectionLabel(
+                        _isKo ? '투표 제목' : 'Poll question',
+                      ),
+                      TextFormField(
+                        controller: _questionController,
+                        maxLength: _maxQuestionLength,
+                        maxLengthEnforcement:
+                            MaxLengthEnforcement.truncateAfterCompositionEnds,
+                        textInputAction: TextInputAction.next,
+                        onChanged: (_) {
+                          if (_formError != null) {
+                            setState(() => _formError = null);
+                          }
+                        },
+                        validator: (value) {
+                          if ((value ?? '').trim().isEmpty) {
+                            return _isKo
+                                ? '투표 제목을 입력해주세요.'
+                                : 'Enter a poll question.';
+                          }
+                          return null;
+                        },
+                        style: _inputTextStyle(context),
+                        decoration: _inputDecoration(
+                          hintText: _isKo
+                              ? '무엇을 정할까요?'
+                              : 'What would you like to decide?',
+                        ),
+                      ),
+                      SizedBox(
+                        height: context.rs(24).clamp(20, 28).toDouble(),
+                      ),
+                      Row(
+                        children: [
+                          Expanded(
+                            child: _buildSectionLabel(
+                              _isKo ? '선택지' : 'Options',
                             ),
-                            child: Column(
-                              crossAxisAlignment: CrossAxisAlignment.start,
-                              children: [
-                                _buildSectionLabel(
-                                  _isKo ? '투표 제목' : 'Poll question',
-                                ),
-                                TextFormField(
-                                  controller: _questionController,
-                                  autofocus: true,
-                                  maxLength: _maxQuestionLength,
-                                  maxLengthEnforcement: MaxLengthEnforcement
-                                      .truncateAfterCompositionEnds,
-                                  textInputAction: TextInputAction.next,
-                                  onChanged: (_) {
-                                    if (_formError != null) {
-                                      setState(() => _formError = null);
-                                    }
-                                  },
-                                  validator: (value) {
-                                    if ((value ?? '').trim().isEmpty) {
-                                      return _isKo
-                                          ? '투표 제목을 입력해주세요.'
-                                          : 'Enter a poll question.';
-                                    }
-                                    return null;
-                                  },
-                                  style: _inputTextStyle(context),
-                                  decoration: _inputDecoration(
-                                    hintText: _isKo
-                                        ? '무엇을 정할까요?'
-                                        : 'What would you like to decide?',
-                                  ),
-                                ),
-                                SizedBox(
-                                    height: context
-                                        .rs(20)
-                                        .clamp(16, 24)
-                                        .toDouble()),
-                                Row(
-                                  children: [
-                                    Expanded(
-                                      child: _buildSectionLabel(
-                                        _isKo ? '선택지' : 'Options',
-                                      ),
-                                    ),
-                                    Text(
-                                      '${_options.length}/$_maxOptions',
-                                      style: const TextStyle(
-                                        fontFamily: 'Pretendard',
-                                        fontSize: 12,
-                                        fontWeight: FontWeight.w500,
-                                        color: Color(0xFF98A2B3),
-                                      ),
-                                    ),
-                                  ],
-                                ),
-                                const SizedBox(height: 2),
-                                for (var index = 0;
-                                    index < _options.length;
-                                    index++)
-                                  _buildOptionField(_options[index], index),
-                                Align(
-                                  alignment: Alignment.centerLeft,
-                                  child: TextButton.icon(
-                                    onPressed: _options.length < _maxOptions
-                                        ? _addOption
-                                        : null,
-                                    style: TextButton.styleFrom(
-                                      foregroundColor: const Color(0xFF475467),
-                                      disabledForegroundColor:
-                                          const Color(0xFFB8C0CC),
-                                      padding: const EdgeInsets.symmetric(
-                                          vertical: 10),
-                                      tapTargetSize:
-                                          MaterialTapTargetSize.shrinkWrap,
-                                    ),
-                                    icon:
-                                        const Icon(Icons.add_rounded, size: 19),
-                                    label: Text(
-                                      _isKo ? '선택지 추가' : 'Add option',
-                                      style: const TextStyle(
-                                        fontFamily: 'Pretendard',
-                                        fontSize: 14,
-                                        fontWeight: FontWeight.w700,
-                                      ),
-                                    ),
-                                  ),
-                                ),
-                                SizedBox(
-                                    height: context
-                                        .rs(16)
-                                        .clamp(12, 20)
-                                        .toDouble()),
-                                _buildSettingRow(
-                                  title: _isKo ? '복수 선택' : 'Multiple choices',
-                                  description: _isKo
-                                      ? '끄면 한 가지 선택지만 고를 수 있어요.'
-                                      : 'When off, participants can choose one option.',
-                                  value: _allowMultiple,
-                                  onChanged: (value) {
-                                    setState(() => _allowMultiple = value);
-                                  },
-                                ),
-                                _buildSettingRow(
-                                  title: _isKo ? '익명 투표' : 'Anonymous voting',
-                                  description: _isKo
-                                      ? '참여자에게 누가 선택했는지 표시하지 않아요.'
-                                      : 'Participant choices will not show names.',
-                                  value: _isAnonymous,
-                                  onChanged: (value) {
-                                    setState(() => _isAnonymous = value);
-                                  },
-                                ),
-                                SizedBox(
-                                    height:
-                                        context.rs(8).clamp(6, 10).toDouble()),
-                                _buildClosingTimeRow(),
-                                if (_formError != null) ...[
-                                  const SizedBox(height: 10),
-                                  Text(
-                                    _formError!,
-                                    key: const ValueKey(
-                                        'snack_chat_poll_form_error'),
-                                    style: const TextStyle(
-                                      fontFamily: 'Pretendard',
-                                      fontSize: 12.5,
-                                      height: 1.35,
-                                      fontWeight: FontWeight.w600,
-                                      color: Color(0xFFB42318),
-                                    ),
-                                  ),
-                                ],
-                              ],
+                          ),
+                          Text(
+                            '${_options.length}/$_maxOptions',
+                            style: const TextStyle(
+                              fontFamily: 'Pretendard',
+                              fontSize: 12,
+                              fontWeight: FontWeight.w600,
+                              color: Color(0xFF6B7280),
+                            ),
+                          ),
+                        ],
+                      ),
+                      const SizedBox(height: 2),
+                      for (var index = 0; index < _options.length; index++)
+                        _buildOptionField(_options[index], index),
+                      Align(
+                        alignment: Alignment.centerLeft,
+                        child: TextButton.icon(
+                          onPressed:
+                              _options.length < _maxOptions ? _addOption : null,
+                          style: TextButton.styleFrom(
+                            foregroundColor: const Color(0xFF475467),
+                            disabledForegroundColor: const Color(0xFFB8C0CC),
+                            padding: const EdgeInsets.symmetric(vertical: 10),
+                            minimumSize: const Size(44, 44),
+                          ),
+                          icon: const Icon(Icons.add_rounded, size: 19),
+                          label: Text(
+                            _isKo ? '선택지 추가' : 'Add option',
+                            style: const TextStyle(
+                              fontFamily: 'Pretendard',
+                              fontSize: 14,
+                              fontWeight: FontWeight.w700,
                             ),
                           ),
                         ),
                       ),
+                      SizedBox(
+                        height: context.rs(18).clamp(14, 22).toDouble(),
+                      ),
+                      const Divider(height: 1, color: Color(0xFFE5E7EB)),
+                      SizedBox(
+                        height: context.rs(10).clamp(8, 12).toDouble(),
+                      ),
+                      _buildSettingRow(
+                        title: _isKo ? '복수 선택' : 'Multiple choices',
+                        description: _isKo
+                            ? '끄면 한 가지 선택지만 고를 수 있어요.'
+                            : 'When off, participants can choose one option.',
+                        value: _allowMultiple,
+                        onChanged: (value) {
+                          setState(() => _allowMultiple = value);
+                        },
+                      ),
+                      _buildSettingRow(
+                        title: _isKo ? '익명 투표' : 'Anonymous voting',
+                        description: _isKo
+                            ? '참여자에게 누가 선택했는지 표시하지 않아요.'
+                            : 'Participant choices will not show names.',
+                        value: _isAnonymous,
+                        onChanged: (value) {
+                          setState(() => _isAnonymous = value);
+                        },
+                      ),
+                      SizedBox(
+                        height: context.rs(8).clamp(6, 10).toDouble(),
+                      ),
+                      _buildClosingTimeRow(),
+                      if (_formError != null) ...[
+                        const SizedBox(height: 10),
+                        Text(
+                          _formError!,
+                          key: const ValueKey('snack_chat_poll_form_error'),
+                          style: const TextStyle(
+                            fontFamily: 'Pretendard',
+                            fontSize: 12.5,
+                            height: 1.35,
+                            fontWeight: FontWeight.w600,
+                            color: Color(0xFFB42318),
+                          ),
+                        ),
+                      ],
                     ],
                   ),
                 ),
+              ),
+            ),
+          ),
         ),
       ),
     );
   }
 
-  Widget _buildHeader(double horizontalPadding) {
-    return Padding(
-      padding: EdgeInsets.fromLTRB(
-        math.max(8.0, horizontalPadding - 10),
-        8,
-        math.max(8.0, horizontalPadding - 8),
-        8,
+  PreferredSizeWidget _buildAppBar() {
+    final compactAction = MediaQuery.sizeOf(context).width < 340 ||
+        MediaQuery.textScalerOf(context).scale(14) > 24;
+    return AppBar(
+      backgroundColor: Colors.white,
+      surfaceTintColor: Colors.white,
+      elevation: 0,
+      toolbarHeight: context.rh(56, min: 54, max: 60),
+      automaticallyImplyLeading: false,
+      leadingWidth: 48,
+      leading: IconButton(
+        onPressed: () => Navigator.of(context).pop(),
+        tooltip: MaterialLocalizations.of(context).closeButtonTooltip,
+        icon: Icon(
+          Icons.close_rounded,
+          size: context.ri(22).clamp(21, 24).toDouble(),
+          color: const Color(0xFF111827),
+        ),
       ),
-      child: Row(
-        children: [
-          IconButton(
-            onPressed: () => Navigator.of(context).pop(),
-            tooltip: _isKo ? '닫기' : 'Close',
-            icon: const Icon(Icons.close_rounded),
-            iconSize: context.ri(22).clamp(21, 24).toDouble(),
-          ),
-          Expanded(
-            child: Text(
-              _isKo ? '참석 투표 만들기' : 'Create attendance poll',
-              maxLines: 1,
-              overflow: TextOverflow.ellipsis,
-              textAlign: TextAlign.center,
-              style: TextStyle(
-                fontFamily: 'Pretendard',
-                fontSize: context.rf(18).clamp(16, 19).toDouble(),
-                fontWeight: FontWeight.w800,
-                color: const Color(0xFF111827),
+      flexibleSpace: SafeArea(
+        bottom: false,
+        child: IgnorePointer(
+          child: Center(
+            child: Padding(
+              padding: const EdgeInsets.symmetric(horizontal: 104),
+              child: Text(
+                _isKo ? '참석 투표 만들기' : 'Create attendance poll',
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+                textAlign: TextAlign.center,
+                style: TextStyle(
+                  fontFamily: 'Pretendard',
+                  fontSize: context.rf(18).clamp(16, 19).toDouble(),
+                  fontWeight: FontWeight.w700,
+                  color: const Color(0xFF111827),
+                ),
               ),
             ),
           ),
-          TextButton(
-            onPressed: _submit,
-            style: TextButton.styleFrom(
-              foregroundColor: const Color(0xFF344054),
-              padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 10),
-              minimumSize: const Size(44, 44),
+        ),
+      ),
+      actions: [
+        if (compactAction)
+          SizedBox.square(
+            dimension: 48,
+            child: IconButton(
+              onPressed: _submit,
+              tooltip: _isKo ? '만들기' : 'Create',
+              icon: const Icon(Icons.check_rounded, size: 22),
+              color: const Color(0xFF111827),
             ),
-            child: Text(
+          )
+        else
+          TextButton.icon(
+            onPressed: _submit,
+            icon: const Icon(Icons.check_rounded, size: 19),
+            label: Text(
               _isKo ? '만들기' : 'Create',
               style: const TextStyle(
                 fontFamily: 'Pretendard',
                 fontSize: 14,
-                fontWeight: FontWeight.w800,
+                fontWeight: FontWeight.w700,
               ),
             ),
+            style: TextButton.styleFrom(
+              foregroundColor: const Color(0xFF111827),
+              padding: const EdgeInsets.symmetric(horizontal: 8),
+              minimumSize: const Size(44, 44),
+            ),
           ),
-        ],
-      ),
+        const SizedBox(width: 4),
+      ],
     );
   }
 

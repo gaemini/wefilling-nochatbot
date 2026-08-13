@@ -50,7 +50,8 @@ const MAX_MEMBERSHIP_EVENT_READ = 129;
 const SNACK_CHAT_FILE_MAX_BYTES = 20 * 1024 * 1024;
 const SNACK_CHAT_FILE_JOB_TTL_MS = 2 * 24 * 60 * 60 * 1000;
 const SNACK_CHAT_FILE_COMMITTED_JOB_TTL_MS = 60 * 60 * 1000;
-const SNACK_CHAT_FILE_RETENTION_MS = 24 * 60 * 60 * 1000;
+const SNACK_CHAT_FILE_24H_RETENTION_MS = 24 * 60 * 60 * 1000;
+const SNACK_CHAT_FILE_30D_RETENTION_MS = 30 * 24 * 60 * 60 * 1000;
 const SNACK_CHAT_FILE_MIME_BY_EXTENSION: Record<string, string> = {
   pdf: 'application/pdf',
   hwp: 'application/x-hwp',
@@ -66,6 +67,8 @@ const SNACK_CHAT_FILE_MIME_BY_EXTENSION: Record<string, string> = {
 };
 
 type Data = FirebaseFirestore.DocumentData;
+type SupportedLang = 'ko' | 'en';
+type PushTokenGroups = Record<SupportedLang, string[]>;
 type Period = {
   joinedAfterSequence: number;
   leftAfterSequence: number | null;
@@ -93,6 +96,13 @@ function db(): FirebaseFirestore.Firestore {
 
 function stringValue(value: unknown): string {
   return (value ?? '').toString().trim();
+}
+
+function supportedLanguage(value: unknown): SupportedLang | null {
+  const language = stringValue(value).toLowerCase();
+  if (language === 'ko' || language.startsWith('ko-')) return 'ko';
+  if (language === 'en' || language.startsWith('en-')) return 'en';
+  return null;
 }
 
 function boundedString(value: unknown, max: number): string {
@@ -879,6 +889,13 @@ type SnackChatFileRequest = {
   replyToMessageId: string;
 };
 
+function containsAsciiControlCharacter(value: string): boolean {
+  return Array.from(value).some((character) => {
+    const codePoint = character.codePointAt(0) ?? 0;
+    return codePoint <= 0x1f || codePoint === 0x7f;
+  });
+}
+
 function snackChatFileRequest(raw: unknown): SnackChatFileRequest {
   const data = objectValue(raw);
   const fileExtension = stringValue(data.fileExtension).toLowerCase();
@@ -890,7 +907,7 @@ function snackChatFileRequest(raw: unknown): SnackChatFileRequest {
       !originalFileName || originalFileName.includes('/') ||
       originalFileName.includes('\\') ||
       Array.from(originalFileName).length > 240 ||
-      /[\u0000-\u001F\u007F]/.test(originalFileName) ||
+      containsAsciiControlCharacter(originalFileName) ||
       !Number.isInteger(fileSize) || fileSize <= 0 ||
       fileSize > SNACK_CHAT_FILE_MAX_BYTES) {
     throw new functions.https.HttpsError(
@@ -1180,6 +1197,9 @@ export const prepareSnackChatFileUpload = functions
         }
       }
       const retentionMode = Number(room.get('activeDurationHours')) === 0
+        // Keep the existing wire value so released clients continue to accept
+        // the prepare response. `commitSnackChatFileUpload` still assigns the
+        // new 30-day expiresAt/deleteAt to regular-room files.
         ? 'permanent'
         : 'temporary24h';
       const storagePath = [
@@ -1323,11 +1343,12 @@ export const commitSnackChatFileUpload = functions
       }
       const createdAt = nextRoomMessageTimestamp(room);
       const retentionMode = stringValue(job.get('retentionMode'));
-      const expiresAt = retentionMode === 'temporary24h'
-        ? Timestamp.fromMillis(
-          createdAt.toMillis() + SNACK_CHAT_FILE_RETENTION_MS,
-        )
-        : null;
+      const retentionMs = retentionMode === 'temporary24h'
+        ? SNACK_CHAT_FILE_24H_RETENTION_MS
+        : SNACK_CHAT_FILE_30D_RETENTION_MS;
+      const expiresAt = Timestamp.fromMillis(
+        createdAt.toMillis() + retentionMs,
+      );
       const sequence = nonNegativeInteger(room.get('lastMessageSequence')) + 1;
       const recipients = uniqueStrings(room.get('participantIds'))
         .filter((participantId) => participantId !== uid);
@@ -1357,7 +1378,8 @@ export const commitSnackChatFileUpload = functions
         storagePath,
         retentionMode,
         createdAt,
-        ...(expiresAt == null ? {} : {expiresAt, deleteAt: expiresAt}),
+        expiresAt,
+        deleteAt: expiresAt,
         uploadId: request.uploadId,
         ...(replyTarget?.exists ? {
           replyToMessageId: request.replyToMessageId,
@@ -3326,16 +3348,19 @@ async function applySnackChatUnreadOnce(args: {
 async function pushTokensOwnedByUser(
   userId: string,
   rawCandidates: unknown[],
-): Promise<string[]> {
+  fallbackLanguage: SupportedLang,
+): Promise<PushTokenGroups> {
+  const emptyGroups = (): PushTokenGroups => ({ko: [], en: []});
   const candidates = Array.from(new Set(rawCandidates
     .map(stringValue)
     .filter((token) => token.length > 0 && token.length <= 4096)))
     .slice(0, MAX_PUSH_TOKENS_PER_USER);
-  if (candidates.length === 0) return [];
+  if (candidates.length === 0) return emptyGroups();
   try {
     const registry = await db().getAll(...candidates.map((token) =>
       db().collection('fcm_tokens').doc(token)));
     const result = new Set<string>();
+    const tokenLanguages = new Map<string, SupportedLang>();
     const missing: string[] = [];
     candidates.forEach((token, index) => {
       const owner = registry[index];
@@ -3343,6 +3368,11 @@ async function pushTokensOwnedByUser(
         missing.push(token);
       } else if (stringValue(owner.get('userId')) === userId) {
         result.add(token);
+        tokenLanguages.set(
+          token,
+          supportedLanguage(owner.get('lang') ?? owner.get('locale')) ??
+            fallbackLanguage,
+        );
       }
     });
     for (const token of missing) {
@@ -3355,12 +3385,20 @@ async function pushTokensOwnedByUser(
       const owners = new Set<string>();
       arrayOwners.docs.forEach((document) => owners.add(document.id));
       singleOwners.docs.forEach((document) => owners.add(document.id));
-      if (owners.size === 1 && owners.has(userId)) result.add(token);
+      if (owners.size === 1 && owners.has(userId)) {
+        result.add(token);
+        tokenLanguages.set(token, fallbackLanguage);
+      }
     }
-    return candidates.filter((token) => result.has(token));
+    const groups = emptyGroups();
+    candidates.forEach((token) => {
+      if (!result.has(token)) return;
+      groups[tokenLanguages.get(token) ?? fallbackLanguage].push(token);
+    });
+    return groups;
   } catch (error) {
     console.warn('Snack Chat token ownership verification failed.', error);
-    return [];
+    return emptyGroups();
   }
 }
 
@@ -3441,9 +3479,10 @@ async function sendSnackChatPush(args: {
   message: Data;
 }): Promise<void> {
   try {
-    const [room, recipient, blocked] = await Promise.all([
+    const [room, recipient, settings, blocked] = await Promise.all([
       args.roomRef.get(),
       db().collection(USERS).doc(args.recipientId).get(),
+      db().collection('user_settings').doc(args.recipientId).get(),
       hasBlockBetween(args.senderId, args.recipientId),
     ]);
     const roomData = room.data() ?? {};
@@ -3454,30 +3493,37 @@ async function sendSnackChatPush(args: {
         uniqueStrings(userData.mutedSnackChatIds).includes(args.roomRef.id)) {
       return;
     }
-    const tokens = await pushTokensOwnedByUser(args.recipientId, [
+    const notificationSettings = settings.exists &&
+        settings.data()?.notifications &&
+        typeof settings.data()?.notifications === 'object'
+      ? settings.data()?.notifications as Data
+      : {};
+    if (notificationSettings.all_notifications === false ||
+        notificationSettings.dm_messages === false ||
+        notificationSettings.snack_chat_invite === false) {
+      return;
+    }
+    const fallbackLanguage = supportedLanguage(
+      settings.data()?.locale ??
+      settings.data()?.language ??
+      settings.data()?.preferredLanguage ??
+      userData.preferredLanguage ??
+      userData.locale ??
+      userData.language,
+    ) ?? 'ko';
+    const tokenGroups = await pushTokensOwnedByUser(args.recipientId, [
       userData.fcmToken,
       ...(Array.isArray(userData.fcmTokens) ? userData.fcmTokens : []),
-    ]);
-    if (tokens.length === 0) return;
+    ], fallbackLanguage);
+    const tokenCount = tokenGroups.ko.length + tokenGroups.en.length;
+    if (tokenCount === 0) return;
     // Claim immediately before FCM. Retried Firestore events cannot send a
     // duplicate notification; a process crash favors at-most-once delivery.
     if (!await claimPushAttempt(args.eventRef, args.recipientId)) return;
 
     const messageType = stringValue(args.message.type);
     const rawText = boundedString(args.message.text, 100);
-    const preview = messageType === 'image'
-      ? (rawText || '📷 Photo')
-      : messageType === 'file'
-        ? '📎 ' + (boundedString(args.message.originalFileName, 80) || 'File')
-      : messageType === 'poll'
-        ? '📊 ' + (rawText || 'Poll')
-        : (rawText || 'Message');
     const roomTitle = boundedString(roomData.title, 80) || 'Snack Chat';
-    const language = stringValue(
-      userData.preferredLanguage ?? userData.locale ?? userData.language,
-    ).toLowerCase();
-    const isKorean = !language.startsWith('en');
-    const body = args.senderName + ': ' + preview;
     let badge: number | null = null;
     try {
       badge = nonNegativeInteger(userData.notificationUnreadTotal) +
@@ -3488,50 +3534,64 @@ async function sendSnackChatPush(args: {
     }
 
     const invalid: string[] = [];
-    for (let offset = 0; offset < tokens.length; offset += 500) {
-      const chunk = tokens.slice(offset, offset + 500);
-      const result = await admin.messaging().sendEachForMulticast({
-        tokens: chunk,
-        notification: {title: roomTitle, body},
-        data: {
-          type: 'snack_chat_message',
-          recipientUserId: args.recipientId,
-          snackChatId: args.roomRef.id,
-          senderId: args.senderId,
-          senderName: args.senderName,
-          roomTitle,
-          ...(badge == null ? {} : {badge: String(badge)}),
-          language: isKorean ? 'ko' : 'en',
-        },
-        apns: {
-          headers: {
-            'apns-push-type': 'alert',
-            'apns-priority': '10',
+    for (const language of ['ko', 'en'] as const) {
+      const tokens = tokenGroups[language];
+      const isKorean = language === 'ko';
+      const preview = messageType === 'image'
+        ? (rawText || (isKorean ? '📷 사진' : '📷 Photo'))
+        : messageType === 'file'
+          ? '📎 ' + (boundedString(args.message.originalFileName, 80) ||
+            (isKorean ? '파일' : 'File'))
+          : messageType === 'poll'
+            ? '📊 ' + (rawText || (isKorean ? '투표' : 'Poll'))
+            : (rawText || (isKorean ? '메시지' : 'Message'));
+      const body = args.senderName + ': ' + preview;
+
+      for (let offset = 0; offset < tokens.length; offset += 500) {
+        const chunk = tokens.slice(offset, offset + 500);
+        const result = await admin.messaging().sendEachForMulticast({
+          tokens: chunk,
+          notification: {title: roomTitle, body},
+          data: {
+            type: 'snack_chat_message',
+            recipientUserId: args.recipientId,
+            snackChatId: args.roomRef.id,
+            senderId: args.senderId,
+            senderName: args.senderName,
+            roomTitle,
+            ...(badge == null ? {} : {badge: String(badge)}),
+            language,
           },
-          payload: {
-            aps: {
-              sound: 'default',
-              ...(badge == null ? {} : {badge}),
+          apns: {
+            headers: {
+              'apns-push-type': 'alert',
+              'apns-priority': '10',
+            },
+            payload: {
+              aps: {
+                sound: 'default',
+                ...(badge == null ? {} : {badge}),
+              },
             },
           },
-        },
-        android: {
-          priority: 'high',
-          notification: {
-            sound: 'default',
-            channelId: 'high_importance_channel',
-            ...(badge == null ? {} : {notificationCount: badge}),
+          android: {
+            priority: 'high',
+            notification: {
+              sound: 'default',
+              channelId: 'high_importance_channel',
+              ...(badge == null ? {} : {notificationCount: badge}),
+            },
           },
-        },
-      });
-      result.responses.forEach((response, index) => {
-        if (response.success) return;
-        const code = response.error?.code ?? '';
-        if (code === 'messaging/registration-token-not-registered' ||
-            code === 'messaging/invalid-registration-token') {
-          invalid.push(chunk[index]);
-        }
-      });
+        });
+        result.responses.forEach((response, index) => {
+          if (response.success) return;
+          const code = response.error?.code ?? '';
+          if (code === 'messaging/registration-token-not-registered' ||
+              code === 'messaging/invalid-registration-token') {
+            invalid.push(chunk[index]);
+          }
+        });
+      }
     }
     await cleanInvalidPushTokens(args.recipientId, userData, invalid);
   } catch (error) {
@@ -3648,7 +3708,7 @@ function expectedSnackChatFilePath(
   const retentionMode = stringValue(data.retentionMode);
   const uploadId = stringValue(data.uploadId);
   const storagePath = stringValue(data.storagePath);
-  if (!['temporary24h', 'permanent'].includes(retentionMode) ||
+  if (!['temporary24h', 'temporary30d', 'permanent'].includes(retentionMode) ||
       !uploadId || !storagePath) {
     return '';
   }
@@ -3700,6 +3760,48 @@ export const onSnackChatFileUploadJobDeleted = functions
     if (!storagePath) return null;
     await admin.storage().bucket().file(storagePath)
       .delete({ignoreNotFound: true});
+    return null;
+  });
+
+/**
+ * TTL is the primary deletion path. This bounded hourly sweep shortens TTL
+ * delivery lag and also removes legacy `permanent` file messages after the
+ * new 30-day maximum retention period.
+ */
+export const cleanupExpiredSnackChatFiles = functions
+  .runWith({timeoutSeconds: 300, memory: '512MB', failurePolicy: true})
+  .pubsub.schedule('every 60 minutes')
+  .timeZone('UTC')
+  .onRun(async () => {
+    const now = Timestamp.now();
+    const legacyCutoff = Timestamp.fromMillis(
+      now.toMillis() - SNACK_CHAT_FILE_30D_RETENTION_MS,
+    );
+    const [expired, legacy] = await Promise.all([
+      db().collectionGroup('messages')
+        .where('messageScope', '==', 'snack_chat')
+        .where('type', '==', 'file')
+        .where('deleteAt', '<=', now)
+        .orderBy('deleteAt')
+        .limit(250)
+        .get(),
+      db().collectionGroup('messages')
+        .where('messageScope', '==', 'snack_chat')
+        .where('type', '==', 'file')
+        .where('createdAt', '<=', legacyCutoff)
+        .orderBy('createdAt')
+        .limit(250)
+        .get(),
+    ]);
+    const due = new Map<string, FirebaseFirestore.QueryDocumentSnapshot>();
+    expired.docs.forEach((document) => due.set(document.ref.path, document));
+    legacy.docs.forEach((document) => due.set(document.ref.path, document));
+    if (due.size === 0) return null;
+
+    const batch = db().batch();
+    due.forEach((document) => batch.delete(document.ref));
+    await batch.commit();
+    console.log(`cleanupExpiredSnackChatFiles deleted=${due.size}`);
     return null;
   });
 

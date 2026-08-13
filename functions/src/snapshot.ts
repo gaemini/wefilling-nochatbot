@@ -102,6 +102,14 @@ function validRequestId(value: unknown): string {
   return id;
 }
 
+function validNotificationId(value: unknown): string {
+  const id = text(value);
+  if (!/^[A-Za-z0-9_-]{1,220}$/.test(id)) {
+    throw new functions.https.HttpsError('invalid-argument', 'Invalid notification id.');
+  }
+  return id;
+}
+
 function validSnapshotComment(value: unknown): string {
   const message = text(value);
   const length = Array.from(message).length;
@@ -331,6 +339,27 @@ async function deleteQuery(query: FirebaseFirestore.Query): Promise<void> {
   }
 }
 
+// 고정 limit으로 결과를 잘라내지 않고 작은 페이지를 끝까지 순회한다.
+// 한 번의 Firestore 응답 크기는 제한하면서도 사용자가 볼 수 있는 스낵/조회자
+// 총개수에는 상한을 두지 않는다.
+async function readAllQueryDocuments(
+  query: FirebaseFirestore.Query,
+  pageSize = 400,
+): Promise<FirebaseFirestore.QueryDocumentSnapshot[]> {
+  const documents: FirebaseFirestore.QueryDocumentSnapshot[] = [];
+  let cursor: FirebaseFirestore.QueryDocumentSnapshot | undefined;
+  while (true) {
+    let pageQuery = query.limit(pageSize);
+    if (cursor) pageQuery = pageQuery.startAfter(cursor);
+    const page = await pageQuery.get();
+    if (page.empty) break;
+    documents.push(...page.docs);
+    cursor = page.docs[page.docs.length - 1];
+    if (page.size < pageSize) break;
+  }
+  return documents;
+}
+
 async function removeSnapshotFromFeeds(
   snapshotId: string,
   data: FirebaseFirestore.DocumentData,
@@ -381,16 +410,14 @@ async function replaceViewerAuthorFeed(
   await deleteQuery(feed.where('authorId', '==', authorUid));
 
   const now = admin.firestore.Timestamp.now();
-  const active = await store.collection(COL.snapshots)
+  const active = await readAllQueryDocuments(store.collection(COL.snapshots)
     .where('authorId', '==', authorUid)
     .where('status', '==', 'active')
-    .where('expiresAt', '>', now)
-    .limit(120)
-    .get();
-  if (active.empty) return;
+    .where('expiresAt', '>', now));
+  if (active.length === 0) return;
 
   const writer = store.bulkWriter();
-  for (const document of active.docs) {
+  for (const document of active) {
     const data = document.data();
     if (await canAccessSnapshot(viewerUid, data, now)) {
       writer.set(feed.doc(document.id), snapshotFeedData(document.id, data));
@@ -416,6 +443,7 @@ async function deleteSnapshotResources(
     removeSnapshotFromFeeds(snapshotId, data),
     deleteQuery(snapshotRef.collection('reactions')),
     deleteQuery(snapshotRef.collection('comments')),
+    deleteQuery(snapshotRef.collection('views')),
   ]);
   for (const result of cleanupResults) {
     if (result.status === 'rejected') {
@@ -562,43 +590,34 @@ export const syncMySnapshotFeed = functions.runWith({timeoutSeconds: 120, memory
     if (!user.exists || !isActiveUserData(user.data() ?? {})) return {count: 0};
 
     const docs = new Map<string, FirebaseFirestore.QueryDocumentSnapshot>();
-    const queries: Array<{name: string; promise: Promise<FirebaseFirestore.QuerySnapshot>}> = [];
-    queries.push({name: 'owner-v2', promise: store.collection(COL.snapshots)
+    const queries: Array<{
+      name: string;
+      promise: Promise<FirebaseFirestore.QueryDocumentSnapshot[]>;
+    }> = [];
+    queries.push({name: 'owner-v2', promise: readAllQueryDocuments(store.collection(COL.snapshots)
       .where('ownerId', '==', uid)
       .where('status', '==', 'active')
-      .where('expiresAt', '>', now)
-      .limit(120)
-      .get()});
-    queries.push({name: 'public-v2', promise: store.collection(COL.snapshots)
+      .where('expiresAt', '>', now))});
+    queries.push({name: 'public-v2', promise: readAllQueryDocuments(store.collection(COL.snapshots)
       .where('visibilityMode', '==', 'public')
       .where('status', '==', 'active')
-      .where('expiresAt', '>', now)
-      .limit(120)
-      .get()});
-    queries.push({name: 'frozen-audience', promise: store.collection(COL.snapshots)
+      .where('expiresAt', '>', now))});
+    queries.push({name: 'frozen-audience', promise: readAllQueryDocuments(store.collection(COL.snapshots)
       .where('audienceUserIdsFrozen', 'array-contains', uid)
       .where('status', '==', 'active')
-      .where('expiresAt', '>', now)
-      .limit(120)
-      .get()});
-    queries.push({name: 'owner-legacy', promise: store.collection(COL.snapshots)
+      .where('expiresAt', '>', now))});
+    queries.push({name: 'owner-legacy', promise: readAllQueryDocuments(store.collection(COL.snapshots)
       .where('authorId', '==', uid)
       .where('status', '==', 'active')
-      .where('expiresAt', '>', now)
-      .limit(120)
-      .get()});
-    queries.push({name: 'public-legacy', promise: store.collection(COL.snapshots)
+      .where('expiresAt', '>', now))});
+    queries.push({name: 'public-legacy', promise: readAllQueryDocuments(store.collection(COL.snapshots)
       .where('visibility', '==', 'public')
       .where('status', '==', 'active')
-      .where('expiresAt', '>', now)
-      .limit(120)
-      .get()});
-    queries.push({name: 'legacy-audience', promise: store.collection(COL.snapshots)
+      .where('expiresAt', '>', now))});
+    queries.push({name: 'legacy-audience', promise: readAllQueryDocuments(store.collection(COL.snapshots)
       .where('allowedUserIds', 'array-contains', uid)
       .where('status', '==', 'active')
-      .where('expiresAt', '>', now)
-      .limit(120)
-      .get()});
+      .where('expiresAt', '>', now))});
     const results = await Promise.allSettled(queries.map((entry) => entry.promise));
     results.forEach((result, index) => {
       const queryName = queries[index].name;
@@ -606,7 +625,7 @@ export const syncMySnapshotFeed = functions.runWith({timeoutSeconds: 120, memory
         console.error(`syncMySnapshotFeed query failed type=${queryName} uid=${uid}`, result.reason);
         return;
       }
-      for (const doc of result.value.docs) docs.set(doc.id, doc);
+      for (const doc of result.value) docs.set(doc.id, doc);
     });
 
     const [blockedByMe, blockingMe] = await Promise.all([
@@ -629,8 +648,7 @@ export const syncMySnapshotFeed = functions.runWith({timeoutSeconds: 120, memory
           item.audienceUserIdsFrozen.map(text).includes(uid);
       }
       return Array.isArray(item.allowedUserIds) && item.allowedUserIds.map(text).includes(uid);
-    }).sort((a, b) => timestampMillis(b.get('createdAt')) - timestampMillis(a.get('createdAt')))
-      .slice(0, 120);
+    }).sort((a, b) => timestampMillis(b.get('createdAt')) - timestampMillis(a.get('createdAt')));
 
     await deleteQuery(store.collection(COL.users).doc(uid).collection(SNAPSHOT_FEED));
     const writer = store.bulkWriter();
@@ -654,6 +672,130 @@ export const updateSnapshotVisibility = functions.runWith({timeoutSeconds: 120, 
       'Snapshot visibility cannot be changed after publishing.',
     );
   });
+
+export const recordSnapshotView = functions.https.onCall(async (raw, context) => {
+  const uid = requireUid(context);
+  const data = raw && typeof raw === 'object' ? raw as Record<string, unknown> : {};
+  const snapshotId = validSnapshotId(data.snapshotId);
+  const store = db();
+  const snapshotRef = store.collection(COL.snapshots).doc(snapshotId);
+  const [snapshot, viewer] = await Promise.all([
+    snapshotRef.get(),
+    store.collection(COL.users).doc(uid).get(),
+  ]);
+  if (!snapshot.exists || !(await canAccessSnapshot(uid, snapshot.data() ?? {}))) {
+    throw new functions.https.HttpsError('permission-denied', 'Snapshot is not accessible.');
+  }
+
+  const snapshotData = snapshot.data() ?? {};
+  const ownerId = text(snapshotData.ownerId ?? snapshotData.authorId);
+  if (!ownerId || ownerId === uid) {
+    return {success: true, recorded: false};
+  }
+  if (!viewer.exists || !isActiveUserData(viewer.data() ?? {})) {
+    throw new functions.https.HttpsError('failed-precondition', 'User profile is missing.');
+  }
+
+  const profile = viewer.data() ?? {};
+  const viewRef = snapshotRef.collection('views').doc(uid);
+  const viewedAt = admin.firestore.Timestamp.now();
+  let created = true;
+  try {
+    // UID 문서에 create를 사용하면 원자적 중복 방지는 유지하면서도
+    // transaction의 선행 read 왕복을 없애 새 조회자가 더 빨리 나타난다.
+    await viewRef.create({
+      userId: uid,
+      displayName: text(profile.nickname ?? profile.name) || 'User',
+      photoUrl: text(profile.photoURL),
+      photoVersion: Math.max(0, Number(profile.photoVersion ?? 0) || 0),
+      nationality: text(profile.nationality),
+      university: profileUniversity(profile),
+      viewedAt,
+      firstViewedAt: viewedAt,
+    });
+  } catch (error) {
+    const value = error && typeof error === 'object'
+      ? error as Record<string, unknown>
+      : {};
+    const code = Number(value.code);
+    const message = text(value.message).toUpperCase();
+    if (code === 6 || message.includes('ALREADY_EXISTS')) {
+      created = false;
+      // 예전 버전에서 생성된 조회 문서는 viewedAt/프로필 필드가 없을 수 있다.
+      // 재열람 시 최신 안전 프로필과 마지막 조회 시각을 보정하되 최초 조회
+      // 시각은 덮어쓰지 않는다. 친구 여부는 조회 기록 조건에 포함하지 않는다.
+      await viewRef.set({
+        userId: uid,
+        displayName: text(profile.nickname ?? profile.name) || 'User',
+        photoUrl: text(profile.photoURL),
+        photoVersion: Math.max(0, Number(profile.photoVersion ?? 0) || 0),
+        nationality: text(profile.nationality),
+        university: profileUniversity(profile),
+        viewedAt,
+      }, {merge: true});
+    } else {
+      throw error;
+    }
+  }
+  console.log(
+    `snapshot-view-recorded snapshotId=${snapshotId} viewerId=${uid} ` +
+    `ownerId=${ownerId} visibility=${text(snapshotData.visibilityMode ?? snapshotData.visibility)} ` +
+    `created=${created}`,
+  );
+  return {success: true, recorded: true, created};
+});
+
+export const getSnapshotViewers = functions.https.onCall(async (raw, context) => {
+  const uid = requireUid(context);
+  const data = raw && typeof raw === 'object' ? raw as Record<string, unknown> : {};
+  const snapshotId = validSnapshotId(data.snapshotId);
+  const snapshotRef = db().collection(COL.snapshots).doc(snapshotId);
+  const snapshot = await snapshotRef.get();
+  if (!snapshot.exists) {
+    throw new functions.https.HttpsError('not-found', 'Snapshot was not found.');
+  }
+
+  const snapshotData = snapshot.data() ?? {};
+  const ownerId = text(snapshotData.ownerId ?? snapshotData.authorId);
+  if (!ownerId || ownerId !== uid) {
+    throw new functions.https.HttpsError(
+      'permission-denied',
+      'Only the snapshot owner can view this list.',
+    );
+  }
+
+  // orderBy(viewedAt)는 해당 필드가 없는 레거시 조회 문서를 결과에서
+  // 제외한다. 전체 영수증을 읽은 뒤 호환 타임스탬프로 서버에서 정렬한다.
+  const views = await readAllQueryDocuments(snapshotRef.collection('views'));
+  const documents = [...views].sort((a, b) => {
+    const aData = a.data();
+    const bData = b.data();
+    const aTime = timestampMillis(
+      aData.viewedAt ?? aData.lastViewedAt ?? aData.firstViewedAt ?? aData.createdAt,
+    );
+    const bTime = timestampMillis(
+      bData.viewedAt ?? bData.lastViewedAt ?? bData.firstViewedAt ?? bData.createdAt,
+    );
+    return bTime - aTime;
+  });
+  return {
+    viewers: documents.map((document) => {
+      const viewer = document.data();
+      return {
+        userId: text(viewer.userId) || document.id,
+        displayName: text(viewer.displayName ?? viewer.nickname) || 'User',
+        photoUrl: text(viewer.photoUrl ?? viewer.photoURL),
+        photoVersion: Math.max(0, Number(viewer.photoVersion ?? 0) || 0),
+        nationality: text(viewer.nationality),
+        university: text(viewer.university),
+        viewedAtMillis: timestampMillis(
+          viewer.viewedAt ?? viewer.lastViewedAt ??
+          viewer.firstViewedAt ?? viewer.createdAt,
+        ),
+      };
+    }),
+  };
+});
 
 export const getSnapshotReactionStatus = functions.https.onCall(async (raw, context) => {
   const uid = requireUid(context);
@@ -830,8 +972,24 @@ export const sendSnapshotComment = functions.https.onCall(async (raw, context) =
     db().collection(COL.users).doc(ownerId).get(),
   ]);
   const actorData = actorDocument.data() ?? {};
+  const ownerData = ownerDocument.data() ?? {};
   const actorName = text(actorData.nickname ?? actorData.name) || 'User';
-  const isKorean = prefersKoreanNotification(ownerDocument.data() ?? {});
+  const sourceAuthorName = text(snapshotData.authorName) ||
+    text(ownerData.nickname ?? ownerData.name) || 'User';
+  const sourceAuthorPhotoUrl = text(snapshotData.authorPhotoUrl) ||
+    text(ownerData.photoURL);
+  const sourceOverlay = snapshotData.overlay && typeof snapshotData.overlay === 'object'
+    ? snapshotData.overlay as Record<string, unknown>
+    : {};
+  const sourceText = text(snapshotData.overlayText ?? sourceOverlay.text);
+  const sourceCreatedAt = snapshotData.createdAt ?? accessCheckedAt;
+  const sourceImageStoragePath = text(
+    snapshotData.imageStoragePath ?? snapshotData.storagePath,
+  );
+  const sourceImageUrl = text(snapshotData.imageUrl);
+  const sourceAspectRatio = Number(snapshotData.aspectRatio) || .8;
+  const sourceExpiresAt = snapshotData.expiresAt;
+  const isKorean = prefersKoreanNotification(ownerData);
   const title = isKorean ? '스낵에 코멘트가 도착했어요' : 'New Snack comment';
   const notificationMessage = isKorean
     ? `${actorName}님: ${message}`
@@ -870,6 +1028,14 @@ export const sendSnapshotComment = functions.https.onCall(async (raw, context) =
       comment: message,
       actorId: uid,
       actorName,
+      sourceAuthorName,
+      sourceAuthorPhotoUrl,
+      sourceText,
+      sourceCreatedAt,
+      sourceImageStoragePath,
+      sourceImageUrl,
+      sourceAspectRatio,
+      sourceExpiresAt,
       isRead: false,
       createdAt: admin.firestore.FieldValue.serverTimestamp(),
       data: {
@@ -877,6 +1043,350 @@ export const sendSnapshotComment = functions.https.onCall(async (raw, context) =
         comment: message,
         actorId: uid,
         actorName,
+        sourceAuthorName,
+        sourceAuthorPhotoUrl,
+        sourceText,
+        sourceCreatedAt,
+        sourceImageStoragePath,
+        sourceImageUrl,
+        sourceAspectRatio,
+        sourceExpiresAt,
+      },
+    });
+    return {created: true};
+  });
+  return {success: true, created: result.created};
+});
+
+/**
+ * 알림에서만 열 수 있는 스낵 코멘트 편지를 반환한다.
+ *
+ * 스냅샷은 24시간 후 삭제되지만 코멘트 알림은 사용자가 지울 때까지 남는다.
+ * 편지 원본을 알림 문서로 삼아 스냅샷 만료 후에도 당사자 두 명만 코멘트와
+ * 답장을 확인할 수 있게 한다.
+ */
+export const getSnapshotCommentLetter = functions.https.onCall(async (raw, context) => {
+  const uid = requireUid(context);
+  const data = raw && typeof raw === 'object' ? raw as Record<string, unknown> : {};
+  const notificationId = validNotificationId(data.notificationId);
+  const store = db();
+  const tapped = await store.collection(COL.notifications).doc(notificationId).get();
+  if (!tapped.exists) {
+    throw new functions.https.HttpsError('not-found', 'The Snack letter is no longer available.');
+  }
+
+  const tappedData = tapped.data() ?? {};
+  const tappedNested = tappedData.data && typeof tappedData.data === 'object'
+    ? tappedData.data as Record<string, unknown>
+    : {};
+  const tappedType = text(tappedData.type);
+  if (tappedType !== 'snapshot_comment' && tappedType !== 'snapshot_comment_reply') {
+    throw new functions.https.HttpsError('invalid-argument', 'This notification is not a Snack letter.');
+  }
+
+  let originalId = notificationId;
+  let original = tapped;
+  if (tappedType === 'snapshot_comment_reply') {
+    originalId = validNotificationId(tappedNested.originalNotificationId);
+    original = await store.collection(COL.notifications).doc(originalId).get();
+  }
+
+  const originalData = original.exists ? (original.data() ?? {}) : {};
+  const originalNested = originalData.data && typeof originalData.data === 'object'
+    ? originalData.data as Record<string, unknown>
+    : {};
+  if (original.exists && text(originalData.type) !== 'snapshot_comment') {
+    throw new functions.https.HttpsError('permission-denied', 'The Snack letter is invalid.');
+  }
+
+  // 답장 알림은 원본 알림이 작성자에 의해 삭제된 뒤에도 상대방이 자신에게
+  // 도착한 편지를 읽을 수 있도록 필요한 원문을 함께 보관한다.
+  const ownerId = text(
+    originalData.userId ?? originalNested.ownerId ?? tappedNested.ownerId,
+  );
+  const commenterId = text(
+    originalData.actorId ?? originalNested.actorId ?? originalNested.commenterId ??
+      tappedNested.commenterId ?? tappedData.userId,
+  );
+  if (!ownerId || !commenterId || (uid !== ownerId && uid !== commenterId)) {
+    throw new functions.https.HttpsError('permission-denied', 'Only the participants can read this letter.');
+  }
+
+  const snapshotId = text(
+    originalData.snapshotId ?? originalNested.snapshotId ??
+      tappedData.snapshotId ?? tappedNested.snapshotId,
+  );
+  const [ownerDocument, commenterDocument] = await Promise.all([
+    store.collection(COL.users).doc(ownerId).get(),
+    store.collection(COL.users).doc(commenterId).get(),
+  ]);
+  const ownerProfile = ownerDocument.data() ?? {};
+  const commenterProfile = commenterDocument.data() ?? {};
+  const sourceSnapshotDocument = snapshotId
+    ? await store.collection(COL.snapshots).doc(snapshotId).get()
+    : null;
+  const sourceSnapshotData = sourceSnapshotDocument?.data() ?? {};
+  const sourceOverlay = sourceSnapshotData.overlay &&
+      typeof sourceSnapshotData.overlay === 'object'
+    ? sourceSnapshotData.overlay as Record<string, unknown>
+    : {};
+  const comment = text(
+    originalData.comment ?? originalNested.comment ?? tappedNested.comment,
+  );
+  const reply = text(
+    originalData.reply ?? originalNested.reply ?? tappedData.reply ?? tappedNested.reply,
+  );
+  if (!comment) {
+    throw new functions.https.HttpsError('not-found', 'The original comment is missing.');
+  }
+
+  const ownerName = text(ownerProfile.nickname ?? ownerProfile.name) ||
+    text(tappedNested.ownerName ?? originalNested.ownerName) || 'User';
+  const ownerPhotoUrl = text(ownerProfile.photoURL) ||
+    text(tappedNested.ownerPhotoUrl ?? originalNested.ownerPhotoUrl);
+  const sourceAuthorName = text(
+    originalData.sourceAuthorName ?? originalNested.sourceAuthorName ??
+      tappedNested.sourceAuthorName ?? sourceSnapshotData.authorName,
+  ) || ownerName;
+  const sourceAuthorPhotoUrl = text(
+    originalData.sourceAuthorPhotoUrl ?? originalNested.sourceAuthorPhotoUrl ??
+      tappedNested.sourceAuthorPhotoUrl ?? sourceSnapshotData.authorPhotoUrl,
+  ) || ownerPhotoUrl;
+  const sourceText = text(
+    originalData.sourceText ?? originalNested.sourceText ??
+      tappedNested.sourceText ?? sourceSnapshotData.overlayText ?? sourceOverlay.text,
+  );
+  const sourceImageStoragePath = text(
+    originalData.sourceImageStoragePath ?? originalNested.sourceImageStoragePath ??
+      tappedNested.sourceImageStoragePath ?? sourceSnapshotData.imageStoragePath ??
+      sourceSnapshotData.storagePath,
+  );
+  const sourceImageUrl = text(
+    originalData.sourceImageUrl ?? originalNested.sourceImageUrl ??
+      tappedNested.sourceImageUrl ?? sourceSnapshotData.imageUrl,
+  );
+  const sourceAspectRatio = Number(
+    originalData.sourceAspectRatio ?? originalNested.sourceAspectRatio ??
+      tappedNested.sourceAspectRatio ?? sourceSnapshotData.aspectRatio,
+  ) || .8;
+  const sourceExpiresAt = originalData.sourceExpiresAt ??
+    originalNested.sourceExpiresAt ?? tappedNested.sourceExpiresAt ??
+    sourceSnapshotData.expiresAt;
+
+  return {
+    notificationId,
+    originalNotificationId: originalId,
+    snapshotId,
+    ownerId,
+    ownerName,
+    ownerPhotoUrl,
+    commenterId,
+    commenterName: text(commenterProfile.nickname ?? commenterProfile.name) ||
+      text(originalData.actorName ?? originalNested.actorName ??
+        tappedNested.commenterName) || 'User',
+    commenterPhotoUrl: text(commenterProfile.photoURL) ||
+      text(tappedNested.commenterPhotoUrl ?? originalNested.commenterPhotoUrl),
+    comment,
+    reply,
+    commentCreatedAtMillis: timestampMillis(
+      originalData.createdAt ?? originalNested.commentCreatedAt ??
+        tappedNested.commentCreatedAt,
+    ),
+    repliedAtMillis: timestampMillis(
+      originalData.repliedAt ?? originalNested.repliedAt ??
+        tappedData.repliedAt ?? tappedNested.repliedAt,
+    ),
+    sourceAuthorName,
+    sourceAuthorPhotoUrl,
+    sourceText,
+    sourceImageStoragePath,
+    sourceImageUrl,
+    sourceAspectRatio,
+    sourceExpiresAtMillis: timestampMillis(sourceExpiresAt),
+    sourceCreatedAtMillis: timestampMillis(
+      originalData.sourceCreatedAt ?? originalNested.sourceCreatedAt ??
+        tappedNested.sourceCreatedAt ?? sourceSnapshotData.createdAt ??
+        originalData.createdAt,
+    ),
+    viewerRole: uid === ownerId ? 'owner' : 'commenter',
+    canReply: uid === ownerId && reply.length === 0 && original.exists,
+  };
+});
+
+/** 스낵 작성자가 코멘트 한 건에 정확히 한 번만 답장한다. */
+export const replySnapshotComment = functions.https.onCall(async (raw, context) => {
+  const uid = requireUid(context);
+  const data = raw && typeof raw === 'object' ? raw as Record<string, unknown> : {};
+  const notificationId = validNotificationId(data.notificationId);
+  if (data.requestId != null) validRequestId(data.requestId);
+  const reply = validSnapshotComment(data.message ?? data.reply);
+  const store = db();
+  const originalRef = store.collection(COL.notifications).doc(notificationId);
+  const initial = await originalRef.get();
+  if (!initial.exists || text(initial.get('type')) !== 'snapshot_comment') {
+    throw new functions.https.HttpsError('not-found', 'The original Snack comment is missing.');
+  }
+  const initialData = initial.data() ?? {};
+  const initialNested = initialData.data && typeof initialData.data === 'object'
+    ? initialData.data as Record<string, unknown>
+    : {};
+  const ownerId = text(initialData.userId);
+  const commenterId = text(
+    initialData.actorId ?? initialNested.actorId ?? initialNested.commenterId,
+  );
+  const snapshotId = text(initialData.snapshotId ?? initialNested.snapshotId);
+  const comment = text(initialData.comment ?? initialNested.comment);
+  if (ownerId !== uid || !commenterId || commenterId === uid || !comment) {
+    throw new functions.https.HttpsError('permission-denied', 'Only the Snack author can reply.');
+  }
+  if (await isBlocked(uid, commenterId)) {
+    throw new functions.https.HttpsError('permission-denied', 'This letter is not available.');
+  }
+
+  const [ownerDocument, commenterDocument] = await Promise.all([
+    store.collection(COL.users).doc(uid).get(),
+    store.collection(COL.users).doc(commenterId).get(),
+  ]);
+  const ownerProfile = ownerDocument.data() ?? {};
+  const commenterProfile = commenterDocument.data() ?? {};
+  const sourceSnapshotDocument = snapshotId
+    ? await store.collection(COL.snapshots).doc(snapshotId).get()
+    : null;
+  const sourceSnapshotData = sourceSnapshotDocument?.data() ?? {};
+  const sourceOverlay = sourceSnapshotData.overlay &&
+      typeof sourceSnapshotData.overlay === 'object'
+    ? sourceSnapshotData.overlay as Record<string, unknown>
+    : {};
+  const ownerName = text(ownerProfile.nickname ?? ownerProfile.name) || 'User';
+  const ownerPhotoUrl = text(ownerProfile.photoURL);
+  const commenterName = text(commenterProfile.nickname ?? commenterProfile.name) ||
+    text(initialData.actorName ?? initialNested.actorName) || 'User';
+  const commenterPhotoUrl = text(commenterProfile.photoURL);
+  const sourceAuthorName = text(
+    initialData.sourceAuthorName ?? initialNested.sourceAuthorName ??
+      sourceSnapshotData.authorName,
+  ) || ownerName;
+  const sourceAuthorPhotoUrl = text(
+    initialData.sourceAuthorPhotoUrl ?? initialNested.sourceAuthorPhotoUrl ??
+      sourceSnapshotData.authorPhotoUrl,
+  ) || ownerPhotoUrl;
+  const sourceText = text(
+    initialData.sourceText ?? initialNested.sourceText ??
+      sourceSnapshotData.overlayText ?? sourceOverlay.text,
+  );
+  const sourceImageStoragePath = text(
+    initialData.sourceImageStoragePath ?? initialNested.sourceImageStoragePath ??
+      sourceSnapshotData.imageStoragePath ?? sourceSnapshotData.storagePath,
+  );
+  const sourceImageUrl = text(
+    initialData.sourceImageUrl ?? initialNested.sourceImageUrl ??
+      sourceSnapshotData.imageUrl,
+  );
+  const sourceAspectRatio = Number(
+    initialData.sourceAspectRatio ?? initialNested.sourceAspectRatio ??
+      sourceSnapshotData.aspectRatio,
+  ) || .8;
+  const sourceExpiresAt = initialData.sourceExpiresAt ??
+    initialNested.sourceExpiresAt ?? sourceSnapshotData.expiresAt;
+  const sourceCreatedAt = initialData.sourceCreatedAt ??
+    initialNested.sourceCreatedAt ?? sourceSnapshotData.createdAt ??
+    initialData.createdAt;
+  const isKorean = prefersKoreanNotification(commenterProfile);
+  const title = isKorean ? '스낵 답장이 도착했어요' : 'A Snack reply arrived';
+  const message = isKorean ? `${ownerName}님: ${reply}` : `${ownerName}: ${reply}`;
+  const replyNotificationRef = store.collection(COL.notifications)
+    .doc(`snapshot_comment_reply_${notificationId}`);
+
+  const result = await store.runTransaction(async (transaction) => {
+    const [current, previousReply] = await Promise.all([
+      transaction.get(originalRef),
+      transaction.get(replyNotificationRef),
+    ]);
+    if (!current.exists || text(current.get('type')) !== 'snapshot_comment' ||
+        text(current.get('userId')) !== uid) {
+      throw new functions.https.HttpsError('permission-denied', 'The Snack letter changed.');
+    }
+    const currentData = current.data() ?? {};
+    const currentNested = currentData.data && typeof currentData.data === 'object'
+      ? currentData.data as Record<string, unknown>
+      : {};
+    const currentCommenterId = text(
+      currentData.actorId ?? currentNested.actorId ?? currentNested.commenterId,
+    );
+    if (currentCommenterId !== commenterId) {
+      throw new functions.https.HttpsError('permission-denied', 'The Snack letter changed.');
+    }
+    // 네트워크 재시도와 빠른 연속 탭은 성공으로 응답하되 새 답장/알림을
+    // 만들지 않는다. 원본과 답장 알림은 같은 트랜잭션이므로 부분 저장도 없다.
+    if (text(currentData.reply ?? currentNested.reply) || previousReply.exists) {
+      return {created: false};
+    }
+
+    const repliedAt = admin.firestore.Timestamp.now();
+    const mergedOriginalData = {
+      ...currentNested,
+      ownerId: uid,
+      ownerName,
+      ownerPhotoUrl,
+      commenterId,
+      commenterName,
+      commenterPhotoUrl,
+      sourceAuthorName,
+      sourceAuthorPhotoUrl,
+      sourceText,
+      sourceCreatedAt,
+      sourceImageStoragePath,
+      sourceImageUrl,
+      sourceAspectRatio,
+      sourceExpiresAt,
+      comment,
+      reply,
+      repliedAt,
+      replyActorId: uid,
+      replyActorName: ownerName,
+    };
+    transaction.update(originalRef, {
+      reply,
+      repliedAt,
+      replyActorId: uid,
+      replyActorName: ownerName,
+      data: mergedOriginalData,
+    });
+    transaction.create(replyNotificationRef, {
+      userId: commenterId,
+      type: 'snapshot_comment_reply',
+      title,
+      message,
+      snapshotId,
+      comment,
+      reply,
+      actorId: uid,
+      actorName: ownerName,
+      isRead: false,
+      createdAt: repliedAt,
+      data: {
+        snapshotId,
+        originalNotificationId: notificationId,
+        ownerId: uid,
+        ownerName,
+        ownerPhotoUrl,
+        commenterId,
+        commenterName,
+        commenterPhotoUrl,
+        sourceAuthorName,
+        sourceAuthorPhotoUrl,
+        sourceText,
+        sourceCreatedAt,
+        sourceImageStoragePath,
+        sourceImageUrl,
+        sourceAspectRatio,
+        sourceExpiresAt,
+        comment,
+        commentCreatedAt: currentData.createdAt,
+        reply,
+        repliedAt,
+        actorId: uid,
+        actorName: ownerName,
       },
     });
     return {created: true};

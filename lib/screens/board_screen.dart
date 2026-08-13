@@ -5,6 +5,8 @@
 import 'dart:async';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter/rendering.dart';
+import 'package:flutter/scheduler.dart';
 import '../models/post.dart';
 import '../models/post_category.dart';
 import '../models/meetup.dart';
@@ -31,7 +33,12 @@ import '../utils/logger.dart';
 import '../utils/responsive_helper.dart';
 
 class BoardScreen extends StatefulWidget {
-  const BoardScreen({super.key});
+  final VoidCallback onOpenMeetups;
+
+  const BoardScreen({
+    super.key,
+    required this.onOpenMeetups,
+  });
 
   @override
   State<BoardScreen> createState() => BoardScreenState();
@@ -48,7 +55,10 @@ class BoardScreenState extends State<BoardScreen> {
 
   // 수동 새로고침 시 계산한 댓글 수 오버라이드 (postId -> count)
   final Map<String, int> _commentCountOverrides = {};
+  final Map<String, int> _commentCountOverrideSources = {};
   bool _didAutoRefreshTodayCommentCounts = false;
+
+  static const int _maxTodayMeetups = 3;
 
   // 일반 게시물은 그림자 대신 콘텐츠 여백과 divider로 구분한다.
   static const EdgeInsets _boardPostCardMargin = EdgeInsets.zero;
@@ -72,6 +82,7 @@ class BoardScreenState extends State<BoardScreen> {
   late final ScrollController _todayScrollController;
   late final ScrollController _allScrollController;
   bool _controllersInitialized = false;
+  bool _showCreateButton = true;
   static const String _psTodayOffsetId = 'board.todayScrollOffset.v1';
   static const String _psAllOffsetId = 'board.allScrollOffset.v1';
 
@@ -214,9 +225,8 @@ class BoardScreenState extends State<BoardScreen> {
     }
   }
 
-  /// 댓글 수 재집계 - 백그라운드에서 조용히 처리 (setState 없이)
-  Future<void> _refreshCommentCountsForPosts(List<Post> posts,
-      {bool silent = false}) async {
+  /// 상세 화면과 같은 기준으로 카드 댓글 수를 일괄 재집계합니다.
+  Future<void> _refreshCommentCountsForPosts(List<Post> posts) async {
     // 너무 많은 카드에 대해 매번 집계하면 느려질 수 있어, 상위 N개만 갱신
     const maxTargets = 40;
     final ids = posts.map((p) => p.id).toSet().take(maxTargets).toList();
@@ -225,14 +235,16 @@ class BoardScreenState extends State<BoardScreen> {
     final counts = await _commentService.fetchCommentCountsForPostIds(ids);
     if (!mounted) return;
 
-    // silent 모드일 때는 setState 없이 데이터만 업데이트
-    if (silent) {
+    final postsById = <String, Post>{for (final post in posts) post.id: post};
+    setState(() {
       _commentCountOverrides.addAll(counts);
-    } else {
-      setState(() {
-        _commentCountOverrides.addAll(counts);
-      });
-    }
+      for (final entry in counts.entries) {
+        final source = postsById[entry.key];
+        if (source != null) {
+          _commentCountOverrideSources[entry.key] = source.commentCount;
+        }
+      }
+    });
   }
 
   @override
@@ -313,6 +325,19 @@ class BoardScreenState extends State<BoardScreen> {
   void _handleScrollChanged() {
     if (!mounted) return;
     _persistBoardState(persistOffsets: true);
+    final controller = _activeScrollController;
+    if (!controller.hasClients) return;
+    final position = controller.position;
+    final shouldShow = position.pixels <= position.minScrollExtent + 8
+        ? true
+        : switch (position.userScrollDirection) {
+            ScrollDirection.forward => true,
+            ScrollDirection.reverse => false,
+            ScrollDirection.idle => _showCreateButton,
+          };
+    if (shouldShow != _showCreateButton) {
+      setState(() => _showCreateButton = shouldShow);
+    }
   }
 
   // 외부(MainScreen)에서 호출할 수 있는 public 메서드
@@ -347,9 +372,12 @@ class BoardScreenState extends State<BoardScreen> {
       floatingActionButton: SafeArea(
         top: false,
         minimum: const EdgeInsets.only(bottom: 8),
-        child: AppFab.write(
-          onPressed: _openCreatePost,
-          heroTag: 'board_write_fab',
+        child: _ScrollAwareCreateButton(
+          visible: _showCreateButton,
+          child: AppFab.write(
+            onPressed: _openCreatePost,
+            heroTag: 'board_write_fab',
+          ),
         ),
       ),
     );
@@ -368,6 +396,17 @@ class BoardScreenState extends State<BoardScreen> {
     final sourcePosts = snapshot.data ?? _cachedTodayPosts ?? const <Post>[];
     final todayPosts = sourcePosts.where(_isPostInToday).toList();
 
+    // 일괄 재집계 값은 과거 카운터 드리프트를 보정하기 위한 임시 값이다.
+    // 이후 서버 commentCount가 바뀌면 새 댓글/삭제 이벤트가 반영된 것이므로
+    // 임시 값을 해제하고 실시간 포스트 스트림을 다시 단일 기준으로 사용한다.
+    for (final post in todayPosts) {
+      final sourceCount = _commentCountOverrideSources[post.id];
+      if (sourceCount != null && sourceCount != post.commentCount) {
+        _commentCountOverrideSources.remove(post.id);
+        _commentCountOverrides.remove(post.id);
+      }
+    }
+
     if (snapshot.hasData) {
       _cachedTodayPosts = todayPosts;
       if (_isInitialLoad) _isInitialLoad = false;
@@ -377,7 +416,7 @@ class BoardScreenState extends State<BoardScreen> {
       _didAutoRefreshTodayCommentCounts = true;
       WidgetsBinding.instance.addPostFrameCallback((_) {
         if (!mounted) return;
-        _refreshCommentCountsForPosts(todayPosts, silent: true);
+        _refreshCommentCountsForPosts(todayPosts);
       });
     }
 
@@ -452,8 +491,6 @@ class BoardScreenState extends State<BoardScreen> {
     required IconData icon,
     required String title,
     bool isLoading = false,
-    String? actionLabel,
-    VoidCallback? onAction,
   }) {
     final horizontal = _sectionHorizontalPadding;
     final iconSize = context.ri(18).clamp(17.0, 19.0).toDouble();
@@ -486,31 +523,6 @@ class BoardScreenState extends State<BoardScreen> {
                 dimension: 14,
                 child: CircularProgressIndicator(strokeWidth: 2),
               ),
-            if (actionLabel != null && onAction != null) ...[
-              const SizedBox(width: 12),
-              TextButton(
-                onPressed: onAction,
-                style: TextButton.styleFrom(
-                  foregroundColor: const Color(0xFF344054),
-                  minimumSize: const Size(44, 40),
-                  padding: const EdgeInsets.symmetric(horizontal: 4),
-                  tapTargetSize: MaterialTapTargetSize.shrinkWrap,
-                  textStyle: TextStyle(
-                    fontFamily: 'Pretendard',
-                    fontSize: context.rf(12.5).clamp(12.0, 13.0).toDouble(),
-                    fontWeight: FontWeight.w700,
-                  ),
-                ),
-                child: Row(
-                  mainAxisSize: MainAxisSize.min,
-                  children: [
-                    Text(actionLabel),
-                    const SizedBox(width: 2),
-                    const Icon(Icons.chevron_right_rounded, size: 17),
-                  ],
-                ),
-              ),
-            ],
           ],
         ),
       ),
@@ -808,23 +820,40 @@ class BoardScreenState extends State<BoardScreen> {
     );
   }
 
-  Future<void> _openPostExplorer() async {
-    await Navigator.push<void>(
-      context,
-      MaterialPageRoute(
-        builder: (_) => _BoardPostExplorerScreen(
-          onSelected: _openPostCategory,
-        ),
-      ),
-    );
-  }
-
   Future<void> _openPostCategory(PostCategory category) async {
     await Navigator.push<void>(
       context,
       MaterialPageRoute(
         builder: (_) => PostCategoryFeedScreen(category: category),
       ),
+    );
+  }
+
+  Widget _buildPostCategoryRail() {
+    return LayoutBuilder(
+      builder: (context, constraints) {
+        final isCompact = constraints.maxWidth < 360;
+        final isExpanded = constraints.maxWidth >= 600;
+        final cardWidth = isCompact ? 158.0 : (isExpanded ? 210.0 : 176.0);
+        final cardHeight = isCompact ? 140.0 : (isExpanded ? 148.0 : 144.0);
+        final contentPadding = isCompact ? 12.0 : (isExpanded ? 16.0 : 14.0);
+        final iconSize = isCompact ? 21.0 : (isExpanded ? 24.0 : 22.0);
+        final titleSize = isCompact ? 14.0 : (isExpanded ? 16.0 : 15.0);
+        final descriptionSize = isCompact ? 11.0 : (isExpanded ? 12.0 : 11.5);
+
+        return _AutoScrollingPostCategoryRail(
+          key: const ValueKey('board_post_category_rail'),
+          height: cardHeight + 14,
+          cardWidth: cardWidth,
+          cardHeight: cardHeight,
+          horizontalPadding: _sectionHorizontalPadding,
+          contentPadding: contentPadding,
+          iconSize: iconSize,
+          titleSize: titleSize,
+          descriptionSize: descriptionSize,
+          onSelected: _openPostCategory,
+        );
+      },
     );
   }
 
@@ -866,9 +895,17 @@ class BoardScreenState extends State<BoardScreen> {
         final todayMeetups =
             meetupSnapshot.data ?? _cachedTodayMeetups ?? const <Meetup>[];
 
+        final visibleTodayMeetups =
+            todayMeetups.take(_maxTodayMeetups).toList(growable: false);
+        final hiddenTodayMeetupCount =
+            todayMeetups.length - visibleTodayMeetups.length;
+
         final meetupsCount = isMeetupsLoading
             ? 2
-            : (todayMeetups.isNotEmpty ? todayMeetups.length : 1);
+            : (todayMeetups.isNotEmpty
+                ? visibleTodayMeetups.length +
+                    (hiddenTodayMeetupCount > 0 ? 1 : 0)
+                : 1);
 
         final List<dynamic> todayCombined = <dynamic>[...todayPosts]..sort(
             (a, b) => _getTodayCombinedCreatedAt(b)
@@ -885,6 +922,7 @@ class BoardScreenState extends State<BoardScreen> {
             1 + // meetups header
             meetupsCount +
             1 + // posts header
+            1 + // horizontally scrollable post categories
             postsCount;
 
         return RefreshIndicator(
@@ -945,7 +983,13 @@ class BoardScreenState extends State<BoardScreen> {
                   return _buildTodaySectionMessage(noTodayMeetupsText);
                 }
 
-                final meetup = todayMeetups[i];
+                if (i >= visibleTodayMeetups.length) {
+                  return _buildTodayMeetupsMoreButton(
+                    hiddenMeetupCount: hiddenTodayMeetupCount,
+                  );
+                }
+
+                final meetup = visibleTodayMeetups[i];
                 return Padding(
                   padding: _boardPostCardMargin,
                   child: StreamBuilder<int>(
@@ -973,16 +1017,17 @@ class BoardScreenState extends State<BoardScreen> {
                 return _buildTodaySectionHeader(
                   icon: Icons.article_rounded,
                   title: todayPostsTitle,
-                  actionLabel:
-                      Localizations.localeOf(context).languageCode == 'ko'
-                          ? '카테고리'
-                          : 'Browse',
-                  onAction: _openPostExplorer,
                 );
               }
               i -= 1;
 
-              // 4) posts list/skeleton/error/empty
+              // 4) categories: page snapping 없이 연속적으로 움직이는 가로 목록
+              if (i == 0) {
+                return _buildPostCategoryRail();
+              }
+              i -= 1;
+
+              // 5) posts list/skeleton/error/empty
               if (isPostsLoading) {
                 return Padding(
                   padding: EdgeInsets.symmetric(
@@ -1026,6 +1071,55 @@ class BoardScreenState extends State<BoardScreen> {
           ),
         );
       },
+    );
+  }
+
+  Widget _buildTodayMeetupsMoreButton({required int hiddenMeetupCount}) {
+    final isKo = Localizations.localeOf(context).languageCode == 'ko';
+    final label = _safeL10n((l) => l.moreOptions, '더보기');
+    final semanticsLabel = isKo
+        ? '$label, 밋업 $hiddenMeetupCount개 더 보기'
+        : '$label, view $hiddenMeetupCount more meetups';
+
+    return Padding(
+      padding: EdgeInsets.fromLTRB(
+        _sectionHorizontalPadding,
+        0,
+        _sectionHorizontalPadding,
+        6,
+      ),
+      child: Center(
+        child: Semantics(
+          key: const ValueKey('today_meetups_more_button'),
+          button: true,
+          label: semanticsLabel,
+          excludeSemantics: true,
+          child: TextButton(
+            onPressed: widget.onOpenMeetups,
+            style: TextButton.styleFrom(
+              foregroundColor: const Color(0xFF475467),
+              minimumSize: const Size(88, 44),
+              padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+              tapTargetSize: MaterialTapTargetSize.padded,
+            ),
+            child: Row(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Text(
+                  label,
+                  style: TextStyle(
+                    fontFamily: 'Pretendard',
+                    fontSize: context.rf(13).clamp(12.5, 14.0).toDouble(),
+                    fontWeight: FontWeight.w700,
+                  ),
+                ),
+                const SizedBox(width: 2),
+                const Icon(Icons.chevron_right_rounded, size: 18),
+              ],
+            ),
+          ),
+        ),
+      ),
     );
   }
 
@@ -1211,8 +1305,9 @@ class BoardScreenState extends State<BoardScreen> {
       MaterialPageRoute(builder: (context) => PostDetailScreen(post: post)),
     );
 
-    // StreamBuilder가 자동으로 갱신하므로 setState 불필요
-    // setState를 호출하면 로딩 화면이 다시 보여 스크롤이 초기화될 수 있음
+    // 상세 화면과 동일한 댓글 집계 기준으로 복귀 즉시 카드 수치를 동기화한다.
+    if (!mounted) return;
+    await _refreshCommentCountsForPosts([post]);
   }
 
   DateTime _getTodayCombinedCreatedAt(dynamic item) {
@@ -1458,59 +1553,191 @@ class BoardScreenState extends State<BoardScreen> {
   }
 }
 
-class _BoardPostExplorerScreen extends StatefulWidget {
-  final ValueChanged<PostCategory> onSelected;
+class _ScrollAwareCreateButton extends StatelessWidget {
+  const _ScrollAwareCreateButton({
+    required this.visible,
+    required this.child,
+  });
 
-  const _BoardPostExplorerScreen({required this.onSelected});
+  final bool visible;
+  final Widget child;
 
   @override
-  State<_BoardPostExplorerScreen> createState() =>
-      _BoardPostExplorerScreenState();
+  Widget build(BuildContext context) {
+    return IgnorePointer(
+      ignoring: !visible,
+      child: AnimatedOpacity(
+        opacity: visible ? 1 : 0,
+        duration: const Duration(milliseconds: 160),
+        curve: Curves.easeOut,
+        child: AnimatedScale(
+          scale: visible ? 1 : .82,
+          alignment: Alignment.bottomRight,
+          duration: const Duration(milliseconds: 180),
+          curve: Curves.easeOutCubic,
+          child: child,
+        ),
+      ),
+    );
+  }
 }
 
-class _BoardPostExplorerScreenState extends State<_BoardPostExplorerScreen> {
-  final ScrollController _scrollController = ScrollController();
+class _AutoScrollingPostCategoryRail extends StatefulWidget {
+  const _AutoScrollingPostCategoryRail({
+    super.key,
+    required this.height,
+    required this.cardWidth,
+    required this.cardHeight,
+    required this.horizontalPadding,
+    required this.contentPadding,
+    required this.iconSize,
+    required this.titleSize,
+    required this.descriptionSize,
+    required this.onSelected,
+  });
+
+  final double height;
+  final double cardWidth;
+  final double cardHeight;
+  final double horizontalPadding;
+  final double contentPadding;
+  final double iconSize;
+  final double titleSize;
+  final double descriptionSize;
+  final ValueChanged<PostCategory> onSelected;
+
+  @override
+  State<_AutoScrollingPostCategoryRail> createState() =>
+      _AutoScrollingPostCategoryRailState();
+}
+
+class _AutoScrollingPostCategoryRailState
+    extends State<_AutoScrollingPostCategoryRail>
+    with SingleTickerProviderStateMixin {
+  static const double _gap = 8;
+  static const double _pixelsPerSecond = 26;
+  static const int _repeatedCycles = 1000;
+  static const int _initialCycle = _repeatedCycles ~/ 2;
+
+  late final ScrollController _scrollController;
+  late final Ticker _ticker;
+  Duration? _lastElapsed;
+  bool _isUserScrolling = false;
+  bool _disableAnimations = false;
+
+  double get _itemExtent => widget.cardWidth + _gap;
+  double get _cycleExtent => _itemExtent * PostCategory.ordered.length;
+  double get _loopStartOffset => _cycleExtent * _initialCycle;
+
+  @override
+  void initState() {
+    super.initState();
+    _scrollController = ScrollController(initialScrollOffset: _loopStartOffset);
+    _ticker = createTicker(_onTick)..start();
+  }
+
+  @override
+  void didChangeDependencies() {
+    super.didChangeDependencies();
+    _disableAnimations = MediaQuery.of(context).disableAnimations;
+  }
+
+  @override
+  void didUpdateWidget(covariant _AutoScrollingPostCategoryRail oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (oldWidget.cardWidth != widget.cardWidth &&
+        _scrollController.hasClients) {
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (!mounted || !_scrollController.hasClients) return;
+        _scrollController.jumpTo(_loopStartOffset);
+      });
+    }
+  }
+
+  void _onTick(Duration elapsed) {
+    final previous = _lastElapsed;
+    _lastElapsed = elapsed;
+    if (previous == null ||
+        _isUserScrolling ||
+        !_scrollController.hasClients ||
+        _disableAnimations) {
+      return;
+    }
+
+    final elapsedMicros =
+        (elapsed - previous).inMicroseconds.clamp(0, 50000).toDouble();
+    var target = _scrollController.offset +
+        (_pixelsPerSecond * elapsedMicros / Duration.microsecondsPerSecond);
+
+    final loopEnd = _loopStartOffset + _cycleExtent;
+    if (target < _loopStartOffset || target >= loopEnd) {
+      final unwrapped = (target - _loopStartOffset) % _cycleExtent;
+      final relative = (unwrapped + _cycleExtent) % _cycleExtent;
+      target = _loopStartOffset + relative;
+    }
+
+    final position = _scrollController.position;
+    _scrollController.jumpTo(
+      target.clamp(position.minScrollExtent, position.maxScrollExtent),
+    );
+  }
+
+  bool _handleScrollNotification(ScrollNotification notification) {
+    if (notification is ScrollStartNotification &&
+        notification.dragDetails != null) {
+      _isUserScrolling = true;
+    } else if (notification is ScrollEndNotification) {
+      _isUserScrolling = false;
+    }
+    return false;
+  }
 
   @override
   void dispose() {
+    _ticker.dispose();
     _scrollController.dispose();
     super.dispose();
   }
 
   @override
   Widget build(BuildContext context) {
-    final isKo = Localizations.localeOf(context).languageCode == 'ko';
-    return Scaffold(
-      backgroundColor: Colors.white,
-      appBar: AppBar(
-        backgroundColor: Colors.white,
-        surfaceTintColor: Colors.white,
-        elevation: 0,
-        scrolledUnderElevation: 0,
-        centerTitle: true,
-        leading: IconButton(
-          onPressed: () => Navigator.pop(context),
-          icon: const Icon(Icons.arrow_back_rounded),
+    final categoryCount = PostCategory.ordered.length;
+    return SizedBox(
+      height: widget.height,
+      child: Padding(
+        padding: EdgeInsets.fromLTRB(
+          widget.horizontalPadding,
+          5,
+          widget.horizontalPadding,
+          9,
         ),
-        title: Text(
-          isKo ? '포스트 카테고리' : 'Post categories',
-          style: TextStyle(
-            fontFamily: 'Pretendard',
-            fontSize: context.rf(18).clamp(17.0, 20.0).toDouble(),
-            fontWeight: FontWeight.w800,
-            color: const Color(0xFF101828),
-          ),
-        ),
-      ),
-      body: SafeArea(
-        top: false,
-        child: Center(
-          child: ConstrainedBox(
-            constraints: const BoxConstraints(maxWidth: 600),
-            child: PostCategoryExplorer(
-              scrollController: _scrollController,
-              onSelected: widget.onSelected,
+        child: NotificationListener<ScrollNotification>(
+          onNotification: _handleScrollNotification,
+          child: ListView.builder(
+            controller: _scrollController,
+            scrollDirection: Axis.horizontal,
+            physics: const BouncingScrollPhysics(
+              parent: AlwaysScrollableScrollPhysics(),
             ),
+            itemExtent: _itemExtent,
+            itemCount: categoryCount * _repeatedCycles,
+            itemBuilder: (context, index) {
+              final category = PostCategory.ordered[index % categoryCount];
+              return Padding(
+                padding: const EdgeInsets.only(right: _gap),
+                child: SizedBox(
+                  height: widget.cardHeight,
+                  child: PostCategoryTile(
+                    category: category,
+                    contentPadding: widget.contentPadding,
+                    iconSize: widget.iconSize,
+                    titleSize: widget.titleSize,
+                    descriptionSize: widget.descriptionSize,
+                    onTap: () => widget.onSelected(category),
+                  ),
+                ),
+              );
+            },
           ),
         ),
       ),

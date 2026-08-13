@@ -6,6 +6,7 @@ import 'package:flutter/services.dart';
 import 'package:wechat_assets_picker/wechat_assets_picker.dart';
 
 import '../constants/app_constants.dart';
+import '../design/tokens.dart';
 import '../l10n/app_localizations.dart';
 import '../models/friend_category.dart';
 import '../models/post_category.dart';
@@ -14,6 +15,7 @@ import '../repositories/users_repository.dart';
 import '../services/friend_category_service.dart';
 import '../services/post_service.dart';
 import '../ui/widgets/fullscreen_file_image_viewer.dart';
+import '../ui/widgets/group_audience_preview.dart';
 import '../ui/widgets/post_category_selector.dart';
 import '../utils/logger.dart';
 import '../utils/responsive_helper.dart';
@@ -61,13 +63,15 @@ class _CreatePostScreenState extends State<CreatePostScreen> {
   bool _isAnonymous = false;
   List<String> _selectedCategoryIds = [];
   bool _showCategoryRequiredHint = false;
-  PostCategory? _selectedPostCategory;
-  bool _showPostCategoryRequiredHint = false;
+  final Set<PostCategory> _selectedPostTags = <PostCategory>{};
+  bool _showPostTagRequiredHint = false;
 
   @override
   void initState() {
     super.initState();
-    _selectedPostCategory = widget.initialCategory;
+    if (widget.initialCategory case final initialCategory?) {
+      _selectedPostTags.add(initialCategory);
+    }
     final initialAudienceCategory = widget.initialAudienceCategory;
     if (initialAudienceCategory != null) {
       _visibility = 'category';
@@ -113,7 +117,7 @@ class _CreatePostScreenState extends State<CreatePostScreen> {
     final contentNotEmpty = _contentController.text.trim().isNotEmpty;
     final hasImages = _selectedAssets.isNotEmpty;
     final canProceed =
-        _selectedPostCategory != null && (contentNotEmpty || hasImages);
+        _selectedPostTags.isNotEmpty && (contentNotEmpty || hasImages);
 
     if (!mounted) return;
     setState(() {
@@ -129,6 +133,13 @@ class _CreatePostScreenState extends State<CreatePostScreen> {
       ids.addAll(category.friendIds);
     }
     return ids;
+  }
+
+  List<UserProfile> _membersForCategory(FriendCategory category) {
+    final memberIds = category.friendIds.toSet();
+    return _selectedAudienceUsers
+        .where((user) => memberIds.contains(user.uid))
+        .toList(growable: false);
   }
 
   Future<void> _refreshSelectedAudienceUsers() async {
@@ -389,10 +400,16 @@ class _CreatePostScreenState extends State<CreatePostScreen> {
   Future<void> _submitPost() async {
     final l10n = AppLocalizations.of(context)!;
 
-    if (_selectedPostCategory == null) {
-      setState(() => _showPostCategoryRequiredHint = true);
+    if (_selectedPostTags.isEmpty) {
+      setState(() => _showPostTagRequiredHint = true);
       ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text(l10n.postCategoryRequired)),
+        SnackBar(
+          content: Text(
+            Localizations.localeOf(context).languageCode == 'ko'
+                ? '태그를 한 개 이상 선택해 주세요.'
+                : 'Choose at least one tag.',
+          ),
+        ),
       );
       await _goToStep(0);
       WidgetsBinding.instance.addPostFrameCallback((_) {
@@ -454,7 +471,8 @@ class _CreatePostScreenState extends State<CreatePostScreen> {
       final success = await _postService.addPost(
         '',
         _contentController.text.trim(),
-        categoryKey: _selectedPostCategory!.key,
+        categoryKeys:
+            _selectedPostTags.map((category) => category.key).toList(),
         imageFiles: _selectedImages.isNotEmpty ? _selectedImages : null,
         visibility: _visibility,
         isAnonymous: _isAnonymous,
@@ -497,8 +515,7 @@ class _CreatePostScreenState extends State<CreatePostScreen> {
       backgroundColor: Colors.white,
       elevation: 0,
       surfaceTintColor: Colors.white,
-      centerTitle: true,
-      toolbarHeight: context.rh(56, min: 54, max: 60),
+      toolbarHeight: _composerToolbarHeight,
       automaticallyImplyLeading: false,
       leadingWidth: 48,
       leading: IconButton(
@@ -510,20 +527,7 @@ class _CreatePostScreenState extends State<CreatePostScreen> {
         onPressed: () => Navigator.of(context).pop(),
         tooltip: MaterialLocalizations.of(context).closeButtonTooltip,
       ),
-      title: MediaQuery.withClampedTextScaling(
-        maxScaleFactor: 1.2,
-        child: Text(
-          l10n.newPostCreation,
-          maxLines: 1,
-          overflow: TextOverflow.ellipsis,
-          style: TextStyle(
-            fontFamily: 'Pretendard',
-            fontSize: context.rf(18).clamp(16, 19).toDouble(),
-            fontWeight: FontWeight.w700,
-            color: const Color(0xFF111827),
-          ),
-        ),
-      ),
+      flexibleSpace: _buildCenteredComposerTitle(l10n.writeStory),
       actions: [
         SizedBox.square(
           dimension: 48,
@@ -546,13 +550,14 @@ class _CreatePostScreenState extends State<CreatePostScreen> {
 
   PreferredSizeWidget _buildVisibilityAppBar() {
     final l10n = AppLocalizations.of(context)!;
+    final useCompactShareAction = MediaQuery.sizeOf(context).width < 340 ||
+        MediaQuery.textScalerOf(context).scale(14) > 24;
 
     return AppBar(
       backgroundColor: Colors.white,
       elevation: 0,
       surfaceTintColor: Colors.white,
-      centerTitle: true,
-      toolbarHeight: context.rh(56, min: 54, max: 60),
+      toolbarHeight: _composerToolbarHeight,
       automaticallyImplyLeading: false,
       leadingWidth: 48,
       leading: IconButton(
@@ -564,24 +569,27 @@ class _CreatePostScreenState extends State<CreatePostScreen> {
         onPressed: _isSubmitting ? null : () => _goToStep(0),
         tooltip: MaterialLocalizations.of(context).backButtonTooltip,
       ),
-      title: MediaQuery.withClampedTextScaling(
-        maxScaleFactor: 1.2,
-        child: Text(
-          l10n.newPostCreation,
-          maxLines: 1,
-          overflow: TextOverflow.ellipsis,
-          style: TextStyle(
-            fontFamily: 'Pretendard',
-            fontSize: context.rf(18).clamp(16, 19).toDouble(),
-            fontWeight: FontWeight.w700,
-            color: const Color(0xFF111827),
-          ),
-        ),
-      ),
+      flexibleSpace: _buildCenteredComposerTitle(l10n.writeStory),
       actions: [
-        MediaQuery.withClampedTextScaling(
-          maxScaleFactor: 1.15,
-          child: TextButton.icon(
+        if (useCompactShareAction)
+          SizedBox.square(
+            dimension: 48,
+            child: IconButton(
+              onPressed: _isSubmitting ? null : _submitPost,
+              tooltip: l10n.share,
+              icon: _isSubmitting
+                  ? const SizedBox.square(
+                      dimension: 15,
+                      child: CircularProgressIndicator(strokeWidth: 2),
+                    )
+                  : Icon(
+                      Icons.check_rounded,
+                      size: context.ri(21).clamp(20, 23).toDouble(),
+                    ),
+            ),
+          )
+        else
+          TextButton.icon(
             onPressed: _isSubmitting ? null : _submitPost,
             icon: _isSubmitting
                 ? const SizedBox.square(
@@ -593,7 +601,7 @@ class _CreatePostScreenState extends State<CreatePostScreen> {
                     size: context.ri(18).clamp(17, 20).toDouble(),
                   ),
             label: Text(
-              l10n.registration,
+              l10n.share,
               style: TextStyle(
                 fontFamily: 'Pretendard',
                 fontSize: context.rf(14).clamp(13, 15).toDouble(),
@@ -607,9 +615,44 @@ class _CreatePostScreenState extends State<CreatePostScreen> {
               minimumSize: const Size(44, 44),
             ),
           ),
-        ),
         const SizedBox(width: 4),
       ],
+    );
+  }
+
+  double get _composerToolbarHeight {
+    final base = context.rh(56, min: 54, max: 60);
+    final scaledTitle = MediaQuery.textScalerOf(context).scale(
+      context.rf(18).clamp(16, 19).toDouble(),
+    );
+    final accessible = scaledTitle * 1.2 + DesignTokens.s24;
+    return accessible > base ? accessible.clamp(base, 96).toDouble() : base;
+  }
+
+  Widget _buildCenteredComposerTitle(String title) {
+    final horizontalClearance =
+        MediaQuery.sizeOf(context).width < 360 ? 88.0 : 104.0;
+    return SafeArea(
+      bottom: false,
+      child: IgnorePointer(
+        child: Center(
+          child: Padding(
+            padding: EdgeInsets.symmetric(horizontal: horizontalClearance),
+            child: Text(
+              title,
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
+              textAlign: TextAlign.center,
+              style: TextStyle(
+                fontFamily: 'Pretendard',
+                fontSize: context.rf(18).clamp(16, 19).toDouble(),
+                fontWeight: FontWeight.w700,
+                color: const Color(0xFF111827),
+              ),
+            ),
+          ),
+        ),
+      ),
     );
   }
 
@@ -728,7 +771,11 @@ class _CreatePostScreenState extends State<CreatePostScreen> {
     final imageLabel = l10n.imageAttachment;
     final screenSize = MediaQuery.sizeOf(context);
     final systemBottomInset = MediaQuery.viewPaddingOf(context).bottom;
-    final horizontalPadding = screenSize.width < 360 ? 12.0 : 16.0;
+    final horizontalPadding = screenSize.width < 360
+        ? 14.0
+        : screenSize.width < 430
+            ? 16.0
+            : 20.0;
     final contentMinLines = screenSize.height < 700 ? 7 : 10;
 
     return SingleChildScrollView(
@@ -738,21 +785,24 @@ class _CreatePostScreenState extends State<CreatePostScreen> {
         horizontalPadding,
         context.rs(8).clamp(6, 10).toDouble(),
         horizontalPadding,
-        24 + systemBottomInset,
+        DesignTokens.s24 + systemBottomInset,
       ),
       child: Center(
         child: ConstrainedBox(
-          constraints: const BoxConstraints(maxWidth: 720),
+          constraints: const BoxConstraints(maxWidth: 640),
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
               PostCategorySelector(
-                selected: _selectedPostCategory,
-                showError: _showPostCategoryRequiredHint,
-                onChanged: (category) {
+                selected: _selectedPostTags,
+                showError: _showPostTagRequiredHint,
+                showHeader: false,
+                onChanged: (tags) {
                   setState(() {
-                    _selectedPostCategory = category;
-                    _showPostCategoryRequiredHint = false;
+                    _selectedPostTags
+                      ..clear()
+                      ..addAll(tags);
+                    _showPostTagRequiredHint = false;
                   });
                   _checkCanProceed();
                 },
@@ -966,115 +1016,71 @@ class _CreatePostScreenState extends State<CreatePostScreen> {
     return Semantics(
       button: true,
       selected: isSelected,
-      child: Material(
-        color: Colors.transparent,
-        child: InkWell(
-          onTap: () {
-            final nextSelection = List<String>.from(_selectedCategoryIds);
-            if (isSelected) {
-              nextSelection.remove(category.id);
-            } else {
-              nextSelection.add(category.id);
-            }
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Material(
+            color: Colors.transparent,
+            child: InkWell(
+              onTap: () {
+                final nextSelection = List<String>.from(_selectedCategoryIds);
+                if (isSelected) {
+                  nextSelection.remove(category.id);
+                } else {
+                  nextSelection.add(category.id);
+                }
 
-            setState(() {
-              _selectedCategoryIds = nextSelection;
-              if (nextSelection.isNotEmpty) {
-                _showCategoryRequiredHint = false;
-              }
-            });
-            _refreshSelectedAudienceUsers();
-          },
-          child: ConstrainedBox(
-            constraints: const BoxConstraints(minHeight: 48),
-            child: Padding(
-              padding: const EdgeInsets.symmetric(vertical: 10),
-              child: Row(
-                children: [
-                  Expanded(
-                    child: Text(
-                      category.name,
-                      maxLines: 1,
-                      overflow: TextOverflow.ellipsis,
-                      style: TextStyle(
-                        fontFamily: 'Pretendard',
-                        fontSize: context.rf(14).clamp(13, 15).toDouble(),
-                        fontWeight:
-                            isSelected ? FontWeight.w800 : FontWeight.w600,
-                        color: const Color(0xFF111827),
+                setState(() {
+                  _selectedCategoryIds = nextSelection;
+                  if (nextSelection.isNotEmpty) {
+                    _showCategoryRequiredHint = false;
+                  }
+                });
+                unawaited(_refreshSelectedAudienceUsers());
+              },
+              child: ConstrainedBox(
+                constraints: const BoxConstraints(minHeight: 48),
+                child: Padding(
+                  padding: const EdgeInsets.symmetric(vertical: 10),
+                  child: Row(
+                    children: [
+                      Expanded(
+                        child: Text(
+                          category.name,
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                          style: TextStyle(
+                            fontFamily: 'Pretendard',
+                            fontSize: context.rf(14).clamp(13, 15).toDouble(),
+                            fontWeight:
+                                isSelected ? FontWeight.w800 : FontWeight.w600,
+                            color: const Color(0xFF111827),
+                          ),
+                        ),
                       ),
-                    ),
+                      const SizedBox(width: 8),
+                      Icon(
+                        isSelected
+                            ? Icons.check_circle_rounded
+                            : Icons.circle_outlined,
+                        size: context.ri(21).clamp(20, 23).toDouble(),
+                        color: isSelected
+                            ? const Color(0xFF475467)
+                            : const Color(0xFFD0D5DD),
+                      ),
+                    ],
                   ),
-                  const SizedBox(width: 8),
-                  Icon(
-                    isSelected
-                        ? Icons.check_circle_rounded
-                        : Icons.circle_outlined,
-                    size: context.ri(21).clamp(20, 23).toDouble(),
-                    color: isSelected
-                        ? const Color(0xFF475467)
-                        : const Color(0xFFD0D5DD),
-                  ),
-                ],
+                ),
               ),
             ),
           ),
-        ),
+          if (isSelected)
+            GroupAudiencePreview(
+              members: _membersForCategory(category),
+              loading: _isLoadingAudienceUsers && category.friendIds.isNotEmpty,
+            ),
+        ],
       ),
-    );
-  }
-
-  Widget _buildSelectedAudienceNames(AppLocalizations l10n) {
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        Text(
-          l10n.postSelectedPeopleTitle,
-          style: TextStyle(
-            fontFamily: 'Pretendard',
-            fontSize: context.rf(13).clamp(12, 14).toDouble(),
-            fontWeight: FontWeight.w800,
-            color: const Color(0xFF111827),
-          ),
-        ),
-        const SizedBox(height: 8),
-        if (_isLoadingAudienceUsers)
-          const Padding(
-            padding: EdgeInsets.symmetric(vertical: 12),
-            child: SizedBox.square(
-              dimension: 18,
-              child: CircularProgressIndicator(strokeWidth: 2),
-            ),
-          )
-        else if (_selectedAudienceUsers.isEmpty)
-          Text(
-            l10n.postSelectedPeopleEmpty,
-            style: TextStyle(
-              fontFamily: 'Pretendard',
-              fontSize: context.rf(12.5).clamp(12, 13.5).toDouble(),
-              fontWeight: FontWeight.w500,
-              color: const Color(0xFF98A2B3),
-            ),
-          )
-        else
-          Wrap(
-            spacing: 12,
-            runSpacing: 8,
-            children: _selectedAudienceUsers
-                .map(
-                  (user) => Text(
-                    user.displayNameOrNickname,
-                    style: TextStyle(
-                      fontFamily: 'Pretendard',
-                      fontSize: context.rf(13).clamp(12, 14).toDouble(),
-                      fontWeight: FontWeight.w700,
-                      color: const Color(0xFF344054),
-                    ),
-                  ),
-                )
-                .toList(growable: false),
-          ),
-      ],
     );
   }
 
@@ -1122,10 +1128,6 @@ class _CreatePostScreenState extends State<CreatePostScreen> {
               ),
             ),
           ),
-        SizedBox(height: context.rs(16)),
-        const Divider(height: 1, color: Color(0xFFEAECF0)),
-        SizedBox(height: context.rs(14)),
-        _buildSelectedAudienceNames(l10n),
       ],
     );
   }
@@ -1134,7 +1136,11 @@ class _CreatePostScreenState extends State<CreatePostScreen> {
     final l10n = AppLocalizations.of(context)!;
     final screenWidth = MediaQuery.sizeOf(context).width;
     final systemBottomInset = MediaQuery.viewPaddingOf(context).bottom;
-    final horizontalPadding = screenWidth < 360 ? 12.0 : 16.0;
+    final horizontalPadding = screenWidth < 360
+        ? 14.0
+        : screenWidth < 430
+            ? 16.0
+            : 20.0;
 
     return SingleChildScrollView(
       controller: _visibilityScrollController,
@@ -1143,11 +1149,11 @@ class _CreatePostScreenState extends State<CreatePostScreen> {
         horizontalPadding,
         context.rs(12).clamp(10, 16).toDouble(),
         horizontalPadding,
-        24 + systemBottomInset,
+        DesignTokens.s24 + systemBottomInset,
       ),
       child: Center(
         child: ConstrainedBox(
-          constraints: const BoxConstraints(maxWidth: 720),
+          constraints: const BoxConstraints(maxWidth: 640),
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
@@ -1239,11 +1245,9 @@ class _CreatePostScreenState extends State<CreatePostScreen> {
         resizeToAvoidBottomInset: true,
         appBar:
             _stepIndex == 0 ? _buildComposeAppBar() : _buildVisibilityAppBar(),
-        body: SafeArea(
-          top: false,
-          minimum: const EdgeInsets.only(bottom: 8),
-          child: _buildAnimatedBody(),
-        ),
+        // 키보드는 Scaffold의 resizeToAvoidBottomInset이 처리하고, 시스템
+        // 내비게이션 여백은 각 스크롤 본문의 viewPadding으로 한 번만 반영한다.
+        body: _buildAnimatedBody(),
       ),
     );
   }

@@ -3,13 +3,14 @@
 // Cloud Functions 메인 진입점
 // 친구요청 관련 함수들을 export
 Object.defineProperty(exports, "__esModule", { value: true });
-exports.onMeetupDeleted = exports.onMeetupUpdated = exports.onAdBannerChanged = exports.onFriendRequestCreated = exports.joinMeetupSecure = exports.onPrivatePostCreated = exports.onUserCreated = exports.backfillEmailClaims = exports.cancelPendingEmailSignup = exports.discardIncompleteRegistration = exports.finalizeEnglishSocialSignup = exports.completeHanyangProfileVerification = exports.finalizeHanyangEmailVerification = exports.migrateEmailVerified = exports.initializeAds = exports.onUserProfileUpdatedPropagateAuthorInfo = exports.onSnackChatVoteWritten = exports.onSnackChatReactionWritten = exports.notifyClosedSnackChatPolls = exports.onSnackChatMessageCreated = exports.onSnackChatRoomWritten = exports.onSnackChatFileUploadJobDeleted = exports.onSnackChatFileMessageDeleted = exports.cancelSnackChatFileUpload = exports.commitSnackChatFileUpload = exports.prepareSnackChatFileUpload = exports.reportSnackChatMessage = exports.fetchSnackChatLinkPreview = exports.createSnackChatAnnouncementSecure = exports.updateSnackChatTitleSecure = exports.leaveSnackChatSecure = exports.ensureSnackChatMembershipSecure = exports.joinMeetupSnackChatSecure = exports.inviteSnackChatParticipants = exports.createMeetupSnackChatSecure = exports.createSnackChatSecure = exports.onSnapshotBlockChanged = exports.cleanupOrphanSnapshotUploads = exports.cleanupExpiredSnapshots = exports.deleteSnapshot = exports.sendSnapshotComment = exports.toggleSnapshotReaction = exports.getSnapshotCommentStatus = exports.getSnapshotReactionStatus = exports.updateSnapshotVisibility = exports.syncMySnapshotFeed = exports.createSnapshot = exports.getSnapshotServerTime = exports.createMeetupSecure = exports.createPostSecure = void 0;
-exports.fixNegativeUnreadCounts = exports.onDMMessageRead = exports.onDMMessageCreated = exports.onMeetupReviewCreatedDeleteMeetupChat = exports.onMeetupReviewDeleted = exports.onMeetupReviewUpdated = exports.onReviewRequestUpdated = exports.onReviewRequestCreated = exports.onMeetupCreated = exports.onMeetupParticipantJoined = exports.onNotificationDeletedSyncUnreadCounter = exports.onNotificationUpdatedSyncUnreadCounter = exports.onNotificationCreated = exports.unregisterFcmToken = exports.registerFcmToken = exports.fixDeletedAccountsInConversations = exports.deleteAccountImmediately = exports.onReportCreated = exports.reportUser = exports.unhideAnonymousComment = exports.hideAnonymousComment = exports.unblockAnonymousPost = exports.blockAnonymousPost = exports.unblockUser = exports.blockUser = exports.unfriend = exports.rejectFriendRequest = exports.acceptFriendRequest = exports.cancelFriendRequest = exports.sendFriendRequest = exports.cleanupExpiredEmailVerifications = exports.createGeneralEmailSignup = exports.verifyEmailCode = exports.sendEmailVerificationCode = exports.onPostLiked = exports.onCommentLiked = exports.onCommentDeleted = exports.onCommentCreated = void 0;
+exports.onPrivatePostCreated = exports.onUserCreated = exports.backfillEmailClaims = exports.cancelPendingEmailSignup = exports.discardIncompleteRegistration = exports.finalizeEnglishSocialSignup = exports.completeHanyangProfileVerification = exports.finalizeHanyangEmailVerification = exports.migrateEmailVerified = exports.initializeAds = exports.onUserProfileUpdatedPropagateAuthorInfo = exports.onSnackChatVoteWritten = exports.onSnackChatReactionWritten = exports.notifyClosedSnackChatPolls = exports.onSnackChatMessageCreated = exports.onSnackChatRoomWritten = exports.cleanupExpiredSnackChatFiles = exports.onSnackChatFileUploadJobDeleted = exports.onSnackChatFileMessageDeleted = exports.cancelSnackChatFileUpload = exports.commitSnackChatFileUpload = exports.prepareSnackChatFileUpload = exports.reportSnackChatMessage = exports.fetchSnackChatLinkPreview = exports.createSnackChatAnnouncementSecure = exports.updateSnackChatTitleSecure = exports.leaveSnackChatSecure = exports.ensureSnackChatMembershipSecure = exports.joinMeetupSnackChatSecure = exports.inviteSnackChatParticipants = exports.createMeetupSnackChatSecure = exports.createSnackChatSecure = exports.onSnapshotBlockChanged = exports.cleanupOrphanSnapshotUploads = exports.cleanupExpiredSnapshots = exports.deleteSnapshot = exports.replySnapshotComment = exports.sendSnapshotComment = exports.toggleSnapshotReaction = exports.getSnapshotCommentLetter = exports.getSnapshotCommentStatus = exports.getSnapshotReactionStatus = exports.getSnapshotViewers = exports.recordSnapshotView = exports.updateSnapshotVisibility = exports.syncMySnapshotFeed = exports.createSnapshot = exports.getSnapshotServerTime = exports.createMeetupSecure = exports.createPostSecure = void 0;
+exports.fixNegativeUnreadCounts = exports.onDMMessageRead = exports.onDMMessageCreated = exports.onMeetupReviewCreatedDeleteMeetupChat = exports.onMeetupReviewDeleted = exports.onMeetupReviewUpdated = exports.onReviewRequestUpdated = exports.onReviewRequestCreated = exports.onMeetupCreated = exports.onMeetupParticipantJoined = exports.onNotificationDeletedSyncUnreadCounter = exports.onNotificationUpdatedSyncUnreadCounter = exports.onNotificationCreated = exports.unregisterFcmToken = exports.registerFcmToken = exports.fixDeletedAccountsInConversations = exports.deleteAccountImmediately = exports.onReportCreated = exports.reportUser = exports.unhideAnonymousComment = exports.hideAnonymousComment = exports.unblockAnonymousPost = exports.blockAnonymousPost = exports.unblockUser = exports.blockUser = exports.unfriend = exports.rejectFriendRequest = exports.acceptFriendRequest = exports.cancelFriendRequest = exports.sendFriendRequest = exports.cleanupExpiredEmailVerifications = exports.createGeneralEmailSignup = exports.verifyEmailCode = exports.sendEmailVerificationCode = exports.onPostLiked = exports.onCommentLiked = exports.onCommentSoftDeleted = exports.onCommentDeleted = exports.onCommentCreated = exports.onMeetupDeleted = exports.onMeetupUpdated = exports.onAdBannerChanged = exports.onFriendRequestCreated = exports.joinMeetupSecure = void 0;
 const functions = require("firebase-functions");
 const admin = require("firebase-admin");
 const nodemailer = require("nodemailer");
 const crypto = require("crypto");
 const firestore_paths_1 = require("./firestore_paths");
+const frozen_audience_1 = require("./frozen_audience");
 var content_creation_1 = require("./content_creation");
 Object.defineProperty(exports, "createPostSecure", { enumerable: true, get: function () { return content_creation_1.createPostSecure; } });
 Object.defineProperty(exports, "createMeetupSecure", { enumerable: true, get: function () { return content_creation_1.createMeetupSecure; } });
@@ -18,10 +19,14 @@ Object.defineProperty(exports, "getSnapshotServerTime", { enumerable: true, get:
 Object.defineProperty(exports, "createSnapshot", { enumerable: true, get: function () { return snapshot_1.createSnapshot; } });
 Object.defineProperty(exports, "syncMySnapshotFeed", { enumerable: true, get: function () { return snapshot_1.syncMySnapshotFeed; } });
 Object.defineProperty(exports, "updateSnapshotVisibility", { enumerable: true, get: function () { return snapshot_1.updateSnapshotVisibility; } });
+Object.defineProperty(exports, "recordSnapshotView", { enumerable: true, get: function () { return snapshot_1.recordSnapshotView; } });
+Object.defineProperty(exports, "getSnapshotViewers", { enumerable: true, get: function () { return snapshot_1.getSnapshotViewers; } });
 Object.defineProperty(exports, "getSnapshotReactionStatus", { enumerable: true, get: function () { return snapshot_1.getSnapshotReactionStatus; } });
 Object.defineProperty(exports, "getSnapshotCommentStatus", { enumerable: true, get: function () { return snapshot_1.getSnapshotCommentStatus; } });
+Object.defineProperty(exports, "getSnapshotCommentLetter", { enumerable: true, get: function () { return snapshot_1.getSnapshotCommentLetter; } });
 Object.defineProperty(exports, "toggleSnapshotReaction", { enumerable: true, get: function () { return snapshot_1.toggleSnapshotReaction; } });
 Object.defineProperty(exports, "sendSnapshotComment", { enumerable: true, get: function () { return snapshot_1.sendSnapshotComment; } });
+Object.defineProperty(exports, "replySnapshotComment", { enumerable: true, get: function () { return snapshot_1.replySnapshotComment; } });
 Object.defineProperty(exports, "deleteSnapshot", { enumerable: true, get: function () { return snapshot_1.deleteSnapshot; } });
 Object.defineProperty(exports, "cleanupExpiredSnapshots", { enumerable: true, get: function () { return snapshot_1.cleanupExpiredSnapshots; } });
 Object.defineProperty(exports, "cleanupOrphanSnapshotUploads", { enumerable: true, get: function () { return snapshot_1.cleanupOrphanSnapshotUploads; } });
@@ -42,6 +47,7 @@ Object.defineProperty(exports, "commitSnackChatFileUpload", { enumerable: true, 
 Object.defineProperty(exports, "cancelSnackChatFileUpload", { enumerable: true, get: function () { return snack_chat_1.cancelSnackChatFileUpload; } });
 Object.defineProperty(exports, "onSnackChatFileMessageDeleted", { enumerable: true, get: function () { return snack_chat_1.onSnackChatFileMessageDeleted; } });
 Object.defineProperty(exports, "onSnackChatFileUploadJobDeleted", { enumerable: true, get: function () { return snack_chat_1.onSnackChatFileUploadJobDeleted; } });
+Object.defineProperty(exports, "cleanupExpiredSnackChatFiles", { enumerable: true, get: function () { return snack_chat_1.cleanupExpiredSnackChatFiles; } });
 Object.defineProperty(exports, "onSnackChatRoomWritten", { enumerable: true, get: function () { return snack_chat_1.onSnackChatRoomWrittenSecure; } });
 Object.defineProperty(exports, "onSnackChatMessageCreated", { enumerable: true, get: function () { return snack_chat_1.onSnackChatMessageCreatedSecure; } });
 Object.defineProperty(exports, "notifyClosedSnackChatPolls", { enumerable: true, get: function () { return snack_chat_1.notifyClosedSnackChatPolls; } });
@@ -1240,11 +1246,49 @@ exports.onUserCreated = functions.firestore
         return null;
     }
 });
-// 비공개 게시글 생성 시 알림 생성 (allowedUserIds 대상)
+function notificationSettingAllows(document, unifiedKey, legacyKeys = []) {
+    var _a;
+    if (!document.exists)
+        return true;
+    const raw = (_a = document.data()) === null || _a === void 0 ? void 0 : _a.notifications;
+    const settings = raw && typeof raw === 'object'
+        ? raw
+        : {};
+    if (settings.all_notifications === false || settings[unifiedKey] === false) {
+        return false;
+    }
+    return legacyKeys.every((key) => settings[key] !== false);
+}
+async function filterAudienceByNotificationSettings(userIds, unifiedKey, legacyKeys = []) {
+    const unique = toUniqueStringArray(userIds);
+    if (unique.length === 0)
+        return [];
+    const documents = await db.getAll(...unique.map((userId) => db.collection('user_settings').doc(userId)));
+    return unique.filter((_, index) => notificationSettingAllows(documents[index], unifiedKey, legacyKeys));
+}
+function audienceNotificationId(type, contentId, userId) {
+    return `${type}_` + crypto.createHash('sha256')
+        .update(`${contentId}:${userId}`)
+        .digest('hex');
+}
+async function commitNotificationCreates(notifications) {
+    let created = 0;
+    // 트리거가 동시에 재실행되어도 createNotificationOnce의 transaction이
+    // 같은 deterministic ID를 한 번만 생성한다. 작은 동시성 묶음으로 처리해
+    // 한 대상의 충돌이 전체 batch를 실패시키는 병목도 피한다.
+    for (let offset = 0; offset < notifications.length; offset += 25) {
+        const chunk = notifications.slice(offset, offset + 25);
+        const results = await Promise.all(chunk.map((item) => createNotificationOnce(item.reference, item.data)));
+        created += results.filter(Boolean).length;
+    }
+    return created;
+}
+// 포스트 생성 시 생성 당시 공개 범위 안에 있는 친구에게만 알림 생성.
+// public은 생성 시점 친구 snapshot, category는 선택 그룹의 frozen audience를 쓴다.
 exports.onPrivatePostCreated = functions.firestore
     .document('posts/{postId}')
     .onCreate(async (snapshot, context) => {
-    var _a, _b;
+    var _a;
     try {
         const post = snapshot.data();
         const postId = context.params.postId;
@@ -1253,54 +1297,50 @@ exports.onPrivatePostCreated = functions.firestore
         const title = post.title || '';
         const content = post.content || '';
         const preview = (typeof content === 'string' ? content : '').slice(0, 80);
-        if (visibility !== 'category') {
-            console.log(`onPrivatePostCreated: 공개글이므로 스킵 (postId=${postId})`);
+        if (visibility !== 'public' && visibility !== 'category') {
+            console.log(`onPrivatePostCreated: 지원하지 않는 공개범위 스킵 (postId=${postId})`);
             return null;
         }
-        const allowed = Array.isArray(post.allowedUserIds) ? post.allowedUserIds : [];
-        if (allowed.length === 0) {
-            console.log(`onPrivatePostCreated: allowedUserIds 비어있음 (postId=${postId})`);
+        let targetUserIds = toUniqueStringArray(post.notificationAudienceUserIdsFrozen).filter((uid) => uid !== authorId);
+        if (targetUserIds.length === 0) {
+            targetUserIds = visibility === 'category'
+                ? toUniqueStringArray(toInt(post.visibilitySchemaVersion) >= 2
+                    ? post.audienceUserIdsFrozen
+                    : post.allowedUserIds).filter((uid) => uid !== authorId)
+                : await (0, frozen_audience_1.resolveFriendNotificationAudience)(authorId);
+        }
+        targetUserIds = await filterTargetUserIdsByBlockRelationship(authorId, targetUserIds);
+        targetUserIds = await filterAudienceByNotificationSettings(targetUserIds, 'post_interactions', ['post_private']);
+        if (targetUserIds.length === 0) {
+            console.log(`onPrivatePostCreated: 알림 대상 없음 (postId=${postId})`);
             return null;
         }
         // 작성자 정보 (표시용)
         const authorDoc = await db.collection('users').doc(authorId).get();
         const authorName = authorDoc.exists ? (((_a = authorDoc.data()) === null || _a === void 0 ? void 0 : _a.nickname) || 'User') : 'User';
-        // 대상 사용자별 설정 확인 후 notifications 문서 생성
-        const batch = db.batch();
-        let created = 0;
-        for (const uid of allowed) {
-            if (uid === authorId)
-                continue;
-            const settingsDoc = await db.collection('user_settings').doc(uid).get();
-            const noti = settingsDoc.exists ? (((_b = settingsDoc.data()) === null || _b === void 0 ? void 0 : _b.notifications) || {}) : {};
-            const allOn = noti.all_notifications !== false; // undefined면 기본 허용
-            const postPrivateOn = noti.post_private !== false;
-            if (!allOn || !postPrivateOn) {
-                continue;
-            }
-            const titleText = `${authorName} · ${title || 'New post'}`;
-            const messageText = preview || 'You have a new private post.';
-            const docRef = db.collection('notifications').doc();
-            batch.set(docRef, {
+        const notifications = targetUserIds.map((uid) => ({
+            reference: db.collection('notifications').doc(audienceNotificationId('post_created', postId, uid)),
+            data: {
                 userId: uid,
-                title: titleText,
-                message: messageText,
-                type: 'post_private',
+                title: `${authorName} · ${title || 'New post'}`,
+                message: preview || 'A friend shared a new post.',
+                type: 'post_created',
                 postId,
                 actorId: authorId,
                 actorName: authorName,
                 data: {
-                    postId: postId,
+                    postId,
                     postTitle: title,
-                    authorName: authorName,
+                    authorName,
+                    contentPreview: preview,
+                    visibility,
                 },
                 createdAt: admin.firestore.FieldValue.serverTimestamp(),
                 isRead: false,
-            });
-            created += 1;
-        }
+            },
+        }));
+        const created = await commitNotificationCreates(notifications);
         if (created > 0) {
-            await batch.commit();
             console.log(`onPrivatePostCreated: notifications 생성 ${created}건`);
         }
         else {
@@ -1481,7 +1521,7 @@ exports.joinMeetupSecure = functions.https.onCall(async (data, context) => {
 exports.onFriendRequestCreated = functions.firestore
     .document('friend_requests/{requestId}')
     .onWrite(async (change, context) => {
-    var _a, _b, _c, _d, _e, _f, _g;
+    var _a, _b, _c, _d, _e, _f, _g, _h;
     try {
         const snapshot = change.after.exists ? change.after : change.before;
         const req = snapshot.data();
@@ -1509,14 +1549,14 @@ exports.onFriendRequestCreated = functions.firestore
             ? String(((_e = change.before.data()) === null || _e === void 0 ? void 0 : _e.status) || '')
             : '';
         const afterStatus = change.after.exists ? String(req.status || '') : 'DELETED';
-        const notificationId = 'friend_request_' + crypto
-            .createHash('sha256')
-            // One deterministic id per PENDING transition: retries remain
-            // idempotent, while a later re-request still creates a fresh alert.
-            .update(`${String(context.params.requestId)}:${context.eventId}`)
+        const notificationGeneration = normalizeUidLoose(req.notificationGeneration);
+        const notificationId = 'friend_request_' + crypto.createHash('sha256')
+            .update(`${String(context.params.requestId)}:${notificationGeneration || context.eventId}`)
             .digest('hex');
         const notificationRef = db.collection('notifications').doc(notificationId);
-        const deleteExistingFriendAlerts = async () => {
+        // 신규 요청은 generation으로 정확히 한 문서만 읽고/삭제한다. 배포 전
+        // 레거시 요청에만 1회 범위 조회를 사용해 과거 랜덤 ID 알림을 정리한다.
+        const deleteLegacyFriendAlerts = async () => {
             const existing = await db.collection('notifications')
                 .where('userId', '==', toUid)
                 .limit(500)
@@ -1536,9 +1576,16 @@ exports.onFriendRequestCreated = functions.firestore
             if (changed)
                 await batch.commit();
         };
+        const deleteCurrentFriendAlert = async () => {
+            if (notificationGeneration) {
+                await notificationRef.delete();
+                return;
+            }
+            await deleteLegacyFriendAlerts();
+        };
         if (afterStatus !== 'PENDING') {
             // 수락/거절/취소된 요청은 알림 목록과 배지에서도 즉시 제거한다.
-            await deleteExistingFriendAlerts();
+            await deleteCurrentFriendAlert();
             return null;
         }
         // 이미 PENDING인 문서의 unrelated update/트리거 재시도는 무시한다.
@@ -1546,39 +1593,33 @@ exports.onFriendRequestCreated = functions.firestore
             return null;
         if (await hasBlockRelationship(fromUid, toUid)) {
             console.log('⏭️ 차단 관계(friend_request) - 알림 스킵');
-            await deleteExistingFriendAlerts();
+            await deleteCurrentFriendAlert();
             return null;
         }
-        const settingsDoc = await db.collection('user_settings').doc(toUid).get();
+        const [settingsDoc, fromUser] = await Promise.all([
+            db.collection('user_settings').doc(toUid).get(),
+            db.collection('users').doc(fromUid).get(),
+        ]);
         const noti = settingsDoc.exists ? (((_f = settingsDoc.data()) === null || _f === void 0 ? void 0 : _f.notifications) || {}) : {};
         const allOn = noti.all_notifications !== false;
         // 통합 키 사용 (friend_alerts), 레거시 키(friend_request) 폴백
         const friendOn = noti.friend_alerts !== false && noti.friend_request !== false;
         if (!allOn || !friendOn) {
-            await deleteExistingFriendAlerts();
+            await deleteCurrentFriendAlert();
             return null;
         }
-        const fromUser = await db.collection('users').doc(fromUid).get();
         const fromName = fromUser.exists ? (((_g = fromUser.data()) === null || _g === void 0 ? void 0 : _g.nickname) || 'User') : 'User';
-        // Remove legacy/random ids and the previous request generation before
-        // creating the current generation. 499 + this set stays within a
-        // Firestore batch's 500-write maximum.
-        const existing = await db.collection('notifications')
-            .where('userId', '==', toUid)
-            .limit(499)
-            .get();
-        const batch = db.batch();
-        existing.docs.forEach((document) => {
-            var _a;
-            const data = document.data();
-            const dataFromUid = String(((_a = data === null || data === void 0 ? void 0 : data.data) === null || _a === void 0 ? void 0 : _a.fromUid) || '');
-            if (document.ref.path !== notificationRef.path &&
-                data.type === 'friend_request' &&
-                (data.actorId === fromUid || dataFromUid === fromUid)) {
-                batch.delete(document.ref);
-            }
-        });
-        batch.set(notificationRef, {
+        const beforeGeneration = normalizeUidLoose((_h = change.before.data()) === null || _h === void 0 ? void 0 : _h.notificationGeneration);
+        if (beforeGeneration && beforeGeneration !== notificationGeneration) {
+            const previousId = 'friend_request_' + crypto.createHash('sha256')
+                .update(`${String(context.params.requestId)}:${beforeGeneration}`)
+                .digest('hex');
+            await db.collection('notifications').doc(previousId).delete();
+        }
+        else if (!beforeGeneration && change.before.exists) {
+            await deleteLegacyFriendAlerts();
+        }
+        const notificationPayload = {
             userId: toUid,
             title: 'friend_request',
             message: '',
@@ -1589,12 +1630,30 @@ exports.onFriendRequestCreated = functions.firestore
                 fromUid: fromUid,
                 fromName: fromName,
                 friendRequestId: String(context.params.requestId),
+                notificationGeneration,
             },
             createdAt: admin.firestore.FieldValue.serverTimestamp(),
             isRead: false,
+        };
+        const created = await db.runTransaction(async (tx) => {
+            const [latestRequest, existingNotification] = await Promise.all([
+                tx.get(snapshot.ref),
+                tx.get(notificationRef),
+            ]);
+            const latest = latestRequest.data() || {};
+            if (!latestRequest.exists ||
+                String(latest.status || '') !== 'PENDING' ||
+                normalizeUidLoose(latest.notificationGeneration) !==
+                    notificationGeneration ||
+                existingNotification.exists) {
+                return false;
+            }
+            tx.create(notificationRef, notificationPayload);
+            return true;
         });
-        await batch.commit();
-        console.log('onFriendRequestCreated: 알림 생성 완료');
+        console.log(created
+            ? 'onFriendRequestCreated: 알림 생성 완료'
+            : 'onFriendRequestCreated: 최신 요청이 아니거나 이미 생성됨');
         return null;
     }
     catch (error) {
@@ -2045,15 +2104,19 @@ exports.onCommentDeleted = functions.firestore
         const postId = comment === null || comment === void 0 ? void 0 : comment.postId;
         if (!postId)
             return null;
-        const dec = admin.firestore.FieldValue.increment(-1);
-        try {
-            await db.collection('posts').doc(postId).update({ commentCount: dec });
+        // 이미 soft-delete 시점에 집계에서 제외된 문서는 보관 기간 만료 등으로
+        // 실제 제거되더라도 다시 차감하지 않는다.
+        if ((comment === null || comment === void 0 ? void 0 : comment.isDeleted) !== true) {
+            const dec = admin.firestore.FieldValue.increment(-1);
+            try {
+                await db.collection('posts').doc(postId).update({ commentCount: dec });
+            }
+            catch (_) { }
+            try {
+                await db.collection('meetups').doc(postId).update({ commentCount: dec });
+            }
+            catch (_) { }
         }
-        catch (_) { }
-        try {
-            await db.collection('meetups').doc(postId).update({ commentCount: dec });
-        }
-        catch (_) { }
         // ✅ 부모(최상위) 댓글이 삭제되면, 해당 댓글의 대댓글도 함께 삭제한다.
         // - 클라이언트는 타인의 대댓글을 삭제할 권한이 없을 수 있으므로(Admin SDK로 처리)
         // - 대댓글 삭제는 각각 onCommentDeleted를 다시 트리거하여 commentCount가 올바르게 감소한다.
@@ -2079,6 +2142,35 @@ exports.onCommentDeleted = functions.firestore
     }
     catch (error) {
         console.error('onCommentDeleted 오류:', error);
+        return null;
+    }
+});
+// 댓글을 문서 삭제 대신 tombstone으로 전환할 때 활성 댓글 수를 한 번만 감소시킨다.
+// ID와 parentCommentId를 보존하므로 중간 대댓글 삭제 후에도 스레드 순서가 유지된다.
+exports.onCommentSoftDeleted = functions.firestore
+    .document('comments/{commentId}')
+    .onUpdate(async (change) => {
+    try {
+        const before = change.before.data();
+        const after = change.after.data();
+        if ((before === null || before === void 0 ? void 0 : before.isDeleted) === true || (after === null || after === void 0 ? void 0 : after.isDeleted) !== true)
+            return null;
+        const postId = after === null || after === void 0 ? void 0 : after.postId;
+        if (!postId)
+            return null;
+        const dec = admin.firestore.FieldValue.increment(-1);
+        try {
+            await db.collection('posts').doc(postId).update({ commentCount: dec });
+        }
+        catch (_) { }
+        try {
+            await db.collection('meetups').doc(postId).update({ commentCount: dec });
+        }
+        catch (_) { }
+        return null;
+    }
+    catch (error) {
+        console.error('onCommentSoftDeleted 오류:', error);
         return null;
     }
 });
@@ -2845,6 +2937,7 @@ exports.sendFriendRequest = functions.https.onCall(async (data, context) => {
         }
         const { toUid } = data;
         const fromUid = context.auth.uid;
+        const notificationGeneration = crypto.randomBytes(16).toString('hex');
         // 입력 검증
         if (!toUid || typeof toUid !== 'string') {
             throw new functions.https.HttpsError('invalid-argument', '유효하지 않은 사용자 ID입니다.');
@@ -2889,6 +2982,7 @@ exports.sendFriendRequest = functions.https.onCall(async (data, context) => {
                 fromUid,
                 toUid,
                 status: 'PENDING',
+                notificationGeneration,
                 createdAt: admin.firestore.FieldValue.serverTimestamp(),
                 updatedAt: admin.firestore.FieldValue.serverTimestamp(),
             };
@@ -4123,7 +4217,7 @@ function toBool(v) {
     return s === 'true' || s === '1' || s === 'yes';
 }
 function buildLocalizedNotificationText(params) {
-    var _a, _b, _c, _d, _e, _f, _g, _h, _j, _k, _l, _m, _o, _p, _q, _r, _s, _t, _u, _v;
+    var _a, _b, _c, _d, _e, _f, _g, _h, _j, _k, _l, _m, _o, _p, _q, _r, _s, _t, _u, _v, _w, _x, _y, _z, _0;
     const { lang, type, titleFallback, bodyFallback, actorName, data } = params;
     const name = safeStringLoose((_b = (_a = actorName !== null && actorName !== void 0 ? actorName : data === null || data === void 0 ? void 0 : data.actorName) !== null && _a !== void 0 ? _a : data === null || data === void 0 ? void 0 : data.fromName) !== null && _b !== void 0 ? _b : data === null || data === void 0 ? void 0 : data.senderName, lang === 'ko' ? '익명' : 'User');
     const meetupTitle = safeStringLoose((_c = data === null || data === void 0 ? void 0 : data.meetupTitle) !== null && _c !== void 0 ? _c : data === null || data === void 0 ? void 0 : data.title, lang === 'ko' ? '모임' : 'Meetup');
@@ -4163,16 +4257,29 @@ function buildLocalizedNotificationText(params) {
             }
             return { title: 'Participant left', body: `${participantName} left "${meetupTitle}".` };
         }
+        case 'meetup_created': {
+            const host = safeStringLoose((_h = data === null || data === void 0 ? void 0 : data.hostName) !== null && _h !== void 0 ? _h : actorName, name);
+            if (lang === 'ko') {
+                return {
+                    title: '새 모임이 만들어졌어요',
+                    body: `${host}님이 "${meetupTitle}" 모임을 만들었어요.`,
+                };
+            }
+            return {
+                title: 'New meetup',
+                body: `${host} created "${meetupTitle}".`,
+            };
+        }
         case 'friend_request': {
-            const fromName = safeStringLoose((_h = data === null || data === void 0 ? void 0 : data.fromName) !== null && _h !== void 0 ? _h : data === null || data === void 0 ? void 0 : data.fromUserName, name);
+            const fromName = safeStringLoose((_j = data === null || data === void 0 ? void 0 : data.fromName) !== null && _j !== void 0 ? _j : data === null || data === void 0 ? void 0 : data.fromUserName, name);
             if (lang === 'ko') {
                 return { title: '친구 요청', body: `${fromName}님이 친구 요청을 보냈어요.` };
             }
             return { title: 'Friend request', body: `${fromName} sent you a friend request.` };
         }
         case 'post_private': {
-            const author = safeStringLoose((_k = (_j = data === null || data === void 0 ? void 0 : data.authorName) !== null && _j !== void 0 ? _j : data === null || data === void 0 ? void 0 : data.fromName) !== null && _k !== void 0 ? _k : actorName, name);
-            const preview = safeStringLoose((_m = (_l = data === null || data === void 0 ? void 0 : data.preview) !== null && _l !== void 0 ? _l : data === null || data === void 0 ? void 0 : data.contentPreview) !== null && _m !== void 0 ? _m : bodyFallback, '');
+            const author = safeStringLoose((_l = (_k = data === null || data === void 0 ? void 0 : data.authorName) !== null && _k !== void 0 ? _k : data === null || data === void 0 ? void 0 : data.fromName) !== null && _l !== void 0 ? _l : actorName, name);
+            const preview = safeStringLoose((_o = (_m = data === null || data === void 0 ? void 0 : data.preview) !== null && _m !== void 0 ? _m : data === null || data === void 0 ? void 0 : data.contentPreview) !== null && _o !== void 0 ? _o : bodyFallback, '');
             if (lang === 'ko') {
                 return {
                     title: '친구공개 포스트',
@@ -4184,6 +4291,20 @@ function buildLocalizedNotificationText(params) {
                 body: preview || `${author} posted "${postTitle}".`,
             };
         }
+        case 'post_created': {
+            const author = safeStringLoose((_q = (_p = data === null || data === void 0 ? void 0 : data.authorName) !== null && _p !== void 0 ? _p : data === null || data === void 0 ? void 0 : data.fromName) !== null && _q !== void 0 ? _q : actorName, name);
+            const preview = safeStringLoose((_s = (_r = data === null || data === void 0 ? void 0 : data.preview) !== null && _r !== void 0 ? _r : data === null || data === void 0 ? void 0 : data.contentPreview) !== null && _s !== void 0 ? _s : bodyFallback, '');
+            if (lang === 'ko') {
+                return {
+                    title: '새 포스트',
+                    body: preview || `${author}님이 "${postTitle}" 포스트를 올렸어요.`,
+                };
+            }
+            return {
+                title: 'New post',
+                body: preview || `${author} posted "${postTitle}".`,
+            };
+        }
         case 'new_comment': {
             const postIsAnonymous = toBool(data === null || data === void 0 ? void 0 : data.postIsAnonymous);
             if (postIsAnonymous) {
@@ -4191,7 +4312,7 @@ function buildLocalizedNotificationText(params) {
                     ? { title: '새 댓글이 달렸습니다', body: '회원님의 포스트에 새 댓글이 달렸어요.' }
                     : { title: 'New comment', body: 'A new comment was added to your post.' };
             }
-            const commenter = safeStringLoose((_o = data === null || data === void 0 ? void 0 : data.commenterName) !== null && _o !== void 0 ? _o : actorName, name);
+            const commenter = safeStringLoose((_t = data === null || data === void 0 ? void 0 : data.commenterName) !== null && _t !== void 0 ? _t : actorName, name);
             return lang === 'ko'
                 ? { title: '새 댓글이 달렸습니다', body: `${commenter}님이 회원님의 포스트에 댓글을 남겼어요.` }
                 : { title: 'New comment', body: `${commenter} commented on your post.` };
@@ -4203,7 +4324,7 @@ function buildLocalizedNotificationText(params) {
                     ? { title: '새 답글이 달렸습니다', body: '회원님의 댓글에 새 답글이 달렸어요.' }
                     : { title: 'New reply', body: 'A new reply was added to your comment.' };
             }
-            const replier = safeStringLoose((_p = data === null || data === void 0 ? void 0 : data.replierName) !== null && _p !== void 0 ? _p : actorName, name);
+            const replier = safeStringLoose((_u = data === null || data === void 0 ? void 0 : data.replierName) !== null && _u !== void 0 ? _u : actorName, name);
             return lang === 'ko'
                 ? { title: '새 답글이 달렸습니다', body: `${replier}님이 회원님의 댓글에 답글을 남겼어요.` }
                 : { title: 'New reply', body: `${replier} replied to your comment.` };
@@ -4215,7 +4336,7 @@ function buildLocalizedNotificationText(params) {
                     ? { title: '포스트에 좋아요가 추가되었습니다', body: '회원님의 포스트에 새 좋아요가 추가되었어요.' }
                     : { title: 'New like', body: 'A new like was added to your post.' };
             }
-            const liker = safeStringLoose((_q = data === null || data === void 0 ? void 0 : data.likerName) !== null && _q !== void 0 ? _q : actorName, name);
+            const liker = safeStringLoose((_v = data === null || data === void 0 ? void 0 : data.likerName) !== null && _v !== void 0 ? _v : actorName, name);
             return lang === 'ko'
                 ? { title: '포스트에 좋아요가 추가되었습니다', body: `${liker}님이 회원님의 포스트를 좋아해요.` }
                 : { title: 'New like', body: `${liker} liked your post.` };
@@ -4266,6 +4387,18 @@ function buildLocalizedNotificationText(params) {
                     body: comment ? `${name}: ${comment}` : `${name} sent a comment on your Snack.`,
                 };
         }
+        case 'snapshot_comment_reply': {
+            const reply = safeStringLoose(data === null || data === void 0 ? void 0 : data.reply, bodyFallback).trim();
+            return lang === 'ko'
+                ? {
+                    title: '스낵 답장이 도착했어요',
+                    body: reply ? `${name}님: ${reply}` : `${name}님이 답장을 보냈어요.`,
+                }
+                : {
+                    title: 'A Snack reply arrived',
+                    body: reply ? `${name}: ${reply}` : `${name} replied to your Snack comment.`,
+                };
+        }
         case 'comment_like': {
             const postIsAnonymous = toBool(data === null || data === void 0 ? void 0 : data.postIsAnonymous);
             if (postIsAnonymous) {
@@ -4273,7 +4406,7 @@ function buildLocalizedNotificationText(params) {
                     ? { title: '댓글에 좋아요가 추가되었습니다', body: '회원님의 댓글에 새 좋아요가 추가되었어요.' }
                     : { title: 'New like', body: 'A new like was added to your comment.' };
             }
-            const liker = safeStringLoose((_r = data === null || data === void 0 ? void 0 : data.likerName) !== null && _r !== void 0 ? _r : actorName, name);
+            const liker = safeStringLoose((_w = data === null || data === void 0 ? void 0 : data.likerName) !== null && _w !== void 0 ? _w : actorName, name);
             return lang === 'ko'
                 ? { title: '댓글에 좋아요가 추가되었습니다', body: `${liker}님이 회원님의 댓글을 좋아해요.` }
                 : { title: 'New like', body: `${liker} liked your comment.` };
@@ -4286,23 +4419,23 @@ function buildLocalizedNotificationText(params) {
             return { title: 'Review approval requested', body: `${author} requested approval for "${meetupTitle}".` };
         }
         case 'review_comment': {
-            const commenter = safeStringLoose((_s = data === null || data === void 0 ? void 0 : data.commenterName) !== null && _s !== void 0 ? _s : actorName, name);
+            const commenter = safeStringLoose((_x = data === null || data === void 0 ? void 0 : data.commenterName) !== null && _x !== void 0 ? _x : actorName, name);
             if (lang === 'ko') {
                 return { title: '새 댓글이 달렸습니다', body: `${commenter}님이 "${reviewTitle}"에 댓글을 남겼어요.` };
             }
             return { title: 'New comment', body: `${commenter} commented on "${reviewTitle}".` };
         }
         case 'review_like': {
-            const liker = safeStringLoose((_t = data === null || data === void 0 ? void 0 : data.likerName) !== null && _t !== void 0 ? _t : actorName, name);
+            const liker = safeStringLoose((_y = data === null || data === void 0 ? void 0 : data.likerName) !== null && _y !== void 0 ? _y : actorName, name);
             if (lang === 'ko') {
                 return { title: '좋아요가 추가되었습니다', body: `${liker}님이 "${reviewTitle}"을 좋아해요.` };
             }
             return { title: 'New like', body: `${liker} liked "${reviewTitle}".` };
         }
         case 'snack_chat_invite': {
-            const rawInviter = safeStringLoose((_u = data === null || data === void 0 ? void 0 : data.creatorName) !== null && _u !== void 0 ? _u : actorName, name);
+            const rawInviter = safeStringLoose((_z = data === null || data === void 0 ? void 0 : data.creatorName) !== null && _z !== void 0 ? _z : actorName, name);
             const inviter = rawInviter.split('|')[0].replace(/\s+님$/, '').trim() || (lang === 'ko' ? '친구' : 'User');
-            const snackChatName = safeStringLoose((_v = data === null || data === void 0 ? void 0 : data.snackChatName) !== null && _v !== void 0 ? _v : data === null || data === void 0 ? void 0 : data.title, '');
+            const snackChatName = safeStringLoose((_0 = data === null || data === void 0 ? void 0 : data.snackChatName) !== null && _0 !== void 0 ? _0 : data === null || data === void 0 ? void 0 : data.title, '');
             if (lang === 'ko') {
                 return snackChatName
                     ? { title: '새 Snack Chat에 초대되었어요', body: `${inviter}님이 "${snackChatName}"에 초대했어요.` }
@@ -4479,7 +4612,79 @@ exports.unregisterFcmToken = functions.https.onCall(async (data, context) => {
     }
     return { ok: true, deleted };
 });
-exports.onNotificationCreated = functions.firestore
+async function isVerifiedCreatedContentNotificationRecipient(notification) {
+    var _a, _b;
+    const type = safeStringLoose(notification.type);
+    if (type !== 'post_created' && type !== 'meetup_created')
+        return true;
+    const nested = notification.data && typeof notification.data === 'object'
+        ? notification.data
+        : {};
+    const contentId = safeStringLoose(type === 'post_created'
+        ? (_a = notification.postId) !== null && _a !== void 0 ? _a : nested.postId
+        : (_b = notification.meetupId) !== null && _b !== void 0 ? _b : nested.meetupId);
+    const recipientId = normalizeUidLoose(notification.userId);
+    if (!contentId || !recipientId)
+        return false;
+    const collection = type === 'post_created' ? 'posts' : 'meetups';
+    const document = await db.collection(collection).doc(contentId).get();
+    if (!document.exists)
+        return false;
+    const content = document.data() || {};
+    const ownerId = normalizeUidLoose(content.ownerId || content.userId);
+    const actorId = normalizeUidLoose(notification.actorId || nested.hostId);
+    const visibility = safeStringLoose(content.visibilityMode || content.visibility);
+    const audience = toUniqueStringArray(content.notificationAudienceUserIdsFrozen);
+    return Boolean(ownerId) && actorId === ownerId &&
+        ['public', 'category'].includes(visibility) &&
+        audience.includes(recipientId);
+}
+async function isVerifiedFriendRequestNotificationRecipient(notification) {
+    if (safeStringLoose(notification.type) !== 'friend_request')
+        return true;
+    const nested = notification.data && typeof notification.data === 'object'
+        ? notification.data
+        : {};
+    const requestId = safeStringLoose(nested.friendRequestId);
+    if (!requestId)
+        return false;
+    const request = await db.collection('friend_requests').doc(requestId).get();
+    if (!request.exists)
+        return false;
+    const data = request.data() || {};
+    const expectedGeneration = normalizeUidLoose(nested.notificationGeneration);
+    return safeStringLoose(data.status) === 'PENDING' &&
+        normalizeUidLoose(data.toUid) === normalizeUidLoose(notification.userId) &&
+        normalizeUidLoose(data.fromUid) === normalizeUidLoose(notification.actorId) &&
+        normalizeUidLoose(data.notificationGeneration) === expectedGeneration;
+}
+async function isVerifiedSnapshotCommentReplyRecipient(notification) {
+    if (safeStringLoose(notification.type) !== 'snapshot_comment_reply')
+        return true;
+    const nested = notification.data && typeof notification.data === 'object'
+        ? notification.data
+        : {};
+    const originalNotificationId = safeStringLoose(nested.originalNotificationId);
+    const recipientId = normalizeUidLoose(notification.userId);
+    const ownerId = normalizeUidLoose(notification.actorId || nested.ownerId);
+    if (!originalNotificationId || !recipientId || !ownerId)
+        return false;
+    const original = await db.collection('notifications').doc(originalNotificationId).get();
+    if (!original.exists)
+        return false;
+    const originalData = original.data() || {};
+    const originalNested = originalData.data && typeof originalData.data === 'object'
+        ? originalData.data
+        : {};
+    return safeStringLoose(originalData.type) === 'snapshot_comment' &&
+        normalizeUidLoose(originalData.userId) === ownerId &&
+        normalizeUidLoose(originalData.actorId || originalNested.actorId) === recipientId &&
+        safeStringLoose(originalData.reply || originalNested.reply) ===
+            safeStringLoose(notification.reply || nested.reply);
+}
+exports.onNotificationCreated = functions
+    .runWith({ failurePolicy: true, timeoutSeconds: 120, memory: '512MB' })
+    .firestore
     .document('notifications/{notificationId}')
     .onCreate(async (snapshot, context) => {
     var _a, _b, _c, _d, _e;
@@ -4509,8 +4714,15 @@ exports.onNotificationCreated = functions.firestore
             await snapshot.ref.delete();
             return null;
         }
+        if (!await isVerifiedCreatedContentNotificationRecipient(notificationData) || !await isVerifiedFriendRequestNotificationRecipient(notificationData) || !await isVerifiedSnapshotCommentReplyRecipient(notificationData)) {
+            console.warn(`⏭️ 알림 최종 수신자 검증 실패 - 삭제/푸시 스킵 (notification=${notificationId})`);
+            await snapshot.ref.set({ skipUnreadCounterSync: true }, { merge: true });
+            await snapshot.ref.delete();
+            return null;
+        }
         if (actorId && await hasBlockRelationship(userId, actorId)) {
             console.log(`⏭️ 차단 관계(notification=${notificationId}) - 알림/푸시 삭제`);
+            await snapshot.ref.set({ skipUnreadCounterSync: true }, { merge: true });
             await snapshot.ref.delete();
             return null;
         }
@@ -4524,6 +4736,18 @@ exports.onNotificationCreated = functions.firestore
         const settingsDoc = await db.collection('user_settings').doc(String(userId)).get();
         const settingsData = settingsDoc.exists ? settingsDoc.data() : undefined;
         const fallbackUserLang = detectUserLang({ userData: userData, settingsData });
+        const notificationAllowed = type === 'post_created'
+            ? notificationSettingAllows(settingsDoc, 'post_interactions', ['post_private'])
+            : type === 'meetup_created'
+                ? notificationSettingAllows(settingsDoc, 'meetup_alerts', ['meetup_alert'])
+                : type === 'friend_request'
+                    ? notificationSettingAllows(settingsDoc, 'friend_alerts', ['friend_request'])
+                    : true;
+        if (!notificationAllowed) {
+            await snapshot.ref.set({ skipUnreadCounterSync: true }, { merge: true });
+            await snapshot.ref.delete();
+            return null;
+        }
         const actorNameSafe = typeof notificationData.actorName === 'string' ? notificationData.actorName : '';
         const dataSafe = (notificationData.data && typeof notificationData.data === 'object')
             ? notificationData.data
@@ -4581,10 +4805,6 @@ exports.onNotificationCreated = functions.firestore
             }
         }
         const totalTokens = tokenGroups.ko.length + tokenGroups.en.length;
-        if (totalTokens === 0) {
-            console.log('FCM 토큰이 없어 알림을 전송하지 않습니다.');
-            return null;
-        }
         // 앱 아이콘 배지: "읽지 않은 알림 + DM + 화면에 보이는 Snack Chat"
         // - 일반 알림: dm_received 타입 제외 (Notifications 탭 기준)
         // - DM: users/{uid}.dmUnreadTotal
@@ -4594,22 +4814,62 @@ exports.onNotificationCreated = functions.firestore
         // - users/{uid}.notificationUnreadTotal 카운터를 서버에서 유지
         // - 실패 시 재시도 로직 추가
         let badgeCount = null;
+        const counterMarkerRef = db.collection('_notification_function_events')
+            .doc(crypto.createHash('sha256')
+            .update(`notification-created:${notificationId}`)
+            .digest('hex'));
         // 최대 2번 시도
         for (let attempt = 0; attempt < 2; attempt++) {
             try {
                 const userRef = db.collection('users').doc(userId);
-                const { notiUnreadTotal, dmUnreadTotal } = await db.runTransaction(async (tx) => {
-                    const snap = await tx.get(userRef);
+                const { notiUnreadTotal, dmUnreadTotal, shouldSend } = await db.runTransaction(async (tx) => {
+                    var _a;
+                    const [marker, currentNotification, snap] = await Promise.all([
+                        tx.get(counterMarkerRef),
+                        tx.get(snapshot.ref),
+                        tx.get(userRef),
+                    ]);
                     const d = (snap.data() || {});
                     const curNoti = toNonNegativeInt(d.notificationUnreadTotal);
                     const curDm = toNonNegativeInt(d.dmUnreadTotal);
+                    if (marker.exists) {
+                        return {
+                            notiUnreadTotal: curNoti,
+                            dmUnreadTotal: curDm,
+                            shouldSend: false,
+                        };
+                    }
                     // 새 알림 문서 생성 트리거이므로 기본 정책상 isRead=false.
                     // dm_received는 "일반 알림" 카운트에서 제외하므로 카운터 증가 제외.
-                    const delta = type === 'dm_received' ? 0 : 1;
+                    // 알림 목록에서 먼저 읽거나 삭제한 경우에는 지연된 onCreate가
+                    // 카운터를 다시 살리지 않는다.
+                    const isCurrentUnread = currentNotification.exists &&
+                        ((_a = currentNotification.data()) === null || _a === void 0 ? void 0 : _a.isRead) !== true;
+                    const delta = type === 'dm_received' || !isCurrentUnread ? 0 : 1;
                     const nextNoti = Math.max(0, curNoti + delta);
                     tx.set(userRef, { notificationUnreadTotal: nextNoti }, { merge: true });
-                    return { notiUnreadTotal: nextNoti, dmUnreadTotal: curDm };
+                    tx.create(counterMarkerRef, {
+                        type: 'notification_created',
+                        notificationId,
+                        userId,
+                        applied: delta > 0,
+                        counterSettled: false,
+                        createdAt: admin.firestore.FieldValue.serverTimestamp(),
+                    });
+                    return {
+                        notiUnreadTotal: nextNoti,
+                        dmUnreadTotal: curDm,
+                        shouldSend: isCurrentUnread,
+                    };
                 });
+                if (!shouldSend) {
+                    console.log('⏭️ 이미 읽음/삭제/처리된 알림 - 카운터 부활 및 중복 푸시 스킵');
+                    return null;
+                }
+                if (totalTokens === 0) {
+                    badgeCount = null;
+                    break;
+                }
                 const snackChatUnreadTotal = await getVisibleSnackChatUnreadTotal(String(userId));
                 badgeCount = notiUnreadTotal + dmUnreadTotal + snackChatUnreadTotal;
                 console.log(`📊 배지 계산(카운터): 알림(${notiUnreadTotal}) + DM(${dmUnreadTotal}) + SC(${snackChatUnreadTotal}) = ${badgeCount}`);
@@ -4651,12 +4911,16 @@ exports.onNotificationCreated = functions.firestore
                 }
             }
         }
+        if (totalTokens === 0) {
+            console.log('FCM 토큰이 없어 카운터만 반영하고 푸시는 전송하지 않습니다.');
+            return null;
+        }
         // badge 값: 계산된 실제 값 사용 (0이면 0으로, null이면 badge 필드 생략)
         // 중요: iOS는 badge를 절대값으로 처리하므로 정확한 값을 보내야 함
         const hasBadge = badgeCount !== null;
         const finalBadge = hasBadge ? Math.max(0, badgeCount) : 0;
         console.log(`📊 최종 badge = ${finalBadge} (raw badgeCount = ${badgeCount})`);
-        const commonData = Object.assign({ type: String(type || ''), recipientUserId: String(userId || ''), notificationId: String(notificationId || ''), postId: String(notificationData.postId || ''), meetupId: String(notificationData.meetupId || ''), snapshotId: String(notificationData.snapshotId || (dataSafe === null || dataSafe === void 0 ? void 0 : dataSafe.snapshotId) || ''), reaction: String(notificationData.reaction || (dataSafe === null || dataSafe === void 0 ? void 0 : dataSafe.reaction) || ''), comment: String(notificationData.comment || (dataSafe === null || dataSafe === void 0 ? void 0 : dataSafe.comment) || ''), actorId: String(notificationData.actorId || ''), actorName: String(notificationData.actorName || '') }, (hasBadge ? { badge: String(finalBadge) } : {}));
+        const commonData = Object.assign({ type: String(type || ''), recipientUserId: String(userId || ''), notificationId: String(notificationId || ''), postId: String(notificationData.postId || (dataSafe === null || dataSafe === void 0 ? void 0 : dataSafe.postId) || ''), meetupId: String(notificationData.meetupId || (dataSafe === null || dataSafe === void 0 ? void 0 : dataSafe.meetupId) || ''), snapshotId: String(notificationData.snapshotId || (dataSafe === null || dataSafe === void 0 ? void 0 : dataSafe.snapshotId) || ''), conversationId: String(notificationData.conversationId || (dataSafe === null || dataSafe === void 0 ? void 0 : dataSafe.conversationId) || ''), senderId: String(notificationData.senderId || (dataSafe === null || dataSafe === void 0 ? void 0 : dataSafe.senderId) || notificationData.actorId || ''), snackChatId: String(notificationData.snackChatId || (dataSafe === null || dataSafe === void 0 ? void 0 : dataSafe.snackChatId) || ''), reviewId: String(notificationData.reviewId || (dataSafe === null || dataSafe === void 0 ? void 0 : dataSafe.reviewId) || ''), requestId: String(notificationData.requestId || (dataSafe === null || dataSafe === void 0 ? void 0 : dataSafe.requestId) || ''), userId: String((dataSafe === null || dataSafe === void 0 ? void 0 : dataSafe.userId) || ''), meetupTitle: safeStringLoose(dataSafe === null || dataSafe === void 0 ? void 0 : dataSafe.meetupTitle).slice(0, 200), imageUrl: safeStringLoose(dataSafe === null || dataSafe === void 0 ? void 0 : dataSafe.imageUrl).slice(0, 1000), content: safeStringLoose(dataSafe === null || dataSafe === void 0 ? void 0 : dataSafe.content).slice(0, 500), reaction: String(notificationData.reaction || (dataSafe === null || dataSafe === void 0 ? void 0 : dataSafe.reaction) || ''), comment: String(notificationData.comment || (dataSafe === null || dataSafe === void 0 ? void 0 : dataSafe.comment) || ''), reply: String(notificationData.reply || (dataSafe === null || dataSafe === void 0 ? void 0 : dataSafe.reply) || ''), originalNotificationId: String((dataSafe === null || dataSafe === void 0 ? void 0 : dataSafe.originalNotificationId) || ''), actorId: String(notificationData.actorId || actorId || ''), actorName: String(notificationData.actorName || (dataSafe === null || dataSafe === void 0 ? void 0 : dataSafe.actorName) || '') }, (hasBadge ? { badge: String(finalBadge) } : {}));
         const sendForLang = async (lang, tokens) => {
             const localized = buildLocalizedNotificationText({
                 lang,
@@ -4749,12 +5013,16 @@ exports.onNotificationCreated = functions.firestore
     }
     catch (error) {
         console.error('알림 전송 오류:', error);
-        return null; // 알림 실패해도 알림 데이터는 유지
+        // 생성 카운터가 커밋되기 전의 일시 실패는 재시도되어야 한다.
+        // 이미 마커가 만들어졌다면 재실행은 푸시/증분을 중복 적용하지 않는다.
+        throw error;
     }
 });
 // 알림 읽음/안읽음 변경 시 users.notificationUnreadTotal 동기화
 // - dm_received는 일반 알림 카운트에서 제외
-exports.onNotificationUpdatedSyncUnreadCounter = functions.firestore
+exports.onNotificationUpdatedSyncUnreadCounter = functions
+    .runWith({ failurePolicy: true, timeoutSeconds: 60, memory: '256MB' })
+    .firestore
     .document('notifications/{notificationId}')
     .onUpdate(async (change, context) => {
     const before = change.before.data();
@@ -4769,25 +5037,66 @@ exports.onNotificationUpdatedSyncUnreadCounter = functions.firestore
     const afterRead = after.isRead === true;
     if (beforeRead === afterRead)
         return null;
-    // false -> true : -1, true -> false : +1
-    const delta = (!beforeRead && afterRead) ? -1 : 1;
+    const notificationId = String(context.params.notificationId);
     const userRef = db.collection('users').doc(String(userId));
+    const markerRef = db.collection('_notification_function_events')
+        .doc(crypto.createHash('sha256')
+        .update(`notification-created:${notificationId}`)
+        .digest('hex'));
     try {
         await db.runTransaction(async (tx) => {
             var _a;
-            const snap = await tx.get(userRef);
+            const [marker, snap] = await Promise.all([
+                tx.get(markerRef),
+                tx.get(userRef),
+            ]);
+            // onCreate와 false→true가 동시에 실행될 수 있다. 생성 마커가
+            // 아직 없다면 onCreate가 최종 문서 상태를 보고 0/1을 확정하므로
+            // 여기서 먼저 차감하지 않는다(다른 알림 카운터 차감 방지).
+            if (!marker.exists)
+                return;
+            const markerData = marker.data() || {};
+            const applied = markerData.applied === true;
+            const settled = markerData.counterSettled === true;
             const cur = toNonNegativeInt((_a = snap.data()) === null || _a === void 0 ? void 0 : _a.notificationUnreadTotal);
-            const next = Math.max(0, cur + delta);
-            tx.set(userRef, { notificationUnreadTotal: next }, { merge: true });
+            if (!beforeRead && afterRead) {
+                if (!applied || settled)
+                    return;
+                tx.set(userRef, {
+                    notificationUnreadTotal: Math.max(0, cur - 1),
+                }, { merge: true });
+                tx.update(markerRef, {
+                    counterSettled: true,
+                    settledAt: admin.firestore.FieldValue.serverTimestamp(),
+                });
+                return;
+            }
+            // 현재 앱에는 "다시 안 읽음" UI가 없지만 레거시/관리 작업도
+            // 카운터를 깨뜨리지 않도록 역전이를 대칭적으로 처리한다.
+            if (beforeRead && !afterRead) {
+                if (applied && !settled)
+                    return;
+                tx.set(userRef, {
+                    notificationUnreadTotal: cur + 1,
+                }, { merge: true });
+                tx.update(markerRef, {
+                    applied: true,
+                    counterSettled: false,
+                    reopenedAt: admin.firestore.FieldValue.serverTimestamp(),
+                });
+            }
         });
     }
     catch (e) {
-        console.warn('⚠️ notificationUnreadTotal 동기화 실패(무시):', e);
+        console.error('notificationUnreadTotal 동기화 실패:', e);
+        throw e;
     }
     return null;
 });
 // 알림 삭제 시 users.notificationUnreadTotal 동기화
-exports.onNotificationDeletedSyncUnreadCounter = functions.firestore
+exports.onNotificationDeletedSyncUnreadCounter = functions
+    .runWith({ failurePolicy: true, timeoutSeconds: 60, memory: '256MB' })
+    .firestore
     .document('notifications/{notificationId}')
     .onDelete(async (snapshot, context) => {
     const data = snapshot.data();
@@ -4801,17 +5110,39 @@ exports.onNotificationDeletedSyncUnreadCounter = functions.firestore
         skipUnreadCounterSync)
         return null;
     const userRef = db.collection('users').doc(String(userId));
+    const notificationId = String(context.params.notificationId);
+    const markerRef = db.collection('_notification_function_events')
+        .doc(crypto.createHash('sha256')
+        .update(`notification-created:${notificationId}`)
+        .digest('hex'));
     try {
         await db.runTransaction(async (tx) => {
             var _a;
-            const snap = await tx.get(userRef);
+            const [marker, snap] = await Promise.all([
+                tx.get(markerRef),
+                tx.get(userRef),
+            ]);
+            // 생성 트리거보다 삭제가 빨랐다면 생성 트리거가 삭제 상태를 보고
+            // 증가하지 않는다. 마커 없이 먼저 차감하면 다른 알림이 줄어든다.
+            if (!marker.exists)
+                return;
+            const markerData = marker.data() || {};
+            if (markerData.applied !== true ||
+                markerData.counterSettled === true)
+                return;
             const cur = toNonNegativeInt((_a = snap.data()) === null || _a === void 0 ? void 0 : _a.notificationUnreadTotal);
-            const next = Math.max(0, cur - 1);
-            tx.set(userRef, { notificationUnreadTotal: next }, { merge: true });
+            tx.set(userRef, {
+                notificationUnreadTotal: Math.max(0, cur - 1),
+            }, { merge: true });
+            tx.update(markerRef, {
+                counterSettled: true,
+                deletedAt: admin.firestore.FieldValue.serverTimestamp(),
+            });
         });
     }
     catch (e) {
-        console.warn('⚠️ notificationUnreadTotal(삭제) 동기화 실패(무시):', e);
+        console.error('notificationUnreadTotal(삭제) 동기화 실패:', e);
+        throw e;
     }
     return null;
 });
@@ -4894,7 +5225,6 @@ exports.onMeetupParticipantJoined = functions.firestore
 exports.onMeetupCreated = functions.firestore
     .document('meetups/{meetupId}')
     .onCreate(async (snapshot, context) => {
-    var _a, _b, _c;
     try {
         const meetupData = snapshot.data();
         const meetupId = context.params.meetupId;
@@ -4908,26 +5238,14 @@ exports.onMeetupCreated = functions.firestore
         const hostName = (hostData === null || hostData === void 0 ? void 0 : hostData.nickname) || '익명';
         // 알림 받을 사용자 목록
         let targetUserIds = [];
-        // 공개범위에 따라 대상 사용자 필터링
+        // 공개범위에 따라 대상 사용자 필터링. 전체 공개 콘텐츠도 푸시는
+        // 생성 시점의 친구에게만 보내며, 피드 공개 범위 자체는 바꾸지 않는다.
         if (visibility === 'public') {
-            // 전체 공개: 모든 활성 사용자에게 알림 (최대 100명)
-            console.log('전체 공개 모임 - 모든 사용자에게 알림');
-            const allUsersSnapshot = await db
-                .collection('users')
-                .limit(100)
-                .get();
-            allUsersSnapshot.forEach((doc) => {
-                if (doc.id === hostId)
-                    return; // 본인 제외
-                const data = doc.data();
-                const legacy = data === null || data === void 0 ? void 0 : data.fcmToken;
-                const arr = data === null || data === void 0 ? void 0 : data.fcmTokens;
-                const hasLegacy = typeof legacy === 'string' && legacy.length > 0;
-                const hasArr = Array.isArray(arr) && arr.some((t) => typeof t === 'string' && t.length > 0);
-                if (hasLegacy || hasArr) {
-                    targetUserIds.push(doc.id);
-                }
-            });
+            targetUserIds = toUniqueStringArray(meetupData.notificationAudienceUserIdsFrozen);
+            if (targetUserIds.length === 0) {
+                targetUserIds = await (0, frozen_audience_1.resolveFriendNotificationAudience)(hostId);
+            }
+            console.log(`전체 공개 모임 - 친구 알림 대상 ${targetUserIds.length}명`);
         }
         else {
             // 친구/그룹 공개 알림도 생성 당시 문서에 고정된 대상만 사용한다.
@@ -4941,151 +5259,38 @@ exports.onMeetupCreated = functions.firestore
             console.log(`비공개 모임 알림 대상 확정: mode=${visibility}, count=${targetUserIds.length}`);
         }
         targetUserIds = await filterTargetUserIdsByBlockRelationship(hostId, targetUserIds);
+        targetUserIds = await filterAudienceByNotificationSettings(targetUserIds, 'meetup_alerts', ['meetup_alert']);
         if (targetUserIds.length === 0) {
             console.log('알림 대상이 없습니다.');
             return null;
         }
         console.log(`알림 대상: ${targetUserIds.length}명`);
-        // 대상 사용자들의 FCM 토큰 가져오기 (최대 10명씩 배치 처리)
-        const tokenSetKo = new Set();
-        const tokenSetEn = new Set();
-        const tokenLangByToken = new Map();
-        const addTokenOnce = (rawToken, lang) => {
-            const t = (rawToken !== null && rawToken !== void 0 ? rawToken : '').toString().trim();
-            if (!t)
-                return;
-            const prev = tokenLangByToken.get(t);
-            if (prev) {
-                if (prev !== lang) {
-                    console.warn(`⚠️ 동일 토큰이 서로 다른 언어로 분류됨: keep=${prev}, ignore=${lang}`);
-                }
-                return;
-            }
-            tokenLangByToken.set(t, lang);
-            (lang === 'en' ? tokenSetEn : tokenSetKo).add(t);
-        };
-        const batchSize = 10;
-        for (let i = 0; i < targetUserIds.length; i += batchSize) {
-            const batch = targetUserIds.slice(i, i + batchSize);
-            // ✅ 신규: fcm_tokens 레지스트리 기반 (토큰 단위 로케일)
-            // - 동일 디바이스 토큰이 여러 사용자 문서에 남아있어도 docId(token) 기준으로 1회만 포함됨
-            try {
-                const tokenDocsSnap = await db
-                    .collection('fcm_tokens')
-                    .where('userId', 'in', batch)
-                    .limit(500)
-                    .get();
-                tokenDocsSnap.forEach((doc) => {
-                    var _a, _b;
-                    const d = doc.data();
-                    const lang = (_b = normalizeSupportedLang((_a = d === null || d === void 0 ? void 0 : d.lang) !== null && _a !== void 0 ? _a : d === null || d === void 0 ? void 0 : d.locale)) !== null && _b !== void 0 ? _b : 'ko';
-                    addTokenOnce(doc.id, lang);
-                });
-            }
-            catch (e) {
-                console.warn('⚠️ fcm_tokens 조회 실패(무시): 레거시 users.fcmToken(s)만 사용', e);
-            }
-            const usersSnapshot = await db
-                .collection('users')
-                .where(admin.firestore.FieldPath.documentId(), 'in', batch)
-                .get();
-            usersSnapshot.forEach((doc) => {
-                const userData = doc.data();
-                const lang = detectUserLang({ userData: userData, settingsData: undefined });
-                const legacy = userData === null || userData === void 0 ? void 0 : userData.fcmToken;
-                if (typeof legacy === 'string' && legacy.length > 0) {
-                    addTokenOnce(legacy, lang);
-                }
-                const arr = userData === null || userData === void 0 ? void 0 : userData.fcmTokens;
-                if (Array.isArray(arr)) {
-                    arr.forEach((t) => {
-                        if (typeof t === 'string' && t.length > 0) {
-                            addTokenOnce(t, lang);
-                        }
-                    });
-                }
-            });
-        }
-        const fcmTokensKo = Array.from(tokenSetKo);
-        const fcmTokensEn = Array.from(tokenSetEn);
-        console.log(`FCM 토큰(ko): ${fcmTokensKo.length}개, (en): ${fcmTokensEn.length}개`);
-        if (fcmTokensKo.length === 0 && fcmTokensEn.length === 0) {
-            console.log('FCM 토큰이 없어 알림을 전송하지 않습니다.');
-            return null;
-        }
-        // 알림 메시지 구성
-        const isHangoutCategory = ['행아웃', 'hangout', '술', 'drink', 'Drinks']
-            .includes(category);
-        const categoryEmoji = category === '스터디' || category === 'study' ? '📚' :
-            category === '식사' || category === 'meal' || category === 'food' || category === '밥' ? '🍽️' :
-                category === '취미' || category === 'hobby' || category === 'cafe' || category === '카페' ? '🎨' :
-                    isHangoutCategory ? '🎉' :
-                        category === '문화' || category === 'culture' ? '🎭' : '🎉';
         const meetupTitle = meetupData.title || '';
-        const categoryEn = category === '스터디' || category === 'study' ? 'Study' :
-            category === '식사' || category === 'meal' || category === 'food' || category === '밥' ? 'Meal' :
-                category === '취미' || category === 'hobby' || category === 'cafe' || category === '카페' ? 'Hobby' :
-                    isHangoutCategory ? 'Hangout' :
-                        category === '문화' || category === 'culture' ? 'Culture' : 'Meetup';
-        const categoryKo = category === '스터디' || category === 'study' ? '스터디' :
-            category === '식사' || category === 'meal' || category === 'food' || category === '밥' ? '밥' :
-                category === '카페' || category === 'cafe' || category === 'hobby' ? '카페' :
-                    isHangoutCategory ? '행아웃' :
-                        category === '문화' || category === 'culture' ? '문화' :
-                            category;
-        const titleKo = `${categoryEmoji} 새 ${categoryKo} 모임이 생성되었습니다!`;
-        const bodyKo = `${hostName}님이 "${meetupTitle}" 모임을 만들었습니다.`;
-        const titleEn = `${categoryEmoji} New ${categoryEn} meetup`;
-        const bodyEn = `${hostName} created "${meetupTitle}".`;
-        const baseData = {
-            type: 'NEW_MEETUP',
-            meetupId,
-            hostId,
-            hostName,
-            meetupTitle,
-            meetupCategory: category,
-            meetupDate: ((_c = (_b = (_a = meetupData.date) === null || _a === void 0 ? void 0 : _a.toDate) === null || _b === void 0 ? void 0 : _b.call(_a)) === null || _c === void 0 ? void 0 : _c.toISOString()) || '',
-            meetupLocation: meetupData.location || '',
-            visibility,
-        };
-        const buildMessage = (tokens, title, body) => ({
-            tokens,
-            notification: { title, body },
-            data: baseData,
-            apns: {
-                headers: {
-                    'apns-push-type': 'alert',
-                    'apns-priority': '10',
+        const notifications = targetUserIds.map((uid) => ({
+            reference: db.collection('notifications').doc(audienceNotificationId('meetup_created', meetupId, uid)),
+            data: {
+                userId: uid,
+                title: 'meetup_created',
+                message: '',
+                type: 'meetup_created',
+                meetupId,
+                actorId: hostId,
+                actorName: hostName,
+                data: {
+                    meetupId,
+                    hostId,
+                    hostName,
+                    meetupTitle,
+                    meetupCategory: category,
+                    meetupLocation: meetupData.location || '',
+                    visibility,
                 },
-                payload: {
-                    aps: { sound: 'default' },
-                },
+                createdAt: admin.firestore.FieldValue.serverTimestamp(),
+                isRead: false,
             },
-            android: {
-                priority: 'high',
-                notification: { sound: 'default', channelId: 'meetup_notifications' },
-            },
-        });
-        const responses = [];
-        if (fcmTokensKo.length > 0) {
-            const resKo = await admin.messaging().sendEachForMulticast(buildMessage(fcmTokensKo, titleKo, bodyKo));
-            responses.push({ lang: 'ko', res: resKo, total: fcmTokensKo.length });
-        }
-        if (fcmTokensEn.length > 0) {
-            const resEn = await admin.messaging().sendEachForMulticast(buildMessage(fcmTokensEn, titleEn, bodyEn));
-            responses.push({ lang: 'en', res: resEn, total: fcmTokensEn.length });
-        }
-        for (const r of responses) {
-            console.log(`✅ 알림 전송(${r.lang}) 성공: ${r.res.successCount}/${r.total}`);
-            if (r.res.failureCount > 0) {
-                console.error(`❌ 알림 전송(${r.lang}) 실패: ${r.res.failureCount}개`);
-                r.res.responses.forEach((resp, idx) => {
-                    if (!resp.success) {
-                        console.error(`실패한 토큰 ${idx}: ${resp.error}`);
-                    }
-                });
-            }
-        }
+        }));
+        const created = await commitNotificationCreates(notifications);
+        console.log(`모임 생성 알림 문서 생성: ${created}/${targetUserIds.length}`);
         return null;
     }
     catch (error) {
@@ -5430,10 +5635,12 @@ exports.onMeetupReviewCreatedDeleteMeetupChat = functions.firestore
     }
 });
 // DM 메시지 생성 시 푸시 알림 전송
-exports.onDMMessageCreated = functions.firestore
+exports.onDMMessageCreated = functions
+    .runWith({ failurePolicy: true, timeoutSeconds: 120, memory: '512MB' })
+    .firestore
     .document('conversations/{conversationId}/messages/{messageId}')
     .onCreate(async (snapshot, context) => {
-    var _a;
+    var _a, _b;
     try {
         const messageData = snapshot.data();
         const conversationId = context.params.conversationId;
@@ -5484,20 +5691,31 @@ exports.onDMMessageCreated = functions.firestore
         console.log(`  - 발신자 이름: ${senderName}`);
         // 수신자 정보(토큰/총 DM 안읽음) 조회
         const recipientRef = db.collection('users').doc(recipientId);
-        const recipientDoc = await recipientRef.get();
+        const [recipientDoc, recipientSettingsDoc] = await Promise.all([
+            recipientRef.get(),
+            db.collection('user_settings').doc(recipientId).get(),
+        ]);
         if (!recipientDoc.exists) {
             console.log('⚠️ 수신자 문서를 찾을 수 없음');
             console.log('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━');
             return null;
         }
         const recipientData = recipientDoc.data();
+        const recipientNotificationSettings = recipientSettingsDoc.exists
+            ? ((_b = recipientSettingsDoc.data()) === null || _b === void 0 ? void 0 : _b.notifications) || {}
+            : {};
+        const dmPushEnabled = recipientNotificationSettings.all_notifications !== false &&
+            recipientNotificationSettings.dm_messages !== false &&
+            recipientNotificationSettings.dm_received !== false;
         const tokenSet = new Set();
         // 레거시 토큰
-        if (typeof (recipientData === null || recipientData === void 0 ? void 0 : recipientData.fcmToken) === 'string' && recipientData.fcmToken.length > 0) {
+        if (dmPushEnabled &&
+            typeof (recipientData === null || recipientData === void 0 ? void 0 : recipientData.fcmToken) === 'string' &&
+            recipientData.fcmToken.length > 0) {
             tokenSet.add(recipientData.fcmToken);
         }
         // 멀티 디바이스 토큰
-        if (Array.isArray(recipientData === null || recipientData === void 0 ? void 0 : recipientData.fcmTokens)) {
+        if (dmPushEnabled && Array.isArray(recipientData === null || recipientData === void 0 ? void 0 : recipientData.fcmTokens)) {
             recipientData.fcmTokens.forEach((t) => {
                 if (typeof t === 'string' && t.length > 0) {
                     tokenSet.add(t);
@@ -5506,6 +5724,9 @@ exports.onDMMessageCreated = functions.firestore
         }
         const tokens = await filterPushTokensOwnedByUser(recipientId, Array.from(tokenSet));
         const hasTokens = tokens.length > 0;
+        if (!dmPushEnabled) {
+            console.log('⏭️ 수신자가 DM 푸시 알림을 꺼놓음 (미읽음 카운터는 유지)');
+        }
         console.log('🔍 [FCM 진단 - Functions] 수신자 토큰 확인:');
         console.log(`  - fcmToken: ${(recipientData === null || recipientData === void 0 ? void 0 : recipientData.fcmToken) ? '있음' : '없음'}`);
         console.log(`  - fcmTokens 길이: ${Array.isArray(recipientData === null || recipientData === void 0 ? void 0 : recipientData.fcmTokens) ? recipientData.fcmTokens.length : 0}`);
@@ -5623,7 +5844,7 @@ exports.onDMMessageCreated = functions.firestore
             console.warn('⚠️ DM unreadCount/dmUnreadTotal 증분 업데이트 실패:', e);
             // A push without the matching counter creates a badge that cannot be
             // cleared reliably, so do not send one for an uncommitted event.
-            return null;
+            throw e;
         }
         if (!shouldSendNotification) {
             console.log('⏭️ 이미 읽음 처리되었거나 처리 완료된 DM 이벤트 - 증분/푸시 스킵');
@@ -5743,14 +5964,16 @@ exports.onDMMessageCreated = functions.firestore
     }
     catch (error) {
         console.error('❌ onDMMessageCreated 오류:', error);
-        return null;
+        throw error;
     }
 });
 // DM 메시지가 수신자에 의해 false→true로 바뀐 시점을 읽음
 // 카운터의 단일 감소 소스로 사용한다. message-created 트리거가
 // 늦게 실행되더라도 현재 message.isRead를 확인하므로 카운터 1이
 // 다시 살아나지 않는다.
-exports.onDMMessageRead = functions.firestore
+exports.onDMMessageRead = functions
+    .runWith({ failurePolicy: true, timeoutSeconds: 120, memory: '512MB' })
+    .firestore
     .document('conversations/{conversationId}/messages/{messageId}')
     .onUpdate(async (change, context) => {
     const before = change.before.data();
@@ -5794,10 +6017,16 @@ exports.onDMMessageRead = functions.firestore
                 ? Object.assign({}, data.unreadCount) : {};
             recipientIds.forEach((recipientId, index) => {
                 var _a;
-                unreadCount[recipientId] = Math.max(0, toNonNegativeInt(unreadCount[recipientId]) - 1);
+                const roomUnreadBefore = toNonNegativeInt(unreadCount[recipientId]);
+                unreadCount[recipientId] = Math.max(0, roomUnreadBefore - 1);
                 const userData = ((_a = userSnaps[index]) === null || _a === void 0 ? void 0 : _a.data()) || {};
                 tx.set(userRefs[index], {
-                    dmUnreadTotal: Math.max(0, toNonNegativeInt(userData.dmUnreadTotal) - 1),
+                    // 클라이언트의 방 단위 정합화가 먼저 0으로 만든 경우에는
+                    // 같은 메시지의 지연된 read trigger가 다른 방의 총 미읽음까지
+                    // 한 번 더 차감하지 않도록 한다.
+                    dmUnreadTotal: roomUnreadBefore > 0
+                        ? Math.max(0, toNonNegativeInt(userData.dmUnreadTotal) - 1)
+                        : toNonNegativeInt(userData.dmUnreadTotal),
                 }, { merge: true });
             });
             tx.set(convRef, {

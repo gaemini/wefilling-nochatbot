@@ -10,6 +10,22 @@ import '../providers/settings_provider.dart';
 import '../l10n/app_localizations.dart';
 import 'post_category.dart';
 
+List<String> _normalizePostCategoryKeys(
+  Iterable<Object?> values,
+  Object? legacyKey,
+) {
+  final normalized = <String>[];
+  for (final value in values) {
+    final raw = value?.toString().trim() ?? '';
+    if (!PostCategory.isSupportedKey(raw) || normalized.contains(raw)) {
+      continue;
+    }
+    normalized.add(raw);
+  }
+  if (normalized.isNotEmpty) return normalized;
+  return <String>[PostCategory.fromKey(legacyKey).key];
+}
+
 class PollOption {
   final String id;
   final String text;
@@ -51,6 +67,7 @@ class Post {
   final String authorPhotoURL; // 작성자 프로필 사진 URL
   final String category; // 카테고리
   final String categoryKey; // 안정적인 Post 카테고리 저장 key
+  final List<String> categoryKeys; // 선택한 포스트 태그 key 목록
   final DateTime createdAt;
   final String userId;
   final int commentCount;
@@ -92,6 +109,7 @@ class Post {
     this.authorPhotoURL = '', // 프로필 사진 URL (기본값은 빈 문자열)
     this.category = '일반', // 레거시 필드 호환
     String? categoryKey,
+    List<String> categoryKeys = const [],
     required this.createdAt,
     required this.userId,
     this.commentCount = 0,
@@ -108,9 +126,13 @@ class Post {
     this.allowedUserIds = const [], // 허용된 사용자 ID 목록 (기본값: 빈 리스트)
     this.visibilitySchemaVersion = 0,
     this.visibilityLockedAt,
-  }) : categoryKey = PostCategory.fromKey(categoryKey).key;
+  })  : categoryKeys = _normalizePostCategoryKeys(categoryKeys, categoryKey),
+        categoryKey =
+            _normalizePostCategoryKeys(categoryKeys, categoryKey).first;
 
   PostCategory get postCategory => PostCategory.fromKey(categoryKey);
+  List<PostCategory> get postCategories =>
+      categoryKeys.map(PostCategory.fromKey).toList(growable: false);
 
   // 모델 디버깅을 위한 문자열 표현
   @override
@@ -189,6 +211,7 @@ class Post {
     String? authorPhotoURL,
     String? category,
     String? categoryKey,
+    List<String>? categoryKeys,
     DateTime? createdAt,
     String? userId,
     int? commentCount,
@@ -215,6 +238,8 @@ class Post {
       authorPhotoURL: authorPhotoURL ?? this.authorPhotoURL,
       category: category ?? this.category,
       categoryKey: categoryKey ?? this.categoryKey,
+      categoryKeys: categoryKeys ??
+          (categoryKey != null ? <String>[categoryKey] : this.categoryKeys),
       createdAt: createdAt ?? this.createdAt,
       userId: userId ?? this.userId,
       commentCount: commentCount ?? this.commentCount,
@@ -246,6 +271,7 @@ class Post {
       'authorPhotoURL': authorPhotoURL,
       'category': category,
       'categoryKey': categoryKey,
+      'categoryKeys': categoryKeys,
       'createdAt': createdAt.millisecondsSinceEpoch,
       'userId': userId,
       'commentCount': commentCount,
@@ -289,6 +315,9 @@ class Post {
       authorPhotoURL: map['authorPhotoURL'] ?? '',
       category: map['category'] ?? '일반',
       categoryKey: map['categoryKey']?.toString(),
+      categoryKeys: map['categoryKeys'] is List
+          ? List<String>.from(map['categoryKeys'])
+          : const <String>[],
       createdAt: map['createdAt'] is int
           ? DateTime.fromMillisecondsSinceEpoch(map['createdAt'])
           : DateTime.now(),

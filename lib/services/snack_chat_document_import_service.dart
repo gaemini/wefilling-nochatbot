@@ -51,11 +51,21 @@ class SnackChatDocumentImportService {
 
   Future<bool> _isReadableFile(String? path) async {
     if (path == null || path.isEmpty) return false;
-    try {
-      final stat = await File(path).stat();
-      return stat.type == FileSystemEntityType.file && stat.size > 0;
-    } catch (_) {
-      return false;
+    final file = File(path);
+    int? previousSize;
+    for (var attempt = 0; attempt < 8; attempt++) {
+      try {
+        final stat = await file.stat();
+        if (stat.type == FileSystemEntityType.file && stat.size > 0) {
+          if (previousSize == stat.size) return true;
+          previousSize = stat.size;
+        }
+      } on FileSystemException {
+        // Android의 ContentResolver/파일 선택기 복사가 마지막 close를
+        // 끝내는 짧은 구간에는 같은 경로가 pending 상태일 수 있다.
+      }
+      await Future<void>.delayed(Duration(milliseconds: 35 * (attempt + 1)));
     }
+    return false;
   }
 }

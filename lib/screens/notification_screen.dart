@@ -22,6 +22,7 @@ import '../widgets/notification_list_item.dart';
 import '../services/user_info_cache_service.dart';
 import '../services/snapshot_service.dart';
 import 'snapshot_detail_screen.dart';
+import 'snapshot_comment_letter_screen.dart';
 
 class NotificationScreen extends StatefulWidget {
   /// true면 화면이 열릴 때 "모두 읽음"을 즉시 실행한다.
@@ -108,7 +109,7 @@ class _NotificationScreenState extends State<NotificationScreen> {
   Future<void> _handleNotificationTap(AppNotification notification) async {
     // 읽지 않은 알림인 경우 읽음 처리
     if (!notification.isRead) {
-      _notificationService.markNotificationAsRead(notification.id);
+      await _notificationService.markNotificationAsRead(notification.id);
     }
 
     // 알림 타입별로 해당 화면으로 이동
@@ -117,18 +118,23 @@ class _NotificationScreenState extends State<NotificationScreen> {
       case 'meetup_cancelled':
       case 'meetup_participant_joined':
       case 'meetup_participant_left':
+      case 'meetup_created':
         await _navigateToMeetup(notification);
         break;
       case 'new_comment':
       case 'comment_reply':
       case 'new_like':
       case 'post_private':
+      case 'post_created':
       case 'comment_like':
         await _navigateToPost(notification);
         break;
       case 'snapshot_reaction':
-      case 'snapshot_comment':
         await _navigateToSnapshot(notification);
+        break;
+      case 'snapshot_comment':
+      case 'snapshot_comment_reply':
+        await _navigateToSnapshotCommentLetter(notification);
         break;
       case 'review_comment':
       case 'review_like':
@@ -187,6 +193,25 @@ class _NotificationScreenState extends State<NotificationScreen> {
         isError: true,
       );
     }
+  }
+
+  Future<void> _navigateToSnapshotCommentLetter(
+    AppNotification notification,
+  ) async {
+    if (notification.id.trim().isEmpty) {
+      _showStyledSnackBar(
+        AppLocalizations.of(context)!.notificationDataMissing,
+        isError: true,
+      );
+      return;
+    }
+    await Navigator.of(context).push<void>(
+      MaterialPageRoute(
+        builder: (_) => SnapshotCommentLetterScreen(
+          notificationId: notification.id,
+        ),
+      ),
+    );
   }
 
   Future<void> _navigateToSnackChat(AppNotification notification) async {
@@ -556,9 +581,9 @@ class _NotificationScreenState extends State<NotificationScreen> {
   // 알림 타입과 데이터를 기반으로 현재 언어로 번역된 메시지 반환
   String _getLocalizedMessage(AppNotification notification) {
     final l10n = AppLocalizations.of(context);
-    final data = notification.data;
+    final data = notification.data ?? const <String, dynamic>{};
 
-    if (data == null) {
+    if (data.isEmpty && notification.type != 'snack_chat_invite') {
       return notification.message; // 데이터가 없으면 기본 메시지 사용
     }
 
@@ -645,6 +670,36 @@ class _NotificationScreenState extends State<NotificationScreen> {
           // 일반 댓글 - 실시간 닉네임 가져오기
           final likerName = _getActorName(notification);
           return l10n!.newCommentLikeMessage(likerName);
+        case 'snapshot_comment':
+          {
+            final commenterName = _getActorName(notification);
+            final comment = (data['comment'] ?? '').toString().trim();
+            final lang = Localizations.localeOf(context).languageCode;
+            final name = commenterName.isEmpty
+                ? (lang == 'ko' ? '사용자' : 'User')
+                : commenterName;
+            if (comment.isEmpty) {
+              return lang == 'ko'
+                  ? '$name님이 스낵에 코멘트를 보냈어요.'
+                  : '$name sent a comment on your Snack.';
+            }
+            return lang == 'ko' ? '$name님: $comment' : '$name: $comment';
+          }
+        case 'snapshot_comment_reply':
+          {
+            final replierName = _getActorName(notification);
+            final reply = (data['reply'] ?? '').toString().trim();
+            final lang = Localizations.localeOf(context).languageCode;
+            final name = replierName.isEmpty
+                ? (lang == 'ko' ? '사용자' : 'User')
+                : replierName;
+            if (reply.isEmpty) {
+              return lang == 'ko'
+                  ? '$name님이 스낵 코멘트에 답장했어요.'
+                  : '$name replied to your Snack comment.';
+            }
+            return lang == 'ko' ? '$name님: $reply' : '$name: $reply';
+          }
         case 'friend_request':
           final fromName = _getActorName(notification);
           return l10n!.friendRequestMessage(fromName);
@@ -660,6 +715,16 @@ class _NotificationScreenState extends State<NotificationScreen> {
           final likerName = _getActorName(notification);
           final reviewTitle = data['reviewTitle'] ?? data['meetupTitle'] ?? '';
           return l10n!.newLikeMessage(likerName, reviewTitle);
+        case 'meetup_created':
+          {
+            final hostName = _getActorName(notification);
+            final meetupTitle = (data['meetupTitle'] ?? '').toString().trim();
+            final name = hostName.isEmpty ? 'User' : hostName;
+            final lang = Localizations.localeOf(context).languageCode;
+            return lang == 'ko'
+                ? '$name님이 "$meetupTitle" 모임을 만들었습니다.'
+                : '$name created "$meetupTitle".';
+          }
         case 'post_private':
           {
             // 친구공개(허용된 사용자에게만 공개) 게시글 알림
@@ -679,6 +744,21 @@ class _NotificationScreenState extends State<NotificationScreen> {
             return lang == 'ko'
                 ? '$name님이 $badge 포스트를 올렸습니다: $postTitle'
                 : '$name posted a $badge post: $postTitle';
+          }
+        case 'post_created':
+          {
+            final authorName = _getActorName(notification);
+            final postTitle = (data['postTitle'] ?? '').toString().trim();
+            final name = authorName.isEmpty ? 'User' : authorName;
+            final lang = Localizations.localeOf(context).languageCode;
+            if (postTitle.isEmpty) {
+              return lang == 'ko'
+                  ? '$name님이 새 포스트를 올렸습니다.'
+                  : '$name posted a new post.';
+            }
+            return lang == 'ko'
+                ? '$name님이 새 포스트를 올렸습니다: $postTitle'
+                : '$name posted a new post: $postTitle';
           }
         case 'snack_chat_invite':
           {
@@ -761,7 +841,8 @@ class _NotificationScreenState extends State<NotificationScreen> {
           notification.type == 'new_comment' ||
           notification.type == 'comment_reply' ||
           notification.type == 'comment_like' ||
-          notification.type == 'post_private';
+          notification.type == 'post_private' ||
+          notification.type == 'post_created';
       if (canHavePreview && postId is String && postId.isNotEmpty) {
         previewFuture = _getPostPreviewImageUrl(postId);
       }

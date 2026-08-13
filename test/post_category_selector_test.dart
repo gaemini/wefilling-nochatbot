@@ -7,8 +7,8 @@ import 'package:wefilling/models/post_category.dart';
 import 'package:wefilling/ui/widgets/post_category_selector.dart';
 
 Widget _app({
-  required PostCategory? selected,
-  required ValueChanged<PostCategory> onChanged,
+  required Set<PostCategory> selected,
+  required ValueChanged<Set<PostCategory>> onChanged,
 }) {
   return MaterialApp(
     locale: const Locale('en'),
@@ -22,9 +22,18 @@ Widget _app({
     home: Scaffold(
       body: Padding(
         padding: const EdgeInsets.all(20),
-        child: PostCategorySelector(
-          selected: selected,
-          onChanged: onChanged,
+        child: StatefulBuilder(
+          builder: (context, setState) {
+            return PostCategorySelector(
+              selected: selected,
+              onChanged: (tags) {
+                setState(() {
+                  selected = tags;
+                });
+                onChanged(tags);
+              },
+            );
+          },
         ),
       ),
     ),
@@ -32,65 +41,71 @@ Widget _app({
 }
 
 void main() {
-  testWidgets('opens the category sheet and returns a stable category',
+  testWidgets('shows every tag inline and returns multiple stable tags',
       (tester) async {
-    PostCategory? result;
+    Set<PostCategory>? result;
     await tester.pumpWidget(_app(
-      selected: null,
-      onChanged: (category) => result = category,
+      selected: const <PostCategory>{},
+      onChanged: (tags) => result = tags,
     ));
 
-    expect(find.text('Select category'), findsOneWidget);
+    expect(find.text('Tags'), findsOneWidget);
+    expect(find.text('Style'), findsOneWidget);
+    expect(find.text('Photo'), findsOneWidget);
+    expect(find.text('Other'), findsOneWidget);
     expect(find.text('Poll'), findsNothing);
+    expect(find.byType(BottomSheet), findsNothing);
 
-    await tester.tap(find.text('Select category'));
-    await tester.pumpAndSettle();
     await tester.tap(find.text('Style'));
-    await tester.pumpAndSettle();
+    await tester.pump();
+    await tester.tap(find.text('Photo'));
+    await tester.pump();
 
-    expect(result, PostCategory.style);
-    expect(result?.key, 'style');
+    expect(
+      result,
+      containsAll(<PostCategory>[PostCategory.style, PostCategory.photo]),
+    );
   });
 
-  testWidgets('selected category uses the unified detail presentation',
+  testWidgets('selected tags display an immediate selected indicator',
       (tester) async {
     await tester.pumpWidget(_app(
-      selected: PostCategory.booksWriting,
+      selected: const <PostCategory>{PostCategory.booksWriting},
       onChanged: (_) {},
     ));
 
     expect(find.text('Books & Writing'), findsOneWidget);
-    expect(find.text('Reading, writing & quotes'), findsOneWidget);
-    expect(find.byIcon(Icons.auto_stories_outlined), findsOneWidget);
+    expect(find.byIcon(Icons.check_circle_rounded), findsOneWidget);
     expect(tester.takeException(), isNull);
   });
 
-  testWidgets('restaurant category uses restaurant copy and icon',
+  testWidgets('tapping a selected tag deselects it without opening a sheet',
       (tester) async {
+    Set<PostCategory>? result;
     await tester.pumpWidget(_app(
-      selected: PostCategory.create,
-      onChanged: (_) {},
+      selected: const <PostCategory>{PostCategory.create},
+      onChanged: (tags) => result = tags,
     ));
 
-    expect(find.text('Restaurant'), findsOneWidget);
-    expect(find.text('Restaurants, dining & food'), findsOneWidget);
-    expect(find.byIcon(Icons.restaurant_outlined), findsOneWidget);
+    await tester.tap(find.text('Restaurant'));
+    await tester.pump();
+
+    expect(result, isEmpty);
+    expect(find.byType(BottomSheet), findsNothing);
   });
 
-  testWidgets('category picker stays overflow-free on a compact phone',
+  testWidgets('inline tag list stays overflow-free on a compact phone',
       (tester) async {
     await tester.binding.setSurfaceSize(const Size(320, 640));
     addTearDown(() => tester.binding.setSurfaceSize(null));
 
     await tester.pumpWidget(_app(
-      selected: null,
+      selected: const <PostCategory>{},
       onChanged: (_) {},
     ));
-    await tester.tap(find.text('Select category'));
-    await tester.pumpAndSettle();
 
     expect(find.text('Restaurant'), findsOneWidget);
-    expect(find.byType(BottomSheet), findsOneWidget);
+    expect(find.byType(BottomSheet), findsNothing);
     expect(tester.takeException(), isNull);
   });
 }

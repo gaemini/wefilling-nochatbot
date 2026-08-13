@@ -345,7 +345,10 @@ _BadgeSpec _badgeSpecForType(String type) {
       return const _BadgeSpec(icon: Icons.favorite, color: Color(0xFF111827));
     case 'snapshot_comment':
       return const _BadgeSpec(
-          icon: Icons.chat_bubble, color: AppColors.pointColor);
+          icon: Icons.mail_rounded, color: AppColors.pointColor);
+    case 'snapshot_comment_reply':
+      return const _BadgeSpec(
+          icon: Icons.mark_email_read_rounded, color: AppColors.pointColor);
     case 'new_comment':
     case 'comment_reply':
       // 게시글 댓글 알림: 댓글 아이콘은 파란색으로 강조
@@ -369,12 +372,16 @@ _BadgeSpec _badgeSpecForType(String type) {
     case 'meetup_participant_left':
       return const _BadgeSpec(
           icon: Icons.logout_rounded, color: Color(0xFFEF4444));
+    case 'meetup_created':
+      return const _BadgeSpec(
+          icon: Icons.event_available, color: AppColors.pointColor);
     case 'review_approval_request':
       return const _BadgeSpec(
           icon: Icons.rate_review, color: AppColors.pointColor);
     case 'ad_updates':
       return const _BadgeSpec(icon: Icons.campaign, color: Color(0xFFF59E0B));
     case 'post_private':
+    case 'post_created':
       // 친구공개(allowed users) 게시글 알림: 자물쇠 대신 일반 게시글 느낌으로 표시
       return const _BadgeSpec(icon: Icons.article, color: Color(0xFF9CA3AF));
     default:

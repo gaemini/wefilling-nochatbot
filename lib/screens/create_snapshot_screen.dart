@@ -12,12 +12,15 @@ import 'package:path/path.dart' as path;
 import 'package:path_provider/path_provider.dart';
 import 'package:wechat_assets_picker/wechat_assets_picker.dart';
 
-import '../models/snapshot.dart';
 import '../models/friend_category.dart';
+import '../models/snapshot.dart';
+import '../models/user_profile.dart';
+import '../repositories/users_repository.dart';
 import '../services/friend_category_service.dart';
 import '../services/snapshot_service.dart';
 import '../snapshot/snapshot_strings.dart';
 import '../ui/snackbar/app_snackbar.dart';
+import '../ui/widgets/group_audience_preview.dart';
 import '../utils/logger.dart';
 import '../utils/responsive_helper.dart';
 
@@ -31,10 +34,13 @@ class CreateSnapshotScreen extends StatefulWidget {
 }
 
 class _CreateSnapshotScreenState extends State<CreateSnapshotScreen> {
+  static const int _galleryPageSize = 100;
+
   final ImagePicker _picker = ImagePicker();
   final GlobalKey _compositionKey = GlobalKey();
   final SnapshotService _service = SnapshotService.instance;
   final FriendCategoryService _friendCategoryService = FriendCategoryService();
+  final UsersRepository _usersRepository = UsersRepository();
   final TextEditingController _overlayController = TextEditingController();
   final FocusNode _overlayFocusNode = FocusNode();
 
@@ -54,6 +60,9 @@ class _CreateSnapshotScreenState extends State<CreateSnapshotScreen> {
   SnapshotVisibility _visibility = SnapshotVisibility.public;
   List<FriendCategory> _friendCategories = const <FriendCategory>[];
   List<String> _selectedCategoryIds = const <String>[];
+  List<UserProfile> _selectedAudienceUsers = const <UserProfile>[];
+  bool _isLoadingAudienceUsers = false;
+  int _audienceLoadSeq = 0;
   bool _showCategoryRequired = false;
   bool _loadingPhoto = false;
   bool _composing = false;
@@ -61,7 +70,11 @@ class _CreateSnapshotScreenState extends State<CreateSnapshotScreen> {
   double _uploadProgress = 0;
   int _step = 0;
   List<AssetEntity> _recentPhotos = const <AssetEntity>[];
+  AssetPathEntity? _recentPhotoAlbum;
+  int _galleryTotalCount = 0;
+  int _galleryNextPage = 0;
   bool _loadingGallery = true;
+  bool _loadingMoreGallery = false;
   bool _galleryPermissionDenied = false;
 
   double get _aspectRatio {
@@ -83,15 +96,67 @@ class _CreateSnapshotScreenState extends State<CreateSnapshotScreen> {
             .where(validIds.contains)
             .toList(growable: false);
       });
+      unawaited(_refreshSelectedAudienceUsers());
     });
     unawaited(_loadRecentPhotos());
+  }
+
+  Set<String> _selectedAudienceIds() {
+    final selectedIds = _selectedCategoryIds.toSet();
+    final audienceIds = <String>{};
+    for (final category in _friendCategories) {
+      if (selectedIds.contains(category.id)) {
+        audienceIds.addAll(category.friendIds);
+      }
+    }
+    return audienceIds;
+  }
+
+  List<UserProfile> _membersForCategory(FriendCategory category) {
+    final memberIds = category.friendIds.toSet();
+    return _selectedAudienceUsers
+        .where((user) => memberIds.contains(user.uid))
+        .toList(growable: false);
+  }
+
+  Future<void> _refreshSelectedAudienceUsers() async {
+    final currentSeq = ++_audienceLoadSeq;
+    final audienceIds = _selectedAudienceIds().toList(growable: false);
+
+    if (audienceIds.isEmpty) {
+      if (!mounted) return;
+      setState(() {
+        _selectedAudienceUsers = const <UserProfile>[];
+        _isLoadingAudienceUsers = false;
+      });
+      return;
+    }
+
+    if (!mounted) return;
+    setState(() => _isLoadingAudienceUsers = true);
+
+    final profiles = await _usersRepository.getUserProfilesBatch(audienceIds);
+    profiles.sort(
+      (left, right) =>
+          left.displayNameOrNickname.compareTo(right.displayNameOrNickname),
+    );
+
+    if (!mounted || currentSeq != _audienceLoadSeq) return;
+    setState(() {
+      _selectedAudienceUsers = profiles;
+      _isLoadingAudienceUsers = false;
+    });
   }
 
   Future<void> _loadRecentPhotos() async {
     if (mounted) {
       setState(() {
         _loadingGallery = true;
+        _loadingMoreGallery = false;
         _galleryPermissionDenied = false;
+        _recentPhotoAlbum = null;
+        _galleryTotalCount = 0;
+        _galleryNextPage = 0;
       });
     }
     try {
@@ -120,17 +185,26 @@ class _CreateSnapshotScreenState extends State<CreateSnapshotScreen> {
           ],
         ),
       );
-      final photos = albums.isEmpty
-          ? const <AssetEntity>[]
-          : await albums.first.getAssetListPaged(page: 0, size: 90);
-      final sortedPhotos = List<AssetEntity>.from(photos)
-        ..sort((a, b) {
-          final aDate = a.createDateSecond ?? a.modifiedDateSecond ?? 0;
-          final bDate = b.createDateSecond ?? b.modifiedDateSecond ?? 0;
-          return bDate.compareTo(aDate);
-        });
+      if (albums.isEmpty) {
+        if (!mounted) return;
+        setState(() => _recentPhotos = const <AssetEntity>[]);
+        return;
+      }
+
+      final album = albums.first;
+      final results = await Future.wait<dynamic>([
+        album.assetCountAsync,
+        album.getAssetListPaged(page: 0, size: _galleryPageSize),
+      ]);
+      final totalCount = results[0] as int;
+      final photos = results[1] as List<AssetEntity>;
       if (!mounted) return;
-      setState(() => _recentPhotos = sortedPhotos);
+      setState(() {
+        _recentPhotoAlbum = album;
+        _galleryTotalCount = totalCount;
+        _galleryNextPage = 1;
+        _recentPhotos = List<AssetEntity>.unmodifiable(photos);
+      });
     } on PlatformException {
       if (!mounted) return;
       setState(() => _galleryPermissionDenied = true);
@@ -139,6 +213,47 @@ class _CreateSnapshotScreenState extends State<CreateSnapshotScreen> {
       setState(() => _recentPhotos = const <AssetEntity>[]);
     } finally {
       if (mounted) setState(() => _loadingGallery = false);
+    }
+  }
+
+  Future<void> _loadMoreRecentPhotos() async {
+    final album = _recentPhotoAlbum;
+    if (album == null ||
+        _loadingGallery ||
+        _loadingMoreGallery ||
+        _recentPhotos.length >= _galleryTotalCount) {
+      return;
+    }
+
+    final requestedPage = _galleryNextPage;
+    setState(() => _loadingMoreGallery = true);
+    try {
+      final photos = await album.getAssetListPaged(
+        page: requestedPage,
+        size: _galleryPageSize,
+      );
+      if (!mounted || !identical(album, _recentPhotoAlbum)) return;
+
+      final knownIds = _recentPhotos.map((photo) => photo.id).toSet();
+      final nextPhotos = photos
+          .where((photo) => knownIds.add(photo.id))
+          .toList(growable: false);
+      setState(() {
+        _galleryNextPage = requestedPage + 1;
+        _recentPhotos = List<AssetEntity>.unmodifiable(
+          <AssetEntity>[..._recentPhotos, ...nextPhotos],
+        );
+      });
+    } on PlatformException {
+      // Keep the already loaded photos usable. A later scroll can retry this
+      // exact page because the cursor advances only after a successful read.
+    } catch (_) {
+      // Asset providers can be temporarily unavailable while the device is
+      // syncing cloud photos. Preserve the current page and allow a retry.
+    } finally {
+      if (mounted && identical(album, _recentPhotoAlbum)) {
+        setState(() => _loadingMoreGallery = false);
+      }
     }
   }
 
@@ -826,11 +941,14 @@ class _CreateSnapshotScreenState extends State<CreateSnapshotScreen> {
                         selecting: _loadingPhoto,
                         permissionDenied: _galleryPermissionDenied,
                         photos: _recentPhotos,
+                        hasMore: _recentPhotos.length < _galleryTotalCount,
+                        loadingMore: _loadingMoreGallery,
                         cameraLabel: strings.camera,
                         permissionMessage: strings.galleryPermissionRequired,
                         retryLabel: strings.retry,
                         onCamera: () => _pickImage(ImageSource.camera),
                         onRetry: _loadRecentPhotos,
+                        onLoadMore: _loadMoreRecentPhotos,
                         onPhotoTap: _selectRecentPhoto,
                       )
                     : Center(
@@ -1185,6 +1303,13 @@ class _CreateSnapshotScreenState extends State<CreateSnapshotScreen> {
           _CategoryRow(
             category: category,
             selected: _selectedCategoryIds.contains(category.id),
+            child: _selectedCategoryIds.contains(category.id)
+                ? GroupAudiencePreview(
+                    members: _membersForCategory(category),
+                    loading: _isLoadingAudienceUsers &&
+                        category.friendIds.isNotEmpty,
+                  )
+                : null,
             onTap: () {
               final next = List<String>.from(_selectedCategoryIds);
               if (next.contains(category.id)) {
@@ -1196,6 +1321,7 @@ class _CreateSnapshotScreenState extends State<CreateSnapshotScreen> {
                 _selectedCategoryIds = next;
                 if (next.isNotEmpty) _showCategoryRequired = false;
               });
+              unawaited(_refreshSelectedAudienceUsers());
             },
           ),
         if (_showCategoryRequired && _selectedCategoryIds.isEmpty)
@@ -1222,11 +1348,14 @@ class _RecentPhotoGallery extends StatelessWidget {
     required this.selecting,
     required this.permissionDenied,
     required this.photos,
+    required this.hasMore,
+    required this.loadingMore,
     required this.cameraLabel,
     required this.permissionMessage,
     required this.retryLabel,
     required this.onCamera,
     required this.onRetry,
+    required this.onLoadMore,
     required this.onPhotoTap,
   });
 
@@ -1234,11 +1363,14 @@ class _RecentPhotoGallery extends StatelessWidget {
   final bool selecting;
   final bool permissionDenied;
   final List<AssetEntity> photos;
+  final bool hasMore;
+  final bool loadingMore;
   final String cameraLabel;
   final String permissionMessage;
   final String retryLabel;
   final VoidCallback onCamera;
   final VoidCallback onRetry;
+  final VoidCallback onLoadMore;
   final ValueChanged<AssetEntity> onPhotoTap;
 
   @override
@@ -1283,47 +1415,65 @@ class _RecentPhotoGallery extends StatelessWidget {
 
     return Stack(
       children: [
-        GridView.builder(
-          padding: const EdgeInsets.fromLTRB(0, 2, 0, 8),
-          physics: const BouncingScrollPhysics(),
-          gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
-            crossAxisCount: 3,
-            mainAxisSpacing: 3,
-            crossAxisSpacing: 3,
-          ),
-          itemCount: photos.length + 1,
-          itemBuilder: (context, index) {
-            if (index == 0) {
-              return _CameraButton(
-                label: cameraLabel,
-                enabled: !selecting,
-                onPressed: onCamera,
-                fillCell: true,
-              );
+        NotificationListener<ScrollNotification>(
+          onNotification: (notification) {
+            if (hasMore &&
+                !loadingMore &&
+                notification.metrics.extentAfter < 600) {
+              onLoadMore();
             }
-            final photo = photos[index - 1];
-            return Semantics(
-              button: true,
-              label: '${index + 1}',
-              child: Material(
-                color: const Color(0xFFF2F4F7),
-                borderRadius: BorderRadius.circular(10),
-                clipBehavior: Clip.antiAlias,
-                child: InkWell(
-                  onTap: selecting ? null : () => onPhotoTap(photo),
-                  child: Image(
-                    image: AssetEntityImageProvider(
-                      photo,
-                      isOriginal: false,
-                      thumbnailSize: const ThumbnailSize.square(420),
+            return false;
+          },
+          child: GridView.builder(
+            padding: const EdgeInsets.fromLTRB(0, 2, 0, 8),
+            physics: const BouncingScrollPhysics(),
+            gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
+              crossAxisCount: 3,
+              mainAxisSpacing: 3,
+              crossAxisSpacing: 3,
+            ),
+            itemCount: photos.length + 1 + (loadingMore ? 1 : 0),
+            itemBuilder: (context, index) {
+              if (index == 0) {
+                return _CameraButton(
+                  label: cameraLabel,
+                  enabled: !selecting,
+                  onPressed: onCamera,
+                  fillCell: true,
+                );
+              }
+              if (index > photos.length) {
+                return const Center(
+                  child: SizedBox.square(
+                    dimension: 22,
+                    child: CircularProgressIndicator(strokeWidth: 2),
+                  ),
+                );
+              }
+              final photo = photos[index - 1];
+              return Semantics(
+                button: true,
+                label: '$index',
+                child: Material(
+                  color: const Color(0xFFF2F4F7),
+                  borderRadius: BorderRadius.circular(10),
+                  clipBehavior: Clip.antiAlias,
+                  child: InkWell(
+                    onTap: selecting ? null : () => onPhotoTap(photo),
+                    child: Image(
+                      image: AssetEntityImageProvider(
+                        photo,
+                        isOriginal: false,
+                        thumbnailSize: const ThumbnailSize.square(420),
+                      ),
+                      fit: BoxFit.cover,
+                      filterQuality: FilterQuality.medium,
                     ),
-                    fit: BoxFit.cover,
-                    filterQuality: FilterQuality.medium,
                   ),
                 ),
-              ),
-            );
-          },
+              );
+            },
+          ),
         ),
         if (selecting)
           Positioned.fill(
@@ -1474,47 +1624,58 @@ class _CategoryRow extends StatelessWidget {
     required this.category,
     required this.selected,
     required this.onTap,
+    this.child,
   });
 
   final FriendCategory category;
   final bool selected;
   final VoidCallback onTap;
+  final Widget? child;
 
   @override
   Widget build(BuildContext context) {
     return Semantics(
       button: true,
       selected: selected,
-      child: InkWell(
-        onTap: onTap,
-        child: ConstrainedBox(
-          constraints: const BoxConstraints(minHeight: 46),
-          child: Row(
-            children: [
-              Expanded(
-                child: Text(
-                  category.name,
-                  maxLines: 1,
-                  overflow: TextOverflow.ellipsis,
-                  style: TextStyle(
-                    fontFamily: 'Pretendard',
-                    fontSize: context.rf(14).clamp(13, 15).toDouble(),
-                    fontWeight: selected ? FontWeight.w800 : FontWeight.w600,
-                    color: const Color(0xFF111827),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          InkWell(
+            onTap: onTap,
+            child: ConstrainedBox(
+              constraints: const BoxConstraints(minHeight: 46),
+              child: Row(
+                children: [
+                  Expanded(
+                    child: Text(
+                      category.name,
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      style: TextStyle(
+                        fontFamily: 'Pretendard',
+                        fontSize: context.rf(14).clamp(13, 15).toDouble(),
+                        fontWeight:
+                            selected ? FontWeight.w800 : FontWeight.w600,
+                        color: const Color(0xFF111827),
+                      ),
+                    ),
                   ),
-                ),
+                  const SizedBox(width: 8),
+                  Icon(
+                    selected
+                        ? Icons.check_circle_rounded
+                        : Icons.circle_outlined,
+                    size: context.ri(21).clamp(20, 23).toDouble(),
+                    color: selected
+                        ? const Color(0xFF475467)
+                        : const Color(0xFFD0D5DD),
+                  ),
+                ],
               ),
-              const SizedBox(width: 8),
-              Icon(
-                selected ? Icons.check_circle_rounded : Icons.circle_outlined,
-                size: context.ri(21).clamp(20, 23).toDouble(),
-                color: selected
-                    ? const Color(0xFF475467)
-                    : const Color(0xFFD0D5DD),
-              ),
-            ],
+            ),
           ),
-        ),
+          if (child != null) child!,
+        ],
       ),
     );
   }

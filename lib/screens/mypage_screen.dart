@@ -34,6 +34,7 @@ import 'post_detail_screen.dart';
 import 'saved_posts_screen.dart';
 import 'review_detail_screen.dart';
 import 'friends_page.dart';
+import 'social_tag_people_screen.dart';
 import 'semester_todo_admin_screen.dart';
 import '../ui/widgets/profile_image_viewer.dart';
 import '../utils/profile_photo_policy.dart';
@@ -506,7 +507,9 @@ class _MyPageScreenState extends State<MyPageScreen>
                 children: [
                   ...social.interests.map(
                     (id) => _socialTagLabel(
-                      SocialProfileCatalog.labelFor(
+                      tagId: id,
+                      kind: SocialProfileTagKind.interest,
+                      label: SocialProfileCatalog.labelFor(
                         id,
                         SocialProfileCatalog.interests,
                         Localizations.localeOf(context).languageCode,
@@ -515,7 +518,9 @@ class _MyPageScreenState extends State<MyPageScreen>
                   ),
                   ...social.preferredActivities.map(
                     (id) => _socialTagLabel(
-                      SocialProfileCatalog.labelFor(
+                      tagId: id,
+                      kind: SocialProfileTagKind.activity,
+                      label: SocialProfileCatalog.labelFor(
                         id,
                         SocialProfileCatalog.activities,
                         Localizations.localeOf(context).languageCode,
@@ -642,14 +647,43 @@ class _MyPageScreenState extends State<MyPageScreen>
     );
   }
 
-  Widget _socialTagLabel(String value) {
-    return Text(
-      '#$value',
-      style: const TextStyle(
-        fontFamily: 'Pretendard',
-        fontSize: 13,
-        fontWeight: FontWeight.w600,
-        color: AppColors.pointColor,
+  Widget _socialTagLabel({
+    required String tagId,
+    required SocialProfileTagKind kind,
+    required String label,
+  }) {
+    return Semantics(
+      button: true,
+      label: '#$label',
+      child: Material(
+        color: Colors.transparent,
+        child: InkWell(
+          onTap: () => _openSocialTagPeople(tagId, kind),
+          borderRadius: BorderRadius.circular(8),
+          child: Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 2, vertical: 7),
+            child: Text(
+              '#$label',
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
+              style: const TextStyle(
+                fontFamily: 'Pretendard',
+                fontSize: 13,
+                fontWeight: FontWeight.w600,
+                color: AppColors.pointColor,
+                height: 1.2,
+              ),
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+
+  void _openSocialTagPeople(String tagId, SocialProfileTagKind kind) {
+    Navigator.of(context).push<void>(
+      MaterialPageRoute(
+        builder: (_) => SocialTagPeopleScreen(tagId: tagId, kind: kind),
       ),
     );
   }

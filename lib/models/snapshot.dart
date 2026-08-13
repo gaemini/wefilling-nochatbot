@@ -156,6 +156,54 @@ class SnapshotItem {
   }
 }
 
+class SnapshotViewer {
+  const SnapshotViewer({
+    required this.userId,
+    required this.displayName,
+    required this.photoUrl,
+    required this.photoVersion,
+    required this.nationality,
+    required this.university,
+    required this.viewedAt,
+  });
+
+  final String userId;
+  final String displayName;
+  final String photoUrl;
+  final int photoVersion;
+  final String nationality;
+  final String university;
+  final DateTime viewedAt;
+
+  factory SnapshotViewer.fromFirestore(
+    DocumentSnapshot<Map<String, dynamic>> document,
+  ) {
+    return SnapshotViewer.fromMap(
+      document.id,
+      document.data() ?? const <String, dynamic>{},
+    );
+  }
+
+  factory SnapshotViewer.fromMap(String id, Map<String, dynamic> data) {
+    final rawName = (data['displayName'] ?? data['nickname'] ?? '').toString();
+    return SnapshotViewer(
+      userId: (data['userId'] ?? id).toString(),
+      displayName: rawName.trim().isEmpty ? 'User' : rawName.trim(),
+      photoUrl: (data['photoUrl'] ?? data['photoURL'] ?? '').toString(),
+      photoVersion: _asInt(data['photoVersion']),
+      nationality: (data['nationality'] ?? '').toString().trim(),
+      university: (data['university'] ?? '').toString().trim(),
+      viewedAt: _asDateTime(
+        data['viewedAt'] ??
+            data['lastViewedAt'] ??
+            data['firstViewedAt'] ??
+            data['createdAt'] ??
+            data['viewedAtMillis'],
+      ),
+    );
+  }
+}
+
 DateTime _asDateTime(Object? value) {
   if (value is Timestamp) return value.toDate();
   if (value is DateTime) return value;

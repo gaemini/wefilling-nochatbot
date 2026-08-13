@@ -1050,21 +1050,18 @@ class _MeetupHomePageState extends State<MeetupHomePage> with PreloadMixin {
                           final pageDateKey = _dayKey(pageDate);
                           final isPagePast = _isPastDay(pageDateKey);
 
-                          // 해당 날짜의 모임 목록
-                          final pageMeetups = (isPagePast
-                                  ? (myByDay[pageDateKey] ?? const <Meetup>[])
-                                  : (visibleByDay[pageDateKey] ??
-                                      const <Meetup>[]))
-                              .toList();
+                          // 전체 공개 모임은 가입 시점과 관계없이 과거/만료 후에도
+                          // 기록으로 확인할 수 있어야 한다. 접근 가능한 그룹 모임도
+                          // 동일한 visible 스트림에서 기존 공개 범위대로 유지한다.
+                          final pageMeetups =
+                              (visibleByDay[pageDateKey] ?? const <Meetup>[])
+                                  .toList();
 
                           // 스켈레톤 표시 여부
-                          final pageShowSkeleton = isPagePast
-                              ? (mySnap.connectionState ==
+                          final pageShowSkeleton =
+                              visibleSnap.connectionState ==
                                       ConnectionState.waiting &&
-                                  !mySnap.hasData)
-                              : (visibleSnap.connectionState ==
-                                      ConnectionState.waiting &&
-                                  !visibleSnap.hasData);
+                                  !visibleSnap.hasData;
 
                           return pageShowSkeleton
                               ? ListView(
@@ -1128,7 +1125,7 @@ class _MeetupHomePageState extends State<MeetupHomePage> with PreloadMixin {
                                             child: _buildMeetupCard(
                                               meetup,
                                               forceIsParticipating:
-                                                  isPagePast ? true : null,
+                                                  isPagePast ? false : null,
                                               disableParticipationLookup:
                                                   isPagePast,
                                             ),

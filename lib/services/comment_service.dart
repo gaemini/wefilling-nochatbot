@@ -112,6 +112,7 @@ class CommentService {
         'replyToUserNickname': replyToUserNickname,
         'likeCount': 0,
         'likedBy': [],
+        'isDeleted': false,
       };
 
       // Firestore에 저장
@@ -193,7 +194,9 @@ class CommentService {
           .where('postId', isEqualTo: postId)
           .get();
 
-      final commentCount = querySnapshot.docs.length;
+      final commentCount = querySnapshot.docs
+          .where((doc) => doc.data()['isDeleted'] != true)
+          .length;
 
       // 리뷰 프로필 문서(users/{uid}/posts/{postId}) 업데이트 (권한 실패 시 무시)
       if (reviewOwnerUserId != null && reviewOwnerUserId.isNotEmpty) {
@@ -248,6 +251,7 @@ class CommentService {
 
   /// 여러 게시글의 댓글 수를 한 번에 조회합니다. (수동 새로고침용)
   /// - Firestore whereIn(최대 10개) 제한 때문에 내부에서 청크 처리합니다.
+  /// - 상세 화면과 동일하게 삭제된 댓글과 부모가 없는 대댓글은 집계하지 않습니다.
   /// - 반환: { postId: count }
   Future<Map<String, int>> fetchCommentCountsForPostIds(
       List<String> postIds) async {
@@ -265,6 +269,13 @@ class CommentService {
       ));
     }
 
+    final blockedRelationships = await Future.wait<Set<String>>([
+      ContentFilterService.getBlockedUserIds(),
+      ContentFilterService.getBlockedByUserIds(),
+    ]);
+    final blockedUserIds = blockedRelationships[0];
+    final blockedByUserIds = blockedRelationships[1];
+
     Future<Map<String, int>> fetchChunk(List<String> chunk) async {
       final counts = <String, int>{};
       try {
@@ -274,16 +285,28 @@ class CommentService {
             .get()
             .timeout(queryTimeout);
 
+        final commentsByPost = <String, List<Comment>>{
+          for (final postId in chunk) postId: <Comment>[],
+        };
         for (final doc in snap.docs) {
-          final data = doc.data();
-          final postId = data['postId']?.toString();
-          if (postId == null || postId.isEmpty) continue;
-          counts[postId] = (counts[postId] ?? 0) + 1;
+          final comment = Comment.fromFirestore(doc);
+          final postComments = commentsByPost[comment.postId];
+          if (postComments == null) continue;
+          if (blockedUserIds.contains(comment.userId) ||
+              blockedByUserIds.contains(comment.userId) ||
+              ContentHideService.shouldHideComment(
+                commentId: comment.id,
+                userId: comment.userId,
+              )) {
+            continue;
+          }
+          postComments.add(comment);
         }
 
-        // whereIn 대상이지만 댓글이 0개인 경우도 0으로 채움
         for (final id in chunk) {
-          counts[id] = counts[id] ?? 0;
+          counts[id] = countActiveThreadComments(
+            commentsByPost[id] ?? const <Comment>[],
+          );
         }
       } catch (e) {
         // 실패한 청크는 기존 카드 값을 유지한다. 빈 결과를 반환하면 호출 측에서
@@ -303,6 +326,35 @@ class CommentService {
     }
 
     return result;
+  }
+
+  /// 화면에 유지할 수 있는 댓글 스레드만 반환합니다.
+  /// 삭제된 부모 댓글은 대댓글 위치 보존을 위한 tombstone이므로 부모로 인정하고,
+  /// 부모 문서 자체가 사라진 고아 대댓글만 제외합니다.
+  static List<Comment> retainValidThreadComments(
+    Iterable<Comment> comments,
+  ) {
+    final commentList = comments.toList(growable: false);
+    final topLevelIds = commentList
+        .where((comment) => comment.isTopLevel)
+        .map((comment) => comment.id)
+        .toSet();
+
+    return commentList
+        .where(
+          (comment) =>
+              comment.isTopLevel ||
+              (comment.parentCommentId != null &&
+                  topLevelIds.contains(comment.parentCommentId)),
+        )
+        .toList(growable: false);
+  }
+
+  /// 상세/목록에서 공통으로 사용하는 실제 표시 댓글 수입니다.
+  static int countActiveThreadComments(Iterable<Comment> comments) {
+    return retainValidThreadComments(comments)
+        .where((comment) => !comment.isDeleted)
+        .length;
   }
 
   // 게시글의 모든 댓글 가져오기
@@ -385,8 +437,7 @@ class CommentService {
         return false;
       }
 
-      // 댓글 삭제
-      await _firestore.collection('comments').doc(commentId).delete();
+      await _softDeleteComment(commentDoc.reference, user.uid);
 
       // 댓글 수 정합성 보정 (리뷰 프로필용)
       unawaited(_updateCommentCount(postId));
@@ -423,6 +474,10 @@ class CommentService {
         }
 
         final commentData = commentDoc.data()!;
+        if (commentData['isDeleted'] == true) {
+          Logger.log('  ❌ 삭제된 댓글에는 좋아요를 변경할 수 없습니다.');
+          return false;
+        }
         final List<String> likedBy =
             List<String>.from(commentData['likedBy'] ?? []);
         final int currentLikeCount = commentData['likeCount'] ?? 0;
@@ -510,7 +565,37 @@ class CommentService {
     }
   }
 
-  // 개선된 댓글 삭제 (대댓글도 함께 삭제)
+  Future<void> _softDeleteComment(
+    DocumentReference<Map<String, dynamic>> commentRef,
+    String userId,
+  ) async {
+    await _firestore.runTransaction((transaction) async {
+      final snapshot = await transaction.get(commentRef);
+      if (!snapshot.exists) {
+        throw StateError('comment-not-found');
+      }
+
+      final data = snapshot.data()!;
+      if (data['userId'] != userId) {
+        throw StateError('comment-owner-mismatch');
+      }
+      if (data['isDeleted'] == true) return;
+
+      // 스레드의 ID/부모 관계/생성 시각은 그대로 두고 내용과 공개 작성자
+      // 정보만 비운다. 중간 답글이 삭제돼도 후속 답글의 위치가 유지된다.
+      transaction.update(commentRef, <String, dynamic>{
+        'isDeleted': true,
+        'deletedAt': FieldValue.serverTimestamp(),
+        'content': '',
+        'authorNickname': '',
+        'authorPhotoUrl': '',
+        'likeCount': 0,
+        'likedBy': <String>[],
+      });
+    }).timeout(const Duration(seconds: 10));
+  }
+
+  // 스레드 보존형 댓글 삭제. 기존 메서드명은 호출부 호환을 위해 유지한다.
   Future<bool> deleteCommentWithReplies(String commentId, String postId) async {
     try {
       final user = _auth.currentUser;
@@ -527,11 +612,7 @@ class CommentService {
       // 본인이 작성한 댓글만 삭제 가능
       if (commentUserId != user.uid) return false;
 
-      // NOTE:
-      // - 대댓글은 다른 사용자가 작성한 경우가 많아, 클라이언트 권한으로 일괄 삭제가 실패할 수 있다.
-      // - 따라서 여기서는 "부모 댓글"만 삭제하고,
-      //   대댓글은 Cloud Functions(onDelete 트리거)에서 관리자 권한으로 연쇄 삭제한다.
-      await _firestore.collection('comments').doc(commentId).delete();
+      await _softDeleteComment(commentDoc.reference, user.uid);
 
       // 댓글 수 정합성 보정 (리뷰 프로필용)
       unawaited(_updateCommentCount(postId));

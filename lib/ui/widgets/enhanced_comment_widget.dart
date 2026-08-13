@@ -4,6 +4,7 @@
 
 import 'package:flutter/gestures.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:url_launcher/url_launcher.dart';
 import 'package:linkify/linkify.dart' as linkify;
@@ -16,6 +17,7 @@ import '../../l10n/app_localizations.dart';
 import '../../screens/friend_profile_screen.dart';
 import '../../screens/main_screen.dart';
 import '../../utils/logger.dart';
+import '../../utils/responsive_helper.dart';
 import '../dialogs/block_dialog.dart';
 import '../snackbar/app_snackbar.dart';
 
@@ -94,7 +96,8 @@ class _EnhancedCommentWidgetState extends State<EnhancedCommentWidget> {
     final l10n = AppLocalizations.of(context)!;
 
     final canReport = !isMyComment;
-    final canReply = !isMyComment && widget.isAnonymousPost && widget.onReplyTap != null;
+    final canReply =
+        !isMyComment && widget.isAnonymousPost && widget.onReplyTap != null;
     final canDelete = isMyComment;
     final canBlock = !isMyComment &&
         !widget.isAnonymousPost &&
@@ -132,7 +135,8 @@ class _EnhancedCommentWidgetState extends State<EnhancedCommentWidget> {
                         widget.onReplyTap?.call();
                       },
                     ),
-                  if (canReply && (canReport || canBlock || canHideAnonymousComment))
+                  if (canReply &&
+                      (canReport || canBlock || canHideAnonymousComment))
                     const _ActionDivider(),
                   if (canReport)
                     _ActionRow(
@@ -158,9 +162,7 @@ class _EnhancedCommentWidgetState extends State<EnhancedCommentWidget> {
                           userName: targetName,
                         );
                         if (!mounted) return;
-                        if (result != null &&
-                            result is Map<String, dynamic> &&
-                            result['success'] == true) {
+                        if (result != null && result['success'] == true) {
                           setState(() {
                             _hiddenByReport = true;
                           });
@@ -178,7 +180,8 @@ class _EnhancedCommentWidgetState extends State<EnhancedCommentWidget> {
                       onTap: () async {
                         Navigator.pop(sheetContext);
                         if (!mounted) return;
-                        final success = await ReportService.hideAnonymousComment(
+                        final success =
+                            await ReportService.hideAnonymousComment(
                           commentId: widget.comment.id,
                           postId: widget.postId,
                         );
@@ -234,12 +237,13 @@ class _EnhancedCommentWidgetState extends State<EnhancedCommentWidget> {
   /// 신고 다이얼로그
   Future<void> _showReportDialog() async {
     final TextEditingController reasonController = TextEditingController();
-    
+
     final confirmed = await showDialog<bool>(
       context: context,
       builder: (context) {
         return AlertDialog(
-          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
+          shape:
+              RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
           backgroundColor: Colors.white,
           elevation: 8,
           contentPadding: const EdgeInsets.fromLTRB(24, 20, 24, 0),
@@ -250,14 +254,11 @@ class _EnhancedCommentWidgetState extends State<EnhancedCommentWidget> {
                 width: 28,
                 height: 28,
                 decoration: BoxDecoration(
-                  color: const Color(0xFFEF4444).withOpacity(0.1),
+                  color: const Color(0xFFEF4444).withValues(alpha: 0.1),
                   borderRadius: BorderRadius.circular(8),
                 ),
-                child: const Icon(
-                  Icons.report_gmailerrorred_outlined, 
-                  color: Color(0xFFEF4444), 
-                  size: 18
-                ),
+                child: const Icon(Icons.report_gmailerrorred_outlined,
+                    color: Color(0xFFEF4444), size: 18),
               ),
               const SizedBox(width: 12),
               Text(
@@ -294,9 +295,12 @@ class _EnhancedCommentWidgetState extends State<EnhancedCommentWidget> {
                   color: Color(0xFF111827),
                 ),
                 decoration: InputDecoration(
-                  labelText: Localizations.localeOf(context).languageCode == 'ko' ? '신고 사유' : 'Reason',
-                  hintText: Localizations.localeOf(context).languageCode == 'ko' 
-                      ? '신고 사유를 입력해주세요 (예: 욕설, 비방)' 
+                  labelText:
+                      Localizations.localeOf(context).languageCode == 'ko'
+                          ? '신고 사유'
+                          : 'Reason',
+                  hintText: Localizations.localeOf(context).languageCode == 'ko'
+                      ? '신고 사유를 입력해주세요 (예: 욕설, 비방)'
                       : 'Please enter the reason (e.g., abuse, spam)',
                   labelStyle: const TextStyle(
                     fontFamily: 'Pretendard',
@@ -318,9 +322,11 @@ class _EnhancedCommentWidgetState extends State<EnhancedCommentWidget> {
                   ),
                   focusedBorder: OutlineInputBorder(
                     borderRadius: BorderRadius.circular(12),
-                    borderSide: const BorderSide(color: Color(0xFFEF4444), width: 1.5),
+                    borderSide:
+                        const BorderSide(color: Color(0xFFEF4444), width: 1.5),
                   ),
-                  contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+                  contentPadding:
+                      const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
                   filled: true,
                   fillColor: const Color(0xFFF9FAFB),
                 ),
@@ -435,104 +441,124 @@ class _EnhancedCommentWidgetState extends State<EnhancedCommentWidget> {
     final confirmed = await showDialog<bool>(
       context: context,
       barrierDismissible: true,
-      builder: (context) {
-        return AlertDialog(
-          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
+      barrierColor: const Color(0x99000000),
+      builder: (dialogContext) {
+        const dangerColor = Color(0xFFD92D20);
+        const primaryText = Color(0xFF111827);
+        const secondaryText = Color(0xFF667085);
+        final horizontalInset = dialogContext.rs(28).clamp(20, 36).toDouble();
+        final contentPadding = dialogContext.rs(22).clamp(20, 24).toDouble();
+
+        return Dialog(
           backgroundColor: Colors.white,
-          elevation: 8,
-          contentPadding: const EdgeInsets.fromLTRB(24, 20, 24, 0),
-          actionsPadding: const EdgeInsets.fromLTRB(24, 0, 24, 20),
-          title: Row(
-            children: [
-              Container(
-                width: 28,
-                height: 28,
-                decoration: BoxDecoration(
-                  color: const Color(0xFFEF4444).withOpacity(0.1),
-                  borderRadius: BorderRadius.circular(8),
-                ),
-                child: const Icon(
-                  Icons.delete_outline, 
-                  color: Color(0xFFEF4444), 
-                  size: 18
-                ),
-              ),
-              const SizedBox(width: 12),
-              Text(
-                AppLocalizations.of(context)!.delete,
-                style: const TextStyle(
-                  fontFamily: 'Pretendard',
-                  fontSize: 18,
-                  fontWeight: FontWeight.w700,
-                  color: Color(0xFF111827),
-                ),
-              ),
-            ],
+          elevation: 0,
+          insetPadding: EdgeInsets.symmetric(
+            horizontal: horizontalInset,
+            vertical: dialogContext.rs(24).clamp(16, 32).toDouble(),
           ),
-          content: Padding(
-            padding: const EdgeInsets.only(top: 8, bottom: 16), // 하단 여백 추가
-            child: Text(
-              _getDeleteConfirmMessage(context),
-              style: const TextStyle(
-                fontFamily: 'Pretendard',
-                fontSize: 15,
-                fontWeight: FontWeight.w400,
-                color: Color(0xFF6B7280),
-                height: 1.5,
+          shape:
+              RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
+          child: ConstrainedBox(
+            constraints: const BoxConstraints(maxWidth: 380),
+            child: MediaQuery.withClampedTextScaling(
+              maxScaleFactor: 1.3,
+              child: SingleChildScrollView(
+                padding: EdgeInsets.fromLTRB(
+                  contentPadding,
+                  contentPadding,
+                  dialogContext.rs(16).clamp(12, 18).toDouble(),
+                  dialogContext.rs(12).clamp(10, 14).toDouble(),
+                ),
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      AppLocalizations.of(dialogContext)!.delete,
+                      style: TextStyle(
+                        fontFamily: 'Pretendard',
+                        fontSize: dialogContext.rf(17).clamp(16, 18).toDouble(),
+                        fontWeight: FontWeight.w700,
+                        height: 1.3,
+                        color: primaryText,
+                      ),
+                    ),
+                    SizedBox(
+                      height: dialogContext.rs(8).clamp(6, 10).toDouble(),
+                    ),
+                    Text(
+                      _getDeleteQuestion(dialogContext),
+                      style: TextStyle(
+                        fontFamily: 'Pretendard',
+                        fontSize:
+                            dialogContext.rf(14.5).clamp(13.5, 15.5).toDouble(),
+                        fontWeight: FontWeight.w600,
+                        height: 1.4,
+                        color: primaryText,
+                      ),
+                    ),
+                    SizedBox(
+                      height: dialogContext.rs(4).clamp(3, 6).toDouble(),
+                    ),
+                    Text(
+                      _getDeleteWarning(dialogContext),
+                      style: TextStyle(
+                        fontFamily: 'Pretendard',
+                        fontSize:
+                            dialogContext.rf(13).clamp(12.5, 14).toDouble(),
+                        fontWeight: FontWeight.w400,
+                        height: 1.5,
+                        color: secondaryText,
+                      ),
+                    ),
+                    SizedBox(
+                      height: dialogContext.rs(14).clamp(12, 18).toDouble(),
+                    ),
+                    Align(
+                      alignment: Alignment.centerRight,
+                      child: Wrap(
+                        spacing: 2,
+                        runSpacing: 2,
+                        alignment: WrapAlignment.end,
+                        children: [
+                          TextButton(
+                            onPressed: () {
+                              HapticFeedback.lightImpact();
+                              Navigator.pop(dialogContext, false);
+                            },
+                            style: _commentDeleteActionStyle(secondaryText),
+                            child: Text(
+                              AppLocalizations.of(dialogContext)!.cancel,
+                              style: const TextStyle(
+                                fontFamily: 'Pretendard',
+                                fontSize: 14,
+                                fontWeight: FontWeight.w600,
+                              ),
+                            ),
+                          ),
+                          TextButton(
+                            onPressed: () {
+                              HapticFeedback.mediumImpact();
+                              Navigator.pop(dialogContext, true);
+                            },
+                            style: _commentDeleteActionStyle(dangerColor),
+                            child: Text(
+                              AppLocalizations.of(dialogContext)!.delete,
+                              style: const TextStyle(
+                                fontFamily: 'Pretendard',
+                                fontSize: 14,
+                                fontWeight: FontWeight.w700,
+                              ),
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                  ],
+                ),
               ),
             ),
           ),
-          actions: [
-            Row(
-              children: [
-                Expanded(
-                  child: TextButton(
-                    onPressed: () => Navigator.pop(context, false),
-                    style: TextButton.styleFrom(
-                      padding: const EdgeInsets.symmetric(vertical: 12),
-                      shape: RoundedRectangleBorder(
-                        borderRadius: BorderRadius.circular(12),
-                        side: BorderSide(color: Colors.grey.shade300, width: 1),
-                      ),
-                      backgroundColor: Colors.white,
-                    ),
-                    child: Text(
-                      AppLocalizations.of(context)!.cancel,
-                      style: const TextStyle(
-                        fontFamily: 'Pretendard',
-                        fontSize: 14,
-                        fontWeight: FontWeight.w700, // w600 → w700 (bold)
-                        color: Color(0xFF6B7280),
-                      ),
-                    ),
-                  ),
-                ),
-                const SizedBox(width: 12),
-                Expanded(
-                  child: ElevatedButton(
-                    onPressed: () => Navigator.pop(context, true),
-                    style: ElevatedButton.styleFrom(
-                      padding: const EdgeInsets.symmetric(vertical: 12),
-                      backgroundColor: const Color(0xFFEF4444),
-                      foregroundColor: Colors.white,
-                      elevation: 0,
-                      shape: RoundedRectangleBorder(
-                        borderRadius: BorderRadius.circular(12),
-                      ),
-                    ),
-                    child: Text(
-                      AppLocalizations.of(context)!.delete,
-                      style: const TextStyle(
-                        fontFamily: 'Pretendard',
-                        fontSize: 14,
-                        fontWeight: FontWeight.w700, // w600 → w700 (bold)
-                      ),
-                    ),
-                  ),
-                ),
-              ],
-            ),
-          ],
         );
       },
     );
@@ -542,14 +568,16 @@ class _EnhancedCommentWidgetState extends State<EnhancedCommentWidget> {
     }
   }
 
-  /// 언어별 삭제 확인 메시지 반환
-  String _getDeleteConfirmMessage(BuildContext context) {
+  String _getDeleteQuestion(BuildContext context) {
     final locale = Localizations.localeOf(context).languageCode;
-    if (locale == 'ko') {
-      return '댓글을 삭제하시겠습니까?\n삭제된 댓글은 복구할 수 없습니다.';
-    } else {
-      return 'Are you sure you want to delete this comment?\nDeleted comments cannot be recovered.';
-    }
+    return locale == 'ko' ? '댓글을 삭제할까요?' : 'Delete this comment?';
+  }
+
+  String _getDeleteWarning(BuildContext context) {
+    final locale = Localizations.localeOf(context).languageCode;
+    return locale == 'ko'
+        ? '삭제한 댓글은 다시 복구할 수 없어요.'
+        : 'This comment cannot be restored after deletion.';
   }
 
   String _localizedText({required String ko, required String en}) {
@@ -612,7 +640,8 @@ class _EnhancedCommentWidgetState extends State<EnhancedCommentWidget> {
           context: context,
           barrierDismissible: true,
           builder: (context) => AlertDialog(
-            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
+            shape:
+                RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
             backgroundColor: Colors.white,
             elevation: 8,
             contentPadding: const EdgeInsets.fromLTRB(24, 20, 24, 0),
@@ -623,7 +652,7 @@ class _EnhancedCommentWidgetState extends State<EnhancedCommentWidget> {
                   width: 28,
                   height: 28,
                   decoration: BoxDecoration(
-                    color: const Color(0xFF6366F1).withOpacity(0.1),
+                    color: const Color(0xFF6366F1).withValues(alpha: 0.1),
                     borderRadius: BorderRadius.circular(8),
                   ),
                   child: const Icon(
@@ -670,7 +699,8 @@ class _EnhancedCommentWidgetState extends State<EnhancedCommentWidget> {
                         padding: const EdgeInsets.symmetric(vertical: 12),
                         shape: RoundedRectangleBorder(
                           borderRadius: BorderRadius.circular(12),
-                          side: BorderSide(color: Colors.grey.shade300, width: 1),
+                          side:
+                              BorderSide(color: Colors.grey.shade300, width: 1),
                         ),
                         backgroundColor: Colors.white,
                       ),
@@ -716,7 +746,8 @@ class _EnhancedCommentWidgetState extends State<EnhancedCommentWidget> {
         false;
 
     if (!confirmed || !mounted) return;
-    final success = await ReportService.unhideAnonymousComment(widget.comment.id);
+    final success =
+        await ReportService.unhideAnonymousComment(widget.comment.id);
     if (!mounted) return;
     if (success) {
       setState(() {});
@@ -743,7 +774,9 @@ class _EnhancedCommentWidgetState extends State<EnhancedCommentWidget> {
   void _openCommentAuthorProfile() {
     // 익명 게시글에서는 프로필 접근 불가
     if (widget.isAnonymousPost) return;
-    if (widget.comment.userId.isEmpty || widget.comment.userId == 'deleted') return;
+    if (widget.comment.userId.isEmpty || widget.comment.userId == 'deleted') {
+      return;
+    }
 
     final me = FirebaseAuth.instance.currentUser?.uid;
     if (me != null && widget.comment.userId == me) {
@@ -792,8 +825,9 @@ class _EnhancedCommentWidgetState extends State<EnhancedCommentWidget> {
 
     try {
       // 댓글 좋아요 토글 실행
-      final success = await _commentService.toggleCommentLike(widget.comment.id, user.uid);
-      
+      final success =
+          await _commentService.toggleCommentLike(widget.comment.id, user.uid);
+
       if (!success && mounted) {
         AppSnackBar.show(
           context,
@@ -813,6 +847,122 @@ class _EnhancedCommentWidgetState extends State<EnhancedCommentWidget> {
     }
   }
 
+  List<Widget> _buildReplyThread() {
+    if (widget.replies.isEmpty) return const <Widget>[];
+
+    return <Widget>[
+      const SizedBox(height: 12),
+      Padding(
+        padding: const EdgeInsets.only(left: 42.0),
+        child: InkWell(
+          onTap: () => setState(() => _showReplies = !_showReplies),
+          child: Row(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Container(
+                width: 24,
+                height: 1,
+                color: const Color(0xFFD1D5DB),
+                margin: const EdgeInsets.only(right: 8),
+              ),
+              Text(
+                _showReplies
+                    ? _localizedText(ko: '답글 숨기기', en: 'Hide replies')
+                    : _localizedText(
+                        ko: '답글 ${widget.replies.length}개 보기',
+                        en: 'View ${widget.replies.length} replies',
+                      ),
+                style: const TextStyle(
+                  fontFamily: 'Pretendard',
+                  fontSize: 12,
+                  fontWeight: FontWeight.w600,
+                  color: Color(0xFF6B7280),
+                ),
+              ),
+            ],
+          ),
+        ),
+      ),
+      if (_showReplies) ...[
+        const SizedBox(height: 12),
+        ...widget.replies.map((reply) {
+          final child = widget.replyWidgetBuilder?.call(reply) ??
+              EnhancedCommentWidget(
+                key: ValueKey<String>('comment-${reply.id}'),
+                comment: reply,
+                replies: const [],
+                postId: widget.postId,
+                onDeleteComment: widget.onDeleteComment,
+                isAnonymousPost: widget.isAnonymousPost,
+                getDisplayName: widget.getDisplayName,
+                isReplyTarget: false,
+                parentTopLevelCommentId: widget.comment.id,
+                onReplyTap: reply.isDeleted ? null : widget.onReplyTap,
+              );
+
+          // 빌더가 반환한 위젯에도 댓글 문서 ID를 키로 강제한다. 중간 항목이
+          // 사라지거나 갱신돼도 다음 댓글의 State/프로필 스트림이 재사용되지 않는다.
+          return KeyedSubtree(
+            key: ValueKey<String>('reply-slot-${reply.id}'),
+            child: child,
+          );
+        }),
+      ],
+    ];
+  }
+
+  Widget _buildDeletedCommentPlaceholder() {
+    return Container(
+      margin: EdgeInsets.only(
+        left: 16.0 + (widget.comment.depth * 20.0),
+        right: widget.comment.depth == 0 ? 16.0 : 0.0,
+        bottom: 16,
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              if (!widget.isAnonymousPost) ...[
+                Container(
+                  width: 32,
+                  height: 32,
+                  alignment: Alignment.center,
+                  decoration: const BoxDecoration(
+                    shape: BoxShape.circle,
+                    color: Color(0xFFF3F4F6),
+                  ),
+                  child: const Icon(
+                    Icons.person_off_outlined,
+                    size: 17,
+                    color: Color(0xFF9CA3AF),
+                  ),
+                ),
+                const SizedBox(width: 10),
+              ],
+              Expanded(
+                child: Text(
+                  _localizedText(
+                    ko: '삭제된 댓글입니다.',
+                    en: 'This comment was deleted.',
+                  ),
+                  style: const TextStyle(
+                    fontFamily: 'Pretendard',
+                    fontSize: 14,
+                    fontWeight: FontWeight.w500,
+                    color: Color(0xFF9CA3AF),
+                    height: 1.45,
+                  ),
+                ),
+              ),
+            ],
+          ),
+          ..._buildReplyThread(),
+        ],
+      ),
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     if (_hiddenByReport ||
@@ -825,12 +975,18 @@ class _EnhancedCommentWidgetState extends State<EnhancedCommentWidget> {
     if (ContentHideService.isHiddenAnonymousComment(widget.comment.id)) {
       return _buildHiddenCommentPlaceholder();
     }
+    if (widget.comment.isDeleted) {
+      return _buildDeletedCommentPlaceholder();
+    }
 
     final currentUser = FirebaseAuth.instance.currentUser;
     final isMyComment = currentUser?.uid == widget.comment.userId;
-    final isLiked = currentUser != null && widget.comment.isLikedBy(currentUser.uid);
-    final likeColor = isLiked ? const Color(0xFFEF4444) : const Color(0xFF9CA3AF);
-    final likeCountColor = isLiked ? const Color(0xFFEF4444) : const Color(0xFF6B7280);
+    final isLiked =
+        currentUser != null && widget.comment.isLikedBy(currentUser.uid);
+    final likeColor =
+        isLiked ? const Color(0xFFEF4444) : const Color(0xFF9CA3AF);
+    final likeCountColor =
+        isLiked ? const Color(0xFFEF4444) : const Color(0xFF6B7280);
     const bodyStyle = TextStyle(
       fontFamily: 'Pretendard',
       fontSize: 15,
@@ -869,11 +1025,6 @@ class _EnhancedCommentWidgetState extends State<EnhancedCommentWidget> {
       required String displayName,
       required String photoUrl,
     }) {
-      // 최상위 댓글 ID 결정: 현재 댓글이 최상위면 자기 자신, 아니면 부모 ID
-      final String parentTopId = widget.comment.depth == 0 
-          ? widget.comment.id 
-          : (widget.parentTopLevelCommentId ?? widget.comment.parentCommentId ?? widget.comment.id);
-
       return GestureDetector(
         behavior: HitTestBehavior.translucent,
         onLongPress: () {
@@ -893,76 +1044,65 @@ class _EnhancedCommentWidgetState extends State<EnhancedCommentWidget> {
           }
         },
         child: Container(
-        margin: EdgeInsets.only(
-          left: 16.0 + (widget.comment.depth * 20.0),
-          // 대댓글은 부모 컨테이너(우측 16px) 안에 렌더링되므로
-          // 여기서 우측 여백을 또 주면 하트가 왼쪽으로 밀림 → depth>0은 0으로
-          right: widget.comment.depth == 0 ? 16.0 : 0.0,
-          bottom: 16, // 댓글 간 간격
-        ),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Row(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                // 익명 게시글이 아닐 때만 프로필 이미지 표시
-                if (!widget.isAnonymousPost) ...[
-                  GestureDetector(
-                    onTap: _openCommentAuthorProfile,
-                    child: Container(
-                      width: 32,
-                      height: 32,
-                      margin: const EdgeInsets.only(top: 2),
-                      decoration: BoxDecoration(
-                        shape: BoxShape.circle,
-                        color: Colors.grey[200],
-                      ),
-                      child: photoUrl.trim().isNotEmpty
-                          ? ClipOval(
-                              child: Image.network(
-                                photoUrl.trim(),
-                                width: 32,
-                                height: 32,
-                                fit: BoxFit.cover,
-                                errorBuilder: (_, __, ___) => Icon(
-                                  Icons.person,
-                                  size: 18,
-                                  color: Colors.grey[500],
-                                ),
-                              ),
-                            )
-                          : Icon(
-                              Icons.person,
-                              size: 18,
-                              color: Colors.grey[500],
-                            ),
-                    ),
-                  ),
-                  const SizedBox(width: 10),
-                ],
-
-                // 댓글 내용 영역
-                Expanded(
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Row(
-                        children: [
-                          // 익명 게시글이면 클릭 불가능한 텍스트, 아니면 클릭 가능
-                          widget.isAnonymousPost
-                              ? Text(
-                                  displayName,
-                                  style: const TextStyle(
-                                    fontFamily: 'Pretendard',
-                                    fontSize: 14,
-                                    fontWeight: FontWeight.w700,
-                                    color: Color(0xFF111827),
+          margin: EdgeInsets.only(
+            left: 16.0 + (widget.comment.depth * 20.0),
+            // 대댓글은 부모 컨테이너(우측 16px) 안에 렌더링되므로
+            // 여기서 우측 여백을 또 주면 하트가 왼쪽으로 밀림 → depth>0은 0으로
+            right: widget.comment.depth == 0 ? 16.0 : 0.0,
+            bottom: 16, // 댓글 간 간격
+          ),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Row(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  // 익명 게시글이 아닐 때만 프로필 이미지 표시
+                  if (!widget.isAnonymousPost) ...[
+                    GestureDetector(
+                      onTap: _openCommentAuthorProfile,
+                      child: Container(
+                        width: 32,
+                        height: 32,
+                        margin: const EdgeInsets.only(top: 2),
+                        decoration: BoxDecoration(
+                          shape: BoxShape.circle,
+                          color: Colors.grey[200],
+                        ),
+                        child: photoUrl.trim().isNotEmpty
+                            ? ClipOval(
+                                child: Image.network(
+                                  photoUrl.trim(),
+                                  width: 32,
+                                  height: 32,
+                                  fit: BoxFit.cover,
+                                  errorBuilder: (_, __, ___) => Icon(
+                                    Icons.person,
+                                    size: 18,
+                                    color: Colors.grey[500],
                                   ),
-                                )
-                              : GestureDetector(
-                                  onTap: _openCommentAuthorProfile,
-                                  child: Text(
+                                ),
+                              )
+                            : Icon(
+                                Icons.person,
+                                size: 18,
+                                color: Colors.grey[500],
+                              ),
+                      ),
+                    ),
+                    const SizedBox(width: 10),
+                  ],
+
+                  // 댓글 내용 영역
+                  Expanded(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Row(
+                          children: [
+                            // 익명 게시글이면 클릭 불가능한 텍스트, 아니면 클릭 가능
+                            widget.isAnonymousPost
+                                ? Text(
                                     displayName,
                                     style: const TextStyle(
                                       fontFamily: 'Pretendard',
@@ -970,148 +1110,105 @@ class _EnhancedCommentWidgetState extends State<EnhancedCommentWidget> {
                                       fontWeight: FontWeight.w700,
                                       color: Color(0xFF111827),
                                     ),
+                                  )
+                                : GestureDetector(
+                                    onTap: _openCommentAuthorProfile,
+                                    child: Text(
+                                      displayName,
+                                      style: const TextStyle(
+                                        fontFamily: 'Pretendard',
+                                        fontSize: 14,
+                                        fontWeight: FontWeight.w700,
+                                        color: Color(0xFF111827),
+                                      ),
+                                    ),
                                   ),
-                                ),
-                          const SizedBox(width: 6),
-                          Text(
-                            widget.comment.getFormattedTime(context),
-                            style: const TextStyle(
-                              fontFamily: 'Pretendard',
-                              fontSize: 12,
-                              fontWeight: FontWeight.w400,
-                              color: Color(0xFF6B7280),
-                            ),
-                          ),
-                          const Spacer(),
-                        ],
-                      ),
-                      const SizedBox(height: 2),
-
-                      // @아이디를 본문과 "같은 텍스트 흐름"으로 합쳐 줄바꿈까지 자연스럽게 처리
-                      RichText(
-                        text: TextSpan(
-                          children: [
-                            if (isReply)
-                              TextSpan(
-                                text: '@${widget.comment.replyToUserNickname} ',
-                                style: mentionStyle,
-                              ),
-                            ..._buildLinkifiedSpans(
-                              text: widget.comment.content,
-                              style: bodyStyle,
-                              linkStyle: linkStyle,
-                            ),
-                          ],
-                        ),
-                      ),
-
-                      const SizedBox(height: 8),
-                    ],
-                  ),
-                ),
-
-                // 우측 좋아요(하트) + 숫자: depth와 무관하게 동일한 X좌표에 자동 정렬
-                Padding(
-                  padding: const EdgeInsets.only(top: 6),
-                  child: SizedBox(
-                    width: 36,
-                    child: Column(
-                      mainAxisSize: MainAxisSize.min,
-                      children: [
-                        InkWell(
-                          onTap: _toggleLike,
-                          customBorder: const CircleBorder(),
-                          child: Padding(
-                            padding: const EdgeInsets.all(8.0),
-                            child: Icon(
-                              isLiked
-                                  ? Icons.favorite_rounded
-                                  : Icons.favorite_border_rounded,
-                              size: 16,
-                              color: likeColor,
-                            ),
-                          ),
-                        ),
-                        if (widget.comment.likeCount > 0)
-                          Transform.translate(
-                            offset: const Offset(0, -4),
-                            child: Text(
-                              '${widget.comment.likeCount}',
-                              style: TextStyle(
+                            const SizedBox(width: 6),
+                            Text(
+                              widget.comment.getFormattedTime(context),
+                              style: const TextStyle(
                                 fontFamily: 'Pretendard',
                                 fontSize: 12,
-                                fontWeight: FontWeight.w700,
-                                color: likeCountColor,
-                                height: 1.0,
+                                fontWeight: FontWeight.w400,
+                                color: Color(0xFF6B7280),
                               ),
                             ),
+                            const Spacer(),
+                          ],
+                        ),
+                        const SizedBox(height: 2),
+
+                        // @아이디를 본문과 "같은 텍스트 흐름"으로 합쳐 줄바꿈까지 자연스럽게 처리
+                        RichText(
+                          text: TextSpan(
+                            children: [
+                              if (isReply)
+                                TextSpan(
+                                  text:
+                                      '@${widget.comment.replyToUserNickname} ',
+                                  style: mentionStyle,
+                                ),
+                              ..._buildLinkifiedSpans(
+                                text: widget.comment.content,
+                                style: bodyStyle,
+                                linkStyle: linkStyle,
+                              ),
+                            ],
                           ),
+                        ),
+
+                        const SizedBox(height: 8),
                       ],
                     ),
                   ),
-                ),
-              ],
-            ),
 
-            // 답글 더보기/숨기기 + 답글 목록 (부모 Expanded 밖에서 렌더링 → 하트 정렬 자동)
-            if (widget.replies.isNotEmpty) ...[
-              const SizedBox(height: 12),
-              Padding(
-                padding: const EdgeInsets.only(left: 42.0), // 아바타(32) + 간격(10)
-                child: InkWell(
-                  onTap: () => setState(() => _showReplies = !_showReplies),
-                  child: Row(
-                    mainAxisSize: MainAxisSize.min,
-                    children: [
-                      Container(
-                        width: 24,
-                        height: 1,
-                        color: const Color(0xFFD1D5DB),
-                        margin: const EdgeInsets.only(right: 8),
+                  // 우측 좋아요(하트) + 숫자: depth와 무관하게 동일한 X좌표에 자동 정렬
+                  Padding(
+                    padding: const EdgeInsets.only(top: 6),
+                    child: SizedBox(
+                      width: 36,
+                      child: Column(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          InkWell(
+                            onTap: _toggleLike,
+                            customBorder: const CircleBorder(),
+                            child: Padding(
+                              padding: const EdgeInsets.all(8.0),
+                              child: Icon(
+                                isLiked
+                                    ? Icons.favorite_rounded
+                                    : Icons.favorite_border_rounded,
+                                size: 16,
+                                color: likeColor,
+                              ),
+                            ),
+                          ),
+                          if (widget.comment.likeCount > 0)
+                            Transform.translate(
+                              offset: const Offset(0, -4),
+                              child: Text(
+                                '${widget.comment.likeCount}',
+                                style: TextStyle(
+                                  fontFamily: 'Pretendard',
+                                  fontSize: 12,
+                                  fontWeight: FontWeight.w700,
+                                  color: likeCountColor,
+                                  height: 1.0,
+                                ),
+                              ),
+                            ),
+                        ],
                       ),
-                      Text(
-                        _showReplies
-                            ? '답글 숨기기'
-                            : '답글 ${widget.replies.length}개 보기',
-                        style: const TextStyle(
-                          fontFamily: 'Pretendard',
-                          fontSize: 12,
-                          fontWeight: FontWeight.w600,
-                          color: Color(0xFF6B7280),
-                        ),
-                      ),
-                    ],
+                    ),
                   ),
-                ),
+                ],
               ),
-              if (_showReplies) ...[
-                const SizedBox(height: 12),
-                ...widget.replies.map(
-                  (reply) {
-                    // replyWidgetBuilder가 제공되면 사용, 아니면 기본 위젯 생성
-                    if (widget.replyWidgetBuilder != null) {
-                      return widget.replyWidgetBuilder!(reply);
-                    }
-                    
-                    // 기본 대댓글 위젯 (backward compatibility)
-                    final parentTopId = widget.comment.id;
-                    return EnhancedCommentWidget(
-                      comment: reply,
-                      replies: const [],
-                      postId: widget.postId,
-                      onDeleteComment: widget.onDeleteComment,
-                      isAnonymousPost: widget.isAnonymousPost,
-                      getDisplayName: widget.getDisplayName,
-                      isReplyTarget: false,
-                      parentTopLevelCommentId: parentTopId,
-                      onReplyTap: widget.onReplyTap,
-                    );
-                  },
-                ),
-              ],
+
+              // 답글 목록은 문서 ID 키로 고정되어 삭제/삽입 후에도 State가 섞이지 않는다.
+              ..._buildReplyThread(),
             ],
-          ],
-        ),
+          ),
         ),
       );
     }
@@ -1140,12 +1237,22 @@ class _EnhancedCommentWidgetState extends State<EnhancedCommentWidget> {
         return buildContent(
           displayName:
               liveName.isNotEmpty ? liveName : widget.comment.authorNickname,
-          photoUrl: livePhoto.isNotEmpty ? livePhoto : widget.comment.authorPhotoUrl,
+          photoUrl:
+              livePhoto.isNotEmpty ? livePhoto : widget.comment.authorPhotoUrl,
         );
       },
     );
   }
 }
+
+ButtonStyle _commentDeleteActionStyle(Color foregroundColor) =>
+    TextButton.styleFrom(
+      foregroundColor: foregroundColor,
+      minimumSize: const Size(64, 40),
+      padding: const EdgeInsets.symmetric(horizontal: 12),
+      tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+    );
 
 class _ActionRow extends StatelessWidget {
   final IconData icon;

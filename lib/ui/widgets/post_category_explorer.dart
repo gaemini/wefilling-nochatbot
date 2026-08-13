@@ -92,7 +92,7 @@ class PostCategoryExplorer extends StatelessWidget {
                 delegate: SliverChildBuilderDelegate(
                   (context, index) {
                     final category = PostCategory.ordered[index];
-                    return _CategoryTile(
+                    return PostCategoryTile(
                       category: category,
                       contentPadding: tilePadding,
                       iconSize: iconSize,
@@ -123,8 +123,9 @@ class PostCategoryExplorer extends StatelessWidget {
   }
 }
 
-class _CategoryTile extends StatelessWidget {
-  const _CategoryTile({
+class PostCategoryTile extends StatelessWidget {
+  const PostCategoryTile({
+    super.key,
     required this.category,
     required this.contentPadding,
     required this.iconSize,

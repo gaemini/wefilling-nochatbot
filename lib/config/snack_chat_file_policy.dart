@@ -14,7 +14,6 @@ class SnackChatFilePolicy {
   static const int maxFileBytes = 20 * 1024 * 1024;
   static const int maxSelectionCount = 5;
   static const int maxConcurrentUploads = 2;
-  static const int maxLocalCacheBytes = 150 * 1024 * 1024;
 
   static const Map<String, String> allowedMimeByExtension = <String, String>{
     'pdf': 'application/pdf',
@@ -198,7 +197,10 @@ class SnackChatFilePolicy {
   static Future<List<int>> _readHead(File file, int count) async {
     final handle = await file.open();
     try {
-      return handle.read(count);
+      // `return handle.read(...)`만 사용하면 try/finally가 pending read보다
+      // 먼저 진행되어 Android에서 같은 RandomAccessFile을 닫으려 한다.
+      // 읽기가 끝난 뒤에만 close가 실행되도록 반드시 await한다.
+      return await handle.read(count);
     } finally {
       await handle.close();
     }

@@ -265,6 +265,9 @@ class PostService {
       authorPhotoURL: data['authorPhotoURL'] ?? '',
       category: data['category'] ?? '일반',
       categoryKey: data['categoryKey']?.toString(),
+      categoryKeys: data['categoryKeys'] is List
+          ? List<String>.from(data['categoryKeys'])
+          : const <String>[],
       createdAt: createdAt,
       userId: data['ownerId'] ?? data['userId'] ?? '',
       commentCount: data['commentCount'] ?? 0,
@@ -294,7 +297,7 @@ class PostService {
   Future<bool> addPost(
     String title,
     String content, {
-    required String categoryKey,
+    required List<String> categoryKeys,
     List<File>? imageFiles,
     String visibility = 'public', // 공개 범위
     bool isAnonymous = false, // 익명 여부
@@ -303,8 +306,14 @@ class PostService {
     List<String> pollOptions = const [], // type == 'poll'일 때만 사용
   }) async {
     try {
-      if (!PostCategory.isSupportedKey(categoryKey)) {
-        throw ArgumentError.value(categoryKey, 'categoryKey');
+      final normalizedCategoryKeys = categoryKeys
+          .map((key) => key.trim())
+          .where(PostCategory.isSupportedKey)
+          .toSet()
+          .toList(growable: false);
+      if (normalizedCategoryKeys.isEmpty ||
+          normalizedCategoryKeys.length != categoryKeys.length) {
+        throw ArgumentError.value(categoryKeys, 'categoryKeys');
       }
 
       final user = _auth.currentUser;
@@ -392,7 +401,8 @@ class PostService {
           'postId': postId,
           'title': title,
           'content': content,
-          'categoryKey': categoryKey,
+          'categoryKey': normalizedCategoryKeys.first,
+          'categoryKeys': normalizedCategoryKeys,
           'imageUrls': imageUrls,
           'visibility': visibility,
           'visibleToCategoryIds': normalizedCategoryIds,
@@ -444,12 +454,21 @@ class PostService {
   Future<Post?> updatePost({
     required Post post,
     required String content,
-    required String categoryKey,
+    required List<String> categoryKeys,
     required List<String> keptImageUrls,
     List<File>? newImageFiles,
   }) async {
     try {
-      if (!PostCategory.isSupportedKey(categoryKey)) return null;
+      final normalizedCategoryKeys = categoryKeys
+          .map((key) => key.trim())
+          .where(PostCategory.isSupportedKey)
+          .toSet()
+          .toList(growable: false);
+      if (normalizedCategoryKeys.isEmpty ||
+          normalizedCategoryKeys.length != categoryKeys.length) {
+        return null;
+      }
+      final categoryKey = normalizedCategoryKeys.first;
 
       final user = _auth.currentUser;
       if (user == null) return null;
@@ -501,6 +520,7 @@ class PostService {
       await postRef.update({
         'content': content,
         'categoryKey': categoryKey,
+        'categoryKeys': normalizedCategoryKeys,
         'imageUrls': finalImageUrls,
         'updatedAt': FieldValue.serverTimestamp(),
       });
@@ -525,6 +545,7 @@ class PostService {
           post.copyWith(
             content: content,
             categoryKey: categoryKey,
+            categoryKeys: normalizedCategoryKeys,
             imageUrls: finalImageUrls,
           );
     } catch (e) {
@@ -846,9 +867,12 @@ class PostService {
 
   /// 카테고리별 최신 게시글 페이지를 가져옵니다.
   ///
-  /// `other`는 운영 마이그레이션 전에도 categoryKey가 없는 레거시 글을
-  /// 누락시키지 않도록 createdAt 페이지를 제한적으로 스캔합니다. 다른
-  /// 카테고리는 복합 index를 사용하는 strict query를 적용합니다.
+  /// 공개 범위 쿼리를 먼저 적용한 뒤 태그를 필터링합니다.
+  ///
+  /// allowedUserIds와 categoryKeys는 모두 array 필드이므로 Firestore 쿼리에
+  /// 두 arrayContains를 결합할 수 없습니다. 접근 권한을 약화하지 않으면서
+  /// 보조 태그도 노출하기 위해 최신 구간을 연속 스캔합니다. categoryKey만
+  /// 가진 기존 글도 같은 결과에 포함합니다.
   Future<PostCategoryPage> getPostsByCategoryPage({
     required PostCategory category,
     DocumentSnapshot<Map<String, dynamic>>? startAfter,
@@ -867,19 +891,14 @@ class PostService {
       return const PostCategoryPage(posts: [], cursor: null, hasMore: false);
     }
 
-    final beforeCreatedAt = startAfter?.data()?['createdAt'];
-    final fetchLimit = category == PostCategory.other
-        ? (normalizedPageSize * 3).clamp(30, 150)
-        : normalizedPageSize;
+    Timestamp? beforeCreatedAt = startAfter?.data()?['createdAt'] as Timestamp?;
+    final fetchLimit = (normalizedPageSize * 3).clamp(60, 150);
 
     Future<QuerySnapshot<Map<String, dynamic>>> fetch(
       Query<Map<String, dynamic>> query,
     ) {
       var scoped = query;
-      if (category != PostCategory.other) {
-        scoped = scoped.where('categoryKey', isEqualTo: category.key);
-      }
-      if (beforeCreatedAt is Timestamp) {
+      if (beforeCreatedAt != null) {
         scoped = scoped.where('createdAt', isLessThan: beforeCreatedAt);
       }
       return scoped
@@ -889,26 +908,73 @@ class PostService {
           .timeout(_categoryQueryTimeout);
     }
 
-    final snapshots = await Future.wait([
-      fetch(_firestore
-          .collection('posts')
-          .where('visibility', isEqualTo: 'public')),
-      fetch(_firestore
-          .collection('posts')
-          .where('allowedUserIds', arrayContains: user.uid)),
-      fetch(
-          _firestore.collection('posts').where('userId', isEqualTo: user.uid)),
-    ], eagerError: true);
     final byId = <String, QueryDocumentSnapshot<Map<String, dynamic>>>{};
-    for (final snapshot in snapshots) {
-      for (final doc in snapshot.docs) {
-        if (category == PostCategory.other &&
-            PostCategory.fromKey(doc.data()['categoryKey']) != category) {
-          continue;
-        }
-        byId[doc.id] = doc;
+    DocumentSnapshot<Map<String, dynamic>>? scannedCursor = startAfter;
+    var sourceHasMore = true;
+
+    bool matchesCategory(Map<String, dynamic> data) {
+      final rawKeys = data['categoryKeys'];
+      if (rawKeys is List && rawKeys.any((key) => key == category.key)) {
+        return true;
       }
+      return PostCategory.fromKey(data['categoryKey']) == category;
     }
+
+    // 희소한 태그에서도 첫 화면이 비어 보이지 않도록 최대 다섯 구간을
+    // 이어서 읽습니다. 각 구간은 접근 가능한 문서만 반환합니다.
+    for (var round = 0;
+        round < 5 && byId.length <= normalizedPageSize && sourceHasMore;
+        round++) {
+      final snapshots = await Future.wait([
+        fetch(_firestore
+            .collection('posts')
+            .where('visibility', isEqualTo: 'public')),
+        fetch(_firestore
+            .collection('posts')
+            .where('allowedUserIds', arrayContains: user.uid)),
+        fetch(_firestore
+            .collection('posts')
+            .where('userId', isEqualTo: user.uid)),
+      ], eagerError: true);
+
+      final scannedById =
+          <String, QueryDocumentSnapshot<Map<String, dynamic>>>{};
+      for (final snapshot in snapshots) {
+        for (final doc in snapshot.docs) {
+          scannedById[doc.id] = doc;
+          if (matchesCategory(doc.data())) byId[doc.id] = doc;
+        }
+      }
+
+      final scannedDocs = scannedById.values.toList()
+        ..sort((a, b) {
+          final at = a.data()['createdAt'];
+          final bt = b.data()['createdAt'];
+          final aDate = at is Timestamp
+              ? at.toDate()
+              : DateTime.fromMillisecondsSinceEpoch(0);
+          final bDate = bt is Timestamp
+              ? bt.toDate()
+              : DateTime.fromMillisecondsSinceEpoch(0);
+          return bDate.compareTo(aDate);
+        });
+      if (scannedDocs.isEmpty) {
+        sourceHasMore = false;
+        break;
+      }
+
+      scannedCursor = scannedDocs.last;
+      final oldestCreatedAt = scannedCursor.data()?['createdAt'];
+      sourceHasMore = snapshots.any(
+        (snapshot) => snapshot.docs.length == fetchLimit,
+      );
+      if (oldestCreatedAt is! Timestamp) {
+        sourceHasMore = false;
+        break;
+      }
+      beforeCreatedAt = oldestCreatedAt;
+    }
+
     final rawDocs = byId.values.toList()
       ..sort((a, b) {
         final at = a.data()['createdAt'];
@@ -922,9 +988,8 @@ class PostService {
         return bDate.compareTo(aDate);
       });
     final pageDocs = rawDocs.take(normalizedPageSize).toList(growable: false);
-    final cursor = pageDocs.isEmpty ? startAfter : pageDocs.last;
-    final hasMore = rawDocs.length > normalizedPageSize ||
-        snapshots.any((snapshot) => snapshot.docs.length == fetchLimit);
+    final cursor = pageDocs.isEmpty ? scannedCursor : pageDocs.last;
+    final hasMore = rawDocs.length > normalizedPageSize || sourceHasMore;
 
     final parsed = pageDocs
         .map((doc) => _buildPostFromFirestore(doc.id, doc.data()))
@@ -1185,20 +1250,10 @@ class PostService {
 
       final lowercaseQuery = query.toLowerCase();
 
-      Query<Map<String, dynamic>> withCategory(
-        Query<Map<String, dynamic>> source,
-      ) {
-        if (category == null || category.isEmpty) return source;
-        return source.where('categoryKey', isEqualTo: category);
-      }
-
       Future<QuerySnapshot<Map<String, dynamic>>> fetch(
         Query<Map<String, dynamic>> source,
       ) =>
-          withCategory(source)
-              .orderBy('createdAt', descending: true)
-              .limit(600)
-              .get();
+          source.orderBy('createdAt', descending: true).limit(600).get();
 
       final snapshots = await Future.wait([
         fetch(_firestore
@@ -1226,6 +1281,11 @@ class PostService {
           final post = _buildPostFromFirestore(doc.id, data);
 
           if (!_canUserReadPost(post, user)) continue;
+          if (category != null &&
+              category.isNotEmpty &&
+              !post.categoryKeys.contains(category)) {
+            continue;
+          }
 
           // 검색어와 일치하는지 확인
           final title = (data['title'] as String? ?? '').toLowerCase();

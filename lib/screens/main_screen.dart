@@ -128,7 +128,10 @@ class _MainScreenState extends State<MainScreen> with WidgetsBindingObserver {
   Widget _buildScreenForIndex(int index) {
     switch (index) {
       case 0:
-        return BoardScreen(key: _boardScreenKey);
+        return BoardScreen(
+          key: _boardScreenKey,
+          onOpenMeetups: () => _onItemTapped(1),
+        );
       case 1:
         // 알림에서 온 모임은 최초 1회만 자동 오픈되도록 전달
         return MeetupHomePage(initialMeetupId: _pendingMeetupId);

@@ -34,7 +34,7 @@ class _EditPostScreenState extends State<EditPostScreen> {
   bool _isSubmitting = false;
   bool _isResolvingSelectedImages = false;
   bool _canSubmit = false;
-  late PostCategory _selectedPostCategory;
+  late final Set<PostCategory> _selectedPostTags;
 
   bool get _isPollLocked =>
       widget.post.type == 'poll' && (widget.post.pollTotalVotes > 0);
@@ -43,7 +43,7 @@ class _EditPostScreenState extends State<EditPostScreen> {
   void initState() {
     super.initState();
     _keptImageUrls = List<String>.from(widget.post.imageUrls);
-    _selectedPostCategory = widget.post.postCategory;
+    _selectedPostTags = widget.post.postCategories.toSet();
     _contentController.text = widget.post.content;
     _contentController.addListener(_checkCanSubmit);
     _checkCanSubmit();
@@ -63,6 +63,7 @@ class _EditPostScreenState extends State<EditPostScreen> {
     final can = !_isSubmitting &&
         !_isResolvingSelectedImages &&
         !_isPollLocked &&
+        _selectedPostTags.isNotEmpty &&
         (contentNotEmpty || hasAnyImage);
     if (can != _canSubmit && mounted) {
       setState(() => _canSubmit = can);
@@ -168,7 +169,8 @@ class _EditPostScreenState extends State<EditPostScreen> {
       final updated = await _postService.updatePost(
         post: widget.post,
         content: _contentController.text.trim(),
-        categoryKey: _selectedPostCategory.key,
+        categoryKeys:
+            _selectedPostTags.map((category) => category.key).toList(),
         keptImageUrls: List<String>.from(_keptImageUrls),
         newImageFiles: _selectedImages.isNotEmpty
             ? List<File>.from(_selectedImages)
@@ -417,10 +419,14 @@ class _EditPostScreenState extends State<EditPostScreen> {
                 ),
               const SizedBox(height: 12),
               PostCategorySelector(
-                selected: _selectedPostCategory,
+                selected: _selectedPostTags,
                 enabled: !_isSubmitting && !_isPollLocked,
-                onChanged: (category) {
-                  setState(() => _selectedPostCategory = category);
+                onChanged: (tags) {
+                  setState(() {
+                    _selectedPostTags
+                      ..clear()
+                      ..addAll(tags);
+                  });
                   _checkCanSubmit();
                 },
               ),

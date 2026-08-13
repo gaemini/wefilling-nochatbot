@@ -18,6 +18,7 @@ import java.io.BufferedInputStream
 import java.io.BufferedOutputStream
 import java.io.File
 import java.io.FileInputStream
+import java.io.FileOutputStream
 import java.util.UUID
 import java.util.concurrent.atomic.AtomicBoolean
 
@@ -111,7 +112,8 @@ class MainActivity : FlutterActivity() {
                     importDirectory,
                     UUID.randomUUID().toString() + (extension?.let { ".$it" } ?: ""),
                 )
-                outputFile = importedFile
+                val pendingFile = File(importedFile.absolutePath + ".part")
+                outputFile = pendingFile
 
                 val rawInput = when (sourceUri.scheme?.lowercase()) {
                     "content" -> contentResolver.openInputStream(sourceUri)
@@ -124,23 +126,30 @@ class MainActivity : FlutterActivity() {
 
                 var totalBytes = 0L
                 BufferedInputStream(rawInput).use { input ->
-                    BufferedOutputStream(importedFile.outputStream()).use { output ->
-                        val buffer = ByteArray(DEFAULT_BUFFER_SIZE * 8)
-                        while (true) {
-                            val read = input.read(buffer)
-                            if (read < 0) break
-                            totalBytes += read
-                            if (totalBytes > maxDocumentBytes) {
-                                throw IllegalArgumentException("Document exceeds the 20 MB limit.")
+                    FileOutputStream(pendingFile).use { rawOutput ->
+                        BufferedOutputStream(rawOutput).use { output ->
+                            val buffer = ByteArray(DEFAULT_BUFFER_SIZE * 8)
+                            while (true) {
+                                val read = input.read(buffer)
+                                if (read < 0) break
+                                totalBytes += read
+                                if (totalBytes > maxDocumentBytes) {
+                                    throw IllegalArgumentException("Document exceeds the 20 MB limit.")
+                                }
+                                output.write(buffer, 0, read)
                             }
-                            output.write(buffer, 0, read)
+                            output.flush()
+                            rawOutput.fd.sync()
                         }
-                        output.flush()
                     }
                 }
                 if (totalBytes <= 0L) {
                     throw IllegalArgumentException("The selected document is empty.")
                 }
+                if (!pendingFile.renameTo(importedFile)) {
+                    throw IllegalStateException("Could not publish the imported document.")
+                }
+                outputFile = importedFile
                 runOnUiThread { result.success(importedFile.absolutePath) }
             } catch (error: Throwable) {
                 outputFile?.delete()
@@ -274,6 +283,4 @@ class MainActivity : FlutterActivity() {
         }.start()
     }
 }
-
-
 

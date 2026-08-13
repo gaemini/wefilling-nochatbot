@@ -502,7 +502,8 @@ class SnackChatMessage {
 
   bool get isPending => sendStatus == MessageSendStatus.sending;
   bool get hasFailed => sendStatus == MessageSendStatus.failed;
-  bool get isTemporaryFile => retentionMode == 'temporary24h';
+  bool get isTemporaryFile =>
+      retentionMode == 'temporary24h' || retentionMode == 'temporary30d';
   bool get isFileExpired {
     final deadline = expiresAt;
     return type == SnackChatMessageType.file &&

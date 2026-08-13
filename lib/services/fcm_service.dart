@@ -736,7 +736,10 @@ class FCMService {
 
   bool _isMeetupType(String type) {
     if (type.isEmpty) return false;
-    if (type.startsWith('meetup_')) return true;
+    final normalized = type.toLowerCase();
+    if (normalized.startsWith('meetup_') || normalized == 'new_meetup') {
+      return true;
+    }
     // 서버/클라 타입이 바뀌는 경우를 대비한 안전장치
     switch (type) {
       case 'review_approval_request':

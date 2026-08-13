@@ -734,6 +734,10 @@ class _MeetupDetailScreenState extends State<MeetupDetailScreen>
   }
 
   Widget? _buildMeetupSnackChatAction() {
+    // 만료된 밋업은 연결된 방 ID가 남아 있더라도 새 참여 진입점을 노출하지
+    // 않는다. 서버의 joinMeetupSnackChatSecure 만료 검증과 같은 정책이다.
+    if (_currentMeetup.isExpired()) return null;
+
     final roomId = _currentMeetup.snackChatId?.trim() ?? '';
     final canCreate = _isHost && !_currentMeetup.isExpired() && roomId.isEmpty;
     if (!canCreate && roomId.isEmpty) return null;
@@ -1865,6 +1869,16 @@ class _MeetupDetailScreenState extends State<MeetupDetailScreen>
   Future<void> _openOrCreateMeetupSnackChat(String currentRoomId) async {
     if (_isSnackChatActionLoading) return;
     final isKo = Localizations.localeOf(context).languageCode == 'ko';
+    if (_currentMeetup.isExpired()) {
+      AppSnackBar.show(
+        context,
+        message: isKo
+            ? '만료된 밋업에서는 스낵챗에 참여할 수 없습니다.'
+            : 'You cannot join the Snack Chat for an expired meetup.',
+        type: AppSnackBarType.warning,
+      );
+      return;
+    }
     setState(() => _isSnackChatActionLoading = true);
     try {
       var roomId = currentRoomId;

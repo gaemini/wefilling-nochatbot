@@ -391,22 +391,25 @@ class NotificationService {
     if (user == null) return false;
 
     try {
-      // 현재 사용자의 모든 안 읽은 알림 찾기
-      final querySnapshot =
-          await _firestore
-              .collection('notifications')
-              .where('userId', isEqualTo: user.uid)
-              .where('isRead', isEqualTo: false)
-              .get();
+      // Firestore write batch 한도를 넘는 계정도 페이지 단위로 끝까지 처리한다.
+      while (true) {
+        final querySnapshot =
+            await _firestore
+                .collection('notifications')
+                .where('userId', isEqualTo: user.uid)
+                .where('isRead', isEqualTo: false)
+                .limit(450)
+                .get();
+        if (querySnapshot.docs.isEmpty) break;
 
-      // 배치 작업으로 모든 알림 업데이트
-      final batch = _firestore.batch();
-      for (var doc in querySnapshot.docs) {
-        batch.update(doc.reference, {'isRead': true});
+        final batch = _firestore.batch();
+        for (final doc in querySnapshot.docs) {
+          batch.update(doc.reference, {'isRead': true});
+        }
+        await batch.commit();
+        if (querySnapshot.docs.length < 450) break;
       }
 
-      await batch.commit();
-      
       // 실시간 리스너가 자동으로 배지를 업데이트하므로 수동 호출 불필요
       return true;
     } catch (e) {

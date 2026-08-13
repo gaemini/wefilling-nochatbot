@@ -17,6 +17,8 @@ class Comment {
   final String authorPhotoUrl;
   final String content;
   final DateTime createdAt;
+  final bool isDeleted;
+  final DateTime? deletedAt;
 
   // 대댓글 관련 필드
   final String? parentCommentId; // 대댓글인 경우 부모 댓글 ID
@@ -40,6 +42,8 @@ class Comment {
     required this.authorPhotoUrl,
     required this.content,
     required this.createdAt,
+    this.isDeleted = false,
+    this.deletedAt,
     this.parentCommentId,
     this.depth = 0,
     this.replyToCommentId,
@@ -63,6 +67,10 @@ class Comment {
       createdAt: data['createdAt'] != null
           ? (data['createdAt'] as Timestamp).toDate()
           : DateTime.now(),
+      isDeleted: data['isDeleted'] == true,
+      deletedAt: data['deletedAt'] is Timestamp
+          ? (data['deletedAt'] as Timestamp).toDate()
+          : null,
       parentCommentId: data['parentCommentId'],
       depth: data['depth'] ?? 0,
       replyToCommentId: data['replyToCommentId'],
@@ -101,6 +109,8 @@ class Comment {
       'authorPhotoUrl': authorPhotoUrl,
       'content': content,
       'createdAt': createdAt.millisecondsSinceEpoch,
+      'isDeleted': isDeleted,
+      'deletedAt': deletedAt?.millisecondsSinceEpoch,
       'parentCommentId': parentCommentId,
       'depth': depth,
       'replyToCommentId': replyToCommentId,
@@ -123,6 +133,10 @@ class Comment {
       createdAt: map['createdAt'] is int
           ? DateTime.fromMillisecondsSinceEpoch(map['createdAt'])
           : DateTime.now(),
+      isDeleted: map['isDeleted'] == true,
+      deletedAt: map['deletedAt'] is int
+          ? DateTime.fromMillisecondsSinceEpoch(map['deletedAt'])
+          : null,
       parentCommentId: map['parentCommentId'],
       depth: map['depth'] ?? 0,
       replyToCommentId: map['replyToCommentId'],
@@ -151,6 +165,8 @@ class Comment {
     String? authorPhotoUrl,
     String? content,
     DateTime? createdAt,
+    bool? isDeleted,
+    DateTime? deletedAt,
     String? parentCommentId,
     int? depth,
     String? replyToCommentId,
@@ -167,6 +183,8 @@ class Comment {
       authorPhotoUrl: authorPhotoUrl ?? this.authorPhotoUrl,
       content: content ?? this.content,
       createdAt: createdAt ?? this.createdAt,
+      isDeleted: isDeleted ?? this.isDeleted,
+      deletedAt: deletedAt ?? this.deletedAt,
       parentCommentId: parentCommentId ?? this.parentCommentId,
       depth: depth ?? this.depth,
       replyToCommentId: replyToCommentId ?? this.replyToCommentId,

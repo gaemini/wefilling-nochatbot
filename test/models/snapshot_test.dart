@@ -74,4 +74,27 @@ void main() {
       expect(item.reactionCounts['❤️'], 3);
     });
   });
+
+  group('SnapshotViewer', () {
+    test('uses stable fallbacks for legacy view receipt fields', () {
+      final viewer = SnapshotViewer.fromMap(
+        'viewer-id',
+        {
+          'nickname': '  jaemini  ',
+          'photoURL': 'https://example.com/avatar.jpg',
+          'photoVersion': 3,
+          'nationality': 'KR',
+          'university': 'Hanyang',
+          // Legacy receipts may only have the original first-view timestamp.
+          'firstViewedAt': DateTime.utc(2026, 8, 10, 4, 30),
+        },
+      );
+
+      expect(viewer.userId, 'viewer-id');
+      expect(viewer.displayName, 'jaemini');
+      expect(viewer.photoUrl, 'https://example.com/avatar.jpg');
+      expect(viewer.photoVersion, 3);
+      expect(viewer.viewedAt, DateTime.utc(2026, 8, 10, 4, 30));
+    });
+  });
 }

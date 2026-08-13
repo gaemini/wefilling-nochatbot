@@ -121,7 +121,10 @@ service firebase.storage {
         && message.data.storagePath == expectedPath
         && message.data.retentionMode == retentionMode
         && (
-          retentionMode == 'permanent'
+          (
+            retentionMode == 'permanent'
+            && !message.data.keys().hasAny(['expiresAt'])
+          )
           || (
             message.data.expiresAt is timestamp
             && request.time < message.data.expiresAt

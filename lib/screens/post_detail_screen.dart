@@ -40,6 +40,7 @@ import '../ui/dialogs/block_dialog.dart';
 import '../ui/dialogs/report_dialog.dart';
 import '../ui/snackbar/app_snackbar.dart';
 import '../ui/widgets/post_action_group.dart';
+import '../utils/responsive_helper.dart';
 
 class PostDetailScreen extends StatefulWidget {
   final Post post;
@@ -85,6 +86,7 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
   static const int _maxPrefetchImages = 6; // 한 화면에서 병렬 프리패치 상한
   bool _didPrefetchImages = false;
   Future<List<_PostAudienceUser>>? _audienceUsersFuture;
+  bool _audienceExpanded = false;
 
   static const Map<String, String> _imageHttpHeaders = {
     'User-Agent':
@@ -120,8 +122,6 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
     WidgetsBinding.instance.addPostFrameCallback((_) {
       _validateAccessAndRefreshPost();
     });
-    _audienceUsersFuture = _loadAudienceUsers(_currentPost);
-
     // 디버그용: 이미지 URL 확인
     if (kDebugMode) {
       _logImageUrls();
@@ -168,7 +168,8 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
         _isAuthor = user != null && refreshed.userId == user.uid;
         _isLiked = user != null && refreshed.likedBy.contains(user.uid);
         _accessValidated = true;
-        _audienceUsersFuture = _loadAudienceUsers(refreshed);
+        _audienceUsersFuture =
+            _audienceExpanded ? _loadAudienceUsers(refreshed) : null;
       });
 
       // 작성자 글에는 북마크 UI가 없으므로 저장 상태 조회 불필요
@@ -1194,68 +1195,109 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
 
     final l10n = AppLocalizations.of(context)!;
     final isCompact = MediaQuery.sizeOf(context).width < 360;
+    final horizontalPadding = isCompact ? 8.0 : 10.0;
 
-    return FutureBuilder<List<_PostAudienceUser>>(
-      future: _audienceUsersFuture,
-      builder: (context, snapshot) {
-        if (snapshot.connectionState != ConnectionState.done &&
-            !snapshot.hasData) {
-          return const Padding(
-            padding: EdgeInsets.fromLTRB(8, 4, 8, 8),
-            child: SizedBox(
-              height: 88,
-              child: Center(
-                child: SizedBox(
-                  width: 20,
-                  height: 20,
-                  child: CircularProgressIndicator(strokeWidth: 2),
-                ),
-              ),
-            ),
-          );
-        }
-
-        final audienceUsers = snapshot.data ?? const <_PostAudienceUser>[];
-        if (audienceUsers.isEmpty) return const SizedBox.shrink();
-
-        return Padding(
-          padding: const EdgeInsets.fromLTRB(8, 4, 8, 8),
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              MediaQuery.withClampedTextScaling(
-                maxScaleFactor: 1.2,
-                child: Text(
-                  l10n.postAudienceTitle,
-                  maxLines: 1,
-                  overflow: TextOverflow.ellipsis,
-                  style: TextStyle(
-                    fontFamily: 'Pretendard',
-                    fontSize: isCompact ? 13.5 : 14,
-                    fontWeight: FontWeight.w700,
-                    color: const Color(0xFF374151),
-                  ),
-                ),
-              ),
-              SizedBox(height: isCompact ? 8 : 10),
-              SingleChildScrollView(
-                scrollDirection: Axis.horizontal,
+    return Padding(
+      padding: EdgeInsets.fromLTRB(horizontalPadding, 2, horizontalPadding, 8),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Semantics(
+            button: true,
+            expanded: _audienceExpanded,
+            label: l10n.postAudienceTitle,
+            child: InkWell(
+              borderRadius: BorderRadius.circular(8),
+              onTap: () {
+                setState(() {
+                  _audienceExpanded = !_audienceExpanded;
+                  if (_audienceExpanded) {
+                    _audienceUsersFuture ??= _loadAudienceUsers(_currentPost);
+                  }
+                });
+              },
+              child: ConstrainedBox(
+                constraints: const BoxConstraints(minHeight: 44),
                 child: Row(
                   children: [
-                    for (var index = 0;
-                        index < audienceUsers.length;
-                        index++) ...[
-                      _buildAudienceAvatarItem(audienceUsers[index]),
-                      if (index != audienceUsers.length - 1)
-                        SizedBox(width: isCompact ? 6 : 8),
-                    ],
+                    Icon(
+                      Icons.group_outlined,
+                      size: isCompact ? 20 : 21,
+                      color: const Color(0xFF64748B),
+                    ),
+                    const SizedBox(width: 8),
+                    Expanded(
+                      child: MediaQuery.withClampedTextScaling(
+                        maxScaleFactor: 1.2,
+                        child: Text(
+                          l10n.postAudienceTitle,
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                          style: TextStyle(
+                            fontFamily: 'Pretendard',
+                            fontSize: isCompact ? 13.5 : 14,
+                            fontWeight: FontWeight.w700,
+                            color: const Color(0xFF374151),
+                          ),
+                        ),
+                      ),
+                    ),
+                    AnimatedRotation(
+                      turns: _audienceExpanded ? .5 : 0,
+                      duration: const Duration(milliseconds: 180),
+                      child: const Icon(
+                        Icons.keyboard_arrow_down_rounded,
+                        size: 22,
+                        color: Color(0xFF64748B),
+                      ),
+                    ),
                   ],
                 ),
               ),
-            ],
+            ),
           ),
-        );
-      },
+          if (_audienceExpanded)
+            FutureBuilder<List<_PostAudienceUser>>(
+              future: _audienceUsersFuture,
+              builder: (context, snapshot) {
+                if (snapshot.connectionState != ConnectionState.done &&
+                    !snapshot.hasData) {
+                  return const SizedBox(
+                    height: 76,
+                    child: Center(
+                      child: SizedBox.square(
+                        dimension: 18,
+                        child: CircularProgressIndicator(strokeWidth: 2),
+                      ),
+                    ),
+                  );
+                }
+
+                final audienceUsers =
+                    snapshot.data ?? const <_PostAudienceUser>[];
+                if (audienceUsers.isEmpty) return const SizedBox.shrink();
+
+                return Padding(
+                  padding: EdgeInsets.only(top: isCompact ? 6 : 8),
+                  child: SingleChildScrollView(
+                    scrollDirection: Axis.horizontal,
+                    child: Row(
+                      children: [
+                        for (var index = 0;
+                            index < audienceUsers.length;
+                            index++) ...[
+                          _buildAudienceAvatarItem(audienceUsers[index]),
+                          if (index != audienceUsers.length - 1)
+                            SizedBox(width: isCompact ? 6 : 8),
+                        ],
+                      ],
+                    ),
+                  ),
+                );
+              },
+            ),
+        ],
+      ),
     );
   }
 
@@ -2150,6 +2192,7 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
     final body = _getUnifiedBodyText(_currentPost);
     final hasTitle = title.isNotEmpty;
     final hasBody = body.isNotEmpty;
+    final bodyFontSize = context.rf(15).clamp(14.0, 16.0).toDouble();
 
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
@@ -2184,11 +2227,11 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
               hasTitle ? title : body,
               style: TextStyle(
                 fontFamily: 'Pretendard',
-                fontSize: hasTitle ? 28 : 21,
-                fontWeight: hasTitle ? FontWeight.w800 : FontWeight.w600,
+                fontSize: hasTitle ? 28 : bodyFontSize,
+                fontWeight: hasTitle ? FontWeight.w800 : FontWeight.w500,
                 color: BrandColors.textPrimary,
-                height: hasTitle ? 1.22 : 1.42,
-                letterSpacing: hasTitle ? -0.65 : -0.3,
+                height: hasTitle ? 1.22 : 1.5,
+                letterSpacing: hasTitle ? -0.65 : 0,
               ),
             ),
           ),
@@ -2303,13 +2346,13 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
             ),
             child: Text(
               body,
-              style: const TextStyle(
+              style: TextStyle(
                 fontFamily: 'Pretendard',
-                fontSize: 16,
-                fontWeight: FontWeight.w400,
+                fontSize: bodyFontSize,
+                fontWeight: FontWeight.w500,
                 color: BrandColors.textPrimary,
-                height: 1.6,
-                letterSpacing: -0.15,
+                height: 1.5,
+                letterSpacing: 0,
               ),
             ),
           ),
@@ -2523,30 +2566,27 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
                               userId: c.userId,
                             );
                           }).toList();
+                          final allComments =
+                              CommentService.retainValidThreadComments(
+                            rawComments,
+                          );
                           final topLevelComments =
-                              rawComments.where((c) => c.isTopLevel).toList();
-                          final topLevelIds =
-                              topLevelComments.map((c) => c.id).toSet();
-                          final allComments = rawComments
-                              .where(
-                                (c) =>
-                                    c.isTopLevel ||
-                                    (c.parentCommentId != null &&
-                                        topLevelIds
-                                            .contains(c.parentCommentId)),
-                              )
-                              .toList();
+                              allComments.where((c) => c.isTopLevel).toList();
                           final currentUser = FirebaseAuth.instance.currentUser;
+                          final activeCommentCount =
+                              CommentService.countActiveThreadComments(
+                            allComments,
+                          );
 
                           // 댓글 수를 스트림 기준으로 정합성 유지 (무한 setState 루프 방지)
-                          if (_currentPost.commentCount != allComments.length) {
+                          if (_currentPost.commentCount != activeCommentCount) {
                             WidgetsBinding.instance.addPostFrameCallback((_) {
                               if (!mounted) return;
                               if (_currentPost.commentCount ==
-                                  allComments.length) return;
+                                  activeCommentCount) return;
                               setState(() {
                                 _currentPost = _currentPost.copyWith(
-                                    commentCount: allComments.length);
+                                    commentCount: activeCommentCount);
                               });
                             });
                           }
@@ -2568,6 +2608,7 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
                           Widget buildCommentWidget(
                               Comment comment, String parentTopId) {
                             return EnhancedCommentWidget(
+                              key: ValueKey<String>('comment-${comment.id}'),
                               comment: comment,
                               replies: const [],
                               postId: _currentPost.id,
@@ -2581,16 +2622,18 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
                                   comment, currentUser?.uid),
                               isReplyTarget:
                                   _replyTargetCommentId == comment.id,
-                              onReplyTap: () {
-                                // 해당 댓글에 답글 달기
-                                _enterReplyMode(
-                                  parentTopId: parentTopId,
-                                  replyToUserId: comment.userId,
-                                  replyToUserName: getCommentAuthorName(
-                                      comment, currentUser?.uid),
-                                  targetCommentId: comment.id,
-                                );
-                              },
+                              onReplyTap: comment.isDeleted
+                                  ? null
+                                  : () {
+                                      // 해당 댓글에 답글 달기
+                                      _enterReplyMode(
+                                        parentTopId: parentTopId,
+                                        replyToUserId: comment.userId,
+                                        replyToUserName: getCommentAuthorName(
+                                            comment, currentUser?.uid),
+                                        targetCommentId: comment.id,
+                                      );
+                                    },
                               parentTopLevelCommentId: parentTopId,
                             );
                           }
@@ -2606,6 +2649,7 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
                                   .toList();
 
                               return EnhancedCommentWidget(
+                                key: ValueKey<String>('comment-${comment.id}'),
                                 comment: comment,
                                 replies: replies,
                                 postId: _currentPost.id,
@@ -2620,16 +2664,18 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
                                         comment, currentUser?.uid),
                                 isReplyTarget:
                                     _replyTargetCommentId == comment.id,
-                                onReplyTap: () {
-                                  // 최상위 댓글에 답글 달기
-                                  _enterReplyMode(
-                                    parentTopId: comment.id,
-                                    replyToUserId: comment.userId,
-                                    replyToUserName: getCommentAuthorName(
-                                        comment, currentUser?.uid),
-                                    targetCommentId: comment.id,
-                                  );
-                                },
+                                onReplyTap: comment.isDeleted
+                                    ? null
+                                    : () {
+                                        // 최상위 댓글에 답글 달기
+                                        _enterReplyMode(
+                                          parentTopId: comment.id,
+                                          replyToUserId: comment.userId,
+                                          replyToUserName: getCommentAuthorName(
+                                              comment, currentUser?.uid),
+                                          targetCommentId: comment.id,
+                                        );
+                                      },
                                 parentTopLevelCommentId: comment.id,
                                 // 대댓글을 위한 빌더: 각 대댓글마다 개별 콜백 생성
                                 replyWidgetBuilder: (reply) =>

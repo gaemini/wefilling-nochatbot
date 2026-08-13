@@ -21,6 +21,7 @@ import '../utils/hanyang_verification_helper.dart';
 import '../ui/widgets/profile_image_viewer.dart';
 import 'user_friends_list_screen.dart';
 import '../models/social_profile_data.dart';
+import 'social_tag_people_screen.dart';
 
 class FriendProfileScreen extends StatefulWidget {
   final String userId;
@@ -603,17 +604,15 @@ class _FriendProfileScreenState extends State<FriendProfileScreen> {
               child: ElevatedButton.icon(
                 onPressed: _openDM,
                 icon: const Icon(Icons.message, size: 20),
-                label: Flexible(
-                  child: Text(
-                    AppLocalizations.of(context)!.sendMessage,
-                    style: const TextStyle(
-                      fontFamily: 'Pretendard',
-                      fontSize: 15,
-                      fontWeight: FontWeight.w600,
-                    ),
-                    overflow: TextOverflow.ellipsis,
-                    maxLines: 1,
+                label: Text(
+                  AppLocalizations.of(context)!.sendMessage,
+                  style: const TextStyle(
+                    fontFamily: 'Pretendard',
+                    fontSize: 15,
+                    fontWeight: FontWeight.w600,
                   ),
+                  overflow: TextOverflow.ellipsis,
+                  maxLines: 1,
                 ),
                 style: ElevatedButton.styleFrom(
                   backgroundColor: const Color(0xFFF3F4F6),
@@ -636,8 +635,13 @@ class _FriendProfileScreenState extends State<FriendProfileScreen> {
   }) {
     final languageCode = Localizations.localeOf(context).languageCode;
 
-    Widget tags({required String title, required List<String> values}) {
-      if (values.isEmpty) return const SizedBox.shrink();
+    Widget tags({
+      required String title,
+      required List<String> ids,
+      required List<SocialProfileOption> catalog,
+      required SocialProfileTagKind kind,
+    }) {
+      if (ids.isEmpty) return const SizedBox.shrink();
       return Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
@@ -654,38 +658,48 @@ class _FriendProfileScreenState extends State<FriendProfileScreen> {
           Wrap(
             spacing: 8,
             runSpacing: 7,
-            children: values
-                .map(
-                  (value) => Text(
-                    '#$value',
-                    style: const TextStyle(
-                      fontFamily: 'Pretendard',
-                      fontSize: 14,
-                      fontWeight: FontWeight.w600,
-                      color: AppColors.pointColor,
+            children: ids.map(
+              (id) {
+                final label = SocialProfileCatalog.labelFor(
+                  id,
+                  catalog,
+                  languageCode,
+                );
+                return Semantics(
+                  button: true,
+                  label: '#$label',
+                  child: Material(
+                    color: Colors.transparent,
+                    child: InkWell(
+                      onTap: () => _openSocialTagPeople(id, kind),
+                      borderRadius: BorderRadius.circular(8),
+                      child: Padding(
+                        padding: const EdgeInsets.symmetric(
+                          horizontal: 2,
+                          vertical: 7,
+                        ),
+                        child: Text(
+                          '#$label',
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                          style: const TextStyle(
+                            fontFamily: 'Pretendard',
+                            fontSize: 14,
+                            fontWeight: FontWeight.w600,
+                            color: AppColors.pointColor,
+                            height: 1.2,
+                          ),
+                        ),
+                      ),
                     ),
                   ),
-                )
-                .toList(growable: false),
+                );
+              },
+            ).toList(growable: false),
           ),
         ],
       );
     }
-
-    final interestLabels = profile.interests
-        .map((id) => SocialProfileCatalog.labelFor(
-              id,
-              SocialProfileCatalog.interests,
-              languageCode,
-            ))
-        .toList(growable: false);
-    final activityLabels = profile.preferredActivities
-        .map((id) => SocialProfileCatalog.labelFor(
-              id,
-              SocialProfileCatalog.activities,
-              languageCode,
-            ))
-        .toList(growable: false);
 
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
@@ -714,18 +728,22 @@ class _FriendProfileScreenState extends State<FriendProfileScreen> {
               ),
             ],
           ),
-        if (interestLabels.isNotEmpty) ...[
+        if (profile.interests.isNotEmpty) ...[
           const SizedBox(height: 18),
           tags(
             title: languageCode == 'ko' ? '요즘 관심 있는 것' : 'Into these days',
-            values: interestLabels,
+            ids: profile.interests,
+            catalog: SocialProfileCatalog.interests,
+            kind: SocialProfileTagKind.interest,
           ),
         ],
-        if (activityLabels.isNotEmpty) ...[
+        if (profile.preferredActivities.isNotEmpty) ...[
           const SizedBox(height: 18),
           tags(
             title: languageCode == 'ko' ? '같이 하고 싶은 것' : 'Let\'s do together',
-            values: activityLabels,
+            ids: profile.preferredActivities,
+            catalog: SocialProfileCatalog.activities,
+            kind: SocialProfileTagKind.activity,
           ),
         ],
         if (profile.friendshipPrompt.isNotEmpty) ...[
@@ -772,6 +790,14 @@ class _FriendProfileScreenState extends State<FriendProfileScreen> {
           ),
         ],
       ],
+    );
+  }
+
+  void _openSocialTagPeople(String tagId, SocialProfileTagKind kind) {
+    Navigator.of(context).push<void>(
+      MaterialPageRoute(
+        builder: (_) => SocialTagPeopleScreen(tagId: tagId, kind: kind),
+      ),
     );
   }
 

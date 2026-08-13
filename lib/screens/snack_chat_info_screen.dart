@@ -529,99 +529,18 @@ class _SnackChatInfoScreenState extends State<SnackChatInfoScreen> {
     required int maxLength,
     required int maxLines,
     String initialValue = '',
-  }) async {
-    final controller = TextEditingController(text: initialValue);
-    var canSubmit = initialValue.trim().isNotEmpty;
-    final result = await showDialog<String>(
+  }) {
+    return showDialog<String>(
       context: context,
-      builder: (dialogContext) {
-        return StatefulBuilder(
-          builder: (context, setDialogState) {
-            return MediaQuery.withClampedTextScaling(
-              maxScaleFactor: 1.3,
-              child: AlertDialog(
-                backgroundColor: Colors.white,
-                surfaceTintColor: Colors.white,
-                elevation: 0,
-                insetPadding: EdgeInsets.symmetric(
-                  horizontal: context.rs(24).clamp(18, 32).toDouble(),
-                ),
-                title: Text(
-                  title,
-                  style: TextStyle(
-                    fontFamily: 'Pretendard',
-                    fontSize: context.rf(18).clamp(17, 19).toDouble(),
-                    fontWeight: FontWeight.w700,
-                    color: const Color(0xFF111827),
-                  ),
-                ),
-                content: ConstrainedBox(
-                  constraints: const BoxConstraints(maxWidth: 420),
-                  child: TextField(
-                    controller: controller,
-                    autofocus: true,
-                    minLines: maxLines == 1 ? 1 : 3,
-                    maxLines: maxLines,
-                    maxLength: maxLength,
-                    textInputAction: maxLines == 1
-                        ? TextInputAction.done
-                        : TextInputAction.newline,
-                    onChanged: (value) {
-                      final next = value.trim().isNotEmpty;
-                      if (next != canSubmit) {
-                        setDialogState(() => canSubmit = next);
-                      }
-                    },
-                    style: TextStyle(
-                      fontFamily: 'Pretendard',
-                      fontSize: context.rf(15).clamp(14, 16).toDouble(),
-                      height: 1.45,
-                      color: const Color(0xFF111827),
-                    ),
-                    decoration: InputDecoration(
-                      hintText: hintText,
-                      hintStyle: const TextStyle(
-                        fontFamily: 'Pretendard',
-                        color: Color(0xFF98A2B3),
-                      ),
-                      border: const UnderlineInputBorder(),
-                      enabledBorder: const UnderlineInputBorder(
-                        borderSide: BorderSide(color: Color(0xFFD0D5DD)),
-                      ),
-                      focusedBorder: const UnderlineInputBorder(
-                        borderSide: BorderSide(
-                          color: Color(0xFF475467),
-                          width: 1.4,
-                        ),
-                      ),
-                    ),
-                  ),
-                ),
-                actions: [
-                  TextButton(
-                    onPressed: () => Navigator.of(dialogContext).pop(),
-                    child: Text(
-                      Localizations.localeOf(context).languageCode == 'ko'
-                          ? '취소'
-                          : 'Cancel',
-                    ),
-                  ),
-                  TextButton(
-                    onPressed: canSubmit
-                        ? () => Navigator.of(dialogContext)
-                            .pop(controller.text.trim())
-                        : null,
-                    child: Text(actionLabel),
-                  ),
-                ],
-              ),
-            );
-          },
-        );
-      },
+      builder: (_) => _CreatorTextDialog(
+        title: title,
+        hintText: hintText,
+        actionLabel: actionLabel,
+        maxLength: maxLength,
+        maxLines: maxLines,
+        initialValue: initialValue,
+      ),
     );
-    controller.dispose();
-    return result;
   }
 
   Future<void> _changeRoomTitle(SnackChat room) async {
@@ -1357,6 +1276,129 @@ class _SnackChatInfoScreenState extends State<SnackChatInfoScreen> {
           );
         },
       ),
+    );
+  }
+}
+
+class _CreatorTextDialog extends StatefulWidget {
+  const _CreatorTextDialog({
+    required this.title,
+    required this.hintText,
+    required this.actionLabel,
+    required this.maxLength,
+    required this.maxLines,
+    required this.initialValue,
+  });
+
+  final String title;
+  final String hintText;
+  final String actionLabel;
+  final int maxLength;
+  final int maxLines;
+  final String initialValue;
+
+  @override
+  State<_CreatorTextDialog> createState() => _CreatorTextDialogState();
+}
+
+class _CreatorTextDialogState extends State<_CreatorTextDialog> {
+  late final TextEditingController _controller;
+  late bool _canSubmit;
+
+  @override
+  void initState() {
+    super.initState();
+    _controller = TextEditingController(text: widget.initialValue);
+    _controller.selection = TextSelection.collapsed(
+      offset: _controller.text.length,
+    );
+    _canSubmit = widget.initialValue.trim().isNotEmpty;
+  }
+
+  @override
+  void dispose() {
+    _controller.dispose();
+    super.dispose();
+  }
+
+  void _submit() {
+    final value = _controller.text.trim();
+    if (value.isEmpty) return;
+    Navigator.of(context).pop(value);
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final isKo = Localizations.localeOf(context).languageCode == 'ko';
+    return AlertDialog(
+      backgroundColor: Colors.white,
+      surfaceTintColor: Colors.white,
+      elevation: 0,
+      scrollable: true,
+      insetPadding: EdgeInsets.symmetric(
+        horizontal: context.rs(24).clamp(18, 32).toDouble(),
+      ),
+      title: Text(
+        widget.title,
+        style: TextStyle(
+          fontFamily: 'Pretendard',
+          fontSize: context.rf(18).clamp(17, 19).toDouble(),
+          fontWeight: FontWeight.w700,
+          color: const Color(0xFF111827),
+        ),
+      ),
+      content: ConstrainedBox(
+        constraints: const BoxConstraints(maxWidth: 420),
+        child: TextField(
+          controller: _controller,
+          autofocus: true,
+          minLines: widget.maxLines == 1 ? 1 : 3,
+          maxLines: widget.maxLines,
+          maxLength: widget.maxLength,
+          textInputAction: widget.maxLines == 1
+              ? TextInputAction.done
+              : TextInputAction.newline,
+          onSubmitted:
+              widget.maxLines == 1 && _canSubmit ? (_) => _submit() : null,
+          onChanged: (value) {
+            final next = value.trim().isNotEmpty;
+            if (next != _canSubmit) setState(() => _canSubmit = next);
+          },
+          style: TextStyle(
+            fontFamily: 'Pretendard',
+            fontSize: context.rf(15).clamp(14, 16).toDouble(),
+            height: 1.45,
+            color: const Color(0xFF111827),
+          ),
+          decoration: InputDecoration(
+            hintText: widget.hintText,
+            hintStyle: const TextStyle(
+              fontFamily: 'Pretendard',
+              color: Color(0xFF98A2B3),
+            ),
+            border: const UnderlineInputBorder(),
+            enabledBorder: const UnderlineInputBorder(
+              borderSide: BorderSide(color: Color(0xFFD0D5DD)),
+            ),
+            focusedBorder: const UnderlineInputBorder(
+              borderSide: BorderSide(
+                color: Color(0xFF475467),
+                width: 1.4,
+              ),
+            ),
+          ),
+        ),
+      ),
+      actions: [
+        TextButton(
+          onPressed: () => Navigator.of(context).pop(),
+          child: Text(isKo ? '취소' : 'Cancel'),
+        ),
+        TextButton(
+          onPressed: _canSubmit ? _submit : null,
+          child: Text(widget.actionLabel),
+        ),
+      ],
     );
   }
 }

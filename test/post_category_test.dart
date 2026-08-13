@@ -29,6 +29,7 @@ void main() {
       );
 
       expect(post.categoryKey, 'other');
+      expect(post.categoryKeys, <String>['other']);
       expect(post.postCategory, PostCategory.other);
     });
 
@@ -44,7 +45,28 @@ void main() {
       );
 
       expect(post.toMap()['categoryKey'], 'books_writing');
+      expect(post.toMap()['categoryKeys'], <String>['books_writing']);
       expect(post.copyWith(categoryKey: 'unsupported').categoryKey, 'other');
+    });
+
+    test('Post keeps unique supported tag keys and a primary legacy key', () {
+      final post = Post(
+        id: 'multi-tag-post',
+        title: 'title',
+        content: 'content',
+        author: 'author',
+        categoryKey: 'style',
+        categoryKeys: const <String>['photo', 'cafe', 'photo', 'unknown'],
+        createdAt: DateTime.fromMillisecondsSinceEpoch(0),
+        userId: 'user-id',
+      );
+
+      expect(post.categoryKey, 'photo');
+      expect(post.categoryKeys, <String>['photo', 'cafe']);
+      expect(
+        post.postCategories,
+        <PostCategory>[PostCategory.photo, PostCategory.cafe],
+      );
     });
   });
 }

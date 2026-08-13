@@ -14,8 +14,8 @@ import '../utils/responsive_helper.dart';
 import 'snapshot_storage_image.dart';
 import 'snapshot_strings.dart';
 
-const double _snackPreviewSize = 68;
-const double _snackTileWidth = 76;
+const double _snackPreviewSize = 72;
+const double _snackTileWidth = 74;
 const double _snackBannerHeight = 104;
 const BorderRadius _snackPreviewRadius = BorderRadius.all(
   Radius.circular(18),
@@ -80,8 +80,8 @@ class _SnapshotTodaySectionState extends State<SnapshotTodaySection>
   Widget build(BuildContext context) {
     final strings = SnapshotStrings.of(context);
     final uid = FirebaseAuth.instance.currentUser?.uid ?? '';
-    final horizontal = context.rs(8).clamp(6, 10).toDouble();
-    final itemGap = context.rs(4).clamp(4, 6).toDouble();
+    final horizontal = context.rs(6).clamp(4, 8).toDouble();
+    final itemGap = context.rs(2).clamp(1, 3).toDouble();
 
     return ColoredBox(
       color: Colors.white,
@@ -107,7 +107,7 @@ class _SnapshotTodaySectionState extends State<SnapshotTodaySection>
                   physics: const BouncingScrollPhysics(),
                   padding: EdgeInsets.symmetric(
                     horizontal: horizontal,
-                    vertical: 6,
+                    vertical: 4,
                   ),
                   itemCount: 1 +
                       (loading ? 3 : visibleItems.length) +
@@ -304,10 +304,10 @@ class _EmptySnackPreview extends StatelessWidget {
         photoUrl: photoUrl,
         photoVersion: photoVersion,
         isAnonymous: false,
-        size: 54,
+        size: 58,
         placeholderColor: const Color(0xFFF3F4F6),
         placeholderIcon: Icons.camera_alt_outlined,
-        placeholderIconSize: 27,
+        placeholderIconSize: 29,
       ),
     );
   }
@@ -338,7 +338,7 @@ class _SnackTileShell extends StatelessWidget {
             mainAxisAlignment: MainAxisAlignment.center,
             children: [
               preview,
-              const SizedBox(height: 6),
+              const SizedBox(height: 3),
               SizedBox(
                 width: _snackTileWidth,
                 child: Text(
@@ -415,7 +415,7 @@ class _SnackSkeleton extends StatelessWidget {
               ),
             ),
           ),
-          const SizedBox(height: 6),
+          const SizedBox(height: 3),
           Center(
             child: Container(
               width: 48,

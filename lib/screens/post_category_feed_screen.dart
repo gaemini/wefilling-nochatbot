@@ -1,5 +1,6 @@
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter/rendering.dart';
 
 import '../constants/app_constants.dart';
 import '../design/tokens.dart';
@@ -9,6 +10,7 @@ import '../models/post_category.dart';
 import '../services/post_service.dart';
 import '../ui/widgets/optimized_post_card.dart';
 import '../ui/widgets/skeletons.dart';
+import '../utils/responsive_helper.dart';
 import 'create_post_screen.dart';
 import 'post_detail_screen.dart';
 
@@ -44,6 +46,7 @@ class _PostCategoryFeedScreenState extends State<PostCategoryFeedScreen> {
   bool _isLoading = true;
   bool _isLoadingMore = false;
   bool _hasMore = true;
+  bool _showCreateButton = true;
   Object? _error;
   int _requestGeneration = 0;
 
@@ -63,6 +66,19 @@ class _PostCategoryFeedScreenState extends State<PostCategoryFeedScreen> {
   }
 
   void _handleScroll() {
+    if (_scrollController.hasClients) {
+      final position = _scrollController.position;
+      final shouldShow = position.pixels <= position.minScrollExtent + 8
+          ? true
+          : switch (position.userScrollDirection) {
+              ScrollDirection.forward => true,
+              ScrollDirection.reverse => false,
+              ScrollDirection.idle => _showCreateButton,
+            };
+      if (shouldShow != _showCreateButton && mounted) {
+        setState(() => _showCreateButton = shouldShow);
+      }
+    }
     if (!_hasMore || _isLoading || _isLoadingMore) return;
     if (_scrollController.position.extentAfter < 480) _loadMore();
   }
@@ -174,7 +190,7 @@ class _PostCategoryFeedScreenState extends State<PostCategoryFeedScreen> {
       final index = _posts.indexWhere((item) => item.id == post.id);
       if (refreshed != null && index >= 0) {
         setState(() {
-          if (refreshed.categoryKey == widget.category.key) {
+          if (refreshed.categoryKeys.contains(widget.category.key)) {
             _posts[index] = refreshed;
           } else {
             _posts.removeAt(index);
@@ -204,20 +220,34 @@ class _PostCategoryFeedScreenState extends State<PostCategoryFeedScreen> {
   Widget build(BuildContext context) {
     final l10n = AppLocalizations.of(context)!;
     final label = widget.category.label(l10n);
-
     return Scaffold(
       backgroundColor: BrandColors.surface,
       appBar: AppBar(
         backgroundColor: BrandColors.surface,
         surfaceTintColor: Colors.transparent,
-        title: Text(label),
+        elevation: 0,
+        toolbarHeight: context.rh(56, min: 54, max: 60),
+        title: Text(
+          label,
+          maxLines: 1,
+          overflow: TextOverflow.ellipsis,
+          style: TextStyle(
+            fontFamily: 'Pretendard',
+            fontSize: context.rf(18).clamp(17, 20).toDouble(),
+            fontWeight: FontWeight.w700,
+            color: BrandColors.textPrimary,
+          ),
+        ),
       ),
-      floatingActionButton: FloatingActionButton(
-        heroTag: 'category_post_fab_${widget.category.key}',
-        onPressed: _openCreatePost,
-        backgroundColor: AppColors.pointColor,
-        foregroundColor: Colors.white,
-        child: const Icon(Icons.add_rounded),
+      floatingActionButton: _CategoryCreateButton(
+        visible: _showCreateButton,
+        child: FloatingActionButton(
+          heroTag: 'category_post_fab_${widget.category.key}',
+          onPressed: _openCreatePost,
+          backgroundColor: AppColors.pointColor,
+          foregroundColor: Colors.white,
+          child: const Icon(Icons.add_rounded),
+        ),
       ),
       body: RefreshIndicator(
         color: AppColors.pointColor,
@@ -309,12 +339,17 @@ class _PostCategoryFeedScreenState extends State<PostCategoryFeedScreen> {
                 itemCount: _posts.length,
                 itemBuilder: (context, index) {
                   final post = _posts[index];
-                  return OptimizedPostCard(
-                    key: ValueKey(post.id),
-                    post: post,
-                    index: index,
-                    preloadImage: index < 3,
-                    onTap: () => _openPost(post),
+                  return Center(
+                    child: ConstrainedBox(
+                      constraints: const BoxConstraints(maxWidth: 600),
+                      child: OptimizedPostCard(
+                        key: ValueKey(post.id),
+                        post: post,
+                        index: index,
+                        preloadImage: index < 3,
+                        onTap: () => _openPost(post),
+                      ),
+                    ),
                   );
                 },
               ),
@@ -327,6 +362,35 @@ class _PostCategoryFeedScreenState extends State<PostCategoryFeedScreen> {
               ),
             const SliverToBoxAdapter(child: SizedBox(height: 96)),
           ],
+        ),
+      ),
+    );
+  }
+}
+
+class _CategoryCreateButton extends StatelessWidget {
+  const _CategoryCreateButton({
+    required this.visible,
+    required this.child,
+  });
+
+  final bool visible;
+  final Widget child;
+
+  @override
+  Widget build(BuildContext context) {
+    return IgnorePointer(
+      ignoring: !visible,
+      child: AnimatedOpacity(
+        opacity: visible ? 1 : 0,
+        duration: const Duration(milliseconds: 160),
+        curve: Curves.easeOut,
+        child: AnimatedScale(
+          scale: visible ? 1 : .82,
+          alignment: Alignment.bottomRight,
+          duration: const Duration(milliseconds: 180),
+          curve: Curves.easeOutCubic,
+          child: child,
         ),
       ),
     );

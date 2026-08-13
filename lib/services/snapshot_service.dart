@@ -9,6 +9,7 @@ import 'package:firebase_storage/firebase_storage.dart';
 import 'package:uuid/uuid.dart';
 
 import '../models/snapshot.dart';
+import '../models/snapshot_comment_letter.dart';
 import '../security/frozen_audience_policy.dart';
 import 'content_hide_service.dart';
 import '../utils/logger.dart';
@@ -28,6 +29,9 @@ class SnapshotService {
       <String, Future<Uint8List>>{};
   final List<String> _imageLru = <String>[];
   final Set<String> _locallyHiddenSnapshotIds = <String>{};
+  final Set<String> _recordedViewReceiptKeys = <String>{};
+  final Map<String, Future<void>> _recordingViewReceipts =
+      <String, Future<void>>{};
   final StreamController<void> _localFilterChanges =
       StreamController<void>.broadcast();
   static const int _maxCachedImages = 28;
@@ -130,7 +134,7 @@ class SnapshotService {
       await _functions
           .httpsCallable('syncMySnapshotFeed')
           .call()
-          .timeout(const Duration(seconds: 15));
+          .timeout(const Duration(seconds: 120));
       _lastFeedSyncAt = DateTime.now().toUtc();
       _feedSyncRetryAfter = null;
     } catch (error) {
@@ -222,7 +226,6 @@ class SnapshotService {
           .doc(uid)
           .collection('snapshot_feed')
           .orderBy('createdAt', descending: true)
-          .limit(120)
           .snapshots()
           .listen((snapshot) {
         final parsed = <SnapshotItem>[];
@@ -561,6 +564,173 @@ class SnapshotService {
     return controller.stream;
   }
 
+  Future<void> recordView(String snapshotId) async {
+    final viewerId = _auth.currentUser?.uid;
+    if (viewerId == null || snapshotId.isEmpty) return;
+    final receiptKey = '${viewerId}_$snapshotId';
+    if (_recordedViewReceiptKeys.contains(receiptKey)) return;
+
+    final pending = _recordingViewReceipts[receiptKey];
+    if (pending != null) return pending;
+
+    late final Future<void> operation;
+    operation = _recordViewWithRetry(
+      snapshotId: snapshotId,
+      viewerId: viewerId,
+      receiptKey: receiptKey,
+    ).whenComplete(() {
+      if (identical(_recordingViewReceipts[receiptKey], operation)) {
+        _recordingViewReceipts.remove(receiptKey);
+      }
+    });
+    _recordingViewReceipts[receiptKey] = operation;
+    return operation;
+  }
+
+  Future<void> _recordViewWithRetry({
+    required String snapshotId,
+    required String viewerId,
+    required String receiptKey,
+  }) async {
+    Object? lastError;
+    StackTrace? lastStackTrace;
+    const retryDelays = <Duration>[
+      Duration.zero,
+      Duration(milliseconds: 450),
+      Duration(milliseconds: 1200),
+    ];
+
+    for (var attempt = 0; attempt < retryDelays.length; attempt++) {
+      final delay = retryDelays[attempt];
+      if (delay > Duration.zero) await Future<void>.delayed(delay);
+      if (_auth.currentUser?.uid != viewerId) return;
+      try {
+        final result = await _functions
+            .httpsCallable('recordSnapshotView')
+            .call(<String, dynamic>{'snapshotId': snapshotId}).timeout(
+                const Duration(seconds: 8));
+        final data = result.data;
+        if (data is! Map || data['success'] != true) {
+          throw StateError('snapshot-view-not-confirmed');
+        }
+        _recordedViewReceiptKeys.add(receiptKey);
+        return;
+      } catch (error, stackTrace) {
+        lastError = error;
+        lastStackTrace = stackTrace;
+        if (_isTerminalViewRecordError(error)) break;
+      }
+    }
+
+    // 조회 실패가 감상을 중단시키지는 않되, 일시 오류는 위에서 자동 재시도해
+    // 빠르게 넘기거나 화면을 닫은 뒤에도 기록이 완료될 기회를 보장한다.
+    Logger.error(
+      '스낵 조회 기록 실패 '
+      '(snapshotId=$snapshotId, viewerId=$viewerId)',
+      lastError,
+      lastStackTrace,
+    );
+  }
+
+  bool _isTerminalViewRecordError(Object error) {
+    if (error is! FirebaseFunctionsException) return false;
+    return <String>{
+      'invalid-argument',
+      'unauthenticated',
+      'permission-denied',
+      'not-found',
+      'failed-precondition',
+    }.contains(error.code);
+  }
+
+  Stream<List<SnapshotViewer>> watchViewers(String snapshotId) async* {
+    final ownerId = _auth.currentUser?.uid;
+    if (ownerId == null || snapshotId.isEmpty) {
+      yield const <SnapshotViewer>[];
+      return;
+    }
+
+    try {
+      await for (final snapshot in _firestore
+          .collection('snapshots')
+          .doc(snapshotId)
+          .collection('views')
+          // viewedAt이 없는 레거시 영수증도 포함해야 하므로 서버 orderBy를
+          // 사용하지 않고 파싱 후 정렬한다.
+          .snapshots(includeMetadataChanges: true)) {
+        final viewers = <SnapshotViewer>[];
+        for (final document in snapshot.docs) {
+          try {
+            viewers.add(SnapshotViewer.fromFirestore(document));
+          } catch (error, stackTrace) {
+            Logger.error(
+              '스낵 조회자 파싱 실패 '
+              '(snapshotId=$snapshotId, ownerId=$ownerId, '
+              'viewerId=${document.id})',
+              error,
+              stackTrace,
+            );
+          }
+        }
+        viewers.sort((a, b) => b.viewedAt.compareTo(a.viewedAt));
+        yield List<SnapshotViewer>.unmodifiable(viewers);
+      }
+    } on FirebaseException catch (error, stackTrace) {
+      // 구버전 Rules가 아직 적용된 환경에서도 작성자 목록을 복구할 수
+      // 있도록 서버에서 소유권을 검증하는 Callable로 전환한다.
+      Logger.error(
+        '스낵 조회자 실시간 구독 실패, 서버 조회로 전환 '
+        '(snapshotId=$snapshotId, ownerId=$ownerId, code=${error.code})',
+        error,
+        stackTrace,
+      );
+      while (true) {
+        yield await _fetchViewersFromServer(snapshotId, ownerId);
+        // 실시간 Rules가 일시적으로 적용되지 않은 환경에서도 새 조회자를
+        // 오래 기다리지 않도록 짧은 보조 갱신 주기를 사용한다.
+        await Future<void>.delayed(const Duration(seconds: 2));
+      }
+    }
+  }
+
+  Future<List<SnapshotViewer>> _fetchViewersFromServer(
+    String snapshotId,
+    String ownerId,
+  ) async {
+    final result = await _functions
+        .httpsCallable('getSnapshotViewers')
+        .call(<String, dynamic>{'snapshotId': snapshotId}).timeout(
+            const Duration(seconds: 12));
+    final resultData = result.data;
+    if (resultData is! Map) {
+      throw const FormatException('Invalid snapshot viewer response.');
+    }
+    final rawViewers = resultData['viewers'];
+    if (rawViewers is! List) return const <SnapshotViewer>[];
+
+    final viewers = <SnapshotViewer>[];
+    for (final rawViewer in rawViewers) {
+      if (rawViewer is! Map) continue;
+      final data = <String, dynamic>{};
+      rawViewer.forEach((key, value) {
+        data[key.toString()] = value;
+      });
+      final viewerId = (data['userId'] ?? '').toString().trim();
+      if (viewerId.isEmpty) continue;
+      try {
+        viewers.add(SnapshotViewer.fromMap(viewerId, data));
+      } catch (error, stackTrace) {
+        Logger.error(
+          '서버 스낵 조회자 파싱 실패 '
+          '(snapshotId=$snapshotId, ownerId=$ownerId, viewerId=$viewerId)',
+          error,
+          stackTrace,
+        );
+      }
+    }
+    return List<SnapshotViewer>.unmodifiable(viewers);
+  }
+
   Future<void> deleteSnapshot(String snapshotId) async {
     await _functions
         .httpsCallable('deleteSnapshot')
@@ -677,6 +847,44 @@ class SnapshotService {
         return true;
       }
     }
+  }
+
+  Future<SnapshotCommentLetter> getCommentLetter(
+    String notificationId,
+  ) async {
+    final normalized = notificationId.trim();
+    if (normalized.isEmpty) throw ArgumentError.value(notificationId);
+    final result = await _functions
+        .httpsCallable('getSnapshotCommentLetter')
+        .call(<String, dynamic>{'notificationId': normalized}).timeout(
+            const Duration(seconds: 15));
+    if (result.data is! Map) {
+      throw StateError('snapshot-comment-letter-invalid');
+    }
+    return SnapshotCommentLetter.fromCallable(
+      Map<String, dynamic>.from(result.data as Map),
+    );
+  }
+
+  /// Returns true only when this request created the one allowed reply.
+  Future<bool> replyToCommentLetter(
+    String notificationId,
+    String message,
+  ) async {
+    final normalized = message.trim();
+    if (normalized.isEmpty) return false;
+    final result = await _functions
+        .httpsCallable('replySnapshotComment')
+        .call(<String, dynamic>{
+      'notificationId': notificationId.trim(),
+      'message': normalized,
+      'requestId': _uuid.v4(),
+    }).timeout(const Duration(seconds: 20));
+    final data = result.data;
+    if (data is! Map || data['success'] != true) {
+      throw StateError('snapshot-comment-reply-not-confirmed');
+    }
+    return data['created'] == true;
   }
 
   Stream<bool> watchMyReaction(String snapshotId) {

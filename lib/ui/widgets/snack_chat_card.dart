@@ -47,6 +47,52 @@ class SnackChatCard extends StatelessWidget {
     return isKo ? '$period $hour:$minute' : '$hour:$minute $period';
   }
 
+  String _localizedSystemPreview(String raw, {required bool isKo}) {
+    RegExpMatch? match =
+        RegExp(r'^(.+) joined the Snack Chat\.$').firstMatch(raw);
+    match ??= RegExp(r'^(.+)님이 스낵챗에 참여했어요\.$').firstMatch(raw);
+    if (match != null) {
+      final name = match.group(1)!.trim();
+      return isKo ? '$name님이 스낵챗에 참여했어요.' : '$name joined the Snack Chat.';
+    }
+
+    match = RegExp(r'^(.+) left the Snack Chat\.$').firstMatch(raw);
+    match ??= RegExp(r'^(.+)님이 스낵챗에서 나갔어요\.$').firstMatch(raw);
+    if (match != null) {
+      final name = match.group(1)!.trim();
+      return isKo ? '$name님이 스낵챗에서 나갔어요.' : '$name left the Snack Chat.';
+    }
+
+    match =
+        RegExp(r'^The Snack Chat name changed to "(.+)"\.$').firstMatch(raw);
+    match ??= RegExp(r'^스낵챗 이름이 "(.+)"로 변경됐어요\.$').firstMatch(raw);
+    if (match != null) {
+      final title = match.group(1)!.trim();
+      return isKo
+          ? '스낵챗 이름이 "$title"로 변경됐어요.'
+          : 'The Snack Chat name changed to "$title".';
+    }
+
+    match = RegExp(r'^(.+) created a poll: (.+)$').firstMatch(raw);
+    match ??= RegExp(r'^(.+)님이 투표를 만들었어요: (.+)$').firstMatch(raw);
+    if (match != null) {
+      final name = match.group(1)!.trim();
+      final question = match.group(2)!.trim();
+      return isKo
+          ? '$name님이 투표를 만들었어요: $question'
+          : '$name created a poll: $question';
+    }
+
+    match = RegExp(r'^Poll ended: (.+)$').firstMatch(raw);
+    match ??= RegExp(r'^투표가 종료됐어요: (.+)$').firstMatch(raw);
+    if (match != null) {
+      final question = match.group(1)!.trim();
+      return isKo ? '투표가 종료됐어요: $question' : 'Poll ended: $question';
+    }
+
+    return raw;
+  }
+
   @override
   Widget build(BuildContext context) {
     final isKo = Localizations.localeOf(context).languageCode == 'ko';
@@ -64,11 +110,13 @@ class SnackChatCard extends StatelessWidget {
         !DateTime.now().isBefore(snackChat.lastMessageExpiresAt!);
     final lastMessage = fileSummaryExpired
         ? (isKo ? '만료된 파일입니다' : 'File expired')
-        : rawLastMessage == '[이미지]'
-            ? (isKo ? '[이미지]' : '[Image]')
-            : rawLastMessage.isEmpty
-                ? (isKo ? '아직 메시지가 없습니다' : 'No messages yet')
-                : rawLastMessage;
+        : snackChat.lastMessageType == 'system'
+            ? _localizedSystemPreview(rawLastMessage, isKo: isKo)
+            : rawLastMessage == '[이미지]'
+                ? (isKo ? '[이미지]' : '[Image]')
+                : rawLastMessage.isEmpty
+                    ? (isKo ? '아직 메시지가 없습니다' : 'No messages yet')
+                    : rawLastMessage;
 
     return Material(
       color: BrandColors.surface,

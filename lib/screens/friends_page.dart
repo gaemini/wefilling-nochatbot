@@ -22,6 +22,7 @@ import '../utils/logger.dart';
 import '../utils/responsive_helper.dart';
 import '../ui/widgets/shape_icon.dart';
 import 'requests_page.dart';
+import 'social_tag_explorer_screen.dart';
 import '../widgets/user_tile.dart';
 
 class FriendsPage extends StatefulWidget {
@@ -825,6 +826,8 @@ class _FriendsPageState extends State<FriendsPage> {
             // 검색바
             _buildSearchBar(),
 
+            _buildTagFriendFinderShortcut(),
+
             _buildFriendRequestsShortcut(),
 
             // 친구 목록
@@ -845,18 +848,9 @@ class _FriendsPageState extends State<FriendsPage> {
 
                   // 로딩이 끝났고 친구 목록이 비어있을 때만 빈 상태 표시
                   if (!provider.isLoading && provider.friends.isEmpty) {
-                    return SingleChildScrollView(
-                      physics: const BouncingScrollPhysics(),
-                      child: Padding(
-                        padding: const EdgeInsets.symmetric(vertical: 40),
-                        child: AppEmptyState.noFriends(
-                          context: context,
-                          onSearchFriends: () {
-                            // 친구 검색 화면으로 이동하는 로직
-                            // 예: Navigator.push(...);
-                          },
-                        ),
-                      ),
+                    return AppEmptyState.noFriends(
+                      context: context,
+                      onSearchFriends: _openTagFriendFinder,
                     );
                   }
 
@@ -954,6 +948,73 @@ class _FriendsPageState extends State<FriendsPage> {
                 ),
               );
             },
+          ),
+        ),
+      ),
+    );
+  }
+
+  void _openTagFriendFinder() {
+    Navigator.of(context).push(
+      MaterialPageRoute<void>(
+        builder: (_) => const SocialTagExplorerScreen(),
+      ),
+    );
+  }
+
+  Widget _buildTagFriendFinderShortcut() {
+    final width = MediaQuery.sizeOf(context).width;
+    final horizontalPadding = width < 360 ? 12.0 : (width < 600 ? 16.0 : 24.0);
+    final isKorean = Localizations.localeOf(context).languageCode == 'ko';
+
+    return Material(
+      color: Colors.white,
+      child: InkWell(
+        onTap: _openTagFriendFinder,
+        child: Center(
+          child: ConstrainedBox(
+            constraints: const BoxConstraints(maxWidth: 720),
+            child: Container(
+              constraints: const BoxConstraints(minHeight: 52),
+              padding: EdgeInsets.symmetric(horizontal: horizontalPadding),
+              decoration: const BoxDecoration(
+                border: Border(
+                  bottom: BorderSide(color: Color(0xFFEAECF0)),
+                ),
+              ),
+              child: MediaQuery.withClampedTextScaling(
+                maxScaleFactor: 1.2,
+                child: Row(
+                  children: [
+                    const Icon(
+                      Icons.tag_rounded,
+                      size: 20,
+                      color: Color(0xFF475467),
+                    ),
+                    const SizedBox(width: 12),
+                    Expanded(
+                      child: Text(
+                        isKorean ? '태그로 친구 찾기' : 'Find friends by tag',
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                        style: TextStyle(
+                          fontFamily: 'Pretendard',
+                          fontSize: context.rf(14).clamp(13, 15).toDouble(),
+                          fontWeight: FontWeight.w700,
+                          color: const Color(0xFF111827),
+                        ),
+                      ),
+                    ),
+                    const SizedBox(width: 8),
+                    const Icon(
+                      Icons.chevron_right_rounded,
+                      size: 20,
+                      color: Color(0xFF98A2B3),
+                    ),
+                  ],
+                ),
+              ),
+            ),
           ),
         ),
       ),

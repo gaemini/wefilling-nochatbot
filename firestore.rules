@@ -16,6 +16,25 @@ service cloud.firestore {
       ];
     }
 
+    function isValidPostCategoryKeys(value) {
+      return value is list
+        && value.size() >= 1
+        && value.size() <= 10
+        && value.toSet().size() == value.size()
+        && value.toSet().hasOnly([
+          'style',
+          'create',
+          'photo',
+          'content',
+          'cafe',
+          'academic_study',
+          'books_writing',
+          'travel_local',
+          'global',
+          'other'
+        ]);
+    }
+
     // ===== 스낵샷 접근 제어 =====
     // canonical 문서는 상세 화면/Storage 접근의 최종 권한 원본이다.
     // 목록은 서버가 생성한 users/{uid}/snapshot_feed만 본인이 읽는다.
@@ -390,6 +409,19 @@ service cloud.firestore {
           );
         allow list, create, update, delete: if false;
       }
+
+      match /views/{viewerId} {
+        // 조회 기록은 서버만 작성한다. 목록은 부모 스냅샷의 작성자에게만
+        // 허용하며, 만료/공개범위 판정과 결합해 list 쿼리가 거부되지 않게
+        // 소유권만 독립적으로 확인한다.
+        allow read: if request.auth != null
+          && request.auth.uid == get(
+            /databases/$(database)/documents/snapshots/$(snapshotId)
+          ).data.get('ownerId', get(
+            /databases/$(database)/documents/snapshots/$(snapshotId)
+          ).data.get('authorId', ''));
+        allow create, update, delete: if false;
+      }
     }
     
     // ===== 친구 요청 컬렉션 =====
@@ -535,8 +567,10 @@ service cloud.firestore {
         canReadPostData(resource.data) &&
         // categoryKey를 변경할 때만 taxonomy를 검증합니다. 레거시 문서의
         // 좋아요/조회수 업데이트는 마이그레이션 전에도 계속 허용됩니다.
-        (!request.resource.data.diff(resource.data).affectedKeys().hasAny(['categoryKey']) ||
-         isValidPostCategoryKey(request.resource.data.categoryKey)) &&
+        (!request.resource.data.diff(resource.data).affectedKeys().hasAny(['categoryKey', 'categoryKeys']) ||
+         (isValidPostCategoryKey(request.resource.data.categoryKey) &&
+          isValidPostCategoryKeys(request.resource.data.categoryKeys) &&
+          request.resource.data.categoryKey == request.resource.data.categoryKeys[0])) &&
         // createdAt 필드는 절대 수정 불가
         (!request.resource.data.diff(resource.data).affectedKeys().hasAny(['createdAt'])) &&
         visibilityFieldsUnchanged() &&
@@ -1037,7 +1071,9 @@ service cloud.firestore {
           && exists(targetPath)
           && parent.postId == data.postId
           && parent.get('parentCommentId', null) == null
+          && parent.get('isDeleted', false) != true
           && target.postId == data.postId
+          && target.get('isDeleted', false) != true
           && (targetId == parentId
             || target.get('parentCommentId', '') == parentId)
           && data.replyToUserId is string
@@ -1058,6 +1094,7 @@ service cloud.firestore {
           && exists(parentPath)
           && parent.postId == data.postId
           && parent.get('parentCommentId', null) == null
+          && parent.get('isDeleted', false) != true
           && data.replyToUserId is string
           && data.replyToUserId == parent.userId;
       }
@@ -1072,6 +1109,30 @@ service cloud.firestore {
             );
       }
 
+      function isCommentSoftDelete() {
+        let changed = request.resource.data.diff(resource.data).affectedKeys();
+        return request.auth.uid == resource.data.userId
+          && resource.data.get('isDeleted', false) != true
+          && request.resource.data.isDeleted == true
+          && request.resource.data.deletedAt == request.time
+          && request.resource.data.content == ''
+          && request.resource.data.authorNickname == ''
+          && request.resource.data.authorPhotoUrl == ''
+          && request.resource.data.likeCount == 0
+          && request.resource.data.likedBy.size() == 0
+          && changed.hasOnly([
+            'isDeleted', 'deletedAt', 'content', 'authorNickname',
+            'authorPhotoUrl', 'likeCount', 'likedBy'
+          ]);
+      }
+
+      function isCommentLikeUpdate() {
+        return resource.data.get('isDeleted', false) != true
+          && request.resource.data.get('isDeleted', false) != true
+          && request.resource.data.diff(resource.data).affectedKeys()
+            .hasOnly(['likeCount', 'likedBy']);
+      }
+
       allow read: if canReadCommentTarget(resource.data);
       
       // 생성: 로그인한 사용자만 댓글 작성 가능 (emailVerified 확인)
@@ -1082,30 +1143,22 @@ service cloud.firestore {
         exists(/databases/$(database)/documents/users/$(request.auth.uid)) &&
         get(/databases/$(database)/documents/users/$(request.auth.uid)).data.emailVerified == true &&
         request.auth.uid == request.resource.data.userId &&
+        request.resource.data.get('isDeleted', false) == false &&
+        request.resource.data.get('deletedAt', null) == null &&
         // 대댓글의 표시 부모, 실제 답글 대상, 수신자 UID가 모두 같은
         // 게시글/스레드에 속하는지 검증한다.
         validCommentThread(request.resource.data);
       
-      // 수정: 본인의 댓글 수정 가능 또는 좋아요/답글 필드만 변경하는 경우 누구나 가능
-      // userId='deleted'는 수정 불가 (탈퇴한 사용자 댓글 보호)
+      // 수정: 삭제는 스레드 위치를 보존하는 tombstone 전환만 허용한다.
+      // 좋아요는 삭제되지 않은 댓글의 집계 필드만 변경할 수 있다.
       allow update: if 
         request.auth != null &&
         canReadCommentTarget(resource.data) &&
         resource.data.userId != 'deleted' &&
-        // createdAt 필드는 절대 수정 불가
-        (!request.resource.data.diff(resource.data).affectedKeys().hasAny(['createdAt'])) &&
-        (request.auth.uid == resource.data.userId ||
-         // 좋아요 관련 필드만 변경하는 경우 (likeCount, likedBy만 변경 허용)
-         (request.resource.data.diff(resource.data).affectedKeys().hasOnly(['likeCount', 'likedBy']) ||
-          request.resource.data.diff(resource.data).affectedKeys().hasOnly(['likeCount']) ||
-          request.resource.data.diff(resource.data).affectedKeys().hasOnly(['likedBy'])));
+        (isCommentSoftDelete() || isCommentLikeUpdate());
       
-      // 삭제: 본인의 댓글만 삭제 가능 (userId='deleted'는 삭제 불가)
-      allow delete: if 
-        request.auth != null &&
-        canReadCommentTarget(resource.data) &&
-        request.auth.uid == resource.data.userId &&
-        resource.data.userId != 'deleted';
+      // 클라이언트의 물리 삭제는 스레드 붕괴를 만들므로 금지한다.
+      allow delete: if false;
     }
     
     // ===== 기존 호환성 유지 끝 =====

@@ -537,6 +537,16 @@ class _DMChatScreenState extends State<DMChatScreen> {
 
   @override
   void dispose() {
+    // 화면을 아주 빠르게 닫아도 읽음 작업이 debounce 타이머와 함께
+    // 취소되지 않도록 마지막 서버 동기화를 먼저 시작한다. 동일 메시지를
+    // 다시 처리해도 false→true 전이만 서버 카운터에 반영되어 멱등하다.
+    if (_activeConversationId.isNotEmpty && !_isLeaving) {
+      unawaited(
+        _dmService.markAsRead(_activeConversationId).catchError((Object error) {
+          Logger.error('❌ [DM 읽음] 화면 종료 동기화 실패: $error');
+        }),
+      );
+    }
     // ✅ 현재 화면이 활성 대화방이면 해제
     if (DMActiveConversation.isActive(_activeConversationId)) {
       DMActiveConversation.setActive(null);
@@ -584,43 +594,43 @@ class _DMChatScreenState extends State<DMChatScreen> {
     }
 
     _autoMarkReadDebounce?.cancel();
-    _autoMarkReadDebounce = Timer(const Duration(milliseconds: 250), () async {
-      if (!mounted) return;
-      if (_autoMarkReadInFlight) return;
-      _autoMarkReadInFlight = true;
-      Logger.log(
-          '📖 [markAsRead] 실행 - conversationId: $_activeConversationId (스트림 기반 트리거)');
-      try {
-        await _dmService.markAsRead(_activeConversationId);
-        _autoMarkReadRetryAttempt = 0;
-        Logger.log(
-            '✅ [markAsRead] 완료 - conversationId: $_activeConversationId');
-      } catch (e) {
-        Logger.error('❌ [markAsRead] 실패: $e');
-        _autoMarkReadRetryAttempt =
-            (_autoMarkReadRetryAttempt + 1).clamp(1, 5).toInt();
-        final retrySeconds =
-            (1 << _autoMarkReadRetryAttempt).clamp(2, 30).toInt();
-        _autoMarkReadDebounce?.cancel();
-        _autoMarkReadDebounce = Timer(
-          Duration(seconds: retrySeconds),
-          () => _scheduleAutoMarkAsRead(
-            _messages,
-            forceCounterReconcile: true,
-          ),
+    unawaited(_performAutoMarkAsRead());
+  }
+
+  Future<void> _performAutoMarkAsRead() async {
+    if (!mounted || _autoMarkReadInFlight || _isLeaving) return;
+    _autoMarkReadInFlight = true;
+    Logger.log(
+        '📖 [markAsRead] 실행 - conversationId: $_activeConversationId (즉시 트리거)');
+    try {
+      await _dmService.markAsRead(_activeConversationId);
+      _autoMarkReadRetryAttempt = 0;
+      Logger.log('✅ [markAsRead] 완료 - conversationId: $_activeConversationId');
+    } catch (e) {
+      Logger.error('❌ [markAsRead] 실패: $e');
+      _autoMarkReadRetryAttempt =
+          (_autoMarkReadRetryAttempt + 1).clamp(1, 5).toInt();
+      final retrySeconds =
+          (1 << _autoMarkReadRetryAttempt).clamp(2, 30).toInt();
+      _autoMarkReadDebounce?.cancel();
+      _autoMarkReadDebounce = Timer(
+        Duration(seconds: retrySeconds),
+        () => _scheduleAutoMarkAsRead(
+          _messages,
+          forceCounterReconcile: true,
+        ),
+      );
+    } finally {
+      _autoMarkReadInFlight = false;
+      if (_autoMarkReadQueued) {
+        _autoMarkReadQueued = false;
+        _scheduleAutoMarkAsRead(
+          _messages,
+          forceCounterReconcile: true,
         );
-      } finally {
-        _autoMarkReadInFlight = false;
-        if (_autoMarkReadQueued) {
-          _autoMarkReadQueued = false;
-          _scheduleAutoMarkAsRead(
-            _messages,
-            forceCounterReconcile: true,
-          );
-        }
-        Logger.log('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━');
       }
-    });
+      Logger.log('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━');
+    }
   }
 
   /// 대화방 정보 로드

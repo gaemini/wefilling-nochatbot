@@ -23,7 +23,6 @@ import '../../screens/friend_profile_screen.dart';
 import '../../screens/main_screen.dart';
 import '../../ui/dialogs/block_dialog.dart';
 import '../../ui/dialogs/report_dialog.dart';
-import '../../ui/snackbar/app_snackbar.dart';
 import '../../utils/logger.dart';
 import '../../utils/responsive_helper.dart';
 import 'audience_ring.dart';
@@ -80,8 +79,6 @@ class OptimizedPostCard extends StatefulWidget {
 class _OptimizedPostCardState extends State<OptimizedPostCard> {
   final PostService _postService = PostService();
   final DMService _dmService = DMService();
-  bool _isSaved = false;
-  bool _isLoading = false;
   bool _isLikeInFlight = false;
   bool _isLikedOverride = false;
   int _likesOverride = 0;
@@ -95,7 +92,6 @@ class _OptimizedPostCardState extends State<OptimizedPostCard> {
   @override
   void initState() {
     super.initState();
-    _checkSavedStatus();
     _syncLocalLikeStateFromWidget();
     // precacheImage는 MediaQuery 등 ImageConfiguration을 사용하므로 첫 프레임 이후 실행
     WidgetsBinding.instance.addPostFrameCallback((_) {
@@ -537,57 +533,6 @@ class _OptimizedPostCardState extends State<OptimizedPostCard> {
     _didPrecache = true;
   }
 
-  Future<void> _checkSavedStatus() async {
-    final isSaved = await _postService.isPostSaved(widget.post.id);
-    if (mounted) {
-      setState(() {
-        _isSaved = isSaved;
-      });
-    }
-  }
-
-  Future<void> _toggleSave() async {
-    if (_isLoading) return;
-
-    setState(() {
-      _isLoading = true;
-    });
-
-    try {
-      final newSavedStatus = await _postService.toggleSavePost(widget.post.id);
-      if (mounted) {
-        setState(() {
-          _isSaved = newSavedStatus;
-          _isLoading = false;
-        });
-
-        AppSnackBar.show(
-          context,
-          message: newSavedStatus
-              ? (AppLocalizations.of(context)!.postSaved ??
-                  '포스트가 저장되었습니다')
-              : (AppLocalizations.of(context)!.postUnsaved ??
-                  '포스트 저장이 취소되었습니다'),
-          type: newSavedStatus
-              ? AppSnackBarType.success
-              : AppSnackBarType.info,
-          duration: const Duration(seconds: 1),
-        );
-      }
-    } catch (e) {
-      if (mounted) {
-        setState(() {
-          _isLoading = false;
-        });
-        AppSnackBar.show(
-          context,
-          message: AppLocalizations.of(context)!.error ?? "",
-          type: AppSnackBarType.error,
-        );
-      }
-    }
-  }
-
   void _openProfileOrMyPage({
     required String userId,
     required String nickname,
@@ -634,7 +579,10 @@ class _OptimizedPostCardState extends State<OptimizedPostCard> {
     final imageGap = context.rs(10).clamp(8.0, 10.0).toDouble();
     final contentTopGap = context.rs(12).clamp(9.0, 12.0).toDouble();
     final titleSize = context.rf(20).clamp(18.0, 22.0).toDouble();
-    final bodySize = context.rf(14.5).clamp(13.5, 15.0).toDouble();
+    // 포스트 생성 화면의 본문 타이포그래피와 같은 크기 범위를 사용한다.
+    // 카드 본문이 작성자 정보보다 과하게 강조되지 않도록 14–16sp로 제한한다.
+    final bodySize = context.rf(15).clamp(14.0, 16.0).toDouble();
+    final hasPrimaryContent = hasTitle || hasBody || post.type == 'poll';
 
     return Container(
       margin: widget.margin,
@@ -655,11 +603,64 @@ class _OptimizedPostCardState extends State<OptimizedPostCard> {
                 ),
                 child: _buildAuthorInfoWithTitle(post, theme, colorScheme),
               ),
+              if (hasPrimaryContent)
+                Padding(
+                  padding: EdgeInsets.fromLTRB(
+                    contentInsets.left,
+                    contentTopGap,
+                    contentInsets.right,
+                    0,
+                  ),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      if (hasTitle)
+                        _buildSmartEllipsizedText(
+                          text: title,
+                          maxLines: 3,
+                          style: TextStyle(
+                            color: BrandColors.textPrimary,
+                            fontFamily: 'Pretendard',
+                            fontWeight: FontWeight.w700,
+                            fontSize: titleSize,
+                            height: 1.2,
+                            letterSpacing: -0.45,
+                          ),
+                        ),
+                      if (hasTitle && hasBody) const SizedBox(height: 6),
+                      if (hasBody && hasTitle)
+                        _buildSmartEllipsizedText(
+                          text: unifiedText,
+                          maxLines: 2,
+                          style: TextStyle(
+                            color: BrandColors.textSecondary,
+                            fontFamily: 'Pretendard',
+                            fontWeight: FontWeight.w400,
+                            fontSize: bodySize,
+                            height: 1.45,
+                            letterSpacing: -0.2,
+                          ),
+                        ),
+                      if (hasBody && !hasTitle)
+                        _buildTextOnlyPreview(
+                          unifiedText,
+                          theme,
+                          colorScheme,
+                        ),
+                      if (post.type == 'poll') ...[
+                        if (hasTitle || hasBody)
+                          const SizedBox(height: DesignTokens.s12),
+                        PollPostWidget(postId: post.id),
+                      ],
+                    ],
+                  ),
+                ),
               if (post.imageUrls.isNotEmpty) ...[
                 SizedBox(height: imageGap),
                 Padding(
-                  padding: EdgeInsets.symmetric(
-                    horizontal: contentInsets.left,
+                  padding: EdgeInsets.only(
+                    left: contentInsets.left,
+                    right: contentInsets.right,
                   ),
                   child: _buildPostImages(post.imageUrls),
                 ),
@@ -667,60 +668,15 @@ class _OptimizedPostCardState extends State<OptimizedPostCard> {
               Padding(
                 padding: EdgeInsets.fromLTRB(
                   contentInsets.left,
-                  contentTopGap,
+                  DesignTokens.s4,
                   contentInsets.right,
                   contentInsets.bottom,
                 ),
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    if (hasTitle)
-                      _buildSmartEllipsizedText(
-                        text: title,
-                        maxLines: 3,
-                        style: TextStyle(
-                          color: BrandColors.textPrimary,
-                          fontFamily: 'Pretendard',
-                          fontWeight: FontWeight.w700,
-                          fontSize: titleSize,
-                          height: 1.2,
-                          letterSpacing: -0.45,
-                        ),
-                      ),
-                    if (hasTitle && hasBody) const SizedBox(height: 6),
-                    if (hasBody && hasTitle)
-                      _buildSmartEllipsizedText(
-                        text: unifiedText,
-                        maxLines: 2,
-                        style: TextStyle(
-                          color: BrandColors.textSecondary,
-                          fontFamily: 'Pretendard',
-                          fontWeight: FontWeight.w400,
-                          fontSize: bodySize,
-                          height: 1.45,
-                          letterSpacing: -0.2,
-                        ),
-                      ),
-                    if (hasBody && !hasTitle)
-                      _buildTextOnlyPreview(
-                        unifiedText,
-                        theme,
-                        colorScheme,
-                      ),
-                    if (post.type == 'poll') ...[
-                      if (hasTitle || hasBody)
-                        const SizedBox(height: DesignTokens.s12),
-                      PollPostWidget(postId: post.id),
-                    ],
-                    if (hasTitle || hasBody || post.type == 'poll')
-                      const SizedBox(height: 10),
-                    _buildPostMeta(
-                      post.copyWith(
-                        commentCount: widget.externalCommentCountOverride ??
-                            post.commentCount,
-                      ),
-                    ),
-                  ],
+                child: _buildPostMeta(
+                  post.copyWith(
+                    commentCount: widget.externalCommentCountOverride ??
+                        post.commentCount,
+                  ),
                 ),
               ),
               const Divider(
@@ -831,22 +787,22 @@ class _OptimizedPostCardState extends State<OptimizedPostCard> {
     final trimmed = preview.trim();
     if (trimmed.isEmpty) return const SizedBox.shrink();
 
-    final responsiveFontSize = context.rf(17).clamp(15.5, 18.0).toDouble();
+    final responsiveFontSize = context.rf(15).clamp(14.0, 16.0).toDouble();
     final style = theme.textTheme.bodyLarge?.copyWith(
           color: BrandColors.textPrimary,
           fontFamily: 'Pretendard',
           fontSize: responsiveFontSize,
-          fontWeight: FontWeight.w600,
-          height: 1.4,
-          letterSpacing: -0.2,
+          fontWeight: FontWeight.w500,
+          height: 1.5,
+          letterSpacing: 0,
         ) ??
         TextStyle(
           color: BrandColors.textPrimary,
           fontFamily: 'Pretendard',
           fontSize: responsiveFontSize,
-          fontWeight: FontWeight.w600,
-          height: 1.4,
-          letterSpacing: -0.2,
+          fontWeight: FontWeight.w500,
+          height: 1.5,
+          letterSpacing: 0,
         );
 
     return _buildSmartEllipsizedText(
@@ -1133,8 +1089,6 @@ class _OptimizedPostCardState extends State<OptimizedPostCard> {
   Widget _buildPostMeta(Post post) {
     final isLikedByMe = _isLikedOverride;
     final l10n = AppLocalizations.of(context)!;
-    final showSave = FirebaseAuth.instance.currentUser != null &&
-        post.userId != FirebaseAuth.instance.currentUser!.uid;
 
     return PostActionGroup(
       likes: _likesOverride,
@@ -1163,13 +1117,9 @@ class _OptimizedPostCardState extends State<OptimizedPostCard> {
         await _toggleLikeFromHeartButton();
       },
       onCommentTap: widget.onTap,
-      showSave: showSave,
-      isSaved: _isSaved,
-      isSaving: _isLoading,
-      saveLabel: _isSaved ? l10n.saved : l10n.save,
-      onSaveTap: _toggleSave,
       compact: true,
       hideEmptyMetrics: true,
+      showCommentLabel: true,
     );
   }
 

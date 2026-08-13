@@ -611,67 +611,91 @@ class _SnackChatScreenState extends State<SnackChatScreen>
       return;
     }
     _autoMarkReadDebounce?.cancel();
-    _autoMarkReadDebounce = Timer(const Duration(milliseconds: 350), () async {
-      final needsLegacyReset = _legacyReadResetPending && !_legacyReadResetSent;
-      if (!_canMarkRead ||
-          (!needsLegacyReset &&
-              _highestVisibleSequence <= _lastReadSequenceSent)) {
-        return;
+    unawaited(_performMarkAsRead());
+  }
+
+  Future<void> _performMarkAsRead() async {
+    final needsLegacyReset = _legacyReadResetPending && !_legacyReadResetSent;
+    if (!_canMarkRead ||
+        (!needsLegacyReset &&
+            _highestVisibleSequence <= _lastReadSequenceSent)) {
+      return;
+    }
+    if (_autoMarkReadInFlight) {
+      _readFlushQueued = true;
+      return;
+    }
+    final target = _highestVisibleSequence;
+    _autoMarkReadInFlight = true;
+    final operation = () async {
+      await _ensureMyMembershipReady();
+      await _snackChatService.markAsRead(
+        widget.snackChatId,
+        lastReadSequence: target,
+      );
+    }();
+    _markAsReadOperation = operation;
+    var didSucceed = false;
+    try {
+      await operation;
+      didSucceed = true;
+      _readRetryAttempt = 0;
+      if (needsLegacyReset) {
+        _legacyReadResetPending = false;
+        _legacyReadResetSent = true;
       }
-      if (_autoMarkReadInFlight) {
-        _readFlushQueued = true;
-        return;
+      _lastReadSequenceSent =
+          target > _lastReadSequenceSent ? target : _lastReadSequenceSent;
+    } catch (_) {
+      // 화면이 유지되는 동안 아래 bounded retry로 복구한다.
+    } finally {
+      if (identical(_markAsReadOperation, operation)) {
+        _markAsReadOperation = null;
       }
-      final target = _highestVisibleSequence;
-      _autoMarkReadInFlight = true;
-      final operation = () async {
+      _autoMarkReadInFlight = false;
+      if (_readFlushQueued ||
+          (didSucceed && _highestVisibleSequence > _lastReadSequenceSent)) {
+        _readFlushQueued = false;
+        _scheduleMarkAsRead();
+      } else if (!didSucceed &&
+          _canMarkRead &&
+          (_highestVisibleSequence > _lastReadSequenceSent ||
+              (_legacyReadResetPending && !_legacyReadResetSent))) {
+        // Firestore transactions are not queued while offline. Keep one
+        // bounded retry alive while this route remains visible so the read
+        // cursor converges after connectivity returns without requiring an
+        // extra scroll gesture.
+        _readRetryAttempt = (_readRetryAttempt + 1).clamp(1, 5).toInt();
+        final retrySeconds = (1 << _readRetryAttempt).clamp(2, 30).toInt();
+        _autoMarkReadDebounce?.cancel();
+        _autoMarkReadDebounce = Timer(
+          Duration(seconds: retrySeconds),
+          _scheduleMarkAsRead,
+        );
+      }
+    }
+  }
+
+  void _flushReadOnDispose() {
+    final target = _highestVisibleSequence;
+    final needsLegacyReset = _legacyReadResetPending && !_legacyReadResetSent;
+    if (_roomWasLeft ||
+        _roomAccessTerminated ||
+        (target <= 0 && !needsLegacyReset)) {
+      return;
+    }
+    unawaited(
+      (() async {
         await _ensureMyMembershipReady();
         await _snackChatService.markAsRead(
           widget.snackChatId,
           lastReadSequence: target,
         );
-      }();
-      _markAsReadOperation = operation;
-      var didSucceed = false;
-      try {
-        await operation;
-        didSucceed = true;
-        _readRetryAttempt = 0;
-        if (needsLegacyReset) {
-          _legacyReadResetPending = false;
-          _legacyReadResetSent = true;
-        }
-        _lastReadSequenceSent =
-            target > _lastReadSequenceSent ? target : _lastReadSequenceSent;
-      } catch (_) {
-        // best-effort
-      } finally {
-        if (identical(_markAsReadOperation, operation)) {
-          _markAsReadOperation = null;
-        }
-        _autoMarkReadInFlight = false;
-        if (_readFlushQueued ||
-            (didSucceed && _highestVisibleSequence > _lastReadSequenceSent)) {
-          _readFlushQueued = false;
-          _scheduleMarkAsRead();
-        } else if (!didSucceed &&
-            _canMarkRead &&
-            (_highestVisibleSequence > _lastReadSequenceSent ||
-                (_legacyReadResetPending && !_legacyReadResetSent))) {
-          // Firestore transactions are not queued while offline. Keep one
-          // bounded retry alive while this route remains visible so the read
-          // cursor converges after connectivity returns without requiring an
-          // extra scroll gesture.
-          _readRetryAttempt = (_readRetryAttempt + 1).clamp(1, 5).toInt();
-          final retrySeconds = (1 << _readRetryAttempt).clamp(2, 30).toInt();
-          _autoMarkReadDebounce?.cancel();
-          _autoMarkReadDebounce = Timer(
-            Duration(seconds: retrySeconds),
-            _scheduleMarkAsRead,
-          );
-        }
-      }
-    });
+      })()
+          .catchError((Object error) {
+        Logger.error('Snack Chat 화면 종료 읽음 동기화 실패', error);
+      }),
+    );
   }
 
   void _subscribeToMessages() {
@@ -1176,6 +1200,9 @@ class _SnackChatScreenState extends State<SnackChatScreen>
 
   @override
   void dispose() {
+    // 빠르게 뒤로 가더라도 이미 화면에 노출된 마지막 sequence를 서버에
+    // 먼저 전달한다. 커서는 단조 증가하므로 진행 중 작업과 중복되어도 안전하다.
+    _flushReadOnDispose();
     _isLeavingRoom = true;
     _cacheHydrationGeneration++;
     _auxiliarySubscriptionGeneration++;
@@ -1890,10 +1917,30 @@ class _SnackChatScreenState extends State<SnackChatScreen>
           _showNotice('${selected.name}: 파일을 읽을 수 없습니다.');
           continue;
         }
-        validated.add(await SnackChatFilePolicy.validatePath(
-          path,
-          displayName: selected.name,
-        ));
+        SnackChatSelectedFile? checked;
+        Object? lastError;
+        StackTrace? lastStackTrace;
+        for (var attempt = 0; attempt < 4 && checked == null; attempt++) {
+          try {
+            checked = await SnackChatFilePolicy.validatePath(
+              path,
+              displayName: selected.name,
+            );
+          } on FileSystemException catch (error, stackTrace) {
+            lastError = error;
+            lastStackTrace = stackTrace;
+            await Future<void>.delayed(
+              Duration(milliseconds: 80 * (attempt + 1)),
+            );
+          }
+        }
+        if (checked == null) {
+          Error.throwWithStackTrace(
+            lastError ?? StateError('document-import-not-ready'),
+            lastStackTrace ?? StackTrace.current,
+          );
+        }
+        validated.add(checked);
       } on SnackChatFileValidationException catch (error) {
         if (mounted) _showNotice('${selected.name}: ${error.message}');
       } catch (error, stackTrace) {
@@ -2947,7 +2994,7 @@ class _SnackChatScreenState extends State<SnackChatScreen>
                 IconButton(
                   onPressed: _isLeavingRoom ? null : () => _openRoomInfo(room),
                   icon: const Icon(
-                    Icons.info_outline_rounded,
+                    Icons.more_vert_rounded,
                     color: Color(0xFF344054),
                   ),
                   iconSize: context.ri(22).clamp(21, 24).toDouble(),
@@ -2956,7 +3003,7 @@ class _SnackChatScreenState extends State<SnackChatScreen>
                     height: 44,
                   ),
                   padding: EdgeInsets.zero,
-                  tooltip: isKo ? '채팅방 정보' : 'Chat information',
+                  tooltip: isKo ? '더보기' : 'More',
                 ),
                 SizedBox(width: context.rs(2).clamp(0, 4).toDouble()),
               ],
@@ -3095,8 +3142,6 @@ class _SnackChatScreenState extends State<SnackChatScreen>
         final row = Column(
           children: [
             if (showDateDivider) _buildDateDivider(message.createdAt),
-            if (_shouldShowLastReadDivider(index))
-              _buildLastReadDivider(isKo: isKo),
             _buildMessageBubble(
               message: message,
               isMe: isMe,
@@ -3219,45 +3264,6 @@ class _SnackChatScreenState extends State<SnackChatScreen>
             ),
           ),
       ],
-    );
-  }
-
-  bool _shouldShowLastReadDivider(int index) {
-    final boundary = _initialLastReadSequence;
-    if (boundary == null ||
-        boundary <= 0 ||
-        index < 0 ||
-        index >= _messages.length) {
-      return false;
-    }
-    final current = _messages[index].sequence;
-    if (current == null || current <= boundary) return false;
-    if (index + 1 >= _messages.length) return false;
-    final older = _messages[index + 1].sequence;
-    return older != null && older <= boundary;
-  }
-
-  Widget _buildLastReadDivider({required bool isKo}) {
-    return Padding(
-      padding: const EdgeInsets.symmetric(vertical: 10, horizontal: 4),
-      child: Row(
-        children: [
-          const Expanded(child: Divider(height: 1, color: Color(0xFFD0D5DD))),
-          Padding(
-            padding: const EdgeInsets.symmetric(horizontal: 10),
-            child: Text(
-              isKo ? '새 메시지' : 'New messages',
-              style: const TextStyle(
-                fontFamily: 'Pretendard',
-                fontSize: 10.5,
-                fontWeight: FontWeight.w600,
-                color: _secondaryText,
-              ),
-            ),
-          ),
-          const Expanded(child: Divider(height: 1, color: Color(0xFFD0D5DD))),
-        ],
-      ),
     );
   }
 
@@ -3711,10 +3717,6 @@ class _SnackChatScreenState extends State<SnackChatScreen>
   }
 
   Future<void> _handleFileTap(SnackChatMessage message) async {
-    if (message.isFileExpired) {
-      _showNotice('만료된 파일입니다.');
-      return;
-    }
     if (message.hasFailed) {
       await _retryMessage(message);
       return;
@@ -3844,9 +3846,11 @@ class _SnackChatScreenState extends State<SnackChatScreen>
                   ),
                 ),
               ),
-              if (!expired && message.isTemporaryFile)
+              if (!expired && message.expiresAt != null)
                 Text(
-                  isKo ? '24시간' : '24h',
+                  message.retentionMode == 'temporary24h'
+                      ? (isKo ? '24시간' : '24h')
+                      : (isKo ? '30일' : '30d'),
                   style: TextStyle(
                     fontFamily: 'Pretendard',
                     fontSize: 11.5,
@@ -3964,10 +3968,66 @@ class _SnackChatScreenState extends State<SnackChatScreen>
         }
         break;
     }
+    final localizedLegacy = _localizedLegacySystemMessage(
+      fallback,
+      isKorean: isKorean,
+    );
+    if (localizedLegacy != null) return localizedLegacy;
     if (fallback.isNotEmpty) return _redactInternalIdentifiers(fallback);
     return isKorean
         ? '채팅방 정보가 변경되었습니다.'
         : 'Snack Chat information was updated.';
+  }
+
+  String? _localizedLegacySystemMessage(
+    String fallback, {
+    required bool isKorean,
+  }) {
+    if (fallback.isEmpty) return null;
+
+    RegExpMatch? match =
+        RegExp(r'^(.+) joined the Snack Chat\.$').firstMatch(fallback);
+    match ??= RegExp(r'^(.+)님이 스낵챗에 참여했어요\.$').firstMatch(fallback);
+    if (match != null) {
+      final name = _redactInternalIdentifiers(match.group(1)!.trim());
+      return isKorean ? '$name님이 스낵챗에 참여했어요.' : '$name joined the Snack Chat.';
+    }
+
+    match = RegExp(r'^(.+) left the Snack Chat\.$').firstMatch(fallback);
+    match ??= RegExp(r'^(.+)님이 스낵챗에서 나갔어요\.$').firstMatch(fallback);
+    if (match != null) {
+      final name = _redactInternalIdentifiers(match.group(1)!.trim());
+      return isKorean ? '$name님이 스낵챗에서 나갔어요.' : '$name left the Snack Chat.';
+    }
+
+    match = RegExp(r'^The Snack Chat name changed to "(.+)"\.$')
+        .firstMatch(fallback);
+    match ??= RegExp(r'^스낵챗 이름이 "(.+)"로 변경됐어요\.$').firstMatch(fallback);
+    if (match != null) {
+      final title = match.group(1)!.trim();
+      return isKorean
+          ? '스낵챗 이름이 "$title"로 변경됐어요.'
+          : 'The Snack Chat name changed to "$title".';
+    }
+
+    match = RegExp(r'^(.+) created a poll: (.+)$').firstMatch(fallback);
+    match ??= RegExp(r'^(.+)님이 투표를 만들었어요: (.+)$').firstMatch(fallback);
+    if (match != null) {
+      final name = _redactInternalIdentifiers(match.group(1)!.trim());
+      final question = match.group(2)!.trim();
+      return isKorean
+          ? '$name님이 투표를 만들었어요: $question'
+          : '$name created a poll: $question';
+    }
+
+    match = RegExp(r'^Poll ended: (.+)$').firstMatch(fallback);
+    match ??= RegExp(r'^투표가 종료됐어요: (.+)$').firstMatch(fallback);
+    if (match != null) {
+      final question = match.group(1)!.trim();
+      return isKorean ? '투표가 종료됐어요: $question' : 'Poll ended: $question';
+    }
+
+    return null;
   }
 
   String _redactInternalIdentifiers(String value) {
@@ -4085,6 +4145,18 @@ class _SnackChatScreenState extends State<SnackChatScreen>
       return const SizedBox.shrink();
     }
     final heroTag = 'snack_chat_image_${widget.snackChatId}_${message.id}';
+    final mediaSize = MediaQuery.sizeOf(context);
+    final maxImageWidth =
+        (mediaSize.width * 0.7).clamp(180.0, 380.0).toDouble();
+    final maxImageHeight =
+        (mediaSize.height * 0.38).clamp(240.0, 360.0).toDouble();
+
+    Widget adaptiveImage(ImageProvider imageProvider) => SnackChatAdaptiveImage(
+          imageProvider: imageProvider,
+          maxWidth: maxImageWidth,
+          maxHeight: maxImageHeight,
+          error: _imageError(isMe),
+        );
 
     return GestureDetector(
       onTap: message.isPending && imageUrl == null && storagePath == null
@@ -4096,48 +4168,40 @@ class _SnackChatScreenState extends State<SnackChatScreen>
               ),
       child: ConstrainedBox(
         constraints: BoxConstraints(
-          maxWidth: (MediaQuery.sizeOf(context).width * 0.7)
-              .clamp(180.0, 380.0)
-              .toDouble(),
-          maxHeight: 320,
+          maxWidth: maxImageWidth,
+          maxHeight: maxImageHeight,
         ),
         child: ClipRRect(
           borderRadius: BorderRadius.circular(11),
           child: Hero(
             tag: heroTag,
-            child: SizedBox(
-              width: 220,
-              height: 180,
-              child: localPath?.isNotEmpty == true &&
-                      (storagePath == null || message.isPending)
-                  ? Image.file(
-                      File(localPath!),
-                      fit: BoxFit.contain,
-                      errorBuilder: (_, __, ___) => _imageError(isMe),
-                    )
-                  : storagePath?.isNotEmpty == true
-                      ? SnackChatStorageImage(
-                          storagePath: storagePath!,
-                          fit: BoxFit.contain,
-                          loading: _imageLoading(),
-                          error: imageUrl?.isNotEmpty == true
-                              ? CachedNetworkImage(
-                                  imageUrl: imageUrl!,
-                                  cacheManager: AppImageCacheManager.instance,
-                                  fit: BoxFit.contain,
-                                  errorWidget: (_, __, ___) =>
-                                      _imageError(isMe),
-                                )
-                              : _imageError(isMe),
-                        )
-                      : CachedNetworkImage(
-                          imageUrl: imageUrl!,
-                          cacheManager: AppImageCacheManager.instance,
-                          fit: BoxFit.contain,
-                          placeholder: (_, __) => _imageLoading(),
-                          errorWidget: (_, __, ___) => _imageError(isMe),
-                        ),
-            ),
+            child: localPath?.isNotEmpty == true &&
+                    (storagePath == null || message.isPending)
+                ? adaptiveImage(FileImage(File(localPath!)))
+                : storagePath?.isNotEmpty == true
+                    ? SnackChatStorageImage(
+                        storagePath: storagePath!,
+                        imageBuilder: (_, imageProvider) =>
+                            adaptiveImage(imageProvider),
+                        loading: _imageLoading(),
+                        error: imageUrl?.isNotEmpty == true
+                            ? CachedNetworkImage(
+                                imageUrl: imageUrl!,
+                                cacheManager: AppImageCacheManager.instance,
+                                imageBuilder: (_, imageProvider) =>
+                                    adaptiveImage(imageProvider),
+                                errorWidget: (_, __, ___) => _imageError(isMe),
+                              )
+                            : _imageError(isMe),
+                      )
+                    : CachedNetworkImage(
+                        imageUrl: imageUrl!,
+                        cacheManager: AppImageCacheManager.instance,
+                        imageBuilder: (_, imageProvider) =>
+                            adaptiveImage(imageProvider),
+                        placeholder: (_, __) => _imageLoading(),
+                        errorWidget: (_, __, ___) => _imageError(isMe),
+                      ),
           ),
         ),
       ),

@@ -37,6 +37,22 @@ class SnapshotStrings {
   String get next => isKorean ? '다음' : 'Next';
   String get previousSnapshot => isKorean ? '이전 스낵' : 'Previous snack';
   String get nextSnapshot => isKorean ? '다음 스낵' : 'Next snack';
+  String get viewers => isKorean ? '조회한 사람' : 'Viewed by';
+  String viewersCount(int count) => isKorean
+      ? '$count명이 이 스낵을 확인했어요'
+      : '$count ${count == 1 ? 'person has' : 'people have'} viewed this snack';
+  String get noViewers => isKorean ? '아직 조회 기록이 없어요' : 'No views yet';
+  String get noViewersDescription => isKorean
+      ? '이 스낵을 본 사람이 여기에 표시됩니다.'
+      : 'People who view this snack will appear here.';
+  String get viewersLoading =>
+      isKorean ? '조회 기록을 불러오는 중…' : 'Loading view history…';
+  String get viewersLoadFailed =>
+      isKorean ? '조회 기록을 불러오지 못했어요.' : 'Could not load view history.';
+  String get viewedJustNow => isKorean ? '방금 전' : 'Just now';
+  String viewedMinutesAgo(int minutes) =>
+      isKorean ? '$minutes분 전' : '${minutes}m ago';
+  String viewedHoursAgo(int hours) => isKorean ? '$hours시간 전' : '${hours}h ago';
   String feedPosition(int current, int total) =>
       isKorean ? '전체 스낵샷 $current/$total' : 'All snapshots $current/$total';
   String get preview => isKorean ? '미리보기' : 'Preview';

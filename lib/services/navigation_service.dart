@@ -12,6 +12,7 @@ import '../models/meetup.dart';
 import '../models/student_type.dart';
 import '../services/semester_todo_service.dart';
 import '../services/snapshot_service.dart';
+import '../services/review_service.dart';
 
 import '../screens/post_detail_screen.dart';
 import '../screens/meetup_detail_screen.dart';
@@ -23,17 +24,68 @@ import '../screens/snack_chat_screen.dart';
 import '../screens/semester_todo_screen.dart';
 import '../screens/student_type_selection_screen.dart';
 import '../screens/snapshot_detail_screen.dart';
+import '../screens/snapshot_comment_letter_screen.dart';
+import '../screens/review_detail_screen.dart';
+import '../screens/review_approval_screen.dart';
 
 class NavigationService {
   static final GlobalKey<NavigatorState> navigatorKey =
       GlobalKey<NavigatorState>();
+  static String? _lastHandledPushKey;
+  static DateTime? _lastHandledPushAt;
+
+  static String _stringValue(Map<String, dynamic> data, String key) =>
+      (data[key] ?? '').toString().trim();
+
+  static Future<NavigatorState?> _waitForNavigator() async {
+    for (var attempt = 0; attempt < 50; attempt++) {
+      final navigator = navigatorKey.currentState;
+      if (navigator != null && navigator.mounted) return navigator;
+      await Future<void>.delayed(const Duration(milliseconds: 100));
+    }
+    return null;
+  }
+
+  static Future<void> _markOpenedNotificationRead(
+    Map<String, dynamic> data,
+  ) async {
+    final notificationId = _stringValue(data, 'notificationId');
+    if (notificationId.isEmpty || FirebaseAuth.instance.currentUser == null) {
+      return;
+    }
+    try {
+      await FirebaseFirestore.instance
+          .collection('notifications')
+          .doc(notificationId)
+          .update({'isRead': true}).timeout(const Duration(seconds: 3));
+    } catch (_) {
+      // 삭제되었거나 이미 처리된 알림은 탐색을 막지 않는다.
+    }
+  }
 
   // 푸시 데이터 기반 화면 이동
   static Future<void> handlePushNavigation(Map<String, dynamic> data) async {
-    final nav = navigatorKey.currentState;
+    final nav = await _waitForNavigator();
     if (nav == null) return;
 
-    final type = data['type'] as String? ?? '';
+    final type = _stringValue(data, 'type');
+    final notificationId = _stringValue(data, 'notificationId');
+    final navigationKey = notificationId.isNotEmpty
+        ? notificationId
+        : '$type|${_stringValue(data, 'postId')}|'
+            '${_stringValue(data, 'meetupId')}|'
+            '${_stringValue(data, 'conversationId')}|'
+            '${_stringValue(data, 'snackChatId')}';
+    final now = DateTime.now();
+    if (_lastHandledPushKey == navigationKey &&
+        _lastHandledPushAt != null &&
+        now.difference(_lastHandledPushAt!) < const Duration(seconds: 2)) {
+      return;
+    }
+    _lastHandledPushKey = navigationKey;
+    _lastHandledPushAt = now;
+    await _markOpenedNotificationRead(data);
+
     try {
       switch (type) {
         case 'personalTodoReminder':
@@ -60,15 +112,15 @@ class NavigationService {
         case 'dm_received':
           {
             // DM 푸시 알림 클릭 시 대화방으로 이동
-            final conversationId = data['conversationId'] as String?;
-            final senderId = data['senderId'] as String?;
+            final conversationId = _stringValue(data, 'conversationId');
+            final senderId = _stringValue(data, 'senderId');
 
-            if (conversationId != null && conversationId.isNotEmpty) {
+            if (conversationId.isNotEmpty) {
               await nav.push(
                 MaterialPageRoute(
                   builder: (_) => DMChatScreen(
                     conversationId: conversationId,
-                    otherUserId: senderId ?? '',
+                    otherUserId: senderId,
                   ),
                 ),
               );
@@ -77,11 +129,14 @@ class NavigationService {
             break;
           }
         case 'post_private':
+        case 'post_created':
         case 'new_comment':
+        case 'comment_reply':
         case 'new_like':
+        case 'comment_like':
           {
-            final postId = data['postId'] as String?;
-            if (postId == null || postId.isEmpty) break;
+            final postId = _stringValue(data, 'postId');
+            if (postId.isEmpty) break;
             final Post? post = await PostService().getPostById(postId);
             if (post != null) {
               await nav.push(MaterialPageRoute(
@@ -91,10 +146,9 @@ class NavigationService {
             break;
           }
         case 'snapshot_reaction':
-        case 'snapshot_comment':
           {
-            final snapshotId = data['snapshotId'] as String?;
-            if (snapshotId == null || snapshotId.isEmpty) break;
+            final snapshotId = _stringValue(data, 'snapshotId');
+            if (snapshotId.isEmpty) break;
             final snapshot =
                 await SnapshotService.instance.getSnapshot(snapshotId);
             await nav.push(
@@ -107,11 +161,72 @@ class NavigationService {
             );
             return;
           }
+        case 'snapshot_comment':
+        case 'snapshot_comment_reply':
+          {
+            if (notificationId.isEmpty) break;
+            await nav.push(
+              MaterialPageRoute(
+                builder: (_) => SnapshotCommentLetterScreen(
+                  notificationId: notificationId,
+                ),
+              ),
+            );
+            return;
+          }
+        case 'review_comment':
+        case 'review_like':
+          {
+            final reviewId = _stringValue(data, 'reviewId').isNotEmpty
+                ? _stringValue(data, 'reviewId')
+                : _stringValue(data, 'postId');
+            final userId = _stringValue(data, 'userId');
+            if (reviewId.isEmpty || userId.isEmpty) break;
+            final reviews = await ReviewService()
+                .getUserReviewsStream(userId)
+                .first
+                .timeout(const Duration(seconds: 8));
+            final matching = reviews.where((review) => review.id == reviewId);
+            if (matching.isEmpty) break;
+            await nav.push(
+              MaterialPageRoute(
+                builder: (_) => ReviewDetailScreen(review: matching.first),
+              ),
+            );
+            return;
+          }
+        case 'review_approval_request':
+          {
+            final requestId = _stringValue(data, 'requestId');
+            final reviewId = _stringValue(data, 'reviewId');
+            if (requestId.isEmpty || reviewId.isEmpty) break;
+            final imageUrl = _stringValue(data, 'imageUrl');
+            await nav.push(
+              MaterialPageRoute(
+                builder: (_) => ReviewApprovalScreen(
+                  requestId: requestId,
+                  reviewId: reviewId,
+                  meetupTitle: _stringValue(data, 'meetupTitle'),
+                  imageUrl: imageUrl,
+                  imageUrls: imageUrl.isEmpty ? null : <String>[imageUrl],
+                  content: _stringValue(data, 'content'),
+                  authorName: _stringValue(data, 'actorName').isEmpty
+                      ? '익명'
+                      : _stringValue(data, 'actorName'),
+                ),
+              ),
+            );
+            return;
+          }
         case 'meetup_full':
         case 'meetup_cancelled':
+        case 'meetup_created':
+        case 'NEW_MEETUP':
+        case 'meetup_participant_joined':
+        case 'meetup_participant_left':
           {
-            final meetupId = data['meetupId'] as String?;
-            if (meetupId == null || meetupId.isEmpty) break;
+            final meetupId = _stringValue(data, 'meetupId');
+            if (meetupId.isEmpty) break;
             final Meetup? meetup =
                 await MeetupService().getMeetupById(meetupId);
             if (meetup != null) {
@@ -145,8 +260,8 @@ class NavigationService {
           }
         case 'snack_chat_message':
           {
-            final snackChatId = data['snackChatId'] as String?;
-            if (snackChatId == null || snackChatId.isEmpty) break;
+            final snackChatId = _stringValue(data, 'snackChatId');
+            if (snackChatId.isEmpty) break;
             await nav.push(MaterialPageRoute(
               builder: (_) => SnackChatScreen(
                 snackChatId: snackChatId,
@@ -157,8 +272,8 @@ class NavigationService {
           }
         case 'snack_chat_invite':
           {
-            final snackChatId = data['snackChatId'] as String?;
-            if (snackChatId == null || snackChatId.isEmpty) break;
+            final snackChatId = _stringValue(data, 'snackChatId');
+            if (snackChatId.isEmpty) break;
 
             // 현재 참여자인지 확인 (나간 사용자 처리)
             final uid = FirebaseAuth.instance.currentUser?.uid;

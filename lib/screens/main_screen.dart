@@ -45,7 +45,11 @@ class MainScreen extends StatefulWidget {
   State<MainScreen> createState() => _MainScreenState();
 }
 
-class _MainScreenState extends State<MainScreen> with WidgetsBindingObserver {
+class _MainScreenState extends State<MainScreen>
+    with WidgetsBindingObserver, SingleTickerProviderStateMixin {
+  static const Duration _chromeShowDuration = Duration(milliseconds: 220);
+  static const Duration _chromeHideDuration = Duration(milliseconds: 180);
+
   late int _selectedIndex;
   final NotificationService _notificationService = NotificationService();
   final DMService _dmService = DMService();
@@ -54,6 +58,9 @@ class _MainScreenState extends State<MainScreen> with WidgetsBindingObserver {
   String? _pendingMeetupId; // 알림으로 전달된 모임 ID (1회용)
   AuthProvider? _authProvider;
   late final List<Widget?> _screenCache;
+  bool _showBoardChrome = true;
+  late final AnimationController _chromeController;
+  late final Animation<double> _chromeAnimation;
 
   // BoardScreen 스크롤 제어를 위한 GlobalKey
   final GlobalKey<BoardScreenState> _boardScreenKey =
@@ -63,6 +70,17 @@ class _MainScreenState extends State<MainScreen> with WidgetsBindingObserver {
   void initState() {
     super.initState();
     WidgetsBinding.instance.addObserver(this);
+    _chromeController = AnimationController(
+      vsync: this,
+      duration: _chromeShowDuration,
+      reverseDuration: _chromeHideDuration,
+      value: 1,
+    );
+    _chromeAnimation = CurvedAnimation(
+      parent: _chromeController,
+      curve: Curves.easeOutCubic,
+      reverseCurve: Curves.easeInOutCubic,
+    );
 
     // 초기 탭 인덱스 설정
     _selectedIndex = widget.initialTabIndex;
@@ -114,6 +132,7 @@ class _MainScreenState extends State<MainScreen> with WidgetsBindingObserver {
 
     // 실시간 배지 리스너 중지
     BadgeService.stopRealtimeBadgeSync();
+    _chromeController.dispose();
 
     super.dispose();
   }
@@ -131,6 +150,7 @@ class _MainScreenState extends State<MainScreen> with WidgetsBindingObserver {
         return BoardScreen(
           key: _boardScreenKey,
           onOpenMeetups: () => _onItemTapped(1),
+          onChromeVisibilityChanged: _handleBoardChromeVisibilityChanged,
         );
       case 1:
         // 알림에서 온 모임은 최초 1회만 자동 오픈되도록 전달
@@ -152,6 +172,20 @@ class _MainScreenState extends State<MainScreen> with WidgetsBindingObserver {
     if (_screenCache[index] != null) return;
     _screenCache[index] = _buildScreenForIndex(index);
   }
+
+  void _handleBoardChromeVisibilityChanged(bool visible) {
+    if (!mounted || _selectedIndex != 0 || _showBoardChrome == visible) return;
+    setState(() => _showBoardChrome = visible);
+    _animateChrome(visible);
+  }
+
+  void _animateChrome(bool visible) {
+    if (visible) {
+      _chromeController.forward();
+    } else {
+      _chromeController.reverse();
+    }
+  }
   // 프로덕션 배포: 디버그 헬퍼 제거
   // final FirebaseDebugHelper _firebaseDebugHelper = FirebaseDebugHelper();
 
@@ -162,10 +196,12 @@ class _MainScreenState extends State<MainScreen> with WidgetsBindingObserver {
       return;
     }
 
+    final shouldShowChrome = index != 0 || _showBoardChrome;
     setState(() {
       _selectedIndex = index;
       _ensureScreenBuilt(index);
     });
+    _animateChrome(shouldShowChrome);
 
     // Meetups 탭으로 이동하는 순간, 아직 소모되지 않은 모임 ID가 있다면 바로 소모 처리
     if (index == 1 && _pendingMeetupId != null) {
@@ -277,180 +313,226 @@ class _MainScreenState extends State<MainScreen> with WidgetsBindingObserver {
     );
   }
 
-  @override
-  Widget build(BuildContext context) {
-    return Scaffold(
-      appBar: AppBar(
-        automaticallyImplyLeading: false,
-        backgroundColor: Colors.white,
-        surfaceTintColor: Colors.white,
-        shadowColor: Colors.black12,
-        title: Row(
-          children: [
-            // Wefilling 로고 + 텍스트 (클릭 가능)
-            GestureDetector(
-              onTap: () {
-                // 광고 쇼케이스 페이지로 이동
-                Navigator.push(
-                  context,
-                  MaterialPageRoute(
-                    builder: (context) => const AdShowcaseScreen(),
-                  ),
-                );
-              },
-              behavior: HitTestBehavior.opaque, // 투명한 영역도 터치 가능하게
-              child: Row(
-                mainAxisSize: MainAxisSize.min, // Row 크기를 내용물에 맞춤
-                children: [
-                  Container(
-                    width: 24,
-                    height: 24,
-                    child: _buildLogo(),
-                  ),
-                  const SizedBox(width: 8),
-                  const Text(
-                    'Wefilling',
-                    style: TextStyle(
-                      fontFamily: 'HancomMalrangmalrang',
-                      fontSize: 17,
-                      fontWeight: FontWeight.w700,
-                      color: AppColors.pointColor, // 위필링 시그니처 파란색으로 통일
-                      letterSpacing: -0.5,
-                      shadows: [
-                        Shadow(
-                          offset: Offset(0.5, 0.5),
-                          blurRadius: 0.5,
-                          color: AppColors.pointColor,
-                        ),
-                      ],
-                    ),
-                  ),
-                ],
-              ),
+  PreferredSizeWidget _buildAnimatedAppBar(
+    double factor, {
+    required Widget title,
+  }) {
+    final hidden = factor <= 0.01;
+    return AppBar(
+      toolbarHeight: kToolbarHeight * factor,
+      elevation: hidden ? 0 : null,
+      scrolledUnderElevation: hidden ? 0 : null,
+      automaticallyImplyLeading: false,
+      backgroundColor: Colors.white,
+      surfaceTintColor: Colors.white,
+      shadowColor: Colors.black12,
+      title: ClipRect(
+        child: IgnorePointer(
+          ignoring: factor < 0.9,
+          child: Opacity(
+            opacity: factor,
+            child: Transform.translate(
+              offset: Offset(0, -10 * (1 - factor)),
+              child: title,
             ),
-            const Spacer(),
-            // 돋보기 아이콘 (게시글/모임 탭에서만 표시)
-            if (_selectedIndex <= 1) ...[
-              AppIconButton(
-                icon: Icons.search,
-                onPressed: _navigateToSearchPage,
-                semanticLabel: AppLocalizations.of(context)!.search,
-                visualDensity: VisualDensity.compact,
+          ),
+        ),
+      ),
+    );
+  }
+
+  Widget _buildAppBarTitle() {
+    return Row(
+      children: [
+        GestureDetector(
+          onTap: () {
+            Navigator.push(
+              context,
+              MaterialPageRoute(
+                builder: (context) => const AdShowcaseScreen(),
               ),
-              const SizedBox(width: 4),
+            );
+          },
+          behavior: HitTestBehavior.opaque,
+          child: Row(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              SizedBox(width: 24, height: 24, child: _buildLogo()),
+              const SizedBox(width: 8),
+              const Text(
+                'Wefilling',
+                style: TextStyle(
+                  fontFamily: 'HancomMalrangmalrang',
+                  fontSize: 17,
+                  fontWeight: FontWeight.w700,
+                  color: AppColors.pointColor,
+                  letterSpacing: -0.5,
+                  shadows: [
+                    Shadow(
+                      offset: Offset(0.5, 0.5),
+                      blurRadius: 0.5,
+                      color: AppColors.pointColor,
+                    ),
+                  ],
+                ),
+              ),
             ],
-            // 마이페이지 탭일 때: 설정 버튼을 먼저 표시 (알림 아이콘과 위치 교체)
-            if (_selectedIndex == 3) ...[
-              AppIconButton(
-                icon: Icons.settings_outlined,
+          ),
+        ),
+        const Spacer(),
+        if (_selectedIndex <= 1) ...[
+          AppIconButton(
+            icon: Icons.search,
+            onPressed: _navigateToSearchPage,
+            semanticLabel: AppLocalizations.of(context)!.search,
+            visualDensity: VisualDensity.compact,
+          ),
+          const SizedBox(width: 4),
+        ],
+        if (_selectedIndex == 3) ...[
+          AppIconButton(
+            icon: Icons.settings_outlined,
+            iconSize: 23,
+            onPressed: () => MyPageSettingsSheet.show(context),
+            semanticLabel: AppLocalizations.of(context)!.settings,
+            visualDensity: VisualDensity.compact,
+          ),
+          const SemesterTodoAppBarButton(),
+        ],
+        StreamBuilder<int>(
+          stream: _notificationService.getUnreadNotificationCount(),
+          builder: (context, snapshot) {
+            return NotificationBadge(
+              count: snapshot.data ?? 0,
+              child: AppIconButton(
+                icon: Icons.notifications_outlined,
                 iconSize: 23,
                 onPressed: () {
-                  MyPageSettingsSheet.show(context);
+                  Navigator.push(
+                    context,
+                    MaterialPageRoute(
+                      builder: (_) => const NotificationScreen(
+                        markAllAsReadOnOpen: true,
+                      ),
+                    ),
+                  );
                 },
-                semanticLabel: AppLocalizations.of(context)!.settings,
+                semanticLabel: AppLocalizations.of(context)!.notifications,
                 visualDensity: VisualDensity.compact,
               ),
-              const SemesterTodoAppBarButton(),
-            ],
-            // 알림 아이콘
-            StreamBuilder<int>(
-              stream: _notificationService.getUnreadNotificationCount(),
-              builder: (context, snapshot) {
-                final unreadCount = snapshot.data ?? 0;
+            );
+          },
+        ),
+      ],
+    );
+  }
 
-                return NotificationBadge(
-                  count: unreadCount,
-                  child: AppIconButton(
-                    icon: Icons.notifications_outlined,
-                    iconSize: 23,
-                    onPressed: () {
-                      Navigator.push(
-                        context,
-                        MaterialPageRoute(
-                          // 종 아이콘으로 알림 화면을 열면 즉시 "모두 읽음" 처리하여
-                          // 배지(앱 아이콘/상단 뱃지)를 0으로 동기화한다.
-                          builder: (_) => const NotificationScreen(
-                            markAllAsReadOnOpen: true,
-                          ),
-                        ),
-                      );
-                    },
-                    semanticLabel: AppLocalizations.of(context)!.notifications,
-                    visualDensity: VisualDensity.compact,
-                  ),
-                );
-              },
+  Widget _buildBottomNavigation() {
+    return StreamBuilder<int>(
+      stream: _dmService.getTotalUnreadCount(),
+      builder: (context, dmSnapshot) {
+        return StreamBuilder<int>(
+          stream: _snackChatService.getTotalUnreadCount(),
+          builder: (context, scSnapshot) {
+            final l10n = AppLocalizations.of(context)!;
+            if (dmSnapshot.hasError) {
+              Logger.error('DM 배지 스트림 오류', dmSnapshot.error);
+            }
+            final unreadDMCount = dmSnapshot.data ?? 0;
+            final unreadSCCount = scSnapshot.data ?? 0;
+            return AdaptiveBottomNavigation(
+              selectedIndex: _selectedIndex,
+              onItemTapped: _onItemTapped,
+              items: [
+                BottomNavigationItem(
+                  icon: Icons.menu,
+                  selectedIcon: Icons.menu,
+                  label: l10n.board,
+                  iconSizeMultiplier: 1.2,
+                ),
+                BottomNavigationItem(
+                  icon: Icons.groups_outlined,
+                  selectedIcon: Icons.groups,
+                  label: l10n.meetup,
+                  iconSizeMultiplier: 1.35,
+                ),
+                BottomNavigationItem(
+                  icon: Icons.forum_outlined,
+                  selectedIcon: Icons.forum_rounded,
+                  label: l10n.snackChat,
+                  semanticLabel: l10n.snackChatTabSemantic,
+                  badgeCount: unreadSCCount,
+                  iconSizeMultiplier: 1.2,
+                ),
+                BottomNavigationItem(
+                  icon: Icons.person_outline,
+                  selectedIcon: Icons.person,
+                  label: l10n.myPage,
+                  iconSizeMultiplier: 1.2,
+                ),
+                BottomNavigationItem(
+                  icon: Icons.send_outlined,
+                  selectedIcon: Icons.send_rounded,
+                  label: l10n.dm,
+                  badgeCount: unreadDMCount,
+                ),
+              ],
+            );
+          },
+        );
+      },
+    );
+  }
+
+  Widget _buildAnimatedBottomNavigation(
+    double factor, {
+    required Widget child,
+  }) {
+    return IgnorePointer(
+      ignoring: factor < 0.9,
+      child: ClipRect(
+        child: Align(
+          alignment: Alignment.topCenter,
+          heightFactor: factor,
+          child: Opacity(
+            opacity: factor,
+            child: Transform.translate(
+              offset: Offset(0, 12 * (1 - factor)),
+              child: child,
             ),
-          ],
+          ),
         ),
       ),
-      body: IndexedStack(
-        index: _selectedIndex,
-        children: List.generate(
-          5,
-          (i) => _screenCache[i] ?? const SizedBox.shrink(),
-        ),
+    );
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final appBarTitle = _buildAppBarTitle();
+    final body = IndexedStack(
+      index: _selectedIndex,
+      children: List.generate(
+        5,
+        (i) => _screenCache[i] ?? const SizedBox.shrink(),
       ),
-
-      // 완전 반응형 하단 네비게이션 (갤럭시 S23 등 모든 기기 대응)
-      bottomNavigationBar: StreamBuilder<int>(
-        stream: _dmService.getTotalUnreadCount(),
-        builder: (context, dmSnapshot) {
-          return StreamBuilder<int>(
-            // 현재 계정의 Today/All 목록에 실제로 표시되는 방만 카운트한다.
-            stream: _snackChatService.getTotalUnreadCount(),
-            builder: (context, scSnapshot) {
-              final l10n = AppLocalizations.of(context)!;
-
-              if (dmSnapshot.hasError) {
-                Logger.error('DM 배지 스트림 오류', dmSnapshot.error);
-              }
-
-              final unreadDMCount = dmSnapshot.data ?? 0;
-              final unreadSCCount = scSnapshot.data ?? 0;
-
-              return AdaptiveBottomNavigation(
-                selectedIndex: _selectedIndex,
-                onItemTapped: _onItemTapped,
-                items: [
-                  BottomNavigationItem(
-                    icon: Icons.menu,
-                    selectedIcon: Icons.menu,
-                    label: l10n.board,
-                    iconSizeMultiplier: 1.2,
-                  ),
-                  BottomNavigationItem(
-                    icon: Icons.groups_outlined,
-                    selectedIcon: Icons.groups,
-                    label: l10n.meetup,
-                    iconSizeMultiplier: 1.35,
-                  ),
-                  BottomNavigationItem(
-                    icon: Icons.forum_outlined,
-                    selectedIcon: Icons.forum_rounded,
-                    label: l10n.snackChat,
-                    semanticLabel: l10n.snackChatTabSemantic,
-                    badgeCount: unreadSCCount,
-                    iconSizeMultiplier: 1.2,
-                  ),
-                  BottomNavigationItem(
-                    icon: Icons.person_outline,
-                    selectedIcon: Icons.person,
-                    label: l10n.myPage,
-                    iconSizeMultiplier: 1.2,
-                  ),
-                  BottomNavigationItem(
-                    icon: Icons.send_outlined,
-                    selectedIcon: Icons.send_rounded,
-                    label: l10n.dm,
-                    badgeCount: unreadDMCount,
-                  ),
-                ],
-              );
-            },
-          );
-        },
-      ),
+    );
+    final bottomNavigation = _buildBottomNavigation();
+    return AnimatedBuilder(
+      animation: _chromeAnimation,
+      builder: (context, _) {
+        final factor = _chromeAnimation.value;
+        return Scaffold(
+          appBar: _buildAnimatedAppBar(
+            factor,
+            title: appBarTitle,
+          ),
+          body: body,
+          bottomNavigationBar: _buildAnimatedBottomNavigation(
+            factor,
+            child: bottomNavigation,
+          ),
+        );
+      },
     );
   }
 }

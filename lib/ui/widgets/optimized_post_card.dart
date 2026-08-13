@@ -10,6 +10,7 @@ import 'package:firebase_auth/firebase_auth.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:cached_network_image/cached_network_image.dart';
 import '../../models/post.dart';
+import '../../models/post_category.dart';
 import '../../design/tokens.dart';
 import '../../services/cache/app_image_cache_manager.dart';
 import '../../services/post_service.dart';
@@ -35,6 +36,7 @@ class OptimizedPostCard extends StatefulWidget {
   final Post post;
   final int index;
   final VoidCallback onTap;
+  final ValueChanged<PostCategory>? onCategoryTap;
 
   /// 수동 새로고침 시 계산한 댓글 수를 카드에 우선 반영하기 위한 오버라이드 값
   final int? externalCommentCountOverride;
@@ -48,6 +50,7 @@ class OptimizedPostCard extends StatefulWidget {
     required this.post,
     required this.index,
     required this.onTap,
+    this.onCategoryTap,
     this.externalCommentCountOverride,
     this.preloadImage = false,
     this.useGlassmorphism = false,
@@ -60,6 +63,7 @@ class OptimizedPostCard extends StatefulWidget {
     required Post post,
     required int index,
     required VoidCallback onTap,
+    ValueChanged<PostCategory>? onCategoryTap,
     bool preloadImage = false,
   }) {
     return OptimizedPostCard(
@@ -67,6 +71,7 @@ class OptimizedPostCard extends StatefulWidget {
       post: post,
       index: index,
       onTap: onTap,
+      onCategoryTap: onCategoryTap,
       preloadImage: preloadImage,
       useGlassmorphism: true,
     );
@@ -633,7 +638,7 @@ class _OptimizedPostCardState extends State<OptimizedPostCard> {
                               fontFamily: 'Pretendard',
                               fontWeight: FontWeight.w400,
                               fontSize: bodySize,
-                              height: 1.24,
+                              height: 1.15,
                               letterSpacing: -0.3,
                             ),
                           ),
@@ -655,11 +660,26 @@ class _OptimizedPostCardState extends State<OptimizedPostCard> {
                       ],
                       Padding(
                         padding: const EdgeInsets.only(top: DesignTokens.s2),
-                        child: _buildPostMeta(
-                          post.copyWith(
-                            commentCount: widget.externalCommentCountOverride ??
-                                post.commentCount,
-                          ),
+                        child: Row(
+                          crossAxisAlignment: CrossAxisAlignment.center,
+                          children: [
+                            _buildPostMeta(
+                              post.copyWith(
+                                commentCount:
+                                    widget.externalCommentCountOverride ??
+                                        post.commentCount,
+                              ),
+                            ),
+                            if (post.imageUrls.isNotEmpty) ...[
+                              const SizedBox(width: DesignTokens.s4),
+                              Expanded(
+                                child: Align(
+                                  alignment: Alignment.centerRight,
+                                  child: _buildPostCategoryTags(post),
+                                ),
+                              ),
+                            ],
+                          ],
                         ),
                       ),
                     ],
@@ -780,7 +800,7 @@ class _OptimizedPostCardState extends State<OptimizedPostCard> {
           fontFamily: 'Pretendard',
           fontSize: responsiveFontSize,
           fontWeight: FontWeight.w400,
-          height: 1.38,
+          height: 1.15,
           letterSpacing: -0.3,
         ) ??
         TextStyle(
@@ -788,7 +808,7 @@ class _OptimizedPostCardState extends State<OptimizedPostCard> {
           fontFamily: 'Pretendard',
           fontSize: responsiveFontSize,
           fontWeight: FontWeight.w400,
-          height: 1.38,
+          height: 1.15,
           letterSpacing: -0.3,
         );
 
@@ -973,25 +993,28 @@ class _OptimizedPostCardState extends State<OptimizedPostCard> {
                 ),
 
                 if (canOpenActions)
-                  Semantics(
-                    button: true,
-                    label: AppLocalizations.of(context)!.moreOptions,
-                    child: IconButton(
-                      tooltip: AppLocalizations.of(context)!.moreOptions,
-                      constraints: const BoxConstraints.tightFor(
-                        width: 32,
-                        height: 32,
-                      ),
-                      padding: EdgeInsets.zero,
-                      visualDensity: VisualDensity.compact,
-                      onPressed: () => _openPostActionsSheet(
-                        post: post,
-                        authorName: resolvedNickname,
-                      ),
-                      icon: const Icon(
-                        Icons.more_vert_rounded,
-                        size: 22,
-                        color: BrandColors.iconDefault,
+                  Transform.translate(
+                    offset: const Offset(10, 0),
+                    child: Semantics(
+                      button: true,
+                      label: AppLocalizations.of(context)!.moreOptions,
+                      child: IconButton(
+                        tooltip: AppLocalizations.of(context)!.moreOptions,
+                        constraints: const BoxConstraints.tightFor(
+                          width: 28,
+                          height: 28,
+                        ),
+                        padding: EdgeInsets.zero,
+                        visualDensity: VisualDensity.compact,
+                        onPressed: () => _openPostActionsSheet(
+                          post: post,
+                          authorName: resolvedNickname,
+                        ),
+                        icon: const Icon(
+                          Icons.more_vert_rounded,
+                          size: 18,
+                          color: BrandColors.iconDefault,
+                        ),
                       ),
                     ),
                   ),
@@ -1069,6 +1092,40 @@ class _OptimizedPostCardState extends State<OptimizedPostCard> {
     );
   }
 
+  Widget _buildPostCategoryTags(Post post) {
+    final l10n = AppLocalizations.of(context)!;
+    return Wrap(
+      alignment: WrapAlignment.end,
+      spacing: 6,
+      runSpacing: 2,
+      children: [
+        for (final category in post.postCategories)
+          Semantics(
+            button: widget.onCategoryTap != null,
+            label: category.label(l10n),
+            child: GestureDetector(
+              behavior: HitTestBehavior.opaque,
+              onTap: widget.onCategoryTap == null
+                  ? null
+                  : () => widget.onCategoryTap!(category),
+              child: Text(
+                '#${category.label(l10n)}',
+                textAlign: TextAlign.right,
+                style: const TextStyle(
+                  fontFamily: 'Pretendard',
+                  fontSize: 12.5,
+                  fontWeight: FontWeight.w600,
+                  color: BrandColors.info,
+                  height: 1.2,
+                  letterSpacing: -0.2,
+                ),
+              ),
+            ),
+          ),
+      ],
+    );
+  }
+
   /// 게시글 메타 정보 빌드
   Widget _buildPostMeta(Post post) {
     final isLikedByMe = _isLikedOverride;
@@ -1102,6 +1159,9 @@ class _OptimizedPostCardState extends State<OptimizedPostCard> {
       },
       onCommentTap: widget.onTap,
       compact: true,
+      iconSizeOverride: 15,
+      countFontSizeOverride: 12.5,
+      minExtentOverride: 30,
       hideEmptyMetrics: false,
       prioritizeComments: false,
       spreadMetrics: false,

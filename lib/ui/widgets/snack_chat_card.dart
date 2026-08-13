@@ -6,6 +6,7 @@ import '../../design/tokens.dart';
 import '../../models/snack_chat.dart';
 import '../../models/user_profile.dart';
 import '../../repositories/users_repository.dart';
+import 'audience_ring.dart';
 
 class SnackChatCard extends StatelessWidget {
   final SnackChat snackChat;
@@ -100,6 +101,7 @@ class SnackChatCard extends StatelessWidget {
     final horizontalPadding =
         (screenWidth * 0.045).clamp(14.0, 20.0).toDouble();
     final isCompact = screenWidth < 360;
+    final is24HourChat = snackChat.activeDurationHours == 24;
     final isFavorited = snackChat.isFavoritedBy(currentUserId);
     final unreadCount =
         currentUserId == null ? 0 : snackChat.getMyUnreadCount(currentUserId!);
@@ -139,10 +141,24 @@ class SnackChatCard extends StatelessWidget {
           child: Row(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              _ParticipantAvatarMosaic(
-                participantIds: snackChat.participantIds,
-                currentUserId: currentUserId,
-              ),
+              if (is24HourChat)
+                AudienceRing(
+                  restricted: true,
+                  size: 52,
+                  ringWidth: 3,
+                  innerGap: 1.5,
+                  borderRadius: BorderRadius.circular(11),
+                  semanticLabel: isKo ? '24시간 스낵챗' : '24-hour Snack Chat',
+                  child: _ParticipantAvatarMosaic(
+                    participantIds: snackChat.participantIds,
+                    currentUserId: currentUserId,
+                  ),
+                )
+              else
+                _ParticipantAvatarMosaic(
+                  participantIds: snackChat.participantIds,
+                  currentUserId: currentUserId,
+                ),
               SizedBox(width: isCompact ? 9 : 11),
               Expanded(
                 child: Column(
@@ -368,14 +384,23 @@ class _ParticipantAvatarMosaicState extends State<_ParticipantAvatarMosaic> {
         child: SizedBox(
           width: 52,
           height: 52,
-          child: Wrap(
-            spacing: 4,
-            runSpacing: 4,
-            children: List.generate(4, (index) {
-              final profile =
-                  index < ids.length ? profilesById[ids[index]] : null;
-              return _AvatarTile(profile: profile);
-            }),
+          child: LayoutBuilder(
+            builder: (context, constraints) {
+              final availableSize = constraints.biggest.shortestSide;
+              final tileSize = (availableSize - 4) / 2;
+              return Wrap(
+                spacing: 4,
+                runSpacing: 4,
+                children: List.generate(4, (index) {
+                  final profile =
+                      index < ids.length ? profilesById[ids[index]] : null;
+                  return _AvatarTile(
+                    profile: profile,
+                    size: tileSize,
+                  );
+                }),
+              );
+            },
           ),
         ),
       ),
@@ -385,8 +410,9 @@ class _ParticipantAvatarMosaicState extends State<_ParticipantAvatarMosaic> {
 
 class _AvatarTile extends StatelessWidget {
   final UserProfile? profile;
+  final double size;
 
-  const _AvatarTile({this.profile});
+  const _AvatarTile({this.profile, required this.size});
 
   @override
   Widget build(BuildContext context) {
@@ -395,8 +421,8 @@ class _AvatarTile extends StatelessWidget {
     return ClipRRect(
       borderRadius: BorderRadius.circular(7),
       child: Container(
-        width: 24,
-        height: 24,
+        width: size,
+        height: size,
         color: const Color(0xFFE8EEF3),
         child: imageUrl == null
             ? const Icon(

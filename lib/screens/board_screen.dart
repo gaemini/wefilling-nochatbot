@@ -34,10 +34,12 @@ import '../utils/responsive_helper.dart';
 
 class BoardScreen extends StatefulWidget {
   final VoidCallback onOpenMeetups;
+  final ValueChanged<bool>? onChromeVisibilityChanged;
 
   const BoardScreen({
     super.key,
     required this.onOpenMeetups,
+    this.onChromeVisibilityChanged,
   });
 
   @override
@@ -83,6 +85,10 @@ class BoardScreenState extends State<BoardScreen> {
   late final ScrollController _allScrollController;
   bool _controllersInitialized = false;
   bool _showCreateButton = true;
+  double? _lastScrollOffset;
+  double _directionalScrollDistance = 0;
+  ScrollDirection _lastScrollDirection = ScrollDirection.idle;
+  static const double _chromeDirectionThreshold = 14;
   static const String _psTodayOffsetId = 'board.todayScrollOffset.v1';
   static const String _psAllOffsetId = 'board.allScrollOffset.v1';
 
@@ -324,19 +330,44 @@ class BoardScreenState extends State<BoardScreen> {
 
   void _handleScrollChanged() {
     if (!mounted) return;
-    _persistBoardState(persistOffsets: true);
     final controller = _activeScrollController;
     if (!controller.hasClients) return;
     final position = controller.position;
-    final shouldShow = position.pixels <= position.minScrollExtent + 8
-        ? true
-        : switch (position.userScrollDirection) {
-            ScrollDirection.forward => true,
-            ScrollDirection.reverse => false,
-            ScrollDirection.idle => _showCreateButton,
-          };
+    final offset = position.pixels;
+    final direction = position.userScrollDirection;
+
+    if (offset <= position.minScrollExtent + 8) {
+      _lastScrollOffset = offset;
+      _directionalScrollDistance = 0;
+      _lastScrollDirection = ScrollDirection.idle;
+      _setScrollChromeVisibility(true);
+      return;
+    }
+
+    if (direction == ScrollDirection.idle) {
+      _lastScrollOffset = offset;
+      return;
+    }
+
+    if (direction != _lastScrollDirection) {
+      _directionalScrollDistance = 0;
+      _lastScrollDirection = direction;
+    }
+    final previousOffset = _lastScrollOffset;
+    _lastScrollOffset = offset;
+    if (previousOffset != null) {
+      _directionalScrollDistance += (offset - previousOffset).abs();
+    }
+    if (_directionalScrollDistance < _chromeDirectionThreshold) return;
+
+    _directionalScrollDistance = 0;
+    _setScrollChromeVisibility(direction == ScrollDirection.forward);
+  }
+
+  void _setScrollChromeVisibility(bool shouldShow) {
     if (shouldShow != _showCreateButton) {
       setState(() => _showCreateButton = shouldShow);
+      widget.onChromeVisibilityChanged?.call(shouldShow);
     }
   }
 
@@ -603,7 +634,7 @@ class BoardScreenState extends State<BoardScreen> {
             key: const PageStorageKey('board_today_list'),
             controller: _todayScrollController,
             physics: const AlwaysScrollableScrollPhysics(),
-            cacheExtent: 1000,
+            scrollCacheExtent: const ScrollCacheExtent.pixels(1000),
             padding: const EdgeInsets.only(top: 4, bottom: 90),
             itemCount: 1 + // AdBanner
                 1 + // meetups header
@@ -766,6 +797,7 @@ class BoardScreenState extends State<BoardScreen> {
                 post: post,
                 index: postIndex,
                 onTap: () => _navigateToPostDetail(post),
+                onCategoryTap: _openPostCategory,
                 externalCommentCountOverride: _commentCountOverrides[post.id],
                 preloadImage: postIndex < 3,
                 margin: _boardPostCardMargin,
@@ -940,7 +972,7 @@ class BoardScreenState extends State<BoardScreen> {
             key: const PageStorageKey('board_today_list_unified'),
             controller: _todayScrollController,
             physics: const AlwaysScrollableScrollPhysics(),
-            cacheExtent: 1000,
+            scrollCacheExtent: const ScrollCacheExtent.pixels(1000),
             padding: const EdgeInsets.only(top: 4, bottom: 90),
             itemCount: itemCount,
             itemBuilder: (context, index) {
@@ -1060,6 +1092,7 @@ class BoardScreenState extends State<BoardScreen> {
                   post: item,
                   index: itemIndex,
                   onTap: () => _navigateToPostDetail(item),
+                  onCategoryTap: _openPostCategory,
                   externalCommentCountOverride: _commentCountOverrides[item.id],
                   preloadImage: itemIndex < 3,
                   margin: _boardPostCardMargin,
@@ -1234,7 +1267,7 @@ class BoardScreenState extends State<BoardScreen> {
         key: const PageStorageKey('board_all_list'),
         controller: _allScrollController,
         physics: const AlwaysScrollableScrollPhysics(),
-        cacheExtent: 1000,
+        scrollCacheExtent: const ScrollCacheExtent.pixels(1000),
         padding: const EdgeInsets.symmetric(vertical: 4),
         itemCount: _calculateAllItemCount(grouped),
         itemBuilder: (context, index) {
@@ -1284,6 +1317,7 @@ class BoardScreenState extends State<BoardScreen> {
               post: item,
               index: i,
               onTap: () => _navigateToPostDetail(item),
+              onCategoryTap: _openPostCategory,
               externalCommentCountOverride: _commentCountOverrides[item.id],
               preloadImage: i < 3,
               margin: _boardPostCardMargin,
@@ -1300,14 +1334,39 @@ class BoardScreenState extends State<BoardScreen> {
 
   /// 게시글 상세 화면으로 이동
   void _navigateToPostDetail(Post post) async {
-    await Navigator.push<bool>(
+    final controller = _activeScrollController;
+    final preservedOffset = controller.hasClients ? controller.offset : null;
+
+    final wasDeleted = await Navigator.push<bool>(
       context,
       MaterialPageRoute(builder: (context) => PostDetailScreen(post: post)),
     );
 
-    // 상세 화면과 동일한 댓글 집계 기준으로 복귀 즉시 카드 수치를 동기화한다.
     if (!mounted) return;
-    await _refreshCommentCountsForPosts([post]);
+    _restoreActiveScrollOffset(preservedOffset);
+
+    // 삭제된 글에는 불필요한 댓글 조회를 실행하지 않는다. 그 외에는 상세 화면과
+    // 동일한 집계 기준으로 카드 수치만 갱신하고 기존 목록/스크롤은 유지한다.
+    if (wasDeleted != true) {
+      await _refreshCommentCountsForPosts([post]);
+    }
+  }
+
+  void _restoreActiveScrollOffset(double? offset) {
+    if (offset == null) return;
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!mounted) return;
+      final controller = _activeScrollController;
+      if (!controller.hasClients) return;
+
+      final position = controller.position;
+      final target = offset
+          .clamp(position.minScrollExtent, position.maxScrollExtent)
+          .toDouble();
+      if ((controller.offset - target).abs() > 0.5) {
+        controller.jumpTo(target);
+      }
+    });
   }
 
   DateTime _getTodayCombinedCreatedAt(dynamic item) {

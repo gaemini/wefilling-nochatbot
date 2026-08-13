@@ -34,6 +34,9 @@ class PostActionGroup extends StatelessWidget {
   final bool prioritizeComments;
   final bool showCommentLabel;
   final bool spreadMetrics;
+  final double? iconSizeOverride;
+  final double? countFontSizeOverride;
+  final double? minExtentOverride;
 
   const PostActionGroup({
     super.key,
@@ -62,6 +65,9 @@ class PostActionGroup extends StatelessWidget {
     this.prioritizeComments = false,
     this.showCommentLabel = false,
     this.spreadMetrics = false,
+    this.iconSizeOverride,
+    this.countFontSizeOverride,
+    this.minExtentOverride,
   });
 
   String _labelWithCount(String label, int count) {
@@ -71,18 +77,21 @@ class PostActionGroup extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     const actionColor = BrandColors.iconDefault;
-    final responsiveIconSize = context
-        .iconToken(compact ? 20 : 21)
-        .clamp(compact ? 18.5 : 20, compact ? 20.5 : 22)
-        .toDouble();
-    final responsiveCountSize = context
-        .fontToken(compact ? 13 : 14)
-        .clamp(compact ? 12 : 13, compact ? 13.5 : 15)
-        .toDouble();
-    final responsiveMinExtent = context
-        .spacingToken(compact ? 36 : 42)
-        .clamp(compact ? 34 : 40, compact ? 38 : 44)
-        .toDouble();
+    final responsiveIconSize = iconSizeOverride ??
+        context
+            .iconToken(compact ? 20 : 21)
+            .clamp(compact ? 18.5 : 20, compact ? 20.5 : 22)
+            .toDouble();
+    final responsiveCountSize = countFontSizeOverride ??
+        context
+            .fontToken(compact ? 13 : 14)
+            .clamp(compact ? 12 : 13, compact ? 13.5 : 15)
+            .toDouble();
+    final responsiveMinExtent = minExtentOverride ??
+        context
+            .spacingToken(compact ? 36 : 42)
+            .clamp(compact ? 34 : 40, compact ? 38 : 44)
+            .toDouble();
 
     final likeAction = Semantics(
       button: true,

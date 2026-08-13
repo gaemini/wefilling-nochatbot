@@ -202,6 +202,25 @@ class _PostCategoryFeedScreenState extends State<PostCategoryFeedScreen> {
     _restoreScrollOffset(preservedOffset);
   }
 
+  Future<void> _openPostCategory(PostCategory category) async {
+    if (category == widget.category) {
+      if (!_scrollController.hasClients) return;
+      await _scrollController.animateTo(
+        _scrollController.position.minScrollExtent,
+        duration: const Duration(milliseconds: 250),
+        curve: Curves.easeOut,
+      );
+      return;
+    }
+
+    await Navigator.push<void>(
+      context,
+      MaterialPageRoute(
+        builder: (_) => PostCategoryFeedScreen(category: category),
+      ),
+    );
+  }
+
   void _restoreScrollOffset(double? offset) {
     if (offset == null) return;
     WidgetsBinding.instance.addPostFrameCallback((_) {
@@ -348,6 +367,7 @@ class _PostCategoryFeedScreenState extends State<PostCategoryFeedScreen> {
                         index: index,
                         preloadImage: index < 3,
                         onTap: () => _openPost(post),
+                        onCategoryTap: _openPostCategory,
                       ),
                     ),
                   );

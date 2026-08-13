@@ -52,7 +52,6 @@ class PostDetailScreen extends StatefulWidget {
 }
 
 class _PostDetailScreenState extends State<PostDetailScreen> {
-  static const double _threadContentInset = 64;
   final PostService _postService = PostService();
   final CommentService _commentService = CommentService();
   final DMService _dmService = DMService();
@@ -2224,44 +2223,39 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
         const SizedBox(height: DesignTokens.s4),
         Padding(
           padding: const EdgeInsets.symmetric(horizontal: DesignTokens.s16),
-          child: Stack(
-            clipBehavior: Clip.none,
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
             children: [
               _buildEditorialAuthorRow(l10n),
-              if (hasTitle || hasBody)
-                Padding(
-                  padding: const EdgeInsets.only(left: 48, top: 33),
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      if (hasTitle)
-                        Text(
-                          title,
-                          style: TextStyle(
-                            fontFamily: 'Pretendard',
-                            fontSize: titleFontSize,
-                            fontWeight: FontWeight.w600,
-                            color: BrandColors.textPrimary,
-                            height: 1.36,
-                            letterSpacing: -0.3,
-                          ),
-                        ),
-                      if (hasTitle && hasBody) const SizedBox(height: 3),
-                      if (hasBody)
-                        Text(
-                          body,
-                          style: TextStyle(
-                            fontFamily: 'Pretendard',
-                            fontSize: bodyFontSize,
-                            fontWeight: FontWeight.w400,
-                            color: BrandColors.textPrimary,
-                            height: 1.38,
-                            letterSpacing: -0.3,
-                          ),
-                        ),
-                    ],
+              if (hasTitle || hasBody) ...[
+                const SizedBox(height: 2),
+                if (hasTitle)
+                  Text(
+                    title,
+                    textAlign: TextAlign.left,
+                    style: TextStyle(
+                      fontFamily: 'Pretendard',
+                      fontSize: titleFontSize,
+                      fontWeight: FontWeight.w600,
+                      color: BrandColors.textPrimary,
+                      height: 1.24,
+                      letterSpacing: -0.3,
+                    ),
                   ),
-                ),
+                if (hasBody)
+                  Text(
+                    body,
+                    textAlign: TextAlign.left,
+                    style: TextStyle(
+                      fontFamily: 'Pretendard',
+                      fontSize: bodyFontSize,
+                      fontWeight: FontWeight.w400,
+                      color: BrandColors.textPrimary,
+                      height: 1.20,
+                      letterSpacing: -0.3,
+                    ),
+                  ),
+              ],
             ],
           ),
         ),
@@ -2384,12 +2378,12 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
         ],
         if (_currentPost.imageUrls.isEmpty)
           Padding(
-            padding: const EdgeInsets.fromLTRB(_threadContentInset, 5, 16, 0),
+            padding: const EdgeInsets.fromLTRB(16, 5, 16, 0),
             child: _buildPostCategoryTags(l10n),
           ),
         if (_currentPost.type == 'poll')
           Padding(
-            padding: const EdgeInsets.fromLTRB(_threadContentInset, 8, 16, 0),
+            padding: const EdgeInsets.fromLTRB(16, 8, 16, 0),
             child: PollPostWidget(postId: _currentPost.id),
           ),
         Padding(
@@ -2397,12 +2391,15 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
           child: Center(
             child: ConstrainedBox(
               constraints: const BoxConstraints(maxWidth: 640),
-              child: _buildStatsRow(
-                likes: _currentPost.likes,
-                commentCount: _currentPost.commentCount,
-                viewCount: _currentPost.viewCount,
-                isLiked: _isLiked,
-                likedBy: _currentPost.likedBy,
+              child: SizedBox(
+                width: double.infinity,
+                child: _buildStatsRow(
+                  likes: _currentPost.likes,
+                  commentCount: _currentPost.commentCount,
+                  viewCount: _currentPost.viewCount,
+                  isLiked: _isLiked,
+                  likedBy: _currentPost.likedBy,
+                ),
               ),
             ),
           ),

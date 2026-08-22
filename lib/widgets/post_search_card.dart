@@ -95,26 +95,13 @@ class PostSearchCard extends StatelessWidget {
 
               SizedBox(height: DesignTokens.s12),
 
-              // 제목
+              // 제목/본문 구분이 없는 현재 포스트의 단일 본문
               Text(
-                post.title,
+                post.displayText,
                 style: TypographyStyles.titleLarge,
-                maxLines: 2,
+                maxLines: 3,
                 overflow: TextOverflow.ellipsis,
               ),
-
-              // 내용
-              if (post.content.isNotEmpty) ...[
-                SizedBox(height: DesignTokens.s8),
-                Text(
-                  post.content,
-                  maxLines: 3,
-                  overflow: TextOverflow.ellipsis,
-                  style: TypographyStyles.bodyMedium.copyWith(
-                    height: 1.4,
-                  ),
-                ),
-              ],
 
               SizedBox(height: DesignTokens.s12),
 

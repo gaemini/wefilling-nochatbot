@@ -5,6 +5,7 @@ import '../../l10n/app_localizations.dart';
 import '../../models/meetup.dart';
 import '../../utils/responsive_helper.dart';
 import 'audience_ring.dart';
+import 'meetup_public_countdown.dart';
 
 /// 포스트 피드용 밋업 요약.
 /// 날짜를 고정된 레일로 분리하고 관련 정보를 한 덩어리로 묶어 빠르게 훑을 수 있게 한다.
@@ -57,6 +58,9 @@ class BoardMeetupCard extends StatelessWidget {
   Widget build(BuildContext context) {
     final participants = currentParticipants ?? meetup.currentParticipants;
     final horizontal = context.rs(16).clamp(14.0, 18.0).toDouble();
+    final dateRailSize = meetup.hasPublicTimeLimit
+        ? context.rs(80).clamp(76.0, 82.0).toDouble()
+        : context.rs(66).clamp(66.0, 68.0).toDouble();
     final metaSize = context.rf(12.5).clamp(12.0, 13.0).toDouble();
     final metaStyle = TextStyle(
       fontFamily: 'Pretendard',
@@ -79,7 +83,7 @@ class BoardMeetupCard extends StatelessWidget {
               children: [
                 AudienceRing(
                   restricted: meetup.visibility != 'public',
-                  size: context.rs(66).clamp(66.0, 68.0).toDouble(),
+                  size: dateRailSize,
                   innerGap: 1.5,
                   borderRadius: BorderRadius.circular(
                     context.rs(16).clamp(14.0, 18.0).toDouble(),
@@ -137,6 +141,16 @@ class BoardMeetupCard extends StatelessWidget {
                             color: const Color(0xFF667085),
                           ),
                         ),
+                        if (meetup.hasPublicTimeLimit) ...[
+                          const SizedBox(height: 4),
+                          Padding(
+                            padding: const EdgeInsets.symmetric(horizontal: 3),
+                            child: MeetupPublicCountdown(
+                              meetup: meetup,
+                              compact: true,
+                            ),
+                          ),
+                        ],
                       ],
                     ),
                   ),

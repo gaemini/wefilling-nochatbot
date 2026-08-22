@@ -87,6 +87,8 @@ class _OptimizedPostCardState extends State<OptimizedPostCard> {
   bool _isLikeInFlight = false;
   bool _isLikedOverride = false;
   int _likesOverride = 0;
+  int? _liveCommentCount;
+  StreamSubscription<PostEngagement>? _engagementSubscription;
   bool _didPrecache = false;
   Timer? _likeHoldTimer;
   bool _likeSheetOpenedByHold = false;
@@ -99,6 +101,7 @@ class _OptimizedPostCardState extends State<OptimizedPostCard> {
   void initState() {
     super.initState();
     _syncLocalLikeStateFromWidget();
+    _subscribeToEngagement();
     // precacheImage는 MediaQuery 등 ImageConfiguration을 사용하므로 첫 프레임 이후 실행
     WidgetsBinding.instance.addPostFrameCallback((_) {
       if (!mounted) return;
@@ -108,6 +111,7 @@ class _OptimizedPostCardState extends State<OptimizedPostCard> {
 
   @override
   void dispose() {
+    _engagementSubscription?.cancel();
     _likeHoldTimer?.cancel();
     _likeHoldTimer = null;
     super.dispose();
@@ -119,7 +123,9 @@ class _OptimizedPostCardState extends State<OptimizedPostCard> {
     // 카드가 다른 포스트로 교체되었거나, 외부 갱신이 들어온 경우 로컬 상태를 동기화
     if (oldWidget.post.id != widget.post.id) {
       _isLikeInFlight = false;
+      _liveCommentCount = null;
       _syncLocalLikeStateFromWidget();
+      _subscribeToEngagement();
       return;
     }
     // 좋아요 토글 진행 중이 아니면 서버/스트림으로 들어온 최신 값을 따라간다
@@ -134,6 +140,34 @@ class _OptimizedPostCardState extends State<OptimizedPostCard> {
     _isLikedOverride = liked;
     _likesOverride = widget.post.likes;
   }
+
+  void _subscribeToEngagement() {
+    final previous = _engagementSubscription;
+    if (previous != null) unawaited(previous.cancel());
+    final postId = widget.post.id;
+    _engagementSubscription = _postService.watchPostEngagement(postId).listen(
+      (engagement) {
+        if (!mounted || widget.post.id != postId) return;
+        final me = FirebaseAuth.instance.currentUser?.uid;
+        setState(() {
+          _liveCommentCount = engagement.commentCount;
+          // 내 낙관적 토글이 서버에 반영되는 짧은 구간에는 되돌리지 않는다.
+          if (!_isLikeInFlight) {
+            _likesOverride = engagement.likes;
+            _isLikedOverride = me != null && engagement.likedBy.contains(me);
+          }
+        });
+      },
+      onError: (Object error) {
+        Logger.warning('포스트 실시간 지표 구독 오류($postId): $error');
+      },
+    );
+  }
+
+  int _effectiveCommentCount(Post post) =>
+      _liveCommentCount ??
+      widget.externalCommentCountOverride ??
+      post.commentCount;
 
   Future<void> _toggleLikeFromHeartButton() async {
     if (_isLikeInFlight) return;
@@ -577,18 +611,15 @@ class _OptimizedPostCardState extends State<OptimizedPostCard> {
     final colorScheme = theme.colorScheme;
     final post = widget.post;
     final unifiedText = _getUnifiedBodyText(post);
-    final title = post.title.trim();
-    final hasTitle = title.isNotEmpty;
-    final hasBody = unifiedText.isNotEmpty;
+    final hasContent = unifiedText.isNotEmpty;
     final contentInsets =
         widget.contentPadding.resolve(Directionality.of(context));
     final imageGap = context.rs(4).clamp(3.0, 5.0).toDouble();
     final contentTopGap = context.rs(2).clamp(1.0, 3.0).toDouble();
     // Threads의 비율처럼 작성자명과 본문은 거의 같은 크기를 쓰고,
     // 작성자명은 굵기로만 위계를 만든다.
-    final titleSize = context.rf(16).clamp(15.5, 17.0).toDouble();
-    final bodySize = context.rf(16).clamp(15.5, 17.0).toDouble();
-    final hasPrimaryContent = hasTitle || hasBody || post.type == 'poll';
+    final contentSize = context.rf(16).clamp(15.5, 17.0).toDouble();
+    final hasPrimaryContent = hasContent || post.type == 'poll';
 
     return Container(
       margin: widget.margin,
@@ -616,40 +647,21 @@ class _OptimizedPostCardState extends State<OptimizedPostCard> {
                     children: [
                       if (hasPrimaryContent) ...[
                         SizedBox(height: contentTopGap),
-                        if (hasTitle)
+                        if (hasContent)
                           _buildSmartEllipsizedText(
-                            text: title,
-                            maxLines: 3,
+                            text: unifiedText,
+                            maxLines: 4,
                             style: TextStyle(
                               color: BrandColors.textPrimary,
                               fontFamily: 'Pretendard',
-                              fontWeight: FontWeight.w600,
-                              fontSize: titleSize,
+                              fontWeight: FontWeight.w500,
+                              fontSize: contentSize,
                               height: 1.24,
                               letterSpacing: -0.3,
                             ),
                           ),
-                        if (hasBody && hasTitle)
-                          _buildSmartEllipsizedText(
-                            text: unifiedText,
-                            maxLines: 2,
-                            style: TextStyle(
-                              color: BrandColors.textPrimary,
-                              fontFamily: 'Pretendard',
-                              fontWeight: FontWeight.w400,
-                              fontSize: bodySize,
-                              height: 1.15,
-                              letterSpacing: -0.3,
-                            ),
-                          ),
-                        if (hasBody && !hasTitle)
-                          _buildTextOnlyPreview(
-                            unifiedText,
-                            theme,
-                            colorScheme,
-                          ),
                         if (post.type == 'poll') ...[
-                          if (hasTitle || hasBody)
+                          if (hasContent)
                             const SizedBox(height: DesignTokens.s8),
                           PollPostWidget(postId: post.id),
                         ],
@@ -665,9 +677,7 @@ class _OptimizedPostCardState extends State<OptimizedPostCard> {
                           children: [
                             _buildPostMeta(
                               post.copyWith(
-                                commentCount:
-                                    widget.externalCommentCountOverride ??
-                                        post.commentCount,
+                                commentCount: _effectiveCommentCount(post),
                               ),
                             ),
                             if (post.imageUrls.isNotEmpty) ...[
@@ -698,9 +708,10 @@ class _OptimizedPostCardState extends State<OptimizedPostCard> {
     );
   }
 
-  /// 게시글 본문 가져오기 (제목 필드는 더 이상 사용하지 않음)
+  /// 현재 게시글은 제목/본문 구분 없이 한 덩어리로 표시한다.
+  /// content가 없는 과거 게시글만 legacy title을 대신 사용한다.
   String _getUnifiedBodyText(Post post) {
-    return post.content.trim();
+    return post.displayText;
   }
 
   /// 카드 폭을 기준으로 실제 렌더링 폭을 측정해,
@@ -785,38 +796,6 @@ class _OptimizedPostCardState extends State<OptimizedPostCard> {
           style: style,
         );
       },
-    );
-  }
-
-  /// 제목이 없는 텍스트 게시물은 본문 자체를 메인 텍스트로 사용한다.
-  Widget _buildTextOnlyPreview(
-      String preview, ThemeData theme, ColorScheme colorScheme) {
-    final trimmed = preview.trim();
-    if (trimmed.isEmpty) return const SizedBox.shrink();
-
-    final responsiveFontSize = context.rf(16).clamp(15.5, 17.0).toDouble();
-    final style = theme.textTheme.bodyLarge?.copyWith(
-          color: BrandColors.textPrimary,
-          fontFamily: 'Pretendard',
-          fontSize: responsiveFontSize,
-          fontWeight: FontWeight.w400,
-          height: 1.15,
-          letterSpacing: -0.3,
-        ) ??
-        TextStyle(
-          color: BrandColors.textPrimary,
-          fontFamily: 'Pretendard',
-          fontSize: responsiveFontSize,
-          fontWeight: FontWeight.w400,
-          height: 1.15,
-          letterSpacing: -0.3,
-        );
-
-    return _buildSmartEllipsizedText(
-      text: trimmed,
-      style: style,
-      maxLines: 4,
-      forceSuffix: false,
     );
   }
 
@@ -1325,11 +1304,8 @@ class _OptimizedPostCardState extends State<OptimizedPostCard> {
         final originPostImageUrl =
             (post.imageUrls.isNotEmpty ? post.imageUrls.first : '').trim();
         // 게시글 컨텍스트 카드가 항상 렌더링되도록 preview를 최소 1개는 만든다.
-        final rawContent = post.content.trim();
-        final rawTitle = post.title.trim();
-        final base = rawContent.isNotEmpty
-            ? rawContent
-            : (rawTitle.isNotEmpty ? rawTitle : '포스트');
+        final displayText = post.displayText;
+        final base = displayText.isNotEmpty ? displayText : '포스트';
         final originPostPreview =
             base.length > 90 ? '${base.substring(0, 90)}...' : base;
         Navigator.push(
@@ -1432,7 +1408,7 @@ class _OptimizedPostCardState extends State<OptimizedPostCard> {
                     onTap: () async {
                       Navigator.pop(sheetContext);
                       final headline =
-                          post.content.trim().split('\n').first.trim();
+                          post.displayText.split('\n').first.trim();
                       await showReportDialog(
                         context,
                         reportedUserId: post.userId,
@@ -1490,7 +1466,7 @@ class _OptimizedPostCardState extends State<OptimizedPostCard> {
                             false;
                         if (!confirmed || !mounted) return;
                         final headline =
-                            post.content.trim().split('\n').first.trim();
+                            post.displayText.split('\n').first.trim();
                         final success = await ReportService.blockAnonymousPost(
                           postId: post.id,
                           titleSnapshot: headline,

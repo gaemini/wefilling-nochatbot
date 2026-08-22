@@ -28,6 +28,7 @@ class _MyMeetupCalendarScreenState extends State<MyMeetupCalendarScreen> {
 
   StreamSubscription? _hostedSub;
   StreamSubscription? _participatingSub;
+  Timer? _publicationTimer;
   Set<String> _hostedMeetupIds = <String>{};
   // ✅ "내 참여 모임" = 승인(approved) + 참여 신청(pending) 모두 포함
   // - 요구사항: 미래 모임에서 "참여 신청한 모임"도 보여야 함
@@ -101,6 +102,9 @@ class _MyMeetupCalendarScreenState extends State<MyMeetupCalendarScreen> {
     super.initState();
     _selectedDay = DateTime.now();
     _startStreams();
+    _publicationTimer = Timer.periodic(const Duration(seconds: 30), (_) {
+      if (mounted) setState(() {});
+    });
 
     // ✅ 친구 미래 모임은 "월 단위 캐시"로 동작 (페이지 재진입 시 재조회 최소화)
     _calendarCache.addListener(_handleCalendarCacheUpdated);
@@ -113,6 +117,7 @@ class _MyMeetupCalendarScreenState extends State<MyMeetupCalendarScreen> {
   void dispose() {
     _hostedSub?.cancel();
     _participatingSub?.cancel();
+    _publicationTimer?.cancel();
     for (final s in _meetupDocSubs.values) {
       s.cancel();
     }
@@ -240,6 +245,13 @@ class _MyMeetupCalendarScreenState extends State<MyMeetupCalendarScreen> {
           (data['isCompleted'] is bool) ? data['isCompleted'] as bool : false,
       hasReview:
           (data['hasReview'] is bool) ? data['hasReview'] as bool : false,
+      isConfirmed:
+          (data['isConfirmed'] is bool) ? data['isConfirmed'] as bool : false,
+      publicDurationHours: (data['publicDurationHours'] as num?)?.toInt(),
+      publicExpiresAt: data['publicExpiresAt'] is Timestamp
+          ? (data['publicExpiresAt'] as Timestamp).toDate()
+          : null,
+      publicWindowStatus: (data['publicWindowStatus'] ?? '').toString(),
       reviewId: data['reviewId']?.toString(),
       viewCount: (data['viewCount'] is int) ? data['viewCount'] as int : 0,
       commentCount:
@@ -284,6 +296,7 @@ class _MyMeetupCalendarScreenState extends State<MyMeetupCalendarScreen> {
   Map<DateTime, List<Meetup>> _buildEventMap() {
     final map = <DateTime, List<Meetup>>{};
     for (final m in _meetupById.values) {
+      if (!m.isPublishedAt()) continue;
       final key = _dayKey(m.date.toLocal());
       (map[key] ??= <Meetup>[]).add(m);
     }
@@ -768,7 +781,9 @@ class _MeetupCheckMarkPainter extends CustomPainter {
       ..lineTo(w * 0.84, h * 0.28);
 
     canvas.drawPath(path, paint);
-  }  @override
+  }
+
+  @override
   bool shouldRepaint(covariant _MeetupCheckMarkPainter oldDelegate) {
     return oldDelegate.color != color || oldDelegate.strokeWidth != strokeWidth;
   }

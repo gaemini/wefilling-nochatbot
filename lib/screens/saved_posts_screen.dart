@@ -26,7 +26,8 @@ class _SavedPostsScreenState extends State<SavedPostsScreen> {
 
       if (fetched == null) {
         ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text(AppLocalizations.of(context)!.postNotFound ?? "")),
+          SnackBar(
+              content: Text(AppLocalizations.of(context)!.postNotFound ?? "")),
         );
         return;
       }
@@ -49,7 +50,8 @@ class _SavedPostsScreenState extends State<SavedPostsScreen> {
   Widget build(BuildContext context) {
     final l10n = AppLocalizations.of(context)!;
     final authProvider = Provider.of<AuthProvider>(context);
-    final isLoggedIn = authProvider.user?.uid != null && (authProvider.user!.uid).isNotEmpty;
+    final isLoggedIn =
+        authProvider.user?.uid != null && (authProvider.user!.uid).isNotEmpty;
     final isKo = Localizations.localeOf(context).languageCode == 'ko';
 
     return Scaffold(
@@ -159,7 +161,8 @@ class _SavedPostsScreenState extends State<SavedPostsScreen> {
                 }
 
                 return ListView.builder(
-                  padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+                  padding:
+                      const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
                   itemCount: savedPosts.length,
                   itemBuilder: (context, index) {
                     final post = savedPosts[index];
@@ -197,15 +200,18 @@ class _SavedPostsScreenState extends State<SavedPostsScreen> {
                                   ),
                                   child: post.imageUrls.isNotEmpty
                                       ? ClipRRect(
-                                          borderRadius: BorderRadius.circular(10),
+                                          borderRadius:
+                                              BorderRadius.circular(10),
                                           child: Image.network(
                                             post.imageUrls.first,
                                             fit: BoxFit.cover,
-                                            errorBuilder: (context, error, stackTrace) {
+                                            errorBuilder:
+                                                (context, error, stackTrace) {
                                               return Container(
                                                 color: const Color(0xFFF3F4F6),
                                                 child: const Icon(
-                                                  Icons.image_not_supported_outlined,
+                                                  Icons
+                                                      .image_not_supported_outlined,
                                                   color: Color(0xFF9CA3AF),
                                                   size: 24,
                                                 ),
@@ -222,10 +228,11 @@ class _SavedPostsScreenState extends State<SavedPostsScreen> {
                                 const SizedBox(width: 12),
                                 Expanded(
                                   child: Column(
-                                    crossAxisAlignment: CrossAxisAlignment.start,
+                                    crossAxisAlignment:
+                                        CrossAxisAlignment.start,
                                     children: [
                                       Text(
-                                        post.title,
+                                        post.displayText,
                                         style: const TextStyle(
                                           fontFamily: 'Pretendard',
                                           fontSize: 16,
@@ -233,18 +240,6 @@ class _SavedPostsScreenState extends State<SavedPostsScreen> {
                                           color: Color(0xFF111827),
                                           height: 1.25,
                                           letterSpacing: -0.2,
-                                        ),
-                                        maxLines: 1,
-                                        overflow: TextOverflow.ellipsis,
-                                      ),
-                                      const SizedBox(height: 4),
-                                      Text(
-                                        post.content,
-                                        style: const TextStyle(
-                                          fontFamily: 'Pretendard',
-                                          fontSize: 14,
-                                          color: Color(0xFF6B7280),
-                                          height: 1.5,
                                         ),
                                         maxLines: 2,
                                         overflow: TextOverflow.ellipsis,
@@ -271,4 +266,3 @@ class _SavedPostsScreenState extends State<SavedPostsScreen> {
     );
   }
 }
-

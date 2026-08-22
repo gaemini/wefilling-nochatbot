@@ -1221,9 +1221,7 @@ class _MyPageScreenState extends State<MyPageScreen>
 
   Widget _buildBorderlessPostRow(Post post) {
     final l10n = AppLocalizations.of(context)!;
-    final metadata = post.content.trim().isEmpty
-        ? post.postCategory.label(l10n)
-        : post.content.trim();
+    final metadata = post.postCategory.label(l10n);
     const thumbnailSize = 84.0;
 
     return Material(
@@ -1243,8 +1241,8 @@ class _MyPageScreenState extends State<MyPageScreen>
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
                       Text(
-                        post.title,
-                        maxLines: 1,
+                        post.displayText,
+                        maxLines: 2,
                         overflow: TextOverflow.ellipsis,
                         style: const TextStyle(
                           fontFamily: 'Pretendard',
@@ -1344,7 +1342,7 @@ class _MyPageScreenState extends State<MyPageScreen>
         final post = posts[index];
         return Semantics(
           button: true,
-          label: post.title,
+          label: post.displayText,
           child: InkWell(
             onTap: () => _openPostDetail(post.id),
             child: _buildPostThumbnail(post),

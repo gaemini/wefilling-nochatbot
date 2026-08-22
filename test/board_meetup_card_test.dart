@@ -3,9 +3,14 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:wefilling/models/meetup.dart';
 import 'package:wefilling/ui/widgets/audience_ring.dart';
 import 'package:wefilling/ui/widgets/board_meetup_card.dart';
+import 'package:wefilling/ui/widgets/meetup_public_countdown.dart';
 
 void main() {
-  Meetup buildMeetup({String visibility = 'category'}) => Meetup(
+  Meetup buildMeetup({
+    String visibility = 'category',
+    DateTime? publicExpiresAt,
+  }) =>
+      Meetup(
         id: 'meetup-1',
         title: 'A deliberately long meetup title that must stay compact',
         description: '',
@@ -18,6 +23,9 @@ void main() {
         imageUrl: '',
         date: DateTime(2026, 7, 26),
         visibility: visibility,
+        publicDurationHours: publicExpiresAt == null ? null : 8,
+        publicExpiresAt: publicExpiresAt,
+        publicWindowStatus: publicExpiresAt == null ? 'unlimited' : 'timed',
       );
 
   Future<void> pumpCard(
@@ -26,6 +34,7 @@ void main() {
     required double textScale,
     String visibility = 'category',
     bool showAction = false,
+    DateTime? publicExpiresAt,
   }) async {
     await tester.binding.setSurfaceSize(surfaceSize);
     addTearDown(() => tester.binding.setSurfaceSize(null));
@@ -44,7 +53,10 @@ void main() {
                   width: surfaceSize.width,
                   child: BoardMeetupCard(
                     key: const Key('meetup-card'),
-                    meetup: buildMeetup(visibility: visibility),
+                    meetup: buildMeetup(
+                      visibility: visibility,
+                      publicExpiresAt: publicExpiresAt,
+                    ),
                     onTap: () {},
                     trailingAction: showAction
                         ? const SizedBox(width: 42, height: 36)
@@ -125,6 +137,27 @@ void main() {
 
     final size = tester.getSize(find.byKey(const Key('meetup-card')));
     expect(size.height, lessThanOrEqualTo(110));
+    expect(tester.takeException(), isNull);
+  });
+
+  testWidgets('shows a timed meetup countdown without narrow-screen overflow',
+      (tester) async {
+    await pumpCard(
+      tester,
+      surfaceSize: const Size(320, 640),
+      textScale: 1.3,
+      publicExpiresAt: DateTime.now().add(
+        const Duration(hours: 7, minutes: 23),
+      ),
+    );
+
+    expect(find.byType(MeetupPublicCountdown), findsOneWidget);
+    expect(find.textContaining('H'), findsOneWidget);
+    expect(find.textContaining('left'), findsOneWidget);
+    expect(
+      tester.getSize(find.byKey(const Key('meetup-card'))).height,
+      lessThanOrEqualTo(110),
+    );
     expect(tester.takeException(), isNull);
   });
 

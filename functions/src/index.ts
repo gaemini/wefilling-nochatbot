@@ -9,7 +9,12 @@ import * as crypto from 'crypto';
 import { COL } from './firestore_paths';
 import {resolveFriendNotificationAudience} from './frozen_audience';
 
-export {createPostSecure, createMeetupSecure} from './content_creation';
+export {
+  createPostSecure,
+  createMeetupSecure,
+  confirmMeetupSecure,
+  expireTimedMeetups,
+} from './content_creation';
 export {
   markDMConversationReadSecure,
   reconcileDMUnreadTotalSecure,
@@ -1589,6 +1594,14 @@ function meetupHasEnded(meetup: Record<string, any>): boolean {
   return true;
 }
 
+function meetupPublicationExpired(meetup: Record<string, any>): boolean {
+  if (meetup.isConfirmed === true) return false;
+  if (meetup.publicWindowStatus === 'expired') return true;
+  const expiresAt = meetup.publicExpiresAt;
+  return expiresAt instanceof admin.firestore.Timestamp &&
+    expiresAt.toMillis() <= Date.now();
+}
+
 /**
  * 밋업 참여의 최종 권한 판정은 생성 시 저장된 frozen audience로 수행한다.
  * 현재 친구/그룹 원본은 과거 콘텐츠 권한 계산에 사용하지 않는다.
@@ -1627,6 +1640,9 @@ export const joinMeetupSecure = functions.https.onCall(async (data, context) => 
   if (meetupHasEnded(initialData)) {
     throw new functions.https.HttpsError('failed-precondition', '종료된 밋업입니다.');
   }
+  if (meetupPublicationExpired(initialData)) {
+    throw new functions.https.HttpsError('failed-precondition', '공개 시간이 지난 밋업입니다.');
+  }
 
   const participantRef = db
     .collection(COL.meetupParticipants)
@@ -1660,6 +1676,9 @@ export const joinMeetupSecure = functions.https.onCall(async (data, context) => 
     }
     if (meetupHasEnded(meetup)) {
       throw new functions.https.HttpsError('failed-precondition', '종료된 밋업입니다.');
+    }
+    if (meetupPublicationExpired(meetup)) {
+      throw new functions.https.HttpsError('failed-precondition', '공개 시간이 지난 밋업입니다.');
     }
     if (toUniqueStringArray(meetup.kickedUserIds).includes(userId)) {
       throw new functions.https.HttpsError('permission-denied', '참여할 수 없는 밋업입니다.');
@@ -6742,8 +6761,10 @@ export const onDMMessageCreated = functions
           // this create trigger acquires the transaction. The callable stores
           // a server read-through watermark with the counter reset, so an old
           // create event must not resurrect unread=1 or send a stale push.
-          const messageCreatedAt = currentMessageSnap.get('createdAt');
-          const messageCreatedAtMs = firestoreTimeToMillis(messageCreatedAt) ?? 0;
+          // The client-authored createdAt can be ahead/behind the server
+          // clock. Firestore createTime is server-owned and comparable with
+          // the callable's server read-through watermark.
+          const messageCreatedAtMs = currentMessageSnap.createTime!.toMillis();
           const lastReadAtBy = data?.lastReadAtBy &&
             typeof data.lastReadAtBy === 'object' ? data.lastReadAtBy : {};
           const alreadyReadThrough = recipients.length > 0 &&
@@ -7031,7 +7052,7 @@ export const onDMMessageRead = functions
               typeof id === 'string' && id.length > 0)
         ));
         const recipientIds = participants.filter((id) => id !== senderId);
-        const messageCreatedAtMs = firestoreTimeToMillis(after.createdAt) ?? 0;
+        const messageCreatedAtMs = change.after.createTime!.toMillis();
         const lastReadAtBy = data.lastReadAtBy &&
           typeof data.lastReadAtBy === 'object' ? data.lastReadAtBy : {};
         // The room-level callable may already have cleared this exact

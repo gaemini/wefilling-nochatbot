@@ -139,10 +139,14 @@ class _PostCategoryFeedScreenState extends State<PostCategoryFeedScreen> {
       final page = await _loadPage(startAfter: _cursor);
       if (!mounted || generation != _requestGeneration) return;
       final knownIds = _posts.map((post) => post.id).toSet();
+      final additions =
+          page.posts.where((post) => knownIds.add(post.id)).toList();
       setState(() {
-        _posts.addAll(page.posts.where((post) => knownIds.add(post.id)));
+        _posts.addAll(additions);
         _cursor = page.cursor;
-        _hasMore = page.hasMore;
+        // 서버가 동일 페이지나 필터링 후 빈 페이지를 hasMore=true와 함께
+        // 반환해도 하단 로더가 연속 호출되는 무한 페이지네이션을 막는다.
+        _hasMore = page.hasMore && additions.isNotEmpty;
       });
     } catch (error) {
       if (!mounted || generation != _requestGeneration) return;

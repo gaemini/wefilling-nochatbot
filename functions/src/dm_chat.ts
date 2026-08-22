@@ -231,9 +231,12 @@ export const markDMConversationReadSecure = functions
       page.docs.forEach((message) => {
         const data = message.data();
         const senderId = (data.senderId ?? '').toString().trim();
-        const createdAt = timestampMillis(data.createdAt);
+        // createdAt is authored by the sender's device and can be skewed.
+        // Firestore createTime is server-owned, so it is safe to compare with
+        // the server read-through watermark.
+        const serverCreatedAt = message.createTime!.toMillis();
         if (senderId && senderId !== userId &&
-            createdAt > 0 && createdAt <= readThroughAt.toMillis()) {
+            serverCreatedAt <= readThroughAt.toMillis()) {
           batch.update(message.ref, {
             isRead: true,
             readAt: readThroughAt,

@@ -28,6 +28,7 @@ import 'friend_profile_screen.dart';
 import 'package:url_launcher/url_launcher.dart';
 import 'package:linkify/linkify.dart';
 import '../ui/widgets/fullscreen_image_viewer.dart';
+import '../ui/widgets/meetup_public_countdown.dart';
 import '../utils/category_label_utils.dart';
 import '../utils/logger.dart';
 import '../utils/responsive_helper.dart';
@@ -61,6 +62,7 @@ class _MeetupDetailScreenState extends State<MeetupDetailScreen>
   bool _isHost = false;
   bool _isParticipant = false; // 현재 사용자가 승인된 참여자인지
   bool _hasResolvedCanonicalMeetup = false;
+  bool _publicationExitScheduled = false;
   // 참여자 목록은 항상 전체 노출 (접기/펼치기 제거)
   late Meetup _currentMeetup;
   List<MeetupParticipant> _participants = [];
@@ -112,6 +114,10 @@ class _MeetupDetailScreenState extends State<MeetupDetailScreen>
           .get(const GetOptions(source: Source.server));
       if (!mounted || !snapshot.exists || snapshot.data() == null) return;
       final canonical = Meetup.fromFirestore(snapshot);
+      if (canonical.isPublicWindowExpiredAt()) {
+        _schedulePublicationExpiryExit();
+        return;
+      }
       setState(() {
         _currentMeetup = canonical;
         _hasResolvedCanonicalMeetup = true;
@@ -122,6 +128,15 @@ class _MeetupDetailScreenState extends State<MeetupDetailScreen>
       // 액션을 표시하지 않는다. 실시간 스트림은 계속 화면 데이터를 갱신한다.
       Logger.error('밋업 서버 상태 확인 오류: $error');
     }
+  }
+
+  void _schedulePublicationExpiryExit() {
+    if (_publicationExitScheduled) return;
+    _publicationExitScheduled = true;
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!mounted) return;
+      Navigator.of(context).maybePop();
+    });
   }
 
   void _ensureAudienceFuture() {
@@ -543,6 +558,12 @@ class _MeetupDetailScreenState extends State<MeetupDetailScreen>
             _currentMeetup = newMeetup;
           }
         }
+        if (snapshot.connectionState == ConnectionState.active &&
+            !snapshot.hasError &&
+            snapshot.data == null &&
+            _currentMeetup.isPublicWindowExpiredAt()) {
+          _schedulePublicationExpiryExit();
+        }
         _ensureAudienceFuture();
         final currentLang = Localizations.localeOf(context).languageCode;
         final horizontal = context.rs(20).clamp(16, 24).toDouble();
@@ -636,6 +657,10 @@ class _MeetupDetailScreenState extends State<MeetupDetailScreen>
                                 ? '${_currentMeetup.date.month}월 ${_currentMeetup.date.day}일 (${_currentMeetup.getFormattedDayOfWeek(languageCode: currentLang)}) ${_currentMeetup.time.isEmpty || _currentMeetup.time == '미정' ? '시간 미정' : _currentMeetup.time}'
                                 : '${DateFormat('MMM d', 'en').format(_currentMeetup.date)} (${_currentMeetup.getFormattedDayOfWeek(languageCode: 'en')}) ${_currentMeetup.time.isEmpty || _currentMeetup.time == '미정' ? 'Time TBD' : _currentMeetup.time}',
                           ),
+                          if (_currentMeetup.hasPublicTimeLimit) ...[
+                            const SizedBox(height: 10),
+                            MeetupPublicCountdown(meetup: _currentMeetup),
+                          ],
                           const SizedBox(height: 13),
                           _buildSimpleInfoRow(
                             Icons.location_on_outlined,
@@ -1807,6 +1832,17 @@ class _MeetupDetailScreenState extends State<MeetupDetailScreen>
   Future<void> _confirmMeetup() async {
     if (_isLoading || _currentMeetup.isConfirmed) return;
     final isKo = Localizations.localeOf(context).languageCode == 'ko';
+    if (_currentMeetup.isPublicWindowExpiredAt()) {
+      AppSnackBar.show(
+        context,
+        message: isKo
+            ? '공개 시간이 지나 밋업을 확정할 수 없습니다.'
+            : 'This meetup can no longer be confirmed because its public time expired.',
+        type: AppSnackBarType.warning,
+      );
+      _schedulePublicationExpiryExit();
+      return;
+    }
     final approved = await showDialog<bool>(
       context: context,
       barrierColor: const Color(0x99000000),

@@ -9,8 +9,62 @@ import '../models/ad_banner.dart';
 import '../services/ad_banner_service.dart';
 import '../utils/logger.dart';
 
-class AdShowcaseScreen extends StatelessWidget {
-  const AdShowcaseScreen({super.key});
+class AdShowcaseScreen extends StatefulWidget {
+  const AdShowcaseScreen({
+    super.key,
+    this.initialBannerId,
+    this.bannersStream,
+  });
+
+  /// 홈 배너에서 진입한 경우 상세 목록의 같은 광고로 바로 이동한다.
+  final String? initialBannerId;
+
+  /// 테스트와 프리뷰에서 Firebase 없이 광고 목록을 주입할 수 있다.
+  final Stream<List<AdBanner>>? bannersStream;
+
+  @override
+  State<AdShowcaseScreen> createState() => _AdShowcaseScreenState();
+}
+
+class _AdShowcaseScreenState extends State<AdShowcaseScreen> {
+  AdBannerService? _adBannerService;
+  final Map<String, GlobalKey> _bannerKeys = <String, GlobalKey>{};
+  bool _didRevealInitialBanner = false;
+
+  GlobalKey _keyForBanner(String bannerId) {
+    return _bannerKeys.putIfAbsent(
+      bannerId,
+      () => GlobalKey(debugLabel: 'ad-showcase-$bannerId'),
+    );
+  }
+
+  void _revealInitialBanner(List<AdBanner> banners) {
+    final targetId = widget.initialBannerId?.trim();
+    if (_didRevealInitialBanner || targetId == null || targetId.isEmpty) return;
+    if (!banners.any((banner) => banner.id == targetId)) return;
+
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!mounted || _didRevealInitialBanner) return;
+      final targetContext = _keyForBanner(targetId).currentContext;
+      if (targetContext == null) return;
+
+      _didRevealInitialBanner = true;
+      Scrollable.ensureVisible(
+        targetContext,
+        alignment: 0.04,
+        duration: const Duration(milliseconds: 320),
+        curve: Curves.easeOutCubic,
+      );
+    });
+  }
+
+  @override
+  void didUpdateWidget(covariant AdShowcaseScreen oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (oldWidget.initialBannerId != widget.initialBannerId) {
+      _didRevealInitialBanner = false;
+    }
+  }
 
   Future<void> _launchUrl(String url) async {
     try {
@@ -60,12 +114,11 @@ class AdShowcaseScreen extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final adBannerService = AdBannerService();
-
     return Scaffold(
       appBar: AppBar(
         leading: IconButton(
-          icon: const Icon(Icons.arrow_back_ios_new, color: Color(0xFF4A90E2), size: 20),
+          icon: const Icon(Icons.arrow_back_ios_new,
+              color: Color(0xFF4A90E2), size: 20),
           onPressed: () => Navigator.pop(context),
         ),
         title: Text.rich(
@@ -99,7 +152,8 @@ class AdShowcaseScreen extends StatelessWidget {
       ),
       backgroundColor: const Color(0xFFF8F9FA),
       body: StreamBuilder<List<AdBanner>>(
-        stream: adBannerService.getActiveBannersStream(),
+        stream: widget.bannersStream ??
+            (_adBannerService ??= AdBannerService()).getActiveBannersStream(),
         builder: (context, snapshot) {
           // 로딩 중
           if (snapshot.connectionState == ConnectionState.waiting) {
@@ -167,18 +221,34 @@ class AdShowcaseScreen extends StatelessWidget {
             );
           }
 
-          // 광고 목록 표시
-          return ListView.builder(
+          _revealInitialBanner(activeAds);
+
+          // 광고 수가 많지 않은 쇼케이스 화면이므로 모든 카드를 한 번에 빌드한다.
+          // 그래야 화면 밖에 있는 선택 광고도 GlobalKey로 정확히 찾아 이동할 수 있다.
+          return SingleChildScrollView(
             padding: EdgeInsets.only(
               left: 16,
               right: 16,
               top: 16,
-              bottom: MediaQuery.of(context).padding.bottom + 16, // 하단 시스템 UI 영역 고려
+              bottom:
+                  MediaQuery.of(context).padding.bottom + 16, // 하단 시스템 UI 영역 고려
             ),
-            itemCount: activeAds.length,
-            itemBuilder: (context, index) {
-              return _buildAdCard(context, activeAds[index], index);
-            },
+            child: Column(
+              children: [
+                for (var index = 0; index < activeAds.length; index++)
+                  KeyedSubtree(
+                    key: _keyForBanner(activeAds[index].id),
+                    child: _buildAdCard(context, activeAds[index], index),
+                  ),
+                // 마지막 광고도 화면 상단 가까이에 정렬할 수 있는 앵커 여백.
+                if (widget.initialBannerId?.trim().isNotEmpty == true)
+                  SizedBox(
+                    height: (MediaQuery.sizeOf(context).height - 160)
+                        .clamp(0, 480)
+                        .toDouble(),
+                  ),
+              ],
+            ),
           );
         },
       ),
@@ -238,9 +308,9 @@ class AdShowcaseScreen extends StatelessWidget {
                     ),
                   ],
                 ),
-                
+
                 const SizedBox(height: 12),
-                
+
                 // 이미지 (있는 경우만 표시)
                 if (banner.imageUrl != null && banner.imageUrl!.isNotEmpty)
                   ClipRRect(
@@ -276,10 +346,10 @@ class AdShowcaseScreen extends StatelessWidget {
                       ),
                     ),
                   ),
-                
+
                 if (banner.imageUrl != null && banner.imageUrl!.isNotEmpty)
                   const SizedBox(height: 12),
-                
+
                 // 설명 (더 많은 줄 표시 가능)
                 Text(
                   banner.description,

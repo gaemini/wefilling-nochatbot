@@ -95,6 +95,8 @@ class _DMChatScreenState extends State<DMChatScreen>
   bool _autoMarkReadInFlight = false;
   bool _autoMarkReadQueued = false;
   int _autoMarkReadRetryAttempt = 0;
+  Future<void>? _autoMarkReadOperation;
+  bool _exitReadFlushStarted = false;
   StreamSubscription<DocumentSnapshot<Map<String, dynamic>>>?
       _conversationReadSub;
   AppLifecycleState _appLifecycleState = AppLifecycleState.detached;
@@ -561,18 +563,9 @@ class _DMChatScreenState extends State<DMChatScreen>
 
   @override
   void dispose() {
-    // 화면을 아주 빠르게 닫아도 읽음 작업이 debounce 타이머와 함께
-    // 취소되지 않도록 마지막 서버 동기화를 먼저 시작한다. 동일 메시지를
-    // 다시 처리해도 false→true 전이만 서버 카운터에 반영되어 멱등하다.
-    if (_activeConversationId.isNotEmpty && !_isLeaving) {
-      unawaited(
-        _dmService.markAsRead(_activeConversationId).then((result) {
-          return BadgeService.syncAfterDmRead(result.newDmUnreadTotal);
-        }).catchError((Object error) {
-          Logger.error('❌ [DM 읽음] 화면 종료 동기화 실패: $error');
-        }),
-      );
-    }
+    // PopScope를 거치지 않고 라우트가 제거되는 경우에도 백그라운드 읽음
+    // 동기화를 시작한다. 이 Future는 화면 생명주기와 독립적으로 완료된다.
+    _startBackgroundReadFlush();
     // ✅ 현재 화면이 활성 대화방이면 해제
     if (DMActiveConversation.isActive(_activeConversationId)) {
       DMActiveConversation.setActive(null);
@@ -633,11 +626,16 @@ class _DMChatScreenState extends State<DMChatScreen>
     _autoMarkReadInFlight = true;
     Logger.log(
         '📖 [markAsRead] 실행 - conversationId: $_activeConversationId (즉시 트리거)');
-    try {
-      final result = await _dmService.markAsRead(_activeConversationId);
+    final conversationId = _activeConversationId;
+    final operation = () async {
+      final result = await _dmService.markAsRead(conversationId);
       await BadgeService.syncAfterDmRead(result.newDmUnreadTotal);
+    }();
+    _autoMarkReadOperation = operation;
+    try {
+      await operation;
       _autoMarkReadRetryAttempt = 0;
-      Logger.log('✅ [markAsRead] 완료 - conversationId: $_activeConversationId');
+      Logger.log('✅ [markAsRead] 완료 - conversationId: $conversationId');
     } catch (e) {
       Logger.error('❌ [markAsRead] 실패: $e');
       _autoMarkReadRetryAttempt =
@@ -653,6 +651,9 @@ class _DMChatScreenState extends State<DMChatScreen>
         ),
       );
     } finally {
+      if (identical(_autoMarkReadOperation, operation)) {
+        _autoMarkReadOperation = null;
+      }
       _autoMarkReadInFlight = false;
       if (_autoMarkReadQueued) {
         _autoMarkReadQueued = false;
@@ -943,31 +944,76 @@ class _DMChatScreenState extends State<DMChatScreen>
     return const SizedBox.shrink();
   }
 
+  void _startBackgroundReadFlush() {
+    if (_activeConversationId.isEmpty || _isLeaving || _exitReadFlushStarted) {
+      return;
+    }
+    _exitReadFlushStarted = true;
+    _autoMarkReadDebounce?.cancel();
+    final conversationId = _activeConversationId;
+    final pending = _autoMarkReadOperation;
+
+    unawaited(
+      (() async {
+        if (pending != null) {
+          try {
+            await pending.timeout(const Duration(seconds: 3));
+          } catch (_) {
+            // 진행 중 요청이 실패하거나 지연돼도 아래 최종 요청은 시도한다.
+          }
+        }
+
+        // 화면은 즉시 닫고, 이 최종 요청만 백그라운드에서 계속한다.
+        final result = await _dmService
+            .markAsRead(conversationId)
+            .timeout(const Duration(seconds: 12));
+        await BadgeService.syncAfterDmRead(result.newDmUnreadTotal);
+      })()
+          .catchError((Object error) {
+        Logger.error('❌ [DM 읽음] 화면 종료 동기화 실패: $error');
+      }),
+    );
+  }
+
+  Widget _readAwareRoute({required Widget child}) {
+    return PopScope<Object?>(
+      canPop: true,
+      onPopInvokedWithResult: (didPop, _) {
+        if (didPop) _startBackgroundReadFlush();
+      },
+      child: child,
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     if (_currentUser == null) {
-      return Scaffold(
-        appBar: AppBar(title: Text(AppLocalizations.of(context)!.dm ?? "")),
-        body: Center(
-          child: Text(AppLocalizations.of(context)!.loginRequired ?? ""),
+      return _readAwareRoute(
+        child: Scaffold(
+          appBar: AppBar(title: Text(AppLocalizations.of(context)!.dm)),
+          body: Center(
+            child: Text(AppLocalizations.of(context)!.loginRequired),
+          ),
         ),
       );
     }
 
-    return Scaffold(
-      backgroundColor: DMColors.pageBg,
-      appBar: _buildAppBar(),
-      body: Column(
-        children: [
-          // 익명 게시글 DM인 경우에만 게시글로 돌아가기 배너 추가
-          if (_conversation != null &&
-              _conversation!.postId != null &&
-              _conversation!.postId!.isNotEmpty &&
-              _conversation!.isOtherUserAnonymous(_currentUser!.uid))
-            _buildPostNavigationBanner(),
-          Expanded(child: _buildMessageList()),
-          _buildInputArea(),
-        ],
+    return _readAwareRoute(
+      child: Scaffold(
+        backgroundColor: DMColors.pageBg,
+        appBar: _buildAppBar(),
+        body: Column(
+          children: [
+            // 익명 게시글 DM인 경우에만 게시글로 돌아가기 배너 추가
+            if (_conversation != null &&
+                _conversation!.postId != null &&
+                _conversation!.postId!.isNotEmpty &&
+                _conversation!.isOtherUserAnonymous(_currentUser.uid))
+              _buildPostNavigationBanner(),
+            Expanded(child: _buildMessageList()),
+            _buildInputArea(),
+          ],
+        ),
       ),
     );
   }

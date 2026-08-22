@@ -195,11 +195,13 @@ class _AdBannerWidgetState extends State<AdBannerWidget> {
     return GestureDetector(
       key: ValueKey('banner_$index'), // AnimatedSwitcher를 위한 고유 키
       onTap: () {
-        // 광고 목록 페이지로 이동
+        // 광고 목록 페이지에서 사용자가 누른 광고 위치로 바로 이동한다.
         Navigator.push(
           context,
           MaterialPageRoute(
-            builder: (context) => const AdShowcaseScreen(),
+            builder: (context) => AdShowcaseScreen(
+              initialBannerId: banner.id,
+            ),
           ),
         );
       },

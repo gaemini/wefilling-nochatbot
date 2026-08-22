@@ -105,7 +105,9 @@ service cloud.firestore {
         'visibilityMode', 'visibility',
         'audienceUserIdsFrozen', 'allowedUserIds',
         'sourceGroupIds', 'visibleToCategoryIds',
-        'visibilityLockedAt', 'visibilitySchemaVersion'
+        'visibilityLockedAt', 'visibilitySchemaVersion',
+        'publicDurationHours', 'publicExpiresAt', 'publicExpiredAt',
+        'publicWindowStatus', 'expiredAt'
       ]);
     }
 
@@ -142,6 +144,15 @@ service cloud.firestore {
         : ((meetupDoc.data.keys().hasAny(['date']) && meetupDoc.data.date is timestamp)
             ? request.time < meetupDoc.data.date + duration.value(1, 'd')
             : true);
+    }
+
+    // 미확정 밋업의 공개 제한시간은 서버에서 생성하고 확정/만료 함수만
+    // 변경한다. 레거시 클라이언트의 직접 확정도 제한시간 이후에는 막는다.
+    function meetupPublicationWindowOpen(meetupData) {
+      return meetupData.get('publicWindowStatus', '') != 'expired'
+        && (!meetupData.keys().hasAny(['publicExpiresAt'])
+          || (meetupData.publicExpiresAt is timestamp
+            && request.time < meetupData.publicExpiresAt));
     }
 
     function canReadPostData(postData) {
@@ -663,7 +674,11 @@ service cloud.firestore {
           ])
           // 한 번 확정된 모임은 미확정 상태로 되돌릴 수 없다.
           && (resource.data.get('isConfirmed', false) != true
-            || request.resource.data.get('isConfirmed', false) == true)) ||
+            || request.resource.data.get('isConfirmed', false) == true)
+          // 제한시간 이후의 미확정 -> 확정 전환은 서버/클라이언트 모두 거부한다.
+          && (request.resource.data.get('isConfirmed', false) != true
+            || resource.data.get('isConfirmed', false) == true
+            || meetupPublicationWindowOpen(resource.data))) ||
         // 참여자는 currentParticipants만 수정 가능 (참여/취소 시)
         (request.resource.data.diff(resource.data).affectedKeys().hasOnly(['currentParticipants', 'updatedAt']) &&
          canReadMeetupData(resource.data) &&
@@ -690,6 +705,9 @@ service cloud.firestore {
         allow read: if canReadParentMeetup();
         allow create: if request.auth != null
           && canReadParentMeetup()
+          && meetupPublicationWindowOpen(
+            get(/databases/$(database)/documents/meetups/$(meetupId)).data
+          )
           && exists(/databases/$(database)/documents/users/$(request.auth.uid))
           && get(/databases/$(database)/documents/users/$(request.auth.uid)).data.emailVerified == true;
         allow update: if request.auth != null 

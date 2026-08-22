@@ -43,6 +43,10 @@ class Meetup {
   final bool hasReview; // 후기가 작성되었는지
   final bool groupChatEnabled; // 모임 단체 톡방 활성화 여부 (호스트가 켜기)
   final bool isConfirmed; // 모임장이 모임을 확정했는지
+  /// 미확정 밋업이 목록에 공개되는 시간. null이면 시간 제한 없음.
+  final int? publicDurationHours;
+  final DateTime? publicExpiresAt;
+  final String publicWindowStatus; // unlimited | timed | confirmed | expired
   final String? snackChatId; // 이 모임에서 생성된 Snack Chat
   final String? reviewId; // 작성된 후기 ID
   final int viewCount; // 조회수
@@ -77,6 +81,9 @@ class Meetup {
     this.hasReview = false, // 기본값: 후기 없음
     this.groupChatEnabled = false, // 기본값: 비활성
     this.isConfirmed = false,
+    this.publicDurationHours,
+    this.publicExpiresAt,
+    this.publicWindowStatus = '',
     this.snackChatId,
     this.reviewId,
     this.viewCount = 0, // 기본값: 조회수 0
@@ -112,6 +119,9 @@ class Meetup {
     bool? hasReview,
     bool? groupChatEnabled,
     bool? isConfirmed,
+    int? publicDurationHours,
+    DateTime? publicExpiresAt,
+    String? publicWindowStatus,
     String? snackChatId,
     String? reviewId,
     int? viewCount,
@@ -147,6 +157,9 @@ class Meetup {
       hasReview: hasReview ?? this.hasReview,
       groupChatEnabled: groupChatEnabled ?? this.groupChatEnabled,
       isConfirmed: isConfirmed ?? this.isConfirmed,
+      publicDurationHours: publicDurationHours ?? this.publicDurationHours,
+      publicExpiresAt: publicExpiresAt ?? this.publicExpiresAt,
+      publicWindowStatus: publicWindowStatus ?? this.publicWindowStatus,
       snackChatId: snackChatId ?? this.snackChatId,
       reviewId: reviewId ?? this.reviewId,
       viewCount: viewCount ?? this.viewCount,
@@ -156,6 +169,27 @@ class Meetup {
 
   /// 확정된 모임과 기존 완료 모임은 동일한 후기 플로우를 사용한다.
   bool get canStartReview => isConfirmed || isCompleted;
+
+  bool get hasPublicTimeLimit =>
+      !isConfirmed &&
+      publicExpiresAt != null &&
+      publicWindowStatus != 'expired';
+
+  bool isPublicWindowExpiredAt([DateTime? now]) {
+    if (isConfirmed) return false;
+    if (publicWindowStatus == 'expired') return true;
+    final expiresAt = publicExpiresAt;
+    if (expiresAt == null) return false;
+    return !expiresAt.isAfter(now ?? DateTime.now());
+  }
+
+  Duration? publicTimeRemaining([DateTime? now]) {
+    if (!hasPublicTimeLimit) return null;
+    final remaining = publicExpiresAt!.difference(now ?? DateTime.now());
+    return remaining.isNegative ? Duration.zero : remaining;
+  }
+
+  bool isPublishedAt([DateTime? now]) => !isPublicWindowExpiredAt(now);
 
   static DateTime _parseFirestoreDate(dynamic raw, {DateTime? fallback}) {
     final fb = fallback ?? DateTime.fromMillisecondsSinceEpoch(0);
@@ -549,6 +583,11 @@ class Meetup {
       hasReview: json['hasReview'] ?? false,
       groupChatEnabled: json['groupChatEnabled'] ?? false,
       isConfirmed: json['isConfirmed'] ?? false,
+      publicDurationHours: (json['publicDurationHours'] as num?)?.toInt(),
+      publicExpiresAt: json['publicExpiresAt'] == null
+          ? null
+          : _parseFirestoreDate(json['publicExpiresAt']),
+      publicWindowStatus: (json['publicWindowStatus'] ?? '').toString(),
       snackChatId: (json['snackChatId'] ?? '').toString().trim().isEmpty
           ? null
           : json['snackChatId'].toString().trim(),
@@ -605,6 +644,11 @@ class Meetup {
       'hasReview': hasReview,
       'groupChatEnabled': groupChatEnabled,
       'isConfirmed': isConfirmed,
+      if (publicDurationHours != null)
+        'publicDurationHours': publicDurationHours,
+      if (publicExpiresAt != null) 'publicExpiresAt': publicExpiresAt,
+      if (publicWindowStatus.isNotEmpty)
+        'publicWindowStatus': publicWindowStatus,
       if (snackChatId != null && snackChatId!.isNotEmpty)
         'snackChatId': snackChatId,
       'reviewId': reviewId,

@@ -26,28 +26,28 @@ class UserStatsService {
         .where('userId', isEqualTo: user.uid)
         .snapshots()
         .asyncMap((snapshot) async {
-          int count = 0;
-          
-          // 각 모임에 대해 리뷰 합의가 완료되었는지 확인
-          for (var doc in snapshot.docs) {
-            final meetupId = doc.id;
-            
-            // 리뷰 합의 문서 확인
-            final reviewDoc = await _firestore
-                .collection('meetings')
-                .doc(meetupId)
-                .collection('reviews')
-                .doc('consensus')
-                .get();
-            
-            // 리뷰 합의가 완료된 모임만 카운트
-            if (reviewDoc.exists) {
-              count++;
-            }
-          }
-          
-          return count;
-        });
+      int count = 0;
+
+      // 각 모임에 대해 리뷰 합의가 완료되었는지 확인
+      for (var doc in snapshot.docs) {
+        final meetupId = doc.id;
+
+        // 리뷰 합의 문서 확인
+        final reviewDoc = await _firestore
+            .collection('meetings')
+            .doc(meetupId)
+            .collection('reviews')
+            .doc('consensus')
+            .get();
+
+        // 리뷰 합의가 완료된 모임만 카운트
+        if (reviewDoc.exists) {
+          count++;
+        }
+      }
+
+      return count;
+    });
   }
 
   // 사용자가 참여한 모임 수 (주최한 모임 제외)
@@ -79,12 +79,12 @@ class UserStatsService {
         .where('userId', isEqualTo: user.uid)
         .snapshots()
         .map((snapshot) {
-          return snapshot.docs.map((doc) {
+      return snapshot.docs
+          .map((doc) {
             final data = doc.data();
-            final meetupDate =
-                data['date'] != null
-                    ? (data['date'] as Timestamp).toDate()
-                    : DateTime.now();
+            final meetupDate = data['date'] != null
+                ? (data['date'] as Timestamp).toDate()
+                : DateTime.now();
 
             return Meetup(
               id: doc.id,
@@ -99,9 +99,18 @@ class UserStatsService {
               date: meetupDate,
               userId: data['userId'], // 모임 주최자 ID 추가
               hostNickname: data['hostNickname'], // 주최자 닉네임 추가
+              isConfirmed: data['isConfirmed'] == true,
+              publicDurationHours:
+                  (data['publicDurationHours'] as num?)?.toInt(),
+              publicExpiresAt: data['publicExpiresAt'] is Timestamp
+                  ? (data['publicExpiresAt'] as Timestamp).toDate()
+                  : null,
+              publicWindowStatus: (data['publicWindowStatus'] ?? '').toString(),
             );
-          }).toList();
-        });
+          })
+          .where((meetup) => meetup.isPublishedAt())
+          .toList();
+    });
   }
 
   // 사용자가 참여했던 모임 목록 (주최한 모임 제외)
@@ -116,26 +125,25 @@ class UserStatsService {
         .where('participants', arrayContains: user.uid)
         .snapshots()
         .map((snapshot) {
-          try {
-            // 사용자가 주최하지 않은 모임만 필터링
-            final filteredDocs =
-                snapshot.docs.where((doc) {
-                  final data = doc.data();
-                  // 'userId' 필드가 존재하고, 현재 사용자 ID와 다른 경우
-                  return data['userId'] != user.uid;
-                }).toList();
+      try {
+        // 사용자가 주최하지 않은 모임만 필터링
+        final filteredDocs = snapshot.docs.where((doc) {
+          final data = doc.data();
+          // 'userId' 필드가 존재하고, 현재 사용자 ID와 다른 경우
+          return data['userId'] != user.uid;
+        }).toList();
 
-            // 필터링된 결과가 없을 경우 빈 배열 반환
-            if (filteredDocs.isEmpty) {
-              return <Meetup>[];
-            }
+        // 필터링된 결과가 없을 경우 빈 배열 반환
+        if (filteredDocs.isEmpty) {
+          return <Meetup>[];
+        }
 
-            return filteredDocs.map((doc) {
+        return filteredDocs
+            .map((doc) {
               final data = doc.data();
-              final meetupDate =
-                  data['date'] != null
-                      ? (data['date'] as Timestamp).toDate()
-                      : DateTime.now();
+              final meetupDate = data['date'] != null
+                  ? (data['date'] as Timestamp).toDate()
+                  : DateTime.now();
 
               return Meetup(
                 id: doc.id,
@@ -151,13 +159,23 @@ class UserStatsService {
                 date: meetupDate,
                 userId: data['userId'], // 모임 주최자 ID 추가
                 hostNickname: data['hostNickname'], // 주최자 닉네임 추가
+                isConfirmed: data['isConfirmed'] == true,
+                publicDurationHours:
+                    (data['publicDurationHours'] as num?)?.toInt(),
+                publicExpiresAt: data['publicExpiresAt'] is Timestamp
+                    ? (data['publicExpiresAt'] as Timestamp).toDate()
+                    : null,
+                publicWindowStatus:
+                    (data['publicWindowStatus'] ?? '').toString(),
               );
-            }).toList();
-          } catch (e) {
-            Logger.error('참여 모임 처리 오류: $e');
-            return <Meetup>[];
-          }
-        });
+            })
+            .where((meetup) => meetup.isPublishedAt())
+            .toList();
+      } catch (e) {
+        Logger.error('참여 모임 처리 오류: $e');
+        return <Meetup>[];
+      }
+    });
   }
 
   // 사용자가 작성한 게시글 수
@@ -187,27 +205,27 @@ class UserStatsService {
         .orderBy('createdAt', descending: true)
         .snapshots()
         .map((snapshot) {
-          return snapshot.docs.map((doc) {
-            final data = doc.data();
-            return Post(
-              id: doc.id,
-              title: data['title'] ?? '',
-              content: data['content'] ?? '',
-              author: data['authorNickname'] ?? '',
-              authorNationality: data['authorNationality'] ?? '', // 국적 정보 추가
-              category: data['category'] ?? '일반', // 카테고리 추가
-              createdAt:
-                  data['createdAt'] != null
-                      ? (data['createdAt'] as Timestamp).toDate()
-                      : DateTime.now(),
-              userId: data['userId'] ?? '',
-              likes: (data['likes'] ?? 0).toInt(),
-              likedBy: List<String>.from(data['likedBy'] ?? []),
-              commentCount: (data['commentCount'] ?? 0).toInt(),
-              imageUrls: List<String>.from(data['imageUrls'] ?? []), // 이미지 URL 목록 추가
-            );
-          }).toList();
-        });
+      return snapshot.docs.map((doc) {
+        final data = doc.data();
+        return Post(
+          id: doc.id,
+          title: data['title'] ?? '',
+          content: data['content'] ?? '',
+          author: data['authorNickname'] ?? '',
+          authorNationality: data['authorNationality'] ?? '', // 국적 정보 추가
+          category: data['category'] ?? '일반', // 카테고리 추가
+          createdAt: data['createdAt'] != null
+              ? (data['createdAt'] as Timestamp).toDate()
+              : DateTime.now(),
+          userId: data['userId'] ?? '',
+          likes: (data['likes'] ?? 0).toInt(),
+          likedBy: List<String>.from(data['likedBy'] ?? []),
+          commentCount: (data['commentCount'] ?? 0).toInt(),
+          imageUrls:
+              List<String>.from(data['imageUrls'] ?? []), // 이미지 URL 목록 추가
+        );
+      }).toList();
+    });
   }
 
   // 사용자가 받은 좋아요 총수
@@ -222,12 +240,12 @@ class UserStatsService {
         .where('userId', isEqualTo: user.uid)
         .snapshots()
         .map((snapshot) {
-          int totalLikes = 0;
-          for (var doc in snapshot.docs) {
-            totalLikes += (doc.data()['likes'] as num? ?? 0).toInt();
-          }
-          return totalLikes;
-        });
+      int totalLikes = 0;
+      for (var doc in snapshot.docs) {
+        totalLikes += (doc.data()['likes'] as num? ?? 0).toInt();
+      }
+      return totalLikes;
+    });
   }
 
   // 사용자가 좋아요를 받은 게시글 목록
@@ -244,27 +262,27 @@ class UserStatsService {
         .orderBy('likes', descending: true)
         .snapshots()
         .map((snapshot) {
-          return snapshot.docs.map((doc) {
-            final data = doc.data();
-            return Post(
-              id: doc.id,
-              title: data['title'] ?? '',
-              content: data['content'] ?? '',
-              author: data['authorNickname'] ?? '',
-              authorNationality: data['authorNationality'] ?? '', // 국적 정보 추가
-              category: data['category'] ?? '일반', // 카테고리 추가
-              createdAt:
-                  data['createdAt'] != null
-                      ? (data['createdAt'] as Timestamp).toDate()
-                      : DateTime.now(),
-              userId: data['userId'] ?? '',
-              likes: (data['likes'] ?? 0).toInt(),
-              likedBy: List<String>.from(data['likedBy'] ?? []),
-              commentCount: (data['commentCount'] ?? 0).toInt(),
-              imageUrls: List<String>.from(data['imageUrls'] ?? []), // 이미지 URL 목록 추가
-            );
-          }).toList();
-        });
+      return snapshot.docs.map((doc) {
+        final data = doc.data();
+        return Post(
+          id: doc.id,
+          title: data['title'] ?? '',
+          content: data['content'] ?? '',
+          author: data['authorNickname'] ?? '',
+          authorNationality: data['authorNationality'] ?? '', // 국적 정보 추가
+          category: data['category'] ?? '일반', // 카테고리 추가
+          createdAt: data['createdAt'] != null
+              ? (data['createdAt'] as Timestamp).toDate()
+              : DateTime.now(),
+          userId: data['userId'] ?? '',
+          likes: (data['likes'] ?? 0).toInt(),
+          likedBy: List<String>.from(data['likedBy'] ?? []),
+          commentCount: (data['commentCount'] ?? 0).toInt(),
+          imageUrls:
+              List<String>.from(data['imageUrls'] ?? []), // 이미지 URL 목록 추가
+        );
+      }).toList();
+    });
   }
 
   // ==================== 특정 사용자 통계 메서드 ====================
@@ -277,28 +295,28 @@ class UserStatsService {
         .where('userId', isEqualTo: userId)
         .snapshots()
         .asyncMap((snapshot) async {
-          int count = 0;
-          
-          // 각 모임에 대해 리뷰 합의가 완료되었는지 확인
-          for (var doc in snapshot.docs) {
-            final meetupId = doc.id;
-            
-            // 리뷰 합의 문서 확인
-            final reviewDoc = await _firestore
-                .collection('meetings')
-                .doc(meetupId)
-                .collection('reviews')
-                .doc('consensus')
-                .get();
-            
-            // 리뷰 합의가 완료된 모임만 카운트
-            if (reviewDoc.exists) {
-              count++;
-            }
-          }
-          
-          return count;
-        });
+      int count = 0;
+
+      // 각 모임에 대해 리뷰 합의가 완료되었는지 확인
+      for (var doc in snapshot.docs) {
+        final meetupId = doc.id;
+
+        // 리뷰 합의 문서 확인
+        final reviewDoc = await _firestore
+            .collection('meetings')
+            .doc(meetupId)
+            .collection('reviews')
+            .doc('consensus')
+            .get();
+
+        // 리뷰 합의가 완료된 모임만 카운트
+        if (reviewDoc.exists) {
+          count++;
+        }
+      }
+
+      return count;
+    });
   }
 
   // 특정 사용자가 참여한 모임 수 (주최한 모임 제외)

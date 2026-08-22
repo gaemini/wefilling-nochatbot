@@ -20,6 +20,10 @@ class DMService {
   final DMMessageCacheService _localMessageCache = DMMessageCacheService();
   static bool _rulesTestDone = false;
   static const String _imageLastMessageFallback = '📷 Photo';
+  static DateTime? _secureReadCallableUnavailableUntil;
+  static const Duration _secureReadCallableRetryDelay = Duration(minutes: 5);
+  static const int _legacyReadPageSize = 400;
+  static const int _legacyReadMaxPages = 25;
 
   static String _visibilityPrefsKey(String myUid, String conversationId) =>
       'dm_visibility_start__${myUid}__${conversationId}';
@@ -1487,34 +1491,163 @@ class DMService {
       if (currentUser == null || conversationId.trim().isEmpty) {
         return const DMReadResult();
       }
-      final response = await _functions
-          .httpsCallable('markDMConversationReadSecure')
-          .call(<String, dynamic>{'conversationId': conversationId}).timeout(
-              const Duration(seconds: 120));
-      final data = response.data;
-      if (data is! Map || data['success'] != true) {
-        throw StateError('DM 읽음 상태를 동기화하지 못했습니다.');
-      }
-      int readInt(Object? value) => value is num ? value.toInt() : 0;
-      final result = DMReadResult(
-        clearedCount: readInt(data['clearedCount']),
-        newDmUnreadTotal: readInt(data['newDmUnreadTotal']),
-        receiptsUpdated: readInt(data['receiptsUpdated']),
-        cleanupComplete: data['cleanupComplete'] != false,
-      );
-      Logger.log(
-        '✅ [markAsRead] 서버 정합화 완료 - conversationId=$conversationId, '
-        'cleared=${result.clearedCount}, receipts=${result.receiptsUpdated}',
-      );
 
-      // 캐시 클리어 - 스트림 리스너가 변경사항을 감지하도록
-      _conversationCache.remove(conversationId);
-      _messageCache.remove(conversationId);
-      return result;
+      final unavailableUntil = _secureReadCallableUnavailableUntil;
+      if (unavailableUntil != null &&
+          unavailableUntil.isAfter(DateTime.now())) {
+        return _markAsReadWithFirestoreFallback(
+          conversationId,
+          currentUser.uid,
+        );
+      }
+
+      try {
+        final response = await _functions
+            .httpsCallable('markDMConversationReadSecure')
+            .call(<String, dynamic>{'conversationId': conversationId}).timeout(
+                const Duration(seconds: 120));
+        final data = response.data;
+        if (data is! Map || data['success'] != true) {
+          throw StateError('DM 읽음 상태를 동기화하지 못했습니다.');
+        }
+        int readInt(Object? value) => value is num ? value.toInt() : 0;
+        final result = DMReadResult(
+          clearedCount: readInt(data['clearedCount']),
+          newDmUnreadTotal: readInt(data['newDmUnreadTotal']),
+          receiptsUpdated: readInt(data['receiptsUpdated']),
+          cleanupComplete: data['cleanupComplete'] != false,
+        );
+        _secureReadCallableUnavailableUntil = null;
+        Logger.log(
+          '✅ [markAsRead] 서버 정합화 완료 - conversationId=$conversationId, '
+          'cleared=${result.clearedCount}, receipts=${result.receiptsUpdated}',
+        );
+
+        _conversationCache.remove(conversationId);
+        _messageCache.remove(conversationId);
+        return result;
+      } on FirebaseFunctionsException catch (error) {
+        if (error.code != 'not-found') rethrow;
+
+        // 새 callable이 아직 배포되지 않은 앱/서버 조합에서도 읽음이 완전히
+        // 멈추지 않게 기존 Firestore Rules + onDMMessageRead 경로로 수렴한다.
+        _secureReadCallableUnavailableUntil =
+            DateTime.now().add(_secureReadCallableRetryDelay);
+        Logger.error(
+          '⚠️ markDMConversationReadSecure 미배포 - Firestore 호환 읽음 처리 사용',
+          error,
+        );
+        return _markAsReadWithFirestoreFallback(
+          conversationId,
+          currentUser.uid,
+        );
+      }
     } catch (e) {
       Logger.error('메시지 읽음 처리 오류', e);
       rethrow;
     }
+  }
+
+  /// secure callable이 없는 구버전 서버를 위한 제한적 호환 경로다.
+  /// 메시지 false→true 변경은 기존 Rules가 수신자에게 허용하고, 이미 배포된
+  /// onDMMessageRead가 방/사용자 미읽음 카운터를 서버에서 감소시킨다.
+  Future<DMReadResult> _markAsReadWithFirestoreFallback(
+    String conversationId,
+    String userId,
+  ) async {
+    final conversationRef =
+        _firestore.collection('conversations').doc(conversationId);
+    final userRef = _firestore.collection('users').doc(userId);
+    final snapshots = await Future.wait([
+      conversationRef.get(),
+      userRef.get(),
+    ]);
+    final conversation = snapshots[0];
+    final user = snapshots[1];
+    if (!conversation.exists) return const DMReadResult();
+
+    final conversationData = conversation.data() ?? <String, dynamic>{};
+    final participants = (conversationData['participants'] as List?)
+            ?.whereType<String>()
+            .toSet() ??
+        const <String>{};
+    if (!participants.contains(userId)) {
+      throw StateError('대화 참여자만 읽음 처리할 수 있습니다.');
+    }
+
+    int nonNegativeInt(Object? value) {
+      if (value is! num) return 0;
+      final parsed = value.toInt();
+      return parsed < 0 ? 0 : parsed;
+    }
+
+    final unreadMap = conversationData['unreadCount'];
+    final clearedCount =
+        nonNegativeInt(unreadMap is Map ? unreadMap[userId] : null);
+    final userData = user.data() ?? <String, dynamic>{};
+    final previousTotal = nonNegativeInt(userData['dmUnreadTotal']);
+    final predictedTotal =
+        previousTotal > clearedCount ? previousTotal - clearedCount : 0;
+
+    DocumentSnapshot<Map<String, dynamic>>? cursor;
+    var receiptsUpdated = 0;
+    var cleanupComplete = true;
+    for (var pageIndex = 0; pageIndex < _legacyReadMaxPages; pageIndex++) {
+      Query<Map<String, dynamic>> query = conversationRef
+          .collection('messages')
+          .where('isRead', isEqualTo: false)
+          .orderBy(FieldPath.documentId)
+          .limit(_legacyReadPageSize);
+      if (cursor != null) query = query.startAfterDocument(cursor);
+      final page = await query.get();
+      if (page.docs.isEmpty) break;
+
+      final incoming = page.docs
+          .where((message) => message.data()['senderId'] != userId)
+          .toList(growable: false);
+      if (incoming.isNotEmpty) {
+        final batch = _firestore.batch();
+        for (final message in incoming) {
+          batch.update(message.reference, {
+            'isRead': true,
+            'readAt': FieldValue.serverTimestamp(),
+          });
+        }
+        try {
+          await batch.commit();
+          receiptsUpdated += incoming.length;
+        } catch (_) {
+          // 다른 읽음 요청과 겹쳐 batch 전체가 실패할 수 있다. 그 경우
+          // 아직 false인 문서만 개별 재시도해 나머지 메시지까지 수렴시킨다.
+          for (final message in incoming) {
+            try {
+              await message.reference.update({
+                'isRead': true,
+                'readAt': FieldValue.serverTimestamp(),
+              });
+              receiptsUpdated++;
+            } catch (_) {}
+          }
+        }
+      }
+
+      cursor = page.docs.last;
+      if (page.docs.length < _legacyReadPageSize) break;
+      if (pageIndex == _legacyReadMaxPages - 1) cleanupComplete = false;
+    }
+
+    _conversationCache.remove(conversationId);
+    _messageCache.remove(conversationId);
+    Logger.log(
+      '✅ [markAsRead:fallback] conversationId=$conversationId, '
+      'receipts=$receiptsUpdated, predictedTotal=$predictedTotal',
+    );
+    return DMReadResult(
+      clearedCount: clearedCount,
+      newDmUnreadTotal: predictedTotal,
+      receiptsUpdated: receiptsUpdated,
+      cleanupComplete: cleanupComplete,
+    );
   }
 
   /// 총 읽지 않은 DM 수 스트림

@@ -74,6 +74,8 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
   bool _isSaved = false;
   bool _isTogglingSave = false;
   late Post _currentPost;
+  StreamSubscription<PostEngagement>? _engagementSubscription;
+  bool _hasResolvedCommentStreamCount = false;
   bool _accessValidated = false;
   final PageController _imagePageController =
       PageController(initialPage: 0, keepPage: false);
@@ -132,6 +134,13 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
     // 첫 스냅샷이 UI에 전달되지 않아 StreamBuilder가 무한 로딩에 빠질 수 있음.
     // → 단일 구독(StreamBuilder)로만 사용하고, 카운트는 builder에서 동기화.
     _commentsStream = _commentService.getCommentsWithReplies(_currentPost.id);
+    _engagementSubscription =
+        _postService.watchPostEngagement(_currentPost.id).listen(
+      _applyLiveEngagement,
+      onError: (Object error) {
+        Logger.warning('포스트 상세 실시간 지표 구독 오류: $error');
+      },
+    );
 
     // 스크롤 상태 감지 → "맨 위로" 버튼 자연스러운 노출/숨김
     _scrollController.addListener(_handleScrollChanged);
@@ -193,10 +202,10 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
     }
   }
 
-  /// 게시글 본문 가져오기 (제목 필드는 더 이상 사용하지 않음)
+  /// 현재 게시글은 제목/본문 구분 없이 content를 사용한다.
+  /// content가 비어 있는 과거 데이터만 legacy title로 폴백한다.
   String _getUnifiedBodyText(Post post) {
-    // 제목 없이 본문만 사용 (제목 필드는 폐기됨)
-    return post.content.trim();
+    return post.displayText;
   }
 
   /// 상세 화면에서 보여줄 "첫 줄(제목처럼)"과 "나머지(캡션 본문)" 분리
@@ -340,6 +349,7 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
 
   @override
   void dispose() {
+    _engagementSubscription?.cancel();
     _likeHoldTimer?.cancel();
     _commentController.dispose();
     _scrollController.removeListener(_handleScrollChanged);
@@ -347,6 +357,25 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
     _commentFocusNode.dispose();
     _imagePageController.dispose();
     super.dispose();
+  }
+
+  void _applyLiveEngagement(PostEngagement engagement) {
+    if (!mounted) return;
+    final me = FirebaseAuth.instance.currentUser?.uid;
+    setState(() {
+      _currentPost = _currentPost.copyWith(
+        likes: _isTogglingLike ? _currentPost.likes : engagement.likes,
+        likedBy: _isTogglingLike ? _currentPost.likedBy : engagement.likedBy,
+        // 댓글 서브컬렉션 스냅샷이 도착한 뒤에는 실제 활성 스레드 수가
+        // 트리거 기반 집계 필드보다 더 최신일 수 있으므로 그 값을 우선한다.
+        commentCount: _hasResolvedCommentStreamCount
+            ? _currentPost.commentCount
+            : engagement.commentCount,
+      );
+      if (!_isTogglingLike) {
+        _isLiked = me != null && engagement.likedBy.contains(me);
+      }
+    });
   }
 
   void _handleScrollChanged() {
@@ -1074,11 +1103,8 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
                 : '')
             .trim();
         // 게시글 컨텍스트 카드가 항상 렌더링되도록 preview를 최소 1개는 만든다.
-        final rawContent = _currentPost.content.trim();
-        final rawTitle = _currentPost.title.trim();
-        final base = rawContent.isNotEmpty
-            ? rawContent
-            : (rawTitle.isNotEmpty ? rawTitle : '포스트');
+        final displayText = _currentPost.displayText;
+        final base = displayText.isNotEmpty ? displayText : '포스트';
         final originPostPreview =
             base.length > 90 ? '${base.substring(0, 90)}...' : base;
         Navigator.push(
@@ -2210,12 +2236,9 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
 
   Widget _buildEditorialPostContent() {
     final l10n = AppLocalizations.of(context)!;
-    final title = _currentPost.title.trim();
-    final body = _getUnifiedBodyText(_currentPost);
-    final hasTitle = title.isNotEmpty;
-    final hasBody = body.isNotEmpty;
-    final bodyFontSize = context.rf(16).clamp(15.5, 17.0).toDouble();
-    final titleFontSize = context.rf(16).clamp(15.5, 17.0).toDouble();
+    final content = _getUnifiedBodyText(_currentPost);
+    final hasContent = content.isNotEmpty;
+    final contentFontSize = context.rf(16).clamp(15.5, 17.0).toDouble();
 
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
@@ -2227,34 +2250,20 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
               _buildEditorialAuthorRow(l10n),
-              if (hasTitle || hasBody) ...[
+              if (hasContent) ...[
                 const SizedBox(height: 2),
-                if (hasTitle)
-                  Text(
-                    title,
-                    textAlign: TextAlign.left,
-                    style: TextStyle(
-                      fontFamily: 'Pretendard',
-                      fontSize: titleFontSize,
-                      fontWeight: FontWeight.w600,
-                      color: BrandColors.textPrimary,
-                      height: 1.24,
-                      letterSpacing: -0.3,
-                    ),
+                Text(
+                  content,
+                  textAlign: TextAlign.left,
+                  style: TextStyle(
+                    fontFamily: 'Pretendard',
+                    fontSize: contentFontSize,
+                    fontWeight: FontWeight.w500,
+                    color: BrandColors.textPrimary,
+                    height: 1.24,
+                    letterSpacing: -0.3,
                   ),
-                if (hasBody)
-                  Text(
-                    body,
-                    textAlign: TextAlign.left,
-                    style: TextStyle(
-                      fontFamily: 'Pretendard',
-                      fontSize: bodyFontSize,
-                      fontWeight: FontWeight.w400,
-                      color: BrandColors.textPrimary,
-                      height: 1.20,
-                      letterSpacing: -0.3,
-                    ),
-                  ),
+                ),
               ],
             ],
           ),
@@ -2607,6 +2616,7 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
                               CommentService.countActiveThreadComments(
                             allComments,
                           );
+                          _hasResolvedCommentStreamCount = true;
 
                           // 댓글 수를 스트림 기준으로 정합성 유지 (무한 setState 루프 방지)
                           if (_currentPost.commentCount != activeCommentCount) {

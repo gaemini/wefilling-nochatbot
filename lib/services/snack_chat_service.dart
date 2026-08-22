@@ -997,11 +997,12 @@ class SnackChatService {
     }
   }
 
-  /// 방 배지와 사용자별 마지막 읽은 sequence를 함께 단조 증가시킨다.
-  Future<int> markAsRead(
-    String snackChatId, {
-    int? lastReadSequence,
-  }) async {
+  /// 현재 방의 최신 메시지까지 모두 읽은 것으로 처리한다.
+  ///
+  /// 화면에서 개별 메시지의 노출 여부를 계산하지 않는다. 채팅방에 들어온
+  /// 사용자는 방을 나갈 때까지 도착한 최신 sequence 전체를 읽은 것으로
+  /// 간주하고, 방 배지와 사용자 읽음 커서를 한 트랜잭션에서 맞춘다.
+  Future<int> markAsRead(String snackChatId) async {
     final uid = _uid;
     if (uid == null) return 0;
 
@@ -1022,32 +1023,23 @@ class SnackChatService {
           // the screen retries when the membership stream catches up.
           throw StateError('Snack Chat 멤버십 정보를 아직 준비하지 못했습니다.');
         }
-        // null is the explicit "read the whole room" operation used when a
-        // route closes. Visibility-driven updates still pass their high-water
-        // sequence and therefore never over-report while the user scrolls.
-        final requested = lastReadSequence ?? room.lastMessageSequence;
-        final bounded = requested.clamp(0, room.lastMessageSequence).toInt();
+        final readThroughSequence =
+            room.lastMessageSequence < 0 ? 0 : room.lastMessageSequence;
         final memberData = memberDoc.data();
         final previousRaw = memberData?['lastReadSequence'];
         final previous = previousRaw is num ? previousRaw.toInt() : 0;
 
         final unreadBefore = room.unreadCount[uid] ?? 0;
-        // A user looking at an older part of the history has not necessarily
-        // seen newer messages. Only clear the room badge after the latest
-        // sequence was actually visible.
-        if (bounded >= room.lastMessageSequence &&
-            (room.unreadCount[uid] ?? 0) != 0) {
+        if ((room.unreadCount[uid] ?? 0) != 0) {
           transaction.update(roomRef, {'unreadCount.$uid': 0});
         }
-        if (bounded > previous) {
+        if (readThroughSequence > previous) {
           transaction.update(memberRef, {
-            'lastReadSequence': bounded,
+            'lastReadSequence': readThroughSequence,
             'lastReadAt': FieldValue.serverTimestamp(),
           });
         }
-        return bounded >= room.lastMessageSequence && unreadBefore > 0
-            ? unreadBefore
-            : 0;
+        return unreadBefore > 0 ? unreadBefore : 0;
       }).timeout(const Duration(seconds: 10));
 
       Logger.log('✅ [SnackChat] markAsRead 완료');

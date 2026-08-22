@@ -95,6 +95,7 @@ class BoardScreenState extends State<BoardScreen> {
   // 캐시된 데이터를 저장하여 부드러운 전환 구현
   List<Post>? _cachedTodayPosts;
   bool _isInitialLoad = true;
+  Future<void>? _refreshInFlight;
 
   // AppLocalizations 안전 호출 헬퍼
   String _safeL10n(String Function(AppLocalizations) getter, String fallback) {
@@ -251,6 +252,77 @@ class BoardScreenState extends State<BoardScreen> {
         }
       }
     });
+  }
+
+  /// 포스트 본문과 지표를 함께 새로 읽고, 모든 네트워크 대기에 상한을 둔다.
+  /// 연속으로 당겨도 동일 Future를 공유하므로 중복 요청과 무한 인디케이터를 막는다.
+  Future<void> _refreshFeed([List<Post> visiblePosts = const <Post>[]]) {
+    final activeRefresh = _refreshInFlight;
+    if (activeRefresh != null) return activeRefresh;
+
+    late final Future<void> trackedRefresh;
+    trackedRefresh = _performFeedRefresh(visiblePosts).whenComplete(() {
+      if (identical(_refreshInFlight, trackedRefresh)) {
+        _refreshInFlight = null;
+      }
+    });
+    _refreshInFlight = trackedRefresh;
+    return trackedRefresh;
+  }
+
+  Future<void> _performFeedRefresh(List<Post> visiblePosts) async {
+    var refreshedPosts = visiblePosts;
+    Object? refreshError;
+
+    // 일시적인 연결 실패는 한 번 자동 재시도한다. 각 시도는 서비스 내부
+    // timeout으로 반드시 끝나므로 RefreshIndicator도 무한 대기하지 않는다.
+    for (var attempt = 0; attempt < 2; attempt++) {
+      try {
+        refreshedPosts = await _postService.refreshPosts(
+          timeout: const Duration(seconds: 7),
+        );
+        refreshError = null;
+        break;
+      } catch (error) {
+        refreshError = error;
+        Logger.warning('포스트 수동 새로고침 실패(${attempt + 1}/2): $error');
+        if (attempt == 0) {
+          await Future<void>.delayed(const Duration(milliseconds: 250));
+        }
+      }
+    }
+
+    final refreshedTodayPosts = refreshedPosts.where(_isPostInToday).toList();
+    final commentTargets =
+        refreshedTodayPosts.isNotEmpty ? refreshedTodayPosts : visiblePosts;
+    try {
+      await _refreshCommentCountsForPosts(commentTargets).timeout(
+        const Duration(seconds: 8),
+      );
+    } catch (error) {
+      // 댓글 재집계 실패가 포스트 목록 새로고침이나 인디케이터 종료를 막지 않는다.
+      Logger.warning('새로고침 중 댓글 수 재집계 실패: $error');
+    }
+
+    if (!mounted) return;
+    setState(() {
+      if (refreshError == null) {
+        _cachedTodayPosts = refreshedTodayPosts;
+        _isInitialLoad = false;
+      }
+      _didAutoRefreshTodayCommentCounts = true;
+    });
+
+    if (refreshError != null) {
+      final isKo = Localizations.localeOf(context).languageCode == 'ko';
+      AppSnackBar.show(
+        context,
+        message: isKo
+            ? '새로고침에 실패했습니다. 잠시 후 다시 시도해 주세요.'
+            : 'Refresh failed. Please try again shortly.',
+        type: AppSnackBarType.error,
+      );
+    }
   }
 
   @override
@@ -463,10 +535,7 @@ class BoardScreenState extends State<BoardScreen> {
     return RefreshIndicator(
       color: AppColors.pointColor,
       backgroundColor: Colors.white,
-      onRefresh: () async {
-        await Future.delayed(const Duration(milliseconds: 500));
-        if (mounted) setState(() {});
-      },
+      onRefresh: () => _refreshFeed(_cachedTodayPosts ?? const <Post>[]),
       child: ListView(
         controller: _todayScrollController,
         physics: const AlwaysScrollableScrollPhysics(),
@@ -493,10 +562,7 @@ class BoardScreenState extends State<BoardScreen> {
     return RefreshIndicator(
       color: AppColors.pointColor,
       backgroundColor: Colors.white,
-      onRefresh: () async {
-        await Future.delayed(const Duration(milliseconds: 500));
-        if (mounted) setState(() {});
-      },
+      onRefresh: () => _refreshFeed(_cachedTodayPosts ?? const <Post>[]),
       child: ListView(
         controller: _todayScrollController,
         physics: const AlwaysScrollableScrollPhysics(),
@@ -627,9 +693,7 @@ class BoardScreenState extends State<BoardScreen> {
         return RefreshIndicator(
           color: AppColors.pointColor,
           backgroundColor: Colors.white,
-          onRefresh: () async {
-            await _refreshCommentCountsForPosts(todayPosts);
-          },
+          onRefresh: () => _refreshFeed(todayPosts),
           child: ListView.builder(
             key: const PageStorageKey('board_today_list'),
             controller: _todayScrollController,
@@ -960,14 +1024,7 @@ class BoardScreenState extends State<BoardScreen> {
         return RefreshIndicator(
           color: AppColors.pointColor,
           backgroundColor: Colors.white,
-          onRefresh: () async {
-            if (!isPostsLoading && !isPostsError) {
-              await _refreshCommentCountsForPosts(todayPosts);
-            } else {
-              await Future.delayed(const Duration(milliseconds: 500));
-              if (mounted) setState(() {});
-            }
-          },
+          onRefresh: () => _refreshFeed(todayPosts),
           child: ListView.builder(
             key: const PageStorageKey('board_today_list_unified'),
             controller: _todayScrollController,
@@ -1161,10 +1218,7 @@ class BoardScreenState extends State<BoardScreen> {
     return RefreshIndicator(
       color: AppColors.pointColor,
       backgroundColor: Colors.white,
-      onRefresh: () async {
-        await Future.delayed(const Duration(milliseconds: 500));
-        if (mounted) setState(() {});
-      },
+      onRefresh: () => _refreshFeed(),
       child: ListView(
         controller: _allScrollController,
         physics: const AlwaysScrollableScrollPhysics(),
@@ -1191,10 +1245,7 @@ class BoardScreenState extends State<BoardScreen> {
     return RefreshIndicator(
       color: AppColors.pointColor,
       backgroundColor: Colors.white,
-      onRefresh: () async {
-        await Future.delayed(const Duration(milliseconds: 500));
-        if (mounted) setState(() {});
-      },
+      onRefresh: () => _refreshFeed(),
       child: ListView(
         controller: _allScrollController,
         physics: const AlwaysScrollableScrollPhysics(),
@@ -1218,10 +1269,7 @@ class BoardScreenState extends State<BoardScreen> {
     return RefreshIndicator(
       color: AppColors.pointColor,
       backgroundColor: Colors.white,
-      onRefresh: () async {
-        await Future.delayed(const Duration(milliseconds: 500));
-        if (mounted) setState(() {});
-      },
+      onRefresh: () => _refreshFeed(),
       child: ListView(
         controller: _allScrollController,
         physics: const AlwaysScrollableScrollPhysics(),
@@ -1260,9 +1308,7 @@ class BoardScreenState extends State<BoardScreen> {
     return RefreshIndicator(
       color: AppColors.pointColor,
       backgroundColor: Colors.white,
-      onRefresh: () async {
-        await _refreshCommentCountsForPosts(posts);
-      },
+      onRefresh: () => _refreshFeed(posts),
       child: ListView.builder(
         key: const PageStorageKey('board_all_list'),
         controller: _allScrollController,

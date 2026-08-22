@@ -269,10 +269,21 @@ class CommentService {
       ));
     }
 
-    final blockedRelationships = await Future.wait<Set<String>>([
-      ContentFilterService.getBlockedUserIds(),
-      ContentFilterService.getBlockedByUserIds(),
-    ]);
+    late final List<Set<String>> blockedRelationships;
+    try {
+      blockedRelationships = await Future.wait<Set<String>>([
+        ContentFilterService.getBlockedUserIds(),
+        ContentFilterService.getBlockedByUserIds(),
+      ]).timeout(queryTimeout);
+    } catch (error) {
+      // 차단 목록 네트워크 조회가 멈춰도 댓글 수 새로고침 전체가 대기하지
+      // 않도록 마지막으로 확인된 메모리 캐시를 사용한다.
+      Logger.warning('댓글 수 집계용 차단 목록 조회 실패(캐시 사용): $error');
+      blockedRelationships = <Set<String>>[
+        ContentFilterService.getBlockedUserIdsCached(),
+        ContentFilterService.getBlockedByUserIdsCached(),
+      ];
+    }
     final blockedUserIds = blockedRelationships[0];
     final blockedByUserIds = blockedRelationships[1];
 

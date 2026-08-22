@@ -98,7 +98,7 @@ class _MeetupHomeCardState extends State<MeetupHomeCard> {
     }
 
     final isKo = Localizations.localeOf(context).languageCode == 'ko';
-    if (widget.meetup.isExpired()) {
+    if (widget.meetup.isExpired() || widget.meetup.isPublicWindowExpiredAt()) {
       return _statusText(isKo ? '만료' : 'Expired');
     }
 

@@ -83,4 +83,31 @@ void main() {
     await tester.pump(PostCategoryFeedScreen.pageLoadTimeout);
     await tester.pump();
   });
+
+  testWidgets('빈 다음 페이지는 hasMore 값과 관계없이 추가 로딩을 종료한다', (tester) async {
+    var loadCount = 0;
+
+    await tester.pumpWidget(_testApp(({
+      required category,
+      startAfter,
+      pageSize = 20,
+      forceRefresh = false,
+    }) async {
+      loadCount++;
+      return const PostCategoryPage(
+        posts: [],
+        cursor: null,
+        hasMore: true,
+      );
+    }));
+    await tester.pumpAndSettle();
+
+    await tester.drag(find.byType(CustomScrollView), const Offset(0, -120));
+    await tester.pumpAndSettle();
+    expect(loadCount, 2);
+
+    await tester.drag(find.byType(CustomScrollView), const Offset(0, -120));
+    await tester.pumpAndSettle();
+    expect(loadCount, 2);
+  });
 }

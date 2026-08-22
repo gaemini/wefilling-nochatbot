@@ -31,7 +31,7 @@ class _SearchResultPageState extends State<SearchResultPage> {
   final TextEditingController _searchController = TextEditingController();
   final PostService _postService = PostService();
   final MeetupService _meetupService = MeetupService();
-  
+
   Timer? _debounceTimer;
   List<dynamic> _searchResults = [];
   bool _isLoading = false;
@@ -104,8 +104,9 @@ class _SearchResultPageState extends State<SearchResultPage> {
   }
 
   String _pageTitle(BuildContext context) {
-    return widget.boardType == 'meeting' 
-        ? (AppLocalizations.of(context)!.activityBoard ?? "") : AppLocalizations.of(context)!.infoBoard;
+    return widget.boardType == 'meeting'
+        ? (AppLocalizations.of(context)!.activityBoard ?? "")
+        : AppLocalizations.of(context)!.infoBoard;
   }
 
   String _searchHint(BuildContext context) {
@@ -295,7 +296,8 @@ class _SearchResultPageState extends State<SearchResultPage> {
                     ),
                     const SizedBox(width: 8),
                     Container(
-                      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                      padding: const EdgeInsets.symmetric(
+                          horizontal: 8, vertical: 4),
                       decoration: BoxDecoration(
                         color: Colors.blue,
                         borderRadius: BorderRadius.circular(8),
@@ -312,7 +314,7 @@ class _SearchResultPageState extends State<SearchResultPage> {
                   ],
                 ),
                 const SizedBox(height: 4),
-                
+
                 // 호스트 닉네임
                 Text(
                   '${AppLocalizations.of(context)!.host}: ${meetup.host}',
@@ -323,7 +325,7 @@ class _SearchResultPageState extends State<SearchResultPage> {
                   ),
                 ),
                 const SizedBox(height: 8),
-                
+
                 // 본문
                 Text(
                   meetup.description,
@@ -335,7 +337,7 @@ class _SearchResultPageState extends State<SearchResultPage> {
                   overflow: TextOverflow.ellipsis,
                 ),
                 const SizedBox(height: 12),
-                
+
                 // 하단: 위치 + 참여 현황
                 Row(
                   children: [
@@ -364,9 +366,11 @@ class _SearchResultPageState extends State<SearchResultPage> {
                     ),
                     const SizedBox(width: 4),
                     FutureBuilder<int>(
-                      future: MeetupService().getRealTimeParticipantCount(meetup.id),
+                      future: MeetupService()
+                          .getRealTimeParticipantCount(meetup.id),
                       builder: (context, snapshot) {
-                        final participantCount = snapshot.data ?? meetup.currentParticipants;
+                        final participantCount =
+                            snapshot.data ?? meetup.currentParticipants;
                         return Text(
                           '$participantCount/${meetup.maxParticipants}',
                           style: TextStyle(
@@ -425,102 +429,90 @@ class _SearchResultPageState extends State<SearchResultPage> {
             child: Row(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-              // 좌측: 하트/댓글 아이콘
-              Column(
-                children: [
-                  Row(
-                    children: [
-                      Icon(
-                        Icons.favorite_border,
-                        size: 16,
-                        color: Colors.red.shade400,
-                      ),
-                      const SizedBox(width: 2),
-                      Text(
-                        '${post.likes}',
-                        style: TextStyle(
-                          fontSize: 12,
-                          color: Colors.red.shade400,
-                        ),
-                      ),
-                    ],
-                  ),
-                  const SizedBox(height: 4),
-                  Row(
-                    children: [
-                      Icon(
-                        Icons.chat_bubble_outline,
-                        size: 16,
-                        color: Colors.blue.shade400,
-                      ),
-                      const SizedBox(width: 2),
-                      Text(
-                        '${post.commentCount}',
-                        style: TextStyle(
-                          fontSize: 12,
-                          color: Colors.blue.shade400,
-                        ),
-                      ),
-                    ],
-                  ),
-                ],
-              ),
-              const SizedBox(width: 12),
-              
-              // 중앙: 내용
-              Expanded(
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
+                // 좌측: 하트/댓글 아이콘
+                Column(
                   children: [
-                    // 닉네임 + 시간
                     Row(
                       children: [
-                        Text(
-                          post.author,
-                          style: TextStyle(
-                            fontSize: 13,
-                            color: Colors.black.withOpacity(0.87),
-                            fontWeight: FontWeight.w500,
-                          ),
+                        Icon(
+                          Icons.favorite_border,
+                          size: 16,
+                          color: Colors.red.shade400,
                         ),
-                        const SizedBox(width: 8),
+                        const SizedBox(width: 2),
                         Text(
-                          post.getFormattedTime(context),
+                          '${post.likes}',
                           style: TextStyle(
                             fontSize: 12,
-                            color: Colors.black.withOpacity(0.87),
+                            color: Colors.red.shade400,
                           ),
                         ),
                       ],
                     ),
                     const SizedBox(height: 4),
-                    
-                    // 제목
-                    Text(
-                      post.title,
-                      style: const TextStyle(
-                        fontSize: 14,
-                        fontWeight: FontWeight.w600,
-                        color: Colors.black,
-                      ),
-                      maxLines: 1,
-                      overflow: TextOverflow.ellipsis,
-                    ),
-                    const SizedBox(height: 2),
-                    
-                    // 본문
-                    Text(
-                      post.content,
-                      style: TextStyle(
-                        fontSize: 13,
-                        color: Colors.black.withOpacity(0.6),
-                      ),
-                      maxLines: 2,
-                      overflow: TextOverflow.ellipsis,
+                    Row(
+                      children: [
+                        Icon(
+                          Icons.chat_bubble_outline,
+                          size: 16,
+                          color: Colors.blue.shade400,
+                        ),
+                        const SizedBox(width: 2),
+                        Text(
+                          '${post.commentCount}',
+                          style: TextStyle(
+                            fontSize: 12,
+                            color: Colors.blue.shade400,
+                          ),
+                        ),
+                      ],
                     ),
                   ],
                 ),
-              ),
+                const SizedBox(width: 12),
+
+                // 중앙: 내용
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      // 닉네임 + 시간
+                      Row(
+                        children: [
+                          Text(
+                            post.author,
+                            style: TextStyle(
+                              fontSize: 13,
+                              color: Colors.black.withOpacity(0.87),
+                              fontWeight: FontWeight.w500,
+                            ),
+                          ),
+                          const SizedBox(width: 8),
+                          Text(
+                            post.getFormattedTime(context),
+                            style: TextStyle(
+                              fontSize: 12,
+                              color: Colors.black.withOpacity(0.87),
+                            ),
+                          ),
+                        ],
+                      ),
+                      const SizedBox(height: 4),
+
+                      // 제목/본문 구분이 없는 포스트의 단일 본문
+                      Text(
+                        post.displayText,
+                        style: const TextStyle(
+                          fontSize: 14,
+                          fontWeight: FontWeight.w600,
+                          color: Colors.black,
+                        ),
+                        maxLines: 3,
+                        overflow: TextOverflow.ellipsis,
+                      ),
+                    ],
+                  ),
+                ),
               ],
             ),
           ),

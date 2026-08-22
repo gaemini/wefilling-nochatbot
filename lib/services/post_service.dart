@@ -33,6 +33,20 @@ class PostCategoryPage {
   final bool hasMore;
 }
 
+/// 포스트 본문 전체를 다시 읽지 않고 카드/상세의 소셜 지표만 실시간으로
+/// 갱신하기 위한 값 객체다.
+class PostEngagement {
+  const PostEngagement({
+    required this.likes,
+    required this.commentCount,
+    required this.likedBy,
+  });
+
+  final int likes;
+  final int commentCount;
+  final List<String> likedBy;
+}
+
 class PostService {
   static final PostService instance = PostService._internal();
   factory PostService() => instance;
@@ -664,6 +678,33 @@ class PostService {
     }
   }
 
+  /// 하트/댓글 수는 어느 포스트 화면에서든 새로고침 없이 반영한다.
+  /// ListView 밖으로 나간 카드는 dispose되므로 화면에 보이는 카드만 구독한다.
+  Stream<PostEngagement> watchPostEngagement(String postId) {
+    int count(Object? value) {
+      if (value is! num) return 0;
+      return value.toInt().clamp(0, 1 << 30).toInt();
+    }
+
+    return _firestore
+        .collection('posts')
+        .doc(postId)
+        .snapshots()
+        .where(
+          (snapshot) => snapshot.exists && snapshot.data() != null,
+        )
+        .map((snapshot) {
+      final data = snapshot.data()!;
+      return PostEngagement(
+        likes: count(data['likes']),
+        commentCount: count(data['commentCount']),
+        likedBy: data['likedBy'] is List
+            ? List<String>.from(data['likedBy'] as List)
+            : const <String>[],
+      );
+    });
+  }
+
   Future<bool> toggleLike(String postId) async {
     try {
       final user = _auth.currentUser;
@@ -863,6 +904,63 @@ class PostService {
       Logger.error('캐시된 게시글 가져오기 실패: $e');
       return [];
     }
+  }
+
+  /// 당겨서 새로고침 시 실시간 리스너를 기다리지 않고 서버의 최신 피드를
+  /// 명시적으로 다시 읽는다. 세 접근 범위 중 하나라도 실패하면 불완전한
+  /// 목록으로 기존 화면을 덮지 않고 오류를 반환한다.
+  Future<List<Post>> refreshPosts({
+    Duration timeout = const Duration(seconds: 7),
+  }) async {
+    final user = _auth.currentUser;
+    if (user == null) {
+      _lastParsedPosts = const <Post>[];
+      requestReemitWithCurrentFilters();
+      return const <Post>[];
+    }
+
+    Future<List<Post>> fetch(Query<Map<String, dynamic>> query) async {
+      final snapshot = await query
+          .orderBy('createdAt', descending: true)
+          .limit(_feedRealtimeLimit)
+          .get(const GetOptions(source: Source.server))
+          .timeout(timeout);
+      return snapshot.docs
+          .map((doc) => _buildPostFromFirestore(doc.id, doc.data()))
+          .where((post) => _canUserReadPost(post, user))
+          .toList(growable: false);
+    }
+
+    final scopedPosts = await Future.wait<List<Post>>(
+      <Future<List<Post>>>[
+        fetch(_firestore
+            .collection('posts')
+            .where('visibility', isEqualTo: 'public')),
+        fetch(_firestore
+            .collection('posts')
+            .where('allowedUserIds', arrayContains: user.uid)),
+        fetch(_firestore
+            .collection('posts')
+            .where('userId', isEqualTo: user.uid)),
+      ],
+      eagerError: true,
+    );
+
+    final byId = <String, Post>{};
+    for (final posts in scopedPosts) {
+      for (final post in posts) {
+        byId[post.id] = post;
+      }
+    }
+    final refreshed = byId.values.toList()
+      ..sort((a, b) => b.createdAt.compareTo(a.createdAt));
+    final limited = refreshed.length > _feedRealtimeLimit
+        ? refreshed.take(_feedRealtimeLimit).toList(growable: false)
+        : refreshed;
+
+    _lastParsedPosts = limited;
+    requestReemitWithCurrentFilters();
+    return ContentHideService.filterPostsSync(limited);
   }
 
   /// 카테고리별 최신 게시글 페이지를 가져옵니다.

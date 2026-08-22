@@ -275,6 +275,7 @@ class MeetupService {
     List<String>? imageUrls, // 추가 이미지 URL들(최대 3장)
     String visibility = 'public', // 공개 범위
     List<String> visibleToCategoryIds = const [], // 특정 카테고리에만 공개
+    int? publicDurationHours, // null: 제한 없음, 그 외 1~12시간
   }) async {
     try {
       final user = _auth.currentUser;
@@ -291,6 +292,11 @@ class MeetupService {
           .toList();
       if (visibility == 'category' && normalizedCategoryIds.isEmpty) {
         Logger.error('그룹 공개 밋업에 선택된 그룹이 없습니다.');
+        return false;
+      }
+      if (publicDurationHours != null &&
+          (publicDurationHours < 1 || publicDurationHours > 12)) {
+        Logger.error('밋업 공개 시간은 1~12시간이어야 합니다.');
         return false;
       }
       final startsAt = _computeMeetupStartsAt(date, time);
@@ -346,6 +352,7 @@ class MeetupService {
           'imageUrls': remoteUrls,
           'visibility': visibility,
           'visibleToCategoryIds': normalizedCategoryIds,
+          'publicDurationHours': publicDurationHours,
         }).timeout(const Duration(seconds: 30));
       } catch (error) {
         // 서버가 생성한 뒤 응답만 유실된 경우를 실패/중복으로 처리하지 않는다.
@@ -450,6 +457,57 @@ class MeetupService {
     return ContentFilterService.filterMeetups(visible);
   }
 
+  /// Firestore 스냅샷이 새로 오지 않아도 가장 가까운 공개 만료 시각에 목록을
+  /// 다시 방출한다. 따라서 화면 새로고침이나 1분 주기의 서버 정리 작업을
+  /// 기다리지 않고 미확정 밋업이 정시에 사라진다.
+  Stream<List<Meetup>> _hideExpiredMeetupsOverTime(
+    Stream<List<Meetup>> source,
+  ) {
+    late final StreamController<List<Meetup>> controller;
+    StreamSubscription<List<Meetup>>? subscription;
+    Timer? expiryTimer;
+    var latest = const <Meetup>[];
+
+    void emit() {
+      expiryTimer?.cancel();
+      final now = DateTime.now();
+      final visible =
+          latest.where((meetup) => meetup.isPublishedAt(now)).toList(
+                growable: false,
+              );
+      if (!controller.isClosed) controller.add(visible);
+
+      DateTime? nearest;
+      for (final meetup in visible) {
+        final expiresAt = meetup.publicExpiresAt;
+        if (!meetup.hasPublicTimeLimit || expiresAt == null) continue;
+        if (nearest == null || expiresAt.isBefore(nearest)) nearest = expiresAt;
+      }
+      if (nearest == null) return;
+      final delay = nearest.difference(now);
+      expiryTimer = Timer(
+        delay.isNegative
+            ? Duration.zero
+            : delay + const Duration(milliseconds: 50),
+        emit,
+      );
+    }
+
+    controller = StreamController<List<Meetup>>.broadcast(
+      onListen: () {
+        subscription = source.listen((meetups) {
+          latest = meetups;
+          emit();
+        }, onError: controller.addError);
+      },
+      onCancel: () async {
+        expiryTimer?.cancel();
+        await subscription?.cancel();
+      },
+    );
+    return controller.stream;
+  }
+
   /// Firestore Rules가 목록을 필터처럼 처리할 수 없으므로 공개/대상/주최 쿼리를
   /// 분리합니다. 이 경로를 통과한 문서만 기기로 내려오며, 마지막 검사는 문서에
   /// 저장된 frozen audience와 별도 차단 정책만 사용합니다.
@@ -468,7 +526,9 @@ class MeetupService {
       // 레거시 비공개 문서에 allowedUserIds가 없어도 주최자는 복구할 수 있습니다.
       watch(baseQuery.where('userId', isEqualTo: user.uid)),
     ]);
-    return scoped.asyncMap(_filterVisibleAndBlocked);
+    return _hideExpiredMeetupsOverTime(
+      scoped.asyncMap(_filterVisibleAndBlocked),
+    );
   }
 
   Future<List<Meetup>> _getAudienceScopedMeetupQuery(
@@ -640,22 +700,26 @@ class MeetupService {
     for (var i = 0; i < list.length; i += 10) {
       final chunk = list.sublist(i, (i + 10).clamp(0, list.length));
       for (final id in chunk) {
-        streams.add(_firestore
-            .collection('meetups')
-            .doc(id)
-            .snapshots()
-            .asyncMap((doc) async {
-          if (!doc.exists || doc.data() == null) return const <Meetup>[];
-          final meetup = Meetup.fromJson(<String, dynamic>{
-            ...doc.data()!,
-            'id': doc.id,
-          });
-          return _filterVisibleAndBlocked(<Meetup>[meetup]);
-        }).handleError((Object error) {
-          // 공개 대상에서 빠진 사용자의 기존 참여 ID가 남아 있어도 문서를
-          // 우회 조회하지 않고 해당 항목만 목록에서 제외합니다.
-          Logger.warning('접근할 수 없는 밋업 문서 제외($id): $error');
-        }));
+        streams.add(
+          _hideExpiredMeetupsOverTime(
+            _firestore
+                .collection('meetups')
+                .doc(id)
+                .snapshots()
+                .asyncMap((doc) async {
+              if (!doc.exists || doc.data() == null) return const <Meetup>[];
+              final meetup = Meetup.fromJson(<String, dynamic>{
+                ...doc.data()!,
+                'id': doc.id,
+              });
+              return _filterVisibleAndBlocked(<Meetup>[meetup]);
+            }),
+          ).handleError((Object error) {
+            // 공개 대상에서 빠진 사용자의 기존 참여 ID가 남아 있어도 문서를
+            // 우회 조회하지 않고 해당 항목만 목록에서 제외합니다.
+            Logger.warning('접근할 수 없는 밋업 문서 제외($id): $error');
+          }),
+        );
       }
     }
 
@@ -911,6 +975,11 @@ class MeetupService {
         hasReview: data['hasReview'] ?? false,
         groupChatEnabled: data['groupChatEnabled'] ?? false,
         isConfirmed: data['isConfirmed'] ?? false,
+        publicDurationHours: (data['publicDurationHours'] as num?)?.toInt(),
+        publicExpiresAt: data['publicExpiresAt'] is Timestamp
+            ? (data['publicExpiresAt'] as Timestamp).toDate()
+            : null,
+        publicWindowStatus: (data['publicWindowStatus'] ?? '').toString(),
         snackChatId: (data['snackChatId'] ?? '').toString().trim().isEmpty
             ? null
             : data['snackChatId'].toString().trim(),
@@ -989,10 +1058,18 @@ class MeetupService {
             : null,
         isCompleted: data['isCompleted'] ?? false, // 모임 완료 여부
         hasReview: data['hasReview'] ?? false, // 후기 작성 여부
+        isConfirmed: data['isConfirmed'] ?? false,
+        publicDurationHours: (data['publicDurationHours'] as num?)?.toInt(),
+        publicExpiresAt: data['publicExpiresAt'] is Timestamp
+            ? (data['publicExpiresAt'] as Timestamp).toDate()
+            : null,
+        publicWindowStatus: (data['publicWindowStatus'] ?? '').toString(),
         reviewId: data['reviewId'], // 후기 ID
         viewCount: data['viewCount'] ?? 0,
         commentCount: data['commentCount'] ?? 0,
       );
+
+      if (!meetup.isPublishedAt()) return null;
 
       // 🔒 단건 조회에서도 공개범위/차단 필터 적용 (검색/홈과 동일 기준)
       if (user == null) {
@@ -1025,6 +1102,7 @@ class MeetupService {
       final user = _auth.currentUser;
       if (user == null) return [];
       return meetups.where((meetup) {
+        if (!meetup.isPublishedAt()) return false;
         final canRead = FrozenAudiencePolicy.canRead(
           viewerId: user.uid,
           ownerId: meetup.userId ?? '',
@@ -1841,20 +1919,12 @@ class MeetupService {
     try {
       final user = _auth.currentUser;
       if (user == null) return false;
-      final ref = _firestore.collection('meetups').doc(meetupId);
-      return _firestore.runTransaction<bool>((transaction) async {
-        final snapshot = await transaction.get(ref);
-        if (!snapshot.exists) return false;
-        final data = snapshot.data() ?? const <String, dynamic>{};
-        if ((data['userId'] ?? '').toString() != user.uid) return false;
-        if (data['isConfirmed'] == true) return true;
-        transaction.update(ref, <String, dynamic>{
-          'isConfirmed': true,
-          'confirmedAt': FieldValue.serverTimestamp(),
-          'updatedAt': FieldValue.serverTimestamp(),
-        });
-        return true;
-      });
+      final response = await FirebaseFunctions.instance
+          .httpsCallable('confirmMeetupSecure')
+          .call(<String, dynamic>{'meetupId': meetupId}).timeout(
+              const Duration(seconds: 20));
+      final data = response.data;
+      return data is Map && data['success'] == true;
     } catch (error, stackTrace) {
       Logger.error('모임 확정 실패: $error\n$stackTrace');
       return false;
@@ -2752,11 +2822,11 @@ class MeetupService {
   Stream<Meetup?> getMeetupStream(String meetupId) {
     Logger.log('📡 [STREAM] getMeetupStream 시작: $meetupId');
 
-    return _firestore
+    final source = _firestore
         .collection('meetups')
         .doc(meetupId)
         .snapshots()
-        .map((snapshot) {
+        .map<List<Meetup>>((snapshot) {
       Logger.log(
           '🔄 [STREAM] 스냅샷 수신 - exists: ${snapshot.exists}, metadata: ${snapshot.metadata}');
 
@@ -2770,12 +2840,14 @@ class MeetupService {
         Logger.log(
             '🔍 [STREAM] 메타데이터 - fromCache: ${snapshot.metadata.isFromCache}, hasPendingWrites: ${snapshot.metadata.hasPendingWrites}');
 
-        return meetup;
+        return <Meetup>[meetup];
       }
 
       Logger.log('⚠️ [STREAM] 모임 데이터 없음 또는 삭제됨');
-      return null;
+      return const <Meetup>[];
     });
+    return _hideExpiredMeetupsOverTime(source)
+        .map((meetups) => meetups.isEmpty ? null : meetups.first);
   }
 
   // 모임 조회수 증가 (세션당 1회만)

@@ -24,6 +24,8 @@ class SnapshotStrings {
       ? '사진 한 장으로 24시간 동안 친구들과 나눌 수 있어요.'
       : 'Share one photo with friends for 24 hours.';
   String get choosePhoto => isKorean ? '이미지 선택' : 'Choose image';
+  String get addPhotos => isKorean ? '사진 더 보기' : 'Add photos';
+  String get settings => isKorean ? '설정' : 'Settings';
   String get camera => isKorean ? '카메라' : 'Camera';
   String get gallery => isKorean ? '갤러리' : 'Gallery';
   String get galleryPermissionRequired => isKorean

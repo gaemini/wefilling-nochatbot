@@ -33,8 +33,16 @@ class CreateSnapshotScreen extends StatefulWidget {
   State<CreateSnapshotScreen> createState() => _CreateSnapshotScreenState();
 }
 
-class _CreateSnapshotScreenState extends State<CreateSnapshotScreen> {
+class _CreateSnapshotScreenState extends State<CreateSnapshotScreen>
+    with WidgetsBindingObserver {
   static const int _galleryPageSize = 100;
+  static const PermissionRequestOption _galleryPermissionRequestOption =
+      PermissionRequestOption(
+    androidPermission: AndroidPermission(
+      type: RequestType.image,
+      mediaLocation: false,
+    ),
+  );
 
   final ImagePicker _picker = ImagePicker();
   final GlobalKey _compositionKey = GlobalKey();
@@ -76,6 +84,9 @@ class _CreateSnapshotScreenState extends State<CreateSnapshotScreen> {
   bool _loadingGallery = true;
   bool _loadingMoreGallery = false;
   bool _galleryPermissionDenied = false;
+  bool _galleryPermissionLimited = false;
+  bool _galleryLoadFailed = false;
+  int _galleryLoadSequence = 0;
 
   double get _aspectRatio {
     if (_sourceWidth <= 0 || _sourceHeight <= 0) return .8;
@@ -85,6 +96,7 @@ class _CreateSnapshotScreenState extends State<CreateSnapshotScreen> {
   @override
   void initState() {
     super.initState();
+    WidgetsBinding.instance.addObserver(this);
     _overlayFocusNode.addListener(_syncOverlayFocus);
     _categoriesSubscription =
         _friendCategoryService.getCategoriesStream().listen((categories) {
@@ -98,12 +110,42 @@ class _CreateSnapshotScreenState extends State<CreateSnapshotScreen> {
       });
       unawaited(_refreshSelectedAudienceUsers());
     });
-    if (Platform.isAndroid) {
-      // Android uses the system Photo Picker instead of enumerating the
-      // device photo library through photo_manager.
-      _loadingGallery = false;
-    } else {
-      unawaited(_loadRecentPhotos());
+    unawaited(_loadRecentPhotos());
+  }
+
+  @override
+  void didChangeAppLifecycleState(AppLifecycleState state) {
+    if (state == AppLifecycleState.resumed) {
+      unawaited(_refreshRecentPhotosAfterResume());
+    }
+  }
+
+  Future<void> _refreshRecentPhotosAfterResume() async {
+    if (_loadingGallery || _loadingPhoto || _uploading || _sourceFile != null) {
+      return;
+    }
+    final refreshSequence = ++_galleryLoadSequence;
+    try {
+      final permission = await PhotoManager.getPermissionState(
+        requestOption: _galleryPermissionRequestOption,
+      );
+      if (!mounted || refreshSequence != _galleryLoadSequence) return;
+      if (permission.hasAccess) {
+        await _loadRecentPhotos(requestPermission: false);
+        return;
+      }
+      setState(() {
+        _recentPhotos = const <AssetEntity>[];
+        _recentPhotoAlbum = null;
+        _galleryTotalCount = 0;
+        _galleryNextPage = 0;
+        _galleryPermissionDenied = true;
+        _galleryPermissionLimited = false;
+        _galleryLoadFailed = false;
+      });
+    } on PlatformException {
+      // Keep the current gallery state. The visible retry action still lets
+      // the user request access again if this platform check was interrupted.
     }
   }
 
@@ -154,37 +196,41 @@ class _CreateSnapshotScreenState extends State<CreateSnapshotScreen> {
     });
   }
 
-  Future<void> _loadRecentPhotos() async {
-    if (Platform.isAndroid) {
-      if (mounted) setState(() => _loadingGallery = false);
-      return;
-    }
+  Future<void> _loadRecentPhotos({bool requestPermission = true}) async {
+    final loadSequence = ++_galleryLoadSequence;
     if (mounted) {
       setState(() {
         _loadingGallery = true;
         _loadingMoreGallery = false;
         _galleryPermissionDenied = false;
+        _galleryPermissionLimited = false;
+        _galleryLoadFailed = false;
         _recentPhotoAlbum = null;
         _galleryTotalCount = 0;
         _galleryNextPage = 0;
       });
     }
     try {
-      final permission = await PhotoManager.requestPermissionExtend(
-        requestOption: const PermissionRequestOption(
-          androidPermission: AndroidPermission(
-            type: RequestType.image,
-            mediaLocation: false,
-          ),
-        ),
-      );
+      final permission = requestPermission
+          ? await PhotoManager.requestPermissionExtend(
+              requestOption: _galleryPermissionRequestOption,
+            )
+          : await PhotoManager.getPermissionState(
+              requestOption: _galleryPermissionRequestOption,
+            );
+      if (!mounted || loadSequence != _galleryLoadSequence) return;
       if (!permission.hasAccess) {
         if (!mounted) return;
         setState(() {
           _recentPhotos = const <AssetEntity>[];
           _galleryPermissionDenied = true;
+          _galleryPermissionLimited = false;
+          _galleryLoadFailed = false;
         });
         return;
+      }
+      if (mounted) {
+        setState(() => _galleryPermissionLimited = permission.isLimited);
       }
       final albums = await PhotoManager.getAssetPathList(
         type: RequestType.image,
@@ -195,6 +241,7 @@ class _CreateSnapshotScreenState extends State<CreateSnapshotScreen> {
           ],
         ),
       );
+      if (!mounted || loadSequence != _galleryLoadSequence) return;
       if (albums.isEmpty) {
         if (!mounted) return;
         setState(() => _recentPhotos = const <AssetEntity>[]);
@@ -208,21 +255,51 @@ class _CreateSnapshotScreenState extends State<CreateSnapshotScreen> {
       ]);
       final totalCount = results[0] as int;
       final photos = results[1] as List<AssetEntity>;
-      if (!mounted) return;
+      if (!mounted || loadSequence != _galleryLoadSequence) return;
       setState(() {
         _recentPhotoAlbum = album;
         _galleryTotalCount = totalCount;
         _galleryNextPage = 1;
         _recentPhotos = List<AssetEntity>.unmodifiable(photos);
       });
-    } on PlatformException {
-      if (!mounted) return;
-      setState(() => _galleryPermissionDenied = true);
-    } catch (_) {
-      if (!mounted) return;
-      setState(() => _recentPhotos = const <AssetEntity>[]);
+    } on PlatformException catch (error, stackTrace) {
+      if (!mounted || loadSequence != _galleryLoadSequence) return;
+      Logger.error('최근 사진 불러오기 실패', error, stackTrace);
+      setState(() {
+        _recentPhotos = const <AssetEntity>[];
+        _galleryLoadFailed = true;
+      });
+    } catch (error, stackTrace) {
+      if (!mounted || loadSequence != _galleryLoadSequence) return;
+      Logger.error('최근 사진 불러오기 실패', error, stackTrace);
+      setState(() {
+        _recentPhotos = const <AssetEntity>[];
+        _galleryLoadFailed = true;
+      });
     } finally {
-      if (mounted) setState(() => _loadingGallery = false);
+      if (mounted && loadSequence == _galleryLoadSequence) {
+        setState(() => _loadingGallery = false);
+      }
+    }
+  }
+
+  Future<void> _selectMorePhotos() async {
+    if (_loadingGallery || _loadingPhoto || _uploading) return;
+    final strings = SnapshotStrings.of(context);
+    setState(() => _loadingGallery = true);
+    try {
+      await PhotoManager.presentLimited(type: RequestType.image);
+      if (!mounted) return;
+      await _loadRecentPhotos(requestPermission: false);
+    } catch (error, stackTrace) {
+      if (!mounted) return;
+      Logger.error('사진 선택 범위 변경 실패', error, stackTrace);
+      setState(() => _loadingGallery = false);
+      AppSnackBar.show(
+        context,
+        message: strings.permissionFailed,
+        type: AppSnackBarType.warning,
+      );
     }
   }
 
@@ -269,6 +346,7 @@ class _CreateSnapshotScreenState extends State<CreateSnapshotScreen> {
 
   @override
   void dispose() {
+    WidgetsBinding.instance.removeObserver(this);
     _categoriesSubscription?.cancel();
     _friendCategoryService.dispose();
     final pendingCommit = _overlayCommitCompleter;
@@ -946,30 +1024,30 @@ class _CreateSnapshotScreenState extends State<CreateSnapshotScreen> {
             children: [
               Expanded(
                 child: _sourceFile == null
-                    ? (Platform.isAndroid
-                        ? _SystemPhotoPickerGallery(
-                            selecting: _loadingPhoto,
-                            cameraLabel: strings.camera,
-                            galleryLabel: strings.choosePhoto,
-                            onCamera: () => _pickImage(ImageSource.camera),
-                            onGallery: () => _pickImage(ImageSource.gallery),
-                          )
-                        : _RecentPhotoGallery(
-                            loading: _loadingGallery,
-                            selecting: _loadingPhoto,
-                            permissionDenied: _galleryPermissionDenied,
-                            photos: _recentPhotos,
-                            hasMore: _recentPhotos.length < _galleryTotalCount,
-                            loadingMore: _loadingMoreGallery,
-                            cameraLabel: strings.camera,
-                            permissionMessage:
-                                strings.galleryPermissionRequired,
-                            retryLabel: strings.retry,
-                            onCamera: () => _pickImage(ImageSource.camera),
-                            onRetry: _loadRecentPhotos,
-                            onLoadMore: _loadMoreRecentPhotos,
-                            onPhotoTap: _selectRecentPhoto,
-                          ))
+                    ? _RecentPhotoGallery(
+                        loading: _loadingGallery,
+                        selecting: _loadingPhoto,
+                        permissionDenied: _galleryPermissionDenied,
+                        permissionLimited: _galleryPermissionLimited,
+                        loadFailed: _galleryLoadFailed,
+                        photos: _recentPhotos,
+                        hasMore: _recentPhotos.length < _galleryTotalCount,
+                        loadingMore: _loadingMoreGallery,
+                        cameraLabel: strings.camera,
+                        galleryLabel: strings.choosePhoto,
+                        addPhotosLabel: strings.addPhotos,
+                        settingsLabel: strings.settings,
+                        permissionMessage: strings.galleryPermissionRequired,
+                        loadFailedMessage: strings.photoFailed,
+                        retryLabel: strings.retry,
+                        onCamera: () => _pickImage(ImageSource.camera),
+                        onGallery: () => _pickImage(ImageSource.gallery),
+                        onAddPhotos: _selectMorePhotos,
+                        onRetry: _loadRecentPhotos,
+                        onOpenSettings: PhotoManager.openSetting,
+                        onLoadMore: _loadMoreRecentPhotos,
+                        onPhotoTap: _selectRecentPhoto,
+                      )
                     : Center(
                         child: ConstrainedBox(
                           constraints: const BoxConstraints(maxWidth: 640),
@@ -1139,9 +1217,9 @@ class _CreateSnapshotScreenState extends State<CreateSnapshotScreen> {
                             _sourceWidth = 0;
                             _sourceHeight = 0;
                           });
-                          if (!Platform.isAndroid && _recentPhotos.isEmpty) {
-                            unawaited(_loadRecentPhotos());
-                          }
+                          unawaited(
+                            _loadRecentPhotos(requestPermission: false),
+                          );
                         },
                         icon: const Icon(Icons.image_outlined, size: 19),
                         label: Text(strings.choosePhoto),
@@ -1366,14 +1444,23 @@ class _RecentPhotoGallery extends StatelessWidget {
     required this.loading,
     required this.selecting,
     required this.permissionDenied,
+    required this.permissionLimited,
+    required this.loadFailed,
     required this.photos,
     required this.hasMore,
     required this.loadingMore,
     required this.cameraLabel,
+    required this.galleryLabel,
+    required this.addPhotosLabel,
+    required this.settingsLabel,
     required this.permissionMessage,
+    required this.loadFailedMessage,
     required this.retryLabel,
     required this.onCamera,
+    required this.onGallery,
+    required this.onAddPhotos,
     required this.onRetry,
+    required this.onOpenSettings,
     required this.onLoadMore,
     required this.onPhotoTap,
   });
@@ -1381,14 +1468,23 @@ class _RecentPhotoGallery extends StatelessWidget {
   final bool loading;
   final bool selecting;
   final bool permissionDenied;
+  final bool permissionLimited;
+  final bool loadFailed;
   final List<AssetEntity> photos;
   final bool hasMore;
   final bool loadingMore;
   final String cameraLabel;
+  final String galleryLabel;
+  final String addPhotosLabel;
+  final String settingsLabel;
   final String permissionMessage;
+  final String loadFailedMessage;
   final String retryLabel;
   final VoidCallback onCamera;
+  final VoidCallback onGallery;
+  final VoidCallback onAddPhotos;
   final VoidCallback onRetry;
+  final VoidCallback onOpenSettings;
   final VoidCallback onLoadMore;
   final ValueChanged<AssetEntity> onPhotoTap;
 
@@ -1412,9 +1508,63 @@ class _RecentPhotoGallery extends StatelessWidget {
                 enabled: !selecting,
                 onPressed: onCamera,
               ),
+              const SizedBox(height: 14),
+              OutlinedButton.icon(
+                onPressed: selecting ? null : onGallery,
+                icon: const Icon(Icons.photo_library_outlined, size: 19),
+                label: Text(galleryLabel),
+              ),
               const SizedBox(height: 20),
               Text(
                 permissionMessage,
+                textAlign: TextAlign.center,
+                style: const TextStyle(
+                  fontFamily: 'Pretendard',
+                  fontSize: 14,
+                  height: 1.45,
+                  fontWeight: FontWeight.w500,
+                  color: Color(0xFF667085),
+                ),
+              ),
+              const SizedBox(height: 8),
+              Row(
+                mainAxisAlignment: MainAxisAlignment.center,
+                children: [
+                  TextButton(onPressed: onRetry, child: Text(retryLabel)),
+                  const SizedBox(width: 4),
+                  TextButton(
+                    onPressed: onOpenSettings,
+                    child: Text(settingsLabel),
+                  ),
+                ],
+              ),
+            ],
+          ),
+        ),
+      );
+    }
+
+    if (loadFailed) {
+      return Center(
+        child: Padding(
+          padding: const EdgeInsets.symmetric(horizontal: 28),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              _CameraButton(
+                label: cameraLabel,
+                enabled: !selecting,
+                onPressed: onCamera,
+              ),
+              const SizedBox(height: 14),
+              OutlinedButton.icon(
+                onPressed: selecting ? null : onGallery,
+                icon: const Icon(Icons.photo_library_outlined, size: 19),
+                label: Text(galleryLabel),
+              ),
+              const SizedBox(height: 20),
+              Text(
+                loadFailedMessage,
                 textAlign: TextAlign.center,
                 style: const TextStyle(
                   fontFamily: 'Pretendard',
@@ -1432,6 +1582,7 @@ class _RecentPhotoGallery extends StatelessWidget {
       );
     }
 
+    final leadingItemCount = permissionLimited ? 2 : 1;
     return Stack(
       children: [
         NotificationListener<ScrollNotification>(
@@ -1451,7 +1602,7 @@ class _RecentPhotoGallery extends StatelessWidget {
               mainAxisSpacing: 3,
               crossAxisSpacing: 3,
             ),
-            itemCount: photos.length + 1 + (loadingMore ? 1 : 0),
+            itemCount: photos.length + leadingItemCount + (loadingMore ? 1 : 0),
             itemBuilder: (context, index) {
               if (index == 0) {
                 return _CameraButton(
@@ -1461,7 +1612,16 @@ class _RecentPhotoGallery extends StatelessWidget {
                   fillCell: true,
                 );
               }
-              if (index > photos.length) {
+              if (permissionLimited && index == 1) {
+                return _PhotoActionCell(
+                  label: addPhotosLabel,
+                  icon: Icons.add_photo_alternate_outlined,
+                  enabled: !selecting,
+                  onPressed: onAddPhotos,
+                );
+              }
+              final photoIndex = index - leadingItemCount;
+              if (photoIndex >= photos.length) {
                 return const Center(
                   child: SizedBox.square(
                     dimension: 22,
@@ -1469,10 +1629,10 @@ class _RecentPhotoGallery extends StatelessWidget {
                   ),
                 );
               }
-              final photo = photos[index - 1];
+              final photo = photos[photoIndex];
               return Semantics(
                 button: true,
-                label: '$index',
+                label: '${photoIndex + 1}',
                 child: Material(
                   color: const Color(0xFFF2F4F7),
                   borderRadius: BorderRadius.circular(10),
@@ -1508,81 +1668,56 @@ class _RecentPhotoGallery extends StatelessWidget {
   }
 }
 
-class _SystemPhotoPickerGallery extends StatelessWidget {
-  const _SystemPhotoPickerGallery({
-    required this.selecting,
-    required this.cameraLabel,
-    required this.galleryLabel,
-    required this.onCamera,
-    required this.onGallery,
+class _PhotoActionCell extends StatelessWidget {
+  const _PhotoActionCell({
+    required this.label,
+    required this.icon,
+    required this.enabled,
+    required this.onPressed,
   });
 
-  final bool selecting;
-  final String cameraLabel;
-  final String galleryLabel;
-  final VoidCallback onCamera;
-  final VoidCallback onGallery;
+  final String label;
+  final IconData icon;
+  final bool enabled;
+  final VoidCallback onPressed;
 
   @override
   Widget build(BuildContext context) {
-    return Stack(
-      children: [
-        GridView.count(
-          padding: const EdgeInsets.fromLTRB(0, 2, 0, 8),
-          physics: const BouncingScrollPhysics(),
-          crossAxisCount: 3,
-          mainAxisSpacing: 3,
-          crossAxisSpacing: 3,
-          children: [
-            _CameraButton(
-              label: cameraLabel,
-              enabled: !selecting,
-              onPressed: onCamera,
-              fillCell: true,
-            ),
-            Material(
-              color: const Color(0xFFF2F4F7),
-              borderRadius: BorderRadius.circular(10),
-              clipBehavior: Clip.antiAlias,
-              child: InkWell(
-                onTap: selecting ? null : onGallery,
-                child: Center(
-                  child: Column(
-                    mainAxisSize: MainAxisSize.min,
-                    children: [
-                      const Icon(
-                        Icons.photo_library_outlined,
-                        size: 27,
-                        color: Color(0xFF111827),
-                      ),
-                      const SizedBox(height: 7),
-                      Text(
-                        galleryLabel,
-                        textAlign: TextAlign.center,
-                        style: const TextStyle(
-                          fontFamily: 'Pretendard',
-                          fontSize: 12,
-                          fontWeight: FontWeight.w700,
-                          color: Color(0xFF344054),
-                        ),
-                      ),
-                    ],
+    return Semantics(
+      button: true,
+      label: label,
+      child: Material(
+        color: const Color(0xFFF2F4F7),
+        borderRadius: BorderRadius.circular(10),
+        clipBehavior: Clip.antiAlias,
+        child: InkWell(
+          onTap: enabled ? onPressed : null,
+          child: Center(
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Icon(icon, size: 27, color: const Color(0xFF111827)),
+                const SizedBox(height: 7),
+                Padding(
+                  padding: const EdgeInsets.symmetric(horizontal: 6),
+                  child: Text(
+                    label,
+                    textAlign: TextAlign.center,
+                    maxLines: 2,
+                    overflow: TextOverflow.ellipsis,
+                    style: const TextStyle(
+                      fontFamily: 'Pretendard',
+                      fontSize: 12,
+                      fontWeight: FontWeight.w700,
+                      color: Color(0xFF344054),
+                    ),
                   ),
                 ),
-              ),
-            ),
-          ],
-        ),
-        if (selecting)
-          Positioned.fill(
-            child: ColoredBox(
-              color: Colors.white.withValues(alpha: .6),
-              child: const Center(
-                child: CircularProgressIndicator(strokeWidth: 2),
-              ),
+              ],
             ),
           ),
-      ],
+        ),
+      ),
     );
   }
 }

@@ -43,7 +43,7 @@ class ProfilePost {
       authorId: post.userId,
       type: post.imageUrls.isNotEmpty ? 'image' : 'text',
       coverPhotoUrl: post.imageUrls.isNotEmpty ? post.imageUrls.first : null,
-      text: post.content,
+      text: post.displayText,
       createdAt: post.createdAt,
       visibility: 'public', // 기본값
       meta: {
@@ -92,12 +92,12 @@ class ProfileImageAdapter {
     try {
       // 기존 StorageService 재사용
       final uploadedUrl = await _storageService.uploadImage(imageFile);
-      
+
       if (uploadedUrl != null) {
         Logger.log('프로필 포스트 이미지 업로드 성공: $uploadedUrl');
         return uploadedUrl;
       }
-      
+
       return null;
     } catch (e) {
       Logger.error('프로필 포스트 이미지 업로드 오류: $e');
@@ -106,7 +106,8 @@ class ProfileImageAdapter {
   }
 
   /// 여러 이미지 업로드 (병렬 처리)
-  Future<List<String>> uploadMultipleImages(List<File> imageFiles, String userId) async {
+  Future<List<String>> uploadMultipleImages(
+      List<File> imageFiles, String userId) async {
     if (!_isFeatureEnabled()) return [];
 
     try {
@@ -125,11 +126,12 @@ class ProfileImageAdapter {
       );
 
       // null이 아닌 URL만 반환
-      final successUrls = results.where((url) => url != null).cast<String>().toList();
-      
-      Logger.log('프로필 이미지 업로드 완료: ${successUrls.length}개 (요청: ${imageFiles.length}개)');
-      return successUrls;
+      final successUrls =
+          results.where((url) => url != null).cast<String>().toList();
 
+      Logger.log(
+          '프로필 이미지 업로드 완료: ${successUrls.length}개 (요청: ${imageFiles.length}개)');
+      return successUrls;
     } catch (e) {
       Logger.error('프로필 이미지 다중 업로드 오류: $e');
       return [];
@@ -137,7 +139,8 @@ class ProfileImageAdapter {
   }
 
   bool _isFeatureEnabled() {
-    return FeatureFlagService().isFeatureEnabled(FeatureFlagService.FEATURE_PROFILE_GRID);
+    return FeatureFlagService()
+        .isFeatureEnabled(FeatureFlagService.FEATURE_PROFILE_GRID);
   }
 }
 
@@ -230,7 +233,8 @@ class ProfileDataAdapter {
   }
 
   /// 미팅 리뷰에서 포스트 생성 (기존 시스템과 연동)
-  Future<bool> createPostFromReview(String userId, Map<String, dynamic> reviewData) async {
+  Future<bool> createPostFromReview(
+      String userId, Map<String, dynamic> reviewData) async {
     if (!_isFeatureEnabled()) return false;
 
     try {
@@ -298,6 +302,7 @@ class ProfileDataAdapter {
   }
 
   bool _isFeatureEnabled() {
-    return FeatureFlagService().isFeatureEnabled(FeatureFlagService.FEATURE_PROFILE_GRID);
+    return FeatureFlagService()
+        .isFeatureEnabled(FeatureFlagService.FEATURE_PROFILE_GRID);
   }
 }

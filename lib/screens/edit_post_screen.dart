@@ -45,7 +45,7 @@ class _EditPostScreenState extends State<EditPostScreen> {
     super.initState();
     _keptImageUrls = List<String>.from(widget.post.imageUrls);
     _selectedPostTags = widget.post.postCategories.toSet();
-    _contentController.text = widget.post.content;
+    _contentController.text = widget.post.displayText;
     _contentController.addListener(_checkCanSubmit);
     _checkCanSubmit();
   }

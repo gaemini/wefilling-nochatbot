@@ -10,7 +10,6 @@ import 'package:flutter/services.dart';
 import 'package:flutter_linkify/flutter_linkify.dart';
 import 'package:image_picker/image_picker.dart';
 import 'package:url_launcher/url_launcher.dart';
-import 'package:visibility_detector/visibility_detector.dart';
 
 import '../models/snack_chat.dart';
 import '../models/snack_chat_message.dart';
@@ -127,6 +126,8 @@ class _SnackChatScreenState extends State<SnackChatScreen>
   bool _readFlushQueued = false;
   int _readRetryAttempt = 0;
   Future<void>? _markAsReadOperation;
+  bool _pushBackNavigationInFlight = false;
+  bool _exitReadFlushStarted = false;
   final Map<String, String> _senderNameCache = {};
   final Map<String, Future<String>> _senderNameFutures = {};
   final Set<String> _senderProfileRefreshStarted = <String>{};
@@ -136,11 +137,6 @@ class _SnackChatScreenState extends State<SnackChatScreen>
   Future<void>? _membershipReady;
   AppLifecycleState _appLifecycleState = AppLifecycleState.detached;
   bool _routeActive = true;
-  int _highestVisibleSequence = 0;
-  int _lastReadSequenceSent = 0;
-  int? _initialLastReadSequence;
-  bool _legacyReadResetPending = false;
-  bool _legacyReadResetSent = false;
   SnackChatMessage? _replyingTo;
   String? _replyingToSenderName;
   Object? _messageStreamError;
@@ -291,11 +287,8 @@ class _SnackChatScreenState extends State<SnackChatScreen>
     _roomWasLeft = false;
     _roomAccessTerminationScheduled = false;
     _roomAvailabilityCheckInFlight = false;
-    _highestVisibleSequence = 0;
-    _lastReadSequenceSent = 0;
-    _initialLastReadSequence = null;
-    _legacyReadResetPending = false;
-    _legacyReadResetSent = false;
+    _pushBackNavigationInFlight = false;
+    _exitReadFlushStarted = false;
     _isNearLatest = true;
     _outboxRetryAttempt = 0;
     _newMessageCount = 0;
@@ -525,16 +518,13 @@ class _SnackChatScreenState extends State<SnackChatScreen>
     });
   }
 
-  bool get _canTrackVisibility {
+  bool get _canMarkWholeRoomRead {
     if (!mounted || _isLeavingRoom || _roomAccessTerminated || !_routeActive) {
       return false;
     }
     if (_appLifecycleState != AppLifecycleState.resumed) return false;
     return ModalRoute.of(context)?.isCurrent ?? false;
   }
-
-  bool get _canMarkRead =>
-      _canTrackVisibility && _initialLastReadSequence != null;
 
   Future<void> _ensureMyMembershipReady({bool force = false}) {
     final existing = _membershipReady;
@@ -585,43 +575,10 @@ class _SnackChatScreenState extends State<SnackChatScreen>
     });
   }
 
-  void _onMessageVisibilityChanged(
-    SnackChatMessage message,
-    VisibilityInfo info,
-  ) {
-    final sequence = message.sequence;
-    // Visibility can arrive before the server-maintained membership document.
-    // Keep the observed high-water mark immediately, then gate only the
-    // Firestore write until the initial read cursor is known. Otherwise the
-    // first visible page may stay unread until the user scrolls again.
-    if (info.visibleFraction < 0.6 || !_canTrackVisibility) {
-      return;
-    }
-    if (sequence == null) {
-      // Pre-sequence rooms used only the room-level unread badge. A visible
-      // legacy message must still clear that badge once, but never clear a
-      // mixed/new room whose latest sequenced messages may be off-screen.
-      if (!_legacyReadResetSent && (_lastRoom?.lastMessageSequence ?? 0) == 0) {
-        _legacyReadResetPending = true;
-        _scheduleMarkAsRead();
-      }
-      return;
-    }
-    if (sequence > _highestVisibleSequence) {
-      _highestVisibleSequence = sequence;
-      _scheduleMarkAsRead();
-    }
-  }
-
-  /// Only the highest sequence that was actually visible is persisted. A
-  /// second target arriving during a write is queued instead of being lost.
+  /// 채팅방이 현재 화면이면 개별 메시지 노출 여부와 관계없이 방 전체를
+  /// 읽음 처리한다. 진행 중 요청이 있으면 한 번만 추가 실행하도록 합친다.
   void _scheduleMarkAsRead() {
-    final needsLegacyReset = _legacyReadResetPending && !_legacyReadResetSent;
-    if (!_canMarkRead ||
-        (!needsLegacyReset &&
-            _highestVisibleSequence <= _lastReadSequenceSent)) {
-      return;
-    }
+    if (!_canMarkWholeRoomRead) return;
     if (_autoMarkReadInFlight) {
       _readFlushQueued = true;
       return;
@@ -630,25 +587,27 @@ class _SnackChatScreenState extends State<SnackChatScreen>
     unawaited(_performMarkAsRead());
   }
 
-  Future<void> _performMarkAsRead() async {
-    final needsLegacyReset = _legacyReadResetPending && !_legacyReadResetSent;
-    if (!_canMarkRead ||
-        (!needsLegacyReset &&
-            _highestVisibleSequence <= _lastReadSequenceSent)) {
-      return;
-    }
-    if (_autoMarkReadInFlight) {
+  Future<void> _performMarkAsRead({
+    bool allowInactiveRoute = false,
+    bool retryOnFailure = true,
+  }) async {
+    if (_roomWasLeft || _roomAccessTerminated || _isLeavingRoom) return;
+    if (!allowInactiveRoute && !_canMarkWholeRoomRead) return;
+
+    final pending = _markAsReadOperation;
+    if (pending != null) {
       _readFlushQueued = true;
+      try {
+        await pending;
+      } catch (_) {}
       return;
     }
-    final target = _highestVisibleSequence;
+
     _autoMarkReadInFlight = true;
+    final roomId = widget.snackChatId;
     final operation = () async {
       await _ensureMyMembershipReady();
-      final cleared = await _snackChatService.markAsRead(
-        widget.snackChatId,
-        lastReadSequence: target,
-      );
+      final cleared = await _snackChatService.markAsRead(roomId);
       if (cleared > 0) await BadgeService.refreshNow();
     }();
     _markAsReadOperation = operation;
@@ -657,31 +616,25 @@ class _SnackChatScreenState extends State<SnackChatScreen>
       await operation;
       didSucceed = true;
       _readRetryAttempt = 0;
-      if (needsLegacyReset) {
-        _legacyReadResetPending = false;
-        _legacyReadResetSent = true;
-      }
-      _lastReadSequenceSent =
-          target > _lastReadSequenceSent ? target : _lastReadSequenceSent;
     } catch (_) {
+      if (!retryOnFailure) rethrow;
       // 화면이 유지되는 동안 아래 bounded retry로 복구한다.
     } finally {
       if (identical(_markAsReadOperation, operation)) {
         _markAsReadOperation = null;
       }
       _autoMarkReadInFlight = false;
-      if (_readFlushQueued ||
-          (didSucceed && _highestVisibleSequence > _lastReadSequenceSent)) {
+      if (_readFlushQueued) {
         _readFlushQueued = false;
-        _scheduleMarkAsRead();
-      } else if (!didSucceed &&
-          _canMarkRead &&
-          (_highestVisibleSequence > _lastReadSequenceSent ||
-              (_legacyReadResetPending && !_legacyReadResetSent))) {
-        // Firestore transactions are not queued while offline. Keep one
-        // bounded retry alive while this route remains visible so the read
-        // cursor converges after connectivity returns without requiring an
-        // extra scroll gesture.
+        if (allowInactiveRoute) {
+          await _performMarkAsRead(
+            allowInactiveRoute: true,
+            retryOnFailure: retryOnFailure,
+          );
+        } else {
+          _scheduleMarkAsRead();
+        }
+      } else if (!didSucceed && retryOnFailure && _canMarkWholeRoomRead) {
         _readRetryAttempt = (_readRetryAttempt + 1).clamp(1, 5).toInt();
         final retrySeconds = (1 << _readRetryAttempt).clamp(2, 30).toInt();
         _autoMarkReadDebounce?.cancel();
@@ -693,14 +646,28 @@ class _SnackChatScreenState extends State<SnackChatScreen>
     }
   }
 
-  void _flushReadOnDispose() {
-    if (_roomWasLeft || _roomAccessTerminated) {
+  void _startBackgroundReadFlush() {
+    if (_roomWasLeft || _roomAccessTerminated || _exitReadFlushStarted) {
       return;
     }
+    _exitReadFlushStarted = true;
+    _autoMarkReadDebounce?.cancel();
+    final roomId = widget.snackChatId;
+    final pending = _markAsReadOperation;
+
     unawaited(
       (() async {
+        if (pending != null) {
+          try {
+            await pending.timeout(const Duration(seconds: 3));
+          } catch (_) {
+            // 진행 중 요청과 별개로 아래 최종 동기화는 계속 시도한다.
+          }
+        }
         await _ensureMyMembershipReady();
-        final cleared = await _snackChatService.markAsRead(widget.snackChatId);
+        final cleared = await _snackChatService
+            .markAsRead(roomId)
+            .timeout(const Duration(seconds: 12));
         if (cleared > 0) await BadgeService.refreshNow();
       })()
           .catchError((Object error) {
@@ -710,14 +677,10 @@ class _SnackChatScreenState extends State<SnackChatScreen>
   }
 
   Future<void> _markWholeRoomAsRead() async {
-    if (_roomWasLeft || _roomAccessTerminated || _isLeavingRoom) return;
-    try {
-      await _ensureMyMembershipReady();
-      final cleared = await _snackChatService.markAsRead(widget.snackChatId);
-      if (cleared > 0) await BadgeService.refreshNow();
-    } catch (error) {
-      Logger.error('Snack Chat 전체 읽음 동기화 실패', error);
-    }
+    await _performMarkAsRead(
+      allowInactiveRoute: true,
+      retryOnFailure: true,
+    );
   }
 
   void _subscribeToMessages() {
@@ -801,6 +764,9 @@ class _SnackChatScreenState extends State<SnackChatScreen>
         _scheduleMessageCacheWrite();
         _scheduleFileExpiryRefresh();
         _scheduleOutboxRecovery();
+        if (addedRemoteMessages > 0 || !hadLiveBatch) {
+          _scheduleMarkAsRead();
+        }
         if (wasNearLatest && (incoming.isNotEmpty || !hadLiveBatch)) {
           WidgetsBinding.instance.addPostFrameCallback((_) {
             if (mounted && _isNearLatest) _scrollToLatest(animated: true);
@@ -919,15 +885,6 @@ class _SnackChatScreenState extends State<SnackChatScreen>
           _members
             ..clear()
             ..addAll(nextMembers);
-          if (mine != null) {
-            final current = _initialLastReadSequence;
-            if (current == null || mine.lastReadSequence > current) {
-              _initialLastReadSequence = mine.lastReadSequence;
-            }
-          }
-          if (mine != null && mine.lastReadSequence > _lastReadSequenceSent) {
-            _lastReadSequenceSent = mine.lastReadSequence;
-          }
         });
         if (mine == null) {
           unawaited(_ensureMyMembershipReady().catchError((_) {}));
@@ -1222,9 +1179,8 @@ class _SnackChatScreenState extends State<SnackChatScreen>
 
   @override
   void dispose() {
-    // 빠르게 뒤로 가더라도 방의 최신 sequence까지 먼저 읽음 처리한다.
-    // 커서는 단조 증가하므로 진행 중인 가시성 기반 작업과 중복되어도 안전하다.
-    _flushReadOnDispose();
+    // 화면 이동은 막지 않고, 읽음 동기화 Future만 백그라운드에서 완료한다.
+    _startBackgroundReadFlush();
     _isLeavingRoom = true;
     _cacheHydrationGeneration++;
     _auxiliarySubscriptionGeneration++;
@@ -2936,6 +2892,13 @@ class _SnackChatScreenState extends State<SnackChatScreen>
           _roomRetryAttempt = 0;
           _lastRoom = incomingRoom;
           _cacheRoomIfChanged(incomingRoom);
+          final currentUserId = _uid;
+          if (currentUserId != null &&
+              (incomingRoom.unreadCount[currentUserId] ?? 0) > 0) {
+            WidgetsBinding.instance.addPostFrameCallback((_) {
+              if (mounted) _scheduleMarkAsRead();
+            });
+          }
         } else if (!_isLeavingRoom &&
             !roomSnap.hasError &&
             roomSnap.connectionState == ConnectionState.active) {
@@ -2988,8 +2951,11 @@ class _SnackChatScreenState extends State<SnackChatScreen>
         return PopScope(
           canPop: !widget.fromPush,
           onPopInvokedWithResult: (didPop, _) {
-            if (!didPop && widget.fromPush) {
-              _handlePushBackNavigation(room);
+            if (didPop) {
+              _routeActive = false;
+              _startBackgroundReadFlush();
+            } else if (widget.fromPush) {
+              _handleRoutePop(room);
             }
           },
           child: Scaffold(
@@ -3179,17 +3145,12 @@ class _SnackChatScreenState extends State<SnackChatScreen>
             ),
           ],
         );
-        return VisibilityDetector(
-          key: ValueKey<String>('snack-chat-visible-${message.id}'),
-          onVisibilityChanged: (info) =>
-              _onMessageVisibilityChanged(message, info),
-          child: KeyedSubtree(
-            key: _messageKeys.putIfAbsent(
-              message.id,
-              () => GlobalKey(debugLabel: 'snack-chat-${message.id}'),
-            ),
-            child: row,
+        return KeyedSubtree(
+          key: _messageKeys.putIfAbsent(
+            message.id,
+            () => GlobalKey(debugLabel: 'snack-chat-${message.id}'),
           ),
+          child: row,
         );
       },
     );
@@ -4359,6 +4320,14 @@ class _SnackChatScreenState extends State<SnackChatScreen>
       'Dec'
     ];
     return months[month - 1];
+  }
+
+  void _handleRoutePop(SnackChat room) {
+    if (_pushBackNavigationInFlight) return;
+    _pushBackNavigationInFlight = true;
+    _routeActive = false;
+    _startBackgroundReadFlush();
+    _handlePushBackNavigation(room);
   }
 
   void _handlePushBackNavigation(SnackChat room) {

@@ -145,6 +145,7 @@ class MeetupCalendarCacheService extends ChangeNotifier {
           .where((m) => m.userId != null && _friendIds.contains(m.userId))
           .where((m) => !_dayKey(m.date).isBefore(todayKey)) // 오늘 포함, 미래만
           .where((m) => _canSeeMeetup(m, user.uid))
+          .where((m) => m.isPublishedAt())
           .toList();
 
       final filteredByBlock =
@@ -178,13 +179,16 @@ class MeetupCalendarCacheService extends ChangeNotifier {
 
   List<Meetup> friendMeetupsForDay(DateTime dayKey) {
     final cache = _monthCaches[_monthKey(dayKey)];
-    return cache?.byDayKey[dayKey] ?? const <Meetup>[];
+    final cached = cache?.byDayKey[dayKey] ?? const <Meetup>[];
+    return cached.where((meetup) => meetup.isPublishedAt()).toList(
+          growable: false,
+        );
   }
 
   bool hasFriendMeetupOnDay(DateTime dayKey) {
     final cache = _monthCaches[_monthKey(dayKey)];
     final list = cache?.byDayKey[dayKey];
-    return list != null && list.isNotEmpty;
+    return list != null && list.any((meetup) => meetup.isPublishedAt());
   }
 
   Future<void> _loadFriendContextIfNeeded() async {

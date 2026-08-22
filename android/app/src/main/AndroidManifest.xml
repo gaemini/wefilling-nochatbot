@@ -3,28 +3,25 @@
     xmlns:tools="http://schemas.android.com/tools">
     <!-- 인터넷 권한 선언을 manifest 내부로 이동 -->
     <uses-permission android:name="android.permission.INTERNET" />
-    <!--
-      Image selection uses Android System Photo Picker and document selection
-      uses Storage Access Framework. Remove broad permissions contributed by
-      transitive plugin manifests (notably open_filex/photo_manager).
-    -->
+    <!-- 광고 ID는 사용하지 않으므로 전이 의존성이 추가한 권한을 제거합니다. -->
     <uses-permission
         android:name="com.google.android.gms.permission.AD_ID"
         tools:node="remove" />
+    <!-- 스낵 생성 화면에서 최근 사진을 바로 표시하기 위한 미디어 권한 -->
+    <uses-permission android:name="android.permission.READ_MEDIA_IMAGES" />
+    <!-- Android 14의 '선택한 사진만 허용' 접근도 지원합니다. -->
     <uses-permission
-        android:name="android.permission.READ_MEDIA_IMAGES"
-        tools:node="remove" />
+        android:name="android.permission.READ_MEDIA_VISUAL_USER_SELECTED" />
+    <!-- Android 12 이하에서 사진을 읽기 위한 호환 권한 -->
+    <uses-permission
+        android:name="android.permission.READ_EXTERNAL_STORAGE"
+        android:maxSdkVersion="32" />
+    <!-- 앱은 사진만 조회하므로 나머지 미디어 권한은 제거합니다. -->
     <uses-permission
         android:name="android.permission.READ_MEDIA_VIDEO"
         tools:node="remove" />
     <uses-permission
         android:name="android.permission.READ_MEDIA_AUDIO"
-        tools:node="remove" />
-    <uses-permission
-        android:name="android.permission.READ_MEDIA_VISUAL_USER_SELECTED"
-        tools:node="remove" />
-    <uses-permission
-        android:name="android.permission.READ_EXTERNAL_STORAGE"
         tools:node="remove" />
     <uses-permission
         android:name="android.permission.WRITE_EXTERNAL_STORAGE"

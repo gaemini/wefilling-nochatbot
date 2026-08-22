@@ -134,6 +134,14 @@ class Post {
   List<PostCategory> get postCategories =>
       categoryKeys.map(PostCategory.fromKey).toList(growable: false);
 
+  /// 현재 포스트 작성 화면은 제목과 본문을 나누지 않고 content 한 필드만
+  /// 입력받는다. 과거 데이터의 title만 남아 있는 경우까지 한 곳에서 호환한다.
+  String get displayText {
+    final normalizedContent = content.trim();
+    if (normalizedContent.isNotEmpty) return normalizedContent;
+    return title.trim();
+  }
+
   // 모델 디버깅을 위한 문자열 표현
   @override
   String toString() {
@@ -163,10 +171,11 @@ class Post {
 
   // 미리보기용 내용 (최대 100자)
   String getPreviewContent() {
-    if (content.length <= 100) {
-      return content;
+    final text = displayText;
+    if (text.length <= 100) {
+      return text;
     }
-    return '${content.substring(0, 100)}...';
+    return '${text.substring(0, 100)}...';
   }
 
   // 현재 사용자가 이 게시글에 좋아요를 눌렀는지 확인
@@ -185,10 +194,10 @@ class Post {
 
   // 본문 번역 메서드
   Future<String> getTranslatedContent(SettingsProvider settings) async {
-    if (!settings.autoTranslate) return content;
+    if (!settings.autoTranslate) return displayText;
     if (_translatedContent != null) return _translatedContent!;
 
-    _translatedContent = await settings.translateText(content);
+    _translatedContent = await settings.translateText(displayText);
     return _translatedContent!;
   }
 

@@ -107,6 +107,7 @@ class _CreateMeetupScreenState extends State<CreateMeetupScreen> {
   String _visibility = 'public'; // 'public', 'friends', 'category'
   List<FriendCategory> _friendCategories = [];
   List<String> _selectedCategoryIds = [];
+  int? _publicDurationHours; // null이면 시간 제한 없음(기본값)
 
   // 이미지 관련 변수 (최대 3장)
   static const int _maxMeetupImages = 3;
@@ -295,6 +296,107 @@ class _CreateMeetupScreenState extends State<CreateMeetupScreen> {
     setState(() {
       _selectedTime = selected;
     });
+  }
+
+  String _publicDurationLabel(BuildContext context, [int? hours]) {
+    final value = hours ?? _publicDurationHours;
+    final isKo = Localizations.localeOf(context).languageCode == 'ko';
+    if (value == null) return isKo ? '시간 제한 없음' : 'No time limit';
+    return isKo ? '$value시간' : '$value ${value == 1 ? 'hour' : 'hours'}';
+  }
+
+  Future<void> _showPublicDurationSheet() async {
+    final isKo = Localizations.localeOf(context).languageCode == 'ko';
+    final selected = await showModalBottomSheet<int>(
+      context: context,
+      isScrollControlled: true,
+      backgroundColor: Colors.white,
+      showDragHandle: true,
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(24)),
+      ),
+      builder: (sheetContext) => SafeArea(
+        top: false,
+        child: LayoutBuilder(
+          builder: (context, constraints) {
+            final columns = constraints.maxWidth < 360 ? 3 : 4;
+            return SingleChildScrollView(
+              padding: EdgeInsets.fromLTRB(
+                context.rs(18).clamp(16, 22).toDouble(),
+                6,
+                context.rs(18).clamp(16, 22).toDouble(),
+                context.rs(20).clamp(18, 26).toDouble(),
+              ),
+              child: MediaQuery.withClampedTextScaling(
+                maxScaleFactor: 1.25,
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      isKo ? '밋업 공개 시간' : 'Meetup public time',
+                      style: const TextStyle(
+                        fontFamily: 'Pretendard',
+                        fontSize: 20,
+                        fontWeight: FontWeight.w800,
+                        color: Color(0xFF101828),
+                      ),
+                    ),
+                    const SizedBox(height: 7),
+                    Text(
+                      isKo
+                          ? '선택한 시간이 지나면 미확정 밋업은 목록에서 사라져요.'
+                          : 'Unconfirmed meetups disappear when the selected time ends.',
+                      style: _helperStyle.copyWith(height: 1.45),
+                    ),
+                    const SizedBox(height: 16),
+                    _PublicDurationOption(
+                      label: isKo ? '시간 제한 없음' : 'No time limit',
+                      selected: _publicDurationHours == null,
+                      icon: Icons.all_inclusive_rounded,
+                      onTap: () => Navigator.pop(sheetContext, 0),
+                    ),
+                    const SizedBox(height: 14),
+                    Text(
+                      isKo ? '공개 시간' : 'Public duration',
+                      style: const TextStyle(
+                        fontFamily: 'Pretendard',
+                        fontSize: 13,
+                        fontWeight: FontWeight.w700,
+                        color: Color(0xFF475467),
+                      ),
+                    ),
+                    const SizedBox(height: 9),
+                    GridView.builder(
+                      shrinkWrap: true,
+                      physics: const NeverScrollableScrollPhysics(),
+                      itemCount: 12,
+                      gridDelegate: SliverGridDelegateWithFixedCrossAxisCount(
+                        crossAxisCount: columns,
+                        crossAxisSpacing: 8,
+                        mainAxisSpacing: 8,
+                        childAspectRatio: 1.75,
+                      ),
+                      itemBuilder: (context, index) {
+                        final hours = index + 1;
+                        return _PublicDurationOption(
+                          label: isKo ? '$hours시간' : '${hours}H',
+                          selected: _publicDurationHours == hours,
+                          compact: true,
+                          onTap: () => Navigator.pop(sheetContext, hours),
+                        );
+                      },
+                    ),
+                  ],
+                ),
+              ),
+            );
+          },
+        ),
+      ),
+    );
+    if (selected == null || !mounted) return;
+    setState(() => _publicDurationHours = selected == 0 ? null : selected);
   }
 
   Future<void> _showMaxParticipantsSheet() async {
@@ -731,6 +833,11 @@ class _CreateMeetupScreenState extends State<CreateMeetupScreen> {
                           children: [
                             // 공개 범위 (최상단)
                             _buildMeetupVisibilitySection(),
+                            SizedBox(
+                                height:
+                                    context.rs(18).clamp(15, 22).toDouble()),
+
+                            _buildPublicDurationSection(),
                             SizedBox(
                                 height:
                                     context.rs(18).clamp(15, 22).toDouble()),
@@ -1306,6 +1413,8 @@ class _CreateMeetupScreenState extends State<CreateMeetupScreen> {
                                               visibility: _visibility,
                                               visibleToCategoryIds:
                                                   _selectedCategoryIds,
+                                              publicDurationHours:
+                                                  _publicDurationHours,
                                             );
 
                                             if (success) {
@@ -1338,6 +1447,23 @@ class _CreateMeetupScreenState extends State<CreateMeetupScreen> {
                                                           : '',
                                                   date: selectedDate,
                                                   category: _selectedCategory!,
+                                                  publicDurationHours:
+                                                      _publicDurationHours,
+                                                  publicExpiresAt:
+                                                      _publicDurationHours ==
+                                                              null
+                                                          ? null
+                                                          : DateTime.now().add(
+                                                              Duration(
+                                                                hours:
+                                                                    _publicDurationHours!,
+                                                              ),
+                                                            ),
+                                                  publicWindowStatus:
+                                                      _publicDurationHours ==
+                                                              null
+                                                          ? 'unlimited'
+                                                          : 'timed',
                                                 );
 
                                                 final dayIndex =
@@ -1705,6 +1831,71 @@ class _CreateMeetupScreenState extends State<CreateMeetupScreen> {
     );
   }
 
+  Widget _buildPublicDurationSection() {
+    final isKo = Localizations.localeOf(context).languageCode == 'ko';
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Text(
+          isKo ? '공개 시간' : 'Public time',
+          style: _responsiveSectionTitle(context),
+        ),
+        const SizedBox(height: 3),
+        Text(
+          isKo
+              ? '미확정 밋업이 목록에 표시되는 시간이에요.'
+              : 'How long an unconfirmed meetup stays visible.',
+          style: _helperStyle,
+        ),
+        const SizedBox(height: 5),
+        Semantics(
+          button: true,
+          label: isKo ? '밋업 공개 시간 선택' : 'Select meetup public time',
+          value: _publicDurationLabel(context),
+          child: InkWell(
+            onTap: _showPublicDurationSheet,
+            borderRadius: BorderRadius.circular(8),
+            child: Container(
+              constraints: const BoxConstraints(minHeight: 48),
+              padding: const EdgeInsets.symmetric(vertical: 10),
+              decoration: const BoxDecoration(
+                border: Border(
+                  bottom: BorderSide(color: Color(0xFFEAECF0)),
+                ),
+              ),
+              child: Row(
+                children: [
+                  Icon(
+                    _publicDurationHours == null
+                        ? Icons.all_inclusive_rounded
+                        : Icons.timer_outlined,
+                    size: context.ri(20).clamp(19, 22).toDouble(),
+                    color: const Color(0xFF667085),
+                  ),
+                  const SizedBox(width: 10),
+                  Expanded(
+                    child: Text(
+                      _publicDurationLabel(context),
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      style: _responsiveInputStyle(context),
+                    ),
+                  ),
+                  const SizedBox(width: 8),
+                  const Icon(
+                    Icons.chevron_right_rounded,
+                    size: 21,
+                    color: Color(0xFF98A2B3),
+                  ),
+                ],
+              ),
+            ),
+          ),
+        ),
+      ],
+    );
+  }
+
   Widget _buildMeetupDateSection() {
     final l10n = AppLocalizations.of(context)!;
     final lang = Localizations.localeOf(context).languageCode;
@@ -2040,6 +2231,78 @@ class _CreateMeetupScreenState extends State<CreateMeetupScreen> {
           ),
         ),
       ],
+    );
+  }
+}
+
+class _PublicDurationOption extends StatelessWidget {
+  const _PublicDurationOption({
+    required this.label,
+    required this.selected,
+    required this.onTap,
+    this.icon,
+    this.compact = false,
+  });
+
+  final String label;
+  final bool selected;
+  final VoidCallback onTap;
+  final IconData? icon;
+  final bool compact;
+
+  @override
+  Widget build(BuildContext context) {
+    final foreground = selected ? Colors.white : const Color(0xFF344054);
+    return Material(
+      color: Colors.transparent,
+      child: InkWell(
+        onTap: onTap,
+        borderRadius: BorderRadius.circular(12),
+        child: AnimatedContainer(
+          duration: const Duration(milliseconds: 160),
+          constraints: BoxConstraints(minHeight: compact ? 44 : 50),
+          padding: EdgeInsets.symmetric(
+            horizontal: compact ? 8 : 14,
+            vertical: compact ? 8 : 12,
+          ),
+          decoration: BoxDecoration(
+            color: selected ? const Color(0xFF344054) : const Color(0xFFF9FAFB),
+            borderRadius: BorderRadius.circular(12),
+            border: Border.all(
+              color:
+                  selected ? const Color(0xFF344054) : const Color(0xFFEAECF0),
+            ),
+          ),
+          child: Row(
+            mainAxisAlignment: MainAxisAlignment.center,
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              if (icon != null) ...[
+                Icon(icon, size: 19, color: foreground),
+                const SizedBox(width: 8),
+              ],
+              Flexible(
+                child: Text(
+                  label,
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  textAlign: TextAlign.center,
+                  style: TextStyle(
+                    fontFamily: 'Pretendard',
+                    fontSize: context.rf(13).clamp(12, 14).toDouble(),
+                    fontWeight: FontWeight.w700,
+                    color: foreground,
+                  ),
+                ),
+              ),
+              if (!compact && selected) ...[
+                const SizedBox(width: 8),
+                const Icon(Icons.check_rounded, size: 18, color: Colors.white),
+              ],
+            ],
+          ),
+        ),
+      ),
     );
   }
 }

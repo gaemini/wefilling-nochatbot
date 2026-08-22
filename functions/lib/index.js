@@ -3,8 +3,8 @@
 // Cloud Functions 메인 진입점
 // 친구요청 관련 함수들을 export
 Object.defineProperty(exports, "__esModule", { value: true });
-exports.backfillEmailClaims = exports.cancelPendingEmailSignup = exports.discardIncompleteRegistration = exports.finalizeEnglishSocialSignup = exports.completeHanyangProfileVerification = exports.finalizeHanyangEmailVerification = exports.migrateEmailVerified = exports.initializeAds = exports.onUserProfileUpdatedPropagateAuthorInfo = exports.onSnackChatVoteWritten = exports.onSnackChatReactionWritten = exports.notifyClosedSnackChatPolls = exports.onSnackChatMessageCreated = exports.onSnackChatRoomWritten = exports.cleanupExpiredSnackChatFiles = exports.onSnackChatFileUploadJobDeleted = exports.onSnackChatFileMessageDeleted = exports.cancelSnackChatFileUpload = exports.commitSnackChatFileUpload = exports.prepareSnackChatFileUpload = exports.reportSnackChatMessage = exports.fetchSnackChatLinkPreview = exports.createSnackChatAnnouncementSecure = exports.updateSnackChatTitleSecure = exports.leaveSnackChatSecure = exports.ensureSnackChatMembershipSecure = exports.joinMeetupSnackChatSecure = exports.inviteSnackChatParticipants = exports.createMeetupSnackChatSecure = exports.createSnackChatSecure = exports.onSnapshotBlockChanged = exports.cleanupOrphanSnapshotUploads = exports.cleanupExpiredSnapshots = exports.deleteSnapshot = exports.replySnapshotComment = exports.sendSnapshotComment = exports.toggleSnapshotReaction = exports.getSnapshotCommentLetter = exports.getSnapshotCommentStatus = exports.getSnapshotReactionStatus = exports.getSnapshotViewers = exports.recordSnapshotView = exports.updateSnapshotVisibility = exports.syncMySnapshotFeed = exports.createSnapshot = exports.getSnapshotServerTime = exports.reconcileDMUnreadTotalSecure = exports.markDMConversationReadSecure = exports.createMeetupSecure = exports.createPostSecure = void 0;
-exports.fixNegativeUnreadCounts = exports.onDMMessageRead = exports.onDMMessageCreated = exports.onMeetupReviewCreatedDeleteMeetupChat = exports.onMeetupReviewDeleted = exports.onMeetupReviewUpdated = exports.onReviewRequestUpdated = exports.onReviewRequestCreated = exports.onMeetupCreated = exports.onMeetupParticipantJoined = exports.onNotificationDeletedSyncUnreadCounter = exports.onNotificationUpdatedSyncUnreadCounter = exports.onNotificationCreated = exports.unregisterFcmToken = exports.registerFcmToken = exports.fixDeletedAccountsInConversations = exports.deleteAccountImmediately = exports.onReportCreated = exports.reportUser = exports.unhideAnonymousComment = exports.hideAnonymousComment = exports.unblockAnonymousPost = exports.blockAnonymousPost = exports.unblockUser = exports.blockUser = exports.unfriend = exports.rejectFriendRequest = exports.acceptFriendRequest = exports.cancelFriendRequest = exports.sendFriendRequest = exports.cleanupExpiredEmailVerifications = exports.createGeneralEmailSignup = exports.verifyEmailCode = exports.sendEmailVerificationCode = exports.onPostLiked = exports.onCommentLiked = exports.onCommentSoftDeleted = exports.onCommentDeleted = exports.onCommentCreated = exports.onMeetupDeleted = exports.onMeetupUpdated = exports.onAdBannerChanged = exports.onFriendRequestCreated = exports.joinMeetupSecure = exports.onPrivatePostCreated = exports.onUserCreated = void 0;
+exports.discardIncompleteRegistration = exports.finalizeEnglishSocialSignup = exports.completeHanyangProfileVerification = exports.finalizeHanyangEmailVerification = exports.migrateEmailVerified = exports.initializeAds = exports.onUserProfileUpdatedPropagateAuthorInfo = exports.onSnackChatVoteWritten = exports.onSnackChatReactionWritten = exports.notifyClosedSnackChatPolls = exports.onSnackChatMessageCreated = exports.onSnackChatRoomWritten = exports.cleanupExpiredSnackChatFiles = exports.onSnackChatFileUploadJobDeleted = exports.onSnackChatFileMessageDeleted = exports.cancelSnackChatFileUpload = exports.commitSnackChatFileUpload = exports.prepareSnackChatFileUpload = exports.reportSnackChatMessage = exports.fetchSnackChatLinkPreview = exports.createSnackChatAnnouncementSecure = exports.updateSnackChatTitleSecure = exports.leaveSnackChatSecure = exports.ensureSnackChatMembershipSecure = exports.joinMeetupSnackChatSecure = exports.inviteSnackChatParticipants = exports.createMeetupSnackChatSecure = exports.createSnackChatSecure = exports.onSnapshotBlockChanged = exports.cleanupOrphanSnapshotUploads = exports.cleanupExpiredSnapshots = exports.deleteSnapshot = exports.replySnapshotComment = exports.sendSnapshotComment = exports.toggleSnapshotReaction = exports.getSnapshotCommentLetter = exports.getSnapshotCommentStatus = exports.getSnapshotReactionStatus = exports.getSnapshotViewers = exports.recordSnapshotView = exports.updateSnapshotVisibility = exports.syncMySnapshotFeed = exports.createSnapshot = exports.getSnapshotServerTime = exports.reconcileDMUnreadTotalSecure = exports.markDMConversationReadSecure = exports.expireTimedMeetups = exports.confirmMeetupSecure = exports.createMeetupSecure = exports.createPostSecure = void 0;
+exports.fixNegativeUnreadCounts = exports.onDMMessageRead = exports.onDMMessageCreated = exports.onMeetupReviewCreatedDeleteMeetupChat = exports.onMeetupReviewDeleted = exports.onMeetupReviewUpdated = exports.onReviewRequestUpdated = exports.onReviewRequestCreated = exports.onMeetupCreated = exports.onMeetupParticipantJoined = exports.onNotificationDeletedSyncUnreadCounter = exports.onNotificationUpdatedSyncUnreadCounter = exports.onNotificationCreated = exports.unregisterFcmToken = exports.registerFcmToken = exports.fixDeletedAccountsInConversations = exports.deleteAccountImmediately = exports.onReportCreated = exports.reportUser = exports.unhideAnonymousComment = exports.hideAnonymousComment = exports.unblockAnonymousPost = exports.blockAnonymousPost = exports.unblockUser = exports.blockUser = exports.unfriend = exports.rejectFriendRequest = exports.acceptFriendRequest = exports.cancelFriendRequest = exports.sendFriendRequest = exports.cleanupExpiredEmailVerifications = exports.createGeneralEmailSignup = exports.verifyEmailCode = exports.sendEmailVerificationCode = exports.onPostLiked = exports.onCommentLiked = exports.onCommentSoftDeleted = exports.onCommentDeleted = exports.onCommentCreated = exports.onMeetupDeleted = exports.onMeetupUpdated = exports.onAdBannerChanged = exports.onFriendRequestCreated = exports.joinMeetupSecure = exports.onPrivatePostCreated = exports.onUserCreated = exports.backfillEmailClaims = exports.cancelPendingEmailSignup = void 0;
 const functions = require("firebase-functions");
 const admin = require("firebase-admin");
 const nodemailer = require("nodemailer");
@@ -14,6 +14,8 @@ const frozen_audience_1 = require("./frozen_audience");
 var content_creation_1 = require("./content_creation");
 Object.defineProperty(exports, "createPostSecure", { enumerable: true, get: function () { return content_creation_1.createPostSecure; } });
 Object.defineProperty(exports, "createMeetupSecure", { enumerable: true, get: function () { return content_creation_1.createMeetupSecure; } });
+Object.defineProperty(exports, "confirmMeetupSecure", { enumerable: true, get: function () { return content_creation_1.confirmMeetupSecure; } });
+Object.defineProperty(exports, "expireTimedMeetups", { enumerable: true, get: function () { return content_creation_1.expireTimedMeetups; } });
 var dm_chat_1 = require("./dm_chat");
 Object.defineProperty(exports, "markDMConversationReadSecure", { enumerable: true, get: function () { return dm_chat_1.markDMConversationReadSecure; } });
 Object.defineProperty(exports, "reconcileDMUnreadTotalSecure", { enumerable: true, get: function () { return dm_chat_1.reconcileDMUnreadTotalSecure; } });
@@ -1417,6 +1419,15 @@ function meetupHasEnded(meetup) {
     }
     return true;
 }
+function meetupPublicationExpired(meetup) {
+    if (meetup.isConfirmed === true)
+        return false;
+    if (meetup.publicWindowStatus === 'expired')
+        return true;
+    const expiresAt = meetup.publicExpiresAt;
+    return expiresAt instanceof admin.firestore.Timestamp &&
+        expiresAt.toMillis() <= Date.now();
+}
 /**
  * 밋업 참여의 최종 권한 판정은 생성 시 저장된 frozen audience로 수행한다.
  * 현재 친구/그룹 원본은 과거 콘텐츠 권한 계산에 사용하지 않는다.
@@ -1450,6 +1461,9 @@ exports.joinMeetupSecure = functions.https.onCall(async (data, context) => {
     if (meetupHasEnded(initialData)) {
         throw new functions.https.HttpsError('failed-precondition', '종료된 밋업입니다.');
     }
+    if (meetupPublicationExpired(initialData)) {
+        throw new functions.https.HttpsError('failed-precondition', '공개 시간이 지난 밋업입니다.');
+    }
     const participantRef = db
         .collection(firestore_paths_1.COL.meetupParticipants)
         .doc(`${meetupId}_${userId}`);
@@ -1478,6 +1492,9 @@ exports.joinMeetupSecure = functions.https.onCall(async (data, context) => {
         }
         if (meetupHasEnded(meetup)) {
             throw new functions.https.HttpsError('failed-precondition', '종료된 밋업입니다.');
+        }
+        if (meetupPublicationExpired(meetup)) {
+            throw new functions.https.HttpsError('failed-precondition', '공개 시간이 지난 밋업입니다.');
         }
         if (toUniqueStringArray(meetup.kickedUserIds).includes(userId)) {
             throw new functions.https.HttpsError('permission-denied', '참여할 수 없는 밋업입니다.');
@@ -5759,7 +5776,7 @@ exports.onDMMessageCreated = functions
             .digest('hex'));
         try {
             const transactionResult = await db.runTransaction(async (tx) => {
-                var _a, _b;
+                var _a;
                 // 트랜잭션 규칙: 모든 get()을 set()/update() 전에 수행해야 함
                 const eventSnap = await tx.get(dmCreateEventRef);
                 if (eventSnap.exists) {
@@ -5792,8 +5809,10 @@ exports.onDMMessageCreated = functions
                 // this create trigger acquires the transaction. The callable stores
                 // a server read-through watermark with the counter reset, so an old
                 // create event must not resurrect unread=1 or send a stale push.
-                const messageCreatedAt = currentMessageSnap.get('createdAt');
-                const messageCreatedAtMs = (_a = firestoreTimeToMillis(messageCreatedAt)) !== null && _a !== void 0 ? _a : 0;
+                // The client-authored createdAt can be ahead/behind the server
+                // clock. Firestore createTime is server-owned and comparable with
+                // the callable's server read-through watermark.
+                const messageCreatedAtMs = currentMessageSnap.createTime.toMillis();
                 const lastReadAtBy = (data === null || data === void 0 ? void 0 : data.lastReadAtBy) &&
                     typeof data.lastReadAtBy === 'object' ? data.lastReadAtBy : {};
                 const alreadyReadThrough = recipients.length > 0 &&
@@ -5857,7 +5876,7 @@ exports.onDMMessageCreated = functions
                 // 배지 계산용
                 let nextDmUnreadTotal = 0;
                 if (validRecipients.length > 0 && userSnaps.length > 0) {
-                    const recipientUserData = ((_b = userSnaps[0]) === null || _b === void 0 ? void 0 : _b.exists) ? userSnaps[0].data() : null;
+                    const recipientUserData = ((_a = userSnaps[0]) === null || _a === void 0 ? void 0 : _a.exists) ? userSnaps[0].data() : null;
                     const curTotal = typeof (recipientUserData === null || recipientUserData === void 0 ? void 0 : recipientUserData.dmUnreadTotal) === 'number'
                         ? recipientUserData.dmUnreadTotal
                         : 0;
@@ -6029,7 +6048,6 @@ exports.onDMMessageRead = functions
         .digest('hex'));
     try {
         await db.runTransaction(async (tx) => {
-            var _a;
             const marker = await tx.get(markerRef);
             if (marker.exists)
                 return;
@@ -6048,7 +6066,7 @@ exports.onDMMessageRead = functions
             const participants = Array.from(new Set((Array.isArray(data.participants) ? data.participants : [])
                 .filter((id) => typeof id === 'string' && id.length > 0)));
             const recipientIds = participants.filter((id) => id !== senderId);
-            const messageCreatedAtMs = (_a = firestoreTimeToMillis(after.createdAt)) !== null && _a !== void 0 ? _a : 0;
+            const messageCreatedAtMs = change.after.createTime.toMillis();
             const lastReadAtBy = data.lastReadAtBy &&
                 typeof data.lastReadAtBy === 'object' ? data.lastReadAtBy : {};
             // The room-level callable may already have cleared this exact

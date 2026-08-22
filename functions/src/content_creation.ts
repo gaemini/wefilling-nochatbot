@@ -167,6 +167,14 @@ export const createMeetupSecure = functions.runWith({timeoutSeconds: 120, memory
     const startsAtMillis = integer(data.startsAtMillis, 0, 8640000000000000, 'startsAt');
     const endsAtMillis = integer(data.endsAtMillis, startsAtMillis, 8640000000000000, 'endsAt');
     const now = admin.firestore.Timestamp.now();
+    const publicDurationHours = data.publicDurationHours == null
+      ? null
+      : integer(data.publicDurationHours, 1, 12, 'publicDurationHours');
+    const publicExpiresAt = publicDurationHours == null
+      ? null
+      : admin.firestore.Timestamp.fromMillis(
+        now.toMillis() + publicDurationHours * 60 * 60 * 1000,
+      );
     const remoteUrls = stringList(data.imageUrls, 3);
     const document: FirebaseFirestore.DocumentData = {
       userId: uid,
@@ -200,6 +208,11 @@ export const createMeetupSecure = functions.runWith({timeoutSeconds: 120, memory
       visibilityLockedAt: now,
       visibilitySchemaVersion: VISIBILITY_SCHEMA_VERSION,
       isConfirmed: false,
+      publicWindowStatus: publicDurationHours == null ? 'unlimited' : 'timed',
+      ...(publicDurationHours == null ? {} : {
+        publicDurationHours,
+        publicExpiresAt,
+      }),
       groupChatEnabled: false,
       kickedUserIds: [],
       status: 'active',
@@ -217,4 +230,105 @@ export const createMeetupSecure = functions.runWith({timeoutSeconds: 120, memory
       `audienceCount=${frozen.audienceUserIdsFrozen.length}`,
     );
     return {meetupId};
+  });
+
+/** 공개 제한시간과 확정이 경합해도 서버 트랜잭션에서 한 상태만 선택한다. */
+export const confirmMeetupSecure = functions
+  .runWith({timeoutSeconds: 30, memory: '256MB'})
+  .https.onCall(async (raw, context) => {
+    const uid = requireUid(context);
+    await profile(uid);
+    const data = object(raw);
+    const meetupId = contentId(data.meetupId);
+    const ref = admin.firestore().collection(COL.meetups).doc(meetupId);
+
+    return admin.firestore().runTransaction(async (transaction) => {
+      const snapshot = await transaction.get(ref);
+      if (!snapshot.exists) {
+        throw new functions.https.HttpsError('not-found', 'Meetup not found.');
+      }
+      const meetup = snapshot.data() ?? {};
+      if ((meetup.ownerId ?? meetup.userId ?? '').toString() !== uid) {
+        throw new functions.https.HttpsError(
+          'permission-denied',
+          'Only the meetup host can confirm it.',
+        );
+      }
+      if (meetup.isConfirmed === true) return {success: true, meetupId};
+
+      const now = admin.firestore.Timestamp.now();
+      const expiresAt = meetup.publicExpiresAt;
+      if (meetup.publicWindowStatus === 'expired' ||
+          (expiresAt instanceof admin.firestore.Timestamp &&
+            expiresAt.toMillis() <= now.toMillis())) {
+        throw new functions.https.HttpsError(
+          'failed-precondition',
+          'The meetup publication window has expired.',
+        );
+      }
+
+      transaction.update(ref, {
+        isConfirmed: true,
+        confirmedAt: now,
+        updatedAt: now,
+        publicWindowStatus: 'confirmed',
+        // 확정된 문서는 만료 스케줄 쿼리에서 즉시 제외한다.
+        publicExpiresAt: admin.firestore.FieldValue.delete(),
+      });
+      return {success: true, meetupId};
+    });
+  });
+
+/**
+ * 제한시간이 지난 미확정 밋업을 매분 비공개 상태로 전환한다.
+ * 문서를 삭제하지 않아 경합/연관 데이터 손실을 피하고 모든 앱 목록에서 숨긴다.
+ */
+export const expireTimedMeetups = functions.pubsub
+  .schedule('* * * * *')
+  .timeZone('Asia/Seoul')
+  .onRun(async () => {
+    const firestore = admin.firestore();
+    const now = admin.firestore.Timestamp.now();
+    const snapshot = await firestore.collection(COL.meetups)
+      .where('publicExpiresAt', '<=', now)
+      .limit(300)
+      .get();
+
+    let expired = 0;
+    for (let offset = 0; offset < snapshot.docs.length; offset += 20) {
+      const chunk = snapshot.docs.slice(offset, offset + 20);
+      const results = await Promise.all(chunk.map((candidate) =>
+        firestore.runTransaction(async (transaction) => {
+          const current = await transaction.get(candidate.ref);
+          if (!current.exists) {
+            return false;
+          }
+          const expiresAt = current.get('publicExpiresAt');
+          if (!(expiresAt instanceof admin.firestore.Timestamp) ||
+              expiresAt.toMillis() > now.toMillis()) {
+            return false;
+          }
+          if (current.get('isConfirmed') === true) {
+            transaction.update(candidate.ref, {
+              publicWindowStatus: 'confirmed',
+              publicExpiresAt: admin.firestore.FieldValue.delete(),
+              updatedAt: now,
+            });
+            return false;
+          }
+          transaction.update(candidate.ref, {
+            publicWindowStatus: 'expired',
+            publicExpiredAt: expiresAt,
+            publicExpiresAt: admin.firestore.FieldValue.delete(),
+            status: 'expired',
+            expiredAt: now,
+            updatedAt: now,
+          });
+          return true;
+        }),
+      ));
+      expired += results.filter((result) => result).length;
+    }
+    console.log(`expireTimedMeetups: scanned=${snapshot.size} expired=${expired}`);
+    return null;
   });

@@ -43,7 +43,7 @@ type InstagramLinkPreview = {
   thumbnailUrl: string | null;
   aspectRatio: number;
   embedHtml: string;
-  previewMode: 'embed';
+  previewMode: 'embed' | 'image';
   previewStatus: 'ready';
 };
 
@@ -61,6 +61,7 @@ type ParsedSharedLink =
 
 const CACHE_COLLECTION = 'linkPreviewCache';
 const CACHE_TTL_MS = 3 * 24 * 60 * 60 * 1000;
+const INSTAGRAM_METADATA_VERSION = 2;
 const REQUEST_TIMEOUT_MS = 5_000;
 const MAX_RESPONSE_BYTES = 512 * 1024;
 const META_GRAPH_API_VERSION = 'v25.0';
@@ -254,6 +255,51 @@ function fetchJson(url: URL, allowedHostname: string): Promise<Record<string, un
   });
 }
 
+function fetchHtml(url: URL, allowedHostname: string): Promise<string> {
+  if (url.protocol !== 'https:' || url.hostname !== allowedHostname) {
+    return Promise.reject(new Error('Unexpected HTML metadata endpoint.'));
+  }
+
+  return new Promise((resolve, reject) => {
+    const request = https.get(url, {
+      headers: {
+        Accept: 'text/html,application/xhtml+xml',
+        'Accept-Language': 'ko-KR,ko;q=0.9,en;q=0.8',
+        'User-Agent': 'Mozilla/5.0 (compatible; WefillingLinkPreview/1.0)',
+      },
+    }, (response) => {
+      const statusCode = response.statusCode ?? 0;
+      if (statusCode < 200 || statusCode >= 300) {
+        response.resume();
+        reject(new Error(`Instagram page returned HTTP ${statusCode}.`));
+        return;
+      }
+      const contentType = (response.headers['content-type'] ?? '').toLowerCase();
+      if (!contentType.includes('text/html')) {
+        response.resume();
+        reject(new Error('Instagram page did not return HTML.'));
+        return;
+      }
+
+      const chunks: Buffer[] = [];
+      let receivedBytes = 0;
+      response.on('data', (chunk: Buffer) => {
+        receivedBytes += chunk.length;
+        if (receivedBytes > MAX_RESPONSE_BYTES) {
+          request.destroy(new Error('Instagram page exceeded the size limit.'));
+          return;
+        }
+        chunks.push(chunk);
+      });
+      response.on('end', () => resolve(Buffer.concat(chunks).toString('utf8')));
+    });
+    request.setTimeout(REQUEST_TIMEOUT_MS, () => {
+      request.destroy(new Error('Instagram page request timed out.'));
+    });
+    request.on('error', reject);
+  });
+}
+
 function thumbnailUrl(snippet: YouTubeSnippet): string | null {
   const thumbnails = snippet.thumbnails ?? {};
   for (const size of ['maxres', 'standard', 'high', 'medium', 'default']) {
@@ -267,6 +313,96 @@ function thumbnailUrl(snippet: YouTubeSnippet): string | null {
 
 function stringValue(value: unknown, maxLength: number): string {
   return typeof value === 'string' ? value.trim().slice(0, maxLength) : '';
+}
+
+function decodeHtml(value: string): string {
+  const named: Record<string, string> = {
+    amp: '&', quot: '"', apos: '\'', lt: '<', gt: '>', nbsp: ' ',
+  };
+  return value
+    .replace(/&#x([0-9a-f]+);?/gi, (_match, raw: string) =>
+      String.fromCodePoint(parseInt(raw, 16)))
+    .replace(/&#(\d+);?/g, (_match, raw: string) =>
+      String.fromCodePoint(parseInt(raw, 10)))
+    .replace(/&([a-z]+);/gi, (match, name: string) =>
+      named[name.toLowerCase()] ?? match)
+    .replace(/\\u0026/gi, '&')
+    .replace(/\\\//g, '/')
+    .replace(/\s+/g, ' ')
+    .trim();
+}
+
+function tagAttributes(tag: string): Record<string, string> {
+  const attributes: Record<string, string> = {};
+  const pattern = /([^\s=/>]+)\s*=\s*(?:"([^"]*)"|'([^']*)'|([^\s"'=<>]+))/g;
+  let match: RegExpExecArray | null;
+  while ((match = pattern.exec(tag)) != null) {
+    attributes[match[1].toLowerCase()] = match[2] ?? match[3] ?? match[4] ?? '';
+  }
+  return attributes;
+}
+
+function htmlMetadata(html: string): Map<string, string> {
+  const metadata = new Map<string, string>();
+  for (const match of html.matchAll(/<meta\b[^>]*>/gi)) {
+    const attributes = tagAttributes(match[0]);
+    const key = (attributes.property || attributes.name || '').toLowerCase();
+    const content = decodeHtml(attributes.content ?? '');
+    if (key && content && !metadata.has(key)) metadata.set(key, content);
+  }
+  return metadata;
+}
+
+function instagramImageUrl(value: unknown): string | null {
+  const raw = optionalHttpsUrl(value);
+  if (!raw) return null;
+  const host = new URL(raw).hostname.toLowerCase().replace(/\.$/, '');
+  const allowed = host === 'instagram.com' || host.endsWith('.instagram.com') ||
+    host === 'cdninstagram.com' || host.endsWith('.cdninstagram.com') ||
+    host === 'fbcdn.net' || host.endsWith('.fbcdn.net');
+  return allowed ? raw : null;
+}
+
+function instagramImageFromHtml(html: string, metadata: Map<string, string>): string | null {
+  for (const key of ['og:image', 'og:image:secure_url', 'twitter:image']) {
+    const image = instagramImageUrl(metadata.get(key));
+    if (image) return image;
+  }
+  for (const pattern of [
+    /"display_url"\s*:\s*"([^"]+)"/i,
+    /"thumbnail_src"\s*:\s*"([^"]+)"/i,
+    /"thumbnail_url"\s*:\s*"([^"]+)"/i,
+  ]) {
+    const match = pattern.exec(html);
+    const image = instagramImageUrl(match ? decodeHtml(match[1]) : '');
+    if (image) return image;
+  }
+  return null;
+}
+
+function instagramCaptionFromEmbed(html: string): string {
+  const candidates: string[] = [];
+  for (const match of html.matchAll(/<p\b[^>]*>([\s\S]*?)<\/p>/gi)) {
+    const value = decodeHtml(match[1].replace(/<[^>]+>/g, ' '));
+    if (!value || /^A post shared by\b/i.test(value) ||
+        /^View this post on Instagram/i.test(value)) continue;
+    candidates.push(value);
+  }
+  return stringValue(candidates.sort((a, b) => b.length - a.length)[0], 300);
+}
+
+function instagramCaptionFromPage(metadata: Map<string, string>): string {
+  const description = metadata.get('og:description') ??
+    metadata.get('twitter:description') ?? '';
+  const quoted = /:\s*["“]([\s\S]+?)["”]\.?$/.exec(description);
+  const candidate = quoted?.[1] ?? description;
+  if (/^(See Instagram|Instagram photos)/i.test(candidate)) return '';
+  return stringValue(candidate, 300);
+}
+
+function instagramAuthorFromPage(metadata: Map<string, string>): string {
+  const title = metadata.get('og:title') ?? metadata.get('twitter:title') ?? '';
+  return stringValue(title.split(/\s+[•|]\s+Instagram/i)[0], 160);
 }
 
 function isoDate(value: unknown): string | null {
@@ -430,9 +566,15 @@ function instagramPreviewFromCache(
   if (!(fetchedAt instanceof admin.firestore.Timestamp)) return null;
   if (Date.now() - fetchedAt.toMillis() > CACHE_TTL_MS) return null;
   if (data.provider !== 'instagram' || data.shortcode !== shortcode) return null;
+  if (data.metadataVersion !== INSTAGRAM_METADATA_VERSION) return null;
 
   const embedHtml = stringValue(data.embedHtml, 100_000);
-  if (!embedHtml || !embedHtml.includes('class="instagram-media"')) return null;
+  const thumbnailUrl = instagramImageUrl(data.thumbnailUrl);
+  const previewMode = data.previewMode === 'embed' &&
+      embedHtml.includes('class="instagram-media"')
+    ? 'embed'
+    : (thumbnailUrl ? 'image' : null);
+  if (!previewMode) return null;
   return {
     provider: 'instagram',
     contentType,
@@ -441,15 +583,12 @@ function instagramPreviewFromCache(
     canonicalUrl,
     title: stringValue(data.title, 300) || 'Instagram에서 공유된 게시물',
     authorName: stringValue(data.authorName, 160),
-    thumbnailUrl: typeof data.thumbnailUrl === 'string' &&
-        data.thumbnailUrl.startsWith('https://')
-      ? data.thumbnailUrl
-      : null,
+    thumbnailUrl,
     aspectRatio: typeof data.aspectRatio === 'number' && data.aspectRatio > 0
       ? Math.min(2.4, Math.max(0.5, data.aspectRatio))
       : 1,
     embedHtml,
-    previewMode: 'embed',
+    previewMode,
     previewStatus: 'ready',
   };
 }
@@ -520,40 +659,80 @@ async function fetchInstagramPreview(
   endpoint.searchParams.set('url', canonicalUrl);
   endpoint.searchParams.set('omitscript', 'true');
 
-  let response: Record<string, unknown>;
-  try {
-    response = await fetchJson(endpoint, 'graph.facebook.com');
-  } catch (error) {
+  const embedPageUrl = new URL(`${canonicalUrl}embed/captioned/`);
+  const [oEmbedResult, pageResult, embedPageResult] = await Promise.allSettled([
+    fetchJson(endpoint, 'graph.facebook.com'),
+    fetchHtml(new URL(canonicalUrl), 'www.instagram.com'),
+    fetchHtml(embedPageUrl, 'www.instagram.com'),
+  ]);
+
+  const response = oEmbedResult.status === 'fulfilled' ? oEmbedResult.value : {};
+  if (oEmbedResult.status === 'rejected') {
     functions.logger.warn('Instagram oEmbed request failed.', {
       shortcode,
-      error: error instanceof Error ? error.message : 'unknown',
+      error: oEmbedResult.reason instanceof Error ? oEmbedResult.reason.message : 'unknown',
     });
+  }
+
+  const pageHtml = pageResult.status === 'fulfilled' ? pageResult.value : '';
+  const embedPageHtml = embedPageResult.status === 'fulfilled' ? embedPageResult.value : '';
+  const pageMetadata = htmlMetadata(pageHtml);
+  const embedPageMetadata = htmlMetadata(embedPageHtml);
+  const rawEmbedHtml = stringValue(response.html, 100_000);
+  let safeEmbedHtml = '';
+  if (rawEmbedHtml) {
+    try {
+      safeEmbedHtml = instagramEmbedHtml(rawEmbedHtml);
+    } catch (error) {
+      functions.logger.warn('Instagram returned unusable embed HTML.', {
+        shortcode,
+        error: error instanceof Error ? error.message : 'unknown',
+      });
+    }
+  }
+  const thumbnail = instagramImageUrl(response.thumbnail_url) ??
+    instagramImageFromHtml(pageHtml, pageMetadata) ??
+    instagramImageFromHtml(embedPageHtml, embedPageMetadata);
+  const thumbnailWidth = Number(response.thumbnail_width);
+  const thumbnailHeight = Number(response.thumbnail_height);
+  const metadataWidth = Number(pageMetadata.get('og:image:width') ??
+    embedPageMetadata.get('og:image:width'));
+  const metadataHeight = Number(pageMetadata.get('og:image:height') ??
+    embedPageMetadata.get('og:image:height'));
+  const resolvedWidth = Number.isFinite(thumbnailWidth) && thumbnailWidth > 0
+    ? thumbnailWidth : metadataWidth;
+  const resolvedHeight = Number.isFinite(thumbnailHeight) && thumbnailHeight > 0
+    ? thumbnailHeight : metadataHeight;
+  const aspectRatio = Number.isFinite(resolvedWidth) &&
+      Number.isFinite(resolvedHeight) && resolvedWidth > 0 && resolvedHeight > 0
+    ? Math.min(2.4, Math.max(0.5, resolvedWidth / resolvedHeight))
+    : 1;
+  const title = stringValue(response.title, 300) ||
+    instagramCaptionFromEmbed(rawEmbedHtml) ||
+    instagramCaptionFromPage(pageMetadata) ||
+    instagramCaptionFromPage(embedPageMetadata);
+  const authorName = stringValue(response.author_name, 160) ||
+    instagramAuthorFromPage(pageMetadata) ||
+    instagramAuthorFromPage(embedPageMetadata);
+  if (!safeEmbedHtml && !thumbnail) {
     throw callableError(
       'unavailable',
-      'instagram-oembed-error',
+      'instagram-metadata-error',
       'Instagram preview is temporarily unavailable.',
     );
   }
-
-  const thumbnail = optionalHttpsUrl(response.thumbnail_url);
-  const thumbnailWidth = Number(response.thumbnail_width);
-  const thumbnailHeight = Number(response.thumbnail_height);
-  const aspectRatio = Number.isFinite(thumbnailWidth) &&
-      Number.isFinite(thumbnailHeight) && thumbnailWidth > 0 && thumbnailHeight > 0
-    ? Math.min(2.4, Math.max(0.5, thumbnailWidth / thumbnailHeight))
-    : 1;
   return {
     provider: 'instagram',
     contentType,
     shortcode,
     originalUrl,
     canonicalUrl,
-    title: stringValue(response.title, 300) || 'Instagram에서 공유된 게시물',
-    authorName: stringValue(response.author_name, 160),
+    title: title || 'Instagram에서 공유된 게시물',
+    authorName,
     thumbnailUrl: thumbnail,
     aspectRatio,
-    embedHtml: instagramEmbedHtml(response.html),
-    previewMode: 'embed',
+    embedHtml: safeEmbedHtml,
+    previewMode: safeEmbedHtml ? 'embed' : 'image',
     previewStatus: 'ready',
   };
 }
@@ -573,6 +752,8 @@ async function writeInstagramPreviewCache(preview: InstagramLinkPreview): Promis
         thumbnailUrl: preview.thumbnailUrl,
         aspectRatio: preview.aspectRatio,
         embedHtml: preview.embedHtml,
+        previewMode: preview.previewMode,
+        metadataVersion: INSTAGRAM_METADATA_VERSION,
         fetchedAt: admin.firestore.FieldValue.serverTimestamp(),
       });
   } catch (error) {

@@ -530,93 +530,172 @@ class _FriendCategoriesScreenState extends State<FriendCategoriesScreen>
 
   void _showDeleteConfirmDialog(FriendCategory category) {
     if (!mounted) return;
+    final l10n = AppLocalizations.of(context)!;
+    final messageParts =
+        l10n.deleteCategoryConfirm(category.name).split('\n\n');
+    final question = messageParts.first;
+    final supportingMessage = messageParts.skip(1).join('\n\n');
 
-    showDialog(
+    showDialog<void>(
       context: context,
-      builder: (context) => AlertDialog(
-        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
-        title: Text(
-          AppLocalizations.of(context)!.deleteCategory ?? "",
-          style: const TextStyle(
-            fontFamily: 'Inter',
-            fontFamilyFallback: const ['NotoSansKR'],
-            fontSize: 18,
-            fontWeight: FontWeight.w600,
-            color: Color(0xFF111827),
-          ),
-        ),
-        content: Text(
-          AppLocalizations.of(context)!.deleteCategoryConfirm(category.name),
-          style: const TextStyle(
-            fontFamily: 'Inter',
-            fontFamilyFallback: const ['NotoSansKR'],
-            fontSize: 14,
-            fontWeight: FontWeight.w400,
-            color: Color(0xFF6B7280),
-          ),
-        ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(context),
-            child: Text(
-              AppLocalizations.of(context)!.cancel ?? "",
-              style: const TextStyle(
-                fontFamily: 'Inter',
-                fontFamilyFallback: const ['NotoSansKR'],
-                fontSize: 14,
-                fontWeight: FontWeight.w600,
-                color: Color(0xFF6B7280),
-              ),
-            ),
-          ),
-          ElevatedButton(
-            style: ElevatedButton.styleFrom(
-              backgroundColor: const Color(0xFFEF4444),
-              foregroundColor: Colors.white,
-              elevation: 0,
-              shape: RoundedRectangleBorder(
-                borderRadius: BorderRadius.circular(8),
-              ),
-            ),
-            onPressed: () async {
-              final success =
-                  await _categoryService.deleteCategory(category.id);
-              if (!context.mounted) return;
-              Navigator.pop(context);
-              if (!mounted) return;
+      useSafeArea: true,
+      barrierColor: Colors.black.withValues(alpha: 0.38),
+      builder: (dialogContext) {
+        final media = MediaQuery.of(dialogContext);
+        final compact = media.size.width < 360;
 
-              if (success) {
-                setState(() {
-                  _friendCountCache.removeWhere(
-                    (key, _) => key.startsWith('${category.id}_'),
-                  );
-                });
-                ScaffoldMessenger.of(context).showSnackBar(
-                  SnackBar(
-                      content: Text(
-                          AppLocalizations.of(context)!.categoryDeleted ?? "")),
-                );
-              } else {
-                ScaffoldMessenger.of(context).showSnackBar(
-                  SnackBar(
-                      content: Text(
-                          AppLocalizations.of(context)!.categoryDeleteFailed ??
-                              "")),
-                );
-              }
-            },
-            child: Text(
-              AppLocalizations.of(context)!.delete ?? "",
-              style: const TextStyle(
-                fontFamily: 'Inter',
-                fontFamilyFallback: const ['NotoSansKR'],
-                fontSize: 14,
-                fontWeight: FontWeight.w600,
+        return MediaQuery.withClampedTextScaling(
+          maxScaleFactor: 1.25,
+          child: SafeArea(
+            minimum: const EdgeInsets.symmetric(vertical: 16),
+            child: Dialog(
+              backgroundColor: Colors.white,
+              surfaceTintColor: Colors.white,
+              elevation: 0,
+              insetPadding: EdgeInsets.symmetric(
+                horizontal: compact ? 14 : 20,
+              ),
+              shape: RoundedRectangleBorder(
+                borderRadius: BorderRadius.circular(compact ? 20 : 24),
+              ),
+              child: ConstrainedBox(
+                constraints: const BoxConstraints(maxWidth: 400),
+                child: SingleChildScrollView(
+                  padding: EdgeInsets.fromLTRB(
+                    compact ? 18 : 24,
+                    compact ? 20 : 26,
+                    compact ? 18 : 24,
+                    compact ? 14 : 18,
+                  ),
+                  child: Column(
+                    mainAxisSize: MainAxisSize.min,
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(
+                        l10n.deleteCategory,
+                        style: TextStyle(
+                          fontFamily: 'Inter',
+                          fontFamilyFallback: const ['NotoSansKR'],
+                          fontSize: compact ? 19 : 20,
+                          fontWeight: FontWeight.w700,
+                          color: const Color(0xFF111827),
+                          height: 1.2,
+                          letterSpacing: -0.3,
+                        ),
+                      ),
+                      SizedBox(height: compact ? 16 : 20),
+                      Text(
+                        question,
+                        style: TextStyle(
+                          fontFamily: 'Inter',
+                          fontFamilyFallback: const ['NotoSansKR'],
+                          fontSize: compact ? 14 : 15,
+                          fontWeight: FontWeight.w500,
+                          color: const Color(0xFF344054),
+                          height: 1.45,
+                          letterSpacing: -0.2,
+                        ),
+                      ),
+                      if (supportingMessage.isNotEmpty) ...[
+                        const SizedBox(height: 12),
+                        Text(
+                          supportingMessage,
+                          style: TextStyle(
+                            fontFamily: 'Inter',
+                            fontFamilyFallback: const ['NotoSansKR'],
+                            fontSize: compact ? 12.5 : 13.5,
+                            fontWeight: FontWeight.w400,
+                            color: const Color(0xFF667085),
+                            height: 1.45,
+                            letterSpacing: -0.1,
+                          ),
+                        ),
+                      ],
+                      SizedBox(height: compact ? 20 : 24),
+                      Row(
+                        children: [
+                          Expanded(
+                            child: TextButton(
+                              onPressed: () => Navigator.pop(dialogContext),
+                              style: TextButton.styleFrom(
+                                foregroundColor: const Color(0xFF667085),
+                                minimumSize: const Size(0, 44),
+                                padding:
+                                    const EdgeInsets.symmetric(horizontal: 8),
+                              ),
+                              child: Text(
+                                l10n.cancel,
+                                maxLines: 1,
+                                overflow: TextOverflow.ellipsis,
+                                style: const TextStyle(
+                                  fontFamily: 'Inter',
+                                  fontFamilyFallback: ['NotoSansKR'],
+                                  fontSize: 14,
+                                  fontWeight: FontWeight.w600,
+                                ),
+                              ),
+                            ),
+                          ),
+                          const SizedBox(width: 8),
+                          Expanded(
+                            child: TextButton(
+                              style: TextButton.styleFrom(
+                                foregroundColor: BrandColors.error,
+                                minimumSize: const Size(0, 44),
+                                padding:
+                                    const EdgeInsets.symmetric(horizontal: 8),
+                              ),
+                              onPressed: () async {
+                                final success = await _categoryService
+                                    .deleteCategory(category.id);
+                                if (!dialogContext.mounted) return;
+                                Navigator.pop(dialogContext);
+                                if (!mounted) return;
+
+                                if (success) {
+                                  setState(() {
+                                    _friendCountCache.removeWhere(
+                                      (key, _) =>
+                                          key.startsWith('${category.id}_'),
+                                    );
+                                  });
+                                  ScaffoldMessenger.of(this.context)
+                                      .showSnackBar(
+                                    SnackBar(
+                                        content: Text(l10n.categoryDeleted)),
+                                  );
+                                } else {
+                                  ScaffoldMessenger.of(this.context)
+                                      .showSnackBar(
+                                    SnackBar(
+                                      content: Text(l10n.categoryDeleteFailed),
+                                    ),
+                                  );
+                                }
+                              },
+                              child: Text(
+                                l10n.delete,
+                                maxLines: 1,
+                                overflow: TextOverflow.ellipsis,
+                                style: const TextStyle(
+                                  fontFamily: 'Inter',
+                                  fontFamilyFallback: ['NotoSansKR'],
+                                  fontSize: 14,
+                                  fontWeight: FontWeight.w700,
+                                ),
+                              ),
+                            ),
+                          ),
+                        ],
+                      ),
+                    ],
+                  ),
+                ),
               ),
             ),
           ),
-        ],
-      ),
+        );
+      },
     );
   }
 

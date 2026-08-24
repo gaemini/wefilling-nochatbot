@@ -77,6 +77,29 @@ void main() {
     expect(userB!.items.single.id, 'b-post');
   });
 
+  test('keeps every tag when a multi-tag saved post is restored', () async {
+    final post = Post(
+      id: 'multi-tag-saved-post',
+      title: '',
+      content: 'saved content',
+      author: 'tester',
+      categoryKeys: const ['content', 'photo', 'cafe'],
+      createdAt: DateTime(2026, 8, 25),
+      userId: 'author-1',
+    );
+
+    await service.saveSavedPosts('user-1', [post]);
+    MyPageCacheService.clearMemory();
+
+    final cached = await MyPageCacheService().readSavedPosts('user-1');
+
+    expect(cached, isNotNull);
+    expect(
+      cached!.items.single.categoryKeys,
+      const ['content', 'photo', 'cafe'],
+    );
+  });
+
   test('round-trips meetup reviews through the persistent cache', () async {
     final review = ReviewPost(
       id: 'review-1',

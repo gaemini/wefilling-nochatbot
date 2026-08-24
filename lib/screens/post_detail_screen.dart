@@ -41,6 +41,7 @@ import '../ui/dialogs/block_dialog.dart';
 import '../ui/dialogs/report_dialog.dart';
 import '../ui/snackbar/app_snackbar.dart';
 import '../ui/widgets/post_action_group.dart';
+import '../ui/widgets/adaptive_post_image_frame.dart';
 import '../ui/widgets/instagram_embed_preview.dart';
 import '../ui/widgets/shared_link_preview_card.dart';
 import '../utils/responsive_helper.dart';
@@ -2369,60 +2370,56 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
   Widget _buildEditorialPostContent() {
     final l10n = AppLocalizations.of(context)!;
     final content = _getUnifiedBodyText(_currentPost);
-    final hasContent = content.isNotEmpty;
-    final contentFontSize = context.rf(16).clamp(15.5, 17.0).toDouble();
+    final contentFontSize = context.rf(15).clamp(14.5, 16.0).toDouble();
+    final horizontalPadding = context.rs(8).clamp(7.0, 9.0).toDouble();
     final standaloneImageUrls = _currentPost.standaloneImageUrls;
 
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        const SizedBox(height: DesignTokens.s4),
+        SizedBox(height: context.rs(10).clamp(8.0, 12.0).toDouble()),
         Padding(
-          padding: const EdgeInsets.symmetric(horizontal: DesignTokens.s16),
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              _buildEditorialAuthorRow(l10n),
-              if (hasContent) ...[
-                const SizedBox(height: 2),
-                PostLinkifiedText(
-                  text: content,
-                  textAlign: TextAlign.left,
-                  style: TextStyle(
-                    fontFamily: 'Inter',
-                    fontFamilyFallback: const ['NotoSansKR'],
-                    fontSize: contentFontSize,
-                    fontWeight: FontWeight.w500,
-                    color: BrandColors.textPrimary,
-                    height: 1.24,
-                    letterSpacing: -0.3,
+          padding: EdgeInsets.symmetric(horizontal: horizontalPadding),
+          child: Center(
+            child: ConstrainedBox(
+              constraints: const BoxConstraints(maxWidth: 640),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  MediaQuery.withClampedTextScaling(
+                    maxScaleFactor: 1.25,
+                    child: _buildEditorialAuthorBlock(
+                      l10n,
+                      content: content,
+                      contentFontSize: contentFontSize,
+                    ),
                   ),
-                ),
-              ],
-              if (_currentPost.linkPreview case final preview?) ...[
-                const SizedBox(height: DesignTokens.s12),
-                if (preview.isInstagramEmbed)
-                  InstagramEmbedPreview(
-                    preview: preview,
-                    fallbackImageUrl:
-                        _currentPost.sharedLinkCardFallbackImageUrl,
-                  )
-                else
-                  SharedLinkPreviewCard(
-                    preview: preview,
-                    fallbackImageUrl:
-                        _currentPost.sharedLinkCardFallbackImageUrl,
-                  ),
-              ],
-            ],
+                  if (_currentPost.linkPreview case final preview?) ...[
+                    const SizedBox(height: DesignTokens.s8),
+                    if (preview.isInstagramEmbed)
+                      InstagramEmbedPreview(
+                        preview: preview,
+                        fallbackImageUrl:
+                            _currentPost.sharedLinkCardFallbackImageUrl,
+                      )
+                    else
+                      SharedLinkPreviewCard(
+                        preview: preview,
+                        fallbackImageUrl:
+                            _currentPost.sharedLinkCardFallbackImageUrl,
+                      ),
+                  ],
+                ],
+              ),
+            ),
           ),
         ),
         if (standaloneImageUrls.isNotEmpty) ...[
           Padding(
-            padding: const EdgeInsets.fromLTRB(
-              DesignTokens.s16,
-              6,
-              DesignTokens.s16,
+            padding: EdgeInsets.fromLTRB(
+              horizontalPadding,
+              DesignTokens.s8,
+              horizontalPadding,
               0,
             ),
             child: Center(
@@ -2430,8 +2427,8 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
                 constraints: const BoxConstraints(maxWidth: 640),
                 child: ClipRRect(
                   borderRadius: BorderRadius.circular(DesignTokens.r12),
-                  child: AspectRatio(
-                    aspectRatio: 3 / 4,
+                  child: AdaptivePostImageFrame(
+                    imageUrl: standaloneImageUrls.first,
                     child: Stack(
                       fit: StackFit.expand,
                       children: [
@@ -2467,11 +2464,15 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
                                 child: Hero(
                                   tag: 'post_image_$index',
                                   child: ColoredBox(
-                                    color: BrandColors.imagePlaceholder,
+                                    color: index == 0
+                                        ? BrandColors.imagePlaceholder
+                                        : Colors.white,
                                     child: SizedBox.expand(
                                       child: _buildRetryableImage(
                                         imageUrl,
-                                        fit: BoxFit.cover,
+                                        fit: index == 0
+                                            ? BoxFit.cover
+                                            : BoxFit.contain,
                                         isFullScreen: false,
                                       ),
                                     ),
@@ -2517,13 +2518,18 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
           ),
           if (standaloneImageUrls.length > 1)
             Padding(
-              padding: const EdgeInsets.only(top: DesignTokens.s8),
+              padding: const EdgeInsets.only(top: DesignTokens.s4),
               child: _buildImageDotsIndicator(
                 count: standaloneImageUrls.length,
               ),
             ),
           Padding(
-            padding: const EdgeInsets.fromLTRB(16, 5, 16, 0),
+            padding: EdgeInsets.fromLTRB(
+              horizontalPadding,
+              DesignTokens.s4,
+              horizontalPadding,
+              0,
+            ),
             child: Center(
               child: ConstrainedBox(
                 constraints: const BoxConstraints(maxWidth: 640),
@@ -2537,16 +2543,31 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
         ],
         if (standaloneImageUrls.isEmpty)
           Padding(
-            padding: const EdgeInsets.fromLTRB(16, 5, 16, 0),
+            padding: EdgeInsets.fromLTRB(
+              horizontalPadding,
+              DesignTokens.s4,
+              horizontalPadding,
+              0,
+            ),
             child: _buildPostCategoryTags(l10n),
           ),
         if (_currentPost.type == 'poll')
           Padding(
-            padding: const EdgeInsets.fromLTRB(16, 8, 16, 0),
+            padding: EdgeInsets.fromLTRB(
+              horizontalPadding,
+              DesignTokens.s8,
+              horizontalPadding,
+              0,
+            ),
             child: PollPostWidget(postId: _currentPost.id),
           ),
         Padding(
-          padding: const EdgeInsets.fromLTRB(16, 2, 16, 0),
+          padding: EdgeInsets.fromLTRB(
+            horizontalPadding,
+            DesignTokens.s2,
+            horizontalPadding,
+            0,
+          ),
           child: Center(
             child: ConstrainedBox(
               constraints: const BoxConstraints(maxWidth: 640),
@@ -2568,15 +2589,21 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
     );
   }
 
-  Widget _buildEditorialAuthorRow(AppLocalizations l10n) {
+  Widget _buildEditorialAuthorBlock(
+    AppLocalizations l10n, {
+    required String content,
+    required double contentFontSize,
+  }) {
     final isAnonymous = _currentPost.isAnonymous;
     final authorName = isAnonymous ? l10n.anonymous : _currentPost.author;
     final canOpenProfile = !isAnonymous &&
         _currentPost.userId.isNotEmpty &&
         _currentPost.userId != 'deleted';
+    final avatarSize = context.rs(40).clamp(39.0, 42.0).toDouble();
+    final authorGap = context.rs(5).clamp(4.0, 6.0).toDouble();
 
     return Row(
-      crossAxisAlignment: CrossAxisAlignment.center,
+      crossAxisAlignment: CrossAxisAlignment.start,
       children: [
         Semantics(
           button: canOpenProfile,
@@ -2585,13 +2612,13 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
             behavior: HitTestBehavior.opaque,
             onTap: canOpenProfile ? _openAuthorProfile : null,
             child: SizedBox.square(
-              dimension: 40,
+              dimension: avatarSize,
               child: Center(
                 child: AudienceRing(
                   restricted: _currentPost.visibility == 'category',
-                  size: 36,
-                  ringWidth: 2.25,
-                  innerGap: 1.25,
+                  size: avatarSize,
+                  ringWidth: 1.5,
+                  innerGap: 0.5,
                   semanticLabel:
                       Localizations.localeOf(context).languageCode == 'ko'
                           ? '선택한 그룹에 공개된 포스트'
@@ -2601,70 +2628,90 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
                     photoUrl: _currentPost.authorPhotoURL,
                     photoVersion: 0,
                     isAnonymous: isAnonymous,
-                    size: 36,
+                    size: avatarSize,
                   ),
                 ),
               ),
             ),
           ),
         ),
-        const SizedBox(width: DesignTokens.s8),
+        SizedBox(width: authorGap),
         Expanded(
-          child: Wrap(
-            spacing: DesignTokens.s4,
-            runSpacing: DesignTokens.s2,
-            crossAxisAlignment: WrapCrossAlignment.center,
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              GestureDetector(
-                onTap: canOpenProfile ? _openAuthorProfile : null,
-                child: Text(
-                  authorName,
+              Row(
+                crossAxisAlignment: CrossAxisAlignment.center,
+                children: [
+                  Flexible(
+                    child: GestureDetector(
+                      onTap: canOpenProfile ? _openAuthorProfile : null,
+                      child: Text(
+                        authorName,
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                        style: TextStyle(
+                          fontFamily: 'Inter',
+                          fontFamilyFallback: const ['NotoSansKR'],
+                          fontSize: context.rf(16).clamp(14.5, 16.0).toDouble(),
+                          fontWeight: FontWeight.w700,
+                          color: BrandColors.textPrimary,
+                          height: 1.2,
+                          letterSpacing: -0.25,
+                        ),
+                      ),
+                    ),
+                  ),
+                  if (!isAnonymous &&
+                      _currentPost.authorNationality.trim().isNotEmpty) ...[
+                    const SizedBox(width: DesignTokens.s4),
+                    CountryFlagCircle(
+                      nationality: _currentPost.authorNationality,
+                      size: context.ri(12).clamp(11.0, 13.0).toDouble(),
+                    ),
+                  ],
+                  const SizedBox(width: DesignTokens.s4),
+                  const Text(
+                    '·',
+                    style: TextStyle(
+                      color: BrandColors.textTertiary,
+                      height: 1,
+                    ),
+                  ),
+                  const SizedBox(width: DesignTokens.s4),
+                  Text(
+                    _currentPost.getFormattedTime(context),
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    style: TextStyle(
+                      fontFamily: 'Inter',
+                      fontFamilyFallback: const ['NotoSansKR'],
+                      fontSize: context.rf(14).clamp(12.5, 14.0).toDouble(),
+                      fontWeight: FontWeight.w400,
+                      color: BrandColors.textTertiary,
+                      height: 1.2,
+                      letterSpacing: -0.15,
+                    ),
+                  ),
+                ],
+              ),
+              if (content.isNotEmpty) ...[
+                SizedBox(height: context.rs(3).clamp(2.0, 4.0).toDouble()),
+                PostLinkifiedText(
+                  text: content,
+                  textAlign: TextAlign.left,
                   style: TextStyle(
                     fontFamily: 'Inter',
                     fontFamilyFallback: const ['NotoSansKR'],
-                    fontSize: context.rf(16).clamp(15.0, 16.5).toDouble(),
-                    fontWeight: FontWeight.w700,
+                    fontSize: contentFontSize,
+                    fontWeight: FontWeight.w500,
                     color: BrandColors.textPrimary,
-                    height: 1.22,
+                    height: 1.28,
                     letterSpacing: -0.25,
                   ),
                 ),
-              ),
-              const Text(
-                '·',
-                style: TextStyle(color: BrandColors.textTertiary),
-              ),
-              Text(
-                _currentPost.getFormattedTime(context),
-                style: TextStyle(
-                  fontFamily: 'Inter',
-                  fontFamilyFallback: const ['NotoSansKR'],
-                  fontSize: context.rf(14).clamp(13.0, 14.5).toDouble(),
-                  fontWeight: FontWeight.w400,
-                  color: BrandColors.textTertiary,
-                  height: 1.22,
-                  letterSpacing: -0.15,
-                ),
-              ),
-              if (!isAnonymous &&
-                  _currentPost.authorNationality.trim().isNotEmpty)
-                CountryFlagCircle(
-                  nationality: _currentPost.authorNationality,
-                  size: 15,
-                ),
+              ],
             ],
-          ),
-        ),
-        IconButton(
-          tooltip: l10n.moreOptions,
-          onPressed: _openPostActionsSheet,
-          padding: EdgeInsets.zero,
-          visualDensity: VisualDensity.compact,
-          constraints: const BoxConstraints.tightFor(width: 32, height: 32),
-          icon: const Icon(
-            Icons.more_vert_rounded,
-            size: 22,
-            color: BrandColors.iconDefault,
           ),
         ),
       ],
@@ -2708,6 +2755,18 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
         ),
         title: const SizedBox.shrink(),
         centerTitle: false,
+        actions: [
+          IconButton(
+            tooltip: AppLocalizations.of(context)!.moreOptions,
+            onPressed: _openPostActionsSheet,
+            icon: const Icon(
+              Icons.more_vert_rounded,
+              size: 22,
+              color: BrandColors.iconDefault,
+            ),
+          ),
+          const SizedBox(width: DesignTokens.s4),
+        ],
       ),
       body: Stack(
         children: [

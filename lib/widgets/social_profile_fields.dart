@@ -491,16 +491,33 @@ class SocialProfilePreview extends StatelessWidget {
         ],
         if (conversationStarter.trim().isNotEmpty) ...[
           const SizedBox(height: 18),
-          Text(
-            conversationStarter.trim(),
-            style: const TextStyle(
-              fontFamily: 'Inter',
-              fontFamilyFallback: const ['NotoSansKR'],
-              fontSize: 14,
-              fontWeight: FontWeight.w600,
-              color: Color(0xFF0F172A),
-              height: 1.45,
-            ),
+          Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text(
+                languageCode == 'ko' ? '그대에게 물어보고 싶어요' : "I'd like to ask you",
+                style: const TextStyle(
+                  fontFamily: 'Inter',
+                  fontFamilyFallback: ['NotoSansKR'],
+                  fontSize: 12,
+                  fontWeight: FontWeight.w600,
+                  color: Color(0xFF64748B),
+                  height: 1.35,
+                ),
+              ),
+              const SizedBox(height: 5),
+              Text(
+                conversationStarter.trim(),
+                style: const TextStyle(
+                  fontFamily: 'Inter',
+                  fontFamilyFallback: ['NotoSansKR'],
+                  fontSize: 16,
+                  fontWeight: FontWeight.w600,
+                  color: Color(0xFF0F172A),
+                  height: 1.45,
+                ),
+              ),
+            ],
           ),
         ],
       ],

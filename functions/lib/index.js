@@ -1964,6 +1964,7 @@ async function resolveVerifiedCommentReplyRecipient(comment, postId) {
         return {
             userId: parentAuthorId,
             parentCommentId,
+            parentAuthorId,
             targetCommentId: parentCommentId,
         };
     }
@@ -1985,6 +1986,7 @@ async function resolveVerifiedCommentReplyRecipient(comment, postId) {
     return {
         userId: targetUserId,
         parentCommentId,
+        parentAuthorId: normalizeUidLoose(parent.userId),
         targetCommentId: requestedTargetId,
     };
 }
@@ -2015,7 +2017,16 @@ async function isVerifiedCommentNotificationRecipient(notification) {
     if (normalizeUidLoose(comment.postId) !== postId)
         return false;
     const verifiedReply = await resolveVerifiedCommentReplyRecipient(comment, postId);
-    return (verifiedReply === null || verifiedReply === void 0 ? void 0 : verifiedReply.userId) === recipientId;
+    if (!verifiedReply)
+        return false;
+    if (verifiedReply.userId === recipientId)
+        return true;
+    // A nested reply belongs to the top-level comment thread as well. Notify
+    // that thread owner even when the user replied to another nested comment,
+    // but only when the stored recipient comment is the verified parent.
+    const recipientCommentId = normalizeUidLoose(data.recipientCommentId);
+    return verifiedReply.parentAuthorId === recipientId &&
+        recipientCommentId === verifiedReply.parentCommentId;
 }
 // 댓글 생성 시 게시글 작성자에게 알림 (new_comment)
 exports.onCommentCreated = functions.firestore
@@ -2077,7 +2088,22 @@ exports.onCommentCreated = functions.firestore
         // ✅ (A) 게시글 새 댓글 알림: 게시글 작성자에게
         // - 자기 게시글에 자신이 댓글을 단 경우는 알림 제외
         // - 답글(parentCommentId)이고, 부모 댓글 작성자=게시글 작성자라면 중복 알림을 피하기 위해 new_comment는 생략
-        const skipPostAuthorNewComment = (verifiedReply === null || verifiedReply === void 0 ? void 0 : verifiedReply.userId) === postAuthorId;
+        const replyRecipients = verifiedReply
+            ? [
+                {
+                    userId: verifiedReply.userId,
+                    recipientCommentId: verifiedReply.targetCommentId,
+                },
+                ...(verifiedReply.parentAuthorId &&
+                    verifiedReply.parentAuthorId !== verifiedReply.userId
+                    ? [{
+                            userId: verifiedReply.parentAuthorId,
+                            recipientCommentId: verifiedReply.parentCommentId,
+                        }]
+                    : []),
+            ]
+            : [];
+        const skipPostAuthorNewComment = replyRecipients.some((recipient) => recipient.userId === postAuthorId);
         if (postAuthorId && postAuthorId !== commenterId && !skipPostAuthorNewComment) {
             if (await hasBlockRelationship(postAuthorId, commenterId)) {
                 console.log('⏭️ 차단 관계(new_comment) - 알림 스킵');
@@ -2126,9 +2152,11 @@ exports.onCommentCreated = functions.firestore
         // - parentCommentId가 있는 경우만(=대댓글)
         if (verifiedReply) {
             try {
-                const replyRecipientId = verifiedReply.userId;
-                // 자기 댓글에 자신이 답글을 단 경우는 알림 제외
-                if (replyRecipientId !== commenterId) {
+                for (const replyRecipient of replyRecipients) {
+                    const replyRecipientId = replyRecipient.userId;
+                    // 자기 댓글에 자신이 답글을 단 경우는 알림 제외
+                    if (replyRecipientId === commenterId)
+                        continue;
                     if (await hasBlockRelationship(replyRecipientId, commenterId)) {
                         console.log('⏭️ 차단 관계(comment_reply) - 알림 스킵');
                     }
@@ -2162,7 +2190,8 @@ exports.onCommentCreated = functions.firestore
                                     postIsAnonymous: postIsAnonymous,
                                     parentCommentId: verifiedReply.parentCommentId,
                                     replyToCommentId: verifiedReply.targetCommentId,
-                                    replyToUserId: replyRecipientId,
+                                    replyToUserId: verifiedReply.userId,
+                                    recipientCommentId: replyRecipient.recipientCommentId,
                                     commentId: context.params.commentId,
                                     replierName: postIsAnonymous ? null : commenterName,
                                 },

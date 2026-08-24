@@ -285,6 +285,15 @@ class PostService {
     }
   }
 
+  List<String> _parseStringList(dynamic raw) {
+    if (raw is! Iterable) return const <String>[];
+    return raw
+        .map((value) => value?.toString().trim() ?? '')
+        .where((value) => value.isNotEmpty)
+        .toSet()
+        .toList(growable: false);
+  }
+
   Post _buildPostFromFirestore(String id, Map<String, dynamic> data) {
     DateTime createdAt = DateTime.now();
     final rawCreatedAt = data['createdAt'];
@@ -303,16 +312,14 @@ class PostService {
       authorPhotoURL: data['authorPhotoURL'] ?? '',
       category: data['category'] ?? '일반',
       categoryKey: data['categoryKey']?.toString(),
-      categoryKeys: data['categoryKeys'] is List
-          ? List<String>.from(data['categoryKeys'])
-          : const <String>[],
+      categoryKeys: _parseStringList(data['categoryKeys']),
       createdAt: createdAt,
       userId: data['ownerId'] ?? data['userId'] ?? '',
       commentCount: data['commentCount'] ?? 0,
       likes: data['likes'] ?? 0,
       viewCount: data['viewCount'] ?? 0,
-      likedBy: List<String>.from(data['likedBy'] ?? []),
-      imageUrls: List<String>.from(data['imageUrls'] ?? []),
+      likedBy: _parseStringList(data['likedBy']),
+      imageUrls: _parseStringList(data['imageUrls']),
       linkPreview: data['linkPreview'] is Map
           ? SharedLinkPreview.fromMap(
               Map<String, dynamic>.from(data['linkPreview'] as Map),
@@ -320,10 +327,11 @@ class PostService {
           : null,
       visibility: data['visibilityMode'] ?? data['visibility'] ?? 'public',
       isAnonymous: data['isAnonymous'] ?? false,
-      visibleToCategoryIds: List<String>.from(
-          data['sourceGroupIds'] ?? data['visibleToCategoryIds'] ?? []),
-      allowedUserIds: List<String>.from(
-        data['audienceUserIdsFrozen'] ?? data['allowedUserIds'] ?? [],
+      visibleToCategoryIds: _parseStringList(
+        data['sourceGroupIds'] ?? data['visibleToCategoryIds'],
+      ),
+      allowedUserIds: _parseStringList(
+        data['audienceUserIdsFrozen'] ?? data['allowedUserIds'],
       ),
       visibilitySchemaVersion:
           (data['visibilitySchemaVersion'] as num?)?.toInt() ?? 0,
@@ -348,6 +356,7 @@ class PostService {
     String type = 'text', // 'text' | 'poll'
     List<String> pollOptions = const [], // type == 'poll'일 때만 사용
     SharedLinkPreview? linkPreview,
+    File? linkPreviewImageFile,
     String? requestedPostId,
     void Function(String postId)? onCreated,
   }) async {
@@ -391,11 +400,23 @@ class PostService {
               ? normalizedRequestedPostId
               : _firestore.collection('posts').doc().id;
 
+      // Instagram 작성 화면의 미디어는 피드/상세에서 WebView 없이도 동일하게
+      // 보이도록 첫 번째 포스트 미디어로 고정한다. 사용자가 첨부한 이미지에
+      // 이미 포함된 파일이면 경로 기준으로 중복 업로드하지 않는다.
+      final previewImagePath = linkPreviewImageFile?.path.trim() ?? '';
+      final hasPreviewImageFile = previewImagePath.isNotEmpty &&
+          linkPreviewImageFile != null &&
+          linkPreviewImageFile.existsSync();
+      final orderedImageFiles = <File>[
+        if (hasPreviewImageFile) linkPreviewImageFile,
+        ...?imageFiles?.where((file) => file.path != previewImagePath),
+      ];
+
       // 이미지 파일이 있는 경우 업로드 (병렬 처리로 성능 향상)
       List<String> imageUrls = [];
-      if (imageFiles != null && imageFiles.isNotEmpty) {
+      if (orderedImageFiles.isNotEmpty) {
         // 한번에 하나씩 순차적으로 업로드하지 않고, 병렬로 처리
-        final futures = imageFiles.map(
+        final futures = orderedImageFiles.map(
           (imageFile) => _storageService.uploadImage(imageFile),
         );
 
@@ -412,7 +433,7 @@ class PostService {
 
           // 사용자가 선택한 이미지 중 하나라도 실패하면 불완전한 게시글을
           // 만들지 않는다. 이미 올라간 파일은 아래 catch에서 정리한다.
-          if (imageUrls.length != imageFiles.length) {
+          if (imageUrls.length != orderedImageFiles.length) {
             for (final url in imageUrls) {
               try {
                 await _storageService.deleteImage(url);
@@ -450,6 +471,14 @@ class PostService {
       }
 
       try {
+        final persistedLinkPreview = linkPreview != null && hasPreviewImageFile
+            ? linkPreview.copyWith(
+                // Callable이 검증을 마친 뒤 imageUrls.first의 영구
+                // Firebase URL을 thumbnailUrl로 설정하게 한다.
+                thumbnailUrl: '',
+                previewStatus: 'ready',
+              )
+            : linkPreview;
         await FirebaseFunctions.instance
             .httpsCallable('createPostSecure')
             .call(<String, dynamic>{
@@ -464,7 +493,8 @@ class PostService {
           'isAnonymous': isAnonymous,
           'type': type,
           'pollOptions': cleanedPollOptions,
-          if (linkPreview != null) 'linkPreview': linkPreview.toMap(),
+          if (persistedLinkPreview != null)
+            'linkPreview': persistedLinkPreview.toMap(),
         }).timeout(const Duration(seconds: 30));
       } catch (error) {
         // Callable 응답만 유실됐을 수 있다. 동일 ID의 서버 문서를 먼저 확인해
@@ -1680,23 +1710,40 @@ class PostService {
         .collection('users')
         .doc(user.uid)
         .collection('savedPosts')
-        .orderBy('savedAt', descending: true)
         .snapshots()
         .asyncMap((savedSnapshot) async {
-      List<Post> savedPosts = [];
+      final references = savedSnapshot.docs
+          .map((savedDoc) {
+            final data = savedDoc.data();
+            final storedPostId = data['postId']?.toString().trim() ?? '';
+            final savedAt = data['savedAt'];
+            return (
+              postId: storedPostId.isNotEmpty ? storedPostId : savedDoc.id,
+              savedAtMillis:
+                  savedAt is Timestamp ? savedAt.millisecondsSinceEpoch : 0,
+            );
+          })
+          .where((reference) => reference.postId.isNotEmpty)
+          .toList()
+        ..sort((a, b) => b.savedAtMillis.compareTo(a.savedAtMillis));
 
-      for (var savedDoc in savedSnapshot.docs) {
+      // 문서별 순차 요청은 저장 수에 비례해 화면 반영을 늦춘다. 조회는
+      // 병렬로 수행하되 references의 정렬 순서로 결과를 다시 구성한다.
+      final postDocuments = await Future.wait(
+        references.map(
+          (reference) =>
+              _firestore.collection('posts').doc(reference.postId).get(),
+        ),
+      );
+      final savedPosts = <Post>[];
+      for (final postDoc in postDocuments) {
+        if (!postDoc.exists) continue;
         try {
-          final postId = savedDoc.data()['postId'] as String;
-          final postDoc =
-              await _firestore.collection('posts').doc(postId).get();
-
-          if (postDoc.exists) {
-            final data = postDoc.data()!;
-            savedPosts.add(_buildPostFromFirestore(postDoc.id, data));
-          }
-        } catch (e) {
-          Logger.error('저장된 게시글 로드 오류: $e');
+          savedPosts.add(
+            _buildPostFromFirestore(postDoc.id, postDoc.data()!),
+          );
+        } catch (error) {
+          Logger.error('저장된 게시글 파싱 오류: $error');
         }
       }
 

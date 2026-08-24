@@ -26,6 +26,7 @@ import '../../ui/dialogs/block_dialog.dart';
 import '../../ui/dialogs/report_dialog.dart';
 import '../../utils/logger.dart';
 import '../../utils/responsive_helper.dart';
+import 'adaptive_post_image_frame.dart';
 import 'audience_ring.dart';
 import 'post_action_group.dart';
 import 'poll_post_widget.dart';
@@ -974,7 +975,7 @@ class _OptimizedPostCardState extends State<OptimizedPostCard> {
                         const SizedBox(width: 4),
                         CountryFlagCircle(
                           nationality: post.authorNationality,
-                          size: 15,
+                          size: 12,
                         ),
                       ],
                       const SizedBox(width: 4),
@@ -1077,8 +1078,8 @@ class _OptimizedPostCardState extends State<OptimizedPostCard> {
     if (imageUrls.length == 1) {
       return ClipRRect(
         borderRadius: BorderRadius.circular(_imageRadius),
-        child: AspectRatio(
-          aspectRatio: 4 / 3,
+        child: AdaptivePostImageFrame(
+          imageUrl: imageUrls.first,
           child: CachedNetworkImage(
             imageUrl: imageUrls.first,
             cacheManager: AppImageCacheManager.instance,
@@ -1681,8 +1682,8 @@ class _ImageSliderState extends State<_ImageSlider> {
       borderRadius: BorderRadius.circular(widget.imageRadius),
       child: Stack(
         children: [
-          AspectRatio(
-            aspectRatio: 4 / 3,
+          AdaptivePostImageFrame(
+            imageUrl: widget.imageUrls.first,
             child: PageView.builder(
               controller: _pageController,
               itemCount: widget.imageUrls.length,
@@ -1692,15 +1693,18 @@ class _ImageSliderState extends State<_ImageSlider> {
                 });
               },
               itemBuilder: (context, index) {
-                return CachedNetworkImage(
-                  imageUrl: widget.imageUrls[index],
-                  cacheManager: AppImageCacheManager.instance,
-                  memCacheWidth: 800,
-                  fit: BoxFit.cover,
-                  fadeInDuration: const Duration(milliseconds: 100),
-                  fadeOutDuration: const Duration(milliseconds: 80),
-                  placeholder: (_, __) => const _PostImagePlaceholder(),
-                  errorWidget: (_, __, ___) => const _PostImageError(),
+                return ColoredBox(
+                  color: Colors.white,
+                  child: CachedNetworkImage(
+                    imageUrl: widget.imageUrls[index],
+                    cacheManager: AppImageCacheManager.instance,
+                    memCacheWidth: 800,
+                    fit: index == 0 ? BoxFit.cover : BoxFit.contain,
+                    fadeInDuration: const Duration(milliseconds: 100),
+                    fadeOutDuration: const Duration(milliseconds: 80),
+                    placeholder: (_, __) => const _PostImagePlaceholder(),
+                    errorWidget: (_, __, ___) => const _PostImageError(),
+                  ),
                 );
               },
             ),

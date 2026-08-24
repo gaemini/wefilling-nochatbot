@@ -22,6 +22,7 @@ class MyPageCacheEntry<T> {
 
 class MyPageCacheService {
   static const String boxName = 'my_page_tabs_v1';
+  static const int _schemaVersion = 2;
   static const Duration cacheTtl = Duration(minutes: 30);
 
   /// 같은 앱 실행 중에는 Hive 접근조차 반복하지 않도록 하는 1차 메모리 캐시.
@@ -178,7 +179,7 @@ class MyPageCacheService {
     }
   }
 
-  String _key(String userId, String tab) => '$userId::$tab';
+  String _key(String userId, String tab) => 'v$_schemaVersion::$userId::$tab';
 }
 
 class _RawCacheEntry {

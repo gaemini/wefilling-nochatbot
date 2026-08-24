@@ -1,9 +1,11 @@
 import 'dart:async';
 import 'dart:io';
+import 'dart:ui' as ui;
 
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:image_picker/image_picker.dart';
+import 'package:path_provider/path_provider.dart';
 import 'package:wechat_assets_picker/wechat_assets_picker.dart';
 
 import '../constants/app_constants.dart';
@@ -16,6 +18,7 @@ import '../models/shared_link_preview.dart';
 import '../models/user_profile.dart';
 import '../repositories/users_repository.dart';
 import '../services/friend_category_service.dart';
+import '../services/cache/app_image_cache_manager.dart';
 import '../services/post_service.dart';
 import '../services/shared_link_preview_service.dart';
 import '../ui/widgets/fullscreen_file_image_viewer.dart';
@@ -213,6 +216,61 @@ class _CreatePostScreenState extends State<CreatePostScreen> {
               );
     setState(() => _sharedLinkPreview = resolvedPreview);
     _checkCanProceed();
+  }
+
+  /// Instagram Embed는 작성 화면에서 실시간으로 보이지만 게시 후에는 피드마다
+  /// WebView를 만들 수 없다. 공유 payload 이미지가 없으면 현재 확인된 썸네일을
+  /// 게시 직전에 로컬 파일로 고정해 Firebase Storage에 영구 보관한다.
+  Future<File?> _resolvePersistentSharedPreviewImage() async {
+    if (_sharedLinkRemoved) return null;
+
+    if (_hasSharedPayloadImage) {
+      return File(_sharedPayloadImagePath);
+    }
+
+    final preview = _sharedLinkPreview;
+    if (preview == null || preview.provider != 'instagram') return null;
+
+    final thumbnailUrl = preview.thumbnailUrl.trim();
+    if (thumbnailUrl.isEmpty) return null;
+
+    try {
+      final cached = await AppImageCacheManager.instance.getSingleFile(
+        thumbnailUrl,
+        headers: const <String, String>{
+          HttpHeaders.acceptHeader: 'image/avif,image/webp,image/*,*/*;q=0.8',
+          HttpHeaders.refererHeader: 'https://www.instagram.com/',
+        },
+      ).timeout(const Duration(seconds: 15));
+      final bytes = await cached.readAsBytes();
+      if (bytes.isEmpty || bytes.length > 20 * 1024 * 1024) return null;
+
+      final codec = await ui.instantiateImageCodec(
+        bytes,
+        targetWidth: 8,
+        targetHeight: 8,
+      );
+      final frame = await codec.getNextFrame();
+      final isValid = frame.image.width > 0 && frame.image.height > 0;
+      frame.image.dispose();
+      codec.dispose();
+      if (!isValid) return null;
+
+      // 캐시 파일의 확장자는 응답에 따라 생략될 수 있다. 업로드 압축기가
+      // 안정적으로 처리하도록 실제 게시용 임시 파일은 jpg 경로로 고정한다.
+      final directory = await getTemporaryDirectory();
+      final requestId = widget.initialSharedRequest?.id
+              .replaceAll(RegExp(r'[^A-Za-z0-9_-]'), '') ??
+          DateTime.now().microsecondsSinceEpoch.toString();
+      final file = File(
+        '${directory.path}/wefilling-instagram-preview-$requestId.jpg',
+      );
+      await file.writeAsBytes(bytes, flush: true);
+      return file;
+    } catch (error) {
+      Logger.error('Instagram 게시용 썸네일 준비 실패: $error');
+      return null;
+    }
   }
 
   String _firstNonUrlLine(String text) {
@@ -779,6 +837,9 @@ class _CreatePostScreenState extends State<CreatePostScreen> {
       }
       if (!mounted) return;
 
+      final sharedPreviewImage = await _resolvePersistentSharedPreviewImage();
+      if (!mounted) return;
+
       if (_selectedImages.isNotEmpty) {
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
@@ -801,6 +862,7 @@ class _CreatePostScreenState extends State<CreatePostScreen> {
         type: 'text',
         pollOptions: const [],
         linkPreview: _sharedLinkRemoved ? null : _sharedLinkPreview,
+        linkPreviewImageFile: sharedPreviewImage,
         requestedPostId: _externalPostId(),
         onCreated: (postId) => createdPostId = postId,
       );

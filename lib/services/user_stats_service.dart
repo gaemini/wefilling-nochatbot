@@ -259,6 +259,10 @@ class UserStatsService {
           author: data['authorNickname'] ?? '',
           authorNationality: data['authorNationality'] ?? '', // 국적 정보 추가
           category: data['category'] ?? '일반', // 카테고리 추가
+          categoryKey: data['categoryKey']?.toString(),
+          categoryKeys: data['categoryKeys'] is List
+              ? List<String>.from(data['categoryKeys'])
+              : const <String>[],
           createdAt: data['createdAt'] != null
               ? (data['createdAt'] as Timestamp).toDate()
               : DateTime.now(),
@@ -316,6 +320,10 @@ class UserStatsService {
           author: data['authorNickname'] ?? '',
           authorNationality: data['authorNationality'] ?? '', // 국적 정보 추가
           category: data['category'] ?? '일반', // 카테고리 추가
+          categoryKey: data['categoryKey']?.toString(),
+          categoryKeys: data['categoryKeys'] is List
+              ? List<String>.from(data['categoryKeys'])
+              : const <String>[],
           createdAt: data['createdAt'] != null
               ? (data['createdAt'] as Timestamp).toDate()
               : DateTime.now(),

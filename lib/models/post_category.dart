@@ -29,6 +29,55 @@ enum PostCategory {
     return PostCategory.other;
   }
 
+  /// `categoryKey` 도입 전 저장된 한글·영문 카테고리도 현재의 안정적인
+  /// key로 복원한다. 새 글 저장 검증에는 [isSupportedKey]를 계속 사용해
+  /// 레거시 표시명이 다시 저장되는 것은 허용하지 않는다.
+  static PostCategory fromPersistedValue(Object? value) {
+    final raw = value?.toString().trim() ?? '';
+    if (raw.isEmpty) return PostCategory.other;
+
+    final direct = values.where((category) => category.key == raw);
+    if (direct.isNotEmpty) return direct.first;
+
+    final normalized = raw.toLowerCase().replaceAll(
+          RegExp(r'[\s·・_\-/&]+'),
+          '',
+        );
+    return switch (normalized) {
+      'style' || 'fashion' || '스타일' => PostCategory.style,
+      'create' ||
+      'restaurant' ||
+      'food' ||
+      '레스토랑' ||
+      '맛집' =>
+        PostCategory.create,
+      'photo' || 'photos' || '사진' => PostCategory.photo,
+      'content' || 'contents' || '콘텐츠' => PostCategory.content,
+      'cafe' || 'café' || '카페' => PostCategory.cafe,
+      'academicstudy' ||
+      'academicsstudy' ||
+      'academic' ||
+      'study' ||
+      '학업스터디' ||
+      '스터디' =>
+        PostCategory.academicStudy,
+      'bookswriting' ||
+      'bookwriting' ||
+      'books' ||
+      'writing' ||
+      '책글' =>
+        PostCategory.booksWriting,
+      'travellocal' ||
+      'travel' ||
+      'local' ||
+      '여행로컬' =>
+        PostCategory.travelLocal,
+      'global' || '글로벌' => PostCategory.global,
+      'other' || 'general' || 'normal' || '기타' || '일반' => PostCategory.other,
+      _ => PostCategory.other,
+    };
+  }
+
   static bool isSupportedKey(Object? value) {
     final normalized = value?.toString().trim() ?? '';
     return values.any((category) => category.key == normalized);

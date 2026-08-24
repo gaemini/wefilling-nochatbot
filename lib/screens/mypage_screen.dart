@@ -3,6 +3,9 @@
 // Instagram 스타일 후기 탭 추가
 // 기존 기능 유지 + 새로운 탭 구조
 
+import 'dart:async';
+import 'dart:math' as math;
+
 import 'package:flutter/material.dart';
 import 'package:flutter/rendering.dart' show ScrollCacheExtent;
 import 'package:flutter/services.dart';
@@ -70,6 +73,7 @@ class _MyPageScreenState extends State<MyPageScreen>
   Object? _userPostsError;
   Object? _reviewsError;
   Object? _savedPostsError;
+  StreamSubscription<List<Post>>? _savedPostsSubscription;
 
   @override
   void initState() {
@@ -97,6 +101,8 @@ class _MyPageScreenState extends State<MyPageScreen>
 
     _myPageCacheUserId = userId;
     final loadToken = ++_myPageLoadToken;
+    unawaited(_savedPostsSubscription?.cancel());
+    _savedPostsSubscription = null;
     _friendCountStream = userId == null
         ? Stream<int>.value(0)
         : _relationshipService.getFriendCount();
@@ -197,32 +203,35 @@ class _MyPageScreenState extends State<MyPageScreen>
       if (cached != null) _savedPosts = cached.items;
       _isLoadingSavedPosts = cached == null;
     });
-    if (cached?.isFresh == true) return;
 
-    try {
-      final posts = await _postService
-          .getSavedPosts()
-          .first
-          .timeout(const Duration(seconds: 20));
-      if (!_isCurrentLoad(userId, loadToken)) return;
-      await _myPageCacheService.saveSavedPosts(userId, posts);
-      if (!_isCurrentLoad(userId, loadToken)) return;
-      setState(() {
-        _savedPosts = posts;
-        _isLoadingSavedPosts = false;
-        _savedPostsError = null;
-      });
-    } catch (error) {
-      if (!_isCurrentLoad(userId, loadToken)) return;
-      setState(() {
-        _isLoadingSavedPosts = false;
-        if (_savedPosts == null) _savedPostsError = error;
-      });
-    }
+    // 저장 글은 다른 화면에서 언제든 추가/해제될 수 있다. 캐시는 초기
+    // 화면에만 즉시 사용하고, freshness와 관계없이 Firestore 스트림을
+    // 유지해야 마이페이지 탭도 같은 순간에 갱신된다.
+    await _savedPostsSubscription?.cancel();
+    if (!_isCurrentLoad(userId, loadToken)) return;
+    _savedPostsSubscription = _postService.getSavedPosts().listen(
+      (posts) async {
+        if (!_isCurrentLoad(userId, loadToken)) return;
+        setState(() {
+          _savedPosts = posts;
+          _isLoadingSavedPosts = false;
+          _savedPostsError = null;
+        });
+        await _myPageCacheService.saveSavedPosts(userId, posts);
+      },
+      onError: (Object error, StackTrace stackTrace) {
+        if (!_isCurrentLoad(userId, loadToken)) return;
+        setState(() {
+          _isLoadingSavedPosts = false;
+          if (_savedPosts == null) _savedPostsError = error;
+        });
+      },
+    );
   }
 
   @override
   void dispose() {
+    unawaited(_savedPostsSubscription?.cancel());
     _tabController.dispose();
     super.dispose();
   }
@@ -1222,9 +1231,10 @@ class _MyPageScreenState extends State<MyPageScreen>
     List<Post> posts, {
     required String storageKey,
   }) {
+    final metrics = _PostListMetrics.from(context);
     return ListView.separated(
       key: PageStorageKey('$storageKey.list'),
-      padding: const EdgeInsets.symmetric(horizontal: 16),
+      padding: EdgeInsets.symmetric(horizontal: metrics.horizontalPadding),
       scrollCacheExtent: const ScrollCacheExtent.viewport(1.25),
       itemCount: posts.length,
       separatorBuilder: (_, __) => const Divider(
@@ -1238,22 +1248,26 @@ class _MyPageScreenState extends State<MyPageScreen>
 
   Widget _buildBorderlessPostRow(Post post) {
     final l10n = AppLocalizations.of(context)!;
-    final metadata = post.postCategory.label(l10n);
-    const thumbnailSize = 84.0;
+    final metadata = post.postCategories
+        .map((category) => category.label(l10n))
+        .toSet()
+        .join(' · ');
+    final metrics = _PostListMetrics.from(context);
 
     return Material(
       color: Colors.white,
       child: InkWell(
         onTap: () => _openPostDetail(post.id),
         child: Padding(
-          padding: const EdgeInsets.symmetric(vertical: 10),
+          padding: EdgeInsets.symmetric(vertical: metrics.verticalPadding),
           child: Row(
+            crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              _buildPostThumbnail(post, size: thumbnailSize),
-              const SizedBox(width: 12),
+              _buildPostThumbnail(post, size: metrics.thumbnailSize),
+              SizedBox(width: metrics.contentGap),
               Expanded(
                 child: SizedBox(
-                  height: thumbnailSize,
+                  height: metrics.rowHeight,
                   child: Column(
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
@@ -1261,46 +1275,53 @@ class _MyPageScreenState extends State<MyPageScreen>
                         post.displayText,
                         maxLines: 2,
                         overflow: TextOverflow.ellipsis,
-                        style: const TextStyle(
+                        style: TextStyle(
                           fontFamily: 'Inter',
-                          fontFamilyFallback: const ['NotoSansKR'],
-                          fontSize: 16,
+                          fontFamilyFallback: const <String>['NotoSansKR'],
+                          fontSize: metrics.titleFontSize,
                           fontWeight: FontWeight.w700,
-                          color: Color(0xFF111827),
+                          color: const Color(0xFF111827),
                           height: 1.25,
                         ),
                       ),
-                      const SizedBox(height: 5),
+                      SizedBox(height: metrics.titleGap),
                       Text(
                         DateFormat('yyyy.MM.dd').format(post.createdAt),
-                        style: const TextStyle(
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                        style: TextStyle(
                           fontFamily: 'Inter',
-                          fontFamilyFallback: const ['NotoSansKR'],
-                          fontSize: 13,
+                          fontFamilyFallback: const <String>['NotoSansKR'],
+                          fontSize: metrics.supportingFontSize,
                           fontWeight: FontWeight.w500,
-                          color: Color(0xFF9CA3AF),
+                          color: const Color(0xFF9CA3AF),
+                          height: 1.2,
                         ),
                       ),
                       const Spacer(),
+                      SizedBox(height: metrics.metadataGap),
                       Row(
                         children: [
-                          const Icon(
+                          Icon(
                             Icons.notes_rounded,
-                            size: 17,
-                            color: Color(0xFF9CA3AF),
+                            size: metrics.metadataIconSize,
+                            color: const Color(0xFF9CA3AF),
                           ),
-                          const SizedBox(width: 5),
+                          SizedBox(width: metrics.iconGap),
                           Expanded(
                             child: Text(
                               metadata,
                               maxLines: 1,
                               overflow: TextOverflow.ellipsis,
-                              style: const TextStyle(
+                              style: TextStyle(
                                 fontFamily: 'Inter',
-                                fontFamilyFallback: const ['NotoSansKR'],
-                                fontSize: 13,
+                                fontFamilyFallback: const <String>[
+                                  'NotoSansKR',
+                                ],
+                                fontSize: metrics.supportingFontSize,
                                 fontWeight: FontWeight.w500,
-                                color: Color(0xFF6B7280),
+                                color: const Color(0xFF6B7280),
+                                height: 1.2,
                               ),
                             ),
                           ),
@@ -1310,31 +1331,44 @@ class _MyPageScreenState extends State<MyPageScreen>
                   ),
                 ),
               ),
-              const SizedBox(width: 6),
+              SizedBox(width: metrics.trailingGap),
               SizedBox(
-                height: thumbnailSize,
+                height: metrics.rowHeight,
                 child: Align(
                   alignment: Alignment.bottomRight,
-                  child: Row(
-                    mainAxisSize: MainAxisSize.min,
-                    children: [
-                      const Icon(
-                        Icons.favorite_rounded,
-                        size: 18,
-                        color: BrandColors.textSecondary,
+                  child: ConstrainedBox(
+                    constraints: BoxConstraints(
+                      maxWidth: metrics.trailingMaxWidth,
+                    ),
+                    child: FittedBox(
+                      fit: BoxFit.scaleDown,
+                      alignment: Alignment.bottomRight,
+                      child: Row(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          Icon(
+                            Icons.favorite_rounded,
+                            size: metrics.likeIconSize,
+                            color: BrandColors.textSecondary,
+                          ),
+                          SizedBox(width: metrics.iconGap),
+                          Text(
+                            '${post.likes}',
+                            maxLines: 1,
+                            style: TextStyle(
+                              fontFamily: 'Inter',
+                              fontFamilyFallback: const <String>[
+                                'NotoSansKR',
+                              ],
+                              fontSize: metrics.supportingFontSize,
+                              fontWeight: FontWeight.w600,
+                              color: const Color(0xFF6B7280),
+                              height: 1.2,
+                            ),
+                          ),
+                        ],
                       ),
-                      const SizedBox(width: 4),
-                      Text(
-                        '${post.likes}',
-                        style: const TextStyle(
-                          fontFamily: 'Inter',
-                          fontFamilyFallback: const ['NotoSansKR'],
-                          fontSize: 13,
-                          fontWeight: FontWeight.w600,
-                          color: Color(0xFF6B7280),
-                        ),
-                      ),
-                    ],
+                    ),
                   ),
                 ),
               ),
@@ -1374,13 +1408,17 @@ class _MyPageScreenState extends State<MyPageScreen>
   }
 
   Widget _buildPostThumbnail(Post post, {double? size}) {
-    final image = post.imageUrls.isNotEmpty ? post.imageUrls.first : null;
+    final image = (post.imageUrls.isNotEmpty
+            ? post.imageUrls.first
+            : post.linkPreview?.thumbnailUrl.trim()) ??
+        '';
+    final hasImage = image.isNotEmpty;
     return SizedBox(
       width: size,
       height: size,
       child: ClipRRect(
         borderRadius: BorderRadius.circular(12),
-        child: image == null
+        child: !hasImage
             ? const ColoredBox(
                 color: Color(0xFFF3F4F6),
                 child: Icon(
@@ -2223,6 +2261,91 @@ class MyPageSettingsSheet {
   ) {
     showLogoutConfirmDialog(context, authProvider: authProvider);
   }
+}
+
+class _PostListMetrics {
+  const _PostListMetrics({
+    required this.horizontalPadding,
+    required this.verticalPadding,
+    required this.thumbnailSize,
+    required this.rowHeight,
+    required this.contentGap,
+    required this.trailingGap,
+    required this.titleGap,
+    required this.metadataGap,
+    required this.iconGap,
+    required this.titleFontSize,
+    required this.supportingFontSize,
+    required this.metadataIconSize,
+    required this.likeIconSize,
+    required this.trailingMaxWidth,
+  });
+
+  factory _PostListMetrics.from(BuildContext context) {
+    final width = MediaQuery.sizeOf(context).width;
+    final textScaler = MediaQuery.textScalerOf(context);
+    final compact = width < 360;
+    final wide = width >= 600;
+
+    final horizontalPadding = compact ? 12.0 : (wide ? 24.0 : 16.0);
+    final verticalPadding = compact ? 8.0 : (wide ? 12.0 : 10.0);
+    final thumbnailSize = compact ? 76.0 : (wide ? 92.0 : 84.0);
+    final contentGap = compact ? 10.0 : (wide ? 14.0 : 12.0);
+    final trailingGap = compact ? 4.0 : (wide ? 8.0 : 6.0);
+    final titleGap = compact ? 3.0 : (wide ? 5.0 : 4.0);
+    final metadataGap = compact ? 3.0 : (wide ? 5.0 : 4.0);
+    final iconGap = compact ? 3.0 : 4.0;
+    final titleFontSize = compact ? 15.0 : (wide ? 17.0 : 16.0);
+    final supportingFontSize = compact ? 12.0 : (wide ? 14.0 : 13.0);
+    final metadataIconSize = compact ? 16.0 : (wide ? 18.0 : 17.0);
+    final likeIconSize = compact ? 17.0 : (wide ? 19.0 : 18.0);
+    final trailingMaxWidth = compact ? 56.0 : (wide ? 84.0 : 72.0);
+
+    final titleBlockHeight = textScaler.scale(titleFontSize) * 1.25 * 2;
+    final supportingLineHeight = textScaler.scale(supportingFontSize) * 1.2;
+    final metadataLineHeight = math.max(
+      supportingLineHeight,
+      metadataIconSize,
+    );
+    final requiredHeight = titleBlockHeight +
+        titleGap +
+        supportingLineHeight +
+        metadataGap +
+        metadataLineHeight +
+        2;
+
+    return _PostListMetrics(
+      horizontalPadding: horizontalPadding,
+      verticalPadding: verticalPadding,
+      thumbnailSize: thumbnailSize,
+      rowHeight: math.max(thumbnailSize, requiredHeight),
+      contentGap: contentGap,
+      trailingGap: trailingGap,
+      titleGap: titleGap,
+      metadataGap: metadataGap,
+      iconGap: iconGap,
+      titleFontSize: titleFontSize,
+      supportingFontSize: supportingFontSize,
+      metadataIconSize: metadataIconSize,
+      likeIconSize: likeIconSize,
+      trailingMaxWidth: trailingMaxWidth,
+    );
+  }
+
+  final double horizontalPadding;
+  final double verticalPadding;
+  final double thumbnailSize;
+  final double rowHeight;
+  final double contentGap;
+  final double trailingGap;
+  final double titleGap;
+  final double metadataGap;
+  final double iconGap;
+  final double titleFontSize;
+  final double supportingFontSize;
+  final double metadataIconSize;
+  final double likeIconSize;
+  final double trailingMaxWidth;
 }
 
 /// TabBarView 바깥으로 잠시 이동해도 탭의 렌더 트리와 스크롤 상태를 유지한다.

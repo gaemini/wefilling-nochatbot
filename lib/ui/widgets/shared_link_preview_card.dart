@@ -1,7 +1,11 @@
+import 'dart:collection';
+
 import 'package:flutter/material.dart';
 import 'package:url_launcher/url_launcher.dart';
 
 import '../../models/shared_link_preview.dart';
+import '../../services/shared_link_preview_service.dart';
+import 'adaptive_post_image_frame.dart';
 
 class SharedLinkPreviewCard extends StatelessWidget {
   const SharedLinkPreviewCard({
@@ -10,12 +14,14 @@ class SharedLinkPreviewCard extends StatelessWidget {
     this.fallbackImageUrl = '',
     this.onRemove,
     this.compact = false,
+    this.resolveMissingMetadata = true,
   });
 
   final SharedLinkPreview preview;
   final String fallbackImageUrl;
   final VoidCallback? onRemove;
   final bool compact;
+  final bool resolveMissingMetadata;
 
   List<String> _effectiveImageUrls() {
     final candidates = <String>[];
@@ -39,22 +45,21 @@ class SharedLinkPreviewCard extends StatelessWidget {
       }
     }
 
-    // Older Instagram share documents may predate persisted thumbnail URLs.
-    // The canonical public media endpoint gives those cards a lightweight
-    // image candidate without creating a WebView for every feed row.
-    if (preview.provider == 'instagram') {
-      final shortcode = preview.shortcode.trim().isNotEmpty
-          ? preview.shortcode.trim()
-          : preview.contentId.trim();
-      if (RegExp(r'^[A-Za-z0-9_-]{3,100}$').hasMatch(shortcode)) {
-        final route = preview.contentType == 'reel' ? 'reel' : 'p';
-        addCandidate(
-          'https://www.instagram.com/$route/$shortcode/media/?size=l',
-        );
-      }
-    }
     return candidates;
   }
+
+  bool get _hasGenericInstagramTitle {
+    final title = preview.title.trim();
+    return title.isEmpty ||
+        title == 'Instagram에서 공유된 게시물' ||
+        title == 'Instagram에서 공유된 Reel';
+  }
+
+  bool get _shouldResolveInstagramMetadata =>
+      resolveMissingMetadata &&
+      preview.provider == 'instagram' &&
+      !preview.isLoading &&
+      (preview.thumbnailUrl.trim().isEmpty || _hasGenericInstagramTitle);
 
   String _providerLabel() {
     switch (preview.provider) {
@@ -108,6 +113,23 @@ class SharedLinkPreviewCard extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    if (_shouldResolveInstagramMetadata) {
+      return FutureBuilder<SharedLinkPreview>(
+        future: _InstagramPreviewUpgrade.resolve(preview),
+        initialData: preview,
+        builder: (context, snapshot) {
+          final upgraded = snapshot.data ?? preview;
+          return SharedLinkPreviewCard(
+            preview: upgraded,
+            fallbackImageUrl: fallbackImageUrl,
+            onRemove: onRemove,
+            compact: compact,
+            resolveMissingMetadata: false,
+          );
+        },
+      );
+    }
+
     final imageUrls = _effectiveImageUrls();
     final hasImage = imageUrls.isNotEmpty;
 
@@ -140,10 +162,8 @@ class SharedLinkPreviewCard extends StatelessWidget {
               if (hasImage)
                 ClipRRect(
                   borderRadius: BorderRadius.circular(14),
-                  child: AspectRatio(
-                    aspectRatio: preview.provider == 'instagram'
-                        ? (compact ? 16 / 9 : 4 / 5)
-                        : 16 / 9,
+                  child: AdaptivePostImageFrame(
+                    imageUrl: imageUrls.first,
                     child: Stack(
                       fit: StackFit.expand,
                       children: [
@@ -461,68 +481,84 @@ class _InstagramVisualSurface extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return DecoratedBox(
-      decoration: const BoxDecoration(
-        gradient: LinearGradient(
-          begin: Alignment.topLeft,
-          end: Alignment.bottomRight,
-          colors: [
-            Color(0xFF6366F1),
-            Color(0xFF8B5CF6),
-            Color(0xFFEC4899),
+    return const ColoredBox(
+      color: Color(0xFFF7F8FA),
+      child: Center(
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Icon(
+              Icons.photo_camera_outlined,
+              size: 30,
+              color: Color(0xFFC13584),
+            ),
+            SizedBox(height: 7),
+            Text(
+              'Instagram',
+              style: TextStyle(
+                fontFamily: 'Inter',
+                fontFamilyFallback: ['NotoSansKR'],
+                fontSize: 14,
+                fontWeight: FontWeight.w600,
+                color: Color(0xFF344054),
+              ),
+            ),
           ],
         ),
       ),
-      child: Stack(
-        fit: StackFit.expand,
-        children: [
-          const Positioned(
-            top: -36,
-            right: -22,
-            child: _SoftCircle(size: 130, opacity: 0.10),
-          ),
-          const Positioned(
-            left: -34,
-            bottom: -54,
-            child: _SoftCircle(size: 150, opacity: 0.08),
-          ),
-          Center(
-            child: Column(
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                Container(
-                  width: 48,
-                  height: 48,
-                  decoration: BoxDecoration(
-                    color: Colors.white.withValues(alpha: 0.18),
-                    shape: BoxShape.circle,
-                    border: Border.all(
-                      color: Colors.white.withValues(alpha: 0.32),
-                    ),
-                  ),
-                  child: const Icon(
-                    Icons.photo_camera_outlined,
-                    size: 26,
-                    color: Colors.white,
-                  ),
-                ),
-                const SizedBox(height: 8),
-                const Text(
-                  'Instagram',
-                  style: TextStyle(
-                    fontFamily: 'Inter',
-                    fontFamilyFallback: const ['NotoSansKR'],
-                    fontSize: 14,
-                    fontWeight: FontWeight.w600,
-                    color: Colors.white,
-                  ),
-                ),
-              ],
-            ),
-          ),
-        ],
-      ),
     );
+  }
+}
+
+class _InstagramPreviewUpgrade {
+  static const int _maximumEntries = 120;
+  static final LinkedHashMap<String, Future<SharedLinkPreview>> _requests =
+      LinkedHashMap<String, Future<SharedLinkPreview>>();
+
+  static bool _isPersistentPostImage(String value) {
+    final host = Uri.tryParse(value.trim())?.host.toLowerCase() ?? '';
+    return host == 'firebasestorage.googleapis.com' ||
+        host == 'storage.googleapis.com';
+  }
+
+  static Future<SharedLinkPreview> resolve(SharedLinkPreview current) {
+    final key = current.effectiveUrl;
+    final existing = _requests.remove(key);
+    if (existing != null) {
+      _requests[key] = existing;
+      return existing;
+    }
+
+    final request = SharedLinkPreviewService.instance.resolve(key).then(
+      (resolved) {
+        final resolvedTitle = resolved.title.trim();
+        final currentTitle = current.title.trim();
+        final resolvedIsGeneric = resolvedTitle.isEmpty ||
+            resolvedTitle == 'Instagram에서 공유된 게시물' ||
+            resolvedTitle == 'Instagram에서 공유된 Reel';
+        return resolved.copyWith(
+          title: resolvedIsGeneric && currentTitle.isNotEmpty
+              ? currentTitle
+              : resolved.title,
+          authorName: resolved.authorName.trim().isEmpty
+              ? current.authorName
+              : resolved.authorName,
+          // 게시 시 Firebase Storage에 고정한 이미지는 Meta CDN 주소보다
+          // 우선한다. 메타데이터 재조회가 카드/상세의 영구 이미지를 다시
+          // 만료 가능한 Instagram URL로 바꾸지 않게 한다.
+          thumbnailUrl: _isPersistentPostImage(current.thumbnailUrl)
+              ? current.thumbnailUrl
+              : (resolved.thumbnailUrl.trim().isEmpty
+                  ? current.thumbnailUrl
+                  : resolved.thumbnailUrl),
+        );
+      },
+    );
+    _requests[key] = request;
+    while (_requests.length > _maximumEntries) {
+      _requests.remove(_requests.keys.first);
+    }
+    return request;
   }
 }
 
@@ -590,7 +626,9 @@ class _ResilientNetworkImageState extends State<_ResilientNetworkImage> {
     final instagramHeaders = host == 'instagram.com' ||
             host.endsWith('.instagram.com') ||
             host == 'cdninstagram.com' ||
-            host.endsWith('.cdninstagram.com')
+            host.endsWith('.cdninstagram.com') ||
+            host == 'fbcdn.net' ||
+            host.endsWith('.fbcdn.net')
         ? const <String, String>{
             'Accept': 'image/avif,image/webp,image/*,*/*;q=0.8',
             'Referer': 'https://www.instagram.com/',
@@ -621,25 +659,6 @@ class _ResilientNetworkImageState extends State<_ResilientNetworkImage> {
         }
         return widget.fallback;
       },
-    );
-  }
-}
-
-class _SoftCircle extends StatelessWidget {
-  const _SoftCircle({required this.size, required this.opacity});
-
-  final double size;
-  final double opacity;
-
-  @override
-  Widget build(BuildContext context) {
-    return Container(
-      width: size,
-      height: size,
-      decoration: BoxDecoration(
-        color: Colors.white.withValues(alpha: opacity),
-        shape: BoxShape.circle,
-      ),
     );
   }
 }

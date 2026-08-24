@@ -24,7 +24,7 @@ List<String> _normalizePostCategoryKeys(
     normalized.add(raw);
   }
   if (normalized.isNotEmpty) return normalized;
-  return <String>[PostCategory.fromKey(legacyKey).key];
+  return <String>[PostCategory.fromPersistedValue(legacyKey).key];
 }
 
 class PollOption {
@@ -129,9 +129,14 @@ class Post {
     this.allowedUserIds = const [], // 허용된 사용자 ID 목록 (기본값: 빈 리스트)
     this.visibilitySchemaVersion = 0,
     this.visibilityLockedAt,
-  })  : categoryKeys = _normalizePostCategoryKeys(categoryKeys, categoryKey),
-        categoryKey =
-            _normalizePostCategoryKeys(categoryKeys, categoryKey).first;
+  })  : categoryKeys = _normalizePostCategoryKeys(
+          categoryKeys,
+          (categoryKey?.trim().isNotEmpty ?? false) ? categoryKey : category,
+        ),
+        categoryKey = _normalizePostCategoryKeys(
+          categoryKeys,
+          (categoryKey?.trim().isNotEmpty ?? false) ? categoryKey : category,
+        ).first;
 
   PostCategory get postCategory => PostCategory.fromKey(categoryKey);
   List<PostCategory> get postCategories =>

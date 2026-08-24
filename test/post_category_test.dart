@@ -33,6 +33,32 @@ void main() {
       expect(post.postCategory, PostCategory.other);
     });
 
+    test('Post.fromMap restores a legacy localized category', () {
+      final koreanPost = Post.fromMap(
+        {
+          'title': 'legacy cafe',
+          'content': 'content',
+          'category': '카페',
+          'createdAt': 0,
+        },
+        'legacy-cafe-id',
+      );
+      final englishPost = Post.fromMap(
+        {
+          'title': 'legacy travel',
+          'content': 'content',
+          'category': 'Travel & Local',
+          'createdAt': 0,
+        },
+        'legacy-travel-id',
+      );
+
+      expect(koreanPost.categoryKey, 'cafe');
+      expect(koreanPost.postCategory, PostCategory.cafe);
+      expect(englishPost.categoryKey, 'travel_local');
+      expect(englishPost.postCategory, PostCategory.travelLocal);
+    });
+
     test('Post normalizes unknown keys and stores a stable key', () {
       final post = Post(
         id: 'post-id',

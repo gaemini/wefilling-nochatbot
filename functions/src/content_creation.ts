@@ -173,10 +173,11 @@ function sharedLinkPreview(
   const embedHtml = inferredProvider === 'instagram'
     ? validatedInstagramEmbedHtml(value.embedHtml, normalizedCanonicalUrl)
     : '';
-  const previewMode = inferredProvider === 'instagram' &&
-      requestedPreviewMode === 'embed' && embedHtml
-    ? 'embed'
-    : (inferredProvider === 'youtube' ? 'image' : 'link');
+  const previewMode = inferredProvider === 'instagram'
+    ? (requestedPreviewMode === 'embed' && embedHtml
+      ? 'embed'
+      : (requestedPreviewMode === 'image' && thumbnailUrl ? 'image' : 'link'))
+    : 'image';
 
   return {
     provider: inferredProvider,
@@ -194,7 +195,7 @@ function sharedLinkPreview(
     ...(previewMode === 'embed' ? {embedHtml} : {}),
     fetchedAt: now,
     previewStatus: previewStatus === 'ready' &&
-        (inferredProvider === 'youtube' || previewMode === 'embed')
+        (inferredProvider === 'youtube' || previewMode !== 'link')
       ? 'ready'
       : 'unavailable',
   };
@@ -316,7 +317,9 @@ export const createPostSecure = functions.runWith({timeoutSeconds: 120, memory: 
     const user = await profile(uid);
     const now = admin.firestore.Timestamp.now();
     const rawLinkPreview = sharedLinkPreview(data.linkPreview, now);
-    const imageUrls = stringList(data.imageUrls, 10);
+    // 최대 15개의 사용자 첨부 이미지에 Instagram 카드용 영구 썸네일
+    // 한 장이 앞에 추가될 수 있다.
+    const imageUrls = stringList(data.imageUrls, 16);
     const linkPreview = sharedLinkPreviewWithImageFallback(
       rawLinkPreview,
       imageUrls,

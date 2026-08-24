@@ -17,6 +17,7 @@ import 'licenses_screen.dart';
 import '../main.dart';
 import '../l10n/app_localizations.dart';
 import '../constants/app_constants.dart';
+import '../config/app_config.dart';
 
 class AccountSettingsScreen extends StatefulWidget {
   const AccountSettingsScreen({Key? key}) : super(key: key);
@@ -188,7 +189,7 @@ class _AccountSettingsScreenState extends State<AccountSettingsScreen> {
                     Icons.info_outline,
                     _showAppInfoDialog,
                     subtitle:
-                        '${AppLocalizations.of(context)!.appVersion} 1.0.0',
+                        '${AppLocalizations.of(context)!.appVersion} ${AppConfig.fullVersion}',
                   ),
 
                   const SizedBox(height: 32),
@@ -495,118 +496,209 @@ class _AccountSettingsScreenState extends State<AccountSettingsScreen> {
 
   // 앱 정보 다이얼로그
   void _showAppInfoDialog() {
-    showDialog(
+    final l10n = AppLocalizations.of(context)!;
+    final currentYear = DateTime.now().year;
+
+    showDialog<void>(
       context: context,
-      builder: (context) => AlertDialog(
-        title: Row(
-          children: [
-            const Icon(Icons.apps, color: Color(0xFF6366F1)),
-            const SizedBox(width: 8),
-            Text(AppLocalizations.of(context)!.appInfoTitle),
-          ],
-        ),
-        content: SingleChildScrollView(
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              // 버전 정보
-              Text(
-                '${AppLocalizations.of(context)!.appVersion} 1.0.0',
-                style: const TextStyle(
-                  fontSize: 16,
-                  fontWeight: FontWeight.bold,
+      useSafeArea: true,
+      barrierColor: Colors.black.withValues(alpha: 0.38),
+      builder: (dialogContext) {
+        final media = MediaQuery.of(dialogContext);
+        final compact = media.size.width < 360;
+        final horizontalPadding = compact ? 18.0 : 24.0;
+        final maximumHeight =
+            media.size.height - media.padding.top - media.padding.bottom - 32;
+
+        return MediaQuery.withClampedTextScaling(
+          maxScaleFactor: 1.25,
+          child: SafeArea(
+            minimum: const EdgeInsets.symmetric(vertical: 16),
+            child: Dialog(
+              backgroundColor: Colors.white,
+              surfaceTintColor: Colors.white,
+              elevation: 0,
+              insetPadding: EdgeInsets.symmetric(
+                horizontal: compact ? 14 : 20,
+              ),
+              shape: RoundedRectangleBorder(
+                borderRadius: BorderRadius.circular(compact ? 20 : 24),
+              ),
+              child: ConstrainedBox(
+                constraints: BoxConstraints(
+                  maxWidth: 420,
+                  maxHeight: maximumHeight,
                 ),
-              ),
-              const SizedBox(height: 4),
-              Text(
-                AppLocalizations.of(context)!.appTaglineShort,
-                style: TextStyle(
-                  fontSize: 14,
-                  color: Colors.grey[600],
-                ),
-              ),
-              const SizedBox(height: 20),
-
-              // 저작권
-              Text(
-                AppLocalizations.of(context)!.copyright,
-                style: const TextStyle(fontSize: 12),
-              ),
-              const SizedBox(height: 16),
-
-              const Divider(),
-              const SizedBox(height: 16),
-
-              // 특허 정보
-              Row(
-                children: [
-                  const Icon(
-                    Icons.verified_outlined,
-                    size: 18,
-                    color: Color(0xFF6366F1),
+                child: SingleChildScrollView(
+                  padding: EdgeInsets.fromLTRB(
+                    horizontalPadding,
+                    compact ? 16 : 20,
+                    horizontalPadding,
+                    compact ? 12 : 16,
                   ),
-                  const SizedBox(width: 8),
-                  Text(
-                    AppLocalizations.of(context)!.patentPending,
-                    style: const TextStyle(
-                      fontSize: 14,
-                      fontWeight: FontWeight.bold,
-                      color: Color(0xFF6366F1),
-                    ),
+                  child: Column(
+                    mainAxisSize: MainAxisSize.min,
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Row(
+                        crossAxisAlignment: CrossAxisAlignment.center,
+                        children: [
+                          Image.asset(
+                            'assets/icons/app_logo_transparent.png',
+                            width: compact ? 38 : 44,
+                            height: compact ? 38 : 44,
+                            fit: BoxFit.contain,
+                          ),
+                          SizedBox(width: compact ? 10 : 12),
+                          Expanded(
+                            child: Text(
+                              AppConfig.appName,
+                              maxLines: 1,
+                              overflow: TextOverflow.ellipsis,
+                              style: TextStyle(
+                                fontFamily: 'Inter',
+                                fontFamilyFallback: const ['NotoSansKR'],
+                                fontSize: compact ? 21 : 23,
+                                fontWeight: FontWeight.w700,
+                                color: const Color(0xFF111827),
+                                height: 1.15,
+                                letterSpacing: -0.3,
+                              ),
+                            ),
+                          ),
+                          IconButton(
+                            onPressed: () => Navigator.pop(dialogContext),
+                            tooltip: MaterialLocalizations.of(dialogContext)
+                                .closeButtonTooltip,
+                            icon: const Icon(Icons.close_rounded),
+                            iconSize: 22,
+                            color: const Color(0xFF667085),
+                            padding: EdgeInsets.zero,
+                            constraints: const BoxConstraints.tightFor(
+                              width: 44,
+                              height: 44,
+                            ),
+                          ),
+                        ],
+                      ),
+                      SizedBox(height: compact ? 18 : 22),
+                      Text(
+                        '${l10n.appVersion} ${AppConfig.fullVersion}',
+                        style: TextStyle(
+                          fontFamily: 'Inter',
+                          fontFamilyFallback: const ['NotoSansKR'],
+                          fontSize: compact ? 15 : 16,
+                          fontWeight: FontWeight.w700,
+                          color: const Color(0xFF111827),
+                          height: 1.25,
+                          letterSpacing: -0.2,
+                        ),
+                      ),
+                      const SizedBox(height: 5),
+                      Text(
+                        l10n.appTaglineShort,
+                        style: TextStyle(
+                          fontFamily: 'Inter',
+                          fontFamilyFallback: const ['NotoSansKR'],
+                          fontSize: compact ? 13 : 14,
+                          fontWeight: FontWeight.w400,
+                          color: const Color(0xFF667085),
+                          height: 1.35,
+                          letterSpacing: -0.15,
+                        ),
+                      ),
+                      SizedBox(height: compact ? 18 : 22),
+                      Text(
+                        '© $currentYear Wefilling. All rights reserved.',
+                        style: TextStyle(
+                          fontFamily: 'Inter',
+                          fontFamilyFallback: const ['NotoSansKR'],
+                          fontSize: compact ? 11.5 : 12,
+                          fontWeight: FontWeight.w400,
+                          color: const Color(0xFF667085),
+                          height: 1.35,
+                        ),
+                      ),
+                      SizedBox(height: compact ? 24 : 28),
+                      Row(
+                        children: [
+                          const Icon(
+                            Icons.verified_outlined,
+                            size: 19,
+                            color: AppColors.pointColor,
+                          ),
+                          const SizedBox(width: 8),
+                          Expanded(
+                            child: Text(
+                              l10n.patentPending,
+                              style: TextStyle(
+                                fontFamily: 'Inter',
+                                fontFamilyFallback: const ['NotoSansKR'],
+                                fontSize: compact ? 14 : 15,
+                                fontWeight: FontWeight.w700,
+                                color: const Color(0xFF111827),
+                                height: 1.25,
+                                letterSpacing: -0.2,
+                              ),
+                            ),
+                          ),
+                        ],
+                      ),
+                      const SizedBox(height: 10),
+                      Text(
+                        l10n.patentApplicationNumber,
+                        style: TextStyle(
+                          fontFamily: 'Inter',
+                          fontFamilyFallback: const ['NotoSansKR'],
+                          fontSize: compact ? 12 : 13,
+                          fontWeight: FontWeight.w500,
+                          color: const Color(0xFF475467),
+                          height: 1.4,
+                          letterSpacing: -0.1,
+                        ),
+                      ),
+                      const SizedBox(height: 5),
+                      Text(
+                        l10n.patentInventionTitle,
+                        style: TextStyle(
+                          fontFamily: 'Inter',
+                          fontFamilyFallback: const ['NotoSansKR'],
+                          fontSize: compact ? 11.5 : 12.5,
+                          fontWeight: FontWeight.w400,
+                          color: const Color(0xFF667085),
+                          height: 1.45,
+                          letterSpacing: -0.1,
+                        ),
+                      ),
+                      SizedBox(height: compact ? 18 : 22),
+                      Align(
+                        alignment: Alignment.centerRight,
+                        child: TextButton(
+                          onPressed: () => Navigator.pop(dialogContext),
+                          style: TextButton.styleFrom(
+                            foregroundColor: AppColors.pointColor,
+                            minimumSize: const Size(72, 44),
+                            padding: const EdgeInsets.symmetric(horizontal: 12),
+                          ),
+                          child: Text(
+                            l10n.confirm,
+                            style: const TextStyle(
+                              fontFamily: 'Inter',
+                              fontFamilyFallback: ['NotoSansKR'],
+                              fontSize: 15,
+                              fontWeight: FontWeight.w700,
+                            ),
+                          ),
+                        ),
+                      ),
+                    ],
                   ),
-                ],
-              ),
-              const SizedBox(height: 8),
-              Text(
-                AppLocalizations.of(context)!.patentApplicationNumber,
-                style: TextStyle(
-                  fontSize: 12,
-                  color: Colors.grey[700],
                 ),
-              ),
-              const SizedBox(height: 4),
-              Text(
-                AppLocalizations.of(context)!.patentInventionTitle,
-                style: TextStyle(
-                  fontSize: 11,
-                  color: Colors.grey[600],
-                  height: 1.4,
-                ),
-              ),
-              const SizedBox(height: 12),
-              Text(
-                'Patent Pending',
-                style: TextStyle(
-                  fontSize: 11,
-                  color: Colors.grey[600],
-                  fontStyle: FontStyle.italic,
-                ),
-              ),
-              Text(
-                'Application No.: KR 10-2025-0187957',
-                style: TextStyle(
-                  fontSize: 10,
-                  color: Colors.grey[600],
-                  fontStyle: FontStyle.italic,
-                ),
-              ),
-            ],
-          ),
-        ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(context),
-            child: Text(
-              AppLocalizations.of(context)!.confirm,
-              style: const TextStyle(
-                color: Color(0xFF6366F1),
-                fontWeight: FontWeight.w600,
               ),
             ),
           ),
-        ],
-      ),
+        );
+      },
     );
   }
 }

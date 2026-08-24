@@ -78,6 +78,41 @@ void main() {
     expect(post.standaloneImageUrls, isEmpty);
   });
 
+  test('영구 저장된 Instagram 미리보기는 카드에만 쓰고 첨부 사진과 중복하지 않는다', () {
+    final post = Post.fromMap(<String, dynamic>{
+      'title': '',
+      'content': '공유 포스트',
+      'authorNickname': '작성자',
+      'categoryKey': 'content',
+      'categoryKeys': <String>['content'],
+      'createdAt': 1700000000000,
+      'userId': 'user-1',
+      'imageUrls': <String>[
+        'https://example.com/persisted-instagram-preview.jpg',
+        'https://example.com/user-attachment.jpg',
+      ],
+      'linkPreview': <String, dynamic>{
+        'provider': 'instagram',
+        'originalUrl': 'https://www.instagram.com/reel/AbC_123-x/',
+        'canonicalUrl': 'https://www.instagram.com/reel/AbC_123-x/',
+        'shortcode': 'AbC_123-x',
+        'contentType': 'reel',
+        'thumbnailUrl': 'https://example.com/persisted-instagram-preview.jpg',
+        'previewMode': 'embed',
+        'previewStatus': 'ready',
+      },
+    }, 'post-2');
+
+    expect(
+      post.sharedLinkCardFallbackImageUrl,
+      'https://example.com/persisted-instagram-preview.jpg',
+    );
+    expect(
+      post.standaloneImageUrls,
+      <String>['https://example.com/user-attachment.jpg'],
+    );
+  });
+
   test('Instagram embed 데이터와 query 없는 canonical URL을 유지한다', () {
     const canonicalUrl = 'https://www.instagram.com/reel/AbC_123-x/';
     const embedHtml =
@@ -98,6 +133,26 @@ void main() {
     expect(preview.hasThumbnail, isFalse);
     expect(preview.shortcode, 'AbC_123-x');
     expect(preview.toMap()['embedHtml'], embedHtml);
+  });
+
+  test('Instagram image 미리보기의 캡션과 썸네일을 캐시에 유지한다', () {
+    final preview = SharedLinkPreview.fromMap(const <String, dynamic>{
+      'provider': 'instagram',
+      'originalUrl': 'https://www.instagram.com/reel/AbC_123-x/',
+      'canonicalUrl': 'https://www.instagram.com/reel/AbC_123-x/',
+      'shortcode': 'AbC_123-x',
+      'contentType': 'reel',
+      'title': '공개 게시물 캡션',
+      'thumbnailUrl': 'https://scontent.cdninstagram.com/thumbnail.jpg',
+      'aspectRatio': 0.8,
+      'previewMode': 'image',
+      'previewStatus': 'ready',
+    });
+
+    expect(preview.title, '공개 게시물 캡션');
+    expect(preview.hasThumbnail, isTrue);
+    expect(preview.previewMode, 'image');
+    expect(preview.toMap()['thumbnailUrl'], contains('cdninstagram.com'));
   });
 
   test('Instagram fallback은 공유 파라미터를 제거하고 오류 문구를 사용하지 않는다', () {
@@ -193,14 +248,18 @@ void main() {
     await tester.pumpWidget(
       MaterialApp(
         home: Scaffold(
-          body: SharedLinkPreviewCard(preview: preview, compact: true),
+          body: SharedLinkPreviewCard(
+            preview: preview,
+            compact: true,
+            resolveMissingMetadata: false,
+          ),
         ),
       ),
     );
 
     expect(find.text('Instagram'), findsOneWidget);
     expect(find.text('Instagram에서 공유된 Reel'), findsOneWidget);
-    expect(find.text('원본에서 보기'), findsOneWidget);
+    expect(find.textContaining('원본에서 보기'), findsOneWidget);
 
     await tester.tap(find.text('Instagram에서 공유된 Reel'));
     await tester.pump();

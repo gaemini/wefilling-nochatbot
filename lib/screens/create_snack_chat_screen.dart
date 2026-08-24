@@ -243,7 +243,8 @@ class _CreateSnackChatScreenState extends State<CreateSnackChatScreen> {
               maxLines: 1,
               overflow: TextOverflow.ellipsis,
               style: TextStyle(
-                fontFamily: 'Pretendard',
+                fontFamily: 'Inter',
+                fontFamilyFallback: const ['NotoSansKR'],
                 fontSize: context.rf(18).clamp(16, 19).toDouble(),
                 fontWeight: FontWeight.w700,
                 color: const Color(0xFF111827),
@@ -268,7 +269,8 @@ class _CreateSnackChatScreenState extends State<CreateSnackChatScreen> {
                     Text(
                       '${_selectedParticipantIds.length}',
                       style: const TextStyle(
-                        fontFamily: 'Pretendard',
+                        fontFamily: 'Inter',
+                        fontFamilyFallback: const ['NotoSansKR'],
                         fontSize: 14,
                         fontWeight: FontWeight.w700,
                       ),
@@ -277,7 +279,8 @@ class _CreateSnackChatScreenState extends State<CreateSnackChatScreen> {
                     Text(
                       l10n.next,
                       style: const TextStyle(
-                        fontFamily: 'Pretendard',
+                        fontFamily: 'Inter',
+                        fontFamilyFallback: const ['NotoSansKR'],
                         fontSize: 14,
                         fontWeight: FontWeight.w700,
                       ),
@@ -311,7 +314,8 @@ class _CreateSnackChatScreenState extends State<CreateSnackChatScreen> {
                     : Text(
                         l10n.confirm,
                         style: const TextStyle(
-                          fontFamily: 'Pretendard',
+                          fontFamily: 'Inter',
+                          fontFamilyFallback: const ['NotoSansKR'],
                           fontSize: 14,
                           fontWeight: FontWeight.w800,
                         ),
@@ -364,7 +368,8 @@ class _CreateSnackChatScreenState extends State<CreateSnackChatScreen> {
                     child: Text(
                       l10n.snackChatNoFriendsSelected,
                       style: const TextStyle(
-                        fontFamily: 'Pretendard',
+                        fontFamily: 'Inter',
+                        fontFamilyFallback: const ['NotoSansKR'],
                         fontSize: 13,
                         fontWeight: FontWeight.w600,
                         color: Color(0xFF94A3B8),
@@ -393,13 +398,15 @@ class _CreateSnackChatScreenState extends State<CreateSnackChatScreen> {
               controller: _searchController,
               textInputAction: TextInputAction.search,
               style: const TextStyle(
-                fontFamily: 'Pretendard',
+                fontFamily: 'Inter',
+                fontFamilyFallback: const ['NotoSansKR'],
                 fontSize: 14,
               ),
               decoration: InputDecoration(
                 hintText: l10n.searchByName,
                 hintStyle: const TextStyle(
-                  fontFamily: 'Pretendard',
+                  fontFamily: 'Inter',
+                  fontFamilyFallback: const ['NotoSansKR'],
                   fontSize: 14,
                   color: Color(0xFF6B7280),
                 ),
@@ -441,7 +448,8 @@ class _CreateSnackChatScreenState extends State<CreateSnackChatScreen> {
           child: Text(
             l10n.snackChatFriendList,
             style: const TextStyle(
-              fontFamily: 'Pretendard',
+              fontFamily: 'Inter',
+              fontFamilyFallback: const ['NotoSansKR'],
               fontSize: 14,
               fontWeight: FontWeight.w700,
               color: Color(0xFF64748B),
@@ -455,7 +463,8 @@ class _CreateSnackChatScreenState extends State<CreateSnackChatScreen> {
                   child: Text(
                     l10n.snackChatNoFriendsToInvite,
                     style: const TextStyle(
-                      fontFamily: 'Pretendard',
+                      fontFamily: 'Inter',
+                      fontFamilyFallback: const ['NotoSansKR'],
                       color: Color(0xFF64748B),
                     ),
                   ),
@@ -507,7 +516,8 @@ class _CreateSnackChatScreenState extends State<CreateSnackChatScreen> {
                     maxLines: 1,
                     overflow: TextOverflow.ellipsis,
                     style: const TextStyle(
-                      fontFamily: 'Pretendard',
+                      fontFamily: 'Inter',
+                      fontFamilyFallback: const ['NotoSansKR'],
                       fontSize: 14,
                       fontWeight: FontWeight.w600,
                       color: Color(0xFF111827),
@@ -569,7 +579,8 @@ class _CreateSnackChatScreenState extends State<CreateSnackChatScreen> {
                   Text(
                     l10n.snackChatRoomTitle,
                     style: TextStyle(
-                      fontFamily: 'Pretendard',
+                      fontFamily: 'Inter',
+                      fontFamilyFallback: const ['NotoSansKR'],
                       fontSize: context.rf(15).clamp(14, 16).toDouble(),
                       fontWeight: FontWeight.w800,
                       color: const Color(0xFF111827),
@@ -587,7 +598,8 @@ class _CreateSnackChatScreenState extends State<CreateSnackChatScreen> {
                       }
                     },
                     style: TextStyle(
-                      fontFamily: 'Pretendard',
+                      fontFamily: 'Inter',
+                      fontFamilyFallback: const ['NotoSansKR'],
                       fontSize: context.rf(15).clamp(14, 16).toDouble(),
                       fontWeight: FontWeight.w500,
                       height: 1.35,
@@ -596,7 +608,8 @@ class _CreateSnackChatScreenState extends State<CreateSnackChatScreen> {
                     decoration: InputDecoration(
                       hintText: l10n.snackChatRoomTitleHint,
                       hintStyle: TextStyle(
-                        fontFamily: 'Pretendard',
+                        fontFamily: 'Inter',
+                        fontFamilyFallback: const ['NotoSansKR'],
                         fontSize: context.rf(15).clamp(14, 16).toDouble(),
                         fontWeight: FontWeight.w400,
                         color: const Color(0xFF98A2B3),
@@ -624,7 +637,8 @@ class _CreateSnackChatScreenState extends State<CreateSnackChatScreen> {
                   Text(
                     l10n.snackChatVisibilityDuration,
                     style: TextStyle(
-                      fontFamily: 'Pretendard',
+                      fontFamily: 'Inter',
+                      fontFamilyFallback: const ['NotoSansKR'],
                       fontSize: context.rf(15).clamp(14, 16).toDouble(),
                       fontWeight: FontWeight.w800,
                       color: const Color(0xFF111827),
@@ -634,7 +648,8 @@ class _CreateSnackChatScreenState extends State<CreateSnackChatScreen> {
                   Text(
                     l10n.snackChatVisibilityDurationHint,
                     style: TextStyle(
-                      fontFamily: 'Pretendard',
+                      fontFamily: 'Inter',
+                      fontFamilyFallback: const ['NotoSansKR'],
                       fontSize: context.rf(12.5).clamp(12, 13.5).toDouble(),
                       fontWeight: FontWeight.w500,
                       height: 1.35,
@@ -725,7 +740,8 @@ class _CreateSnackChatScreenState extends State<CreateSnackChatScreen> {
                     maxLines: 1,
                     overflow: TextOverflow.ellipsis,
                     style: TextStyle(
-                      fontFamily: 'Pretendard',
+                      fontFamily: 'Inter',
+                      fontFamilyFallback: const ['NotoSansKR'],
                       fontSize: context.rf(14).clamp(13, 15).toDouble(),
                       fontWeight: selected ? FontWeight.w800 : FontWeight.w600,
                       color: selected
@@ -798,7 +814,8 @@ class _CreateSnackChatScreenState extends State<CreateSnackChatScreen> {
                 overflow: TextOverflow.ellipsis,
                 textAlign: TextAlign.center,
                 style: const TextStyle(
-                  fontFamily: 'Pretendard',
+                  fontFamily: 'Inter',
+                  fontFamilyFallback: const ['NotoSansKR'],
                   fontSize: 12,
                   fontWeight: FontWeight.w600,
                   color: Color(0xFF374151),
@@ -840,7 +857,8 @@ class _CreateSnackChatScreenState extends State<CreateSnackChatScreen> {
       child: Text(
         label.isEmpty ? '?' : label[0],
         style: TextStyle(
-          fontFamily: 'Pretendard',
+          fontFamily: 'Inter',
+          fontFamilyFallback: const ['NotoSansKR'],
           fontSize: avatarSize * 0.34,
           fontWeight: FontWeight.w700,
           color: const Color(0xFF6B7280),

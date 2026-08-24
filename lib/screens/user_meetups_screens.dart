@@ -60,7 +60,8 @@ class _UserMeetupsScreenState extends State<UserMeetupsScreen>
             maxLines: 1,
             overflow: TextOverflow.ellipsis,
             style: TextStyle(
-              fontFamily: 'Pretendard',
+              fontFamily: 'Inter',
+              fontFamilyFallback: const ['NotoSansKR'],
               fontSize: context.rf(18).clamp(17, 19).toDouble(),
               fontWeight: FontWeight.w700,
               color: const Color(0xFF111827),
@@ -85,12 +86,14 @@ class _UserMeetupsScreenState extends State<UserMeetupsScreen>
                 labelPadding:
                     EdgeInsets.symmetric(horizontal: width < 360 ? 6 : 10),
                 labelStyle: TextStyle(
-                  fontFamily: 'Pretendard',
+                  fontFamily: 'Inter',
+                  fontFamilyFallback: const ['NotoSansKR'],
                   fontSize: context.rf(14).clamp(13, 15).toDouble(),
                   fontWeight: FontWeight.w700,
                 ),
                 unselectedLabelStyle: TextStyle(
-                  fontFamily: 'Pretendard',
+                  fontFamily: 'Inter',
+                  fontFamilyFallback: const ['NotoSansKR'],
                   fontSize: context.rf(14).clamp(13, 15).toDouble(),
                   fontWeight: FontWeight.w500,
                 ),
@@ -228,7 +231,8 @@ class _UserMeetupsScreenState extends State<UserMeetupsScreen>
                                 formattedDate,
                                 maxLines: 1,
                                 style: TextStyle(
-                                  fontFamily: 'Pretendard',
+                                  fontFamily: 'Inter',
+                                  fontFamilyFallback: const ['NotoSansKR'],
                                   fontSize: context
                                       .rf(12.5)
                                       .clamp(11.5, 13)
@@ -244,7 +248,8 @@ class _UserMeetupsScreenState extends State<UserMeetupsScreen>
                                 maxLines: 1,
                                 overflow: TextOverflow.ellipsis,
                                 style: const TextStyle(
-                                  fontFamily: 'Pretendard',
+                                  fontFamily: 'Inter',
+                                  fontFamilyFallback: const ['NotoSansKR'],
                                   fontSize: 12,
                                   fontWeight: FontWeight.w500,
                                   color: Color(0xFF8B93A1),
@@ -257,7 +262,8 @@ class _UserMeetupsScreenState extends State<UserMeetupsScreen>
                                 maxLines: 1,
                                 overflow: TextOverflow.ellipsis,
                                 style: const TextStyle(
-                                  fontFamily: 'Pretendard',
+                                  fontFamily: 'Inter',
+                                  fontFamilyFallback: const ['NotoSansKR'],
                                   fontSize: 11.5,
                                   fontWeight: FontWeight.w600,
                                   color: Color(0xFF667085),
@@ -278,7 +284,8 @@ class _UserMeetupsScreenState extends State<UserMeetupsScreen>
                                 maxLines: 2,
                                 overflow: TextOverflow.ellipsis,
                                 style: TextStyle(
-                                  fontFamily: 'Pretendard',
+                                  fontFamily: 'Inter',
+                                  fontFamilyFallback: const ['NotoSansKR'],
                                   fontSize:
                                       context.rf(14).clamp(13, 15).toDouble(),
                                   fontWeight: FontWeight.w700,
@@ -344,7 +351,8 @@ class _UserMeetupsScreenState extends State<UserMeetupsScreen>
   }
 
   TextStyle get _metadataStyle => const TextStyle(
-        fontFamily: 'Pretendard',
+        fontFamily: 'Inter',
+        fontFamilyFallback: const ['NotoSansKR'],
         fontSize: 12.5,
         fontWeight: FontWeight.w500,
         color: Color(0xFF667085),
@@ -418,7 +426,8 @@ class _UserMeetupsScreenState extends State<UserMeetupsScreen>
               message,
               textAlign: TextAlign.center,
               style: const TextStyle(
-                fontFamily: 'Pretendard',
+                fontFamily: 'Inter',
+                fontFamilyFallback: const ['NotoSansKR'],
                 fontSize: 14,
                 fontWeight: FontWeight.w600,
                 color: Color(0xFF667085),
@@ -447,7 +456,8 @@ class _UserMeetupsScreenState extends State<UserMeetupsScreen>
               message,
               textAlign: TextAlign.center,
               style: const TextStyle(
-                fontFamily: 'Pretendard',
+                fontFamily: 'Inter',
+                fontFamilyFallback: const ['NotoSansKR'],
                 fontSize: 14,
                 fontWeight: FontWeight.w600,
                 color: Color(0xFF667085),

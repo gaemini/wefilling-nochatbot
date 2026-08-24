@@ -112,7 +112,8 @@ class _CreateCategoryScreenState extends State<CreateCategoryScreen> {
         Text(
           AppLocalizations.of(context)!.colorSelection,
           style: const TextStyle(
-            fontFamily: 'Pretendard',
+            fontFamily: 'Inter',
+            fontFamilyFallback: const ['NotoSansKR'],
             fontWeight: FontWeight.w600,
             fontSize: 14,
             color: Color(0xFF111827),
@@ -165,7 +166,8 @@ class _CreateCategoryScreenState extends State<CreateCategoryScreen> {
         Text(
           AppLocalizations.of(context)!.iconSelection,
           style: const TextStyle(
-            fontFamily: 'Pretendard',
+            fontFamily: 'Inter',
+            fontFamilyFallback: const ['NotoSansKR'],
             fontWeight: FontWeight.w600,
             fontSize: 14,
             color: Color(0xFF111827),
@@ -262,7 +264,8 @@ class _CreateCategoryScreenState extends State<CreateCategoryScreen> {
         title: Text(
           _isEdit ? (l10n.editCategory ?? "") : l10n.newCategory,
           style: const TextStyle(
-            fontFamily: 'Pretendard',
+            fontFamily: 'Inter',
+            fontFamilyFallback: const ['NotoSansKR'],
             fontSize: 20,
             fontWeight: FontWeight.w700,
             height: 1.2,
@@ -342,7 +345,8 @@ class _CreateCategoryScreenState extends State<CreateCategoryScreen> {
                   child: Text(
                     _isEdit ? (l10n.editAction ?? "") : l10n.create,
                     style: const TextStyle(
-                      fontFamily: 'Pretendard',
+                      fontFamily: 'Inter',
+                      fontFamilyFallback: const ['NotoSansKR'],
                       fontSize: 16,
                       fontWeight: FontWeight.w700,
                       height: 1.1,

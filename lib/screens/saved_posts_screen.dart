@@ -66,7 +66,8 @@ class _SavedPostsScreenState extends State<SavedPostsScreen> {
         title: Text(
           isKo ? '저장된 게시글' : 'Saved Posts',
           style: const TextStyle(
-            fontFamily: 'Pretendard',
+            fontFamily: 'Inter',
+            fontFamilyFallback: const ['NotoSansKR'],
             fontSize: 18,
             fontWeight: FontWeight.w600,
             color: Color(0xFF111827),
@@ -88,7 +89,8 @@ class _SavedPostsScreenState extends State<SavedPostsScreen> {
                   Text(
                     l10n.loginRequired,
                     style: const TextStyle(
-                      fontFamily: 'Pretendard',
+                      fontFamily: 'Inter',
+                      fontFamilyFallback: const ['NotoSansKR'],
                       fontSize: 18,
                       fontWeight: FontWeight.w600,
                       color: Color(0xFF111827),
@@ -98,7 +100,8 @@ class _SavedPostsScreenState extends State<SavedPostsScreen> {
                   Text(
                     l10n.loginToViewSavedPosts,
                     style: const TextStyle(
-                      fontFamily: 'Pretendard',
+                      fontFamily: 'Inter',
+                      fontFamilyFallback: const ['NotoSansKR'],
                       fontSize: 14,
                       color: Color(0xFF6B7280),
                     ),
@@ -140,7 +143,8 @@ class _SavedPostsScreenState extends State<SavedPostsScreen> {
                         Text(
                           l10n.noSavedPosts,
                           style: const TextStyle(
-                            fontFamily: 'Pretendard',
+                            fontFamily: 'Inter',
+                            fontFamilyFallback: const ['NotoSansKR'],
                             fontSize: 20,
                             fontWeight: FontWeight.w600,
                             color: Color(0xFF111827),
@@ -150,7 +154,8 @@ class _SavedPostsScreenState extends State<SavedPostsScreen> {
                         Text(
                           l10n.saveInterestingPosts,
                           style: const TextStyle(
-                            fontFamily: 'Pretendard',
+                            fontFamily: 'Inter',
+                            fontFamilyFallback: const ['NotoSansKR'],
                             fontSize: 15,
                             color: Color(0xFF6B7280),
                           ),
@@ -234,7 +239,8 @@ class _SavedPostsScreenState extends State<SavedPostsScreen> {
                                       Text(
                                         post.displayText,
                                         style: const TextStyle(
-                                          fontFamily: 'Pretendard',
+                                          fontFamily: 'Inter',
+                                          fontFamilyFallback: const ['NotoSansKR'],
                                           fontSize: 16,
                                           fontWeight: FontWeight.w600,
                                           color: Color(0xFF111827),

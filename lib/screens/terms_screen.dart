@@ -23,7 +23,8 @@ class TermsScreen extends StatelessWidget {
         title: Text(
           AppLocalizations.of(context)!.termsOfService ?? "",
           style: const TextStyle(
-            fontFamily: 'Pretendard',
+            fontFamily: 'Inter',
+            fontFamilyFallback: const ['NotoSansKR'],
             fontSize: 18,
             fontWeight: FontWeight.w600,
             color: Color(0xFF111827),
@@ -205,7 +206,8 @@ class TermsScreen extends StatelessWidget {
             const Text(
               '부칙',
               style: TextStyle(
-                fontFamily: 'Pretendard',
+                fontFamily: 'Inter',
+                fontFamilyFallback: const ['NotoSansKR'],
                 fontSize: 16,
                 fontWeight: FontWeight.w700,
                 color: Color(0xFF111827),
@@ -215,7 +217,8 @@ class TermsScreen extends StatelessWidget {
             const Text(
               '이 약관은 2025년 11월 25일부터 적용됩니다.',
               style: TextStyle(
-                fontFamily: 'Pretendard',
+                fontFamily: 'Inter',
+                fontFamilyFallback: const ['NotoSansKR'],
                 fontSize: 14,
                 color: Color(0xFF6B7280),
                 height: 1.5,
@@ -225,7 +228,8 @@ class TermsScreen extends StatelessWidget {
             const Text(
               '문의: wefilling@gmail.com',
               style: TextStyle(
-                fontFamily: 'Pretendard',
+                fontFamily: 'Inter',
+                fontFamilyFallback: const ['NotoSansKR'],
                 fontSize: 14,
                 color: Color(0xFF6B7280),
               ),
@@ -395,7 +399,8 @@ class TermsScreen extends StatelessWidget {
             const Text(
               'Supplementary Provisions',
               style: TextStyle(
-                fontFamily: 'Pretendard',
+                fontFamily: 'Inter',
+                fontFamilyFallback: const ['NotoSansKR'],
                 fontSize: 16,
                 fontWeight: FontWeight.w700,
                 color: Color(0xFF111827),
@@ -405,7 +410,8 @@ class TermsScreen extends StatelessWidget {
             const Text(
               'These Terms become effective from November 25, 2025.',
               style: TextStyle(
-                fontFamily: 'Pretendard',
+                fontFamily: 'Inter',
+                fontFamilyFallback: const ['NotoSansKR'],
                 fontSize: 14,
                 color: Color(0xFF6B7280),
                 height: 1.5,
@@ -415,7 +421,8 @@ class TermsScreen extends StatelessWidget {
             const Text(
               'Contact: wefilling@gmail.com',
               style: TextStyle(
-                fontFamily: 'Pretendard',
+                fontFamily: 'Inter',
+                fontFamilyFallback: const ['NotoSansKR'],
                 fontSize: 14,
                 color: Color(0xFF6B7280),
               ),
@@ -435,7 +442,8 @@ class TermsScreen extends StatelessWidget {
           Text(
             title,
             style: const TextStyle(
-              fontFamily: 'Pretendard',
+              fontFamily: 'Inter',
+              fontFamilyFallback: const ['NotoSansKR'],
               fontSize: 18,
               fontWeight: FontWeight.w700,
               color: Color(0xFF111827),
@@ -446,7 +454,8 @@ class TermsScreen extends StatelessWidget {
           Text(
             content,
             style: const TextStyle(
-              fontFamily: 'Pretendard',
+              fontFamily: 'Inter',
+              fontFamilyFallback: const ['NotoSansKR'],
               fontSize: 15,
               height: 1.7,
               color: Color(0xFF374151),

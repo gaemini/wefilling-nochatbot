@@ -147,7 +147,8 @@ class _EmailLoginScreenState extends State<EmailLoginScreen> {
         context.rf(compact ? 24 : 27).clamp(23.0, 28.0).toDouble();
     final bodySize = context.rf(15).clamp(14.0, 16.0).toDouble();
     final labelStyle = TextStyle(
-      fontFamily: 'Pretendard',
+      fontFamily: 'Inter',
+      fontFamilyFallback: const ['NotoSansKR'],
       fontSize: context.rf(14).clamp(13.0, 15.0).toDouble(),
       fontWeight: FontWeight.w600,
       color: ink,
@@ -162,7 +163,8 @@ class _EmailLoginScreenState extends State<EmailLoginScreen> {
       return InputDecoration(
         hintText: hintText,
         hintStyle: TextStyle(
-          fontFamily: 'Pretendard',
+          fontFamily: 'Inter',
+          fontFamilyFallback: const ['NotoSansKR'],
           fontSize: bodySize,
           color: const Color(0xFF94A3B8),
         ),
@@ -217,7 +219,8 @@ class _EmailLoginScreenState extends State<EmailLoginScreen> {
         title: Text(
           l10n.emailLoginTitle,
           style: TextStyle(
-            fontFamily: 'Pretendard',
+            fontFamily: 'Inter',
+            fontFamilyFallback: const ['NotoSansKR'],
             fontSize: context.rf(18).clamp(17.0, 19.0).toDouble(),
             fontWeight: FontWeight.w700,
             color: ink,
@@ -265,7 +268,8 @@ class _EmailLoginScreenState extends State<EmailLoginScreen> {
                       Text(
                         l10n.emailLoginTitle,
                         style: TextStyle(
-                          fontFamily: 'Pretendard',
+                          fontFamily: 'Inter',
+                          fontFamilyFallback: const ['NotoSansKR'],
                           fontSize: titleSize,
                           fontWeight: FontWeight.w700,
                           color: ink,
@@ -279,7 +283,8 @@ class _EmailLoginScreenState extends State<EmailLoginScreen> {
                       Text(
                         l10n.emailLoginDescription,
                         style: TextStyle(
-                          fontFamily: 'Pretendard',
+                          fontFamily: 'Inter',
+                          fontFamilyFallback: const ['NotoSansKR'],
                           fontSize: bodySize,
                           fontWeight: FontWeight.w400,
                           color: secondary,
@@ -311,7 +316,8 @@ class _EmailLoginScreenState extends State<EmailLoginScreen> {
                           prefixIcon: Icons.mail_outline_rounded,
                         ),
                         style: TextStyle(
-                          fontFamily: 'Pretendard',
+                          fontFamily: 'Inter',
+                          fontFamilyFallback: const ['NotoSansKR'],
                           fontSize: bodySize,
                           fontWeight: FontWeight.w500,
                           color: ink,
@@ -366,7 +372,8 @@ class _EmailLoginScreenState extends State<EmailLoginScreen> {
                           ),
                         ),
                         style: TextStyle(
-                          fontFamily: 'Pretendard',
+                          fontFamily: 'Inter',
+                          fontFamilyFallback: const ['NotoSansKR'],
                           fontSize: bodySize,
                           fontWeight: FontWeight.w500,
                           color: ink,
@@ -395,7 +402,8 @@ class _EmailLoginScreenState extends State<EmailLoginScreen> {
                               child: Text(
                                 _errorMessage!,
                                 style: TextStyle(
-                                  fontFamily: 'Pretendard',
+                                  fontFamily: 'Inter',
+                                  fontFamilyFallback: const ['NotoSansKR'],
                                   fontSize: context
                                       .rf(13.5)
                                       .clamp(13.0, 14.0)
@@ -439,7 +447,8 @@ class _EmailLoginScreenState extends State<EmailLoginScreen> {
                               : Text(
                                   l10n.login,
                                   style: TextStyle(
-                                    fontFamily: 'Pretendard',
+                                    fontFamily: 'Inter',
+                                    fontFamilyFallback: const ['NotoSansKR'],
                                     fontSize: context
                                         .rf(16)
                                         .clamp(15.0, 17.0)

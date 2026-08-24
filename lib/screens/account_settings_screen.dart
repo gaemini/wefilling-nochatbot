@@ -51,7 +51,8 @@ class _AccountSettingsScreenState extends State<AccountSettingsScreen> {
         title: Text(
           AppLocalizations.of(context)!.accountSettings ?? "",
           style: const TextStyle(
-            fontFamily: 'Pretendard',
+            fontFamily: 'Inter',
+            fontFamilyFallback: const ['NotoSansKR'],
             fontSize: 18,
             fontWeight: FontWeight.w600,
             color: Color(0xFF111827),
@@ -204,7 +205,8 @@ class _AccountSettingsScreenState extends State<AccountSettingsScreen> {
       child: Text(
         title,
         style: const TextStyle(
-          fontFamily: 'Pretendard',
+          fontFamily: 'Inter',
+          fontFamilyFallback: const ['NotoSansKR'],
           fontSize: 13,
           fontWeight: FontWeight.w600,
           color: Color(0xFF6B7280),
@@ -241,7 +243,8 @@ class _AccountSettingsScreenState extends State<AccountSettingsScreen> {
                   Text(
                     title,
                     style: TextStyle(
-                      fontFamily: 'Pretendard',
+                      fontFamily: 'Inter',
+                      fontFamilyFallback: const ['NotoSansKR'],
                       fontSize: 16,
                       fontWeight: FontWeight.w500,
                       color: color ?? const Color(0xFF111827),
@@ -252,7 +255,8 @@ class _AccountSettingsScreenState extends State<AccountSettingsScreen> {
                     Text(
                       subtitle,
                       style: const TextStyle(
-                        fontFamily: 'Pretendard',
+                        fontFamily: 'Inter',
+                        fontFamilyFallback: const ['NotoSansKR'],
                         fontSize: 14,
                         color: Color(0xFF6B7280),
                       ),
@@ -332,7 +336,8 @@ class _AccountSettingsScreenState extends State<AccountSettingsScreen> {
                     sheetContext,
                   ).clamp(maxScaleFactor: 1.2),
                   style: const TextStyle(
-                    fontFamily: 'Pretendard',
+                    fontFamily: 'Inter',
+                    fontFamilyFallback: const ['NotoSansKR'],
                     fontSize: 20,
                     fontWeight: FontWeight.w700,
                     color: Color(0xFF111827),
@@ -368,7 +373,8 @@ class _AccountSettingsScreenState extends State<AccountSettingsScreen> {
                     child: Text(
                       l10n.cancel,
                       style: const TextStyle(
-                        fontFamily: 'Pretendard',
+                        fontFamily: 'Inter',
+                        fontFamilyFallback: const ['NotoSansKR'],
                         fontSize: 15,
                         fontWeight: FontWeight.w600,
                       ),
@@ -632,7 +638,8 @@ class _LanguageOptionTile extends StatelessWidget {
               child: Text(
                 code,
                 style: TextStyle(
-                  fontFamily: 'Pretendard',
+                  fontFamily: 'Inter',
+                  fontFamilyFallback: const ['NotoSansKR'],
                   fontSize: 13,
                   fontWeight: FontWeight.w700,
                   color:
@@ -651,7 +658,8 @@ class _LanguageOptionTile extends StatelessWidget {
                   context,
                 ).clamp(maxScaleFactor: 1.2),
                 style: TextStyle(
-                  fontFamily: 'Pretendard',
+                  fontFamily: 'Inter',
+                  fontFamilyFallback: const ['NotoSansKR'],
                   fontSize: 16,
                   fontWeight: FontWeight.w600,
                   color:

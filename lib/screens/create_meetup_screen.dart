@@ -6,6 +6,7 @@ import 'package:flutter/services.dart';
 import 'package:table_calendar/table_calendar.dart';
 import '../models/meetup.dart';
 import '../models/friend_category.dart';
+import '../constants/meetup_limits.dart';
 import '../services/meetup_service.dart';
 import '../services/friend_category_service.dart';
 import 'package:image_picker/image_picker.dart';
@@ -41,10 +42,11 @@ class CreateMeetupScreen extends StatefulWidget {
 }
 
 class _CreateMeetupScreenState extends State<CreateMeetupScreen> {
-  // ---- Typography (Pretendard) ----
+  // ---- Typography (Inter + Noto Sans KR fallback) ----
   // 화면 전반 타이포 계층을 통일해서 “기본 폰트 섞임” 느낌을 제거
   static const TextStyle _appBarTitleStyle = TextStyle(
-    fontFamily: 'Pretendard',
+    fontFamily: 'Inter',
+    fontFamilyFallback: const ['NotoSansKR'],
     fontSize: 20,
     fontWeight: FontWeight.w700,
     height: 1.2,
@@ -53,7 +55,8 @@ class _CreateMeetupScreenState extends State<CreateMeetupScreen> {
   );
 
   static const TextStyle _sectionTitleStyle = TextStyle(
-    fontFamily: 'Pretendard',
+    fontFamily: 'Inter',
+    fontFamilyFallback: const ['NotoSansKR'],
     fontSize: 16,
     fontWeight: FontWeight.w700,
     height: 1.25,
@@ -62,7 +65,8 @@ class _CreateMeetupScreenState extends State<CreateMeetupScreen> {
   );
 
   static const TextStyle _helperStyle = TextStyle(
-    fontFamily: 'Pretendard',
+    fontFamily: 'Inter',
+    fontFamilyFallback: const ['NotoSansKR'],
     fontSize: 12,
     fontWeight: FontWeight.w500,
     height: 1.25,
@@ -70,7 +74,8 @@ class _CreateMeetupScreenState extends State<CreateMeetupScreen> {
   );
 
   static const TextStyle _inputTextStyle = TextStyle(
-    fontFamily: 'Pretendard',
+    fontFamily: 'Inter',
+    fontFamilyFallback: const ['NotoSansKR'],
     fontSize: 14,
     fontWeight: FontWeight.w500,
     height: 1.2,
@@ -78,7 +83,8 @@ class _CreateMeetupScreenState extends State<CreateMeetupScreen> {
   );
 
   static const TextStyle _hintTextStyle = TextStyle(
-    fontFamily: 'Pretendard',
+    fontFamily: 'Inter',
+    fontFamilyFallback: const ['NotoSansKR'],
     fontSize: 14,
     fontWeight: FontWeight.w400,
     height: 1.2,
@@ -116,7 +122,7 @@ class _CreateMeetupScreenState extends State<CreateMeetupScreen> {
   final ImagePicker _picker = ImagePicker();
 
   // 최대 인원 선택 목록
-  final List<int> _participantOptions = [3, 4, 5, 6];
+  final List<int> _participantOptions = meetupParticipantOptions;
 
   String _formatHHmm(DateTime dt) {
     final h = dt.hour.toString().padLeft(2, '0');
@@ -179,7 +185,8 @@ class _CreateMeetupScreenState extends State<CreateMeetupScreen> {
                 Text(
                   l10n.timeSelection,
                   style: const TextStyle(
-                    fontFamily: 'Pretendard',
+                    fontFamily: 'Inter',
+                    fontFamilyFallback: const ['NotoSansKR'],
                     fontSize: 20,
                     fontWeight: FontWeight.w700,
                     color: Color(0xFF111827),
@@ -244,7 +251,8 @@ class _CreateMeetupScreenState extends State<CreateMeetupScreen> {
                     data: const CupertinoThemeData(
                       textTheme: CupertinoTextThemeData(
                         dateTimePickerTextStyle: TextStyle(
-                          fontFamily: 'Pretendard',
+                          fontFamily: 'Inter',
+                          fontFamilyFallback: const ['NotoSansKR'],
                           fontSize: 18,
                           fontWeight: FontWeight.w600,
                           color: Color(0xFF111827),
@@ -336,7 +344,8 @@ class _CreateMeetupScreenState extends State<CreateMeetupScreen> {
                     Text(
                       isKo ? '밋업 공개 시간' : 'Meetup public time',
                       style: const TextStyle(
-                        fontFamily: 'Pretendard',
+                        fontFamily: 'Inter',
+                        fontFamilyFallback: const ['NotoSansKR'],
                         fontSize: 20,
                         fontWeight: FontWeight.w800,
                         color: Color(0xFF101828),
@@ -360,7 +369,8 @@ class _CreateMeetupScreenState extends State<CreateMeetupScreen> {
                     Text(
                       isKo ? '공개 시간' : 'Public duration',
                       style: const TextStyle(
-                        fontFamily: 'Pretendard',
+                        fontFamily: 'Inter',
+                        fontFamilyFallback: const ['NotoSansKR'],
                         fontSize: 13,
                         fontWeight: FontWeight.w700,
                         color: Color(0xFF475467),
@@ -469,7 +479,8 @@ class _CreateMeetupScreenState extends State<CreateMeetupScreen> {
                   Text(
                     l10n.exitMeetupCreation,
                     style: TextStyle(
-                      fontFamily: 'Pretendard',
+                      fontFamily: 'Inter',
+                      fontFamilyFallback: const ['NotoSansKR'],
                       fontSize: context.rf(17).clamp(16, 18).toDouble(),
                       fontWeight: FontWeight.w700,
                       height: 1.3,
@@ -480,7 +491,8 @@ class _CreateMeetupScreenState extends State<CreateMeetupScreen> {
                   Text(
                     l10n.exitMeetupCreationMessage,
                     style: TextStyle(
-                      fontFamily: 'Pretendard',
+                      fontFamily: 'Inter',
+                      fontFamilyFallback: const ['NotoSansKR'],
                       fontSize: context.rf(13.5).clamp(13, 14.5).toDouble(),
                       fontWeight: FontWeight.w400,
                       height: 1.5,
@@ -510,7 +522,8 @@ class _CreateMeetupScreenState extends State<CreateMeetupScreen> {
                           child: Text(
                             l10n.stay,
                             style: const TextStyle(
-                              fontFamily: 'Pretendard',
+                              fontFamily: 'Inter',
+                              fontFamilyFallback: const ['NotoSansKR'],
                               fontSize: 14,
                               fontWeight: FontWeight.w600,
                             ),
@@ -531,7 +544,8 @@ class _CreateMeetupScreenState extends State<CreateMeetupScreen> {
                           child: Text(
                             l10n.exit,
                             style: const TextStyle(
-                              fontFamily: 'Pretendard',
+                              fontFamily: 'Inter',
+                              fontFamilyFallback: const ['NotoSansKR'],
                               fontSize: 14,
                               fontWeight: FontWeight.w700,
                             ),
@@ -573,7 +587,9 @@ class _CreateMeetupScreenState extends State<CreateMeetupScreen> {
       _titleController.text = t.title;
       _descriptionController.text = t.description;
       _locationController.text = t.location;
-      _maxParticipants = t.maxParticipants;
+      _maxParticipants = t.maxParticipants
+          .clamp(minMeetupParticipants, maxMeetupParticipants)
+          .toInt();
       _visibility = t.visibility;
       _selectedCategoryIds = t.visibility == 'category'
           ? List<String>.from(t.visibleToCategoryIds)
@@ -736,7 +752,8 @@ class _CreateMeetupScreenState extends State<CreateMeetupScreen> {
     return Text(
       '*',
       style: TextStyle(
-        fontFamily: 'Pretendard',
+        fontFamily: 'Inter',
+        fontFamilyFallback: const ['NotoSansKR'],
         fontSize: context.rf(14).clamp(13, 15).toDouble(),
         fontWeight: FontWeight.w700,
         color: const Color(0xFF667085),
@@ -989,7 +1006,8 @@ class _CreateMeetupScreenState extends State<CreateMeetupScreen> {
                                       AppLocalizations.of(context)!
                                           .optionalField,
                                       style: TextStyle(
-                                        fontFamily: 'Pretendard',
+                                        fontFamily: 'Inter',
+                                        fontFamilyFallback: const ['NotoSansKR'],
                                         fontSize: context
                                             .rf(12)
                                             .clamp(11, 13)
@@ -1062,7 +1080,8 @@ class _CreateMeetupScreenState extends State<CreateMeetupScreen> {
                                         maxLines: 1,
                                         overflow: TextOverflow.ellipsis,
                                         style: TextStyle(
-                                          fontFamily: 'Pretendard',
+                                          fontFamily: 'Inter',
+                                          fontFamilyFallback: const ['NotoSansKR'],
                                           fontSize: context
                                               .rf(13)
                                               .clamp(12, 14)
@@ -1184,8 +1203,11 @@ class _CreateMeetupScreenState extends State<CreateMeetupScreen> {
                                                           '$total/$_maxMeetupImages',
                                                           style:
                                                               const TextStyle(
-                                                            fontFamily:
-                                                                'Pretendard',
+                                                            fontFamily: 'Inter',
+                                                            fontFamilyFallback:
+                                                                const [
+                                                              'NotoSansKR'
+                                                            ],
                                                             fontSize: 12,
                                                             fontWeight:
                                                                 FontWeight.w800,
@@ -1570,7 +1592,8 @@ class _CreateMeetupScreenState extends State<CreateMeetupScreen> {
                   : Text(
                       label,
                       style: TextStyle(
-                        fontFamily: 'Pretendard',
+                        fontFamily: 'Inter',
+                        fontFamilyFallback: const ['NotoSansKR'],
                         fontSize: context.rf(15).clamp(14, 16).toDouble(),
                         fontWeight: FontWeight.w700,
                         color: textColor,
@@ -1972,7 +1995,8 @@ class _CreateMeetupScreenState extends State<CreateMeetupScreen> {
                             child: Text(
                               monthTitle(_focusedDay),
                               style: const TextStyle(
-                                fontFamily: 'Pretendard',
+                                fontFamily: 'Inter',
+                                fontFamilyFallback: const ['NotoSansKR'],
                                 fontSize: 16,
                                 fontWeight: FontWeight.w900,
                                 color: Color(0xFF111827),
@@ -2058,7 +2082,8 @@ class _CreateMeetupScreenState extends State<CreateMeetupScreen> {
                                 child: Text(
                                   label,
                                   style: TextStyle(
-                                    fontFamily: 'Pretendard',
+                                    fontFamily: 'Inter',
+                                    fontFamilyFallback: const ['NotoSansKR'],
                                     fontSize:
                                         context.rf(12).clamp(11, 13).toDouble(),
                                     fontWeight: FontWeight.w800,
@@ -2288,7 +2313,8 @@ class _PublicDurationOption extends StatelessWidget {
                   overflow: TextOverflow.ellipsis,
                   textAlign: TextAlign.center,
                   style: TextStyle(
-                    fontFamily: 'Pretendard',
+                    fontFamily: 'Inter',
+                    fontFamilyFallback: const ['NotoSansKR'],
                     fontSize: context.rf(13).clamp(12, 14).toDouble(),
                     fontWeight: FontWeight.w700,
                     color: foreground,
@@ -2354,7 +2380,8 @@ class _VisibilitySegmentedControl extends StatelessWidget {
               ),
               child: DefaultTextStyle(
                 style: TextStyle(
-                  fontFamily: 'Pretendard',
+                  fontFamily: 'Inter',
+                  fontFamilyFallback: const ['NotoSansKR'],
                   fontSize: context.rf(14).clamp(12, 15).toDouble(),
                   fontWeight: isSelected ? FontWeight.w800 : FontWeight.w600,
                   color: isSelected
@@ -2480,7 +2507,8 @@ class _CreateMeetupCalendarDayCell extends StatelessWidget {
                 child: Text(
                   '${day.day}',
                   style: TextStyle(
-                    fontFamily: 'Pretendard',
+                    fontFamily: 'Inter',
+                    fontFamilyFallback: const ['NotoSansKR'],
                     fontSize: context.rf(14).clamp(12.5, 15).toDouble(),
                     fontWeight: fontWeight,
                     color: textColor,

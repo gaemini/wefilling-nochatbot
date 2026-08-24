@@ -94,7 +94,8 @@ class _MeetupPublicCountdownState extends State<MeetupPublicCountdown> {
                 label,
                 maxLines: 1,
                 style: TextStyle(
-                  fontFamily: 'Pretendard',
+                  fontFamily: 'Inter',
+                  fontFamilyFallback: const ['NotoSansKR'],
                   fontSize: context.rf(8.5).clamp(8.0, 9.0).toDouble(),
                   fontWeight: FontWeight.w700,
                   height: 1,
@@ -135,7 +136,8 @@ class _MeetupPublicCountdownState extends State<MeetupPublicCountdown> {
                 maxLines: 1,
                 overflow: TextOverflow.ellipsis,
                 style: TextStyle(
-                  fontFamily: 'Pretendard',
+                  fontFamily: 'Inter',
+                  fontFamilyFallback: const ['NotoSansKR'],
                   fontSize: context.rf(12.5).clamp(12, 13).toDouble(),
                   fontWeight: FontWeight.w700,
                   color: const Color(0xFF475467),

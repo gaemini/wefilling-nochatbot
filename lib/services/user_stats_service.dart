@@ -4,15 +4,60 @@
 // 사용자별 콘텐츠 필터링 및 조회
 
 import 'package:cloud_firestore/cloud_firestore.dart';
+import 'package:cloud_functions/cloud_functions.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import '../models/post.dart';
 import '../models/meetup.dart';
 import '../models/meetup_participant.dart';
 import '../utils/logger.dart';
 
+class UserProfileStats {
+  const UserProfileStats({
+    required this.friendCount,
+    required this.joinedMeetupCount,
+    required this.writtenPostCount,
+    required this.fetchedAt,
+  });
+
+  final int friendCount;
+  final int joinedMeetupCount;
+  final int writtenPostCount;
+  final DateTime fetchedAt;
+
+  factory UserProfileStats.fromMap(Map<String, dynamic> map) {
+    int count(String key) => (map[key] as num?)?.toInt() ?? 0;
+    final fetchedAtMillis = (map['fetchedAtMillis'] as num?)?.toInt();
+    return UserProfileStats(
+      friendCount: count('friendCount'),
+      joinedMeetupCount: count('joinedMeetupCount'),
+      writtenPostCount: count('writtenPostCount'),
+      fetchedAt: fetchedAtMillis == null
+          ? DateTime.now()
+          : DateTime.fromMillisecondsSinceEpoch(fetchedAtMillis),
+    );
+  }
+}
+
 class UserStatsService {
   final FirebaseFirestore _firestore = FirebaseFirestore.instance;
   final FirebaseAuth _auth = FirebaseAuth.instance;
+
+  /// 친구 프로필 헤더에 표시할 세 통계를 캐시가 아닌 서버 aggregate로 조회한다.
+  Future<UserProfileStats> getLatestProfileStatsForUser(String userId) async {
+    final normalizedUserId = userId.trim();
+    if (normalizedUserId.isEmpty) {
+      throw ArgumentError.value(userId, 'userId');
+    }
+    final response = await FirebaseFunctions.instance
+        .httpsCallable('getUserProfileStats')
+        .call(<String, dynamic>{'userId': normalizedUserId}).timeout(
+            const Duration(seconds: 15));
+    final raw = response.data;
+    if (raw is! Map) {
+      throw const FormatException('Invalid profile stats response.');
+    }
+    return UserProfileStats.fromMap(Map<String, dynamic>.from(raw));
+  }
 
   // 사용자가 주최한 모임 수 (후기 작성 완료된 모임만)
   Stream<int> getHostedMeetupCount() {

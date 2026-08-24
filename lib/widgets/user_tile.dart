@@ -149,7 +149,8 @@ class UserTile extends StatelessWidget {
         Text(
           user.displayNameOrNickname,
           style: TextStyle(
-            fontFamily: 'Pretendard',
+            fontFamily: 'Inter',
+            fontFamilyFallback: const ['NotoSansKR'],
             fontSize: compact ? context.rf(14).clamp(13, 15).toDouble() : 16,
             fontWeight: FontWeight.w700,
             color: const Color(0xFF111827),
@@ -182,7 +183,8 @@ class UserTile extends StatelessWidget {
                   maxLines: 1,
                   overflow: TextOverflow.ellipsis,
                   style: TextStyle(
-                    fontFamily: 'Pretendard',
+                    fontFamily: 'Inter',
+                    fontFamilyFallback: const ['NotoSansKR'],
                     fontSize: compact ? 12 : 12.5,
                     color: const Color(0xFF8B93A1),
                     fontWeight: FontWeight.w500,
@@ -237,7 +239,8 @@ class UserTile extends StatelessWidget {
           maxLines: 1,
           overflow: TextOverflow.ellipsis,
           style: const TextStyle(
-            fontFamily: 'Pretendard',
+            fontFamily: 'Inter',
+            fontFamilyFallback: const ['NotoSansKR'],
             fontSize: 12,
             fontWeight: FontWeight.w600,
             color: Color(0xFF98A2B3),
@@ -276,7 +279,8 @@ class UserTile extends StatelessWidget {
           maxLines: 1,
           overflow: TextOverflow.ellipsis,
           style: const TextStyle(
-            fontFamily: 'Pretendard',
+            fontFamily: 'Inter',
+            fontFamilyFallback: const ['NotoSansKR'],
             fontSize: 12,
             fontWeight: FontWeight.w700,
           ),
@@ -297,7 +301,8 @@ class UserTile extends StatelessWidget {
       child: Text(
         _labelForStatus(context, relationshipStatus),
         style: const TextStyle(
-          fontFamily: 'Pretendard',
+          fontFamily: 'Inter',
+          fontFamilyFallback: const ['NotoSansKR'],
           fontSize: 13,
           fontWeight: FontWeight.w600,
         ),

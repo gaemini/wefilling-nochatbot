@@ -48,7 +48,8 @@ class _AccountDeleteStepperScreenState extends State<AccountDeleteStepperScreen>
         title: Text(
           loc.selectDeleteReason,
           style: const TextStyle(
-            fontFamily: 'Pretendard',
+            fontFamily: 'Inter',
+            fontFamilyFallback: const ['NotoSansKR'],
             fontSize: 16,
             fontWeight: FontWeight.w600,
             color: Color(0xFF111827),
@@ -66,7 +67,8 @@ class _AccountDeleteStepperScreenState extends State<AccountDeleteStepperScreen>
                 title: Text(
                   reason,
                   style: const TextStyle(
-                    fontFamily: 'Pretendard',
+                    fontFamily: 'Inter',
+                    fontFamilyFallback: const ['NotoSansKR'],
                     fontSize: 15,
                     color: Color(0xFF111827),
                   ),
@@ -81,7 +83,8 @@ class _AccountDeleteStepperScreenState extends State<AccountDeleteStepperScreen>
                   decoration: InputDecoration(
                     labelText: loc.otherReasonOptional,
                     labelStyle: const TextStyle(
-                      fontFamily: 'Pretendard',
+                      fontFamily: 'Inter',
+                      fontFamilyFallback: const ['NotoSansKR'],
                       color: Color(0xFF6B7280),
                     ),
                     border: OutlineInputBorder(
@@ -104,7 +107,8 @@ class _AccountDeleteStepperScreenState extends State<AccountDeleteStepperScreen>
         title: Text(
           loc.deleteDataNotice,
           style: const TextStyle(
-            fontFamily: 'Pretendard',
+            fontFamily: 'Inter',
+            fontFamilyFallback: const ['NotoSansKR'],
             fontSize: 16,
             fontWeight: FontWeight.w600,
             color: Color(0xFF111827),
@@ -125,7 +129,8 @@ class _AccountDeleteStepperScreenState extends State<AccountDeleteStepperScreen>
               child: Text(
                 loc.accountDeletionIrreversible,
                 style: const TextStyle(
-                  fontFamily: 'Pretendard',
+                  fontFamily: 'Inter',
+                  fontFamilyFallback: const ['NotoSansKR'],
                   color: Colors.red,
                   fontSize: 14,
                 ),
@@ -162,7 +167,8 @@ class _AccountDeleteStepperScreenState extends State<AccountDeleteStepperScreen>
               child: Text(
                 loc.postDeleteTip,
                 style: const TextStyle(
-                  fontFamily: 'Pretendard',
+                  fontFamily: 'Inter',
+                  fontFamilyFallback: const ['NotoSansKR'],
                   fontSize: 14,
                 ),
               ),
@@ -176,7 +182,8 @@ class _AccountDeleteStepperScreenState extends State<AccountDeleteStepperScreen>
         title: Text(
           loc.finalWarning,
           style: const TextStyle(
-            fontFamily: 'Pretendard',
+            fontFamily: 'Inter',
+            fontFamilyFallback: const ['NotoSansKR'],
             fontSize: 16,
             fontWeight: FontWeight.w600,
             color: Color(0xFF111827),
@@ -195,7 +202,8 @@ class _AccountDeleteStepperScreenState extends State<AccountDeleteStepperScreen>
                   child: Text(
                     loc.reallyDeleteAccount,
                     style: const TextStyle(
-                      fontFamily: 'Pretendard',
+                      fontFamily: 'Inter',
+                      fontFamilyFallback: const ['NotoSansKR'],
                       fontWeight: FontWeight.bold,
                       fontSize: 16,
                     ),
@@ -207,7 +215,8 @@ class _AccountDeleteStepperScreenState extends State<AccountDeleteStepperScreen>
             Text(
               loc.actionCannotBeUndone,
               style: const TextStyle(
-                fontFamily: 'Pretendard',
+                fontFamily: 'Inter',
+                fontFamilyFallback: const ['NotoSansKR'],
                 color: Colors.red,
                 fontSize: 14,
               ),
@@ -221,7 +230,8 @@ class _AccountDeleteStepperScreenState extends State<AccountDeleteStepperScreen>
             Text(
               '${loc.deleteReasonLabel}: ${_selectedReason == loc.deleteReasonOther ? (_otherReasonController.text.isNotEmpty ? _otherReasonController.text : loc.deleteReasonOther) : _selectedReason}',
               style: const TextStyle(
-                fontFamily: 'Pretendard',
+                fontFamily: 'Inter',
+                fontFamilyFallback: const ['NotoSansKR'],
                 fontSize: 14,
               ),
             ),
@@ -229,7 +239,8 @@ class _AccountDeleteStepperScreenState extends State<AccountDeleteStepperScreen>
             Text(
               loc.postsAnonymizedAutomatic,
               style: const TextStyle(
-                fontFamily: 'Pretendard',
+                fontFamily: 'Inter',
+                fontFamilyFallback: const ['NotoSansKR'],
                 fontSize: 14,
               ),
             ),
@@ -242,7 +253,8 @@ class _AccountDeleteStepperScreenState extends State<AccountDeleteStepperScreen>
         title: Text(
           loc.identityVerification,
           style: const TextStyle(
-            fontFamily: 'Pretendard',
+            fontFamily: 'Inter',
+            fontFamilyFallback: const ['NotoSansKR'],
             fontSize: 16,
             fontWeight: FontWeight.w600,
             color: Color(0xFF111827),
@@ -256,7 +268,8 @@ class _AccountDeleteStepperScreenState extends State<AccountDeleteStepperScreen>
             Text(
               loc.reLoginForVerification,
               style: const TextStyle(
-                fontFamily: 'Pretendard',
+                fontFamily: 'Inter',
+                fontFamilyFallback: const ['NotoSansKR'],
                 fontSize: 14,
               ),
             ),
@@ -280,7 +293,8 @@ class _AccountDeleteStepperScreenState extends State<AccountDeleteStepperScreen>
                           ? loc.deleteButtonAppleLogin 
                           : loc.deleteButtonGoogleLogin,
                       style: const TextStyle(
-                        fontFamily: 'Pretendard',
+                        fontFamily: 'Inter',
+                        fontFamilyFallback: const ['NotoSansKR'],
                         fontSize: 14,
                       ),
                     ),
@@ -292,7 +306,8 @@ class _AccountDeleteStepperScreenState extends State<AccountDeleteStepperScreen>
             Text(
               loc.accountDeletedImmediatelyAfterAuth,
               style: const TextStyle(
-                fontFamily: 'Pretendard',
+                fontFamily: 'Inter',
+                fontFamilyFallback: const ['NotoSansKR'],
                 color: Colors.red,
                 fontWeight: FontWeight.bold,
                 fontSize: 14,
@@ -318,7 +333,8 @@ class _AccountDeleteStepperScreenState extends State<AccountDeleteStepperScreen>
           Text(
             title,
             style: TextStyle(
-              fontFamily: 'Pretendard',
+              fontFamily: 'Inter',
+              fontFamilyFallback: const ['NotoSansKR'],
               color: color,
               fontWeight: FontWeight.bold,
               fontSize: 14,
@@ -333,7 +349,8 @@ class _AccountDeleteStepperScreenState extends State<AccountDeleteStepperScreen>
                   child: Text(
                     it,
                     style: const TextStyle(
-                      fontFamily: 'Pretendard',
+                      fontFamily: 'Inter',
+                      fontFamilyFallback: const ['NotoSansKR'],
                       fontSize: 14,
                     ),
                   ),
@@ -352,7 +369,8 @@ class _AccountDeleteStepperScreenState extends State<AccountDeleteStepperScreen>
             child: Text(
               text,
               style: const TextStyle(
-                fontFamily: 'Pretendard',
+                fontFamily: 'Inter',
+                fontFamilyFallback: const ['NotoSansKR'],
                 fontSize: 14,
               ),
             ),
@@ -520,7 +538,8 @@ class _AccountDeleteStepperScreenState extends State<AccountDeleteStepperScreen>
         title: Text(
           loc.deleteAccount,
           style: const TextStyle(
-            fontFamily: 'Pretendard',
+            fontFamily: 'Inter',
+            fontFamilyFallback: const ['NotoSansKR'],
             fontSize: 18,
             fontWeight: FontWeight.w600,
             color: Color(0xFF111827),
@@ -555,7 +574,8 @@ class _AccountDeleteStepperScreenState extends State<AccountDeleteStepperScreen>
                       child: Text(
                         isLast ? loc.deleteAccount : loc.next,
                         style: const TextStyle(
-                          fontFamily: 'Pretendard',
+                          fontFamily: 'Inter',
+                          fontFamilyFallback: const ['NotoSansKR'],
                           fontSize: 16,
                           fontWeight: FontWeight.w600,
                         ),
@@ -572,7 +592,8 @@ class _AccountDeleteStepperScreenState extends State<AccountDeleteStepperScreen>
                     child: Text(
                       loc.back,
                       style: const TextStyle(
-                        fontFamily: 'Pretendard',
+                        fontFamily: 'Inter',
+                        fontFamilyFallback: const ['NotoSansKR'],
                         fontSize: 16,
                         fontWeight: FontWeight.w500,
                       ),

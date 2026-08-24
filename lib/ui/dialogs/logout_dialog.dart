@@ -55,7 +55,8 @@ Future<void> showLogoutConfirmDialog(
                       Text(
                         l10n.logout,
                         style: TextStyle(
-                          fontFamily: 'Pretendard',
+                          fontFamily: 'Inter',
+                          fontFamilyFallback: const ['NotoSansKR'],
                           fontSize:
                               innerContext.rf(17).clamp(16, 18).toDouble(),
                           fontWeight: FontWeight.w700,
@@ -72,7 +73,8 @@ Future<void> showLogoutConfirmDialog(
                           isLoading ? l10n.loggingOut : l10n.logoutConfirm,
                           key: ValueKey(isLoading),
                           style: TextStyle(
-                            fontFamily: 'Pretendard',
+                            fontFamily: 'Inter',
+                            fontFamilyFallback: const ['NotoSansKR'],
                             fontSize: innerContext
                                 .rf(13.5)
                                 .clamp(13, 14.5)
@@ -106,7 +108,8 @@ Future<void> showLogoutConfirmDialog(
                               child: Text(
                                 l10n.cancel,
                                 style: const TextStyle(
-                                  fontFamily: 'Pretendard',
+                                  fontFamily: 'Inter',
+                                  fontFamilyFallback: const ['NotoSansKR'],
                                   fontSize: 14,
                                   fontWeight: FontWeight.w600,
                                 ),
@@ -132,7 +135,8 @@ Future<void> showLogoutConfirmDialog(
                                   : Text(
                                       l10n.logout,
                                       style: const TextStyle(
-                                        fontFamily: 'Pretendard',
+                                        fontFamily: 'Inter',
+                                        fontFamilyFallback: const ['NotoSansKR'],
                                         fontSize: 14,
                                         fontWeight: FontWeight.w700,
                                       ),

@@ -216,7 +216,8 @@ class _CategoryDetailScreenState extends State<CategoryDetailScreen> {
               child: Text(
                 widget.category.name,
                 style: const TextStyle(
-                  fontFamily: 'Pretendard',
+                  fontFamily: 'Inter',
+                  fontFamilyFallback: const ['NotoSansKR'],
                   color: Color(0xFF111827),
                   fontSize: 17,
                   fontWeight: FontWeight.w600,
@@ -243,7 +244,8 @@ class _CategoryDetailScreenState extends State<CategoryDetailScreen> {
                 : Text(
                     AppLocalizations.of(context)!.save,
                     style: TextStyle(
-                      fontFamily: 'Pretendard',
+                      fontFamily: 'Inter',
+                      fontFamilyFallback: const ['NotoSansKR'],
                       fontSize: 13,
                       fontWeight: FontWeight.w700,
                       color: (_hasChanges && !_isSaving)
@@ -337,7 +339,8 @@ class _CategoryDetailScreenState extends State<CategoryDetailScreen> {
                                   AppLocalizations.of(context)!
                                       .groupNoFriendsSelected,
                                   style: const TextStyle(
-                                    fontFamily: 'Pretendard',
+                                    fontFamily: 'Inter',
+                                    fontFamilyFallback: const ['NotoSansKR'],
                                     fontSize: 13,
                                     fontWeight: FontWeight.w600,
                                     color: Color(0xFF94A3B8),
@@ -364,14 +367,16 @@ class _CategoryDetailScreenState extends State<CategoryDetailScreen> {
                           controller: _searchController,
                           textInputAction: TextInputAction.search,
                           style: const TextStyle(
-                            fontFamily: 'Pretendard',
+                            fontFamily: 'Inter',
+                            fontFamilyFallback: const ['NotoSansKR'],
                             fontSize: 14,
                           ),
                           decoration: InputDecoration(
                             hintText: AppLocalizations.of(context)!
                                 .searchByFriendName,
                             hintStyle: const TextStyle(
-                              fontFamily: 'Pretendard',
+                              fontFamily: 'Inter',
+                              fontFamilyFallback: const ['NotoSansKR'],
                               fontSize: 14,
                               color: Color(0xFF6B7280),
                             ),
@@ -418,7 +423,8 @@ class _CategoryDetailScreenState extends State<CategoryDetailScreen> {
                       child: Text(
                         AppLocalizations.of(context)!.friends,
                         style: const TextStyle(
-                          fontFamily: 'Pretendard',
+                          fontFamily: 'Inter',
+                          fontFamilyFallback: const ['NotoSansKR'],
                           fontSize: 14,
                           fontWeight: FontWeight.w700,
                           color: Color(0xFF64748B),
@@ -433,7 +439,8 @@ class _CategoryDetailScreenState extends State<CategoryDetailScreen> {
                                 AppLocalizations.of(context)!
                                     .groupNoSearchResults,
                                 style: const TextStyle(
-                                  fontFamily: 'Pretendard',
+                                  fontFamily: 'Inter',
+                                  fontFamilyFallback: const ['NotoSansKR'],
                                   fontSize: 14,
                                   fontWeight: FontWeight.w600,
                                   color: Color(0xFF64748B),
@@ -514,7 +521,8 @@ class _CategoryDetailScreenState extends State<CategoryDetailScreen> {
                     maxLines: 1,
                     overflow: TextOverflow.ellipsis,
                     style: const TextStyle(
-                      fontFamily: 'Pretendard',
+                      fontFamily: 'Inter',
+                      fontFamilyFallback: const ['NotoSansKR'],
                       fontSize: 14,
                       fontWeight: FontWeight.w600,
                       color: Color(0xFF111827),
@@ -602,7 +610,8 @@ class _CategoryDetailScreenState extends State<CategoryDetailScreen> {
                 overflow: TextOverflow.ellipsis,
                 textAlign: TextAlign.center,
                 style: const TextStyle(
-                  fontFamily: 'Pretendard',
+                  fontFamily: 'Inter',
+                  fontFamilyFallback: const ['NotoSansKR'],
                   fontSize: 12,
                   fontWeight: FontWeight.w600,
                   color: Color(0xFF374151),
@@ -654,7 +663,8 @@ class _CategoryDetailScreenState extends State<CategoryDetailScreen> {
       child: Text(
         label.isEmpty ? '?' : label[0],
         style: TextStyle(
-          fontFamily: 'Pretendard',
+          fontFamily: 'Inter',
+          fontFamilyFallback: const ['NotoSansKR'],
           fontSize: avatarSize * 0.34,
           fontWeight: FontWeight.w700,
           color: const Color(0xFF6B7280),

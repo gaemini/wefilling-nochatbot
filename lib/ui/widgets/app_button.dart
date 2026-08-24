@@ -32,7 +32,8 @@ class AppButton extends StatelessWidget {
         : context.rh(40, min: 38, max: 42);
     final verticalPadding = size == AppButtonSize.l ? context.rs(6) : context.rs(3);
     final textStyle = TextStyle(
-      fontFamily: 'Pretendard',
+      fontFamily: 'Inter',
+      fontFamilyFallback: const ['NotoSansKR'],
       fontSize: context.rf(size == AppButtonSize.l ? 15 : 14),
       fontWeight: FontWeight.w700,
       height: 1.2,

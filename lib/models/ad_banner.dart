@@ -51,12 +51,12 @@ class AdBanner {
       imageUrl: json['imageUrl'] as String?,
       isActive: json['isActive'] as bool? ?? true,
       order: json['order'] as int? ?? 0,
-      createdAt: json['createdAt'] is Timestamp 
-          ? (json['createdAt'] as Timestamp).toDate() 
+      createdAt: json['createdAt'] is Timestamp
+          ? (json['createdAt'] as Timestamp).toDate()
           : json['createdAt'] is String
               ? DateTime.parse(json['createdAt'] as String)
               : null,
-      updatedAt: json['updatedAt'] is Timestamp 
+      updatedAt: json['updatedAt'] is Timestamp
           ? (json['updatedAt'] as Timestamp).toDate()
           : json['updatedAt'] is String
               ? DateTime.parse(json['updatedAt'] as String)
@@ -68,9 +68,10 @@ class AdBanner {
   factory AdBanner.fromFirestore(DocumentSnapshot doc) {
     final data = doc.data() as Map<String, dynamic>;
     return AdBanner.fromJson({
-      'id': doc.id,
       ...data,
+      // 문서 내부의 레거시 id 필드가 중복되어 있어도 실제 Firestore 문서 ID를
+      // 화면/스크롤 앵커의 고유 식별자로 사용한다.
+      'id': doc.id,
     });
   }
 }
-

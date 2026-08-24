@@ -1,6 +1,11 @@
 rules_version = '2';
 service cloud.firestore {
   match /databases/{database}/documents {
+    // YouTube 링크 미리보기 캐시는 Admin SDK에서만 관리한다.
+    match /linkPreviewCache/{cacheId} {
+      allow read, write: if false;
+    }
+
     function isValidPostCategoryKey(value) {
       return value is string && value in [
         'style',
@@ -106,6 +111,7 @@ service cloud.firestore {
         'audienceUserIdsFrozen', 'allowedUserIds',
         'sourceGroupIds', 'visibleToCategoryIds',
         'visibilityLockedAt', 'visibilitySchemaVersion',
+        'isAnonymous',
         'publicDurationHours', 'publicExpiresAt', 'publicExpiredAt',
         'publicWindowStatus', 'expiredAt'
       ]);
@@ -590,6 +596,9 @@ service cloud.firestore {
           request.resource.data.categoryKey == request.resource.data.categoryKeys[0])) &&
         // createdAt 필드는 절대 수정 불가
         (!request.resource.data.diff(resource.data).affectedKeys().hasAny(['createdAt'])) &&
+        // 외부 링크 미리보기는 createPostSecure가 검증해 저장하며 클라이언트가
+        // 게시 후 임의 URL/썸네일로 교체할 수 없다.
+        (!request.resource.data.diff(resource.data).affectedKeys().hasAny(['linkPreview'])) &&
         visibilityFieldsUnchanged() &&
         (request.auth.uid == resource.data.userId ||
          // 좋아요 필드만 변경하는 경우 누구나 가능 (읽기 권한이 있으면)
@@ -666,6 +675,10 @@ service cloud.firestore {
         (request.auth.uid == resource.data.userId
           && meetupNotExpired(resource)
           && validMeetupAudience(request.resource.data)
+          && request.resource.data.maxParticipants is int
+          && request.resource.data.maxParticipants >= 3
+          && request.resource.data.maxParticipants <= 10
+          && request.resource.data.maxParticipants >= request.resource.data.currentParticipants
           && visibilityFieldsUnchanged()
           // Snack Chat linkage is owned by createMeetupSnackChatSecure so a
           // client cannot point a Meetup at an unrelated room or clear it.
@@ -1334,9 +1347,10 @@ service cloud.firestore {
             == resource.data.get('lastMessageSequence', 0) + 1
           && request.resource.data.unreadCount is map
           && resource.data.unreadCount is map
-          && request.resource.data.unreadCount.diff(resource.data.unreadCount)
-            .affectedKeys().hasOnly([request.auth.uid])
-          && request.resource.data.unreadCount[request.auth.uid] == 0;
+          // Sending a message must not implicitly mark the sender's existing
+          // unread messages as read. The exit-boundary callable is the only
+          // normal path that advances the read cursor and aggregate.
+          && request.resource.data.unreadCount == resource.data.unreadCount;
       }
 
       // 일반/Meetup 연결 방 모두 secure callable만 생성한다. Admin SDK는

@@ -108,7 +108,8 @@ class _SnapshotCommentLetterScreenState
           content: Text(
             _isKorean ? '답장을 보냈어요.' : 'Your reply was sent.',
             style: const TextStyle(
-              fontFamily: 'Pretendard',
+              fontFamily: 'Inter',
+              fontFamilyFallback: const ['NotoSansKR'],
               fontWeight: FontWeight.w600,
             ),
           ),
@@ -124,7 +125,8 @@ class _SnapshotCommentLetterScreenState
                 ? '답장을 보내지 못했어요. 잠시 후 다시 시도해 주세요.'
                 : 'Could not send the reply. Please try again.',
             style: const TextStyle(
-              fontFamily: 'Pretendard',
+              fontFamily: 'Inter',
+              fontFamilyFallback: const ['NotoSansKR'],
               fontWeight: FontWeight.w600,
             ),
           ),
@@ -220,7 +222,8 @@ class _SnapshotCommentLetterScreenState
             maxLines: 1,
             overflow: TextOverflow.ellipsis,
             style: TextStyle(
-              fontFamily: 'Pretendard',
+              fontFamily: 'Inter',
+              fontFamilyFallback: const ['NotoSansKR'],
               fontSize: context.rf(18).clamp(17, 20).toDouble(),
               fontWeight: FontWeight.w700,
               color: const Color(0xFF111827),
@@ -314,7 +317,8 @@ class _SnapshotCommentLetterScreenState
                     maxLines: 2,
                     overflow: TextOverflow.ellipsis,
                     style: TextStyle(
-                      fontFamily: 'Pretendard',
+                      fontFamily: 'Inter',
+                      fontFamilyFallback: const ['NotoSansKR'],
                       fontSize: context.rf(18).clamp(17, 20).toDouble(),
                       height: 1.35,
                       fontWeight: FontWeight.w700,
@@ -336,7 +340,8 @@ class _SnapshotCommentLetterScreenState
                   Text(
                     letter.comment,
                     style: TextStyle(
-                      fontFamily: 'Pretendard',
+                      fontFamily: 'Inter',
+                      fontFamilyFallback: const ['NotoSansKR'],
                       fontSize: context.rf(16).clamp(15, 17).toDouble(),
                       height: 1.5,
                       fontWeight: FontWeight.w500,
@@ -362,7 +367,8 @@ class _SnapshotCommentLetterScreenState
                       maxLines: 2,
                       overflow: TextOverflow.ellipsis,
                       style: TextStyle(
-                        fontFamily: 'Pretendard',
+                        fontFamily: 'Inter',
+                        fontFamilyFallback: const ['NotoSansKR'],
                         fontSize: context.rf(16).clamp(15, 18).toDouble(),
                         fontWeight: FontWeight.w700,
                         color: const Color(0xFF111827),
@@ -387,7 +393,8 @@ class _SnapshotCommentLetterScreenState
                     Text(
                       letter.reply,
                       style: TextStyle(
-                        fontFamily: 'Pretendard',
+                        fontFamily: 'Inter',
+                        fontFamilyFallback: const ['NotoSansKR'],
                         fontSize: context.rf(16).clamp(15, 17).toDouble(),
                         height: 1.5,
                         fontWeight: FontWeight.w500,
@@ -403,7 +410,8 @@ class _SnapshotCommentLetterScreenState
                           : 'This letter can only be reopened from notifications.',
                       textAlign: TextAlign.center,
                       style: TextStyle(
-                        fontFamily: 'Pretendard',
+                        fontFamily: 'Inter',
+                        fontFamilyFallback: const ['NotoSansKR'],
                         fontSize: context.rf(12).clamp(11.5, 13).toDouble(),
                         height: 1.45,
                         fontWeight: FontWeight.w500,
@@ -485,7 +493,8 @@ class _SnapshotCommentLetterScreenState
                           onSubmitted: (_) => _sendReply(),
                           onChanged: (_) => setState(() {}),
                           style: TextStyle(
-                            fontFamily: 'Pretendard',
+                            fontFamily: 'Inter',
+                            fontFamilyFallback: const ['NotoSansKR'],
                             fontSize: context.rf(15).clamp(14, 16).toDouble(),
                             fontWeight: FontWeight.w500,
                             color: const Color(0xFF111827),
@@ -495,7 +504,8 @@ class _SnapshotCommentLetterScreenState
                                 ? '한 번뿐인 답장을 작성해 주세요'
                                 : 'Write your one-time reply',
                             hintStyle: TextStyle(
-                              fontFamily: 'Pretendard',
+                              fontFamily: 'Inter',
+                              fontFamilyFallback: const ['NotoSansKR'],
                               fontSize: context.rf(14).clamp(13, 15).toDouble(),
                               color: const Color(0xFF9CA3AF),
                               fontWeight: FontWeight.w500,
@@ -562,7 +572,8 @@ class _SnapshotCommentLetterScreenState
                 _isKorean ? '이 편지를 열 수 없어요.' : 'This letter is unavailable.',
                 textAlign: TextAlign.center,
                 style: const TextStyle(
-                  fontFamily: 'Pretendard',
+                  fontFamily: 'Inter',
+                  fontFamilyFallback: const ['NotoSansKR'],
                   fontSize: 18,
                   fontWeight: FontWeight.w800,
                   color: Color(0xFF111827),
@@ -575,7 +586,8 @@ class _SnapshotCommentLetterScreenState
                     : 'The notification was deleted or is no longer available.',
                 textAlign: TextAlign.center,
                 style: const TextStyle(
-                  fontFamily: 'Pretendard',
+                  fontFamily: 'Inter',
+                  fontFamilyFallback: const ['NotoSansKR'],
                   fontSize: 14,
                   height: 1.5,
                   color: Color(0xFF6B7280),
@@ -653,7 +665,8 @@ class _SourceContext extends StatelessWidget {
                             maxLines: 1,
                             overflow: TextOverflow.ellipsis,
                             style: TextStyle(
-                              fontFamily: 'Pretendard',
+                              fontFamily: 'Inter',
+                              fontFamilyFallback: const ['NotoSansKR'],
                               fontSize: context.rf(14).clamp(13, 15).toDouble(),
                               height: 1.35,
                               fontWeight: FontWeight.w700,
@@ -668,7 +681,8 @@ class _SourceContext extends StatelessWidget {
                             maxLines: 2,
                             overflow: TextOverflow.ellipsis,
                             style: TextStyle(
-                              fontFamily: 'Pretendard',
+                              fontFamily: 'Inter',
+                              fontFamilyFallback: const ['NotoSansKR'],
                               fontSize:
                                   context.rf(12.5).clamp(12, 14).toDouble(),
                               height: 1.4,
@@ -682,7 +696,8 @@ class _SourceContext extends StatelessWidget {
                               time,
                               maxLines: 1,
                               style: TextStyle(
-                                fontFamily: 'Pretendard',
+                                fontFamily: 'Inter',
+                                fontFamilyFallback: const ['NotoSansKR'],
                                 fontSize:
                                     context.rf(11.5).clamp(11, 12.5).toDouble(),
                                 fontWeight: FontWeight.w500,
@@ -847,7 +862,8 @@ class _PersonLine extends StatelessWidget {
                   maxLines: 1,
                   overflow: TextOverflow.ellipsis,
                   style: TextStyle(
-                    fontFamily: 'Pretendard',
+                    fontFamily: 'Inter',
+                    fontFamilyFallback: const ['NotoSansKR'],
                     fontSize: context.rf(15).clamp(14, 16).toDouble(),
                     fontWeight: FontWeight.w700,
                     color: const Color(0xFF111827),
@@ -863,7 +879,8 @@ class _PersonLine extends StatelessWidget {
                     maxLines: 1,
                     overflow: TextOverflow.ellipsis,
                     style: TextStyle(
-                      fontFamily: 'Pretendard',
+                      fontFamily: 'Inter',
+                      fontFamilyFallback: const ['NotoSansKR'],
                       fontSize: context.rf(12).clamp(11.5, 13).toDouble(),
                       fontWeight: FontWeight.w500,
                       color: const Color(0xFF9CA3AF),

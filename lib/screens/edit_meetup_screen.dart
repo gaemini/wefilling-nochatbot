@@ -10,6 +10,7 @@ import 'package:image_picker/image_picker.dart';
 import 'package:intl/intl.dart';
 import '../models/meetup.dart';
 import '../constants/app_constants.dart';
+import '../constants/meetup_limits.dart';
 import '../l10n/app_localizations.dart';
 import '../utils/logger.dart';
 import '../utils/responsive_helper.dart';
@@ -53,7 +54,7 @@ class _EditMeetupScreenState extends State<EditMeetupScreen> {
     'culture',
     'etc',
   ];
-  final List<int> _participantOptions = [3, 4, 5, 6];
+  final List<int> _participantOptions = meetupParticipantOptions;
 
   @override
   void initState() {
@@ -74,7 +75,9 @@ class _EditMeetupScreenState extends State<EditMeetupScreen> {
     _titleController.text = widget.meetup.title;
     _descriptionController.text = widget.meetup.description;
     _locationController.text = widget.meetup.location;
-    _selectedMaxParticipants = widget.meetup.maxParticipants;
+    _selectedMaxParticipants = widget.meetup.maxParticipants
+        .clamp(minMeetupParticipants, maxMeetupParticipants)
+        .toInt();
     _selectedDate = widget.meetup.date;
     _existingImageUrl = widget.meetup.thumbnailImageUrl;
 
@@ -343,7 +346,8 @@ class _EditMeetupScreenState extends State<EditMeetupScreen> {
       context.rs(20).clamp(16, 24).toDouble();
 
   TextStyle _sectionTitleStyle(BuildContext context) => TextStyle(
-        fontFamily: 'Pretendard',
+        fontFamily: 'Inter',
+        fontFamilyFallback: const ['NotoSansKR'],
         fontSize: context.rf(15).clamp(14, 16).toDouble(),
         fontWeight: FontWeight.w700,
         height: 1.25,
@@ -352,7 +356,8 @@ class _EditMeetupScreenState extends State<EditMeetupScreen> {
       );
 
   TextStyle _inputStyle(BuildContext context) => TextStyle(
-        fontFamily: 'Pretendard',
+        fontFamily: 'Inter',
+        fontFamilyFallback: const ['NotoSansKR'],
         fontSize: context.rf(15).clamp(14, 16).toDouble(),
         fontWeight: FontWeight.w500,
         height: 1.35,
@@ -407,7 +412,8 @@ class _EditMeetupScreenState extends State<EditMeetupScreen> {
                   Text(
                     l10n.exitMeetupEditing,
                     style: TextStyle(
-                      fontFamily: 'Pretendard',
+                      fontFamily: 'Inter',
+                      fontFamilyFallback: const ['NotoSansKR'],
                       fontSize: context.rf(17).clamp(16, 18).toDouble(),
                       fontWeight: FontWeight.w700,
                       height: 1.3,
@@ -418,7 +424,8 @@ class _EditMeetupScreenState extends State<EditMeetupScreen> {
                   Text(
                     l10n.exitMeetupEditingMessage,
                     style: TextStyle(
-                      fontFamily: 'Pretendard',
+                      fontFamily: 'Inter',
+                      fontFamilyFallback: const ['NotoSansKR'],
                       fontSize: context.rf(13.5).clamp(13, 14.5).toDouble(),
                       fontWeight: FontWeight.w400,
                       height: 1.5,
@@ -442,7 +449,8 @@ class _EditMeetupScreenState extends State<EditMeetupScreen> {
                           child: Text(
                             l10n.stay,
                             style: const TextStyle(
-                              fontFamily: 'Pretendard',
+                              fontFamily: 'Inter',
+                              fontFamilyFallback: const ['NotoSansKR'],
                               fontSize: 14,
                               fontWeight: FontWeight.w600,
                             ),
@@ -457,7 +465,8 @@ class _EditMeetupScreenState extends State<EditMeetupScreen> {
                           child: Text(
                             l10n.exit,
                             style: const TextStyle(
-                              fontFamily: 'Pretendard',
+                              fontFamily: 'Inter',
+                              fontFamilyFallback: const ['NotoSansKR'],
                               fontSize: 14,
                               fontWeight: FontWeight.w700,
                             ),
@@ -533,7 +542,8 @@ class _EditMeetupScreenState extends State<EditMeetupScreen> {
               maxLines: 1,
               overflow: TextOverflow.ellipsis,
               style: TextStyle(
-                fontFamily: 'Pretendard',
+                fontFamily: 'Inter',
+                fontFamilyFallback: const ['NotoSansKR'],
                 fontSize: context.rf(18).clamp(16, 19).toDouble(),
                 fontWeight: FontWeight.w700,
                 height: 1.2,
@@ -782,7 +792,8 @@ class _EditMeetupScreenState extends State<EditMeetupScreen> {
           Text(
             l10n.optionalField,
             style: TextStyle(
-              fontFamily: 'Pretendard',
+              fontFamily: 'Inter',
+              fontFamilyFallback: const ['NotoSansKR'],
               fontSize: context.rf(12).clamp(11, 13).toDouble(),
               fontWeight: FontWeight.w500,
               color: const Color(0xFF9CA3AF),
@@ -939,7 +950,8 @@ class _EditMeetupScreenState extends State<EditMeetupScreen> {
             maxLines: 1,
             overflow: TextOverflow.ellipsis,
             style: TextStyle(
-              fontFamily: 'Pretendard',
+              fontFamily: 'Inter',
+              fontFamilyFallback: const ['NotoSansKR'],
               fontSize: context.rf(13).clamp(12, 14).toDouble(),
               fontWeight: FontWeight.w700,
             ),
@@ -1042,7 +1054,8 @@ class _EditMeetupScreenState extends State<EditMeetupScreen> {
                 : Text(
                     label,
                     style: TextStyle(
-                      fontFamily: 'Pretendard',
+                      fontFamily: 'Inter',
+                      fontFamilyFallback: const ['NotoSansKR'],
                       fontSize: context.rf(15).clamp(14, 16).toDouble(),
                       fontWeight: FontWeight.w700,
                       color: foregroundColor,

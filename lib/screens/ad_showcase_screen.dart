@@ -31,21 +31,23 @@ class _AdShowcaseScreenState extends State<AdShowcaseScreen> {
   final Map<String, GlobalKey> _bannerKeys = <String, GlobalKey>{};
   bool _didRevealInitialBanner = false;
 
-  GlobalKey _keyForBanner(String bannerId) {
+  GlobalKey _keyForBanner(String bannerId, int index) {
+    final anchorId = '$index::$bannerId';
     return _bannerKeys.putIfAbsent(
-      bannerId,
-      () => GlobalKey(debugLabel: 'ad-showcase-$bannerId'),
+      anchorId,
+      () => GlobalKey(debugLabel: 'ad-showcase-$anchorId'),
     );
   }
 
   void _revealInitialBanner(List<AdBanner> banners) {
     final targetId = widget.initialBannerId?.trim();
     if (_didRevealInitialBanner || targetId == null || targetId.isEmpty) return;
-    if (!banners.any((banner) => banner.id == targetId)) return;
+    final targetIndex = banners.indexWhere((banner) => banner.id == targetId);
+    if (targetIndex < 0) return;
 
     WidgetsBinding.instance.addPostFrameCallback((_) {
       if (!mounted || _didRevealInitialBanner) return;
-      final targetContext = _keyForBanner(targetId).currentContext;
+      final targetContext = _keyForBanner(targetId, targetIndex).currentContext;
       if (targetContext == null) return;
 
       _didRevealInitialBanner = true;
@@ -237,7 +239,9 @@ class _AdShowcaseScreenState extends State<AdShowcaseScreen> {
               children: [
                 for (var index = 0; index < activeAds.length; index++)
                   KeyedSubtree(
-                    key: _keyForBanner(activeAds[index].id),
+                    // 순번을 함께 사용해 잘못된 레거시 데이터에 중복 id가 있어도
+                    // 한 Column 안에서 GlobalKey가 충돌하지 않도록 한다.
+                    key: _keyForBanner(activeAds[index].id, index),
                     child: _buildAdCard(context, activeAds[index], index),
                   ),
                 // 마지막 광고도 화면 상단 가까이에 정렬할 수 있는 앵커 여백.

@@ -436,7 +436,8 @@ class _MyPageScreenState extends State<MyPageScreen>
                           ? nickname
                           : AppLocalizations.of(context)!.user,
                       style: const TextStyle(
-                        fontFamily: 'Pretendard',
+                        fontFamily: 'Inter',
+                        fontFamilyFallback: const ['NotoSansKR'],
                         fontSize: 20,
                         fontWeight: FontWeight.w600,
                         color: Color(0xFF111827),
@@ -461,7 +462,8 @@ class _MyPageScreenState extends State<MyPageScreen>
                                               .languageCode) ??
                                   nationality,
                               style: const TextStyle(
-                                fontFamily: 'Pretendard',
+                                fontFamily: 'Inter',
+                                fontFamilyFallback: const ['NotoSansKR'],
                                 fontSize: 14,
                                 fontWeight: FontWeight.w400,
                                 color: Color(0xFF6B7280),
@@ -479,7 +481,8 @@ class _MyPageScreenState extends State<MyPageScreen>
                       Text(
                         bio,
                         style: const TextStyle(
-                          fontFamily: 'Pretendard',
+                          fontFamily: 'Inter',
+                          fontFamilyFallback: const ['NotoSansKR'],
                           fontSize: 14,
                           fontWeight: FontWeight.w400,
                           color: Color(0xFF111827),
@@ -563,7 +566,8 @@ class _MyPageScreenState extends State<MyPageScreen>
                             child: Text(
                               '$profileCompletion',
                               style: const TextStyle(
-                                fontFamily: 'Pretendard',
+                                fontFamily: 'Inter',
+                                fontFamilyFallback: const ['NotoSansKR'],
                                 fontSize: 10,
                                 fontWeight: FontWeight.w700,
                                 color: Color(0xFF475569),
@@ -584,7 +588,8 @@ class _MyPageScreenState extends State<MyPageScreen>
                                 ? 'Add interests so similar people can find you.'
                                 : 'Add a question to make the first DM easier.'),
                         style: const TextStyle(
-                          fontFamily: 'Pretendard',
+                          fontFamily: 'Inter',
+                          fontFamilyFallback: const ['NotoSansKR'],
                           fontSize: 13,
                           fontWeight: FontWeight.w500,
                           color: Color(0xFF475569),
@@ -667,7 +672,8 @@ class _MyPageScreenState extends State<MyPageScreen>
               maxLines: 1,
               overflow: TextOverflow.ellipsis,
               style: const TextStyle(
-                fontFamily: 'Pretendard',
+                fontFamily: 'Inter',
+                fontFamilyFallback: const ['NotoSansKR'],
                 fontSize: 13,
                 fontWeight: FontWeight.w600,
                 color: AppColors.pointColor,
@@ -708,7 +714,8 @@ class _MyPageScreenState extends State<MyPageScreen>
             Text(
               AppLocalizations.of(context)!.loginRequired,
               style: TextStyle(
-                fontFamily: 'Pretendard',
+                fontFamily: 'Inter',
+                fontFamilyFallback: const ['NotoSansKR'],
                 fontSize: 18,
                 fontWeight: FontWeight.w600,
                 color: Color(0xFF111827),
@@ -718,7 +725,8 @@ class _MyPageScreenState extends State<MyPageScreen>
             Text(
               AppLocalizations.of(context)!.loginToViewReviews,
               style: TextStyle(
-                fontFamily: 'Pretendard',
+                fontFamily: 'Inter',
+                fontFamilyFallback: const ['NotoSansKR'],
                 fontSize: 14,
                 color: Color(0xFF6B7280),
               ),
@@ -742,7 +750,8 @@ class _MyPageScreenState extends State<MyPageScreen>
         child: Text(
           AppLocalizations.of(context)!.error,
           style: const TextStyle(
-            fontFamily: 'Pretendard',
+            fontFamily: 'Inter',
+            fontFamilyFallback: const ['NotoSansKR'],
             fontSize: 16,
             color: Color(0xFFEF4444),
           ),
@@ -771,7 +780,8 @@ class _MyPageScreenState extends State<MyPageScreen>
             Text(
               AppLocalizations.of(context)!.noReviewsYet,
               style: TextStyle(
-                fontFamily: 'Pretendard',
+                fontFamily: 'Inter',
+                fontFamilyFallback: const ['NotoSansKR'],
                 fontSize: 20,
                 fontWeight: FontWeight.w600,
                 color: Color(0xFF111827),
@@ -781,7 +791,8 @@ class _MyPageScreenState extends State<MyPageScreen>
             Text(
               AppLocalizations.of(context)!.joinMeetupAndWriteReview,
               style: TextStyle(
-                fontFamily: 'Pretendard',
+                fontFamily: 'Inter',
+                fontFamilyFallback: const ['NotoSansKR'],
                 fontSize: 15,
                 color: Color(0xFF6B7280),
               ),
@@ -967,7 +978,8 @@ class _MyPageScreenState extends State<MyPageScreen>
             Text(
               AppLocalizations.of(context)!.loginRequired,
               style: TextStyle(
-                fontFamily: 'Pretendard',
+                fontFamily: 'Inter',
+                fontFamilyFallback: const ['NotoSansKR'],
                 fontSize: 18,
                 fontWeight: FontWeight.w600,
                 color: Color(0xFF111827),
@@ -977,7 +989,8 @@ class _MyPageScreenState extends State<MyPageScreen>
             Text(
               isKo ? '포스트를 보려면 로그인해주세요' : 'Please login to view posts',
               style: TextStyle(
-                fontFamily: 'Pretendard',
+                fontFamily: 'Inter',
+                fontFamilyFallback: const ['NotoSansKR'],
                 fontSize: 14,
                 color: Color(0xFF6B7280),
               ),
@@ -1021,7 +1034,8 @@ class _MyPageScreenState extends State<MyPageScreen>
             Text(
               AppLocalizations.of(context)!.noWrittenPosts,
               style: const TextStyle(
-                fontFamily: 'Pretendard',
+                fontFamily: 'Inter',
+                fontFamilyFallback: const ['NotoSansKR'],
                 fontSize: 20,
                 fontWeight: FontWeight.w600,
                 color: Color(0xFF111827),
@@ -1071,7 +1085,8 @@ class _MyPageScreenState extends State<MyPageScreen>
             Text(
               isKo ? '저장한 글이 없습니다' : 'No saved posts yet',
               style: const TextStyle(
-                fontFamily: 'Pretendard',
+                fontFamily: 'Inter',
+                fontFamilyFallback: const ['NotoSansKR'],
                 fontSize: 18,
                 fontWeight: FontWeight.w700,
                 color: Color(0xFF111827),
@@ -1134,7 +1149,8 @@ class _MyPageScreenState extends State<MyPageScreen>
                         child: Text(
                           l10n.all,
                           style: const TextStyle(
-                            fontFamily: 'Pretendard',
+                            fontFamily: 'Inter',
+                            fontFamilyFallback: const ['NotoSansKR'],
                             fontSize: 12,
                             fontWeight: FontWeight.w700,
                             color: Color(0xFF4B5563),
@@ -1158,7 +1174,8 @@ class _MyPageScreenState extends State<MyPageScreen>
                     child: Text(
                       l10n.myMeetups,
                       style: const TextStyle(
-                        fontFamily: 'Pretendard',
+                        fontFamily: 'Inter',
+                        fontFamilyFallback: const ['NotoSansKR'],
                         fontSize: 12,
                         fontWeight: FontWeight.w600,
                       ),
@@ -1245,7 +1262,8 @@ class _MyPageScreenState extends State<MyPageScreen>
                         maxLines: 2,
                         overflow: TextOverflow.ellipsis,
                         style: const TextStyle(
-                          fontFamily: 'Pretendard',
+                          fontFamily: 'Inter',
+                          fontFamilyFallback: const ['NotoSansKR'],
                           fontSize: 16,
                           fontWeight: FontWeight.w700,
                           color: Color(0xFF111827),
@@ -1256,7 +1274,8 @@ class _MyPageScreenState extends State<MyPageScreen>
                       Text(
                         DateFormat('yyyy.MM.dd').format(post.createdAt),
                         style: const TextStyle(
-                          fontFamily: 'Pretendard',
+                          fontFamily: 'Inter',
+                          fontFamilyFallback: const ['NotoSansKR'],
                           fontSize: 13,
                           fontWeight: FontWeight.w500,
                           color: Color(0xFF9CA3AF),
@@ -1277,7 +1296,8 @@ class _MyPageScreenState extends State<MyPageScreen>
                               maxLines: 1,
                               overflow: TextOverflow.ellipsis,
                               style: const TextStyle(
-                                fontFamily: 'Pretendard',
+                                fontFamily: 'Inter',
+                                fontFamilyFallback: const ['NotoSansKR'],
                                 fontSize: 13,
                                 fontWeight: FontWeight.w500,
                                 color: Color(0xFF6B7280),
@@ -1307,7 +1327,8 @@ class _MyPageScreenState extends State<MyPageScreen>
                       Text(
                         '${post.likes}',
                         style: const TextStyle(
-                          fontFamily: 'Pretendard',
+                          fontFamily: 'Inter',
+                          fontFamilyFallback: const ['NotoSansKR'],
                           fontSize: 13,
                           fontWeight: FontWeight.w600,
                           color: Color(0xFF6B7280),
@@ -1553,7 +1574,8 @@ class _MyPageScreenState extends State<MyPageScreen>
               Text(
                 label,
                 style: const TextStyle(
-                  fontFamily: 'Pretendard',
+                  fontFamily: 'Inter',
+                  fontFamilyFallback: const ['NotoSansKR'],
                   fontSize: 12,
                   fontWeight: FontWeight.w400,
                   color: Color(0xFF6B7280),
@@ -1573,7 +1595,8 @@ class _MyPageScreenState extends State<MyPageScreen>
             '$value',
             key: ValueKey<String>('count_$cacheKey:$value'),
             style: const TextStyle(
-              fontFamily: 'Pretendard',
+              fontFamily: 'Inter',
+              fontFamilyFallback: const ['NotoSansKR'],
               fontSize: 17,
               fontWeight: FontWeight.w700,
               color: Color(0xFF111827),
@@ -1583,7 +1606,8 @@ class _MyPageScreenState extends State<MyPageScreen>
             '—',
             key: ValueKey<String>('count_$cacheKey:loading'),
             style: const TextStyle(
-              fontFamily: 'Pretendard',
+              fontFamily: 'Inter',
+              fontFamilyFallback: const ['NotoSansKR'],
               fontSize: 17,
               fontWeight: FontWeight.w700,
               color: Color(0xFF9CA3AF),
@@ -1937,7 +1961,8 @@ class _MyPageScreenState extends State<MyPageScreen>
             Text(
               title,
               style: TextStyle(
-                fontFamily: 'Pretendard',
+                fontFamily: 'Inter',
+                fontFamilyFallback: const ['NotoSansKR'],
                 fontSize: 16,
                 fontWeight: FontWeight.w500,
                 color: color ?? const Color(0xFF111827),
@@ -1976,7 +2001,8 @@ class _MyPageScreenState extends State<MyPageScreen>
               child: Text(
                 AppLocalizations.of(context)!.friends,
                 style: const TextStyle(
-                  fontFamily: 'Pretendard',
+                  fontFamily: 'Inter',
+                  fontFamilyFallback: const ['NotoSansKR'],
                   fontSize: 18,
                   fontWeight: FontWeight.w700,
                   color: const Color(0xFF111827),
@@ -2172,7 +2198,8 @@ class MyPageSettingsSheet {
             Text(
               title,
               style: TextStyle(
-                fontFamily: 'Pretendard',
+                fontFamily: 'Inter',
+                fontFamilyFallback: const ['NotoSansKR'],
                 fontSize: 16,
                 fontWeight: FontWeight.w500,
                 color: color ?? const Color(0xFF111827),

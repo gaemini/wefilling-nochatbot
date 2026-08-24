@@ -337,7 +337,8 @@ class SnackChatReplyPreviewView extends StatelessWidget {
                       maxLines: 1,
                       overflow: TextOverflow.ellipsis,
                       style: TextStyle(
-                        fontFamily: 'Pretendard',
+                        fontFamily: 'Inter',
+                        fontFamilyFallback: const ['NotoSansKR'],
                         fontSize: 11.5,
                         fontWeight: FontWeight.w700,
                         color: foreground,
@@ -348,7 +349,8 @@ class SnackChatReplyPreviewView extends StatelessWidget {
                       maxLines: 1,
                       overflow: TextOverflow.ellipsis,
                       style: TextStyle(
-                        fontFamily: 'Pretendard',
+                        fontFamily: 'Inter',
+                        fontFamilyFallback: const ['NotoSansKR'],
                         fontSize: 11.5,
                         fontWeight: FontWeight.w500,
                         color: foreground.withValues(alpha: 0.86),
@@ -415,7 +417,8 @@ class SnackChatReactionBar extends StatelessWidget {
                   child: Text(
                     '${entry.key} ${entry.value}',
                     style: TextStyle(
-                      fontFamily: 'Pretendard',
+                      fontFamily: 'Inter',
+                      fontFamilyFallback: const ['NotoSansKR'],
                       fontSize: 11.5,
                       fontWeight: selected ? FontWeight.w700 : FontWeight.w600,
                       color:
@@ -476,7 +479,8 @@ class SnackChatPollCard extends StatelessWidget {
                 child: Text(
                   poll.question,
                   style: TextStyle(
-                    fontFamily: 'Pretendard',
+                    fontFamily: 'Inter',
+                    fontFamilyFallback: const ['NotoSansKR'],
                     fontSize: 14.5,
                     height: 1.35,
                     fontWeight: FontWeight.w700,
@@ -540,7 +544,8 @@ class SnackChatPollCard extends StatelessWidget {
                                 maxLines: 2,
                                 overflow: TextOverflow.ellipsis,
                                 style: TextStyle(
-                                  fontFamily: 'Pretendard',
+                                  fontFamily: 'Inter',
+                                  fontFamilyFallback: const ['NotoSansKR'],
                                   fontSize: 13,
                                   fontWeight: selected
                                       ? FontWeight.w700
@@ -553,7 +558,8 @@ class SnackChatPollCard extends StatelessWidget {
                             Text(
                               '$count',
                               style: TextStyle(
-                                fontFamily: 'Pretendard',
+                                fontFamily: 'Inter',
+                                fontFamilyFallback: const ['NotoSansKR'],
                                 fontSize: 11.5,
                                 fontWeight: FontWeight.w600,
                                 color: secondary,
@@ -587,7 +593,8 @@ class SnackChatPollCard extends StatelessWidget {
               if (isClosed) '종료됨',
             ].join(' · '),
             style: TextStyle(
-              fontFamily: 'Pretendard',
+              fontFamily: 'Inter',
+              fontFamilyFallback: const ['NotoSansKR'],
               fontSize: 11,
               fontWeight: FontWeight.w500,
               color: secondary,
@@ -702,7 +709,8 @@ class SnackChatLinkPreviewCard extends StatelessWidget {
                         maxLines: 1,
                         overflow: TextOverflow.ellipsis,
                         style: TextStyle(
-                          fontFamily: 'Pretendard',
+                          fontFamily: 'Inter',
+                          fontFamilyFallback: const ['NotoSansKR'],
                           fontSize: 10.5,
                           fontWeight: FontWeight.w600,
                           color: secondary,
@@ -714,7 +722,8 @@ class SnackChatLinkPreviewCard extends StatelessWidget {
                           maxLines: 2,
                           overflow: TextOverflow.ellipsis,
                           style: TextStyle(
-                            fontFamily: 'Pretendard',
+                            fontFamily: 'Inter',
+                            fontFamilyFallback: const ['NotoSansKR'],
                             fontSize: 12.5,
                             height: 1.3,
                             fontWeight: FontWeight.w700,
@@ -727,7 +736,8 @@ class SnackChatLinkPreviewCard extends StatelessWidget {
                           maxLines: 2,
                           overflow: TextOverflow.ellipsis,
                           style: TextStyle(
-                            fontFamily: 'Pretendard',
+                            fontFamily: 'Inter',
+                            fontFamilyFallback: const ['NotoSansKR'],
                             fontSize: 11,
                             height: 1.3,
                             color: secondary,

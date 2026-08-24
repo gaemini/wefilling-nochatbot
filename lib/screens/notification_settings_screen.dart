@@ -88,7 +88,8 @@ class _NotificationSettingsScreenState
         title: Text(
           AppLocalizations.of(context)!.notificationSettings ?? "",
           style: const TextStyle(
-            fontFamily: 'Pretendard',
+            fontFamily: 'Inter',
+            fontFamilyFallback: const ['NotoSansKR'],
             fontSize: 18,
             fontWeight: FontWeight.w600,
             color: Color(0xFF111827),
@@ -187,7 +188,8 @@ class _NotificationSettingsScreenState
         title: Text(
           AppLocalizations.of(context)!.allNotifications,
           style: const TextStyle(
-            fontFamily: 'Pretendard',
+            fontFamily: 'Inter',
+            fontFamilyFallback: const ['NotoSansKR'],
             fontSize: 17,
             fontWeight: FontWeight.w800,
             color: Color(0xFF111827),
@@ -198,7 +200,8 @@ class _NotificationSettingsScreenState
           child: Text(
             AppLocalizations.of(context)!.allNotificationsSubtitle,
             style: TextStyle(
-              fontFamily: 'Pretendard',
+              fontFamily: 'Inter',
+              fontFamilyFallback: const ['NotoSansKR'],
               fontSize: 13,
               fontWeight: FontWeight.w600,
               color: Colors.grey[700],
@@ -235,7 +238,8 @@ class _NotificationSettingsScreenState
           Text(
             title,
             style: const TextStyle(
-              fontFamily: 'Pretendard',
+              fontFamily: 'Inter',
+              fontFamilyFallback: const ['NotoSansKR'],
               fontSize: 15,
               fontWeight: FontWeight.w800,
               color: Color(0xFF6B7280),
@@ -257,7 +261,8 @@ class _NotificationSettingsScreenState
           title: Text(
             AppLocalizations.of(context)!.disableAllNotificationsTitle,
             style: const TextStyle(
-              fontFamily: 'Pretendard',
+              fontFamily: 'Inter',
+              fontFamilyFallback: const ['NotoSansKR'],
               fontSize: 18,
               fontWeight: FontWeight.w800,
             ),
@@ -265,7 +270,8 @@ class _NotificationSettingsScreenState
           content: Text(
             AppLocalizations.of(context)!.disableAllNotificationsMessage,
             style: const TextStyle(
-              fontFamily: 'Pretendard',
+              fontFamily: 'Inter',
+              fontFamilyFallback: const ['NotoSansKR'],
               fontSize: 15,
               fontWeight: FontWeight.w600,
               height: 1.5,
@@ -277,7 +283,8 @@ class _NotificationSettingsScreenState
               child: Text(
                 AppLocalizations.of(context)!.cancel,
                 style: const TextStyle(
-                  fontFamily: 'Pretendard',
+                  fontFamily: 'Inter',
+                  fontFamilyFallback: const ['NotoSansKR'],
                   fontWeight: FontWeight.w700,
                 ),
               ),
@@ -291,7 +298,8 @@ class _NotificationSettingsScreenState
               child: Text(
                 AppLocalizations.of(context)!.turnOff,
                 style: const TextStyle(
-                  fontFamily: 'Pretendard',
+                  fontFamily: 'Inter',
+                  fontFamilyFallback: const ['NotoSansKR'],
                   fontWeight: FontWeight.w700,
                 ),
               ),
@@ -367,7 +375,8 @@ class _NotificationSettingsScreenState
       title: Text(
         title,
         style: TextStyle(
-          fontFamily: 'Pretendard',
+          fontFamily: 'Inter',
+          fontFamilyFallback: const ['NotoSansKR'],
           fontSize: 15,
           fontWeight: FontWeight.w700,
           color: disabled ? Colors.grey.shade400 : const Color(0xFF111827),
@@ -378,7 +387,8 @@ class _NotificationSettingsScreenState
         child: Text(
           subtitle,
           style: TextStyle(
-            fontFamily: 'Pretendard',
+            fontFamily: 'Inter',
+            fontFamilyFallback: const ['NotoSansKR'],
             fontSize: 13,
             fontWeight: FontWeight.w600,
             color: disabled ? Colors.grey.shade400 : Colors.grey[600],

@@ -459,7 +459,7 @@
   "categoryDeleteFailed": "Failed to delete group",
   "enterCategoryName": "Please enter group name",
   "deleteCategory": "Delete Group",
-  "deleteCategoryConfirm": "Are you sure you want to delete '{name}' group?\n\nFriends in this group will be moved to other groups.",
+  "deleteCategoryConfirm": "Are you sure you want to delete '{name}' group?\n\nOnly the group is deleted. Its friends will not be moved to another group.",
   "@deleteCategoryConfirm": {
     "placeholders": {
       "name": {
@@ -1332,9 +1332,11 @@
   "postComposeImageHelper": "You can attach up to 15 images.",
   "addImage": "Add",
   "postComposeVisibilityPrompt": "Choose who can see this post.",
-  "postVisibilityPublicTitle": "Visible to everyone",
+  "postVisibilityPublicTitle": "Public",
   "postVisibilityPublicDescription": "All users can view this post",
-  "postVisibilityGroupTitle": "Select groups",
+  "postVisibilityAnonymousTitle": "Public anonymously",
+  "postVisibilityAnonymousDescription": "All users can view this post without your profile",
+  "postVisibilityGroupTitle": "Group only",
   "postVisibilityGroupDescription": "Only friends in selected groups can view this post",
   "postVisibilityNoGroupsSelected": "No groups selected",
   "postVisibilityGroupsSelected": "{count} groups selected",

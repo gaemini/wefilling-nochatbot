@@ -86,7 +86,8 @@ class _NotificationScreenState extends State<NotificationScreen> {
         content: Text(
           message,
           style: const TextStyle(
-            fontFamily: 'Pretendard',
+            fontFamily: 'Inter',
+            fontFamilyFallback: const ['NotoSansKR'],
             fontSize: 15,
             fontWeight: FontWeight.w600,
             color: Colors.white,
@@ -922,7 +923,8 @@ class _NotificationScreenState extends State<NotificationScreen> {
         title: Text(
           AppLocalizations.of(context)!.notification,
           style: const TextStyle(
-            fontFamily: 'Pretendard',
+            fontFamily: 'Inter',
+            fontFamilyFallback: const ['NotoSansKR'],
             fontSize: 18,
             fontWeight: FontWeight.w600,
           ),
@@ -960,7 +962,8 @@ class _NotificationScreenState extends State<NotificationScreen> {
                   Text(
                     AppLocalizations.of(context)!.noNotifications,
                     style: const TextStyle(
-                      fontFamily: 'Pretendard',
+                      fontFamily: 'Inter',
+                      fontFamilyFallback: const ['NotoSansKR'],
                       fontSize: 16,
                       fontWeight: FontWeight.w500,
                       color: Color(0xFF6B7280),

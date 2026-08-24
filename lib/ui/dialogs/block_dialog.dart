@@ -50,7 +50,8 @@ class _BlockUserDialogState extends State<BlockUserDialog> {
           Text(
             AppLocalizations.of(context)!.blockUserTitle,
             style: const TextStyle(
-              fontFamily: 'Pretendard',
+              fontFamily: 'Inter',
+              fontFamilyFallback: const ['NotoSansKR'],
               fontSize: 18,
               fontWeight: FontWeight.w700,
               color: Color(0xFF111827),
@@ -65,7 +66,8 @@ class _BlockUserDialogState extends State<BlockUserDialog> {
           Text(
             AppLocalizations.of(context)!.blockUserMessage(widget.userName),
             style: const TextStyle(
-              fontFamily: 'Pretendard',
+              fontFamily: 'Inter',
+              fontFamilyFallback: const ['NotoSansKR'],
               fontSize: 15,
               fontWeight: FontWeight.w500,
               color: Color(0xFF374151),
@@ -91,7 +93,8 @@ class _BlockUserDialogState extends State<BlockUserDialog> {
                     Text(
                       AppLocalizations.of(context)!.blockUserWarningTitle,
                       style: const TextStyle(
-                        fontFamily: 'Pretendard',
+                        fontFamily: 'Inter',
+                        fontFamilyFallback: const ['NotoSansKR'],
                         fontSize: 14,
                         fontWeight: FontWeight.w600,
                         color: Color(0xFF92400E),
@@ -106,7 +109,8 @@ class _BlockUserDialogState extends State<BlockUserDialog> {
                   '• ${AppLocalizations.of(context)!.blockUserWarning3}\n'
                   '• ${AppLocalizations.of(context)!.blockUserWarning4}',
                   style: const TextStyle(
-                    fontFamily: 'Pretendard',
+                    fontFamily: 'Inter',
+                    fontFamilyFallback: const ['NotoSansKR'],
                     fontSize: 13,
                     fontWeight: FontWeight.w500,
                     color: Color(0xFF78350F),
@@ -135,7 +139,8 @@ class _BlockUserDialogState extends State<BlockUserDialog> {
                 child: Text(
                   AppLocalizations.of(context)!.cancel,
                   style: const TextStyle(
-                    fontFamily: 'Pretendard',
+                    fontFamily: 'Inter',
+                    fontFamilyFallback: const ['NotoSansKR'],
                     fontSize: 14,
                     fontWeight: FontWeight.w700,
                     color: Color(0xFF6B7280),
@@ -170,7 +175,8 @@ class _BlockUserDialogState extends State<BlockUserDialog> {
                     : Text(
                         AppLocalizations.of(context)!.blockUserButton,
                         style: const TextStyle(
-                          fontFamily: 'Pretendard',
+                          fontFamily: 'Inter',
+                          fontFamilyFallback: const ['NotoSansKR'],
                           fontSize: 14,
                           fontWeight: FontWeight.w700,
                         ),
@@ -316,7 +322,8 @@ class _UnblockUserDialogState extends State<UnblockUserDialog> {
           Text(
             AppLocalizations.of(context)!.unblockUserTitle,
             style: const TextStyle(
-              fontFamily: 'Pretendard',
+              fontFamily: 'Inter',
+              fontFamilyFallback: const ['NotoSansKR'],
               fontSize: 18,
               fontWeight: FontWeight.w700,
               color: Color(0xFF111827),
@@ -327,7 +334,8 @@ class _UnblockUserDialogState extends State<UnblockUserDialog> {
       content: Text(
         AppLocalizations.of(context)!.unblockUserMessage(widget.userName),
         style: const TextStyle(
-          fontFamily: 'Pretendard',
+          fontFamily: 'Inter',
+          fontFamilyFallback: const ['NotoSansKR'],
           fontSize: 15,
           fontWeight: FontWeight.w500,
           color: Color(0xFF374151),
@@ -351,7 +359,8 @@ class _UnblockUserDialogState extends State<UnblockUserDialog> {
                 child: Text(
                   AppLocalizations.of(context)!.cancel,
                   style: const TextStyle(
-                    fontFamily: 'Pretendard',
+                    fontFamily: 'Inter',
+                    fontFamilyFallback: const ['NotoSansKR'],
                     fontSize: 14,
                     fontWeight: FontWeight.w700,
                     color: Color(0xFF6B7280),
@@ -386,7 +395,8 @@ class _UnblockUserDialogState extends State<UnblockUserDialog> {
                     : Text(
                         AppLocalizations.of(context)!.unblockUserButton,
                         style: const TextStyle(
-                          fontFamily: 'Pretendard',
+                          fontFamily: 'Inter',
+                          fontFamilyFallback: const ['NotoSansKR'],
                           fontSize: 14,
                           fontWeight: FontWeight.w700,
                         ),

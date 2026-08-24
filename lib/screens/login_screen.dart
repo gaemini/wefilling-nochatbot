@@ -94,7 +94,8 @@ class _LoginScreenState extends State<LoginScreen>
                 Text(
                   AppLocalizations.of(context)!.registrationRequired,
                   style: const TextStyle(
-                    fontFamily: 'Pretendard',
+                    fontFamily: 'Inter',
+                    fontFamilyFallback: const ['NotoSansKR'],
                     fontSize: 22,
                     fontWeight: FontWeight.w700,
                     color: Color(0xFF1E293B),
@@ -110,7 +111,8 @@ class _LoginScreenState extends State<LoginScreen>
                 Text(
                   AppLocalizations.of(context)!.signupRequired,
                   style: const TextStyle(
-                    fontFamily: 'Pretendard',
+                    fontFamily: 'Inter',
+                    fontFamilyFallback: const ['NotoSansKR'],
                     fontSize: 16,
                     fontWeight: FontWeight.w400,
                     height: 1.6,
@@ -143,7 +145,8 @@ class _LoginScreenState extends State<LoginScreen>
                         child: Text(
                           AppLocalizations.of(context)!.signUpFirstMessage,
                           style: TextStyle(
-                            fontFamily: 'Pretendard',
+                            fontFamily: 'Inter',
+                            fontFamilyFallback: const ['NotoSansKR'],
                             fontSize: 14,
                             fontWeight: FontWeight.w500,
                             color: Colors.blue.shade900,
@@ -248,8 +251,8 @@ class _LoginScreenState extends State<LoginScreen>
                                         style: TextStyle(
                                           fontSize: appNameSize,
                                           fontWeight: FontWeight.bold,
-                                          fontFamily: 'HancomMalrangmalrang',
-                                          fontFamilyFallback: const ['Pretendard'],
+                                          fontFamily: 'Inter',
+                                          fontFamilyFallback: const ['NotoSansKR'],
                                           color: Colors.black,
                                           letterSpacing: 1.2,
                                         ),
@@ -530,7 +533,8 @@ class _LoginScreenState extends State<LoginScreen>
         title: Text(
           currentLocale == 'ko' ? '언어 선택' : 'Select Language',
           style: const TextStyle(
-            fontFamily: 'Pretendard',
+            fontFamily: 'Inter',
+            fontFamilyFallback: const ['NotoSansKR'],
             fontSize: 20,
             fontWeight: FontWeight.w700,
             color: Color(0xFF111827),
@@ -573,7 +577,8 @@ class _LoginScreenState extends State<LoginScreen>
                 child: Text(
                   currentLocale == 'ko' ? '취소' : 'Cancel',
                   style: const TextStyle(
-                    fontFamily: 'Pretendard',
+                    fontFamily: 'Inter',
+                    fontFamilyFallback: const ['NotoSansKR'],
                     fontSize: 15,
                     fontWeight: FontWeight.w700,
                   ),
@@ -664,7 +669,8 @@ class _LoginScreenState extends State<LoginScreen>
                     Text(
                       AppLocalizations.of(context)!.registrationRequired,
                       style: const TextStyle(
-                        fontFamily: 'Pretendard',
+                        fontFamily: 'Inter',
+                        fontFamilyFallback: const ['NotoSansKR'],
                         fontSize: 22,
                         fontWeight: FontWeight.w700,
                         color: Color(0xFF1E293B),
@@ -680,7 +686,8 @@ class _LoginScreenState extends State<LoginScreen>
                     Text(
                       AppLocalizations.of(context)!.signupRequired,
                       style: const TextStyle(
-                        fontFamily: 'Pretendard',
+                        fontFamily: 'Inter',
+                        fontFamilyFallback: const ['NotoSansKR'],
                         fontSize: 16,
                         fontWeight: FontWeight.w400,
                         height: 1.6,
@@ -713,7 +720,8 @@ class _LoginScreenState extends State<LoginScreen>
                             child: Text(
                               AppLocalizations.of(context)!.signUpFirstMessage,
                               style: TextStyle(
-                                fontFamily: 'Pretendard',
+                                fontFamily: 'Inter',
+                                fontFamilyFallback: const ['NotoSansKR'],
                                 fontSize: 14,
                                 fontWeight: FontWeight.w500,
                                 color: Colors.blue.shade900,
@@ -834,7 +842,8 @@ class _LoginScreenState extends State<LoginScreen>
                     Text(
                       AppLocalizations.of(context)!.registrationRequired,
                       style: const TextStyle(
-                        fontFamily: 'Pretendard',
+                        fontFamily: 'Inter',
+                        fontFamilyFallback: const ['NotoSansKR'],
                         fontSize: 22,
                         fontWeight: FontWeight.w700,
                         color: Color(0xFF1E293B),
@@ -850,7 +859,8 @@ class _LoginScreenState extends State<LoginScreen>
                     Text(
                       AppLocalizations.of(context)!.signupRequired,
                       style: const TextStyle(
-                        fontFamily: 'Pretendard',
+                        fontFamily: 'Inter',
+                        fontFamilyFallback: const ['NotoSansKR'],
                         fontSize: 16,
                         fontWeight: FontWeight.w400,
                         height: 1.6,
@@ -883,7 +893,8 @@ class _LoginScreenState extends State<LoginScreen>
                             child: Text(
                               AppLocalizations.of(context)!.signUpFirstMessage,
                               style: TextStyle(
-                                fontFamily: 'Pretendard',
+                                fontFamily: 'Inter',
+                                fontFamilyFallback: const ['NotoSansKR'],
                                 fontSize: 14,
                                 fontWeight: FontWeight.w500,
                                 color: Colors.blue.shade900,
@@ -1062,7 +1073,8 @@ class _LoginMethodButton extends StatelessWidget {
                 maxLines: 1,
                 overflow: TextOverflow.ellipsis,
                 style: const TextStyle(
-                  fontFamily: 'Pretendard',
+                  fontFamily: 'Inter',
+                  fontFamilyFallback: const ['NotoSansKR'],
                   fontSize: 15,
                   fontWeight: FontWeight.w700,
                 ),
@@ -1186,7 +1198,8 @@ class _LanguageOption extends StatelessWidget {
                 child: Text(
                   label,
                   style: const TextStyle(
-                    fontFamily: 'Pretendard',
+                    fontFamily: 'Inter',
+                    fontFamilyFallback: const ['NotoSansKR'],
                     fontSize: 15,
                     fontWeight: FontWeight.w600,
                     color: Color(0xFF111827),

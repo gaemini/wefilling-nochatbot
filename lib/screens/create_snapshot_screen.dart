@@ -540,7 +540,8 @@ class _CreateSnapshotScreenState extends State<CreateSnapshotScreen>
     double? fontScale,
   }) {
     return TextStyle(
-      fontFamily: 'Pretendard',
+      fontFamily: 'Inter',
+      fontFamilyFallback: const ['NotoSansKR'],
       fontSize: (imageWidth * .066).clamp(19, 34).toDouble() *
           (fontScale ?? _overlayFontScale),
       fontWeight: FontWeight.w800,
@@ -855,7 +856,8 @@ class _CreateSnapshotScreenState extends State<CreateSnapshotScreen>
                   strings.deleteConfirm,
                   textAlign: TextAlign.center,
                   style: TextStyle(
-                    fontFamily: 'Pretendard',
+                    fontFamily: 'Inter',
+                    fontFamilyFallback: const ['NotoSansKR'],
                     fontSize: sheetContext.rf(16).clamp(15, 17).toDouble(),
                     fontWeight: FontWeight.w700,
                     color: const Color(0xFF111827),
@@ -939,7 +941,8 @@ class _CreateSnapshotScreenState extends State<CreateSnapshotScreen>
               maxLines: 1,
               overflow: TextOverflow.ellipsis,
               style: TextStyle(
-                fontFamily: 'Pretendard',
+                fontFamily: 'Inter',
+                fontFamilyFallback: const ['NotoSansKR'],
                 fontSize: context.rf(18).clamp(16, 19).toDouble(),
                 fontWeight: FontWeight.w700,
                 color: const Color(0xFF111827),
@@ -985,7 +988,8 @@ class _CreateSnapshotScreenState extends State<CreateSnapshotScreen>
                   label: Text(
                     strings.upload,
                     style: TextStyle(
-                      fontFamily: 'Pretendard',
+                      fontFamily: 'Inter',
+                      fontFamilyFallback: const ['NotoSansKR'],
                       fontSize: context.rf(14).clamp(13, 15).toDouble(),
                       fontWeight: FontWeight.w700,
                     ),
@@ -1087,7 +1091,8 @@ class _CreateSnapshotScreenState extends State<CreateSnapshotScreen>
                                                     strings.tapPhotoToType,
                                                     textAlign: TextAlign.center,
                                                     style: TextStyle(
-                                                      fontFamily: 'Pretendard',
+                                                      fontFamily: 'Inter',
+                                                      fontFamilyFallback: const ['NotoSansKR'],
                                                       fontSize: (width * .043)
                                                           .clamp(13, 17)
                                                           .toDouble(),
@@ -1320,7 +1325,8 @@ class _CreateSnapshotScreenState extends State<CreateSnapshotScreen>
             Text(
               strings.visibilityPrompt,
               style: TextStyle(
-                fontFamily: 'Pretendard',
+                fontFamily: 'Inter',
+                fontFamilyFallback: const ['NotoSansKR'],
                 fontSize: context.rf(17).clamp(15.5, 18).toDouble(),
                 fontWeight: FontWeight.w800,
                 color: const Color(0xFF111827),
@@ -1374,7 +1380,8 @@ class _CreateSnapshotScreenState extends State<CreateSnapshotScreen>
         child: Text(
           strings.noGroups,
           style: TextStyle(
-            fontFamily: 'Pretendard',
+            fontFamily: 'Inter',
+            fontFamilyFallback: const ['NotoSansKR'],
             fontSize: context.rf(12).clamp(11, 13).toDouble(),
             fontWeight: FontWeight.w500,
             color: const Color(0xFF667085),
@@ -1389,7 +1396,8 @@ class _CreateSnapshotScreenState extends State<CreateSnapshotScreen>
         Text(
           strings.groupsSelected(_selectedCategoryIds.length),
           style: TextStyle(
-            fontFamily: 'Pretendard',
+            fontFamily: 'Inter',
+            fontFamilyFallback: const ['NotoSansKR'],
             fontSize: context.rf(12).clamp(11, 13).toDouble(),
             fontWeight: FontWeight.w700,
             color: const Color(0xFF667085),
@@ -1427,7 +1435,8 @@ class _CreateSnapshotScreenState extends State<CreateSnapshotScreen>
             child: Text(
               strings.groupRequired,
               style: TextStyle(
-                fontFamily: 'Pretendard',
+                fontFamily: 'Inter',
+                fontFamilyFallback: const ['NotoSansKR'],
                 fontSize: context.rf(12).clamp(11, 13).toDouble(),
                 fontWeight: FontWeight.w700,
                 color: const Color(0xFFB42318),
@@ -1519,7 +1528,8 @@ class _RecentPhotoGallery extends StatelessWidget {
                 permissionMessage,
                 textAlign: TextAlign.center,
                 style: const TextStyle(
-                  fontFamily: 'Pretendard',
+                  fontFamily: 'Inter',
+                  fontFamilyFallback: const ['NotoSansKR'],
                   fontSize: 14,
                   height: 1.45,
                   fontWeight: FontWeight.w500,
@@ -1567,7 +1577,8 @@ class _RecentPhotoGallery extends StatelessWidget {
                 loadFailedMessage,
                 textAlign: TextAlign.center,
                 style: const TextStyle(
-                  fontFamily: 'Pretendard',
+                  fontFamily: 'Inter',
+                  fontFamilyFallback: const ['NotoSansKR'],
                   fontSize: 14,
                   height: 1.45,
                   fontWeight: FontWeight.w500,
@@ -1706,7 +1717,8 @@ class _PhotoActionCell extends StatelessWidget {
                     maxLines: 2,
                     overflow: TextOverflow.ellipsis,
                     style: const TextStyle(
-                      fontFamily: 'Pretendard',
+                      fontFamily: 'Inter',
+                      fontFamilyFallback: const ['NotoSansKR'],
                       fontSize: 12,
                       fontWeight: FontWeight.w700,
                       color: Color(0xFF344054),
@@ -1804,7 +1816,8 @@ class _VisibilityRow extends StatelessWidget {
                       Text(
                         title,
                         style: TextStyle(
-                          fontFamily: 'Pretendard',
+                          fontFamily: 'Inter',
+                          fontFamilyFallback: const ['NotoSansKR'],
                           fontSize: 15,
                           fontWeight:
                               selected ? FontWeight.w800 : FontWeight.w700,
@@ -1817,7 +1830,8 @@ class _VisibilityRow extends StatelessWidget {
                         maxLines: 2,
                         overflow: TextOverflow.ellipsis,
                         style: const TextStyle(
-                          fontFamily: 'Pretendard',
+                          fontFamily: 'Inter',
+                          fontFamilyFallback: const ['NotoSansKR'],
                           fontSize: 12.5,
                           height: 1.3,
                           color: Color(0xFF667085),
@@ -1885,7 +1899,8 @@ class _CategoryRow extends StatelessWidget {
                       maxLines: 1,
                       overflow: TextOverflow.ellipsis,
                       style: TextStyle(
-                        fontFamily: 'Pretendard',
+                        fontFamily: 'Inter',
+                        fontFamilyFallback: const ['NotoSansKR'],
                         fontSize: context.rf(14).clamp(13, 15).toDouble(),
                         fontWeight:
                             selected ? FontWeight.w800 : FontWeight.w600,

@@ -121,13 +121,12 @@ class _SnackChatScreenState extends State<SnackChatScreen>
   bool _roomAvailabilityCheckInFlight = false;
   Timer? _roomRetryTimer;
   int _roomRetryAttempt = 0;
-  Timer? _autoMarkReadDebounce;
-  bool _autoMarkReadInFlight = false;
-  bool _readFlushQueued = false;
-  int _readRetryAttempt = 0;
-  Future<void>? _markAsReadOperation;
   bool _pushBackNavigationInFlight = false;
   bool _exitReadFlushStarted = false;
+  bool _activeReadSyncInFlight = false;
+  int _pendingReadSequence = 0;
+  int _confirmedReadSequence = 0;
+  int _readSyncGeneration = 0;
   final Map<String, String> _senderNameCache = {};
   final Map<String, Future<String>> _senderNameFutures = {};
   final Set<String> _senderProfileRefreshStarted = <String>{};
@@ -136,7 +135,6 @@ class _SnackChatScreenState extends State<SnackChatScreen>
   late Stream<SnackChat?> _roomStream;
   Future<void>? _membershipReady;
   AppLifecycleState _appLifecycleState = AppLifecycleState.detached;
-  bool _routeActive = true;
   SnackChatMessage? _replyingTo;
   String? _replyingToSenderName;
   Object? _messageStreamError;
@@ -203,7 +201,6 @@ class _SnackChatScreenState extends State<SnackChatScreen>
     _scrollController.addListener(_onScroll);
     _messageController.addListener(_onDraftChanged);
     unawaited(_hydrateLocalState());
-    unawaited(_markWholeRoomAsRead());
     _subscribeToMessages();
     _subscribeToAuxiliaryState();
     _subscribeToFileTransfers();
@@ -225,13 +222,15 @@ class _SnackChatScreenState extends State<SnackChatScreen>
     if (SnackChatActiveConversation.isActive(oldWidget.snackChatId)) {
       SnackChatActiveConversation.setActive(null);
     }
-    unawaited(
-      _snackChatService.markAsRead(oldWidget.snackChatId).then((cleared) {
-        if (cleared > 0) return BadgeService.refreshNow();
-      }).catchError((Object error) {
-        Logger.error('Snack Chat 이전 화면 읽음 동기화 실패', error);
-      }),
-    );
+    final oldReadBoundary = _latestLoadedSequence();
+    if (oldReadBoundary > 0) {
+      unawaited(
+        _flushReadBoundary(
+          roomId: oldWidget.snackChatId,
+          throughSequence: oldReadBoundary,
+        ),
+      );
+    }
     _messageSubscriptionGeneration++;
     _auxiliarySubscriptionGeneration++;
     unawaited(_msgSub?.cancel() ?? Future<void>.value());
@@ -289,6 +288,10 @@ class _SnackChatScreenState extends State<SnackChatScreen>
     _roomAvailabilityCheckInFlight = false;
     _pushBackNavigationInFlight = false;
     _exitReadFlushStarted = false;
+    _activeReadSyncInFlight = false;
+    _pendingReadSequence = 0;
+    _confirmedReadSequence = 0;
+    _readSyncGeneration++;
     _isNearLatest = true;
     _outboxRetryAttempt = 0;
     _newMessageCount = 0;
@@ -300,7 +303,6 @@ class _SnackChatScreenState extends State<SnackChatScreen>
       SnackChatActiveConversation.setActive(widget.snackChatId);
     }
     unawaited(_hydrateLocalState());
-    unawaited(_markWholeRoomAsRead());
     _subscribeToMessages();
     _subscribeToAuxiliaryState();
     _subscribeToFileTransfers();
@@ -518,14 +520,6 @@ class _SnackChatScreenState extends State<SnackChatScreen>
     });
   }
 
-  bool get _canMarkWholeRoomRead {
-    if (!mounted || _isLeavingRoom || _roomAccessTerminated || !_routeActive) {
-      return false;
-    }
-    if (_appLifecycleState != AppLifecycleState.resumed) return false;
-    return ModalRoute.of(context)?.isCurrent ?? false;
-  }
-
   Future<void> _ensureMyMembershipReady({bool force = false}) {
     final existing = _membershipReady;
     if (!force && existing != null) return existing;
@@ -542,7 +536,9 @@ class _SnackChatScreenState extends State<SnackChatScreen>
     _appLifecycleState = state;
     if (state == AppLifecycleState.resumed) {
       SnackChatActiveConversation.setActive(widget.snackChatId);
-      unawaited(_markWholeRoomAsRead());
+      // 백그라운드 전환 이후 도착한 메시지는 다음 화면 종료 시점에
+      // 별도의 읽음 경계로 반영할 수 있도록 종료 플러시를 다시 연다.
+      _exitReadFlushStarted = false;
       if (_messageStreamError != null && _messageRetryTimer == null) {
         _subscribeToMessages();
       }
@@ -550,9 +546,11 @@ class _SnackChatScreenState extends State<SnackChatScreen>
       _scheduleOutboxRecovery();
       unawaited(_fileTransfer.retryRoom(widget.snackChatId));
       unawaited(_fileTransfer.purgeExpiredCache());
+      _scheduleActiveReadSync();
       if (mounted) setState(() {});
     } else if (state == AppLifecycleState.inactive ||
         state == AppLifecycleState.paused) {
+      _startBackgroundReadFlush();
       if (SnackChatActiveConversation.isActive(widget.snackChatId)) {
         SnackChatActiveConversation.setActive(null);
       }
@@ -575,73 +573,97 @@ class _SnackChatScreenState extends State<SnackChatScreen>
     });
   }
 
-  /// 채팅방이 현재 화면이면 개별 메시지 노출 여부와 관계없이 방 전체를
-  /// 읽음 처리한다. 진행 중 요청이 있으면 한 번만 추가 실행하도록 합친다.
-  void _scheduleMarkAsRead() {
-    if (!_canMarkWholeRoomRead) return;
-    if (_autoMarkReadInFlight) {
-      _readFlushQueued = true;
-      return;
+  int _latestLoadedSequence() {
+    var latest = 0;
+    for (final message in _messages) {
+      final sequence = message.sequence;
+      if (sequence != null && sequence > latest) latest = sequence;
     }
-    _autoMarkReadDebounce?.cancel();
-    unawaited(_performMarkAsRead());
+    return latest;
   }
 
-  Future<void> _performMarkAsRead({
-    bool allowInactiveRoute = false,
-    bool retryOnFailure = true,
+  Future<void> _flushReadBoundary({
+    required String roomId,
+    required int throughSequence,
   }) async {
-    if (_roomWasLeft || _roomAccessTerminated || _isLeavingRoom) return;
-    if (!allowInactiveRoute && !_canMarkWholeRoomRead) return;
-
-    final pending = _markAsReadOperation;
-    if (pending != null) {
-      _readFlushQueued = true;
+    if (throughSequence <= 0) return;
+    Object? lastError;
+    for (var attempt = 0; attempt < 2; attempt++) {
       try {
-        await pending;
-      } catch (_) {}
+        if (roomId == widget.snackChatId) {
+          await _ensureMyMembershipReady();
+        } else {
+          await _snackChatService.ensureMyMembership(roomId);
+        }
+        final cleared = await _snackChatService
+            .markAsRead(roomId, throughSequence: throughSequence)
+            .timeout(const Duration(seconds: 16));
+        if (cleared > 0) await BadgeService.refreshNow();
+        return;
+      } catch (error) {
+        lastError = error;
+        if (attempt == 0) {
+          await Future<void>.delayed(const Duration(milliseconds: 450));
+        }
+      }
+    }
+    throw lastError ?? StateError('Snack Chat 읽음 동기화 실패');
+  }
+
+  /// 현재 방이 화면에 실제로 열려 있을 때 수신된 최신 sequence를 즉시
+  /// 서버 읽음 커서에 반영한다. 타이머 기반 debounce를 쓰지 않아 읽음
+  /// 숫자가 늦게 사라지지 않으며, 직렬화로 동시에 여러 callable이
+  /// 실행되는 것도 막는다.
+  void _scheduleActiveReadSync() {
+    if (!mounted ||
+        _isLeavingRoom ||
+        _roomWasLeft ||
+        _roomAccessTerminated ||
+        _appLifecycleState != AppLifecycleState.resumed ||
+        !SnackChatActiveConversation.isActive(widget.snackChatId)) {
       return;
     }
+    final latest = _latestLoadedSequence();
+    if (latest <= _confirmedReadSequence) return;
+    if (latest > _pendingReadSequence) _pendingReadSequence = latest;
+    if (_activeReadSyncInFlight) return;
 
-    _autoMarkReadInFlight = true;
     final roomId = widget.snackChatId;
-    final operation = () async {
-      await _ensureMyMembershipReady();
-      final cleared = await _snackChatService.markAsRead(roomId);
-      if (cleared > 0) await BadgeService.refreshNow();
-    }();
-    _markAsReadOperation = operation;
-    var didSucceed = false;
+    final generation = _readSyncGeneration;
+    _activeReadSyncInFlight = true;
+    unawaited(_drainActiveReadSync(roomId, generation));
+  }
+
+  Future<void> _drainActiveReadSync(String roomId, int generation) async {
     try {
-      await operation;
-      didSucceed = true;
-      _readRetryAttempt = 0;
-    } catch (_) {
-      if (!retryOnFailure) rethrow;
-      // 화면이 유지되는 동안 아래 bounded retry로 복구한다.
-    } finally {
-      if (identical(_markAsReadOperation, operation)) {
-        _markAsReadOperation = null;
-      }
-      _autoMarkReadInFlight = false;
-      if (_readFlushQueued) {
-        _readFlushQueued = false;
-        if (allowInactiveRoute) {
-          await _performMarkAsRead(
-            allowInactiveRoute: true,
-            retryOnFailure: retryOnFailure,
+      while (mounted &&
+          generation == _readSyncGeneration &&
+          roomId == widget.snackChatId &&
+          _appLifecycleState == AppLifecycleState.resumed &&
+          _pendingReadSequence > _confirmedReadSequence) {
+        final target = _pendingReadSequence;
+        try {
+          await _flushReadBoundary(
+            roomId: roomId,
+            throughSequence: target,
           );
-        } else {
-          _scheduleMarkAsRead();
+          if (generation != _readSyncGeneration) return;
+          _confirmedReadSequence = target;
+        } catch (error) {
+          Logger.error('Snack Chat 실시간 읽음 동기화 실패', error);
+          // 다음 stream event 또는 resume에서 다시 시도하되, 네트워크가
+          // 끊긴 동안 즉시 재귀 호출이 반복되지는 않게 한다.
+          _pendingReadSequence = _confirmedReadSequence;
+          return;
         }
-      } else if (!didSucceed && retryOnFailure && _canMarkWholeRoomRead) {
-        _readRetryAttempt = (_readRetryAttempt + 1).clamp(1, 5).toInt();
-        final retrySeconds = (1 << _readRetryAttempt).clamp(2, 30).toInt();
-        _autoMarkReadDebounce?.cancel();
-        _autoMarkReadDebounce = Timer(
-          Duration(seconds: retrySeconds),
-          _scheduleMarkAsRead,
-        );
+      }
+    } finally {
+      if (generation == _readSyncGeneration) {
+        _activeReadSyncInFlight = false;
+        if (_pendingReadSequence > _confirmedReadSequence &&
+            _appLifecycleState == AppLifecycleState.resumed) {
+          _scheduleActiveReadSync();
+        }
       }
     }
   }
@@ -651,35 +673,17 @@ class _SnackChatScreenState extends State<SnackChatScreen>
       return;
     }
     _exitReadFlushStarted = true;
-    _autoMarkReadDebounce?.cancel();
     final roomId = widget.snackChatId;
-    final pending = _markAsReadOperation;
+    final throughSequence = _latestLoadedSequence();
+    if (throughSequence <= 0) return;
 
     unawaited(
-      (() async {
-        if (pending != null) {
-          try {
-            await pending.timeout(const Duration(seconds: 3));
-          } catch (_) {
-            // 진행 중 요청과 별개로 아래 최종 동기화는 계속 시도한다.
-          }
-        }
-        await _ensureMyMembershipReady();
-        final cleared = await _snackChatService
-            .markAsRead(roomId)
-            .timeout(const Duration(seconds: 12));
-        if (cleared > 0) await BadgeService.refreshNow();
-      })()
-          .catchError((Object error) {
+      _flushReadBoundary(
+        roomId: roomId,
+        throughSequence: throughSequence,
+      ).catchError((Object error) {
         Logger.error('Snack Chat 화면 종료 읽음 동기화 실패', error);
       }),
-    );
-  }
-
-  Future<void> _markWholeRoomAsRead() async {
-    await _performMarkAsRead(
-      allowInactiveRoute: true,
-      retryOnFailure: true,
     );
   }
 
@@ -764,9 +768,7 @@ class _SnackChatScreenState extends State<SnackChatScreen>
         _scheduleMessageCacheWrite();
         _scheduleFileExpiryRefresh();
         _scheduleOutboxRecovery();
-        if (addedRemoteMessages > 0 || !hadLiveBatch) {
-          _scheduleMarkAsRead();
-        }
+        _scheduleActiveReadSync();
         if (wasNearLatest && (incoming.isNotEmpty || !hadLiveBatch)) {
           WidgetsBinding.instance.addPostFrameCallback((_) {
             if (mounted && _isNearLatest) _scrollToLatest(animated: true);
@@ -892,8 +894,6 @@ class _SnackChatScreenState extends State<SnackChatScreen>
           unawaited(
             _ensureMyMembershipReady(force: true).catchError((_) {}),
           );
-        } else {
-          _scheduleMarkAsRead();
         }
       },
       onError: handleError,
@@ -1181,6 +1181,7 @@ class _SnackChatScreenState extends State<SnackChatScreen>
   void dispose() {
     // 화면 이동은 막지 않고, 읽음 동기화 Future만 백그라운드에서 완료한다.
     _startBackgroundReadFlush();
+    _readSyncGeneration++;
     _isLeavingRoom = true;
     _cacheHydrationGeneration++;
     _auxiliarySubscriptionGeneration++;
@@ -1203,7 +1204,6 @@ class _SnackChatScreenState extends State<SnackChatScreen>
       }
     }
     WidgetsBinding.instance.removeObserver(this);
-    _autoMarkReadDebounce?.cancel();
     if (SnackChatActiveConversation.isActive(widget.snackChatId)) {
       SnackChatActiveConversation.setActive(null);
     }
@@ -1245,8 +1245,6 @@ class _SnackChatScreenState extends State<SnackChatScreen>
       unawaited(_localCache.clearRoom(widget.snackChatId));
       _messageSubscriptionGeneration++;
       _auxiliarySubscriptionGeneration++;
-      _autoMarkReadDebounce?.cancel();
-      _autoMarkReadDebounce = null;
       _auxiliaryRetryTimer?.cancel();
       _auxiliaryRetryTimer = null;
       final subscriptions = <StreamSubscription<dynamic>?>[
@@ -1780,14 +1778,7 @@ class _SnackChatScreenState extends State<SnackChatScreen>
     final roomId = widget.snackChatId;
     setState(() => _isCreatingPoll = true);
     try {
-      SnackChatPoll? poll;
-      _routeActive = false;
-      try {
-        poll = await showSnackChatPollDialog(context);
-      } finally {
-        _routeActive = true;
-        _scheduleMarkAsRead();
-      }
+      final poll = await showSnackChatPollDialog(context);
       if (!mounted ||
           poll == null ||
           _uid == null ||
@@ -1809,7 +1800,7 @@ class _SnackChatScreenState extends State<SnackChatScreen>
       await _enqueueOutbound(roomId, () async {
         final ok = await _snackChatService.sendPollMessage(
           roomId,
-          poll: poll!,
+          poll: poll,
           messageId: messageId,
         );
         await _resolveSendOutcome(messageId, ok, roomId: roomId);
@@ -1827,14 +1818,7 @@ class _SnackChatScreenState extends State<SnackChatScreen>
     if (_isAttachmentFlowOpen) return;
     setState(() => _isAttachmentFlowOpen = true);
     try {
-      _routeActive = false;
-      SnackChatAttachmentAction? action;
-      try {
-        action = await showSnackChatAttachmentSheet(context);
-      } finally {
-        _routeActive = true;
-        _scheduleMarkAsRead();
-      }
+      final action = await showSnackChatAttachmentSheet(context);
       if (!mounted) return;
       if (action == SnackChatAttachmentAction.image) {
         await _pickAndSendImage();
@@ -1859,21 +1843,14 @@ class _SnackChatScreenState extends State<SnackChatScreen>
       _showNotice('채팅방 정보를 확인한 뒤 다시 시도해 주세요.');
       return;
     }
-    FilePickerResult? picked;
-    _routeActive = false;
-    try {
-      picked = await FilePicker.pickFiles(
-        type: FileType.custom,
-        allowMultiple: true,
-        withData: false,
-        withReadStream: false,
-        allowedExtensions:
-            SnackChatFilePolicy.allowedMimeByExtension.keys.toList(),
-      );
-    } finally {
-      _routeActive = true;
-      _scheduleMarkAsRead();
-    }
+    final picked = await FilePicker.pickFiles(
+      type: FileType.custom,
+      allowMultiple: true,
+      withData: false,
+      withReadStream: false,
+      allowedExtensions:
+          SnackChatFilePolicy.allowedMimeByExtension.keys.toList(),
+    );
     if (!mounted || picked == null || roomId != widget.snackChatId) return;
     if (picked.files.length > SnackChatFilePolicy.maxSelectionCount) {
       _showNotice('파일은 한 번에 최대 5개까지 선택할 수 있습니다.');
@@ -1931,18 +1908,11 @@ class _SnackChatScreenState extends State<SnackChatScreen>
       }
     }
     if (!mounted || validated.isEmpty || roomId != widget.snackChatId) return;
-    _routeActive = false;
-    List<SnackChatSelectedFile>? confirmed;
-    try {
-      confirmed = await showSnackChatFileConfirmationSheet(
-        context,
-        files: validated,
-        temporary24h: room.activeDurationHours != 0,
-      );
-    } finally {
-      _routeActive = true;
-      _scheduleMarkAsRead();
-    }
+    final confirmed = await showSnackChatFileConfirmationSheet(
+      context,
+      files: validated,
+      temporary24h: room.activeDurationHours != 0,
+    );
     if (!mounted ||
         confirmed == null ||
         confirmed.isEmpty ||
@@ -2267,7 +2237,6 @@ class _SnackChatScreenState extends State<SnackChatScreen>
     SnackChatMessage message,
     String emoji,
   ) async {
-    _routeActive = false;
     try {
       final reactions = await _snackChatService.fetchMessageReactions(
         snackChatId: widget.snackChatId,
@@ -2281,9 +2250,6 @@ class _SnackChatScreenState extends State<SnackChatScreen>
       await _showPeopleSheet(title: '$emoji ${ids.length}명', userIds: ids);
     } catch (_) {
       if (mounted) _showNotice('반응한 사용자를 불러오지 못했습니다.');
-    } finally {
-      _routeActive = true;
-      _scheduleMarkAsRead();
     }
   }
 
@@ -2352,7 +2318,6 @@ class _SnackChatScreenState extends State<SnackChatScreen>
   _ReadReceiptData _readReceiptFor(SnackChatMessage message) {
     final sequence = message.sequence;
     if (sequence == null ||
-        message.senderId != _uid ||
         (message.type != SnackChatMessageType.text &&
             message.type != SnackChatMessageType.image &&
             message.type != SnackChatMessageType.file) ||
@@ -2416,7 +2381,8 @@ class _SnackChatScreenState extends State<SnackChatScreen>
                   ? '일부 프로필을 불러오지 못해 저장된 정보를 표시합니다.'
                   : 'Some profiles could not be loaded. Showing saved information.',
               style: const TextStyle(
-                fontFamily: 'Pretendard',
+                fontFamily: 'Inter',
+                fontFamilyFallback: const ['NotoSansKR'],
                 fontSize: 12.5,
                 height: 1.35,
                 color: _secondaryText,
@@ -2436,68 +2402,62 @@ class _SnackChatScreenState extends State<SnackChatScreen>
   Future<void> _showReadReceiptDetails(SnackChatMessage message) async {
     final receipt = _readReceiptFor(message);
     if (receipt.total == 0) return;
-    _routeActive = false;
     final ids = <String>[...receipt.read, ...receipt.unread];
     final initialCached = _cachedPeople(ids);
     final isKo = Localizations.localeOf(context).languageCode == 'ko';
     var peopleFuture = _loadPeople(ids);
-    try {
-      await showModalBottomSheet<void>(
-        context: context,
-        useSafeArea: true,
-        showDragHandle: true,
-        isScrollControlled: true,
-        builder: (context) => FractionallySizedBox(
-          heightFactor: 0.72,
-          child: StatefulBuilder(
-            builder: (context, setSheetState) =>
-                FutureBuilder<Map<String, DMUserInfo?>>(
-              future: peopleFuture,
-              initialData: initialCached,
-              builder: (context, snapshot) {
-                final users = _cachedPeople(ids);
-                final loaded = snapshot.data;
-                if (loaded != null) users.addAll(loaded);
-                final loading =
-                    snapshot.connectionState != ConnectionState.done;
-                return ListView(
-                  padding: const EdgeInsets.fromLTRB(20, 4, 20, 24),
-                  children: [
-                    if (snapshot.hasError)
-                      _peopleLoadRetry(
-                        isKo: isKo,
-                        onRetry: () => setSheetState(
-                          () => peopleFuture = _loadPeople(ids),
-                        ),
+    await showModalBottomSheet<void>(
+      context: context,
+      useSafeArea: true,
+      showDragHandle: true,
+      isScrollControlled: true,
+      backgroundColor: Colors.white,
+      builder: (context) => FractionallySizedBox(
+        heightFactor: 0.72,
+        child: StatefulBuilder(
+          builder: (context, setSheetState) =>
+              FutureBuilder<Map<String, DMUserInfo?>>(
+            future: peopleFuture,
+            initialData: initialCached,
+            builder: (context, snapshot) {
+              final users = _cachedPeople(ids);
+              final loaded = snapshot.data;
+              if (loaded != null) users.addAll(loaded);
+              final loading = snapshot.connectionState != ConnectionState.done;
+              return ListView(
+                padding: const EdgeInsets.fromLTRB(20, 4, 20, 24),
+                children: [
+                  if (snapshot.hasError)
+                    _peopleLoadRetry(
+                      isKo: isKo,
+                      onRetry: () => setSheetState(
+                        () => peopleFuture = _loadPeople(ids),
                       ),
-                    _peopleSectionTitle(
-                      isKo
-                          ? '확인 ${receipt.read.length}명'
-                          : 'Seen ${receipt.read.length}',
                     ),
-                    ...receipt.read.map(
-                      (id) => _personTile(id, users[id], loading: loading),
-                    ),
-                    const SizedBox(height: 16),
-                    _peopleSectionTitle(
-                      isKo
-                          ? '미확인 ${receipt.unread.length}명'
-                          : 'Not seen ${receipt.unread.length}',
-                    ),
-                    ...receipt.unread.map(
-                      (id) => _personTile(id, users[id], loading: loading),
-                    ),
-                  ],
-                );
-              },
-            ),
+                  _peopleSectionTitle(
+                    isKo
+                        ? '확인 ${receipt.read.length}명'
+                        : 'Seen ${receipt.read.length}',
+                  ),
+                  ...receipt.read.map(
+                    (id) => _personTile(id, users[id], loading: loading),
+                  ),
+                  const SizedBox(height: 16),
+                  _peopleSectionTitle(
+                    isKo
+                        ? '미확인 ${receipt.unread.length}명'
+                        : 'Not seen ${receipt.unread.length}',
+                  ),
+                  ...receipt.unread.map(
+                    (id) => _personTile(id, users[id], loading: loading),
+                  ),
+                ],
+              );
+            },
           ),
         ),
-      );
-    } finally {
-      _routeActive = true;
-      _scheduleMarkAsRead();
-    }
+      ),
+    );
   }
 
   Future<void> _showPeopleSheet({
@@ -2549,7 +2509,8 @@ class _SnackChatScreenState extends State<SnackChatScreen>
         child: Text(
           text,
           style: const TextStyle(
-            fontFamily: 'Pretendard',
+            fontFamily: 'Inter',
+            fontFamilyFallback: const ['NotoSansKR'],
             fontSize: 16,
             fontWeight: FontWeight.w700,
           ),
@@ -2598,7 +2559,8 @@ class _SnackChatScreenState extends State<SnackChatScreen>
         maxLines: 1,
         overflow: TextOverflow.ellipsis,
         style: const TextStyle(
-          fontFamily: 'Pretendard',
+          fontFamily: 'Inter',
+          fontFamilyFallback: const ['NotoSansKR'],
           fontSize: 14,
           fontWeight: FontWeight.w600,
         ),
@@ -2607,33 +2569,53 @@ class _SnackChatScreenState extends State<SnackChatScreen>
   }
 
   Future<void> _showMessageActions(SnackChatMessage message) async {
-    _routeActive = false;
     final isMe = message.senderId == _uid;
-    try {
-      final action = await showModalBottomSheet<_MessageAction>(
-        context: context,
-        useSafeArea: true,
-        showDragHandle: true,
-        builder: (sheetContext) => SingleChildScrollView(
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              if (!message.hasFailed &&
-                  !message.isPending &&
-                  !message.isDeleted) ...[
-                Padding(
-                  padding:
-                      const EdgeInsets.symmetric(horizontal: 12, vertical: 4),
-                  child: LayoutBuilder(
-                    builder: (context, constraints) {
-                      final extent = (constraints.maxWidth / 6)
-                          .clamp(40.0, 48.0)
-                          .toDouble();
-                      return Wrap(
-                        alignment: WrapAlignment.spaceEvenly,
-                        children: const ['👍', '❤️', '😂', '😮', '😢', '🙏']
-                            .map((emoji) => SizedBox.square(
-                                  dimension: extent,
+    final action = await showModalBottomSheet<_MessageAction>(
+      context: context,
+      useSafeArea: false,
+      isScrollControlled: true,
+      backgroundColor: Colors.transparent,
+      barrierColor: Colors.black.withValues(alpha: 0.48),
+      builder: (sheetContext) {
+        final media = MediaQuery.of(sheetContext);
+        final bottomSafeArea = media.viewPadding.bottom;
+        final maxSheetHeight = media.size.height * 0.72;
+        return Material(
+          color: Colors.white,
+          borderRadius: const BorderRadius.vertical(top: Radius.circular(22)),
+          clipBehavior: Clip.antiAlias,
+          child: ConstrainedBox(
+            constraints: BoxConstraints(maxHeight: maxSheetHeight),
+            child: SingleChildScrollView(
+              padding: EdgeInsets.fromLTRB(
+                0,
+                8,
+                0,
+                (bottomSafeArea + 10).clamp(18, 42).toDouble(),
+              ),
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  Container(
+                    width: 34,
+                    height: 4,
+                    decoration: BoxDecoration(
+                      color: const Color(0xFFD1D5DB),
+                      borderRadius: BorderRadius.circular(99),
+                    ),
+                  ),
+                  const SizedBox(height: 10),
+                  if (!message.hasFailed &&
+                      !message.isPending &&
+                      !message.isDeleted) ...[
+                    Padding(
+                      padding: const EdgeInsets.symmetric(horizontal: 14),
+                      child: SizedBox(
+                        height: 50,
+                        child: Row(
+                          children: const ['👍', '❤️', '😂', '😮', '😢', '🙏']
+                              .map(
+                                (emoji) => Expanded(
                                   child: IconButton(
                                     onPressed: () => Navigator.pop(
                                       sheetContext,
@@ -2643,107 +2625,157 @@ class _SnackChatScreenState extends State<SnackChatScreen>
                                       ),
                                     ),
                                     padding: EdgeInsets.zero,
+                                    constraints: const BoxConstraints.expand(),
                                     tooltip: emoji,
                                     icon: Text(
                                       emoji,
                                       style: const TextStyle(fontSize: 22),
                                     ),
                                   ),
-                                ))
-                            .toList(growable: false),
-                      );
-                    },
-                  ),
+                                ),
+                              )
+                              .toList(growable: false),
+                        ),
+                      ),
+                    ),
+                    const SizedBox(height: 2),
+                    _messageActionTile(
+                      icon: Icons.reply_rounded,
+                      label: '답장',
+                      onTap: () => Navigator.pop(
+                        sheetContext,
+                        const _MessageAction(_MessageActionType.reply),
+                      ),
+                    ),
+                  ],
+                  if (message.hasFailed && isMe) ...[
+                    _messageActionTile(
+                      icon: Icons.refresh_rounded,
+                      label: '다시 시도',
+                      onTap: () => Navigator.pop(
+                        sheetContext,
+                        const _MessageAction(_MessageActionType.retry),
+                      ),
+                    ),
+                    _messageActionTile(
+                      icon: Icons.delete_outline_rounded,
+                      label: '실패 메시지 삭제',
+                      destructive: true,
+                      onTap: () => Navigator.pop(
+                        sheetContext,
+                        const _MessageAction(_MessageActionType.removeFailed),
+                      ),
+                    ),
+                  ],
+                  if (!isMe && !message.hasFailed && !message.isPending) ...[
+                    _messageActionTile(
+                      icon: Icons.report_gmailerrorred_outlined,
+                      label: '메시지 신고',
+                      destructive: true,
+                      onTap: () => Navigator.pop(
+                        sheetContext,
+                        const _MessageAction(_MessageActionType.report),
+                      ),
+                    ),
+                    _messageActionTile(
+                      icon: Icons.block_outlined,
+                      label: '사용자 차단',
+                      destructive: true,
+                      onTap: () => Navigator.pop(
+                        sheetContext,
+                        const _MessageAction(_MessageActionType.block),
+                      ),
+                    ),
+                  ],
+                ],
+              ),
+            ),
+          ),
+        );
+      },
+    );
+    if (!mounted || action == null) return;
+    switch (action.type) {
+      case _MessageActionType.reaction:
+        final emoji = action.emoji;
+        if (emoji != null) await _toggleReaction(message, emoji);
+        break;
+      case _MessageActionType.reply:
+        await _beginReply(message);
+        break;
+      case _MessageActionType.retry:
+        await _retryMessage(message);
+        break;
+      case _MessageActionType.removeFailed:
+        await _removeFailedMessage(message);
+        break;
+      case _MessageActionType.report:
+        await showReportDialog(
+          context,
+          reportedUserId: message.senderId,
+          targetType: 'snack_chat_message',
+          targetId: '${widget.snackChatId}/${message.id}',
+          targetTitle: message.type == SnackChatMessageType.file
+              ? message.originalFileName ?? '파일 메시지'
+              : message.text.trim().isEmpty
+                  ? '이미지 메시지'
+                  : message.text.trim(),
+        );
+        break;
+      case _MessageActionType.block:
+        await showBlockUserDialog(
+          context,
+          userId: message.senderId,
+          userName: _safeUserLabel(message.senderName),
+        );
+        break;
+    }
+  }
+
+  Widget _messageActionTile({
+    required IconData icon,
+    required String label,
+    required VoidCallback onTap,
+    bool destructive = false,
+  }) {
+    final color =
+        destructive ? const Color(0xFFD92D20) : const Color(0xFF111827);
+    return Material(
+      color: Colors.transparent,
+      child: InkWell(
+        onTap: onTap,
+        child: ConstrainedBox(
+          constraints: const BoxConstraints(minHeight: 52),
+          child: Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 8),
+            child: Row(
+              children: [
+                SizedBox(
+                  width: 34,
+                  child: Icon(icon, size: 22, color: color),
                 ),
-                ListTile(
-                  leading: const Icon(Icons.reply_rounded),
-                  title: const Text('답장'),
-                  onTap: () => Navigator.pop(
-                    sheetContext,
-                    const _MessageAction(_MessageActionType.reply),
+                const SizedBox(width: 8),
+                Expanded(
+                  child: Text(
+                    label,
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    style: TextStyle(
+                      fontFamily: 'Inter',
+                      fontFamilyFallback: const ['NotoSansKR'],
+                      fontSize: 15,
+                      fontWeight: FontWeight.w600,
+                      color: color,
+                      height: 1.25,
+                    ),
                   ),
                 ),
               ],
-              if (message.hasFailed && isMe) ...[
-                ListTile(
-                  leading: const Icon(Icons.refresh_rounded),
-                  title: const Text('다시 시도'),
-                  onTap: () => Navigator.pop(
-                    sheetContext,
-                    const _MessageAction(_MessageActionType.retry),
-                  ),
-                ),
-                ListTile(
-                  leading: const Icon(Icons.delete_outline_rounded),
-                  title: const Text('실패 메시지 삭제'),
-                  onTap: () => Navigator.pop(
-                    sheetContext,
-                    const _MessageAction(_MessageActionType.removeFailed),
-                  ),
-                ),
-              ],
-              if (!isMe && !message.hasFailed && !message.isPending) ...[
-                ListTile(
-                  leading: const Icon(Icons.report_gmailerrorred_outlined),
-                  title: const Text('메시지 신고'),
-                  onTap: () => Navigator.pop(
-                    sheetContext,
-                    const _MessageAction(_MessageActionType.report),
-                  ),
-                ),
-                ListTile(
-                  leading: const Icon(Icons.block_outlined),
-                  title: const Text('사용자 차단'),
-                  onTap: () => Navigator.pop(
-                    sheetContext,
-                    const _MessageAction(_MessageActionType.block),
-                  ),
-                ),
-              ],
-            ],
+            ),
           ),
         ),
-      );
-      if (!mounted || action == null) return;
-      switch (action.type) {
-        case _MessageActionType.reaction:
-          final emoji = action.emoji;
-          if (emoji != null) await _toggleReaction(message, emoji);
-          break;
-        case _MessageActionType.reply:
-          await _beginReply(message);
-          break;
-        case _MessageActionType.retry:
-          await _retryMessage(message);
-          break;
-        case _MessageActionType.removeFailed:
-          await _removeFailedMessage(message);
-          break;
-        case _MessageActionType.report:
-          await showReportDialog(
-            context,
-            reportedUserId: message.senderId,
-            targetType: 'snack_chat_message',
-            targetId: '${widget.snackChatId}/${message.id}',
-            targetTitle: message.type == SnackChatMessageType.file
-                ? message.originalFileName ?? '파일 메시지'
-                : message.text.trim().isEmpty
-                    ? '이미지 메시지'
-                    : message.text.trim(),
-          );
-          break;
-        case _MessageActionType.block:
-          await showBlockUserDialog(
-            context,
-            userId: message.senderId,
-            userName: _safeUserLabel(message.senderName),
-          );
-          break;
-      }
-    } finally {
-      _routeActive = true;
-      _scheduleMarkAsRead();
-    }
+      ),
+    );
   }
 
   Future<void> _openExternalUrl(String rawUrl) async {
@@ -2762,9 +2794,9 @@ class _SnackChatScreenState extends State<SnackChatScreen>
     ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(text)));
   }
 
-  /// 방을 나가기 전에 읽음 타이머와 Firestore 구독을 먼저 중단한다.
-  /// 나가기 트랜잭션과 markAsRead/stream callback이 경합해 이미 제거된
-  /// 참여자의 필드를 다시 쓰는 상황을 방지한다.
+  /// 방을 나가기 전에 Firestore 구독을 먼저 중단한다.
+  /// 현재 화면에 로드된 메시지 sequence까지만 읽음으로 반영한 후
+  /// 나가기를 실행해 새 메시지와 참여자 제거가 경합하지 않게 한다.
   Future<void> _leaveRoomFromInfo() async {
     if (_isLeavingRoom) return;
     if (!mounted) {
@@ -2776,8 +2808,6 @@ class _SnackChatScreenState extends State<SnackChatScreen>
     _outboxRetryTimer?.cancel();
     _messageRetryTimer?.cancel();
     _roomRetryTimer?.cancel();
-    _autoMarkReadDebounce?.cancel();
-    _autoMarkReadDebounce = null;
     _auxiliarySubscriptionGeneration++;
     _auxiliaryRetryTimer?.cancel();
     _auxiliaryRetryTimer = null;
@@ -2805,19 +2835,10 @@ class _SnackChatScreenState extends State<SnackChatScreen>
         if (voteSubscription != null) voteSubscription.cancel(),
         if (blockSubscription != null) blockSubscription.cancel(),
       ]);
-      final pendingRead = _markAsReadOperation;
-      if (pendingRead != null) {
-        try {
-          await pendingRead.timeout(const Duration(seconds: 2));
-        } catch (_) {
-          // 읽음 반영은 best-effort다. 네트워크가 느리거나 실패해도 방
-          // 나가기 자체를 막거나 무한 대기시키지 않는다.
-        }
-      }
-      final cleared = await _snackChatService
-          .markAsRead(widget.snackChatId)
-          .timeout(const Duration(seconds: 10));
-      if (cleared > 0) await BadgeService.refreshNow();
+      await _flushReadBoundary(
+        roomId: widget.snackChatId,
+        throughSequence: _latestLoadedSequence(),
+      ).timeout(const Duration(seconds: 18));
       await _snackChatService.leaveRoom(widget.snackChatId);
       await _localCache.clearRoom(widget.snackChatId);
       _roomWasLeft = true;
@@ -2837,45 +2858,37 @@ class _SnackChatScreenState extends State<SnackChatScreen>
 
   Future<void> _openRoomInfo(SnackChat room) async {
     if (_isLeavingRoom) return;
-    _routeActive = false;
     final infoRoute = MaterialPageRoute<bool>(
       builder: (_) => SnackChatInfoScreen(
         snackChatId: room.id,
         onLeave: _leaveRoomFromInfo,
       ),
     );
-    try {
-      final didLeave = await Navigator.of(context).push<bool>(infoRoute);
-      if (!mounted || didLeave != true) return;
+    final didLeave = await Navigator.of(context).push<bool>(infoRoute);
+    if (!mounted || didLeave != true) return;
 
-      // push()의 Future는 reverse transition이 끝나기 전에 완료될 수 있다.
-      // 정보 화면의 overlay가 완전히 제거된 뒤 채팅 화면을 닫아 연속 pop으로
-      // 인한 framework dependency assertion을 방지한다.
-      await infoRoute.completed;
-      if (!mounted) return;
+    // push()의 Future는 reverse transition이 끝나기 전에 완료될 수 있다.
+    // 정보 화면의 overlay가 완전히 제거된 뒤 채팅 화면을 닫아 연속 pop으로
+    // 인한 framework dependency assertion을 방지한다.
+    await infoRoute.completed;
+    if (!mounted) return;
 
-      if (SnackChatActiveConversation.isActive(widget.snackChatId)) {
-        SnackChatActiveConversation.setActive(null);
-      }
-
-      if (widget.fromPush) {
-        Navigator.of(context).pushAndRemoveUntil(
-          MaterialPageRoute(
-            builder: (_) => const MainScreen(
-              initialGroupTabIndex: snackChatTabIndex,
-            ),
-          ),
-          (_) => false,
-        );
-        return;
-      }
-      Navigator.of(context).pop(true);
-    } finally {
-      _routeActive = true;
-      if (mounted && !_isLeavingRoom && !_roomAccessTerminated) {
-        _scheduleMarkAsRead();
-      }
+    if (SnackChatActiveConversation.isActive(widget.snackChatId)) {
+      SnackChatActiveConversation.setActive(null);
     }
+
+    if (widget.fromPush) {
+      Navigator.of(context).pushAndRemoveUntil(
+        MaterialPageRoute(
+          builder: (_) => const MainScreen(
+            initialGroupTabIndex: snackChatTabIndex,
+          ),
+        ),
+        (_) => false,
+      );
+      return;
+    }
+    Navigator.of(context).pop(true);
   }
 
   @override
@@ -2892,13 +2905,6 @@ class _SnackChatScreenState extends State<SnackChatScreen>
           _roomRetryAttempt = 0;
           _lastRoom = incomingRoom;
           _cacheRoomIfChanged(incomingRoom);
-          final currentUserId = _uid;
-          if (currentUserId != null &&
-              (incomingRoom.unreadCount[currentUserId] ?? 0) > 0) {
-            WidgetsBinding.instance.addPostFrameCallback((_) {
-              if (mounted) _scheduleMarkAsRead();
-            });
-          }
         } else if (!_isLeavingRoom &&
             !roomSnap.hasError &&
             roomSnap.connectionState == ConnectionState.active) {
@@ -2952,7 +2958,6 @@ class _SnackChatScreenState extends State<SnackChatScreen>
           canPop: !widget.fromPush,
           onPopInvokedWithResult: (didPop, _) {
             if (didPop) {
-              _routeActive = false;
               _startBackgroundReadFlush();
             } else if (widget.fromPush) {
               _handleRoutePop(room);
@@ -3041,7 +3046,8 @@ class _SnackChatScreenState extends State<SnackChatScreen>
                 isKo ? '메시지를 불러오지 못했습니다.' : 'Messages could not be loaded.',
                 textAlign: TextAlign.center,
                 style: const TextStyle(
-                  fontFamily: 'Pretendard',
+                  fontFamily: 'Inter',
+                  fontFamilyFallback: const ['NotoSansKR'],
                   fontSize: 14,
                   color: _secondaryText,
                 ),
@@ -3075,7 +3081,8 @@ class _SnackChatScreenState extends State<SnackChatScreen>
                     : 'Send the first message in this Snack Chat.',
                 textAlign: TextAlign.center,
                 style: TextStyle(
-                  fontFamily: 'Pretendard',
+                  fontFamily: 'Inter',
+                  fontFamilyFallback: const ['NotoSansKR'],
                   fontSize: context.rf(14).clamp(13, 15).toDouble(),
                   color: _secondaryText,
                   height: 1.5,
@@ -3191,7 +3198,8 @@ class _SnackChatScreenState extends State<SnackChatScreen>
                             maxLines: 1,
                             overflow: TextOverflow.ellipsis,
                             style: const TextStyle(
-                              fontFamily: 'Pretendard',
+                              fontFamily: 'Inter',
+                              fontFamilyFallback: const ['NotoSansKR'],
                               fontSize: 12,
                               fontWeight: FontWeight.w600,
                               color: _secondaryText,
@@ -3237,7 +3245,8 @@ class _SnackChatScreenState extends State<SnackChatScreen>
                         Text(
                           '$_newMessageCount',
                           style: const TextStyle(
-                            fontFamily: 'Pretendard',
+                            fontFamily: 'Inter',
+                            fontFamilyFallback: const ['NotoSansKR'],
                             fontSize: 12,
                             fontWeight: FontWeight.w700,
                             color: Colors.white,
@@ -3359,7 +3368,8 @@ class _SnackChatScreenState extends State<SnackChatScreen>
                                   onSubmitted: (_) => _send(),
                                   cursorColor: const Color(0xFFD1D5DB),
                                   style: TextStyle(
-                                    fontFamily: 'Pretendard',
+                                    fontFamily: 'Inter',
+                                    fontFamilyFallback: const ['NotoSansKR'],
                                     fontSize:
                                         context.rf(15).clamp(14, 16).toDouble(),
                                     fontWeight: FontWeight.w500,
@@ -3371,7 +3381,8 @@ class _SnackChatScreenState extends State<SnackChatScreen>
                                         ? '메시지를 입력하세요...'
                                         : 'Type a message...',
                                     hintStyle: const TextStyle(
-                                      fontFamily: 'Pretendard',
+                                      fontFamily: 'Inter',
+                                      fontFamilyFallback: const ['NotoSansKR'],
                                       fontWeight: FontWeight.w500,
                                       color: Color(0xFF9CA3AF),
                                     ),
@@ -3523,7 +3534,8 @@ class _SnackChatScreenState extends State<SnackChatScreen>
               : 9,
     );
     final textStyle = TextStyle(
-      fontFamily: 'Pretendard',
+      fontFamily: 'Inter',
+      fontFamilyFallback: const ['NotoSansKR'],
       fontSize: context.rf(14).clamp(13.5, 15).toDouble(),
       fontWeight: FontWeight.w500,
       height: 1.35,
@@ -3538,8 +3550,17 @@ class _SnackChatScreenState extends State<SnackChatScreen>
     final replyPreview = message.replyPreview == null
         ? null
         : _effectiveReplyPreview(message.replyPreview!);
+    final canOpenReadReceipt = hasText &&
+        !message.isDeleted &&
+        !message.isPending &&
+        !message.hasFailed &&
+        message.sequence != null;
     final bubble = GestureDetector(
-      onTap: hasFile ? () => _handleFileTap(message) : null,
+      onTap: hasFile
+          ? () => _handleFileTap(message)
+          : canOpenReadReceipt
+              ? () => _showReadReceiptDetails(message)
+              : null,
       onLongPress:
           message.isPending ? null : () => _showMessageActions(message),
       child: Container(
@@ -3689,7 +3710,8 @@ class _SnackChatScreenState extends State<SnackChatScreen>
                   maxLines: 1,
                   overflow: TextOverflow.ellipsis,
                   style: TextStyle(
-                    fontFamily: 'Pretendard',
+                    fontFamily: 'Inter',
+                    fontFamilyFallback: const ['NotoSansKR'],
                     fontSize: context.rf(13).clamp(12, 14).toDouble(),
                     fontWeight: FontWeight.w700,
                     color: const Color(0xFF111827),
@@ -3785,7 +3807,8 @@ class _SnackChatScreenState extends State<SnackChatScreen>
                       maxLines: 2,
                       overflow: TextOverflow.ellipsis,
                       style: TextStyle(
-                        fontFamily: 'Pretendard',
+                        fontFamily: 'Inter',
+                        fontFamilyFallback: const ['NotoSansKR'],
                         fontSize: context.rf(14).clamp(13.5, 15).toDouble(),
                         height: 1.25,
                         fontWeight: FontWeight.w700,
@@ -3802,7 +3825,8 @@ class _SnackChatScreenState extends State<SnackChatScreen>
                       maxLines: 1,
                       overflow: TextOverflow.ellipsis,
                       style: TextStyle(
-                        fontFamily: 'Pretendard',
+                        fontFamily: 'Inter',
+                        fontFamilyFallback: const ['NotoSansKR'],
                         fontSize: 11.5,
                         fontWeight: FontWeight.w500,
                         color: secondary,
@@ -3822,7 +3846,8 @@ class _SnackChatScreenState extends State<SnackChatScreen>
                   maxLines: 1,
                   overflow: TextOverflow.ellipsis,
                   style: TextStyle(
-                    fontFamily: 'Pretendard',
+                    fontFamily: 'Inter',
+                    fontFamilyFallback: const ['NotoSansKR'],
                     fontSize: 11.5,
                     fontWeight: FontWeight.w600,
                     color: message.hasFailed
@@ -3839,7 +3864,8 @@ class _SnackChatScreenState extends State<SnackChatScreen>
                       ? (isKo ? '24시간' : '24h')
                       : (isKo ? '30일' : '30d'),
                   style: TextStyle(
-                    fontFamily: 'Pretendard',
+                    fontFamily: 'Inter',
+                    fontFamilyFallback: const ['NotoSansKR'],
                     fontSize: 11.5,
                     fontWeight: FontWeight.w700,
                     color: secondary,
@@ -3888,7 +3914,8 @@ class _SnackChatScreenState extends State<SnackChatScreen>
           _localizedSystemMessage(message),
           textAlign: TextAlign.center,
           style: TextStyle(
-            fontFamily: 'Pretendard',
+            fontFamily: 'Inter',
+            fontFamilyFallback: const ['NotoSansKR'],
             fontSize: context.rf(11.5).clamp(10.5, 12.5).toDouble(),
             fontWeight: FontWeight.w600,
             color: _secondaryText,
@@ -4032,7 +4059,7 @@ class _SnackChatScreenState extends State<SnackChatScreen>
   ) {
     final receipt = _readReceiptFor(message);
     final hasReceipt = receipt.total > 0;
-    final everyoneConfirmed = hasReceipt && receipt.unread.isEmpty;
+    final remainingUnread = receipt.unread.length;
     final isKo = Localizations.localeOf(context).languageCode == 'ko';
     final failureReason = message.errorMessage?.trim() ?? '';
     final failureLabel = isKo
@@ -4046,7 +4073,7 @@ class _SnackChatScreenState extends State<SnackChatScreen>
       return const SizedBox(width: 5);
     }
     return Padding(
-      padding: const EdgeInsets.only(right: 5, bottom: 2),
+      padding: const EdgeInsets.only(right: 3, bottom: 2),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.end,
         mainAxisSize: MainAxisSize.min,
@@ -4071,33 +4098,28 @@ class _SnackChatScreenState extends State<SnackChatScreen>
                 ),
               ),
             )
-          else
+          else if (hasReceipt && remainingUnread > 0)
             Tooltip(
-              message: everyoneConfirmed
-                  ? isKo
-                      ? '모두 확인'
-                      : 'Seen by everyone'
-                  : hasReceipt
-                      ? isKo
-                          ? '${receipt.read.length}/${receipt.total}명 확인'
-                          : '${receipt.read.length}/${receipt.total} seen'
-                      : isKo
-                          ? '전송됨'
-                          : 'Sent',
+              message:
+                  isKo ? '$remainingUnread명 미확인' : '$remainingUnread not seen',
               child: InkWell(
-                onTap:
-                    hasReceipt ? () => _showReadReceiptDetails(message) : null,
+                onTap: () => _showReadReceiptDetails(message),
                 borderRadius: BorderRadius.circular(12),
                 child: SizedBox(
                   width: 28,
                   height: 24,
-                  child: Center(
-                    child: Icon(
-                      everyoneConfirmed
-                          ? Icons.done_all_rounded
-                          : Icons.check_rounded,
-                      size: 15,
-                      color: everyoneConfirmed ? _secondaryText : _tertiaryText,
+                  child: Align(
+                    alignment: Alignment.centerRight,
+                    child: Text(
+                      '$remainingUnread',
+                      style: TextStyle(
+                        fontFamily: 'Inter',
+                        fontFamilyFallback: const ['NotoSansKR'],
+                        fontSize: context.rf(11).clamp(10.5, 12).toDouble(),
+                        fontWeight: FontWeight.w700,
+                        color: _secondaryText,
+                        height: 1,
+                      ),
                     ),
                   ),
                 ),
@@ -4112,7 +4134,8 @@ class _SnackChatScreenState extends State<SnackChatScreen>
   Widget _messageTimeText(String timeText) => Text(
         timeText,
         style: TextStyle(
-          fontFamily: 'Pretendard',
+          fontFamily: 'Inter',
+          fontFamilyFallback: const ['NotoSansKR'],
           fontSize: context.rf(10.5).clamp(10, 11.5).toDouble(),
           fontWeight: FontWeight.w600,
           color: _tertiaryText,
@@ -4214,19 +4237,13 @@ class _SnackChatScreenState extends State<SnackChatScreen>
     String? storagePath,
     required String heroTag,
   }) async {
-    _routeActive = false;
-    try {
-      await showFullscreenImageViewer(
-        context,
-        imageUrls: [imageUrl ?? ''],
-        storagePaths: [storagePath],
-        initialIndex: 0,
-        heroTag: heroTag,
-      );
-    } finally {
-      _routeActive = true;
-      _scheduleMarkAsRead();
-    }
+    await showFullscreenImageViewer(
+      context,
+      imageUrls: [imageUrl ?? ''],
+      storagePaths: [storagePath],
+      initialIndex: 0,
+      heroTag: heroTag,
+    );
   }
 
   String _formatTime(DateTime t) {
@@ -4294,7 +4311,8 @@ class _SnackChatScreenState extends State<SnackChatScreen>
         child: Text(
           dateText,
           style: TextStyle(
-            fontFamily: 'Pretendard',
+            fontFamily: 'Inter',
+            fontFamilyFallback: const ['NotoSansKR'],
             fontSize: context.rf(11.5).clamp(10.5, 12).toDouble(),
             fontWeight: FontWeight.w600,
             color: _secondaryText,
@@ -4325,7 +4343,6 @@ class _SnackChatScreenState extends State<SnackChatScreen>
   void _handleRoutePop(SnackChat room) {
     if (_pushBackNavigationInFlight) return;
     _pushBackNavigationInFlight = true;
-    _routeActive = false;
     _startBackgroundReadFlush();
     _handlePushBackNavigation(room);
   }

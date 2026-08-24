@@ -34,6 +34,14 @@
 				<string>com.googleusercontent.apps.700373659727-ijco1q1rp93rkejsk8662sbqr4j4rsfj</string>
 			</array>
 		</dict>
+		<dict>
+			<key>CFBundleURLName</key>
+			<string>wefilling-external-share</string>
+			<key>CFBundleURLSchemes</key>
+			<array>
+				<string>wefilling</string>
+			</array>
+		</dict>
 	</array>
 	<key>CFBundleVersion</key>
 	<string>$(FLUTTER_BUILD_NUMBER)</string>

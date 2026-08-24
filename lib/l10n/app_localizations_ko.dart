@@ -1295,7 +1295,7 @@ class AppLocalizationsKo extends AppLocalizations {
 
   @override
   String deleteCategoryConfirm(String name) {
-    return '\'$name\' 그룹을 삭제하시겠습니까?\n\n이 그룹에 속한 친구들은 다른 그룹으로 이동됩니다.';
+    return '\'$name\' 그룹을 삭제하시겠습니까?\n\n그룹만 삭제되며 친구들은 다른 그룹으로 이동하지 않습니다.';
   }
 
   @override
@@ -2898,13 +2898,19 @@ class AppLocalizationsKo extends AppLocalizations {
   String get postComposeVisibilityPrompt => '공개 대상을 선택해주세요.';
 
   @override
-  String get postVisibilityPublicTitle => '모두에게 공개';
+  String get postVisibilityPublicTitle => '전체 공개';
 
   @override
   String get postVisibilityPublicDescription => '모든 사용자가 게시글을 볼 수 있습니다';
 
   @override
-  String get postVisibilityGroupTitle => '그룹 선택';
+  String get postVisibilityAnonymousTitle => '전체 익명 공개';
+
+  @override
+  String get postVisibilityAnonymousDescription => '작성자 정보 없이 모든 사용자에게 공개됩니다';
+
+  @override
+  String get postVisibilityGroupTitle => '그룹 공개';
 
   @override
   String get postVisibilityGroupDescription => '선택한 그룹 친구에게만 공개됩니다';

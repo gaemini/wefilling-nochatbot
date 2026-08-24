@@ -118,7 +118,8 @@ class _SnackChatPollScheduleScreenState
                         maxLines: 2,
                         overflow: TextOverflow.ellipsis,
                         style: TextStyle(
-                          fontFamily: 'Pretendard',
+                          fontFamily: 'Inter',
+                          fontFamilyFallback: const ['NotoSansKR'],
                           fontSize: context.rf(16).clamp(15, 17).toDouble(),
                           height: 1.35,
                           fontWeight: FontWeight.w600,
@@ -146,7 +147,8 @@ class _SnackChatPollScheduleScreenState
                               ? '현재 시간 이후로 선택해 주세요.'
                               : 'Choose a time later than now.',
                           style: const TextStyle(
-                            fontFamily: 'Pretendard',
+                            fontFamily: 'Inter',
+                            fontFamilyFallback: const ['NotoSansKR'],
                             fontSize: 12.5,
                             fontWeight: FontWeight.w600,
                             color: Color(0xFFB42318),
@@ -195,7 +197,8 @@ class _SnackChatPollScheduleScreenState
                 overflow: TextOverflow.ellipsis,
                 textAlign: TextAlign.center,
                 style: TextStyle(
-                  fontFamily: 'Pretendard',
+                  fontFamily: 'Inter',
+                  fontFamilyFallback: const ['NotoSansKR'],
                   fontSize: context.rf(18).clamp(16, 19).toDouble(),
                   fontWeight: FontWeight.w700,
                   color: const Color(0xFF111827),
@@ -229,7 +232,8 @@ class _SnackChatPollScheduleScreenState
             child: Text(
               _isKo ? '완료' : 'Done',
               style: const TextStyle(
-                fontFamily: 'Pretendard',
+                fontFamily: 'Inter',
+                fontFamilyFallback: const ['NotoSansKR'],
                 fontSize: 14,
                 fontWeight: FontWeight.w700,
               ),
@@ -290,7 +294,8 @@ class _SnackChatPollScheduleScreenState
               child: Text(
                 ':',
                 style: TextStyle(
-                  fontFamily: 'Pretendard',
+                  fontFamily: 'Inter',
+                  fontFamilyFallback: const ['NotoSansKR'],
                   fontSize: 24,
                   fontWeight: FontWeight.w700,
                   color: Color(0xFF374151),
@@ -313,7 +318,8 @@ class _SnackChatPollScheduleScreenState
     return Text(
       value,
       style: TextStyle(
-        fontFamily: 'Pretendard',
+        fontFamily: 'Inter',
+        fontFamilyFallback: const ['NotoSansKR'],
         fontSize: context.rf(15).clamp(14, 16).toDouble(),
         fontWeight: FontWeight.w800,
         color: const Color(0xFF111827),
@@ -352,7 +358,8 @@ class _TimeWheel extends StatelessWidget {
           child: Text(
             valueLabel(index),
             style: const TextStyle(
-              fontFamily: 'Pretendard',
+              fontFamily: 'Inter',
+              fontFamilyFallback: const ['NotoSansKR'],
               fontSize: 21,
               fontWeight: FontWeight.w600,
               color: Color(0xFF111827),

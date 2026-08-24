@@ -172,7 +172,8 @@ class SnackChatCard extends StatelessWidget {
                             maxLines: 1,
                             overflow: TextOverflow.ellipsis,
                             style: TextStyle(
-                              fontFamily: 'Pretendard',
+                              fontFamily: 'Inter',
+                              fontFamilyFallback: const ['NotoSansKR'],
                               fontSize: 17,
                               height: 1.25,
                               fontWeight:
@@ -185,7 +186,8 @@ class SnackChatCard extends StatelessWidget {
                         Text(
                           '${snackChat.participantCount}',
                           style: const TextStyle(
-                            fontFamily: 'Pretendard',
+                            fontFamily: 'Inter',
+                            fontFamilyFallback: const ['NotoSansKR'],
                             fontSize: 14,
                             height: 1.25,
                             fontWeight: FontWeight.w600,
@@ -208,7 +210,8 @@ class SnackChatCard extends StatelessWidget {
                       maxLines: 1,
                       overflow: TextOverflow.ellipsis,
                       style: TextStyle(
-                        fontFamily: 'Pretendard',
+                        fontFamily: 'Inter',
+                        fontFamilyFallback: const ['NotoSansKR'],
                         fontSize: 13,
                         height: 1.35,
                         fontWeight:
@@ -234,7 +237,8 @@ class SnackChatCard extends StatelessWidget {
                       maxLines: 1,
                       overflow: TextOverflow.ellipsis,
                       style: TextStyle(
-                        fontFamily: 'Pretendard',
+                        fontFamily: 'Inter',
+                        fontFamilyFallback: const ['NotoSansKR'],
                         fontSize: 11,
                         height: 1.25,
                         fontWeight:
@@ -263,7 +267,8 @@ class SnackChatCard extends StatelessWidget {
                               unreadCount > 99 ? '99+' : '$unreadCount',
                               textAlign: TextAlign.center,
                               style: const TextStyle(
-                                fontFamily: 'Pretendard',
+                                fontFamily: 'Inter',
+                                fontFamilyFallback: const ['NotoSansKR'],
                                 fontSize: 9.5,
                                 height: 1.2,
                                 fontWeight: FontWeight.w700,

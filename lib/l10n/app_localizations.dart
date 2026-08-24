@@ -2591,7 +2591,7 @@ abstract class AppLocalizations {
   /// No description provided for @deleteCategoryConfirm.
   ///
   /// In ko, this message translates to:
-  /// **'\'{name}\' 그룹을 삭제하시겠습니까?\n\n이 그룹에 속한 친구들은 다른 그룹으로 이동됩니다.'**
+  /// **'\'{name}\' 그룹을 삭제하시겠습니까?\n\n그룹만 삭제되며 친구들은 다른 그룹으로 이동하지 않습니다.'**
   String deleteCategoryConfirm(String name);
 
   /// No description provided for @unfriendConfirm.
@@ -5567,7 +5567,7 @@ abstract class AppLocalizations {
   /// No description provided for @postVisibilityPublicTitle.
   ///
   /// In ko, this message translates to:
-  /// **'모두에게 공개'**
+  /// **'전체 공개'**
   String get postVisibilityPublicTitle;
 
   /// No description provided for @postVisibilityPublicDescription.
@@ -5576,10 +5576,22 @@ abstract class AppLocalizations {
   /// **'모든 사용자가 게시글을 볼 수 있습니다'**
   String get postVisibilityPublicDescription;
 
+  /// No description provided for @postVisibilityAnonymousTitle.
+  ///
+  /// In ko, this message translates to:
+  /// **'전체 익명 공개'**
+  String get postVisibilityAnonymousTitle;
+
+  /// No description provided for @postVisibilityAnonymousDescription.
+  ///
+  /// In ko, this message translates to:
+  /// **'작성자 정보 없이 모든 사용자에게 공개됩니다'**
+  String get postVisibilityAnonymousDescription;
+
   /// No description provided for @postVisibilityGroupTitle.
   ///
   /// In ko, this message translates to:
-  /// **'그룹 선택'**
+  /// **'그룹 공개'**
   String get postVisibilityGroupTitle;
 
   /// No description provided for @postVisibilityGroupDescription.

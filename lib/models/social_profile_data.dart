@@ -24,6 +24,16 @@ class SocialProfileData {
   factory SocialProfileData.fromMap(Map<String, dynamic>? map) {
     final data = map ?? const <String, dynamic>{};
 
+    String conversationStarter() {
+      final value = (data['conversationStarter'] ?? '').toString().trim();
+      // 이전 선택지를 저장한 프로필도 상대방에게 묻는 현재 문구로
+      // 표시되도록 정확히 일치하는 기존 문구만 안전하게 변환한다.
+      if (value == '공강 시간에는 주로 무엇을 하나요?') {
+        return '공강 시간에는 주로 무엇을 하시나요?';
+      }
+      return value;
+    }
+
     List<String> strings(String key) {
       final value = data[key];
       if (value is! List) return const <String>[];
@@ -40,8 +50,7 @@ class SocialProfileData {
       bio: (data['bio'] ?? '').toString().trim(),
       interests: strings('interests'),
       preferredActivities: strings('preferredActivities'),
-      conversationStarter:
-          (data['conversationStarter'] ?? '').toString().trim(),
+      conversationStarter: conversationStarter(),
       friendshipPrompt: (data['friendshipPrompt'] ?? '').toString().trim(),
       department: (data['department'] ?? '').toString().trim(),
       grade: (data['grade'] ?? '').toString().trim(),
@@ -168,7 +177,7 @@ class SocialProfileCatalog {
         en: 'What is your favorite food spot near campus?'),
     SocialProfileOption(
         id: 'break',
-        ko: '공강 시간에는 주로 무엇을 하나요?',
+        ko: '공강 시간에는 주로 무엇을 하시나요?',
         en: 'What do you usually do between classes?'),
     SocialProfileOption(
         id: 'movie',

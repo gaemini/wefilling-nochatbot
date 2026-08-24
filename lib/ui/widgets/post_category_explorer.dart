@@ -171,7 +171,8 @@ class PostCategoryTile extends StatelessWidget {
               maxLines: 2,
               overflow: TextOverflow.ellipsis,
               style: TextStyle(
-                fontFamily: 'Pretendard',
+                fontFamily: 'Inter',
+                fontFamilyFallback: const ['NotoSansKR'],
                 fontSize: titleSize,
                 fontWeight: FontWeight.w800,
                 color: foregroundColor,
@@ -184,7 +185,8 @@ class PostCategoryTile extends StatelessWidget {
               maxLines: 2,
               overflow: TextOverflow.ellipsis,
               style: TextStyle(
-                fontFamily: 'Pretendard',
+                fontFamily: 'Inter',
+                fontFamilyFallback: const ['NotoSansKR'],
                 fontSize: descriptionSize,
                 fontWeight: FontWeight.w500,
                 color: secondaryForegroundColor,

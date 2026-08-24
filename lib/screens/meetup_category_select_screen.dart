@@ -122,7 +122,8 @@ class _MeetupCategorySelectScreenState
         child: Text(
           _labelForKey(l10n, key),
           style: TextStyle(
-            fontFamily: 'Pretendard',
+            fontFamily: 'Inter',
+            fontFamilyFallback: const ['NotoSansKR'],
             fontSize: context.rf(13).clamp(12, 14).toDouble(),
             fontWeight: isSelected ? FontWeight.w800 : FontWeight.w600,
             height: 1.2,
@@ -142,7 +143,8 @@ class _MeetupCategorySelectScreenState
         child: Text(
           l10n.pleaseSelectCategory,
           style: TextStyle(
-            fontFamily: 'Pretendard',
+            fontFamily: 'Inter',
+            fontFamilyFallback: const ['NotoSansKR'],
             fontSize: context.rf(14).clamp(13, 15).toDouble(),
             fontWeight: FontWeight.w500,
             height: 1.25,
@@ -158,7 +160,8 @@ class _MeetupCategorySelectScreenState
         Text(
           l10n.recommendedPlaces,
           style: TextStyle(
-            fontFamily: 'Pretendard',
+            fontFamily: 'Inter',
+            fontFamilyFallback: const ['NotoSansKR'],
             fontSize: context.rf(14).clamp(13, 15).toDouble(),
             fontWeight: FontWeight.w700,
             height: 1.2,
@@ -182,7 +185,8 @@ class _MeetupCategorySelectScreenState
           Text(
             l10n.noRecommendedPlaces,
             style: const TextStyle(
-              fontFamily: 'Pretendard',
+              fontFamily: 'Inter',
+              fontFamilyFallback: const ['NotoSansKR'],
               fontSize: 14,
               fontWeight: FontWeight.w500,
               height: 1.25,
@@ -248,7 +252,8 @@ class _MeetupCategorySelectScreenState
                 child: Text(
                   '$displayIndex',
                   style: TextStyle(
-                    fontFamily: 'Pretendard',
+                    fontFamily: 'Inter',
+                    fontFamilyFallback: const ['NotoSansKR'],
                     fontSize: context.rf(12).clamp(11, 13).toDouble(),
                     fontWeight: FontWeight.w800,
                     height: 1.0,
@@ -261,7 +266,8 @@ class _MeetupCategorySelectScreenState
                 child: Text(
                   place.name,
                   style: TextStyle(
-                    fontFamily: 'Pretendard',
+                    fontFamily: 'Inter',
+                    fontFamilyFallback: const ['NotoSansKR'],
                     fontSize: context.rf(15).clamp(14, 16).toDouble(),
                     fontWeight: FontWeight.w800,
                     height: 1.25,
@@ -339,7 +345,8 @@ class _MeetupCategorySelectScreenState
             maxLines: 1,
             overflow: TextOverflow.ellipsis,
             style: TextStyle(
-              fontFamily: 'Pretendard',
+              fontFamily: 'Inter',
+              fontFamilyFallback: const ['NotoSansKR'],
               fontSize: context.rf(18).clamp(16, 19).toDouble(),
               fontWeight: FontWeight.w700,
               height: 1.2,
@@ -429,7 +436,8 @@ class _MeetupCategorySelectScreenState
                     child: Text(
                       l10n.done,
                       style: TextStyle(
-                        fontFamily: 'Pretendard',
+                        fontFamily: 'Inter',
+                        fontFamilyFallback: const ['NotoSansKR'],
                         fontSize: context.rf(15).clamp(14, 16).toDouble(),
                         fontWeight: FontWeight.w700,
                         height: 1.1,

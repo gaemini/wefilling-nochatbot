@@ -22,7 +22,8 @@ class LicensesScreen extends StatelessWidget {
         title: Text(
           AppLocalizations.of(context)!.openSourceLicenses ?? "오픈소스 라이선스",
           style: const TextStyle(
-            fontFamily: 'Pretendard',
+            fontFamily: 'Inter',
+            fontFamilyFallback: const ['NotoSansKR'],
             fontSize: 18,
             fontWeight: FontWeight.w600,
             color: Color(0xFF111827),
@@ -45,7 +46,8 @@ class LicensesScreen extends StatelessWidget {
               child: Text(
                 isKo ? '라이선스를 불러오는 중 오류가 발생했습니다' : 'Error loading licenses',
                 style: TextStyle(
-                  fontFamily: 'Pretendard',
+                  fontFamily: 'Inter',
+                  fontFamilyFallback: const ['NotoSansKR'],
                   fontSize: 14,
                   color: Colors.grey[600],
                 ),
@@ -68,7 +70,8 @@ class LicensesScreen extends StatelessWidget {
                     const Text(
                       'Wefilling',
                       style: TextStyle(
-                        fontFamily: 'Pretendard',
+                        fontFamily: 'Inter',
+                        fontFamilyFallback: const ['NotoSansKR'],
                         fontSize: 24,
                         fontWeight: FontWeight.w700,
                         color: Color(0xFF111827),
@@ -78,7 +81,8 @@ class LicensesScreen extends StatelessWidget {
                     const Text(
                       'Powered by Flutter',
                       style: TextStyle(
-                        fontFamily: 'Pretendard',
+                        fontFamily: 'Inter',
+                        fontFamilyFallback: const ['NotoSansKR'],
                         fontSize: 14,
                         color: Color(0xFF6B7280),
                       ),
@@ -89,7 +93,8 @@ class LicensesScreen extends StatelessWidget {
                           ? '라이선스 ${licenseData.packages.length}개'
                           : '${licenseData.packages.length} licenses',
                       style: const TextStyle(
-                        fontFamily: 'Pretendard',
+                        fontFamily: 'Inter',
+                        fontFamilyFallback: const ['NotoSansKR'],
                         fontSize: 14,
                         color: Color(0xFF6B7280),
                       ),
@@ -156,7 +161,8 @@ class LicensesScreen extends StatelessWidget {
                   Text(
                     packageName,
                     style: const TextStyle(
-                      fontFamily: 'Pretendard',
+                      fontFamily: 'Inter',
+                      fontFamilyFallback: const ['NotoSansKR'],
                       fontSize: 16,
                       fontWeight: FontWeight.w500,
                       color: Color(0xFF111827),
@@ -168,7 +174,8 @@ class LicensesScreen extends StatelessWidget {
                         ? '라이선스 ${licenseIndices.length}개'
                         : '${licenseIndices.length} ${licenseIndices.length == 1 ? 'license' : 'licenses'}',
                     style: const TextStyle(
-                      fontFamily: 'Pretendard',
+                      fontFamily: 'Inter',
+                      fontFamilyFallback: const ['NotoSansKR'],
                       fontSize: 14,
                       color: Color(0xFF6B7280),
                     ),
@@ -251,7 +258,8 @@ class LicenseDetailScreen extends StatelessWidget {
         title: Text(
           packageName,
           style: const TextStyle(
-            fontFamily: 'Pretendard',
+            fontFamily: 'Inter',
+            fontFamilyFallback: const ['NotoSansKR'],
             fontSize: 18,
             fontWeight: FontWeight.w600,
             color: Color(0xFF111827),
@@ -267,7 +275,8 @@ class LicenseDetailScreen extends StatelessWidget {
             Text(
               packageName,
               style: const TextStyle(
-                fontFamily: 'Pretendard',
+                fontFamily: 'Inter',
+                fontFamilyFallback: const ['NotoSansKR'],
                 fontSize: 24,
                 fontWeight: FontWeight.w700,
                 color: Color(0xFF111827),
@@ -287,7 +296,8 @@ class LicenseDetailScreen extends StatelessWidget {
                         child: Text(
                           paragraph.text,
                           style: TextStyle(
-                            fontFamily: 'Pretendard',
+                            fontFamily: 'Inter',
+                            fontFamilyFallback: const ['NotoSansKR'],
                             fontSize: paragraph.indent == 0 ? 15 : 14,
                             height: 1.7,
                             color: const Color(0xFF374151),

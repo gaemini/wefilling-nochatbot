@@ -38,7 +38,8 @@ class GroupAudiencePreview extends StatelessWidget {
               maxLines: 1,
               overflow: TextOverflow.ellipsis,
               style: TextStyle(
-                fontFamily: 'Pretendard',
+                fontFamily: 'Inter',
+                fontFamilyFallback: const ['NotoSansKR'],
                 fontSize: context.rf(11.5).clamp(11, 12.5).toDouble(),
                 fontWeight: FontWeight.w700,
                 color: const Color(0xFF667085),
@@ -59,7 +60,8 @@ class GroupAudiencePreview extends StatelessWidget {
                 maxLines: 2,
                 overflow: TextOverflow.ellipsis,
                 style: TextStyle(
-                  fontFamily: 'Pretendard',
+                  fontFamily: 'Inter',
+                  fontFamilyFallback: const ['NotoSansKR'],
                   fontSize: context.rf(12).clamp(11.5, 13).toDouble(),
                   fontWeight: FontWeight.w500,
                   color: const Color(0xFF98A2B3),
@@ -97,7 +99,8 @@ class GroupAudiencePreview extends StatelessWidget {
                                     maxLines: 1,
                                     overflow: TextOverflow.ellipsis,
                                     style: TextStyle(
-                                      fontFamily: 'Pretendard',
+                                      fontFamily: 'Inter',
+                                      fontFamilyFallback: const ['NotoSansKR'],
                                       fontSize: context
                                           .rf(12.5)
                                           .clamp(12, 13.5)

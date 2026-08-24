@@ -153,7 +153,8 @@ class _EmailSignUpScreenState extends State<EmailSignUpScreen> {
           maxLines: 1,
           overflow: TextOverflow.ellipsis,
           style: const TextStyle(
-            fontFamily: 'Pretendard',
+            fontFamily: 'Inter',
+            fontFamilyFallback: const ['NotoSansKR'],
             fontSize: 18,
             fontWeight: FontWeight.w700,
             color: Color(0xFF0F172A),
@@ -207,7 +208,8 @@ class _EmailSignUpScreenState extends State<EmailSignUpScreen> {
                             helperText: l10n.emailHelperText,
                           ),
                           style: const TextStyle(
-                            fontFamily: 'Pretendard',
+                            fontFamily: 'Inter',
+                            fontFamilyFallback: const ['NotoSansKR'],
                             fontSize: 16,
                             fontWeight: FontWeight.w500,
                             color: Color(0xFF0F172A),
@@ -250,7 +252,8 @@ class _EmailSignUpScreenState extends State<EmailSignUpScreen> {
                             ),
                           ),
                           style: const TextStyle(
-                            fontFamily: 'Pretendard',
+                            fontFamily: 'Inter',
+                            fontFamilyFallback: const ['NotoSansKR'],
                             fontSize: 16,
                             fontWeight: FontWeight.w500,
                             color: Color(0xFF0F172A),
@@ -287,7 +290,8 @@ class _EmailSignUpScreenState extends State<EmailSignUpScreen> {
                             ),
                           ),
                           style: const TextStyle(
-                            fontFamily: 'Pretendard',
+                            fontFamily: 'Inter',
+                            fontFamilyFallback: const ['NotoSansKR'],
                             fontSize: 16,
                             fontWeight: FontWeight.w500,
                             color: Color(0xFF0F172A),

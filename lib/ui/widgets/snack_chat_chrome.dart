@@ -81,7 +81,8 @@ class SnackChatHeaderTitle extends StatelessWidget {
               overflow: TextOverflow.ellipsis,
               textAlign: TextAlign.center,
               style: TextStyle(
-                fontFamily: 'Pretendard',
+                fontFamily: 'Inter',
+                fontFamilyFallback: const ['NotoSansKR'],
                 fontSize: context.rf(16).clamp(15, 17).toDouble(),
                 fontWeight: FontWeight.w700,
                 color: const Color(0xFF111827),
@@ -106,7 +107,8 @@ class SnackChatHeaderTitle extends StatelessWidget {
                     overflow: TextOverflow.ellipsis,
                     textAlign: TextAlign.center,
                     style: TextStyle(
-                      fontFamily: 'Pretendard',
+                      fontFamily: 'Inter',
+                      fontFamilyFallback: const ['NotoSansKR'],
                       fontSize: context.rf(11).clamp(10.5, 12).toDouble(),
                       fontWeight: FontWeight.w600,
                       color: const Color(0xFF667085),

@@ -138,7 +138,8 @@ class _SemesterTodoScreenState extends State<SemesterTodoScreen> {
           title: Text(
             _isKorean ? '학기 To-do' : 'Semester To-do',
             style: const TextStyle(
-              fontFamily: 'Pretendard',
+              fontFamily: 'Inter',
+              fontFamilyFallback: const ['NotoSansKR'],
               fontSize: 18,
               fontWeight: FontWeight.w700,
               color: Color(0xFF0F172A),
@@ -220,7 +221,8 @@ class _SemesterTodoScreenState extends State<SemesterTodoScreen> {
                   maxLines: 1,
                   overflow: TextOverflow.ellipsis,
                   style: const TextStyle(
-                    fontFamily: 'Pretendard',
+                    fontFamily: 'Inter',
+                    fontFamilyFallback: const ['NotoSansKR'],
                     fontSize: 22,
                     fontWeight: FontWeight.w800,
                     color: Color(0xFF0F172A),
@@ -230,7 +232,8 @@ class _SemesterTodoScreenState extends State<SemesterTodoScreen> {
                 Text(
                   '$status · ${_studentType.title(context)}',
                   style: const TextStyle(
-                    fontFamily: 'Pretendard',
+                    fontFamily: 'Inter',
+                    fontFamilyFallback: const ['NotoSansKR'],
                     fontSize: 13,
                     color: Color(0xFF64748B),
                   ),
@@ -278,7 +281,8 @@ class _SemesterTodoScreenState extends State<SemesterTodoScreen> {
                 child: Text(
                   _weekLabel(controller.weeks, index),
                   style: TextStyle(
-                    fontFamily: 'Pretendard',
+                    fontFamily: 'Inter',
+                    fontFamilyFallback: const ['NotoSansKR'],
                     fontSize: 14,
                     fontWeight: selected ? FontWeight.w800 : FontWeight.w600,
                     color: selected
@@ -396,7 +400,8 @@ class _SemesterTodoScreenState extends State<SemesterTodoScreen> {
                     : 'Week ${week.weekNumber}')
                 : _weekLabel(controller.weeks, weekIndex),
             style: const TextStyle(
-              fontFamily: 'Pretendard',
+              fontFamily: 'Inter',
+              fontFamilyFallback: const ['NotoSansKR'],
               fontSize: 19,
               fontWeight: FontWeight.w800,
               color: Color(0xFF0F172A),
@@ -409,7 +414,8 @@ class _SemesterTodoScreenState extends State<SemesterTodoScreen> {
                 child: Text(
                   '${_dateLabel(week.startDate)} – ${_dateLabel(week.endDate)}',
                   style: const TextStyle(
-                    fontFamily: 'Pretendard',
+                    fontFamily: 'Inter',
+                    fontFamilyFallback: const ['NotoSansKR'],
                     fontSize: 14,
                     fontWeight: FontWeight.w600,
                     color: Color(0xFF64748B),
@@ -421,7 +427,8 @@ class _SemesterTodoScreenState extends State<SemesterTodoScreen> {
                     ? '${required.length}개 중 $done개 완료'
                     : '$done of ${required.length} done',
                 style: const TextStyle(
-                  fontFamily: 'Pretendard',
+                  fontFamily: 'Inter',
+                  fontFamilyFallback: const ['NotoSansKR'],
                   fontSize: 13,
                   fontWeight: FontWeight.w700,
                   color: Color(0xFF334155),
@@ -513,7 +520,8 @@ class _SemesterTodoScreenState extends State<SemesterTodoScreen> {
                 ? '할 일을 불러오지 못했어요. 아래로 당겨 다시 시도해주세요.'
                 : 'Could not load tasks. Pull down to try again.',
             style: const TextStyle(
-              fontFamily: 'Pretendard',
+              fontFamily: 'Inter',
+              fontFamilyFallback: const ['NotoSansKR'],
               fontSize: 14,
               height: 1.5,
               color: Color(0xFF64748B),
@@ -530,7 +538,8 @@ class _SemesterTodoScreenState extends State<SemesterTodoScreen> {
                 ? '이번 주에 등록된 안내가 없어요.\n나만의 할 일을 추가해 보세요.'
                 : 'Nothing is scheduled for this week.\nAdd a task of your own.',
             style: const TextStyle(
-              fontFamily: 'Pretendard',
+              fontFamily: 'Inter',
+              fontFamilyFallback: const ['NotoSansKR'],
               fontSize: 14,
               height: 1.5,
               color: Color(0xFF64748B),
@@ -552,7 +561,8 @@ class _SemesterTodoScreenState extends State<SemesterTodoScreen> {
                   ? '직접 관리할 일이 있다면 추가해 보세요.'
                   : 'Add anything you want to manage for yourself.',
               style: const TextStyle(
-                fontFamily: 'Pretendard',
+                fontFamily: 'Inter',
+                fontFamilyFallback: const ['NotoSansKR'],
                 fontSize: 14,
                 color: Color(0xFF64748B),
               ),
@@ -618,7 +628,8 @@ class _SemesterTodoScreenState extends State<SemesterTodoScreen> {
                     Text(
                       _isKorean ? '매일 $time 알림' : 'Daily reminder at $time',
                       style: const TextStyle(
-                        fontFamily: 'Pretendard',
+                        fontFamily: 'Inter',
+                        fontFamilyFallback: const ['NotoSansKR'],
                         fontSize: 14,
                         fontWeight: FontWeight.w700,
                         color: Color(0xFF334155),
@@ -628,7 +639,8 @@ class _SemesterTodoScreenState extends State<SemesterTodoScreen> {
                     Text(
                       _isKorean ? '시간을 눌러 변경' : 'Tap to change time',
                       style: const TextStyle(
-                        fontFamily: 'Pretendard',
+                        fontFamily: 'Inter',
+                        fontFamilyFallback: const ['NotoSansKR'],
                         fontSize: 12,
                         color: Color(0xFF94A3B8),
                       ),
@@ -689,7 +701,8 @@ class _SemesterTodoScreenState extends State<SemesterTodoScreen> {
                   Text(
                     task.title.resolve(_languageCode),
                     style: TextStyle(
-                      fontFamily: 'Pretendard',
+                      fontFamily: 'Inter',
+                      fontFamilyFallback: const ['NotoSansKR'],
                       fontSize: 16,
                       height: 1.35,
                       fontWeight: FontWeight.w600,
@@ -704,7 +717,8 @@ class _SemesterTodoScreenState extends State<SemesterTodoScreen> {
                     Text(
                       task.description.resolve(_languageCode),
                       style: const TextStyle(
-                        fontFamily: 'Pretendard',
+                        fontFamily: 'Inter',
+                        fontFamilyFallback: const ['NotoSansKR'],
                         fontSize: 13,
                         height: 1.45,
                         color: Color(0xFF64748B),
@@ -768,7 +782,8 @@ class _SemesterTodoScreenState extends State<SemesterTodoScreen> {
                     Text(
                       todo.title,
                       style: TextStyle(
-                        fontFamily: 'Pretendard',
+                        fontFamily: 'Inter',
+                        fontFamilyFallback: const ['NotoSansKR'],
                         fontSize: 16,
                         fontWeight: FontWeight.w600,
                         color: todo.completed
@@ -785,7 +800,8 @@ class _SemesterTodoScreenState extends State<SemesterTodoScreen> {
                         maxLines: 2,
                         overflow: TextOverflow.ellipsis,
                         style: const TextStyle(
-                          fontFamily: 'Pretendard',
+                          fontFamily: 'Inter',
+                          fontFamilyFallback: const ['NotoSansKR'],
                           fontSize: 13,
                           color: Color(0xFF64748B),
                         ),
@@ -798,7 +814,8 @@ class _SemesterTodoScreenState extends State<SemesterTodoScreen> {
                             ? '마감 ${_dateLabel(todo.dueAt!)}'
                             : 'Due ${_dateLabel(todo.dueAt!)}',
                         style: const TextStyle(
-                          fontFamily: 'Pretendard',
+                          fontFamily: 'Inter',
+                          fontFamilyFallback: const ['NotoSansKR'],
                           fontSize: 12,
                           fontWeight: FontWeight.w600,
                           color: Color(0xFF64748B),
@@ -1219,7 +1236,8 @@ class _PersonalTodoEditorPageState extends State<_PersonalTodoEditorPage> {
               ? (widget.isKorean ? '할 일 추가' : 'Add task')
               : (widget.isKorean ? '할 일 수정' : 'Edit task'),
           style: const TextStyle(
-            fontFamily: 'Pretendard',
+            fontFamily: 'Inter',
+            fontFamilyFallback: const ['NotoSansKR'],
             fontSize: 20,
             fontWeight: FontWeight.w800,
             color: Color(0xFF0F172A),
@@ -1236,7 +1254,8 @@ class _PersonalTodoEditorPageState extends State<_PersonalTodoEditorPage> {
             child: Text(
               widget.isKorean ? '저장' : 'Save',
               style: const TextStyle(
-                fontFamily: 'Pretendard',
+                fontFamily: 'Inter',
+                fontFamilyFallback: const ['NotoSansKR'],
                 fontSize: 16,
                 fontWeight: FontWeight.w800,
               ),
@@ -1370,7 +1389,8 @@ class _PersonalTodoEditorPageState extends State<_PersonalTodoEditorPage> {
                   label: Text(
                     widget.isKorean ? '할 일 삭제' : 'Delete task',
                     style: const TextStyle(
-                      fontFamily: 'Pretendard',
+                      fontFamily: 'Inter',
+                      fontFamilyFallback: const ['NotoSansKR'],
                       fontWeight: FontWeight.w700,
                     ),
                   ),
@@ -1397,7 +1417,8 @@ class _SectionTitle extends StatelessWidget {
             child: Text(
               title,
               style: const TextStyle(
-                fontFamily: 'Pretendard',
+                fontFamily: 'Inter',
+                fontFamilyFallback: const ['NotoSansKR'],
                 fontSize: 18,
                 fontWeight: FontWeight.w800,
                 color: Color(0xFF0F172A),
@@ -1456,7 +1477,8 @@ class _ReminderTimeSheetState extends State<_ReminderTimeSheet> {
                   child: Text(
                     widget.isKorean ? '알림 시간' : 'Reminder time',
                     style: const TextStyle(
-                      fontFamily: 'Pretendard',
+                      fontFamily: 'Inter',
+                      fontFamilyFallback: const ['NotoSansKR'],
                       fontSize: 20,
                       height: 1.3,
                       fontWeight: FontWeight.w800,
@@ -1478,7 +1500,8 @@ class _ReminderTimeSheetState extends State<_ReminderTimeSheet> {
                   ? '매일 알림을 받을 시간을 선택해 주세요.'
                   : 'Choose when you want to receive the daily reminder.',
               style: const TextStyle(
-                fontFamily: 'Pretendard',
+                fontFamily: 'Inter',
+                fontFamilyFallback: const ['NotoSansKR'],
                 fontSize: 14,
                 height: 1.45,
                 color: Color(0xFF64748B),
@@ -1491,7 +1514,8 @@ class _ReminderTimeSheetState extends State<_ReminderTimeSheet> {
                 data: const CupertinoThemeData(
                   textTheme: CupertinoTextThemeData(
                     dateTimePickerTextStyle: TextStyle(
-                      fontFamily: 'Pretendard',
+                      fontFamily: 'Inter',
+                      fontFamilyFallback: const ['NotoSansKR'],
                       fontSize: 21,
                       fontWeight: FontWeight.w600,
                       color: Color(0xFF0F172A),
@@ -1525,7 +1549,8 @@ class _ReminderTimeSheetState extends State<_ReminderTimeSheet> {
                   child: Text(
                     widget.isKorean ? '취소' : 'Cancel',
                     style: const TextStyle(
-                      fontFamily: 'Pretendard',
+                      fontFamily: 'Inter',
+                      fontFamilyFallback: const ['NotoSansKR'],
                       fontSize: 15,
                       fontWeight: FontWeight.w600,
                     ),
@@ -1541,7 +1566,8 @@ class _ReminderTimeSheetState extends State<_ReminderTimeSheet> {
                   child: Text(
                     widget.isKorean ? '저장' : 'Save',
                     style: const TextStyle(
-                      fontFamily: 'Pretendard',
+                      fontFamily: 'Inter',
+                      fontFamilyFallback: const ['NotoSansKR'],
                       fontSize: 15,
                       fontWeight: FontWeight.w800,
                     ),
@@ -1635,7 +1661,8 @@ class _EmptySemesterState extends StatelessWidget {
             Text(
               korean ? '진행 중인 학기가 없어요.' : 'There is no active semester.',
               style: const TextStyle(
-                fontFamily: 'Pretendard',
+                fontFamily: 'Inter',
+                fontFamilyFallback: const ['NotoSansKR'],
                 fontSize: 16,
                 fontWeight: FontWeight.w600,
                 color: Color(0xFF334155),
@@ -1648,7 +1675,8 @@ class _EmptySemesterState extends StatelessWidget {
                   : 'Weekly guidance will appear here when a semester is published.',
               textAlign: TextAlign.center,
               style: const TextStyle(
-                fontFamily: 'Pretendard',
+                fontFamily: 'Inter',
+                fontFamilyFallback: const ['NotoSansKR'],
                 fontSize: 14,
                 color: Color(0xFF64748B),
               ),

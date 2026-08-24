@@ -38,7 +38,8 @@ class _SemesterTodoAdminScreenState extends State<SemesterTodoAdminScreen> {
         title: Text(
           _isKorean ? '학기 To-do 관리' : 'Semester To-do admin',
           style: const TextStyle(
-            fontFamily: 'Pretendard',
+            fontFamily: 'Inter',
+            fontFamilyFallback: const ['NotoSansKR'],
             fontSize: 18,
             fontWeight: FontWeight.w700,
           ),
@@ -91,7 +92,8 @@ class _SemesterTodoAdminScreenState extends State<SemesterTodoAdminScreen> {
                         title: Text(
                           semester.title.resolve(_isKorean ? 'ko' : 'en'),
                           style: const TextStyle(
-                            fontFamily: 'Pretendard',
+                            fontFamily: 'Inter',
+                            fontFamilyFallback: const ['NotoSansKR'],
                             fontSize: 17,
                             fontWeight: FontWeight.w700,
                           ),

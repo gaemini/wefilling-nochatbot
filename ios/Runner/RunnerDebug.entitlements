@@ -2,14 +2,15 @@
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
 <plist version="1.0">
 <dict>
-	<!--
-	  Personal Apple development teams cannot provision Push Notifications or
-	  Sign in with Apple. Keep Debug installable on a local device while the
-	  Profile/Release entitlement files retain the production capabilities.
-	-->
+	<key>aps-environment</key>
+	<string>development</string>
 	<key>keychain-access-groups</key>
 	<array>
 		<string>$(AppIdentifierPrefix)com.wefilling.app</string>
+	</array>
+	<key>com.apple.security.application-groups</key>
+	<array>
+		<string>group.com.wefilling.app</string>
 	</array>
 </dict>
 </plist>

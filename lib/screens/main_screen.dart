@@ -12,6 +12,7 @@ import '../constants/app_constants.dart';
 import '../l10n/app_localizations.dart';
 import '../providers/auth_provider.dart';
 import '../services/dm_service.dart';
+import '../services/external_share_service.dart';
 import '../services/notification_service.dart';
 import '../services/snack_chat_service.dart';
 import '../services/badge_service.dart';
@@ -98,6 +99,9 @@ class _MainScreenState extends State<MainScreen>
     // post-frame 콜백에서 (이미 dispose된) context를 조회하는 레이스를 제거한다.
     _authProvider = Provider.of<AuthProvider>(context, listen: false);
     _authProvider?.registerStreamCleanup(_cleanupCallback);
+    ExternalShareService.instance.postPageRequests.addListener(
+      _showPostPageAfterExternalShare,
+    );
 
     WidgetsBinding.instance.addPostFrameCallback((_) {
       if (!mounted) return;
@@ -125,6 +129,9 @@ class _MainScreenState extends State<MainScreen>
   @override
   void dispose() {
     WidgetsBinding.instance.removeObserver(this);
+    ExternalShareService.instance.postPageRequests.removeListener(
+      _showPostPageAfterExternalShare,
+    );
     _authProvider?.unregisterStreamCleanup(_cleanupCallback);
 
     // 서비스 정리
@@ -135,6 +142,20 @@ class _MainScreenState extends State<MainScreen>
     _chromeController.dispose();
 
     super.dispose();
+  }
+
+  void _showPostPageAfterExternalShare() {
+    if (!mounted) return;
+    setState(() {
+      _selectedIndex = 0;
+      _ensureScreenBuilt(0);
+      _showBoardChrome = true;
+    });
+    _animateChrome(true);
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!mounted) return;
+      _boardScreenKey.currentState?.showLatestPost();
+    });
   }
 
   @override
@@ -362,7 +383,8 @@ class _MainScreenState extends State<MainScreen>
               const Text(
                 'Wefilling',
                 style: TextStyle(
-                  fontFamily: 'HancomMalrangmalrang',
+                  fontFamily: 'Inter',
+                  fontFamilyFallback: const ['NotoSansKR'],
                   fontSize: 17,
                   fontWeight: FontWeight.w700,
                   color: AppColors.pointColor,

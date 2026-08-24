@@ -70,7 +70,6 @@ class FCMService {
   static PushInitState _state = PushInitState.idle;
   static int _sessionEpoch = 0;
   static int _activeEpoch = 0;
-  static Timer? _delayedTokenSyncTimer;
   static Completer<void>? _appActiveCompleter;
   static AppLifecycleListener? _appLifecycleListener;
   static StreamSubscription<String>? _tokenRefreshSub;
@@ -119,23 +118,6 @@ class FCMService {
       throw StateError('stale epoch while waiting app active');
     }
     _setState(PushInitState.appActive, reason: 'resumed');
-  }
-
-  void _scheduleDelayedTokenSync(int epoch, String userId) {
-    _delayedTokenSyncTimer?.cancel();
-    _delayedTokenSyncTimer = Timer(const Duration(seconds: 15), () {
-      if (epoch != _activeEpoch) {
-        Logger.log(
-            '⏭️ 지연 토큰 동기화 취소: stale epoch (현재=$_activeEpoch, 요청=$epoch)');
-        return;
-      }
-      if (_initializedUserId != userId) {
-        Logger.log(
-            '⏭️ 지연 토큰 동기화 취소: stale user (현재=$_initializedUserId, 요청=$userId)');
-        return;
-      }
-      _startTokenSync(userId, epoch);
-    });
   }
 
   bool _isStaleEpoch(int epoch) => epoch != _activeEpoch;
@@ -231,8 +213,6 @@ class FCMService {
   Future<void> reset() async {
     _sessionEpoch += 1;
     _activeEpoch = _sessionEpoch;
-    _delayedTokenSyncTimer?.cancel();
-    _delayedTokenSyncTimer = null;
     _appActiveCompleter = null;
     _appLifecycleListener?.dispose();
     _appLifecycleListener = null;
@@ -273,27 +253,6 @@ class FCMService {
     } catch (e) {
       Logger.error('locale 초기화 실패 (무시)', e);
     }
-  }
-
-  Future<bool> _waitForApnsReady() async {
-    if (kIsWeb || !Platform.isIOS) return true;
-
-    const int maxAttempts = 20; // 최대 10초 대기 (0.5초 * 20)
-    for (int i = 0; i < maxAttempts; i++) {
-      try {
-        final String? apnsToken = await _messaging.getAPNSToken();
-        if (apnsToken != null && apnsToken.isNotEmpty) {
-          Logger.log('✅ APNs 토큰 준비 완료');
-          return true;
-        }
-      } catch (e) {
-        Logger.error('APNs 토큰 확인 실패 (재시도)', e);
-      }
-      await Future.delayed(const Duration(milliseconds: 500));
-    }
-
-    Logger.log('⚠️ APNs 토큰 미준비 - 이번 세션 FCM 토큰 조회 연기');
-    return false;
   }
 
   // FCM 초기화
@@ -421,37 +380,16 @@ class FCMService {
         }
       }
 
-      // 토큰 동기화는 UI와 분리해서 백그라운드로 처리
-      try {
-        var canStartTokenSync = true;
-        if (!kIsWeb && Platform.isIOS) {
-          final apnsReady = await _waitForApnsReady();
-          if (!apnsReady) {
-            canStartTokenSync = false;
-            // _initializedUserId를 먼저 설정해야 토큰 동기화에서 stale user로 중단되지 않음
-            _initializedUserId = userId;
-            _scheduleDelayedTokenSync(epoch, userId);
-          } else {
-            _setState(PushInitState.apnsRegistered);
-          }
-        }
-
-        if (_isStaleEpoch(epoch)) {
-          Logger.log('⏭️ FCM 초기화 중단: stale epoch(token_sync_start)');
-          completer.complete();
-          return;
-        }
-
-        // _initializedUserId를 토큰 동기화 시작 전에 설정
-        // (microtask로 실행되는 _startTokenSync에서 stale user 체크 통과를 위해)
-        _initializedUserId = userId;
-
-        if (canStartTokenSync) {
-          _startTokenSync(userId, epoch);
-        }
-      } catch (e) {
-        Logger.error('토큰 동기화 시작 실패 - 계속 진행', e);
+      if (_isStaleEpoch(epoch)) {
+        Logger.log('⏭️ FCM 초기화 중단: stale epoch(listener_setup)');
+        completer.complete();
+        return;
       }
+
+      // APNs가 늦게 준비되더라도 메시지 리스너는 즉시 연결한다. 토큰 동기화는
+      // 아래 재시도 루프에서 독립적으로 APNs 준비를 기다린다.
+      _initializedUserId = userId;
+      _startTokenSync(userId, epoch);
 
       // 토큰 갱신 리스너 등록
       try {
@@ -573,8 +511,6 @@ class FCMService {
         Logger.error('초기 메시지 처리 실패 - 계속 진행', e);
       }
 
-      _initializedUserId = userId;
-      _setState(PushInitState.tokenSynced, reason: 'initialize_completed');
       completer.complete();
     } catch (e) {
       completer.complete();
@@ -634,6 +570,9 @@ class FCMService {
               continue;
             } else {
               Logger.log('📱 APNs 토큰 준비됨: ${apnsToken.substring(0, 20)}...');
+              if (!_isStaleEpoch(epoch) && _initializedUserId == userId) {
+                _setState(PushInitState.apnsRegistered);
+              }
             }
           } catch (e) {
             Logger.error('❌ APNs 토큰 가져오기 실패: $e');
@@ -689,6 +628,17 @@ class FCMService {
       if (title.trim().isEmpty && body.trim().isEmpty) return;
 
       final type = (message.data['type'] ?? '').toString();
+      final snackChatId = (message.data['snackChatId'] ?? '').toString().trim();
+      final isGroupedSnackChat =
+          type == 'snack_chat_message' && snackChatId.isNotEmpty;
+      final notificationGroupKey =
+          (message.data['notificationGroupKey'] ?? '').toString().trim();
+      final effectiveGroupKey = notificationGroupKey.isNotEmpty
+          ? notificationGroupKey
+          : 'snack_$snackChatId';
+      final unreadCount = int.tryParse(
+        (message.data['unreadCount'] ?? '').toString(),
+      );
       final String androidChannelId =
           _isMeetupType(type) ? _channelMeetupId : _channelHighImportanceId;
       final String androidChannelName =
@@ -707,12 +657,16 @@ class FCMService {
         showWhen: true,
         enableVibration: true,
         playSound: true,
+        tag: isGroupedSnackChat ? effectiveGroupKey : null,
+        groupKey: isGroupedSnackChat ? effectiveGroupKey : null,
+        number: isGroupedSnackChat ? unreadCount : null,
       );
 
-      const DarwinNotificationDetails iosDetails = DarwinNotificationDetails(
+      final DarwinNotificationDetails iosDetails = DarwinNotificationDetails(
         presentAlert: true,
         presentBadge: true,
         presentSound: true,
+        threadIdentifier: isGroupedSnackChat ? effectiveGroupKey : null,
       );
 
       final NotificationDetails details = NotificationDetails(
@@ -721,7 +675,9 @@ class FCMService {
       );
 
       await _localNotifications.show(
-        message.hashCode,
+        isGroupedSnackChat
+            ? _stableNotificationId('snack_chat:$snackChatId')
+            : message.hashCode,
         title,
         body,
         details,
@@ -732,6 +688,15 @@ class FCMService {
     } catch (e) {
       Logger.error('❌ 로컬 알림 표시 실패: $e');
     }
+  }
+
+  int _stableNotificationId(String value) {
+    var hash = 0x811C9DC5;
+    for (final codeUnit in value.codeUnits) {
+      hash ^= codeUnit;
+      hash = (hash * 0x01000193) & 0x7FFFFFFF;
+    }
+    return hash;
   }
 
   bool _isMeetupType(String type) {

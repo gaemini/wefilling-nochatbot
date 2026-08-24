@@ -5,6 +5,7 @@ import android.content.ContentValues
 import android.content.Intent
 import android.net.Uri
 import android.os.Build
+import android.os.Bundle
 import android.os.Environment
 import android.provider.MediaStore
 import androidx.annotation.NonNull
@@ -20,6 +21,11 @@ import java.util.UUID
 import java.util.concurrent.atomic.AtomicBoolean
 
 class MainActivity : FlutterActivity() {
+    companion object {
+        const val externalShareReadyAction = "com.wefilling.app.EXTERNAL_SHARE_READY"
+        const val externalShareIdExtra = "externalShareId"
+    }
+
     private val mediaSaverChannelName = "com.wefilling.app/media_saver"
     private val documentImportChannelName = "com.wefilling.app/document_import"
     private val maxDocumentBytes = 20L * 1024L * 1024L
@@ -27,6 +33,11 @@ class MainActivity : FlutterActivity() {
     private var pendingImageBytes: ByteArray? = null
     private var pendingSaveResult: MethodChannel.Result? = null
     private val mediaSaveInProgress = AtomicBoolean(false)
+    private var externalShareChannel: MethodChannel? = null
+
+    override fun onCreate(savedInstanceState: Bundle?) {
+        super.onCreate(savedInstanceState)
+    }
 
     override fun configureFlutterEngine(@NonNull flutterEngine: FlutterEngine) {
         super.configureFlutterEngine(flutterEngine)
@@ -71,6 +82,43 @@ class MainActivity : FlutterActivity() {
                 return@setMethodCallHandler
             }
             importDocument(uri, fileName, result)
+        }
+
+        externalShareChannel = MethodChannel(
+            flutterEngine.dartExecutor.binaryMessenger,
+            "com.wefilling.app/external_share",
+        ).also { channel ->
+            channel.setMethodCallHandler { call, result ->
+                when (call.method) {
+                    "getPendingShares" -> result.success(
+                        ShareRequestStore.pending(applicationContext),
+                    )
+                    "consumeShare" -> {
+                        val id = call.argument<String>("id")?.trim().orEmpty()
+                        if (id.isEmpty()) {
+                            result.error("invalid-share-id", "Share id is required.", null)
+                        } else {
+                            ShareRequestStore.consume(applicationContext, id)
+                            result.success(null)
+                        }
+                    }
+                    "completeShareFlow" -> {
+                        result.success(null)
+                    }
+                    else -> result.notImplemented()
+                }
+            }
+        }
+    }
+
+    override fun onNewIntent(intent: Intent) {
+        super.onNewIntent(intent)
+        setIntent(intent)
+        if (intent.action == externalShareReadyAction) {
+            externalShareChannel?.invokeMethod(
+                "shareReceived",
+                mapOf("id" to intent.getStringExtra(externalShareIdExtra)),
+            )
         }
     }
 

@@ -36,4 +36,36 @@ void main() {
     expect(find.text('광고 6'), findsOneWidget);
     expect(tester.getTopLeft(find.text('광고 6')).dy, lessThan(240));
   });
+
+  testWidgets('레거시 광고 ID가 중복되어도 상세 화면 키가 충돌하지 않는다', (tester) async {
+    final banners = <AdBanner>[
+      const AdBanner(
+        id: 'banner_001',
+        title: '첫 번째 광고',
+        description: '첫 번째 설명',
+        url: 'https://example.com/first',
+        order: 1,
+      ),
+      const AdBanner(
+        id: 'banner_001',
+        title: '두 번째 광고',
+        description: '두 번째 설명',
+        url: 'https://example.com/second',
+        order: 2,
+      ),
+    ];
+
+    await tester.pumpWidget(
+      MaterialApp(
+        home: AdShowcaseScreen(
+          bannersStream: Stream<List<AdBanner>>.value(banners),
+        ),
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    expect(tester.takeException(), isNull);
+    expect(find.text('첫 번째 광고'), findsOneWidget);
+    expect(find.text('두 번째 광고'), findsOneWidget);
+  });
 }

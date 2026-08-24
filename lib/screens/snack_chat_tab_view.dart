@@ -180,7 +180,8 @@ class _SectionTitle extends StatelessWidget {
       child: Text(
         title,
         style: const TextStyle(
-          fontFamily: 'Pretendard',
+          fontFamily: 'Inter',
+          fontFamilyFallback: const ['NotoSansKR'],
           fontSize: 15,
           fontWeight: FontWeight.w700,
           color: Color(0xFF111827),
@@ -220,7 +221,8 @@ class _SectionEmpty extends StatelessWidget {
       child: Text(
         message,
         style: const TextStyle(
-          fontFamily: 'Pretendard',
+          fontFamily: 'Inter',
+          fontFamilyFallback: const ['NotoSansKR'],
           fontSize: 13,
           fontWeight: FontWeight.w500,
           color: Color(0xFF6B7280),

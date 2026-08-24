@@ -1072,7 +1072,8 @@ class _DMChatScreenState extends State<DMChatScreen>
                   ? Text(
                       resolvedName.trim(),
                       style: const TextStyle(
-                        fontFamily: 'Pretendard',
+                        fontFamily: 'Inter',
+                        fontFamilyFallback: const ['NotoSansKR'],
                         fontSize: 16,
                         fontWeight: FontWeight.w700,
                         color: DMColors.textPrimary,
@@ -1138,7 +1139,8 @@ class _DMChatScreenState extends State<DMChatScreen>
                   Text(
                     primaryTitle,
                     style: const TextStyle(
-                      fontFamily: 'Pretendard',
+                      fontFamily: 'Inter',
+                      fontFamilyFallback: const ['NotoSansKR'],
                       fontSize: 16,
                       fontWeight: FontWeight.w700,
                       color: DMColors.textPrimary,
@@ -1150,7 +1152,8 @@ class _DMChatScreenState extends State<DMChatScreen>
                   Text(
                     secondaryTitle,
                     style: const TextStyle(
-                      fontFamily: 'Pretendard',
+                      fontFamily: 'Inter',
+                      fontFamilyFallback: const ['NotoSansKR'],
                       fontSize: 12,
                       color: DMColors.textSecondary,
                     ),
@@ -1163,7 +1166,8 @@ class _DMChatScreenState extends State<DMChatScreen>
             Text(
               _formatHeaderDate(),
               style: const TextStyle(
-                fontFamily: 'Pretendard',
+                fontFamily: 'Inter',
+                fontFamilyFallback: const ['NotoSansKR'],
                 fontSize: 12,
                 color: DMColors.textTertiary,
               ),
@@ -1210,7 +1214,8 @@ class _DMChatScreenState extends State<DMChatScreen>
                     Text(
                       AppLocalizations.of(context)!.leaveChatRoom ?? "채팅방 나가기",
                       style: const TextStyle(
-                        fontFamily: 'Pretendard',
+                        fontFamily: 'Inter',
+                        fontFamilyFallback: const ['NotoSansKR'],
                         fontSize: 14,
                         fontWeight: FontWeight.w600,
                         color: Color(0xFF6B7280),
@@ -1326,7 +1331,8 @@ class _DMChatScreenState extends State<DMChatScreen>
                         Text(
                           primaryTitle,
                           style: const TextStyle(
-                            fontFamily: 'Pretendard',
+                            fontFamily: 'Inter',
+                            fontFamilyFallback: const ['NotoSansKR'],
                             fontSize: 16,
                             fontWeight: FontWeight.w700,
                             color: DMColors.textPrimary,
@@ -1360,7 +1366,8 @@ class _DMChatScreenState extends State<DMChatScreen>
                     child: Text(
                       _formatHeaderDate(),
                       style: const TextStyle(
-                        fontFamily: 'Pretendard',
+                        fontFamily: 'Inter',
+                        fontFamilyFallback: const ['NotoSansKR'],
                         color: DMColors.textTertiary,
                         fontSize: 12,
                       ),
@@ -1402,7 +1409,8 @@ class _DMChatScreenState extends State<DMChatScreen>
                         Text(
                           AppLocalizations.of(context)!.blockThisUser ?? "",
                           style: const TextStyle(
-                            fontFamily: 'Pretendard',
+                            fontFamily: 'Inter',
+                            fontFamilyFallback: const ['NotoSansKR'],
                             fontSize: 14,
                             fontWeight: FontWeight.w600,
                             color: Color(0xFFEF4444),
@@ -1436,7 +1444,8 @@ class _DMChatScreenState extends State<DMChatScreen>
                         Text(
                           AppLocalizations.of(context)!.leaveChatRoom,
                           style: const TextStyle(
-                            fontFamily: 'Pretendard',
+                            fontFamily: 'Inter',
+                            fontFamilyFallback: const ['NotoSansKR'],
                             fontSize: 14,
                             fontWeight: FontWeight.w600,
                             color: Color(0xFF6B7280),
@@ -1523,7 +1532,8 @@ class _DMChatScreenState extends State<DMChatScreen>
               Text(
                 l10n.leaveChatRoom,
                 style: const TextStyle(
-                  fontFamily: 'Pretendard',
+                  fontFamily: 'Inter',
+                  fontFamilyFallback: const ['NotoSansKR'],
                   fontSize: 18,
                   fontWeight: FontWeight.w700,
                   color: Color(0xFF111827),
@@ -1536,7 +1546,8 @@ class _DMChatScreenState extends State<DMChatScreen>
                 ? '이 채팅방에서 나가시겠습니까?'
                 : 'Are you sure you want to leave this chat?',
             style: const TextStyle(
-              fontFamily: 'Pretendard',
+              fontFamily: 'Inter',
+              fontFamilyFallback: const ['NotoSansKR'],
               fontSize: 15,
               fontWeight: FontWeight.w500,
               color: Color(0xFF374151),
@@ -1563,7 +1574,8 @@ class _DMChatScreenState extends State<DMChatScreen>
                     child: Text(
                       l10n.cancel ?? '',
                       style: const TextStyle(
-                        fontFamily: 'Pretendard',
+                        fontFamily: 'Inter',
+                        fontFamilyFallback: const ['NotoSansKR'],
                         fontSize: 14,
                         fontWeight: FontWeight.w700,
                         color: Color(0xFF6B7280),
@@ -1591,7 +1603,8 @@ class _DMChatScreenState extends State<DMChatScreen>
                     child: Text(
                       isKo ? '나가기' : 'Leave',
                       style: const TextStyle(
-                        fontFamily: 'Pretendard',
+                        fontFamily: 'Inter',
+                        fontFamilyFallback: const ['NotoSansKR'],
                         fontSize: 14,
                         fontWeight: FontWeight.w700,
                       ),
@@ -1919,7 +1932,8 @@ class _DMChatScreenState extends State<DMChatScreen>
               title,
               textAlign: TextAlign.center,
               style: const TextStyle(
-                fontFamily: 'Pretendard',
+                fontFamily: 'Inter',
+                fontFamilyFallback: const ['NotoSansKR'],
                 fontSize: 16,
                 fontWeight: FontWeight.w800,
                 color: Color(0xFF111827),
@@ -1931,7 +1945,8 @@ class _DMChatScreenState extends State<DMChatScreen>
               subtitle,
               textAlign: TextAlign.center,
               style: const TextStyle(
-                fontFamily: 'Pretendard',
+                fontFamily: 'Inter',
+                fontFamilyFallback: const ['NotoSansKR'],
                 fontSize: 13,
                 fontWeight: FontWeight.w600,
                 color: Color(0xFF6B7280),
@@ -1943,7 +1958,8 @@ class _DMChatScreenState extends State<DMChatScreen>
               hint,
               textAlign: TextAlign.center,
               style: const TextStyle(
-                fontFamily: 'Pretendard',
+                fontFamily: 'Inter',
+                fontFamilyFallback: const ['NotoSansKR'],
                 fontSize: 12,
                 fontWeight: FontWeight.w500,
                 color: DMColors.textTertiary,
@@ -2040,7 +2056,8 @@ class _DMChatScreenState extends State<DMChatScreen>
                       message.text,
                       style: const TextStyle(
                         color: DMColors.myMessageText,
-                        fontFamily: 'Pretendard',
+                        fontFamily: 'Inter',
+                        fontFamilyFallback: const ['NotoSansKR'],
                         fontSize: 15,
                         height: 1.35,
                         fontWeight: FontWeight.w500,
@@ -2145,7 +2162,8 @@ class _DMChatScreenState extends State<DMChatScreen>
                       message.text,
                       style: const TextStyle(
                         color: DMColors.otherMessageText,
-                        fontFamily: 'Pretendard',
+                        fontFamily: 'Inter',
+                        fontFamilyFallback: const ['NotoSansKR'],
                         fontSize: 15,
                         height: 1.35,
                         fontWeight: FontWeight.w500,
@@ -2459,7 +2477,8 @@ class _DMChatScreenState extends State<DMChatScreen>
                         ? '첫 메시지를 보내면 대화방이 생성돼요.'
                         : 'Send your first message to create this chat.',
                     style: const TextStyle(
-                      fontFamily: 'Pretendard',
+                      fontFamily: 'Inter',
+                      fontFamilyFallback: const ['NotoSansKR'],
                       fontSize: 12,
                       fontWeight: FontWeight.w600,
                       color: Color(0xFF6B7280),
@@ -2538,7 +2557,8 @@ class _DMChatScreenState extends State<DMChatScreen>
                             counterText: '',
                           ),
                           style: TextStyle(
-                            fontFamily: 'Pretendard',
+                            fontFamily: 'Inter',
+                            fontFamilyFallback: const ['NotoSansKR'],
                             color: Colors.white,
                             fontSize: MediaQuery.sizeOf(context).width < 360
                                 ? 14
@@ -2687,7 +2707,8 @@ class _DMChatScreenState extends State<DMChatScreen>
                         child: Text(
                           isKo ? '이 게시글에 대해 DM 보내기' : 'Message about this post',
                           style: const TextStyle(
-                            fontFamily: 'Pretendard',
+                            fontFamily: 'Inter',
+                            fontFamilyFallback: const ['NotoSansKR'],
                             fontSize: 13,
                             fontWeight: FontWeight.w700,
                             color: Color(0xFF111827),
@@ -2720,7 +2741,8 @@ class _DMChatScreenState extends State<DMChatScreen>
                     Text(
                       preview,
                       style: const TextStyle(
-                        fontFamily: 'Pretendard',
+                        fontFamily: 'Inter',
+                        fontFamilyFallback: const ['NotoSansKR'],
                         fontSize: 12,
                         fontWeight: FontWeight.w600,
                         color: Color(0xFF4B5563),
@@ -2769,7 +2791,8 @@ class _DMChatScreenState extends State<DMChatScreen>
                 Text(
                   isKorean ? '이미지 1장 선택됨' : '1 image selected',
                   style: const TextStyle(
-                    fontFamily: 'Pretendard',
+                    fontFamily: 'Inter',
+                    fontFamilyFallback: const ['NotoSansKR'],
                     fontSize: 13,
                     fontWeight: FontWeight.w600,
                     color: Color(0xFF111827),
@@ -2782,7 +2805,8 @@ class _DMChatScreenState extends State<DMChatScreen>
                         ? '업로드 중... ${((_uploadProgress ?? 0) * 100).round()}%'
                         : 'Uploading... ${((_uploadProgress ?? 0) * 100).round()}%',
                     style: const TextStyle(
-                      fontFamily: 'Pretendard',
+                      fontFamily: 'Inter',
+                      fontFamilyFallback: const ['NotoSansKR'],
                       fontSize: 12,
                       fontWeight: FontWeight.w500,
                       color: Color(0xFF6B7280),
@@ -2807,7 +2831,8 @@ class _DMChatScreenState extends State<DMChatScreen>
                         ? '전송하면 상대방에게 이미지가 표시됩니다'
                         : 'It will be visible to the other user',
                     style: const TextStyle(
-                      fontFamily: 'Pretendard',
+                      fontFamily: 'Inter',
+                      fontFamilyFallback: const ['NotoSansKR'],
                       fontSize: 12,
                       fontWeight: FontWeight.w400,
                       color: Color(0xFF6B7280),
@@ -3259,7 +3284,8 @@ class _DMChatScreenState extends State<DMChatScreen>
                   ? '이 대화는 포스트에서 시작되었습니다'
                   : 'This conversation started from a post',
               style: const TextStyle(
-                fontFamily: 'Pretendard',
+                fontFamily: 'Inter',
+                fontFamilyFallback: const ['NotoSansKR'],
                 color: DMColors.textSecondary,
                 fontSize: 13,
                 fontWeight: FontWeight.w600,
@@ -3279,7 +3305,8 @@ class _DMChatScreenState extends State<DMChatScreen>
                   ? '포스트 보기'
                   : 'View Post',
               style: const TextStyle(
-                fontFamily: 'Pretendard',
+                fontFamily: 'Inter',
+                fontFamilyFallback: const ['NotoSansKR'],
                 fontSize: 13,
                 fontWeight: FontWeight.w700,
               ),

@@ -29,6 +29,8 @@ import '../../utils/responsive_helper.dart';
 import 'audience_ring.dart';
 import 'post_action_group.dart';
 import 'poll_post_widget.dart';
+import 'post_linkified_text.dart';
+import 'shared_link_preview_card.dart';
 import 'user_avatar.dart';
 
 /// Board/Home 피드에서 사용하는 content-first 일반 게시글 카드.
@@ -42,6 +44,7 @@ class OptimizedPostCard extends StatefulWidget {
   final int? externalCommentCountOverride;
   final bool preloadImage;
   final bool useGlassmorphism;
+  final bool showBottomDivider;
   final EdgeInsetsGeometry margin;
   final EdgeInsetsGeometry contentPadding;
 
@@ -54,8 +57,9 @@ class OptimizedPostCard extends StatefulWidget {
     this.externalCommentCountOverride,
     this.preloadImage = false,
     this.useGlassmorphism = false,
+    this.showBottomDivider = true,
     this.margin = EdgeInsets.zero,
-    this.contentPadding = const EdgeInsets.fromLTRB(16, 7, 16, 3),
+    this.contentPadding = const EdgeInsets.fromLTRB(8, 7, 8, 3),
   });
 
   factory OptimizedPostCard.glassmorphism({
@@ -94,7 +98,7 @@ class _OptimizedPostCardState extends State<OptimizedPostCard> {
   bool _likeSheetOpenedByHold = false;
 
   static const double _imageRadius = DesignTokens.r12;
-  static const double _threadContentOffset = 48;
+  static const double _threadContentOffset = 44;
   static const String _overflowSuffix = '\u00A0\u00A0....'; // 2칸 + ....
 
   @override
@@ -338,7 +342,8 @@ class _OptimizedPostCardState extends State<OptimizedPostCard> {
                                   TextSpan(
                                     text: l10n.likes,
                                     style: const TextStyle(
-                                      fontFamily: 'Pretendard',
+                                      fontFamily: 'Inter',
+                                      fontFamilyFallback: const ['NotoSansKR'],
                                       fontSize: 16,
                                       fontWeight: FontWeight.w700,
                                       color: Color(0xFF111827),
@@ -348,7 +353,8 @@ class _OptimizedPostCardState extends State<OptimizedPostCard> {
                                   TextSpan(
                                     text: '$likeCount',
                                     style: const TextStyle(
-                                      fontFamily: 'Pretendard',
+                                      fontFamily: 'Inter',
+                                      fontFamilyFallback: const ['NotoSansKR'],
                                       fontSize: 14,
                                       fontWeight: FontWeight.w700,
                                       color: secondaryText,
@@ -375,7 +381,8 @@ class _OptimizedPostCardState extends State<OptimizedPostCard> {
                                   ? '최대 $maxShown명만 표시됩니다. (외 $hiddenCount명)'
                                   : 'Showing up to $maxShown users. (+$hiddenCount more)',
                               style: const TextStyle(
-                                fontFamily: 'Pretendard',
+                                fontFamily: 'Inter',
+                                fontFamilyFallback: const ['NotoSansKR'],
                                 fontSize: 12,
                                 fontWeight: FontWeight.w500,
                                 color: secondaryText,
@@ -407,7 +414,8 @@ class _OptimizedPostCardState extends State<OptimizedPostCard> {
                                   child: Text(
                                     isKo ? '아직 좋아요가 없어요' : 'No likes yet.',
                                     style: const TextStyle(
-                                      fontFamily: 'Pretendard',
+                                      fontFamily: 'Inter',
+                                      fontFamilyFallback: const ['NotoSansKR'],
                                       fontSize: 14,
                                       fontWeight: FontWeight.w500,
                                       color: secondaryText,
@@ -451,7 +459,8 @@ class _OptimizedPostCardState extends State<OptimizedPostCard> {
                                           u.nickname,
                                           overflow: TextOverflow.ellipsis,
                                           style: const TextStyle(
-                                            fontFamily: 'Pretendard',
+                                            fontFamily: 'Inter',
+                                            fontFamilyFallback: const ['NotoSansKR'],
                                             fontSize: 14,
                                             fontWeight: FontWeight.w600,
                                             color: Color(0xFF111827),
@@ -470,7 +479,8 @@ class _OptimizedPostCardState extends State<OptimizedPostCard> {
                                         Text(
                                           isKo ? '(나)' : '(You)',
                                           style: const TextStyle(
-                                            fontFamily: 'Pretendard',
+                                            fontFamily: 'Inter',
+                                            fontFamilyFallback: const ['NotoSansKR'],
                                             fontSize: 12,
                                             fontWeight: FontWeight.w600,
                                             color: secondaryText,
@@ -618,8 +628,9 @@ class _OptimizedPostCardState extends State<OptimizedPostCard> {
     final contentTopGap = context.rs(2).clamp(1.0, 3.0).toDouble();
     // Threads의 비율처럼 작성자명과 본문은 거의 같은 크기를 쓰고,
     // 작성자명은 굵기로만 위계를 만든다.
-    final contentSize = context.rf(16).clamp(15.5, 17.0).toDouble();
+    final contentSize = context.rf(15).clamp(14.5, 16.0).toDouble();
     final hasPrimaryContent = hasContent || post.type == 'poll';
+    final standaloneImageUrls = post.standaloneImageUrls;
 
     return Container(
       margin: widget.margin,
@@ -653,7 +664,8 @@ class _OptimizedPostCardState extends State<OptimizedPostCard> {
                             maxLines: 4,
                             style: TextStyle(
                               color: BrandColors.textPrimary,
-                              fontFamily: 'Pretendard',
+                              fontFamily: 'Inter',
+                              fontFamilyFallback: const ['NotoSansKR'],
                               fontWeight: FontWeight.w500,
                               fontSize: contentSize,
                               height: 1.24,
@@ -666,9 +678,21 @@ class _OptimizedPostCardState extends State<OptimizedPostCard> {
                           PollPostWidget(postId: post.id),
                         ],
                       ],
-                      if (post.imageUrls.isNotEmpty) ...[
+                      if (post.linkPreview case final preview?) ...[
+                        SizedBox(
+                          height: hasPrimaryContent
+                              ? DesignTokens.s8
+                              : contentTopGap,
+                        ),
+                        SharedLinkPreviewCard(
+                          preview: preview,
+                          fallbackImageUrl: post.sharedLinkCardFallbackImageUrl,
+                          compact: true,
+                        ),
+                      ],
+                      if (standaloneImageUrls.isNotEmpty) ...[
                         SizedBox(height: imageGap),
-                        _buildPostImages(post.imageUrls),
+                        _buildPostImages(standaloneImageUrls),
                       ],
                       Padding(
                         padding: const EdgeInsets.only(top: DesignTokens.s2),
@@ -680,7 +704,7 @@ class _OptimizedPostCardState extends State<OptimizedPostCard> {
                                 commentCount: _effectiveCommentCount(post),
                               ),
                             ),
-                            if (post.imageUrls.isNotEmpty) ...[
+                            if (standaloneImageUrls.isNotEmpty) ...[
                               const SizedBox(width: DesignTokens.s4),
                               Expanded(
                                 child: Align(
@@ -696,11 +720,12 @@ class _OptimizedPostCardState extends State<OptimizedPostCard> {
                   ),
                 ),
               ),
-              const Divider(
-                height: 1,
-                thickness: 1,
-                color: BrandColors.divider,
-              ),
+              if (widget.showBottomDivider)
+                const Divider(
+                  height: 1,
+                  thickness: 1,
+                  color: BrandColors.divider,
+                ),
             ],
           ),
         ),
@@ -744,12 +769,12 @@ class _OptimizedPostCardState extends State<OptimizedPostCard> {
 
         // 원문이 넘치지 않고 강제 표시도 아니면 그대로
         if (!forceSuffix && !exceeds(normalized)) {
-          return Text(
-            normalized,
+          return PostLinkifiedText(
+            text: normalized,
+            style: style,
             maxLines: maxLines,
             overflow: TextOverflow.clip,
             softWrap: true,
-            style: style,
           );
         }
 
@@ -764,12 +789,12 @@ class _OptimizedPostCardState extends State<OptimizedPostCard> {
 
         // suffix만으로도 안 들어오면(극단적 폭), 기본 ellipsis로 폴백
         if (!fitsCandidate('')) {
-          return Text(
-            normalized,
+          return PostLinkifiedText(
+            text: normalized,
+            style: style,
             maxLines: maxLines,
             overflow: TextOverflow.ellipsis,
             softWrap: true,
-            style: style,
           );
         }
 
@@ -788,12 +813,14 @@ class _OptimizedPostCardState extends State<OptimizedPostCard> {
             base.substring(0, low).replaceAll(RegExp(r'[ \t]+$'), '');
         final finalText = prefix.isEmpty ? '...' : '$prefix$_overflowSuffix';
 
-        return Text(
-          finalText,
+        return PostLinkifiedText(
+          text: normalized,
+          style: style,
+          visibleSourceLength: prefix.length,
+          suffix: finalText.substring(prefix.length),
           maxLines: maxLines,
           overflow: TextOverflow.clip,
           softWrap: true,
-          style: style,
         );
       },
     );
@@ -847,7 +874,7 @@ class _OptimizedPostCardState extends State<OptimizedPostCard> {
           ConstrainedBox(
             constraints: const BoxConstraints(minHeight: 40),
             child: Row(
-              crossAxisAlignment: CrossAxisAlignment.center,
+              crossAxisAlignment: CrossAxisAlignment.start,
               children: [
                 // 프로필 이미지
                 Semantics(
@@ -869,9 +896,9 @@ class _OptimizedPostCardState extends State<OptimizedPostCard> {
                       child: Center(
                         child: AudienceRing(
                           restricted: post.visibility == 'category',
-                          size: 36,
-                          ringWidth: 2.25,
-                          innerGap: 1.25,
+                          size: 40,
+                          ringWidth: 1.5,
+                          innerGap: 0.5,
                           semanticLabel:
                               Localizations.localeOf(context).languageCode ==
                                       'ko'
@@ -909,7 +936,7 @@ class _OptimizedPostCardState extends State<OptimizedPostCard> {
                   ),
                 ),
 
-                const SizedBox(width: 8),
+                const SizedBox(width: 4),
 
                 // 작성자 이름과 시간
                 Expanded(
@@ -930,9 +957,10 @@ class _OptimizedPostCardState extends State<OptimizedPostCard> {
                             maxLines: 1,
                             overflow: TextOverflow.ellipsis,
                             style: TextStyle(
-                              fontFamily: 'Pretendard',
+                              fontFamily: 'Inter',
+                              fontFamilyFallback: const ['NotoSansKR'],
                               fontSize:
-                                  context.rf(16).clamp(15.0, 16.5).toDouble(),
+                                  context.rf(15).clamp(14.0, 15.5).toDouble(),
                               fontWeight: FontWeight.w700,
                               color: BrandColors.textPrimary,
                               height: 1.22,
@@ -960,7 +988,8 @@ class _OptimizedPostCardState extends State<OptimizedPostCard> {
                         maxLines: 1,
                         style: theme.textTheme.bodySmall?.copyWith(
                           color: BrandColors.textTertiary,
-                          fontFamily: 'Pretendard',
+                          fontFamily: 'Inter',
+                          fontFamilyFallback: const ['NotoSansKR'],
                           fontSize: context.rf(14).clamp(13.0, 14.5).toDouble(),
                           fontWeight: FontWeight.w400,
                           height: 1.22,
@@ -1005,7 +1034,7 @@ class _OptimizedPostCardState extends State<OptimizedPostCard> {
           Padding(
             padding: const EdgeInsets.only(
               left: _threadContentOffset,
-              top: 32,
+              top: 22,
             ),
             child: threadContent,
           ),
@@ -1091,7 +1120,8 @@ class _OptimizedPostCardState extends State<OptimizedPostCard> {
                 '#${category.label(l10n)}',
                 textAlign: TextAlign.right,
                 style: const TextStyle(
-                  fontFamily: 'Pretendard',
+                  fontFamily: 'Inter',
+                  fontFamilyFallback: const ['NotoSansKR'],
                   fontSize: 12.5,
                   fontWeight: FontWeight.w600,
                   color: BrandColors.info,
@@ -1381,7 +1411,8 @@ class _OptimizedPostCardState extends State<OptimizedPostCard> {
                     title: Text(
                       l10n.directMessage,
                       style: const TextStyle(
-                        fontFamily: 'Pretendard',
+                        fontFamily: 'Inter',
+                        fontFamilyFallback: const ['NotoSansKR'],
                         fontWeight: FontWeight.w600,
                         color: Color(0xFF111827),
                       ),
@@ -1400,7 +1431,8 @@ class _OptimizedPostCardState extends State<OptimizedPostCard> {
                     title: Text(
                       l10n.reportTitle,
                       style: const TextStyle(
-                        fontFamily: 'Pretendard',
+                        fontFamily: 'Inter',
+                        fontFamilyFallback: const ['NotoSansKR'],
                         fontWeight: FontWeight.w600,
                         color: Color(0xFFEF4444),
                       ),
@@ -1427,7 +1459,8 @@ class _OptimizedPostCardState extends State<OptimizedPostCard> {
                     title: Text(
                       l10n.blockAction,
                       style: const TextStyle(
-                        fontFamily: 'Pretendard',
+                        fontFamily: 'Inter',
+                        fontFamilyFallback: const ['NotoSansKR'],
                         fontWeight: FontWeight.w600,
                         color: Color(0xFFEF4444),
                       ),
@@ -1578,7 +1611,8 @@ class _PostImageError extends StatelessWidget {
               Text(
                 label,
                 style: const TextStyle(
-                  fontFamily: 'Pretendard',
+                  fontFamily: 'Inter',
+                  fontFamilyFallback: const ['NotoSansKR'],
                   fontSize: 13,
                   fontWeight: FontWeight.w500,
                   color: BrandColors.textTertiary,
@@ -1684,7 +1718,8 @@ class _ImageSliderState extends State<_ImageSlider> {
               child: Text(
                 '${_currentPage + 1}/${widget.imageUrls.length}',
                 style: const TextStyle(
-                  fontFamily: 'Pretendard',
+                  fontFamily: 'Inter',
+                  fontFamilyFallback: const ['NotoSansKR'],
                   fontSize: 12,
                   fontWeight: FontWeight.w700,
                   color: Colors.white,

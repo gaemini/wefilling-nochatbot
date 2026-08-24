@@ -653,7 +653,8 @@ class _ProfileEditScreenState extends State<ProfileEditScreen> {
             title: Text(
               AppLocalizations.of(context)!.profileEdit ?? "",
               style: const TextStyle(
-                fontFamily: 'Pretendard',
+                fontFamily: 'Inter',
+                fontFamilyFallback: const ['NotoSansKR'],
                 fontSize: 18,
                 fontWeight: FontWeight.w600,
                 color: Color(0xFF111827),
@@ -678,7 +679,8 @@ class _ProfileEditScreenState extends State<ProfileEditScreen> {
                       child: Text(
                         AppLocalizations.of(context)!.save,
                         style: const TextStyle(
-                          fontFamily: 'Pretendard',
+                          fontFamily: 'Inter',
+                          fontFamilyFallback: const ['NotoSansKR'],
                           fontSize: 16,
                           fontWeight: FontWeight.w600,
                           color: AppColors.pointColor,
@@ -706,7 +708,8 @@ class _ProfileEditScreenState extends State<ProfileEditScreen> {
                         Text(
                           AppLocalizations.of(context)!.profileImage,
                           style: const TextStyle(
-                            fontFamily: 'Pretendard',
+                            fontFamily: 'Inter',
+                            fontFamilyFallback: const ['NotoSansKR'],
                             fontWeight: FontWeight.w600,
                             fontSize: 16,
                             color: Color(0xFF111827),
@@ -828,7 +831,8 @@ class _ProfileEditScreenState extends State<ProfileEditScreen> {
                         Text(
                           AppLocalizations.of(context)!.tapToChangeImage,
                           style: const TextStyle(
-                            fontFamily: 'Pretendard',
+                            fontFamily: 'Inter',
+                            fontFamilyFallback: const ['NotoSansKR'],
                             color: AppColors.pointColor,
                             fontSize: 14,
                             fontWeight: FontWeight.w500,
@@ -844,7 +848,8 @@ class _ProfileEditScreenState extends State<ProfileEditScreen> {
                     AppLocalizations.of(context)!.nicknameQuestion ??
                         'What is your nickname?',
                     style: const TextStyle(
-                      fontFamily: 'Pretendard',
+                      fontFamily: 'Inter',
+                      fontFamilyFallback: const ['NotoSansKR'],
                       fontWeight: FontWeight.w600,
                       fontSize: 16,
                       color: Color(0xFF111827),
@@ -862,7 +867,8 @@ class _ProfileEditScreenState extends State<ProfileEditScreen> {
                               : 'Use a name friends can easily remember.',
                     ),
                     style: const TextStyle(
-                      fontFamily: 'Pretendard',
+                      fontFamily: 'Inter',
+                      fontFamilyFallback: const ['NotoSansKR'],
                       fontSize: 16,
                       fontWeight: FontWeight.w500,
                       color: Color(0xFF111827),
@@ -878,7 +884,8 @@ class _ProfileEditScreenState extends State<ProfileEditScreen> {
                       AppLocalizations.of(context)!
                           .nicknameChangeLimited(_nicknameRemainingDays!),
                       style: const TextStyle(
-                        fontFamily: 'Pretendard',
+                        fontFamily: 'Inter',
+                        fontFamilyFallback: const ['NotoSansKR'],
                         fontSize: 12,
                         color: Color(0xFF6B7280),
                       ),
@@ -890,7 +897,8 @@ class _ProfileEditScreenState extends State<ProfileEditScreen> {
                   const Text(
                     'Bio',
                     style: TextStyle(
-                      fontFamily: 'Pretendard',
+                      fontFamily: 'Inter',
+                      fontFamilyFallback: const ['NotoSansKR'],
                       fontWeight: FontWeight.w600,
                       fontSize: 16,
                       color: Color(0xFF111827),
@@ -908,7 +916,8 @@ class _ProfileEditScreenState extends State<ProfileEditScreen> {
                               : 'Write one line that feels like you.',
                     ),
                     style: const TextStyle(
-                      fontFamily: 'Pretendard',
+                      fontFamily: 'Inter',
+                      fontFamilyFallback: const ['NotoSansKR'],
                       fontSize: 16,
                       fontWeight: FontWeight.w500,
                       color: Color(0xFF111827),
@@ -923,7 +932,8 @@ class _ProfileEditScreenState extends State<ProfileEditScreen> {
                   const Text(
                     'Where are you from?',
                     style: TextStyle(
-                      fontFamily: 'Pretendard',
+                      fontFamily: 'Inter',
+                      fontFamilyFallback: const ['NotoSansKR'],
                       fontWeight: FontWeight.w600,
                       fontSize: 16,
                       color: Color(0xFF111827),
@@ -948,7 +958,8 @@ class _ProfileEditScreenState extends State<ProfileEditScreen> {
                           country.getLocalizedName(
                               currentLanguage), // 현재 언어에 맞게 표시
                           style: const TextStyle(
-                            fontFamily: 'Pretendard',
+                            fontFamily: 'Inter',
+                            fontFamilyFallback: const ['NotoSansKR'],
                             fontSize: 14,
                             fontWeight: FontWeight.w500,
                             color: Color(0xFF111827),
@@ -974,7 +985,8 @@ class _ProfileEditScreenState extends State<ProfileEditScreen> {
                       AppLocalizations.of(context)!
                           .nationalityChangeLimited(_nationalityRemainingDays!),
                       style: const TextStyle(
-                        fontFamily: 'Pretendard',
+                        fontFamily: 'Inter',
+                        fontFamilyFallback: const ['NotoSansKR'],
                         fontSize: 12,
                         color: Color(0xFF6B7280),
                       ),
@@ -1018,7 +1030,8 @@ class _ProfileEditScreenState extends State<ProfileEditScreen> {
                                 maxLines: 1,
                                 overflow: TextOverflow.ellipsis,
                                 style: TextStyle(
-                                  fontFamily: 'Pretendard',
+                                  fontFamily: 'Inter',
+                                  fontFamilyFallback: const ['NotoSansKR'],
                                   fontSize: 14,
                                   fontWeight: FontWeight.w700,
                                   color: selected
@@ -1150,7 +1163,8 @@ class _ProfileEditScreenState extends State<ProfileEditScreen> {
                                               ? '한양메일 미인증'
                                               : 'Hanyang email not verified'),
                                       style: const TextStyle(
-                                        fontFamily: 'Pretendard',
+                                        fontFamily: 'Inter',
+                                        fontFamilyFallback: const ['NotoSansKR'],
                                         fontSize: 14,
                                         fontWeight: FontWeight.w700,
                                         color: Color(0xFF475569),
@@ -1164,7 +1178,8 @@ class _ProfileEditScreenState extends State<ProfileEditScreen> {
                                             ? '학교 정보를 사용하려면 한양메일 인증이 필요해요.'
                                             : 'Verify your Hanyang email to use school information.',
                                         style: const TextStyle(
-                                          fontFamily: 'Pretendard',
+                                          fontFamily: 'Inter',
+                                          fontFamilyFallback: const ['NotoSansKR'],
                                           fontSize: 13,
                                           fontWeight: FontWeight.w400,
                                           color: Color(0xFF64748B),
@@ -1200,7 +1215,8 @@ class _ProfileEditScreenState extends State<ProfileEditScreen> {
                                     vertical: 10,
                                   ),
                                   textStyle: const TextStyle(
-                                    fontFamily: 'Pretendard',
+                                    fontFamily: 'Inter',
+                                    fontFamilyFallback: const ['NotoSansKR'],
                                     fontSize: 14,
                                     fontWeight: FontWeight.w700,
                                   ),

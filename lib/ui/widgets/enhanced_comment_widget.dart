@@ -264,7 +264,8 @@ class _EnhancedCommentWidgetState extends State<EnhancedCommentWidget> {
               Text(
                 AppLocalizations.of(context)!.report,
                 style: const TextStyle(
-                  fontFamily: 'Pretendard',
+                  fontFamily: 'Inter',
+                  fontFamilyFallback: const ['NotoSansKR'],
                   fontSize: 18,
                   fontWeight: FontWeight.w700,
                   color: Color(0xFF111827),
@@ -279,7 +280,8 @@ class _EnhancedCommentWidgetState extends State<EnhancedCommentWidget> {
               Text(
                 AppLocalizations.of(context)!.reportConfirm,
                 style: const TextStyle(
-                  fontFamily: 'Pretendard',
+                  fontFamily: 'Inter',
+                  fontFamilyFallback: const ['NotoSansKR'],
                   fontSize: 15,
                   fontWeight: FontWeight.w500,
                   color: Color(0xFF374151),
@@ -290,7 +292,8 @@ class _EnhancedCommentWidgetState extends State<EnhancedCommentWidget> {
               TextField(
                 controller: reasonController,
                 style: const TextStyle(
-                  fontFamily: 'Pretendard',
+                  fontFamily: 'Inter',
+                  fontFamilyFallback: const ['NotoSansKR'],
                   fontSize: 14,
                   color: Color(0xFF111827),
                 ),
@@ -303,12 +306,14 @@ class _EnhancedCommentWidgetState extends State<EnhancedCommentWidget> {
                       ? '신고 사유를 입력해주세요 (예: 욕설, 비방)'
                       : 'Please enter the reason (e.g., abuse, spam)',
                   labelStyle: const TextStyle(
-                    fontFamily: 'Pretendard',
+                    fontFamily: 'Inter',
+                    fontFamilyFallback: const ['NotoSansKR'],
                     fontSize: 14,
                     color: Color(0xFF6B7280),
                   ),
                   hintStyle: const TextStyle(
-                    fontFamily: 'Pretendard',
+                    fontFamily: 'Inter',
+                    fontFamilyFallback: const ['NotoSansKR'],
                     fontSize: 14,
                     color: Color(0xFF9CA3AF),
                   ),
@@ -351,7 +356,8 @@ class _EnhancedCommentWidgetState extends State<EnhancedCommentWidget> {
                     child: Text(
                       AppLocalizations.of(context)!.cancel,
                       style: const TextStyle(
-                        fontFamily: 'Pretendard',
+                        fontFamily: 'Inter',
+                        fontFamilyFallback: const ['NotoSansKR'],
                         fontSize: 14,
                         fontWeight: FontWeight.w700,
                         color: Color(0xFF6B7280),
@@ -375,7 +381,8 @@ class _EnhancedCommentWidgetState extends State<EnhancedCommentWidget> {
                     child: Text(
                       AppLocalizations.of(context)!.report,
                       style: const TextStyle(
-                        fontFamily: 'Pretendard',
+                        fontFamily: 'Inter',
+                        fontFamilyFallback: const ['NotoSansKR'],
                         fontSize: 14,
                         fontWeight: FontWeight.w700,
                       ),
@@ -476,7 +483,8 @@ class _EnhancedCommentWidgetState extends State<EnhancedCommentWidget> {
                     Text(
                       AppLocalizations.of(dialogContext)!.delete,
                       style: TextStyle(
-                        fontFamily: 'Pretendard',
+                        fontFamily: 'Inter',
+                        fontFamilyFallback: const ['NotoSansKR'],
                         fontSize: dialogContext.rf(17).clamp(16, 18).toDouble(),
                         fontWeight: FontWeight.w700,
                         height: 1.3,
@@ -489,7 +497,8 @@ class _EnhancedCommentWidgetState extends State<EnhancedCommentWidget> {
                     Text(
                       _getDeleteQuestion(dialogContext),
                       style: TextStyle(
-                        fontFamily: 'Pretendard',
+                        fontFamily: 'Inter',
+                        fontFamilyFallback: const ['NotoSansKR'],
                         fontSize:
                             dialogContext.rf(14.5).clamp(13.5, 15.5).toDouble(),
                         fontWeight: FontWeight.w600,
@@ -503,7 +512,8 @@ class _EnhancedCommentWidgetState extends State<EnhancedCommentWidget> {
                     Text(
                       _getDeleteWarning(dialogContext),
                       style: TextStyle(
-                        fontFamily: 'Pretendard',
+                        fontFamily: 'Inter',
+                        fontFamilyFallback: const ['NotoSansKR'],
                         fontSize:
                             dialogContext.rf(13).clamp(12.5, 14).toDouble(),
                         fontWeight: FontWeight.w400,
@@ -530,7 +540,8 @@ class _EnhancedCommentWidgetState extends State<EnhancedCommentWidget> {
                             child: Text(
                               AppLocalizations.of(dialogContext)!.cancel,
                               style: const TextStyle(
-                                fontFamily: 'Pretendard',
+                                fontFamily: 'Inter',
+                                fontFamilyFallback: const ['NotoSansKR'],
                                 fontSize: 14,
                                 fontWeight: FontWeight.w600,
                               ),
@@ -545,7 +556,8 @@ class _EnhancedCommentWidgetState extends State<EnhancedCommentWidget> {
                             child: Text(
                               AppLocalizations.of(dialogContext)!.delete,
                               style: const TextStyle(
-                                fontFamily: 'Pretendard',
+                                fontFamily: 'Inter',
+                                fontFamilyFallback: const ['NotoSansKR'],
                                 fontSize: 14,
                                 fontWeight: FontWeight.w700,
                               ),
@@ -610,7 +622,8 @@ class _EnhancedCommentWidgetState extends State<EnhancedCommentWidget> {
                 en: 'Blocked comment.',
               ),
               style: const TextStyle(
-                fontFamily: 'Pretendard',
+                fontFamily: 'Inter',
+                fontFamilyFallback: const ['NotoSansKR'],
                 fontSize: 13,
                 fontWeight: FontWeight.w700,
                 color: Color(0xFF6B7280),
@@ -623,7 +636,8 @@ class _EnhancedCommentWidgetState extends State<EnhancedCommentWidget> {
                 en: 'Long press to unblock.',
               ),
               style: const TextStyle(
-                fontFamily: 'Pretendard',
+                fontFamily: 'Inter',
+                fontFamilyFallback: const ['NotoSansKR'],
                 fontSize: 12,
                 fontWeight: FontWeight.w500,
                 color: Color(0xFF9CA3AF),
@@ -665,7 +679,8 @@ class _EnhancedCommentWidgetState extends State<EnhancedCommentWidget> {
                 Text(
                   _localizedText(ko: '댓글 차단 해제', en: 'Unblock comment'),
                   style: const TextStyle(
-                    fontFamily: 'Pretendard',
+                    fontFamily: 'Inter',
+                    fontFamilyFallback: const ['NotoSansKR'],
                     fontSize: 18,
                     fontWeight: FontWeight.w700,
                     color: Color(0xFF111827),
@@ -681,7 +696,8 @@ class _EnhancedCommentWidgetState extends State<EnhancedCommentWidget> {
                   en: 'Do you want to unblock this comment?',
                 ),
                 style: const TextStyle(
-                  fontFamily: 'Pretendard',
+                  fontFamily: 'Inter',
+                  fontFamilyFallback: const ['NotoSansKR'],
                   fontSize: 15,
                   fontWeight: FontWeight.w400,
                   color: Color(0xFF6B7280),
@@ -707,7 +723,8 @@ class _EnhancedCommentWidgetState extends State<EnhancedCommentWidget> {
                       child: Text(
                         _localizedText(ko: '취소', en: 'Cancel'),
                         style: const TextStyle(
-                          fontFamily: 'Pretendard',
+                          fontFamily: 'Inter',
+                          fontFamilyFallback: const ['NotoSansKR'],
                           fontSize: 14,
                           fontWeight: FontWeight.w700,
                           color: Color(0xFF6B7280),
@@ -731,7 +748,8 @@ class _EnhancedCommentWidgetState extends State<EnhancedCommentWidget> {
                       child: Text(
                         _localizedText(ko: '해제', en: 'Unblock'),
                         style: const TextStyle(
-                          fontFamily: 'Pretendard',
+                          fontFamily: 'Inter',
+                          fontFamilyFallback: const ['NotoSansKR'],
                           fontSize: 14,
                           fontWeight: FontWeight.w700,
                         ),
@@ -873,7 +891,8 @@ class _EnhancedCommentWidgetState extends State<EnhancedCommentWidget> {
                         en: 'View ${widget.replies.length} replies',
                       ),
                 style: const TextStyle(
-                  fontFamily: 'Pretendard',
+                  fontFamily: 'Inter',
+                  fontFamilyFallback: const ['NotoSansKR'],
                   fontSize: 12,
                   fontWeight: FontWeight.w600,
                   color: Color(0xFF6B7280),
@@ -947,7 +966,8 @@ class _EnhancedCommentWidgetState extends State<EnhancedCommentWidget> {
                     en: 'This comment was deleted.',
                   ),
                   style: const TextStyle(
-                    fontFamily: 'Pretendard',
+                    fontFamily: 'Inter',
+                    fontFamilyFallback: const ['NotoSansKR'],
                     fontSize: 14,
                     fontWeight: FontWeight.w500,
                     color: Color(0xFF9CA3AF),
@@ -988,21 +1008,24 @@ class _EnhancedCommentWidgetState extends State<EnhancedCommentWidget> {
     final likeCountColor =
         isLiked ? const Color(0xFFEF4444) : const Color(0xFF6B7280);
     const bodyStyle = TextStyle(
-      fontFamily: 'Pretendard',
+      fontFamily: 'Inter',
+      fontFamilyFallback: const ['NotoSansKR'],
       fontSize: 15,
       fontWeight: FontWeight.w700, // 본문 bold
       color: Color(0xFF1F2937), // textSecondary
       height: 1.5,
     );
     const linkStyle = TextStyle(
-      fontFamily: 'Pretendard',
+      fontFamily: 'Inter',
+      fontFamilyFallback: const ['NotoSansKR'],
       fontSize: 15,
       fontWeight: FontWeight.w700,
       color: Color(0xFF6366F1), // BrandColors.primary
       decoration: TextDecoration.underline,
     );
     const mentionStyle = TextStyle(
-      fontFamily: 'Pretendard',
+      fontFamily: 'Inter',
+      fontFamilyFallback: const ['NotoSansKR'],
       fontSize: 13,
       fontWeight: FontWeight.w700,
       // ✅ 대댓글 @멘션은 본문보다 살짝 옅게(회색 톤) 표시
@@ -1105,7 +1128,8 @@ class _EnhancedCommentWidgetState extends State<EnhancedCommentWidget> {
                                 ? Text(
                                     displayName,
                                     style: const TextStyle(
-                                      fontFamily: 'Pretendard',
+                                      fontFamily: 'Inter',
+                                      fontFamilyFallback: const ['NotoSansKR'],
                                       fontSize: 14,
                                       fontWeight: FontWeight.w700,
                                       color: Color(0xFF111827),
@@ -1116,7 +1140,8 @@ class _EnhancedCommentWidgetState extends State<EnhancedCommentWidget> {
                                     child: Text(
                                       displayName,
                                       style: const TextStyle(
-                                        fontFamily: 'Pretendard',
+                                        fontFamily: 'Inter',
+                                        fontFamilyFallback: const ['NotoSansKR'],
                                         fontSize: 14,
                                         fontWeight: FontWeight.w700,
                                         color: Color(0xFF111827),
@@ -1127,7 +1152,8 @@ class _EnhancedCommentWidgetState extends State<EnhancedCommentWidget> {
                             Text(
                               widget.comment.getFormattedTime(context),
                               style: const TextStyle(
-                                fontFamily: 'Pretendard',
+                                fontFamily: 'Inter',
+                                fontFamilyFallback: const ['NotoSansKR'],
                                 fontSize: 12,
                                 fontWeight: FontWeight.w400,
                                 color: Color(0xFF6B7280),
@@ -1190,7 +1216,8 @@ class _EnhancedCommentWidgetState extends State<EnhancedCommentWidget> {
                               child: Text(
                                 '${widget.comment.likeCount}',
                                 style: TextStyle(
-                                  fontFamily: 'Pretendard',
+                                  fontFamily: 'Inter',
+                                  fontFamilyFallback: const ['NotoSansKR'],
                                   fontSize: 12,
                                   fontWeight: FontWeight.w700,
                                   color: likeCountColor,
@@ -1280,7 +1307,8 @@ class _ActionRow extends StatelessWidget {
               child: Text(
                 label,
                 style: const TextStyle(
-                  fontFamily: 'Pretendard',
+                  fontFamily: 'Inter',
+                  fontFamilyFallback: const ['NotoSansKR'],
                   fontSize: 16,
                   fontWeight: FontWeight.w700,
                   color: Color(0xFFEF4444),

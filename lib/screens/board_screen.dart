@@ -66,7 +66,7 @@ class BoardScreenState extends State<BoardScreen> {
   static const EdgeInsets _boardPostCardMargin = EdgeInsets.zero;
 
   EdgeInsets get _boardPostCardContentPadding {
-    final horizontal = context.rs(16).clamp(14.0, 18.0).toDouble();
+    final horizontal = context.rs(8).clamp(7.0, 9.0).toDouble();
     final top = context.rs(7).clamp(6.0, 8.0).toDouble();
     final bottom = context.rs(3).clamp(2.0, 4.0).toDouble();
     return EdgeInsets.fromLTRB(horizontal, top, horizontal, bottom);
@@ -88,7 +88,9 @@ class BoardScreenState extends State<BoardScreen> {
   double? _lastScrollOffset;
   double _directionalScrollDistance = 0;
   ScrollDirection _lastScrollDirection = ScrollDirection.idle;
+  Timer? _chromeRestoreTimer;
   static const double _chromeDirectionThreshold = 14;
+  static const Duration _chromeRestoreDelay = Duration(milliseconds: 650);
   static const String _psTodayOffsetId = 'board.todayScrollOffset.v1';
   static const String _psAllOffsetId = 'board.allScrollOffset.v1';
 
@@ -96,6 +98,19 @@ class BoardScreenState extends State<BoardScreen> {
   List<Post>? _cachedTodayPosts;
   bool _isInitialLoad = true;
   Future<void>? _refreshInFlight;
+
+  // 오늘 섹션 아래에 이어 붙이는 전체 포스트 커서 페이지입니다. 한 번에
+  // 10개만 읽고, 오늘 게시글은 실시간 섹션과 중복되지 않도록 화면에서 제외합니다.
+  static const int _historyPageSize = 10;
+  static const double _historyLoadMoreThreshold = 520;
+  final List<Post> _pagedPosts = <Post>[];
+  AllPostsCursor? _historyCursor;
+  Object? _historyInitialError;
+  Object? _historyLoadMoreError;
+  bool _isHistoryInitialLoading = true;
+  bool _isHistoryLoadingMore = false;
+  bool _historyHasMore = true;
+  int _historyLoadGeneration = 0;
 
   // AppLocalizations 안전 호출 헬퍼
   String _safeL10n(String Function(AppLocalizations) getter, String fallback) {
@@ -117,10 +132,20 @@ class BoardScreenState extends State<BoardScreen> {
     return !local.isBefore(_startOfToday());
   }
 
+  List<Post> get _historicalPosts {
+    final posts = _pagedPosts.where((post) => !_isPostInToday(post)).toList();
+    posts.sort((left, right) {
+      final dateOrder = right.createdAt.compareTo(left.createdAt);
+      return dateOrder != 0 ? dateOrder : right.id.compareTo(left.id);
+    });
+    return posts;
+  }
+
   @override
   void initState() {
     super.initState();
     _loadCachedData();
+    unawaited(_loadFirstHistoricalPage());
     _scheduleMidnightRefresh();
     // Today 밋업 섹션은 현재 사용자의 공개 범위 안에서:
     // - 오늘 생성된 모임
@@ -129,6 +154,118 @@ class BoardScreenState extends State<BoardScreen> {
     _todayMeetupsStream = _meetupService.getTodayTabMeetups();
 
     // 컨트롤러 초기화/상태 복원은 didChangeDependencies에서 처리
+  }
+
+  Future<void> _loadFirstHistoricalPage({bool showLoading = true}) async {
+    final generation = ++_historyLoadGeneration;
+    if (mounted) {
+      setState(() {
+        _isHistoryInitialLoading = true;
+        _isHistoryLoadingMore = false;
+        if (showLoading) _historyInitialError = null;
+      });
+    }
+
+    try {
+      final page = await _postService.getAllPostsPage(
+        startAfter: null,
+        pageSize: _historyPageSize,
+      );
+      if (!mounted || generation != _historyLoadGeneration) return;
+      setState(() {
+        _pagedPosts
+          ..clear()
+          ..addAll(page.posts);
+        _historyCursor = page.cursor;
+        _historyHasMore = page.hasMore;
+        _historyInitialError = null;
+        _historyLoadMoreError = null;
+        _isHistoryInitialLoading = false;
+        _isHistoryLoadingMore = false;
+      });
+      _scheduleHistoricalPrefetchIfNeeded();
+    } catch (error) {
+      if (!mounted || generation != _historyLoadGeneration) return;
+      setState(() {
+        _historyInitialError = error;
+        _isHistoryInitialLoading = false;
+        _isHistoryLoadingMore = false;
+      });
+    }
+  }
+
+  Future<void> _loadMoreHistoricalPosts() async {
+    if (_isHistoryInitialLoading || _isHistoryLoadingMore || !_historyHasMore) {
+      return;
+    }
+
+    final previousCursor = _historyCursor;
+    final generation = _historyLoadGeneration;
+    setState(() {
+      _isHistoryLoadingMore = true;
+      _historyLoadMoreError = null;
+    });
+
+    try {
+      final page = await _postService.getAllPostsPage(
+        startAfter: previousCursor,
+        pageSize: _historyPageSize,
+      );
+      if (!mounted || generation != _historyLoadGeneration) return;
+
+      final byId = <String, Post>{
+        for (final post in _pagedPosts) post.id: post
+      };
+      for (final post in page.posts) {
+        byId[post.id] = post;
+      }
+      final merged = byId.values.toList()
+        ..sort((left, right) {
+          final dateOrder = right.createdAt.compareTo(left.createdAt);
+          return dateOrder != 0 ? dateOrder : right.id.compareTo(left.id);
+        });
+      final cursorProgressed =
+          page.cursor?.createdAt != previousCursor?.createdAt ||
+              page.cursor?.postId != previousCursor?.postId;
+
+      setState(() {
+        _pagedPosts
+          ..clear()
+          ..addAll(merged);
+        _historyCursor = page.cursor;
+        _historyHasMore =
+            page.hasMore && (page.posts.isNotEmpty || cursorProgressed);
+        _isHistoryLoadingMore = false;
+      });
+      _scheduleHistoricalPrefetchIfNeeded();
+    } catch (error) {
+      if (!mounted || generation != _historyLoadGeneration) return;
+      setState(() {
+        _historyLoadMoreError = error;
+        _isHistoryLoadingMore = false;
+      });
+    }
+  }
+
+  void _scheduleHistoricalPrefetchIfNeeded() {
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!mounted ||
+          !_controllersInitialized ||
+          !_todayScrollController.hasClients) {
+        return;
+      }
+      if (_todayScrollController.position.extentAfter <=
+          _historyLoadMoreThreshold) {
+        unawaited(_loadMoreHistoricalPosts());
+      }
+    });
+  }
+
+  Future<void> _refreshBoardFeed(List<Post> visiblePosts) async {
+    await Future.wait<void>([
+      _refreshFeed(visiblePosts),
+      _loadFirstHistoricalPage(showLoading: false),
+    ]);
   }
 
   @override
@@ -329,6 +466,7 @@ class BoardScreenState extends State<BoardScreen> {
   void dispose() {
     Logger.log('🔄 BoardScreen dispose 시작');
     _midnightTimer?.cancel();
+    _chromeRestoreTimer?.cancel();
     if (_controllersInitialized) {
       // 마지막 상태 저장
       try {
@@ -408,18 +546,26 @@ class BoardScreenState extends State<BoardScreen> {
     final offset = position.pixels;
     final direction = position.userScrollDirection;
 
+    if (position.extentAfter <= _historyLoadMoreThreshold) {
+      unawaited(_loadMoreHistoricalPosts());
+    }
+
     if (offset <= position.minScrollExtent + 8) {
       _lastScrollOffset = offset;
       _directionalScrollDistance = 0;
       _lastScrollDirection = ScrollDirection.idle;
+      _chromeRestoreTimer?.cancel();
       _setScrollChromeVisibility(true);
       return;
     }
 
     if (direction == ScrollDirection.idle) {
       _lastScrollOffset = offset;
+      _scheduleChromeRestore();
       return;
     }
+
+    _chromeRestoreTimer?.cancel();
 
     if (direction != _lastScrollDirection) {
       _directionalScrollDistance = 0;
@@ -434,6 +580,31 @@ class BoardScreenState extends State<BoardScreen> {
 
     _directionalScrollDistance = 0;
     _setScrollChromeVisibility(direction == ScrollDirection.forward);
+  }
+
+  bool _handleBoardScrollNotification(ScrollNotification notification) {
+    if (notification.metrics.axis != Axis.vertical || notification.depth != 0) {
+      return false;
+    }
+    if (notification is ScrollStartNotification ||
+        notification is ScrollUpdateNotification) {
+      _chromeRestoreTimer?.cancel();
+    } else if (notification is ScrollEndNotification ||
+        notification is UserScrollNotification &&
+            notification.direction == ScrollDirection.idle) {
+      _scheduleChromeRestore();
+    }
+    return false;
+  }
+
+  void _scheduleChromeRestore() {
+    _chromeRestoreTimer?.cancel();
+    _chromeRestoreTimer = Timer(_chromeRestoreDelay, () {
+      if (!mounted) return;
+      _directionalScrollDistance = 0;
+      _lastScrollDirection = ScrollDirection.idle;
+      _setScrollChromeVisibility(true);
+    });
   }
 
   void _setScrollChromeVisibility(bool shouldShow) {
@@ -454,6 +625,13 @@ class BoardScreenState extends State<BoardScreen> {
     );
   }
 
+  Future<void> showLatestPost() async {
+    _setScrollChromeVisibility(true);
+    await _refreshBoardFeed(const <Post>[]);
+    if (!mounted) return;
+    scrollToTop();
+  }
+
   @override
   Widget build(BuildContext context) {
     return Scaffold(
@@ -463,11 +641,14 @@ class BoardScreenState extends State<BoardScreen> {
           constraints: const BoxConstraints(maxWidth: 600),
           child: SizedBox(
             width: double.infinity,
-            child: StreamBuilder<List<Post>>(
-              stream: _postService.getPostsStream(),
-              builder: (context, postSnap) {
-                return _buildTodayPostsTab(postSnap);
-              },
+            child: NotificationListener<ScrollNotification>(
+              onNotification: _handleBoardScrollNotification,
+              child: StreamBuilder<List<Post>>(
+                stream: _postService.getPostsStream(),
+                builder: (context, postSnap) {
+                  return _buildTodayPostsTab(postSnap);
+                },
+              ),
             ),
           ),
         ),
@@ -607,7 +788,8 @@ class BoardScreenState extends State<BoardScreen> {
                 maxLines: 1,
                 overflow: TextOverflow.ellipsis,
                 style: TextStyle(
-                  fontFamily: 'Pretendard',
+                  fontFamily: 'Inter',
+                  fontFamilyFallback: const ['NotoSansKR'],
                   fontSize: _sectionTitleSize,
                   fontWeight: FontWeight.w800,
                   color: const Color(0xFF111827),
@@ -642,7 +824,8 @@ class BoardScreenState extends State<BoardScreen> {
         child: Text(
           message,
           style: TextStyle(
-            fontFamily: 'Pretendard',
+            fontFamily: 'Inter',
+            fontFamilyFallback: const ['NotoSansKR'],
             fontSize: _sectionBodySize,
             fontWeight: FontWeight.w600,
             color: const Color(0xFF6B7280),
@@ -735,7 +918,8 @@ class BoardScreenState extends State<BoardScreen> {
                       Text(
                         todayMeetupsTitle,
                         style: const TextStyle(
-                          fontFamily: 'Pretendard',
+                          fontFamily: 'Inter',
+                          fontFamilyFallback: const ['NotoSansKR'],
                           fontSize: 16,
                           fontWeight: FontWeight.w800,
                           color: Color(0xFF111827),
@@ -752,7 +936,8 @@ class BoardScreenState extends State<BoardScreen> {
                         Text(
                           '${todayMeetups.length}',
                           style: const TextStyle(
-                            fontFamily: 'Pretendard',
+                            fontFamily: 'Inter',
+                            fontFamilyFallback: const ['NotoSansKR'],
                             fontSize: 13,
                             fontWeight: FontWeight.w700,
                             color: Color(0xFF6B7280),
@@ -782,7 +967,8 @@ class BoardScreenState extends State<BoardScreen> {
                     child: Text(
                       noTodayMeetupsText,
                       style: const TextStyle(
-                        fontFamily: 'Pretendard',
+                        fontFamily: 'Inter',
+                        fontFamilyFallback: const ['NotoSansKR'],
                         fontSize: 14,
                         fontWeight: FontWeight.w600,
                         color: Color(0xFF6B7280),
@@ -826,7 +1012,8 @@ class BoardScreenState extends State<BoardScreen> {
                       Text(
                         todayPostsTitle,
                         style: const TextStyle(
-                          fontFamily: 'Pretendard',
+                          fontFamily: 'Inter',
+                          fontFamilyFallback: const ['NotoSansKR'],
                           fontSize: 16,
                           fontWeight: FontWeight.w800,
                           color: Color(0xFF111827),
@@ -845,7 +1032,8 @@ class BoardScreenState extends State<BoardScreen> {
                   child: Text(
                     noTodayPostsText,
                     style: const TextStyle(
-                      fontFamily: 'Pretendard',
+                      fontFamily: 'Inter',
+                      fontFamilyFallback: const ['NotoSansKR'],
                       fontSize: 14,
                       fontWeight: FontWeight.w600,
                       color: Color(0xFF6B7280),
@@ -953,6 +1141,78 @@ class BoardScreenState extends State<BoardScreen> {
     );
   }
 
+  Widget _buildHistoricalPostsDivider() {
+    final l10n = AppLocalizations.of(context)!;
+    return Padding(
+      padding: EdgeInsets.fromLTRB(
+        _sectionHorizontalPadding,
+        14,
+        _sectionHorizontalPadding,
+        8,
+      ),
+      child: Row(
+        children: [
+          const Expanded(child: Divider(color: Color(0xFFEAECF0))),
+          const SizedBox(width: 10),
+          Text(
+            '${l10n.previous} ${l10n.posts}',
+            style: TextStyle(
+              fontFamily: 'Inter',
+              fontFamilyFallback: const ['NotoSansKR'],
+              fontSize: context.rf(11.5).clamp(11, 12.5).toDouble(),
+              fontWeight: FontWeight.w600,
+              color: const Color(0xFF98A2B3),
+              letterSpacing: 0.1,
+            ),
+          ),
+          const SizedBox(width: 10),
+          const Expanded(child: Divider(color: Color(0xFFEAECF0))),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildHistoricalPostsFooter() {
+    if (_isHistoryInitialLoading || _isHistoryLoadingMore) {
+      return const Padding(
+        key: ValueKey('board_history_loading'),
+        padding: EdgeInsets.fromLTRB(0, 16, 0, 28),
+        child: Center(
+          child: SizedBox.square(
+            dimension: 20,
+            child: CircularProgressIndicator(strokeWidth: 2),
+          ),
+        ),
+      );
+    }
+
+    final error =
+        _pagedPosts.isEmpty ? _historyInitialError : _historyLoadMoreError;
+    if (error != null) {
+      final isKo = Localizations.localeOf(context).languageCode == 'ko';
+      return Padding(
+        padding: const EdgeInsets.fromLTRB(16, 8, 16, 22),
+        child: Center(
+          child: TextButton(
+            key: const ValueKey('board_history_retry'),
+            onPressed: () {
+              if (_pagedPosts.isEmpty) {
+                unawaited(_loadFirstHistoricalPage());
+              } else {
+                unawaited(_loadMoreHistoricalPosts());
+              }
+            },
+            child: Text(isKo ? '이전 포스트 다시 불러오기' : 'Retry earlier posts'),
+          ),
+        ),
+      );
+    }
+
+    // 추가 페이지는 스크롤 임계점에서 자동으로 요청됩니다. 버튼이나 완료
+    // 문구를 두지 않아 오늘 피드에서 이전 피드로 자연스럽게 이어집니다.
+    return SizedBox(height: _historyHasMore ? 44 : 24);
+  }
+
   Widget _buildTodayUnifiedList({
     required List<Post> todayPosts,
     required bool isPostsLoading,
@@ -1006,6 +1266,7 @@ class BoardScreenState extends State<BoardScreen> {
         final List<dynamic> todayCombined = <dynamic>[...todayPosts]..sort(
             (a, b) => _getTodayCombinedCreatedAt(b)
                 .compareTo(_getTodayCombinedCreatedAt(a)));
+        final historicalPosts = _historicalPosts;
 
         final postsCount = isPostsLoading
             ? 3
@@ -1019,12 +1280,14 @@ class BoardScreenState extends State<BoardScreen> {
             meetupsCount +
             1 + // posts header
             1 + // horizontally scrollable post categories
-            postsCount;
+            postsCount +
+            (historicalPosts.isEmpty ? 0 : historicalPosts.length + 1) +
+            1; // 이전 포스트 로딩/재시도 여백
 
         return RefreshIndicator(
           color: AppColors.pointColor,
           backgroundColor: Colors.white,
-          onRefresh: () => _refreshFeed(todayPosts),
+          onRefresh: () => _refreshBoardFeed(todayPosts),
           child: ListView.builder(
             key: const PageStorageKey('board_today_list_unified'),
             controller: _todayScrollController,
@@ -1117,45 +1380,78 @@ class BoardScreenState extends State<BoardScreen> {
               i -= 1;
 
               // 5) posts list/skeleton/error/empty
-              if (isPostsLoading) {
-                return Padding(
-                  padding: EdgeInsets.symmetric(
-                    horizontal: _sectionHorizontalPadding,
-                    vertical: 8,
-                  ),
-                  child: _buildPostSkeleton(),
-                );
+              if (i < postsCount) {
+                if (isPostsLoading) {
+                  return Padding(
+                    padding: EdgeInsets.symmetric(
+                      horizontal: _sectionHorizontalPadding,
+                      vertical: 8,
+                    ),
+                    child: _buildPostSkeleton(),
+                  );
+                }
+
+                if (isPostsError) {
+                  return Padding(
+                    padding: EdgeInsets.all(_sectionHorizontalPadding),
+                    child: _buildErrorWidget('데이터를 불러올 수 없습니다'),
+                  );
+                }
+
+                if (todayCombined.isEmpty) {
+                  return _buildTodaySectionMessage(
+                    noTodayPostsText,
+                    bottom: 10,
+                  );
+                }
+
+                final itemIndex = i;
+                final item = todayCombined[itemIndex];
+                if (item is Post) {
+                  return OptimizedPostCard(
+                    key: ValueKey(item.id),
+                    post: item,
+                    index: itemIndex,
+                    onTap: () => _navigateToPostDetail(item),
+                    onCategoryTap: _openPostCategory,
+                    externalCommentCountOverride:
+                        _commentCountOverrides[item.id],
+                    preloadImage: itemIndex < 3,
+                    showBottomDivider: historicalPosts.isEmpty ||
+                        itemIndex != todayCombined.length - 1,
+                    margin: _boardPostCardMargin,
+                    contentPadding: _boardPostCardContentPadding,
+                  );
+                }
+                return const SizedBox.shrink();
               }
 
-              if (isPostsError) {
-                return Padding(
-                  padding: EdgeInsets.all(_sectionHorizontalPadding),
-                  child: _buildErrorWidget('데이터를 불러올 수 없습니다'),
-                );
+              i -= postsCount;
+
+              // 6) 오늘 이후의 이전 포스트. 첫 카드 앞에 작은 구분선을 넣고,
+              // 페이지는 사용자가 아래로 내릴 때마다 최신순 10개씩 추가한다.
+              if (historicalPosts.isNotEmpty) {
+                if (i == 0) return _buildHistoricalPostsDivider();
+                i -= 1;
+                if (i < historicalPosts.length) {
+                  final post = historicalPosts[i];
+                  return OptimizedPostCard(
+                    key: ValueKey('board_history_${post.id}'),
+                    post: post,
+                    index: todayCombined.length + i,
+                    onTap: () => _navigateToPostDetail(post),
+                    onCategoryTap: _openPostCategory,
+                    externalCommentCountOverride:
+                        _commentCountOverrides[post.id],
+                    preloadImage: i < 2,
+                    margin: _boardPostCardMargin,
+                    contentPadding: _boardPostCardContentPadding,
+                  );
+                }
+                i -= historicalPosts.length;
               }
 
-              if (todayCombined.isEmpty) {
-                return _buildTodaySectionMessage(
-                  noTodayPostsText,
-                  bottom: 24,
-                );
-              }
-
-              final itemIndex = i;
-              final item = todayCombined[itemIndex];
-              if (item is Post) {
-                return OptimizedPostCard(
-                  key: ValueKey(item.id),
-                  post: item,
-                  index: itemIndex,
-                  onTap: () => _navigateToPostDetail(item),
-                  onCategoryTap: _openPostCategory,
-                  externalCommentCountOverride: _commentCountOverrides[item.id],
-                  preloadImage: itemIndex < 3,
-                  margin: _boardPostCardMargin,
-                  contentPadding: _boardPostCardContentPadding,
-                );
-              }
+              if (i == 0) return _buildHistoricalPostsFooter();
               return const SizedBox.shrink();
             },
           ),
@@ -1198,7 +1494,8 @@ class BoardScreenState extends State<BoardScreen> {
                 Text(
                   label,
                   style: TextStyle(
-                    fontFamily: 'Pretendard',
+                    fontFamily: 'Inter',
+                    fontFamilyFallback: const ['NotoSansKR'],
                     fontSize: context.rf(13).clamp(12.5, 14.0).toDouble(),
                     fontWeight: FontWeight.w700,
                   ),
@@ -1393,7 +1690,9 @@ class BoardScreenState extends State<BoardScreen> {
 
     // 삭제된 글에는 불필요한 댓글 조회를 실행하지 않는다. 그 외에는 상세 화면과
     // 동일한 집계 기준으로 카드 수치만 갱신하고 기존 목록/스크롤은 유지한다.
-    if (wasDeleted != true) {
+    if (wasDeleted == true) {
+      setState(() => _pagedPosts.removeWhere((item) => item.id == post.id));
+    } else {
       await _refreshCommentCountsForPosts([post]);
     }
   }

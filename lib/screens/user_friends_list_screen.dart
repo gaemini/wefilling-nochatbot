@@ -195,7 +195,8 @@ class _UserFriendsListScreenState extends State<UserFriendsListScreen> {
           maxLines: 1,
           overflow: TextOverflow.ellipsis,
           style: TextStyle(
-            fontFamily: 'Pretendard',
+            fontFamily: 'Inter',
+            fontFamilyFallback: const ['NotoSansKR'],
             fontSize: context.rf(18).clamp(17, 19).toDouble(),
             fontWeight: FontWeight.w700,
             color: const Color(0xFF111827),
@@ -234,7 +235,8 @@ class _UserFriendsListScreenState extends State<UserFriendsListScreen> {
                 l10n.myFriendsOnly,
                 textAlign: TextAlign.center,
                 style: const TextStyle(
-                  fontFamily: 'Pretendard',
+                  fontFamily: 'Inter',
+                  fontFamilyFallback: const ['NotoSansKR'],
                   fontSize: 16,
                   fontWeight: FontWeight.w700,
                   color: Color(0xFF111827),
@@ -257,7 +259,8 @@ class _UserFriendsListScreenState extends State<UserFriendsListScreen> {
                   child: Text(
                     l10n.back,
                     style: const TextStyle(
-                      fontFamily: 'Pretendard',
+                      fontFamily: 'Inter',
+                      fontFamilyFallback: const ['NotoSansKR'],
                       fontSize: 15,
                       fontWeight: FontWeight.w700,
                     ),
@@ -293,7 +296,8 @@ class _UserFriendsListScreenState extends State<UserFriendsListScreen> {
               _errorMessage!,
               textAlign: TextAlign.center,
               style: const TextStyle(
-                fontFamily: 'Pretendard',
+                fontFamily: 'Inter',
+                fontFamilyFallback: const ['NotoSansKR'],
                 fontSize: 14,
                 fontWeight: FontWeight.w600,
                 color: Color(0xFF667085),
@@ -308,7 +312,8 @@ class _UserFriendsListScreenState extends State<UserFriendsListScreen> {
               child: const Text(
                 '다시 시도',
                 style: TextStyle(
-                  fontFamily: 'Pretendard',
+                  fontFamily: 'Inter',
+                  fontFamilyFallback: const ['NotoSansKR'],
                   fontSize: 14,
                   fontWeight: FontWeight.w600,
                 ),
@@ -333,7 +338,8 @@ class _UserFriendsListScreenState extends State<UserFriendsListScreen> {
             Text(
               AppLocalizations.of(context)!.noFriendsYet,
               style: const TextStyle(
-                fontFamily: 'Pretendard',
+                fontFamily: 'Inter',
+                fontFamilyFallback: const ['NotoSansKR'],
                 fontSize: 14,
                 fontWeight: FontWeight.w600,
                 color: Color(0xFF667085),
@@ -461,7 +467,8 @@ class _UserFriendsListScreenState extends State<UserFriendsListScreen> {
                                   isMe,
                                 ),
                                 style: TextStyle(
-                                  fontFamily: 'Pretendard',
+                                  fontFamily: 'Inter',
+                                  fontFamilyFallback: const ['NotoSansKR'],
                                   fontSize:
                                       context.rf(14).clamp(13, 15).toDouble(),
                                   fontWeight: FontWeight.w700,
@@ -485,7 +492,8 @@ class _UserFriendsListScreenState extends State<UserFriendsListScreen> {
                                       child: Text(
                                         friend.nationality!,
                                         style: const TextStyle(
-                                          fontFamily: 'Pretendard',
+                                          fontFamily: 'Inter',
+                                          fontFamilyFallback: const ['NotoSansKR'],
                                           fontSize: 12,
                                           fontWeight: FontWeight.w500,
                                           color: Color(0xFF8B93A1),
@@ -541,7 +549,8 @@ class _UserFriendsListScreenState extends State<UserFriendsListScreen> {
                                     maxLines: 1,
                                     overflow: TextOverflow.ellipsis,
                                     style: const TextStyle(
-                                      fontFamily: 'Pretendard',
+                                      fontFamily: 'Inter',
+                                      fontFamilyFallback: const ['NotoSansKR'],
                                       fontSize: 12,
                                       fontWeight: FontWeight.w700,
                                     ),
@@ -699,7 +708,8 @@ class _SectionHeader extends StatelessWidget {
             maxLines: 1,
             overflow: TextOverflow.ellipsis,
             style: const TextStyle(
-              fontFamily: 'Pretendard',
+              fontFamily: 'Inter',
+              fontFamilyFallback: const ['NotoSansKR'],
               fontSize: 13,
               fontWeight: FontWeight.w700,
               color: Color(0xFF667085),

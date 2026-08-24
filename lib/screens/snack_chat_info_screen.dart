@@ -227,7 +227,8 @@ class _SnackChatInfoScreenState extends State<SnackChatInfoScreen> {
                               Text(
                                 l10n.snackChatSelectParticipants,
                                 style: TextStyle(
-                                  fontFamily: 'Pretendard',
+                                  fontFamily: 'Inter',
+                                  fontFamilyFallback: const ['NotoSansKR'],
                                   fontSize:
                                       context.rf(18).clamp(17, 20).toDouble(),
                                   fontWeight: FontWeight.w800,
@@ -240,7 +241,8 @@ class _SnackChatInfoScreenState extends State<SnackChatInfoScreen> {
                               Text(
                                 l10n.snackChatMaxParticipants,
                                 style: TextStyle(
-                                  fontFamily: 'Pretendard',
+                                  fontFamily: 'Inter',
+                                  fontFamilyFallback: const ['NotoSansKR'],
                                   fontSize: context
                                       .rf(12.5)
                                       .clamp(12, 13.5)
@@ -263,7 +265,8 @@ class _SnackChatInfoScreenState extends State<SnackChatInfoScreen> {
                                   );
                                 },
                                 style: TextStyle(
-                                  fontFamily: 'Pretendard',
+                                  fontFamily: 'Inter',
+                                  fontFamilyFallback: const ['NotoSansKR'],
                                   fontSize:
                                       context.rf(14).clamp(13, 15).toDouble(),
                                   color: const Color(0xFF111827),
@@ -271,7 +274,8 @@ class _SnackChatInfoScreenState extends State<SnackChatInfoScreen> {
                                 decoration: InputDecoration(
                                   hintText: l10n.searchByName,
                                   hintStyle: const TextStyle(
-                                    fontFamily: 'Pretendard',
+                                    fontFamily: 'Inter',
+                                    fontFamilyFallback: const ['NotoSansKR'],
                                     fontSize: 14,
                                     color: Color(0xFF98A2B3),
                                   ),
@@ -331,7 +335,8 @@ class _SnackChatInfoScreenState extends State<SnackChatInfoScreen> {
                                       l10n.snackChatNoFriendsToInvite,
                                       textAlign: TextAlign.center,
                                       style: const TextStyle(
-                                        fontFamily: 'Pretendard',
+                                        fontFamily: 'Inter',
+                                        fontFamilyFallback: const ['NotoSansKR'],
                                         fontSize: 13,
                                         fontWeight: FontWeight.w500,
                                         color: Color(0xFF667085),
@@ -408,7 +413,8 @@ class _SnackChatInfoScreenState extends State<SnackChatInfoScreen> {
                                 maxLines: 1,
                                 overflow: TextOverflow.ellipsis,
                                 style: TextStyle(
-                                  fontFamily: 'Pretendard',
+                                  fontFamily: 'Inter',
+                                  fontFamilyFallback: const ['NotoSansKR'],
                                   fontSize:
                                       context.rf(15).clamp(14, 16).toDouble(),
                                   fontWeight: FontWeight.w700,
@@ -646,7 +652,8 @@ class _SnackChatInfoScreenState extends State<SnackChatInfoScreen> {
                     Text(
                       dialogIsKo ? '채팅방 나가기' : 'Leave Chat Room',
                       style: TextStyle(
-                        fontFamily: 'Pretendard',
+                        fontFamily: 'Inter',
+                        fontFamilyFallback: const ['NotoSansKR'],
                         fontSize: context.rf(17).clamp(16, 18).toDouble(),
                         fontWeight: FontWeight.w700,
                         height: 1.3,
@@ -659,7 +666,8 @@ class _SnackChatInfoScreenState extends State<SnackChatInfoScreen> {
                           ? '채팅방에서 나가면 목록과 대화를 볼 수 없으며, 다시 참여하려면 초대를 받아야 합니다.'
                           : 'After leaving, this room and its messages will no longer be available. You will need another invitation to rejoin.',
                       style: TextStyle(
-                        fontFamily: 'Pretendard',
+                        fontFamily: 'Inter',
+                        fontFamilyFallback: const ['NotoSansKR'],
                         fontSize: context.rf(13.5).clamp(13, 14.5).toDouble(),
                         fontWeight: FontWeight.w400,
                         height: 1.5,
@@ -690,7 +698,8 @@ class _SnackChatInfoScreenState extends State<SnackChatInfoScreen> {
                             child: Text(
                               dialogIsKo ? '취소' : 'Cancel',
                               style: const TextStyle(
-                                fontFamily: 'Pretendard',
+                                fontFamily: 'Inter',
+                                fontFamilyFallback: const ['NotoSansKR'],
                                 fontSize: 14,
                                 fontWeight: FontWeight.w600,
                               ),
@@ -712,7 +721,8 @@ class _SnackChatInfoScreenState extends State<SnackChatInfoScreen> {
                             child: Text(
                               dialogIsKo ? '나가기' : 'Leave',
                               style: const TextStyle(
-                                fontFamily: 'Pretendard',
+                                fontFamily: 'Inter',
+                                fontFamilyFallback: const ['NotoSansKR'],
                                 fontSize: 14,
                                 fontWeight: FontWeight.w700,
                               ),
@@ -791,7 +801,8 @@ class _SnackChatInfoScreenState extends State<SnackChatInfoScreen> {
                   maxLines: 1,
                   overflow: TextOverflow.ellipsis,
                   style: TextStyle(
-                    fontFamily: 'Pretendard',
+                    fontFamily: 'Inter',
+                    fontFamilyFallback: const ['NotoSansKR'],
                     fontSize: context.rf(16).clamp(15, 17).toDouble(),
                     fontWeight: FontWeight.w700,
                     color: const Color(0xFF111827),
@@ -807,7 +818,8 @@ class _SnackChatInfoScreenState extends State<SnackChatInfoScreen> {
                     Text(
                       l10n.snackChatParticipantCount(room.participantCount),
                       style: TextStyle(
-                        fontFamily: 'Pretendard',
+                        fontFamily: 'Inter',
+                        fontFamilyFallback: const ['NotoSansKR'],
                         fontSize: context.rf(12.5).clamp(12, 13.5).toDouble(),
                         fontWeight: FontWeight.w500,
                         color: const Color(0xFF667085),
@@ -829,7 +841,8 @@ class _SnackChatInfoScreenState extends State<SnackChatInfoScreen> {
                               ? l10n.snackChatDurationNoEnd
                               : l10n.snackChatDuration24Hours,
                           style: TextStyle(
-                            fontFamily: 'Pretendard',
+                            fontFamily: 'Inter',
+                            fontFamilyFallback: const ['NotoSansKR'],
                             fontSize:
                                 context.rf(12.5).clamp(12, 13.5).toDouble(),
                             fontWeight: FontWeight.w500,
@@ -880,7 +893,8 @@ class _SnackChatInfoScreenState extends State<SnackChatInfoScreen> {
                 maxLines: 2,
                 overflow: TextOverflow.ellipsis,
                 style: TextStyle(
-                  fontFamily: 'Pretendard',
+                  fontFamily: 'Inter',
+                  fontFamilyFallback: const ['NotoSansKR'],
                   fontSize: context.rf(14.5).clamp(13.5, 15.5).toDouble(),
                   fontWeight: FontWeight.w600,
                   color: const Color(0xFF1F2937),
@@ -937,7 +951,8 @@ class _SnackChatInfoScreenState extends State<SnackChatInfoScreen> {
                 title: const Text(
                   'Snack Chat',
                   style: TextStyle(
-                    fontFamily: 'Pretendard',
+                    fontFamily: 'Inter',
+                    fontFamilyFallback: const ['NotoSansKR'],
                     fontWeight: FontWeight.w800,
                   ),
                 ),
@@ -998,7 +1013,8 @@ class _SnackChatInfoScreenState extends State<SnackChatInfoScreen> {
                 child: Text(
                   'Snack Chat',
                   style: TextStyle(
-                    fontFamily: 'Pretendard',
+                    fontFamily: 'Inter',
+                    fontFamilyFallback: const ['NotoSansKR'],
                     fontSize: context.rf(18).clamp(17, 19).toDouble(),
                     fontWeight: FontWeight.w700,
                     color: const Color(0xFF111827),
@@ -1061,7 +1077,8 @@ class _SnackChatInfoScreenState extends State<SnackChatInfoScreen> {
                                   label: Text(
                                     isKo ? '이름 변경' : 'Rename',
                                     style: const TextStyle(
-                                      fontFamily: 'Pretendard',
+                                      fontFamily: 'Inter',
+                                      fontFamilyFallback: const ['NotoSansKR'],
                                       fontSize: 13,
                                       fontWeight: FontWeight.w600,
                                     ),
@@ -1094,7 +1111,8 @@ class _SnackChatInfoScreenState extends State<SnackChatInfoScreen> {
                                   label: Text(
                                     isKo ? '공지 등록' : 'Announcement',
                                     style: const TextStyle(
-                                      fontFamily: 'Pretendard',
+                                      fontFamily: 'Inter',
+                                      fontFamilyFallback: const ['NotoSansKR'],
                                       fontSize: 13,
                                       fontWeight: FontWeight.w600,
                                     ),
@@ -1136,7 +1154,8 @@ class _SnackChatInfoScreenState extends State<SnackChatInfoScreen> {
                               child: Text(
                                 isKo ? '참여 멤버' : 'MEMBERS',
                                 style: TextStyle(
-                                  fontFamily: 'Pretendard',
+                                  fontFamily: 'Inter',
+                                  fontFamilyFallback: const ['NotoSansKR'],
                                   fontSize:
                                       context.rf(13).clamp(12, 14).toDouble(),
                                   fontWeight: FontWeight.w700,
@@ -1198,7 +1217,8 @@ class _SnackChatInfoScreenState extends State<SnackChatInfoScreen> {
                             child: Text(
                               isKo ? '표시할 멤버가 없습니다.' : 'No members to show.',
                               style: const TextStyle(
-                                fontFamily: 'Pretendard',
+                                fontFamily: 'Inter',
+                                fontFamilyFallback: const ['NotoSansKR'],
                                 fontSize: 13,
                                 color: Color(0xFF98A2B3),
                               ),
@@ -1234,7 +1254,8 @@ class _SnackChatInfoScreenState extends State<SnackChatInfoScreen> {
                               label: Text(
                                 isKo ? '채팅방 나가기' : 'Leave Room',
                                 style: const TextStyle(
-                                  fontFamily: 'Pretendard',
+                                  fontFamily: 'Inter',
+                                  fontFamilyFallback: const ['NotoSansKR'],
                                   fontSize: 13,
                                   fontWeight: FontWeight.w600,
                                 ),
@@ -1315,7 +1336,8 @@ class _CreatorTextDialogState extends State<_CreatorTextDialog> {
       title: Text(
         widget.title,
         style: TextStyle(
-          fontFamily: 'Pretendard',
+          fontFamily: 'Inter',
+          fontFamilyFallback: const ['NotoSansKR'],
           fontSize: context.rf(18).clamp(17, 19).toDouble(),
           fontWeight: FontWeight.w700,
           color: const Color(0xFF111827),
@@ -1339,7 +1361,8 @@ class _CreatorTextDialogState extends State<_CreatorTextDialog> {
             if (next != _canSubmit) setState(() => _canSubmit = next);
           },
           style: TextStyle(
-            fontFamily: 'Pretendard',
+            fontFamily: 'Inter',
+            fontFamilyFallback: const ['NotoSansKR'],
             fontSize: context.rf(15).clamp(14, 16).toDouble(),
             height: 1.45,
             color: const Color(0xFF111827),
@@ -1347,7 +1370,8 @@ class _CreatorTextDialogState extends State<_CreatorTextDialog> {
           decoration: InputDecoration(
             hintText: widget.hintText,
             hintStyle: const TextStyle(
-              fontFamily: 'Pretendard',
+              fontFamily: 'Inter',
+              fontFamilyFallback: const ['NotoSansKR'],
               color: Color(0xFF98A2B3),
             ),
             border: const UnderlineInputBorder(),
@@ -1428,7 +1452,8 @@ class _InviteParticipantTile extends StatelessWidget {
                         : Text(
                             fallback.toUpperCase(),
                             style: TextStyle(
-                              fontFamily: 'Pretendard',
+                              fontFamily: 'Inter',
+                              fontFamilyFallback: const ['NotoSansKR'],
                               fontSize: context.rf(14).clamp(13, 15).toDouble(),
                               fontWeight: FontWeight.w700,
                               color: const Color(0xFF475467),
@@ -1442,7 +1467,8 @@ class _InviteParticipantTile extends StatelessWidget {
                       maxLines: 1,
                       overflow: TextOverflow.ellipsis,
                       style: TextStyle(
-                        fontFamily: 'Pretendard',
+                        fontFamily: 'Inter',
+                        fontFamilyFallback: const ['NotoSansKR'],
                         fontSize: context.rf(14.5).clamp(13.5, 15.5).toDouble(),
                         fontWeight: FontWeight.w600,
                         color: const Color(0xFF111827),
@@ -1538,7 +1564,8 @@ class _MemberTile extends StatelessWidget {
                                   ? '?'
                                   : user.displayNameOrNickname[0].toUpperCase(),
                               style: TextStyle(
-                                fontFamily: 'Pretendard',
+                                fontFamily: 'Inter',
+                                fontFamilyFallback: const ['NotoSansKR'],
                                 fontSize:
                                     context.rf(13).clamp(12, 14).toDouble(),
                                 fontWeight: FontWeight.w700,
@@ -1554,7 +1581,8 @@ class _MemberTile extends StatelessWidget {
                         maxLines: 1,
                         overflow: TextOverflow.ellipsis,
                         style: TextStyle(
-                          fontFamily: 'Pretendard',
+                          fontFamily: 'Inter',
+                          fontFamilyFallback: const ['NotoSansKR'],
                           fontSize:
                               context.rf(14.5).clamp(13.5, 15.5).toDouble(),
                           fontWeight: FontWeight.w600,

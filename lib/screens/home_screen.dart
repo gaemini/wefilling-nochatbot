@@ -802,7 +802,8 @@ class _MeetupHomePageState extends State<MeetupHomePage> with PreloadMixin {
                       maxLines: 1,
                       overflow: TextOverflow.ellipsis,
                       style: TextStyle(
-                        fontFamily: 'Pretendard',
+                        fontFamily: 'Inter',
+                        fontFamilyFallback: const ['NotoSansKR'],
                         fontSize: labelSize,
                         fontWeight: FontWeight.w900,
                         color: const Color(0xFF4B5563),
@@ -916,7 +917,8 @@ class _MeetupHomePageState extends State<MeetupHomePage> with PreloadMixin {
                       child: Text(
                         label,
                         style: TextStyle(
-                          fontFamily: 'Pretendard',
+                          fontFamily: 'Inter',
+                          fontFamilyFallback: const ['NotoSansKR'],
                           fontSize: 12,
                           fontWeight: FontWeight.w800,
                           color: color,
@@ -1281,7 +1283,8 @@ class _CategoryTabItem extends StatelessWidget {
             child: Text(
               label,
               style: TextStyle(
-                fontFamily: 'Pretendard',
+                fontFamily: 'Inter',
+                fontFamilyFallback: const ['NotoSansKR'],
                 fontSize: fontSize,
                 fontWeight: selected ? FontWeight.w800 : FontWeight.w600,
                 color: selected ? selectedText : unselectedText,
@@ -1350,7 +1353,8 @@ class _CalendarDayCell extends StatelessWidget {
                 child: Text(
                   '${day.day}',
                   style: TextStyle(
-                    fontFamily: 'Pretendard',
+                    fontFamily: 'Inter',
+                    fontFamilyFallback: const ['NotoSansKR'],
                     fontSize: 14,
                     fontWeight: (isToday || isSelected)
                         ? FontWeight.w700

@@ -3,8 +3,9 @@
 // Cloud Functions 메인 진입점
 // 친구요청 관련 함수들을 export
 Object.defineProperty(exports, "__esModule", { value: true });
-exports.discardIncompleteRegistration = exports.finalizeEnglishSocialSignup = exports.completeHanyangProfileVerification = exports.finalizeHanyangEmailVerification = exports.migrateEmailVerified = exports.initializeAds = exports.onUserProfileUpdatedPropagateAuthorInfo = exports.onSnackChatVoteWritten = exports.onSnackChatReactionWritten = exports.notifyClosedSnackChatPolls = exports.onSnackChatMessageCreated = exports.onSnackChatRoomWritten = exports.cleanupExpiredSnackChatFiles = exports.onSnackChatFileUploadJobDeleted = exports.onSnackChatFileMessageDeleted = exports.cancelSnackChatFileUpload = exports.commitSnackChatFileUpload = exports.prepareSnackChatFileUpload = exports.reportSnackChatMessage = exports.fetchSnackChatLinkPreview = exports.createSnackChatAnnouncementSecure = exports.updateSnackChatTitleSecure = exports.leaveSnackChatSecure = exports.ensureSnackChatMembershipSecure = exports.joinMeetupSnackChatSecure = exports.inviteSnackChatParticipants = exports.createMeetupSnackChatSecure = exports.createSnackChatSecure = exports.onSnapshotBlockChanged = exports.cleanupOrphanSnapshotUploads = exports.cleanupExpiredSnapshots = exports.deleteSnapshot = exports.replySnapshotComment = exports.sendSnapshotComment = exports.toggleSnapshotReaction = exports.getSnapshotCommentLetter = exports.getSnapshotCommentStatus = exports.getSnapshotReactionStatus = exports.getSnapshotViewers = exports.recordSnapshotView = exports.updateSnapshotVisibility = exports.syncMySnapshotFeed = exports.createSnapshot = exports.getSnapshotServerTime = exports.reconcileDMUnreadTotalSecure = exports.markDMConversationReadSecure = exports.expireTimedMeetups = exports.confirmMeetupSecure = exports.createMeetupSecure = exports.createPostSecure = void 0;
-exports.fixNegativeUnreadCounts = exports.onDMMessageRead = exports.onDMMessageCreated = exports.onMeetupReviewCreatedDeleteMeetupChat = exports.onMeetupReviewDeleted = exports.onMeetupReviewUpdated = exports.onReviewRequestUpdated = exports.onReviewRequestCreated = exports.onMeetupCreated = exports.onMeetupParticipantJoined = exports.onNotificationDeletedSyncUnreadCounter = exports.onNotificationUpdatedSyncUnreadCounter = exports.onNotificationCreated = exports.unregisterFcmToken = exports.registerFcmToken = exports.fixDeletedAccountsInConversations = exports.deleteAccountImmediately = exports.onReportCreated = exports.reportUser = exports.unhideAnonymousComment = exports.hideAnonymousComment = exports.unblockAnonymousPost = exports.blockAnonymousPost = exports.unblockUser = exports.blockUser = exports.unfriend = exports.rejectFriendRequest = exports.acceptFriendRequest = exports.cancelFriendRequest = exports.sendFriendRequest = exports.cleanupExpiredEmailVerifications = exports.createGeneralEmailSignup = exports.verifyEmailCode = exports.sendEmailVerificationCode = exports.onPostLiked = exports.onCommentLiked = exports.onCommentSoftDeleted = exports.onCommentDeleted = exports.onCommentCreated = exports.onMeetupDeleted = exports.onMeetupUpdated = exports.onAdBannerChanged = exports.onFriendRequestCreated = exports.joinMeetupSecure = exports.onPrivatePostCreated = exports.onUserCreated = exports.backfillEmailClaims = exports.cancelPendingEmailSignup = void 0;
+exports.initializeAds = exports.onUserProfileUpdatedPropagateAuthorInfo = exports.getUserProfileStats = exports.onSnackChatVoteWritten = exports.onSnackChatReactionWritten = exports.notifyClosedSnackChatPolls = exports.onSnackChatMessageCreated = exports.onSnackChatRoomWritten = exports.cleanupExpiredSnackChatFiles = exports.onSnackChatFileUploadJobDeleted = exports.onSnackChatFileMessageDeleted = exports.cancelSnackChatFileUpload = exports.commitSnackChatFileUpload = exports.prepareSnackChatFileUpload = exports.reportSnackChatMessage = exports.fetchSnackChatLinkPreview = exports.createSnackChatAnnouncementSecure = exports.updateSnackChatTitleSecure = exports.leaveSnackChatSecure = exports.markSnackChatReadSecure = exports.ensureSnackChatMembershipSecure = exports.joinMeetupSnackChatSecure = exports.inviteSnackChatParticipants = exports.createMeetupSnackChatSecure = exports.createSnackChatSecure = exports.onSnapshotBlockChanged = exports.cleanupOrphanSnapshotUploads = exports.cleanupExpiredSnapshots = exports.deleteSnapshot = exports.replySnapshotComment = exports.sendSnapshotComment = exports.toggleSnapshotReaction = exports.getSnapshotCommentLetter = exports.getSnapshotCommentStatus = exports.getSnapshotReactionStatus = exports.getSnapshotViewers = exports.recordSnapshotView = exports.updateSnapshotVisibility = exports.syncMySnapshotFeed = exports.createSnapshot = exports.getSnapshotServerTime = exports.resolveSharedLink = exports.reconcileDMUnreadTotalSecure = exports.markDMConversationReadSecure = exports.expireTimedMeetups = exports.confirmMeetupSecure = exports.createMeetupSecure = exports.getExternalShareComposerContext = exports.createExternalSharePost = exports.createPostSecure = void 0;
+exports.onMeetupReviewCreatedDeleteMeetupChat = exports.onMeetupReviewDeleted = exports.onMeetupReviewUpdated = exports.onReviewRequestUpdated = exports.onReviewRequestCreated = exports.onMeetupCreated = exports.onMeetupParticipantJoined = exports.onNotificationDeletedSyncUnreadCounter = exports.onNotificationUpdatedSyncUnreadCounter = exports.onNotificationCreated = exports.unregisterFcmToken = exports.registerFcmToken = exports.fixDeletedAccountsInConversations = exports.deleteAccountImmediately = exports.onReportCreated = exports.reportUser = exports.unhideAnonymousComment = exports.hideAnonymousComment = exports.unblockAnonymousPost = exports.blockAnonymousPost = exports.unblockUser = exports.blockUser = exports.unfriend = exports.rejectFriendRequest = exports.acceptFriendRequest = exports.cancelFriendRequest = exports.sendFriendRequest = exports.cleanupExpiredEmailVerifications = exports.createGeneralEmailSignup = exports.verifyEmailCode = exports.sendEmailVerificationCode = exports.onPostLiked = exports.onCommentLiked = exports.onCommentSoftDeleted = exports.onCommentDeleted = exports.onCommentCreated = exports.onMeetupDeleted = exports.onMeetupUpdated = exports.onAdBannerChanged = exports.onFriendRequestCreated = exports.joinMeetupSecure = exports.onPrivatePostCreated = exports.onUserCreated = exports.backfillEmailClaims = exports.cancelPendingEmailSignup = exports.discardIncompleteRegistration = exports.finalizeEnglishSocialSignup = exports.completeHanyangProfileVerification = exports.finalizeHanyangEmailVerification = exports.migrateEmailVerified = void 0;
+exports.fixNegativeUnreadCounts = exports.onDMMessageRead = exports.onDMMessageCreated = void 0;
 const functions = require("firebase-functions");
 const admin = require("firebase-admin");
 const nodemailer = require("nodemailer");
@@ -13,12 +14,16 @@ const firestore_paths_1 = require("./firestore_paths");
 const frozen_audience_1 = require("./frozen_audience");
 var content_creation_1 = require("./content_creation");
 Object.defineProperty(exports, "createPostSecure", { enumerable: true, get: function () { return content_creation_1.createPostSecure; } });
+Object.defineProperty(exports, "createExternalSharePost", { enumerable: true, get: function () { return content_creation_1.createExternalSharePost; } });
+Object.defineProperty(exports, "getExternalShareComposerContext", { enumerable: true, get: function () { return content_creation_1.getExternalShareComposerContext; } });
 Object.defineProperty(exports, "createMeetupSecure", { enumerable: true, get: function () { return content_creation_1.createMeetupSecure; } });
 Object.defineProperty(exports, "confirmMeetupSecure", { enumerable: true, get: function () { return content_creation_1.confirmMeetupSecure; } });
 Object.defineProperty(exports, "expireTimedMeetups", { enumerable: true, get: function () { return content_creation_1.expireTimedMeetups; } });
 var dm_chat_1 = require("./dm_chat");
 Object.defineProperty(exports, "markDMConversationReadSecure", { enumerable: true, get: function () { return dm_chat_1.markDMConversationReadSecure; } });
 Object.defineProperty(exports, "reconcileDMUnreadTotalSecure", { enumerable: true, get: function () { return dm_chat_1.reconcileDMUnreadTotalSecure; } });
+var shared_link_preview_1 = require("./shared_link_preview");
+Object.defineProperty(exports, "resolveSharedLink", { enumerable: true, get: function () { return shared_link_preview_1.resolveSharedLink; } });
 var snapshot_1 = require("./snapshot");
 Object.defineProperty(exports, "getSnapshotServerTime", { enumerable: true, get: function () { return snapshot_1.getSnapshotServerTime; } });
 Object.defineProperty(exports, "createSnapshot", { enumerable: true, get: function () { return snapshot_1.createSnapshot; } });
@@ -42,6 +47,7 @@ Object.defineProperty(exports, "createMeetupSnackChatSecure", { enumerable: true
 Object.defineProperty(exports, "inviteSnackChatParticipants", { enumerable: true, get: function () { return snack_chat_1.inviteSnackChatParticipants; } });
 Object.defineProperty(exports, "joinMeetupSnackChatSecure", { enumerable: true, get: function () { return snack_chat_1.joinMeetupSnackChatSecure; } });
 Object.defineProperty(exports, "ensureSnackChatMembershipSecure", { enumerable: true, get: function () { return snack_chat_1.ensureSnackChatMembershipSecure; } });
+Object.defineProperty(exports, "markSnackChatReadSecure", { enumerable: true, get: function () { return snack_chat_1.markSnackChatReadSecure; } });
 Object.defineProperty(exports, "leaveSnackChatSecure", { enumerable: true, get: function () { return snack_chat_1.leaveSnackChatSecure; } });
 Object.defineProperty(exports, "updateSnackChatTitleSecure", { enumerable: true, get: function () { return snack_chat_1.updateSnackChatTitleSecure; } });
 Object.defineProperty(exports, "createSnackChatAnnouncementSecure", { enumerable: true, get: function () { return snack_chat_1.createSnackChatAnnouncementSecure; } });
@@ -68,6 +74,51 @@ const db = admin.firestore();
 function toStr(v) {
     return (v !== null && v !== void 0 ? v : '').toString();
 }
+/**
+ * 프로필 헤더의 공개 활동 통계를 서버 원본에서 한 번에 집계한다.
+ * meetup_participants는 본인 외 목록 조회가 보안 규칙으로 제한되므로,
+ * 클라이언트가 세 컬렉션을 제각각 읽지 않고 Admin SDK가 동일 시점의 최신
+ * aggregate count만 반환한다.
+ */
+exports.getUserProfileStats = functions
+    .runWith({ timeoutSeconds: 30, memory: '256MB' })
+    .https.onCall(async (raw, context) => {
+    var _a;
+    if (!((_a = context.auth) === null || _a === void 0 ? void 0 : _a.uid)) {
+        throw new functions.https.HttpsError('unauthenticated', 'Sign-in is required.');
+    }
+    const targetUserId = toStr(raw && typeof raw === 'object'
+        ? raw.userId
+        : '').trim();
+    if (!targetUserId || targetUserId.length > 128 || targetUserId.includes('/')) {
+        throw new functions.https.HttpsError('invalid-argument', 'A valid userId is required.');
+    }
+    const user = await db.collection(firestore_paths_1.COL.users).doc(targetUserId).get();
+    if (!user.exists) {
+        throw new functions.https.HttpsError('not-found', 'User not found.');
+    }
+    const [friendAggregate, postAggregate, joinedMeetupAggregate] = await Promise.all([
+        db.collection(firestore_paths_1.COL.friendships)
+            .where('uids', 'array-contains', targetUserId)
+            .count()
+            .get(),
+        db.collection(firestore_paths_1.COL.posts)
+            .where('userId', '==', targetUserId)
+            .count()
+            .get(),
+        db.collection(firestore_paths_1.COL.meetupParticipants)
+            .where('userId', '==', targetUserId)
+            .where('status', '==', 'approved')
+            .count()
+            .get(),
+    ]);
+    return {
+        friendCount: friendAggregate.data().count,
+        writtenPostCount: postAggregate.data().count,
+        joinedMeetupCount: joinedMeetupAggregate.data().count,
+        fetchedAtMillis: Date.now(),
+    };
+});
 function escapeHtml(value) {
     return toStr(value).replace(/[&<>"']/g, (character) => {
         switch (character) {
@@ -1575,7 +1626,7 @@ exports.onFriendRequestCreated = functions.firestore
         const afterStatus = change.after.exists ? String(req.status || '') : 'DELETED';
         const notificationGeneration = normalizeUidLoose(req.notificationGeneration);
         const notificationId = 'friend_request_' + crypto.createHash('sha256')
-            .update(`${String(context.params.requestId)}:${notificationGeneration || context.eventId}`)
+            .update(`${String(context.params.requestId)}:${notificationGeneration || 'legacy'}`)
             .digest('hex');
         const notificationRef = db.collection('notifications').doc(notificationId);
         // 신규 요청은 generation으로 정확히 한 문서만 읽고/삭제한다. 배포 전
@@ -1612,9 +1663,25 @@ exports.onFriendRequestCreated = functions.firestore
             await deleteCurrentFriendAlert();
             return null;
         }
-        // 이미 PENDING인 문서의 unrelated update/트리거 재시도는 무시한다.
-        if (beforeStatus === 'PENDING')
-            return null;
+        // 구버전 함수가 만든 요청에는 notificationGeneration이 없다. 이미 알림이
+        // 남아 있으면 PENDING 문서의 unrelated update에서 중복 생성하지 않는다.
+        // 반대로 과거 혼합 배포로 알림이 삭제된 경우에는 아래 결정적 ID로 복구한다.
+        if (beforeStatus === 'PENDING' && !notificationGeneration) {
+            const existing = await db.collection('notifications')
+                .where('userId', '==', toUid)
+                .limit(500)
+                .get();
+            const hasExistingAlert = existing.docs.some((document) => {
+                var _a;
+                const data = document.data();
+                const dataFromUid = normalizeUidLoose((_a = data === null || data === void 0 ? void 0 : data.data) === null || _a === void 0 ? void 0 : _a.fromUid);
+                return data.type === 'friend_request' &&
+                    (normalizeUidLoose(data.actorId) === normalizeUidLoose(fromUid) ||
+                        dataFromUid === normalizeUidLoose(fromUid));
+            });
+            if (hasExistingAlert)
+                return null;
+        }
         if (await hasBlockRelationship(fromUid, toUid)) {
             console.log('⏭️ 차단 관계(friend_request) - 알림 스킵');
             await deleteCurrentFriendAlert();
@@ -1640,7 +1707,8 @@ exports.onFriendRequestCreated = functions.firestore
                 .digest('hex');
             await db.collection('notifications').doc(previousId).delete();
         }
-        else if (!beforeGeneration && change.before.exists) {
+        else if (!beforeGeneration && change.before.exists &&
+            beforeStatus !== 'PENDING') {
             await deleteLegacyFriendAlerts();
         }
         const notificationPayload = {
@@ -4669,18 +4737,27 @@ async function isVerifiedFriendRequestNotificationRecipient(notification) {
     const nested = notification.data && typeof notification.data === 'object'
         ? notification.data
         : {};
-    const requestId = safeStringLoose(nested.friendRequestId);
-    if (!requestId)
+    const recipientId = normalizeUidLoose(notification.userId);
+    const actorId = normalizeUidLoose(notification.actorId || nested.actorId || nested.fromUid);
+    // onFriendRequestCreated와 onNotificationCreated가 서로 다른 시점에
+    // 배포되더라도 기존 알림을 정상 검증할 수 있어야 한다. 구버전 알림에는
+    // friendRequestId가 없으므로, 서버가 사용하는 결정적 문서 ID로 복원한다.
+    const requestId = safeStringLoose(nested.friendRequestId) ||
+        (actorId && recipientId ? `${actorId}_${recipientId}` : '');
+    if (!requestId || !recipientId || !actorId)
         return false;
     const request = await db.collection('friend_requests').doc(requestId).get();
     if (!request.exists)
         return false;
     const data = request.data() || {};
     const expectedGeneration = normalizeUidLoose(nested.notificationGeneration);
-    return safeStringLoose(data.status) === 'PENDING' &&
-        normalizeUidLoose(data.toUid) === normalizeUidLoose(notification.userId) &&
-        normalizeUidLoose(data.fromUid) === normalizeUidLoose(notification.actorId) &&
-        normalizeUidLoose(data.notificationGeneration) === expectedGeneration;
+    const actualGeneration = normalizeUidLoose(data.notificationGeneration);
+    const generationMatches = expectedGeneration.length === 0 ||
+        actualGeneration === expectedGeneration;
+    return safeStringLoose(data.status).toUpperCase() === 'PENDING' &&
+        normalizeUidLoose(data.toUid) === recipientId &&
+        normalizeUidLoose(data.fromUid) === actorId &&
+        generationMatches;
 }
 async function isVerifiedSnapshotCommentReplyRecipient(notification) {
     if (safeStringLoose(notification.type) !== 'snapshot_comment_reply')

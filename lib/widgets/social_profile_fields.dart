@@ -27,7 +27,8 @@ class ProfileSectionHeading extends StatelessWidget {
               child: Text(
                 title,
                 style: const TextStyle(
-                  fontFamily: 'Pretendard',
+                  fontFamily: 'Inter',
+                  fontFamilyFallback: const ['NotoSansKR'],
                   fontSize: 20,
                   fontWeight: FontWeight.w800,
                   color: Color(0xFF0F172A),
@@ -44,7 +45,8 @@ class ProfileSectionHeading extends StatelessWidget {
           Text(
             description!,
             style: const TextStyle(
-              fontFamily: 'Pretendard',
+              fontFamily: 'Inter',
+              fontFamilyFallback: const ['NotoSansKR'],
               fontSize: 14,
               fontWeight: FontWeight.w400,
               color: Color(0xFF64748B),
@@ -86,7 +88,8 @@ class SocialProfileTagSelector extends StatelessWidget {
           showCheckmark: false,
           label: Text(option.label(languageCode)),
           labelStyle: TextStyle(
-            fontFamily: 'Pretendard',
+            fontFamily: 'Inter',
+            fontFamilyFallback: const ['NotoSansKR'],
             fontSize: 14,
             fontWeight: selected ? FontWeight.w700 : FontWeight.w500,
             color: selected ? Colors.white : const Color(0xFF475569),
@@ -127,7 +130,7 @@ class SocialProfileTagSelector extends StatelessWidget {
   }
 }
 
-class SocialProfilePromptField extends StatelessWidget {
+class SocialProfilePromptField extends StatefulWidget {
   const SocialProfilePromptField({
     super.key,
     required this.controller,
@@ -146,60 +149,191 @@ class SocialProfilePromptField extends StatelessWidget {
   final int maxLength;
 
   @override
+  State<SocialProfilePromptField> createState() =>
+      _SocialProfilePromptFieldState();
+}
+
+class _SocialProfilePromptFieldState extends State<SocialProfilePromptField> {
+  bool _showCustomInput = false;
+  bool _updatingController = false;
+
+  @override
+  void initState() {
+    super.initState();
+    widget.controller.addListener(_handleControllerChanged);
+    final value = widget.controller.text.trim();
+    _showCustomInput = value.isNotEmpty && !_matchesSuggestion(value);
+  }
+
+  @override
+  void didUpdateWidget(covariant SocialProfilePromptField oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (oldWidget.controller != widget.controller) {
+      oldWidget.controller.removeListener(_handleControllerChanged);
+      widget.controller.addListener(_handleControllerChanged);
+      final value = widget.controller.text.trim();
+      _showCustomInput = value.isNotEmpty && !_matchesSuggestion(value);
+    }
+  }
+
+  @override
+  void dispose() {
+    widget.controller.removeListener(_handleControllerChanged);
+    super.dispose();
+  }
+
+  bool _matchesSuggestion(String value) {
+    return widget.suggestions.any(
+      (option) => option.ko == value || option.en == value,
+    );
+  }
+
+  void _handleControllerChanged() {
+    if (!mounted || _updatingController) return;
+    final value = widget.controller.text.trim();
+    final matchesSuggestion = _matchesSuggestion(value);
+    final shouldShowCustom =
+        matchesSuggestion ? false : value.isNotEmpty || _showCustomInput;
+    if (shouldShowCustom != _showCustomInput) {
+      setState(() => _showCustomInput = shouldShowCustom);
+    } else {
+      setState(() {});
+    }
+  }
+
+  void _setControllerText(String value) {
+    _updatingController = true;
+    widget.controller
+      ..text = value
+      ..selection = TextSelection.collapsed(offset: value.length);
+    _updatingController = false;
+  }
+
+  void _selectSuggestion(String text) {
+    setState(() {
+      _showCustomInput = false;
+      _setControllerText(text);
+    });
+  }
+
+  void _selectCustomInput() {
+    final current = widget.controller.text.trim();
+    setState(() {
+      _showCustomInput = true;
+      if (_matchesSuggestion(current)) _setControllerText('');
+    });
+  }
+
+  Widget _optionRow({
+    required String text,
+    required bool selected,
+    required VoidCallback onTap,
+  }) {
+    return Semantics(
+      button: true,
+      selected: selected,
+      child: InkWell(
+        onTap: onTap,
+        borderRadius: BorderRadius.circular(10),
+        child: Padding(
+          padding: const EdgeInsets.symmetric(horizontal: 2, vertical: 11),
+          child: Row(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Padding(
+                padding: const EdgeInsets.only(top: 1),
+                child: Icon(
+                  selected
+                      ? Icons.radio_button_checked_rounded
+                      : Icons.radio_button_off_rounded,
+                  size: 20,
+                  color:
+                      selected ? AppColors.pointColor : const Color(0xFFCBD5E1),
+                ),
+              ),
+              const SizedBox(width: 12),
+              Expanded(
+                child: Text(
+                  text,
+                  style: TextStyle(
+                    fontFamily: 'Inter',
+                    fontFamilyFallback: const ['NotoSansKR'],
+                    fontSize: 15,
+                    fontWeight: selected ? FontWeight.w700 : FontWeight.w500,
+                    color: selected
+                        ? const Color(0xFF0F172A)
+                        : const Color(0xFF475569),
+                    height: 1.42,
+                    letterSpacing: -0.2,
+                  ),
+                ),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+
+  @override
   Widget build(BuildContext context) {
     final languageCode = Localizations.localeOf(context).languageCode;
+    final currentValue = widget.controller.text.trim();
 
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        ProfileSectionHeading(title: title, description: description),
-        const SizedBox(height: 14),
-        SizedBox(
-          height: 38,
-          child: ListView.separated(
-            scrollDirection: Axis.horizontal,
-            itemCount: suggestions.length,
-            separatorBuilder: (_, __) => const SizedBox(width: 8),
-            itemBuilder: (context, index) {
-              final text = suggestions[index].label(languageCode);
-              return ActionChip(
-                label: Text(
-                  text,
-                  maxLines: 1,
-                  overflow: TextOverflow.ellipsis,
-                ),
-                labelStyle: const TextStyle(
-                  fontFamily: 'Pretendard',
-                  fontSize: 13,
-                  fontWeight: FontWeight.w500,
-                  color: Color(0xFF475569),
-                ),
-                backgroundColor: const Color(0xFFF8FAFC),
-                side: BorderSide.none,
-                shape: const StadiumBorder(),
-                onPressed: () {
-                  controller
-                    ..text = text
-                    ..selection = TextSelection.collapsed(offset: text.length);
-                },
-              );
-            },
-          ),
+        ProfileSectionHeading(
+          title: widget.title,
+          description: widget.description,
         ),
-        const SizedBox(height: 8),
-        TextFormField(
-          controller: controller,
-          maxLength: maxLength,
-          minLines: 1,
-          maxLines: 2,
-          decoration: socialProfileInputDecoration(hintText: hintText),
-          style: const TextStyle(
-            fontFamily: 'Pretendard',
-            fontSize: 15,
-            fontWeight: FontWeight.w500,
-            color: Color(0xFF0F172A),
-            height: 1.45,
-          ),
+        const SizedBox(height: 14),
+        Column(
+          children: [
+            for (final suggestion in widget.suggestions)
+              _optionRow(
+                text: suggestion.label(languageCode),
+                selected: (currentValue == suggestion.ko ||
+                        currentValue == suggestion.en) &&
+                    !_showCustomInput,
+                onTap: () => _selectSuggestion(suggestion.label(languageCode)),
+              ),
+            _optionRow(
+              text: languageCode == 'ko'
+                  ? '직접 입력 (선택)'
+                  : 'Write my own (optional)',
+              selected: _showCustomInput,
+              onTap: _selectCustomInput,
+            ),
+          ],
+        ),
+        AnimatedSize(
+          duration: const Duration(milliseconds: 180),
+          curve: Curves.easeOut,
+          alignment: Alignment.topCenter,
+          child: !_showCustomInput
+              ? const SizedBox.shrink()
+              : Padding(
+                  padding: const EdgeInsets.only(top: 4),
+                  child: TextFormField(
+                    controller: widget.controller,
+                    maxLength: widget.maxLength,
+                    minLines: 1,
+                    maxLines: 2,
+                    autofocus: false,
+                    decoration: socialProfileInputDecoration(
+                      hintText: widget.hintText,
+                    ),
+                    style: const TextStyle(
+                      fontFamily: 'Inter',
+                      fontFamilyFallback: const ['NotoSansKR'],
+                      fontSize: 15,
+                      fontWeight: FontWeight.w500,
+                      color: Color(0xFF0F172A),
+                      height: 1.45,
+                    ),
+                  ),
+                ),
         ),
       ],
     );
@@ -216,13 +350,15 @@ InputDecoration socialProfileInputDecoration({
     helperText: helperText,
     prefixIcon: prefixIcon,
     hintStyle: const TextStyle(
-      fontFamily: 'Pretendard',
+      fontFamily: 'Inter',
+      fontFamilyFallback: const ['NotoSansKR'],
       fontSize: 15,
       fontWeight: FontWeight.w400,
       color: Color(0xFF94A3B8),
     ),
     helperStyle: const TextStyle(
-      fontFamily: 'Pretendard',
+      fontFamily: 'Inter',
+      fontFamilyFallback: const ['NotoSansKR'],
       fontSize: 12,
       color: Color(0xFF64748B),
     ),
@@ -294,7 +430,8 @@ class SocialProfilePreview extends StatelessWidget {
                     maxLines: 1,
                     overflow: TextOverflow.ellipsis,
                     style: const TextStyle(
-                      fontFamily: 'Pretendard',
+                      fontFamily: 'Inter',
+                      fontFamilyFallback: const ['NotoSansKR'],
                       fontSize: 20,
                       fontWeight: FontWeight.w800,
                       color: Color(0xFF0F172A),
@@ -307,7 +444,8 @@ class SocialProfilePreview extends StatelessWidget {
                       maxLines: 2,
                       overflow: TextOverflow.ellipsis,
                       style: const TextStyle(
-                        fontFamily: 'Pretendard',
+                        fontFamily: 'Inter',
+                        fontFamilyFallback: const ['NotoSansKR'],
                         fontSize: 14,
                         color: Color(0xFF475569),
                         height: 1.4,
@@ -342,7 +480,8 @@ class SocialProfilePreview extends StatelessWidget {
           Text(
             friendshipPrompt.trim(),
             style: const TextStyle(
-              fontFamily: 'Pretendard',
+              fontFamily: 'Inter',
+              fontFamilyFallback: const ['NotoSansKR'],
               fontSize: 15,
               fontWeight: FontWeight.w600,
               color: Color(0xFF334155),
@@ -352,25 +491,16 @@ class SocialProfilePreview extends StatelessWidget {
         ],
         if (conversationStarter.trim().isNotEmpty) ...[
           const SizedBox(height: 18),
-          Row(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              const Icon(Icons.chat_bubble_outline_rounded,
-                  size: 18, color: AppColors.pointColor),
-              const SizedBox(width: 8),
-              Expanded(
-                child: Text(
-                  conversationStarter.trim(),
-                  style: const TextStyle(
-                    fontFamily: 'Pretendard',
-                    fontSize: 14,
-                    fontWeight: FontWeight.w600,
-                    color: Color(0xFF0F172A),
-                    height: 1.45,
-                  ),
-                ),
-              ),
-            ],
+          Text(
+            conversationStarter.trim(),
+            style: const TextStyle(
+              fontFamily: 'Inter',
+              fontFamilyFallback: const ['NotoSansKR'],
+              fontSize: 14,
+              fontWeight: FontWeight.w600,
+              color: Color(0xFF0F172A),
+              height: 1.45,
+            ),
           ),
         ],
       ],
@@ -392,7 +522,8 @@ class _PreviewSection extends StatelessWidget {
         Text(
           title,
           style: const TextStyle(
-            fontFamily: 'Pretendard',
+            fontFamily: 'Inter',
+            fontFamilyFallback: const ['NotoSansKR'],
             fontSize: 13,
             fontWeight: FontWeight.w700,
             color: Color(0xFF64748B),
@@ -407,7 +538,8 @@ class _PreviewSection extends StatelessWidget {
                 (value) => Text(
                   '#$value',
                   style: const TextStyle(
-                    fontFamily: 'Pretendard',
+                    fontFamily: 'Inter',
+                    fontFamilyFallback: const ['NotoSansKR'],
                     fontSize: 14,
                     fontWeight: FontWeight.w600,
                     color: AppColors.pointColor,

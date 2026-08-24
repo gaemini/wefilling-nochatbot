@@ -2,6 +2,8 @@
 // 친구 프로필 화면
 // 참여한 후기만 표시
 
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import '../services/user_stats_service.dart';
 import '../services/review_service.dart';
@@ -48,7 +50,8 @@ class FriendProfileScreen extends StatefulWidget {
   State<FriendProfileScreen> createState() => _FriendProfileScreenState();
 }
 
-class _FriendProfileScreenState extends State<FriendProfileScreen> {
+class _FriendProfileScreenState extends State<FriendProfileScreen>
+    with WidgetsBindingObserver {
   final UserStatsService _userStatsService = UserStatsService();
   final ReviewService _reviewService = ReviewService();
   final DMService _dmService = DMService();
@@ -61,12 +64,56 @@ class _FriendProfileScreenState extends State<FriendProfileScreen> {
   bool _isRequestingFriend = false;
   // 통계 숫자 깜빡임/0 표시 방지용 캐시
   final Map<String, int> _statCountCache = {};
+  UserProfileStats? _profileStats;
+  int _statsLoadToken = 0;
 
   @override
   void initState() {
     super.initState();
+    WidgetsBinding.instance.addObserver(this);
     _loadUserData();
     _loadRelationshipStatus();
+    _loadLatestStats();
+  }
+
+  @override
+  void dispose() {
+    WidgetsBinding.instance.removeObserver(this);
+    super.dispose();
+  }
+
+  @override
+  void didChangeAppLifecycleState(AppLifecycleState state) {
+    if (state == AppLifecycleState.resumed) {
+      unawaited(_loadLatestStats());
+    }
+  }
+
+  Future<void> _loadLatestStats() async {
+    final token = ++_statsLoadToken;
+    try {
+      final stats =
+          await _userStatsService.getLatestProfileStatsForUser(widget.userId);
+      if (!mounted || token != _statsLoadToken) return;
+      setState(() {
+        _profileStats = stats;
+        _statCountCache['friend_profile_friends'] = stats.friendCount;
+        _statCountCache['friend_profile_joined_meetups'] =
+            stats.joinedMeetupCount;
+        _statCountCache['friend_profile_written_posts'] =
+            stats.writtenPostCount;
+      });
+    } catch (error) {
+      Logger.error('최신 프로필 통계 로드 오류: $error');
+    }
+  }
+
+  Future<void> _refreshProfile() async {
+    await Future.wait<void>([
+      _loadUserData(),
+      _loadRelationshipStatus(),
+      _loadLatestStats(),
+    ]);
   }
 
   Future<void> _loadRelationshipStatus() async {
@@ -164,28 +211,32 @@ class _FriendProfileScreenState extends State<FriendProfileScreen> {
           ? const Center(child: CircularProgressIndicator())
           : (!isMe && !isFriends && !isNonFriendPreview)
               ? _buildLockedProfile(l10n)
-              : CustomScrollView(
-                  slivers: [
-                    SliverToBoxAdapter(
-                      child: _buildProfileHeader(
-                          isNonFriendPreview: isNonFriendPreview),
-                    ),
-                    if (!isNonFriendPreview) ...[
-                      const SliverToBoxAdapter(child: SizedBox(height: 8)),
+              : RefreshIndicator(
+                  onRefresh: _refreshProfile,
+                  child: CustomScrollView(
+                    physics: const AlwaysScrollableScrollPhysics(),
+                    slivers: [
                       SliverToBoxAdapter(
-                          child: _buildParticipatedReviewsHeader()),
-                      const SliverToBoxAdapter(
-                        child: Divider(height: 1, color: Color(0xFFE5E7EB)),
+                        child: _buildProfileHeader(
+                            isNonFriendPreview: isNonFriendPreview),
                       ),
-                      _buildReviewGridSliver(),
+                      if (!isNonFriendPreview) ...[
+                        const SliverToBoxAdapter(child: SizedBox(height: 8)),
+                        SliverToBoxAdapter(
+                            child: _buildParticipatedReviewsHeader()),
+                        const SliverToBoxAdapter(
+                          child: Divider(height: 1, color: Color(0xFFE5E7EB)),
+                        ),
+                        _buildReviewGridSliver(),
+                      ],
+                      // 안드로이드 하단 네비게이션 바를 위한 여백 추가
+                      SliverToBoxAdapter(
+                        child: SizedBox(
+                          height: bottomPadding > 0 ? bottomPadding + 16 : 16,
+                        ),
+                      ),
                     ],
-                    // 안드로이드 하단 네비게이션 바를 위한 여백 추가
-                    SliverToBoxAdapter(
-                      child: SizedBox(
-                        height: bottomPadding > 0 ? bottomPadding + 16 : 16,
-                      ),
-                    ),
-                  ],
+                  ),
                 ),
     );
   }
@@ -220,7 +271,8 @@ class _FriendProfileScreenState extends State<FriendProfileScreen> {
               l10n.friendsOnlyProfileTitle,
               textAlign: TextAlign.center,
               style: const TextStyle(
-                fontFamily: 'Pretendard',
+                fontFamily: 'Inter',
+                fontFamilyFallback: const ['NotoSansKR'],
                 fontSize: 18,
                 fontWeight: FontWeight.w700,
                 color: Color(0xFF111827),
@@ -231,7 +283,8 @@ class _FriendProfileScreenState extends State<FriendProfileScreen> {
               l10n.friendsOnlyProfileSubtitle,
               textAlign: TextAlign.center,
               style: const TextStyle(
-                fontFamily: 'Pretendard',
+                fontFamily: 'Inter',
+                fontFamilyFallback: const ['NotoSansKR'],
                 fontSize: 14,
                 fontWeight: FontWeight.w400,
                 color: Color(0xFF6B7280),
@@ -256,7 +309,8 @@ class _FriendProfileScreenState extends State<FriendProfileScreen> {
                 label: Text(
                   isPending ? l10n.requestPending : l10n.friendRequest,
                   style: const TextStyle(
-                    fontFamily: 'Pretendard',
+                    fontFamily: 'Inter',
+                    fontFamilyFallback: const ['NotoSansKR'],
                     fontSize: 15,
                     fontWeight: FontWeight.w700,
                   ),
@@ -414,7 +468,8 @@ class _FriendProfileScreenState extends State<FriendProfileScreen> {
                     Text(
                       nickname,
                       style: const TextStyle(
-                        fontFamily: 'Pretendard',
+                        fontFamily: 'Inter',
+                        fontFamilyFallback: const ['NotoSansKR'],
                         fontSize: 20,
                         fontWeight: FontWeight.w600,
                         color: Color(0xFF111827),
@@ -439,7 +494,8 @@ class _FriendProfileScreenState extends State<FriendProfileScreen> {
                                               .languageCode) ??
                                   nationality,
                               style: const TextStyle(
-                                fontFamily: 'Pretendard',
+                                fontFamily: 'Inter',
+                                fontFamilyFallback: const ['NotoSansKR'],
                                 fontSize: 14,
                                 fontWeight: FontWeight.w400,
                                 color: Color(0xFF6B7280),
@@ -456,7 +512,8 @@ class _FriendProfileScreenState extends State<FriendProfileScreen> {
                       Text(
                         bio.toString(),
                         style: const TextStyle(
-                          fontFamily: 'Pretendard',
+                          fontFamily: 'Inter',
+                          fontFamilyFallback: const ['NotoSansKR'],
                           fontSize: 14,
                           fontWeight: FontWeight.w400,
                           color: Color(0xFF111827),
@@ -535,7 +592,6 @@ class _FriendProfileScreenState extends State<FriendProfileScreen> {
                   borderRadius: BorderRadius.circular(8),
                   child: _buildStatItemContent(
                     AppLocalizations.of(context)!.friends,
-                    widget.userId,
                     cacheKey: 'friend_profile_friends',
                     isFriends: true,
                   ),
@@ -544,14 +600,12 @@ class _FriendProfileScreenState extends State<FriendProfileScreen> {
               Container(width: 1, height: 50, color: const Color(0xFFE5E7EB)),
               _buildStatItem(
                 AppLocalizations.of(context)!.joinedMeetups,
-                widget.userId,
                 cacheKey: 'friend_profile_joined_meetups',
                 isJoined: true,
               ),
               Container(width: 1, height: 50, color: const Color(0xFFE5E7EB)),
               _buildStatItem(
                 AppLocalizations.of(context)!.writtenPosts,
-                widget.userId,
                 cacheKey: 'friend_profile_written_posts',
                 isPosts: true,
               ),
@@ -579,7 +633,8 @@ class _FriendProfileScreenState extends State<FriendProfileScreen> {
                 label: Text(
                   isPending ? l10n.requestPending : l10n.friendRequest,
                   style: const TextStyle(
-                    fontFamily: 'Pretendard',
+                    fontFamily: 'Inter',
+                    fontFamilyFallback: const ['NotoSansKR'],
                     fontSize: 15,
                     fontWeight: FontWeight.w700,
                   ),
@@ -607,7 +662,8 @@ class _FriendProfileScreenState extends State<FriendProfileScreen> {
                 label: Text(
                   AppLocalizations.of(context)!.sendMessage,
                   style: const TextStyle(
-                    fontFamily: 'Pretendard',
+                    fontFamily: 'Inter',
+                    fontFamilyFallback: const ['NotoSansKR'],
                     fontSize: 15,
                     fontWeight: FontWeight.w600,
                   ),
@@ -648,7 +704,8 @@ class _FriendProfileScreenState extends State<FriendProfileScreen> {
           Text(
             title,
             style: const TextStyle(
-              fontFamily: 'Pretendard',
+              fontFamily: 'Inter',
+              fontFamilyFallback: const ['NotoSansKR'],
               fontSize: 13,
               fontWeight: FontWeight.w700,
               color: Color(0xFF64748B),
@@ -683,7 +740,8 @@ class _FriendProfileScreenState extends State<FriendProfileScreen> {
                           maxLines: 1,
                           overflow: TextOverflow.ellipsis,
                           style: const TextStyle(
-                            fontFamily: 'Pretendard',
+                            fontFamily: 'Inter',
+                            fontFamilyFallback: const ['NotoSansKR'],
                             fontSize: 14,
                             fontWeight: FontWeight.w600,
                             color: AppColors.pointColor,
@@ -719,7 +777,8 @@ class _FriendProfileScreenState extends State<FriendProfileScreen> {
                     if (profile.showGrade) profile.grade,
                   ].where((value) => value.isNotEmpty).join(' · '),
                   style: const TextStyle(
-                    fontFamily: 'Pretendard',
+                    fontFamily: 'Inter',
+                    fontFamilyFallback: const ['NotoSansKR'],
                     fontSize: 14,
                     fontWeight: FontWeight.w600,
                     color: Color(0xFF475569),
@@ -751,7 +810,8 @@ class _FriendProfileScreenState extends State<FriendProfileScreen> {
           Text(
             profile.friendshipPrompt,
             style: const TextStyle(
-              fontFamily: 'Pretendard',
+              fontFamily: 'Inter',
+              fontFamilyFallback: const ['NotoSansKR'],
               fontSize: 15,
               fontWeight: FontWeight.w600,
               color: Color(0xFF334155),
@@ -761,30 +821,17 @@ class _FriendProfileScreenState extends State<FriendProfileScreen> {
         ],
         if (profile.conversationStarter.isNotEmpty) ...[
           const SizedBox(height: 18),
-          InkWell(
-            borderRadius: BorderRadius.circular(8),
-            onTap: null,
-            child: Padding(
-              padding: const EdgeInsets.symmetric(vertical: 4),
-              child: Row(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  const Icon(Icons.chat_bubble_outline_rounded,
-                      size: 18, color: AppColors.pointColor),
-                  const SizedBox(width: 8),
-                  Expanded(
-                    child: Text(
-                      profile.conversationStarter,
-                      style: const TextStyle(
-                        fontFamily: 'Pretendard',
-                        fontSize: 14,
-                        fontWeight: FontWeight.w600,
-                        color: Color(0xFF0F172A),
-                        height: 1.45,
-                      ),
-                    ),
-                  ),
-                ],
+          Padding(
+            padding: const EdgeInsets.symmetric(vertical: 4),
+            child: Text(
+              profile.conversationStarter,
+              style: const TextStyle(
+                fontFamily: 'Inter',
+                fontFamilyFallback: const ['NotoSansKR'],
+                fontSize: 14,
+                fontWeight: FontWeight.w600,
+                color: Color(0xFF0F172A),
+                height: 1.45,
               ),
             ),
           ),
@@ -813,7 +860,8 @@ class _FriendProfileScreenState extends State<FriendProfileScreen> {
           Text(
             AppLocalizations.of(context)!.participatedReviews,
             style: const TextStyle(
-              fontFamily: 'Pretendard',
+              fontFamily: 'Inter',
+              fontFamilyFallback: const ['NotoSansKR'],
               fontWeight: FontWeight.w600,
               color: AppColors.pointColor,
               fontSize: 16,
@@ -825,8 +873,7 @@ class _FriendProfileScreenState extends State<FriendProfileScreen> {
   }
 
   Widget _buildStatItem(
-    String label,
-    String userId, {
+    String label, {
     required String cacheKey,
     bool isJoined = false,
     bool isPosts = false,
@@ -835,7 +882,6 @@ class _FriendProfileScreenState extends State<FriendProfileScreen> {
     return Expanded(
       child: _buildStatItemContent(
         label,
-        userId,
         cacheKey: cacheKey,
         isJoined: isJoined,
         isPosts: isPosts,
@@ -845,75 +891,65 @@ class _FriendProfileScreenState extends State<FriendProfileScreen> {
   }
 
   Widget _buildStatItemContent(
-    String label,
-    String userId, {
+    String label, {
     required String cacheKey,
     bool isJoined = false,
     bool isPosts = false,
     bool isFriends = false,
   }) {
+    final latestValue = isFriends
+        ? _profileStats?.friendCount
+        : isJoined
+            ? _profileStats?.joinedMeetupCount
+            : isPosts
+                ? _profileStats?.writtenPostCount
+                : null;
+    final value = latestValue ?? _statCountCache[cacheKey];
+    final Widget countWidget = value != null
+        ? Text(
+            '$value',
+            key: ValueKey<String>('count_$cacheKey:$value'),
+            style: const TextStyle(
+              fontFamily: 'Inter',
+              fontFamilyFallback: const ['NotoSansKR'],
+              fontWeight: FontWeight.w700,
+              color: Color(0xFF111827),
+              fontSize: 20,
+            ),
+          )
+        : const Text(
+            '—',
+            key: ValueKey<String>('count_loading'),
+            style: TextStyle(
+              fontFamily: 'Inter',
+              fontFamilyFallback: const ['NotoSansKR'],
+              fontWeight: FontWeight.w700,
+              color: Color(0xFF9CA3AF),
+              fontSize: 20,
+            ),
+          );
+
     return Column(
       children: [
-        StreamBuilder<int>(
-          stream: isFriends
-              ? _userStatsService.getFriendCountForUser(userId)
-              : isJoined
-                  ? _userStatsService.getJoinedMeetupCountForUser(userId)
-                  : isPosts
-                      ? _userStatsService.getUserPostCountForUser(userId)
-                      : _userStatsService.getHostedMeetupCountForUser(userId),
-          initialData: _statCountCache[cacheKey],
-          builder: (context, snapshot) {
-            // 데이터 도착 전 0을 먼저 보여주지 않고(어색함), 캐시/플레이스홀더를 사용
-            final int? live = snapshot.data;
-            if (live != null) {
-              _statCountCache[cacheKey] = live;
-            }
-
-            final int? value = live ?? _statCountCache[cacheKey];
-            final Widget countWidget = value != null
-                ? Text(
-                    '$value',
-                    key: ValueKey<String>('count_$cacheKey:$value'),
-                    style: const TextStyle(
-                      fontFamily: 'Pretendard',
-                      fontWeight: FontWeight.w700,
-                      color: Color(0xFF111827),
-                      fontSize: 20,
-                    ),
-                  )
-                : const Text(
-                    '—',
-                    key: ValueKey<String>('count_loading'),
-                    style: TextStyle(
-                      fontFamily: 'Pretendard',
-                      fontWeight: FontWeight.w700,
-                      color: Color(0xFF9CA3AF),
-                      fontSize: 20,
-                    ),
-                  );
-
-            return AnimatedSwitcher(
-              duration: const Duration(milliseconds: 220),
-              switchInCurve: Curves.easeOutCubic,
-              switchOutCurve: Curves.easeInCubic,
-              transitionBuilder: (child, animation) {
-                final fade = FadeTransition(opacity: animation, child: child);
-                return ScaleTransition(
-                  scale:
-                      Tween<double>(begin: 0.98, end: 1.0).animate(animation),
-                  child: fade,
-                );
-              },
-              child: countWidget,
+        AnimatedSwitcher(
+          duration: const Duration(milliseconds: 220),
+          switchInCurve: Curves.easeOutCubic,
+          switchOutCurve: Curves.easeInCubic,
+          transitionBuilder: (child, animation) {
+            final fade = FadeTransition(opacity: animation, child: child);
+            return ScaleTransition(
+              scale: Tween<double>(begin: 0.98, end: 1.0).animate(animation),
+              child: fade,
             );
           },
+          child: countWidget,
         ),
         const SizedBox(height: 4),
         Text(
           label,
           style: const TextStyle(
-            fontFamily: 'Pretendard',
+            fontFamily: 'Inter',
+            fontFamilyFallback: const ['NotoSansKR'],
             color: Color(0xFF6B7280),
             fontSize: 12,
             fontWeight: FontWeight.w400,
@@ -1140,12 +1176,12 @@ class _FriendProfileScreenState extends State<FriendProfileScreen> {
   }
 
   /// 친구 목록 화면으로 이동
-  void _navigateToFriendsList() {
+  Future<void> _navigateToFriendsList() async {
     final nickname = _userData?['nickname'] ??
         widget.nickname ??
         AppLocalizations.of(context)!.user;
 
-    Navigator.push(
+    await Navigator.push(
       context,
       MaterialPageRoute(
         builder: (context) => UserFriendsListScreen(
@@ -1154,6 +1190,9 @@ class _FriendProfileScreenState extends State<FriendProfileScreen> {
         ),
       ),
     );
+    if (mounted) {
+      await _loadLatestStats();
+    }
   }
 
   void _showCannotViewFriendsListSnackBar(AppLocalizations l10n) {

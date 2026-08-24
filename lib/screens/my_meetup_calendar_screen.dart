@@ -380,7 +380,8 @@ class _MyMeetupCalendarScreenState extends State<MyMeetupCalendarScreen> {
                 child: Text(
                   '${day.day}',
                   style: TextStyle(
-                    fontFamily: 'Pretendard',
+                    fontFamily: 'Inter',
+                    fontFamilyFallback: const ['NotoSansKR'],
                     fontSize: 14,
                     fontWeight: isSelected || isToday
                         ? FontWeight.w900
@@ -434,7 +435,8 @@ class _MyMeetupCalendarScreenState extends State<MyMeetupCalendarScreen> {
           title: Text(
             lang == 'ko' ? '내 모임 달력' : 'My meetup calendar',
             style: const TextStyle(
-              fontFamily: 'Pretendard',
+              fontFamily: 'Inter',
+              fontFamilyFallback: const ['NotoSansKR'],
               fontSize: 18,
               fontWeight: FontWeight.w900,
               color: Color(0xFF111827),
@@ -510,7 +512,8 @@ class _MyMeetupCalendarScreenState extends State<MyMeetupCalendarScreen> {
         title: Text(
           lang == 'ko' ? '내 모임 달력' : 'My meetup calendar',
           style: const TextStyle(
-            fontFamily: 'Pretendard',
+            fontFamily: 'Inter',
+            fontFamilyFallback: const ['NotoSansKR'],
             fontSize: 18,
             fontWeight: FontWeight.w900,
             color: Color(0xFF111827),
@@ -556,7 +559,8 @@ class _MyMeetupCalendarScreenState extends State<MyMeetupCalendarScreen> {
                     child: Text(
                       _dowLabel(context, day),
                       style: TextStyle(
-                        fontFamily: 'Pretendard',
+                        fontFamily: 'Inter',
+                        fontFamilyFallback: const ['NotoSansKR'],
                         fontSize: 12,
                         fontWeight: FontWeight.w800,
                         color: _weekdayColor(day),
@@ -639,7 +643,8 @@ class _MyMeetupCalendarScreenState extends State<MyMeetupCalendarScreen> {
                       : '${_monthName(date.month)} ${date.year}';
                 },
                 titleTextStyle: const TextStyle(
-                  fontFamily: 'Pretendard',
+                  fontFamily: 'Inter',
+                  fontFamilyFallback: const ['NotoSansKR'],
                   fontSize: 16,
                   fontWeight: FontWeight.w900,
                   color: Color(0xFF111827),
@@ -669,7 +674,8 @@ class _MyMeetupCalendarScreenState extends State<MyMeetupCalendarScreen> {
                   child: Text(
                     listTitle,
                     style: const TextStyle(
-                      fontFamily: 'Pretendard',
+                      fontFamily: 'Inter',
+                      fontFamilyFallback: const ['NotoSansKR'],
                       fontSize: 16,
                       fontWeight: FontWeight.w900,
                       color: Color(0xFF111827),
@@ -689,7 +695,8 @@ class _MyMeetupCalendarScreenState extends State<MyMeetupCalendarScreen> {
                                 ? 'No meetups on this day.'
                                 : 'No meetups on this day.'),
                         style: const TextStyle(
-                          fontFamily: 'Pretendard',
+                          fontFamily: 'Inter',
+                          fontFamilyFallback: const ['NotoSansKR'],
                           fontSize: 14,
                           fontWeight: FontWeight.w600,
                           color: Color(0xFF6B7280),

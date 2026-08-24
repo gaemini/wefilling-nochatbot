@@ -870,62 +870,64 @@ class SnackChatService {
               ? '📊 $text'
               : text;
 
-      final committed =
-          await _firestore.runTransaction<bool>((transaction) async {
-        final roomDoc = await transaction.get(roomRef);
-        if (!roomDoc.exists) return false;
-        final room = SnackChat.fromFirestore(roomDoc);
-        if (!room.participantIds.contains(uid)) return false;
+      final committed = await _firestore.runTransaction<bool>(
+        (transaction) async {
+          final roomDoc = await transaction.get(roomRef);
+          if (!roomDoc.exists) return false;
+          final room = SnackChat.fromFirestore(roomDoc);
+          if (!room.participantIds.contains(uid)) return false;
 
-        final existingMessage = await transaction.get(messageRef);
-        if (existingMessage.exists) {
-          final existingSender =
-              (existingMessage.data()?['senderId'] ?? '').toString();
-          return existingSender == uid;
-        }
+          final existingMessage = await transaction.get(messageRef);
+          if (existingMessage.exists) {
+            final existingSender =
+                (existingMessage.data()?['senderId'] ?? '').toString();
+            return existingSender == uid;
+          }
 
-        final sequence = room.lastMessageSequence + 1;
-        final recipients = room.participantIds
-            .where((participantId) => participantId != uid)
-            .toSet()
-            .toList(growable: false);
-        transaction.set(messageRef, <String, dynamic>{
-          'senderId': uid,
-          'messageScope': 'snack_chat',
-          'chatId': snackChatId,
-          'type': snackChatMessageTypeWireName(type),
-          'text': text,
-          // Private Snack Chat images are addressed by their authenticated
-          // Storage path. The upload URL remains local preview state only, so
-          if (imagePath != null && imagePath.isNotEmpty) 'imagePath': imagePath,
-          'createdAt': FieldValue.serverTimestamp(),
-          'sequence': sequence,
-          'recipientIds': recipients,
-          'readBy': <String>[uid],
-          'isDeleted': false,
-          'linkPreviewRemoved': suppressLinkPreview,
-          'reactionCounts': <String, int>{},
-          if (replyPreview != null) ...<String, dynamic>{
-            'replyToMessageId': replyPreview.messageId,
-            'replyPreview': replyPreview.toMap(),
-          },
-          if (poll != null) 'poll': poll.toMap(),
-        });
+          final sequence = room.lastMessageSequence + 1;
+          final recipients = room.participantIds
+              .where((participantId) => participantId != uid)
+              .toSet()
+              .toList(growable: false);
+          transaction.set(messageRef, <String, dynamic>{
+            'senderId': uid,
+            'messageScope': 'snack_chat',
+            'chatId': snackChatId,
+            'type': snackChatMessageTypeWireName(type),
+            'text': text,
+            // Private Snack Chat images are addressed by their authenticated
+            // Storage path. The upload URL remains local preview state only, so
+            if (imagePath != null && imagePath.isNotEmpty)
+              'imagePath': imagePath,
+            'createdAt': FieldValue.serverTimestamp(),
+            'sequence': sequence,
+            'recipientIds': recipients,
+            'readBy': <String>[uid],
+            'isDeleted': false,
+            'linkPreviewRemoved': suppressLinkPreview,
+            'reactionCounts': <String, int>{},
+            if (replyPreview != null) ...<String, dynamic>{
+              'replyToMessageId': replyPreview.messageId,
+              'replyPreview': replyPreview.toMap(),
+            },
+            if (poll != null) 'poll': poll.toMap(),
+          });
 
-        final updateFields = <String, dynamic>{
-          'lastMessage': previewText,
-          'lastMessageId': resolvedMessageId,
-          'lastMessageTime': FieldValue.serverTimestamp(),
-          'lastMessageSenderId': uid,
-          'lastMessageType': snackChatMessageTypeWireName(type),
-          'lastMessageExpiresAt': FieldValue.delete(),
-          'lastMessageSequence': sequence,
-          'unreadCount.$uid': 0,
-          'updatedAt': FieldValue.serverTimestamp(),
-        };
-        transaction.update(roomRef, updateFields);
-        return true;
-      }).timeout(const Duration(seconds: 15));
+          final updateFields = <String, dynamic>{
+            'lastMessage': previewText,
+            'lastMessageId': resolvedMessageId,
+            'lastMessageTime': FieldValue.serverTimestamp(),
+            'lastMessageSenderId': uid,
+            'lastMessageType': snackChatMessageTypeWireName(type),
+            'lastMessageExpiresAt': FieldValue.delete(),
+            'lastMessageSequence': sequence,
+            'updatedAt': FieldValue.serverTimestamp(),
+          };
+          transaction.update(roomRef, updateFields);
+          return true;
+        },
+        maxAttempts: 8,
+      ).timeout(const Duration(seconds: 25));
 
       if (!committed) return false;
       if (type == SnackChatMessageType.text && !suppressLinkPreview) {
@@ -997,50 +999,35 @@ class SnackChatService {
     }
   }
 
-  /// 현재 방의 최신 메시지까지 모두 읽은 것으로 처리한다.
+  /// 화면을 나갈 때 UI에 로드되어 있던 [throughSequence]까지만 읽는다.
   ///
-  /// 화면에서 개별 메시지의 노출 여부를 계산하지 않는다. 채팅방에 들어온
-  /// 사용자는 방을 나갈 때까지 도착한 최신 sequence 전체를 읽은 것으로
-  /// 간주하고, 방 배지와 사용자 읽음 커서를 한 트랜잭션에서 맞춘다.
-  Future<int> markAsRead(String snackChatId) async {
+  /// 최신 방 sequence를 클라이언트에서 다시 조회하지 않고 서버에 경계를
+  /// 전달하므로 화면 종료와 동시에 도착한 새 메시지는 읽음 처리되지 않는다.
+  Future<int> markAsRead(
+    String snackChatId, {
+    required int throughSequence,
+  }) async {
     final uid = _uid;
-    if (uid == null) return 0;
+    if (uid == null || throughSequence <= 0) return 0;
 
     try {
-      Logger.log('📖 [SnackChat] markAsRead: room=$snackChatId, uid=$uid');
-      final roomRef = _collection.doc(snackChatId);
-      final memberRef = roomRef.collection('members').doc(uid);
+      Logger.log(
+        '📖 [SnackChat] markAsRead: room=$snackChatId, '
+        'uid=$uid, through=$throughSequence',
+      );
+      final result = await _functions
+          .httpsCallable('markSnackChatReadSecure')
+          .call(<String, dynamic>{
+        'snackChatId': snackChatId,
+        'throughSequence': throughSequence,
+      }).timeout(const Duration(seconds: 15));
+      final data = result.data;
+      if (data is! Map || data['success'] != true) {
+        throw StateError('Snack Chat 읽음 처리를 완료하지 못했습니다.');
+      }
+      final clearedRaw = data['clearedCount'];
       final clearedCount =
-          await _firestore.runTransaction<int>((transaction) async {
-        final roomDoc = await transaction.get(roomRef);
-        if (!roomDoc.exists) return 0;
-        final room = SnackChat.fromFirestore(roomDoc);
-        if (!room.participantIds.contains(uid)) return 0;
-        final memberDoc = await transaction.get(memberRef);
-        if (!memberDoc.exists) {
-          // A missing member document means the monotonic read cursor cannot
-          // be persisted yet. Do not reset the room badge or report success;
-          // the screen retries when the membership stream catches up.
-          throw StateError('Snack Chat 멤버십 정보를 아직 준비하지 못했습니다.');
-        }
-        final readThroughSequence =
-            room.lastMessageSequence < 0 ? 0 : room.lastMessageSequence;
-        final memberData = memberDoc.data();
-        final previousRaw = memberData?['lastReadSequence'];
-        final previous = previousRaw is num ? previousRaw.toInt() : 0;
-
-        final unreadBefore = room.unreadCount[uid] ?? 0;
-        if ((room.unreadCount[uid] ?? 0) != 0) {
-          transaction.update(roomRef, {'unreadCount.$uid': 0});
-        }
-        if (readThroughSequence > previous) {
-          transaction.update(memberRef, {
-            'lastReadSequence': readThroughSequence,
-            'lastReadAt': FieldValue.serverTimestamp(),
-          });
-        }
-        return unreadBefore > 0 ? unreadBefore : 0;
-      }).timeout(const Duration(seconds: 10));
+          clearedRaw is num ? clearedRaw.toInt().clamp(0, 1 << 31) : 0;
 
       Logger.log('✅ [SnackChat] markAsRead 완료');
       return clearedCount;

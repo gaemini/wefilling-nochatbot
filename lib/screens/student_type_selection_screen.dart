@@ -65,7 +65,8 @@ class _StudentTypeSelectionScreenState
               ? (_isKorean ? '학생 유형' : 'Student type')
               : (_isKorean ? 'To-do 시작하기' : 'Set up To-do'),
           style: const TextStyle(
-            fontFamily: 'Pretendard',
+            fontFamily: 'Inter',
+            fontFamilyFallback: const ['NotoSansKR'],
             fontSize: 18,
             fontWeight: FontWeight.w700,
             color: Color(0xFF0F172A),
@@ -94,7 +95,8 @@ class _StudentTypeSelectionScreenState
                           ? '나에게 맞는 한 학기 안내를 선택하세요'
                           : 'Choose the semester guide that fits you',
                       style: const TextStyle(
-                        fontFamily: 'Pretendard',
+                        fontFamily: 'Inter',
+                        fontFamilyFallback: const ['NotoSansKR'],
                         fontSize: 23,
                         height: 1.25,
                         fontWeight: FontWeight.w800,
@@ -107,7 +109,8 @@ class _StudentTypeSelectionScreenState
                           ? '국적이나 앱 언어와 관계없이 직접 선택하며, 프로필에서 언제든 변경할 수 있어요.'
                           : 'This is independent of nationality or app language. You can change it later.',
                       style: const TextStyle(
-                        fontFamily: 'Pretendard',
+                        fontFamily: 'Inter',
+                        fontFamilyFallback: const ['NotoSansKR'],
                         fontSize: 14,
                         height: 1.5,
                         color: Color(0xFF64748B),
@@ -142,7 +145,8 @@ class _StudentTypeSelectionScreenState
                             : Text(
                                 _isKorean ? '계속' : 'Continue',
                                 style: const TextStyle(
-                                  fontFamily: 'Pretendard',
+                                  fontFamily: 'Inter',
+                                  fontFamilyFallback: const ['NotoSansKR'],
                                   fontSize: 16,
                                   fontWeight: FontWeight.w700,
                                 ),
@@ -188,7 +192,8 @@ class _StudentTypeSelectionScreenState
                     Text(
                       type.title(context),
                       style: TextStyle(
-                        fontFamily: 'Pretendard',
+                        fontFamily: 'Inter',
+                        fontFamilyFallback: const ['NotoSansKR'],
                         fontSize: 17,
                         fontWeight: FontWeight.w700,
                         color: selected
@@ -200,7 +205,8 @@ class _StudentTypeSelectionScreenState
                     Text(
                       type.description(context),
                       style: const TextStyle(
-                        fontFamily: 'Pretendard',
+                        fontFamily: 'Inter',
+                        fontFamilyFallback: const ['NotoSansKR'],
                         fontSize: 14,
                         height: 1.45,
                         color: Color(0xFF64748B),

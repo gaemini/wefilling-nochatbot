@@ -459,7 +459,7 @@
   "categoryDeleteFailed": "그룹 삭제에 실패했습니다",
   "enterCategoryName": "그룹 이름을 입력해주세요",
   "deleteCategory": "그룹 삭제",
-  "deleteCategoryConfirm": "'{name}' 그룹을 삭제하시겠습니까?\n\n이 그룹에 속한 친구들은 다른 그룹으로 이동됩니다.",
+  "deleteCategoryConfirm": "'{name}' 그룹을 삭제하시겠습니까?\n\n그룹만 삭제되며 친구들은 다른 그룹으로 이동하지 않습니다.",
   "@deleteCategoryConfirm": {
     "placeholders": {
       "name": {
@@ -1328,9 +1328,11 @@
   "postComposeImageHelper": "최대 15장까지 첨부할 수 있어요.",
   "addImage": "추가하기",
   "postComposeVisibilityPrompt": "공개 대상을 선택해주세요.",
-  "postVisibilityPublicTitle": "모두에게 공개",
+  "postVisibilityPublicTitle": "전체 공개",
   "postVisibilityPublicDescription": "모든 사용자가 게시글을 볼 수 있습니다",
-  "postVisibilityGroupTitle": "그룹 선택",
+  "postVisibilityAnonymousTitle": "전체 익명 공개",
+  "postVisibilityAnonymousDescription": "작성자 정보 없이 모든 사용자에게 공개됩니다",
+  "postVisibilityGroupTitle": "그룹 공개",
   "postVisibilityGroupDescription": "선택한 그룹 친구에게만 공개됩니다",
   "postVisibilityNoGroupsSelected": "선택된 그룹이 없습니다",
   "postVisibilityGroupsSelected": "{count}개 그룹 선택됨",

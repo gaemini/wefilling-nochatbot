@@ -83,7 +83,8 @@ class _PollPostWidgetState extends State<PollPostWidget> {
                             child: Text(
                               text,
                               style: TextStyle(
-                                fontFamily: 'Pretendard',
+                                fontFamily: 'Inter',
+                                fontFamilyFallback: const ['NotoSansKR'],
                                 fontSize: 14,
                                 fontWeight: isMine ? FontWeight.w700 : FontWeight.w600,
                                 color: const Color(0xFF111827),
@@ -94,7 +95,8 @@ class _PollPostWidgetState extends State<PollPostWidget> {
                           Text(
                             '$percent%',
                             style: TextStyle(
-                              fontFamily: 'Pretendard',
+                              fontFamily: 'Inter',
+                              fontFamilyFallback: const ['NotoSansKR'],
                               fontSize: 12,
                               fontWeight: FontWeight.w800,
                               color: const Color(0xFF111827),
@@ -126,7 +128,8 @@ class _PollPostWidgetState extends State<PollPostWidget> {
                                 ],
                         ),
                         style: const TextStyle(
-                          fontFamily: 'Pretendard',
+                          fontFamily: 'Inter',
+                          fontFamilyFallback: const ['NotoSansKR'],
                           fontSize: 12,
                           fontWeight: FontWeight.w500,
                           color: Color(0xFF6B7280),
@@ -171,7 +174,8 @@ class _PollPostWidgetState extends State<PollPostWidget> {
                             child: Text(
                               text,
                               style: const TextStyle(
-                                fontFamily: 'Pretendard',
+                                fontFamily: 'Inter',
+                                fontFamilyFallback: const ['NotoSansKR'],
                                 fontSize: 14,
                                 fontWeight: FontWeight.w600,
                                 color: Color(0xFF111827),
@@ -224,7 +228,8 @@ class _PollPostWidgetState extends State<PollPostWidget> {
                       : Text(
                           AppLocalizations.of(context)!.pollVoteButton,
                           style: const TextStyle(
-                            fontFamily: 'Pretendard',
+                            fontFamily: 'Inter',
+                            fontFamilyFallback: const ['NotoSansKR'],
                             fontWeight: FontWeight.w700,
                           ),
                         ),
@@ -236,7 +241,8 @@ class _PollPostWidgetState extends State<PollPostWidget> {
                   child: Text(
                     AppLocalizations.of(context)!.pollLoginToVote,
                     style: const TextStyle(
-                      fontFamily: 'Pretendard',
+                      fontFamily: 'Inter',
+                      fontFamilyFallback: const ['NotoSansKR'],
                       fontSize: 12,
                       fontWeight: FontWeight.w500,
                       color: Color(0xFF6B7280),
@@ -265,7 +271,8 @@ class _PollPostWidgetState extends State<PollPostWidget> {
                     child: Text(
                       AppLocalizations.of(context)!.pollVoteToSeeResults,
                       style: const TextStyle(
-                        fontFamily: 'Pretendard',
+                        fontFamily: 'Inter',
+                        fontFamilyFallback: const ['NotoSansKR'],
                         fontSize: 12,
                         fontWeight: FontWeight.w600,
                         color: Color(0xFF6B7280),

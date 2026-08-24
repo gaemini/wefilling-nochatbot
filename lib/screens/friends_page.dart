@@ -198,7 +198,8 @@ class _FriendsPageState extends State<FriendsPage> {
                 l10n.noSearchResults,
                 textAlign: TextAlign.center,
                 style: const TextStyle(
-                  fontFamily: 'Pretendard',
+                  fontFamily: 'Inter',
+                  fontFamilyFallback: const ['NotoSansKR'],
                   fontSize: 18,
                   fontWeight: FontWeight.w700,
                   color: Color(0xFF111827),
@@ -209,7 +210,8 @@ class _FriendsPageState extends State<FriendsPage> {
                 '\'$query\' ${l10n.tryDifferentKeyword}',
                 textAlign: TextAlign.center,
                 style: const TextStyle(
-                  fontFamily: 'Pretendard',
+                  fontFamily: 'Inter',
+                  fontFamilyFallback: const ['NotoSansKR'],
                   fontSize: 14,
                   fontWeight: FontWeight.w500,
                   color: Color(0xFF6B7280),
@@ -896,7 +898,8 @@ class _FriendsPageState extends State<FriendsPage> {
                   child: TextField(
                     controller: _searchController,
                     style: TextStyle(
-                      fontFamily: 'Pretendard',
+                      fontFamily: 'Inter',
+                      fontFamilyFallback: const ['NotoSansKR'],
                       fontSize: context.rf(14).clamp(13, 15).toDouble(),
                       fontWeight: FontWeight.w500,
                       color: const Color(0xFF111827),
@@ -905,7 +908,8 @@ class _FriendsPageState extends State<FriendsPage> {
                       hintText:
                           AppLocalizations.of(context)!.searchByFriendName,
                       hintStyle: const TextStyle(
-                        fontFamily: 'Pretendard',
+                        fontFamily: 'Inter',
+                        fontFamilyFallback: const ['NotoSansKR'],
                         fontWeight: FontWeight.w400,
                         color: Color(0xFF8B93A1),
                       ),
@@ -998,7 +1002,8 @@ class _FriendsPageState extends State<FriendsPage> {
                         maxLines: 1,
                         overflow: TextOverflow.ellipsis,
                         style: TextStyle(
-                          fontFamily: 'Pretendard',
+                          fontFamily: 'Inter',
+                          fontFamilyFallback: const ['NotoSansKR'],
                           fontSize: context.rf(14).clamp(13, 15).toDouble(),
                           fontWeight: FontWeight.w700,
                           color: const Color(0xFF111827),
@@ -1065,7 +1070,8 @@ class _FriendsPageState extends State<FriendsPage> {
                             maxLines: 1,
                             overflow: TextOverflow.ellipsis,
                             style: TextStyle(
-                              fontFamily: 'Pretendard',
+                              fontFamily: 'Inter',
+                              fontFamilyFallback: const ['NotoSansKR'],
                               fontSize: context.rf(14).clamp(13, 15).toDouble(),
                               fontWeight: FontWeight.w700,
                               color: const Color(0xFF111827),
@@ -1088,7 +1094,8 @@ class _FriendsPageState extends State<FriendsPage> {
                               incomingCount > 99 ? '99+' : '$incomingCount',
                               textAlign: TextAlign.center,
                               style: const TextStyle(
-                                fontFamily: 'Pretendard',
+                                fontFamily: 'Inter',
+                                fontFamilyFallback: const ['NotoSansKR'],
                                 fontSize: 10.5,
                                 fontWeight: FontWeight.w700,
                                 color: Colors.white,
@@ -1228,7 +1235,8 @@ class _FriendsPageState extends State<FriendsPage> {
                                                 ) ??
                                                 friend.nationality!,
                                             style: const TextStyle(
-                                              fontFamily: 'Pretendard',
+                                              fontFamily: 'Inter',
+                                              fontFamilyFallback: const ['NotoSansKR'],
                                               fontSize: 12,
                                               fontWeight: FontWeight.w500,
                                               color: Color(0xFF8B93A1),
@@ -1304,7 +1312,8 @@ class _FriendsPageState extends State<FriendsPage> {
               Text(
                 AppLocalizations.of(context)!.error,
                 style: const TextStyle(
-                  fontFamily: 'Pretendard',
+                  fontFamily: 'Inter',
+                  fontFamilyFallback: const ['NotoSansKR'],
                   fontSize: 16,
                   color: Color(0xFF111827),
                   fontWeight: FontWeight.w700,
@@ -1315,7 +1324,8 @@ class _FriendsPageState extends State<FriendsPage> {
                 errorMessage,
                 textAlign: TextAlign.center,
                 style: const TextStyle(
-                  fontFamily: 'Pretendard',
+                  fontFamily: 'Inter',
+                  fontFamilyFallback: const ['NotoSansKR'],
                   fontSize: 13,
                   color: Color(0xFF667085),
                   height: 1.35,
@@ -1370,7 +1380,8 @@ class _CategoryBadge extends StatelessWidget {
               maxLines: 1,
               overflow: TextOverflow.ellipsis,
               style: const TextStyle(
-                fontFamily: 'Pretendard',
+                fontFamily: 'Inter',
+                fontFamilyFallback: const ['NotoSansKR'],
                 fontSize: 11,
                 color: neutral,
                 fontWeight: FontWeight.w600,
@@ -1400,7 +1411,8 @@ class _OverflowBadge extends StatelessWidget {
         maxLines: 1,
         overflow: TextOverflow.ellipsis,
         style: const TextStyle(
-          fontFamily: 'Pretendard',
+          fontFamily: 'Inter',
+          fontFamilyFallback: const ['NotoSansKR'],
           fontSize: 11,
           fontWeight: FontWeight.w700,
           color: Color(0xFF667085),

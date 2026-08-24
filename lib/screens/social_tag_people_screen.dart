@@ -262,7 +262,8 @@ class _SocialTagPeopleScreenState extends State<SocialTagPeopleScreen> {
           maxLines: 1,
           overflow: TextOverflow.ellipsis,
           style: TextStyle(
-            fontFamily: 'Pretendard',
+            fontFamily: 'Inter',
+            fontFamilyFallback: const ['NotoSansKR'],
             fontSize: context.rf(17).clamp(16, 18).toDouble(),
             fontWeight: FontWeight.w700,
             color: const Color(0xFF111827),
@@ -295,7 +296,8 @@ class _SocialTagPeopleScreenState extends State<SocialTagPeopleScreen> {
                           maxLines: 2,
                           overflow: TextOverflow.ellipsis,
                           style: TextStyle(
-                            fontFamily: 'Pretendard',
+                            fontFamily: 'Inter',
+                            fontFamilyFallback: const ['NotoSansKR'],
                             fontSize: context.rf(22).clamp(20, 24).toDouble(),
                             fontWeight: FontWeight.w700,
                             color: AppColors.pointColor,
@@ -310,7 +312,8 @@ class _SocialTagPeopleScreenState extends State<SocialTagPeopleScreen> {
                           maxLines: 2,
                           overflow: TextOverflow.ellipsis,
                           style: TextStyle(
-                            fontFamily: 'Pretendard',
+                            fontFamily: 'Inter',
+                            fontFamilyFallback: const ['NotoSansKR'],
                             fontSize: context.rf(13).clamp(12.5, 14).toDouble(),
                             fontWeight: FontWeight.w500,
                             color: const Color(0xFF6B7280),
@@ -470,7 +473,8 @@ class _TagPersonRow extends StatelessWidget {
                         maxLines: 1,
                         overflow: TextOverflow.ellipsis,
                         style: TextStyle(
-                          fontFamily: 'Pretendard',
+                          fontFamily: 'Inter',
+                          fontFamilyFallback: const ['NotoSansKR'],
                           fontSize: context.rf(15).clamp(14, 16).toDouble(),
                           fontWeight: FontWeight.w700,
                           color: const Color(0xFF111827),
@@ -494,7 +498,8 @@ class _TagPersonRow extends StatelessWidget {
                                 maxLines: 1,
                                 overflow: TextOverflow.ellipsis,
                                 style: TextStyle(
-                                  fontFamily: 'Pretendard',
+                                  fontFamily: 'Inter',
+                                  fontFamilyFallback: const ['NotoSansKR'],
                                   fontSize:
                                       context.rf(12).clamp(11.5, 13).toDouble(),
                                   fontWeight: FontWeight.w500,
@@ -514,7 +519,8 @@ class _TagPersonRow extends StatelessWidget {
                   Text(
                     isKorean ? '나' : 'You',
                     style: TextStyle(
-                      fontFamily: 'Pretendard',
+                      fontFamily: 'Inter',
+                      fontFamilyFallback: const ['NotoSansKR'],
                       fontSize: context.rf(12).clamp(11.5, 13).toDouble(),
                       fontWeight: FontWeight.w600,
                       color: const Color(0xFF98A2B3),
@@ -565,7 +571,8 @@ class _TagPeopleMessage extends StatelessWidget {
               title,
               textAlign: TextAlign.center,
               style: TextStyle(
-                fontFamily: 'Pretendard',
+                fontFamily: 'Inter',
+                fontFamilyFallback: const ['NotoSansKR'],
                 fontSize: context.rf(14).clamp(13, 15).toDouble(),
                 fontWeight: FontWeight.w600,
                 color: const Color(0xFF667085),

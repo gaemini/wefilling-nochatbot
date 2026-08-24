@@ -37,6 +37,8 @@ import 'l10n/app_localizations.dart';
 import 'services/navigation_service.dart';
 import 'screens/admin_migration_screen.dart';
 import 'services/app_messenger.dart';
+import 'services/external_share_service.dart';
+import 'services/ios_shared_auth_service.dart';
 
 void main() {
   runZonedGuarded(
@@ -92,6 +94,11 @@ void main() {
         }
       }
 
+      // Firebase Auth의 기존 iOS 로그인 상태를 Share Extension과 공유되는
+      // Keychain access group으로 먼저 이전한다. 이후 AuthProvider나 외부
+      // 공유 라우터가 currentUser를 읽을 때 세션이 흔들리지 않는다.
+      await IosSharedAuthService.configure();
+
       // 2. locale 초기화 (비동기로 빠르게 처리)
       try {
         final languageService = LanguageService();
@@ -108,14 +115,12 @@ void main() {
 
       // 3. Firebase Messaging 백그라운드 핸들러 등록 (즉시 실행)
       try {
-        if (!kIsWeb && Platform.isAndroid) {
+        if (!kIsWeb && (Platform.isAndroid || Platform.isIOS)) {
           FirebaseMessaging.onBackgroundMessage(
               firebaseMessagingBackgroundHandler);
           if (kDebugMode) {
-            debugPrint('📱 Android FCM 백그라운드 핸들러 등록 완료');
+            debugPrint('📱 FCM 백그라운드 핸들러 등록 완료');
           }
-        } else if (!kIsWeb && Platform.isIOS && kDebugMode) {
-          debugPrint('📱 iOS는 안전 모드로 지연 초기화 - 백그라운드 핸들러 등록 생략');
         }
       } catch (e) {
         if (kDebugMode) {
@@ -275,6 +280,7 @@ void main() {
           child: const MeetupApp(),
         ),
       );
+      unawaited(ExternalShareService.instance.initialize());
 
       if (kDebugMode) {
         debugPrint('🎉 runApp 완료: ${DateTime.now()}');
@@ -466,6 +472,14 @@ class _MeetupAppState extends State<MeetupApp> {
       navigatorKey: NavigationService.navigatorKey,
       home: Consumer<app_auth.AuthProvider>(
         builder: (context, authProvider, _) {
+          final canRouteExternalShare = !authProvider.isLoading &&
+              authProvider.isLoggedIn &&
+              authProvider.isRegistrationComplete;
+          WidgetsBinding.instance.addPostFrameCallback((_) {
+            ExternalShareService.instance
+                .setRoutingReady(canRouteExternalShare);
+          });
+
           if (authProvider.isLoading) {
             return const Scaffold(
               backgroundColor: Color(0xFFDEEFFF),

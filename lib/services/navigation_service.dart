@@ -336,7 +336,8 @@ class _SnackChatNotParticipantScreen extends StatelessWidget {
         title: const Text(
           'Snack Chat',
           style: TextStyle(
-            fontFamily: 'Pretendard',
+            fontFamily: 'Inter',
+            fontFamilyFallback: const ['NotoSansKR'],
             fontWeight: FontWeight.w800,
           ),
         ),
@@ -364,7 +365,8 @@ class _SnackChatNotParticipantScreen extends StatelessWidget {
               Text(
                 isKo ? '참여할 수 없는 채팅방이에요' : 'You cannot join this room',
                 style: const TextStyle(
-                  fontFamily: 'Pretendard',
+                  fontFamily: 'Inter',
+                  fontFamilyFallback: const ['NotoSansKR'],
                   fontSize: 18,
                   fontWeight: FontWeight.w800,
                   color: Color(0xFF111827),
@@ -377,7 +379,8 @@ class _SnackChatNotParticipantScreen extends StatelessWidget {
                     ? '이미 나갔거나 초대가 취소된 채팅방입니다.\n방장에게 다시 초대를 요청해 보세요.'
                     : 'You have already left or the invite was cancelled.\nAsk the host to invite you again.',
                 style: const TextStyle(
-                  fontFamily: 'Pretendard',
+                  fontFamily: 'Inter',
+                  fontFamilyFallback: const ['NotoSansKR'],
                   fontSize: 14,
                   fontWeight: FontWeight.w500,
                   color: Color(0xFF6B7280),
@@ -402,7 +405,8 @@ class _SnackChatNotParticipantScreen extends StatelessWidget {
                   child: Text(
                     isKo ? '돌아가기' : 'Go back',
                     style: const TextStyle(
-                      fontFamily: 'Pretendard',
+                      fontFamily: 'Inter',
+                      fontFamilyFallback: const ['NotoSansKR'],
                       fontSize: 15,
                       fontWeight: FontWeight.w700,
                     ),

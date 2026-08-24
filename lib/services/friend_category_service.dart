@@ -13,7 +13,7 @@ class FriendCategoryService {
 
   /// 사용자당 생성 가능한 최대 카테고리 수
   static const int maxCategoriesPerUser = 10;
-  
+
   // 활성 스트림 구독 관리
   final List<StreamSubscription> _activeSubscriptions = [];
 
@@ -35,10 +35,9 @@ class FriendCategoryService {
         .where('userId', isEqualTo: user.uid)
         .snapshots()
         .handleError((error) {
-          Logger.error('카테고리 스트림 오류: $error');
-          return Stream.value([]);
-        })
-        .map((snapshot) {
+      Logger.error('카테고리 스트림 오류: $error');
+      return Stream.value([]);
+    }).map((snapshot) {
       try {
         final categories = snapshot.docs
             .map((doc) {
@@ -52,7 +51,7 @@ class FriendCategoryService {
             .where((category) => category != null)
             .cast<FriendCategory>()
             .toList();
-        
+
         // 클라이언트에서 정렬 (인덱스 없이도 작동)
         categories.sort((a, b) => a.createdAt.compareTo(b.createdAt));
         return categories;
@@ -97,9 +96,8 @@ class FriendCategoryService {
         'updatedAt': Timestamp.fromDate(now),
       };
 
-      final docRef = await _firestore
-          .collection('friend_categories')
-          .add(categoryData);
+      final docRef =
+          await _firestore.collection('friend_categories').add(categoryData);
 
       return docRef.id;
     } catch (e) {
@@ -147,14 +145,18 @@ class FriendCategoryService {
       final user = _auth.currentUser;
       if (user == null) return false;
 
-      // 카테고리에 속한 친구들을 먼저 '기본' 카테고리로 이동
-      await _moveFriendsToDefault(categoryId);
-
-      // 카테고리 삭제
-      await _firestore
-          .collection('friend_categories')
-          .doc(categoryId)
-          .delete();
+      final categoryRef =
+          _firestore.collection('friend_categories').doc(categoryId);
+      await _firestore.runTransaction((transaction) async {
+        final category = await transaction.get(categoryRef);
+        if (!category.exists) return;
+        if ((category.data()?['userId'] ?? '').toString() != user.uid) {
+          throw StateError('본인의 그룹만 삭제할 수 있습니다.');
+        }
+        // 그룹은 표시·분류 단위일 뿐이므로 그룹을 삭제해도
+        // 친구를 다른 그룹에 자동 편입하지 않는다.
+        transaction.delete(categoryRef);
+      });
 
       return true;
     } catch (e) {
@@ -172,13 +174,18 @@ class FriendCategoryService {
       final user = _auth.currentUser;
       if (user == null) return false;
 
-      // 새 카테고리에 추가
-      await _firestore
-          .collection('friend_categories')
-          .doc(categoryId)
-          .update({
-        'friendIds': FieldValue.arrayUnion([friendId]),
-        'updatedAt': Timestamp.fromDate(DateTime.now()),
+      final categoryRef =
+          _firestore.collection('friend_categories').doc(categoryId);
+      await _firestore.runTransaction((transaction) async {
+        final category = await transaction.get(categoryRef);
+        if (!category.exists ||
+            (category.data()?['userId'] ?? '').toString() != user.uid) {
+          throw StateError('본인의 그룹만 수정할 수 있습니다.');
+        }
+        transaction.update(categoryRef, {
+          'friendIds': FieldValue.arrayUnion([friendId]),
+          'updatedAt': Timestamp.fromDate(DateTime.now()),
+        });
       });
 
       return true;
@@ -197,9 +204,24 @@ class FriendCategoryService {
       final user = _auth.currentUser;
       if (user == null) return false;
 
-      await _firestore.collection('friend_categories').doc(categoryId).update({
-        'friendIds': friendIds,
-        'updatedAt': Timestamp.fromDate(DateTime.now()),
+      final normalizedFriendIds = friendIds
+          .map((id) => id.trim())
+          .where((id) => id.isNotEmpty && id != user.uid)
+          .toSet()
+          .toList(growable: false);
+      final categoryRef =
+          _firestore.collection('friend_categories').doc(categoryId);
+      await _firestore.runTransaction((transaction) async {
+        final category = await transaction.get(categoryRef);
+        if (!category.exists ||
+            (category.data()?['userId'] ?? '').toString() != user.uid) {
+          throw StateError('본인의 그룹만 수정할 수 있습니다.');
+        }
+        // 이 문서만 갱신한다. 다른 그룹의 friendIds는 읽거나 합치지 않는다.
+        transaction.update(categoryRef, {
+          'friendIds': normalizedFriendIds,
+          'updatedAt': Timestamp.fromDate(DateTime.now()),
+        });
       });
       return true;
     } catch (e) {
@@ -217,12 +239,18 @@ class FriendCategoryService {
       final user = _auth.currentUser;
       if (user == null) return false;
 
-      await _firestore
-          .collection('friend_categories')
-          .doc(categoryId)
-          .update({
-        'friendIds': FieldValue.arrayRemove([friendId]),
-        'updatedAt': Timestamp.fromDate(DateTime.now()),
+      final categoryRef =
+          _firestore.collection('friend_categories').doc(categoryId);
+      await _firestore.runTransaction((transaction) async {
+        final category = await transaction.get(categoryRef);
+        if (!category.exists ||
+            (category.data()?['userId'] ?? '').toString() != user.uid) {
+          throw StateError('본인의 그룹만 수정할 수 있습니다.');
+        }
+        transaction.update(categoryRef, {
+          'friendIds': FieldValue.arrayRemove([friendId]),
+          'updatedAt': Timestamp.fromDate(DateTime.now()),
+        });
       });
 
       return true;
@@ -305,7 +333,7 @@ class FriendCategoryService {
     Logger.log('   ┌─────────────────────────────────');
     Logger.log('   │ removeFriendFromAllCategories 시작');
     Logger.log('   │ friendId: $friendId');
-    
+
     final user = _auth.currentUser;
     if (user == null) {
       Logger.log('   │ ❌ 로그인된 사용자 없음');
@@ -322,7 +350,7 @@ class FriendCategoryService {
         .get();
 
     Logger.log('   │ 찾은 카테고리 수: ${snapshot.docs.length}');
-    
+
     if (snapshot.docs.isEmpty) {
       Logger.log('   │ ℹ️ 해당 친구가 속한 카테고리 없음');
       Logger.log('   └─────────────────────────────────');
@@ -351,55 +379,5 @@ class FriendCategoryService {
     Logger.log('   │ ✅ Firestore 배치 커밋 완료');
     Logger.log('   │ ${snapshot.docs.length}개 카테고리에서 제거됨');
     Logger.log('   └─────────────────────────────────');
-  }
-
-  // 카테고리 삭제 시 친구들을 기본 카테고리로 이동
-  Future<void> _moveFriendsToDefault(String categoryId) async {
-    try {
-      final user = _auth.currentUser;
-      if (user == null) return;
-
-      // 삭제할 카테고리 정보 가져오기
-      final categoryDoc = await _firestore
-          .collection('friend_categories')
-          .doc(categoryId)
-          .get();
-
-      if (!categoryDoc.exists) return;
-
-      final category = FriendCategory.fromFirestore(categoryDoc);
-      if (category.friendIds.isEmpty) return;
-
-      // 기본 카테고리 찾기 (인덱스 없이 동작하도록 orderBy를 피하고 클라이언트에서 정렬)
-      final allCategoriesSnapshot = await _firestore
-          .collection('friend_categories')
-          .where('userId', isEqualTo: user.uid)
-          .get();
-
-      if (allCategoriesSnapshot.docs.isNotEmpty) {
-        final categories = allCategoriesSnapshot.docs
-            .map((doc) => FriendCategory.fromFirestore(doc))
-            .toList()
-          ..sort((a, b) => a.createdAt.compareTo(b.createdAt));
-
-        // 삭제 대상 카테고리를 제외한 가장 오래된 카테고리를 기본으로 사용
-        final defaultCategory = categories.firstWhere(
-          (c) => c.id != categoryId,
-          orElse: () => categories.first,
-        );
-        final defaultCategoryId = defaultCategory.id;
-        
-        // 친구들을 기본 카테고리로 이동
-        await _firestore
-            .collection('friend_categories')
-            .doc(defaultCategoryId)
-            .update({
-          'friendIds': FieldValue.arrayUnion(category.friendIds),
-          'updatedAt': Timestamp.fromDate(DateTime.now()),
-        });
-      }
-    } catch (e) {
-      Logger.error('친구 이동 오류: $e');
-    }
   }
 }

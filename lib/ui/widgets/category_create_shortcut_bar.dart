@@ -122,7 +122,8 @@ class _CategoryCreateShortcut extends StatelessWidget {
                         overflow: TextOverflow.ellipsis,
                         textAlign: TextAlign.center,
                         style: TextStyle(
-                          fontFamily: 'Pretendard',
+                          fontFamily: 'Inter',
+                          fontFamilyFallback: const ['NotoSansKR'],
                           fontSize: context.rf(12.5).clamp(11.5, 13).toDouble(),
                           fontWeight: FontWeight.w700,
                           color: const Color(0xFF344054),

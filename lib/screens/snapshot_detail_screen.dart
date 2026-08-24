@@ -1121,7 +1121,8 @@ class _SnapshotViewerEntryState extends State<_SnapshotViewerEntry> {
                                 maxLines: 1,
                                 overflow: TextOverflow.ellipsis,
                                 style: TextStyle(
-                                  fontFamily: 'Pretendard',
+                                  fontFamily: 'Inter',
+                                  fontFamilyFallback: const ['NotoSansKR'],
                                   fontSize:
                                       context.rf(14).clamp(13, 15).toDouble(),
                                   fontWeight: FontWeight.w700,
@@ -1141,7 +1142,8 @@ class _SnapshotViewerEntryState extends State<_SnapshotViewerEntry> {
                                 maxLines: 1,
                                 overflow: TextOverflow.ellipsis,
                                 style: TextStyle(
-                                  fontFamily: 'Pretendard',
+                                  fontFamily: 'Inter',
+                                  fontFamilyFallback: const ['NotoSansKR'],
                                   fontSize: context
                                       .rf(11.5)
                                       .clamp(11, 12.5)
@@ -1207,7 +1209,8 @@ class _SnapshotFeedPositionToast extends StatelessWidget {
                 label,
                 maxLines: 1,
                 style: TextStyle(
-                  fontFamily: 'Pretendard',
+                  fontFamily: 'Inter',
+                  fontFamilyFallback: const ['NotoSansKR'],
                   fontSize: context.rf(11).clamp(10.5, 12).toDouble(),
                   fontWeight: FontWeight.w500,
                   color: Colors.white.withValues(alpha: .72),
@@ -1295,7 +1298,8 @@ class _SnapshotAuthorHeader extends StatelessWidget {
                   maxLines: 1,
                   overflow: TextOverflow.ellipsis,
                   style: TextStyle(
-                    fontFamily: 'Pretendard',
+                    fontFamily: 'Inter',
+                    fontFamilyFallback: const ['NotoSansKR'],
                     fontSize: context.rf(15).clamp(14, 16).toDouble(),
                     fontWeight: FontWeight.w700,
                     color: Colors.white,
@@ -1314,7 +1318,8 @@ class _SnapshotAuthorHeader extends StatelessWidget {
                         maxLines: 1,
                         overflow: TextOverflow.ellipsis,
                         style: TextStyle(
-                          fontFamily: 'Pretendard',
+                          fontFamily: 'Inter',
+                          fontFamilyFallback: const ['NotoSansKR'],
                           fontSize: context.rf(12).clamp(11.5, 13).toDouble(),
                           fontWeight: FontWeight.w500,
                           color: Colors.white.withValues(alpha: .9),
@@ -1336,7 +1341,8 @@ class _SnapshotAuthorHeader extends StatelessWidget {
                       remaining,
                       maxLines: 1,
                       style: TextStyle(
-                        fontFamily: 'Pretendard',
+                        fontFamily: 'Inter',
+                        fontFamilyFallback: const ['NotoSansKR'],
                         fontSize: context.rf(12).clamp(11.5, 13).toDouble(),
                         fontWeight: FontWeight.w500,
                         color: Colors.white.withValues(alpha: .9),
@@ -1586,7 +1592,8 @@ class _SnapshotCommentComposer extends StatelessWidget {
             textInputAction: TextInputAction.done,
             keyboardAppearance: Brightness.dark,
             style: TextStyle(
-              fontFamily: 'Pretendard',
+              fontFamily: 'Inter',
+              fontFamilyFallback: const ['NotoSansKR'],
               fontSize: context.rf(15).clamp(14, 16).toDouble(),
               fontWeight: FontWeight.w500,
               color: Colors.white,
@@ -1595,7 +1602,8 @@ class _SnapshotCommentComposer extends StatelessWidget {
               counterText: '',
               hintText: hintText,
               hintStyle: TextStyle(
-                fontFamily: 'Pretendard',
+                fontFamily: 'Inter',
+                fontFamilyFallback: const ['NotoSansKR'],
                 fontSize: context.rf(15).clamp(14, 16).toDouble(),
                 color: Colors.white.withValues(alpha: .72),
               ),
@@ -1893,7 +1901,8 @@ class _SnapshotDeleteDialog extends StatelessWidget {
                 Text(
                   strings.delete,
                   style: TextStyle(
-                    fontFamily: 'Pretendard',
+                    fontFamily: 'Inter',
+                    fontFamilyFallback: const ['NotoSansKR'],
                     fontSize: context.rf(17).clamp(16, 18).toDouble(),
                     fontWeight: FontWeight.w700,
                     height: 1.3,
@@ -1904,7 +1913,8 @@ class _SnapshotDeleteDialog extends StatelessWidget {
                 Text(
                   strings.deleteConfirm,
                   style: TextStyle(
-                    fontFamily: 'Pretendard',
+                    fontFamily: 'Inter',
+                    fontFamilyFallback: const ['NotoSansKR'],
                     fontSize: context.rf(14.5).clamp(13.5, 15.5).toDouble(),
                     fontWeight: FontWeight.w600,
                     height: 1.4,
@@ -1917,7 +1927,8 @@ class _SnapshotDeleteDialog extends StatelessWidget {
                       ? '삭제한 스낵은 다시 복구할 수 없어요.'
                       : 'This snack cannot be restored after deletion.',
                   style: TextStyle(
-                    fontFamily: 'Pretendard',
+                    fontFamily: 'Inter',
+                    fontFamilyFallback: const ['NotoSansKR'],
                     fontSize: context.rf(13).clamp(12.5, 14).toDouble(),
                     fontWeight: FontWeight.w400,
                     height: 1.5,
@@ -1938,7 +1949,8 @@ class _SnapshotDeleteDialog extends StatelessWidget {
                         child: Text(
                           strings.cancel,
                           style: const TextStyle(
-                            fontFamily: 'Pretendard',
+                            fontFamily: 'Inter',
+                            fontFamilyFallback: const ['NotoSansKR'],
                             fontSize: 14,
                             fontWeight: FontWeight.w600,
                           ),
@@ -1953,7 +1965,8 @@ class _SnapshotDeleteDialog extends StatelessWidget {
                         child: Text(
                           strings.delete,
                           style: const TextStyle(
-                            fontFamily: 'Pretendard',
+                            fontFamily: 'Inter',
+                            fontFamilyFallback: const ['NotoSansKR'],
                             fontSize: 14,
                             fontWeight: FontWeight.w700,
                           ),
@@ -2004,7 +2017,8 @@ class _ActionRow extends StatelessWidget {
               child: Text(
                 label,
                 style: const TextStyle(
-                  fontFamily: 'Pretendard',
+                  fontFamily: 'Inter',
+                  fontFamilyFallback: const ['NotoSansKR'],
                   fontSize: 15,
                   fontWeight: FontWeight.w700,
                 ),

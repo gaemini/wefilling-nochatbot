@@ -233,7 +233,8 @@ class _ReviewDetailScreenState extends State<ReviewDetailScreen> {
               child: Text(
                 l10n?.reviewNotFound ?? "",
                 style: TextStyle(
-                  fontFamily: 'Pretendard',
+                  fontFamily: 'Inter',
+                  fontFamilyFallback: const ['NotoSansKR'],
                   fontSize: 16,
                   color: BrandColors.textSecondary,
                 ),
@@ -258,7 +259,8 @@ class _ReviewDetailScreenState extends State<ReviewDetailScreen> {
                 title: Text(
                   l10n?.reviewDetails ?? "",
                   style: TextStyle(
-                    fontFamily: 'Pretendard',
+                    fontFamily: 'Inter',
+                    fontFamilyFallback: const ['NotoSansKR'],
                     color: BrandColors.textPrimary,
                     fontSize: 18,
                     fontWeight: FontWeight.w600,
@@ -333,7 +335,8 @@ class _ReviewDetailScreenState extends State<ReviewDetailScreen> {
             child: Text(
               review.authorName,
               style: TextStyle(
-                fontFamily: 'Pretendard',
+                fontFamily: 'Inter',
+                fontFamilyFallback: const ['NotoSansKR'],
                 fontSize: 15,
                 fontWeight: FontWeight.w600,
                 color: BrandColors.textPrimary,
@@ -423,7 +426,8 @@ class _ReviewDetailScreenState extends State<ReviewDetailScreen> {
               child: Text(
                 '${_currentImageIndex + 1}/${review.imageUrls.length}',
                 style: const TextStyle(
-                  fontFamily: 'Pretendard',
+                  fontFamily: 'Inter',
+                  fontFamilyFallback: const ['NotoSansKR'],
                   color: Colors.white,
                   fontSize: 12,
                   fontWeight: FontWeight.w600,
@@ -504,7 +508,8 @@ class _ReviewDetailScreenState extends State<ReviewDetailScreen> {
                             ? l10n!.viewAllComments(review.commentCount)
                         : l10n?.writeComment ?? "",
                     style: TextStyle(
-                      fontFamily: 'Pretendard',
+                      fontFamily: 'Inter',
+                      fontFamilyFallback: const ['NotoSansKR'],
                       fontSize: 14,
                       fontWeight: FontWeight.w600,
                       color: BrandColors.textSecondary,
@@ -531,7 +536,8 @@ class _ReviewDetailScreenState extends State<ReviewDetailScreen> {
       child: Text(
             l10n!.likesCount(review.likeCount),
         style: TextStyle(
-          fontFamily: 'Pretendard',
+          fontFamily: 'Inter',
+          fontFamilyFallback: const ['NotoSansKR'],
           fontSize: 14,
           fontWeight: FontWeight.w600,
           color: BrandColors.textPrimary,
@@ -553,7 +559,8 @@ class _ReviewDetailScreenState extends State<ReviewDetailScreen> {
           Text(
             review.content,
             style: TextStyle(
-              fontFamily: 'Pretendard',
+              fontFamily: 'Inter',
+              fontFamilyFallback: const ['NotoSansKR'],
               fontSize: 14,
               color: BrandColors.textPrimary,
               height: 1.5,
@@ -576,7 +583,8 @@ class _ReviewDetailScreenState extends State<ReviewDetailScreen> {
       child: Text(
         dateFormat.format(review.createdAt),
         style: TextStyle(
-          fontFamily: 'Pretendard',
+          fontFamily: 'Inter',
+          fontFamilyFallback: const ['NotoSansKR'],
           fontSize: 12,
           color: BrandColors.textSecondary,
         ),
@@ -606,7 +614,8 @@ class _ReviewDetailScreenState extends State<ReviewDetailScreen> {
               Text(
                     l10n!.meetupParticipants(_participants.length),
                 style: TextStyle(
-                  fontFamily: 'Pretendard',
+                  fontFamily: 'Inter',
+                  fontFamilyFallback: const ['NotoSansKR'],
                   fontSize: 14,
                   fontWeight: FontWeight.w600,
                   color: BrandColors.textPrimary,
@@ -671,7 +680,8 @@ class _ReviewDetailScreenState extends State<ReviewDetailScreen> {
                       child: Text(
                         participant['nickname'] ?? '익명',
                         style: TextStyle(
-                          fontFamily: 'Pretendard',
+                          fontFamily: 'Inter',
+                          fontFamilyFallback: const ['NotoSansKR'],
                           fontSize: 12,
                           color: BrandColors.textPrimary,
                         ),

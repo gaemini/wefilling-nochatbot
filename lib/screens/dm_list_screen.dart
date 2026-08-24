@@ -579,7 +579,8 @@ class _DMListScreenState extends State<DMListScreen> {
                         child: Text(
                           AppLocalizations.of(context)!.friends,
                           style: TextStyle(
-                            fontFamily: 'Pretendard',
+                            fontFamily: 'Inter',
+                            fontFamilyFallback: const ['NotoSansKR'],
                             fontSize: compact ? 14 : 15,
                             fontWeight: FontWeight.w600,
                             color: _filter == DMFilter.friends
@@ -602,7 +603,8 @@ class _DMListScreenState extends State<DMListScreen> {
                         child: Text(
                           AppLocalizations.of(context)!.anonymous,
                           style: TextStyle(
-                            fontFamily: 'Pretendard',
+                            fontFamily: 'Inter',
+                            fontFamilyFallback: const ['NotoSansKR'],
                             fontSize: compact ? 14 : 15,
                             fontWeight: FontWeight.w600,
                             color: _filter == DMFilter.anonymous
@@ -871,7 +873,8 @@ class _DMListScreenState extends State<DMListScreen> {
                                 : Text(
                                     displayName,
                                     style: const TextStyle(
-                                      fontFamily: 'Pretendard',
+                                      fontFamily: 'Inter',
+                                      fontFamilyFallback: const ['NotoSansKR'],
                                       fontSize: 15,
                                       fontWeight: FontWeight.w600,
                                       color: Color(0xFF111827),
@@ -912,7 +915,8 @@ class _DMListScreenState extends State<DMListScreen> {
                                 'dm_last_${conversation.id}_${conversation.lastMessage}',
                               ),
                               style: TextStyle(
-                                fontFamily: 'Pretendard',
+                                fontFamily: 'Inter',
+                                fontFamilyFallback: const ['NotoSansKR'],
                                 fontSize: 13,
                                 color: const Color(0xFF6B7280),
                                 fontWeight: unreadCount > 0
@@ -955,7 +959,8 @@ class _DMListScreenState extends State<DMListScreen> {
                               'dm_time_${conversation.id}_$timeString',
                             ),
                             style: const TextStyle(
-                              fontFamily: 'Pretendard',
+                              fontFamily: 'Inter',
+                              fontFamilyFallback: const ['NotoSansKR'],
                               fontSize: 12,
                               fontWeight: FontWeight.w400,
                               color: Color(0xFF9CA3AF),
@@ -979,7 +984,8 @@ class _DMListScreenState extends State<DMListScreen> {
                       child: Text(
                         unreadCount > 99 ? '99+' : unreadCount.toString(),
                         style: const TextStyle(
-                          fontFamily: 'Pretendard',
+                          fontFamily: 'Inter',
+                          fontFamilyFallback: const ['NotoSansKR'],
                           color: Colors.white,
                           fontSize: 11,
                           fontWeight: FontWeight.w700,
@@ -1015,7 +1021,8 @@ class _DMListScreenState extends State<DMListScreen> {
           Text(
             title,
             style: const TextStyle(
-              fontFamily: 'Pretendard',
+              fontFamily: 'Inter',
+              fontFamilyFallback: const ['NotoSansKR'],
               fontSize: 16,
               fontWeight: FontWeight.w600,
               color: Color(0xFF6B7280),
@@ -1026,7 +1033,8 @@ class _DMListScreenState extends State<DMListScreen> {
             Text(
               subtitle,
               style: const TextStyle(
-                fontFamily: 'Pretendard',
+                fontFamily: 'Inter',
+                fontFamilyFallback: const ['NotoSansKR'],
                 fontSize: 14,
                 fontWeight: FontWeight.w400,
                 color: Color(0xFF9CA3AF),
@@ -1049,7 +1057,8 @@ class _DMListScreenState extends State<DMListScreen> {
           Text(
             AppLocalizations.of(context)!.loadingMessages,
             style: const TextStyle(
-              fontFamily: 'Pretendard',
+              fontFamily: 'Inter',
+              fontFamilyFallback: const ['NotoSansKR'],
               fontSize: 14,
               fontWeight: FontWeight.w500,
               color: Color(0xFF6B7280),
@@ -1075,7 +1084,8 @@ class _DMListScreenState extends State<DMListScreen> {
           Text(
             AppLocalizations.of(context)!.error,
             style: const TextStyle(
-              fontFamily: 'Pretendard',
+              fontFamily: 'Inter',
+              fontFamilyFallback: const ['NotoSansKR'],
               fontSize: 16,
               fontWeight: FontWeight.w600,
               color: Color(0xFFEF4444),
@@ -1087,7 +1097,8 @@ class _DMListScreenState extends State<DMListScreen> {
             child: Text(
               error,
               style: const TextStyle(
-                fontFamily: 'Pretendard',
+                fontFamily: 'Inter',
+                fontFamilyFallback: const ['NotoSansKR'],
                 fontSize: 14,
                 fontWeight: FontWeight.w400,
                 color: Color(0xFF6B7280),
@@ -1161,7 +1172,8 @@ class _DMListScreenState extends State<DMListScreen> {
                     Text(
                       AppLocalizations.of(context)!.friendSelection,
                       style: const TextStyle(
-                        fontFamily: 'Pretendard',
+                        fontFamily: 'Inter',
+                        fontFamilyFallback: const ['NotoSansKR'],
                         fontSize: 18,
                         fontWeight: FontWeight.w600,
                         color: Color(0xFF111827),
@@ -1200,7 +1212,8 @@ class _DMListScreenState extends State<DMListScreen> {
                               ? '친구 목록을 불러올 수 없습니다'
                               : 'Unable to load friend list',
                           style: const TextStyle(
-                            fontFamily: 'Pretendard',
+                            fontFamily: 'Inter',
+                            fontFamilyFallback: const ['NotoSansKR'],
                             fontSize: 14,
                             color: Color(0xFF6B7280),
                           ),
@@ -1227,7 +1240,8 @@ class _DMListScreenState extends State<DMListScreen> {
                                   ? '친구가 없습니다'
                                   : 'No friends yet',
                               style: const TextStyle(
-                                fontFamily: 'Pretendard',
+                                fontFamily: 'Inter',
+                                fontFamilyFallback: const ['NotoSansKR'],
                                 fontSize: 16,
                                 fontWeight: FontWeight.w600,
                                 color: Color(0xFF6B7280),
@@ -1320,7 +1334,8 @@ class _DMListScreenState extends State<DMListScreen> {
                   Text(
                     friend.displayNameOrNickname,
                     style: const TextStyle(
-                      fontFamily: 'Pretendard',
+                      fontFamily: 'Inter',
+                      fontFamilyFallback: const ['NotoSansKR'],
                       fontSize: 15,
                       fontWeight: FontWeight.w600,
                       color: Color(0xFF111827),

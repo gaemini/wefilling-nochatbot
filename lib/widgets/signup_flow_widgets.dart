@@ -25,7 +25,8 @@ class SignupPageIntro extends StatelessWidget {
           title,
           textAlign: TextAlign.center,
           style: const TextStyle(
-            fontFamily: 'Pretendard',
+            fontFamily: 'Inter',
+            fontFamilyFallback: const ['NotoSansKR'],
             fontSize: 24,
             fontWeight: FontWeight.w800,
             color: Color(0xFF0F172A),
@@ -38,7 +39,8 @@ class SignupPageIntro extends StatelessWidget {
           description,
           textAlign: TextAlign.center,
           style: const TextStyle(
-            fontFamily: 'Pretendard',
+            fontFamily: 'Inter',
+            fontFamilyFallback: const ['NotoSansKR'],
             fontSize: 14,
             fontWeight: FontWeight.w400,
             color: Color(0xFF64748B),
@@ -61,7 +63,8 @@ class SignupSectionLabel extends StatelessWidget {
     return Text(
       text,
       style: const TextStyle(
-        fontFamily: 'Pretendard',
+        fontFamily: 'Inter',
+        fontFamilyFallback: const ['NotoSansKR'],
         fontSize: 15,
         fontWeight: FontWeight.w700,
         color: Color(0xFF0F172A),
@@ -86,14 +89,16 @@ InputDecoration signupInputDecoration({
     prefixIconConstraints: const BoxConstraints(minWidth: 38, minHeight: 48),
     suffixIcon: suffixIcon,
     hintStyle: const TextStyle(
-      fontFamily: 'Pretendard',
+      fontFamily: 'Inter',
+      fontFamilyFallback: const ['NotoSansKR'],
       fontSize: 16,
       fontWeight: FontWeight.w400,
       color: Color(0xFF94A3B8),
       letterSpacing: -0.2,
     ),
     helperStyle: const TextStyle(
-      fontFamily: 'Pretendard',
+      fontFamily: 'Inter',
+      fontFamilyFallback: const ['NotoSansKR'],
       fontSize: 12,
       fontWeight: FontWeight.w400,
       color: Color(0xFF64748B),
@@ -149,7 +154,8 @@ class SignupVerifiedEmail extends StatelessWidget {
               Text(
                 label,
                 style: const TextStyle(
-                  fontFamily: 'Pretendard',
+                  fontFamily: 'Inter',
+                  fontFamilyFallback: const ['NotoSansKR'],
                   fontSize: 12,
                   fontWeight: FontWeight.w500,
                   color: Color(0xFF64748B),
@@ -161,7 +167,8 @@ class SignupVerifiedEmail extends StatelessWidget {
                 maxLines: 1,
                 overflow: TextOverflow.ellipsis,
                 style: const TextStyle(
-                  fontFamily: 'Pretendard',
+                  fontFamily: 'Inter',
+                  fontFamilyFallback: const ['NotoSansKR'],
                   fontSize: 15,
                   fontWeight: FontWeight.w700,
                   color: Color(0xFF0F172A),
@@ -213,7 +220,8 @@ class SignupPrimaryButton extends StatelessWidget {
                   maxLines: 1,
                   overflow: TextOverflow.ellipsis,
                   style: const TextStyle(
-                    fontFamily: 'Pretendard',
+                    fontFamily: 'Inter',
+                    fontFamilyFallback: const ['NotoSansKR'],
                     fontSize: 16,
                     fontWeight: FontWeight.w700,
                     letterSpacing: -0.3,
@@ -264,7 +272,8 @@ class SignupInlineError extends StatelessWidget {
           child: Text(
             message,
             style: const TextStyle(
-              fontFamily: 'Pretendard',
+              fontFamily: 'Inter',
+              fontFamilyFallback: const ['NotoSansKR'],
               fontSize: 14,
               fontWeight: FontWeight.w500,
               color: Color(0xFFB91C1C),
@@ -291,7 +300,8 @@ Future<bool> showSignupExitConfirmation(BuildContext context) async {
       title: Text(
         isKorean ? '회원가입을 중단할까요?' : 'Leave sign up?',
         style: const TextStyle(
-          fontFamily: 'Pretendard',
+          fontFamily: 'Inter',
+          fontFamilyFallback: const ['NotoSansKR'],
           fontSize: 20,
           fontWeight: FontWeight.w800,
           color: Color(0xFF0F172A),
@@ -302,7 +312,8 @@ Future<bool> showSignupExitConfirmation(BuildContext context) async {
             ? '아직 회원으로 저장되지 않았어요. 지금까지 입력한 내용은 삭제되며 언제든 다시 가입할 수 있어요.'
             : 'Your account has not been registered yet. Your progress will be discarded, and you can sign up again anytime.',
         style: const TextStyle(
-          fontFamily: 'Pretendard',
+          fontFamily: 'Inter',
+          fontFamilyFallback: const ['NotoSansKR'],
           fontSize: 14,
           fontWeight: FontWeight.w400,
           color: Color(0xFF64748B),

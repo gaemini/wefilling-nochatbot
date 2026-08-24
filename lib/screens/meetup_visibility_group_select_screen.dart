@@ -110,7 +110,8 @@ class _MeetupVisibilityGroupSelectScreenState
           Text(
             m.displayNameOrNickname,
             style: TextStyle(
-              fontFamily: 'Pretendard',
+              fontFamily: 'Inter',
+              fontFamilyFallback: const ['NotoSansKR'],
               fontSize: context.rf(13).clamp(12, 14).toDouble(),
               fontWeight: FontWeight.w600,
               height: 1.2,
@@ -121,7 +122,8 @@ class _MeetupVisibilityGroupSelectScreenState
           Text(
             '+$remaining${l10n.people ?? ''}',
             style: TextStyle(
-              fontFamily: 'Pretendard',
+              fontFamily: 'Inter',
+              fontFamilyFallback: const ['NotoSansKR'],
               fontSize: context.rf(13).clamp(12, 14).toDouble(),
               fontWeight: FontWeight.w700,
               height: 1.2,
@@ -164,7 +166,8 @@ class _MeetupVisibilityGroupSelectScreenState
                 child: Text(
                   category.name,
                   style: TextStyle(
-                    fontFamily: 'Pretendard',
+                    fontFamily: 'Inter',
+                    fontFamilyFallback: const ['NotoSansKR'],
                     fontSize: context.rf(14).clamp(13, 15).toDouble(),
                     fontWeight: isSelected ? FontWeight.w800 : FontWeight.w600,
                     height: 1.2,
@@ -178,7 +181,8 @@ class _MeetupVisibilityGroupSelectScreenState
               Text(
                 '(${category.friendIds.length}${l10n.people ?? ''})',
                 style: TextStyle(
-                  fontFamily: 'Pretendard',
+                  fontFamily: 'Inter',
+                  fontFamilyFallback: const ['NotoSansKR'],
                   fontSize: context.rf(12).clamp(11, 13).toDouble(),
                   fontWeight: FontWeight.w600,
                   height: 1.1,
@@ -203,7 +207,8 @@ class _MeetupVisibilityGroupSelectScreenState
           Text(
             '${l10n.friends} (${friendCount}${l10n.people ?? ''})',
             style: TextStyle(
-              fontFamily: 'Pretendard',
+              fontFamily: 'Inter',
+              fontFamilyFallback: const ['NotoSansKR'],
               fontSize: context.rf(14).clamp(13, 15).toDouble(),
               fontWeight: FontWeight.w700,
               height: 1.2,
@@ -216,7 +221,8 @@ class _MeetupVisibilityGroupSelectScreenState
             Text(
               l10n.noGroupSelectedWarning,
               style: const TextStyle(
-                fontFamily: 'Pretendard',
+                fontFamily: 'Inter',
+                fontFamilyFallback: const ['NotoSansKR'],
                 fontSize: 14,
                 fontWeight: FontWeight.w500,
                 height: 1.25,
@@ -238,7 +244,8 @@ class _MeetupVisibilityGroupSelectScreenState
             Text(
               l10n.noFriendsYet,
               style: const TextStyle(
-                fontFamily: 'Pretendard',
+                fontFamily: 'Inter',
+                fontFamilyFallback: const ['NotoSansKR'],
                 fontSize: 14,
                 fontWeight: FontWeight.w500,
                 height: 1.25,
@@ -280,7 +287,8 @@ class _MeetupVisibilityGroupSelectScreenState
             maxLines: 1,
             overflow: TextOverflow.ellipsis,
             style: TextStyle(
-              fontFamily: 'Pretendard',
+              fontFamily: 'Inter',
+              fontFamilyFallback: const ['NotoSansKR'],
               fontSize: context.rf(18).clamp(16, 19).toDouble(),
               fontWeight: FontWeight.w700,
               height: 1.2,
@@ -303,7 +311,8 @@ class _MeetupVisibilityGroupSelectScreenState
                     child: Text(
                       l10n.noFriendGroupsYet,
                       style: TextStyle(
-                        fontFamily: 'Pretendard',
+                        fontFamily: 'Inter',
+                        fontFamilyFallback: const ['NotoSansKR'],
                         fontSize: context.rf(14).clamp(13, 15).toDouble(),
                         fontWeight: FontWeight.w500,
                         height: 1.3,
@@ -373,7 +382,8 @@ class _MeetupVisibilityGroupSelectScreenState
                     child: Text(
                       l10n.done,
                       style: TextStyle(
-                        fontFamily: 'Pretendard',
+                        fontFamily: 'Inter',
+                        fontFamilyFallback: const ['NotoSansKR'],
                         fontSize: context.rf(15).clamp(14, 16).toDouble(),
                         fontWeight: FontWeight.w700,
                         height: 1.1,

@@ -1,0 +1,29 @@
+{
+  "" : {
+    "diagnostics" : "/Users/chajaemin/Desktop/wefilling-nochatbot/ios/build/Runner.build/Debug-iphonesimulator/ShareExtension.build/Objects-normal/arm64/ShareExtension-primary.dia",
+    "emit-module-dependencies" : "/Users/chajaemin/Desktop/wefilling-nochatbot/ios/build/Runner.build/Debug-iphonesimulator/ShareExtension.build/Objects-normal/arm64/ShareExtension-primary-emit-module.d",
+    "emit-module-diagnostics" : "/Users/chajaemin/Desktop/wefilling-nochatbot/ios/build/Runner.build/Debug-iphonesimulator/ShareExtension.build/Objects-normal/arm64/ShareExtension-primary-emit-module.dia",
+    "pch" : "/Users/chajaemin/Desktop/wefilling-nochatbot/ios/build/Runner.build/Debug-iphonesimulator/ShareExtension.build/Objects-normal/arm64/ShareExtension-primary-Bridging-header.pch",
+    "swift-dependencies" : "/Users/chajaemin/Desktop/wefilling-nochatbot/ios/build/Runner.build/Debug-iphonesimulator/ShareExtension.build/Objects-normal/arm64/ShareExtension-primary.swiftdeps"
+  },
+  "/Users/chajaemin/Desktop/wefilling-nochatbot/ios/ShareExtension/ShareViewController.swift" : {
+    "const-values" : "/Users/chajaemin/Desktop/wefilling-nochatbot/ios/build/Runner.build/Debug-iphonesimulator/ShareExtension.build/Objects-normal/arm64/ShareViewController.swiftconstvalues",
+    "dependencies" : "/Users/chajaemin/Desktop/wefilling-nochatbot/ios/build/Runner.build/Debug-iphonesimulator/ShareExtension.build/Objects-normal/arm64/ShareViewController.d",
+    "diagnostics" : "/Users/chajaemin/Desktop/wefilling-nochatbot/ios/build/Runner.build/Debug-iphonesimulator/ShareExtension.build/Objects-normal/arm64/ShareViewController.dia",
+    "index-unit-output-path" : "/Runner.build/Debug-iphonesimulator/ShareExtension.build/Objects-normal/arm64/ShareViewController.o",
+    "llvm-bc" : "/Users/chajaemin/Desktop/wefilling-nochatbot/ios/build/Runner.build/Debug-iphonesimulator/ShareExtension.build/Objects-normal/arm64/ShareViewController.bc",
+    "object" : "/Users/chajaemin/Desktop/wefilling-nochatbot/ios/build/Runner.build/Debug-iphonesimulator/ShareExtension.build/Objects-normal/arm64/ShareViewController.o",
+    "swift-dependencies" : "/Users/chajaemin/Desktop/wefilling-nochatbot/ios/build/Runner.build/Debug-iphonesimulator/ShareExtension.build/Objects-normal/arm64/ShareViewController.swiftdeps",
+    "swiftmodule" : "/Users/chajaemin/Desktop/wefilling-nochatbot/ios/build/Runner.build/Debug-iphonesimulator/ShareExtension.build/Objects-normal/arm64/ShareViewController~partial.swiftmodule"
+  },
+  "/Users/chajaemin/Desktop/wefilling-nochatbot/ios/Shared/ExternalShareStore.swift" : {
+    "const-values" : "/Users/chajaemin/Desktop/wefilling-nochatbot/ios/build/Runner.build/Debug-iphonesimulator/ShareExtension.build/Objects-normal/arm64/ExternalShareStore.swiftconstvalues",
+    "dependencies" : "/Users/chajaemin/Desktop/wefilling-nochatbot/ios/build/Runner.build/Debug-iphonesimulator/ShareExtension.build/Objects-normal/arm64/ExternalShareStore.d",
+    "diagnostics" : "/Users/chajaemin/Desktop/wefilling-nochatbot/ios/build/Runner.build/Debug-iphonesimulator/ShareExtension.build/Objects-normal/arm64/ExternalShareStore.dia",
+    "index-unit-output-path" : "/Runner.build/Debug-iphonesimulator/ShareExtension.build/Objects-normal/arm64/ExternalShareStore.o",
+    "llvm-bc" : "/Users/chajaemin/Desktop/wefilling-nochatbot/ios/build/Runner.build/Debug-iphonesimulator/ShareExtension.build/Objects-normal/arm64/ExternalShareStore.bc",
+    "object" : "/Users/chajaemin/Desktop/wefilling-nochatbot/ios/build/Runner.build/Debug-iphonesimulator/ShareExtension.build/Objects-normal/arm64/ExternalShareStore.o",
+    "swift-dependencies" : "/Users/chajaemin/Desktop/wefilling-nochatbot/ios/build/Runner.build/Debug-iphonesimulator/ShareExtension.build/Objects-normal/arm64/ExternalShareStore.swiftdeps",
+    "swiftmodule" : "/Users/chajaemin/Desktop/wefilling-nochatbot/ios/build/Runner.build/Debug-iphonesimulator/ShareExtension.build/Objects-normal/arm64/ExternalShareStore~partial.swiftmodule"
+  }
+}

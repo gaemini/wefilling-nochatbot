@@ -343,7 +343,8 @@ class _HanyangEmailVerificationScreenState
                     ? l10n.generalEmailVerificationTitle
                     : l10n.emailVerificationRequired),
             style: const TextStyle(
-              fontFamily: 'Pretendard',
+              fontFamily: 'Inter',
+              fontFamilyFallback: const ['NotoSansKR'],
               fontSize: 18,
               fontWeight: FontWeight.w700,
               color: Color(0xFF0F172A),
@@ -422,7 +423,8 @@ class _HanyangEmailVerificationScreenState
                               icon: Icons.mail_outline_rounded,
                             ),
                             style: const TextStyle(
-                              fontFamily: 'Pretendard',
+                              fontFamily: 'Inter',
+                              fontFamilyFallback: const ['NotoSansKR'],
                               fontSize: 16,
                               fontWeight: FontWeight.w500,
                               color: Color(0xFF0F172A),
@@ -467,7 +469,8 @@ class _HanyangEmailVerificationScreenState
                                   child: Text(
                                     l10n.verificationCodeSent,
                                     style: const TextStyle(
-                                      fontFamily: 'Pretendard',
+                                      fontFamily: 'Inter',
+                                      fontFamilyFallback: const ['NotoSansKR'],
                                       fontSize: 14,
                                       fontWeight: FontWeight.w500,
                                       color: Color(0xFF475569),
@@ -495,7 +498,8 @@ class _HanyangEmailVerificationScreenState
                                 counterText: '',
                               ),
                               style: const TextStyle(
-                                fontFamily: 'Pretendard',
+                                fontFamily: 'Inter',
+                                fontFamilyFallback: const ['NotoSansKR'],
                                 fontSize: 18,
                                 fontWeight: FontWeight.w700,
                                 color: Color(0xFF0F172A),
@@ -535,7 +539,8 @@ class _HanyangEmailVerificationScreenState
                               child: Text(
                                 l10n.retryAction,
                                 style: const TextStyle(
-                                  fontFamily: 'Pretendard',
+                                  fontFamily: 'Inter',
+                                  fontFamilyFallback: const ['NotoSansKR'],
                                   fontSize: 14,
                                   fontWeight: FontWeight.w600,
                                 ),

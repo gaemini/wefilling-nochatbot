@@ -57,7 +57,8 @@ class SocialTagExplorerScreen extends StatelessWidget {
           maxLines: 1,
           overflow: TextOverflow.ellipsis,
           style: TextStyle(
-            fontFamily: 'Pretendard',
+            fontFamily: 'Inter',
+            fontFamilyFallback: const ['NotoSansKR'],
             fontSize: context.rf(17).clamp(16, 18).toDouble(),
             fontWeight: FontWeight.w700,
             color: const Color(0xFF111827),
@@ -85,7 +86,8 @@ class SocialTagExplorerScreen extends StatelessWidget {
                         ? '관심 있는 태그를 누르면 같은 태그를 선택한 사람을 볼 수 있어요.'
                         : 'Choose a tag to meet people who selected it.',
                     style: TextStyle(
-                      fontFamily: 'Pretendard',
+                      fontFamily: 'Inter',
+                      fontFamilyFallback: const ['NotoSansKR'],
                       fontSize: context.rf(13).clamp(12, 14).toDouble(),
                       fontWeight: FontWeight.w500,
                       color: const Color(0xFF667085),
@@ -146,7 +148,8 @@ class _TagSection extends StatelessWidget {
         Text(
           title,
           style: TextStyle(
-            fontFamily: 'Pretendard',
+            fontFamily: 'Inter',
+            fontFamilyFallback: const ['NotoSansKR'],
             fontSize: context.rf(16).clamp(15, 17).toDouble(),
             fontWeight: FontWeight.w800,
             color: const Color(0xFF111827),
@@ -180,7 +183,8 @@ class _TagSection extends StatelessWidget {
                       maxLines: 1,
                       overflow: TextOverflow.ellipsis,
                       style: TextStyle(
-                        fontFamily: 'Pretendard',
+                        fontFamily: 'Inter',
+                        fontFamilyFallback: const ['NotoSansKR'],
                         fontSize: context.rf(13).clamp(12, 14).toDouble(),
                         fontWeight: FontWeight.w700,
                         color: AppColors.pointColor,

@@ -10,6 +10,7 @@ import 'package:firebase_auth/firebase_auth.dart';
 import 'package:firebase_storage/firebase_storage.dart';
 import '../models/meetup.dart';
 import '../models/meetup_participant.dart';
+import '../constants/meetup_limits.dart';
 import '../security/frozen_audience_policy.dart';
 import 'notification_service.dart';
 import 'content_filter_service.dart';
@@ -280,6 +281,13 @@ class MeetupService {
     try {
       final user = _auth.currentUser;
       if (user == null) return false;
+
+      if (!isValidMeetupParticipantLimit(maxParticipants)) {
+        Logger.error(
+          '밋업 최대 인원은 $minMeetupParticipants~$maxMeetupParticipants명이어야 합니다.',
+        );
+        return false;
+      }
 
       if (!const {'public', 'friends', 'category'}.contains(visibility)) {
         Logger.error('지원하지 않는 밋업 공개 범위: $visibility');

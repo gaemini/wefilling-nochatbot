@@ -86,7 +86,8 @@ class _SnapshotViewersScreenState extends State<SnapshotViewersScreen> {
             maxLines: 1,
             overflow: TextOverflow.ellipsis,
             style: TextStyle(
-              fontFamily: 'Pretendard',
+              fontFamily: 'Inter',
+              fontFamilyFallback: const ['NotoSansKR'],
               fontSize: context.rf(18).clamp(16, 19).toDouble(),
               fontWeight: FontWeight.w700,
               color: const Color(0xFF111827),
@@ -171,7 +172,8 @@ class _ViewerList extends StatelessWidget {
             child: Text(
               strings.viewersCount(viewers.length),
               style: TextStyle(
-                fontFamily: 'Pretendard',
+                fontFamily: 'Inter',
+                fontFamilyFallback: const ['NotoSansKR'],
                 fontSize: context.rf(13).clamp(12, 14).toDouble(),
                 fontWeight: FontWeight.w600,
                 color: const Color(0xFF667085),
@@ -264,7 +266,8 @@ class _ViewerRow extends StatelessWidget {
                         maxLines: 1,
                         overflow: TextOverflow.ellipsis,
                         style: TextStyle(
-                          fontFamily: 'Pretendard',
+                          fontFamily: 'Inter',
+                          fontFamilyFallback: const ['NotoSansKR'],
                           fontSize: context.rf(15).clamp(14, 16).toDouble(),
                           fontWeight: FontWeight.w700,
                           color: const Color(0xFF111827),
@@ -278,7 +281,8 @@ class _ViewerRow extends StatelessWidget {
                           maxLines: 1,
                           overflow: TextOverflow.ellipsis,
                           style: TextStyle(
-                            fontFamily: 'Pretendard',
+                            fontFamily: 'Inter',
+                            fontFamilyFallback: const ['NotoSansKR'],
                             fontSize: context.rf(12).clamp(11, 13).toDouble(),
                             fontWeight: FontWeight.w500,
                             color: const Color(0xFF667085),
@@ -295,7 +299,8 @@ class _ViewerRow extends StatelessWidget {
                   maxLines: 1,
                   textAlign: TextAlign.end,
                   style: TextStyle(
-                    fontFamily: 'Pretendard',
+                    fontFamily: 'Inter',
+                    fontFamilyFallback: const ['NotoSansKR'],
                     fontSize: context.rf(12).clamp(11, 13).toDouble(),
                     fontWeight: FontWeight.w500,
                     color: const Color(0xFF98A2B3),
@@ -350,7 +355,8 @@ class _ViewerStatus extends StatelessWidget {
                 title,
                 textAlign: TextAlign.center,
                 style: TextStyle(
-                  fontFamily: 'Pretendard',
+                  fontFamily: 'Inter',
+                  fontFamilyFallback: const ['NotoSansKR'],
                   fontSize: context.rf(16).clamp(15, 17).toDouble(),
                   fontWeight: FontWeight.w700,
                   color: const Color(0xFF111827),
@@ -362,7 +368,8 @@ class _ViewerStatus extends StatelessWidget {
                   description!,
                   textAlign: TextAlign.center,
                   style: TextStyle(
-                    fontFamily: 'Pretendard',
+                    fontFamily: 'Inter',
+                    fontFamilyFallback: const ['NotoSansKR'],
                     fontSize: context.rf(13).clamp(12, 14).toDouble(),
                     fontWeight: FontWeight.w500,
                     color: const Color(0xFF667085),
@@ -381,7 +388,8 @@ class _ViewerStatus extends StatelessWidget {
                   child: Text(
                     actionLabel!,
                     style: TextStyle(
-                      fontFamily: 'Pretendard',
+                      fontFamily: 'Inter',
+                      fontFamilyFallback: const ['NotoSansKR'],
                       fontSize: context.rf(13).clamp(12, 14).toDouble(),
                       fontWeight: FontWeight.w700,
                     ),

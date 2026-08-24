@@ -2110,6 +2110,106 @@ export const ensureSnackChatMembershipSecure = functions
   });
 
 /**
+ * Advances the caller's read cursor only through the message sequence that was
+ * present in the UI when the chat screen was left. Keeping this boundary on
+ * the server prevents a message arriving during route disposal from being
+ * cleared accidentally.
+ *
+ * deliveryRecipientIds is written in the same transaction that increments the
+ * unread aggregate. We therefore decrement only messages with that canonical
+ * marker; an onCreate trigger that is still pending will observe the advanced
+ * cursor and will not increment the message afterwards.
+ */
+export const markSnackChatReadSecure = functions
+  .runWith({timeoutSeconds: 30, memory: '256MB'})
+  .https.onCall(async (raw, context) => {
+    const userId = requireUid(context);
+    await requireActiveUser(userId);
+    const request = objectValue(raw);
+    const snackChatId = firestoreId(request.snackChatId, 'Snack Chat id');
+    const requestedThrough = nonNegativeInteger(request.throughSequence);
+    const roomRef = db().collection(SNACK_CHATS).doc(snackChatId);
+    const memberRef = roomRef.collection('members').doc(userId);
+
+    return db().runTransaction(async (transaction) => {
+      const [room, member] = await transaction.getAll(roomRef, memberRef);
+      if (!room.exists) {
+        throw new functions.https.HttpsError(
+          'not-found',
+          'Snack Chat not found.',
+        );
+      }
+      if (!uniqueStrings(room.get('participantIds')).includes(userId)) {
+        throw new functions.https.HttpsError(
+          'permission-denied',
+          'Only a current participant can mark messages as read.',
+        );
+      }
+      if (!member.exists || stringValue(member.get('status')) !== 'active') {
+        throw new functions.https.HttpsError(
+          'failed-precondition',
+          'Snack Chat membership is not ready.',
+        );
+      }
+
+      const roomLastSequence = nonNegativeInteger(
+        room.get('lastMessageSequence'),
+      );
+      const previousSequence = nonNegativeInteger(
+        member.get('lastReadSequence'),
+      );
+      const readThroughSequence = Math.max(
+        previousSequence,
+        Math.min(requestedThrough, roomLastSequence),
+      );
+      const unreadBefore = normalizedCountMap(room.get('unreadCount'));
+      const currentUnread = unreadBefore[userId] ?? 0;
+
+      let canonicalReadCount = 0;
+      if (readThroughSequence > previousSequence &&
+          readThroughSequence < roomLastSequence &&
+          currentUnread > 0) {
+        const readMessages = await transaction.get(
+          roomRef.collection('messages')
+            .where('sequence', '>', previousSequence)
+            .where('sequence', '<=', readThroughSequence),
+        );
+        canonicalReadCount = readMessages.docs.reduce((count, document) => {
+          const message = document.data();
+          if (stringValue(message.senderId) === userId) return count;
+          const delivered = Array.isArray(message.deliveryRecipientIds)
+            ? uniqueStrings(message.deliveryRecipientIds)
+            : [];
+          return delivered.includes(userId) ? count + 1 : count;
+        }, 0);
+      }
+
+      const unreadAfter = readThroughSequence >= roomLastSequence
+        ? 0
+        : Math.max(0, currentUnread - canonicalReadCount);
+      if (unreadAfter !== currentUnread) {
+        const nextUnread = {...unreadBefore, [userId]: unreadAfter};
+        transaction.update(roomRef, {
+          unreadCount: nextUnread,
+        });
+      }
+      if (readThroughSequence > previousSequence) {
+        transaction.update(memberRef, {
+          lastReadSequence: readThroughSequence,
+          lastReadAt: FieldValue.serverTimestamp(),
+        });
+      }
+
+      return {
+        success: true,
+        readThroughSequence,
+        clearedCount: Math.max(0, currentUnread - unreadAfter),
+        unreadCount: unreadAfter,
+      };
+    });
+  });
+
+/**
  * Removes the caller from a room in one idempotent server transaction. A
  * retry after an uncertain client timeout succeeds even if the first attempt
  * already committed.
@@ -3507,16 +3607,23 @@ async function sendSnackChatPush(args: {
   message: Data;
 }): Promise<void> {
   try {
-    const [room, recipient, settings, blocked] = await Promise.all([
+    const [room, member, recipient, settings, blocked] = await Promise.all([
       args.roomRef.get(),
+      args.roomRef.collection('members').doc(args.recipientId).get(),
       db().collection(USERS).doc(args.recipientId).get(),
       db().collection('user_settings').doc(args.recipientId).get(),
       hasBlockBetween(args.senderId, args.recipientId),
     ]);
     const roomData = room.data() ?? {};
+    const memberData = member.data() ?? {};
     const userData = recipient.data() ?? {};
+    const messageSequence = nonNegativeInteger(args.message.sequence);
+    const roomUnreadMap = normalizedCountMap(roomData.unreadCount);
+    const currentRoomUnread = roomUnreadMap[args.recipientId] ?? 0;
     if (!room.exists || !recipient.exists || !activeUserData(userData) ||
         blocked ||
+        currentRoomUnread <= 0 ||
+        nonNegativeInteger(memberData.lastReadSequence) >= messageSequence ||
         !uniqueStrings(roomData.participantIds).includes(args.recipientId) ||
         uniqueStrings(userData.mutedSnackChatIds).includes(args.roomRef.id)) {
       return;
@@ -3552,6 +3659,15 @@ async function sendSnackChatPush(args: {
     const messageType = stringValue(args.message.type);
     const rawText = boundedString(args.message.text, 100);
     const roomTitle = boundedString(roomData.title, 80) || 'Snack Chat';
+    const roomUnreadCount = currentRoomUnread;
+    // Android replaces notifications with the same tag and APNs collapses
+    // deliveries with the same collapse id. Hashing keeps the APNs header
+    // below its 64-byte limit even when a custom room id is unusually long.
+    const notificationGroupKey = 'snack_' + crypto
+      .createHash('sha256')
+      .update(args.roomRef.id)
+      .digest('hex')
+      .slice(0, 40);
     let badge: number | null = null;
     try {
       badge = nonNegativeInteger(userData.notificationUnreadTotal) +
@@ -3574,12 +3690,15 @@ async function sendSnackChatPush(args: {
             ? '📊 ' + (rawText || (isKorean ? '투표' : 'Poll'))
             : (rawText || (isKorean ? '메시지' : 'Message'));
       const body = args.senderName + ': ' + preview;
+      const groupedTitle = isKorean
+        ? `${roomTitle} · 안 읽은 메시지 ${roomUnreadCount}개`
+        : `${roomTitle} · ${roomUnreadCount} unread`;
 
       for (let offset = 0; offset < tokens.length; offset += 500) {
         const chunk = tokens.slice(offset, offset + 500);
         const result = await admin.messaging().sendEachForMulticast({
           tokens: chunk,
-          notification: {title: roomTitle, body},
+          notification: {title: groupedTitle, body},
           data: {
             type: 'snack_chat_message',
             recipientUserId: args.recipientId,
@@ -3587,6 +3706,9 @@ async function sendSnackChatPush(args: {
             senderId: args.senderId,
             senderName: args.senderName,
             roomTitle,
+            latestMessage: preview,
+            unreadCount: String(roomUnreadCount),
+            notificationGroupKey,
             ...(badge == null ? {} : {badge: String(badge)}),
             language,
           },
@@ -3594,20 +3716,24 @@ async function sendSnackChatPush(args: {
             headers: {
               'apns-push-type': 'alert',
               'apns-priority': '10',
+              'apns-collapse-id': notificationGroupKey,
             },
             payload: {
               aps: {
                 sound: 'default',
+                threadId: notificationGroupKey,
                 ...(badge == null ? {} : {badge}),
               },
             },
           },
           android: {
             priority: 'high',
+            collapseKey: notificationGroupKey,
             notification: {
               sound: 'default',
               channelId: 'high_importance_channel',
-              ...(badge == null ? {} : {notificationCount: badge}),
+              tag: notificationGroupKey,
+              notificationCount: roomUnreadCount,
             },
           },
         });

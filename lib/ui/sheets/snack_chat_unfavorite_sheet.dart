@@ -35,7 +35,8 @@ Future<bool> showSnackChatUnfavoriteSheet(BuildContext context) async {
                     child: Text(
                       l10n.snackChatUnfavoriteTitle,
                       style: const TextStyle(
-                        fontFamily: 'Pretendard',
+                        fontFamily: 'Inter',
+                        fontFamilyFallback: const ['NotoSansKR'],
                         fontSize: 20,
                         height: 1.3,
                         fontWeight: FontWeight.w800,
@@ -49,7 +50,8 @@ Future<bool> showSnackChatUnfavoriteSheet(BuildContext context) async {
               Text(
                 l10n.snackChatUnfavoriteMessage,
                 style: const TextStyle(
-                  fontFamily: 'Pretendard',
+                  fontFamily: 'Inter',
+                  fontFamilyFallback: const ['NotoSansKR'],
                   fontSize: 15,
                   height: 1.5,
                   fontWeight: FontWeight.w400,
@@ -72,7 +74,8 @@ Future<bool> showSnackChatUnfavoriteSheet(BuildContext context) async {
                     child: Text(
                       l10n.cancel,
                       style: const TextStyle(
-                        fontFamily: 'Pretendard',
+                        fontFamily: 'Inter',
+                        fontFamilyFallback: const ['NotoSansKR'],
                         fontSize: 15,
                         fontWeight: FontWeight.w600,
                       ),
@@ -91,7 +94,8 @@ Future<bool> showSnackChatUnfavoriteSheet(BuildContext context) async {
                     child: Text(
                       l10n.confirm,
                       style: const TextStyle(
-                        fontFamily: 'Pretendard',
+                        fontFamily: 'Inter',
+                        fontFamilyFallback: const ['NotoSansKR'],
                         fontSize: 15,
                         fontWeight: FontWeight.w700,
                       ),

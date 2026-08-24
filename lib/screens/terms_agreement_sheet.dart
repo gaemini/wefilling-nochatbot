@@ -61,7 +61,8 @@ class _TermsAgreementSheetState extends State<TermsAgreementSheet> {
               Text(
                 l10n.welcomeTitle,
                 style: const TextStyle(
-                  fontFamily: 'Pretendard',
+                  fontFamily: 'Inter',
+                  fontFamilyFallback: const ['NotoSansKR'],
                   fontSize: 22,
                   fontWeight: FontWeight.w800,
                   color: Color(0xFF0F172A),
@@ -72,7 +73,8 @@ class _TermsAgreementSheetState extends State<TermsAgreementSheet> {
               Text(
                 l10n.termsAgreementDescription,
                 style: const TextStyle(
-                  fontFamily: 'Pretendard',
+                  fontFamily: 'Inter',
+                  fontFamilyFallback: const ['NotoSansKR'],
                   fontSize: 14,
                   color: Color(0xFF64748B),
                   height: 1.5,
@@ -102,7 +104,8 @@ class _TermsAgreementSheetState extends State<TermsAgreementSheet> {
                               child: Text(
                                 l10n.loginTermsNotice,
                                 style: const TextStyle(
-                                  fontFamily: 'Pretendard',
+                                  fontFamily: 'Inter',
+                                  fontFamilyFallback: const ['NotoSansKR'],
                                   fontSize: 14,
                                   color: Color(0xFF334155),
                                   height: 1.45,

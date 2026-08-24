@@ -44,7 +44,8 @@ Future<int?> showParticipantCountSheet({
               Text(
                 title,
                 style: const TextStyle(
-                  fontFamily: 'Pretendard',
+                  fontFamily: 'Inter',
+                  fontFamilyFallback: const ['NotoSansKR'],
                   fontSize: 17,
                   fontWeight: FontWeight.w700,
                   color: Color(0xFF111827),
@@ -101,7 +102,8 @@ class _ParticipantCountRow extends StatelessWidget {
                 maxLines: 1,
                 overflow: TextOverflow.ellipsis,
                 style: TextStyle(
-                  fontFamily: 'Pretendard',
+                  fontFamily: 'Inter',
+                  fontFamilyFallback: const ['NotoSansKR'],
                   fontSize: 15,
                   fontWeight: selected ? FontWeight.w700 : FontWeight.w500,
                   color: const Color(0xFF111827),

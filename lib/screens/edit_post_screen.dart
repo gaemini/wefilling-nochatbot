@@ -390,7 +390,8 @@ class _EditPostScreenState extends State<EditPostScreen> {
         title: Text(
           l10n.editPost,
           style: const TextStyle(
-            fontFamily: 'Pretendard',
+            fontFamily: 'Inter',
+            fontFamilyFallback: const ['NotoSansKR'],
             fontSize: 18,
             fontWeight: FontWeight.w600,
             color: Color(0xFF111827),
@@ -409,7 +410,8 @@ class _EditPostScreenState extends State<EditPostScreen> {
             label: Text(
               l10n.update,
               style: const TextStyle(
-                fontFamily: 'Pretendard',
+                fontFamily: 'Inter',
+                fontFamilyFallback: const ['NotoSansKR'],
                 fontWeight: FontWeight.w700,
               ),
             ),
@@ -438,7 +440,8 @@ class _EditPostScreenState extends State<EditPostScreen> {
                         ? '투표가 진행된 게시글은 수정할 수 없어요.'
                         : 'Poll posts cannot be edited after votes.',
                     style: const TextStyle(
-                      fontFamily: 'Pretendard',
+                      fontFamily: 'Inter',
+                      fontFamilyFallback: const ['NotoSansKR'],
                       fontSize: 13,
                       fontWeight: FontWeight.w600,
                       color: Color(0xFF92400E),
@@ -484,7 +487,8 @@ class _EditPostScreenState extends State<EditPostScreen> {
                   maxLines: null,
                   textAlignVertical: TextAlignVertical.top,
                   style: const TextStyle(
-                    fontFamily: 'Pretendard',
+                    fontFamily: 'Inter',
+                    fontFamilyFallback: const ['NotoSansKR'],
                     fontSize: 16,
                     fontWeight: FontWeight.w500,
                     color: Color(0xFF111827),
@@ -504,7 +508,8 @@ class _EditPostScreenState extends State<EditPostScreen> {
                       label: Text(
                         l10n.imageAttachment,
                         style: const TextStyle(
-                          fontFamily: 'Pretendard',
+                          fontFamily: 'Inter',
+                          fontFamilyFallback: const ['NotoSansKR'],
                           fontWeight: FontWeight.w700,
                         ),
                       ),
@@ -530,7 +535,8 @@ class _EditPostScreenState extends State<EditPostScreen> {
                     child: Text(
                       '${(_keptImageUrls.length + _selectedImages.length).clamp(0, 10)}/10',
                       style: const TextStyle(
-                        fontFamily: 'Pretendard',
+                        fontFamily: 'Inter',
+                        fontFamilyFallback: const ['NotoSansKR'],
                         fontSize: 12,
                         fontWeight: FontWeight.w800,
                         color: Color(0xFF111827),

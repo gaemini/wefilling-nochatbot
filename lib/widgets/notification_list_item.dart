@@ -79,7 +79,8 @@ class NotificationListItem extends StatelessWidget {
                                   primaryColor.withAlpha(primaryTextAlpha);
 
                               final strongStyle = TextStyle(
-                                fontFamily: 'Pretendard',
+                                fontFamily: 'Inter',
+                                fontFamilyFallback: const ['NotoSansKR'],
                                 fontSize: 15,
                                 height: 1.25,
                                 // 아이디(닉네임)는 더 굵게
@@ -90,7 +91,8 @@ class NotificationListItem extends StatelessWidget {
                               );
 
                               final normalStyle = TextStyle(
-                                fontFamily: 'Pretendard',
+                                fontFamily: 'Inter',
+                                fontFamilyFallback: const ['NotoSansKR'],
                                 fontSize: 15,
                                 height: 1.25,
                                 fontWeight: FontWeight.w500,
@@ -153,7 +155,8 @@ class NotificationListItem extends StatelessWidget {
                             TextSpan(
                               text: ' · $timeText',
                               style: TextStyle(
-                                fontFamily: 'Pretendard',
+                                fontFamily: 'Inter',
+                                fontFamilyFallback: const ['NotoSansKR'],
                                 fontSize: 15,
                                 height: 1.25,
                                 fontWeight: FontWeight.w500,

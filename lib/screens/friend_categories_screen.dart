@@ -136,12 +136,14 @@ class _FriendCategoriesScreenState extends State<FriendCategoriesScreen>
             labelColor: const Color(0xFF111827),
             unselectedLabelColor: const Color(0xFF9CA3AF),
             labelStyle: const TextStyle(
-              fontFamily: 'Pretendard',
+              fontFamily: 'Inter',
+              fontFamilyFallback: const ['NotoSansKR'],
               fontSize: 14,
               fontWeight: FontWeight.w600,
             ),
             unselectedLabelStyle: const TextStyle(
-              fontFamily: 'Pretendard',
+              fontFamily: 'Inter',
+              fontFamilyFallback: const ['NotoSansKR'],
               fontSize: 14,
               fontWeight: FontWeight.w500,
             ),
@@ -266,7 +268,8 @@ class _FriendCategoriesScreenState extends State<FriendCategoriesScreen>
             child: Text(
               isKo ? '그룹을 통해 공개범위를 설정하세요.' : 'Set visibility through groups.',
               style: const TextStyle(
-                fontFamily: 'Pretendard',
+                fontFamily: 'Inter',
+                fontFamilyFallback: const ['NotoSansKR'],
                 fontSize: 13,
                 fontWeight: FontWeight.w500,
                 color: Color(0xFF6B7280),
@@ -299,6 +302,7 @@ class _FriendCategoriesScreenState extends State<FriendCategoriesScreen>
     final isCompact = MediaQuery.sizeOf(context).width < 360;
 
     return DecoratedBox(
+      key: ValueKey('friend-category-${category.id}'),
       decoration: const BoxDecoration(
         color: BrandColors.surface,
         border: Border(
@@ -330,7 +334,8 @@ class _FriendCategoriesScreenState extends State<FriendCategoriesScreen>
           maxLines: 1,
           overflow: TextOverflow.ellipsis,
           style: const TextStyle(
-            fontFamily: 'Pretendard',
+            fontFamily: 'Inter',
+            fontFamilyFallback: const ['NotoSansKR'],
             fontSize: 15,
             fontWeight: FontWeight.w700,
             color: Color(0xFF111827),
@@ -339,6 +344,7 @@ class _FriendCategoriesScreenState extends State<FriendCategoriesScreen>
         subtitle: Padding(
           padding: const EdgeInsets.only(top: 2),
           child: _FriendCountSubtitle(
+            key: ValueKey('friend-count-${category.id}'),
             category: category,
             cache: _friendCountCache,
             firestore: _firestore,
@@ -392,7 +398,8 @@ class _FriendCategoriesScreenState extends State<FriendCategoriesScreen>
                   Text(
                     l10n.editAction ?? "",
                     style: const TextStyle(
-                      fontFamily: 'Pretendard',
+                      fontFamily: 'Inter',
+                      fontFamilyFallback: const ['NotoSansKR'],
                       fontSize: 14,
                       fontWeight: FontWeight.w600,
                       color: Color(0xFF111827),
@@ -417,7 +424,8 @@ class _FriendCategoriesScreenState extends State<FriendCategoriesScreen>
                   Text(
                     l10n.delete,
                     style: const TextStyle(
-                      fontFamily: 'Pretendard',
+                      fontFamily: 'Inter',
+                      fontFamilyFallback: const ['NotoSansKR'],
                       fontSize: 14,
                       fontWeight: FontWeight.w600,
                       color: BrandColors.error,
@@ -530,7 +538,8 @@ class _FriendCategoriesScreenState extends State<FriendCategoriesScreen>
         title: Text(
           AppLocalizations.of(context)!.deleteCategory ?? "",
           style: const TextStyle(
-            fontFamily: 'Pretendard',
+            fontFamily: 'Inter',
+            fontFamilyFallback: const ['NotoSansKR'],
             fontSize: 18,
             fontWeight: FontWeight.w600,
             color: Color(0xFF111827),
@@ -539,7 +548,8 @@ class _FriendCategoriesScreenState extends State<FriendCategoriesScreen>
         content: Text(
           AppLocalizations.of(context)!.deleteCategoryConfirm(category.name),
           style: const TextStyle(
-            fontFamily: 'Pretendard',
+            fontFamily: 'Inter',
+            fontFamilyFallback: const ['NotoSansKR'],
             fontSize: 14,
             fontWeight: FontWeight.w400,
             color: Color(0xFF6B7280),
@@ -551,7 +561,8 @@ class _FriendCategoriesScreenState extends State<FriendCategoriesScreen>
             child: Text(
               AppLocalizations.of(context)!.cancel ?? "",
               style: const TextStyle(
-                fontFamily: 'Pretendard',
+                fontFamily: 'Inter',
+                fontFamilyFallback: const ['NotoSansKR'],
                 fontSize: 14,
                 fontWeight: FontWeight.w600,
                 color: Color(0xFF6B7280),
@@ -570,9 +581,16 @@ class _FriendCategoriesScreenState extends State<FriendCategoriesScreen>
             onPressed: () async {
               final success =
                   await _categoryService.deleteCategory(category.id);
+              if (!context.mounted) return;
               Navigator.pop(context);
+              if (!mounted) return;
 
               if (success) {
+                setState(() {
+                  _friendCountCache.removeWhere(
+                    (key, _) => key.startsWith('${category.id}_'),
+                  );
+                });
                 ScaffoldMessenger.of(context).showSnackBar(
                   SnackBar(
                       content: Text(
@@ -590,7 +608,8 @@ class _FriendCategoriesScreenState extends State<FriendCategoriesScreen>
             child: Text(
               AppLocalizations.of(context)!.delete ?? "",
               style: const TextStyle(
-                fontFamily: 'Pretendard',
+                fontFamily: 'Inter',
+                fontFamilyFallback: const ['NotoSansKR'],
                 fontSize: 14,
                 fontWeight: FontWeight.w600,
               ),
@@ -768,6 +787,7 @@ class _FriendCountSubtitle extends StatefulWidget {
   final FirebaseFirestore firestore;
 
   const _FriendCountSubtitle({
+    super.key,
     required this.category,
     required this.cache,
     required this.firestore,
@@ -780,9 +800,12 @@ class _FriendCountSubtitle extends StatefulWidget {
 class _FriendCountSubtitleState extends State<_FriendCountSubtitle> {
   late int _count;
 
-  /// 캐시 키: 카테고리 ID + 친구 목록 해시 (친구 목록이 바뀌면 재조회)
-  String get _cacheKey =>
-      '${widget.category.id}_${widget.category.friendIds.length}';
+  /// 카테고리 ID와 실제 구성원 집합을 함께 키로 사용한다. 같은 인원 수라도
+  /// 구성원이 바뀐 경우 이전 그룹의 비동기 결과를 재사용하지 않는다.
+  String get _cacheKey {
+    final ids = widget.category.friendIds.toSet().toList()..sort();
+    return '${widget.category.id}_${Object.hashAll(ids)}';
+  }
 
   @override
   void initState() {
@@ -797,10 +820,10 @@ class _FriendCountSubtitleState extends State<_FriendCountSubtitle> {
   @override
   void didUpdateWidget(_FriendCountSubtitle oldWidget) {
     super.didUpdateWidget(oldWidget);
-    final newKey = '${widget.category.id}_${widget.category.friendIds.length}';
-    if (oldWidget.category.id != widget.category.id ||
-        oldWidget.category.friendIds.length !=
-            widget.category.friendIds.length) {
+    final oldIds = oldWidget.category.friendIds.toSet().toList()..sort();
+    final newKey = _cacheKey;
+    final oldKey = '${oldWidget.category.id}_${Object.hashAll(oldIds)}';
+    if (oldKey != newKey) {
       _count = widget.cache[newKey] ?? widget.category.friendIds.length;
       if (!widget.cache.containsKey(newKey)) {
         _fetchAndCache();
@@ -809,20 +832,26 @@ class _FriendCountSubtitleState extends State<_FriendCountSubtitle> {
   }
 
   Future<void> _fetchAndCache() async {
-    if (widget.category.friendIds.isEmpty) {
-      widget.cache[_cacheKey] = 0;
+    final requestedKey = _cacheKey;
+    final requestedFriendIds =
+        widget.category.friendIds.toSet().toList(growable: false);
+    if (requestedFriendIds.isEmpty) {
+      widget.cache[requestedKey] = 0;
+      if (mounted && _cacheKey == requestedKey) setState(() => _count = 0);
       return;
     }
     try {
       // 병렬로 existence 체크
       final results = await Future.wait(
-        widget.category.friendIds.map(
+        requestedFriendIds.map(
           (id) => widget.firestore.collection('users').doc(id).get(),
         ),
       );
       final actual = results.where((d) => d.exists).length;
-      widget.cache[_cacheKey] = actual;
-      if (mounted) setState(() => _count = actual);
+      widget.cache[requestedKey] = actual;
+      if (mounted && _cacheKey == requestedKey) {
+        setState(() => _count = actual);
+      }
     } catch (_) {
       // 실패 시 리스트 길이 유지
     }
@@ -832,7 +861,8 @@ class _FriendCountSubtitleState extends State<_FriendCountSubtitle> {
   Widget build(BuildContext context) {
     final isKo = Localizations.localeOf(context).languageCode == 'ko';
     final baseStyle = const TextStyle(
-      fontFamily: 'Pretendard',
+      fontFamily: 'Inter',
+      fontFamilyFallback: const ['NotoSansKR'],
       fontSize: 12,
       fontWeight: FontWeight.w500,
       color: Color(0xFF4B5563),

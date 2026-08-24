@@ -348,7 +348,8 @@ class _NicknameSetupScreenState extends State<NicknameSetupScreen> {
           title: Text(
             _isKorean ? '프로필 설정' : 'Set up profile',
             style: const TextStyle(
-              fontFamily: 'Pretendard',
+              fontFamily: 'Inter',
+              fontFamilyFallback: const ['NotoSansKR'],
               fontSize: 18,
               fontWeight: FontWeight.w700,
               color: Color(0xFF0F172A),
@@ -366,7 +367,8 @@ class _NicknameSetupScreenState extends State<NicknameSetupScreen> {
                 child: Text(
                   _isKorean ? '건너뛰기' : 'Skip',
                   style: const TextStyle(
-                    fontFamily: 'Pretendard',
+                    fontFamily: 'Inter',
+                    fontFamilyFallback: const ['NotoSansKR'],
                     fontSize: 14,
                     fontWeight: FontWeight.w600,
                     color: Color(0xFF64748B),
@@ -448,7 +450,8 @@ class _NicknameSetupScreenState extends State<NicknameSetupScreen> {
                             ? (_isKorean ? '프로필 완성' : 'Finish profile')
                             : (_isKorean ? '다음' : 'Next'),
                         style: const TextStyle(
-                          fontFamily: 'Pretendard',
+                          fontFamily: 'Inter',
+                          fontFamilyFallback: const ['NotoSansKR'],
                           fontSize: 16,
                           fontWeight: FontWeight.w700,
                         ),
@@ -644,7 +647,8 @@ class _NicknameSetupScreenState extends State<NicknameSetupScreen> {
                           Text(
                             type.title(context),
                             style: TextStyle(
-                              fontFamily: 'Pretendard',
+                              fontFamily: 'Inter',
+                              fontFamilyFallback: const ['NotoSansKR'],
                               fontSize: 16,
                               fontWeight: FontWeight.w700,
                               color: _studentType == type
@@ -656,7 +660,8 @@ class _NicknameSetupScreenState extends State<NicknameSetupScreen> {
                           Text(
                             type.description(context),
                             style: const TextStyle(
-                              fontFamily: 'Pretendard',
+                              fontFamily: 'Inter',
+                              fontFamilyFallback: const ['NotoSansKR'],
                               fontSize: 14,
                               height: 1.45,
                               color: Color(0xFF64748B),
@@ -693,7 +698,8 @@ class _NicknameSetupScreenState extends State<NicknameSetupScreen> {
               ? '나중에 마이페이지에서 추가할 수 있어요.'
               : 'You can add these later from My Page.',
           style: const TextStyle(
-            fontFamily: 'Pretendard',
+            fontFamily: 'Inter',
+            fontFamilyFallback: const ['NotoSansKR'],
             fontSize: 13,
             color: Color(0xFF64748B),
           ),
@@ -721,7 +727,8 @@ class _NicknameSetupScreenState extends State<NicknameSetupScreen> {
               ? '나중에 마이페이지에서 추가할 수 있어요.'
               : 'You can add these later from My Page.',
           style: const TextStyle(
-            fontFamily: 'Pretendard',
+            fontFamily: 'Inter',
+            fontFamilyFallback: const ['NotoSansKR'],
             fontSize: 13,
             color: Color(0xFF64748B),
           ),
@@ -732,7 +739,7 @@ class _NicknameSetupScreenState extends State<NicknameSetupScreen> {
         SocialProfilePromptField(
           controller: _conversationController,
           suggestions: SocialProfileCatalog.conversationStarters,
-          title: _isKorean ? '대화의 계기' : 'Start a conversation',
+          title: _isKorean ? '대화 시작 질문' : 'Conversation starter',
           description: _isKorean
               ? '친구들이 어떤 말로 대화를 시작하면 좋을까요?'
               : 'What could a new friend ask you first?',

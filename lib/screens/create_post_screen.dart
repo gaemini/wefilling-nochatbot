@@ -10,27 +10,43 @@ import '../constants/app_constants.dart';
 import '../design/tokens.dart';
 import '../l10n/app_localizations.dart';
 import '../models/friend_category.dart';
+import '../models/external_share_request.dart';
 import '../models/post_category.dart';
+import '../models/shared_link_preview.dart';
 import '../models/user_profile.dart';
 import '../repositories/users_repository.dart';
 import '../services/friend_category_service.dart';
 import '../services/post_service.dart';
+import '../services/shared_link_preview_service.dart';
 import '../ui/widgets/fullscreen_file_image_viewer.dart';
 import '../ui/widgets/group_audience_preview.dart';
+import '../ui/widgets/instagram_embed_preview.dart';
 import '../ui/widgets/post_category_selector.dart';
+import '../ui/widgets/shared_link_preview_card.dart';
 import '../utils/logger.dart';
 import '../utils/responsive_helper.dart';
+import 'post_detail_screen.dart';
 
 class CreatePostScreen extends StatefulWidget {
   final Function onPostCreated;
   final PostCategory? initialCategory;
   final FriendCategory? initialAudienceCategory;
+  final ExternalShareRequest? initialSharedRequest;
+  final VoidCallback? onSharedRequestReady;
+  final Future<bool> Function(String postId)? onSharedPostCreated;
+  final Future<bool> Function(ExternalShareDraft draft)? onSharedDraftSave;
+  final bool stayInAppAfterSharedPost;
 
   const CreatePostScreen({
     super.key,
     required this.onPostCreated,
     this.initialCategory,
     this.initialAudienceCategory,
+    this.initialSharedRequest,
+    this.onSharedRequestReady,
+    this.onSharedPostCreated,
+    this.onSharedDraftSave,
+    this.stayInAppAfterSharedPost = false,
   });
 
   @override
@@ -66,6 +82,19 @@ class _CreatePostScreenState extends State<CreatePostScreen> {
   bool _showCategoryRequiredHint = false;
   final Set<PostCategory> _selectedPostTags = <PostCategory>{};
   bool _showPostTagRequiredHint = false;
+  SharedLinkPreview? _sharedLinkPreview;
+  bool _sharedLinkRemoved = false;
+  int _previewResolveSequence = 0;
+  Future<void>? _sharedLinkResolveFuture;
+  String _sharedPayloadImagePath = '';
+
+  bool get _hasSharedPayloadImage {
+    final path = _sharedPayloadImagePath.trim();
+    return path.isNotEmpty && File(path).existsSync();
+  }
+
+  int get _expectedResolvedImageCount =>
+      _selectedAssets.length + (_hasSharedPayloadImage ? 1 : 0);
 
   @override
   void initState() {
@@ -78,8 +107,132 @@ class _CreatePostScreenState extends State<CreatePostScreen> {
       _visibility = 'category';
       _selectedCategoryIds = <String>[initialAudienceCategory.id];
     }
+    _initializeSharedRequest();
+    if (widget.initialSharedRequest != null) {
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (!mounted) return;
+        widget.onSharedRequestReady?.call();
+      });
+    }
     _contentController.addListener(_checkCanProceed);
     _loadFriendCategories();
+    _checkCanProceed();
+  }
+
+  void _initializeSharedRequest() {
+    final request = widget.initialSharedRequest;
+    if (request == null) return;
+
+    for (final key in request.categoryKeys) {
+      if (PostCategory.isSupportedKey(key)) {
+        _selectedPostTags.add(PostCategory.fromKey(key));
+      }
+    }
+    if (request.visibility == 'category' &&
+        request.visibleToCategoryIds.isNotEmpty) {
+      _visibility = 'category';
+      _isAnonymous = false;
+      _selectedCategoryIds = request.visibleToCategoryIds.toSet().toList();
+    } else {
+      _visibility = 'public';
+      _isAnonymous = request.isAnonymous;
+    }
+
+    final initialDraft = request.draftText.trim();
+    if (initialDraft.isNotEmpty) {
+      _contentController.text = initialDraft;
+    } else if (!request.hasUrl && request.originalText.trim().isNotEmpty) {
+      _contentController.text = request.originalText.trim();
+    }
+    final url = request.normalizedUrl.trim();
+    final detectedProvider =
+        SharedLinkPreviewService.instance.providerForUrl(url);
+    final isYouTubeShare = request.source.trim().toLowerCase() == 'youtube' ||
+        detectedProvider == 'youtube';
+
+    final imagePath = request.imagePath.trim();
+    // Old pending shares can still contain the YouTube app icon. A YouTube URL
+    // is represented only by the video preview card, never as an attached image.
+    if (!isYouTubeShare &&
+        imagePath.isNotEmpty &&
+        File(imagePath).existsSync()) {
+      _selectedImages.add(File(imagePath));
+      if (detectedProvider == 'instagram') {
+        _sharedPayloadImagePath = imagePath;
+      }
+    }
+    if (!request.hasUrl) return;
+
+    final fallback = SharedLinkPreviewService.instance.fallback(
+      url,
+      provider: detectedProvider,
+    );
+    final nativePreview = request.preview;
+    final sharedTitle = _firstNonUrlLine(request.originalText);
+    _sharedLinkPreview = fallback.copyWith(
+      originalUrl: request.originalUrl.trim().isEmpty
+          ? fallback.originalUrl
+          : request.originalUrl.trim(),
+      canonicalUrl: nativePreview?.canonicalUrl.trim().isNotEmpty == true
+          ? nativePreview!.canonicalUrl.trim()
+          : fallback.canonicalUrl,
+      title: nativePreview?.title.trim().isNotEmpty == true
+          ? nativePreview!.title.trim()
+          : (sharedTitle.isNotEmpty ? sharedTitle : fallback.title),
+      authorName: nativePreview?.authorName ?? fallback.authorName,
+      thumbnailUrl: nativePreview?.thumbnailUrl.trim().isNotEmpty == true
+          ? nativePreview!.thumbnailUrl.trim()
+          : fallback.thumbnailUrl,
+      previewStatus: 'loading',
+    );
+    final resolveFuture = _resolveSharedLink(url);
+    _sharedLinkResolveFuture = resolveFuture;
+    unawaited(resolveFuture);
+  }
+
+  Future<void> _resolveSharedLink(String url) async {
+    final sequence = ++_previewResolveSequence;
+    final preview = await SharedLinkPreviewService.instance.resolve(url);
+    if (!mounted || _sharedLinkRemoved || sequence != _previewResolveSequence) {
+      return;
+    }
+    final localPreview = _sharedLinkPreview;
+    final resolvedPreview =
+        preview.previewStatus == 'ready' || localPreview == null
+            ? preview
+            : preview.copyWith(
+                title: localPreview.title.trim().isNotEmpty
+                    ? localPreview.title
+                    : preview.title,
+                authorName: localPreview.authorName.trim().isNotEmpty
+                    ? localPreview.authorName
+                    : preview.authorName,
+                thumbnailUrl: localPreview.thumbnailUrl.trim().isNotEmpty
+                    ? localPreview.thumbnailUrl
+                    : preview.thumbnailUrl,
+              );
+    setState(() => _sharedLinkPreview = resolvedPreview);
+    _checkCanProceed();
+  }
+
+  String _firstNonUrlLine(String text) {
+    for (final rawLine in text.split(RegExp(r'[\r\n]+'))) {
+      final line = rawLine.trim();
+      if (line.isEmpty ||
+          RegExp(r'https?://', caseSensitive: false).hasMatch(line)) {
+        continue;
+      }
+      return line.length > 200 ? line.substring(0, 200) : line;
+    }
+    return '';
+  }
+
+  void _removeSharedLink() {
+    _previewResolveSequence++;
+    setState(() {
+      _sharedLinkRemoved = true;
+      _sharedLinkPreview = null;
+    });
     _checkCanProceed();
   }
 
@@ -117,8 +270,9 @@ class _CreatePostScreenState extends State<CreatePostScreen> {
   void _checkCanProceed() {
     final contentNotEmpty = _contentController.text.trim().isNotEmpty;
     final hasImages = _selectedImages.isNotEmpty;
-    final canProceed =
-        _selectedPostTags.isNotEmpty && (contentNotEmpty || hasImages);
+    final hasSharedLink = _sharedLinkPreview != null && !_sharedLinkRemoved;
+    final canProceed = _selectedPostTags.isNotEmpty &&
+        (contentNotEmpty || hasImages || hasSharedLink);
 
     if (!mounted) return;
     setState(() {
@@ -192,14 +346,6 @@ class _CreatePostScreenState extends State<CreatePostScreen> {
   Future<void> _syncSelectedImagesFromAssets() async {
     if (!mounted) return;
 
-    if (_selectedAssets.isEmpty) {
-      setState(() {
-        _selectedImages.clear();
-        _isResolvingSelectedImages = false;
-      });
-      return;
-    }
-
     setState(() {
       _isResolvingSelectedImages = true;
     });
@@ -210,6 +356,11 @@ class _CreatePostScreenState extends State<CreatePostScreen> {
     setState(() {
       _selectedImages
         ..clear()
+        ..addAll(
+          _hasSharedPayloadImage
+              ? <File>[File(_sharedPayloadImagePath)]
+              : const <File>[],
+        )
         ..addAll(files);
       _isResolvingSelectedImages = false;
     });
@@ -244,12 +395,14 @@ class _CreatePostScreenState extends State<CreatePostScreen> {
       return;
     }
 
+    final maxAssets = 15 - (_hasSharedPayloadImage ? 1 : 0);
+    if (maxAssets <= 0) return;
     final pickedAssets = await AssetPicker.pickAssets(
       context,
       pickerConfig: AssetPickerConfig(
         requestType: RequestType.image,
         selectedAssets: _selectedAssets,
-        maxAssets: 15,
+        maxAssets: maxAssets,
         dragToSelect: false,
       ),
     );
@@ -259,7 +412,7 @@ class _CreatePostScreenState extends State<CreatePostScreen> {
     setState(() {
       _selectedAssets
         ..clear()
-        ..addAll(pickedAssets.take(15));
+        ..addAll(pickedAssets.take(maxAssets));
     });
 
     await _syncSelectedImagesFromAssets();
@@ -294,7 +447,7 @@ class _CreatePostScreenState extends State<CreatePostScreen> {
     if (!mounted || _selectedImages.isEmpty) return;
 
     if (_selectedAssets.isNotEmpty &&
-        _selectedImages.length != _selectedAssets.length) {
+        _selectedImages.length != _expectedResolvedImageCount) {
       await _syncSelectedImagesFromAssets();
     }
     if (!mounted || _selectedImages.isEmpty) return;
@@ -310,14 +463,23 @@ class _CreatePostScreenState extends State<CreatePostScreen> {
 
   Future<void> _removeImage(int index) async {
     if (index < 0 || index >= _selectedImages.length) return;
+    if (_selectedImages[index].path == _sharedPayloadImagePath) {
+      setState(() {
+        _selectedImages.removeAt(index);
+        _sharedPayloadImagePath = '';
+      });
+      _checkCanProceed();
+      return;
+    }
     if (Platform.isAndroid) {
       setState(() => _selectedImages.removeAt(index));
       _checkCanProceed();
       return;
     }
     setState(() {
-      if (index >= 0 && index < _selectedAssets.length) {
-        _selectedAssets.removeAt(index);
+      final assetIndex = index - (_hasSharedPayloadImage ? 1 : 0);
+      if (assetIndex >= 0 && assetIndex < _selectedAssets.length) {
+        _selectedAssets.removeAt(assetIndex);
       }
     });
     await _syncSelectedImagesFromAssets();
@@ -369,7 +531,8 @@ class _CreatePostScreenState extends State<CreatePostScreen> {
             bodyText,
             textAlign: TextAlign.center,
             style: const TextStyle(
-              fontFamily: 'Pretendard',
+              fontFamily: 'Inter',
+              fontFamilyFallback: const ['NotoSansKR'],
               fontSize: 16,
               fontWeight: FontWeight.w700,
               color: Color(0xFF111827),
@@ -393,7 +556,8 @@ class _CreatePostScreenState extends State<CreatePostScreen> {
                     child: Text(
                       l10n.cancel,
                       style: const TextStyle(
-                        fontFamily: 'Pretendard',
+                        fontFamily: 'Inter',
+                        fontFamilyFallback: const ['NotoSansKR'],
                         fontSize: 14,
                         fontWeight: FontWeight.w700,
                       ),
@@ -416,7 +580,8 @@ class _CreatePostScreenState extends State<CreatePostScreen> {
                     child: Text(
                       l10n.registration,
                       style: const TextStyle(
-                        fontFamily: 'Pretendard',
+                        fontFamily: 'Inter',
+                        fontFamilyFallback: const ['NotoSansKR'],
                         fontSize: 14,
                         fontWeight: FontWeight.w700,
                       ),
@@ -431,6 +596,117 @@ class _CreatePostScreenState extends State<CreatePostScreen> {
     );
 
     return result ?? false;
+  }
+
+  String? _externalPostId() {
+    if (!widget.stayInAppAfterSharedPost) return null;
+    final requestId = widget.initialSharedRequest?.id ?? '';
+    final normalized = requestId.replaceAll(RegExp(r'[^A-Za-z0-9]'), '');
+    if (normalized.length < 20) return null;
+    return normalized.substring(0, 20);
+  }
+
+  ExternalShareDraft _currentExternalShareDraft() {
+    return ExternalShareDraft(
+      draftText: _contentController.text.trim(),
+      categoryKeys: _selectedPostTags.map((category) => category.key).toList(),
+      visibility: _visibility,
+      isAnonymous: _visibility == 'public' && _isAnonymous,
+      visibleToCategoryIds:
+          _visibility == 'category' ? _selectedCategoryIds : const <String>[],
+    );
+  }
+
+  Future<void> _handleClose() async {
+    if (_isSubmitting) return;
+    if (widget.initialSharedRequest == null ||
+        !widget.stayInAppAfterSharedPost) {
+      Navigator.of(context).pop(
+        widget.initialSharedRequest == null
+            ? null
+            : ExternalShareComposeOutcome.discarded,
+      );
+      return;
+    }
+
+    final isKo = Localizations.localeOf(context).languageCode == 'ko';
+    final choice = await showDialog<ExternalShareComposeOutcome>(
+      context: context,
+      barrierDismissible: false,
+      builder: (dialogContext) => AlertDialog(
+        title: Text(isKo ? '작성을 종료할까요?' : 'Leave this post?'),
+        content: Text(
+          isKo
+              ? '공유한 내용과 현재 입력을 다음 앱 실행에서 이어서 작성하거나, 공유 요청을 완전히 폐기할 수 있어요.'
+              : 'Keep this draft for the next app launch or discard the shared request.',
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(dialogContext).pop(),
+            child: Text(isKo ? '계속 작성' : 'Keep writing'),
+          ),
+          TextButton(
+            onPressed: () => Navigator.of(dialogContext)
+                .pop(ExternalShareComposeOutcome.discarded),
+            child: Text(
+              isKo ? '공유 요청 폐기' : 'Discard',
+              style: const TextStyle(color: Colors.red),
+            ),
+          ),
+          FilledButton(
+            onPressed: () => Navigator.of(dialogContext)
+                .pop(ExternalShareComposeOutcome.saved),
+            child: Text(isKo ? '초안 유지' : 'Keep draft'),
+          ),
+        ],
+      ),
+    );
+    if (!mounted || choice == null) return;
+
+    if (choice == ExternalShareComposeOutcome.saved) {
+      final saved =
+          await widget.onSharedDraftSave?.call(_currentExternalShareDraft()) ??
+              false;
+      if (!mounted) return;
+      if (!saved) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text(
+              isKo
+                  ? '초안을 저장하지 못했어요. 잠시 후 다시 시도해 주세요.'
+                  : 'Could not save the draft. Please try again.',
+            ),
+          ),
+        );
+        return;
+      }
+    }
+
+    Navigator.of(context).pop(choice);
+  }
+
+  Future<void> _openCreatedSharedPost(String postId) async {
+    await widget.onSharedPostCreated?.call(postId);
+    if (!mounted) return;
+
+    var post = await _postService.getPostById(postId);
+    for (var retry = 0; post == null && retry < 2; retry++) {
+      await Future<void>.delayed(const Duration(milliseconds: 350));
+      post = await _postService.getPostById(postId);
+    }
+    if (!mounted) return;
+
+    if (post == null) {
+      Navigator.of(context).pop(ExternalShareComposeOutcome.posted);
+      return;
+    }
+    Navigator.of(context).pushReplacement<void, ExternalShareComposeOutcome>(
+      MaterialPageRoute<void>(
+        settings: RouteSettings(name: '/posts/$postId'),
+        builder: (_) => PostDetailScreen(post: post!),
+      ),
+      result: ExternalShareComposeOutcome.posted,
+    );
   }
 
   Future<void> _submitPost() async {
@@ -485,7 +761,7 @@ class _CreatePostScreenState extends State<CreatePostScreen> {
     if (!mounted || !confirmed) return;
 
     if (_selectedAssets.isNotEmpty &&
-        _selectedImages.length != _selectedAssets.length) {
+        _selectedImages.length != _expectedResolvedImageCount) {
       await _syncSelectedImagesFromAssets();
     }
     if (!mounted) return;
@@ -495,6 +771,14 @@ class _CreatePostScreenState extends State<CreatePostScreen> {
     });
 
     try {
+      // A user can submit immediately after arriving from the native share
+      // sheet. Wait for the in-flight metadata request so the persisted post
+      // contains the resolved thumbnail/title instead of racing the callback.
+      if (!_sharedLinkRemoved) {
+        await _sharedLinkResolveFuture;
+      }
+      if (!mounted) return;
+
       if (_selectedImages.isNotEmpty) {
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
@@ -504,6 +788,7 @@ class _CreatePostScreenState extends State<CreatePostScreen> {
         );
       }
 
+      String? createdPostId;
       final success = await _postService.addPost(
         '',
         _contentController.text.trim(),
@@ -515,13 +800,26 @@ class _CreatePostScreenState extends State<CreatePostScreen> {
         visibleToCategoryIds: _selectedCategoryIds,
         type: 'text',
         pollOptions: const [],
+        linkPreview: _sharedLinkRemoved ? null : _sharedLinkPreview,
+        requestedPostId: _externalPostId(),
+        onCreated: (postId) => createdPostId = postId,
       );
 
       if (!mounted) return;
 
       if (success) {
         widget.onPostCreated();
-        Navigator.of(context).pop();
+        if (widget.initialSharedRequest != null &&
+            widget.stayInAppAfterSharedPost &&
+            createdPostId != null) {
+          await _openCreatedSharedPost(createdPostId!);
+          return;
+        }
+        Navigator.of(context).pop(
+          widget.initialSharedRequest == null
+              ? null
+              : ExternalShareComposeOutcome.posted,
+        );
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(content: Text(l10n.postCreated)),
         );
@@ -560,7 +858,7 @@ class _CreatePostScreenState extends State<CreatePostScreen> {
           color: const Color(0xFF111827),
           size: context.ri(22).clamp(21, 24).toDouble(),
         ),
-        onPressed: () => Navigator.of(context).pop(),
+        onPressed: _handleClose,
         tooltip: MaterialLocalizations.of(context).closeButtonTooltip,
       ),
       flexibleSpace: _buildCenteredComposerTitle(l10n.writeStory),
@@ -639,7 +937,8 @@ class _CreatePostScreenState extends State<CreatePostScreen> {
             label: Text(
               l10n.share,
               style: TextStyle(
-                fontFamily: 'Pretendard',
+                fontFamily: 'Inter',
+                fontFamilyFallback: const ['NotoSansKR'],
                 fontSize: context.rf(14).clamp(13, 15).toDouble(),
                 fontWeight: FontWeight.w700,
               ),
@@ -680,7 +979,8 @@ class _CreatePostScreenState extends State<CreatePostScreen> {
               overflow: TextOverflow.ellipsis,
               textAlign: TextAlign.center,
               style: TextStyle(
-                fontFamily: 'Pretendard',
+                fontFamily: 'Inter',
+                fontFamilyFallback: const ['NotoSansKR'],
                 fontSize: context.rf(18).clamp(16, 19).toDouble(),
                 fontWeight: FontWeight.w700,
                 color: const Color(0xFF111827),
@@ -699,7 +999,8 @@ class _CreatePostScreenState extends State<CreatePostScreen> {
           child: Text(
             text,
             style: TextStyle(
-              fontFamily: 'Pretendard',
+              fontFamily: 'Inter',
+              fontFamilyFallback: const ['NotoSansKR'],
               fontSize: context.rf(15).clamp(14, 16).toDouble(),
               fontWeight: FontWeight.w800,
               color: const Color(0xFF111827),
@@ -710,7 +1011,8 @@ class _CreatePostScreenState extends State<CreatePostScreen> {
           Text(
             trailing,
             style: TextStyle(
-              fontFamily: 'Pretendard',
+              fontFamily: 'Inter',
+              fontFamilyFallback: const ['NotoSansKR'],
               fontSize: context.rf(13).clamp(12, 14).toDouble(),
               fontWeight: FontWeight.w700,
               color: const Color(0xFF6B7280),
@@ -738,7 +1040,8 @@ class _CreatePostScreenState extends State<CreatePostScreen> {
         label: Text(
           l10n.addImage,
           style: TextStyle(
-            fontFamily: 'Pretendard',
+            fontFamily: 'Inter',
+            fontFamilyFallback: const ['NotoSansKR'],
             fontSize: context.rf(13).clamp(12, 14).toDouble(),
             fontWeight: FontWeight.w700,
           ),
@@ -853,7 +1156,8 @@ class _CreatePostScreenState extends State<CreatePostScreen> {
               Text(
                 l10n.postComposeImageHelper,
                 style: TextStyle(
-                  fontFamily: 'Pretendard',
+                  fontFamily: 'Inter',
+                  fontFamilyFallback: const ['NotoSansKR'],
                   fontSize: context.rf(12).clamp(11, 13).toDouble(),
                   fontWeight: FontWeight.w500,
                   color: const Color(0xFF6B7280),
@@ -871,7 +1175,8 @@ class _CreatePostScreenState extends State<CreatePostScreen> {
                 decoration: InputDecoration(
                   hintText: l10n.enterContent,
                   hintStyle: TextStyle(
-                    fontFamily: 'Pretendard',
+                    fontFamily: 'Inter',
+                    fontFamilyFallback: const ['NotoSansKR'],
                     fontSize: context.rf(15).clamp(14, 16).toDouble(),
                     fontWeight: FontWeight.w400,
                     color: const Color(0xFF9CA3AF),
@@ -880,13 +1185,31 @@ class _CreatePostScreenState extends State<CreatePostScreen> {
                   contentPadding: const EdgeInsets.fromLTRB(0, 2, 0, 16),
                 ),
                 style: TextStyle(
-                  fontFamily: 'Pretendard',
+                  fontFamily: 'Inter',
+                  fontFamilyFallback: const ['NotoSansKR'],
                   fontSize: context.rf(15).clamp(14, 16).toDouble(),
                   fontWeight: FontWeight.w500,
                   color: const Color(0xFF111827),
                   height: 1.5,
                 ),
               ),
+              if (_sharedLinkPreview case final preview?) ...[
+                SizedBox(height: context.rs(12).clamp(10, 16).toDouble()),
+                if (preview.isInstagramEmbed ||
+                    (preview.provider == 'instagram' &&
+                        _sharedPayloadImagePath.isNotEmpty))
+                  InstagramEmbedPreview(
+                    preview: preview,
+                    localImagePath: _sharedPayloadImagePath,
+                    onRemove: _removeSharedLink,
+                  )
+                else
+                  SharedLinkPreviewCard(
+                    preview: preview,
+                    onRemove: _removeSharedLink,
+                  ),
+                SizedBox(height: context.rs(8).clamp(6, 12).toDouble()),
+              ],
             ],
           ),
         ),
@@ -936,7 +1259,8 @@ class _CreatePostScreenState extends State<CreatePostScreen> {
                             maxLines: 2,
                             overflow: TextOverflow.ellipsis,
                             style: TextStyle(
-                              fontFamily: 'Pretendard',
+                              fontFamily: 'Inter',
+                              fontFamilyFallback: const ['NotoSansKR'],
                               fontSize: context.rf(15).clamp(14, 16).toDouble(),
                               fontWeight: FontWeight.w800,
                               color: const Color(0xFF111827),
@@ -946,7 +1270,8 @@ class _CreatePostScreenState extends State<CreatePostScreen> {
                           Text(
                             description,
                             style: TextStyle(
-                              fontFamily: 'Pretendard',
+                              fontFamily: 'Inter',
+                              fontFamilyFallback: const ['NotoSansKR'],
                               fontSize: context.rf(12).clamp(11, 13).toDouble(),
                               fontWeight: FontWeight.w500,
                               color: const Color(0xFF6B7280),
@@ -979,65 +1304,6 @@ class _CreatePostScreenState extends State<CreatePostScreen> {
             ),
           ),
         ),
-      ),
-    );
-  }
-
-  Widget _buildAnonymousToggle() {
-    final l10n = AppLocalizations.of(context)!;
-
-    return ConstrainedBox(
-      constraints: const BoxConstraints(minHeight: 48),
-      child: Row(
-        children: [
-          Expanded(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Text(
-                  l10n.postAnonymously,
-                  style: TextStyle(
-                    fontFamily: 'Pretendard',
-                    fontSize: context.rf(14).clamp(13, 15).toDouble(),
-                    fontWeight: FontWeight.w800,
-                    color: const Color(0xFF111827),
-                  ),
-                ),
-                const SizedBox(height: 2),
-                Text(
-                  l10n.idWillBeShown,
-                  style: TextStyle(
-                    fontFamily: 'Pretendard',
-                    fontSize: context.rf(12).clamp(11, 13).toDouble(),
-                    fontWeight: FontWeight.w500,
-                    color: const Color(0xFF6B7280),
-                  ),
-                ),
-              ],
-            ),
-          ),
-          const SizedBox(width: 8),
-          SizedBox(
-            width: 48,
-            height: 40,
-            child: FittedBox(
-              fit: BoxFit.contain,
-              child: Switch(
-                value: _isAnonymous,
-                onChanged: (value) {
-                  setState(() {
-                    _isAnonymous = value;
-                  });
-                },
-                activeThumbColor: Colors.white,
-                activeTrackColor: const Color(0xFF475467),
-                inactiveThumbColor: Colors.white,
-                inactiveTrackColor: const Color(0xFFD0D5DD),
-                materialTapTargetSize: MaterialTapTargetSize.shrinkWrap,
-              ),
-            ),
-          ),
-        ],
       ),
     );
   }
@@ -1082,7 +1348,8 @@ class _CreatePostScreenState extends State<CreatePostScreen> {
                           maxLines: 1,
                           overflow: TextOverflow.ellipsis,
                           style: TextStyle(
-                            fontFamily: 'Pretendard',
+                            fontFamily: 'Inter',
+                            fontFamilyFallback: const ['NotoSansKR'],
                             fontSize: context.rf(14).clamp(13, 15).toDouble(),
                             fontWeight:
                                 isSelected ? FontWeight.w800 : FontWeight.w600,
@@ -1131,7 +1398,8 @@ class _CreatePostScreenState extends State<CreatePostScreen> {
                   : l10n.postVisibilityGroupsSelected(
                       _selectedCategoryIds.length),
               style: const TextStyle(
-                fontFamily: 'Pretendard',
+                fontFamily: 'Inter',
+                fontFamilyFallback: const ['NotoSansKR'],
                 fontSize: 12,
                 fontWeight: FontWeight.w700,
                 color: Color(0xFF667085),
@@ -1153,7 +1421,8 @@ class _CreatePostScreenState extends State<CreatePostScreen> {
             child: Text(
               l10n.groupSelectAtLeastOne,
               style: const TextStyle(
-                fontFamily: 'Pretendard',
+                fontFamily: 'Inter',
+                fontFamilyFallback: const ['NotoSansKR'],
                 fontSize: 12,
                 fontWeight: FontWeight.w700,
                 color: Color(0xFFB91C1C),
@@ -1192,7 +1461,8 @@ class _CreatePostScreenState extends State<CreatePostScreen> {
               Text(
                 l10n.postComposeVisibilityPrompt,
                 style: TextStyle(
-                  fontFamily: 'Pretendard',
+                  fontFamily: 'Inter',
+                  fontFamilyFallback: const ['NotoSansKR'],
                   fontSize: context.rf(17).clamp(15.5, 18).toDouble(),
                   fontWeight: FontWeight.w800,
                   color: const Color(0xFF111827),
@@ -1203,22 +1473,28 @@ class _CreatePostScreenState extends State<CreatePostScreen> {
                 icon: Icons.public_outlined,
                 title: l10n.postVisibilityPublicTitle,
                 description: l10n.postVisibilityPublicDescription,
-                selected: _visibility == 'public',
+                selected: _visibility == 'public' && !_isAnonymous,
                 onTap: () {
                   setState(() {
                     _visibility = 'public';
+                    _isAnonymous = false;
                     _showCategoryRequiredHint = false;
                   });
                 },
               ),
               const Divider(height: 1, indent: 40, color: Color(0xFFEAECF0)),
-              Padding(
-                padding: EdgeInsets.only(
-                  left: context.rs(40),
-                  top: context.rs(5),
-                  bottom: context.rs(5),
-                ),
-                child: _buildAnonymousToggle(),
+              _buildVisibilityOption(
+                icon: Icons.visibility_off_outlined,
+                title: l10n.postVisibilityAnonymousTitle,
+                description: l10n.postVisibilityAnonymousDescription,
+                selected: _visibility == 'public' && _isAnonymous,
+                onTap: () {
+                  setState(() {
+                    _visibility = 'public';
+                    _isAnonymous = true;
+                    _showCategoryRequiredHint = false;
+                  });
+                },
               ),
               const Divider(height: 1, indent: 40, color: Color(0xFFEAECF0)),
               _buildVisibilityOption(
@@ -1229,6 +1505,9 @@ class _CreatePostScreenState extends State<CreatePostScreen> {
                 onTap: () {
                   setState(() {
                     _visibility = 'category';
+                    // 그룹 공개는 작성자 정보가 보이는 공개 방식만 지원한다.
+                    // 익명 공개를 선택한 상태에서 그룹으로 전환하면 즉시 해제한다.
+                    _isAnonymous = false;
                   });
                 },
                 child: _visibility == 'category'
@@ -1265,11 +1544,17 @@ class _CreatePostScreenState extends State<CreatePostScreen> {
   @override
   Widget build(BuildContext context) {
     return PopScope(
-      canPop: _stepIndex == 0 && !_isSubmitting,
+      canPop: (widget.initialSharedRequest == null ||
+              !widget.stayInAppAfterSharedPost) &&
+          _stepIndex == 0 &&
+          !_isSubmitting,
       onPopInvokedWithResult: (didPop, result) async {
         if (didPop || _isSubmitting) return;
         if (_stepIndex == 1) {
           await _goToStep(0);
+        } else if (widget.initialSharedRequest != null &&
+            widget.stayInAppAfterSharedPost) {
+          await _handleClose();
         }
       },
       child: Scaffold(

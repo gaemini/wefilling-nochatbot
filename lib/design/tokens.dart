@@ -500,13 +500,15 @@ class IconStyles {
 /// 향상된 타이포그래피 시스템 - Instagram 영감 + 가독성 최적화
 class TypographyStyles {
   // === 폰트 패밀리 ===
-  static const String primaryFont = 'Pretendard';
+  static const String primaryFont = 'Inter';
+  static const List<String> fallbackFonts = ['NotoSansKR'];
 
   // === Instagram-style Typography Hierarchy ===
 
   // Display (Hero sections, 큰 제목)
   static TextStyle get displayLarge => TextStyle(
         fontFamily: primaryFont,
+        fontFamilyFallback: fallbackFonts,
         fontSize: 36,
         fontWeight: FontWeight.w800, // 매우 굵게
         height: 1.1,
@@ -516,6 +518,7 @@ class TypographyStyles {
 
   static TextStyle get displayMedium => TextStyle(
         fontFamily: primaryFont,
+        fontFamilyFallback: fallbackFonts,
         fontSize: 28,
         fontWeight: FontWeight.w700,
         height: 1.2,
@@ -526,6 +529,7 @@ class TypographyStyles {
   // Headlines (페이지 제목, 섹션 제목)
   static TextStyle get headlineLarge => TextStyle(
         fontFamily: primaryFont,
+        fontFamilyFallback: fallbackFonts,
         fontSize: 24,
         fontWeight: FontWeight.w700, // Instagram처럼 굵게
         height: 1.25,
@@ -535,6 +539,7 @@ class TypographyStyles {
 
   static TextStyle get headlineMedium => TextStyle(
         fontFamily: primaryFont,
+        fontFamilyFallback: fallbackFonts,
         fontSize: 20,
         fontWeight: FontWeight.w600,
         height: 1.3,
@@ -545,6 +550,7 @@ class TypographyStyles {
   // Titles (카드 제목, 게시글 제목)
   static TextStyle get titleLarge => TextStyle(
         fontFamily: primaryFont,
+        fontFamilyFallback: fallbackFonts,
         fontSize: 18,
         fontWeight: FontWeight.w600, // 적당히 굵게
         height: 1.35,
@@ -554,6 +560,7 @@ class TypographyStyles {
 
   static TextStyle get titleMedium => TextStyle(
         fontFamily: primaryFont,
+        fontFamilyFallback: fallbackFonts,
         fontSize: 16,
         fontWeight: FontWeight.w600,
         height: 1.4,
@@ -563,6 +570,7 @@ class TypographyStyles {
   // Body (본문, 설명)
   static TextStyle get bodyLarge => TextStyle(
         fontFamily: primaryFont,
+        fontFamilyFallback: fallbackFonts,
         fontSize: 16,
         fontWeight: FontWeight.w400, // 일반 굵기로 가독성 확보
         height: 1.5, // 충분한 행간
@@ -572,6 +580,7 @@ class TypographyStyles {
 
   static TextStyle get bodyMedium => TextStyle(
         fontFamily: primaryFont,
+        fontFamilyFallback: fallbackFonts,
         fontSize: 14,
         fontWeight: FontWeight.w400,
         height: 1.45,
@@ -581,6 +590,7 @@ class TypographyStyles {
 
   static TextStyle get bodySmall => TextStyle(
         fontFamily: primaryFont,
+        fontFamilyFallback: fallbackFonts,
         fontSize: 12,
         fontWeight: FontWeight.w400,
         height: 1.4,
@@ -590,6 +600,7 @@ class TypographyStyles {
   // Labels (버튼, 탭, 작은 텍스트)
   static TextStyle get labelLarge => TextStyle(
         fontFamily: primaryFont,
+        fontFamilyFallback: fallbackFonts,
         fontSize: 14,
         fontWeight: FontWeight.w600, // 라벨은 굵게
         height: 1.3,
@@ -599,6 +610,7 @@ class TypographyStyles {
 
   static TextStyle get labelMedium => TextStyle(
         fontFamily: primaryFont,
+        fontFamilyFallback: fallbackFonts,
         fontSize: 12,
         fontWeight: FontWeight.w600,
         height: 1.25,
@@ -608,6 +620,7 @@ class TypographyStyles {
 
   static TextStyle get labelSmall => TextStyle(
         fontFamily: primaryFont,
+        fontFamilyFallback: fallbackFonts,
         fontSize: 10,
         fontWeight: FontWeight.w500,
         height: 1.2,
@@ -620,6 +633,7 @@ class TypographyStyles {
   // 사용자명 스타일 (굵고 작음)
   static TextStyle get username => TextStyle(
         fontFamily: primaryFont,
+        fontFamilyFallback: fallbackFonts,
         fontSize: 14,
         fontWeight: FontWeight.w700, // Instagram처럼 매우 굵게
         height: 1.2,
@@ -629,6 +643,7 @@ class TypographyStyles {
   // 캡션 스타일 (일반 굵기)
   static TextStyle get caption => TextStyle(
         fontFamily: primaryFont,
+        fontFamilyFallback: fallbackFonts,
         fontSize: 14,
         fontWeight: FontWeight.w400,
         height: 1.4,
@@ -638,6 +653,7 @@ class TypographyStyles {
   // 좋아요 수 스타일 (굵게)
   static TextStyle get likeCount => TextStyle(
         fontFamily: primaryFont,
+        fontFamilyFallback: fallbackFonts,
         fontSize: 14,
         fontWeight: FontWeight.w600,
         height: 1.2,
@@ -647,6 +663,7 @@ class TypographyStyles {
   // 시간 표시 스타일 (작고 연하게)
   static TextStyle get timestamp => TextStyle(
         fontFamily: primaryFont,
+        fontFamilyFallback: fallbackFonts,
         fontSize: 11,
         fontWeight: FontWeight.w400,
         height: 1.2,
@@ -656,6 +673,7 @@ class TypographyStyles {
   // 댓글 수 스타일
   static TextStyle get commentCount => TextStyle(
         fontFamily: primaryFont,
+        fontFamilyFallback: fallbackFonts,
         fontSize: 14,
         fontWeight: FontWeight.w400,
         height: 1.2,
@@ -686,6 +704,7 @@ class TypographyStyles {
   // 버튼 텍스트
   static TextStyle get buttonText => TextStyle(
         fontFamily: primaryFont,
+        fontFamilyFallback: fallbackFonts,
         fontSize: 16,
         fontWeight: FontWeight.w600,
         height: 1.2,

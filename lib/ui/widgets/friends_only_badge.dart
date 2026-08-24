@@ -44,7 +44,8 @@ class FriendsOnlyBadge extends StatelessWidget {
         Text(
           label,
           style: TextStyle(
-            fontFamily: 'Pretendard',
+            fontFamily: 'Inter',
+            fontFamilyFallback: const ['NotoSansKR'],
             fontSize: fontSize,
             fontWeight: fontWeight,
             color: fg,

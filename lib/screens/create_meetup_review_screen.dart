@@ -445,7 +445,8 @@ class _CreateMeetupReviewScreenState extends State<CreateMeetupReviewScreen> {
               maxLines: 1,
               overflow: TextOverflow.ellipsis,
               style: TextStyle(
-                fontFamily: 'Pretendard',
+                fontFamily: 'Inter',
+                fontFamilyFallback: const ['NotoSansKR'],
                 fontSize: context.rf(18).clamp(16, 19).toDouble(),
                 fontWeight: FontWeight.w700,
                 color: const Color(0xFF111827),
@@ -511,7 +512,8 @@ class _CreateMeetupReviewScreenState extends State<CreateMeetupReviewScreen> {
                               maxLines: 2,
                               overflow: TextOverflow.ellipsis,
                               style: TextStyle(
-                                fontFamily: 'Pretendard',
+                                fontFamily: 'Inter',
+                                fontFamilyFallback: const ['NotoSansKR'],
                                 fontSize:
                                     context.rf(15).clamp(14, 16).toDouble(),
                                 fontWeight: FontWeight.w700,
@@ -529,7 +531,8 @@ class _CreateMeetupReviewScreenState extends State<CreateMeetupReviewScreen> {
                           child: Text(
                             l10n.reviewPhoto,
                             style: TextStyle(
-                              fontFamily: 'Pretendard',
+                              fontFamily: 'Inter',
+                              fontFamilyFallback: const ['NotoSansKR'],
                               fontSize: context.rf(15).clamp(14, 16).toDouble(),
                               fontWeight: FontWeight.w800,
                               color: const Color(0xFF111827),
@@ -539,7 +542,8 @@ class _CreateMeetupReviewScreenState extends State<CreateMeetupReviewScreen> {
                         Text(
                           '$selectedCount/$maxImages',
                           style: TextStyle(
-                            fontFamily: 'Pretendard',
+                            fontFamily: 'Inter',
+                            fontFamilyFallback: const ['NotoSansKR'],
                             fontSize: context.rf(13).clamp(12, 14).toDouble(),
                             fontWeight: FontWeight.w700,
                             color: const Color(0xFF6B7280),
@@ -569,7 +573,8 @@ class _CreateMeetupReviewScreenState extends State<CreateMeetupReviewScreen> {
                         label: Text(
                           l10n.pickPhoto,
                           style: TextStyle(
-                            fontFamily: 'Pretendard',
+                            fontFamily: 'Inter',
+                            fontFamilyFallback: const ['NotoSansKR'],
                             fontSize: context.rf(13).clamp(12, 14).toDouble(),
                             fontWeight: FontWeight.w700,
                           ),
@@ -614,7 +619,8 @@ class _CreateMeetupReviewScreenState extends State<CreateMeetupReviewScreen> {
                           ? '최대 $maxImages장까지 선택할 수 있어요.'
                           : 'Select up to $maxImages photos.',
                       style: TextStyle(
-                        fontFamily: 'Pretendard',
+                        fontFamily: 'Inter',
+                        fontFamilyFallback: const ['NotoSansKR'],
                         fontSize: context.rf(12).clamp(11, 13).toDouble(),
                         fontWeight: FontWeight.w500,
                         color: const Color(0xFF6B7280),
@@ -624,7 +630,8 @@ class _CreateMeetupReviewScreenState extends State<CreateMeetupReviewScreen> {
                     Text(
                       l10n.reviewContent,
                       style: TextStyle(
-                        fontFamily: 'Pretendard',
+                        fontFamily: 'Inter',
+                        fontFamilyFallback: const ['NotoSansKR'],
                         fontSize: context.rf(15).clamp(14, 16).toDouble(),
                         fontWeight: FontWeight.w800,
                         color: const Color(0xFF111827),
@@ -640,7 +647,8 @@ class _CreateMeetupReviewScreenState extends State<CreateMeetupReviewScreen> {
                       maxLength: 500,
                       textAlignVertical: TextAlignVertical.top,
                       style: TextStyle(
-                        fontFamily: 'Pretendard',
+                        fontFamily: 'Inter',
+                        fontFamilyFallback: const ['NotoSansKR'],
                         fontSize: context.rf(15).clamp(14, 16).toDouble(),
                         fontWeight: FontWeight.w500,
                         color: const Color(0xFF111827),
@@ -649,7 +657,8 @@ class _CreateMeetupReviewScreenState extends State<CreateMeetupReviewScreen> {
                       decoration: InputDecoration(
                         hintText: l10n.reviewWriteHint,
                         hintStyle: TextStyle(
-                          fontFamily: 'Pretendard',
+                          fontFamily: 'Inter',
+                          fontFamilyFallback: const ['NotoSansKR'],
                           fontSize: context.rf(15).clamp(14, 16).toDouble(),
                           fontWeight: FontWeight.w400,
                           color: const Color(0xFF9CA3AF),
@@ -657,7 +666,8 @@ class _CreateMeetupReviewScreenState extends State<CreateMeetupReviewScreen> {
                         border: InputBorder.none,
                         contentPadding: const EdgeInsets.fromLTRB(0, 2, 0, 4),
                         counterStyle: TextStyle(
-                          fontFamily: 'Pretendard',
+                          fontFamily: 'Inter',
+                          fontFamilyFallback: const ['NotoSansKR'],
                           fontSize: context.rf(12).clamp(11, 13).toDouble(),
                           fontWeight: FontWeight.w600,
                           color: const Color(0xFF6B7280),
@@ -679,7 +689,8 @@ class _CreateMeetupReviewScreenState extends State<CreateMeetupReviewScreen> {
                             child: Text(
                               l10n.reviewRequestInfo,
                               style: TextStyle(
-                                fontFamily: 'Pretendard',
+                                fontFamily: 'Inter',
+                                fontFamilyFallback: const ['NotoSansKR'],
                                 fontSize:
                                     context.rf(12).clamp(11, 13).toDouble(),
                                 fontWeight: FontWeight.w500,

@@ -5,6 +5,7 @@ import 'package:image_picker/image_picker.dart';
 import 'package:path_provider/path_provider.dart';
 
 import '../l10n/app_localizations.dart';
+import '../constants/meetup_limits.dart';
 import '../models/friend_category.dart';
 import '../models/meetup_favorite_template.dart';
 import '../services/friend_category_service.dart';
@@ -69,9 +70,10 @@ class _MeetupFavoriteEditorScreenState
       };
       _isUndecidedTime = template.isUndecidedTime;
       _time = template.time;
-      _maxParticipants = const [3, 4, 5, 6].contains(template.maxParticipants)
-          ? template.maxParticipants
-          : 3;
+      _maxParticipants =
+          meetupParticipantOptions.contains(template.maxParticipants)
+              ? template.maxParticipants
+              : 3;
       _thumbnailImagePath = template.thumbnailImagePath;
       _thumbnailImageUrl = template.thumbnailImageUrl;
     }
@@ -195,7 +197,8 @@ class _MeetupFavoriteEditorScreenState
                 title: Text(
                   l10n.undecided,
                   style: const TextStyle(
-                    fontFamily: 'Pretendard',
+                    fontFamily: 'Inter',
+                    fontFamilyFallback: const ['NotoSansKR'],
                     fontSize: 15,
                     fontWeight: FontWeight.w600,
                   ),
@@ -207,7 +210,8 @@ class _MeetupFavoriteEditorScreenState
                 title: Text(
                   isKo ? '시간 선택' : 'Choose a time',
                   style: const TextStyle(
-                    fontFamily: 'Pretendard',
+                    fontFamily: 'Inter',
+                    fontFamilyFallback: const ['NotoSansKR'],
                     fontSize: 15,
                     fontWeight: FontWeight.w600,
                   ),
@@ -250,7 +254,7 @@ class _MeetupFavoriteEditorScreenState
     final selected = await showParticipantCountSheet(
       context: context,
       selectedValue: _maxParticipants,
-      options: const [3, 4, 5, 6],
+      options: meetupParticipantOptions,
       title: isKo ? '최대 인원' : 'Max participants',
       itemLabel: (count) => isKo ? '$count명' : '$count people',
     );
@@ -352,7 +356,8 @@ class _MeetupFavoriteEditorScreenState
     return Text(
       text,
       style: TextStyle(
-        fontFamily: 'Pretendard',
+        fontFamily: 'Inter',
+        fontFamilyFallback: const ['NotoSansKR'],
         fontSize: context.rf(15).clamp(14, 16).toDouble(),
         fontWeight: FontWeight.w700,
         color: const Color(0xFF111827),
@@ -364,7 +369,8 @@ class _MeetupFavoriteEditorScreenState
     return InputDecoration(
       hintText: hint,
       hintStyle: const TextStyle(
-        fontFamily: 'Pretendard',
+        fontFamily: 'Inter',
+        fontFamilyFallback: const ['NotoSansKR'],
         fontSize: 14,
         color: Color(0xFF98A2B3),
       ),
@@ -405,7 +411,8 @@ class _MeetupFavoriteEditorScreenState
             maxLines: 1,
             overflow: TextOverflow.ellipsis,
             style: TextStyle(
-              fontFamily: 'Pretendard',
+              fontFamily: 'Inter',
+              fontFamilyFallback: const ['NotoSansKR'],
               fontSize: context.rf(13).clamp(12, 14).toDouble(),
               fontWeight: selected ? FontWeight.w700 : FontWeight.w600,
               color:
@@ -439,7 +446,8 @@ class _MeetupFavoriteEditorScreenState
                   Text(
                     label,
                     style: const TextStyle(
-                      fontFamily: 'Pretendard',
+                      fontFamily: 'Inter',
+                      fontFamilyFallback: const ['NotoSansKR'],
                       fontSize: 12,
                       fontWeight: FontWeight.w500,
                       color: Color(0xFF667085),
@@ -451,7 +459,8 @@ class _MeetupFavoriteEditorScreenState
                     maxLines: 1,
                     overflow: TextOverflow.ellipsis,
                     style: const TextStyle(
-                      fontFamily: 'Pretendard',
+                      fontFamily: 'Inter',
+                      fontFamilyFallback: const ['NotoSansKR'],
                       fontSize: 14,
                       fontWeight: FontWeight.w600,
                       color: Color(0xFF111827),
@@ -527,7 +536,8 @@ class _MeetupFavoriteEditorScreenState
               ? (isKo ? '즐겨찾기 수정' : 'Edit Favorite')
               : (isKo ? '새 즐겨찾기' : 'New Favorite'),
           style: TextStyle(
-            fontFamily: 'Pretendard',
+            fontFamily: 'Inter',
+            fontFamilyFallback: const ['NotoSansKR'],
             fontSize: context.rf(18).clamp(16, 19).toDouble(),
             fontWeight: FontWeight.w700,
             color: const Color(0xFF111827),
@@ -581,7 +591,8 @@ class _MeetupFavoriteEditorScreenState
             maxLength: 60,
             textInputAction: TextInputAction.next,
             style: const TextStyle(
-              fontFamily: 'Pretendard',
+              fontFamily: 'Inter',
+              fontFamilyFallback: const ['NotoSansKR'],
               fontSize: 15,
               fontWeight: FontWeight.w500,
             ),
@@ -601,7 +612,8 @@ class _MeetupFavoriteEditorScreenState
             controller: _locationController,
             textInputAction: TextInputAction.next,
             style: const TextStyle(
-              fontFamily: 'Pretendard',
+              fontFamily: 'Inter',
+              fontFamilyFallback: const ['NotoSansKR'],
               fontSize: 15,
               fontWeight: FontWeight.w500,
             ),
@@ -628,7 +640,8 @@ class _MeetupFavoriteEditorScreenState
             minLines: 3,
             maxLines: 5,
             style: const TextStyle(
-              fontFamily: 'Pretendard',
+              fontFamily: 'Inter',
+              fontFamilyFallback: const ['NotoSansKR'],
               fontSize: 14,
               height: 1.45,
             ),
@@ -655,7 +668,8 @@ class _MeetupFavoriteEditorScreenState
                         Text(
                           isKo ? '썸네일 이미지' : 'Thumbnail image',
                           style: const TextStyle(
-                            fontFamily: 'Pretendard',
+                            fontFamily: 'Inter',
+                            fontFamilyFallback: const ['NotoSansKR'],
                             fontSize: 14,
                             fontWeight: FontWeight.w700,
                             color: Color(0xFF111827),
@@ -665,7 +679,8 @@ class _MeetupFavoriteEditorScreenState
                         Text(
                           isKo ? '눌러서 이미지 선택' : 'Tap to choose an image',
                           style: const TextStyle(
-                            fontFamily: 'Pretendard',
+                            fontFamily: 'Inter',
+                            fontFamilyFallback: const ['NotoSansKR'],
                             fontSize: 12,
                             color: Color(0xFF667085),
                           ),
@@ -717,7 +732,8 @@ class _MeetupFavoriteEditorScreenState
                   : Text(
                       l10n.save,
                       style: const TextStyle(
-                        fontFamily: 'Pretendard',
+                        fontFamily: 'Inter',
+                        fontFamilyFallback: const ['NotoSansKR'],
                         fontSize: 15,
                         fontWeight: FontWeight.w700,
                       ),

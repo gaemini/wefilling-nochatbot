@@ -169,7 +169,8 @@ class _AdBannerWidgetState extends State<AdBannerWidget> {
                     child: Text(
                       '${_currentIndex + 1}/${_banners.length}',
                       style: TextStyle(
-                        fontFamily: 'Pretendard',
+                        fontFamily: 'Inter',
+                        fontFamilyFallback: const ['NotoSansKR'],
                         color: const Color(0xFF6B7280),
                         fontSize: isCompact ? 10 : 11,
                         fontWeight: FontWeight.w600,
@@ -255,7 +256,8 @@ class _AdBannerWidgetState extends State<AdBannerWidget> {
                       child: Text(
                         banner.title,
                         style: TextStyle(
-                          fontFamily: 'Pretendard',
+                          fontFamily: 'Inter',
+                          fontFamilyFallback: const ['NotoSansKR'],
                           fontSize: titleSize,
                           fontWeight: FontWeight.w800,
                           color: Colors.black,
@@ -279,7 +281,8 @@ class _AdBannerWidgetState extends State<AdBannerWidget> {
                       child: Text(
                         'AD',
                         style: TextStyle(
-                          fontFamily: 'Pretendard',
+                          fontFamily: 'Inter',
+                          fontFamilyFallback: const ['NotoSansKR'],
                           fontSize: compact ? 8 : 9,
                           fontWeight: FontWeight.w800,
                           color: Colors.black,
@@ -295,7 +298,8 @@ class _AdBannerWidgetState extends State<AdBannerWidget> {
                 Text(
                   banner.description,
                   style: TextStyle(
-                    fontFamily: 'Pretendard',
+                    fontFamily: 'Inter',
+                    fontFamilyFallback: const ['NotoSansKR'],
                     fontSize: descriptionSize,
                     fontWeight: FontWeight.w600,
                     color: Colors.grey[600],

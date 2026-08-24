@@ -48,7 +48,8 @@ class PostCategorySelector extends StatelessWidget {
             Text(
               isKorean ? '태그' : 'Tags',
               style: TextStyle(
-                fontFamily: 'Pretendard',
+                fontFamily: 'Inter',
+                fontFamilyFallback: const ['NotoSansKR'],
                 fontSize: context.rf(15).clamp(14, 16).toDouble(),
                 fontWeight: FontWeight.w800,
                 color: const Color(0xFF111827),
@@ -60,7 +61,8 @@ class PostCategorySelector extends StatelessWidget {
                   ? '글과 관련된 태그를 모두 선택해 주세요.'
                   : 'Select all tags that match your post.',
               style: TextStyle(
-                fontFamily: 'Pretendard',
+                fontFamily: 'Inter',
+                fontFamilyFallback: const ['NotoSansKR'],
                 fontSize: context.rf(12).clamp(11, 13).toDouble(),
                 fontWeight: FontWeight.w500,
                 color: const Color(0xFF667085),
@@ -91,7 +93,8 @@ class PostCategorySelector extends StatelessWidget {
             Text(
               isKorean ? '태그를 한 개 이상 선택해 주세요.' : 'Choose at least one tag.',
               style: TextStyle(
-                fontFamily: 'Pretendard',
+                fontFamily: 'Inter',
+                fontFamilyFallback: const ['NotoSansKR'],
                 fontSize: context.rf(12).clamp(11, 13).toDouble(),
                 fontWeight: FontWeight.w700,
                 color: const Color(0xFFB42318),
@@ -157,7 +160,8 @@ class _PostTagChoice extends StatelessWidget {
                       maxLines: 1,
                       overflow: TextOverflow.ellipsis,
                       style: TextStyle(
-                        fontFamily: 'Pretendard',
+                        fontFamily: 'Inter',
+                        fontFamilyFallback: const ['NotoSansKR'],
                         fontSize: context.rf(13).clamp(12, 14).toDouble(),
                         fontWeight:
                             selected ? FontWeight.w800 : FontWeight.w600,

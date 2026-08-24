@@ -9,6 +9,7 @@ import 'package:intl/intl.dart';
 import '../providers/settings_provider.dart';
 import '../l10n/app_localizations.dart';
 import 'post_category.dart';
+import 'shared_link_preview.dart';
 
 List<String> _normalizePostCategoryKeys(
   Iterable<Object?> values,
@@ -75,6 +76,7 @@ class Post {
   final int likes; // 좋아요 수
   final List<String> likedBy; // 좋아요 누른 사용자 ID 목록
   final List<String> imageUrls; // 이미지 URL 목록
+  final SharedLinkPreview? linkPreview;
 
   // 게시글 타입 (기본: text)
   final String type; // 'text' | 'poll'
@@ -117,6 +119,7 @@ class Post {
     this.likes = 0,
     this.likedBy = const [],
     this.imageUrls = const [], // URL 변환 제거 - 원본 URL 그대로 사용
+    this.linkPreview,
     this.type = 'text',
     this.pollOptions = const [],
     this.pollTotalVotes = 0,
@@ -140,6 +143,33 @@ class Post {
     final normalizedContent = content.trim();
     if (normalizedContent.isNotEmpty) return normalizedContent;
     return title.trim();
+  }
+
+  /// 공유 링크에 공식 썸네일이 없으면 공유 payload의 첫 이미지를 카드에
+  /// 사용한다. 피드/상세 모두 같은 우선순위를 사용해 빈 카드가 생기지 않는다.
+  String get sharedLinkCardFallbackImageUrl {
+    final preview = linkPreview;
+    if (preview == null || imageUrls.isEmpty) return '';
+    if (preview.provider != 'youtube' && preview.provider != 'instagram') {
+      return '';
+    }
+    return imageUrls.first.trim();
+  }
+
+  /// 첫 첨부 이미지를 링크 카드가 대신 표시하는 경우 본문 갤러리에서는
+  /// 중복 노출하지 않는다. 나머지 사용자가 추가한 이미지는 그대로 유지한다.
+  List<String> get standaloneImageUrls {
+    final preview = linkPreview;
+    if (preview == null || imageUrls.isEmpty) return imageUrls;
+    if (preview.provider != 'youtube' && preview.provider != 'instagram') {
+      return imageUrls;
+    }
+
+    final first = imageUrls.first.trim();
+    final thumbnail = preview.thumbnailUrl.trim();
+    final firstIsCardImage = thumbnail.isEmpty || thumbnail == first;
+    if (!firstIsCardImage) return imageUrls;
+    return List<String>.unmodifiable(imageUrls.skip(1));
   }
 
   // 모델 디버깅을 위한 문자열 표현
@@ -228,6 +258,7 @@ class Post {
     int? likes,
     List<String>? likedBy,
     List<String>? imageUrls,
+    SharedLinkPreview? linkPreview,
     String? type,
     List<PollOption>? pollOptions,
     int? pollTotalVotes,
@@ -256,6 +287,7 @@ class Post {
       likes: likes ?? this.likes,
       likedBy: likedBy ?? this.likedBy,
       imageUrls: imageUrls ?? this.imageUrls,
+      linkPreview: linkPreview ?? this.linkPreview,
       type: type ?? this.type,
       pollOptions: pollOptions ?? this.pollOptions,
       pollTotalVotes: pollTotalVotes ?? this.pollTotalVotes,
@@ -288,6 +320,7 @@ class Post {
       'likes': likes,
       'likedBy': likedBy,
       'imageUrls': imageUrls,
+      if (linkPreview != null) 'linkPreview': linkPreview!.toMap(),
       'type': type,
       'pollOptions': pollOptions.map((o) => o.toMap()).toList(),
       'pollTotalVotes': pollTotalVotes,
@@ -336,6 +369,11 @@ class Post {
       likes: map['likes'] ?? 0,
       likedBy: List<String>.from(map['likedBy'] ?? []),
       imageUrls: List<String>.from(map['imageUrls'] ?? []),
+      linkPreview: map['linkPreview'] is Map
+          ? SharedLinkPreview.fromMap(
+              Map<String, dynamic>.from(map['linkPreview'] as Map),
+            )
+          : null,
       type: map['type'] ?? 'text',
       pollOptions: parsedPollOptions,
       pollTotalVotes: map['pollTotalVotes'] ?? 0,

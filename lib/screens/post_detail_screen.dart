@@ -24,6 +24,7 @@ import 'edit_post_screen.dart';
 import '../widgets/country_flag_circle.dart';
 import '../ui/widgets/enhanced_comment_widget.dart';
 import '../ui/widgets/poll_post_widget.dart';
+import '../ui/widgets/post_linkified_text.dart';
 import '../ui/widgets/user_avatar.dart';
 import '../ui/widgets/audience_ring.dart';
 import '../l10n/app_localizations.dart';
@@ -40,6 +41,8 @@ import '../ui/dialogs/block_dialog.dart';
 import '../ui/dialogs/report_dialog.dart';
 import '../ui/snackbar/app_snackbar.dart';
 import '../ui/widgets/post_action_group.dart';
+import '../ui/widgets/instagram_embed_preview.dart';
+import '../ui/widgets/shared_link_preview_card.dart';
 import '../utils/responsive_helper.dart';
 
 class PostDetailScreen extends StatefulWidget {
@@ -401,7 +404,8 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
           Text(
             '#${category.label(l10n)}',
             style: const TextStyle(
-              fontFamily: 'Pretendard',
+              fontFamily: 'Inter',
+              fontFamilyFallback: const ['NotoSansKR'],
               fontSize: 13,
               fontWeight: FontWeight.w600,
               color: AppColors.pointColor,
@@ -711,7 +715,8 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
                                   TextSpan(
                                     text: l10n.likes,
                                     style: const TextStyle(
-                                      fontFamily: 'Pretendard',
+                                      fontFamily: 'Inter',
+                                      fontFamilyFallback: const ['NotoSansKR'],
                                       fontSize: 16,
                                       fontWeight: FontWeight.w700,
                                     ).copyWith(color: const Color(0xFF111827)),
@@ -720,7 +725,8 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
                                   TextSpan(
                                     text: '$likeCount',
                                     style: const TextStyle(
-                                      fontFamily: 'Pretendard',
+                                      fontFamily: 'Inter',
+                                      fontFamilyFallback: const ['NotoSansKR'],
                                       fontSize: 14,
                                       fontWeight: FontWeight.w700,
                                     ).copyWith(color: secondaryText),
@@ -746,7 +752,8 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
                                   ? '최대 $maxShown명만 표시됩니다. (외 $hiddenCount명)'
                                   : 'Showing up to $maxShown users. (+$hiddenCount more)',
                               style: const TextStyle(
-                                fontFamily: 'Pretendard',
+                                fontFamily: 'Inter',
+                                fontFamilyFallback: const ['NotoSansKR'],
                                 fontSize: 12,
                                 fontWeight: FontWeight.w500,
                                 color: secondaryText,
@@ -779,7 +786,8 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
                                   child: Text(
                                     isKo ? '아직 좋아요가 없어요' : 'No likes yet.',
                                     style: const TextStyle(
-                                      fontFamily: 'Pretendard',
+                                      fontFamily: 'Inter',
+                                      fontFamilyFallback: const ['NotoSansKR'],
                                       fontSize: 14,
                                       fontWeight: FontWeight.w500,
                                     ).copyWith(color: secondaryText),
@@ -834,7 +842,8 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
                                           u.nickname,
                                           overflow: TextOverflow.ellipsis,
                                           style: (const TextStyle(
-                                            fontFamily: 'Pretendard',
+                                            fontFamily: 'Inter',
+                                            fontFamilyFallback: const ['NotoSansKR'],
                                             fontSize: 14,
                                             fontWeight: FontWeight.w600,
                                           )).copyWith(
@@ -1034,7 +1043,8 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
               content: Text(
                 AppLocalizations.of(context)!.dmFriendsOnlyHint,
                 style: const TextStyle(
-                  fontFamily: 'Pretendard',
+                  fontFamily: 'Inter',
+                  fontFamilyFallback: const ['NotoSansKR'],
                   fontSize: 16,
                   fontWeight: FontWeight.w700,
                   color: Colors.white,
@@ -1222,7 +1232,8 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
                   overflow: TextOverflow.ellipsis,
                   textAlign: TextAlign.center,
                   style: TextStyle(
-                    fontFamily: 'Pretendard',
+                    fontFamily: 'Inter',
+                    fontFamilyFallback: const ['NotoSansKR'],
                     fontSize: isCompact ? 12 : 13,
                     fontWeight: FontWeight.w500,
                     color: const Color(0xFF111827),
@@ -1282,7 +1293,8 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
                           maxLines: 1,
                           overflow: TextOverflow.ellipsis,
                           style: TextStyle(
-                            fontFamily: 'Pretendard',
+                            fontFamily: 'Inter',
+                            fontFamilyFallback: const ['NotoSansKR'],
                             fontSize: isCompact ? 13.5 : 14,
                             fontWeight: FontWeight.w700,
                             color: const Color(0xFF374151),
@@ -1455,7 +1467,8 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
                     title: Text(
                       AppLocalizations.of(context)!.edit,
                       style: const TextStyle(
-                        fontFamily: 'Pretendard',
+                        fontFamily: 'Inter',
+                        fontFamilyFallback: const ['NotoSansKR'],
                         fontWeight: FontWeight.w600,
                         color: Color(0xFF111827),
                       ),
@@ -1479,7 +1492,8 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
                     title: Text(
                       AppLocalizations.of(context)!.directMessage,
                       style: const TextStyle(
-                        fontFamily: 'Pretendard',
+                        fontFamily: 'Inter',
+                        fontFamilyFallback: const ['NotoSansKR'],
                         fontWeight: FontWeight.w600,
                         color: Color(0xFF111827),
                       ),
@@ -1500,7 +1514,8 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
                     title: Text(
                       AppLocalizations.of(context)!.reportTitle,
                       style: const TextStyle(
-                        fontFamily: 'Pretendard',
+                        fontFamily: 'Inter',
+                        fontFamilyFallback: const ['NotoSansKR'],
                         fontWeight: FontWeight.w600,
                         color: Color(0xFFEF4444),
                       ),
@@ -1519,7 +1534,8 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
                     title: Text(
                       AppLocalizations.of(context)!.blockAction,
                       style: const TextStyle(
-                        fontFamily: 'Pretendard',
+                        fontFamily: 'Inter',
+                        fontFamilyFallback: const ['NotoSansKR'],
                         fontWeight: FontWeight.w600,
                         color: Color(0xFFEF4444),
                       ),
@@ -1538,7 +1554,8 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
                     title: Text(
                       AppLocalizations.of(context)!.deletePost ?? "",
                       style: TextStyle(
-                        fontFamily: 'Pretendard',
+                        fontFamily: 'Inter',
+                        fontFamilyFallback: const ['NotoSansKR'],
                         fontWeight: FontWeight.w600,
                         color: Color(0xFFEF4444),
                       ),
@@ -1692,25 +1709,140 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
   }
 
   Future<void> _deletePost() async {
-    // 삭제 확인 다이얼로그 표시
-    final shouldDelete = await showDialog<bool>(
+    final l10n = AppLocalizations.of(context)!;
+    final shouldDelete = await showModalBottomSheet<bool>(
           context: context,
-          builder: (context) => AlertDialog(
-            title: Text(AppLocalizations.of(context)!.deletePost ?? ""),
-            content:
-                Text(AppLocalizations.of(context)!.deletePostConfirm ?? ""),
-            actions: [
-              TextButton(
-                onPressed: () => Navigator.of(context).pop(false),
-                child: Text(AppLocalizations.of(context)!.cancel ?? ""),
+          useSafeArea: false,
+          isScrollControlled: true,
+          backgroundColor: Colors.transparent,
+          barrierColor: Colors.black.withValues(alpha: 0.48),
+          builder: (sheetContext) {
+            final media = MediaQuery.of(sheetContext);
+            final bottomSafeArea = media.viewPadding.bottom;
+            return Material(
+              color: Colors.white,
+              borderRadius:
+                  const BorderRadius.vertical(top: Radius.circular(22)),
+              clipBehavior: Clip.antiAlias,
+              child: SingleChildScrollView(
+                padding: EdgeInsets.fromLTRB(
+                  20,
+                  8,
+                  20,
+                  (bottomSafeArea + 12).clamp(20, 44).toDouble(),
+                ),
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Align(
+                      child: Container(
+                        width: 34,
+                        height: 4,
+                        decoration: BoxDecoration(
+                          color: const Color(0xFFD1D5DB),
+                          borderRadius: BorderRadius.circular(99),
+                        ),
+                      ),
+                    ),
+                    const SizedBox(height: 18),
+                    Row(
+                      children: [
+                        const Icon(
+                          Icons.delete_outline_rounded,
+                          size: 22,
+                          color: Color(0xFF111827),
+                        ),
+                        const SizedBox(width: 10),
+                        Expanded(
+                          child: Text(
+                            l10n.deletePost ?? '',
+                            maxLines: 2,
+                            overflow: TextOverflow.ellipsis,
+                            style: TextStyle(
+                              fontFamily: 'Inter',
+                              fontFamilyFallback: const ['NotoSansKR'],
+                              fontSize: context.rf(18).clamp(17, 19).toDouble(),
+                              fontWeight: FontWeight.w700,
+                              color: const Color(0xFF111827),
+                              height: 1.3,
+                            ),
+                          ),
+                        ),
+                      ],
+                    ),
+                    const SizedBox(height: 10),
+                    Text(
+                      l10n.deletePostConfirm ?? '',
+                      style: TextStyle(
+                        fontFamily: 'Inter',
+                        fontFamilyFallback: const ['NotoSansKR'],
+                        fontSize: context.rf(14).clamp(13.5, 15).toDouble(),
+                        fontWeight: FontWeight.w400,
+                        color: const Color(0xFF667085),
+                        height: 1.45,
+                      ),
+                    ),
+                    const SizedBox(height: 18),
+                    Row(
+                      mainAxisAlignment: MainAxisAlignment.end,
+                      children: [
+                        Flexible(
+                          child: TextButton(
+                            onPressed: () =>
+                                Navigator.of(sheetContext).pop(false),
+                            style: TextButton.styleFrom(
+                              foregroundColor: const Color(0xFF667085),
+                              padding: const EdgeInsets.symmetric(
+                                horizontal: 14,
+                                vertical: 10,
+                              ),
+                            ),
+                            child: Text(
+                              l10n.cancel ?? '',
+                              maxLines: 1,
+                              overflow: TextOverflow.ellipsis,
+                              style: const TextStyle(
+                                fontFamily: 'Inter',
+                                fontFamilyFallback: const ['NotoSansKR'],
+                                fontSize: 14,
+                                fontWeight: FontWeight.w600,
+                              ),
+                            ),
+                          ),
+                        ),
+                        const SizedBox(width: 4),
+                        Flexible(
+                          child: TextButton(
+                            onPressed: () =>
+                                Navigator.of(sheetContext).pop(true),
+                            style: TextButton.styleFrom(
+                              foregroundColor: const Color(0xFFD92D20),
+                              padding: const EdgeInsets.symmetric(
+                                horizontal: 14,
+                                vertical: 10,
+                              ),
+                            ),
+                            child: Text(
+                              l10n.delete ?? '',
+                              maxLines: 1,
+                              overflow: TextOverflow.ellipsis,
+                              style: const TextStyle(
+                                fontFamily: 'Inter',
+                                fontFamilyFallback: const ['NotoSansKR'],
+                                fontSize: 14,
+                                fontWeight: FontWeight.w700,
+                              ),
+                            ),
+                          ),
+                        ),
+                      ],
+                    ),
+                  ],
+                ),
               ),
-              TextButton(
-                onPressed: () => Navigator.of(context).pop(true),
-                style: TextButton.styleFrom(foregroundColor: Colors.red),
-                child: Text(AppLocalizations.of(context)!.delete ?? ""),
-              ),
-            ],
-          ),
+            );
+          },
         ) ??
         false;
 
@@ -2239,6 +2371,7 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
     final content = _getUnifiedBodyText(_currentPost);
     final hasContent = content.isNotEmpty;
     final contentFontSize = context.rf(16).clamp(15.5, 17.0).toDouble();
+    final standaloneImageUrls = _currentPost.standaloneImageUrls;
 
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
@@ -2252,11 +2385,12 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
               _buildEditorialAuthorRow(l10n),
               if (hasContent) ...[
                 const SizedBox(height: 2),
-                Text(
-                  content,
+                PostLinkifiedText(
+                  text: content,
                   textAlign: TextAlign.left,
                   style: TextStyle(
-                    fontFamily: 'Pretendard',
+                    fontFamily: 'Inter',
+                    fontFamilyFallback: const ['NotoSansKR'],
                     fontSize: contentFontSize,
                     fontWeight: FontWeight.w500,
                     color: BrandColors.textPrimary,
@@ -2265,10 +2399,25 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
                   ),
                 ),
               ],
+              if (_currentPost.linkPreview case final preview?) ...[
+                const SizedBox(height: DesignTokens.s12),
+                if (preview.isInstagramEmbed)
+                  InstagramEmbedPreview(
+                    preview: preview,
+                    fallbackImageUrl:
+                        _currentPost.sharedLinkCardFallbackImageUrl,
+                  )
+                else
+                  SharedLinkPreviewCard(
+                    preview: preview,
+                    fallbackImageUrl:
+                        _currentPost.sharedLinkCardFallbackImageUrl,
+                  ),
+              ],
             ],
           ),
         ),
-        if (_currentPost.imageUrls.isNotEmpty) ...[
+        if (standaloneImageUrls.isNotEmpty) ...[
           Padding(
             padding: const EdgeInsets.fromLTRB(
               DesignTokens.s16,
@@ -2295,9 +2444,9 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
                               aroundIndex: index,
                             );
                           },
-                          itemCount: _currentPost.imageUrls.length,
+                          itemCount: standaloneImageUrls.length,
                           itemBuilder: (context, index) {
-                            final imageUrl = _currentPost.imageUrls[index];
+                            final imageUrl = standaloneImageUrls[index];
                             return Semantics(
                               button: true,
                               label: Localizations.localeOf(context)
@@ -2310,7 +2459,7 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
                                 onTap: () {
                                   showFullscreenImageViewer(
                                     context,
-                                    imageUrls: _currentPost.imageUrls,
+                                    imageUrls: standaloneImageUrls,
                                     initialIndex: index,
                                     heroTag: 'post_image_$index',
                                   );
@@ -2332,7 +2481,7 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
                             );
                           },
                         ),
-                        if (_currentPost.imageUrls.length > 1)
+                        if (standaloneImageUrls.length > 1)
                           Positioned(
                             top: DesignTokens.s8,
                             right: DesignTokens.s8,
@@ -2347,9 +2496,10 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
                                     BorderRadius.circular(DesignTokens.r12),
                               ),
                               child: Text(
-                                '${_currentImageIndex + 1}/${_currentPost.imageUrls.length}',
+                                '${_currentImageIndex + 1}/${standaloneImageUrls.length}',
                                 style: const TextStyle(
-                                  fontFamily: 'Pretendard',
+                                  fontFamily: 'Inter',
+                                  fontFamilyFallback: const ['NotoSansKR'],
                                   fontSize: 12,
                                   fontWeight: FontWeight.w700,
                                   color: Colors.white,
@@ -2365,11 +2515,11 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
               ),
             ),
           ),
-          if (_currentPost.imageUrls.length > 1)
+          if (standaloneImageUrls.length > 1)
             Padding(
               padding: const EdgeInsets.only(top: DesignTokens.s8),
               child: _buildImageDotsIndicator(
-                count: _currentPost.imageUrls.length,
+                count: standaloneImageUrls.length,
               ),
             ),
           Padding(
@@ -2385,7 +2535,7 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
             ),
           ),
         ],
-        if (_currentPost.imageUrls.isEmpty)
+        if (standaloneImageUrls.isEmpty)
           Padding(
             padding: const EdgeInsets.fromLTRB(16, 5, 16, 0),
             child: _buildPostCategoryTags(l10n),
@@ -2470,7 +2620,8 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
                 child: Text(
                   authorName,
                   style: TextStyle(
-                    fontFamily: 'Pretendard',
+                    fontFamily: 'Inter',
+                    fontFamilyFallback: const ['NotoSansKR'],
                     fontSize: context.rf(16).clamp(15.0, 16.5).toDouble(),
                     fontWeight: FontWeight.w700,
                     color: BrandColors.textPrimary,
@@ -2486,7 +2637,8 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
               Text(
                 _currentPost.getFormattedTime(context),
                 style: TextStyle(
-                  fontFamily: 'Pretendard',
+                  fontFamily: 'Inter',
+                  fontFamilyFallback: const ['NotoSansKR'],
                   fontSize: context.rf(14).clamp(13.0, 14.5).toDouble(),
                   fontWeight: FontWeight.w400,
                   color: BrandColors.textTertiary,

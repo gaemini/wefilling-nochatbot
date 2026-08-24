@@ -32,7 +32,8 @@ class AppSnackBar {
         };
 
     const textStyle = TextStyle(
-      fontFamily: 'Pretendard',
+      fontFamily: 'Inter',
+      fontFamilyFallback: const ['NotoSansKR'],
       fontSize: 15,
       fontWeight: FontWeight.w700,
       height: 1.25,

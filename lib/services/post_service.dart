@@ -11,6 +11,7 @@ import 'package:cloud_functions/cloud_functions.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import '../models/post.dart';
 import '../models/post_category.dart';
+import '../models/shared_link_preview.dart';
 import '../security/frozen_audience_policy.dart';
 import 'notification_service.dart';
 import 'storage_service.dart';
@@ -30,6 +31,28 @@ class PostCategoryPage {
 
   final List<Post> posts;
   final DocumentSnapshot<Map<String, dynamic>>? cursor;
+  final bool hasMore;
+}
+
+class AllPostsCursor {
+  const AllPostsCursor({
+    required this.createdAt,
+    required this.postId,
+  });
+
+  final DateTime createdAt;
+  final String postId;
+}
+
+class AllPostsPage {
+  const AllPostsPage({
+    required this.posts,
+    required this.cursor,
+    required this.hasMore,
+  });
+
+  final List<Post> posts;
+  final AllPostsCursor? cursor;
   final bool hasMore;
 }
 
@@ -57,6 +80,7 @@ class PostService {
   // - 일부 계정에서 docs 수가 커지면 파싱/필터링이 느려져 UI가 "로딩처럼" 보일 수 있음
   static const int _feedRealtimeLimit = 300;
   static const Duration _categoryQueryTimeout = Duration(seconds: 8);
+  static const Duration _allPostsQueryTimeout = Duration(seconds: 8);
 
   final FirebaseFirestore _firestore = FirebaseFirestore.instance;
   final FirebaseAuth _auth = FirebaseAuth.instance;
@@ -289,6 +313,11 @@ class PostService {
       viewCount: data['viewCount'] ?? 0,
       likedBy: List<String>.from(data['likedBy'] ?? []),
       imageUrls: List<String>.from(data['imageUrls'] ?? []),
+      linkPreview: data['linkPreview'] is Map
+          ? SharedLinkPreview.fromMap(
+              Map<String, dynamic>.from(data['linkPreview'] as Map),
+            )
+          : null,
       visibility: data['visibilityMode'] ?? data['visibility'] ?? 'public',
       isAnonymous: data['isAnonymous'] ?? false,
       visibleToCategoryIds: List<String>.from(
@@ -318,6 +347,9 @@ class PostService {
     List<String> visibleToCategoryIds = const [], // 공개할 카테고리 ID 목록
     String type = 'text', // 'text' | 'poll'
     List<String> pollOptions = const [], // type == 'poll'일 때만 사용
+    SharedLinkPreview? linkPreview,
+    String? requestedPostId,
+    void Function(String postId)? onCreated,
   }) async {
     try {
       final normalizedCategoryKeys = categoryKeys
@@ -345,10 +377,19 @@ class PostService {
       if (visibility == 'category' && normalizedCategoryIds.isEmpty) {
         throw Exception('그룹 공개 게시글에 선택된 그룹이 없습니다.');
       }
+      if (visibility == 'category' && isAnonymous) {
+        throw ArgumentError(
+          '그룹 공개 게시글은 익명으로 작성할 수 없습니다.',
+        );
+      }
 
       // 요청 시작 시 ID를 고정해 재시도/응답 유실 시에도 같은 콘텐츠를
       // 식별할 수 있게 한다. Callable은 동일 ID+작성자의 중복 요청을 멱등 처리한다.
-      final postId = _firestore.collection('posts').doc().id;
+      final normalizedRequestedPostId = requestedPostId?.trim() ?? '';
+      final postId =
+          RegExp(r'^[A-Za-z0-9]{20}$').hasMatch(normalizedRequestedPostId)
+              ? normalizedRequestedPostId
+              : _firestore.collection('posts').doc().id;
 
       // 이미지 파일이 있는 경우 업로드 (병렬 처리로 성능 향상)
       List<String> imageUrls = [];
@@ -423,6 +464,7 @@ class PostService {
           'isAnonymous': isAnonymous,
           'type': type,
           'pollOptions': cleanedPollOptions,
+          if (linkPreview != null) 'linkPreview': linkPreview.toMap(),
         }).timeout(const Duration(seconds: 30));
       } catch (error) {
         // Callable 응답만 유실됐을 수 있다. 동일 ID의 서버 문서를 먼저 확인해
@@ -455,6 +497,7 @@ class PostService {
       }
       _categoryFirstPageCache.clear();
 
+      onCreated?.call(postId);
       return true;
     } catch (e) {
       Logger.error('포스트 작성 오류: $e');
@@ -961,6 +1004,164 @@ class PostService {
     _lastParsedPosts = limited;
     requestReemitWithCurrentFilters();
     return ContentHideService.filterPostsSync(limited);
+  }
+
+  /// ALL 화면 전용 최신순 커서 페이지입니다.
+  ///
+  /// Firestore Rules가 허용하는 공개 글, 현재 사용자가 공개 대상인 글, 내 글
+  /// 쿼리를 같은 `(createdAt, documentId)` 커서로 읽고 하나의 최신순 목록으로
+  /// 병합합니다. 차단/숨김 필터로 한 페이지가 비면 다음 구간을 이어서 읽되,
+  /// 화면에는 항상 [pageSize]개 이하만 반환합니다.
+  Future<AllPostsPage> getAllPostsPage({
+    AllPostsCursor? startAfter,
+    int pageSize = 10,
+  }) async {
+    final normalizedPageSize = pageSize.clamp(1, 30);
+    final user = _auth.currentUser;
+    if (user == null) {
+      return const AllPostsPage(posts: [], cursor: null, hasMore: false);
+    }
+
+    final fetchLimit = (normalizedPageSize + 4).clamp(10, 34);
+    var scanCursor = startAfter;
+    var sourceHasMore = true;
+    final collected = <String, Post>{};
+
+    Future<QuerySnapshot<Map<String, dynamic>>> fetch(
+      Query<Map<String, dynamic>> source,
+      AllPostsCursor? cursor,
+    ) {
+      Query<Map<String, dynamic>> query = source
+          .orderBy('createdAt', descending: true)
+          .orderBy(FieldPath.documentId, descending: true);
+      if (cursor != null) {
+        query = query.startAfter(<Object>[
+          Timestamp.fromDate(cursor.createdAt),
+          cursor.postId,
+        ]);
+      }
+      return query.limit(fetchLimit).get().timeout(_allPostsQueryTimeout);
+    }
+
+    DateTime createdAtOf(
+      QueryDocumentSnapshot<Map<String, dynamic>> document,
+    ) {
+      final value = document.data()['createdAt'];
+      return value is Timestamp
+          ? value.toDate()
+          : DateTime.fromMillisecondsSinceEpoch(0);
+    }
+
+    // 숨김/차단된 글이 연속된 경우에도 첫 페이지가 비어 보이지 않도록
+    // 제한된 횟수 안에서 다음 최신 구간을 이어서 스캔합니다.
+    for (var round = 0;
+        round < 5 && collected.length <= normalizedPageSize && sourceHasMore;
+        round++) {
+      final snapshots = await Future.wait([
+        fetch(
+          _firestore
+              .collection('posts')
+              .where('visibility', isEqualTo: 'public'),
+          scanCursor,
+        ),
+        fetch(
+          _firestore
+              .collection('posts')
+              .where('allowedUserIds', arrayContains: user.uid),
+          scanCursor,
+        ),
+        fetch(
+          _firestore.collection('posts').where('userId', isEqualTo: user.uid),
+          scanCursor,
+        ),
+      ], eagerError: true);
+
+      final scannedById =
+          <String, QueryDocumentSnapshot<Map<String, dynamic>>>{};
+      for (final snapshot in snapshots) {
+        for (final document in snapshot.docs) {
+          scannedById[document.id] = document;
+        }
+      }
+
+      final scanned = scannedById.values.toList()
+        ..sort((a, b) {
+          final dateOrder = createdAtOf(b).compareTo(createdAtOf(a));
+          return dateOrder != 0 ? dateOrder : b.id.compareTo(a.id);
+        });
+      if (scanned.isEmpty) {
+        sourceHasMore = false;
+        break;
+      }
+
+      final continuingBoundaries = snapshots
+          .where((snapshot) => snapshot.docs.length == fetchLimit)
+          .map((snapshot) {
+        final document = snapshot.docs.last;
+        return AllPostsCursor(
+          createdAt: createdAtOf(document),
+          postId: document.id,
+        );
+      }).toList()
+        ..sort((a, b) {
+          final dateOrder = b.createdAt.compareTo(a.createdAt);
+          return dateOrder != 0 ? dateOrder : b.postId.compareTo(a.postId);
+        });
+      sourceHasMore = continuingBoundaries.isNotEmpty;
+      if (sourceHasMore) {
+        // 아직 문서가 남은 각 접근 범위 중 가장 새로운 경계까지만 모든
+        // 쿼리가 확인한 상태입니다. 더 오래된 후보는 다음 라운드에서 다시
+        // 읽어야 다른 범위의 최신 문서를 건너뛰지 않습니다.
+        scanCursor = continuingBoundaries.first;
+      } else {
+        final oldest = scanned.last;
+        scanCursor = AllPostsCursor(
+          createdAt: createdAtOf(oldest),
+          postId: oldest.id,
+        );
+      }
+
+      final parsed = scanned
+          .map((document) =>
+              _buildPostFromFirestore(document.id, document.data()))
+          .where((post) => _canUserReadPost(post, user))
+          .where(
+            (post) =>
+                !ContentHideService.isHiddenPost(post.id) &&
+                !ContentHideService.isHiddenUser(post.userId),
+          )
+          .toList(growable: false);
+      final nonBlocked = await ContentFilterService.filterPosts(parsed);
+      for (final post in ContentHideService.filterPostsSync(nonBlocked)) {
+        final boundary = scanCursor;
+        final isInsideFullyScannedRange = !sourceHasMore ||
+            post.createdAt.isAfter(boundary.createdAt) ||
+            post.createdAt.isAtSameMomentAs(boundary.createdAt) &&
+                post.id.compareTo(boundary.postId) >= 0;
+        if (!isInsideFullyScannedRange) continue;
+        collected[post.id] = post;
+      }
+    }
+
+    final visible = collected.values.toList()
+      ..sort((a, b) {
+        final dateOrder = b.createdAt.compareTo(a.createdAt);
+        return dateOrder != 0 ? dateOrder : b.id.compareTo(a.id);
+      });
+    final pagePosts = visible.take(normalizedPageSize).toList(growable: false);
+    final hasBufferedPosts = visible.length > normalizedPageSize;
+    final nextCursor = hasBufferedPosts && pagePosts.isNotEmpty
+        ? AllPostsCursor(
+            createdAt: pagePosts.last.createdAt,
+            postId: pagePosts.last.id,
+          )
+        : scanCursor;
+
+    return AllPostsPage(
+      posts: pagePosts,
+      cursor: nextCursor,
+      hasMore: hasBufferedPosts || sourceHasMore,
+    );
   }
 
   /// 카테고리별 최신 게시글 페이지를 가져옵니다.

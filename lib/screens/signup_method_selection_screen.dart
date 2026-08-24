@@ -245,7 +245,8 @@ class _SignUpMethodSelectionScreenState
             maxLines: 1,
             overflow: TextOverflow.ellipsis,
             style: const TextStyle(
-              fontFamily: 'Pretendard',
+              fontFamily: 'Inter',
+              fontFamilyFallback: const ['NotoSansKR'],
               fontSize: 18,
               fontWeight: FontWeight.w700,
               color: Color(0xFF0F172A),
@@ -325,7 +326,8 @@ class _SignUpMethodSelectionScreenState
                                             l10n.loginTermsNotice,
                                             textAlign: TextAlign.left,
                                             style: const TextStyle(
-                                              fontFamily: 'Pretendard',
+                                              fontFamily: 'Inter',
+                                              fontFamilyFallback: const ['NotoSansKR'],
                                               fontSize: 13,
                                               fontWeight: FontWeight.w400,
                                               color: Color(0xFF475569),
@@ -460,7 +462,8 @@ class _PolicyLink extends StatelessWidget {
       child: Text(
         label,
         style: const TextStyle(
-          fontFamily: 'Pretendard',
+          fontFamily: 'Inter',
+          fontFamilyFallback: const ['NotoSansKR'],
           fontSize: 14,
           fontWeight: FontWeight.w600,
         ),
@@ -512,7 +515,8 @@ class _SocialSignupButton extends StatelessWidget {
                 maxLines: 1,
                 overflow: TextOverflow.ellipsis,
                 style: const TextStyle(
-                  fontFamily: 'Pretendard',
+                  fontFamily: 'Inter',
+                  fontFamilyFallback: const ['NotoSansKR'],
                   fontSize: 15,
                   fontWeight: FontWeight.w700,
                   letterSpacing: -0.2,

@@ -9,14 +9,16 @@ import '../utils/responsive_helper.dart';
 import 'meetup_favorite_editor_screen.dart';
 
 const TextStyle _kDialogTitleStyle = TextStyle(
-  fontFamily: 'Pretendard',
+  fontFamily: 'Inter',
+  fontFamilyFallback: const ['NotoSansKR'],
   fontSize: 18,
   fontWeight: FontWeight.w700,
   color: Color(0xFF111827),
 );
 
 const TextStyle _kDialogBodyStyle = TextStyle(
-  fontFamily: 'Pretendard',
+  fontFamily: 'Inter',
+  fontFamilyFallback: const ['NotoSansKR'],
   fontSize: 14,
   fontWeight: FontWeight.w500,
   color: Color(0xFF6B7280),
@@ -24,7 +26,8 @@ const TextStyle _kDialogBodyStyle = TextStyle(
 );
 
 const TextStyle _kDialogButtonStyle = TextStyle(
-  fontFamily: 'Pretendard',
+  fontFamily: 'Inter',
+  fontFamilyFallback: const ['NotoSansKR'],
   fontSize: 14,
   fontWeight: FontWeight.w700,
 );
@@ -246,7 +249,8 @@ class _MeetupFavoritesScreenState extends State<MeetupFavoritesScreen> {
         title: Text(
           isKo ? '즐겨찾기' : 'Favorites',
           style: TextStyle(
-            fontFamily: 'Pretendard',
+            fontFamily: 'Inter',
+            fontFamilyFallback: const ['NotoSansKR'],
             fontSize: context.rf(18).clamp(16, 19).toDouble(),
             fontWeight: FontWeight.w700,
             color: Color(0xFF111827),
@@ -291,7 +295,8 @@ class _MeetupFavoritesScreenState extends State<MeetupFavoritesScreen> {
                                 Text(
                                   isKo ? '새 즐겨찾기 만들기' : 'Create a favorite',
                                   style: const TextStyle(
-                                    fontFamily: 'Pretendard',
+                                    fontFamily: 'Inter',
+                                    fontFamilyFallback: const ['NotoSansKR'],
                                     fontSize: 15,
                                     fontWeight: FontWeight.w700,
                                     color: Color(0xFF111827),
@@ -303,7 +308,8 @@ class _MeetupFavoritesScreenState extends State<MeetupFavoritesScreen> {
                                       ? '날짜를 제외한 밋업 정보를 미리 저장합니다.'
                                       : 'Save meetup details without a date.',
                                   style: const TextStyle(
-                                    fontFamily: 'Pretendard',
+                                    fontFamily: 'Inter',
+                                    fontFamilyFallback: const ['NotoSansKR'],
                                     fontSize: 12,
                                     fontWeight: FontWeight.w400,
                                     color: Color(0xFF667085),
@@ -327,7 +333,8 @@ class _MeetupFavoritesScreenState extends State<MeetupFavoritesScreen> {
                         ? '저장한 항목을 눌러 밋업에 불러오세요.'
                         : 'Tap a saved item to load it into your meetup.',
                     style: const TextStyle(
-                      fontFamily: 'Pretendard',
+                      fontFamily: 'Inter',
+                      fontFamilyFallback: const ['NotoSansKR'],
                       fontSize: 13,
                       fontWeight: FontWeight.w500,
                       color: Color(0xFF667085),
@@ -348,7 +355,8 @@ class _MeetupFavoritesScreenState extends State<MeetupFavoritesScreen> {
                           Text(
                             isKo ? '저장된 즐겨찾기가 없어요.' : 'No saved favorites yet.',
                             style: const TextStyle(
-                              fontFamily: 'Pretendard',
+                              fontFamily: 'Inter',
+                              fontFamilyFallback: const ['NotoSansKR'],
                               fontSize: 14,
                               fontWeight: FontWeight.w500,
                               color: Color(0xFF667085),
@@ -435,7 +443,8 @@ class _TemplateCard extends StatelessWidget {
                     Text(
                       title,
                       style: const TextStyle(
-                        fontFamily: 'Pretendard',
+                        fontFamily: 'Inter',
+                        fontFamilyFallback: const ['NotoSansKR'],
                         fontSize: 15,
                         fontWeight: FontWeight.w800,
                         height: 1.2,
@@ -448,7 +457,8 @@ class _TemplateCard extends StatelessWidget {
                     Text(
                       subtitleParts.join(' · '),
                       style: const TextStyle(
-                        fontFamily: 'Pretendard',
+                        fontFamily: 'Inter',
+                        fontFamilyFallback: const ['NotoSansKR'],
                         fontSize: 13,
                         fontWeight: FontWeight.w600,
                         height: 1.2,
@@ -599,7 +609,8 @@ class _TemplateNameDialogState extends State<_TemplateNameDialog> {
             autofocus: true,
             textInputAction: TextInputAction.done,
             style: const TextStyle(
-              fontFamily: 'Pretendard',
+              fontFamily: 'Inter',
+              fontFamilyFallback: const ['NotoSansKR'],
               fontSize: 14,
               fontWeight: FontWeight.w600,
               color: Color(0xFF111827),
@@ -607,7 +618,8 @@ class _TemplateNameDialogState extends State<_TemplateNameDialog> {
             decoration: InputDecoration(
               hintText: isKo ? '예) 오버피팅 모임' : 'e.g. Outfitting meetup',
               hintStyle: const TextStyle(
-                fontFamily: 'Pretendard',
+                fontFamily: 'Inter',
+                fontFamilyFallback: const ['NotoSansKR'],
                 fontSize: 14,
                 fontWeight: FontWeight.w400,
                 color: Color(0xFF9CA3AF),

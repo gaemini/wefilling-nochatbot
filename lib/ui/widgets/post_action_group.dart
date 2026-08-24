@@ -307,7 +307,8 @@ class _PostActionItem extends StatelessWidget {
                 maxLines: 1,
                 overflow: TextOverflow.ellipsis,
                 style: TextStyle(
-                  fontFamily: 'Pretendard',
+                  fontFamily: 'Inter',
+                  fontFamilyFallback: const ['NotoSansKR'],
                   fontSize: countFontSize,
                   fontWeight: emphasized ? FontWeight.w700 : FontWeight.w600,
                   color: BrandColors.textSecondary,
@@ -322,7 +323,8 @@ class _PostActionItem extends StatelessWidget {
                 '$count',
                 maxLines: 1,
                 style: TextStyle(
-                  fontFamily: 'Pretendard',
+                  fontFamily: 'Inter',
+                  fontFamilyFallback: const ['NotoSansKR'],
                   fontSize: countFontSize,
                   fontWeight: FontWeight.w600,
                   color: BrandColors.textSecondary,

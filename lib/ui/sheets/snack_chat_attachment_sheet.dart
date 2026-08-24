@@ -99,7 +99,8 @@ class SnackChatAttachmentSheet extends StatelessWidget {
                     maxLines: 1,
                     overflow: TextOverflow.ellipsis,
                     style: TextStyle(
-                      fontFamily: 'Pretendard',
+                      fontFamily: 'Inter',
+                      fontFamilyFallback: const ['NotoSansKR'],
                       fontSize: context.rf(17).clamp(16, 18).toDouble(),
                       fontWeight: FontWeight.w800,
                       color: const Color(0xFF111827),
@@ -201,7 +202,8 @@ class _AttachmentActionRow extends StatelessWidget {
                         maxLines: 1,
                         overflow: TextOverflow.ellipsis,
                         style: TextStyle(
-                          fontFamily: 'Pretendard',
+                          fontFamily: 'Inter',
+                          fontFamilyFallback: const ['NotoSansKR'],
                           fontSize: context.rf(15.5).clamp(14.5, 16).toDouble(),
                           fontWeight: FontWeight.w800,
                           color: const Color(0xFF111827),
@@ -213,7 +215,8 @@ class _AttachmentActionRow extends StatelessWidget {
                         maxLines: 2,
                         overflow: TextOverflow.ellipsis,
                         style: TextStyle(
-                          fontFamily: 'Pretendard',
+                          fontFamily: 'Inter',
+                          fontFamilyFallback: const ['NotoSansKR'],
                           fontSize: context.rf(12.5).clamp(12, 13.5).toDouble(),
                           fontWeight: FontWeight.w500,
                           height: 1.3,

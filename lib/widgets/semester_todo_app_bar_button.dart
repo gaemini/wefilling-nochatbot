@@ -98,7 +98,8 @@ class _SemesterTodoAppBarButtonState extends State<SemesterTodoAppBarButton> {
                 child: Text(
                   _pending > 9 ? '9+' : '$_pending',
                   style: const TextStyle(
-                    fontFamily: 'Pretendard',
+                    fontFamily: 'Inter',
+                    fontFamilyFallback: const ['NotoSansKR'],
                     fontSize: 9,
                     height: 1,
                     fontWeight: FontWeight.w800,

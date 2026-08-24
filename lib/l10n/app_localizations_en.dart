@@ -1323,7 +1323,7 @@ class AppLocalizationsEn extends AppLocalizations {
 
   @override
   String deleteCategoryConfirm(String name) {
-    return 'Are you sure you want to delete \'$name\' group?\n\nFriends in this group will be moved to other groups.';
+    return 'Are you sure you want to delete \'$name\' group?\n\nOnly the group is deleted. Its friends will not be moved to another group.';
   }
 
   @override
@@ -2983,13 +2983,20 @@ class AppLocalizationsEn extends AppLocalizations {
   String get postComposeVisibilityPrompt => 'Choose who can see this post.';
 
   @override
-  String get postVisibilityPublicTitle => 'Visible to everyone';
+  String get postVisibilityPublicTitle => 'Public';
 
   @override
   String get postVisibilityPublicDescription => 'All users can view this post';
 
   @override
-  String get postVisibilityGroupTitle => 'Select groups';
+  String get postVisibilityAnonymousTitle => 'Public anonymously';
+
+  @override
+  String get postVisibilityAnonymousDescription =>
+      'All users can view this post without your profile';
+
+  @override
+  String get postVisibilityGroupTitle => 'Group only';
 
   @override
   String get postVisibilityGroupDescription =>

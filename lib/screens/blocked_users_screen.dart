@@ -210,7 +210,8 @@ class _BlockedUsersScreenState extends State<BlockedUsersScreen> {
         title: Text(
           isKo ? '차단 해제' : 'Unblock User',
           style: const TextStyle(
-            fontFamily: 'Pretendard',
+            fontFamily: 'Inter',
+            fontFamilyFallback: const ['NotoSansKR'],
             fontWeight: FontWeight.w600,
           ),
         ),
@@ -219,7 +220,8 @@ class _BlockedUsersScreenState extends State<BlockedUsersScreen> {
               ? '$userName 사용자의 차단을 해제하시겠습니까?' 
               : 'Do you want to unblock $userName?',
           style: const TextStyle(
-            fontFamily: 'Pretendard',
+            fontFamily: 'Inter',
+            fontFamilyFallback: const ['NotoSansKR'],
           ),
         ),
         actions: [
@@ -228,7 +230,8 @@ class _BlockedUsersScreenState extends State<BlockedUsersScreen> {
             child: Text(
               isKo ? '취소' : 'Cancel',
               style: const TextStyle(
-                fontFamily: 'Pretendard',
+                fontFamily: 'Inter',
+                fontFamilyFallback: const ['NotoSansKR'],
                 color: Color(0xFF6B7280),
               ),
             ),
@@ -246,7 +249,8 @@ class _BlockedUsersScreenState extends State<BlockedUsersScreen> {
             child: Text(
               isKo ? '해제' : 'Unblock',
               style: const TextStyle(
-                fontFamily: 'Pretendard',
+                fontFamily: 'Inter',
+                fontFamilyFallback: const ['NotoSansKR'],
                 fontWeight: FontWeight.w600,
               ),
             ),
@@ -296,7 +300,8 @@ class _BlockedUsersScreenState extends State<BlockedUsersScreen> {
         title: Text(
           AppLocalizations.of(context)!.blockList ?? "",
           style: const TextStyle(
-            fontFamily: 'Pretendard',
+            fontFamily: 'Inter',
+            fontFamilyFallback: const ['NotoSansKR'],
             fontSize: 18,
             fontWeight: FontWeight.w600,
             color: Color(0xFF111827),
@@ -331,7 +336,8 @@ class _BlockedUsersScreenState extends State<BlockedUsersScreen> {
             Text(
               isKo ? '오류가 발생했습니다' : 'An error occurred',
               style: TextStyle(
-                fontFamily: 'Pretendard',
+                fontFamily: 'Inter',
+                fontFamilyFallback: const ['NotoSansKR'],
                 fontSize: 20,
                 fontWeight: FontWeight.bold,
                 color: Colors.red.shade700,
@@ -342,7 +348,8 @@ class _BlockedUsersScreenState extends State<BlockedUsersScreen> {
               _errorMessage,
               textAlign: TextAlign.center,
               style: const TextStyle(
-                fontFamily: 'Pretendard',
+                fontFamily: 'Inter',
+                fontFamilyFallback: const ['NotoSansKR'],
                 fontSize: 14,
                 color: Color(0xFF111827),
               ),
@@ -411,7 +418,8 @@ class _BlockedUsersScreenState extends State<BlockedUsersScreen> {
       child: Text(
         text,
         style: const TextStyle(
-          fontFamily: 'Pretendard',
+          fontFamily: 'Inter',
+          fontFamilyFallback: const ['NotoSansKR'],
           fontSize: 13,
           fontWeight: FontWeight.w700,
           color: Color(0xFF6B7280),
@@ -474,7 +482,8 @@ class _BlockedUsersScreenState extends State<BlockedUsersScreen> {
                 Text(
                   userName,
                   style: const TextStyle(
-                    fontFamily: 'Pretendard',
+                    fontFamily: 'Inter',
+                    fontFamilyFallback: const ['NotoSansKR'],
                     fontSize: 16,
                     fontWeight: FontWeight.w500,
                     color: Color(0xFF111827),
@@ -490,7 +499,8 @@ class _BlockedUsersScreenState extends State<BlockedUsersScreen> {
                     return isKo ? '$timeAgo에 차단' : 'Blocked $timeAgo';
                   }(),
                   style: const TextStyle(
-                    fontFamily: 'Pretendard',
+                    fontFamily: 'Inter',
+                    fontFamilyFallback: const ['NotoSansKR'],
                     fontSize: 14,
                     color: Color(0xFF6B7280),
                   ),
@@ -512,7 +522,8 @@ class _BlockedUsersScreenState extends State<BlockedUsersScreen> {
                 return isKo ? '차단 해제' : 'Unblock';
               }(),
               style: const TextStyle(
-                fontFamily: 'Pretendard',
+                fontFamily: 'Inter',
+                fontFamilyFallback: const ['NotoSansKR'],
                 fontWeight: FontWeight.w600,
                 fontSize: 14,
               ),
@@ -563,7 +574,8 @@ class _BlockedUsersScreenState extends State<BlockedUsersScreen> {
                 Text(
                   isKo ? '익명 게시글' : 'Anonymous post',
                   style: const TextStyle(
-                    fontFamily: 'Pretendard',
+                    fontFamily: 'Inter',
+                    fontFamilyFallback: const ['NotoSansKR'],
                     fontSize: 16,
                     fontWeight: FontWeight.w600,
                     color: Color(0xFF111827),
@@ -575,7 +587,8 @@ class _BlockedUsersScreenState extends State<BlockedUsersScreen> {
                   maxLines: 1,
                   overflow: TextOverflow.ellipsis,
                   style: const TextStyle(
-                    fontFamily: 'Pretendard',
+                    fontFamily: 'Inter',
+                    fontFamilyFallback: const ['NotoSansKR'],
                     fontSize: 13,
                     fontWeight: FontWeight.w500,
                     color: Color(0xFF6B7280),
@@ -587,7 +600,8 @@ class _BlockedUsersScreenState extends State<BlockedUsersScreen> {
                       ? '${_getFormattedDate(blockedPost.createdAt)}에 차단'
                       : 'Blocked ${_getFormattedDate(blockedPost.createdAt)}',
                   style: const TextStyle(
-                    fontFamily: 'Pretendard',
+                    fontFamily: 'Inter',
+                    fontFamilyFallback: const ['NotoSansKR'],
                     fontSize: 12,
                     color: Color(0xFF9CA3AF),
                   ),
@@ -600,7 +614,8 @@ class _BlockedUsersScreenState extends State<BlockedUsersScreen> {
             child: Text(
               isKo ? '차단 해제' : 'Unblock',
               style: const TextStyle(
-                fontFamily: 'Pretendard',
+                fontFamily: 'Inter',
+                fontFamilyFallback: const ['NotoSansKR'],
                 fontWeight: FontWeight.w600,
                 fontSize: 14,
               ),

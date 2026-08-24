@@ -51,6 +51,8 @@ class AppTheme {
 
     return ThemeData(
       useMaterial3: true,
+      fontFamily: 'Inter',
+      fontFamilyFallback: const ['NotoSansKR'],
       colorScheme: cs,
       snackBarTheme: SnackBarThemeData(
         behavior: SnackBarBehavior.floating,
@@ -60,7 +62,8 @@ class AppTheme {
           borderRadius: BorderRadius.circular(14),
         ),
         contentTextStyle: const TextStyle(
-          fontFamily: 'Pretendard',
+          fontFamily: 'Inter',
+          fontFamilyFallback: const ['NotoSansKR'],
           fontSize: 15,
           fontWeight: FontWeight.w700,
           height: 1.25,
@@ -116,7 +119,8 @@ class AppTheme {
             vertical: DesignTokens.s12,
           ),
           textStyle: const TextStyle(
-            fontFamily: 'Pretendard',
+            fontFamily: 'Inter',
+            fontFamilyFallback: const ['NotoSansKR'],
             fontSize: 16,
             fontWeight: FontWeight.w700,
             height: 1.2,
@@ -136,7 +140,8 @@ class AppTheme {
             vertical: DesignTokens.s12,
           ),
           textStyle: const TextStyle(
-            fontFamily: 'Pretendard',
+            fontFamily: 'Inter',
+            fontFamilyFallback: const ['NotoSansKR'],
             fontSize: 16,
             fontWeight: FontWeight.w700,
             height: 1.2,
@@ -156,7 +161,8 @@ class AppTheme {
             vertical: DesignTokens.s12,
           ),
           textStyle: const TextStyle(
-            fontFamily: 'Pretendard',
+            fontFamily: 'Inter',
+            fontFamilyFallback: const ['NotoSansKR'],
             fontSize: 16,
             fontWeight: FontWeight.w700,
             height: 1.2,

@@ -139,7 +139,8 @@ class _ReviewApprovalScreenState extends State<ReviewApprovalScreen> {
           title: Text(
             l10n?.reviewApprovalRequest ?? "",
             style: const TextStyle(
-              fontFamily: 'Pretendard',
+              fontFamily: 'Inter',
+              fontFamilyFallback: const ['NotoSansKR'],
               fontSize: 18,
               fontWeight: FontWeight.w700,
               color: Colors.black87,
@@ -170,7 +171,8 @@ class _ReviewApprovalScreenState extends State<ReviewApprovalScreen> {
         title: Text(
           l10n?.reviewApprovalRequest ?? "",
           style: const TextStyle(
-            fontFamily: 'Pretendard',
+            fontFamily: 'Inter',
+            fontFamilyFallback: const ['NotoSansKR'],
             fontSize: 18,
             fontWeight: FontWeight.w700,
             color: Colors.black87,
@@ -226,7 +228,8 @@ class _ReviewApprovalScreenState extends State<ReviewApprovalScreen> {
                                   Text(
                                     widget.meetupTitle,
                                     style: const TextStyle(
-                                      fontFamily: 'Pretendard',
+                                      fontFamily: 'Inter',
+                                      fontFamilyFallback: const ['NotoSansKR'],
                                       fontSize: 17,
                                       fontWeight: FontWeight.w700,
                                       color: Colors.black87,
@@ -236,7 +239,8 @@ class _ReviewApprovalScreenState extends State<ReviewApprovalScreen> {
                                   Text(
                                     AppLocalizations.of(context)!.reviewByAuthor(widget.authorName),
                                     style: TextStyle(
-                                      fontFamily: 'Pretendard',
+                                      fontFamily: 'Inter',
+                                      fontFamilyFallback: const ['NotoSansKR'],
                                       fontSize: 14,
                                       fontWeight: FontWeight.w500,
                                       color: Colors.grey[600],
@@ -306,7 +310,8 @@ class _ReviewApprovalScreenState extends State<ReviewApprovalScreen> {
                                             Text(
                                               '이미지를 불러올 수 없습니다',
                                               style: TextStyle(
-                                                fontFamily: 'Pretendard',
+                                                fontFamily: 'Inter',
+                                                fontFamilyFallback: const ['NotoSansKR'],
                                                 fontSize: 14,
                                                 color: Colors.grey[600],
                                               ),
@@ -337,7 +342,8 @@ class _ReviewApprovalScreenState extends State<ReviewApprovalScreen> {
                             child: Text(
                               '${_currentImageIndex + 1} / ${_imageUrls.length}',
                               style: const TextStyle(
-                                fontFamily: 'Pretendard',
+                                fontFamily: 'Inter',
+                                fontFamilyFallback: const ['NotoSansKR'],
                                 color: Colors.white,
                                 fontSize: 13,
                                 fontWeight: FontWeight.w600,
@@ -382,7 +388,8 @@ class _ReviewApprovalScreenState extends State<ReviewApprovalScreen> {
                         Text(
                           AppLocalizations.of(context)!.reviewContent,
                           style: const TextStyle(
-                            fontFamily: 'Pretendard',
+                            fontFamily: 'Inter',
+                            fontFamilyFallback: const ['NotoSansKR'],
                             fontSize: 16,
                             fontWeight: FontWeight.w700,
                             color: Colors.black87,
@@ -400,7 +407,8 @@ class _ReviewApprovalScreenState extends State<ReviewApprovalScreen> {
                           child: Text(
                             widget.content,
                             style: const TextStyle(
-                              fontFamily: 'Pretendard',
+                              fontFamily: 'Inter',
+                              fontFamilyFallback: const ['NotoSansKR'],
                               fontSize: 15,
                               fontWeight: FontWeight.w400,
                               height: 1.6,
@@ -427,7 +435,8 @@ class _ReviewApprovalScreenState extends State<ReviewApprovalScreen> {
                                 child: Text(
                                   AppLocalizations.of(context)!.reviewApprovalInfo,
                                   style: TextStyle(
-                                    fontFamily: 'Pretendard',
+                                    fontFamily: 'Inter',
+                                    fontFamilyFallback: const ['NotoSansKR'],
                                     color: Colors.amber[900],
                                     fontSize: 13,
                                     fontWeight: FontWeight.w500,
@@ -467,7 +476,8 @@ class _ReviewApprovalScreenState extends State<ReviewApprovalScreen> {
                                         ? l10n?.reviewAlreadyAccepted ?? ""
                                         : l10n?.reviewAlreadyRejected ?? "",
                                     style: TextStyle(
-                                      fontFamily: 'Pretendard',
+                                      fontFamily: 'Inter',
+                                      fontFamilyFallback: const ['NotoSansKR'],
                                       color: _currentStatus == 'accepted' ? Colors.green[900] : Colors.red[900],
                                       fontSize: 15,
                                       fontWeight: FontWeight.w600,
@@ -530,7 +540,8 @@ class _ReviewApprovalScreenState extends State<ReviewApprovalScreen> {
                               : Text(
                                   l10n?.reject ?? "",
                                   style: const TextStyle(
-                                    fontFamily: 'Pretendard',
+                                    fontFamily: 'Inter',
+                                    fontFamilyFallback: const ['NotoSansKR'],
                                     fontSize: 16,
                                     fontWeight: FontWeight.w700,
                                   ),
@@ -566,7 +577,8 @@ class _ReviewApprovalScreenState extends State<ReviewApprovalScreen> {
                               : Text(
                                   l10n?.accept ?? "",
                                   style: const TextStyle(
-                                    fontFamily: 'Pretendard',
+                                    fontFamily: 'Inter',
+                                    fontFamilyFallback: const ['NotoSansKR'],
                                     fontSize: 16,
                                     fontWeight: FontWeight.w700,
                                   ),

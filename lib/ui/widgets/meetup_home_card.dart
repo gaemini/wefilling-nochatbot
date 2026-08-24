@@ -168,7 +168,8 @@ class _MeetupHomeCardState extends State<MeetupHomeCard> {
         foregroundColor:
             destructive ? const Color(0xFFB42318) : const Color(0xFF111827),
         textStyle: TextStyle(
-          fontFamily: 'Pretendard',
+          fontFamily: 'Inter',
+          fontFamilyFallback: const ['NotoSansKR'],
           fontSize: context.rf(12).clamp(11.5, 12.5).toDouble(),
           fontWeight: FontWeight.w800,
         ),
@@ -187,7 +188,8 @@ class _MeetupHomeCardState extends State<MeetupHomeCard> {
         maxLines: 1,
         overflow: TextOverflow.ellipsis,
         style: const TextStyle(
-          fontFamily: 'Pretendard',
+          fontFamily: 'Inter',
+          fontFamilyFallback: const ['NotoSansKR'],
           fontSize: 11.5,
           fontWeight: FontWeight.w700,
           color: Color(0xFF667085),

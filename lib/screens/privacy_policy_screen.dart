@@ -23,7 +23,8 @@ class PrivacyPolicyScreen extends StatelessWidget {
         title: Text(
           AppLocalizations.of(context)!.privacyPolicy ?? "",
           style: const TextStyle(
-            fontFamily: 'Pretendard',
+            fontFamily: 'Inter',
+            fontFamilyFallback: const ['NotoSansKR'],
             fontSize: 18,
             fontWeight: FontWeight.w600,
             color: Color(0xFF111827),
@@ -283,7 +284,8 @@ Data subjects may contact the privacy officer and department regarding all perso
                   Text(
                     isKo ? '부칙' : 'Addendum',
                     style: const TextStyle(
-                      fontFamily: 'Pretendard',
+                      fontFamily: 'Inter',
+                      fontFamilyFallback: const ['NotoSansKR'],
                       fontSize: 16,
                       fontWeight: FontWeight.w700,
                       color: Color(0xFF111827),
@@ -295,7 +297,8 @@ Data subjects may contact the privacy officer and department regarding all perso
                         ? '이 개인정보 처리방침은 2025년 11월 25일부터 적용됩니다.\n이전의 개인정보 처리방침은 아래에서 확인하실 수 있습니다.'
                         : 'This Privacy Policy takes effect on November 25, 2025.\nPrevious versions can be found below.',
                     style: const TextStyle(
-                      fontFamily: 'Pretendard',
+                      fontFamily: 'Inter',
+                      fontFamilyFallback: const ['NotoSansKR'],
                       fontSize: 14,
                       color: Color(0xFF6B7280),
                       height: 1.5,
@@ -305,7 +308,8 @@ Data subjects may contact the privacy officer and department regarding all perso
                   Text(
                     isKo ? '문의: wefilling@gmail.com' : 'Contact: wefilling@gmail.com',
                     style: const TextStyle(
-                      fontFamily: 'Pretendard',
+                      fontFamily: 'Inter',
+                      fontFamilyFallback: const ['NotoSansKR'],
                       fontSize: 14,
                       color: Color(0xFF6B7280),
                     ),
@@ -328,7 +332,8 @@ Data subjects may contact the privacy officer and department regarding all perso
           Text(
             title,
             style: const TextStyle(
-              fontFamily: 'Pretendard',
+              fontFamily: 'Inter',
+              fontFamilyFallback: const ['NotoSansKR'],
               fontSize: 18,
               fontWeight: FontWeight.w700,
               color: Color(0xFF111827),
@@ -339,7 +344,8 @@ Data subjects may contact the privacy officer and department regarding all perso
           Text(
             content,
             style: const TextStyle(
-              fontFamily: 'Pretendard',
+              fontFamily: 'Inter',
+              fontFamilyFallback: const ['NotoSansKR'],
               fontSize: 15,
               height: 1.7,
               color: Color(0xFF374151),

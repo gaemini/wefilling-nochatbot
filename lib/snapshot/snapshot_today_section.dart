@@ -350,7 +350,8 @@ class _SnackTileShell extends StatelessWidget {
                     maxScaleFactor: 1.15,
                   ),
                   style: const TextStyle(
-                    fontFamily: 'Pretendard',
+                    fontFamily: 'Inter',
+                    fontFamilyFallback: const ['NotoSansKR'],
                     fontSize: 13,
                     height: 1.25,
                     fontWeight: FontWeight.w600,

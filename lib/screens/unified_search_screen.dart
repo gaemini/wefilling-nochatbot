@@ -496,13 +496,15 @@ class _UnifiedSearchScreenState extends State<UnifiedSearchScreen>
             labelColor: const Color(0xFF111827),
             unselectedLabelColor: const Color(0xFF6B7280),
             labelStyle: const TextStyle(
-              fontFamily: 'Pretendard',
+              fontFamily: 'Inter',
+              fontFamilyFallback: const ['NotoSansKR'],
               fontSize: 17,
               fontWeight: FontWeight.w800,
               letterSpacing: -0.2,
             ),
             unselectedLabelStyle: const TextStyle(
-              fontFamily: 'Pretendard',
+              fontFamily: 'Inter',
+              fontFamilyFallback: const ['NotoSansKR'],
               fontSize: 16,
               fontWeight: FontWeight.w600,
               letterSpacing: -0.2,

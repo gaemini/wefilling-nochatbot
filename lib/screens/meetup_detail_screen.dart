@@ -588,7 +588,8 @@ class _MeetupDetailScreenState extends State<MeetupDetailScreen>
               title: Text(
                 currentLang == 'ko' ? '밋업' : 'Meetup',
                 style: TextStyle(
-                  fontFamily: 'Pretendard',
+                  fontFamily: 'Inter',
+                  fontFamilyFallback: const ['NotoSansKR'],
                   fontSize: context.rf(18).clamp(17, 20).toDouble(),
                   fontWeight: FontWeight.w800,
                   color: const Color(0xFF101828),
@@ -625,7 +626,8 @@ class _MeetupDetailScreenState extends State<MeetupDetailScreen>
                             maxLines: 3,
                             overflow: TextOverflow.ellipsis,
                             style: TextStyle(
-                              fontFamily: 'Pretendard',
+                              fontFamily: 'Inter',
+                              fontFamilyFallback: const ['NotoSansKR'],
                               fontSize: titleSize,
                               fontWeight: FontWeight.w800,
                               color: const Color(0xFF101828),
@@ -638,7 +640,8 @@ class _MeetupDetailScreenState extends State<MeetupDetailScreen>
                             localizedCategoryLabel(
                                 context, _currentMeetup.category),
                             style: TextStyle(
-                              fontFamily: 'Pretendard',
+                              fontFamily: 'Inter',
+                              fontFamilyFallback: const ['NotoSansKR'],
                               fontSize: context.rf(13).clamp(12, 14).toDouble(),
                               fontWeight: FontWeight.w700,
                               color: const Color(0xFF667085),
@@ -676,7 +679,8 @@ class _MeetupDetailScreenState extends State<MeetupDetailScreen>
                             _buildPrettyLinkText(
                               _currentMeetup.description,
                               style: TextStyle(
-                                fontFamily: 'Pretendard',
+                                fontFamily: 'Inter',
+                                fontFamilyFallback: const ['NotoSansKR'],
                                 fontSize:
                                     context.rf(15).clamp(14, 16).toDouble(),
                                 height: 1.55,
@@ -684,7 +688,8 @@ class _MeetupDetailScreenState extends State<MeetupDetailScreen>
                                 fontWeight: FontWeight.w500,
                               ),
                               linkStyle: TextStyle(
-                                fontFamily: 'Pretendard',
+                                fontFamily: 'Inter',
+                                fontFamilyFallback: const ['NotoSansKR'],
                                 fontSize:
                                     context.rf(15).clamp(14, 16).toDouble(),
                                 color: const Color(0xFF111827),
@@ -693,9 +698,9 @@ class _MeetupDetailScreenState extends State<MeetupDetailScreen>
                               ),
                             ),
                           ],
-                          const SizedBox(height: 30),
+                          const SizedBox(height: 24),
                           _buildAudienceSection(),
-                          const SizedBox(height: 30),
+                          const SizedBox(height: 24),
                           _buildParticipantsSection(),
                         ],
                       ),
@@ -783,7 +788,8 @@ class _MeetupDetailScreenState extends State<MeetupDetailScreen>
   Widget _buildSectionTitle(String label) => Text(
         label,
         style: TextStyle(
-          fontFamily: 'Pretendard',
+          fontFamily: 'Inter',
+          fontFamilyFallback: const ['NotoSansKR'],
           fontSize: context.rf(18).clamp(17, 20).toDouble(),
           fontWeight: FontWeight.w800,
           height: 1.25,
@@ -815,7 +821,8 @@ class _MeetupDetailScreenState extends State<MeetupDetailScreen>
               Text(
                 AppLocalizations.of(context)!.host,
                 style: const TextStyle(
-                  fontFamily: 'Pretendard',
+                  fontFamily: 'Inter',
+                  fontFamilyFallback: const ['NotoSansKR'],
                   fontSize: 12,
                   fontWeight: FontWeight.w600,
                   color: Color(0xFF667085),
@@ -827,7 +834,8 @@ class _MeetupDetailScreenState extends State<MeetupDetailScreen>
                 maxLines: 1,
                 overflow: TextOverflow.ellipsis,
                 style: TextStyle(
-                  fontFamily: 'Pretendard',
+                  fontFamily: 'Inter',
+                  fontFamilyFallback: const ['NotoSansKR'],
                   fontSize: context.rf(15).clamp(14, 16).toDouble(),
                   fontWeight: FontWeight.w700,
                   color: const Color(0xFF101828),
@@ -879,7 +887,8 @@ class _MeetupDetailScreenState extends State<MeetupDetailScreen>
               child: Text(
                 label,
                 style: TextStyle(
-                  fontFamily: 'Pretendard',
+                  fontFamily: 'Inter',
+                  fontFamilyFallback: const ['NotoSansKR'],
                   fontSize: context.rf(15).clamp(14, 16).toDouble(),
                   fontWeight: FontWeight.w700,
                   color: const Color(0xFF344054),
@@ -902,21 +911,22 @@ class _MeetupDetailScreenState extends State<MeetupDetailScreen>
         Text(
           l10n.postAudienceSubtitle,
           style: TextStyle(
-            fontFamily: 'Pretendard',
+            fontFamily: 'Inter',
+            fontFamilyFallback: const ['NotoSansKR'],
             fontSize: context.rf(13).clamp(12, 14).toDouble(),
             height: 1.4,
             fontWeight: FontWeight.w500,
             color: const Color(0xFF667085),
           ),
         ),
-        const SizedBox(height: 16),
+        const SizedBox(height: 10),
         FutureBuilder<_MeetupAudienceData>(
           future: _audienceFuture,
           builder: (context, snapshot) {
             if (snapshot.connectionState != ConnectionState.done &&
                 !snapshot.hasData) {
               return const SizedBox(
-                height: 86,
+                height: 58,
                 child: Align(
                   alignment: Alignment.centerLeft,
                   child: SizedBox(
@@ -938,7 +948,8 @@ class _MeetupDetailScreenState extends State<MeetupDetailScreen>
                     ? '공개 대상 정보를 확인할 수 없어요.'
                     : 'Audience information is unavailable.',
                 style: TextStyle(
-                  fontFamily: 'Pretendard',
+                  fontFamily: 'Inter',
+                  fontFamilyFallback: const ['NotoSansKR'],
                   fontSize: context.rf(13).clamp(12, 14).toDouble(),
                   height: 1.4,
                   color: const Color(0xFF667085),
@@ -955,7 +966,7 @@ class _MeetupDetailScreenState extends State<MeetupDetailScreen>
                   for (var index = 0; index < members.length; index++) ...[
                     _buildAudienceMember(members[index]),
                     if (index != members.length - 1)
-                      SizedBox(width: context.rs(14).clamp(12, 18).toDouble()),
+                      SizedBox(width: context.rs(4).clamp(3, 6).toDouble()),
                   ],
                 ],
               ),
@@ -967,8 +978,8 @@ class _MeetupDetailScreenState extends State<MeetupDetailScreen>
   }
 
   Widget _buildAudienceMember(UserProfile member) {
-    final avatarSize = context.ri(58).clamp(54, 62).toDouble();
-    final itemWidth = context.rs(76).clamp(72, 82).toDouble();
+    final avatarSize = context.ri(40).clamp(38, 43).toDouble();
+    final itemWidth = context.rs(52).clamp(49, 56).toDouble();
 
     return Semantics(
       button: true,
@@ -996,15 +1007,16 @@ class _MeetupDetailScreenState extends State<MeetupDetailScreen>
                         color: const Color(0xFF667085),
                       ),
               ),
-              const SizedBox(height: 8),
+              const SizedBox(height: 5),
               Text(
                 member.displayNameOrNickname,
                 maxLines: 1,
                 overflow: TextOverflow.ellipsis,
                 textAlign: TextAlign.center,
                 style: TextStyle(
-                  fontFamily: 'Pretendard',
-                  fontSize: context.rf(13).clamp(12.5, 14).toDouble(),
+                  fontFamily: 'Inter',
+                  fontFamilyFallback: const ['NotoSansKR'],
+                  fontSize: context.rf(11.5).clamp(11, 12.5).toDouble(),
                   fontWeight: FontWeight.w600,
                   color: const Color(0xFF101828),
                 ),
@@ -1152,7 +1164,8 @@ class _MeetupDetailScreenState extends State<MeetupDetailScreen>
           child: _buildPrettyLinkText(
             content,
             style: TextStyle(
-              fontFamily: 'Pretendard',
+              fontFamily: 'Inter',
+              fontFamilyFallback: const ['NotoSansKR'],
               fontSize: context.rf(15).clamp(14, 16).toDouble(),
               fontWeight: FontWeight.w600,
               color: const Color(0xFF344054),
@@ -1202,7 +1215,8 @@ class _MeetupDetailScreenState extends State<MeetupDetailScreen>
                 Text(
                   title,
                   style: const TextStyle(
-                    fontFamily: 'Pretendard',
+                    fontFamily: 'Inter',
+                    fontFamilyFallback: const ['NotoSansKR'],
                     fontSize: 13,
                     fontWeight: FontWeight.w600,
                     color: Color(0xFF64748B), // 적절한 회색 (WCAG 준수)
@@ -1215,14 +1229,16 @@ class _MeetupDetailScreenState extends State<MeetupDetailScreen>
                   _buildPrettyLinkText(
                     content,
                     style: const TextStyle(
-                      fontFamily: 'Pretendard',
+                      fontFamily: 'Inter',
+                      fontFamilyFallback: const ['NotoSansKR'],
                       fontSize: 15,
                       height: 1.5,
                       color: Color(0xFF1E293B), // 진한 회색 (본문용)
                       fontWeight: FontWeight.w500,
                     ),
                     linkStyle: const TextStyle(
-                      fontFamily: 'Pretendard',
+                      fontFamily: 'Inter',
+                      fontFamilyFallback: const ['NotoSansKR'],
                       fontSize: 15,
                       color: AppColors.pointColor, // 위필링 시그니처 블루
                       decoration: TextDecoration.underline,
@@ -1239,7 +1255,8 @@ class _MeetupDetailScreenState extends State<MeetupDetailScreen>
                         child: Text(
                           content,
                           style: const TextStyle(
-                            fontFamily: 'Pretendard',
+                            fontFamily: 'Inter',
+                            fontFamilyFallback: const ['NotoSansKR'],
                             fontSize: 15,
                             height: 1.5,
                             color: Color(0xFF1E293B), // 진한 회색 (본문용)
@@ -1375,7 +1392,8 @@ class _MeetupDetailScreenState extends State<MeetupDetailScreen>
                                   ? '1/${gallery.length}+'
                                   : '1/${gallery.length}',
                               style: const TextStyle(
-                                fontFamily: 'Pretendard',
+                                fontFamily: 'Inter',
+                                fontFamilyFallback: const ['NotoSansKR'],
                                 fontSize: 12,
                                 fontWeight: FontWeight.w800,
                                 color: Colors.white,
@@ -1615,7 +1633,8 @@ class _MeetupDetailScreenState extends State<MeetupDetailScreen>
                 Text(
                   AppLocalizations.of(context)!.reportAction,
                   style: const TextStyle(
-                    fontFamily: 'Pretendard',
+                    fontFamily: 'Inter',
+                    fontFamilyFallback: const ['NotoSansKR'],
                     fontSize: 14,
                     fontWeight: FontWeight.w600,
                     color: Color(0xFFEF4444),
@@ -1648,7 +1667,8 @@ class _MeetupDetailScreenState extends State<MeetupDetailScreen>
                 Text(
                   AppLocalizations.of(context)!.blockAction,
                   style: const TextStyle(
-                    fontFamily: 'Pretendard',
+                    fontFamily: 'Inter',
+                    fontFamilyFallback: const ['NotoSansKR'],
                     fontSize: 14,
                     fontWeight: FontWeight.w600,
                     color: Color(0xFFEF4444),
@@ -1853,7 +1873,8 @@ class _MeetupDetailScreenState extends State<MeetupDetailScreen>
         title: Text(
           isKo ? '밋업을 확정할까요?' : 'Confirm this meetup?',
           style: const TextStyle(
-            fontFamily: 'Pretendard',
+            fontFamily: 'Inter',
+            fontFamilyFallback: const ['NotoSansKR'],
             fontWeight: FontWeight.w800,
             fontSize: 18,
           ),
@@ -1863,7 +1884,8 @@ class _MeetupDetailScreenState extends State<MeetupDetailScreen>
               ? '참여자에게 예정대로 진행되는 밋업임을 알려요.'
               : 'Participants will know that this meetup is going ahead.',
           style: const TextStyle(
-            fontFamily: 'Pretendard',
+            fontFamily: 'Inter',
+            fontFamilyFallback: const ['NotoSansKR'],
             color: Color(0xFF667085),
             height: 1.45,
           ),
@@ -2104,7 +2126,8 @@ class _MeetupDetailScreenState extends State<MeetupDetailScreen>
             maxLines: 1,
             overflow: TextOverflow.ellipsis,
             style: TextStyle(
-              fontFamily: 'Pretendard',
+              fontFamily: 'Inter',
+              fontFamilyFallback: const ['NotoSansKR'],
               fontSize: context.rf(15).clamp(14, 16).toDouble(),
               fontWeight: FontWeight.w700,
             ),
@@ -2127,7 +2150,8 @@ class _MeetupDetailScreenState extends State<MeetupDetailScreen>
                 maxLines: 1,
                 overflow: TextOverflow.ellipsis,
                 style: const TextStyle(
-                  fontFamily: 'Pretendard',
+                  fontFamily: 'Inter',
+                  fontFamilyFallback: const ['NotoSansKR'],
                   fontSize: 14,
                   fontWeight: FontWeight.w700,
                   color: Color(0xFF667085),
@@ -3378,7 +3402,8 @@ class _MeetupDetailScreenState extends State<MeetupDetailScreen>
                   Text(
                     l10n.cancelMeetupConfirm,
                     style: TextStyle(
-                      fontFamily: 'Pretendard',
+                      fontFamily: 'Inter',
+                      fontFamilyFallback: const ['NotoSansKR'],
                       fontSize: context.rf(17).clamp(16, 18).toDouble(),
                       fontWeight: FontWeight.w700,
                       height: 1.3,
@@ -3389,7 +3414,8 @@ class _MeetupDetailScreenState extends State<MeetupDetailScreen>
                   Text(
                     l10n.cancelMeetupMessage(_currentMeetup.title),
                     style: TextStyle(
-                      fontFamily: 'Pretendard',
+                      fontFamily: 'Inter',
+                      fontFamilyFallback: const ['NotoSansKR'],
                       fontSize: context.rf(13.5).clamp(13, 14.5).toDouble(),
                       fontWeight: FontWeight.w400,
                       height: 1.5,
@@ -3401,7 +3427,8 @@ class _MeetupDetailScreenState extends State<MeetupDetailScreen>
                     '• ${l10n.cancelMeetupWarning1}\n'
                     '• ${l10n.cancelMeetupWarning2}',
                     style: TextStyle(
-                      fontFamily: 'Pretendard',
+                      fontFamily: 'Inter',
+                      fontFamilyFallback: const ['NotoSansKR'],
                       fontSize: context.rf(12.5).clamp(12, 13.5).toDouble(),
                       fontWeight: FontWeight.w500,
                       height: 1.5,
@@ -3431,7 +3458,8 @@ class _MeetupDetailScreenState extends State<MeetupDetailScreen>
                           child: Text(
                             l10n.no,
                             style: const TextStyle(
-                              fontFamily: 'Pretendard',
+                              fontFamily: 'Inter',
+                              fontFamilyFallback: const ['NotoSansKR'],
                               fontSize: 14,
                               fontWeight: FontWeight.w600,
                             ),
@@ -3452,7 +3480,8 @@ class _MeetupDetailScreenState extends State<MeetupDetailScreen>
                           child: Text(
                             l10n.yesCancel,
                             style: const TextStyle(
-                              fontFamily: 'Pretendard',
+                              fontFamily: 'Inter',
+                              fontFamilyFallback: const ['NotoSansKR'],
                               fontSize: 14,
                               fontWeight: FontWeight.w700,
                             ),
@@ -3573,7 +3602,8 @@ class _MeetupDetailScreenState extends State<MeetupDetailScreen>
                     maxLines: 1,
                     overflow: TextOverflow.ellipsis,
                     style: TextStyle(
-                      fontFamily: 'Pretendard',
+                      fontFamily: 'Inter',
+                      fontFamilyFallback: const ['NotoSansKR'],
                       fontSize: context.rf(18).clamp(17, 20).toDouble(),
                       fontWeight: FontWeight.w800,
                       color: const Color(0xFF101828),
@@ -3595,7 +3625,8 @@ class _MeetupDetailScreenState extends State<MeetupDetailScreen>
                           ? '${_currentMeetup.currentParticipants}/${_currentMeetup.maxParticipants} ${AppLocalizations.of(context)!.peopleUnit}'
                           : '$displayCount/${_currentMeetup.maxParticipants} ${AppLocalizations.of(context)!.peopleUnit}',
                       style: TextStyle(
-                        fontFamily: 'Pretendard',
+                        fontFamily: 'Inter',
+                        fontFamilyFallback: const ['NotoSansKR'],
                         fontSize: context.rf(14).clamp(13, 15).toDouble(),
                         fontWeight: FontWeight.w600,
                         color: const Color(0xFF344054),
@@ -3623,7 +3654,8 @@ class _MeetupDetailScreenState extends State<MeetupDetailScreen>
                           child: Text(
                             AppLocalizations.of(context)!.noParticipantsYet,
                             style: const TextStyle(
-                              fontFamily: 'Pretendard',
+                              fontFamily: 'Inter',
+                              fontFamilyFallback: const ['NotoSansKR'],
                               color: Color(0xFF64748B),
                               fontSize: 15,
                               fontWeight: FontWeight.w500,
@@ -3692,7 +3724,8 @@ class _MeetupDetailScreenState extends State<MeetupDetailScreen>
                         child: Text(
                           participant.userName,
                           style: const TextStyle(
-                            fontFamily: 'Pretendard',
+                            fontFamily: 'Inter',
+                            fontFamilyFallback: const ['NotoSansKR'],
                             fontSize: 15,
                             fontWeight: FontWeight.w600,
                             color: Color(0xFF1E293B),
@@ -3708,7 +3741,8 @@ class _MeetupDetailScreenState extends State<MeetupDetailScreen>
                         Text(
                           _getLocalizedCountryName(participant.userCountry!),
                           style: const TextStyle(
-                            fontFamily: 'Pretendard',
+                            fontFamily: 'Inter',
+                            fontFamilyFallback: const ['NotoSansKR'],
                             fontSize: 14,
                             fontWeight: FontWeight.w600,
                             color: Color(0xFF475569),
@@ -3728,7 +3762,8 @@ class _MeetupDetailScreenState extends State<MeetupDetailScreen>
                     Text(
                       participant.message!,
                       style: const TextStyle(
-                        fontFamily: 'Pretendard',
+                        fontFamily: 'Inter',
+                        fontFamilyFallback: const ['NotoSansKR'],
                         fontSize: 13,
                         color: Color(0xFF64748B),
                         fontWeight: FontWeight.w400,
@@ -3776,7 +3811,8 @@ class _MeetupDetailScreenState extends State<MeetupDetailScreen>
                 title: Text(
                   isKo ? '퇴장시키기' : 'Remove from meetup',
                   style: const TextStyle(
-                    fontFamily: 'Pretendard',
+                    fontFamily: 'Inter',
+                    fontFamilyFallback: const ['NotoSansKR'],
                     fontWeight: FontWeight.w700,
                     color: Color(0xFFEF4444),
                   ),
@@ -3875,7 +3911,8 @@ class _MeetupDetailScreenState extends State<MeetupDetailScreen>
                   Text(
                     participant.message!,
                     style: const TextStyle(
-                      fontFamily: 'Pretendard',
+                      fontFamily: 'Inter',
+                      fontFamilyFallback: const ['NotoSansKR'],
                       fontSize: 13,
                       color: Color(0xFF64748B),
                       fontWeight: FontWeight.w400,
@@ -3899,7 +3936,8 @@ class _MeetupDetailScreenState extends State<MeetupDetailScreen>
                 participant.getStatusTextLocalized(
                     Localizations.localeOf(context).languageCode),
                 style: TextStyle(
-                  fontFamily: 'Pretendard',
+                  fontFamily: 'Inter',
+                  fontFamilyFallback: const ['NotoSansKR'],
                   fontSize: 12,
                   color: participant.getStatusColor(),
                   fontWeight: FontWeight.w700,
@@ -3932,7 +3970,8 @@ class _MeetupDetailScreenState extends State<MeetupDetailScreen>
               child: Text(
                 participant.userName,
                 style: const TextStyle(
-                  fontFamily: 'Pretendard',
+                  fontFamily: 'Inter',
+                  fontFamilyFallback: const ['NotoSansKR'],
                   fontSize: 15,
                   fontWeight: FontWeight.w600,
                   color: Color(0xFF1E293B), // 진한 회색

@@ -255,7 +255,8 @@ class _PostCategoryFeedScreenState extends State<PostCategoryFeedScreen> {
           maxLines: 1,
           overflow: TextOverflow.ellipsis,
           style: TextStyle(
-            fontFamily: 'Pretendard',
+            fontFamily: 'Inter',
+            fontFamilyFallback: const ['NotoSansKR'],
             fontSize: context.rf(18).clamp(17, 20).toDouble(),
             fontWeight: FontWeight.w700,
             color: BrandColors.textPrimary,
@@ -291,7 +292,8 @@ class _PostCategoryFeedScreenState extends State<PostCategoryFeedScreen> {
                 child: Text(
                   widget.category.description(l10n),
                   style: const TextStyle(
-                    fontFamily: 'Pretendard',
+                    fontFamily: 'Inter',
+                    fontFamilyFallback: const ['NotoSansKR'],
                     fontSize: 14,
                     fontWeight: FontWeight.w500,
                     color: BrandColors.textSecondary,
@@ -340,7 +342,8 @@ class _PostCategoryFeedScreenState extends State<PostCategoryFeedScreen> {
                         l10n.postCategoryEmpty(label),
                         textAlign: TextAlign.center,
                         style: const TextStyle(
-                          fontFamily: 'Pretendard',
+                          fontFamily: 'Inter',
+                          fontFamilyFallback: const ['NotoSansKR'],
                           fontSize: 17,
                           fontWeight: FontWeight.w700,
                           color: BrandColors.textPrimary,

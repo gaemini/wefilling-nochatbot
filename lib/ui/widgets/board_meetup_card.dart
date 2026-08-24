@@ -63,7 +63,8 @@ class BoardMeetupCard extends StatelessWidget {
         : context.rs(66).clamp(66.0, 68.0).toDouble();
     final metaSize = context.rf(12.5).clamp(12.0, 13.0).toDouble();
     final metaStyle = TextStyle(
-      fontFamily: 'Pretendard',
+      fontFamily: 'Inter',
+      fontFamilyFallback: const ['NotoSansKR'],
       fontSize: metaSize,
       fontWeight: FontWeight.w600,
       height: 1.18,
@@ -103,7 +104,8 @@ class BoardMeetupCard extends StatelessWidget {
                           overflow: TextOverflow.ellipsis,
                           textAlign: TextAlign.center,
                           style: TextStyle(
-                            fontFamily: 'Pretendard',
+                            fontFamily: 'Inter',
+                            fontFamilyFallback: const ['NotoSansKR'],
                             fontSize:
                                 context.rf(9.5).clamp(9.0, 10.0).toDouble(),
                             fontWeight: FontWeight.w800,
@@ -117,7 +119,8 @@ class BoardMeetupCard extends StatelessWidget {
                           _dayLabel(),
                           maxLines: 1,
                           style: TextStyle(
-                            fontFamily: 'Pretendard',
+                            fontFamily: 'Inter',
+                            fontFamilyFallback: const ['NotoSansKR'],
                             fontSize:
                                 context.rf(23).clamp(21.0, 24.0).toDouble(),
                             fontWeight: FontWeight.w800,
@@ -133,7 +136,8 @@ class BoardMeetupCard extends StatelessWidget {
                           overflow: TextOverflow.ellipsis,
                           textAlign: TextAlign.center,
                           style: TextStyle(
-                            fontFamily: 'Pretendard',
+                            fontFamily: 'Inter',
+                            fontFamilyFallback: const ['NotoSansKR'],
                             fontSize:
                                 context.rf(10.5).clamp(10.0, 11.0).toDouble(),
                             fontWeight: FontWeight.w700,
@@ -168,7 +172,8 @@ class BoardMeetupCard extends StatelessWidget {
                               maxLines: 1,
                               overflow: TextOverflow.ellipsis,
                               style: TextStyle(
-                                fontFamily: 'Pretendard',
+                                fontFamily: 'Inter',
+                                fontFamilyFallback: const ['NotoSansKR'],
                                 fontSize: context
                                     .rf(15.5)
                                     .clamp(14.5, 16.0)

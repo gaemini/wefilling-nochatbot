@@ -249,7 +249,8 @@ class _SnackChatPollDialogState extends State<SnackChatPollDialog> {
                           Text(
                             '${_options.length}/$_maxOptions',
                             style: const TextStyle(
-                              fontFamily: 'Pretendard',
+                              fontFamily: 'Inter',
+                              fontFamilyFallback: const ['NotoSansKR'],
                               fontSize: 12,
                               fontWeight: FontWeight.w600,
                               color: Color(0xFF6B7280),
@@ -275,7 +276,8 @@ class _SnackChatPollDialogState extends State<SnackChatPollDialog> {
                           label: Text(
                             _isKo ? '선택지 추가' : 'Add option',
                             style: const TextStyle(
-                              fontFamily: 'Pretendard',
+                              fontFamily: 'Inter',
+                              fontFamilyFallback: const ['NotoSansKR'],
                               fontSize: 14,
                               fontWeight: FontWeight.w700,
                             ),
@@ -319,7 +321,8 @@ class _SnackChatPollDialogState extends State<SnackChatPollDialog> {
                           _formError!,
                           key: const ValueKey('snack_chat_poll_form_error'),
                           style: const TextStyle(
-                            fontFamily: 'Pretendard',
+                            fontFamily: 'Inter',
+                            fontFamilyFallback: const ['NotoSansKR'],
                             fontSize: 12.5,
                             height: 1.35,
                             fontWeight: FontWeight.w600,
@@ -369,7 +372,8 @@ class _SnackChatPollDialogState extends State<SnackChatPollDialog> {
                 overflow: TextOverflow.ellipsis,
                 textAlign: TextAlign.center,
                 style: TextStyle(
-                  fontFamily: 'Pretendard',
+                  fontFamily: 'Inter',
+                  fontFamilyFallback: const ['NotoSansKR'],
                   fontSize: context.rf(18).clamp(16, 19).toDouble(),
                   fontWeight: FontWeight.w700,
                   color: const Color(0xFF111827),
@@ -397,7 +401,8 @@ class _SnackChatPollDialogState extends State<SnackChatPollDialog> {
             label: Text(
               _isKo ? '만들기' : 'Create',
               style: const TextStyle(
-                fontFamily: 'Pretendard',
+                fontFamily: 'Inter',
+                fontFamilyFallback: const ['NotoSansKR'],
                 fontSize: 14,
                 fontWeight: FontWeight.w700,
               ),
@@ -417,7 +422,8 @@ class _SnackChatPollDialogState extends State<SnackChatPollDialog> {
     return Text(
       text,
       style: TextStyle(
-        fontFamily: 'Pretendard',
+        fontFamily: 'Inter',
+        fontFamilyFallback: const ['NotoSansKR'],
         fontSize: context.rf(14).clamp(13, 15).toDouble(),
         fontWeight: FontWeight.w800,
         color: const Color(0xFF344054),
@@ -438,7 +444,8 @@ class _SnackChatPollDialogState extends State<SnackChatPollDialog> {
               '${index + 1}',
               textAlign: TextAlign.center,
               style: const TextStyle(
-                fontFamily: 'Pretendard',
+                fontFamily: 'Inter',
+                fontFamilyFallback: const ['NotoSansKR'],
                 fontSize: 13,
                 fontWeight: FontWeight.w700,
                 color: Color(0xFF667085),
@@ -515,7 +522,8 @@ class _SnackChatPollDialogState extends State<SnackChatPollDialog> {
                     Text(
                       title,
                       style: const TextStyle(
-                        fontFamily: 'Pretendard',
+                        fontFamily: 'Inter',
+                        fontFamilyFallback: const ['NotoSansKR'],
                         fontSize: 14,
                         fontWeight: FontWeight.w700,
                         color: Color(0xFF111827),
@@ -525,7 +533,8 @@ class _SnackChatPollDialogState extends State<SnackChatPollDialog> {
                     Text(
                       description,
                       style: const TextStyle(
-                        fontFamily: 'Pretendard',
+                        fontFamily: 'Inter',
+                        fontFamilyFallback: const ['NotoSansKR'],
                         fontSize: 12,
                         height: 1.35,
                         fontWeight: FontWeight.w400,
@@ -572,7 +581,8 @@ class _SnackChatPollDialogState extends State<SnackChatPollDialog> {
                     Text(
                       _isKo ? '종료 시간' : 'End time',
                       style: const TextStyle(
-                        fontFamily: 'Pretendard',
+                        fontFamily: 'Inter',
+                        fontFamilyFallback: const ['NotoSansKR'],
                         fontSize: 14,
                         fontWeight: FontWeight.w700,
                         color: Color(0xFF111827),
@@ -586,7 +596,8 @@ class _SnackChatPollDialogState extends State<SnackChatPollDialog> {
                       maxLines: 2,
                       overflow: TextOverflow.ellipsis,
                       style: const TextStyle(
-                        fontFamily: 'Pretendard',
+                        fontFamily: 'Inter',
+                        fontFamilyFallback: const ['NotoSansKR'],
                         fontSize: 12.5,
                         height: 1.35,
                         fontWeight: FontWeight.w500,
@@ -627,7 +638,8 @@ class _SnackChatPollDialogState extends State<SnackChatPollDialog> {
 
   TextStyle _inputTextStyle(BuildContext context) {
     return TextStyle(
-      fontFamily: 'Pretendard',
+      fontFamily: 'Inter',
+      fontFamilyFallback: const ['NotoSansKR'],
       fontSize: context.rf(15).clamp(14, 16).toDouble(),
       height: 1.35,
       fontWeight: FontWeight.w500,
@@ -639,7 +651,8 @@ class _SnackChatPollDialogState extends State<SnackChatPollDialog> {
     return InputDecoration(
       hintText: hintText,
       hintStyle: const TextStyle(
-        fontFamily: 'Pretendard',
+        fontFamily: 'Inter',
+        fontFamilyFallback: const ['NotoSansKR'],
         fontSize: 14,
         fontWeight: FontWeight.w400,
         color: Color(0xFF98A2B3),
@@ -663,7 +676,8 @@ class _SnackChatPollDialogState extends State<SnackChatPollDialog> {
         borderSide: BorderSide(color: Color(0xFFD92D20), width: 1.4),
       ),
       errorStyle: const TextStyle(
-        fontFamily: 'Pretendard',
+        fontFamily: 'Inter',
+        fontFamilyFallback: const ['NotoSansKR'],
         fontSize: 11.5,
         height: 1.2,
         fontWeight: FontWeight.w500,

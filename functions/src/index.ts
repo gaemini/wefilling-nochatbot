@@ -11,6 +11,8 @@ import {resolveFriendNotificationAudience} from './frozen_audience';
 
 export {
   createPostSecure,
+  createExternalSharePost,
+  getExternalShareComposerContext,
   createMeetupSecure,
   confirmMeetupSecure,
   expireTimedMeetups,
@@ -19,6 +21,8 @@ export {
   markDMConversationReadSecure,
   reconcileDMUnreadTotalSecure,
 } from './dm_chat';
+
+export {resolveSharedLink} from './shared_link_preview';
 
 export {
   getSnapshotServerTime,
@@ -45,6 +49,7 @@ export {
   inviteSnackChatParticipants,
   joinMeetupSnackChatSecure,
   ensureSnackChatMembershipSecure,
+  markSnackChatReadSecure,
   leaveSnackChatSecure,
   updateSnackChatTitleSecure,
   createSnackChatAnnouncementSecure,
@@ -75,6 +80,64 @@ const db = admin.firestore();
 function toStr(v: unknown): string {
   return (v ?? '').toString();
 }
+
+/**
+ * 프로필 헤더의 공개 활동 통계를 서버 원본에서 한 번에 집계한다.
+ * meetup_participants는 본인 외 목록 조회가 보안 규칙으로 제한되므로,
+ * 클라이언트가 세 컬렉션을 제각각 읽지 않고 Admin SDK가 동일 시점의 최신
+ * aggregate count만 반환한다.
+ */
+export const getUserProfileStats = functions
+  .runWith({timeoutSeconds: 30, memory: '256MB'})
+  .https.onCall(async (raw, context) => {
+    if (!context.auth?.uid) {
+      throw new functions.https.HttpsError(
+        'unauthenticated',
+        'Sign-in is required.',
+      );
+    }
+
+    const targetUserId = toStr(
+      raw && typeof raw === 'object'
+        ? (raw as Record<string, unknown>).userId
+        : '',
+    ).trim();
+    if (!targetUserId || targetUserId.length > 128 || targetUserId.includes('/')) {
+      throw new functions.https.HttpsError(
+        'invalid-argument',
+        'A valid userId is required.',
+      );
+    }
+
+    const user = await db.collection(COL.users).doc(targetUserId).get();
+    if (!user.exists) {
+      throw new functions.https.HttpsError('not-found', 'User not found.');
+    }
+
+    const [friendAggregate, postAggregate, joinedMeetupAggregate] =
+      await Promise.all([
+        db.collection(COL.friendships)
+          .where('uids', 'array-contains', targetUserId)
+          .count()
+          .get(),
+        db.collection(COL.posts)
+          .where('userId', '==', targetUserId)
+          .count()
+          .get(),
+        db.collection(COL.meetupParticipants)
+          .where('userId', '==', targetUserId)
+          .where('status', '==', 'approved')
+          .count()
+          .get(),
+      ]);
+
+    return {
+      friendCount: friendAggregate.data().count,
+      writtenPostCount: postAggregate.data().count,
+      joinedMeetupCount: joinedMeetupAggregate.data().count,
+      fetchedAtMillis: Date.now(),
+    };
+  });
 
 function escapeHtml(value: unknown): string {
   return toStr(value).replace(/[&<>"']/g, (character) => {
@@ -1763,7 +1826,7 @@ export const onFriendRequestCreated = functions.firestore
         req.notificationGeneration,
       );
       const notificationId = 'friend_request_' + crypto.createHash('sha256')
-        .update(`${String(context.params.requestId)}:${notificationGeneration || context.eventId}`)
+        .update(`${String(context.params.requestId)}:${notificationGeneration || 'legacy'}`)
         .digest('hex');
       const notificationRef = db.collection('notifications').doc(notificationId);
 
@@ -1802,8 +1865,23 @@ export const onFriendRequestCreated = functions.firestore
         return null;
       }
 
-      // 이미 PENDING인 문서의 unrelated update/트리거 재시도는 무시한다.
-      if (beforeStatus === 'PENDING') return null;
+      // 구버전 함수가 만든 요청에는 notificationGeneration이 없다. 이미 알림이
+      // 남아 있으면 PENDING 문서의 unrelated update에서 중복 생성하지 않는다.
+      // 반대로 과거 혼합 배포로 알림이 삭제된 경우에는 아래 결정적 ID로 복구한다.
+      if (beforeStatus === 'PENDING' && !notificationGeneration) {
+        const existing = await db.collection('notifications')
+          .where('userId', '==', toUid)
+          .limit(500)
+          .get();
+        const hasExistingAlert = existing.docs.some((document) => {
+          const data = document.data();
+          const dataFromUid = normalizeUidLoose(data?.data?.fromUid);
+          return data.type === 'friend_request' &&
+            (normalizeUidLoose(data.actorId) === normalizeUidLoose(fromUid) ||
+              dataFromUid === normalizeUidLoose(fromUid));
+        });
+        if (hasExistingAlert) return null;
+      }
       if (await hasBlockRelationship(fromUid, toUid)) {
         console.log('⏭️ 차단 관계(friend_request) - 알림 스킵');
         await deleteCurrentFriendAlert();
@@ -1834,7 +1912,8 @@ export const onFriendRequestCreated = functions.firestore
           .update(`${String(context.params.requestId)}:${beforeGeneration}`)
           .digest('hex');
         await db.collection('notifications').doc(previousId).delete();
-      } else if (!beforeGeneration && change.before.exists) {
+      } else if (!beforeGeneration && change.before.exists &&
+          beforeStatus !== 'PENDING') {
         await deleteLegacyFriendAlerts();
       }
       const notificationPayload = {
@@ -2058,6 +2137,7 @@ export const onMeetupDeleted = functions.firestore
 type VerifiedCommentReplyRecipient = {
   userId: string;
   parentCommentId: string;
+  parentAuthorId: string;
   targetCommentId: string;
 };
 
@@ -2108,6 +2188,7 @@ async function resolveVerifiedCommentReplyRecipient(
     return {
       userId: parentAuthorId,
       parentCommentId,
+      parentAuthorId,
       targetCommentId: parentCommentId,
     };
   }
@@ -2130,6 +2211,7 @@ async function resolveVerifiedCommentReplyRecipient(
   return {
     userId: targetUserId,
     parentCommentId,
+    parentAuthorId: normalizeUidLoose(parent.userId),
     targetCommentId: requestedTargetId,
   };
 }
@@ -2163,7 +2245,15 @@ async function isVerifiedCommentNotificationRecipient(
     comment,
     postId
   );
-  return verifiedReply?.userId === recipientId;
+  if (!verifiedReply) return false;
+  if (verifiedReply.userId === recipientId) return true;
+
+  // A nested reply belongs to the top-level comment thread as well. Notify
+  // that thread owner even when the user replied to another nested comment,
+  // but only when the stored recipient comment is the verified parent.
+  const recipientCommentId = normalizeUidLoose(data.recipientCommentId);
+  return verifiedReply.parentAuthorId === recipientId &&
+    recipientCommentId === verifiedReply.parentCommentId;
 }
 
 // 댓글 생성 시 게시글 작성자에게 알림 (new_comment)
@@ -2229,8 +2319,24 @@ export const onCommentCreated = functions.firestore
       // ✅ (A) 게시글 새 댓글 알림: 게시글 작성자에게
       // - 자기 게시글에 자신이 댓글을 단 경우는 알림 제외
       // - 답글(parentCommentId)이고, 부모 댓글 작성자=게시글 작성자라면 중복 알림을 피하기 위해 new_comment는 생략
-      const skipPostAuthorNewComment =
-        verifiedReply?.userId === postAuthorId;
+      const replyRecipients = verifiedReply
+        ? [
+          {
+            userId: verifiedReply.userId,
+            recipientCommentId: verifiedReply.targetCommentId,
+          },
+          ...(verifiedReply.parentAuthorId &&
+              verifiedReply.parentAuthorId !== verifiedReply.userId
+            ? [{
+              userId: verifiedReply.parentAuthorId,
+              recipientCommentId: verifiedReply.parentCommentId,
+            }]
+            : []),
+        ]
+        : [];
+      const skipPostAuthorNewComment = replyRecipients.some(
+        (recipient) => recipient.userId === postAuthorId
+      );
       if (postAuthorId && postAuthorId !== commenterId && !skipPostAuthorNewComment) {
         if (await hasBlockRelationship(postAuthorId, commenterId)) {
           console.log('⏭️ 차단 관계(new_comment) - 알림 스킵');
@@ -2284,9 +2390,10 @@ export const onCommentCreated = functions.firestore
       // - parentCommentId가 있는 경우만(=대댓글)
       if (verifiedReply) {
         try {
-          const replyRecipientId = verifiedReply.userId;
-          // 자기 댓글에 자신이 답글을 단 경우는 알림 제외
-          if (replyRecipientId !== commenterId) {
+          for (const replyRecipient of replyRecipients) {
+            const replyRecipientId = replyRecipient.userId;
+            // 자기 댓글에 자신이 답글을 단 경우는 알림 제외
+            if (replyRecipientId === commenterId) continue;
             if (await hasBlockRelationship(replyRecipientId, commenterId)) {
               console.log('⏭️ 차단 관계(comment_reply) - 알림 스킵');
             } else {
@@ -2323,7 +2430,9 @@ export const onCommentCreated = functions.firestore
                       postIsAnonymous: postIsAnonymous,
                       parentCommentId: verifiedReply.parentCommentId,
                       replyToCommentId: verifiedReply.targetCommentId,
-                      replyToUserId: replyRecipientId,
+                      replyToUserId: verifiedReply.userId,
+                      recipientCommentId:
+                        replyRecipient.recipientCommentId,
                       commentId: context.params.commentId,
                       replierName: postIsAnonymous ? null : commenterName,
                     },
@@ -5454,16 +5563,27 @@ async function isVerifiedFriendRequestNotificationRecipient(
   const nested = notification.data && typeof notification.data === 'object'
     ? notification.data as Record<string, any>
     : {};
-  const requestId = safeStringLoose(nested.friendRequestId);
-  if (!requestId) return false;
+  const recipientId = normalizeUidLoose(notification.userId);
+  const actorId = normalizeUidLoose(
+    notification.actorId || nested.actorId || nested.fromUid,
+  );
+  // onFriendRequestCreated와 onNotificationCreated가 서로 다른 시점에
+  // 배포되더라도 기존 알림을 정상 검증할 수 있어야 한다. 구버전 알림에는
+  // friendRequestId가 없으므로, 서버가 사용하는 결정적 문서 ID로 복원한다.
+  const requestId = safeStringLoose(nested.friendRequestId) ||
+    (actorId && recipientId ? `${actorId}_${recipientId}` : '');
+  if (!requestId || !recipientId || !actorId) return false;
   const request = await db.collection('friend_requests').doc(requestId).get();
   if (!request.exists) return false;
   const data = request.data() || {};
   const expectedGeneration = normalizeUidLoose(nested.notificationGeneration);
-  return safeStringLoose(data.status) === 'PENDING' &&
-    normalizeUidLoose(data.toUid) === normalizeUidLoose(notification.userId) &&
-    normalizeUidLoose(data.fromUid) === normalizeUidLoose(notification.actorId) &&
-    normalizeUidLoose(data.notificationGeneration) === expectedGeneration;
+  const actualGeneration = normalizeUidLoose(data.notificationGeneration);
+  const generationMatches = expectedGeneration.length === 0 ||
+    actualGeneration === expectedGeneration;
+  return safeStringLoose(data.status).toUpperCase() === 'PENDING' &&
+    normalizeUidLoose(data.toUid) === recipientId &&
+    normalizeUidLoose(data.fromUid) === actorId &&
+    generationMatches;
 }
 
 async function isVerifiedSnapshotCommentReplyRecipient(

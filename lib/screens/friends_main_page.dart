@@ -84,7 +84,8 @@ class _FriendsMainPageState extends State<FriendsMainPage>
                               child: Text(
                                 AppLocalizations.of(context)!.friends,
                                 style: const TextStyle(
-                                  fontFamily: 'Pretendard',
+                                  fontFamily: 'Inter',
+                                  fontFamilyFallback: const ['NotoSansKR'],
                                   fontSize: 10,
                                   fontWeight: FontWeight.w600,
                                 ),
@@ -103,7 +104,8 @@ class _FriendsMainPageState extends State<FriendsMainPage>
                                 child: Text(
                                   friendsCount > 99 ? '99+' : friendsCount.toString(),
                                   style: const TextStyle(
-                                    fontFamily: 'Pretendard',
+                                    fontFamily: 'Inter',
+                                    fontFamilyFallback: const ['NotoSansKR'],
                                     fontSize: 8.5,
                                     fontWeight: FontWeight.w600,
                                     color: Color(0xFF111827),
@@ -129,7 +131,8 @@ class _FriendsMainPageState extends State<FriendsMainPage>
                   Text(
                     AppLocalizations.of(context)!.search,
                     style: const TextStyle(
-                      fontFamily: 'Pretendard',
+                      fontFamily: 'Inter',
+                      fontFamilyFallback: const ['NotoSansKR'],
                       fontSize: 11,
                       fontWeight: FontWeight.w600,
                     ),
@@ -156,7 +159,8 @@ class _FriendsMainPageState extends State<FriendsMainPage>
                           Text(
                             AppLocalizations.of(context)!.requests,
                             style: const TextStyle(
-                              fontFamily: 'Pretendard',
+                              fontFamily: 'Inter',
+                              fontFamilyFallback: const ['NotoSansKR'],
                               fontSize: 10,
                               fontWeight: FontWeight.w600,
                             ),
@@ -182,7 +186,8 @@ class _FriendsMainPageState extends State<FriendsMainPage>
                             child: Text(
                               incomingCount > 99 ? '99+' : incomingCount.toString(),
                               style: const TextStyle(
-                                fontFamily: 'Pretendard',
+                                fontFamily: 'Inter',
+                                fontFamilyFallback: const ['NotoSansKR'],
                                 color: Colors.white,
                                 fontSize: 9,
                                 fontWeight: FontWeight.w600,
@@ -207,7 +212,8 @@ class _FriendsMainPageState extends State<FriendsMainPage>
                   Text(
                     AppLocalizations.of(context)!.groups,
                     style: const TextStyle(
-                      fontFamily: 'Pretendard',
+                      fontFamily: 'Inter',
+                      fontFamilyFallback: const ['NotoSansKR'],
                       fontSize: 11,
                       fontWeight: FontWeight.w600,
                     ),

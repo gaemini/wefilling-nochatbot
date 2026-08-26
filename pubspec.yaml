@@ -2,7 +2,7 @@ name: wefilling
 description: "함께하면 즐거운 대학 생활 - 위필링"
 publish_to: 'none' # Remove this line if you wish to publish to pub.dev
 
-version: 1.0.58+70
+version: 1.0.59+71
 
 environment:
   sdk: ^3.6.0
@@ -49,9 +49,11 @@ dependencies:
   path_provider: ^2.1.1
   path: ^1.8.3
   http: ^1.1.0
-  translator: ^1.0.3+1
+  crypto: ^3.0.6
   flutter_linkify: ^6.0.0
   google_fonts: ^6.1.0
+  google_mlkit_language_id: ^0.15.1
+  google_mlkit_translation: ^0.15.1
   cached_network_image: ^3.4.1
   flutter_cache_manager: ^3.4.1
   app_badge_plus: ^1.2.6
@@ -91,6 +93,9 @@ flutter_launcher_icons:
   remove_alpha_ios: true
 
 flutter:
+  # Both flavors use the service applicationId; plain `flutter run` therefore
+  # installs com.wefilling.app while retaining the existing flavor task names.
+  default-flavor: development
   generate: true  # Add this line for l10n support
   config:
     enable-lldb-debugging: false

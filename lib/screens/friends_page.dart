@@ -16,6 +16,9 @@ import '../ui/widgets/skeletons.dart';
 import '../design/tokens.dart';
 import '../constants/app_constants.dart';
 import 'friend_profile_screen.dart';
+import 'create_category_screen.dart';
+import 'friend_categories_screen.dart' show groupsTabIndex;
+import 'main_screen.dart';
 import '../l10n/app_localizations.dart';
 import '../utils/country_flag_helper.dart';
 import '../utils/logger.dart';
@@ -104,6 +107,53 @@ class _FriendsPageState extends State<FriendsPage> {
         });
       }
     });
+  }
+
+  Future<void> _openCreateGroup() async {
+    final isKorean = Localizations.localeOf(context).languageCode == 'ko';
+    if (_friendCategories.length >=
+        FriendCategoryService.maxCategoriesPerUser) {
+      _showSnackBar(
+        isKorean
+            ? '그룹은 최대 10개까지 생성할 수 있어요.'
+            : 'You can create up to 10 groups.',
+        const Color(0xFF667085),
+      );
+      return;
+    }
+
+    final result = await Navigator.push<Map<String, dynamic>>(
+      context,
+      MaterialPageRoute(builder: (_) => const CreateCategoryScreen()),
+    );
+    if (!mounted || result == null) return;
+
+    final categoryId = await _categoryService.createCategory(
+      name: result['name'] as String,
+      description: '',
+      color: result['color'] as String,
+      iconName: result['iconName'] as String,
+    );
+    if (!mounted) return;
+    final l10n = AppLocalizations.of(context)!;
+    if (categoryId == null) {
+      _showSnackBar(
+        l10n.categoryCreateFailed,
+        const Color(0xFFB42318),
+      );
+      return;
+    }
+
+    _showSnackBar(l10n.categoryCreated, const Color(0xFF344054));
+    Navigator.of(context).pushAndRemoveUntil(
+      MaterialPageRoute<void>(
+        builder: (_) => const MainScreen(
+          initialTabIndex: 2,
+          initialGroupTabIndex: groupsTabIndex,
+        ),
+      ),
+      (_) => false,
+    );
   }
 
   /// 친구 검색 필터링
@@ -420,69 +470,91 @@ class _FriendsPageState extends State<FriendsPage> {
   void _showFriendOptions(UserProfile friend) {
     showModalBottomSheet(
       context: context,
+      isScrollControlled: true,
+      useSafeArea: true,
       backgroundColor: Colors.white,
       showDragHandle: true,
       shape: const RoundedRectangleBorder(
-        borderRadius: BorderRadius.vertical(top: Radius.circular(24)),
+        borderRadius: BorderRadius.vertical(top: Radius.circular(28)),
       ),
       builder: (sheetContext) {
         final l10n = AppLocalizations.of(sheetContext)!;
+        final width = MediaQuery.sizeOf(sheetContext).width;
+        final horizontal = width < 360 ? 16.0 : (width < 600 ? 20.0 : 24.0);
         return SafeArea(
-          child: Padding(
-            padding: const EdgeInsets.fromLTRB(16, 8, 16, 16),
-            child: Column(
-              mainAxisSize: MainAxisSize.min,
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Text(
-                  friend.displayNameOrNickname,
-                  style: TypographyStyles.headlineMedium.copyWith(
-                    color: BrandColors.textPrimary,
+          top: false,
+          child: Center(
+            heightFactor: 1,
+            child: ConstrainedBox(
+              constraints: const BoxConstraints(maxWidth: 720),
+              child: MediaQuery.withClampedTextScaling(
+                maxScaleFactor: 1.25,
+                child: Padding(
+                  padding: EdgeInsets.fromLTRB(
+                    horizontal,
+                    4,
+                    horizontal,
+                    12,
                   ),
-                  maxLines: 1,
-                  overflow: TextOverflow.ellipsis,
+                  child: Column(
+                    mainAxisSize: MainAxisSize.min,
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Padding(
+                        padding: const EdgeInsets.only(bottom: 6),
+                        child: Text(
+                          friend.displayNameOrNickname,
+                          style: TextStyle(
+                            fontFamily: 'Inter',
+                            fontFamilyFallback: const ['NotoSansKR'],
+                            fontSize:
+                                sheetContext.rf(18).clamp(17, 20).toDouble(),
+                            fontWeight: FontWeight.w700,
+                            height: 1.25,
+                            color: const Color(0xFF111827),
+                          ),
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                        ),
+                      ),
+                      _ActionTile(
+                        icon: Icons.person_outline_rounded,
+                        title: l10n.viewProfile ?? '',
+                        onTap: () {
+                          Navigator.pop(sheetContext);
+                          _navigateToProfile(friend);
+                        },
+                      ),
+                      _ActionTile(
+                        icon: Icons.category_outlined,
+                        title: l10n.groupSettings ?? '',
+                        onTap: () {
+                          Navigator.pop(sheetContext);
+                          _showGroupSelectionDialog(friend);
+                        },
+                      ),
+                      _ActionTile(
+                        icon: Icons.person_remove_outlined,
+                        title: l10n.removeFriendAction ?? '',
+                        isDestructive: true,
+                        onTap: () {
+                          Navigator.pop(sheetContext);
+                          _unfriend(friend);
+                        },
+                      ),
+                      _ActionTile(
+                        icon: Icons.block_rounded,
+                        title: l10n.blockAction ?? '',
+                        isDestructive: true,
+                        onTap: () {
+                          Navigator.pop(sheetContext);
+                          _blockUser(friend);
+                        },
+                      ),
+                    ],
+                  ),
                 ),
-                const SizedBox(height: 16),
-                _ActionTile(
-                  icon: Icons.person_outline,
-                  iconColor: BrandColors.info,
-                  title: l10n.viewProfile ?? "",
-                  onTap: () {
-                    Navigator.pop(sheetContext);
-                    _navigateToProfile(friend);
-                  },
-                ),
-                const Divider(height: 1),
-                _ActionTile(
-                  icon: Icons.category_outlined,
-                  iconColor: AppColors.pointColor,
-                  title: l10n.groupSettings ?? "",
-                  onTap: () {
-                    Navigator.pop(sheetContext);
-                    _showGroupSelectionDialog(friend);
-                  },
-                ),
-                const Divider(height: 1),
-                _ActionTile(
-                  icon: Icons.person_remove_outlined,
-                  iconColor: BrandColors.warning,
-                  title: l10n.removeFriendAction ?? "",
-                  onTap: () {
-                    Navigator.pop(sheetContext);
-                    _unfriend(friend);
-                  },
-                ),
-                const Divider(height: 1),
-                _ActionTile(
-                  icon: Icons.block,
-                  iconColor: BrandColors.error,
-                  title: l10n.blockAction ?? "",
-                  onTap: () {
-                    Navigator.pop(sheetContext);
-                    _blockUser(friend);
-                  },
-                ),
-              ],
+              ),
             ),
           ),
         );
@@ -501,140 +573,262 @@ class _FriendsPageState extends State<FriendsPage> {
     showModalBottomSheet(
       context: context,
       isScrollControlled: true,
+      useSafeArea: true,
       backgroundColor: Colors.white,
       showDragHandle: true,
       shape: const RoundedRectangleBorder(
-        borderRadius: BorderRadius.vertical(top: Radius.circular(24)),
+        borderRadius: BorderRadius.vertical(top: Radius.circular(28)),
       ),
       builder: (sheetContext) => StatefulBuilder(
         builder: (sheetContext, setState) {
           final l10n = AppLocalizations.of(sheetContext)!;
-          final bottomInset = MediaQuery.of(sheetContext).viewInsets.bottom;
+          final media = MediaQuery.of(sheetContext);
+          final width = media.size.width;
+          final horizontal = width < 360 ? 16.0 : (width < 600 ? 20.0 : 24.0);
+          final maxHeight = media.size.height * (width < 600 ? 0.82 : 0.72);
+          final categoriesHeight = _friendCategories.isEmpty
+              ? 92.0
+              : (_friendCategories.length * 58.0)
+                  .clamp(58.0, maxHeight - 132)
+                  .toDouble();
 
-          return SingleChildScrollView(
-            padding: EdgeInsets.fromLTRB(16, 8, 16, bottomInset + 16),
-            child: Column(
-              mainAxisSize: MainAxisSize.min,
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Row(
-                  children: [
-                    Expanded(
-                      child: Text(
-                        l10n.groupSettingsFor(friend.displayNameOrNickname) ??
-                            "",
-                        style: TypographyStyles.headlineMedium.copyWith(
-                          color: BrandColors.textPrimary,
-                        ),
-                      ),
+          return SafeArea(
+            top: false,
+            child: Center(
+              heightFactor: 1,
+              child: ConstrainedBox(
+                constraints:
+                    BoxConstraints(maxWidth: 720, maxHeight: maxHeight),
+                child: MediaQuery.withClampedTextScaling(
+                  maxScaleFactor: 1.25,
+                  child: Padding(
+                    padding: EdgeInsets.fromLTRB(
+                      horizontal,
+                      2,
+                      horizontal,
+                      12 + media.viewInsets.bottom,
                     ),
-                    IconButton(
-                      onPressed: () => Navigator.pop(sheetContext),
-                      icon: const Icon(Icons.close, color: Color(0xFF6B7280)),
-                    ),
-                  ],
-                ),
-                const SizedBox(height: 8),
-                if (_friendCategories.isEmpty)
-                  Padding(
-                    padding: const EdgeInsets.symmetric(vertical: 24),
-                    child: Center(
-                      child: Text(
-                        l10n.noFriendGroupsYet,
-                        style: TypographyStyles.bodyLarge.copyWith(
-                          color: BrandColors.textSecondary,
-                        ),
-                        textAlign: TextAlign.center,
-                      ),
-                    ),
-                  )
-                else
-                  ListView.separated(
-                    shrinkWrap: true,
-                    physics: const NeverScrollableScrollPhysics(),
-                    itemCount: _friendCategories.length,
-                    separatorBuilder: (_, __) => const Divider(height: 1),
-                    itemBuilder: (context, i) {
-                      final category = _friendCategories[i];
-                      final checked = selected.contains(category.id);
-                      final color = _parseColor(category.color);
-
-                      return CheckboxListTile(
-                        value: checked,
-                        onChanged: (v) {
-                          setState(() {
-                            if (v == true) {
-                              selected.add(category.id);
-                            } else {
-                              selected.remove(category.id);
-                            }
-                          });
-                        },
-                        title: Text(category.name,
-                            style: TypographyStyles.titleMedium),
-                        subtitle: Text(
-                          l10n.friendsInGroup(category.friendIds.length),
-                          style: TypographyStyles.bodySmall.copyWith(
-                            color: BrandColors.textSecondary,
-                          ),
-                        ),
-                        // 아이콘만 보이도록 (배경/테두리 제거)
-                        secondary: SizedBox(
-                          width: 40,
-                          height: 40,
-                          child: Center(
-                            child: Icon(
-                              _parseIcon(category.iconName),
-                              color: color,
-                              size: 28,
+                    child: Column(
+                      mainAxisSize: MainAxisSize.min,
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Row(
+                          children: [
+                            Expanded(
+                              child: Text(
+                                l10n.groupSettingsFor(
+                                      friend.displayNameOrNickname,
+                                    ) ??
+                                    '',
+                                maxLines: 2,
+                                overflow: TextOverflow.ellipsis,
+                                style: TextStyle(
+                                  fontFamily: 'Inter',
+                                  fontFamilyFallback: const ['NotoSansKR'],
+                                  fontSize: sheetContext
+                                      .rf(18)
+                                      .clamp(17, 20)
+                                      .toDouble(),
+                                  fontWeight: FontWeight.w700,
+                                  height: 1.25,
+                                  color: const Color(0xFF111827),
+                                ),
+                              ),
                             ),
-                          ),
+                            IconButton(
+                              onPressed: () => Navigator.pop(sheetContext),
+                              icon: const Icon(
+                                Icons.close_rounded,
+                                color: Color(0xFF667085),
+                                size: 22,
+                              ),
+                              constraints: const BoxConstraints(
+                                minWidth: 44,
+                                minHeight: 44,
+                              ),
+                            ),
+                          ],
                         ),
-                        contentPadding: EdgeInsets.zero,
-                        controlAffinity: ListTileControlAffinity.leading,
-                      );
-                    },
+                        const SizedBox(height: 8),
+                        SizedBox(
+                          height: categoriesHeight,
+                          child: _friendCategories.isEmpty
+                              ? Center(
+                                  child: Column(
+                                    mainAxisSize: MainAxisSize.min,
+                                    children: [
+                                      Text(
+                                        l10n.noFriendGroupsYet,
+                                        textAlign: TextAlign.center,
+                                        style: const TextStyle(
+                                          fontFamily: 'Inter',
+                                          fontFamilyFallback: ['NotoSansKR'],
+                                          fontSize: 14,
+                                          fontWeight: FontWeight.w400,
+                                          color: Color(0xFF667085),
+                                          height: 1.4,
+                                        ),
+                                      ),
+                                      const SizedBox(height: 8),
+                                      TextButton.icon(
+                                        onPressed: () {
+                                          Navigator.pop(sheetContext);
+                                          _openCreateGroup();
+                                        },
+                                        icon: const Icon(
+                                          Icons.group_add_outlined,
+                                          size: 19,
+                                        ),
+                                        label: Text(
+                                          Localizations.localeOf(sheetContext)
+                                                      .languageCode ==
+                                                  'ko'
+                                              ? '그룹 만들기'
+                                              : 'Create group',
+                                        ),
+                                      ),
+                                    ],
+                                  ),
+                                )
+                              : ListView.builder(
+                                  padding: EdgeInsets.zero,
+                                  shrinkWrap: true,
+                                  itemCount: _friendCategories.length,
+                                  itemBuilder: (context, i) {
+                                    final category = _friendCategories[i];
+                                    final checked =
+                                        selected.contains(category.id);
+                                    final color = _parseColor(category.color);
+                                    return InkWell(
+                                      onTap: () {
+                                        setState(() {
+                                          checked
+                                              ? selected.remove(category.id)
+                                              : selected.add(category.id);
+                                        });
+                                      },
+                                      borderRadius: BorderRadius.circular(12),
+                                      child: Padding(
+                                        padding: const EdgeInsets.symmetric(
+                                          vertical: 5,
+                                        ),
+                                        child: Row(
+                                          children: [
+                                            Checkbox(
+                                              value: checked,
+                                              onChanged: (value) {
+                                                setState(() {
+                                                  value == true
+                                                      ? selected
+                                                          .add(category.id)
+                                                      : selected.remove(
+                                                          category.id,
+                                                        );
+                                                });
+                                              },
+                                              side: const BorderSide(
+                                                color: Color(0xFF98A2B3),
+                                                width: 1.5,
+                                              ),
+                                              visualDensity:
+                                                  VisualDensity.compact,
+                                            ),
+                                            const SizedBox(width: 6),
+                                            Expanded(
+                                              child: Column(
+                                                crossAxisAlignment:
+                                                    CrossAxisAlignment.start,
+                                                children: [
+                                                  Text(
+                                                    category.name,
+                                                    maxLines: 1,
+                                                    overflow:
+                                                        TextOverflow.ellipsis,
+                                                    style: const TextStyle(
+                                                      fontFamily: 'Inter',
+                                                      fontFamilyFallback: [
+                                                        'NotoSansKR'
+                                                      ],
+                                                      fontSize: 15,
+                                                      fontWeight:
+                                                          FontWeight.w600,
+                                                      color: Color(0xFF111827),
+                                                    ),
+                                                  ),
+                                                  const SizedBox(height: 2),
+                                                  Text(
+                                                    l10n.friendsInGroup(
+                                                      category.friendIds.length,
+                                                    ),
+                                                    style: const TextStyle(
+                                                      fontFamily: 'Inter',
+                                                      fontFamilyFallback: [
+                                                        'NotoSansKR'
+                                                      ],
+                                                      fontSize: 12.5,
+                                                      fontWeight:
+                                                          FontWeight.w400,
+                                                      color: Color(0xFF667085),
+                                                    ),
+                                                  ),
+                                                ],
+                                              ),
+                                            ),
+                                            const SizedBox(width: 10),
+                                            Icon(
+                                              _parseIcon(category.iconName),
+                                              color: color,
+                                              size: 22,
+                                            ),
+                                            const SizedBox(width: 4),
+                                          ],
+                                        ),
+                                      ),
+                                    );
+                                  },
+                                ),
+                        ),
+                        const SizedBox(height: 4),
+                        Row(
+                          children: [
+                            TextButton(
+                              onPressed: () => Navigator.pop(sheetContext),
+                              style: TextButton.styleFrom(
+                                foregroundColor: const Color(0xFF667085),
+                                minimumSize: const Size(80, 44),
+                              ),
+                              child: Text(l10n.cancel ?? ''),
+                            ),
+                            const SizedBox(width: 8),
+                            Expanded(
+                              child: FilledButton(
+                                onPressed: () async {
+                                  Navigator.pop(sheetContext);
+                                  await _applyCategorySelection(
+                                    friend,
+                                    initialSelected,
+                                    selected,
+                                  );
+                                },
+                                style: FilledButton.styleFrom(
+                                  backgroundColor: const Color(0xFF344054),
+                                  foregroundColor: Colors.white,
+                                  elevation: 0,
+                                  minimumSize: const Size.fromHeight(44),
+                                  shape: RoundedRectangleBorder(
+                                    borderRadius: BorderRadius.circular(14),
+                                  ),
+                                ),
+                                child: Text(l10n.save),
+                              ),
+                            ),
+                          ],
+                        ),
+                      ],
+                    ),
                   ),
-                const SizedBox(height: 20),
-                Row(
-                  children: [
-                    Expanded(
-                      child: OutlinedButton(
-                        onPressed: () => Navigator.pop(sheetContext),
-                        style: OutlinedButton.styleFrom(
-                          foregroundColor: const Color(0xFF6B7280),
-                          side: const BorderSide(color: Color(0xFFE5E7EB)),
-                          shape: RoundedRectangleBorder(
-                            borderRadius: BorderRadius.circular(12),
-                          ),
-                          padding: const EdgeInsets.symmetric(vertical: 14),
-                        ),
-                        child: Text(l10n.cancel ?? ""),
-                      ),
-                    ),
-                    const SizedBox(width: 12),
-                    Expanded(
-                      child: ElevatedButton(
-                        style: ElevatedButton.styleFrom(
-                          backgroundColor: AppColors.pointColor,
-                          foregroundColor: Colors.white,
-                          elevation: 0,
-                          shape: RoundedRectangleBorder(
-                            borderRadius: BorderRadius.circular(12),
-                          ),
-                          padding: const EdgeInsets.symmetric(vertical: 14),
-                        ),
-                        onPressed: () async {
-                          Navigator.pop(sheetContext);
-                          await _applyCategorySelection(
-                              friend, initialSelected, selected);
-                        },
-                        child: Text(l10n.save),
-                      ),
-                    ),
-                  ],
                 ),
-              ],
+              ),
             ),
           );
         },
@@ -832,6 +1026,8 @@ class _FriendsPageState extends State<FriendsPage> {
 
             _buildFriendRequestsShortcut(),
 
+            _buildCreateGroupShortcut(),
+
             // 친구 목록
             Expanded(
               child: Consumer<RelationshipProvider>(
@@ -881,9 +1077,9 @@ class _FriendsPageState extends State<FriendsPage> {
     return Padding(
       padding: EdgeInsets.fromLTRB(
         horizontalPadding,
-        width < 360 ? 8 : 10,
+        width < 360 ? 7 : 8,
         horizontalPadding,
-        width < 360 ? 8 : 10,
+        width < 360 ? 7 : 8,
       ),
       child: Center(
         child: ConstrainedBox(
@@ -979,7 +1175,7 @@ class _FriendsPageState extends State<FriendsPage> {
           child: ConstrainedBox(
             constraints: const BoxConstraints(maxWidth: 720),
             child: Container(
-              constraints: const BoxConstraints(minHeight: 52),
+              constraints: const BoxConstraints(minHeight: 48),
               padding: EdgeInsets.symmetric(horizontal: horizontalPadding),
               decoration: const BoxDecoration(
                 border: Border(
@@ -1047,7 +1243,7 @@ class _FriendsPageState extends State<FriendsPage> {
               child: ConstrainedBox(
                 constraints: const BoxConstraints(maxWidth: 720),
                 child: Container(
-                  constraints: const BoxConstraints(minHeight: 52),
+                  constraints: const BoxConstraints(minHeight: 48),
                   padding: EdgeInsets.symmetric(horizontal: horizontalPadding),
                   decoration: const BoxDecoration(
                     border: Border(
@@ -1121,6 +1317,61 @@ class _FriendsPageState extends State<FriendsPage> {
     );
   }
 
+  Widget _buildCreateGroupShortcut() {
+    final width = MediaQuery.sizeOf(context).width;
+    final horizontalPadding = width < 360 ? 12.0 : (width < 600 ? 16.0 : 24.0);
+    final isKorean = Localizations.localeOf(context).languageCode == 'ko';
+
+    return Material(
+      color: Colors.white,
+      child: InkWell(
+        onTap: _openCreateGroup,
+        child: Center(
+          child: ConstrainedBox(
+            constraints: const BoxConstraints(maxWidth: 720),
+            child: Container(
+              constraints: const BoxConstraints(minHeight: 48),
+              padding: EdgeInsets.symmetric(horizontal: horizontalPadding),
+              child: MediaQuery.withClampedTextScaling(
+                maxScaleFactor: 1.2,
+                child: Row(
+                  children: [
+                    const Icon(
+                      Icons.group_add_outlined,
+                      size: 20,
+                      color: Color(0xFF475467),
+                    ),
+                    const SizedBox(width: 12),
+                    Expanded(
+                      child: Text(
+                        isKorean ? '그룹 만들기' : 'Create group',
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                        style: TextStyle(
+                          fontFamily: 'Inter',
+                          fontFamilyFallback: const ['NotoSansKR'],
+                          fontSize: context.rf(14).clamp(13, 15).toDouble(),
+                          fontWeight: FontWeight.w700,
+                          color: const Color(0xFF111827),
+                        ),
+                      ),
+                    ),
+                    const SizedBox(width: 8),
+                    const Icon(
+                      Icons.chevron_right_rounded,
+                      size: 20,
+                      color: Color(0xFF98A2B3),
+                    ),
+                  ],
+                ),
+              ),
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+
   /// 친구 목록 위젯
   Widget _buildFriendsList() {
     // 안드로이드 하단 네비게이션 바 높이 감지
@@ -1157,9 +1408,9 @@ class _FriendsPageState extends State<FriendsPage> {
                     child: Padding(
                       padding: EdgeInsets.fromLTRB(
                         horizontalPadding,
-                        hasGroups ? 10 : 11,
+                        hasGroups ? 7 : 8,
                         horizontalPadding - 4,
-                        hasGroups ? 9 : 11,
+                        hasGroups ? 7 : 8,
                       ),
                       child: MediaQuery.withClampedTextScaling(
                         maxScaleFactor: 1.25,
@@ -1236,7 +1487,9 @@ class _FriendsPageState extends State<FriendsPage> {
                                                 friend.nationality!,
                                             style: const TextStyle(
                                               fontFamily: 'Inter',
-                                              fontFamilyFallback: const ['NotoSansKR'],
+                                              fontFamilyFallback: const [
+                                                'NotoSansKR'
+                                              ],
                                               fontSize: 12,
                                               fontWeight: FontWeight.w500,
                                               color: Color(0xFF8B93A1),
@@ -1425,15 +1678,15 @@ class _OverflowBadge extends StatelessWidget {
 
 class _ActionTile extends StatelessWidget {
   final IconData icon;
-  final Color iconColor;
   final String title;
   final VoidCallback onTap;
+  final bool isDestructive;
 
   const _ActionTile({
     required this.icon,
-    required this.iconColor,
     required this.title,
     required this.onTap,
+    this.isDestructive = false,
   });
 
   @override
@@ -1442,22 +1695,37 @@ class _ActionTile extends StatelessWidget {
       onTap: onTap,
       borderRadius: BorderRadius.circular(12),
       child: Padding(
-        padding: const EdgeInsets.symmetric(vertical: 12),
+        padding: const EdgeInsets.symmetric(vertical: 5),
         child: Row(
           children: [
             SizedBox(
-              width: 40,
-              height: 40,
+              width: 34,
+              height: 34,
               child: Center(
-                child: Icon(icon, color: iconColor, size: 26),
+                child: Icon(
+                  icon,
+                  color: isDestructive
+                      ? const Color(0xFFB42318)
+                      : const Color(0xFF475467),
+                  size: 22,
+                ),
               ),
             ),
-            const SizedBox(width: 12),
+            const SizedBox(width: 10),
             Expanded(
               child: Text(
                 title,
-                style: TypographyStyles.titleMedium.copyWith(
-                  color: BrandColors.textPrimary,
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+                style: TextStyle(
+                  fontFamily: 'Inter',
+                  fontFamilyFallback: const ['NotoSansKR'],
+                  fontSize: context.rf(15).clamp(14, 16).toDouble(),
+                  fontWeight: FontWeight.w600,
+                  height: 1.25,
+                  color: isDestructive
+                      ? const Color(0xFFB42318)
+                      : const Color(0xFF111827),
                 ),
               ),
             ),

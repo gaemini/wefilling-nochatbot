@@ -3990,19 +3990,34 @@ function expectedSnackChatFilePath(
     : '';
 }
 
-/** Removes the private Storage object after TTL or a server-side hard delete. */
+function expectedSnackChatImagePath(roomId: string, data: Data): string {
+  const senderId = stringValue(data.senderId);
+  const imagePath = stringValue(data.imagePath);
+  const prefix = `snack_chat_images/${senderId}/${roomId}/`;
+  return senderId && imagePath.startsWith(prefix) &&
+      /^[^/]{1,256}$/.test(imagePath.slice(prefix.length))
+    ? imagePath
+    : '';
+}
+
+/** Removes private media after its message TTL or a server-side hard delete. */
 export const onSnackChatFileMessageDeleted = functions
   .runWith({timeoutSeconds: 60, memory: '256MB', failurePolicy: true})
   .firestore
   .document('snack_chats/{snackChatId}/messages/{messageId}')
   .onDelete(async (snapshot, context) => {
     const data = snapshot.data() ?? {};
-    if (stringValue(data.type) !== 'file') return null;
-    const storagePath = expectedSnackChatFilePath(
-      stringValue(context.params.snackChatId),
-      stringValue(context.params.messageId),
-      data,
-    );
+    const type = stringValue(data.type);
+    const roomId = stringValue(context.params.snackChatId);
+    const storagePath = type === 'file'
+      ? expectedSnackChatFilePath(
+        roomId,
+        stringValue(context.params.messageId),
+        data,
+      )
+      : type === 'image'
+        ? expectedSnackChatImagePath(roomId, data)
+        : '';
     if (!storagePath) return null;
     await admin.storage().bucket().file(storagePath)
       .delete({ignoreNotFound: true});
@@ -4031,8 +4046,8 @@ export const onSnackChatFileUploadJobDeleted = functions
 
 /**
  * TTL is the primary deletion path. This bounded hourly sweep shortens TTL
- * delivery lag and also removes legacy `permanent` file messages after the
- * new 30-day maximum retention period.
+ * delivery lag and also removes legacy `permanent` file messages and image
+ * messages after the 30-day maximum retention period.
  */
 export const cleanupExpiredSnackChatFiles = functions
   .runWith({timeoutSeconds: 300, memory: '512MB', failurePolicy: true})
@@ -4053,7 +4068,7 @@ export const cleanupExpiredSnackChatFiles = functions
         .get(),
       db().collectionGroup('messages')
         .where('messageScope', '==', 'snack_chat')
-        .where('type', '==', 'file')
+        .where('type', 'in', ['file', 'image'])
         .where('createdAt', '<=', legacyCutoff)
         .orderBy('createdAt')
         .limit(250)

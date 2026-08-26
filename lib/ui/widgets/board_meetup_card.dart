@@ -2,12 +2,14 @@ import 'package:flutter/material.dart';
 import 'package:intl/intl.dart';
 
 import '../../l10n/app_localizations.dart';
+import '../../models/content_translation.dart';
 import '../../models/meetup.dart';
 import '../../utils/responsive_helper.dart';
 import '../../services/user_info_cache_service.dart';
 import 'audience_ring.dart';
 import 'meetup_public_countdown.dart';
 import 'hanyang_verification_gate.dart';
+import 'translatable_content.dart';
 
 /// 포스트 피드용 밋업 요약.
 /// 날짜를 고정된 레일로 분리하고 관련 정보를 한 덩어리로 묶어 빠르게 훑을 수 있게 한다.
@@ -215,11 +217,23 @@ class BoardMeetupCard extends StatelessWidget {
                             ],
                           ),
                           const SizedBox(height: 5),
-                          _InlineMeta(
-                            icon: Icons.location_on_outlined,
-                            text: meetup.location,
-                            style: metaStyle,
-                            onTap: onLocationTap,
+                          TranslatableContent(
+                            request: ContentTranslationRequest(
+                              contentType: 'meetup',
+                              contentId: meetup.id,
+                              sourceFields: <String, String>{
+                                'description': meetup.description,
+                                'location': meetup.location,
+                              },
+                            ),
+                            scope: 'meetup:${meetup.id}',
+                            showToggle: false,
+                            builder: (context, fields) => _InlineMeta(
+                              icon: Icons.location_on_outlined,
+                              text: fields['location'] ?? meetup.location,
+                              style: metaStyle,
+                              onTap: onLocationTap,
+                            ),
                           ),
                           const SizedBox(height: 7),
                           Row(

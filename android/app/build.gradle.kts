@@ -9,6 +9,15 @@ if (keystorePropertiesFile.exists()) {
     logger.warn("WARNING: android/key.properties not found. Release signing will fail.")
 }
 
+val releaseVersionFile = rootProject.file("release-version.properties")
+val releaseVersionProperties = Properties().apply {
+    if (releaseVersionFile.exists()) {
+        releaseVersionFile.inputStream().use { load(it) }
+    }
+}
+val lastUsedReleaseVersionCode =
+    releaseVersionProperties.getProperty("lastUsedVersionCode")?.toIntOrNull() ?: 0
+
 plugins {
     id("com.android.application")
     id("kotlin-android")
@@ -64,10 +73,28 @@ android {
 
     defaultConfig {
         applicationId = "com.wefilling.app"
+        manifestPlaceholders["appLabel"] = "Wefilling"
         minSdkVersion(24)
         targetSdk = flutter.targetSdkVersion
         versionCode = flutter.versionCode
         versionName = flutter.versionName
+    }
+
+    flavorDimensions += "environment"
+    productFlavors {
+        create("development") {
+            dimension = "environment"
+            // Plain `flutter run` must use the same Android/Firebase identity as
+            // the service app. Debug behavior is separated by build type rather
+            // than by installing an unrelated legacy applicationId.
+            applicationId = "com.wefilling.app"
+            manifestPlaceholders["appLabel"] = "Wefilling"
+        }
+        create("production") {
+            dimension = "environment"
+            applicationId = "com.wefilling.app"
+            manifestPlaceholders["appLabel"] = "Wefilling"
+        }
     }
 
     buildTypes {
@@ -89,4 +116,33 @@ flutter {
     source = "../.."
 }
 
+val validateProductionReleaseVersion = tasks.register("validateProductionReleaseVersion") {
+    group = "release"
+    description = "Rejects a production AAB whose versionCode was already used."
 
+    doLast {
+        val currentVersionCode = flutter.versionCode
+        if (currentVersionCode <= lastUsedReleaseVersionCode) {
+            throw GradleException(
+                "versionCode $currentVersionCode has already been used. " +
+                    "Increase pubspec.yaml version above $lastUsedReleaseVersionCode."
+            )
+        }
+        logger.lifecycle(
+            "Production release: versionName=${flutter.versionName}, " +
+                "versionCode=$currentVersionCode, applicationId=com.wefilling.app"
+        )
+    }
+}
+
+tasks.configureEach {
+    if (name == "bundleProductionRelease") {
+        dependsOn(validateProductionReleaseVersion)
+        doLast {
+            releaseVersionFile.writeText(
+                "lastUsedVersionName=${flutter.versionName}\n" +
+                    "lastUsedVersionCode=${flutter.versionCode}\n"
+            )
+        }
+    }
+}

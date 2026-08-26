@@ -1,15 +1,18 @@
 import 'dart:async';
 
+import 'package:cached_network_image/cached_network_image.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/material.dart';
 
 import '../models/snapshot.dart';
 import '../screens/create_snapshot_screen.dart';
 import '../screens/snapshot_detail_screen.dart';
+import '../services/cache/app_image_cache_manager.dart';
 import '../services/snapshot_service.dart';
 import '../services/user_info_cache_service.dart';
 import '../ui/widgets/audience_ring.dart';
 import '../ui/widgets/user_avatar.dart';
+import '../utils/profile_photo_policy.dart';
 import '../utils/responsive_helper.dart';
 import 'snapshot_storage_image.dart';
 import 'snapshot_strings.dart';
@@ -89,20 +92,40 @@ class _SnapshotTodaySectionState extends State<SnapshotTodaySection>
         stream: _stream,
         builder: (context, snapshot) {
           final items = snapshot.data ?? const <SnapshotItem>[];
-          // The service is newest-first. putIfAbsent therefore keeps exactly
-          // one current tray item per owner without allowing an expired/older
-          // duplicate to reorder the row when snapshots update concurrently.
+          // The service is newest-first. The first pass keeps the newest snack
+          // from each author at the front of the tray. Older snacks follow in
+          // chronological order, so the initial viewport stays useful while a
+          // horizontal swipe continues naturally into the archive.
           final latestByAuthor = <String, SnapshotItem>{};
           for (final item in items) {
             latestByAuthor.putIfAbsent(item.authorId, () => item);
           }
           final trayItems = latestByAuthor.values.toList(growable: false);
           final own = latestByAuthor[uid];
-          final ownIndex =
-              own == null ? -1 : items.indexWhere((item) => item.id == own.id);
-          final visibleItems = trayItems
+          final latestVisibleItems = trayItems
               .where((item) => item.authorId != uid)
               .toList(growable: false);
+          final latestVisibleIds =
+              latestVisibleItems.map((item) => item.id).toSet();
+          final olderVisibleItems = items
+              .where(
+                (item) =>
+                    item.authorId != uid && !latestVisibleIds.contains(item.id),
+              )
+              .toList(growable: false);
+          final visibleItems = <SnapshotItem>[
+            ...latestVisibleItems,
+            ...olderVisibleItems,
+          ];
+
+          // The viewer always starts with My Snack when it exists, then walks
+          // through every remaining snack newest-first. This list is also used
+          // for tile taps so the tray and left/right navigation never disagree.
+          final viewerItems = <SnapshotItem>[
+            if (own != null) own,
+            ...items.where((item) => item.id != own?.id),
+          ];
+          final ownIndex = own == null ? -1 : 0;
           final loading = snapshot.connectionState == ConnectionState.waiting &&
               !snapshot.hasData;
           final failed = snapshot.hasError && items.isEmpty;
@@ -142,7 +165,7 @@ class _SnapshotTodaySectionState extends State<SnapshotTodaySection>
                               profileSnapshot.data?.photoVersion ?? 0,
                           onTap: own == null
                               ? _create
-                              : () => _open(items, ownIndex),
+                              : () => _open(viewerItems, ownIndex),
                           onAdd: _create,
                         ),
                       );
@@ -156,12 +179,12 @@ class _SnapshotTodaySectionState extends State<SnapshotTodaySection>
                       );
                     }
                     final item = visibleItems[index - 1];
-                    final sourceIndex = items
+                    final sourceIndex = viewerItems
                         .indexWhere((candidate) => candidate.id == item.id);
                     return _SnapshotTile(
                       snapshot: item,
                       label: item.authorName,
-                      onTap: () => _open(items, sourceIndex),
+                      onTap: () => _open(viewerItems, sourceIndex),
                     );
                   },
                 ),
@@ -188,23 +211,36 @@ class _SnapshotTile extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final isRestricted = snapshot.visibility != SnapshotVisibility.public;
     return _SnackTileShell(
       label: label,
       onTap: onTap,
-      preview: AudienceRing(
-        restricted: snapshot.visibility != SnapshotVisibility.public,
-        size: _snackPreviewSize,
-        borderRadius: _snackPreviewRadius,
-        ringWidth: 2,
-        innerGap: 1.5,
-        semanticLabel: Localizations.localeOf(context).languageCode == 'ko'
-            ? '공개 범위가 제한된 스낵'
-            : 'Limited audience snack',
-        child: SnapshotStorageImage(
-          snapshot: snapshot,
-          borderRadius: _snackPreviewRadius,
-        ),
-      ),
+      preview: isRestricted
+          ? AudienceRing(
+              restricted: true,
+              size: _snackPreviewSize,
+              borderRadius: _snackPreviewRadius,
+              ringWidth: 4,
+              innerGap: 1,
+              // 전체 타일 크기는 그대로 유지하고 제한 공개 링의 바깥선이
+              // 스낵 썸네일의 가장 바깥 경계에 정확히 닿도록 한다.
+              ringInset: 0,
+              emphasized: true,
+              semanticLabel:
+                  Localizations.localeOf(context).languageCode == 'ko'
+                      ? '공개 범위가 제한된 스낵'
+                      : 'Limited audience snack',
+              child: _SnackAuthorProfilePreview(
+                photoUrl: snapshot.authorPhotoUrl,
+              ),
+            )
+          : SizedBox.square(
+              dimension: _snackPreviewSize,
+              child: SnapshotStorageImage(
+                snapshot: snapshot,
+                borderRadius: _snackPreviewRadius,
+              ),
+            ),
     );
   }
 }
@@ -234,54 +270,112 @@ class _MySnackTile extends StatelessWidget {
     return _SnackTileShell(
       label: label,
       onTap: onTap,
-      preview: Stack(
-        clipBehavior: Clip.none,
-        children: [
-          if (story == null)
-            _EmptySnackPreview(
-              uid: uid,
-              photoUrl: profilePhotoUrl,
-              photoVersion: profilePhotoVersion,
+      preview: SizedBox.square(
+        dimension: _snackPreviewSize,
+        child: Stack(
+          clipBehavior: Clip.hardEdge,
+          children: [
+            Positioned.fill(
+              child: story == null
+                  ? _EmptySnackPreview(
+                      uid: uid,
+                      photoUrl: profilePhotoUrl,
+                      photoVersion: profilePhotoVersion,
+                    )
+                  : story.visibility != SnapshotVisibility.public
+                      ? AudienceRing(
+                          restricted: true,
+                          size: _snackPreviewSize,
+                          borderRadius: _snackPreviewRadius,
+                          ringWidth: 4,
+                          innerGap: 1,
+                          ringInset: 0,
+                          emphasized: true,
+                          semanticLabel:
+                              Localizations.localeOf(context).languageCode ==
+                                      'ko'
+                                  ? '공개 범위가 제한된 스낵'
+                                  : 'Limited audience snack',
+                          child: _SnackAuthorProfilePreview(
+                            photoUrl: profilePhotoUrl.trim().isNotEmpty
+                                ? profilePhotoUrl
+                                : story.authorPhotoUrl,
+                          ),
+                        )
+                      : SnapshotStorageImage(
+                          snapshot: story,
+                          borderRadius: _snackPreviewRadius,
+                        ),
+            ),
+            Positioned(
+              right: 0,
+              bottom: 0,
+              child: GestureDetector(
+                behavior: HitTestBehavior.opaque,
+                onTap: onAdd,
+                child: Container(
+                  width: 24,
+                  height: 24,
+                  decoration: BoxDecoration(
+                    color: const Color(0xFF2D9CDB),
+                    shape: BoxShape.circle,
+                    border: Border.all(color: Colors.white, width: 2),
+                  ),
+                  child: const Icon(
+                    Icons.add_rounded,
+                    size: 17,
+                    color: Colors.white,
+                  ),
+                ),
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+class _SnackAuthorProfilePreview extends StatelessWidget {
+  const _SnackAuthorProfilePreview({required this.photoUrl});
+
+  final String photoUrl;
+
+  @override
+  Widget build(BuildContext context) {
+    final normalizedUrl = photoUrl.trim();
+    final canShowPhoto = normalizedUrl.isNotEmpty &&
+        ProfilePhotoPolicy.isAllowedProfilePhotoUrl(normalizedUrl);
+    return ColoredBox(
+      color: const Color(0xFFF3F4F6),
+      child: canShowPhoto
+          ? CachedNetworkImage(
+              imageUrl: normalizedUrl,
+              cacheManager: AppImageCacheManager.instance,
+              fit: BoxFit.cover,
+              fadeInDuration: const Duration(milliseconds: 120),
+              fadeOutDuration: const Duration(milliseconds: 120),
+              placeholder: (_, __) => const _SnackProfilePlaceholder(),
+              errorWidget: (_, __, ___) => const _SnackProfilePlaceholder(),
             )
-          else
-            AudienceRing(
-              restricted: story.visibility != SnapshotVisibility.public,
-              size: _snackPreviewSize,
-              borderRadius: _snackPreviewRadius,
-              ringWidth: 2,
-              innerGap: 1.5,
-              semanticLabel:
-                  Localizations.localeOf(context).languageCode == 'ko'
-                      ? '공개 범위가 제한된 스낵'
-                      : 'Limited audience snack',
-              child: SnapshotStorageImage(
-                snapshot: story,
-                borderRadius: _snackPreviewRadius,
-              ),
-            ),
-          Positioned(
-            right: -2,
-            bottom: -1,
-            child: GestureDetector(
-              behavior: HitTestBehavior.opaque,
-              onTap: onAdd,
-              child: Container(
-                width: 24,
-                height: 24,
-                decoration: BoxDecoration(
-                  color: const Color(0xFF2D9CDB),
-                  shape: BoxShape.circle,
-                  border: Border.all(color: Colors.white, width: 2),
-                ),
-                child: const Icon(
-                  Icons.add_rounded,
-                  size: 17,
-                  color: Colors.white,
-                ),
-              ),
-            ),
-          ),
-        ],
+          : const _SnackProfilePlaceholder(),
+    );
+  }
+}
+
+class _SnackProfilePlaceholder extends StatelessWidget {
+  const _SnackProfilePlaceholder();
+
+  @override
+  Widget build(BuildContext context) {
+    return const ColoredBox(
+      color: Color(0xFFF3F4F6),
+      child: Center(
+        child: Icon(
+          Icons.person_outline_rounded,
+          size: 30,
+          color: Color(0xFF98A2B3),
+        ),
       ),
     );
   }

@@ -18,6 +18,7 @@ import '../main.dart';
 import '../l10n/app_localizations.dart';
 import '../constants/app_constants.dart';
 import '../config/app_config.dart';
+import '../services/content_translation_service.dart';
 
 class AccountSettingsScreen extends StatefulWidget {
   const AccountSettingsScreen({Key? key}) : super(key: key);
@@ -111,6 +112,27 @@ class _AccountSettingsScreenState extends State<AccountSettingsScreen> {
                         Localizations.localeOf(context).languageCode == 'ko'
                             ? (AppLocalizations.of(context)!.korean ?? "")
                             : AppLocalizations.of(context)!.english,
+                  ),
+                  _buildDivider(),
+                  FutureBuilder<String>(
+                    future: ContentTranslationService.instance.targetLanguage(
+                      uiLanguageCode:
+                          Localizations.localeOf(context).languageCode,
+                    ),
+                    builder: (context, snapshot) {
+                      final code = snapshot.data ??
+                          Localizations.localeOf(context).languageCode;
+                      return _buildListItem(
+                        Localizations.localeOf(context).languageCode == 'ko'
+                            ? '번역 언어'
+                            : 'Translation language',
+                        Icons.translate_rounded,
+                        () => _showTranslationLanguageDialog(context),
+                        subtitle: ContentTranslationService
+                                .supportedLanguages[code] ??
+                            'English',
+                      );
+                    },
                   ),
 
                   const SizedBox(height: 32),
@@ -387,6 +409,98 @@ class _AccountSettingsScreenState extends State<AccountSettingsScreen> {
           ),
         );
       },
+    );
+  }
+
+  Future<void> _showTranslationLanguageDialog(BuildContext context) async {
+    final service = ContentTranslationService.instance;
+    final selected = await service.targetLanguage(
+      uiLanguageCode: Localizations.localeOf(context).languageCode,
+    );
+    if (!context.mounted) return;
+    final isKo = Localizations.localeOf(context).languageCode == 'ko';
+
+    await showModalBottomSheet<void>(
+      context: context,
+      isScrollControlled: true,
+      useSafeArea: true,
+      backgroundColor: Colors.white,
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(22)),
+      ),
+      builder: (sheetContext) => SafeArea(
+        top: false,
+        child: ConstrainedBox(
+          constraints: BoxConstraints(
+            maxHeight: MediaQuery.sizeOf(sheetContext).height * 0.72,
+          ),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              const SizedBox(height: 10),
+              const Align(
+                alignment: Alignment.center,
+                child: SizedBox(
+                  width: 40,
+                  child: Divider(
+                    height: 4,
+                    thickness: 4,
+                    color: Color(0xFFD1D5DB),
+                  ),
+                ),
+              ),
+              Padding(
+                padding: const EdgeInsets.fromLTRB(20, 22, 20, 10),
+                child: Text(
+                  isKo ? '번역 언어' : 'Translation language',
+                  style: const TextStyle(
+                    fontFamily: 'Inter',
+                    fontFamilyFallback: ['NotoSansKR'],
+                    fontSize: 20,
+                    fontWeight: FontWeight.w700,
+                    color: Color(0xFF111827),
+                  ),
+                ),
+              ),
+              Flexible(
+                child: ListView(
+                  padding: const EdgeInsets.fromLTRB(16, 0, 16, 12),
+                  children: ContentTranslationService.supportedLanguages.entries
+                      .map(
+                        (entry) => ListTile(
+                          dense: true,
+                          title: Text(
+                            entry.value,
+                            style: const TextStyle(
+                              fontFamily: 'Inter',
+                              fontFamilyFallback: ['NotoSansKR'],
+                              fontSize: 15,
+                              fontWeight: FontWeight.w500,
+                            ),
+                          ),
+                          trailing: entry.key == selected
+                              ? const Icon(
+                                  Icons.check_rounded,
+                                  color: AppColors.pointColor,
+                                )
+                              : null,
+                          onTap: () async {
+                            await service.setPreferredLanguage(entry.key);
+                            if (sheetContext.mounted) {
+                              Navigator.pop(sheetContext);
+                            }
+                            if (mounted) setState(() {});
+                          },
+                        ),
+                      )
+                      .toList(growable: false),
+                ),
+              ),
+            ],
+          ),
+        ),
+      ),
     );
   }
 

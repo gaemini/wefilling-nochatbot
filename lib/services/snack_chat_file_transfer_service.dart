@@ -16,6 +16,7 @@ import '../models/snack_chat.dart';
 import '../models/snack_chat_message.dart';
 import '../utils/logger.dart';
 import 'snack_chat_local_cache_service.dart';
+import 'snack_chat_media_cache_service.dart';
 import 'snack_chat_service.dart';
 
 class SnackChatFileTransferEvent {
@@ -824,6 +825,7 @@ class SnackChatFileTransferService {
     await prefs.remove(_cacheIndexKey(uid));
     await prefs.remove('$_queueKeyPrefix::$uid');
     await _localChatCache.clearPrivateFileStateForAccount(uid);
+    await SnackChatMediaCacheService.instance.clearUser(uid);
   }
 }
 

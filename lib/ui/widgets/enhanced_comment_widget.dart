@@ -9,17 +9,18 @@ import 'package:firebase_auth/firebase_auth.dart';
 import 'package:url_launcher/url_launcher.dart';
 import 'package:linkify/linkify.dart' as linkify;
 import '../../models/comment.dart';
+import '../../models/content_translation.dart';
 import '../../services/comment_service.dart';
 import '../../services/content_hide_service.dart';
 import '../../services/user_info_cache_service.dart';
 import '../../services/report_service.dart';
 import '../../l10n/app_localizations.dart';
 import '../../screens/friend_profile_screen.dart';
-import '../../screens/main_screen.dart';
 import '../../utils/logger.dart';
 import '../../utils/responsive_helper.dart';
 import '../dialogs/block_dialog.dart';
 import '../snackbar/app_snackbar.dart';
+import 'translatable_content.dart';
 
 class EnhancedCommentWidget extends StatefulWidget {
   final Comment comment;
@@ -59,6 +60,26 @@ class _EnhancedCommentWidgetState extends State<EnhancedCommentWidget> {
   final CommentService _commentService = CommentService();
   bool _showReplies = true;
   bool _hiddenByReport = false;
+
+  String _localizedReplyTarget(BuildContext context) {
+    final raw = (widget.comment.replyToUserNickname ?? '').trim();
+    if (!widget.isAnonymousPost || raw.isEmpty) return raw;
+
+    final l10n = AppLocalizations.of(context)!;
+    final anonymousMatch = RegExp(
+      r'^(?:익명|Anonymous)\s*(\d+)$',
+      caseSensitive: false,
+    ).firstMatch(raw);
+    if (anonymousMatch != null) {
+      return l10n.anonymousUser(anonymousMatch.group(1)!);
+    }
+
+    final normalized = raw.toLowerCase();
+    if (raw == '작성자' || raw == '글쓴이' || normalized == 'author') {
+      return l10n.author;
+    }
+    return raw;
+  }
 
   Future<void> _openLinkUrl(String url) async {
     final uri = Uri.tryParse(url);
@@ -799,20 +820,7 @@ class _EnhancedCommentWidgetState extends State<EnhancedCommentWidget> {
         UserInfoCacheService().getCachedUserInfo(widget.comment.userId);
     if (cachedAuthor?.isDeletedAccount == true) return;
 
-    final me = FirebaseAuth.instance.currentUser?.uid;
-    if (me != null && widget.comment.userId == me) {
-      // 하단 네비게이션바가 있는 "원래" 마이페이지 탭으로 이동
-      Navigator.of(context).pushAndRemoveUntil(
-        MaterialPageRoute(
-          builder: (_) => const MainScreen(initialTabIndex: 3),
-        ),
-        (route) => false,
-      );
-      return;
-    }
-
-    Navigator.push(
-      context,
+    Navigator.of(context).push(
       MaterialPageRoute(
         builder: (_) => FriendProfileScreen(
           userId: widget.comment.userId,
@@ -872,7 +880,7 @@ class _EnhancedCommentWidgetState extends State<EnhancedCommentWidget> {
     if (widget.replies.isEmpty) return const <Widget>[];
 
     return <Widget>[
-      const SizedBox(height: 12),
+      const SizedBox(height: 6),
       Padding(
         padding: const EdgeInsets.only(left: 42.0),
         child: InkWell(
@@ -906,7 +914,7 @@ class _EnhancedCommentWidgetState extends State<EnhancedCommentWidget> {
         ),
       ),
       if (_showReplies) ...[
-        const SizedBox(height: 12),
+        const SizedBox(height: 4),
         ...widget.replies.map((reply) {
           final child = widget.replyWidgetBuilder?.call(reply) ??
               EnhancedCommentWidget(
@@ -938,7 +946,7 @@ class _EnhancedCommentWidgetState extends State<EnhancedCommentWidget> {
       margin: EdgeInsets.only(
         left: 16.0 + (widget.comment.depth * 20.0),
         right: widget.comment.depth == 0 ? 16.0 : 0.0,
-        bottom: 16,
+        bottom: widget.comment.depth == 0 ? 6 : 4,
       ),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
@@ -1079,7 +1087,7 @@ class _EnhancedCommentWidgetState extends State<EnhancedCommentWidget> {
             // 대댓글은 부모 컨테이너(우측 16px) 안에 렌더링되므로
             // 여기서 우측 여백을 또 주면 하트가 왼쪽으로 밀림 → depth>0은 0으로
             right: widget.comment.depth == 0 ? 16.0 : 0.0,
-            bottom: 16, // 댓글 간 간격
+            bottom: widget.comment.depth == 0 ? 6 : 4,
           ),
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
@@ -1177,25 +1185,37 @@ class _EnhancedCommentWidgetState extends State<EnhancedCommentWidget> {
                         const SizedBox(height: 2),
 
                         // @아이디를 본문과 "같은 텍스트 흐름"으로 합쳐 줄바꿈까지 자연스럽게 처리
-                        RichText(
-                          text: TextSpan(
-                            children: [
-                              if (isReply)
-                                TextSpan(
-                                  text:
-                                      '@${widget.comment.replyToUserNickname} ',
-                                  style: mentionStyle,
+                        TranslatableContent(
+                          request: ContentTranslationRequest(
+                            contentType: 'comment',
+                            contentId: widget.comment.id,
+                            parentId: widget.postId,
+                            sourceFields: <String, String>{
+                              'content': widget.comment.content,
+                            },
+                          ),
+                          scope: 'post-comments:${widget.postId}',
+                          showToggle: false,
+                          builder: (context, fields) => RichText(
+                            text: TextSpan(
+                              children: [
+                                if (isReply)
+                                  TextSpan(
+                                    text: '@${_localizedReplyTarget(context)} ',
+                                    style: mentionStyle,
+                                  ),
+                                ..._buildLinkifiedSpans(
+                                  text: fields['content'] ??
+                                      widget.comment.content,
+                                  style: bodyStyle,
+                                  linkStyle: linkStyle,
                                 ),
-                              ..._buildLinkifiedSpans(
-                                text: widget.comment.content,
-                                style: bodyStyle,
-                                linkStyle: linkStyle,
-                              ),
-                            ],
+                              ],
+                            ),
                           ),
                         ),
 
-                        const SizedBox(height: 8),
+                        const SizedBox(height: 4),
                       ],
                     ),
                   ),

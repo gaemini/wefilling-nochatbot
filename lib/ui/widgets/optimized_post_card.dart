@@ -3,12 +3,14 @@
 // const 생성자, 메모이제이션, 이미지 최적화
 
 import 'package:flutter/material.dart';
+import 'package:flutter/foundation.dart' show listEquals;
 import 'dart:async';
 import 'dart:collection';
 import 'dart:math' as math;
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:cached_network_image/cached_network_image.dart';
 import '../../models/post.dart';
+import '../../models/content_translation.dart';
 import '../../models/post_category.dart';
 import '../../design/tokens.dart';
 import '../../services/cache/app_image_cache_manager.dart';
@@ -20,7 +22,6 @@ import '../../widgets/country_flag_circle.dart';
 import '../../l10n/app_localizations.dart';
 import '../../screens/dm_chat_screen.dart';
 import '../../screens/friend_profile_screen.dart';
-import '../../screens/main_screen.dart';
 import '../../ui/dialogs/block_dialog.dart';
 import '../../ui/dialogs/report_dialog.dart';
 import '../../utils/logger.dart';
@@ -33,6 +34,7 @@ import 'post_linkified_text.dart';
 import 'shared_link_preview_card.dart';
 import 'user_avatar.dart';
 import 'hanyang_verification_gate.dart';
+import 'translatable_content.dart';
 
 /// Board/Home 피드에서 사용하는 content-first 일반 게시글 카드.
 class OptimizedPostCard extends StatefulWidget {
@@ -93,7 +95,9 @@ class _OptimizedPostCardState extends State<OptimizedPostCard> {
   bool _isLikedOverride = false;
   int _likesOverride = 0;
   int? _liveCommentCount;
+  int? _liveViewCount;
   StreamSubscription<PostEngagement>? _engagementSubscription;
+  Stream<DMUserInfo?>? _cachedAuthorInfoStream;
   bool _didPrecache = false;
   Timer? _likeHoldTimer;
   bool _likeSheetOpenedByHold = false;
@@ -106,7 +110,7 @@ class _OptimizedPostCardState extends State<OptimizedPostCard> {
   void initState() {
     super.initState();
     _syncLocalLikeStateFromWidget();
-    _subscribeToEngagement();
+    _subscribeToCachedEngagement();
     // precacheImage는 MediaQuery 등 ImageConfiguration을 사용하므로 첫 프레임 이후 실행
     WidgetsBinding.instance.addPostFrameCallback((_) {
       if (!mounted) return;
@@ -129,12 +133,21 @@ class _OptimizedPostCardState extends State<OptimizedPostCard> {
     if (oldWidget.post.id != widget.post.id) {
       _isLikeInFlight = false;
       _liveCommentCount = null;
+      _liveViewCount = null;
+      _cachedAuthorInfoStream = null;
       _syncLocalLikeStateFromWidget();
-      _subscribeToEngagement();
+      _subscribeToCachedEngagement();
       return;
     }
-    // 좋아요 토글 진행 중이 아니면 서버/스트림으로 들어온 최신 값을 따라간다
-    if (!_isLikeInFlight) {
+    // 공통 캐시가 아직 없다면 새 위젯 모델을 초기값으로 사용한다. 이미 카드나
+    // 상세가 갱신한 공통 값은 오래된 피드 모델로 되돌리지 않는다.
+    final engagementChanged = oldWidget.post.likes != widget.post.likes ||
+        oldWidget.post.commentCount != widget.post.commentCount ||
+        oldWidget.post.viewCount != widget.post.viewCount ||
+        !listEquals(oldWidget.post.likedBy, widget.post.likedBy);
+    if (engagementChanged) {
+      _postService.updateCachedPostEngagement(widget.post);
+    } else if (_postService.getCachedPostEngagement(widget.post.id) == null) {
       _syncLocalLikeStateFromWidget();
     }
   }
@@ -146,25 +159,25 @@ class _OptimizedPostCardState extends State<OptimizedPostCard> {
     _likesOverride = widget.post.likes;
   }
 
-  void _subscribeToEngagement() {
+  void _subscribeToCachedEngagement() {
     final previous = _engagementSubscription;
     if (previous != null) unawaited(previous.cancel());
     final postId = widget.post.id;
-    _engagementSubscription = _postService.watchPostEngagement(postId).listen(
+    _engagementSubscription = _postService
+        .watchCachedPostEngagement(postId, seed: widget.post)
+        .listen(
       (engagement) {
         if (!mounted || widget.post.id != postId) return;
         final me = FirebaseAuth.instance.currentUser?.uid;
         setState(() {
           _liveCommentCount = engagement.commentCount;
-          // 내 낙관적 토글이 서버에 반영되는 짧은 구간에는 되돌리지 않는다.
-          if (!_isLikeInFlight) {
-            _likesOverride = engagement.likes;
-            _isLikedOverride = me != null && engagement.likedBy.contains(me);
-          }
+          _liveViewCount = engagement.viewCount;
+          _likesOverride = engagement.likes;
+          _isLikedOverride = me != null && engagement.likedBy.contains(me);
         });
       },
       onError: (Object error) {
-        Logger.warning('포스트 실시간 지표 구독 오류($postId): $error');
+        Logger.warning('포스트 캐시 지표 구독 오류($postId): $error');
       },
     );
   }
@@ -185,25 +198,16 @@ class _OptimizedPostCardState extends State<OptimizedPostCard> {
       return;
     }
 
-    // 낙관적 업데이트
-    final nextLiked = !_isLikedOverride;
-    final nextLikes = (_likesOverride + (nextLiked ? 1 : -1)).clamp(0, 1 << 30);
     setState(() {
       _isLikeInFlight = true;
-      _isLikedOverride = nextLiked;
-      _likesOverride = nextLikes;
     });
 
+    // 공통 PostService가 낙관적 상태를 즉시 publish하므로 카드와 상세가
+    // 동시에 같은 값을 그린다. 실패 롤백과 요청 순번 처리도 서비스가 담당한다.
     final ok = await _postService.toggleLike(widget.post.id);
     if (!mounted) return;
 
     if (!ok) {
-      // 실패 시 롤백
-      setState(() {
-        _isLikedOverride = !nextLiked;
-        _likesOverride =
-            (_likesOverride + (nextLiked ? -1 : 1)).clamp(0, 1 << 30);
-      });
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(content: Text(l10n.error)),
       );
@@ -597,20 +601,7 @@ class _OptimizedPostCardState extends State<OptimizedPostCard> {
     required String nickname,
     required String photoURL,
   }) {
-    final me = FirebaseAuth.instance.currentUser?.uid;
-    if (me != null && userId == me) {
-      // 하단 네비게이션바가 있는 "원래" 마이페이지 탭으로 이동
-      Navigator.of(context).pushAndRemoveUntil(
-        MaterialPageRoute(
-          builder: (_) => const MainScreen(initialTabIndex: 3),
-        ),
-        (route) => false,
-      );
-      return;
-    }
-
-    Navigator.push(
-      context,
+    Navigator.of(context).push(
       MaterialPageRoute(
         builder: (_) => FriendProfileScreen(
           userId: userId,
@@ -677,17 +668,30 @@ class _OptimizedPostCardState extends State<OptimizedPostCard> {
                         if (hasPrimaryContent) ...[
                           SizedBox(height: contentTopGap),
                           if (hasContent)
-                            _buildSmartEllipsizedText(
-                              text: unifiedText,
-                              maxLines: 4,
-                              style: TextStyle(
-                                color: BrandColors.textPrimary,
-                                fontFamily: 'Inter',
-                                fontFamilyFallback: const ['NotoSansKR'],
-                                fontWeight: FontWeight.w500,
-                                fontSize: contentSize,
-                                height: 1.24,
-                                letterSpacing: -0.3,
+                            TranslatableContent(
+                              request: ContentTranslationRequest(
+                                contentType: 'post',
+                                contentId: post.id,
+                                sourceFields: <String, String>{
+                                  'content': unifiedText,
+                                },
+                              ),
+                              scope: 'post:${post.id}',
+                              showToggle: false,
+                              loadOnDemand: true,
+                              builder: (context, fields) =>
+                                  _buildSmartEllipsizedText(
+                                text: fields['content'] ?? unifiedText,
+                                maxLines: 4,
+                                style: TextStyle(
+                                  color: BrandColors.textPrimary,
+                                  fontFamily: 'Inter',
+                                  fontFamilyFallback: const ['NotoSansKR'],
+                                  fontWeight: FontWeight.w500,
+                                  fontSize: contentSize,
+                                  height: 1.24,
+                                  letterSpacing: -0.3,
+                                ),
                               ),
                             ),
                           if (post.type == 'poll') ...[
@@ -746,6 +750,8 @@ class _OptimizedPostCardState extends State<OptimizedPostCard> {
                   thickness: 1,
                   color: BrandColors.divider,
                 ),
+              // 카드의 콘텐츠 밀도는 유지하면서 게시글 경계만 살짝 구분한다.
+              SizedBox(height: context.rs(3).clamp(2, 4).toDouble()),
             ],
           ),
         ),
@@ -883,15 +889,18 @@ class _OptimizedPostCardState extends State<OptimizedPostCard> {
       required String resolvedPhotoURL,
       required bool isDeletedAccount,
     }) {
-      final currentUser = FirebaseAuth.instance.currentUser;
       final effectiveDeleted = !isAnonymous && isDeletedAccount;
       final displayNickname = effectiveDeleted
           ? AppLocalizations.of(context)!.deletedAccount
           : resolvedNickname;
       final canOpenProfile = hasProfileTarget && !effectiveDeleted;
-      final canOpenActions = currentUser != null &&
-          canOpenProfile &&
-          post.userId != currentUser.uid;
+      final usesLimitedAudienceIdentity = !isAnonymous &&
+          !effectiveDeleted &&
+          !post.requiresHanyangVerification &&
+          post.visibility != 'public';
+      // Keep the label in lockstep with the existing restricted-audience ring.
+      // This also covers legacy `friends` posts without changing visibility logic.
+      final isFriendsOnly = usesLimitedAudienceIdentity;
       final String? resolvedImageUrl = effectiveDeleted
           ? null
           : (!isAnonymous && resolvedPhotoURL.trim().isNotEmpty)
@@ -926,15 +935,16 @@ class _OptimizedPostCardState extends State<OptimizedPostCard> {
                       dimension: 40,
                       child: Center(
                         child: AudienceRing(
-                          restricted: post.visibility == 'category',
+                          restricted: usesLimitedAudienceIdentity,
                           size: 40,
-                          ringWidth: 1.5,
-                          innerGap: 0.5,
+                          ringWidth: usesLimitedAudienceIdentity ? 4 : 1.5,
+                          innerGap: usesLimitedAudienceIdentity ? 0.75 : 0.5,
+                          emphasized: usesLimitedAudienceIdentity,
                           semanticLabel:
                               Localizations.localeOf(context).languageCode ==
                                       'ko'
-                                  ? '선택한 그룹에 공개된 포스트'
-                                  : 'Post shared with selected groups',
+                                  ? '공개 범위가 제한된 포스트'
+                                  : 'Limited audience post',
                           child: ColoredBox(
                             color: Colors.grey.shade300,
                             child: (resolvedImageUrl != null && !isAnonymous)
@@ -1028,48 +1038,46 @@ class _OptimizedPostCardState extends State<OptimizedPostCard> {
                           letterSpacing: -0.15,
                         ),
                       ),
+                      if (isFriendsOnly) ...[
+                        const SizedBox(width: 4),
+                        const Text(
+                          '·',
+                          style: TextStyle(color: BrandColors.textTertiary),
+                        ),
+                        const SizedBox(width: 4),
+                        Flexible(
+                          flex: 2,
+                          child: _FriendsOnlyIndicator(
+                            isKorean:
+                                Localizations.localeOf(context).languageCode ==
+                                    'ko',
+                          ),
+                        ),
+                      ],
                     ],
                   ),
                 ),
-
-                if (canOpenActions)
-                  Transform.translate(
-                    offset: const Offset(10, 0),
-                    child: Semantics(
-                      button: true,
-                      label: AppLocalizations.of(context)!.moreOptions,
-                      child: IconButton(
-                        tooltip: AppLocalizations.of(context)!.moreOptions,
-                        constraints: const BoxConstraints.tightFor(
-                          width: 28,
-                          height: 28,
-                        ),
-                        padding: EdgeInsets.zero,
-                        visualDensity: VisualDensity.compact,
-                        onPressed: () => _openPostActionsSheet(
-                          post: post,
-                          authorName: displayNickname,
-                        ),
-                        icon: Transform.translate(
-                          offset: const Offset(0, -5),
-                          child: const Icon(
-                            Icons.more_vert_rounded,
-                            size: 18,
-                            color: BrandColors.iconDefault,
-                          ),
-                        ),
-                      ),
-                    ),
-                  ),
               ],
             ),
           ),
-          // 아바타(40px)가 끝날 때까지 기다리지 않고, Threads처럼
-          // 아이디 행 바로 아래에서 본문을 시작한다.
+          // 번역 버튼은 메타데이터 행에서 분리해 긴 아이디가 잘리지 않게
+          // 하고, 아이디 바로 아래에서 항상 같은 위치에 보이게 한다.
           Padding(
             padding: const EdgeInsets.only(
               left: _threadContentOffset,
-              top: 28,
+              top: 22,
+            ),
+            child: TranslationScopeToggle(
+              scope: 'post:${post.id}',
+              postCardHeader: true,
+            ),
+          ),
+          // 번역 버튼 다음에 본문을 배치한다. 번역 결과가 도착하면
+          // TranslatableContent가 같은 영역의 텍스트만 교체한다.
+          Padding(
+            padding: const EdgeInsets.only(
+              left: _threadContentOffset,
+              top: 48,
             ),
             child: threadContent,
           ),
@@ -1086,7 +1094,8 @@ class _OptimizedPostCardState extends State<OptimizedPostCard> {
     }
 
     return StreamBuilder<DMUserInfo?>(
-      stream: cache.watchUserInfo(post.userId),
+      stream: _cachedAuthorInfoStream ??=
+          cache.watchCachedUserInfo(post.userId),
       initialData: cache.getCachedUserInfo(post.userId),
       builder: (context, snapshot) {
         final live = snapshot.data;
@@ -1183,7 +1192,7 @@ class _OptimizedPostCardState extends State<OptimizedPostCard> {
     return PostActionGroup(
       likes: _likesOverride,
       comments: post.commentCount,
-      views: post.viewCount,
+      views: _liveViewCount ?? post.viewCount,
       isLiked: isLikedByMe,
       likeLabel: l10n.like,
       commentLabel: l10n.comment,
@@ -1413,6 +1422,9 @@ class _OptimizedPostCardState extends State<OptimizedPostCard> {
     }
   }
 
+  // 카드에서는 더보기 액션을 노출하지 않지만, 기존 신고/차단/DM 구현은
+  // 상세 화면 정책과의 호환을 위해 제거하지 않고 보존한다.
+  // ignore: unused_element
   Future<void> _openPostActionsSheet({
     required Post post,
     required String authorName,
@@ -1593,6 +1605,58 @@ class _OptimizedPostCardState extends State<OptimizedPostCard> {
 
   @override
   int get hashCode => Object.hash(widget.post.id, widget.index);
+}
+
+class _FriendsOnlyIndicator extends StatelessWidget {
+  const _FriendsOnlyIndicator({required this.isKorean});
+
+  final bool isKorean;
+
+  @override
+  Widget build(BuildContext context) {
+    final label = isKorean ? '친구만' : 'For friends';
+    final indicator = ShaderMask(
+      blendMode: BlendMode.srcIn,
+      shaderCallback: AudienceRing.emphasizedRestrictedGradient.createShader,
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Icon(
+            Icons.people_outline_rounded,
+            size: context.ri(15).clamp(13.5, 15.5).toDouble(),
+            color: Colors.white,
+          ),
+          const SizedBox(width: 3),
+          Text(
+            label,
+            maxLines: 1,
+            softWrap: false,
+            style: TextStyle(
+              fontFamily: 'Inter',
+              fontFamilyFallback: const ['NotoSansKR'],
+              fontSize: context.rf(12).clamp(11.5, 12.5).toDouble(),
+              fontWeight: FontWeight.w600,
+              color: Colors.white,
+              height: 1.15,
+              letterSpacing: -0.15,
+            ),
+          ),
+        ],
+      ),
+    );
+
+    return Semantics(
+      label: label,
+      child: Align(
+        alignment: Alignment.centerLeft,
+        child: FittedBox(
+          fit: BoxFit.scaleDown,
+          alignment: Alignment.centerLeft,
+          child: indicator,
+        ),
+      ),
+    );
+  }
 }
 
 class _PostLikeUser {

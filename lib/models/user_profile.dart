@@ -29,6 +29,8 @@ class UserProfile {
   final StudentType? studentType;
   final bool todoOnboardingCompleted;
   final String? languageCode;
+  final String? preferredTranslationLanguage;
+  final String? preferredTranslationLanguageCode;
   final int profileCompletion;
   final int friendsCount;
   final int incomingCount; // 받은 친구요청 수
@@ -57,6 +59,8 @@ class UserProfile {
     this.studentType,
     this.todoOnboardingCompleted = false,
     this.languageCode,
+    this.preferredTranslationLanguage,
+    this.preferredTranslationLanguageCode,
     this.profileCompletion = 0,
     this.friendsCount = 0,
     this.incomingCount = 0,
@@ -111,6 +115,10 @@ class UserProfile {
       studentType: StudentType.tryParse(data['studentType']),
       todoOnboardingCompleted: data['todoOnboardingCompleted'] == true,
       languageCode: nullableString('languageCode'),
+      preferredTranslationLanguage:
+          nullableString('preferredTranslationLanguage'),
+      preferredTranslationLanguageCode:
+          nullableString('preferredTranslationLanguageCode'),
       profileCompletion: data['profileCompletion'] is num
           ? (data['profileCompletion'] as num).clamp(0, 100).round()
           : 0,
@@ -146,6 +154,10 @@ class UserProfile {
       if (studentType != null) 'studentType': studentType!.value,
       'todoOnboardingCompleted': todoOnboardingCompleted,
       if (languageCode != null) 'languageCode': languageCode,
+      if (preferredTranslationLanguage != null)
+        'preferredTranslationLanguage': preferredTranslationLanguage,
+      if (preferredTranslationLanguageCode != null)
+        'preferredTranslationLanguageCode': preferredTranslationLanguageCode,
       'profileCompletion': profileCompletion,
       'friendsCount': friendsCount,
       'incomingCount': incomingCount,
@@ -190,6 +202,8 @@ class UserProfile {
     StudentType? studentType,
     bool? todoOnboardingCompleted,
     String? languageCode,
+    String? preferredTranslationLanguage,
+    String? preferredTranslationLanguageCode,
     int? profileCompletion,
     int? friendsCount,
     int? incomingCount,
@@ -217,6 +231,10 @@ class UserProfile {
       todoOnboardingCompleted:
           todoOnboardingCompleted ?? this.todoOnboardingCompleted,
       languageCode: languageCode ?? this.languageCode,
+      preferredTranslationLanguage:
+          preferredTranslationLanguage ?? this.preferredTranslationLanguage,
+      preferredTranslationLanguageCode: preferredTranslationLanguageCode ??
+          this.preferredTranslationLanguageCode,
       profileCompletion: profileCompletion ?? this.profileCompletion,
       friendsCount: friendsCount ?? this.friendsCount,
       incomingCount: incomingCount ?? this.incomingCount,

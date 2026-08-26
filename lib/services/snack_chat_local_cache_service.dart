@@ -6,6 +6,30 @@ import '../models/snack_chat.dart';
 import '../models/snack_chat_message.dart';
 import '../utils/logger.dart';
 
+/// Small, account-scoped snapshot used only to position the first frame of a
+/// Snack Chat. The server cursor remains authoritative; this value is reused
+/// only while it still matches the room sequence and unread aggregate shown in
+/// the room list.
+class SnackChatCachedEntryState {
+  const SnackChatCachedEntryState({
+    required this.lastReadSequence,
+    required this.roomLastSequence,
+    required this.roomUnreadCount,
+    required this.canAdvanceReadCursor,
+    required this.updatedAt,
+    this.firstUnreadMessageId,
+    this.firstUnreadSequence,
+  });
+
+  final int lastReadSequence;
+  final int roomLastSequence;
+  final int roomUnreadCount;
+  final bool canAdvanceReadCursor;
+  final String? firstUnreadMessageId;
+  final int? firstUnreadSequence;
+  final DateTime updatedAt;
+}
+
 /// Account- and room-scoped, best-effort cache for Snack Chat.
 ///
 /// Firestore's local persistence remains the source of truth. This cache only
@@ -256,6 +280,76 @@ class SnackChatLocalCacheService {
     }
   }
 
+  Future<SnackChatCachedEntryState?> getEntryState(String roomId) async {
+    final ownerUid = _ownerUid;
+    final box = await _ensureBox();
+    if (ownerUid == null || box == null) return null;
+    try {
+      final raw = box.get('${_baseKey(ownerUid, roomId)}::entry');
+      if (raw is! Map) return null;
+      int intValue(Object? value) => value is num
+          ? value.toInt().clamp(0, 1 << 31).toInt()
+          : int.tryParse((value ?? '').toString())?.clamp(0, 1 << 31).toInt() ??
+              0;
+      final firstUnreadId =
+          (raw['firstUnreadMessageId'] ?? '').toString().trim();
+      final firstUnreadSequence = intValue(raw['firstUnreadSequence']);
+      final rawUpdatedAt = raw['updatedAt'];
+      final updatedAtMillis = rawUpdatedAt is num
+          ? rawUpdatedAt.toInt()
+          : int.tryParse((rawUpdatedAt ?? '').toString()) ?? 0;
+      if (updatedAtMillis <= 0) return null;
+      return SnackChatCachedEntryState(
+        lastReadSequence: intValue(raw['lastReadSequence']),
+        roomLastSequence: intValue(raw['roomLastSequence']),
+        roomUnreadCount: intValue(raw['roomUnreadCount']),
+        canAdvanceReadCursor: raw['canAdvanceReadCursor'] == true,
+        firstUnreadMessageId: firstUnreadId.isEmpty ? null : firstUnreadId,
+        firstUnreadSequence:
+            firstUnreadSequence <= 0 ? null : firstUnreadSequence,
+        updatedAt: DateTime.fromMillisecondsSinceEpoch(updatedAtMillis),
+      );
+    } catch (error) {
+      Logger.error('SnackChatLocalCacheService: entry read failed: $error');
+      return null;
+    }
+  }
+
+  Future<void> saveEntryState(
+    String roomId,
+    SnackChatCachedEntryState state,
+  ) async {
+    final ownerUid = _ownerUid;
+    final box = await _ensureBox();
+    if (ownerUid == null || box == null) return;
+    try {
+      await box.put('${_baseKey(ownerUid, roomId)}::entry', <String, Object?>{
+        'lastReadSequence': state.lastReadSequence,
+        'roomLastSequence': state.roomLastSequence,
+        'roomUnreadCount': state.roomUnreadCount,
+        'canAdvanceReadCursor': state.canAdvanceReadCursor,
+        if (state.firstUnreadMessageId?.isNotEmpty == true)
+          'firstUnreadMessageId': state.firstUnreadMessageId,
+        if (state.firstUnreadSequence != null)
+          'firstUnreadSequence': state.firstUnreadSequence,
+        'updatedAt': state.updatedAt.millisecondsSinceEpoch,
+      });
+    } catch (error) {
+      Logger.error('SnackChatLocalCacheService: entry cache failed: $error');
+    }
+  }
+
+  Future<void> clearEntryState(String roomId) async {
+    final ownerUid = _ownerUid;
+    final box = await _ensureBox();
+    if (ownerUid == null || box == null) return;
+    try {
+      await box.delete('${_baseKey(ownerUid, roomId)}::entry');
+    } catch (error) {
+      Logger.error('SnackChatLocalCacheService: entry clear failed: $error');
+    }
+  }
+
   Future<void> clearRoom(String roomId) async {
     final ownerUid = _ownerUid;
     final box = await _ensureBox();
@@ -264,7 +358,11 @@ class SnackChatLocalCacheService {
     try {
       final messagesKey = '$base::messages';
       await _serializeMessageWrite(messagesKey, () => box.delete(messagesKey));
-      await box.deleteAll(<String>['$base::draft', '$base::room']);
+      await box.deleteAll(<String>[
+        '$base::draft',
+        '$base::room',
+        '$base::entry',
+      ]);
     } catch (error) {
       Logger.error('SnackChatLocalCacheService: room clear failed: $error');
     }

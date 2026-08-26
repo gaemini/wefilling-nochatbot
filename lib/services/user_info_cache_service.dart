@@ -372,6 +372,21 @@ class UserInfoCacheService {
     return _cache[_cacheKey(userId)];
   }
 
+  /// 피드 카드용 휴대폰 캐시 전용 스트림입니다.
+  ///
+  /// 카드가 스크롤로 다시 생성될 때 Firestore listener를 열지 않고 메모리와
+  /// Hive에 마지막으로 저장된 프로필만 전달합니다. 프로필/상세 화면을 여는
+  /// 명시적 사용자 동작에서는 기존 [getUserInfo]/[watchUserInfo]가 최신 값을
+  /// 조회하고 같은 캐시에 기록합니다.
+  Stream<DMUserInfo?> watchCachedUserInfo(String userId) async* {
+    final memory = getCachedUserInfo(userId);
+    if (memory != null) yield memory;
+
+    final persisted = await getPersistedUserInfo(userId);
+    if (persisted == null || identical(persisted, memory)) return;
+    yield persisted;
+  }
+
   /// 여러 사용자 정보 일괄 조회
   Future<Map<String, DMUserInfo?>> getUserInfoBatch(
     List<String> userIds, {

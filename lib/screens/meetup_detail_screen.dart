@@ -8,6 +8,7 @@ import 'package:flutter/material.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import '../models/meetup.dart';
+import '../models/content_translation.dart';
 import '../models/meetup_participant.dart';
 import '../models/user_profile.dart';
 import '../repositories/users_repository.dart';
@@ -33,6 +34,7 @@ import '../ui/widgets/meetup_public_countdown.dart';
 import '../utils/category_label_utils.dart';
 import '../utils/logger.dart';
 import '../utils/responsive_helper.dart';
+import '../ui/widgets/translatable_content.dart';
 import '../ui/snackbar/app_snackbar.dart';
 import 'snack_chat_screen.dart';
 import '../ui/widgets/hanyang_verification_gate.dart';
@@ -629,9 +631,22 @@ class _MeetupDetailScreenState extends State<MeetupDetailScreen>
                               MeetupPublicCountdown(meetup: _currentMeetup),
                             ],
                             const SizedBox(height: 13),
-                            _buildSimpleInfoRow(
-                              Icons.location_on_outlined,
-                              _currentMeetup.location,
+                            TranslatableContent(
+                              request: ContentTranslationRequest(
+                                contentType: 'meetup',
+                                contentId: _currentMeetup.id,
+                                sourceFields: <String, String>{
+                                  'location': _currentMeetup.location,
+                                  'description': _currentMeetup.description,
+                                },
+                              ),
+                              scope: 'meetup:${_currentMeetup.id}',
+                              showToggle:
+                                  _currentMeetup.description.trim().isEmpty,
+                              builder: (context, fields) => _buildSimpleInfoRow(
+                                Icons.location_on_outlined,
+                                fields['location'] ?? _currentMeetup.location,
+                              ),
                             ),
                             const SizedBox(height: 20),
                             _buildHostSummary(),
@@ -642,25 +657,38 @@ class _MeetupDetailScreenState extends State<MeetupDetailScreen>
                               _buildSectionTitle(
                                   currentLang == 'ko' ? '소개' : 'About'),
                               const SizedBox(height: 10),
-                              _buildPrettyLinkText(
-                                _currentMeetup.description,
-                                style: TextStyle(
-                                  fontFamily: 'Inter',
-                                  fontFamilyFallback: const ['NotoSansKR'],
-                                  fontSize:
-                                      context.rf(15).clamp(14, 16).toDouble(),
-                                  height: 1.55,
-                                  color: const Color(0xFF344054),
-                                  fontWeight: FontWeight.w500,
+                              TranslatableContent(
+                                request: ContentTranslationRequest(
+                                  contentType: 'meetup',
+                                  contentId: _currentMeetup.id,
+                                  sourceFields: <String, String>{
+                                    'location': _currentMeetup.location,
+                                    'description': _currentMeetup.description,
+                                  },
                                 ),
-                                linkStyle: TextStyle(
-                                  fontFamily: 'Inter',
-                                  fontFamilyFallback: const ['NotoSansKR'],
-                                  fontSize:
-                                      context.rf(15).clamp(14, 16).toDouble(),
-                                  color: const Color(0xFF111827),
-                                  decoration: TextDecoration.underline,
-                                  fontWeight: FontWeight.w600,
+                                scope: 'meetup:${_currentMeetup.id}',
+                                builder: (context, fields) =>
+                                    _buildPrettyLinkText(
+                                  fields['description'] ??
+                                      _currentMeetup.description,
+                                  style: TextStyle(
+                                    fontFamily: 'Inter',
+                                    fontFamilyFallback: const ['NotoSansKR'],
+                                    fontSize:
+                                        context.rf(15).clamp(14, 16).toDouble(),
+                                    height: 1.55,
+                                    color: const Color(0xFF344054),
+                                    fontWeight: FontWeight.w500,
+                                  ),
+                                  linkStyle: TextStyle(
+                                    fontFamily: 'Inter',
+                                    fontFamilyFallback: const ['NotoSansKR'],
+                                    fontSize:
+                                        context.rf(15).clamp(14, 16).toDouble(),
+                                    color: const Color(0xFF111827),
+                                    decoration: TextDecoration.underline,
+                                    fontWeight: FontWeight.w600,
+                                  ),
                                 ),
                               ),
                             ],
@@ -1579,10 +1607,8 @@ class _MeetupDetailScreenState extends State<MeetupDetailScreen>
   Widget _buildHeaderButtonsContent(User currentUser, bool isMyMeetup) {
     if (isMyMeetup) {
       // 본인 모임인 경우: 수정하기 아이콘 버튼 표시
-      // 모임이 완료되었거나 후기가 작성된 경우에는 수정 불가
-      final isCompleted = _currentMeetup.isCompleted;
-      final hasReview = _currentMeetup.hasReview;
-      final canEdit = !isCompleted && !hasReview;
+      // 확정/완료/후기 작성/만료된 모임은 수정할 수 없다.
+      final canEdit = _currentMeetup.canEditAt();
 
       final editBtn = canEdit
           ? IconButton(
@@ -1740,6 +1766,18 @@ class _MeetupDetailScreenState extends State<MeetupDetailScreen>
 
   /// 모임 수정 화면으로 이동
   Future<void> _showEditMeetup() async {
+    if (!_currentMeetup.canEditAt()) {
+      final isKorean = Localizations.localeOf(context).languageCode == 'ko';
+      AppSnackBar.show(
+        context,
+        message: isKorean
+            ? '확정되었거나 만료된 모임은 수정할 수 없습니다.'
+            : 'Confirmed or expired meetups cannot be edited.',
+        type: AppSnackBarType.warning,
+      );
+      return;
+    }
+
     final result = await Navigator.push(
       context,
       MaterialPageRoute(

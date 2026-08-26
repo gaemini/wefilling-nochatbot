@@ -15,6 +15,7 @@ import '../snapshot/snapshot_strings.dart';
 import '../ui/snackbar/app_snackbar.dart';
 import '../utils/responsive_helper.dart';
 import 'dm_chat_screen.dart';
+import 'friend_profile_screen.dart';
 import 'snapshot_viewers_screen.dart';
 
 /// 상세 화면에서도 작성 화면에서 합성한 전체 프레임을 보존한다.
@@ -202,6 +203,27 @@ class _SnapshotDetailScreenState extends State<SnapshotDetailScreen>
     await Navigator.of(context).push<void>(
       MaterialPageRoute(
         builder: (_) => SnapshotViewersScreen(snapshotId: snapshotId),
+      ),
+    );
+    if (mounted) _resumePlaybackIfAllowed();
+  }
+
+  Future<void> _openAuthorProfile() async {
+    if (_items.isEmpty) return;
+    final item = _current;
+    final userId = item.authorId.trim();
+    if (userId.isEmpty || userId.toLowerCase() == 'deleted') return;
+
+    _playbackController.stop();
+    await Navigator.of(context).push<void>(
+      MaterialPageRoute(
+        builder: (_) => FriendProfileScreen(
+          userId: userId,
+          nickname: item.authorName,
+          photoURL: item.authorPhotoUrl,
+          university: item.university,
+          allowNonFriendsPreview: true,
+        ),
       ),
     );
     if (mounted) _resumePlaybackIfAllowed();
@@ -508,6 +530,7 @@ class _SnapshotDetailScreenState extends State<SnapshotDetailScreen>
                 ),
                 playback: _playbackController,
                 onBack: () => Navigator.of(context).maybePop(),
+                onAuthorTap: _openAuthorProfile,
                 onMore: _showActions,
               ),
               Expanded(
@@ -959,6 +982,7 @@ class _SnapshotTopRegion extends StatelessWidget {
     required this.remaining,
     required this.playback,
     required this.onBack,
+    required this.onAuthorTap,
     required this.onMore,
   });
 
@@ -967,6 +991,7 @@ class _SnapshotTopRegion extends StatelessWidget {
   final String remaining;
   final Animation<double> playback;
   final VoidCallback onBack;
+  final VoidCallback onAuthorTap;
   final VoidCallback onMore;
 
   @override
@@ -994,12 +1019,20 @@ class _SnapshotTopRegion extends StatelessWidget {
                   ),
                 ),
                 Expanded(
-                  child: Padding(
-                    padding: const EdgeInsets.symmetric(horizontal: 4),
-                    child: _SnapshotAuthorHeader(
-                      snapshot: snapshot,
-                      visibility: visibility,
-                      remaining: remaining,
+                  child: Semantics(
+                    button: true,
+                    label: snapshot.authorName,
+                    child: GestureDetector(
+                      behavior: HitTestBehavior.opaque,
+                      onTap: onAuthorTap,
+                      child: Padding(
+                        padding: const EdgeInsets.symmetric(horizontal: 4),
+                        child: _SnapshotAuthorHeader(
+                          snapshot: snapshot,
+                          visibility: visibility,
+                          remaining: remaining,
+                        ),
+                      ),
                     ),
                   ),
                 ),

@@ -39,6 +39,8 @@ export {
   backfillHanyangVerificationStates,
 } from './hanyang_verification';
 
+export {translateContentBatch} from './content_translation';
+
 export {
   getSnapshotServerTime,
   createSnapshot,

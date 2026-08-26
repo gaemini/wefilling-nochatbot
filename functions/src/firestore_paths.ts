@@ -17,6 +17,8 @@ export const COL = {
   comments: 'comments',
   meetups: 'meetups',
   snapshots: 'snapshots',
+  snackChats: 'snack_chats',
+  contentTranslations: 'content_translations',
 
   // DM / Notifications
   conversations: 'conversations',

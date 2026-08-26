@@ -196,6 +196,19 @@ class Meetup {
 
   bool isPublishedAt([DateTime? now]) => !isPublicWindowExpiredAt(now);
 
+  /// 수정 가능한 모임인지 한 곳에서 판정한다.
+  ///
+  /// 화면에서 버튼을 숨기는 조건과 저장 직전 검증이 서로 달라지지 않도록
+  /// 확정/완료/후기/일정 만료/공개 시간 만료를 모두 같은 기준으로 묶는다.
+  bool canEditAt([DateTime? now]) {
+    final base = now ?? DateTime.now();
+    return !isConfirmed &&
+        !isCompleted &&
+        !hasReview &&
+        !isExpired(now: base) &&
+        !isPublicWindowExpiredAt(base);
+  }
+
   static DateTime _parseFirestoreDate(dynamic raw, {DateTime? fallback}) {
     final fb = fallback ?? DateTime.fromMillisecondsSinceEpoch(0);
     if (raw == null) return fb;

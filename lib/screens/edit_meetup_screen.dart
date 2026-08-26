@@ -5,6 +5,7 @@ import 'dart:io';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
+import 'package:firebase_auth/firebase_auth.dart';
 import 'package:firebase_storage/firebase_storage.dart';
 import 'package:image_picker/image_picker.dart';
 import 'package:intl/intl.dart';
@@ -60,6 +61,67 @@ class _EditMeetupScreenState extends State<EditMeetupScreen> {
   void initState() {
     super.initState();
     _initializeFieldsWithoutContext();
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      _verifyEditAccessOnEntry();
+    });
+  }
+
+  Future<void> _verifyEditAccessOnEntry() async {
+    if (!mounted) return;
+    try {
+      final snapshot = await FirebaseFirestore.instance
+          .collection('meetups')
+          .doc(widget.meetup.id)
+          .get(const GetOptions(source: Source.server));
+      if (!mounted || !snapshot.exists) return;
+      final current = Meetup.fromJson({
+        ...snapshot.data()!,
+        'id': snapshot.id,
+      });
+      if (current.canEditAt()) return;
+      _showEditLockedMessage();
+      await _closeScreen();
+    } catch (error) {
+      // 진입 시 네트워크 확인 실패만으로 화면을 닫지는 않는다.
+      // 저장 시점의 트랜잭션 검증이 최종적으로 수정 가능 여부를 보장한다.
+      Logger.warning('모임 수정 가능 여부 사전 확인 실패: $error');
+    }
+  }
+
+  void _showEditLockedMessage() {
+    if (!mounted) return;
+    final isKorean = Localizations.localeOf(context).languageCode == 'ko';
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(
+        content: Text(
+          isKorean
+              ? '확정되었거나 만료된 모임은 수정할 수 없습니다.'
+              : 'Confirmed or expired meetups cannot be edited.',
+        ),
+      ),
+    );
+  }
+
+  Meetup _meetupFromSnapshot(
+    DocumentSnapshot<Map<String, dynamic>> snapshot,
+  ) {
+    if (!snapshot.exists || snapshot.data() == null) {
+      throw StateError('meetup_not_found');
+    }
+    return Meetup.fromJson({...snapshot.data()!, 'id': snapshot.id});
+  }
+
+  void _requireEditableMeetup(
+    DocumentSnapshot<Map<String, dynamic>> snapshot,
+  ) {
+    final meetup = _meetupFromSnapshot(snapshot);
+    final user = FirebaseAuth.instance.currentUser;
+    if (user == null || meetup.userId != user.uid) {
+      throw StateError('meetup_edit_forbidden');
+    }
+    if (!meetup.canEditAt()) {
+      throw StateError('meetup_edit_locked');
+    }
   }
 
   @override
@@ -233,6 +295,15 @@ class _EditMeetupScreenState extends State<EditMeetupScreen> {
     });
 
     try {
+      final firestore = FirebaseFirestore.instance;
+      final meetupRef = firestore.collection('meetups').doc(widget.meetup.id);
+
+      // 이미지 업로드 전에 서버의 최신 상태를 확인한다.
+      final latestSnapshot = await meetupRef.get(
+        const GetOptions(source: Source.server),
+      );
+      _requireEditableMeetup(latestSnapshot);
+
       // 이미지 업로드 (변경된 경우에만)
       String? imageUrl = await _uploadImage();
 
@@ -309,10 +380,13 @@ class _EditMeetupScreenState extends State<EditMeetupScreen> {
         updateData['thumbnailImageUrl'] = imageUrl;
       }
 
-      await FirebaseFirestore.instance
-          .collection('meetups')
-          .doc(widget.meetup.id)
-          .update(updateData);
+      // 사전 확인 뒤 확정/만료되는 경합까지 막기 위해 읽기와 쓰기를
+      // 하나의 트랜잭션에서 다시 검증한다.
+      await firestore.runTransaction((transaction) async {
+        final currentSnapshot = await transaction.get(meetupRef);
+        _requireEditableMeetup(currentSnapshot);
+        transaction.update(meetupRef, updateData);
+      });
 
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
@@ -325,6 +399,12 @@ class _EditMeetupScreenState extends State<EditMeetupScreen> {
       }
     } catch (e) {
       if (mounted) {
+        final isLocked = e.toString().contains('meetup_edit_locked') ||
+            e.toString().contains('meetup_edit_forbidden');
+        if (isLocked) {
+          _showEditLockedMessage();
+          return;
+        }
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
             content:

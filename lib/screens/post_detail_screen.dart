@@ -15,6 +15,7 @@ import 'package:cached_network_image/cached_network_image.dart';
 import '../models/post.dart';
 import '../constants/app_constants.dart';
 import '../models/comment.dart';
+import '../models/content_translation.dart';
 import '../services/post_service.dart';
 import '../services/comment_service.dart';
 import '../services/dm_service.dart';
@@ -32,7 +33,6 @@ import '../design/tokens.dart';
 import '../ui/widgets/fullscreen_image_viewer.dart';
 import '../utils/logger.dart';
 import 'friend_profile_screen.dart';
-import 'main_screen.dart';
 import '../services/relationship_service.dart';
 import '../models/relationship_status.dart';
 import '../services/content_hide_service.dart';
@@ -43,6 +43,7 @@ import '../ui/snackbar/app_snackbar.dart';
 import '../ui/widgets/post_action_group.dart';
 import '../ui/widgets/adaptive_post_image_frame.dart';
 import '../ui/widgets/instagram_embed_preview.dart';
+import '../ui/widgets/translatable_content.dart';
 import '../ui/widgets/shared_link_preview_card.dart';
 import '../utils/responsive_helper.dart';
 import '../ui/widgets/hanyang_verification_gate.dart';
@@ -82,6 +83,7 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
   late Post _currentPost;
   StreamSubscription<PostEngagement>? _engagementSubscription;
   bool _hasResolvedCommentStreamCount = false;
+  int? _lastPublishedThreadCommentCount;
   bool _accessValidated = false;
   final PageController _imagePageController =
       PageController(initialPage: 0, keepPage: false);
@@ -140,8 +142,9 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
     // 첫 스냅샷이 UI에 전달되지 않아 StreamBuilder가 무한 로딩에 빠질 수 있음.
     // → 단일 구독(StreamBuilder)로만 사용하고, 카운트는 builder에서 동기화.
     _commentsStream = _commentService.getCommentsWithReplies(_currentPost.id);
-    _engagementSubscription =
-        _postService.watchPostEngagement(_currentPost.id).listen(
+    _engagementSubscription = _postService
+        .watchPostEngagement(_currentPost.id, seed: _currentPost)
+        .listen(
       _applyLiveEngagement,
       onError: (Object error) {
         Logger.warning('포스트 상세 실시간 지표 구독 오류: $error');
@@ -179,7 +182,7 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
 
       final user = FirebaseAuth.instance.currentUser;
       setState(() {
-        _currentPost = refreshed;
+        _currentPost = _mergeWithSharedEngagement(refreshed);
         _isAuthor = user != null && refreshed.userId == user.uid;
         _isLiked = user != null && refreshed.likedBy.contains(user.uid);
         _accessValidated = true;
@@ -212,6 +215,17 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
   /// content가 비어 있는 과거 데이터만 legacy title로 폴백한다.
   String _getUnifiedBodyText(Post post) {
     return post.displayText;
+  }
+
+  Post _mergeWithSharedEngagement(Post post) {
+    final engagement = _postService.getCachedPostEngagement(post.id);
+    if (engagement == null) return post;
+    return post.copyWith(
+      likes: engagement.likes,
+      likedBy: engagement.likedBy,
+      commentCount: engagement.commentCount,
+      viewCount: engagement.viewCount,
+    );
   }
 
   /// 상세 화면에서 보여줄 "첫 줄(제목처럼)"과 "나머지(캡션 본문)" 분리
@@ -370,17 +384,16 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
     final me = FirebaseAuth.instance.currentUser?.uid;
     setState(() {
       _currentPost = _currentPost.copyWith(
-        likes: _isTogglingLike ? _currentPost.likes : engagement.likes,
-        likedBy: _isTogglingLike ? _currentPost.likedBy : engagement.likedBy,
+        likes: engagement.likes,
+        likedBy: engagement.likedBy,
+        viewCount: engagement.viewCount,
         // 댓글 서브컬렉션 스냅샷이 도착한 뒤에는 실제 활성 스레드 수가
         // 트리거 기반 집계 필드보다 더 최신일 수 있으므로 그 값을 우선한다.
         commentCount: _hasResolvedCommentStreamCount
             ? _currentPost.commentCount
             : engagement.commentCount,
       );
-      if (!_isTogglingLike) {
-        _isLiked = me != null && engagement.likedBy.contains(me);
-      }
+      _isLiked = me != null && engagement.likedBy.contains(me);
     });
   }
 
@@ -816,24 +829,11 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
                                   onTap: u.isDeletedAccount
                                       ? null
                                       : () {
-                                          // 본인 프로필이면 네비게이션바가 있는 마이페이지 탭으로 이동
-                                          if (u.uid == currentUser.uid) {
-                                            Navigator.pop(context);
-                                            _openMyPageWithBottomNav();
-                                            return;
-                                          }
                                           Navigator.pop(context);
-                                          Navigator.push(
-                                            this.context,
-                                            MaterialPageRoute(
-                                              builder: (_) =>
-                                                  FriendProfileScreen(
-                                                userId: u.uid,
-                                                nickname: u.nickname,
-                                                photoURL: u.photoURL,
-                                                allowNonFriendsPreview: true,
-                                              ),
-                                            ),
+                                          _openUserProfile(
+                                            userId: u.uid,
+                                            nickname: u.nickname,
+                                            photoURL: u.photoURL,
                                           );
                                         },
                                   leading: UserAvatar(
@@ -1144,29 +1144,12 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
     }
   }
 
-  void _openMyPageWithBottomNav() {
-    if (!mounted) return;
-    Navigator.of(context).pushAndRemoveUntil(
-      MaterialPageRoute(
-        builder: (_) => const MainScreen(initialTabIndex: 3),
-      ),
-      (route) => false,
-    );
-  }
-
   void _openUserProfile({
     required String userId,
     required String nickname,
     required String photoURL,
   }) {
-    final me = FirebaseAuth.instance.currentUser?.uid;
-    if (me != null && userId == me) {
-      _openMyPageWithBottomNav();
-      return;
-    }
-
-    Navigator.push(
-      context,
+    Navigator.of(context).push(
       MaterialPageRoute(
         builder: (_) => FriendProfileScreen(
           userId: userId,
@@ -1182,12 +1165,6 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
     // 익명/탈퇴 계정은 프로필 접근 불가
     if (_currentPost.isAnonymous) return;
     if (_currentPost.userId.isEmpty || _currentPost.userId == 'deleted') return;
-
-    final me = FirebaseAuth.instance.currentUser?.uid;
-    if (me != null && _currentPost.userId == me) {
-      _openMyPageWithBottomNav();
-      return;
-    }
 
     _openUserProfile(
       userId: _currentPost.userId,
@@ -1212,7 +1189,7 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
           photoURL: user.photoURL,
         ),
         child: SizedBox(
-          width: isCompact ? 62 : 68,
+          width: isCompact ? 55 : 58,
           child: Column(
             mainAxisSize: MainAxisSize.min,
             children: [
@@ -1279,25 +1256,42 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
                 constraints: const BoxConstraints(minHeight: 44),
                 child: Row(
                   children: [
-                    Icon(
-                      Icons.group_outlined,
-                      size: isCompact ? 20 : 21,
-                      color: const Color(0xFF64748B),
-                    ),
-                    const SizedBox(width: 8),
                     Expanded(
-                      child: MediaQuery.withClampedTextScaling(
-                        maxScaleFactor: 1.2,
-                        child: Text(
-                          l10n.postAudienceTitle,
-                          maxLines: 1,
-                          overflow: TextOverflow.ellipsis,
-                          style: TextStyle(
-                            fontFamily: 'Inter',
-                            fontFamilyFallback: const ['NotoSansKR'],
-                            fontSize: isCompact ? 13.5 : 14,
-                            fontWeight: FontWeight.w700,
-                            color: const Color(0xFF374151),
+                      child: Align(
+                        alignment: Alignment.centerLeft,
+                        child: FittedBox(
+                          fit: BoxFit.scaleDown,
+                          alignment: Alignment.centerLeft,
+                          child: ShaderMask(
+                            blendMode: BlendMode.srcIn,
+                            shaderCallback: AudienceRing
+                                .emphasizedRestrictedGradient.createShader,
+                            child: Row(
+                              mainAxisSize: MainAxisSize.min,
+                              children: [
+                                Icon(
+                                  Icons.group_outlined,
+                                  size: isCompact ? 20 : 21,
+                                  color: Colors.white,
+                                ),
+                                const SizedBox(width: 8),
+                                MediaQuery.withClampedTextScaling(
+                                  maxScaleFactor: 1.2,
+                                  child: Text(
+                                    l10n.postAudienceTitle,
+                                    maxLines: 1,
+                                    softWrap: false,
+                                    style: TextStyle(
+                                      fontFamily: 'Inter',
+                                      fontFamilyFallback: const ['NotoSansKR'],
+                                      fontSize: isCompact ? 13.5 : 14,
+                                      fontWeight: FontWeight.w700,
+                                      color: Colors.white,
+                                    ),
+                                  ),
+                                ),
+                              ],
+                            ),
                           ),
                         ),
                       ),
@@ -1348,7 +1342,7 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
                             index++) ...[
                           _buildAudienceAvatarItem(audienceUsers[index]),
                           if (index != audienceUsers.length - 1)
-                            SizedBox(width: isCompact ? 6 : 8),
+                            SizedBox(width: isCompact ? 3 : 4),
                         ],
                       ],
                     ),
@@ -1608,7 +1602,7 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
       final updatedPost = await _postService.getPostById(widget.post.id);
       if (updatedPost != null && mounted) {
         setState(() {
-          _currentPost = updatedPost;
+          _currentPost = _mergeWithSharedEngagement(updatedPost);
         });
       }
     } catch (e) {
@@ -1636,60 +1630,23 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
       return;
     }
 
-    // 즉시 UI 업데이트 (낙관적 업데이트 방식)
     setState(() {
       _isTogglingLike = true;
-      _isLiked = !_isLiked; // 즉시 좋아요 상태 토글
-
-      // 좋아요 수와 목록 업데이트 - copyWith 사용하여 모든 필드 보존
-      if (_isLiked) {
-        // 좋아요 추가
-        _currentPost = _currentPost.copyWith(
-          likes: _currentPost.likes + 1,
-          likedBy: [..._currentPost.likedBy, user.uid],
-        );
-      } else {
-        // 좋아요 제거
-        _currentPost = _currentPost.copyWith(
-          likes: _currentPost.likes - 1,
-          likedBy: _currentPost.likedBy.where((id) => id != user.uid).toList(),
-        );
-      }
     });
 
     try {
-      // Firebase에 변경사항 저장
+      // 공통 PostService가 즉시 낙관적 값을 publish하고 실패 시 같은
+      // postId 상태를 롤백한다. 상세와 뒤쪽 카드가 한 상태를 함께 구독한다.
       final success = await _postService.toggleLike(_currentPost.id);
 
       if (!success && mounted) {
-        // 실패 시 UI 롤백
-        setState(() {
-          _isLiked = !_isLiked;
-          // 좋아요 수와 목록 롤백 - copyWith 사용하여 모든 필드 보존
-          if (_isLiked) {
-            _currentPost = _currentPost.copyWith(
-              likes: _currentPost.likes + 1,
-              likedBy: [..._currentPost.likedBy, user.uid],
-            );
-          } else {
-            _currentPost = _currentPost.copyWith(
-              likes: _currentPost.likes - 1,
-              likedBy:
-                  _currentPost.likedBy.where((id) => id != user.uid).toList(),
-            );
-          }
-
-          ScaffoldMessenger.of(
-            context,
-          ).showSnackBar(SnackBar(
-              content:
-                  Text(AppLocalizations.of(context)!.commentLikeFailed ?? "")));
-        });
-      }
-
-      // 최신 데이터로 백그라운드 갱신 (필요한 경우)
-      if (success) {
-        _refreshPost();
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text(
+              AppLocalizations.of(context)!.commentLikeFailed ?? "",
+            ),
+          ),
+        );
       }
     } catch (e) {
       Logger.error('좋아요 토글 오류: $e');
@@ -1989,11 +1946,6 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
           // 일반 댓글인 경우에만 키보드 닫기
           FocusScope.of(context).unfocus();
         }
-
-        // 게시글 정보 새로고침 (댓글 수 업데이트)
-        Logger.log('💬 게시글 새로고침 시작');
-        await _refreshPost();
-        Logger.log('💬 게시글 새로고침 완료');
       } else if (mounted) {
         ScaffoldMessenger.of(
           context,
@@ -2028,7 +1980,6 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
         SnackBar(
             content: Text(AppLocalizations.of(context)!.commentDeleted ?? "")),
       );
-      await _refreshPost();
     } else if (mounted) {
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
@@ -2051,9 +2002,6 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
           context,
         ).showSnackBar(SnackBar(
             content: Text(AppLocalizations.of(context)!.commentDeleted ?? "")));
-
-        // 게시글 정보 새로고침 (댓글 수 업데이트)
-        await _refreshPost();
       } else if (mounted) {
         ScaffoldMessenger.of(
           context,
@@ -2700,17 +2648,25 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
         ),
         if (content.isNotEmpty) ...[
           SizedBox(height: context.rs(10).clamp(8.0, 12.0).toDouble()),
-          PostLinkifiedText(
-            text: content,
-            textAlign: TextAlign.left,
-            style: TextStyle(
-              fontFamily: 'Inter',
-              fontFamilyFallback: const ['NotoSansKR'],
-              fontSize: contentFontSize,
-              fontWeight: FontWeight.w500,
-              color: BrandColors.textPrimary,
-              height: 1.28,
-              letterSpacing: -0.25,
+          TranslatableContent(
+            request: ContentTranslationRequest(
+              contentType: 'post',
+              contentId: _currentPost.id,
+              sourceFields: <String, String>{'content': content},
+            ),
+            scope: 'post:${_currentPost.id}',
+            builder: (context, fields) => PostLinkifiedText(
+              text: fields['content'] ?? content,
+              textAlign: TextAlign.left,
+              style: TextStyle(
+                fontFamily: 'Inter',
+                fontFamilyFallback: const ['NotoSansKR'],
+                fontSize: contentFontSize,
+                fontWeight: FontWeight.w500,
+                color: BrandColors.textPrimary,
+                height: 1.28,
+                letterSpacing: -0.25,
+              ),
             ),
           ),
         ],
@@ -2811,6 +2767,12 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
 
                       // 댓글 섹션 헤더에서 "Comments" 텍스트 제거 (요구사항)
                       SizedBox(height: _currentPost.imageUrls.isEmpty ? 8 : 16),
+                      Align(
+                        alignment: Alignment.centerRight,
+                        child: TranslationScopeToggle(
+                          scope: 'post-comments:${_currentPost.id}',
+                        ),
+                      ),
 
                       // 확장된 댓글 목록 (대댓글 + 좋아요 지원)
                       StreamBuilder<List<Comment>>(
@@ -2856,6 +2818,16 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
                             allComments,
                           );
                           _hasResolvedCommentStreamCount = true;
+
+                          if (_lastPublishedThreadCommentCount !=
+                              activeCommentCount) {
+                            _lastPublishedThreadCommentCount =
+                                activeCommentCount;
+                            _postService.updateLocalPostCommentCount(
+                              _currentPost.id,
+                              activeCommentCount,
+                            );
+                          }
 
                           // 댓글 수를 스트림 기준으로 정합성 유지 (무한 setState 루프 방지)
                           if (_currentPost.commentCount != activeCommentCount) {

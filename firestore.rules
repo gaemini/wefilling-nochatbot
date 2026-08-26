@@ -1,6 +1,10 @@
 rules_version = '2';
 service cloud.firestore {
   match /databases/{database}/documents {
+    // Gemini 번역 캐시는 Cloud Functions(Admin SDK)만 읽고 쓴다.
+    match /content_translations/{translationId} {
+      allow read, write: if false;
+    }
     // YouTube 링크 미리보기 캐시는 Admin SDK에서만 관리한다.
     match /linkPreviewCache/{cacheId} {
       allow read, write: if false;
@@ -694,9 +698,14 @@ service cloud.firestore {
       
       // 업데이트 규칙 세분화
       allow update: if request.auth != null && (
-        // 주최자는 모든 필드 수정 가능
+        // 주최자의 일반 정보 수정. 확정/완료/후기 작성/만료 이후에는
+        // 클라이언트가 화면을 우회해도 더 이상 내용을 바꿀 수 없다.
         (request.auth.uid == resource.data.userId
+          && resource.data.get('isConfirmed', false) != true
+          && resource.data.get('isCompleted', false) != true
+          && resource.data.get('hasReview', false) != true
           && meetupNotExpired(resource)
+          && meetupPublicationWindowOpen(resource.data)
           && validMeetupAudience(request.resource.data)
           && request.resource.data.maxParticipants is int
           && request.resource.data.maxParticipants >= 3
@@ -706,15 +715,28 @@ service cloud.firestore {
           // Snack Chat linkage is owned by createMeetupSnackChatSecure so a
           // client cannot point a Meetup at an unrelated room or clear it.
           && !request.resource.data.diff(resource.data).affectedKeys().hasAny([
-            'snackChatId', 'groupChatEnabled'
+            'snackChatId', 'groupChatEnabled',
+            'isConfirmed', 'isCompleted', 'hasReview', 'reviewId',
+            'publicDurationHours', 'publicExpiresAt', 'publicExpiredAt',
+            'publicWindowStatus', 'expiredAt'
           ])
-          // 한 번 확정된 모임은 미확정 상태로 되돌릴 수 없다.
-          && (resource.data.get('isConfirmed', false) != true
-            || request.resource.data.get('isConfirmed', false) == true)
-          // 제한시간 이후의 미확정 -> 확정 전환은 서버/클라이언트 모두 거부한다.
-          && (request.resource.data.get('isConfirmed', false) != true
-            || resource.data.get('isConfirmed', false) == true
-            || meetupPublicationWindowOpen(resource.data))) ||
+        ) ||
+        // 완료/후기 상태 전환은 기존 후기 플로우에서 계속 사용할 수 있다.
+        // 콘텐츠 및 공개 범위 필드는 이 분기로 변경할 수 없다.
+        (request.auth.uid == resource.data.userId
+          && (resource.data.get('isCompleted', false) != true
+            || request.resource.data.get('isCompleted', false) == true)
+          && request.resource.data.diff(resource.data).affectedKeys().hasOnly([
+            'isCompleted', 'hasReview', 'reviewId', 'updatedAt'
+          ])) ||
+        // 확정/만료 뒤에도 댓글 수 메타데이터 동기화는 기존대로 유지한다.
+        // 제목·설명·일정 등 모임 콘텐츠는 이 분기로 변경할 수 없다.
+        (request.auth.uid == resource.data.userId
+          && request.resource.data.get('commentCount', 0) is int
+          && request.resource.data.get('commentCount', 0) >= 0
+          && request.resource.data.diff(resource.data).affectedKeys().hasOnly([
+            'commentCount', 'updatedAt'
+          ])) ||
         // 참여자는 currentParticipants만 수정 가능 (참여/취소 시)
         (request.resource.data.diff(resource.data).affectedKeys().hasOnly(['currentParticipants', 'updatedAt']) &&
          canReadMeetupData(resource.data) &&

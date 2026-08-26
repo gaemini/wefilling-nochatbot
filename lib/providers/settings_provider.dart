@@ -1,15 +1,9 @@
 import 'package:flutter/material.dart';
 import 'package:shared_preferences/shared_preferences.dart';
-import 'package:translator/translator.dart';
 
 class SettingsProvider extends ChangeNotifier {
   bool _autoTranslate = false;
   String _targetLanguage = 'ko'; // 기본 번역 언어: 한국어
-  final GoogleTranslator _translator = GoogleTranslator();
-  
-  // 번역 캐시 (메모리 효율성을 위해 제한된 크기)
-  final Map<String, String> _translationCache = {};
-  static const int _maxCacheSize = 100;
 
   bool get autoTranslate => _autoTranslate;
   String get targetLanguage => _targetLanguage;
@@ -40,59 +34,28 @@ class SettingsProvider extends ChangeNotifier {
       _targetLanguage = language;
       final prefs = await SharedPreferences.getInstance();
       await prefs.setString('target_language', language);
-      
-      // 언어가 변경되면 캐시 초기화
-      _translationCache.clear();
+
       notifyListeners();
     }
   }
 
-  // 텍스트 번역
+  /// 레거시 호환용 메서드입니다. 실제 번역은 원문/권한을 서버에서 확인하는
+  /// ContentTranslationService를 통해서만 수행합니다.
+  @Deprecated('Use ContentTranslationService with a content ID.')
   Future<String> translateText(String text) async {
-    if (!_autoTranslate || text.isEmpty) {
-      return text;
-    }
-
-    // 캐시에서 확인
-    final cacheKey = '${text}_$_targetLanguage';
-    if (_translationCache.containsKey(cacheKey)) {
-      return _translationCache[cacheKey]!;
-    }
-
-    try {
-      final translation = await _translator.translate(text, to: _targetLanguage);
-      final translatedText = translation.text;
-
-      // 캐시에 저장 (크기 제한)
-      if (_translationCache.length >= _maxCacheSize) {
-        // 가장 오래된 항목 제거 (간단한 구현)
-        final firstKey = _translationCache.keys.first;
-        _translationCache.remove(firstKey);
-      }
-      _translationCache[cacheKey] = translatedText;
-
-      return translatedText;
-    } catch (e) {
-      // 번역 실패 시 원본 텍스트 반환
-      debugPrint('Translation failed: $e');
-      return text;
-    }
+    return text;
   }
 
   // 언어 감지
   Future<String> detectLanguage(String text) async {
-    try {
-      final detection = await _translator.translate(text, to: 'en');
-      return detection.sourceLanguage.code;
-    } catch (e) {
-      debugPrint('Language detection failed: $e');
-      return 'unknown';
-    }
+    if (RegExp(r'[가-힣]').hasMatch(text)) return 'ko';
+    if (RegExp(r'[ぁ-んァ-ン]').hasMatch(text)) return 'ja';
+    if (RegExp(r'[A-Za-z]').hasMatch(text)) return 'en';
+    return 'unknown';
   }
 
   // 번역 캐시 초기화
   void clearTranslationCache() {
-    _translationCache.clear();
     notifyListeners();
   }
 
@@ -114,4 +77,3 @@ class SettingsProvider extends ChangeNotifier {
     'vi': 'Tiếng Việt',
   };
 }
-

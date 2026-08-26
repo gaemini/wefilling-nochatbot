@@ -8,6 +8,7 @@ import '../models/snack_chat.dart';
 import '../models/snack_chat_message.dart';
 import '../repositories/users_repository.dart';
 import 'content_filter_service.dart';
+import 'snack_chat_local_cache_service.dart';
 import '../utils/local_calendar_day.dart';
 import '../utils/logger.dart';
 import '../utils/snack_chat_list_policy.dart';
@@ -40,6 +41,22 @@ class SnackChatEntryContext {
       firstUnreadMessageId!.isNotEmpty &&
       firstUnreadSequence != null &&
       firstUnreadSequence! > lastReadSequence;
+}
+
+class _SnackChatEntryCacheRecord {
+  const _SnackChatEntryCacheRecord({
+    required this.ownerUid,
+    required this.roomLastSequence,
+    required this.roomUnreadCount,
+    required this.fetchedAt,
+    required this.context,
+  });
+
+  final String ownerUid;
+  final int roomLastSequence;
+  final int roomUnreadCount;
+  final DateTime fetchedAt;
+  final SnackChatEntryContext context;
 }
 
 /// Bounds only the initial connection phase of a Firestore listener.
@@ -139,6 +156,7 @@ class SnackChatService {
   final FirebaseAuth _auth = FirebaseAuth.instance;
   final FirebaseFunctions _functions = FirebaseFunctions.instance;
   final UsersRepository _usersRepository = UsersRepository();
+  final SnackChatLocalCacheService _localCache = SnackChatLocalCacheService();
   StreamController<List<SnackChat>>? _sharedMySnackChatsController;
   StreamSubscription<List<SnackChat>>? _sharedMySnackChatsSubscription;
   Timer? _sharedMySnackChatsReconnectTimer;
@@ -146,8 +164,37 @@ class SnackChatService {
   int _sharedMySnackChatsConsumers = 0;
   int _sharedMySnackChatsGeneration = 0;
   List<SnackChat>? _latestMySnackChats;
+  final Map<String, _SnackChatEntryCacheRecord> _entryContextCache = {};
+  final Map<String, Future<SnackChatEntryContext>> _entryContextInFlight = {};
+  final Map<String, int> _messagePrefetchSequences = {};
+  final Map<String, Future<void>> _messagePrefetchInFlight = {};
+  final Map<String, Future<void>> _roomEntryPrefetchInFlight = {};
+  final Map<String, String> _roomEntryPrefetchTokens = {};
+  String? _entryCacheOwnerUid;
+
+  static const Duration _entryContextCacheLifetime = Duration(seconds: 30);
 
   String? get _uid => _auth.currentUser?.uid;
+
+  void _ensureEntryCacheOwner(String uid) {
+    if (_entryCacheOwnerUid == uid) return;
+    _entryCacheOwnerUid = uid;
+    _entryContextCache.clear();
+    _entryContextInFlight.clear();
+    _messagePrefetchSequences.clear();
+    _messagePrefetchInFlight.clear();
+    _roomEntryPrefetchInFlight.clear();
+    _roomEntryPrefetchTokens.clear();
+  }
+
+  SnackChat? _latestRoom(String snackChatId) {
+    final latest = _latestMySnackChats;
+    if (latest == null) return null;
+    for (final room in latest) {
+      if (room.id == snackChatId) return room;
+    }
+    return null;
+  }
 
   CollectionReference<Map<String, dynamic>> get _collection =>
       _firestore.collection('snack_chats');
@@ -565,11 +612,240 @@ class SnackChatService {
         snap.docs.map((doc) => SnackChatMessage.fromFirestore(doc)).toList());
   }
 
+  /// 목록에 보이는 소수의 방만 선조회한다. 최근 메시지는 기존 계정/방별
+  /// 로컬 캐시에 넣고, 진입 경계는 방의 sequence/unread가 바뀌지 않은 동안만
+  /// 재사용한다. 동일 방의 중복 호출은 아래 in-flight 맵에서 하나로 합쳐진다.
+  void prefetchRoomEntryData(
+    Iterable<SnackChat> rooms, {
+    int maxRooms = 10,
+  }) {
+    final uid = _uid;
+    if (uid == null || maxRooms <= 0) return;
+    _ensureEntryCacheOwner(uid);
+
+    final ordered = rooms.toSet().toList(growable: true)
+      ..sort((left, right) {
+        final leftUnread = left.getMyUnreadCount(uid) > 0 ? 1 : 0;
+        final rightUnread = right.getMyUnreadCount(uid) > 0 ? 1 : 0;
+        if (leftUnread != rightUnread) return rightUnread - leftUnread;
+        final leftFavorite = left.isFavoritedBy(uid) ? 1 : 0;
+        final rightFavorite = right.isFavoritedBy(uid) ? 1 : 0;
+        if (leftFavorite != rightFavorite) return rightFavorite - leftFavorite;
+        return right.updatedAt.compareTo(left.updatedAt);
+      });
+    final selected = ordered.take(maxRooms).toList(growable: false);
+    if (selected.isEmpty) return;
+
+    final profileIds = <String>{};
+    for (final room in selected) {
+      unawaited(_localCache.saveRoom(room.id, room));
+      unawaited(_prefetchRoomEntry(room, uid));
+
+      final displayIds = room.participantIds.toSet().toList(growable: true)
+        ..sort((left, right) {
+          if (left == uid) return 1;
+          if (right == uid) return -1;
+          return 0;
+        });
+      profileIds.addAll(displayIds.take(4));
+    }
+    if (profileIds.isNotEmpty) {
+      unawaited(
+        _usersRepository
+            .getUserProfilesBatch(profileIds.take(20).toList(growable: false))
+            .then<void>((_) {})
+            .catchError((Object error) {
+          Logger.warning('Snack Chat 참여자 프로필 선조회 실패: $error');
+        }),
+      );
+    }
+  }
+
+  /// Returns only a still-valid in-memory boundary. The list screen uses this
+  /// synchronously when opening a room so the first frame already knows
+  /// whether it should stay at the latest message or move to an unread anchor.
+  SnackChatEntryContext? peekEntryContext(String snackChatId) {
+    final uid = _uid;
+    if (uid == null) return null;
+    _ensureEntryCacheOwner(uid);
+    final cached = _entryContextCache['$uid::$snackChatId'];
+    final room = _latestRoom(snackChatId);
+    if (cached == null ||
+        cached.ownerUid != uid ||
+        DateTime.now().difference(cached.fetchedAt) >
+            _entryContextCacheLifetime ||
+        (room != null &&
+            (cached.roomLastSequence != room.lastMessageSequence ||
+                cached.roomUnreadCount != room.getMyUnreadCount(uid)))) {
+      return null;
+    }
+    return cached.context;
+  }
+
+  Future<void> _prefetchRoomEntry(SnackChat room, String uid) {
+    if (_uid != uid) return Future<void>.value();
+    final key = '$uid::${room.id}';
+    final token = '${room.lastMessageSequence}:${room.getMyUnreadCount(uid)}:'
+        '${room.participantCount}:${room.updatedAt.millisecondsSinceEpoch}';
+    if (_roomEntryPrefetchTokens[key] == token) return Future<void>.value();
+    final existing = _roomEntryPrefetchInFlight[key];
+    if (existing != null) return existing;
+
+    late final Future<void> operation;
+    operation = () async {
+      final entryFuture = getEntryContext(room.id);
+      final recentFuture = _prefetchRecentMessages(room, uid);
+      final entry = await entryFuture;
+      await recentFuture;
+      if (_uid != uid) return;
+      if (entry.hasUnreadAnchor) {
+        final cached = await _localCache.getMessages(room.id, limit: 400);
+        final hasAnchor = cached.any(
+          (message) => message.id == entry.firstUnreadMessageId,
+        );
+        if (!hasAnchor) {
+          final window = await fetchMessageWindowAroundSequence(
+            room.id,
+            messageId: entry.firstUnreadMessageId!,
+            sequence: entry.firstUnreadSequence!,
+          );
+          if (_uid == uid && window.isNotEmpty) {
+            await _localCache.upsertMessages(room.id, window);
+          }
+        }
+      }
+      if (_uid == uid) _roomEntryPrefetchTokens[key] = token;
+    }()
+        .catchError((Object error) {
+      Logger.warning('Snack Chat 진입 데이터 선조회 실패(${room.id}): $error');
+    }).whenComplete(() {
+      if (identical(_roomEntryPrefetchInFlight[key], operation)) {
+        _roomEntryPrefetchInFlight.remove(key);
+      }
+    });
+    _roomEntryPrefetchInFlight[key] = operation;
+    return operation;
+  }
+
+  Future<void> _prefetchRecentMessages(SnackChat room, String uid) {
+    if (_uid != uid) return Future<void>.value();
+    final key = '$uid::${room.id}';
+    final completedSequence = _messagePrefetchSequences[key];
+    if (completedSequence != null &&
+        completedSequence >= room.lastMessageSequence) {
+      return Future<void>.value();
+    }
+    final existing = _messagePrefetchInFlight[key];
+    if (existing != null) return existing;
+
+    late final Future<void> operation;
+    operation = fetchMessagesPage(room.id, pageSize: 20).then((messages) async {
+      if (_uid != uid) return;
+      await _localCache.upsertMessages(room.id, messages);
+      _messagePrefetchSequences[key] = room.lastMessageSequence;
+    }).catchError((Object error) {
+      Logger.warning('Snack Chat 최근 메시지 선조회 실패(${room.id}): $error');
+    }).whenComplete(() {
+      if (identical(_messagePrefetchInFlight[key], operation)) {
+        _messagePrefetchInFlight.remove(key);
+      }
+    });
+    _messagePrefetchInFlight[key] = operation;
+    return operation;
+  }
+
   /// Captures the first unread message before the chat screen marks anything
   /// as read. The callable is authoritative. The Firestore fallback uses the
   /// same server-owned member cursor so clients already installed while the
   /// callable rolls out still enter safely without guessing from list length.
-  Future<SnackChatEntryContext> getEntryContext(String snackChatId) async {
+  Future<SnackChatEntryContext> getEntryContext(String snackChatId) {
+    final uid = _uid;
+    if (uid == null) return Future.error(StateError('로그인이 필요합니다.'));
+    _ensureEntryCacheOwner(uid);
+    final key = '$uid::$snackChatId';
+    final room = _latestRoom(snackChatId);
+    final cached = _entryContextCache[key];
+    if (cached != null &&
+        cached.ownerUid == uid &&
+        DateTime.now().difference(cached.fetchedAt) <=
+            _entryContextCacheLifetime &&
+        (room == null ||
+            (cached.roomLastSequence == room.lastMessageSequence &&
+                cached.roomUnreadCount == room.getMyUnreadCount(uid)))) {
+      return Future<SnackChatEntryContext>.value(cached.context);
+    }
+    final existing = _entryContextInFlight[key];
+    if (existing != null) return existing;
+
+    late final Future<SnackChatEntryContext> operation;
+    operation = _loadCachedOrRemoteEntryContext(
+      snackChatId,
+      uid: uid,
+      room: room,
+    ).then((context) {
+      if (_uid == uid) {
+        _entryContextCache[key] = _SnackChatEntryCacheRecord(
+          ownerUid: uid,
+          // 응답을 시작시킨 서버 경계를 저장한다. 요청 도중 새 메시지가
+          // 도착했다면 최신 목록의 sequence와 달라져 다음 진입 때 재조회된다.
+          roomLastSequence: context.roomLastSequence,
+          roomUnreadCount: context.roomUnreadCount,
+          fetchedAt: DateTime.now(),
+          context: context,
+        );
+        unawaited(
+          _localCache.saveEntryState(
+            snackChatId,
+            SnackChatCachedEntryState(
+              lastReadSequence: context.lastReadSequence,
+              roomLastSequence: context.roomLastSequence,
+              roomUnreadCount: context.roomUnreadCount,
+              canAdvanceReadCursor: context.canAdvanceReadCursor,
+              firstUnreadMessageId: context.firstUnreadMessageId,
+              firstUnreadSequence: context.firstUnreadSequence,
+              updatedAt: DateTime.now(),
+            ),
+          ),
+        );
+      }
+      return context;
+    }).whenComplete(() {
+      if (identical(_entryContextInFlight[key], operation)) {
+        _entryContextInFlight.remove(key);
+      }
+    });
+    _entryContextInFlight[key] = operation;
+    return operation;
+  }
+
+  Future<SnackChatEntryContext> _loadCachedOrRemoteEntryContext(
+    String snackChatId, {
+    required String uid,
+    required SnackChat? room,
+  }) async {
+    final local = await _localCache.getEntryState(snackChatId);
+    if (_uid == uid &&
+        room != null &&
+        local != null &&
+        DateTime.now().difference(local.updatedAt) <=
+            const Duration(minutes: 2) &&
+        local.roomLastSequence == room.lastMessageSequence &&
+        local.roomUnreadCount == room.getMyUnreadCount(uid)) {
+      return SnackChatEntryContext(
+        lastReadSequence: local.lastReadSequence,
+        roomLastSequence: local.roomLastSequence,
+        roomUnreadCount: local.roomUnreadCount,
+        canAdvanceReadCursor: local.canAdvanceReadCursor,
+        firstUnreadMessageId: local.firstUnreadMessageId,
+        firstUnreadSequence: local.firstUnreadSequence,
+      );
+    }
+    return _loadEntryContext(snackChatId);
+  }
+
+  Future<SnackChatEntryContext> _loadEntryContext(
+    String snackChatId,
+  ) async {
     try {
       final result = await _functions
           .httpsCallable('getSnackChatEntryContext')
@@ -625,7 +901,8 @@ class SnackChatService {
     }
     // Legacy member documents without a recorded boundary predate membership
     // periods and are treated as continuously eligible, matching the server.
-    return periods.isEmpty || periods.any((period) => period.includes(sequence));
+    return periods.isEmpty ||
+        periods.any((period) => period.includes(sequence));
   }
 
   Future<SnackChatEntryContext> _getEntryContextFromFirestore(
@@ -1256,6 +1533,11 @@ class SnackChatService {
       final clearedRaw = data['clearedCount'];
       final clearedCount =
           clearedRaw is num ? clearedRaw.toInt().clamp(0, 1 << 31) : 0;
+
+      // The room list will publish the new unread aggregate shortly. Until
+      // then, never reuse the entry boundary captured before this read.
+      _entryContextCache.remove('$uid::$snackChatId');
+      unawaited(_localCache.clearEntryState(snackChatId));
 
       Logger.log('✅ [SnackChat] markAsRead 완료');
       return clearedCount;

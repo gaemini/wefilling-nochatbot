@@ -85,6 +85,7 @@ class _SnackChatTabViewState extends State<SnackChatTabView> {
                         : 'No active Snack Chats.',
                   );
                 }
+                _service.prefetchRoomEntryData(items);
                 return Column(children: [
                   if (snapshot.hasError)
                     _SectionError(onRetry: _retryStreams, compact: true),
@@ -97,8 +98,12 @@ class _SnackChatTabViewState extends State<SnackChatTabView> {
                         Navigator.push(
                           context,
                           MaterialPageRoute(
-                            builder: (_) =>
-                                SnackChatScreen(snackChatId: chat.id),
+                            builder: (_) => SnackChatScreen(
+                              snackChatId: chat.id,
+                              initialRoom: chat,
+                              initialEntryContext:
+                                  _service.peekEntryContext(chat.id),
+                            ),
                           ),
                         );
                       },
@@ -130,6 +135,7 @@ class _SnackChatTabViewState extends State<SnackChatTabView> {
                         : 'No archived Snack Chats.',
                   );
                 }
+                _service.prefetchRoomEntryData(items);
                 return Column(children: [
                   if (snapshot.hasError)
                     _SectionError(onRetry: _retryStreams, compact: true),
@@ -142,8 +148,12 @@ class _SnackChatTabViewState extends State<SnackChatTabView> {
                         Navigator.push(
                           context,
                           MaterialPageRoute(
-                            builder: (_) =>
-                                SnackChatScreen(snackChatId: chat.id),
+                            builder: (_) => SnackChatScreen(
+                              snackChatId: chat.id,
+                              initialRoom: chat,
+                              initialEntryContext:
+                                  _service.peekEntryContext(chat.id),
+                            ),
                           ),
                         );
                       },

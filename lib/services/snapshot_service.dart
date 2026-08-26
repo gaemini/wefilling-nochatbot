@@ -12,6 +12,7 @@ import '../models/snapshot.dart';
 import '../models/snapshot_comment_letter.dart';
 import '../security/frozen_audience_policy.dart';
 import 'content_hide_service.dart';
+import 'snapshot_media_cache_service.dart';
 import '../utils/logger.dart';
 
 class SnapshotService {
@@ -23,6 +24,8 @@ class SnapshotService {
   final FirebaseStorage _storage = FirebaseStorage.instance;
   final FirebaseFunctions _functions = FirebaseFunctions.instance;
   final Uuid _uuid = const Uuid();
+  final SnapshotMediaCacheService _mediaCache =
+      SnapshotMediaCacheService.instance;
 
   final Map<String, Uint8List> _imageBytes = <String, Uint8List>{};
   final Map<String, Future<Uint8List>> _imageLoads =
@@ -1009,6 +1012,19 @@ class SnapshotService {
     final currentUserId = _auth.currentUser?.uid;
     if (currentUserId == null) throw StateError('sign-in-required');
 
+    final sourceKey = item.imageStoragePath.trim().isNotEmpty
+        ? 'path:${item.imageStoragePath.trim()}'
+        : 'url:${item.imageUrl.trim()}';
+    final diskCached = await _mediaCache.read(
+      userId: currentUserId,
+      snapshotId: item.id,
+      sourceKey: sourceKey,
+    );
+    if (diskCached != null) {
+      _rememberImage(cacheKey, diskCached);
+      return diskCached;
+    }
+
     Reference? reference;
     var source = 'none';
     if (item.imageStoragePath.trim().isNotEmpty) {
@@ -1106,13 +1122,23 @@ class SnapshotService {
       '(contentId=${item.id}, currentUserId=$currentUserId, source=$source, '
       'hasImageStoragePath=${item.imageStoragePath.isNotEmpty})',
     );
+    _rememberImage(cacheKey, data);
+    await _mediaCache.write(
+      userId: currentUserId,
+      snapshotId: item.id,
+      sourceKey: sourceKey,
+      bytes: data,
+    );
+    return data;
+  }
+
+  void _rememberImage(String cacheKey, Uint8List data) {
     _imageBytes[cacheKey] = data;
     _touchImage(cacheKey);
     while (_imageLru.length > _maxCachedImages) {
       final removeId = _imageLru.removeAt(0);
       _imageBytes.remove(removeId);
     }
-    return data;
   }
 
   void _touchImage(String id) {
@@ -1131,6 +1157,15 @@ class SnapshotService {
       _imageBytes.remove(key);
       _imageLoads.remove(key);
       _imageLru.remove(key);
+    }
+    final currentUserId = _auth.currentUser?.uid;
+    if (currentUserId != null) {
+      unawaited(
+        _mediaCache.evict(
+          userId: currentUserId,
+          snapshotId: snapshotId,
+        ),
+      );
     }
   }
 

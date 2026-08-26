@@ -58,7 +58,6 @@ class BoardScreenState extends State<BoardScreen> {
   // 수동 새로고침 시 계산한 댓글 수 오버라이드 (postId -> count)
   final Map<String, int> _commentCountOverrides = {};
   final Map<String, int> _commentCountOverrideSources = {};
-  bool _didAutoRefreshTodayCommentCounts = false;
 
   static const int _maxTodayMeetups = 3;
 
@@ -102,6 +101,7 @@ class BoardScreenState extends State<BoardScreen> {
   static const int _historyPageSize = 10;
   static const double _historyLoadMoreThreshold = 520;
   final List<Post> _pagedPosts = <Post>[];
+  final List<Post> _cachedHistoricalBacklog = <Post>[];
   AllPostsCursor? _historyCursor;
   Object? _historyInitialError;
   Object? _historyLoadMoreError;
@@ -109,6 +109,10 @@ class BoardScreenState extends State<BoardScreen> {
   bool _isHistoryLoadingMore = false;
   bool _historyHasMore = true;
   int _historyLoadGeneration = 0;
+  final Map<String, GlobalKey> _postAnchorKeys = {};
+  String? _pendingVisiblePostAnchorId;
+  double? _pendingVisiblePostAnchorDy;
+  bool _postAnchorRestoreScheduled = false;
 
   // AppLocalizations 안전 호출 헬퍼
   String _safeL10n(String Function(AppLocalizations) getter, String fallback) {
@@ -128,6 +132,14 @@ class BoardScreenState extends State<BoardScreen> {
   bool _isPostInToday(Post post) {
     final local = post.createdAt.toLocal();
     return !local.isBefore(_startOfToday());
+  }
+
+  bool _samePostIdOrder(List<String> left, List<String> right) {
+    if (left.length != right.length) return false;
+    for (var index = 0; index < left.length; index++) {
+      if (left[index] != right[index]) return false;
+    }
+    return true;
   }
 
   List<Post> get _historicalPosts {
@@ -154,11 +166,75 @@ class BoardScreenState extends State<BoardScreen> {
     return posts;
   }
 
+  Widget _withPostAnchor(Post post, Widget child) {
+    return KeyedSubtree(
+      key: _postAnchorKeys.putIfAbsent(
+        post.id,
+        () => GlobalKey(debugLabel: 'board_post_anchor_${post.id}'),
+      ),
+      child: child,
+    );
+  }
+
+  void _captureVisiblePostAnchor() {
+    if (!_controllersInitialized || !_todayScrollController.hasClients) return;
+    if (_todayScrollController.offset <= 0) return;
+
+    String? bestId;
+    double? bestDy;
+    double bestDistance = double.infinity;
+    final viewportHeight = MediaQuery.sizeOf(context).height;
+
+    for (final entry in _postAnchorKeys.entries) {
+      final renderObject = entry.value.currentContext?.findRenderObject();
+      if (renderObject is! RenderBox || !renderObject.attached) continue;
+      final dy = renderObject.localToGlobal(Offset.zero).dy;
+      final bottom = dy + renderObject.size.height;
+      if (bottom <= 0 || dy >= viewportHeight) continue;
+      final distance = dy >= 0 ? dy : dy.abs() * 0.5;
+      if (distance < bestDistance) {
+        bestDistance = distance;
+        bestId = entry.key;
+        bestDy = dy;
+      }
+    }
+
+    _pendingVisiblePostAnchorId = bestId;
+    _pendingVisiblePostAnchorDy = bestDy;
+  }
+
+  void _scheduleVisiblePostAnchorRestore() {
+    if (_postAnchorRestoreScheduled || _pendingVisiblePostAnchorId == null) {
+      return;
+    }
+    _postAnchorRestoreScheduled = true;
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      _postAnchorRestoreScheduled = false;
+      if (!mounted || !_todayScrollController.hasClients) return;
+      final postId = _pendingVisiblePostAnchorId;
+      final previousDy = _pendingVisiblePostAnchorDy;
+      _pendingVisiblePostAnchorId = null;
+      _pendingVisiblePostAnchorDy = null;
+      if (postId == null || previousDy == null) return;
+
+      final renderObject =
+          _postAnchorKeys[postId]?.currentContext?.findRenderObject();
+      if (renderObject is! RenderBox || !renderObject.attached) return;
+      final currentDy = renderObject.localToGlobal(Offset.zero).dy;
+      final delta = currentDy - previousDy;
+      if (delta.abs() < 0.5) return;
+      final position = _todayScrollController.position;
+      final target = (_todayScrollController.offset + delta)
+          .clamp(position.minScrollExtent, position.maxScrollExtent)
+          .toDouble();
+      _todayScrollController.jumpTo(target);
+    });
+  }
+
   @override
   void initState() {
     super.initState();
-    _loadCachedData();
-    unawaited(_loadFirstHistoricalPage());
+    unawaited(_bootstrapFeed());
     _scheduleMidnightRefresh();
     // Today 밋업 섹션은 현재 사용자의 공개 범위 안에서:
     // - 오늘 생성된 모임
@@ -167,6 +243,16 @@ class BoardScreenState extends State<BoardScreen> {
     _todayMeetupsStream = _meetupService.getTodayTabMeetups();
 
     // 컨트롤러 초기화/상태 복원은 didChangeDependencies에서 처리
+  }
+
+  Future<void> _bootstrapFeed() async {
+    final restoredHistory = await _loadCachedData();
+    if (!mounted) return;
+    if (!restoredHistory) {
+      await _loadFirstHistoricalPage();
+    } else {
+      _scheduleHistoricalPrefetchIfNeeded();
+    }
   }
 
   Future<void> _loadFirstHistoricalPage({bool showLoading = true}) async {
@@ -189,6 +275,7 @@ class BoardScreenState extends State<BoardScreen> {
         _pagedPosts
           ..clear()
           ..addAll(page.posts);
+        _cachedHistoricalBacklog.clear();
         _historyCursor = page.cursor;
         _historyHasMore = page.hasMore;
         _historyInitialError = null;
@@ -218,6 +305,40 @@ class BoardScreenState extends State<BoardScreen> {
       _isHistoryLoadingMore = true;
       _historyLoadMoreError = null;
     });
+
+    // 이미 휴대폰에 저장된 다음 페이지가 있으면 네트워크보다 먼저 10개만
+    // 꺼냅니다. 스크롤 왕복으로 같은 문서를 다시 읽지 않게 하는 경로입니다.
+    if (_cachedHistoricalBacklog.isNotEmpty) {
+      final chunk = _cachedHistoricalBacklog
+          .take(_historyPageSize)
+          .toList(growable: false);
+      _cachedHistoricalBacklog.removeRange(0, chunk.length);
+      final byId = <String, Post>{
+        for (final post in _pagedPosts) post.id: post,
+        for (final post in chunk) post.id: post,
+      };
+      final merged = byId.values.toList()
+        ..sort((left, right) {
+          final dateOrder = right.createdAt.compareTo(left.createdAt);
+          return dateOrder != 0 ? dateOrder : right.id.compareTo(left.id);
+        });
+      final oldest = chunk.isEmpty ? null : chunk.last;
+      setState(() {
+        _pagedPosts
+          ..clear()
+          ..addAll(merged);
+        if (oldest != null) {
+          _historyCursor = AllPostsCursor(
+            createdAt: oldest.createdAt,
+            postId: oldest.id,
+          );
+        }
+        _historyHasMore = true;
+        _isHistoryLoadingMore = false;
+      });
+      _scheduleHistoricalPrefetchIfNeeded();
+      return;
+    }
 
     try {
       final page = await _postService.getAllPostsPage(
@@ -362,23 +483,61 @@ class BoardScreenState extends State<BoardScreen> {
   }
 
   /// 캐시된 데이터를 먼저 로드하여 즉시 화면에 표시
-  Future<void> _loadCachedData() async {
+  Future<bool> _loadCachedData() async {
     try {
       // 차단 목록을 먼저 로드하여 flickering 방지
       await ContentFilterService.preloadBlockLists();
 
-      final cachedPosts = await _postService.getCachedPosts();
-      if (!mounted) return;
+      final cachedResults = await Future.wait<List<Post>>(<Future<List<Post>>>[
+        _postService.getCachedPosts(),
+        _postService.getCachedAllPosts(),
+      ]);
+      if (!mounted) return false;
 
-      if (cachedPosts.isNotEmpty) {
+      final cachedPosts = cachedResults[0];
+      final cachedAllPosts = cachedResults[1];
+      final cachedHistory =
+          cachedAllPosts.where((post) => !_isPostInToday(post)).toList()
+            ..sort((left, right) {
+              final dateOrder = right.createdAt.compareTo(left.createdAt);
+              return dateOrder != 0 ? dateOrder : right.id.compareTo(left.id);
+            });
+
+      if (cachedPosts.isNotEmpty || cachedHistory.isNotEmpty) {
+        final firstHistoryPage =
+            cachedHistory.take(_historyPageSize).toList(growable: false);
+        final remainingHistory =
+            cachedHistory.skip(firstHistoryPage.length).toList(growable: false);
+        final oldest = firstHistoryPage.isEmpty ? null : firstHistoryPage.last;
         setState(() {
           // Today 캐시는 기존 정책을 유지합니다. All은 카테고리 탐색 화면입니다.
           _cachedTodayPosts = cachedPosts.where(_isPostInToday).toList();
+          if (firstHistoryPage.isNotEmpty) {
+            _pagedPosts
+              ..clear()
+              ..addAll(firstHistoryPage);
+            _cachedHistoricalBacklog
+              ..clear()
+              ..addAll(remainingHistory);
+            _historyCursor = AllPostsCursor(
+              createdAt: oldest!.createdAt,
+              postId: oldest.id,
+            );
+            _historyHasMore = true;
+            _historyInitialError = null;
+            _historyLoadMoreError = null;
+            _isHistoryInitialLoading = false;
+            _isHistoryLoadingMore = false;
+          }
         });
-        Logger.log('✅ 캐시된 게시글 로드 완료: ${cachedPosts.length}개');
+        Logger.log(
+          '✅ 캐시된 게시글 로드 완료: today=${cachedPosts.length}, history=${cachedHistory.length}',
+        );
       }
+      return cachedHistory.isNotEmpty;
     } catch (e) {
       Logger.error('캐시 로드 오류: $e');
+      return false;
     }
   }
 
@@ -460,7 +619,6 @@ class BoardScreenState extends State<BoardScreen> {
         _cachedTodayPosts = refreshedTodayPosts;
         _isInitialLoad = false;
       }
-      _didAutoRefreshTodayCommentCounts = true;
     });
 
     if (refreshError != null) {
@@ -505,10 +663,6 @@ class BoardScreenState extends State<BoardScreen> {
       // 날짜가 넘어가면 Today/All 분리가 바뀌므로 캐시를 갱신하고 화면을 리빌드
       await _loadCachedData();
       if (!mounted) return;
-      setState(() {
-        // 댓글 자동 리프레시 플래그는 날짜별로 다시 계산될 수 있게 초기화
-        _didAutoRefreshTodayCommentCounts = false;
-      });
       _scheduleMidnightRefresh();
     });
   }
@@ -686,16 +840,16 @@ class BoardScreenState extends State<BoardScreen> {
     }
 
     if (snapshot.hasData) {
+      final previousIds = (_cachedTodayPosts ?? const <Post>[])
+          .map((post) => post.id)
+          .toList(growable: false);
+      final nextIds = todayPosts.map((post) => post.id).toList(growable: false);
+      if (!_samePostIdOrder(previousIds, nextIds)) {
+        _captureVisiblePostAnchor();
+      }
       _cachedTodayPosts = todayPosts;
       if (_isInitialLoad) _isInitialLoad = false;
-    }
-
-    if (!_didAutoRefreshTodayCommentCounts && todayPosts.isNotEmpty) {
-      _didAutoRefreshTodayCommentCounts = true;
-      WidgetsBinding.instance.addPostFrameCallback((_) {
-        if (!mounted) return;
-        _refreshCommentCountsForPosts(todayPosts);
-      });
+      _scheduleVisiblePostAnchorRestore();
     }
 
     return _buildTodayUnifiedList(
@@ -1140,7 +1294,7 @@ class BoardScreenState extends State<BoardScreen> {
     return Padding(
       padding: EdgeInsets.fromLTRB(
         _sectionHorizontalPadding,
-        28,
+        48,
         _sectionHorizontalPadding,
         8,
       ),
@@ -1403,19 +1557,22 @@ class BoardScreenState extends State<BoardScreen> {
                 final itemIndex = i;
                 final item = todayCombined[itemIndex];
                 if (item is Post) {
-                  return OptimizedPostCard(
-                    key: ValueKey(item.id),
-                    post: item,
-                    index: itemIndex,
-                    onTap: () => _navigateToPostDetail(item),
-                    onCategoryTap: _openPostCategory,
-                    externalCommentCountOverride:
-                        _commentCountOverrides[item.id],
-                    preloadImage: itemIndex < 3,
-                    showBottomDivider: historicalPosts.isEmpty ||
-                        itemIndex != todayCombined.length - 1,
-                    margin: _boardPostCardMargin,
-                    contentPadding: _boardPostCardContentPadding,
+                  return _withPostAnchor(
+                    item,
+                    OptimizedPostCard(
+                      key: ValueKey(item.id),
+                      post: item,
+                      index: itemIndex,
+                      onTap: () => _navigateToPostDetail(item),
+                      onCategoryTap: _openPostCategory,
+                      externalCommentCountOverride:
+                          _commentCountOverrides[item.id],
+                      preloadImage: itemIndex < 3,
+                      showBottomDivider: historicalPosts.isEmpty ||
+                          itemIndex != todayCombined.length - 1,
+                      margin: _boardPostCardMargin,
+                      contentPadding: _boardPostCardContentPadding,
+                    ),
                   );
                 }
                 return const SizedBox.shrink();
@@ -1430,17 +1587,20 @@ class BoardScreenState extends State<BoardScreen> {
                 i -= 1;
                 if (i < historicalPosts.length) {
                   final post = historicalPosts[i];
-                  return OptimizedPostCard(
-                    key: ValueKey('board_history_${post.id}'),
-                    post: post,
-                    index: todayCombined.length + i,
-                    onTap: () => _navigateToPostDetail(post),
-                    onCategoryTap: _openPostCategory,
-                    externalCommentCountOverride:
-                        _commentCountOverrides[post.id],
-                    preloadImage: i < 2,
-                    margin: _boardPostCardMargin,
-                    contentPadding: _boardPostCardContentPadding,
+                  return _withPostAnchor(
+                    post,
+                    OptimizedPostCard(
+                      key: ValueKey('board_history_${post.id}'),
+                      post: post,
+                      index: todayCombined.length + i,
+                      onTap: () => _navigateToPostDetail(post),
+                      onCategoryTap: _openPostCategory,
+                      externalCommentCountOverride:
+                          _commentCountOverrides[post.id],
+                      preloadImage: i < 2,
+                      margin: _boardPostCardMargin,
+                      contentPadding: _boardPostCardContentPadding,
+                    ),
                   );
                 }
                 i -= historicalPosts.length;
@@ -1683,12 +1843,10 @@ class BoardScreenState extends State<BoardScreen> {
     if (!mounted) return;
     _restoreActiveScrollOffset(preservedOffset);
 
-    // 삭제된 글에는 불필요한 댓글 조회를 실행하지 않는다. 그 외에는 상세 화면과
-    // 동일한 집계 기준으로 카드 수치만 갱신하고 기존 목록/스크롤은 유지한다.
+    // 삭제된 글만 현재 목록에서 제거한다. 나머지 수치는 카드와 상세가 같은
+    // PostService 상태를 구독하므로 복귀 시 별도 댓글/피드 재조회 없이 유지된다.
     if (wasDeleted == true) {
       setState(() => _pagedPosts.removeWhere((item) => item.id == post.id));
-    } else {
-      await _refreshCommentCountsForPosts([post]);
     }
   }
 

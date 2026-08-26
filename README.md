@@ -85,14 +85,14 @@ flutter pub get
 ### 6. 실행
 
 ```bash
-# 디버그 모드
-fvm flutter run
+# Android 디버그 모드 (Play Store 앱과 별도 설치)
+fvm flutter run --flavor development
 
 # 프로필 모드 (성능 테스트)
-fvm flutter run --profile
+fvm flutter run --profile --flavor development
 
 # 릴리즈 모드
-fvm flutter run --release
+fvm flutter run --release --flavor development
 ```
 
 ---
@@ -103,16 +103,16 @@ fvm flutter run --release
 
 ```bash
 # 단일 APK
-fvm flutter build apk --release
+fvm flutter build apk --release --flavor production
 
 # Split APK (권장)
-fvm flutter build apk --release --split-per-abi
+fvm flutter build apk --release --split-per-abi --flavor production
 ```
 
 ### Android App Bundle (Play Store)
 
 ```bash
-fvm flutter build appbundle --release
+scripts/android_release.sh build
 ```
 
 ### iOS

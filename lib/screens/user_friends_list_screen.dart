@@ -12,7 +12,6 @@ import '../l10n/app_localizations.dart';
 import '../utils/logger.dart';
 import '../utils/responsive_helper.dart';
 import 'friend_profile_screen.dart';
-import 'main_screen.dart';
 
 class UserFriendsListScreen extends StatefulWidget {
   final String userId;
@@ -434,15 +433,7 @@ class _UserFriendsListScreenState extends State<UserFriendsListScreen> {
             Material(
               color: Colors.white,
               child: InkWell(
-                onTap: (isFriend || isMe)
-                    ? () {
-                        if (isMe) {
-                          _openMyPage();
-                        } else {
-                          _openProfile(friend);
-                        }
-                      }
-                    : null,
+                onTap: (isFriend || isMe) ? () => _openProfile(friend) : null,
                 child: Padding(
                   padding: EdgeInsets.fromLTRB(
                     horizontalPadding,
@@ -493,7 +484,9 @@ class _UserFriendsListScreenState extends State<UserFriendsListScreen> {
                                         friend.nationality!,
                                         style: const TextStyle(
                                           fontFamily: 'Inter',
-                                          fontFamilyFallback: const ['NotoSansKR'],
+                                          fontFamilyFallback: const [
+                                            'NotoSansKR'
+                                          ],
                                           fontSize: 12,
                                           fontWeight: FontWeight.w500,
                                           color: Color(0xFF8B93A1),
@@ -617,16 +610,6 @@ class _UserFriendsListScreenState extends State<UserFriendsListScreen> {
           university: user.university,
         ),
       ),
-    );
-  }
-
-  void _openMyPage() {
-    // 하단 네비게이션바가 있는 "원래" 마이페이지 탭으로 이동
-    Navigator.of(context).pushAndRemoveUntil(
-      MaterialPageRoute(
-        builder: (_) => const MainScreen(initialTabIndex: 3),
-      ),
-      (route) => false,
     );
   }
 

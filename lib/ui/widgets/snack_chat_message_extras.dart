@@ -8,6 +8,7 @@ import 'package:flutter/material.dart';
 
 import '../../models/snack_chat_message.dart';
 import '../../services/cache/app_image_cache_manager.dart';
+import '../../services/snack_chat_media_cache_service.dart';
 
 class SnackChatStorageImage extends StatefulWidget {
   const SnackChatStorageImage({
@@ -63,6 +64,11 @@ class _SnackChatStorageImageState extends State<SnackChatStorageImage> {
       requestKey,
       () async {
         try {
+          final cached = await SnackChatMediaCacheService.instance.read(
+            userId: viewerId,
+            storagePath: path,
+          );
+          if (cached != null && cached.isNotEmpty) return cached;
           final data = await FirebaseStorage.instance
               .ref(path)
               .getData(_maxBytes)
@@ -71,6 +77,11 @@ class _SnackChatStorageImageState extends State<SnackChatStorageImage> {
             _memoryRequests.remove(requestKey);
             return null;
           }
+          await SnackChatMediaCacheService.instance.write(
+            userId: viewerId,
+            storagePath: path,
+            bytes: data,
+          );
           return data;
         } catch (_) {
           _memoryRequests.remove(requestKey);

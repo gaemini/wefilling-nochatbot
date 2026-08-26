@@ -77,8 +77,13 @@ void main() {
 
       // 1. Firebase 기본 초기화 (중복 초기화 방지)
       try {
+        // Android는 네이티브 google-services 설정을 사용해 빌드 variant의
+        // applicationId와 Firebase App ID를 항상 일치시킨다.
         await Firebase.initializeApp(
-            options: DefaultFirebaseOptions.currentPlatform);
+          options: !kIsWeb && Platform.isAndroid
+              ? null
+              : DefaultFirebaseOptions.currentPlatform,
+        );
         if (kDebugMode) {
           debugPrint('🔥 Firebase 초기화 완료');
         }
@@ -131,9 +136,9 @@ void main() {
       // 4. App Check 초기화
       try {
         if (!kIsWeb) {
-          const AndroidAppCheckProvider androidProvider = kReleaseMode
-              ? AndroidPlayIntegrityProvider()
-              : AndroidDebugProvider();
+          const AndroidAppCheckProvider androidProvider = kDebugMode
+              ? AndroidDebugProvider()
+              : AndroidPlayIntegrityProvider();
           const AppleAppCheckProvider appleProvider = kReleaseMode
               ? AppleAppAttestWithDeviceCheckFallbackProvider()
               : AppleDebugProvider();

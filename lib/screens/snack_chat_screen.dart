@@ -13,6 +13,7 @@ import 'package:url_launcher/url_launcher.dart';
 
 import '../models/snack_chat.dart';
 import '../models/snack_chat_message.dart';
+import '../models/content_translation.dart';
 import '../config/snack_chat_file_policy.dart';
 import '../l10n/app_localizations.dart';
 import '../services/cache/app_image_cache_manager.dart';
@@ -29,6 +30,8 @@ import '../ui/widgets/fullscreen_image_viewer.dart';
 import '../ui/widgets/snack_chat_message_extras.dart';
 import '../ui/widgets/snack_chat_chrome.dart';
 import '../ui/widgets/user_avatar.dart';
+import '../ui/widgets/translatable_content.dart';
+import '../services/content_translation_service.dart';
 import '../ui/dialogs/block_dialog.dart';
 import '../ui/dialogs/report_dialog.dart';
 import '../ui/dialogs/snack_chat_poll_dialog.dart';
@@ -44,11 +47,15 @@ import 'snack_chat_info_screen.dart';
 class SnackChatScreen extends StatefulWidget {
   final String snackChatId;
   final bool fromPush;
+  final SnackChat? initialRoom;
+  final SnackChatEntryContext? initialEntryContext;
 
   const SnackChatScreen({
     super.key,
     required this.snackChatId,
     this.fromPush = false,
+    this.initialRoom,
+    this.initialEntryContext,
   });
 
   @override
@@ -195,6 +202,7 @@ class _SnackChatScreenState extends State<SnackChatScreen>
   bool _entryPositionSettled = false;
   bool _entryReadSyncAllowed = false;
   bool _entryPositionInFlight = false;
+  bool _membershipPreparationPending = true;
   Timer? _entryRetryTimer;
   int _entryRetryAttempt = 0;
 
@@ -202,15 +210,25 @@ class _SnackChatScreenState extends State<SnackChatScreen>
   void initState() {
     super.initState();
     WidgetsBinding.instance.addObserver(this);
+    unawaited(
+      ContentTranslationService.instance.loadSnackRoomMode(
+        widget.snackChatId,
+      ),
+    );
     _appLifecycleState =
         WidgetsBinding.instance.lifecycleState ?? AppLifecycleState.detached;
     if (_appLifecycleState == AppLifecycleState.resumed) {
       SnackChatActiveConversation.setActive(widget.snackChatId);
     }
+    _lastRoom = widget.initialRoom;
+    _seedEntryContext(widget.initialEntryContext);
     _roomStream = _snackChatService.watchSnackChat(widget.snackChatId);
     _scrollController.addListener(_onScroll);
     _messageController.addListener(_onDraftChanged);
     unawaited(_hydrateLocalState());
+    // Attach the bounded listener immediately. Entry/membership preparation
+    // runs alongside it and must never gate the first visible message batch.
+    _subscribeToMessages();
     unawaited(_prepareEntryAndSubscribe());
     _subscribeToAuxiliaryState();
     _subscribeToFileTransfers();
@@ -221,6 +239,11 @@ class _SnackChatScreenState extends State<SnackChatScreen>
   void didUpdateWidget(covariant SnackChatScreen oldWidget) {
     super.didUpdateWidget(oldWidget);
     if (oldWidget.snackChatId == widget.snackChatId) return;
+    unawaited(
+      ContentTranslationService.instance.loadSnackRoomMode(
+        widget.snackChatId,
+      ),
+    );
     unawaited(
       _localCache.saveDraft(oldWidget.snackChatId, _messageController.text),
     );
@@ -316,13 +339,17 @@ class _SnackChatScreenState extends State<SnackChatScreen>
     _entryPositionSettled = false;
     _entryReadSyncAllowed = false;
     _entryPositionInFlight = false;
+    _membershipPreparationPending = true;
     _entryRetryTimer = null;
     _entryRetryAttempt = 0;
+    _lastRoom = widget.initialRoom;
+    _seedEntryContext(widget.initialEntryContext);
     _roomStream = _snackChatService.watchSnackChat(widget.snackChatId);
     if (_appLifecycleState == AppLifecycleState.resumed) {
       SnackChatActiveConversation.setActive(widget.snackChatId);
     }
     unawaited(_hydrateLocalState());
+    _subscribeToMessages();
     unawaited(_prepareEntryAndSubscribe());
     _subscribeToAuxiliaryState();
     _subscribeToFileTransfers();
@@ -424,26 +451,39 @@ class _SnackChatScreenState extends State<SnackChatScreen>
     final messagesFuture = _localCache.getMessages(roomId);
     final roomFuture = _localCache.getRoom(roomId);
     final draftFuture = _localCache.getDraft(roomId);
+    final entryFuture = _localCache.getEntryState(roomId);
     final cachedMessages = await messagesFuture;
     final cachedRoom = await roomFuture;
     final draft = await draftFuture;
-    final profiles = await _userInfoCache.hydrateUsers(
-      cachedMessages.map((message) => message.senderId),
-    );
+    final cachedEntry = await entryFuture;
     if (!mounted ||
         generation != _cacheHydrationGeneration ||
         roomId != widget.snackChatId ||
         ownerUid != _uid) {
       return;
     }
-    for (final entry in profiles.entries) {
-      final nickname = entry.value?.nickname.trim() ?? '';
-      if (nickname.isNotEmpty && !_looksLikeInternalIdentifier(nickname)) {
-        _senderNameCache[entry.key] = nickname;
-      }
-    }
     setState(() {
       _lastRoom ??= cachedRoom;
+      final boundaryRoom = _lastRoom ?? cachedRoom;
+      if (!_entryContextResolved &&
+          boundaryRoom != null &&
+          cachedEntry != null &&
+          DateTime.now().difference(cachedEntry.updatedAt) <=
+              const Duration(minutes: 2) &&
+          cachedEntry.roomLastSequence == boundaryRoom.lastMessageSequence &&
+          cachedEntry.roomUnreadCount ==
+              boundaryRoom.getMyUnreadCount(ownerUid)) {
+        _seedEntryContext(
+          SnackChatEntryContext(
+            lastReadSequence: cachedEntry.lastReadSequence,
+            roomLastSequence: cachedEntry.roomLastSequence,
+            roomUnreadCount: cachedEntry.roomUnreadCount,
+            canAdvanceReadCursor: cachedEntry.canAdvanceReadCursor,
+            firstUnreadMessageId: cachedEntry.firstUnreadMessageId,
+            firstUnreadSequence: cachedEntry.firstUnreadSequence,
+          ),
+        );
+      }
       for (final cached in cachedMessages) {
         if (_messageIds.add(cached.id)) {
           _messages.add(
@@ -475,7 +515,53 @@ class _SnackChatScreenState extends State<SnackChatScreen>
         _restoringDraft = false;
       }
     });
+    if (_entryContextResolved &&
+        !_entryPositionSettled &&
+        _firstUnreadMessageId != null) {
+      _scheduleEntryAnchorPosition(generation: _entryBootstrapGeneration);
+    }
+    unawaited(
+      _hydrateCachedSenderNames(
+        roomId: roomId,
+        ownerUid: ownerUid,
+        generation: generation,
+        senderIds: cachedMessages.map((message) => message.senderId),
+      ),
+    );
     _scheduleOutboxRecovery();
+  }
+
+  Future<void> _hydrateCachedSenderNames({
+    required String roomId,
+    required String ownerUid,
+    required int generation,
+    required Iterable<String> senderIds,
+  }) async {
+    final profiles = await _userInfoCache.hydrateUsers(senderIds);
+    if (!mounted ||
+        generation != _cacheHydrationGeneration ||
+        roomId != widget.snackChatId ||
+        ownerUid != _uid) {
+      return;
+    }
+    for (final entry in profiles.entries) {
+      final nickname = entry.value?.nickname.trim() ?? '';
+      if (nickname.isNotEmpty && !_looksLikeInternalIdentifier(nickname)) {
+        _senderNameCache[entry.key] = nickname;
+      }
+    }
+  }
+
+  void _seedEntryContext(SnackChatEntryContext? entry) {
+    if (entry == null) return;
+    _entryContextResolved = true;
+    _entryReadSyncAllowed = entry.canAdvanceReadCursor;
+    _confirmedReadSequence = entry.lastReadSequence;
+    _pendingReadSequence = entry.lastReadSequence;
+    _firstUnreadMessageId = entry.firstUnreadMessageId;
+    _firstUnreadSequence = entry.firstUnreadSequence;
+    _isNearLatest = !entry.hasUnreadAnchor;
+    _entryPositionSettled = !entry.hasUnreadAnchor;
   }
 
   void _onDraftChanged() {
@@ -554,8 +640,12 @@ class _SnackChatScreenState extends State<SnackChatScreen>
   Future<void> _prepareEntryAndSubscribe() async {
     final roomId = widget.snackChatId;
     final generation = ++_entryBootstrapGeneration;
+    var membershipPrepared = false;
     try {
       await _ensureMyMembershipReady();
+      membershipPrepared = true;
+      _membershipPreparationPending = false;
+      if (_messageStreamError != null) _subscribeToMessages();
       final entry = await _snackChatService.getEntryContext(roomId);
       if (!mounted ||
           generation != _entryBootstrapGeneration ||
@@ -565,16 +655,34 @@ class _SnackChatScreenState extends State<SnackChatScreen>
 
       List<SnackChatMessage> anchorWindow = const <SnackChatMessage>[];
       if (entry.hasUnreadAnchor) {
-        anchorWindow = await _snackChatService
-            .fetchMessageWindowAroundSequence(
-              roomId,
-              messageId: entry.firstUnreadMessageId!,
-              sequence: entry.firstUnreadSequence!,
-            )
-            .timeout(const Duration(seconds: 14));
+        final alreadyLoaded = _messageIds.contains(entry.firstUnreadMessageId);
+        if (!alreadyLoaded) {
+          final cached = await _localCache.getMessages(roomId, limit: 400);
+          final anchorSequence = entry.firstUnreadSequence!;
+          if (cached.any(
+            (message) => message.id == entry.firstUnreadMessageId,
+          )) {
+            anchorWindow = cached.where((message) {
+              final sequence = message.sequence;
+              return message.id == entry.firstUnreadMessageId ||
+                  (sequence != null &&
+                      sequence >= anchorSequence - 10 &&
+                      sequence <= anchorSequence + 20);
+            }).toList(growable: false);
+          } else {
+            anchorWindow = await _snackChatService
+                .fetchMessageWindowAroundSequence(
+                  roomId,
+                  messageId: entry.firstUnreadMessageId!,
+                  sequence: anchorSequence,
+                )
+                .timeout(const Duration(seconds: 14));
+          }
+        }
         if (!anchorWindow.any(
-          (message) => message.id == entry.firstUnreadMessageId,
-        )) {
+              (message) => message.id == entry.firstUnreadMessageId,
+            ) &&
+            !_messageIds.contains(entry.firstUnreadMessageId)) {
           throw StateError('The unread Snack Chat anchor is unavailable.');
         }
       }
@@ -605,13 +713,13 @@ class _SnackChatScreenState extends State<SnackChatScreen>
         _isNearLatest = !entry.hasUnreadAnchor;
         _entryPositionSettled = !entry.hasUnreadAnchor;
       });
-      _subscribeToMessages();
       if (entry.hasUnreadAnchor) {
         _scheduleEntryAnchorPosition(generation: generation);
       } else if (_entryReadSyncAllowed) {
         _scheduleActiveReadSync();
       }
     } catch (error, stackTrace) {
+      _membershipPreparationPending = false;
       Logger.error(
         'Snack Chat 첫 안 읽은 메시지 경계 조회 실패',
         error,
@@ -621,6 +729,9 @@ class _SnackChatScreenState extends State<SnackChatScreen>
           generation != _entryBootstrapGeneration ||
           roomId != widget.snackChatId) {
         return;
+      }
+      if (!membershipPrepared && _isTerminalRoomError(_messageStreamError)) {
+        _scheduleRoomAccessTermination();
       }
       // 연결 실패 시에는 최신 화면만 보여 주고 읽음 커서를 추측해서
       // 진행하지 않는다. 다음 진입/재연결에서 서버 경계를 다시 구한다.
@@ -632,7 +743,6 @@ class _SnackChatScreenState extends State<SnackChatScreen>
         _firstUnreadSequence = null;
         _isNearLatest = true;
       });
-      _subscribeToMessages();
       if (_entryRetryAttempt < 3 && _entryRetryTimer == null) {
         _entryRetryAttempt++;
         final retryGeneration = generation;
@@ -907,7 +1017,6 @@ class _SnackChatScreenState extends State<SnackChatScreen>
             generation != _messageSubscriptionGeneration) {
           return;
         }
-        var shouldPinInitialLiveWindow = false;
         var addedRemoteMessages = 0;
         final wasNearLatest = _isNearLatest;
         final hadLiveBatch = _hasReceivedFirstLiveBatch;
@@ -919,7 +1028,6 @@ class _SnackChatScreenState extends State<SnackChatScreen>
             // Only contiguous query batches advance the pagination cursor.
             // A separately fetched reply target must never move this cursor.
             _oldestMessage = incoming.last;
-            shouldPinInitialLiveWindow = true;
           }
           for (final serverMessage in incoming) {
             final index = _messages
@@ -974,16 +1082,6 @@ class _SnackChatScreenState extends State<SnackChatScreen>
             if (mounted && _isNearLatest) _scrollToLatest(animated: true);
           });
         }
-        if (shouldPinInitialLiveWindow) {
-          scheduleMicrotask(() {
-            if (mounted &&
-                !_isLeavingRoom &&
-                !_roomAccessTerminated &&
-                generation == _messageSubscriptionGeneration) {
-              _subscribeToMessages();
-            }
-          });
-        }
       },
       onError: (Object error, StackTrace stackTrace) {
         if (!mounted ||
@@ -995,7 +1093,7 @@ class _SnackChatScreenState extends State<SnackChatScreen>
           _isInitialLoading = false;
           _messageStreamError = error;
         });
-        if (_isTerminalRoomError(error)) {
+        if (_isTerminalRoomError(error) && !_membershipPreparationPending) {
           _scheduleRoomAccessTermination();
         } else if (_messageRetryTimer == null) {
           _messageRetryAttempt = (_messageRetryAttempt + 1).clamp(1, 5).toInt();
@@ -3196,6 +3294,48 @@ class _SnackChatScreenState extends State<SnackChatScreen>
                     l10n.snackChatParticipantCount(room.participantCount),
               ),
               actions: [
+                ListenableBuilder(
+                  listenable: ContentTranslationService.instance,
+                  builder: (context, _) {
+                    final translation = ContentTranslationService.instance;
+                    final scope = 'snack-room:${widget.snackChatId}';
+                    if (!translation.canToggleScope(scope)) {
+                      return const SizedBox.shrink();
+                    }
+                    final original = translation.showsOriginal(scope);
+                    final label = original
+                        ? (isKo ? '번역' : 'Translate')
+                        : (isKo ? '원문' : 'Original');
+                    return Tooltip(
+                      message: original
+                          ? (isKo ? '번역 보기' : 'View translation')
+                          : (isKo ? '원문 보기' : 'View original'),
+                      child: TextButton(
+                        onPressed: () => translation.toggleSnackRoom(
+                          widget.snackChatId,
+                        ),
+                        style: TextButton.styleFrom(
+                          foregroundColor: const Color(0xFF2F9BE8),
+                          minimumSize: const Size(0, 40),
+                          padding: const EdgeInsets.symmetric(horizontal: 6),
+                          tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                        ),
+                        child: Text(
+                          label,
+                          maxLines: 1,
+                          overflow: TextOverflow.fade,
+                          softWrap: false,
+                          style: const TextStyle(
+                            fontFamily: 'Inter',
+                            fontFamilyFallback: ['NotoSansKR'],
+                            fontSize: 11.5,
+                            fontWeight: FontWeight.w600,
+                          ),
+                        ),
+                      ),
+                    );
+                  },
+                ),
                 IconButton(
                   onPressed: _isLeavingRoom ? null : () => _openRoomInfo(room),
                   icon: const Icon(
@@ -3236,9 +3376,10 @@ class _SnackChatScreenState extends State<SnackChatScreen>
 
   Widget _buildMessageContent({required bool isKo}) {
     if (_isInitialLoading) {
-      return const Center(
-        child: CircularProgressIndicator(color: _secondaryText),
-      );
+      // Room data and the bounded message listener are already running. Keep
+      // the conversation surface stable instead of replacing it with a
+      // full-screen loader while the first cache/listener event arrives.
+      return const SizedBox.expand();
     }
     if (_messages.isEmpty && _messageStreamError != null) {
       return Center(
@@ -3817,13 +3958,23 @@ class _SnackChatScreenState extends State<SnackChatScreen>
                   onVote: (ids) => _castVote(message, ids),
                 )
               else if (hasText)
-                Linkify(
-                  text: message.text,
-                  onOpen: (link) => _openExternalUrl(link.url),
-                  style: textStyle,
-                  linkStyle: textStyle.copyWith(
-                    decoration: TextDecoration.underline,
-                    decorationColor: textStyle.color,
+                TranslatableContent(
+                  request: ContentTranslationRequest(
+                    contentType: 'snack_chat_message',
+                    contentId: message.id,
+                    parentId: widget.snackChatId,
+                    sourceFields: <String, String>{'text': message.text},
+                  ),
+                  scope: 'snack-room:${widget.snackChatId}',
+                  showToggle: false,
+                  builder: (context, fields) => Linkify(
+                    text: fields['text'] ?? message.text,
+                    onOpen: (link) => _openExternalUrl(link.url),
+                    style: textStyle,
+                    linkStyle: textStyle.copyWith(
+                      decoration: TextDecoration.underline,
+                      decorationColor: textStyle.color,
+                    ),
                   ),
                 )
               else if (!hasImage && !hasFile)
@@ -4281,6 +4432,7 @@ class _SnackChatScreenState extends State<SnackChatScreen>
         : failureReason.contains('업로드')
             ? 'Upload failed. Retry'
             : 'Send failed. Retry';
+    if (message.isPending) return const SizedBox(width: 5);
     if (!message.isPending && !message.hasFailed && !showTimeText) {
       return const SizedBox(width: 5);
     }
@@ -4290,9 +4442,7 @@ class _SnackChatScreenState extends State<SnackChatScreen>
         crossAxisAlignment: CrossAxisAlignment.end,
         mainAxisSize: MainAxisSize.min,
         children: [
-          if (message.isPending)
-            const Icon(Icons.schedule_rounded, size: 13, color: _tertiaryText)
-          else if (message.hasFailed)
+          if (message.hasFailed)
             Tooltip(
               message: failureReason.isEmpty ? failureLabel : failureReason,
               child: InkWell(
@@ -4511,7 +4661,7 @@ class _SnackChatScreenState extends State<SnackChatScreen>
           Padding(
             padding: const EdgeInsets.symmetric(horizontal: 10),
             child: Text(
-              isKo ? '여기서부터 읽지 않은 메시지' : 'Unread messages',
+              isKo ? '여기부터 읽지 않은 메시지' : 'Unread messages',
               style: TextStyle(
                 fontFamily: 'Inter',
                 fontFamilyFallback: const ['NotoSansKR'],

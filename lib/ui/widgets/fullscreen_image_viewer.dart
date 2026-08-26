@@ -3,6 +3,7 @@ import 'dart:io';
 import 'dart:typed_data';
 
 import 'package:cached_network_image/cached_network_image.dart';
+import 'package:firebase_auth/firebase_auth.dart';
 import 'package:firebase_storage/firebase_storage.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
@@ -10,6 +11,7 @@ import 'package:http/http.dart' as http;
 import 'package:permission_handler/permission_handler.dart' as permissions;
 
 import '../../services/cache/app_image_cache_manager.dart';
+import '../../services/snack_chat_media_cache_service.dart';
 
 class FullscreenImageViewer extends StatefulWidget {
   final List<String> imageUrls;
@@ -326,15 +328,24 @@ class _FullscreenImageViewerState extends State<FullscreenImageViewer>
   Future<Uint8List?> _readStorageBytes(int index) async {
     final storagePath = _storagePathAt(index);
     if (storagePath.isEmpty) return null;
+    final viewerId = FirebaseAuth.instance.currentUser?.uid;
+    if (viewerId == null || viewerId.isEmpty) return null;
     try {
+      final cached = await SnackChatMediaCacheService.instance.read(
+        userId: viewerId,
+        storagePath: storagePath,
+      );
+      if (cached != null && cached.isNotEmpty) return cached;
       final bytes = await FirebaseStorage.instance
           .ref(storagePath)
           .getData(_maxImageBytes)
           .timeout(const Duration(seconds: 15));
       if (bytes == null || bytes.isEmpty) return null;
-      // Auth-protected Snack Chat bytes intentionally stay in this viewer's
-      // memory only. A global disk cache could expose them after logout, room
-      // leave, or an account switch without rechecking Storage Rules.
+      await SnackChatMediaCacheService.instance.write(
+        userId: viewerId,
+        storagePath: storagePath,
+        bytes: bytes,
+      );
       return bytes;
     } catch (_) {
       // path-only 신규 이미지가 아니라면 아래 URL 호환 경로로 복구한다.

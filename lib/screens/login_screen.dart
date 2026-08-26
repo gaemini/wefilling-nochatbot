@@ -398,37 +398,21 @@ class _LoginScreenState extends State<LoginScreen>
                                           color: const Color(0xFF374151),
                                         ),
                                       ),
-                                      SizedBox(height: isVeryShort ? 8 : 12),
-                                      TextButton(
+                                      SizedBox(height: buttonGap),
+                                      _LoginMethodButton(
+                                        label: AppLocalizations.of(context)!
+                                            .signUp,
                                         onPressed: authProvider.isLoading
                                             ? null
-                                            : () {
-                                                _navigateToSignUpFlow(context);
-                                              },
-                                        child: Row(
-                                          mainAxisAlignment:
-                                              MainAxisAlignment.center,
-                                          mainAxisSize: MainAxisSize.min,
-                                          children: [
-                                            Text(
-                                              AppLocalizations.of(context)!
-                                                  .noAccountYet,
-                                              style: TextStyle(
-                                                fontSize: isVeryShort ? 13 : 14,
-                                                color: Colors.grey.shade700,
-                                              ),
-                                            ),
-                                            const SizedBox(width: 4),
-                                            Text(
-                                              AppLocalizations.of(context)!
-                                                  .signUp,
-                                              style: TextStyle(
-                                                fontSize: isVeryShort ? 13 : 14,
-                                                fontWeight: FontWeight.bold,
-                                                color: Colors.blue.shade700,
-                                              ),
-                                            ),
-                                          ],
+                                            : () =>
+                                                _navigateToSignUpFlow(context),
+                                        backgroundColor:
+                                            const Color(0xFF2F9AE5),
+                                        foregroundColor: Colors.white,
+                                        leading: Icon(
+                                          Icons.person_add_alt_1_rounded,
+                                          size: isVeryShort ? 18 : 19,
+                                          color: Colors.white,
                                         ),
                                       ),
                                       if (authProvider.isLoading)

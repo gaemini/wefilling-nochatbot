@@ -63,12 +63,44 @@ class PostEngagement {
   const PostEngagement({
     required this.likes,
     required this.commentCount,
+    required this.viewCount,
     required this.likedBy,
   });
 
   final int likes;
   final int commentCount;
+  final int viewCount;
   final List<String> likedBy;
+
+  PostEngagement copyWith({
+    int? likes,
+    int? commentCount,
+    int? viewCount,
+    List<String>? likedBy,
+  }) {
+    return PostEngagement(
+      likes: likes ?? this.likes,
+      commentCount: commentCount ?? this.commentCount,
+      viewCount: viewCount ?? this.viewCount,
+      likedBy: likedBy ?? this.likedBy,
+    );
+  }
+}
+
+class _PostLikeMutationResult {
+  const _PostLikeMutationResult({
+    required this.engagement,
+    required this.didAddLike,
+    required this.authorId,
+    required this.postTitle,
+    required this.postIsAnonymous,
+  });
+
+  final PostEngagement engagement;
+  final bool didAddLike;
+  final String authorId;
+  final String postTitle;
+  final bool postIsAnonymous;
 }
 
 class PostService {
@@ -92,6 +124,24 @@ class PostService {
   final PostCacheManager _cache = PostCacheManager();
   final ViewHistoryService _viewHistory = ViewHistoryService();
   final Map<String, PostCategoryPage> _categoryFirstPageCache = {};
+
+  // 카드와 상세 화면이 같은 postId의 소셜 지표를 구독하는 정규화 캐시다.
+  // 화면마다 별도의 문서 listener를 만들지 않고 postId당 하나만 유지한다.
+  final Map<String, PostEngagement> _postEngagementCache = {};
+  final Map<String, StreamController<PostEngagement>>
+      _postEngagementControllers = {};
+  final Map<String, StreamSubscription<DocumentSnapshot<Map<String, dynamic>>>>
+      _postEngagementRemoteSubscriptions = {};
+  final Map<String, int> _postEngagementListenerCounts = {};
+  final Map<String, Timer> _postEngagementReleaseTimers = {};
+  final Map<String, int> _postLikeMutationSequences = {};
+  final Map<String, int> _postLikeMutationsInFlight = {};
+  final Set<String> _postViewMutationsInFlight = {};
+  final Map<String, int> _threadCommentCountOverrides = {};
+  final Map<String, Timer> _threadCommentOverrideTimers = {};
+  static const Duration _postEngagementListenerGrace = Duration(seconds: 12);
+  static const Duration _threadCommentOverrideLifetime = Duration(seconds: 20);
+  static const int _maxRetainedPostEngagements = 240;
 
   // Feed stream caching:
   // BoardScreen uses the same PostService instance for multiple tabs.
@@ -872,110 +922,439 @@ class PostService {
     }
   }
 
-  /// 하트/댓글 수는 어느 포스트 화면에서든 새로고침 없이 반영한다.
-  /// ListView 밖으로 나간 카드는 dispose되므로 화면에 보이는 카드만 구독한다.
-  Stream<PostEngagement> watchPostEngagement(String postId) {
-    int count(Object? value) {
-      if (value is! num) return 0;
-      return value.toInt().clamp(0, 1 << 30).toInt();
-    }
+  int _normalizedEngagementCount(Object? value) {
+    if (value is! num) return 0;
+    return value.toInt().clamp(0, 1 << 30).toInt();
+  }
 
-    return _firestore
+  PostEngagement _engagementFromData(Map<String, dynamic> data) {
+    return PostEngagement(
+      likes: _normalizedEngagementCount(data['likes']),
+      commentCount: _normalizedEngagementCount(data['commentCount']),
+      viewCount: _normalizedEngagementCount(data['viewCount']),
+      likedBy: data['likedBy'] is List
+          ? List<String>.unmodifiable(
+              List<String>.from(data['likedBy'] as List),
+            )
+          : const <String>[],
+    );
+  }
+
+  PostEngagement _engagementFromPost(Post post) {
+    return PostEngagement(
+      likes: post.likes,
+      commentCount: post.commentCount,
+      viewCount: post.viewCount,
+      likedBy: List<String>.unmodifiable(post.likedBy),
+    );
+  }
+
+  StreamController<PostEngagement> _engagementControllerFor(String postId) {
+    return _postEngagementControllers.putIfAbsent(
+      postId,
+      // 비동기 전달로 상세의 댓글 StreamBuilder가 실제 개수를 publish할 때
+      // 같은 build 프레임 안에서 setState가 재진입하는 것을 막는다.
+      () => StreamController<PostEngagement>.broadcast(),
+    );
+  }
+
+  void _publishPostEngagement(String postId, PostEngagement engagement) {
+    _postEngagementCache[postId] = engagement;
+    final controller = _postEngagementControllers[postId];
+    if (controller != null && !controller.isClosed) {
+      controller.add(engagement);
+    }
+    _trimPostEngagementCache(protectedPostId: postId);
+  }
+
+  void _trimPostEngagementCache({String? protectedPostId}) {
+    if (_postEngagementCache.length <= _maxRetainedPostEngagements) return;
+    for (final candidate in _postEngagementCache.keys.toList(growable: false)) {
+      if (_postEngagementCache.length <= _maxRetainedPostEngagements) break;
+      if (candidate == protectedPostId ||
+          (_postEngagementListenerCounts[candidate] ?? 0) > 0 ||
+          _postEngagementRemoteSubscriptions.containsKey(candidate) ||
+          _postLikeMutationsInFlight.containsKey(candidate) ||
+          _postViewMutationsInFlight.contains(candidate) ||
+          _threadCommentCountOverrides.containsKey(candidate)) {
+        continue;
+      }
+      _postEngagementCache.remove(candidate);
+      final controller = _postEngagementControllers.remove(candidate);
+      if (controller != null && !controller.isClosed) {
+        unawaited(controller.close());
+      }
+    }
+  }
+
+  /// 피드/검색/상세에서 이미 받은 Post는 공통 상태의 첫 화면 값으로만 쓴다.
+  /// 이후 Firestore listener나 낙관적 변경으로 갱신된 값을 오래된 위젯 모델이
+  /// 다시 덮지 않도록 캐시가 비어 있을 때에만 seed한다.
+  void seedPostEngagement(Post post) {
+    _postEngagementCache.putIfAbsent(post.id, () => _engagementFromPost(post));
+  }
+
+  /// 상위 피드/수동 새로고침에서 새 Post 모델을 받은 경우에만 캐시를 갱신한다.
+  /// 스크롤로 카드가 재생성되는 것만으로는 네트워크 요청을 만들지 않는다.
+  void updateCachedPostEngagement(Post post) {
+    if (_postLikeMutationsInFlight.containsKey(post.id) ||
+        _postViewMutationsInFlight.contains(post.id)) {
+      return;
+    }
+    var next = _engagementFromPost(post);
+    final threadCount = _threadCommentCountOverrides[post.id];
+    if (threadCount != null) {
+      next = next.copyWith(commentCount: threadCount);
+    }
+    final current = _postEngagementCache[post.id];
+    if (current != null &&
+        current.likes == next.likes &&
+        current.commentCount == next.commentCount &&
+        current.viewCount == next.viewCount &&
+        _sameStringList(current.likedBy, next.likedBy)) {
+      return;
+    }
+    _publishPostEngagement(post.id, next);
+  }
+
+  bool _sameStringList(List<String> left, List<String> right) {
+    if (left.length != right.length) return false;
+    for (var index = 0; index < left.length; index++) {
+      if (left[index] != right[index]) return false;
+    }
+    return true;
+  }
+
+  PostEngagement? getCachedPostEngagement(String postId) =>
+      _postEngagementCache[postId];
+
+  void _retainPostEngagement(String postId) {
+    _postEngagementReleaseTimers.remove(postId)?.cancel();
+    _postEngagementListenerCounts[postId] =
+        (_postEngagementListenerCounts[postId] ?? 0) + 1;
+    if (_postEngagementRemoteSubscriptions.containsKey(postId)) return;
+
+    final controller = _engagementControllerFor(postId);
+    _postEngagementRemoteSubscriptions[postId] = _firestore
         .collection('posts')
         .doc(postId)
-        .snapshots()
-        .where(
-          (snapshot) => snapshot.exists && snapshot.data() != null,
-        )
-        .map((snapshot) {
-      final data = snapshot.data()!;
-      return PostEngagement(
-        likes: count(data['likes']),
-        commentCount: count(data['commentCount']),
-        likedBy: data['likedBy'] is List
-            ? List<String>.from(data['likedBy'] as List)
-            : const <String>[],
+        .snapshots(includeMetadataChanges: true)
+        .listen(
+      (snapshot) {
+        final data = snapshot.data();
+        if (!snapshot.exists || data == null) return;
+
+        final current = _postEngagementCache[postId];
+        // 로컬/디스크 캐시가 서버에서 이미 확인한 값이나 현재 낙관적 상태를
+        // 낮추지 못하게 한다. 첫 값이 전혀 없을 때만 캐시 스냅샷을 허용한다.
+        if (snapshot.metadata.isFromCache && current != null) return;
+
+        var next = _engagementFromData(data);
+        if (current != null) {
+          if (_postLikeMutationsInFlight.containsKey(postId)) {
+            next = next.copyWith(
+              likes: current.likes,
+              likedBy: current.likedBy,
+            );
+          }
+          if (_postViewMutationsInFlight.contains(postId)) {
+            next = next.copyWith(viewCount: current.viewCount);
+          }
+          final threadCount = _threadCommentCountOverrides[postId];
+          if (threadCount != null) {
+            if (threadCount == next.commentCount) {
+              _clearThreadCommentOverride(postId);
+            } else {
+              next = next.copyWith(commentCount: threadCount);
+            }
+          }
+        }
+        _publishPostEngagement(postId, next);
+      },
+      onError: (Object error) {
+        Logger.warning('포스트 공통 지표 구독 오류($postId): $error');
+        if (!controller.isClosed) controller.addError(error);
+      },
+    );
+  }
+
+  void _releasePostEngagement(String postId) {
+    final nextCount = (_postEngagementListenerCounts[postId] ?? 1) - 1;
+    if (nextCount > 0) {
+      _postEngagementListenerCounts[postId] = nextCount;
+      return;
+    }
+    _postEngagementListenerCounts.remove(postId);
+    _postEngagementReleaseTimers.remove(postId)?.cancel();
+    _postEngagementReleaseTimers[postId] = Timer(
+      _postEngagementListenerGrace,
+      () {
+        if ((_postEngagementListenerCounts[postId] ?? 0) > 0) return;
+        _postEngagementRemoteSubscriptions.remove(postId)?.cancel();
+        _postEngagementReleaseTimers.remove(postId);
+        _trimPostEngagementCache();
+      },
+    );
+  }
+
+  /// 카드와 상세 화면은 같은 postId 채널을 구독한다. 각 구독자는 현재 캐시를
+  /// 즉시 받은 뒤 postId당 하나인 원격 listener의 변경분만 전달받는다.
+  Stream<PostEngagement> watchPostEngagement(
+    String postId, {
+    Post? seed,
+  }) {
+    if (seed != null) seedPostEngagement(seed);
+    final sharedController = _engagementControllerFor(postId);
+    late final StreamController<PostEngagement> relay;
+    StreamSubscription<PostEngagement>? subscription;
+
+    relay = StreamController<PostEngagement>(
+      sync: true,
+      onListen: () {
+        _retainPostEngagement(postId);
+        subscription = sharedController.stream.listen(
+          relay.add,
+          onError: relay.addError,
+        );
+        final cached = _postEngagementCache[postId];
+        if (cached != null) relay.add(cached);
+      },
+      onCancel: () async {
+        await subscription?.cancel();
+        _releasePostEngagement(postId);
+      },
+    );
+    return relay.stream;
+  }
+
+  /// 피드 카드용 로컬 전용 지표 스트림입니다.
+  ///
+  /// 카드가 viewport에서 사라졌다 다시 나타나도 Firestore 문서 listener를
+  /// 만들지 않습니다. 좋아요 같은 사용자 액션과 상세 화면의 서버 보정 결과는
+  /// 같은 로컬 채널을 통해 즉시 카드에 반영됩니다.
+  Stream<PostEngagement> watchCachedPostEngagement(
+    String postId, {
+    Post? seed,
+  }) {
+    if (seed != null) seedPostEngagement(seed);
+    final sharedController = _engagementControllerFor(postId);
+    late final StreamController<PostEngagement> relay;
+    StreamSubscription<PostEngagement>? subscription;
+
+    relay = StreamController<PostEngagement>(
+      sync: true,
+      onListen: () {
+        subscription = sharedController.stream.listen(
+          relay.add,
+          onError: relay.addError,
+        );
+        final cached = _postEngagementCache[postId];
+        if (cached != null) relay.add(cached);
+      },
+      onCancel: () async {
+        await subscription?.cancel();
+      },
+    );
+    return relay.stream;
+  }
+
+  /// 댓글 서브컬렉션의 실제 활성 스레드 수를 상세 화면에서 계산한 즉시 카드와
+  /// 공유한다. 포스트 문서의 canonical count가 따라오면 override를 해제한다.
+  void updateLocalPostCommentCount(String postId, int commentCount) {
+    final normalized = commentCount.clamp(0, 1 << 30).toInt();
+    _threadCommentCountOverrides[postId] = normalized;
+    _threadCommentOverrideTimers.remove(postId)?.cancel();
+    _threadCommentOverrideTimers[postId] = Timer(
+      _threadCommentOverrideLifetime,
+      () {
+        _clearThreadCommentOverride(postId);
+        unawaited(_reconcilePostEngagementFromServer(postId));
+      },
+    );
+    final current = _postEngagementCache[postId];
+    if (current != null && current.commentCount != normalized) {
+      _publishPostEngagement(
+        postId,
+        current.copyWith(commentCount: normalized),
       );
-    });
+    }
+  }
+
+  void _clearThreadCommentOverride(String postId) {
+    _threadCommentCountOverrides.remove(postId);
+    _threadCommentOverrideTimers.remove(postId)?.cancel();
+  }
+
+  Future<void> _reconcilePostEngagementFromServer(String postId) async {
+    try {
+      final snapshot = await _firestore
+          .collection('posts')
+          .doc(postId)
+          .get(const GetOptions(source: Source.server));
+      final data = snapshot.data();
+      if (!snapshot.exists || data == null) return;
+      var next = _engagementFromData(data);
+      final current = _postEngagementCache[postId];
+      if (current != null && _postLikeMutationsInFlight.containsKey(postId)) {
+        next = next.copyWith(likes: current.likes, likedBy: current.likedBy);
+      }
+      if (current != null && _postViewMutationsInFlight.contains(postId)) {
+        next = next.copyWith(viewCount: current.viewCount);
+      }
+      final threadCount = _threadCommentCountOverrides[postId];
+      if (threadCount != null) {
+        next = next.copyWith(commentCount: threadCount);
+      }
+      _publishPostEngagement(postId, next);
+    } catch (error) {
+      Logger.warning('포스트 공통 지표 서버 보정 실패($postId): $error');
+    }
   }
 
   Future<bool> toggleLike(String postId) async {
-    try {
-      final user = _auth.currentUser;
-      if (user == null) {
-        Logger.error('좋아요 실패: 로그인이 필요합니다.');
-        return false;
-      }
-
-      // 트랜잭션 대신 더 간단한 접근 방식 사용
-      // 게시글 문서 레퍼런스
-      final postRef = _firestore.collection('posts').doc(postId);
-
-      // 게시글 데이터 가져오기
-      final postDoc = await postRef.get();
-      if (!postDoc.exists) {
-        return false;
-      }
-
-      // 현재 좋아요 상태 파악
-      final data = postDoc.data()!;
-      List<dynamic> likedBy = List.from(data['likedBy'] ?? []);
-      bool hasLiked = likedBy.contains(user.uid);
-
-      String _previewText(String raw, {int max = 40}) {
-        final t = raw.replaceAll(RegExp(r'\s+'), ' ').trim();
-        if (t.isEmpty) return '';
-        return t.length <= max ? t : '${t.substring(0, max)}...';
-      }
-
-      final rawTitle = (data['title'] ?? '').toString();
-      final rawContent = (data['content'] ?? '').toString();
-      final postTitle = rawTitle.trim().isNotEmpty
-          ? rawTitle.trim()
-          : _previewText(rawContent);
-      final authorId = data['userId'];
-      final bool postIsAnonymous = data['isAnonymous'] == true;
-
-      // 좋아요 토글
-      if (hasLiked) {
-        // 좋아요 취소
-        likedBy.remove(user.uid);
-        await postRef.update({
-          'likedBy': likedBy,
-          'likes': FieldValue.increment(-1),
-        });
-      } else {
-        // 좋아요 추가
-        likedBy.add(user.uid);
-        await postRef.update({
-          'likedBy': likedBy,
-          'likes': FieldValue.increment(1),
-        });
-
-        // 좋아요 알림 전송 (자신의 게시글이 아닌 경우에만)
-        if (authorId != null && authorId != user.uid) {
-          // 사용자 정보 가져오기
-          final userDoc =
-              await _firestore.collection('users').doc(user.uid).get();
-          final userData = userDoc.data();
-          final nickname = userData?['nickname'] ?? '익명';
-
-          // 좋아요 알림 전송
-          await _notificationService.sendNewLikeNotification(
-            postId,
-            postTitle,
-            authorId,
-            nickname,
-            user.uid,
-            postIsAnonymous: postIsAnonymous,
-          );
-        }
-      }
-
-      return true;
-    } catch (e) {
-      Logger.error('좋아요 기능 오류: $e');
+    final user = _auth.currentUser;
+    if (user == null) {
+      Logger.error('좋아요 실패: 로그인이 필요합니다.');
       return false;
+    }
+
+    final postRef = _firestore.collection('posts').doc(postId);
+    PostEngagement? before = _postEngagementCache[postId];
+    if (before == null) {
+      try {
+        final snapshot = await postRef.get();
+        final data = snapshot.data();
+        if (!snapshot.exists || data == null) return false;
+        before = _engagementFromData(data);
+        _publishPostEngagement(postId, before);
+      } catch (error) {
+        Logger.error('좋아요 초기 상태 조회 오류: $error');
+        return false;
+      }
+    }
+
+    final sequence = (_postLikeMutationSequences[postId] ?? 0) + 1;
+    _postLikeMutationSequences[postId] = sequence;
+    _postLikeMutationsInFlight[postId] = sequence;
+    final shouldLike = !before.likedBy.contains(user.uid);
+    final optimisticLikedBy = List<String>.from(before.likedBy);
+    if (shouldLike) {
+      if (!optimisticLikedBy.contains(user.uid))
+        optimisticLikedBy.add(user.uid);
+    } else {
+      optimisticLikedBy.removeWhere((uid) => uid == user.uid);
+    }
+    _publishPostEngagement(
+      postId,
+      before.copyWith(
+        likes: optimisticLikedBy.length,
+        likedBy: List<String>.unmodifiable(optimisticLikedBy),
+      ),
+    );
+
+    try {
+      final result = await _firestore.runTransaction<_PostLikeMutationResult>(
+        (transaction) async {
+          final snapshot = await transaction.get(postRef);
+          final data = snapshot.data();
+          if (!snapshot.exists || data == null) {
+            throw StateError('post-not-found');
+          }
+
+          final serverLikedBy = data['likedBy'] is List
+              ? List<String>.from(data['likedBy'] as List)
+              : <String>[];
+          final hadLiked = serverLikedBy.contains(user.uid);
+          if (shouldLike) {
+            if (!hadLiked) serverLikedBy.add(user.uid);
+          } else {
+            serverLikedBy.removeWhere((uid) => uid == user.uid);
+          }
+
+          transaction.update(postRef, {
+            'likedBy': serverLikedBy,
+            'likes': serverLikedBy.length,
+          });
+
+          String previewText(String raw, {int max = 40}) {
+            final text = raw.replaceAll(RegExp(r'\s+'), ' ').trim();
+            if (text.isEmpty) return '';
+            return text.length <= max ? text : '${text.substring(0, max)}...';
+          }
+
+          final rawTitle = (data['title'] ?? '').toString().trim();
+          final rawContent = (data['content'] ?? '').toString();
+          return _PostLikeMutationResult(
+            engagement: _engagementFromData(data).copyWith(
+              likes: serverLikedBy.length,
+              likedBy: List<String>.unmodifiable(serverLikedBy),
+            ),
+            didAddLike: shouldLike && !hadLiked,
+            authorId: (data['ownerId'] ?? data['userId'] ?? '').toString(),
+            postTitle: rawTitle.isNotEmpty ? rawTitle : previewText(rawContent),
+            postIsAnonymous: data['isAnonymous'] == true,
+          );
+        },
+      );
+
+      if (_postLikeMutationSequences[postId] == sequence) {
+        _postLikeMutationsInFlight.remove(postId);
+        final current = _postEngagementCache[postId];
+        _publishPostEngagement(
+          postId,
+          result.engagement.copyWith(
+            commentCount: current?.commentCount,
+            viewCount: current?.viewCount,
+          ),
+        );
+      }
+
+      if (result.didAddLike &&
+          result.authorId.isNotEmpty &&
+          result.authorId != user.uid) {
+        unawaited(_sendLikeNotificationBestEffort(
+          postId: postId,
+          result: result,
+          actorId: user.uid,
+        ));
+      }
+      return true;
+    } catch (error) {
+      Logger.error('좋아요 기능 오류: $error');
+      if (_postLikeMutationSequences[postId] == sequence) {
+        _postLikeMutationsInFlight.remove(postId);
+        final current = _postEngagementCache[postId];
+        _publishPostEngagement(
+          postId,
+          before.copyWith(
+            commentCount: current?.commentCount,
+            viewCount: current?.viewCount,
+          ),
+        );
+      }
+      return false;
+    }
+  }
+
+  Future<void> _sendLikeNotificationBestEffort({
+    required String postId,
+    required _PostLikeMutationResult result,
+    required String actorId,
+  }) async {
+    try {
+      final userDoc = await _firestore.collection('users').doc(actorId).get();
+      final nickname = (userDoc.data()?['nickname'] ?? '익명').toString();
+      await _notificationService.sendNewLikeNotification(
+        postId,
+        result.postTitle,
+        result.authorId,
+        nickname,
+        actorId,
+        postIsAnonymous: result.postIsAnonymous,
+      );
+    } catch (error) {
+      // 좋아요 자체는 이미 반영됐으므로 알림 실패로 UI를 롤백하지 않는다.
+      Logger.warning('좋아요 알림 전송 실패($postId): $error');
     }
   }
 
@@ -1010,26 +1389,39 @@ class PostService {
 
   // 게시글 조회수 증가 (세션당 1회만)
   Future<void> incrementViewCount(String postId) async {
+    final user = FirebaseAuth.instance.currentUser;
+    if (user == null || _viewHistory.hasViewed('post', postId)) return;
+
+    final before = _postEngagementCache[postId];
+    _postViewMutationsInFlight.add(postId);
+    if (before != null) {
+      _publishPostEngagement(
+        postId,
+        before.copyWith(viewCount: before.viewCount + 1),
+      );
+    }
+
     try {
-      final user = FirebaseAuth.instance.currentUser;
-      if (user == null) {
-        return;
-      }
-
-      // 이미 조회한 게시글인지 확인
-      if (_viewHistory.hasViewed('post', postId)) {
-        return;
-      }
-
-      // 조회수 증가
       await _firestore.collection('posts').doc(postId).update({
         'viewCount': FieldValue.increment(1),
       });
-
-      // 조회 이력에 추가
       _viewHistory.markAsViewed('post', postId);
-    } catch (e) {
-      Logger.error('❌ 조회수 증가 오류: $e');
+      _postViewMutationsInFlight.remove(postId);
+      await _reconcilePostEngagementFromServer(postId);
+    } catch (error) {
+      _postViewMutationsInFlight.remove(postId);
+      if (before != null) {
+        final current = _postEngagementCache[postId];
+        _publishPostEngagement(
+          postId,
+          before.copyWith(
+            likes: current?.likes,
+            likedBy: current?.likedBy,
+            commentCount: current?.commentCount,
+          ),
+        );
+      }
+      Logger.error('❌ 조회수 증가 오류: $error');
     }
   }
 
@@ -1098,6 +1490,44 @@ class PostService {
       Logger.error('캐시된 게시글 가져오기 실패: $e');
       return [];
     }
+  }
+
+  String get _allPostsCacheVisibility =>
+      'all_${_auth.currentUser?.uid ?? 'guest'}';
+
+  /// 현재 계정이 이미 조회한 전체 피드 페이지를 휴대폰 캐시에서 가져옵니다.
+  Future<List<Post>> getCachedAllPosts() async {
+    if (!CacheFeatureFlags.isPostCacheEnabled) return const <Post>[];
+    try {
+      final cached = await _cache.getPosts(
+        visibility: _allPostsCacheVisibility,
+        allowExpiredFallback: true,
+      );
+      final user = _auth.currentUser;
+      final visible = cached
+          .where((post) => _canUserReadPost(post, user))
+          .where(
+            (post) =>
+                !ContentHideService.isHiddenPost(post.id) &&
+                !ContentHideService.isHiddenUser(post.userId),
+          )
+          .toList(growable: false);
+      final nonBlocked = await ContentFilterService.filterPosts(visible);
+      return ContentHideService.filterPostsSync(nonBlocked);
+    } catch (error) {
+      Logger.warning('전체 포스트 캐시 읽기 실패: $error');
+      return const <Post>[];
+    }
+  }
+
+  void _cacheAllPostsPage(List<Post> posts) {
+    if (!CacheFeatureFlags.isPostCacheEnabled || posts.isEmpty) return;
+    unawaited(
+      _cache.mergePosts(
+        posts,
+        visibility: _allPostsCacheVisibility,
+      ),
+    );
   }
 
   /// 당겨서 새로고침 시 실시간 리스너를 기다리지 않고 서버의 최신 피드를
@@ -1308,6 +1738,7 @@ class PostService {
           )
         : scanCursor;
 
+    _cacheAllPostsPage(pagePosts);
     return AllPostsPage(
       posts: pagePosts,
       cursor: nextCursor,

@@ -3,9 +3,11 @@ import 'dart:io';
 import 'package:flutter/cupertino.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
+import 'package:provider/provider.dart';
 import 'package:table_calendar/table_calendar.dart';
 import '../models/meetup.dart';
 import '../models/friend_category.dart';
+import '../providers/auth_provider.dart';
 import '../constants/meetup_limits.dart';
 import '../services/meetup_service.dart';
 import '../services/friend_category_service.dart';
@@ -111,6 +113,7 @@ class _CreateMeetupScreenState extends State<CreateMeetupScreen> {
 
   // 공개 범위 관련 변수
   String _visibility = 'public'; // 'public', 'friends', 'category'
+  bool _requiresHanyangVerification = false;
   List<FriendCategory> _friendCategories = [];
   List<String> _selectedCategoryIds = [];
   int? _publicDurationHours; // null이면 시간 제한 없음(기본값)
@@ -591,6 +594,7 @@ class _CreateMeetupScreenState extends State<CreateMeetupScreen> {
           .clamp(minMeetupParticipants, maxMeetupParticipants)
           .toInt();
       _visibility = t.visibility;
+      _requiresHanyangVerification = false;
       _selectedCategoryIds = t.visibility == 'category'
           ? List<String>.from(t.visibleToCategoryIds)
           : <String>[];
@@ -640,6 +644,7 @@ class _CreateMeetupScreenState extends State<CreateMeetupScreen> {
     final initialAudienceCategory = widget.initialAudienceCategory;
     if (initialAudienceCategory != null) {
       _visibility = 'category';
+      _requiresHanyangVerification = false;
       _selectedCategoryIds = <String>[initialAudienceCategory.id];
     }
 
@@ -1007,7 +1012,9 @@ class _CreateMeetupScreenState extends State<CreateMeetupScreen> {
                                           .optionalField,
                                       style: TextStyle(
                                         fontFamily: 'Inter',
-                                        fontFamilyFallback: const ['NotoSansKR'],
+                                        fontFamilyFallback: const [
+                                          'NotoSansKR'
+                                        ],
                                         fontSize: context
                                             .rf(12)
                                             .clamp(11, 13)
@@ -1081,7 +1088,9 @@ class _CreateMeetupScreenState extends State<CreateMeetupScreen> {
                                         overflow: TextOverflow.ellipsis,
                                         style: TextStyle(
                                           fontFamily: 'Inter',
-                                          fontFamilyFallback: const ['NotoSansKR'],
+                                          fontFamilyFallback: const [
+                                            'NotoSansKR'
+                                          ],
                                           fontSize: context
                                               .rf(13)
                                               .clamp(12, 14)
@@ -1204,8 +1213,7 @@ class _CreateMeetupScreenState extends State<CreateMeetupScreen> {
                                                           style:
                                                               const TextStyle(
                                                             fontFamily: 'Inter',
-                                                            fontFamilyFallback:
-                                                                const [
+                                                            fontFamilyFallback: const [
                                                               'NotoSansKR'
                                                             ],
                                                             fontSize: 12,
@@ -1408,6 +1416,28 @@ class _CreateMeetupScreenState extends State<CreateMeetupScreen> {
                                             return;
                                           }
 
+                                          if (_requiresHanyangVerification &&
+                                              !context
+                                                  .read<AuthProvider>()
+                                                  .isHanyangEmailVerified) {
+                                            setState(() {
+                                              _requiresHanyangVerification =
+                                                  false;
+                                              _visibility = 'public';
+                                            });
+                                            AppSnackBar.show(
+                                              context,
+                                              message: Localizations.localeOf(
+                                                              context)
+                                                          .languageCode ==
+                                                      'ko'
+                                                  ? '한양메일 인증 후 한양대 공개 범위를 사용할 수 있어요.'
+                                                  : 'Verify your Hanyang email to use Hanyang-only visibility.',
+                                              type: AppSnackBarType.warning,
+                                            );
+                                            return;
+                                          }
+
                                           setState(() {
                                             _isSubmitting = true;
                                           });
@@ -1437,6 +1467,8 @@ class _CreateMeetupScreenState extends State<CreateMeetupScreen> {
                                                   _selectedCategoryIds,
                                               publicDurationHours:
                                                   _publicDurationHours,
+                                              requiresHanyangVerification:
+                                                  _requiresHanyangVerification,
                                             );
 
                                             if (success) {
@@ -1469,6 +1501,8 @@ class _CreateMeetupScreenState extends State<CreateMeetupScreen> {
                                                           : '',
                                                   date: selectedDate,
                                                   category: _selectedCategory!,
+                                                  requiresHanyangVerification:
+                                                      _requiresHanyangVerification,
                                                   publicDurationHours:
                                                       _publicDurationHours,
                                                   publicExpiresAt:
@@ -1824,6 +1858,8 @@ class _CreateMeetupScreenState extends State<CreateMeetupScreen> {
 
   Widget _buildMeetupVisibilitySection() {
     final l10n = AppLocalizations.of(context)!;
+    final isHanyangVerified =
+        context.watch<AuthProvider>().isHanyangEmailVerified;
 
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
@@ -1834,21 +1870,31 @@ class _CreateMeetupScreenState extends State<CreateMeetupScreen> {
         ),
         SizedBox(height: context.rs(6).clamp(4, 8).toDouble()),
         _VisibilitySegmentedControl(
-          selected: _visibility,
+          selected: _requiresHanyangVerification ? 'hanyang' : _visibility,
           groupSelectedCount: _selectedCategoryIds.length,
+          showHanyang: isHanyangVerified,
           onSelectPublic: () {
             setState(() {
               _visibility = 'public';
+              _requiresHanyangVerification = false;
               _selectedCategoryIds.clear();
             });
           },
           onSelectFriends: () {
             setState(() {
               _visibility = 'friends';
+              _requiresHanyangVerification = false;
               _selectedCategoryIds.clear();
             });
           },
           onSelectGroup: _openMeetupGroupSelection,
+          onSelectHanyang: () {
+            setState(() {
+              _visibility = 'public';
+              _requiresHanyangVerification = true;
+              _selectedCategoryIds.clear();
+            });
+          },
         ),
       ],
     );
@@ -2159,6 +2205,7 @@ class _CreateMeetupScreenState extends State<CreateMeetupScreen> {
 
     setState(() {
       _visibility = 'category';
+      _requiresHanyangVerification = false;
       _selectedCategoryIds = result;
     });
   }
@@ -2339,6 +2386,8 @@ class _VisibilitySegmentedControl extends StatelessWidget {
   final VoidCallback onSelectPublic;
   final VoidCallback onSelectFriends;
   final VoidCallback onSelectGroup;
+  final VoidCallback onSelectHanyang;
+  final bool showHanyang;
 
   const _VisibilitySegmentedControl({
     required this.selected,
@@ -2346,6 +2395,8 @@ class _VisibilitySegmentedControl extends StatelessWidget {
     required this.onSelectPublic,
     required this.onSelectFriends,
     required this.onSelectGroup,
+    required this.onSelectHanyang,
+    required this.showHanyang,
   });
 
   @override
@@ -2403,6 +2454,7 @@ class _VisibilitySegmentedControl extends StatelessWidget {
     final isPublic = selected == 'public';
     final isFriends = selected == 'friends';
     final isGroup = selected == 'category';
+    final isHanyang = selected == 'hanyang';
 
     return Container(
       decoration: const BoxDecoration(
@@ -2431,6 +2483,18 @@ class _VisibilitySegmentedControl extends StatelessWidget {
               overflow: TextOverflow.ellipsis,
             ),
           ),
+          if (showHanyang)
+            item(
+              isSelected: isHanyang,
+              onTap: onSelectHanyang,
+              child: Text(
+                Localizations.localeOf(context).languageCode == 'ko'
+                    ? '한양대'
+                    : 'Hanyang',
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+              ),
+            ),
           item(
             isSelected: isGroup,
             onTap: onSelectGroup,

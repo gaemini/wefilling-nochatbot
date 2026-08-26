@@ -27,6 +27,7 @@ void main() {
           isHanyangEmailVerified({
             'emailVerified': true,
             'hanyangEmail': 'student@hanyang.ac.kr',
+            'hanyangEmailVerified': false,
             'verificationMethod': method,
           }),
           isFalse,
@@ -34,14 +35,14 @@ void main() {
       }
     });
 
-    test('legacy Hanyang verification remains compatible', () {
+    test('method alone is not a second verification source', () {
       expect(
         isHanyangEmailVerified({
           'emailVerified': true,
           'hanyangEmail': 'student@hanyang.ac.kr',
           'verificationMethod': 'hanyang_email_code',
         }),
-        isTrue,
+        isFalse,
       );
     });
   });

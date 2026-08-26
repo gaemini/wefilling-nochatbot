@@ -3,6 +3,7 @@ import 'package:flutter/material.dart';
 import '../constants/app_constants.dart';
 import '../models/app_notification.dart';
 import '../services/user_info_cache_service.dart';
+import '../l10n/app_localizations.dart';
 
 class NotificationListItem extends StatelessWidget {
   final AppNotification notification;
@@ -23,16 +24,20 @@ class NotificationListItem extends StatelessWidget {
   });
 
   // actorId로부터 최신 닉네임 가져오기
-  String _getLatestActorName() {
+  String _getLatestActorName(
+    BuildContext context,
+    DMUserInfo? actorInfo,
+  ) {
     final actorId = notification.actorId;
     if (actorId == null || actorId.isEmpty) {
       return notification.actorName ?? '';
     }
 
-    final cache = UserInfoCacheService();
-    final userInfo = cache.getCachedUserInfo(actorId);
-    if (userInfo != null && userInfo.nickname.isNotEmpty) {
-      return userInfo.nickname;
+    if (actorInfo?.isDeletedAccount == true) {
+      return AppLocalizations.of(context)!.deletedAccount;
+    }
+    if (actorInfo != null && actorInfo.nickname.isNotEmpty) {
+      return actorInfo.nickname;
     }
 
     return notification.actorName ?? '';
@@ -40,6 +45,19 @@ class NotificationListItem extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final actorId = notification.actorId;
+    if (actorId == null || actorId.isEmpty) {
+      return _buildContent(context, null);
+    }
+    final cache = UserInfoCacheService();
+    return StreamBuilder<DMUserInfo?>(
+      stream: cache.watchUserInfo(actorId),
+      initialData: cache.getCachedUserInfo(actorId),
+      builder: (context, snapshot) => _buildContent(context, snapshot.data),
+    );
+  }
+
+  Widget _buildContent(BuildContext context, DMUserInfo? actorInfo) {
     final isUnread = !notification.isRead;
     final theme = Theme.of(context);
 
@@ -52,10 +70,17 @@ class NotificationListItem extends StatelessWidget {
     final double primaryTextOpacity = isUnread ? 1.0 : 0.92;
     final int primaryTextAlpha =
         ((primaryColor.a * primaryTextOpacity) * 255.0).round() & 0xff;
+    final latestActorName = _getLatestActorName(context, actorInfo);
+    final storedActorName = (notification.actorName ?? '').trim();
+    final resolvedPrimaryText = storedActorName.isNotEmpty &&
+            latestActorName.isNotEmpty &&
+            primaryText.contains(storedActorName)
+        ? primaryText.replaceFirst(storedActorName, latestActorName)
+        : primaryText;
 
     return Semantics(
       button: true,
-      label: '$primaryText, $timeText',
+      label: '$resolvedPrimaryText, $timeText',
       child: Material(
         color: Colors.transparent,
         child: InkWell(
@@ -110,39 +135,42 @@ class NotificationListItem extends StatelessWidget {
                               if (isAnonymous) {
                                 return <InlineSpan>[
                                   TextSpan(
-                                      text: primaryText, style: strongStyle),
+                                      text: resolvedPrimaryText,
+                                      style: strongStyle),
                                 ];
                               }
 
                               // 일반 알림: 메시지에서 "아이디(actorName)"만 굵게 처리
                               // 실시간 닉네임 가져오기
-                              final latestActorName = _getLatestActorName();
                               String? key = latestActorName.isNotEmpty
                                   ? latestActorName
                                   : null;
 
                               key ??= RegExp(r'^\S+')
-                                  .firstMatch(primaryText)
+                                  .firstMatch(resolvedPrimaryText)
                                   ?.group(0);
 
                               if (key == null || key.isEmpty) {
                                 return <InlineSpan>[
                                   TextSpan(
-                                      text: primaryText, style: strongStyle),
+                                      text: resolvedPrimaryText,
+                                      style: strongStyle),
                                 ];
                               }
 
-                              final idx = primaryText.indexOf(key);
+                              final idx = resolvedPrimaryText.indexOf(key);
                               if (idx < 0) {
                                 return <InlineSpan>[
                                   TextSpan(
-                                      text: primaryText, style: strongStyle),
+                                      text: resolvedPrimaryText,
+                                      style: strongStyle),
                                 ];
                               }
 
-                              final before = primaryText.substring(0, idx);
-                              final after =
-                                  primaryText.substring(idx + key.length);
+                              final before =
+                                  resolvedPrimaryText.substring(0, idx);
+                              final after = resolvedPrimaryText
+                                  .substring(idx + key.length);
 
                               return <InlineSpan>[
                                 if (before.isNotEmpty)

@@ -62,6 +62,7 @@ class _MainScreenState extends State<MainScreen>
   bool _showBoardChrome = true;
   late final AnimationController _chromeController;
   late final Animation<double> _chromeAnimation;
+  late final Stream<int> _unreadNotificationCountStream;
 
   // BoardScreen 스크롤 제어를 위한 GlobalKey
   final GlobalKey<BoardScreenState> _boardScreenKey =
@@ -70,6 +71,8 @@ class _MainScreenState extends State<MainScreen>
   @override
   void initState() {
     super.initState();
+    _unreadNotificationCountStream =
+        _notificationService.getUnreadNotificationCount();
     WidgetsBinding.instance.addObserver(this);
     _chromeController = AnimationController(
       vsync: this,
@@ -422,7 +425,7 @@ class _MainScreenState extends State<MainScreen>
           const SemesterTodoAppBarButton(),
         ],
         StreamBuilder<int>(
-          stream: _notificationService.getUnreadNotificationCount(),
+          stream: _unreadNotificationCountStream,
           builder: (context, snapshot) {
             return NotificationBadge(
               count: snapshot.data ?? 0,

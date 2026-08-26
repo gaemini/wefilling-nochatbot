@@ -58,6 +58,7 @@ class SharedLinkPreviewCard extends StatelessWidget {
   bool get _shouldResolveInstagramMetadata =>
       resolveMissingMetadata &&
       preview.provider == 'instagram' &&
+      !preview.isPersistentThumbnail &&
       !preview.isLoading &&
       (preview.thumbnailUrl.trim().isEmpty || _hasGenericInstagramTitle);
 
@@ -93,6 +94,13 @@ class SharedLinkPreviewCard extends StatelessWidget {
           : 'Instagram에서 공유된 게시물';
     }
     return '공유된 링크';
+  }
+
+  String _compactInstagramTitle() {
+    if (_hasGenericInstagramTitle) {
+      return preview.contentType == 'reel' ? 'Instagram Reel' : 'Instagram 게시물';
+    }
+    return preview.title.trim();
   }
 
   Future<void> _openLink() async {
@@ -196,113 +204,111 @@ class SharedLinkPreviewCard extends StatelessWidget {
                     ),
                   ),
                 ),
-              Padding(
-                padding: EdgeInsets.fromLTRB(
-                  hasImage ? 2 : 0,
-                  hasImage ? 10 : 0,
-                  0,
-                  0,
-                ),
-                child: Row(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Icon(
-                      _providerIcon(),
-                      size: 19,
-                      color: preview.provider == 'youtube'
-                          ? const Color(0xFFFF0033)
-                          : const Color(0xFF667085),
-                    ),
-                    const SizedBox(width: 8),
-                    Expanded(
-                      child: Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: [
-                          Text(
-                            _providerLabel(),
-                            style: const TextStyle(
-                              fontFamily: 'Inter',
-                              fontFamilyFallback: const ['NotoSansKR'],
-                              fontSize: 12,
-                              fontWeight: FontWeight.w700,
-                              color: Color(0xFF667085),
-                            ),
-                          ),
-                          const SizedBox(height: 3),
-                          Text(
-                            _effectiveTitle(),
-                            maxLines: compact ? 2 : 3,
-                            overflow: TextOverflow.ellipsis,
-                            style: const TextStyle(
-                              fontFamily: 'Inter',
-                              fontFamilyFallback: const ['NotoSansKR'],
-                              fontSize: 15,
-                              fontWeight: FontWeight.w600,
-                              height: 1.35,
-                              color: Color(0xFF111827),
-                            ),
-                          ),
-                          if (preview.authorName.trim().isNotEmpty) ...[
-                            const SizedBox(height: 3),
-                            Text(
-                              preview.authorName.trim(),
-                              maxLines: 1,
-                              overflow: TextOverflow.ellipsis,
-                              style: const TextStyle(
-                                fontFamily: 'Inter',
-                                fontFamilyFallback: const ['NotoSansKR'],
-                                fontSize: 12,
-                                fontWeight: FontWeight.w500,
-                                color: Color(0xFF667085),
-                              ),
-                            ),
-                          ],
-                          if (domain.isNotEmpty) ...[
-                            const SizedBox(height: 3),
-                            Text(
-                              domain,
-                              maxLines: 1,
-                              overflow: TextOverflow.ellipsis,
-                              style: const TextStyle(
-                                fontFamily: 'Inter',
-                                fontFamilyFallback: const ['NotoSansKR'],
-                                fontSize: 11,
-                                fontWeight: FontWeight.w400,
-                                color: Color(0xFF98A2B3),
-                              ),
-                            ),
-                          ],
-                          if (preview.provider == 'instagram') ...[
-                            const SizedBox(height: 7),
-                            const Text(
-                              '원본에서 보기',
-                              style: TextStyle(
-                                fontFamily: 'Inter',
-                                fontFamilyFallback: const ['NotoSansKR'],
-                                fontSize: 12,
-                                fontWeight: FontWeight.w600,
-                                color: Color(0xFF667085),
-                              ),
-                            ),
-                          ],
-                        ],
+              if (preview.provider == 'instagram')
+                Padding(
+                  padding: EdgeInsets.fromLTRB(
+                    hasImage ? 2 : 0,
+                    hasImage ? 9 : 0,
+                    0,
+                    0,
+                  ),
+                  child: _buildCompactInstagramMetadata(context),
+                )
+              else
+                Padding(
+                  padding: EdgeInsets.fromLTRB(
+                    hasImage ? 2 : 0,
+                    hasImage ? 10 : 0,
+                    0,
+                    0,
+                  ),
+                  child: Row(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Icon(
+                        _providerIcon(),
+                        size: 19,
+                        color: preview.provider == 'youtube'
+                            ? const Color(0xFFFF0033)
+                            : const Color(0xFF667085),
                       ),
-                    ),
-                    if (onRemove != null)
-                      IconButton(
-                        onPressed: onRemove,
-                        visualDensity: VisualDensity.compact,
-                        tooltip: MaterialLocalizations.of(context)
-                            .deleteButtonTooltip,
-                        icon: const Icon(
-                          Icons.close_rounded,
-                          size: 20,
-                          color: Color(0xFF667085),
+                      const SizedBox(width: 8),
+                      Expanded(
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Text(
+                              _providerLabel(),
+                              style: const TextStyle(
+                                fontFamily: 'Inter',
+                                fontFamilyFallback: ['NotoSansKR'],
+                                fontSize: 12,
+                                fontWeight: FontWeight.w700,
+                                color: Color(0xFF667085),
+                              ),
+                            ),
+                            const SizedBox(height: 3),
+                            Text(
+                              _effectiveTitle(),
+                              maxLines: compact ? 2 : 3,
+                              overflow: TextOverflow.ellipsis,
+                              style: const TextStyle(
+                                fontFamily: 'Inter',
+                                fontFamilyFallback: ['NotoSansKR'],
+                                fontSize: 15,
+                                fontWeight: FontWeight.w600,
+                                height: 1.35,
+                                color: Color(0xFF111827),
+                              ),
+                            ),
+                            if (preview.authorName.trim().isNotEmpty) ...[
+                              const SizedBox(height: 3),
+                              Text(
+                                preview.authorName.trim(),
+                                maxLines: 1,
+                                overflow: TextOverflow.ellipsis,
+                                style: const TextStyle(
+                                  fontFamily: 'Inter',
+                                  fontFamilyFallback: ['NotoSansKR'],
+                                  fontSize: 12,
+                                  fontWeight: FontWeight.w500,
+                                  color: Color(0xFF667085),
+                                ),
+                              ),
+                            ],
+                            if (domain.isNotEmpty) ...[
+                              const SizedBox(height: 3),
+                              Text(
+                                domain,
+                                maxLines: 1,
+                                overflow: TextOverflow.ellipsis,
+                                style: const TextStyle(
+                                  fontFamily: 'Inter',
+                                  fontFamilyFallback: ['NotoSansKR'],
+                                  fontSize: 11,
+                                  fontWeight: FontWeight.w400,
+                                  color: Color(0xFF98A2B3),
+                                ),
+                              ),
+                            ],
+                          ],
                         ),
                       ),
-                  ],
+                      if (onRemove != null)
+                        IconButton(
+                          onPressed: onRemove,
+                          visualDensity: VisualDensity.compact,
+                          tooltip: MaterialLocalizations.of(context)
+                              .deleteButtonTooltip,
+                          icon: const Icon(
+                            Icons.close_rounded,
+                            size: 20,
+                            color: Color(0xFF667085),
+                          ),
+                        ),
+                    ],
+                  ),
                 ),
-              ),
             ],
           ),
         ),
@@ -310,11 +316,82 @@ class SharedLinkPreviewCard extends StatelessWidget {
     );
   }
 
+  Widget _buildCompactInstagramMetadata(BuildContext context) {
+    final author = preview.authorName.trim();
+    final typeLabel =
+        preview.contentType == 'reel' ? 'Instagram Reel' : 'Instagram';
+    final secondary = author.isEmpty ? typeLabel : '$author · $typeLabel';
+    return Row(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        const Padding(
+          padding: EdgeInsets.only(top: 1),
+          child: Icon(
+            Icons.photo_camera_outlined,
+            size: 18,
+            color: Color(0xFF667085),
+          ),
+        ),
+        const SizedBox(width: 8),
+        Expanded(
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text(
+                _compactInstagramTitle(),
+                maxLines: compact ? 2 : 3,
+                overflow: TextOverflow.ellipsis,
+                style: const TextStyle(
+                  fontFamily: 'Inter',
+                  fontFamilyFallback: ['NotoSansKR'],
+                  fontSize: 14,
+                  fontWeight: FontWeight.w600,
+                  height: 1.3,
+                  color: Color(0xFF111827),
+                ),
+              ),
+              const SizedBox(height: 2),
+              Text(
+                secondary,
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+                style: const TextStyle(
+                  fontFamily: 'Inter',
+                  fontFamilyFallback: ['NotoSansKR'],
+                  fontSize: 11,
+                  color: Color(0xFF98A2B3),
+                ),
+              ),
+            ],
+          ),
+        ),
+        if (onRemove != null)
+          IconButton(
+            onPressed: onRemove,
+            visualDensity: VisualDensity.compact,
+            tooltip: MaterialLocalizations.of(context).deleteButtonTooltip,
+            icon: const Icon(
+              Icons.close_rounded,
+              size: 19,
+              color: Color(0xFF667085),
+            ),
+          )
+        else
+          const Padding(
+            padding: EdgeInsets.only(top: 2, left: 8),
+            child: Icon(
+              Icons.open_in_new_rounded,
+              size: 17,
+              color: Color(0xFF98A2B3),
+            ),
+          ),
+      ],
+    );
+  }
+
   Widget _buildInstagramLinkCard(BuildContext context) {
     final isReel = preview.contentType == 'reel';
-    final title = preview.title.trim().isEmpty
-        ? (isReel ? 'Instagram에서 공유된 Reel' : 'Instagram에서 공유된 게시물')
-        : preview.title.trim();
+    final title = _compactInstagramTitle();
 
     return Semantics(
       button: true,
@@ -323,10 +400,7 @@ class SharedLinkPreviewCard extends StatelessWidget {
         children: [
           Material(
             color: Colors.white,
-            shape: RoundedRectangleBorder(
-              borderRadius: BorderRadius.circular(14),
-              side: const BorderSide(color: Color(0xFFEAECF0)),
-            ),
+            borderRadius: BorderRadius.circular(14),
             clipBehavior: Clip.antiAlias,
             child: InkWell(
               onTap: _openLink,
@@ -334,7 +408,7 @@ class SharedLinkPreviewCard extends StatelessWidget {
                 crossAxisAlignment: CrossAxisAlignment.stretch,
                 children: [
                   SizedBox(
-                    height: compact ? 112 : 148,
+                    height: compact ? 84 : 104,
                     child: const _InstagramVisualSurface(),
                   ),
                   Padding(
@@ -362,7 +436,7 @@ class SharedLinkPreviewCard extends StatelessWidget {
                                 overflow: TextOverflow.ellipsis,
                                 style: const TextStyle(
                                   fontFamily: 'Inter',
-                                  fontFamilyFallback: const ['NotoSansKR'],
+                                  fontFamilyFallback: ['NotoSansKR'],
                                   fontSize: 14,
                                   fontWeight: FontWeight.w600,
                                   height: 1.3,
@@ -371,14 +445,12 @@ class SharedLinkPreviewCard extends StatelessWidget {
                               ),
                               const SizedBox(height: 2),
                               Text(
-                                isReel
-                                    ? 'Instagram Reel · 원본에서 보기'
-                                    : 'Instagram · 원본에서 보기',
+                                isReel ? 'Instagram Reel' : 'Instagram',
                                 maxLines: 1,
                                 overflow: TextOverflow.ellipsis,
                                 style: const TextStyle(
                                   fontFamily: 'Inter',
-                                  fontFamilyFallback: const ['NotoSansKR'],
+                                  fontFamilyFallback: ['NotoSansKR'],
                                   fontSize: 11,
                                   fontWeight: FontWeight.w400,
                                   color: Color(0xFF98A2B3),
@@ -515,12 +587,6 @@ class _InstagramPreviewUpgrade {
   static final LinkedHashMap<String, Future<SharedLinkPreview>> _requests =
       LinkedHashMap<String, Future<SharedLinkPreview>>();
 
-  static bool _isPersistentPostImage(String value) {
-    final host = Uri.tryParse(value.trim())?.host.toLowerCase() ?? '';
-    return host == 'firebasestorage.googleapis.com' ||
-        host == 'storage.googleapis.com';
-  }
-
   static Future<SharedLinkPreview> resolve(SharedLinkPreview current) {
     final key = current.effectiveUrl;
     final existing = _requests.remove(key);
@@ -546,7 +612,7 @@ class _InstagramPreviewUpgrade {
           // 게시 시 Firebase Storage에 고정한 이미지는 Meta CDN 주소보다
           // 우선한다. 메타데이터 재조회가 카드/상세의 영구 이미지를 다시
           // 만료 가능한 Instagram URL로 바꾸지 않게 한다.
-          thumbnailUrl: _isPersistentPostImage(current.thumbnailUrl)
+          thumbnailUrl: current.isPersistentThumbnail
               ? current.thumbnailUrl
               : (resolved.thumbnailUrl.trim().isEmpty
                   ? current.thumbnailUrl

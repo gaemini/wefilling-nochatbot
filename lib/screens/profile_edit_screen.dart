@@ -82,6 +82,8 @@ class _ProfileEditScreenState extends State<ProfileEditScreen> {
         builder: (_) => const HanyangEmailVerificationScreen.profile(),
       ),
     );
+    if (!mounted) return;
+    await context.read<AuthProvider>().refreshHanyangVerificationStatus();
   }
 
   Future<bool> _confirmDiscardChanges() async {
@@ -140,8 +142,10 @@ class _ProfileEditScreenState extends State<ProfileEditScreen> {
   void initState() {
     super.initState();
     // 초기 데이터 설정
-    WidgetsBinding.instance.addPostFrameCallback((_) {
+    WidgetsBinding.instance.addPostFrameCallback((_) async {
       final authProvider = Provider.of<AuthProvider>(context, listen: false);
+      await authProvider.refreshHanyangVerificationStatus();
+      if (!mounted) return;
       if (authProvider.userData != null) {
         // 닉네임 설정
         final currentNickname = authProvider.userData!['nickname'];
@@ -1129,57 +1133,106 @@ class _ProfileEditScreenState extends State<ProfileEditScreen> {
                   const SizedBox(height: 14),
                   Consumer<AuthProvider>(
                     builder: (context, authProvider, _) {
+                      final status = authProvider.hanyangVerificationStatus;
                       final verified = authProvider.isHanyangEmailVerified;
+                      final checking = !verified &&
+                          (status == HanyangVerificationStatus.unknown ||
+                              status == HanyangVerificationStatus.checking);
                       final isKorean =
                           Localizations.localeOf(context).languageCode == 'ko';
                       final school = (authProvider.userData?['university'] ??
                               authProvider.userData?['schoolName'] ??
                               'Hanyang University')
                           .toString();
+                      final String statusTitle;
+                      final String? statusDescription;
+                      if (checking) {
+                        statusTitle = isKorean
+                            ? '한양메일 인증 상태 확인 중'
+                            : 'Checking Hanyang email verification';
+                        statusDescription = null;
+                      } else if (verified) {
+                        statusTitle =
+                            '$school · ${isKorean ? '인증됨' : 'Verified'}';
+                        statusDescription =
+                            authProvider.maskedHanyangEmail.isEmpty
+                                ? null
+                                : authProvider.maskedHanyangEmail;
+                      } else if (status ==
+                          HanyangVerificationStatus.unavailable) {
+                        statusTitle = isKorean
+                            ? '인증 상태를 확인하지 못했어요'
+                            : 'Could not check verification status';
+                        statusDescription = isKorean
+                            ? '네트워크 연결을 확인한 뒤 다시 시도해주세요.'
+                            : 'Check your connection and try again.';
+                      } else if (status == HanyangVerificationStatus.conflict) {
+                        statusTitle = isKorean
+                            ? '학교 인증 정보를 확인할 수 없어요'
+                            : 'School verification needs review';
+                        statusDescription = isKorean
+                            ? '고객 지원이 필요한 상태입니다.'
+                            : 'Please contact customer support.';
+                      } else {
+                        statusTitle = isKorean
+                            ? '한양메일 미인증'
+                            : 'Hanyang email not verified';
+                        statusDescription = isKorean
+                            ? '학교 정보를 사용하려면 한양메일 인증이 필요해요.'
+                            : 'Verify your Hanyang email to use school information.';
+                      }
                       return Column(
                         crossAxisAlignment: CrossAxisAlignment.stretch,
                         children: [
                           Row(
                             crossAxisAlignment: CrossAxisAlignment.start,
                             children: [
-                              Icon(
-                                verified
-                                    ? Icons.verified_rounded
-                                    : Icons.school_outlined,
-                                size: 20,
-                                color: verified
-                                    ? AppColors.pointColor
-                                    : const Color(0xFF94A3B8),
-                              ),
+                              if (checking)
+                                const SizedBox(
+                                  width: 20,
+                                  height: 20,
+                                  child: CircularProgressIndicator(
+                                    strokeWidth: 2,
+                                    color: AppColors.pointColor,
+                                  ),
+                                )
+                              else
+                                Icon(
+                                  verified
+                                      ? Icons.verified_rounded
+                                      : Icons.school_outlined,
+                                  size: 20,
+                                  color: verified
+                                      ? AppColors.pointColor
+                                      : const Color(0xFF94A3B8),
+                                ),
                               const SizedBox(width: 9),
                               Expanded(
                                 child: Column(
                                   crossAxisAlignment: CrossAxisAlignment.start,
                                   children: [
                                     Text(
-                                      verified
-                                          ? '$school · ${isKorean ? '인증됨' : 'Verified'}'
-                                          : (isKorean
-                                              ? '한양메일 미인증'
-                                              : 'Hanyang email not verified'),
+                                      statusTitle,
                                       style: const TextStyle(
                                         fontFamily: 'Inter',
-                                        fontFamilyFallback: const ['NotoSansKR'],
+                                        fontFamilyFallback: const [
+                                          'NotoSansKR'
+                                        ],
                                         fontSize: 14,
                                         fontWeight: FontWeight.w700,
                                         color: Color(0xFF475569),
                                         height: 1.35,
                                       ),
                                     ),
-                                    if (!verified) ...[
+                                    if (statusDescription != null) ...[
                                       const SizedBox(height: 4),
                                       Text(
-                                        isKorean
-                                            ? '학교 정보를 사용하려면 한양메일 인증이 필요해요.'
-                                            : 'Verify your Hanyang email to use school information.',
+                                        statusDescription,
                                         style: const TextStyle(
                                           fontFamily: 'Inter',
-                                          fontFamilyFallback: const ['NotoSansKR'],
+                                          fontFamilyFallback: const [
+                                            'NotoSansKR'
+                                          ],
                                           fontSize: 13,
                                           fontWeight: FontWeight.w400,
                                           color: Color(0xFF64748B),
@@ -1192,20 +1245,34 @@ class _ProfileEditScreenState extends State<ProfileEditScreen> {
                               ),
                             ],
                           ),
-                          if (!verified) ...[
+                          if (!verified &&
+                              (status == HanyangVerificationStatus.unverified ||
+                                  status ==
+                                      HanyangVerificationStatus
+                                          .unavailable)) ...[
                             const SizedBox(height: 14),
                             Align(
                               alignment: Alignment.centerLeft,
                               child: TextButton.icon(
-                                onPressed: _openHanyangVerification,
-                                icon: const Icon(
-                                  Icons.mark_email_read_outlined,
+                                onPressed: status ==
+                                        HanyangVerificationStatus.unavailable
+                                    ? () => authProvider
+                                        .refreshHanyangVerificationStatus()
+                                    : _openHanyangVerification,
+                                icon: Icon(
+                                  status ==
+                                          HanyangVerificationStatus.unavailable
+                                      ? Icons.refresh_rounded
+                                      : Icons.mark_email_read_outlined,
                                   size: 19,
                                 ),
                                 label: Text(
-                                  isKorean
-                                      ? '한양메일 인증하기'
-                                      : 'Verify Hanyang email',
+                                  status ==
+                                          HanyangVerificationStatus.unavailable
+                                      ? (isKorean ? '다시 확인' : 'Check again')
+                                      : (isKorean
+                                          ? '한양메일 인증하기'
+                                          : 'Verify Hanyang email'),
                                 ),
                                 style: TextButton.styleFrom(
                                   foregroundColor: AppColors.pointColor,

@@ -8,6 +8,7 @@ import '../models/user_profile.dart';
 import '../models/relationship_status.dart';
 import '../models/friend_request.dart';
 import '../utils/logger.dart';
+import '../utils/account_status_helper.dart';
 
 class UsersRepository {
   final FirebaseFirestore _firestore = FirebaseFirestore.instance;
@@ -48,10 +49,12 @@ class UsersRepository {
       }
 
       // Firestore에서 조회
-      final doc =
-          await _firestore.collection(_usersCollection).doc(userId).get();
+      final doc = await _firestore
+          .collection(_usersCollection)
+          .doc(userId)
+          .get(const GetOptions(source: Source.server));
 
-      if (doc.exists) {
+      if (doc.exists && !isUnavailableUserAccountData(doc.data())) {
         final profile = UserProfile.fromFirestore(doc);
 
         // 캐시에 저장
@@ -110,7 +113,7 @@ class UsersRepository {
             .get();
 
         for (final doc in snapshot.docs) {
-          if (doc.exists) {
+          if (doc.exists && !isUnavailableUserAccountData(doc.data())) {
             final profile = UserProfile.fromFirestore(doc);
             profiles.add(profile);
 
@@ -157,13 +160,14 @@ class UsersRepository {
       final allUsersQuery = await _firestore
           .collection(_usersCollection)
           .limit(100) // 검색 대상을 늘려서 더 정확한 매칭
-          .get();
+          .get(const GetOptions(source: Source.server));
 
       final matchedProfiles = <UserProfile>[];
 
       for (final doc in allUsersQuery.docs) {
         // 현재 사용자 제외
         if (doc.id == currentUid) continue;
+        if (isUnavailableUserAccountData(doc.data())) continue;
 
         try {
           final profile = UserProfile.fromFirestore(doc);
@@ -194,6 +198,21 @@ class UsersRepository {
     } catch (e) {
       Logger.error('사용자 검색 오류: $e');
       return [];
+    }
+  }
+
+  /// 친구요청/DM 같은 관계 액션 직전에 서버 원본으로 계정 상태를 확인한다.
+  Future<bool> isActiveUserAccount(String userId) async {
+    try {
+      final doc = await _firestore
+          .collection(_usersCollection)
+          .doc(userId)
+          .get(const GetOptions(source: Source.server));
+      return doc.exists && !isUnavailableUserAccountData(doc.data());
+    } catch (error) {
+      Logger.error('사용자 활성 상태 확인 오류: $error');
+      // 상태를 확인하지 못한 경우에는 관계 액션을 허용하지 않는다.
+      return false;
     }
   }
 

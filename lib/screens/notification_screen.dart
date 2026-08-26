@@ -47,11 +47,13 @@ class _NotificationScreenState extends State<NotificationScreen> {
   final UserInfoCacheService _userInfoCache = UserInfoCacheService();
   final SnapshotService _snapshotService = SnapshotService.instance;
   final Map<String, Future<String?>> _postPreviewFutures = {};
+  late final Stream<List<AppNotification>> _notificationsStream;
   bool _isLoading = false;
 
   @override
   void initState() {
     super.initState();
+    _notificationsStream = _notificationService.getUserNotifications();
     if (widget.markAllAsReadOnOpen) {
       // build 이전에 setState가 섞이는 것을 피하기 위해 post-frame에서 실행
       WidgetsBinding.instance.addPostFrameCallback((_) {
@@ -932,7 +934,7 @@ class _NotificationScreenState extends State<NotificationScreen> {
         centerTitle: true,
       ),
       body: StreamBuilder<List<AppNotification>>(
-        stream: _notificationService.getUserNotifications(),
+        stream: _notificationsStream,
         builder: (context, snapshot) {
           if (snapshot.connectionState == ConnectionState.waiting &&
               !snapshot.hasData) {

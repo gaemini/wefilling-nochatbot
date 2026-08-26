@@ -200,6 +200,7 @@ class _NicknameSetupScreenState extends State<NicknameSetupScreen> {
               email: pending.loginEmail,
               password: pending.password,
               verificationToken: pending.verificationToken,
+              signupLanguage: pending.signupLanguage,
               profile: profile,
             );
             break;
@@ -211,9 +212,10 @@ class _NicknameSetupScreenState extends State<NicknameSetupScreen> {
               profile: profile,
             );
             break;
+          case PendingSignupKind.generalSocial:
           case PendingSignupKind.englishSocial:
             finalized = await authProvider.finalizeEnglishSocialSignup(
-              signupLanguage: 'en',
+              signupLanguage: pending.signupLanguage,
               profile: profile,
             );
             break;

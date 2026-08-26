@@ -8,7 +8,6 @@ import 'package:provider/provider.dart';
 import '../providers/auth_provider.dart';
 import '../screens/nickname_setup_screen.dart';
 import '../screens/main_screen.dart';
-import '../screens/hanyang_email_verification_screen.dart';
 import '../screens/email_login_screen.dart';
 import '../screens/signup_method_selection_screen.dart';
 import '../main.dart';
@@ -19,8 +18,9 @@ import '../ui/snackbar/app_snackbar.dart';
 
 class LoginScreen extends StatefulWidget {
   final bool showLogoutSuccess;
-  
-  const LoginScreen({Key? key, this.showLogoutSuccess = false}) : super(key: key);
+
+  const LoginScreen({Key? key, this.showLogoutSuccess = false})
+      : super(key: key);
 
   @override
   State<LoginScreen> createState() => _LoginScreenState();
@@ -62,7 +62,7 @@ class _LoginScreenState extends State<LoginScreen>
     // 화면 진입 시 처리
     WidgetsBinding.instance.addPostFrameCallback((_) {
       if (!mounted) return;
-      
+
       // 로그아웃 성공 메시지 표시
       if (widget.showLogoutSuccess) {
         AppSnackBar.show(
@@ -71,7 +71,7 @@ class _LoginScreenState extends State<LoginScreen>
           type: AppSnackBarType.success,
         );
       }
-      
+
       final authProvider = Provider.of<AuthProvider>(context, listen: false);
       if (authProvider.consumeSignupRequiredFlag()) {
         // 동일한 다이얼로그를 재사용
@@ -204,8 +204,10 @@ class _LoginScreenState extends State<LoginScreen>
                       final isShort = constraints.maxHeight < 760;
                       final isVeryShort = constraints.maxHeight < 700;
                       final hPadding = isVeryShort ? 16.0 : 24.0;
-                      final logoSize = isVeryShort ? 78.0 : (isShort ? 86.0 : 100.0);
-                      final appNameSize = isVeryShort ? 34.0 : (isShort ? 37.0 : 40.0);
+                      final logoSize =
+                          isVeryShort ? 78.0 : (isShort ? 86.0 : 100.0);
+                      final appNameSize =
+                          isVeryShort ? 34.0 : (isShort ? 37.0 : 40.0);
                       final cardVPadding = isVeryShort ? 14.0 : 20.0;
                       final cardHPadding = isVeryShort ? 16.0 : 24.0;
                       final buttonGap = isVeryShort ? 10.0 : 14.0;
@@ -234,7 +236,8 @@ class _LoginScreenState extends State<LoginScreen>
                                       width: logoSize,
                                       height: logoSize,
                                       fit: BoxFit.contain,
-                                      errorBuilder: (context, error, stackTrace) {
+                                      errorBuilder:
+                                          (context, error, stackTrace) {
                                         return Icon(
                                           Icons.people_alt_rounded,
                                           size: logoSize * 0.8,
@@ -252,7 +255,9 @@ class _LoginScreenState extends State<LoginScreen>
                                           fontSize: appNameSize,
                                           fontWeight: FontWeight.bold,
                                           fontFamily: 'Inter',
-                                          fontFamilyFallback: const ['NotoSansKR'],
+                                          fontFamilyFallback: const [
+                                            'NotoSansKR'
+                                          ],
                                           color: Colors.black,
                                           letterSpacing: 1.2,
                                         ),
@@ -262,7 +267,8 @@ class _LoginScreenState extends State<LoginScreen>
                                     FittedBox(
                                       fit: BoxFit.scaleDown,
                                       child: Text(
-                                        AppLocalizations.of(context)!.appTagline,
+                                        AppLocalizations.of(context)!
+                                            .appTagline,
                                         maxLines: 1,
                                         style: TextStyle(
                                           fontSize: isVeryShort ? 15 : 18,
@@ -273,174 +279,197 @@ class _LoginScreenState extends State<LoginScreen>
                                     ),
                                   ],
                                 ),
-                                  SizedBox(height: isVeryShort ? 8 : 12),
-                                  Container(
-                                    width: double.infinity,
-                                    padding: EdgeInsets.symmetric(
-                                      horizontal: cardHPadding,
-                                      vertical: cardVPadding,
-                                    ),
-                                    decoration: BoxDecoration(
-                                      color: Colors.white,
-                                      borderRadius: BorderRadius.circular(16),
-                                      boxShadow: [
-                                        BoxShadow(
-                                          color: Colors.black.withOpacity(0.05),
-                                          offset: const Offset(0, 3),
-                                          blurRadius: 10,
-                                          spreadRadius: 0,
+                                SizedBox(height: isVeryShort ? 8 : 12),
+                                Container(
+                                  width: double.infinity,
+                                  padding: EdgeInsets.symmetric(
+                                    horizontal: cardHPadding,
+                                    vertical: cardVPadding,
+                                  ),
+                                  decoration: BoxDecoration(
+                                    color: Colors.white,
+                                    borderRadius: BorderRadius.circular(16),
+                                    boxShadow: [
+                                      BoxShadow(
+                                        color: Colors.black.withOpacity(0.05),
+                                        offset: const Offset(0, 3),
+                                        blurRadius: 10,
+                                        spreadRadius: 0,
+                                      ),
+                                    ],
+                                  ),
+                                  child: Column(
+                                    crossAxisAlignment:
+                                        CrossAxisAlignment.center,
+                                    children: [
+                                      Text(
+                                        AppLocalizations.of(context)!
+                                            .welcomeTitle,
+                                        textAlign: TextAlign.center,
+                                        style: TextStyle(
+                                          fontSize: isVeryShort ? 20 : 22,
+                                          fontWeight: FontWeight.bold,
+                                          color: Colors.blue.shade800,
                                         ),
-                                      ],
-                                    ),
-                                    child: Column(
-                                      crossAxisAlignment: CrossAxisAlignment.center,
-                                      children: [
-                                        Text(
-                                          AppLocalizations.of(context)!.welcomeTitle,
-                                          textAlign: TextAlign.center,
-                                          style: TextStyle(
-                                            fontSize: isVeryShort ? 20 : 22,
-                                            fontWeight: FontWeight.bold,
-                                            color: Colors.blue.shade800,
-                                          ),
+                                      ),
+                                      SizedBox(height: titleGap),
+                                      Text(
+                                        AppLocalizations.of(context)!
+                                            .googleLoginDescription,
+                                        textAlign: TextAlign.center,
+                                        style: TextStyle(
+                                          fontSize: isVeryShort ? 15 : 16,
+                                          height: 1.4,
+                                          color: Colors.grey.shade800,
                                         ),
-                                        SizedBox(height: titleGap),
-                                        Text(
-                                          AppLocalizations.of(context)!.googleLoginDescription,
-                                          textAlign: TextAlign.center,
-                                          style: TextStyle(
-                                            fontSize: isVeryShort ? 15 : 16,
-                                            height: 1.4,
-                                            color: Colors.grey.shade800,
-                                          ),
-                                        ),
-                                        SizedBox(height: isVeryShort ? 14 : 20),
-                                        _LoginMethodButton(
-                                          label: AppLocalizations.of(context)!.appleLogin,
-                                          onPressed: authProvider.isLoading
-                                              ? null
-                                              : () => _handleAppleLogin(
-                                                    context,
-                                                    authProvider,
-                                                  ),
-                                          backgroundColor: const Color(0xFFF3F4F6),
-                                          foregroundColor: const Color(0xFF111827),
-                                          leading: Icon(
-                                            Icons.apple,
-                                            size: isVeryShort ? 19 : 20,
-                                            color: Colors.black,
-                                          ),
-                                        ),
-                                        SizedBox(height: buttonGap),
-                                        _LoginMethodButton(
-                                          label: AppLocalizations.of(context)!.googleLogin,
-                                          onPressed: authProvider.isLoading
-                                              ? null
-                                              : () => _handleGoogleLogin(
-                                                    context,
-                                                    authProvider,
-                                                  ),
-                                          backgroundColor: const Color(0xFFF3F4F6),
-                                          foregroundColor: const Color(0xFF111827),
-                                          leading: Image.asset(
-                                            'assets/icons/google_logo.png',
-                                            width: isVeryShort ? 18 : 20,
-                                            height: isVeryShort ? 18 : 20,
-                                            errorBuilder: (context, error, stackTrace) {
-                                              return SizedBox(
-                                                width: isVeryShort ? 18 : 20,
-                                                height: isVeryShort ? 18 : 20,
-                                                child: CustomPaint(
-                                                  painter: GoogleLogoPainter(),
+                                      ),
+                                      SizedBox(height: isVeryShort ? 14 : 20),
+                                      _LoginMethodButton(
+                                        label: AppLocalizations.of(context)!
+                                            .appleLogin,
+                                        onPressed: authProvider.isLoading
+                                            ? null
+                                            : () => _handleAppleLogin(
+                                                  context,
+                                                  authProvider,
                                                 ),
-                                              );
-                                            },
-                                          ),
+                                        backgroundColor:
+                                            const Color(0xFFF3F4F6),
+                                        foregroundColor:
+                                            const Color(0xFF111827),
+                                        leading: Icon(
+                                          Icons.apple,
+                                          size: isVeryShort ? 19 : 20,
+                                          color: Colors.black,
                                         ),
-                                        SizedBox(height: buttonGap),
-                                        _LoginMethodButton(
-                                          label: AppLocalizations.of(context)!.emailLogin,
-                                          onPressed: authProvider.isLoading
-                                              ? null
-                                              : () {
-                                                  Navigator.push(
-                                                    context,
-                                                    MaterialPageRoute(
-                                                      builder: (_) => const EmailLoginScreen(),
-                                                    ),
-                                                  );
-                                                },
-                                          backgroundColor: const Color(0xFFF3F4F6),
-                                          foregroundColor: const Color(0xFF111827),
-                                          leading: Icon(
-                                            Icons.email_outlined,
-                                            size: isVeryShort ? 18 : 19,
-                                            color: const Color(0xFF374151),
-                                          ),
+                                      ),
+                                      SizedBox(height: buttonGap),
+                                      _LoginMethodButton(
+                                        label: AppLocalizations.of(context)!
+                                            .googleLogin,
+                                        onPressed: authProvider.isLoading
+                                            ? null
+                                            : () => _handleGoogleLogin(
+                                                  context,
+                                                  authProvider,
+                                                ),
+                                        backgroundColor:
+                                            const Color(0xFFF3F4F6),
+                                        foregroundColor:
+                                            const Color(0xFF111827),
+                                        leading: Image.asset(
+                                          'assets/icons/google_logo.png',
+                                          width: isVeryShort ? 18 : 20,
+                                          height: isVeryShort ? 18 : 20,
+                                          errorBuilder:
+                                              (context, error, stackTrace) {
+                                            return SizedBox(
+                                              width: isVeryShort ? 18 : 20,
+                                              height: isVeryShort ? 18 : 20,
+                                              child: CustomPaint(
+                                                painter: GoogleLogoPainter(),
+                                              ),
+                                            );
+                                          },
                                         ),
-                                        SizedBox(height: isVeryShort ? 8 : 12),
-                                        TextButton(
-                                          onPressed: authProvider.isLoading
-                                              ? null
-                                              : () {
-                                                  _navigateToSignUpFlow(context);
-                                                },
-                                          child: Row(
-                                            mainAxisAlignment: MainAxisAlignment.center,
-                                            mainAxisSize: MainAxisSize.min,
+                                      ),
+                                      SizedBox(height: buttonGap),
+                                      _LoginMethodButton(
+                                        label: AppLocalizations.of(context)!
+                                            .emailLogin,
+                                        onPressed: authProvider.isLoading
+                                            ? null
+                                            : () {
+                                                Navigator.push(
+                                                  context,
+                                                  MaterialPageRoute(
+                                                    builder: (_) =>
+                                                        const EmailLoginScreen(),
+                                                  ),
+                                                );
+                                              },
+                                        backgroundColor:
+                                            const Color(0xFFF3F4F6),
+                                        foregroundColor:
+                                            const Color(0xFF111827),
+                                        leading: Icon(
+                                          Icons.email_outlined,
+                                          size: isVeryShort ? 18 : 19,
+                                          color: const Color(0xFF374151),
+                                        ),
+                                      ),
+                                      SizedBox(height: isVeryShort ? 8 : 12),
+                                      TextButton(
+                                        onPressed: authProvider.isLoading
+                                            ? null
+                                            : () {
+                                                _navigateToSignUpFlow(context);
+                                              },
+                                        child: Row(
+                                          mainAxisAlignment:
+                                              MainAxisAlignment.center,
+                                          mainAxisSize: MainAxisSize.min,
+                                          children: [
+                                            Text(
+                                              AppLocalizations.of(context)!
+                                                  .noAccountYet,
+                                              style: TextStyle(
+                                                fontSize: isVeryShort ? 13 : 14,
+                                                color: Colors.grey.shade700,
+                                              ),
+                                            ),
+                                            const SizedBox(width: 4),
+                                            Text(
+                                              AppLocalizations.of(context)!
+                                                  .signUp,
+                                              style: TextStyle(
+                                                fontSize: isVeryShort ? 13 : 14,
+                                                fontWeight: FontWeight.bold,
+                                                color: Colors.blue.shade700,
+                                              ),
+                                            ),
+                                          ],
+                                        ),
+                                      ),
+                                      if (authProvider.isLoading)
+                                        Padding(
+                                          padding:
+                                              const EdgeInsets.only(top: 10),
+                                          child: Column(
                                             children: [
-                                              Text(
-                                                AppLocalizations.of(context)!.noAccountYet,
-                                                style: TextStyle(
-                                                  fontSize: isVeryShort ? 13 : 14,
-                                                  color: Colors.grey.shade700,
+                                              const SizedBox(
+                                                height: 18,
+                                                width: 18,
+                                                child:
+                                                    CircularProgressIndicator(
+                                                  valueColor:
+                                                      AlwaysStoppedAnimation<
+                                                          Color>(
+                                                    Colors.blue,
+                                                  ),
+                                                  strokeWidth: 2,
                                                 ),
                                               ),
-                                              const SizedBox(width: 4),
+                                              const SizedBox(height: 8),
                                               Text(
-                                                AppLocalizations.of(context)!.signUp,
+                                                AppLocalizations.of(context)!
+                                                    .loggingIn,
                                                 style: TextStyle(
-                                                  fontSize: isVeryShort ? 13 : 14,
-                                                  fontWeight: FontWeight.bold,
-                                                  color: Colors.blue.shade700,
+                                                  fontSize:
+                                                      isVeryShort ? 12 : 13,
+                                                  color: Colors.grey.shade600,
                                                 ),
                                               ),
                                             ],
                                           ),
                                         ),
-                                        if (authProvider.isLoading)
-                                          Padding(
-                                            padding: const EdgeInsets.only(top: 10),
-                                            child: Column(
-                                              children: [
-                                                const SizedBox(
-                                                  height: 18,
-                                                  width: 18,
-                                                  child: CircularProgressIndicator(
-                                                    valueColor:
-                                                        AlwaysStoppedAnimation<Color>(
-                                                      Colors.blue,
-                                                    ),
-                                                    strokeWidth: 2,
-                                                  ),
-                                                ),
-                                                const SizedBox(height: 8),
-                                                Text(
-                                                  AppLocalizations.of(context)!.loggingIn,
-                                                  style: TextStyle(
-                                                    fontSize: isVeryShort ? 12 : 13,
-                                                    color: Colors.grey.shade600,
-                                                  ),
-                                                ),
-                                              ],
-                                            ),
-                                          ),
-                                      ],
-                                    ),
+                                    ],
                                   ),
+                                ),
                                 const Spacer(),
                                 Text(
-                                  AppLocalizations.of(context)!.loginTermsNotice,
+                                  AppLocalizations.of(context)!
+                                      .loginTermsNotice,
                                   textAlign: TextAlign.center,
                                   style: TextStyle(
                                     fontSize: isVeryShort ? 11 : 12,
@@ -457,7 +486,7 @@ class _LoginScreenState extends State<LoginScreen>
                   ),
                 ),
               ),
-              
+
               // 언어 선택 버튼 (상단 우측)
               Positioned(
                 top: 16,
@@ -495,8 +524,9 @@ class _LoginScreenState extends State<LoginScreen>
                             ),
                             const SizedBox(width: 8),
                             Text(
-                              Localizations.localeOf(context).languageCode == 'ko' 
-                                  ? 'KOR' 
+                              Localizations.localeOf(context).languageCode ==
+                                      'ko'
+                                  ? 'KOR'
                                   : 'ENG',
                               style: TextStyle(
                                 fontSize: 14,
@@ -517,11 +547,11 @@ class _LoginScreenState extends State<LoginScreen>
       ),
     );
   }
-  
+
   /// 언어 선택 다이얼로그
   void _showLanguageDialog(BuildContext context) {
     final currentLocale = Localizations.localeOf(context).languageCode;
-    
+
     showDialog(
       context: context,
       builder: (dialogContext) => AlertDialog(
@@ -602,7 +632,10 @@ class _LoginScreenState extends State<LoginScreen>
       MaterialPageRoute(
         builder: (_) => isEnglishSignUp
             ? const SignUpMethodSelectionScreen(skipHanyangVerification: true)
-            : const HanyangEmailVerificationScreen(),
+            : const SignUpMethodSelectionScreen(
+                skipHanyangVerification: true,
+                unverifiedSignupLanguage: 'ko',
+              ),
       ),
     );
   }
@@ -638,15 +671,15 @@ class _LoginScreenState extends State<LoginScreen>
           context,
           MaterialPageRoute(builder: (_) => const MainScreen()),
         );
-      } 
+      }
       // 로그인 실패한 경우 (신규 사용자 또는 한양메일 미인증)
       else if (!success) {
         Logger.error("로그인 실패 -> 회원가입 필요 여부 확인");
-        
+
         // 프레임 이후에 다이얼로그를 열어, 재빌드/상태변경과 충돌하지 않도록 함
         WidgetsBinding.instance.addPostFrameCallback((_) {
           if (!mounted) return;
-          
+
           // signupRequired 플래그 확인 (취소가 아닌 실제 회원가입 필요한 경우만)
           if (authProvider.consumeSignupRequiredFlag()) {
             Logger.log("회원가입 필요 메시지 표시");
@@ -811,15 +844,15 @@ class _LoginScreenState extends State<LoginScreen>
           context,
           MaterialPageRoute(builder: (_) => const MainScreen()),
         );
-      } 
+      }
       // 로그인 실패한 경우 (신규 사용자 또는 한양메일 미인증)
       else if (!success) {
         Logger.error("로그인 실패 -> 회원가입 필요 여부 확인");
-        
+
         // 프레임 이후에 다이얼로그를 열어, 재빌드/상태변경과 충돌하지 않도록 함
         WidgetsBinding.instance.addPostFrameCallback((_) {
           if (!mounted) return;
-          
+
           // signupRequired 플래그 확인 (취소가 아닌 실제 회원가입 필요한 경우만)
           if (authProvider.consumeSignupRequiredFlag()) {
             Logger.log("회원가입 필요 메시지 표시");
@@ -941,13 +974,13 @@ class _LoginScreenState extends State<LoginScreen>
       }
     } catch (e) {
       Logger.error("Apple 로그인 오류: $e");
-      
+
       // 사용자 친화적 에러 메시지 생성
       String errorMessage = '로그인 중 오류가 발생했습니다';
       String errorDetail = '';
-      
+
       final errorString = e.toString();
-      
+
       if (errorString.contains('operation-not-allowed')) {
         // Firebase Console에서 Apple Sign In 미활성화 상태
         // 사용자에게 명확한 안내 표시
@@ -960,12 +993,14 @@ class _LoginScreenState extends State<LoginScreen>
               ),
               title: Row(
                 children: [
-                  Icon(Icons.warning_amber, color: Colors.orange.shade700, size: 28),
+                  Icon(Icons.warning_amber,
+                      color: Colors.orange.shade700, size: 28),
                   const SizedBox(width: 12),
                   const Expanded(
                     child: Text(
                       'Firebase 설정 필요',
-                      style: TextStyle(fontWeight: FontWeight.bold, fontSize: 20),
+                      style:
+                          TextStyle(fontWeight: FontWeight.bold, fontSize: 20),
                     ),
                   ),
                 ],
@@ -983,7 +1018,8 @@ class _LoginScreenState extends State<LoginScreen>
               actions: [
                 TextButton(
                   onPressed: () => Navigator.pop(dialogContext),
-                  child: Text(AppLocalizations.of(context)!.confirm, style: TextStyle(fontSize: 16)),
+                  child: Text(AppLocalizations.of(context)!.confirm,
+                      style: TextStyle(fontSize: 16)),
                 ),
               ],
             ),
@@ -997,17 +1033,19 @@ class _LoginScreenState extends State<LoginScreen>
             '• 또는 실제 iPhone에서 테스트 권장\n\n'
             'Xcode 설정 확인:\n'
             '• Sign in with Apple Capability 추가 필요';
-      } else if (errorString.contains('canceled') || errorString.contains('cancelled')) {
+      } else if (errorString.contains('canceled') ||
+          errorString.contains('cancelled')) {
         errorMessage = 'Apple 로그인이 취소되었습니다';
         errorDetail = '';
-      } else if (errorString.contains('network') || errorString.contains('Network')) {
+      } else if (errorString.contains('network') ||
+          errorString.contains('Network')) {
         errorMessage = '네트워크 연결을 확인해주세요';
         errorDetail = '\n인터넷 연결 상태를 확인하고 다시 시도해주세요.';
       } else {
         errorMessage = 'Apple 로그인에 실패했습니다';
         errorDetail = '\n\n다시 시도하거나 Google 로그인을 이용해주세요.';
       }
-      
+
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
@@ -1177,7 +1215,7 @@ class _LanguageOption extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final isSelected = value == groupValue;
-    
+
     return Material(
       color: Colors.transparent,
       child: InkWell(
@@ -1187,9 +1225,8 @@ class _LanguageOption extends StatelessWidget {
           duration: const Duration(milliseconds: 180),
           padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
           decoration: BoxDecoration(
-            color: isSelected
-                ? const Color(0xFFE8F6FC)
-                : const Color(0xFFF5F6F8),
+            color:
+                isSelected ? const Color(0xFFE8F6FC) : const Color(0xFFF5F6F8),
             borderRadius: BorderRadius.circular(14),
           ),
           child: Row(

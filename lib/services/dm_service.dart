@@ -33,6 +33,31 @@ class DMService {
   final Map<String, List<DMMessage>> _messageCache = {};
   // 배지 카운트는 Stream으로 실시간 관리되므로 캐싱 불필요
 
+  bool _isActiveUserData(Map<String, dynamic> data) {
+    final status = (data['status'] ?? '').toString().trim().toLowerCase();
+    return data['isDeleted'] != true &&
+        data['deleted'] != true &&
+        data['disabled'] != true &&
+        data['isSuspended'] != true &&
+        status != 'deleted' &&
+        status != 'suspended';
+  }
+
+  Future<bool> _hasActiveUserProfile(String uid) async {
+    if (uid.isEmpty || uid == 'deleted') return false;
+    try {
+      final doc = await _firestore
+          .collection('users')
+          .doc(uid)
+          .get(const GetOptions(source: Source.server));
+      final data = doc.data();
+      return doc.exists && data != null && _isActiveUserData(data);
+    } catch (error) {
+      Logger.error('👤 활성 계정 확인 실패: $uid, $error');
+      return false;
+    }
+  }
+
   /// conversationId 생성 (사전순 정렬) - 공개 메서드
   String generateConversationId(String otherUserId,
       {bool isOtherUserAnonymous = false, String? postId}) {
@@ -345,6 +370,11 @@ class DMService {
     // 본인에게는 DM 불가 (익명 게시글이어도 본인 게시글이면 불가)
     if (currentUser.uid == otherUserId) {
       Logger.log('❌ 본인에게 DM 불가');
+      return false;
+    }
+
+    if (!await _hasActiveUserProfile(otherUserId)) {
+      Logger.log('❌ 존재하지 않거나 활성 상태가 아닌 사용자');
       return false;
     }
 
@@ -1181,6 +1211,10 @@ class DMService {
         );
 
         if (otherUserId.isNotEmpty) {
+          if (!await _hasActiveUserProfile(otherUserId)) {
+            Logger.log('❌ 탈퇴한 계정으로는 메시지를 보낼 수 없습니다');
+            return false;
+          }
           // 차단 여부 확인
           final isBlocked =
               await ContentFilterService.isUserBlocked(otherUserId);
@@ -1205,6 +1239,13 @@ class DMService {
             await _firestore.collection('users').doc(currentUser.uid).get();
         final otherUserDoc =
             await _firestore.collection('users').doc(otherUserId).get();
+        final otherUserData = otherUserDoc.data();
+        if (!otherUserDoc.exists ||
+            otherUserData == null ||
+            !_isActiveUserData(otherUserData)) {
+          Logger.log('❌ 탈퇴한 계정으로는 대화방을 생성할 수 없습니다');
+          return false;
+        }
 
         String? dmContent;
         if (parsed.anonymous && parsed.postId != null) {

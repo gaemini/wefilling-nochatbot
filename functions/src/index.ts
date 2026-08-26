@@ -8,6 +8,12 @@ import * as nodemailer from 'nodemailer';
 import * as crypto from 'crypto';
 import { COL } from './firestore_paths';
 import {resolveFriendNotificationAudience} from './frozen_audience';
+import {
+  HANYANG_VERIFICATION_SCHEMA_VERSION,
+  hasActiveHanyangClaim,
+  hanyangProjectionEvidence,
+  reconcileHanyangVerificationForUid,
+} from './hanyang_verification';
 
 export {
   createPostSecure,
@@ -22,7 +28,16 @@ export {
   reconcileDMUnreadTotalSecure,
 } from './dm_chat';
 
-export {resolveSharedLink} from './shared_link_preview';
+export {
+  resolveSharedLink,
+  persistInstagramPreviewThumbnail,
+  backfillInstagramPreviewThumbnails,
+} from './shared_link_preview';
+
+export {
+  reconcileMyHanyangVerificationStatus,
+  backfillHanyangVerificationStates,
+} from './hanyang_verification';
 
 export {
   getSnapshotServerTime,
@@ -49,6 +64,7 @@ export {
   inviteSnackChatParticipants,
   joinMeetupSnackChatSecure,
   ensureSnackChatMembershipSecure,
+  getSnackChatEntryContext,
   markSnackChatReadSecure,
   leaveSnackChatSecure,
   updateSnackChatTitleSecure,
@@ -828,18 +844,8 @@ function isCompletedRegistrationData(data: any): boolean {
 }
 
 function isHanyangEmailVerifiedData(data: any): boolean {
-  if (!data) return false;
-  if (typeof data.hanyangEmailVerified === 'boolean') {
-    return data.hanyangEmailVerified === true;
-  }
-  const email = String(data.hanyangEmail || '').trim().toLowerCase();
-  if (!email.endsWith('@hanyang.ac.kr')) return false;
-  const method = String(
-    data.schoolVerificationMethod || data.verificationMethod || ''
-  ).trim();
-  if (method === 'social_en_bypass' || method === 'email_code') return false;
-  return data.emailVerified === true &&
-    (method === '' || method === 'hanyang_email_code');
+  const evidence = hanyangProjectionEvidence(data);
+  return evidence === 'explicit_true' || evidence === 'strong_legacy';
 }
 
 // email_verifications 컬렉션을 콘솔에서 안정적으로 확인하기 위한 고정 메타 문서 ID
@@ -852,6 +858,20 @@ export const finalizeHanyangEmailVerification = functions.https.onCall(async (da
       throw new functions.https.HttpsError('unauthenticated', '로그인이 필요합니다.');
     }
     const uid = context.auth.uid;
+    const canonicalBeforeVerification = await reconcileHanyangVerificationForUid(uid);
+    if (canonicalBeforeVerification.verified) {
+      return {
+        success: true,
+        alreadyVerified: true,
+        ...canonicalBeforeVerification,
+      };
+    }
+    if (canonicalBeforeVerification.status === 'conflict') {
+      throw new functions.https.HttpsError(
+        'failed-precondition',
+        '학교 인증 정보에 충돌이 있어 확인이 필요합니다.',
+      );
+    }
     const authEmail = (typeof (context.auth.token as any)?.email === 'string')
       ? String((context.auth.token as any).email)
       : '';
@@ -1002,6 +1022,8 @@ export const finalizeHanyangEmailVerification = functions.https.onCall(async (da
         hanyangEmailVerified: true,
         hanyangEmailVerifiedAt: admin.firestore.FieldValue.serverTimestamp(),
         schoolVerificationMethod: 'hanyang_email_code',
+        schoolVerificationSchemaVersion: HANYANG_VERIFICATION_SCHEMA_VERSION,
+        schoolVerificationUpdatedAt: admin.firestore.FieldValue.serverTimestamp(),
         signupLanguage: 'ko',
         verificationMethod: 'hanyang_email_code',
         updatedAt: admin.firestore.FieldValue.serverTimestamp(),
@@ -1027,6 +1049,20 @@ export const completeHanyangProfileVerification = functions.https.onCall(async (
   }
 
   const uid = context.auth.uid;
+  const canonicalBeforeVerification = await reconcileHanyangVerificationForUid(uid);
+  if (canonicalBeforeVerification.verified) {
+    return {
+      success: true,
+      alreadyVerified: true,
+      ...canonicalBeforeVerification,
+    };
+  }
+  if (canonicalBeforeVerification.status === 'conflict') {
+    throw new functions.https.HttpsError(
+      'failed-precondition',
+      '학교 인증 정보에 충돌이 있어 확인이 필요합니다.',
+    );
+  }
   const emailRaw = typeof data?.email === 'string' ? data.email.trim() : '';
   const verificationToken = typeof data?.verificationToken === 'string'
     ? data.verificationToken.trim()
@@ -1042,7 +1078,7 @@ export const completeHanyangProfileVerification = functions.https.onCall(async (
   const verificationRef = db.collection(COL.emailVerifications).doc(email);
   const claimRef = db.collection(COL.emailClaims).doc(email);
 
-  await db.runTransaction(async (tx) => {
+  const result = await db.runTransaction(async (tx) => {
     const [userSnap, verificationSnap, claimSnap] = await Promise.all([
       tx.get(userRef),
       tx.get(verificationRef),
@@ -1055,6 +1091,16 @@ export const completeHanyangProfileVerification = functions.https.onCall(async (
         'failed-precondition',
         '가입을 완료한 계정에서만 학교 인증을 추가할 수 있습니다.'
       );
+    }
+
+    // 이미 학교 인증이 완료된 계정은 화면/메모리 상태가 늦게 갱신되어
+    // 재요청이 들어와도 오류로 처리하지 않는다. 사용자 문서는 변경하지
+    // 않으므로 미인증 계정이 이 경로로 승격되는 일도 없다.
+    if (isHanyangEmailVerifiedData(userData)) {
+      return {
+        alreadyVerified: true,
+        hanyangEmail: String(userData.hanyangEmail || '').trim(),
+      };
     }
 
     const verification = verificationSnap.data() as any;
@@ -1073,16 +1119,6 @@ export const completeHanyangProfileVerification = functions.https.onCall(async (
       throw new functions.https.HttpsError(
         'failed-precondition',
         '한양메일 인증이 만료되었거나 유효하지 않습니다. 다시 인증해주세요.'
-      );
-    }
-
-    const existingHanyangEmail = String(userData?.hanyangEmail || '').trim();
-    if (isHanyangEmailVerifiedData(userData) &&
-        existingHanyangEmail &&
-        normalizeEmail(existingHanyangEmail) !== email) {
-      throw new functions.https.HttpsError(
-        'failed-precondition',
-        '이미 다른 한양메일이 인증되어 있습니다.'
       );
     }
 
@@ -1107,15 +1143,19 @@ export const completeHanyangProfileVerification = functions.https.onCall(async (
       hanyangEmailVerified: true,
       hanyangEmailVerifiedAt: admin.firestore.FieldValue.serverTimestamp(),
       schoolVerificationMethod: 'hanyang_email_code',
+      verificationMethod: 'hanyang_email_code',
+      schoolVerificationSchemaVersion: HANYANG_VERIFICATION_SCHEMA_VERSION,
+      schoolVerificationUpdatedAt: admin.firestore.FieldValue.serverTimestamp(),
       updatedAt: admin.firestore.FieldValue.serverTimestamp(),
     });
     tx.delete(verificationRef);
+    return {alreadyVerified: false, hanyangEmail: email};
   });
 
-  return { success: true };
+  return {success: true, ...result};
 });
 
-// 영어 소셜 회원가입 승인(한양메일 인증 우회 전용)
+// 일반 소셜 회원가입 승인(한양메일 인증 없이 가입 가능)
 // - Google/Apple 로그인 사용자만 허용
 // - users/{uid}.emailVerified=true 를 서버에서 확정 저장
 export const finalizeEnglishSocialSignup = functions.https.onCall(async (data, context) => {
@@ -1125,11 +1165,14 @@ export const finalizeEnglishSocialSignup = functions.https.onCall(async (data, c
     }
 
     const uid = context.auth.uid;
+    // 일반 가입 재시도가 이미 확정된 학교 인증을 내리지 못하게 서버 원본을
+    // 먼저 정합화합니다. conflict는 기존 값을 보존하되 승격하지 않습니다.
+    const schoolVerification = await reconcileHanyangVerificationForUid(uid);
     const profile = parseCompletedRegistrationProfile(data?.profile);
     const signupLanguageRaw = typeof data?.signupLanguage === 'string'
       ? String(data.signupLanguage)
       : 'en';
-    const signupLanguage = signupLanguageRaw.toLowerCase().startsWith('en') ? 'en' : 'en';
+    const signupLanguage = signupLanguageRaw.toLowerCase().startsWith('ko') ? 'ko' : 'en';
 
     const tokenEmail = (typeof (context.auth.token as any)?.email === 'string')
       ? String((context.auth.token as any).email)
@@ -1155,7 +1198,7 @@ export const finalizeEnglishSocialSignup = functions.https.onCall(async (data, c
     if (providerId !== 'google.com' && providerId !== 'apple.com') {
       throw new functions.https.HttpsError(
         'permission-denied',
-        '영어 회원가입은 Google/Apple 계정으로만 가능합니다.'
+        'Google/Apple 계정으로만 가입할 수 있습니다.'
       );
     }
 
@@ -1171,15 +1214,6 @@ export const finalizeEnglishSocialSignup = functions.https.onCall(async (data, c
       const userRef = db.collection(COL.users).doc(uid);
       const userSnap = await tx.get(userRef);
       const existing = (userSnap.exists ? (userSnap.data() as any) : {}) || {};
-
-      // 한양메일 인증 계정은 기존 정책 유지(충돌 방지)
-      const hasVerifiedHanyang = isHanyangEmailVerifiedData(existing);
-      if (hasVerifiedHanyang) {
-        throw new functions.https.HttpsError(
-          'failed-precondition',
-          '이미 한양메일 인증 계정이 등록되어 있습니다.'
-        );
-      }
 
       const missing = (k: string) => existing[k] === undefined || existing[k] === null;
       const schemaFill: Record<string, any> = {};
@@ -1207,17 +1241,23 @@ export const finalizeEnglishSocialSignup = functions.https.onCall(async (data, c
       if (missing('termsAccepted')) schemaFill.termsAccepted = true;
       if (missing('termsAcceptedAt')) schemaFill.termsAcceptedAt = admin.firestore.FieldValue.serverTimestamp();
       if (missing('createdAt')) schemaFill.createdAt = admin.firestore.FieldValue.serverTimestamp();
+      if (!schoolVerification.verified) {
+        if (missing('hanyangEmail')) schemaFill.hanyangEmail = '';
+        if (missing('hanyangEmailVerified')) schemaFill.hanyangEmailVerified = false;
+        if (missing('hanyangEmailVerifiedAt')) schemaFill.hanyangEmailVerifiedAt = null;
+        if (missing('schoolVerificationMethod')) schemaFill.schoolVerificationMethod = '';
+        if (missing('verificationMethod')) {
+          schemaFill.verificationMethod = signupLanguage === 'en'
+            ? 'social_en_bypass'
+            : 'social_ko_without_hanyang';
+        }
+      }
       tx.set(userRef, {
         ...schemaFill,
         ...completedProfileFields(profile),
         uid,
         email: authEmail,
-        hanyangEmail: '',
-        hanyangEmailVerified: false,
-        hanyangEmailVerifiedAt: null,
-        schoolVerificationMethod: '',
         signupLanguage,
-        verificationMethod: 'social_en_bypass',
         signupProvider: providerId,
         preferredLanguage: signupLanguage,
         preferredLanguageUpdatedAt: admin.firestore.FieldValue.serverTimestamp(),
@@ -1706,6 +1746,14 @@ export const joinMeetupSecure = functions.https.onCall(async (data, context) => 
   if (meetupPublicationExpired(initialData)) {
     throw new functions.https.HttpsError('failed-precondition', '공개 시간이 지난 밋업입니다.');
   }
+  const requiresHanyangVerification =
+    initialData.requiresHanyangVerification === true;
+  if (requiresHanyangVerification && !(await hasActiveHanyangClaim(userId))) {
+    throw new functions.https.HttpsError(
+      'permission-denied',
+      '한양메일 인증 후 참여할 수 있는 밋업입니다.'
+    );
+  }
 
   const participantRef = db
     .collection(COL.meetupParticipants)
@@ -1731,6 +1779,8 @@ export const joinMeetupSecure = functions.https.onCall(async (data, context) => 
     const meetup = (meetupDoc.data() || {}) as Record<string, any>;
     if (toStr(meetup.visibilityMode || meetup.visibility) !==
           toStr(initialData.visibilityMode || initialData.visibility)
+        || (meetup.requiresHanyangVerification === true) !==
+          requiresHanyangVerification
         || !sameStringSet(
           meetup.audienceUserIdsFrozen || meetup.allowedUserIds,
           initialData.audienceUserIdsFrozen || initialData.allowedUserIds
@@ -3218,7 +3268,7 @@ export const verifyEmailCode = functions.https.onCall(async (data, context) => {
 });
 
 /**
- * 4자리 이메일 인증을 마친 영어 가입 사용자의 이메일/비밀번호 계정을 만든다.
+ * 4자리 이메일 인증을 마친 일반 가입 사용자의 이메일/비밀번호 계정을 만든다.
  *
  * Auth 레코드만 생긴 채 가입이 중단된 경우 새 UID를 만들지 않고 기존 계정을
  * 복구한다. 반대로 프로필 가입까지 완료된 계정은 명확히 차단한다.
@@ -3230,6 +3280,10 @@ export const createGeneralEmailSignup = functions.https.onCall(async (data, cont
     ? data.verificationToken.trim()
     : '';
   const profile = parseCompletedRegistrationProfile(data?.profile);
+  const signupLanguageRaw = typeof data?.signupLanguage === 'string'
+    ? String(data.signupLanguage)
+    : 'en';
+  const signupLanguage = signupLanguageRaw.toLowerCase().startsWith('ko') ? 'ko' : 'en';
 
   if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) {
     throw new functions.https.HttpsError('invalid-argument', '올바른 이메일 형식이 아닙니다.');
@@ -3327,14 +3381,28 @@ export const createGeneralEmailSignup = functions.https.onCall(async (data, cont
     }
 
     const uid = authUser.uid;
+    const schoolVerification = await reconcileHanyangVerificationForUid(uid);
     const now = admin.firestore.FieldValue.serverTimestamp();
+    const missingSchoolDefaults: Record<string, any> = {};
+    if (!schoolVerification.verified) {
+      if (existingUserData?.hanyangEmail == null) missingSchoolDefaults.hanyangEmail = '';
+      if (existingUserData?.hanyangEmailVerified == null) {
+        missingSchoolDefaults.hanyangEmailVerified = false;
+      }
+      if (existingUserData?.hanyangEmailVerifiedAt == null) {
+        missingSchoolDefaults.hanyangEmailVerifiedAt = null;
+      }
+      if (existingUserData?.schoolVerificationMethod == null) {
+        missingSchoolDefaults.schoolVerificationMethod = '';
+      }
+      if (existingUserData?.verificationMethod == null) {
+        missingSchoolDefaults.verificationMethod = 'email_code';
+      }
+    }
     await db.collection(COL.users).doc(uid).set({
       uid,
       email: normalizedEmail,
-      hanyangEmail: '',
-      hanyangEmailVerified: false,
-      hanyangEmailVerifiedAt: null,
-      schoolVerificationMethod: '',
+      ...missingSchoolDefaults,
       ...completedProfileFields(profile),
       photoURL: String(existingUserData?.photoURL || ''),
       photoPath: String(existingUserData?.photoPath || ''),
@@ -3342,10 +3410,9 @@ export const createGeneralEmailSignup = functions.https.onCall(async (data, cont
       postCount: Number(existingUserData?.postCount || 0),
       friendCount: Number(existingUserData?.friendCount || 0),
       reviewCount: Number(existingUserData?.reviewCount || 0),
-      preferredLanguage: String(existingUserData?.preferredLanguage || 'en'),
-      signupLanguage: 'en',
+      preferredLanguage: String(existingUserData?.preferredLanguage || signupLanguage),
+      signupLanguage,
       signupProvider: 'password',
-      verificationMethod: 'email_code',
       termsAccepted: true,
       termsAcceptedAt: existingUserData?.termsAcceptedAt || now,
       createdAt: existingUserData?.createdAt || now,
@@ -3506,6 +3573,47 @@ export const sendFriendRequest = functions.https.onCall(async (data, context) =>
         db.collection('friendships').doc(friendshipId)
       );
 
+      const fromUserRef = db.collection('users').doc(fromUid);
+      const toUserRef = db.collection('users').doc(toUid);
+      const [fromUserDoc, toUserDoc] = await Promise.all([
+        transaction.get(fromUserRef),
+        transaction.get(toUserRef),
+      ]);
+
+      const isActiveAccount = (
+        snapshot: admin.firestore.DocumentSnapshot
+      ): boolean => {
+        if (!snapshot.exists) return false;
+        const profile = snapshot.data() || {};
+        const status = String(
+          profile.status || profile.accountStatus || ''
+        ).trim().toLowerCase();
+        const registrationStatus = String(
+          profile.registrationStatus || ''
+        ).trim().toLowerCase();
+        const hasAccountIdentity = [
+          profile.nickname,
+          profile.displayName,
+          profile.email,
+          profile.hanyangEmail,
+        ].some((value) => String(value || '').trim().length > 0);
+        return profile.isDeleted !== true &&
+          profile.deleted !== true &&
+          profile.disabled !== true &&
+          profile.isSuspended !== true &&
+          profile.deletedAt == null &&
+          status !== 'deleted' &&
+          status !== 'suspended' &&
+          registrationStatus !== 'deleted' &&
+          hasAccountIdentity;
+      };
+      if (!isActiveAccount(fromUserDoc) || !isActiveAccount(toUserDoc)) {
+        throw new functions.https.HttpsError(
+          'failed-precondition',
+          '탈퇴했거나 이용할 수 없는 계정입니다.'
+        );
+      }
+
       if (friendshipDoc.exists) {
         throw new functions.https.HttpsError(
           'already-exists',
@@ -3529,9 +3637,6 @@ export const sendFriendRequest = functions.https.onCall(async (data, context) =>
       );
 
       // 카운터 업데이트
-      const fromUserRef = db.collection('users').doc(fromUid);
-      const toUserRef = db.collection('users').doc(toUid);
-
       transaction.update(fromUserRef, {
         outgoingCount: admin.firestore.FieldValue.increment(1),
         updatedAt: admin.firestore.FieldValue.serverTimestamp(),
@@ -4598,6 +4703,7 @@ export const deleteAccountImmediately = functions.https.onCall(async (data, cont
 
     const uid = context.auth.uid;
     const reason = (data?.reason as string) || 'unspecified';
+    const userRef = db.collection('users').doc(uid);
 
     console.log(`🗑️ 계정 삭제 시작: ${uid}, reason=${reason}`);
 
@@ -4610,7 +4716,7 @@ export const deleteAccountImmediately = functions.https.onCall(async (data, cont
     };
 
     try {
-      const userDoc = await db.collection('users').doc(uid).get();
+      const userDoc = await userRef.get();
       if (userDoc.exists) {
         const userData = userDoc.data()!;
         userInfo = {
@@ -4637,8 +4743,9 @@ export const deleteAccountImmediately = functions.https.onCall(async (data, cont
     postsSnap.forEach((doc) => {
       accountWriter.update(doc.ref, {
         userId: 'deleted',
-        authorNickname: 'Deleted',  // 한/영 모두 "Deleted"로 통일
+        authorNickname: 'DELETED_ACCOUNT',
         authorPhotoURL: '',
+        authorNationality: '',
         updatedAt: admin.firestore.FieldValue.serverTimestamp(),
       });
     });
@@ -4678,8 +4785,36 @@ export const deleteAccountImmediately = functions.https.onCall(async (data, cont
     const blocks2 = await db.collection('blocks').where('blocked', '==', uid).get();
     blocks2.forEach((doc) => accountWriter.delete(doc.ref));
 
-    const notis = await db.collection('notifications').where('userId', '==', uid).get();
-    notis.forEach((doc) => accountWriter.delete(doc.ref));
+    const [notis, actorNotis] = await Promise.all([
+      db.collection('notifications').where('userId', '==', uid).get(),
+      db.collection('notifications').where('actorId', '==', uid).get(),
+    ]);
+    const notificationRefs = new Map<string, admin.firestore.DocumentReference>();
+    [...notis.docs, ...actorNotis.docs].forEach((doc) => {
+      notificationRefs.set(doc.ref.path, doc.ref);
+    });
+    notificationRefs.forEach((ref) => accountWriter.delete(ref));
+
+    // users/{uid} 밖에 보관되는 개인 설정/기기/그룹 데이터도
+    // 함께 제거한다. 게시글·댓글·대화 내용은 별도로 보존한다.
+    accountWriter.delete(db.collection('user_settings').doc(uid));
+    const [friendCategories, fcmTokens, anonymousBlocks,
+      meetupEventsByActor, meetupEventsByTarget] = await Promise.all([
+      db.collection('friend_categories').where('userId', '==', uid).get(),
+      db.collection('fcm_tokens').where('userId', '==', uid).get(),
+      db.collection('anonymous_post_blocks').where('blockerUid', '==', uid).get(),
+      db.collection('meetup_participant_events').where('actorId', '==', uid).get(),
+      db.collection('meetup_participant_events').where('targetUserId', '==', uid).get(),
+    ]);
+    const personalRefs = new Map<string, admin.firestore.DocumentReference>();
+    [
+      ...friendCategories.docs,
+      ...fcmTokens.docs,
+      ...anonymousBlocks.docs,
+      ...meetupEventsByActor.docs,
+      ...meetupEventsByTarget.docs,
+    ].forEach((doc) => personalRefs.set(doc.ref.path, doc.ref));
+    personalRefs.forEach((ref) => accountWriter.delete(ref));
 
     // 1-6. 인증메일 컬렉션 정리
     const emailVer = await db.collection('email_verifications').doc(context.auth.token.email || 'unknown').get();
@@ -4739,18 +4874,20 @@ export const deleteAccountImmediately = functions.https.onCall(async (data, cont
       accountWriter.update(doc.ref, update);
     });
 
-    // 1-9. 사용자 문서 삭제
-    accountWriter.delete(db.collection('users').doc(uid));
-
     await accountWriter.close();
+
+    // 부모 문서 delete만으로는 savedPosts/devices 등 서브컬렉션이
+    // 남으므로 계정 트리 전체를 재귀적으로 제거한다.
+    await db.recursiveDelete(userRef);
 
     // 메시지/멤버십 이력은 읽음 대상 계산과 대화 문맥을 위해 보존한다.
     // 반응/투표는 탈퇴 사용자의 개인 선택 데이터이므로 best-effort로
     // 제거하고, 각 onWrite aggregate trigger가 부모 메시지 수치를 보정한다.
     try {
-      const [reactionDocs, voteDocs] = await Promise.all([
+      const [reactionDocs, voteDocs, authoredMessages] = await Promise.all([
         db.collectionGroup('reactions').where('userId', '==', uid).get(),
         db.collectionGroup('votes').where('userId', '==', uid).get(),
+        db.collectionGroup('messages').where('senderId', '==', uid).get(),
       ]);
       const writer = db.bulkWriter();
       reactionDocs.docs
@@ -4759,6 +4896,12 @@ export const deleteAccountImmediately = functions.https.onCall(async (data, cont
       voteDocs.docs
         .filter((doc) => doc.ref.path.startsWith('snack_chats/'))
         .forEach((doc) => writer.delete(doc.ref));
+      authoredMessages.docs
+        .filter((doc) => doc.ref.path.startsWith('snack_chats/'))
+        .forEach((doc) => writer.update(doc.ref, {
+          senderName: 'DELETED_ACCOUNT',
+          senderPhotoURL: '',
+        }));
       await writer.close();
     } catch (e) {
       console.warn('⚠️ Snack Chat 반응/투표 정리 실패(계속 진행):', e);
@@ -4792,14 +4935,30 @@ export const deleteAccountImmediately = functions.https.onCall(async (data, cont
       // omitting it could also match a different custom UID that merely starts
       // with the deleted account's UID.
       await bucket.deleteFiles({ prefix: `profile_images/${uid}/` });
-      await bucket.deleteFiles({ prefix: `post_images/${uid}/` });
-      await bucket.deleteFiles({ prefix: `dm_images/${uid}/` });
-      await bucket.deleteFiles({ prefix: `snack_chat_images/${uid}/` });
+      // 게시글/DM/Snack Chat 미디어는 작성 내용의 일부이므로
+      // 역사 보존 정책에 따라 유지한다.
     } catch (e) {
       console.warn('⚠️ Storage 삭제 중 오류(무시):', e);
     }
 
-    // 3) Auth 계정 삭제
+    // 3) 개인정보가 담긴 사용자 트리는 위에서 삭제했지만, 지연된 FCM/프로필
+    // merge가 빈 users/{uid} 문서를 다시 만들면 정상 계정으로 오인될 수 있다.
+    // 개인 정보가 전혀 없는 최소 tombstone을 최종 상태로 기록해 검색·친구요청·
+    // DM에서 확실하게 탈퇴 계정으로 판정한다.
+    await userRef.set({
+      uid,
+      nickname: 'DELETED_ACCOUNT',
+      displayName: 'DELETED_ACCOUNT',
+      photoURL: '',
+      isDeleted: true,
+      deleted: true,
+      status: 'deleted',
+      registrationStatus: 'deleted',
+      deletedAt: admin.firestore.FieldValue.serverTimestamp(),
+      updatedAt: admin.firestore.FieldValue.serverTimestamp(),
+    });
+
+    // 4) Auth 계정 삭제
     await admin.auth().deleteUser(uid);
 
     console.log(`✅ 계정 삭제 완료: ${uid}`);

@@ -91,6 +91,7 @@ class _DMChatScreenState extends State<DMChatScreen>
   // 서버에서 확인된 최신 상대 프로필 정보를 별도로 보관한다.
   DMUserInfo? _serverOtherUserInfo;
   bool _serverOtherUserInfoFetchInFlight = false;
+  bool _isOtherAccountDeleted = false;
   Timer? _autoMarkReadDebounce;
   bool _autoMarkReadInFlight = false;
   bool _autoMarkReadQueued = false;
@@ -226,21 +227,56 @@ class _DMChatScreenState extends State<DMChatScreen>
     if (_serverOtherUserInfoFetchInFlight) return;
     _serverOtherUserInfoFetchInFlight = true;
 
-    _userInfoCacheService.getUserInfo(userId, forceRefresh: true).then((info) {
+    FirebaseFirestore.instance
+        .collection('users')
+        .doc(userId)
+        .get(const GetOptions(source: Source.server))
+        .then((doc) {
       if (!mounted) return;
-      if (info == null) return;
+      final data = doc.data();
+      final status = (data?['status'] ?? '').toString().trim().toLowerCase();
+      final isDeleted = !doc.exists ||
+          data == null ||
+          data['isDeleted'] == true ||
+          data['deleted'] == true ||
+          data['disabled'] == true ||
+          data['isSuspended'] == true ||
+          status == 'deleted' ||
+          status == 'suspended';
       setState(() {
-        _serverOtherUserInfo = DMUserInfo(
-          uid: info.uid,
-          nickname: info.nickname,
-          photoURL: info.photoURL,
-          photoVersion: info.photoVersion,
-          isFromCache: false,
-        );
+        _isOtherAccountDeleted = isDeleted;
+        if (isDeleted) {
+          _serverOtherUserInfo = null;
+        } else {
+          final nickname =
+              (data['nickname'] ?? data['name'] ?? 'User').toString().trim();
+          final photoVersionRaw = data['photoVersion'];
+          _serverOtherUserInfo = DMUserInfo(
+            uid: userId,
+            nickname: nickname.isEmpty ? 'User' : nickname,
+            photoURL: (data['photoURL'] ?? '').toString(),
+            photoVersion: photoVersionRaw is int
+                ? photoVersionRaw
+                : int.tryParse('$photoVersionRaw') ?? 0,
+            isFromCache: false,
+          );
+        }
       });
+    }).catchError((Object error) {
+      // 네트워크 오류를 탈퇴로 오판하지 않는다. 실제 전송 시
+      // DMService가 서버 문서를 다시 확인한다.
+      Logger.error('상대 프로필 서버 확인 실패: $error');
     }).whenComplete(() {
       _serverOtherUserInfoFetchInFlight = false;
     });
+  }
+
+  bool get _isPeerDeleted {
+    if (_isAnonymous) return false;
+    if (_isOtherAccountDeleted) return true;
+    final status = _conversation?.participantStatus[widget.otherUserId];
+    final name = _conversation?.getOtherUserName(_currentUser!.uid) ?? '';
+    return status == 'deleted' || name == 'DELETED_ACCOUNT';
   }
 
   /// 디버그: Firestore에 실제로 저장된 데이터 확인
@@ -1240,12 +1276,12 @@ class _DMChatScreenState extends State<DMChatScreen>
         AppLocalizations.of(context)!.deletedAccount ?? 'Deleted Account';
 
     // 익명이 아닐 때만 탈퇴 계정 체크
-    final isCachedDeleted = !_isAnonymous &&
-        hasCachedConversation &&
-        (cachedStatus == 'deleted' ||
-            cachedName.isEmpty ||
-            cachedName == 'DELETED_ACCOUNT' ||
-            cachedName == deletedLabel);
+    final isCachedDeleted = _isPeerDeleted ||
+        (!_isAnonymous &&
+            hasCachedConversation &&
+            (cachedStatus == 'deleted' ||
+                cachedName == 'DELETED_ACCOUNT' ||
+                cachedName == deletedLabel));
 
     // 서버 최신값을 백그라운드로 확보 (옛 값 노출 방지)
     if (!_isAnonymous && !isCachedDeleted) {
@@ -2423,7 +2459,9 @@ class _DMChatScreenState extends State<DMChatScreen>
 
   /// 입력창 빌드
   Widget _buildInputArea() {
-    final canSend = !_isBlocked &&
+    final peerDeleted = _isPeerDeleted;
+    final canSend = !peerDeleted &&
+        !_isBlocked &&
         !_isBlockedBy &&
         !_isLoading &&
         (_messageController.text.trim().isNotEmpty || _pendingImage != null);
@@ -2468,6 +2506,7 @@ class _DMChatScreenState extends State<DMChatScreen>
               ],
               if (_conversationExists == false &&
                   !_isAnonymous &&
+                  !peerDeleted &&
                   !_isBlocked &&
                   !_isBlockedBy) ...[
                 Align(
@@ -2502,7 +2541,10 @@ class _DMChatScreenState extends State<DMChatScreen>
                   children: [
                     // 첨부 버튼 (+)
                     InkWell(
-                      onTap: (_isBlocked || _isBlockedBy || _isLoading)
+                      onTap: (peerDeleted ||
+                              _isBlocked ||
+                              _isBlockedBy ||
+                              _isLoading)
                           ? null
                           : _pickImage,
                       customBorder: const CircleBorder(),
@@ -2516,7 +2558,10 @@ class _DMChatScreenState extends State<DMChatScreen>
                         ),
                         child: Icon(
                           Icons.add,
-                          color: (_isBlocked || _isBlockedBy || _isLoading)
+                          color: (peerDeleted ||
+                                  _isBlocked ||
+                                  _isBlockedBy ||
+                                  _isLoading)
                               ? const Color(0xFF667085)
                               : Colors.white,
                           size: 22,
@@ -2533,16 +2578,22 @@ class _DMChatScreenState extends State<DMChatScreen>
                         child: TextField(
                           controller: _messageController,
                           focusNode: _messageFocusNode,
-                          enabled: !_isBlocked && !_isBlockedBy,
+                          enabled: !peerDeleted && !_isBlocked && !_isBlockedBy,
                           maxLines: null,
                           maxLength: 500,
                           textInputAction: TextInputAction.newline,
                           decoration: InputDecoration(
-                            hintText: (_isBlocked || _isBlockedBy)
-                                ? '차단된 사용자에게 메시지를 보낼 수 없습니다'
-                                : AppLocalizations.of(context)!.typeMessage,
+                            hintText: peerDeleted
+                                ? (Localizations.localeOf(context)
+                                            .languageCode ==
+                                        'ko'
+                                    ? '탈퇴한 계정에게는 메시지를 보낼 수 없어요'
+                                    : 'You cannot message a deleted account')
+                                : (_isBlocked || _isBlockedBy)
+                                    ? '차단된 사용자에게 메시지를 보낼 수 없습니다'
+                                    : AppLocalizations.of(context)!.typeMessage,
                             hintStyle: TextStyle(
-                              color: (_isBlocked || _isBlockedBy)
+                              color: (peerDeleted || _isBlocked || _isBlockedBy)
                                   ? const Color(0xFF667085)
                                   : const Color(0xFF98A2B3),
                               fontSize: MediaQuery.sizeOf(context).width < 360
@@ -2975,6 +3026,8 @@ class _DMChatScreenState extends State<DMChatScreen>
     print('🚨🚨🚨 _sendMessage 함수 호출됨 🚨🚨🚨');
     Logger.log('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━');
     Logger.log('🔍 [FCM 진단 2단계] _sendMessage UI 함수 호출됨');
+
+    if (_isPeerDeleted) return;
 
     final text = _messageController.text.trim();
     final imageFile = _pendingImage;

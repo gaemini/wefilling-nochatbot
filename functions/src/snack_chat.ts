@@ -2110,6 +2110,109 @@ export const ensureSnackChatMembershipSecure = functions
   });
 
 /**
+ * Returns the caller's immutable entry boundary before the client advances its
+ * read cursor. The unread divider is anchored to a message sequence, never to
+ * a mutable list index or to `roomUnreadCount` arithmetic on the device.
+ */
+export const getSnackChatEntryContext = functions
+  .runWith({timeoutSeconds: 30, memory: '256MB'})
+  .https.onCall(async (raw, context) => {
+    const userId = requireUid(context);
+    await requireActiveUser(userId);
+    const request = objectValue(raw);
+    const snackChatId = firestoreId(request.snackChatId, 'Snack Chat id');
+    const roomRef = db().collection(SNACK_CHATS).doc(snackChatId);
+    const memberRef = roomRef.collection('members').doc(userId);
+    const [room, member] = await db().getAll(roomRef, memberRef);
+    if (!room.exists) {
+      throw new functions.https.HttpsError(
+        'not-found',
+        'Snack Chat not found.',
+      );
+    }
+    if (!uniqueStrings(room.get('participantIds')).includes(userId)) {
+      throw new functions.https.HttpsError(
+        'permission-denied',
+        'Only a current participant can read the entry context.',
+      );
+    }
+    if (!member.exists || stringValue(member.get('status')) !== 'active') {
+      throw new functions.https.HttpsError(
+        'failed-precondition',
+        'Snack Chat membership is not ready.',
+      );
+    }
+
+    const roomLastSequence = nonNegativeInteger(
+      room.get('lastMessageSequence'),
+    );
+    const lastReadSequence = nonNegativeInteger(
+      member.get('lastReadSequence'),
+    );
+    const unreadMap = normalizedCountMap(room.get('unreadCount'));
+    const roomUnreadCount = unreadMap[userId] ?? 0;
+    if (roomUnreadCount === 0 || lastReadSequence >= roomLastSequence) {
+      return {
+        success: true,
+        lastReadSequence,
+        roomLastSequence,
+        roomUnreadCount,
+        firstUnreadMessageId: '',
+        firstUnreadSequence: 0,
+        canAdvanceReadCursor: true,
+      };
+    }
+
+    let cursor = lastReadSequence;
+    for (let page = 0; page < 10 && cursor < roomLastSequence; page += 1) {
+      const messages = await roomRef.collection('messages')
+        .where('sequence', '>', cursor)
+        .orderBy('sequence', 'asc')
+        .limit(100)
+        .get();
+      if (messages.empty) break;
+      for (const document of messages.docs) {
+        const message = document.data();
+        const sequence = nonNegativeInteger(message.sequence);
+        cursor = Math.max(cursor, sequence);
+        if (sequence <= lastReadSequence || sequence > roomLastSequence ||
+            stringValue(message.senderId) === userId ||
+            stringValue(message.type) === 'system' ||
+            !sequenceIsInMembership(member.data() ?? {}, sequence)) {
+          continue;
+        }
+        const delivered = uniqueStrings(message.deliveryRecipientIds);
+        // deliveryRecipientIds is authoritative for modern messages. A
+        // positive server unread aggregate provides the legacy compatibility
+        // signal for messages created before the marker existed.
+        if (delivered.length > 0 && !delivered.includes(userId)) continue;
+        return {
+          success: true,
+          lastReadSequence,
+          roomLastSequence,
+          roomUnreadCount,
+          firstUnreadMessageId: document.id,
+          firstUnreadSequence: sequence,
+          canAdvanceReadCursor: true,
+        };
+      }
+      if (messages.size < 100) break;
+    }
+
+    // A stale/inconsistent aggregate must never make the client guess a read
+    // position or clear messages it could not prove were delivered.
+    return {
+      success: true,
+      lastReadSequence,
+      roomLastSequence,
+      roomUnreadCount,
+      firstUnreadMessageId: '',
+      firstUnreadSequence: 0,
+      canAdvanceReadCursor: false,
+    };
+  });
+
+/**
  * Advances the caller's read cursor only through the message sequence that was
  * present in the UI when the chat screen was left. Keeping this boundary on
  * the server prevents a message arriving during route disposal from being
@@ -3601,6 +3704,7 @@ async function cleanInvalidPushTokens(
 async function sendSnackChatPush(args: {
   roomRef: FirebaseFirestore.DocumentReference;
   eventRef: FirebaseFirestore.DocumentReference;
+  messageId: string;
   recipientId: string;
   senderId: string;
   senderName: string;
@@ -3665,7 +3769,7 @@ async function sendSnackChatPush(args: {
     // below its 64-byte limit even when a custom room id is unusually long.
     const notificationGroupKey = 'snack_' + crypto
       .createHash('sha256')
-      .update(args.roomRef.id)
+      .update(args.recipientId + ':' + args.roomRef.id)
       .digest('hex')
       .slice(0, 40);
     let badge: number | null = null;
@@ -3703,12 +3807,19 @@ async function sendSnackChatPush(args: {
             type: 'snack_chat_message',
             recipientUserId: args.recipientId,
             snackChatId: args.roomRef.id,
+            messageId: args.messageId,
             senderId: args.senderId,
             senderName: args.senderName,
             roomTitle,
             latestMessage: preview,
+            messagePreview: preview,
             unreadCount: String(roomUnreadCount),
+            roomUnreadCount: String(roomUnreadCount),
+            sentAtMillis: String(
+              timestampMillis(args.message.createdAt) || Date.now(),
+            ),
             notificationGroupKey,
+            notificationThreadKey: notificationGroupKey,
             ...(badge == null ? {} : {badge: String(badge)}),
             language,
           },
@@ -3846,6 +3957,7 @@ export const onSnackChatMessageCreatedSecure = functions
       sendSnackChatPush({
         roomRef,
         eventRef: applied.eventRef,
+        messageId: stringValue(context.params.messageId),
         recipientId,
         senderId,
         senderName,

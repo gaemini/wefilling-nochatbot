@@ -1690,7 +1690,7 @@ class AppLocalizationsKo extends AppLocalizations {
   String get welcomeTitle => '환영합니다!';
 
   @override
-  String get googleLoginDescription => '구글 계정으로 로그인하고\n다양한 기능을 이용해 보세요.';
+  String get googleLoginDescription => '원하는 방법으로 로그인하고\n위필링을 시작해 보세요.';
 
   @override
   String get googleLogin => '구글 계정으로 로그인';

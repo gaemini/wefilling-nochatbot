@@ -4,8 +4,10 @@ import 'package:intl/intl.dart';
 import '../../l10n/app_localizations.dart';
 import '../../models/meetup.dart';
 import '../../utils/responsive_helper.dart';
+import '../../services/user_info_cache_service.dart';
 import 'audience_ring.dart';
 import 'meetup_public_countdown.dart';
+import 'hanyang_verification_gate.dart';
 
 /// 포스트 피드용 밋업 요약.
 /// 날짜를 고정된 레일로 분리하고 관련 정보를 한 덩어리로 묶어 빠르게 훑을 수 있게 한다.
@@ -70,195 +72,264 @@ class BoardMeetupCard extends StatelessWidget {
       height: 1.18,
       color: const Color(0xFF667085),
     );
+    final isHanyangLocked = HanyangVerificationGate.isLockedForCurrentUser(
+      context,
+      meetup.requiresHanyangVerification,
+    );
 
     return MediaQuery.withClampedTextScaling(
       maxScaleFactor: 1.2,
       child: Material(
         color: Colors.white,
         child: InkWell(
-          onTap: onTap,
+          onTap: isHanyangLocked ? null : onTap,
           child: Padding(
-            padding: EdgeInsets.fromLTRB(horizontal, 9, horizontal, 10),
-            child: Row(
-              crossAxisAlignment: CrossAxisAlignment.center,
-              children: [
-                AudienceRing(
-                  restricted: meetup.visibility != 'public',
-                  size: dateRailSize,
-                  innerGap: 1.5,
-                  borderRadius: BorderRadius.circular(
-                    context.rs(16).clamp(14.0, 18.0).toDouble(),
-                  ),
-                  semanticLabel: _isKorean(context)
-                      ? '공개 범위가 제한된 모임'
-                      : 'Limited audience meetup',
-                  child: ColoredBox(
-                    color: Colors.white,
-                    child: Column(
-                      mainAxisSize: MainAxisSize.min,
-                      mainAxisAlignment: MainAxisAlignment.center,
-                      children: [
-                        Text(
-                          '${_monthLabel(context)} · ${_weekdayLabel(context)}',
-                          maxLines: 1,
-                          overflow: TextOverflow.ellipsis,
-                          textAlign: TextAlign.center,
-                          style: TextStyle(
-                            fontFamily: 'Inter',
-                            fontFamilyFallback: const ['NotoSansKR'],
-                            fontSize:
-                                context.rf(9.5).clamp(9.0, 10.0).toDouble(),
-                            fontWeight: FontWeight.w800,
-                            height: 1,
-                            letterSpacing: 0.2,
-                            color: const Color(0xFF667085),
-                          ),
-                        ),
-                        const SizedBox(height: 2),
-                        Text(
-                          _dayLabel(),
-                          maxLines: 1,
-                          style: TextStyle(
-                            fontFamily: 'Inter',
-                            fontFamilyFallback: const ['NotoSansKR'],
-                            fontSize:
-                                context.rf(23).clamp(21.0, 24.0).toDouble(),
-                            fontWeight: FontWeight.w800,
-                            height: 1,
-                            letterSpacing: -0.5,
-                            color: const Color(0xFF101828),
-                          ),
-                        ),
-                        const SizedBox(height: 4),
-                        Text(
-                          _timeLabel(context),
-                          maxLines: 1,
-                          overflow: TextOverflow.ellipsis,
-                          textAlign: TextAlign.center,
-                          style: TextStyle(
-                            fontFamily: 'Inter',
-                            fontFamilyFallback: const ['NotoSansKR'],
-                            fontSize:
-                                context.rf(10.5).clamp(10.0, 11.0).toDouble(),
-                            fontWeight: FontWeight.w700,
-                            height: 1.05,
-                            color: const Color(0xFF667085),
-                          ),
-                        ),
-                        if (meetup.hasPublicTimeLimit) ...[
-                          const SizedBox(height: 4),
-                          Padding(
-                            padding: const EdgeInsets.symmetric(horizontal: 3),
-                            child: MeetupPublicCountdown(
-                              meetup: meetup,
-                              compact: true,
-                            ),
-                          ),
-                        ],
-                      ],
-                    ),
-                  ),
-                ),
-                SizedBox(width: context.rs(14).clamp(12.0, 16.0).toDouble()),
-                Expanded(
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Row(
-                        children: [
-                          Expanded(
-                            child: Text(
-                              meetup.title,
+            padding: EdgeInsets.symmetric(
+              horizontal: isHanyangLocked ? horizontal : 0,
+            ),
+            child: HanyangVerificationGate(
+              locked: isHanyangLocked,
+              compact: true,
+              child: Padding(
+                padding: EdgeInsets.fromLTRB(horizontal, 9, horizontal, 10),
+                child: Row(
+                  crossAxisAlignment: CrossAxisAlignment.center,
+                  children: [
+                    AudienceRing(
+                      restricted: meetup.visibility != 'public',
+                      size: dateRailSize,
+                      innerGap: 1.5,
+                      borderRadius: BorderRadius.circular(
+                        context.rs(16).clamp(14.0, 18.0).toDouble(),
+                      ),
+                      semanticLabel: _isKorean(context)
+                          ? '공개 범위가 제한된 모임'
+                          : 'Limited audience meetup',
+                      child: ColoredBox(
+                        color: Colors.white,
+                        child: Column(
+                          mainAxisSize: MainAxisSize.min,
+                          mainAxisAlignment: MainAxisAlignment.center,
+                          children: [
+                            Text(
+                              '${_monthLabel(context)} · ${_weekdayLabel(context)}',
                               maxLines: 1,
                               overflow: TextOverflow.ellipsis,
+                              textAlign: TextAlign.center,
+                              style: TextStyle(
+                                fontFamily: 'Inter',
+                                fontFamilyFallback: const ['NotoSansKR'],
+                                fontSize:
+                                    context.rf(9.5).clamp(9.0, 10.0).toDouble(),
+                                fontWeight: FontWeight.w800,
+                                height: 1,
+                                letterSpacing: 0.2,
+                                color: const Color(0xFF667085),
+                              ),
+                            ),
+                            const SizedBox(height: 2),
+                            Text(
+                              _dayLabel(),
+                              maxLines: 1,
+                              style: TextStyle(
+                                fontFamily: 'Inter',
+                                fontFamilyFallback: const ['NotoSansKR'],
+                                fontSize:
+                                    context.rf(23).clamp(21.0, 24.0).toDouble(),
+                                fontWeight: FontWeight.w800,
+                                height: 1,
+                                letterSpacing: -0.5,
+                                color: const Color(0xFF101828),
+                              ),
+                            ),
+                            const SizedBox(height: 4),
+                            Text(
+                              _timeLabel(context),
+                              maxLines: 1,
+                              overflow: TextOverflow.ellipsis,
+                              textAlign: TextAlign.center,
                               style: TextStyle(
                                 fontFamily: 'Inter',
                                 fontFamilyFallback: const ['NotoSansKR'],
                                 fontSize: context
-                                    .rf(15.5)
-                                    .clamp(14.5, 16.0)
+                                    .rf(10.5)
+                                    .clamp(10.0, 11.0)
                                     .toDouble(),
-                                fontWeight: FontWeight.w800,
-                                height: 1.18,
-                                letterSpacing: -0.2,
-                                color: const Color(0xFF101828),
-                              ),
-                            ),
-                          ),
-                          const SizedBox(width: 5),
-                          const Icon(
-                            Icons.chevron_right_rounded,
-                            size: 19,
-                            color: Color(0xFF98A2B3),
-                          ),
-                        ],
-                      ),
-                      const SizedBox(height: 5),
-                      _InlineMeta(
-                        icon: Icons.location_on_outlined,
-                        text: meetup.location,
-                        style: metaStyle,
-                        onTap: onLocationTap,
-                      ),
-                      const SizedBox(height: 7),
-                      Row(
-                        children: [
-                          CircleAvatar(
-                            radius: 10,
-                            backgroundColor: const Color(0xFFF2F4F7),
-                            backgroundImage: meetup.hostPhotoURL.isNotEmpty
-                                ? NetworkImage(meetup.hostPhotoURL)
-                                : null,
-                            child: meetup.hostPhotoURL.isEmpty
-                                ? const Icon(
-                                    Icons.person_outline,
-                                    size: 11,
-                                    color: Color(0xFF667085),
-                                  )
-                                : null,
-                          ),
-                          const SizedBox(width: 6),
-                          Expanded(
-                            child: Text(
-                              meetup.hostNickname ??
-                                  AppLocalizations.of(context)!.anonymous,
-                              maxLines: 1,
-                              overflow: TextOverflow.ellipsis,
-                              style: metaStyle.copyWith(
                                 fontWeight: FontWeight.w700,
-                                color: const Color(0xFF344054),
+                                height: 1.05,
+                                color: const Color(0xFF667085),
                               ),
                             ),
-                          ),
-                          const SizedBox(width: 10),
-                          const Icon(
-                            Icons.people_outline_rounded,
-                            size: 15,
-                            color: Color(0xFF667085),
-                          ),
-                          const SizedBox(width: 4),
-                          Text(
-                            '$participants / ${meetup.maxParticipants}',
-                            maxLines: 1,
-                            style: metaStyle.copyWith(
-                              fontWeight: FontWeight.w800,
-                              color: const Color(0xFF475467),
-                            ),
-                          ),
-                          if (trailingAction != null) ...[
-                            const SizedBox(width: 8),
-                            trailingAction!,
+                            if (meetup.hasPublicTimeLimit) ...[
+                              const SizedBox(height: 4),
+                              Padding(
+                                padding:
+                                    const EdgeInsets.symmetric(horizontal: 3),
+                                child: MeetupPublicCountdown(
+                                  meetup: meetup,
+                                  compact: true,
+                                ),
+                              ),
+                            ],
                           ],
+                        ),
+                      ),
+                    ),
+                    SizedBox(
+                        width: context.rs(14).clamp(12.0, 16.0).toDouble()),
+                    Expanded(
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Row(
+                            children: [
+                              Expanded(
+                                child: Text(
+                                  meetup.title,
+                                  maxLines: 1,
+                                  overflow: TextOverflow.ellipsis,
+                                  style: TextStyle(
+                                    fontFamily: 'Inter',
+                                    fontFamilyFallback: const ['NotoSansKR'],
+                                    fontSize: context
+                                        .rf(15.5)
+                                        .clamp(14.5, 16.0)
+                                        .toDouble(),
+                                    fontWeight: FontWeight.w800,
+                                    height: 1.18,
+                                    letterSpacing: -0.2,
+                                    color: const Color(0xFF101828),
+                                  ),
+                                ),
+                              ),
+                              if (meetup.requiresHanyangVerification) ...[
+                                const SizedBox(width: 6),
+                                const HanyangContentBadge(compact: true),
+                              ],
+                              const SizedBox(width: 5),
+                              const Icon(
+                                Icons.chevron_right_rounded,
+                                size: 19,
+                                color: Color(0xFF98A2B3),
+                              ),
+                            ],
+                          ),
+                          const SizedBox(height: 5),
+                          _InlineMeta(
+                            icon: Icons.location_on_outlined,
+                            text: meetup.location,
+                            style: metaStyle,
+                            onTap: onLocationTap,
+                          ),
+                          const SizedBox(height: 7),
+                          Row(
+                            children: [
+                              Expanded(
+                                  child:
+                                      _buildHostIdentity(context, metaStyle)),
+                              const SizedBox(width: 10),
+                              const Icon(
+                                Icons.people_outline_rounded,
+                                size: 15,
+                                color: Color(0xFF667085),
+                              ),
+                              const SizedBox(width: 4),
+                              Text(
+                                '$participants / ${meetup.maxParticipants}',
+                                maxLines: 1,
+                                style: metaStyle.copyWith(
+                                  fontWeight: FontWeight.w800,
+                                  color: const Color(0xFF475467),
+                                ),
+                              ),
+                              if (trailingAction != null) ...[
+                                const SizedBox(width: 8),
+                                trailingAction!,
+                              ],
+                            ],
+                          ),
                         ],
                       ),
-                    ],
-                  ),
+                    ),
+                  ],
                 ),
-              ],
+              ),
             ),
           ),
         ),
       ),
+    );
+  }
+
+  Widget _buildHostIdentity(BuildContext context, TextStyle metaStyle) {
+    final userId = meetup.userId?.trim() ?? '';
+    if (userId.isEmpty || userId == 'deleted') {
+      return _hostIdentityContent(
+        context,
+        metaStyle,
+        name: AppLocalizations.of(context)!.deletedAccount,
+        photoURL: '',
+      );
+    }
+    final cache = UserInfoCacheService();
+    return StreamBuilder<DMUserInfo?>(
+      stream: cache.watchUserInfo(userId),
+      initialData: cache.getCachedUserInfo(userId),
+      builder: (context, snapshot) {
+        final latest = snapshot.data;
+        final isDeleted = latest?.isDeletedAccount == true;
+        return _hostIdentityContent(
+          context,
+          metaStyle,
+          name: isDeleted
+              ? AppLocalizations.of(context)!.deletedAccount
+              : ((latest?.nickname ?? '').trim().isNotEmpty
+                  ? latest!.nickname
+                  : (meetup.hostNickname ??
+                      AppLocalizations.of(context)!.anonymous)),
+          photoURL: isDeleted
+              ? ''
+              : ((latest?.photoURL ?? '').trim().isNotEmpty
+                  ? latest!.photoURL
+                  : meetup.hostPhotoURL),
+        );
+      },
+    );
+  }
+
+  Widget _hostIdentityContent(
+    BuildContext context,
+    TextStyle metaStyle, {
+    required String name,
+    required String photoURL,
+  }) {
+    return Row(
+      children: [
+        CircleAvatar(
+          radius: 10,
+          backgroundColor: const Color(0xFFF2F4F7),
+          backgroundImage: photoURL.isNotEmpty ? NetworkImage(photoURL) : null,
+          child: photoURL.isEmpty
+              ? const Icon(
+                  Icons.person_outline,
+                  size: 11,
+                  color: Color(0xFF667085),
+                )
+              : null,
+        ),
+        const SizedBox(width: 6),
+        Expanded(
+          child: Text(
+            name,
+            maxLines: 1,
+            overflow: TextOverflow.ellipsis,
+            style: metaStyle.copyWith(
+              fontWeight: FontWeight.w700,
+              color: const Color(0xFF344054),
+            ),
+          ),
+        ),
+      ],
     );
   }
 }

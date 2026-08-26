@@ -53,16 +53,31 @@ service cloud.firestore {
     }
 
     // Firebase Auth 비활성화와 별개로 Firestore에 기록된 정지/탈퇴 상태도
-    // 콘텐츠 공개범위보다 우선한다. 필드가 없는 정상 레거시 계정은 허용한다.
+    // 콘텐츠 공개범위보다 우선한다. 삭제 후 지연된 merge로 uid/token만 남은
+    // 껍데기 문서도 활성 계정으로 인정하지 않는다.
+    function activeUserAccount(userId) {
+      return userId is string
+        && exists(/databases/$(database)/documents/users/$(userId))
+        && get(/databases/$(database)/documents/users/$(userId)).data.get('isDeleted', false) != true
+        && get(/databases/$(database)/documents/users/$(userId)).data.get('deleted', false) != true
+        && get(/databases/$(database)/documents/users/$(userId)).data.get('disabled', false) != true
+        && get(/databases/$(database)/documents/users/$(userId)).data.get('isSuspended', false) != true
+        && get(/databases/$(database)/documents/users/$(userId)).data.get('deletedAt', null) == null
+        && get(/databases/$(database)/documents/users/$(userId)).data.get('status', '') != 'deleted'
+        && get(/databases/$(database)/documents/users/$(userId)).data.get('status', '') != 'suspended'
+        && get(/databases/$(database)/documents/users/$(userId)).data.get('accountStatus', '') != 'deleted'
+        && get(/databases/$(database)/documents/users/$(userId)).data.get('accountStatus', '') != 'suspended'
+        && get(/databases/$(database)/documents/users/$(userId)).data.get('registrationStatus', '') != 'deleted'
+        && (
+          get(/databases/$(database)/documents/users/$(userId)).data.get('nickname', '') != ''
+          || get(/databases/$(database)/documents/users/$(userId)).data.get('displayName', '') != ''
+          || get(/databases/$(database)/documents/users/$(userId)).data.get('email', '') != ''
+          || get(/databases/$(database)/documents/users/$(userId)).data.get('hanyangEmail', '') != ''
+        );
+    }
+
     function currentUserAccountAllowed() {
-      return request.auth != null
-        && exists(/databases/$(database)/documents/users/$(request.auth.uid))
-        && get(/databases/$(database)/documents/users/$(request.auth.uid)).data.get('isDeleted', false) != true
-        && get(/databases/$(database)/documents/users/$(request.auth.uid)).data.get('deleted', false) != true
-        && get(/databases/$(database)/documents/users/$(request.auth.uid)).data.get('disabled', false) != true
-        && get(/databases/$(database)/documents/users/$(request.auth.uid)).data.get('isSuspended', false) != true
-        && get(/databases/$(database)/documents/users/$(request.auth.uid)).data.get('status', '') != 'deleted'
-        && get(/databases/$(database)/documents/users/$(request.auth.uid)).data.get('status', '') != 'suspended';
+      return request.auth != null && activeUserAccount(request.auth.uid);
     }
 
     function accountRestrictionFieldsUnchanged() {
@@ -70,6 +85,7 @@ service cloud.firestore {
         'isDeleted', 'deleted', 'disabled', 'isSuspended', 'status',
         'emailVerified', 'hanyangEmail', 'hanyangEmailVerified',
         'hanyangEmailVerifiedAt', 'schoolVerificationMethod',
+        'schoolVerificationSchemaVersion', 'schoolVerificationUpdatedAt',
         'verificationMethod', 'isAdmin',
         'registrationStatus', 'registrationCompletedAt'
       ]);
@@ -230,15 +246,10 @@ service cloud.firestore {
     match /users/{userId} {
       // 본인만 민감한 필드 수정 가능
       allow read: if request.auth != null; // 인증된 사용자만 프로필 읽기 가능
-      // 참고: 영어 소셜 회원가입(en bypass)은 Cloud Functions(Admin SDK)에서 users 문서를 생성/보정한다.
-      // 클라이언트 직접 create 정책은 기존 한양메일 인증 조건을 유지한다.
-      allow create: if request.auth != null 
-        && request.auth.uid == userId
-        && request.resource.data.emailVerified == true
-        && request.resource.data.hanyangEmail.matches('.*@hanyang.ac.kr$')
-        && request.resource.data.registrationStatus == 'complete'
-        && request.resource.data.nickname is string
-        && request.resource.data.nickname.size() >= 2;
+      // 가입 및 학교 인증 상태는 Cloud Functions(Admin SDK)만 생성한다.
+      // 클라이언트가 hanyangEmailVerified=true를 직접 넣어 인증을 위조할 수
+      // 없도록 users 문서의 직접 생성도 차단한다.
+      allow create: if false;
       allow update: if request.auth != null
         && request.auth.uid == userId
         && accountRestrictionFieldsUnchanged()
@@ -412,14 +423,25 @@ service cloud.firestore {
       allow write: if false;
 
       match /reactions/{userId} {
-        // 반응 전체 목록은 노출하지 않고, 현재 사용자는 자신의
-        // 반응 여부만 단건 조회할 수 있다. 작성은 Callable만 수행한다.
+        // 현재 사용자는 자신의 반응 여부만 확인하고, 스낵 작성자는
+        // 조회 목록에서 반응자를 함께 확인할 수 있다. 작성은 Callable만 수행한다.
         allow get: if request.auth != null
-          && request.auth.uid == userId
-          && canReadSnapshot(
-            get(/databases/$(database)/documents/snapshots/$(snapshotId)).data
-          );
-        allow list, create, update, delete: if false;
+          && ((request.auth.uid == userId
+              && canReadSnapshot(
+                get(/databases/$(database)/documents/snapshots/$(snapshotId)).data
+              ))
+            || request.auth.uid == get(
+              /databases/$(database)/documents/snapshots/$(snapshotId)
+            ).data.get('ownerId', get(
+              /databases/$(database)/documents/snapshots/$(snapshotId)
+            ).data.get('authorId', '')));
+        allow list: if request.auth != null
+          && request.auth.uid == get(
+            /databases/$(database)/documents/snapshots/$(snapshotId)
+          ).data.get('ownerId', get(
+            /databases/$(database)/documents/snapshots/$(snapshotId)
+          ).data.get('authorId', ''));
+        allow create, update, delete: if false;
       }
 
       match /comments/{userId} {
@@ -451,9 +473,10 @@ service cloud.firestore {
     match /friend_requests/{requestId} {
       // 요청 생성: 발신자만 가능, 자기 자신에게 요청 금지
       allow create: if 
-        request.auth != null &&
+        currentUserAccountAllowed() &&
         request.auth.uid == request.resource.data.fromUid &&
         request.auth.uid != request.resource.data.toUid &&
+        activeUserAccount(request.resource.data.toUid) &&
         request.resource.data.status == 'PENDING';
       
       // 요청 읽기: 발신자 또는 수신자만 가능
@@ -1839,6 +1862,13 @@ service cloud.firestore {
           ? (parts.size() >= 3 && (request.auth.uid == parts[1] || request.auth.uid == parts[2]))
           : (request.auth.uid in parts);
       }
+
+      function bothParticipantsActive(data) {
+        return data.participants is list
+          && data.participants.size() == 2
+          && activeUserAccount(data.participants[0])
+          && activeUserAccount(data.participants[1]);
+      }
       
       // 읽기: 대화방 참여자만 (conversationId 기반 최소 방어 포함)
       allow read: if request.auth != null &&
@@ -1853,6 +1883,7 @@ service cloud.firestore {
         isMyConversationId() &&
         request.resource.data.participants is list &&
         request.resource.data.participants.size() == 2 &&
+        bothParticipantsActive(request.resource.data) &&
         request.auth.uid in request.resource.data.participants;
       
       // 수정: (1) 메시지 관련 필드/보관, (2) '나가기' 허용
@@ -1892,6 +1923,15 @@ service cloud.firestore {
           return exists(/databases/$(database)/documents/conversations/$(conversationId)) &&
                  request.auth.uid in get(/databases/$(database)/documents/conversations/$(conversationId)).data.participants;
         }
+
+        function bothRoomParticipantsActive() {
+          let room = get(/databases/$(database)/documents/conversations/$(conversationId));
+          return exists(/databases/$(database)/documents/conversations/$(conversationId))
+            && room.data.participants is list
+            && room.data.participants.size() == 2
+            && activeUserAccount(room.data.participants[0])
+            && activeUserAccount(room.data.participants[1]);
+        }
         
         // conversationId에서 사용자 ID 추출 (일반: uid1_uid2, 익명: anon_uid1_uid2_postId)
         function isMyConversation() {
@@ -1914,6 +1954,7 @@ service cloud.firestore {
         // 생성: 핵심 검증만 유지
         allow create: if request.auth != null &&
           (isParticipant() || isMyConversation()) &&
+          bothRoomParticipantsActive() &&
           // 발신자는 본인
           request.auth.uid == request.resource.data.senderId &&
           // DM은 post_context 타입만 사용한다. Snack Chat의 투표/시스템

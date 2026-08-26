@@ -24,6 +24,8 @@ import '../ui/widgets/profile_image_viewer.dart';
 import 'user_friends_list_screen.dart';
 import '../models/social_profile_data.dart';
 import 'social_tag_people_screen.dart';
+import '../ui/widgets/hanyang_verification_gate.dart';
+import '../utils/account_status_helper.dart';
 
 class FriendProfileScreen extends StatefulWidget {
   final String userId;
@@ -58,6 +60,8 @@ class _FriendProfileScreenState extends State<FriendProfileScreen>
   final RelationshipService _relationshipService = RelationshipService();
 
   Map<String, dynamic>? _userData;
+  Map<String, dynamic>? _viewerData;
+  bool _isDeletedAccount = false;
   bool _isLoading = true;
   bool _isRelationshipLoading = true;
   RelationshipStatus? _relationshipStatus;
@@ -150,17 +154,34 @@ class _FriendProfileScreenState extends State<FriendProfileScreen>
 
   Future<void> _loadUserData() async {
     try {
-      final doc = await FirebaseFirestore.instance
+      final currentUserId = _relationshipService.currentUserId;
+      final targetFuture = FirebaseFirestore.instance
           .collection('users')
           .doc(widget.userId)
-          .get();
+          .get(const GetOptions(source: Source.server));
+      final viewerFuture = currentUserId == null
+          ? Future<DocumentSnapshot<Map<String, dynamic>>?>.value(null)
+          : FirebaseFirestore.instance
+              .collection('users')
+              .doc(currentUserId)
+              .get()
+              .then<DocumentSnapshot<Map<String, dynamic>>?>((value) => value);
+      final documents = await Future.wait([targetFuture, viewerFuture]);
+      final doc = documents.first!;
+      final viewerDoc = documents.last;
+      final targetData = doc.data();
+      final targetIsDeleted = !doc.exists ||
+          targetData == null ||
+          isUnavailableUserAccountData(targetData);
 
-      if (doc.exists && mounted) {
+      if (!targetIsDeleted && mounted) {
         setState(() {
-          _userData = doc.data();
+          _userData = targetData;
+          _viewerData = viewerDoc?.data();
+          _isDeletedAccount = false;
           _isLoading = false;
         });
-      } else if (!doc.exists && mounted) {
+      } else if (targetIsDeleted && mounted) {
         // 탈퇴한 사용자 처리
         Logger.log('⚠️ 탈퇴한 사용자: ${widget.userId}');
         setState(() {
@@ -172,6 +193,9 @@ class _FriendProfileScreenState extends State<FriendProfileScreen>
             'photoURL': '',
             'bio': '',
           };
+          _viewerData = viewerDoc?.data();
+          _isDeletedAccount = true;
+          _isRelationshipLoading = false;
           _isLoading = false;
         });
       }
@@ -179,6 +203,16 @@ class _FriendProfileScreenState extends State<FriendProfileScreen>
       Logger.error('사용자 데이터 로드 오류: $e');
       if (mounted) {
         setState(() {
+          final deletedLabel =
+              AppLocalizations.of(context)?.deletedAccount ?? '탈퇴한 계정';
+          _userData = {
+            'nickname': deletedLabel,
+            'displayName': deletedLabel,
+            'photoURL': '',
+            'bio': '',
+          };
+          _isDeletedAccount = true;
+          _isRelationshipLoading = false;
           _isLoading = false;
         });
       }
@@ -194,8 +228,13 @@ class _FriendProfileScreenState extends State<FriendProfileScreen>
     final currentUserId = _relationshipService.currentUserId;
     final isMe = currentUserId != null && currentUserId == widget.userId;
     final isFriends = _relationshipStatus == RelationshipStatus.friends;
-    final isNonFriendPreview =
-        widget.allowNonFriendsPreview && !isMe && !isFriends;
+    // 학교 인증 정책과 친구 관계는 분리한다. 비친구도 기본 프로필과 친구요청은
+    // 사용할 수 있고, 후기/DM 같은 친구 전용 영역만 계속 숨긴다.
+    final isNonFriendPreview = !isMe && !isFriends;
+    final targetIsHanyangVerified = isHanyangEmailVerified(_userData);
+    final viewerIsHanyangVerified = isHanyangEmailVerified(_viewerData);
+    final isHanyangProfileLocked =
+        !isMe && targetIsHanyangVerified && !viewerIsHanyangVerified;
 
     return Scaffold(
       appBar: AppBar(
@@ -209,35 +248,228 @@ class _FriendProfileScreenState extends State<FriendProfileScreen>
       backgroundColor: Colors.white,
       body: (_isLoading || _isRelationshipLoading)
           ? const Center(child: CircularProgressIndicator())
-          : (!isMe && !isFriends && !isNonFriendPreview)
-              ? _buildLockedProfile(l10n)
-              : RefreshIndicator(
-                  onRefresh: _refreshProfile,
-                  child: CustomScrollView(
-                    physics: const AlwaysScrollableScrollPhysics(),
-                    slivers: [
-                      SliverToBoxAdapter(
-                        child: _buildProfileHeader(
-                            isNonFriendPreview: isNonFriendPreview),
-                      ),
-                      if (!isNonFriendPreview) ...[
-                        const SliverToBoxAdapter(child: SizedBox(height: 8)),
-                        SliverToBoxAdapter(
-                            child: _buildParticipatedReviewsHeader()),
-                        const SliverToBoxAdapter(
-                          child: Divider(height: 1, color: Color(0xFFE5E7EB)),
+          : _isDeletedAccount
+              ? _buildDeletedAccountProfile(l10n)
+              : isHanyangProfileLocked
+                  ? _buildHanyangLockedProfile(l10n)
+                  : (!isMe && !isFriends && !isNonFriendPreview)
+                      ? _buildLockedProfile(l10n)
+                      : RefreshIndicator(
+                          onRefresh: _refreshProfile,
+                          child: CustomScrollView(
+                            physics: const AlwaysScrollableScrollPhysics(),
+                            slivers: [
+                              SliverToBoxAdapter(
+                                child: _buildProfileHeader(
+                                    isNonFriendPreview: isNonFriendPreview),
+                              ),
+                              if (!isNonFriendPreview) ...[
+                                const SliverToBoxAdapter(
+                                    child: SizedBox(height: 8)),
+                                SliverToBoxAdapter(
+                                    child: _buildParticipatedReviewsHeader()),
+                                const SliverToBoxAdapter(
+                                  child: Divider(
+                                      height: 1, color: Color(0xFFE5E7EB)),
+                                ),
+                                _buildReviewGridSliver(),
+                              ],
+                              // 안드로이드 하단 네비게이션 바를 위한 여백 추가
+                              SliverToBoxAdapter(
+                                child: SizedBox(
+                                  height: bottomPadding > 0
+                                      ? bottomPadding + 16
+                                      : 16,
+                                ),
+                              ),
+                            ],
+                          ),
                         ),
-                        _buildReviewGridSliver(),
-                      ],
-                      // 안드로이드 하단 네비게이션 바를 위한 여백 추가
-                      SliverToBoxAdapter(
-                        child: SizedBox(
-                          height: bottomPadding > 0 ? bottomPadding + 16 : 16,
+    );
+  }
+
+  Widget _buildDeletedAccountProfile(AppLocalizations l10n) {
+    final isKo = Localizations.localeOf(context).languageCode == 'ko';
+    return Center(
+      child: SingleChildScrollView(
+        padding: const EdgeInsets.fromLTRB(24, 32, 24, 48),
+        child: Column(
+          mainAxisAlignment: MainAxisAlignment.center,
+          children: [
+            const CircleAvatar(
+              radius: 48,
+              backgroundColor: Color(0xFFF1F5F9),
+              child: Icon(
+                Icons.person_off_outlined,
+                size: 42,
+                color: Color(0xFF94A3B8),
+              ),
+            ),
+            const SizedBox(height: 20),
+            Text(
+              l10n.deletedAccount,
+              textAlign: TextAlign.center,
+              style: const TextStyle(
+                fontFamily: 'Inter',
+                fontFamilyFallback: ['NotoSansKR'],
+                fontSize: 21,
+                fontWeight: FontWeight.w700,
+                color: Color(0xFF0F172A),
+              ),
+            ),
+            const SizedBox(height: 8),
+            Text(
+              isKo
+                  ? '탈퇴하여 더 이상 조회할 수 없는 계정입니다.'
+                  : 'This account is no longer available.',
+              textAlign: TextAlign.center,
+              style: const TextStyle(
+                fontFamily: 'Inter',
+                fontFamilyFallback: ['NotoSansKR'],
+                fontSize: 14,
+                fontWeight: FontWeight.w400,
+                height: 1.45,
+                color: Color(0xFF64748B),
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _buildHanyangLockedProfile(AppLocalizations l10n) {
+    final isKo = Localizations.localeOf(context).languageCode == 'ko';
+    final status = _relationshipStatus ?? RelationshipStatus.none;
+    final canRequest = status == RelationshipStatus.none ||
+        status == RelationshipStatus.blockedBy;
+    final isPending = status == RelationshipStatus.pendingOut;
+    final isFriends = status == RelationshipStatus.friends;
+    final nickname =
+        (_userData?['nickname'] ?? widget.nickname ?? l10n.user).toString();
+    final photoUrl =
+        (_userData?['photoURL'] ?? widget.photoURL ?? '').toString();
+
+    return ListView(
+      physics: const AlwaysScrollableScrollPhysics(),
+      padding: const EdgeInsets.fromLTRB(24, 28, 24, 32),
+      children: [
+        Row(
+          children: [
+            CircleAvatar(
+              radius: 34,
+              backgroundColor: const Color(0xFFF1F5F9),
+              backgroundImage:
+                  photoUrl.isNotEmpty ? NetworkImage(photoUrl) : null,
+              child: photoUrl.isEmpty
+                  ? const Icon(Icons.person_outline_rounded,
+                      size: 32, color: Color(0xFF64748B))
+                  : null,
+            ),
+            const SizedBox(width: 14),
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    nickname,
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    style: const TextStyle(
+                      fontFamily: 'Inter',
+                      fontFamilyFallback: ['NotoSansKR'],
+                      fontSize: 20,
+                      fontWeight: FontWeight.w700,
+                      color: Color(0xFF0F172A),
+                    ),
+                  ),
+                  const SizedBox(height: 5),
+                  Row(
+                    children: [
+                      const Icon(Icons.verified_rounded,
+                          size: 18, color: AppColors.pointColor),
+                      const SizedBox(width: 5),
+                      Text(
+                        isKo ? '한양대학교 인증 사용자' : 'Verified Hanyang user',
+                        style: const TextStyle(
+                          fontFamily: 'Inter',
+                          fontFamilyFallback: ['NotoSansKR'],
+                          fontSize: 13,
+                          fontWeight: FontWeight.w600,
+                          color: Color(0xFF64748B),
                         ),
                       ),
                     ],
                   ),
-                ),
+                ],
+              ),
+            ),
+          ],
+        ),
+        const SizedBox(height: 42),
+        const Icon(Icons.school_outlined, size: 32, color: Color(0xFF475569)),
+        const SizedBox(height: 12),
+        Text(
+          isKo
+              ? '인증된 사용자의 프로필을 보려면\n한양메일 인증이 필요합니다.'
+              : 'Verify your Hanyang email to view\nthis verified user’s profile.',
+          textAlign: TextAlign.center,
+          style: const TextStyle(
+            fontFamily: 'Inter',
+            fontFamilyFallback: ['NotoSansKR'],
+            fontSize: 16,
+            fontWeight: FontWeight.w600,
+            height: 1.5,
+            color: Color(0xFF334155),
+          ),
+        ),
+        const SizedBox(height: 16),
+        Align(
+          child: TextButton(
+            onPressed: () async {
+              await HanyangVerificationGate.openVerification(context);
+              if (mounted) await _refreshProfile();
+            },
+            child: Text(
+              isKo ? '한양메일 인증하러 가기' : 'Verify Hanyang email',
+              style: const TextStyle(fontWeight: FontWeight.w700),
+            ),
+          ),
+        ),
+        if (isFriends) ...[
+          const SizedBox(height: 18),
+          SizedBox(
+            height: 48,
+            child: ElevatedButton.icon(
+              onPressed: _openDM,
+              icon: const Icon(Icons.message_outlined, size: 19),
+              label: Text(l10n.sendMessage),
+              style: ElevatedButton.styleFrom(
+                elevation: 0,
+                backgroundColor: const Color(0xFFF1F5F9),
+                foregroundColor: const Color(0xFF0F172A),
+              ),
+            ),
+          ),
+        ] else if (canRequest || isPending) ...[
+          const SizedBox(height: 18),
+          SizedBox(
+            height: 48,
+            child: ElevatedButton.icon(
+              onPressed: (!canRequest || _isRequestingFriend)
+                  ? null
+                  : _sendFriendRequestFromProfile,
+              icon: const Icon(Icons.person_add_alt_1_rounded, size: 19),
+              label: Text(isPending ? l10n.requestPending : l10n.friendRequest),
+              style: ElevatedButton.styleFrom(
+                elevation: 0,
+                backgroundColor: AppColors.pointColor,
+                foregroundColor: Colors.white,
+              ),
+            ),
+          ),
+        ],
+      ],
     );
   }
 
@@ -335,6 +567,7 @@ class _FriendProfileScreenState extends State<FriendProfileScreen>
 
   Future<void> _sendFriendRequestFromProfile() async {
     final l10n = AppLocalizations.of(context)!;
+    if (_isDeletedAccount) return;
     final currentUserId = _relationshipService.currentUserId;
     if (currentUserId == null) {
       ScaffoldMessenger.of(context).showSnackBar(
@@ -1226,6 +1459,7 @@ class _FriendProfileScreenState extends State<FriendProfileScreen>
 
   /// DM 대화방 열기
   Future<void> _openDM() async {
+    if (_isDeletedAccount) return;
     try {
       // Firebase Auth UID 형식 검증 (20~30자 영숫자, 언더스코어 포함 가능)
       final uidPattern = RegExp(r'^[a-zA-Z0-9_-]{20,30}$');

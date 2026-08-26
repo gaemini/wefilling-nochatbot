@@ -12,6 +12,7 @@ import '../models/meetup_participant.dart';
 import '../models/user_profile.dart';
 import '../repositories/users_repository.dart';
 import '../services/meetup_service.dart';
+import '../services/user_info_cache_service.dart';
 import '../services/snack_chat_service.dart';
 import 'package:intl/intl.dart';
 import '../utils/country_flag_helper.dart';
@@ -34,6 +35,7 @@ import '../utils/logger.dart';
 import '../utils/responsive_helper.dart';
 import '../ui/snackbar/app_snackbar.dart';
 import 'snack_chat_screen.dart';
+import '../ui/widgets/hanyang_verification_gate.dart';
 // NOTE: 단체 톡방(확성기) 기능 제거됨
 
 class MeetupDetailScreen extends StatefulWidget {
@@ -219,18 +221,6 @@ class _MeetupDetailScreenState extends State<MeetupDetailScreen>
     }
   }
 
-  /// 테스트를 위한 기본 국가 정보 반환
-  String _getDefaultCountryForUser(String userName) {
-    // 테스트용 기본 국가 매핑
-    final defaultCountries = {
-      '차재민': '한국',
-      '남태평양는': '미국',
-      'dev99': '한국',
-    };
-
-    return defaultCountries[userName] ?? '한국'; // 기본값은 한국
-  }
-
   /// 국가명을 현재 언어로 변환
   String _getLocalizedCountryName(String countryName) {
     final isEnglish = Localizations.localeOf(context).languageCode == 'en';
@@ -339,57 +329,6 @@ class _MeetupDetailScreenState extends State<MeetupDetailScreen>
         widget.meetupId,
         ParticipantStatus.approved,
       );
-
-      // 각 참여자의 국가 정보를 사용자 프로필에서 가져와서 업데이트
-      for (int i = 0; i < participants.length; i++) {
-        final participant = participants[i];
-        if (participant.userCountry == null ||
-            participant.userCountry!.isEmpty) {
-          try {
-            final userDoc = await FirebaseFirestore.instance
-                .collection('users')
-                .doc(participant.userId)
-                .get();
-
-            if (userDoc.exists) {
-              final userData = userDoc.data()!;
-              final userCountry =
-                  userData['nationality'] ?? userData['country'] ?? '';
-
-              if (userCountry.isNotEmpty) {
-                participants[i] =
-                    participant.copyWith(userCountry: userCountry);
-                Logger.log(
-                    '✅ ${participant.userName}의 국가 정보 업데이트: $userCountry');
-              } else {
-                // 테스트를 위한 기본 국가 정보 설정
-                final defaultCountry =
-                    _getDefaultCountryForUser(participant.userName);
-                if (defaultCountry.isNotEmpty) {
-                  participants[i] =
-                      participant.copyWith(userCountry: defaultCountry);
-                  Logger.log(
-                      '🔧 ${participant.userName}의 기본 국가 정보 설정: $defaultCountry');
-                }
-              }
-            }
-          } catch (e) {
-            Logger.error('❌ ${participant.userName}의 국가 정보 로드 실패: $e');
-            // 오류 발생 시에도 기본 국가 정보 설정
-            final defaultCountry =
-                _getDefaultCountryForUser(participant.userName);
-            if (defaultCountry.isNotEmpty) {
-              participants[i] =
-                  participant.copyWith(userCountry: defaultCountry);
-              Logger.error(
-                  '🔧 ${participant.userName}의 기본 국가 정보 설정 (오류 후): $defaultCountry');
-            }
-          }
-        } else {
-          Logger.log(
-              'ℹ️ ${participant.userName}은 이미 국가 정보가 있음: ${participant.userCountry}');
-        }
-      }
 
       // 방장을 참여자 목록 맨 앞에 포함
       final hostId = _currentMeetup.userId;
@@ -568,6 +507,10 @@ class _MeetupDetailScreenState extends State<MeetupDetailScreen>
         final currentLang = Localizations.localeOf(context).languageCode;
         final horizontal = context.rs(20).clamp(16, 24).toDouble();
         final titleSize = context.rf(25).clamp(22, 28).toDouble();
+        final isHanyangLocked = HanyangVerificationGate.isLockedForCurrentUser(
+          context,
+          _currentMeetup.requiresHanyangVerification,
+        );
 
         return MediaQuery.withClampedTextScaling(
           maxScaleFactor: 1.2,
@@ -603,117 +546,141 @@ class _MeetupDetailScreenState extends State<MeetupDetailScreen>
             ),
             body: SafeArea(
               top: false,
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.stretch,
-                children: [
-                  Expanded(
-                    child: RefreshIndicator(
-                      color: const Color(0xFF111827),
-                      backgroundColor: Colors.white,
-                      onRefresh: () async {
-                        await Future.wait([
-                          _refreshMeetupData(),
-                          Future.delayed(const Duration(milliseconds: 350)),
-                        ]);
-                      },
-                      child: ListView(
-                        physics: const AlwaysScrollableScrollPhysics(),
-                        padding:
-                            EdgeInsets.fromLTRB(horizontal, 12, horizontal, 28),
-                        children: [
-                          Text(
-                            _currentMeetup.title,
-                            maxLines: 3,
-                            overflow: TextOverflow.ellipsis,
-                            style: TextStyle(
-                              fontFamily: 'Inter',
-                              fontFamilyFallback: const ['NotoSansKR'],
-                              fontSize: titleSize,
-                              fontWeight: FontWeight.w800,
-                              color: const Color(0xFF101828),
-                              height: 1.23,
-                              letterSpacing: -0.45,
-                            ),
-                          ),
-                          const SizedBox(height: 8),
-                          Text(
-                            localizedCategoryLabel(
-                                context, _currentMeetup.category),
-                            style: TextStyle(
-                              fontFamily: 'Inter',
-                              fontFamilyFallback: const ['NotoSansKR'],
-                              fontSize: context.rf(13).clamp(12, 14).toDouble(),
-                              fontWeight: FontWeight.w700,
-                              color: const Color(0xFF667085),
-                            ),
-                          ),
-                          if (_currentMeetup.imageUrls.isNotEmpty ||
-                              _currentMeetup.imageUrl.isNotEmpty ||
-                              _currentMeetup.thumbnailImageUrl.isNotEmpty) ...[
-                            const SizedBox(height: 18),
-                            _buildMeetupImage(),
-                          ],
-                          const SizedBox(height: 22),
-                          _buildSimpleInfoRow(
-                            Icons.schedule_rounded,
-                            currentLang == 'ko'
-                                ? '${_currentMeetup.date.month}월 ${_currentMeetup.date.day}일 (${_currentMeetup.getFormattedDayOfWeek(languageCode: currentLang)}) ${_currentMeetup.time.isEmpty || _currentMeetup.time == '미정' ? '시간 미정' : _currentMeetup.time}'
-                                : '${DateFormat('MMM d', 'en').format(_currentMeetup.date)} (${_currentMeetup.getFormattedDayOfWeek(languageCode: 'en')}) ${_currentMeetup.time.isEmpty || _currentMeetup.time == '미정' ? 'Time TBD' : _currentMeetup.time}',
-                          ),
-                          if (_currentMeetup.hasPublicTimeLimit) ...[
-                            const SizedBox(height: 10),
-                            MeetupPublicCountdown(meetup: _currentMeetup),
-                          ],
-                          const SizedBox(height: 13),
-                          _buildSimpleInfoRow(
-                            Icons.location_on_outlined,
-                            _currentMeetup.location,
-                          ),
-                          const SizedBox(height: 20),
-                          _buildHostSummary(),
-                          if (_currentMeetup.description.trim().isNotEmpty) ...[
-                            const SizedBox(height: 28),
-                            _buildSectionTitle(
-                                currentLang == 'ko' ? '소개' : 'About'),
-                            const SizedBox(height: 10),
-                            _buildPrettyLinkText(
-                              _currentMeetup.description,
+              child: HanyangVerificationGate(
+                locked: isHanyangLocked,
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.stretch,
+                  children: [
+                    Expanded(
+                      child: RefreshIndicator(
+                        color: const Color(0xFF111827),
+                        backgroundColor: Colors.white,
+                        onRefresh: () async {
+                          await Future.wait([
+                            _refreshMeetupData(),
+                            Future.delayed(const Duration(milliseconds: 350)),
+                          ]);
+                        },
+                        child: ListView(
+                          physics: const AlwaysScrollableScrollPhysics(),
+                          padding: EdgeInsets.fromLTRB(
+                              horizontal, 12, horizontal, 28),
+                          children: [
+                            Text(
+                              _currentMeetup.title,
+                              maxLines: 3,
+                              overflow: TextOverflow.ellipsis,
                               style: TextStyle(
                                 fontFamily: 'Inter',
                                 fontFamilyFallback: const ['NotoSansKR'],
-                                fontSize:
-                                    context.rf(15).clamp(14, 16).toDouble(),
-                                height: 1.55,
-                                color: const Color(0xFF344054),
-                                fontWeight: FontWeight.w500,
-                              ),
-                              linkStyle: TextStyle(
-                                fontFamily: 'Inter',
-                                fontFamilyFallback: const ['NotoSansKR'],
-                                fontSize:
-                                    context.rf(15).clamp(14, 16).toDouble(),
-                                color: const Color(0xFF111827),
-                                decoration: TextDecoration.underline,
-                                fontWeight: FontWeight.w600,
+                                fontSize: titleSize,
+                                fontWeight: FontWeight.w800,
+                                color: const Color(0xFF101828),
+                                height: 1.23,
+                                letterSpacing: -0.45,
                               ),
                             ),
+                            const SizedBox(height: 8),
+                            Row(
+                              children: [
+                                Flexible(
+                                  child: Text(
+                                    localizedCategoryLabel(
+                                      context,
+                                      _currentMeetup.category,
+                                    ),
+                                    maxLines: 1,
+                                    overflow: TextOverflow.ellipsis,
+                                    style: TextStyle(
+                                      fontFamily: 'Inter',
+                                      fontFamilyFallback: const ['NotoSansKR'],
+                                      fontSize: context
+                                          .rf(13)
+                                          .clamp(12, 14)
+                                          .toDouble(),
+                                      fontWeight: FontWeight.w700,
+                                      color: const Color(0xFF667085),
+                                    ),
+                                  ),
+                                ),
+                                if (_currentMeetup
+                                    .requiresHanyangVerification) ...[
+                                  const SizedBox(width: 7),
+                                  const HanyangContentBadge(),
+                                ],
+                              ],
+                            ),
+                            if (_currentMeetup.imageUrls.isNotEmpty ||
+                                _currentMeetup.imageUrl.isNotEmpty ||
+                                _currentMeetup
+                                    .thumbnailImageUrl.isNotEmpty) ...[
+                              const SizedBox(height: 18),
+                              _buildMeetupImage(),
+                            ],
+                            const SizedBox(height: 22),
+                            _buildSimpleInfoRow(
+                              Icons.schedule_rounded,
+                              currentLang == 'ko'
+                                  ? '${_currentMeetup.date.month}월 ${_currentMeetup.date.day}일 (${_currentMeetup.getFormattedDayOfWeek(languageCode: currentLang)}) ${_currentMeetup.time.isEmpty || _currentMeetup.time == '미정' ? '시간 미정' : _currentMeetup.time}'
+                                  : '${DateFormat('MMM d', 'en').format(_currentMeetup.date)} (${_currentMeetup.getFormattedDayOfWeek(languageCode: 'en')}) ${_currentMeetup.time.isEmpty || _currentMeetup.time == '미정' ? 'Time TBD' : _currentMeetup.time}',
+                            ),
+                            if (_currentMeetup.hasPublicTimeLimit) ...[
+                              const SizedBox(height: 10),
+                              MeetupPublicCountdown(meetup: _currentMeetup),
+                            ],
+                            const SizedBox(height: 13),
+                            _buildSimpleInfoRow(
+                              Icons.location_on_outlined,
+                              _currentMeetup.location,
+                            ),
+                            const SizedBox(height: 20),
+                            _buildHostSummary(),
+                            if (_currentMeetup.description
+                                .trim()
+                                .isNotEmpty) ...[
+                              const SizedBox(height: 28),
+                              _buildSectionTitle(
+                                  currentLang == 'ko' ? '소개' : 'About'),
+                              const SizedBox(height: 10),
+                              _buildPrettyLinkText(
+                                _currentMeetup.description,
+                                style: TextStyle(
+                                  fontFamily: 'Inter',
+                                  fontFamilyFallback: const ['NotoSansKR'],
+                                  fontSize:
+                                      context.rf(15).clamp(14, 16).toDouble(),
+                                  height: 1.55,
+                                  color: const Color(0xFF344054),
+                                  fontWeight: FontWeight.w500,
+                                ),
+                                linkStyle: TextStyle(
+                                  fontFamily: 'Inter',
+                                  fontFamilyFallback: const ['NotoSansKR'],
+                                  fontSize:
+                                      context.rf(15).clamp(14, 16).toDouble(),
+                                  color: const Color(0xFF111827),
+                                  decoration: TextDecoration.underline,
+                                  fontWeight: FontWeight.w600,
+                                ),
+                              ),
+                            ],
+                            const SizedBox(height: 24),
+                            _buildAudienceSection(),
+                            const SizedBox(height: 24),
+                            _buildParticipantsSection(),
                           ],
-                          const SizedBox(height: 24),
-                          _buildAudienceSection(),
-                          const SizedBox(height: 24),
-                          _buildParticipantsSection(),
-                        ],
+                        ),
                       ),
                     ),
-                  ),
-                  if (_buildBottomAction() case final action?)
-                    SafeArea(
-                      top: false,
-                      minimum:
-                          EdgeInsets.fromLTRB(horizontal, 10, horizontal, 12),
-                      child: action,
-                    ),
-                ],
+                    if (_buildBottomAction() case final action?)
+                      SafeArea(
+                        top: false,
+                        minimum:
+                            EdgeInsets.fromLTRB(horizontal, 10, horizontal, 12),
+                        child: action,
+                      ),
+                  ],
+                ),
               ),
             ),
           ),
@@ -799,16 +766,54 @@ class _MeetupDetailScreenState extends State<MeetupDetailScreen>
       );
 
   Widget _buildHostSummary() {
-    final hostName = _currentMeetup.hostNickname ?? _currentMeetup.host;
+    final hostId = _currentMeetup.userId?.trim() ?? '';
+    if (hostId.isEmpty || hostId == 'deleted') {
+      return _buildHostSummaryContent(
+        name: AppLocalizations.of(context)!.deletedAccount,
+        photoURL: '',
+        nationality: '',
+      );
+    }
+    final cache = UserInfoCacheService();
+    return StreamBuilder<DMUserInfo?>(
+      stream: cache.watchUserInfo(hostId),
+      initialData: cache.getCachedUserInfo(hostId),
+      builder: (context, snapshot) {
+        final latest = snapshot.data;
+        final isDeleted = latest?.isDeletedAccount == true;
+        return _buildHostSummaryContent(
+          name: isDeleted
+              ? AppLocalizations.of(context)!.deletedAccount
+              : ((latest?.nickname ?? '').trim().isNotEmpty
+                  ? latest!.nickname
+                  : (_currentMeetup.hostNickname ?? _currentMeetup.host)),
+          photoURL: isDeleted
+              ? ''
+              : ((latest?.photoURL ?? '').trim().isNotEmpty
+                  ? latest!.photoURL
+                  : _currentMeetup.hostPhotoURL),
+          nationality: isDeleted
+              ? ''
+              : ((latest?.nationality ?? '').trim().isNotEmpty
+                  ? latest!.nationality
+                  : _currentMeetup.hostNationality),
+        );
+      },
+    );
+  }
+
+  Widget _buildHostSummaryContent({
+    required String name,
+    required String photoURL,
+    required String nationality,
+  }) {
     return Row(
       children: [
         CircleAvatar(
           radius: context.rs(18).clamp(17, 20).toDouble(),
           backgroundColor: const Color(0xFFF2F4F7),
-          backgroundImage: _currentMeetup.hostPhotoURL.isNotEmpty
-              ? NetworkImage(_currentMeetup.hostPhotoURL)
-              : null,
-          child: _currentMeetup.hostPhotoURL.isEmpty
+          backgroundImage: photoURL.isNotEmpty ? NetworkImage(photoURL) : null,
+          child: photoURL.isEmpty
               ? const Icon(Icons.person_outline,
                   size: 18, color: Color(0xFF667085))
               : null,
@@ -830,7 +835,7 @@ class _MeetupDetailScreenState extends State<MeetupDetailScreen>
               ),
               const SizedBox(height: 2),
               Text(
-                hostName,
+                name,
                 maxLines: 1,
                 overflow: TextOverflow.ellipsis,
                 style: TextStyle(
@@ -844,11 +849,11 @@ class _MeetupDetailScreenState extends State<MeetupDetailScreen>
             ],
           ),
         ),
-        if (_currentMeetup.hostNationality.isNotEmpty)
+        if (nationality.isNotEmpty)
           Padding(
             padding: const EdgeInsets.only(left: 8),
             child: Text(
-              CountryFlagHelper.getFlagEmoji(_currentMeetup.hostNationality),
+              CountryFlagHelper.getFlagEmoji(nationality),
               style: const TextStyle(fontSize: 20),
             ),
           ),
@@ -3684,6 +3689,32 @@ class _MeetupDetailScreenState extends State<MeetupDetailScreen>
 
   // 새로운 심플한 참여자 아이템
   Widget _buildSimpleParticipantItem(MeetupParticipant participant) {
+    final cache = UserInfoCacheService();
+    if (participant.userId.isNotEmpty && participant.userId != 'host') {
+      return StreamBuilder<DMUserInfo?>(
+        stream: cache.watchUserInfo(participant.userId),
+        initialData: cache.getCachedUserInfo(participant.userId),
+        builder: (context, snapshot) {
+          final latest = snapshot.data;
+          if (latest == null) {
+            return _buildSimpleParticipantItemContent(participant);
+          }
+          return _buildSimpleParticipantItemContent(
+            participant.copyWith(
+              userName:
+                  latest.isDeletedAccount ? 'DELETED_ACCOUNT' : latest.nickname,
+              userProfileImage: latest.isDeletedAccount ? '' : latest.photoURL,
+              userCountry: latest.isDeletedAccount ? '' : latest.nationality,
+              isDeletedAccount: latest.isDeletedAccount,
+            ),
+          );
+        },
+      );
+    }
+    return _buildSimpleParticipantItemContent(participant);
+  }
+
+  Widget _buildSimpleParticipantItemContent(MeetupParticipant participant) {
     final hostId = _currentMeetup.userId;
     final canKick = _isHost &&
         hostId != null &&
@@ -3722,7 +3753,10 @@ class _MeetupDetailScreenState extends State<MeetupDetailScreen>
                     children: [
                       Expanded(
                         child: Text(
-                          participant.userName,
+                          participant.isDeletedAccount ||
+                                  participant.userName == 'DELETED_ACCOUNT'
+                              ? AppLocalizations.of(context)!.deletedAccount
+                              : participant.userName,
                           style: const TextStyle(
                             fontFamily: 'Inter',
                             fontFamilyFallback: const ['NotoSansKR'],
@@ -3736,7 +3770,8 @@ class _MeetupDetailScreenState extends State<MeetupDetailScreen>
                       ),
                       const SizedBox(width: 10),
                       // 참여자 국가 정보 (오른쪽 정렬, 국가명 + 국기 순서)
-                      if (participant.userCountry != null &&
+                      if (!participant.isDeletedAccount &&
+                          participant.userCountry != null &&
                           participant.userCountry!.isNotEmpty) ...[
                         Text(
                           _getLocalizedCountryName(participant.userCountry!),
@@ -3881,6 +3916,30 @@ class _MeetupDetailScreenState extends State<MeetupDetailScreen>
 
   // 참여자 아이템
   Widget _buildParticipantItem(MeetupParticipant participant) {
+    final cache = UserInfoCacheService();
+    if (participant.userId.isNotEmpty && participant.userId != 'host') {
+      return StreamBuilder<DMUserInfo?>(
+        stream: cache.watchUserInfo(participant.userId),
+        initialData: cache.getCachedUserInfo(participant.userId),
+        builder: (context, snapshot) {
+          final latest = snapshot.data;
+          if (latest == null) return _buildParticipantItemContent(participant);
+          return _buildParticipantItemContent(
+            participant.copyWith(
+              userName:
+                  latest.isDeletedAccount ? 'DELETED_ACCOUNT' : latest.nickname,
+              userProfileImage: latest.isDeletedAccount ? '' : latest.photoURL,
+              userCountry: latest.isDeletedAccount ? '' : latest.nationality,
+              isDeletedAccount: latest.isDeletedAccount,
+            ),
+          );
+        },
+      );
+    }
+    return _buildParticipantItemContent(participant);
+  }
+
+  Widget _buildParticipantItemContent(MeetupParticipant participant) {
     return Container(
       padding: const EdgeInsets.symmetric(vertical: 8.0),
       child: Row(
@@ -3952,44 +4011,35 @@ class _MeetupDetailScreenState extends State<MeetupDetailScreen>
 
   /// 참가자 이름 옆에 개인 국기 표시 (users/{uid}.nationality 활용)
   Widget _buildParticipantNameWithFlag(MeetupParticipant participant) {
-    return FutureBuilder<DocumentSnapshot>(
-      future: FirebaseFirestore.instance
-          .collection('users')
-          .doc(participant.userId)
-          .get(),
-      builder: (context, snapshot) {
-        String? nationality;
-        if (snapshot.hasData && snapshot.data!.exists) {
-          final data = snapshot.data!.data() as Map<String, dynamic>?;
-          nationality = data?['nationality'];
-        }
-
-        return Row(
-          children: [
-            Expanded(
-              child: Text(
-                participant.userName,
-                style: const TextStyle(
-                  fontFamily: 'Inter',
-                  fontFamilyFallback: const ['NotoSansKR'],
-                  fontSize: 15,
-                  fontWeight: FontWeight.w600,
-                  color: Color(0xFF1E293B), // 진한 회색
-                  letterSpacing: -0.1,
-                ),
-                maxLines: 1,
-                overflow: TextOverflow.ellipsis,
-              ),
+    return Row(
+      children: [
+        Expanded(
+          child: Text(
+            participant.isDeletedAccount ||
+                    participant.userName == 'DELETED_ACCOUNT'
+                ? AppLocalizations.of(context)!.deletedAccount
+                : participant.userName,
+            style: const TextStyle(
+              fontFamily: 'Inter',
+              fontFamilyFallback: const ['NotoSansKR'],
+              fontSize: 15,
+              fontWeight: FontWeight.w600,
+              color: Color(0xFF1E293B),
+              letterSpacing: -0.1,
             ),
-            const SizedBox(width: 6),
-            if (nationality != null && nationality!.isNotEmpty)
-              Text(
-                CountryFlagHelper.getFlagEmoji(nationality!),
-                style: const TextStyle(fontSize: 22), // 국기 가독성 향상
-              ),
-          ],
-        );
-      },
+            maxLines: 1,
+            overflow: TextOverflow.ellipsis,
+          ),
+        ),
+        const SizedBox(width: 6),
+        if (!participant.isDeletedAccount &&
+            participant.userCountry != null &&
+            participant.userCountry!.isNotEmpty)
+          Text(
+            CountryFlagHelper.getFlagEmoji(participant.userCountry!),
+            style: const TextStyle(fontSize: 22),
+          ),
+      ],
     );
   }
 }

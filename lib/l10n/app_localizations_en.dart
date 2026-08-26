@@ -1621,7 +1621,7 @@ class AppLocalizationsEn extends AppLocalizations {
   String get emailSignup => 'Email Sign Up';
 
   @override
-  String get emailLogin => 'Email Login';
+  String get emailLogin => 'Log in with Email';
 
   @override
   String get hanyangEmailOnly => 'Hanyang University Email Verification';
@@ -1727,18 +1727,17 @@ class AppLocalizationsEn extends AppLocalizations {
   String get welcomeTitle => 'Welcome!';
 
   @override
-  String get googleLoginDescription =>
-      'Sign in with your Google account\nand enjoy various features.';
+  String get googleLoginDescription => 'Choose a way to log in and continue.';
 
   @override
-  String get googleLogin => 'Sign in with Google';
+  String get googleLogin => 'Log in with Google';
 
   @override
-  String get loggingIn => 'Signing in...';
+  String get loggingIn => 'Logging in...';
 
   @override
   String get loginTermsNotice =>
-      'By signing in, you agree to our Terms of Service and Privacy Policy.';
+      'By logging in, you agree to our Terms of Service and Privacy Policy.';
 
   @override
   String get verificationSuccess => 'Verification Success';
@@ -1751,7 +1750,7 @@ class AppLocalizationsEn extends AppLocalizations {
   String get continueWithGoogle => 'Continue with Google';
 
   @override
-  String get appleLogin => 'Sign in with Apple';
+  String get appleLogin => 'Log in with Apple';
 
   @override
   String get continueWithApple => 'Continue with Apple';

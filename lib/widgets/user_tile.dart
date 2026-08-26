@@ -142,12 +142,15 @@ class UserTile extends StatelessWidget {
 
   /// 사용자 정보 위젯
   Widget _buildUserInfo(BuildContext context, {bool compact = false}) {
+    final displayName = user.isDeletedAccount
+        ? AppLocalizations.of(context)!.deletedAccount
+        : user.displayNameOrNickname;
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
         // 사용자 이름
         Text(
-          user.displayNameOrNickname,
+          displayName,
           style: TextStyle(
             fontFamily: 'Inter',
             fontFamilyFallback: const ['NotoSansKR'],
@@ -163,7 +166,9 @@ class UserTile extends StatelessWidget {
         SizedBox(height: compact ? 3 : 8),
 
         // 국적 정보
-        if (user.nationality != null && user.nationality!.isNotEmpty)
+        if (!user.isDeletedAccount &&
+            user.nationality != null &&
+            user.nationality!.isNotEmpty)
           Row(
             children: [
               Icon(
@@ -200,6 +205,7 @@ class UserTile extends StatelessWidget {
 
   /// 액션 버튼 위젯
   Widget _buildActionButton(BuildContext context, {bool compact = false}) {
+    if (user.isDeletedAccount) return const SizedBox.shrink();
     if (isLoading) {
       return const SizedBox(
         width: 24,

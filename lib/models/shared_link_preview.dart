@@ -10,9 +10,14 @@ class SharedLinkPreview {
     this.title = '',
     this.authorName = '',
     this.thumbnailUrl = '',
+    this.thumbnailStoragePath = '',
+    this.thumbnailSource = '',
+    this.thumbnailWidth = 0,
+    this.thumbnailHeight = 0,
     this.embedHtml = '',
     this.previewMode = 'link',
     this.aspectRatio = 16 / 9,
+    this.previewVersion = 0,
     this.fetchedAt,
     this.publishedAt,
   });
@@ -26,15 +31,28 @@ class SharedLinkPreview {
   final String title;
   final String authorName;
   final String thumbnailUrl;
+  final String thumbnailStoragePath;
+  final String thumbnailSource;
+  final int thumbnailWidth;
+  final int thumbnailHeight;
   final String embedHtml;
   final String previewMode;
   final double aspectRatio;
+  final int previewVersion;
   final DateTime? fetchedAt;
   final DateTime? publishedAt;
   final String previewStatus;
 
   bool get isLoading => previewStatus == 'loading';
   bool get hasThumbnail => thumbnailUrl.trim().isNotEmpty;
+  bool get isPersistentThumbnail {
+    final uri = Uri.tryParse(thumbnailUrl.trim());
+    if (uri == null || uri.scheme != 'https') return false;
+    final host = uri.host.toLowerCase();
+    return host == 'firebasestorage.googleapis.com' ||
+        host == 'storage.googleapis.com';
+  }
+
   bool get isInstagramEmbed =>
       provider == 'instagram' &&
       previewMode == 'embed' &&
@@ -53,9 +71,14 @@ class SharedLinkPreview {
     String? title,
     String? authorName,
     String? thumbnailUrl,
+    String? thumbnailStoragePath,
+    String? thumbnailSource,
+    int? thumbnailWidth,
+    int? thumbnailHeight,
     String? embedHtml,
     String? previewMode,
     double? aspectRatio,
+    int? previewVersion,
     DateTime? fetchedAt,
     DateTime? publishedAt,
     String? previewStatus,
@@ -70,9 +93,14 @@ class SharedLinkPreview {
       title: title ?? this.title,
       authorName: authorName ?? this.authorName,
       thumbnailUrl: thumbnailUrl ?? this.thumbnailUrl,
+      thumbnailStoragePath: thumbnailStoragePath ?? this.thumbnailStoragePath,
+      thumbnailSource: thumbnailSource ?? this.thumbnailSource,
+      thumbnailWidth: thumbnailWidth ?? this.thumbnailWidth,
+      thumbnailHeight: thumbnailHeight ?? this.thumbnailHeight,
       embedHtml: embedHtml ?? this.embedHtml,
       previewMode: previewMode ?? this.previewMode,
       aspectRatio: aspectRatio ?? this.aspectRatio,
+      previewVersion: previewVersion ?? this.previewVersion,
       fetchedAt: fetchedAt ?? this.fetchedAt,
       publishedAt: publishedAt ?? this.publishedAt,
       previewStatus: previewStatus ?? this.previewStatus,
@@ -90,9 +118,14 @@ class SharedLinkPreview {
       'title': title,
       'authorName': authorName,
       'thumbnailUrl': thumbnailUrl,
+      'thumbnailStoragePath': thumbnailStoragePath,
+      'thumbnailSource': thumbnailSource,
+      if (thumbnailWidth > 0) 'thumbnailWidth': thumbnailWidth,
+      if (thumbnailHeight > 0) 'thumbnailHeight': thumbnailHeight,
       if (embedHtml.isNotEmpty) 'embedHtml': embedHtml,
       'previewMode': previewMode,
       'aspectRatio': aspectRatio,
+      'previewVersion': previewVersion,
       if (fetchedAt != null)
         'fetchedAtMillis': fetchedAt!.millisecondsSinceEpoch,
       if (publishedAt != null)
@@ -102,6 +135,11 @@ class SharedLinkPreview {
   }
 
   factory SharedLinkPreview.fromMap(Map<String, dynamic> map) {
+    int readInt(Object? value) {
+      if (value is num) return value.toInt();
+      return int.tryParse(value?.toString() ?? '') ?? 0;
+    }
+
     final rawFetchedAt = map['fetchedAtMillis'] ?? map['fetchedAt'];
     DateTime? fetchedAt;
     if (rawFetchedAt is int) {
@@ -142,16 +180,71 @@ class SharedLinkPreview {
       title: (map['title'] ?? '').toString(),
       authorName: (map['authorName'] ?? '').toString(),
       thumbnailUrl: (map['thumbnailUrl'] ?? '').toString(),
+      thumbnailStoragePath: (map['thumbnailStoragePath'] ?? '').toString(),
+      thumbnailSource: (map['thumbnailSource'] ?? '').toString(),
+      thumbnailWidth: readInt(map['thumbnailWidth']),
+      thumbnailHeight: readInt(map['thumbnailHeight']),
       embedHtml: (map['embedHtml'] ?? '').toString(),
       previewMode: (map['previewMode'] ??
               (map['provider'] == 'youtube' ? 'image' : 'link'))
           .toString(),
       aspectRatio: aspectRatio,
+      previewVersion: readInt(map['previewVersion']),
       fetchedAt: fetchedAt,
       publishedAt: publishedAt,
       previewStatus: (map['previewStatus'] ?? 'unavailable').toString(),
     );
   }
+
+  @override
+  bool operator ==(Object other) {
+    return identical(this, other) ||
+        other is SharedLinkPreview &&
+            provider == other.provider &&
+            originalUrl == other.originalUrl &&
+            canonicalUrl == other.canonicalUrl &&
+            contentId == other.contentId &&
+            shortcode == other.shortcode &&
+            contentType == other.contentType &&
+            title == other.title &&
+            authorName == other.authorName &&
+            thumbnailUrl == other.thumbnailUrl &&
+            thumbnailStoragePath == other.thumbnailStoragePath &&
+            thumbnailSource == other.thumbnailSource &&
+            thumbnailWidth == other.thumbnailWidth &&
+            thumbnailHeight == other.thumbnailHeight &&
+            embedHtml == other.embedHtml &&
+            previewMode == other.previewMode &&
+            aspectRatio == other.aspectRatio &&
+            previewVersion == other.previewVersion &&
+            fetchedAt == other.fetchedAt &&
+            publishedAt == other.publishedAt &&
+            previewStatus == other.previewStatus;
+  }
+
+  @override
+  int get hashCode => Object.hashAll(<Object?>[
+        provider,
+        originalUrl,
+        canonicalUrl,
+        contentId,
+        shortcode,
+        contentType,
+        title,
+        authorName,
+        thumbnailUrl,
+        thumbnailStoragePath,
+        thumbnailSource,
+        thumbnailWidth,
+        thumbnailHeight,
+        embedHtml,
+        previewMode,
+        aspectRatio,
+        previewVersion,
+        fetchedAt,
+        publishedAt,
+        previewStatus,
+      ]);
 
   factory SharedLinkPreview.loading({
     required String url,

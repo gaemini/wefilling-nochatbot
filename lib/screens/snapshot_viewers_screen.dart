@@ -233,7 +233,8 @@ class _ViewerRow extends StatelessWidget {
     return MediaQuery.withClampedTextScaling(
       maxScaleFactor: 1.3,
       child: Semantics(
-        label: '${viewer.displayName}, $viewedAt',
+        label: '${viewer.displayName}, $viewedAt'
+            '${viewer.reaction.isEmpty ? '' : ', ${strings.likeReaction}'}',
         button: canOpenProfile,
         enabled: canOpenProfile,
         excludeSemantics: true,
@@ -294,17 +295,36 @@ class _ViewerRow extends StatelessWidget {
                   ),
                 ),
                 SizedBox(width: context.rs(10).clamp(8, 12).toDouble()),
-                Text(
-                  viewedAt,
-                  maxLines: 1,
-                  textAlign: TextAlign.end,
-                  style: TextStyle(
-                    fontFamily: 'Inter',
-                    fontFamilyFallback: const ['NotoSansKR'],
-                    fontSize: context.rf(12).clamp(11, 13).toDouble(),
-                    fontWeight: FontWeight.w500,
-                    color: const Color(0xFF98A2B3),
-                  ),
+                Row(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    if (viewer.reaction.isNotEmpty) ...[
+                      Tooltip(
+                        message: strings.likeReaction,
+                        child: Icon(
+                          Icons.favorite_rounded,
+                          key: ValueKey<String>(
+                            'snapshot-viewer-reaction-${viewer.userId}',
+                          ),
+                          size: context.ri(16).clamp(15, 18).toDouble(),
+                          color: const Color(0xFF2D9CDB),
+                        ),
+                      ),
+                      const SizedBox(width: 6),
+                    ],
+                    Text(
+                      viewedAt,
+                      maxLines: 1,
+                      textAlign: TextAlign.end,
+                      style: TextStyle(
+                        fontFamily: 'Inter',
+                        fontFamilyFallback: const ['NotoSansKR'],
+                        fontSize: context.rf(12).clamp(11, 13).toDouble(),
+                        fontWeight: FontWeight.w500,
+                        color: const Color(0xFF98A2B3),
+                      ),
+                    ),
+                  ],
                 ),
               ],
             ),

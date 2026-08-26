@@ -20,16 +20,21 @@ enum SignupEmailPolicy {
 class HanyangEmailVerificationScreen extends StatefulWidget {
   const HanyangEmailVerificationScreen({
     super.key,
-  }) : emailPolicy = SignupEmailPolicy.hanyangOnly;
+  })  : signupLanguage = 'ko',
+        emailPolicy = SignupEmailPolicy.hanyangOnly;
 
-  const HanyangEmailVerificationScreen.general({super.key})
-      : emailPolicy = SignupEmailPolicy.anyVerifiedEmail;
+  const HanyangEmailVerificationScreen.general({
+    super.key,
+    this.signupLanguage = 'en',
+  }) : emailPolicy = SignupEmailPolicy.anyVerifiedEmail;
 
   const HanyangEmailVerificationScreen.profile({super.key})
-      : emailPolicy = SignupEmailPolicy.hanyangProfile;
+      : signupLanguage = 'en',
+        emailPolicy = SignupEmailPolicy.hanyangProfile;
 
   /// 영어 가입 경로에서는 학교 도메인 제한 없이 이메일 소유권만 확인한다.
   final SignupEmailPolicy emailPolicy;
+  final String signupLanguage;
 
   @override
   State<HanyangEmailVerificationScreen> createState() =>
@@ -44,6 +49,7 @@ class _HanyangEmailVerificationScreenState
 
   bool _isCodeSent = false;
   bool _isLoading = false;
+  bool _checkingCanonicalStatus = false;
   String? _errorMessage;
   String _cancellationToken = '';
 
@@ -52,6 +58,36 @@ class _HanyangEmailVerificationScreenState
 
   bool get _isProfileVerification =>
       widget.emailPolicy == SignupEmailPolicy.hanyangProfile;
+
+  @override
+  void initState() {
+    super.initState();
+    if (_isProfileVerification) {
+      _checkingCanonicalStatus = true;
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        _closeIfAlreadyVerified();
+      });
+    }
+  }
+
+  Future<void> _closeIfAlreadyVerified() async {
+    final authProvider = context.read<AuthProvider>();
+    final verified = await authProvider.refreshHanyangVerificationStatus();
+    if (!mounted) return;
+    setState(() => _checkingCanonicalStatus = false);
+    if (!verified) return;
+    final isKo = Localizations.localeOf(context).languageCode == 'ko';
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(
+        content: Text(
+          isKo
+              ? '이미 한양메일 인증이 완료된 계정이에요.'
+              : 'Your Hanyang email is already verified.',
+        ),
+      ),
+    );
+    Navigator.pop(context, true);
+  }
 
   @override
   void dispose() {
@@ -260,6 +296,7 @@ class _HanyangEmailVerificationScreenState
                 verifiedHanyangEmail: '',
                 loginEmail: _emailController.text.trim(),
                 generalEmailVerificationToken: verificationToken,
+                signupLanguage: widget.signupLanguage,
               ),
             ),
           );
@@ -277,10 +314,18 @@ class _HanyangEmailVerificationScreenState
         }
         return;
       }
+    } on FirebaseFunctionsException catch (e) {
+      if (mounted) {
+        setState(() {
+          _errorMessage = e.message?.trim().isNotEmpty == true
+              ? e.message!.trim()
+              : AppLocalizations.of(context)!.error;
+        });
+      }
     } catch (e) {
       if (mounted) {
         setState(() {
-          _errorMessage = '${AppLocalizations.of(context)!.error}: $e';
+          _errorMessage = AppLocalizations.of(context)!.error;
         });
       }
     } finally {
@@ -357,6 +402,11 @@ class _HanyangEmailVerificationScreenState
           top: false,
           child: LayoutBuilder(
             builder: (context, constraints) {
+              if (_checkingCanonicalStatus) {
+                return const Center(
+                  child: CircularProgressIndicator(strokeWidth: 2.4),
+                );
+              }
               final horizontalPadding =
                   constraints.maxWidth < 360 ? 18.0 : 24.0;
 

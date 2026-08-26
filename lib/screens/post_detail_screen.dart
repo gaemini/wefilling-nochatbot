@@ -45,6 +45,8 @@ import '../ui/widgets/adaptive_post_image_frame.dart';
 import '../ui/widgets/instagram_embed_preview.dart';
 import '../ui/widgets/shared_link_preview_card.dart';
 import '../utils/responsive_helper.dart';
+import '../ui/widgets/hanyang_verification_gate.dart';
+import '../services/user_info_cache_service.dart';
 
 class PostDetailScreen extends StatefulWidget {
   final Post post;
@@ -89,7 +91,7 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
   Map<String, int> _imageRetryCount = {}; // URL별 재시도 횟수
   Map<String, bool> _imageRetrying = {}; // URL별 재시도 중 상태
   static const int _maxRetryCount = 3; // 최대 재시도 횟수
-  static const int _maxPrefetchImages = 6; // 한 화면에서 병렬 프리패치 상한
+  static const int _maxPrefetchImages = 15; // 게시글 첨부 최대 수를 병렬 프리패치
   bool _didPrefetchImages = false;
   Future<List<_PostAudienceUser>>? _audienceUsersFuture;
   bool _audienceExpanded = false;
@@ -414,6 +416,8 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
               letterSpacing: -0.2,
             ),
           ),
+        if (_currentPost.requiresHanyangVerification)
+          const HanyangContentBadge(),
       ],
     );
   }
@@ -809,26 +813,29 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
                                     horizontal: DesignTokens.s16,
                                   ),
                                   tileColor: sheetBg,
-                                  onTap: () {
-                                    // 본인 프로필이면 네비게이션바가 있는 마이페이지 탭으로 이동
-                                    if (u.uid == currentUser.uid) {
-                                      Navigator.pop(context);
-                                      _openMyPageWithBottomNav();
-                                      return;
-                                    }
-                                    Navigator.pop(context);
-                                    Navigator.push(
-                                      this.context,
-                                      MaterialPageRoute(
-                                        builder: (_) => FriendProfileScreen(
-                                          userId: u.uid,
-                                          nickname: u.nickname,
-                                          photoURL: u.photoURL,
-                                          allowNonFriendsPreview: true,
-                                        ),
-                                      ),
-                                    );
-                                  },
+                                  onTap: u.isDeletedAccount
+                                      ? null
+                                      : () {
+                                          // 본인 프로필이면 네비게이션바가 있는 마이페이지 탭으로 이동
+                                          if (u.uid == currentUser.uid) {
+                                            Navigator.pop(context);
+                                            _openMyPageWithBottomNav();
+                                            return;
+                                          }
+                                          Navigator.pop(context);
+                                          Navigator.push(
+                                            this.context,
+                                            MaterialPageRoute(
+                                              builder: (_) =>
+                                                  FriendProfileScreen(
+                                                userId: u.uid,
+                                                nickname: u.nickname,
+                                                photoURL: u.photoURL,
+                                                allowNonFriendsPreview: true,
+                                              ),
+                                            ),
+                                          );
+                                        },
                                   leading: UserAvatar(
                                     uid: u.uid,
                                     photoUrl: u.photoURL,
@@ -840,18 +847,24 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
                                     children: [
                                       Flexible(
                                         child: Text(
-                                          u.nickname,
+                                          u.isDeletedAccount
+                                              ? AppLocalizations.of(context)!
+                                                  .deletedAccount
+                                              : u.nickname,
                                           overflow: TextOverflow.ellipsis,
                                           style: (const TextStyle(
                                             fontFamily: 'Inter',
-                                            fontFamilyFallback: const ['NotoSansKR'],
+                                            fontFamilyFallback: const [
+                                              'NotoSansKR'
+                                            ],
                                             fontSize: 14,
                                             fontWeight: FontWeight.w600,
                                           )).copyWith(
                                               color: const Color(0xFF111827)),
                                         ),
                                       ),
-                                      if (u.nationality != null) ...[
+                                      if (!u.isDeletedAccount &&
+                                          u.nationality != null) ...[
                                         const SizedBox(width: 6),
                                         CountryFlagCircle(
                                           nationality: u.nationality!,
@@ -879,48 +892,34 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
 
   Future<List<_PostLikeUser>> _fetchLikeUsers(List<String> userIds) async {
     if (userIds.isEmpty) return const <_PostLikeUser>[];
-
-    final resultById = <String, _PostLikeUser>{};
-
-    // Firestore whereIn 제한(최대 10개) 대응
-    const chunkSize = 10;
-    for (var i = 0; i < userIds.length; i += chunkSize) {
-      final chunk = userIds.sublist(
-        i,
-        (i + chunkSize) > userIds.length ? userIds.length : (i + chunkSize),
-      );
-      final snap = await _firestore
-          .collection('users')
-          .where(FieldPath.documentId, whereIn: chunk)
-          .get();
-      for (final doc in snap.docs) {
-        final data = doc.data();
-        final nickname = (data['nickname'] ?? '').toString().trim().isNotEmpty
-            ? data['nickname'].toString().trim()
-            : 'User';
-        final photoURL = (data['photoURL'] ?? '').toString();
-        final nationalityRaw = (data['nationality'] ?? '').toString().trim();
-        final nationality = nationalityRaw.isEmpty ? null : nationalityRaw;
-        final photoVersion = (data['photoVersion'] is int)
-            ? (data['photoVersion'] as int)
-            : int.tryParse('${data['photoVersion'] ?? 0}') ?? 0;
-        resultById[doc.id] = _PostLikeUser(
-          uid: doc.id,
-          nickname: nickname,
-          photoURL: photoURL,
-          photoVersion: photoVersion,
-          nationality: nationality,
+    final profiles = await UserInfoCacheService().getUserInfoBatch(
+      userIds,
+      forceRefresh: true,
+    );
+    return userIds.map((uid) {
+      final profile = profiles[uid];
+      if (profile == null) {
+        return _PostLikeUser(
+          uid: uid,
+          nickname: 'User',
+          photoURL: '',
+          photoVersion: 0,
+          nationality: null,
+          isDeletedAccount: false,
         );
       }
-    }
-
-    // 원래 순서 유지
-    final ordered = <_PostLikeUser>[];
-    for (final uid in userIds) {
-      final u = resultById[uid];
-      if (u != null) ordered.add(u);
-    }
-    return ordered;
+      final isDeleted = profile.isDeletedAccount;
+      return _PostLikeUser(
+        uid: uid,
+        nickname: isDeleted ? 'DELETED_ACCOUNT' : profile.nickname,
+        photoURL: isDeleted ? '' : profile.photoURL,
+        photoVersion: isDeleted ? 0 : profile.photoVersion,
+        nationality: isDeleted || profile.nationality.isEmpty
+            ? null
+            : profile.nationality,
+        isDeletedAccount: isDeleted,
+      );
+    }).toList(growable: false);
   }
 
   Future<List<String>> _resolveAudienceUserIds(Post post) async {
@@ -2372,6 +2371,7 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
     final content = _getUnifiedBodyText(_currentPost);
     final contentFontSize = context.rf(15).clamp(14.5, 16.0).toDouble();
     final horizontalPadding = context.rs(8).clamp(7.0, 9.0).toDouble();
+    final tagHorizontalInset = context.rs(8).clamp(6.0, 10.0).toDouble();
     final standaloneImageUrls = _currentPost.standaloneImageUrls;
 
     return Column(
@@ -2525,9 +2525,9 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
             ),
           Padding(
             padding: EdgeInsets.fromLTRB(
-              horizontalPadding,
-              DesignTokens.s4,
-              horizontalPadding,
+              horizontalPadding + tagHorizontalInset,
+              DesignTokens.s8,
+              horizontalPadding + tagHorizontalInset,
               0,
             ),
             child: Center(
@@ -2544,9 +2544,9 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
         if (standaloneImageUrls.isEmpty)
           Padding(
             padding: EdgeInsets.fromLTRB(
-              horizontalPadding,
-              DesignTokens.s4,
-              horizontalPadding,
+              horizontalPadding + tagHorizontalInset,
+              DesignTokens.s12,
+              horizontalPadding + tagHorizontalInset,
               0,
             ),
             child: _buildPostCategoryTags(l10n),
@@ -2602,45 +2602,45 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
     final avatarSize = context.rs(40).clamp(39.0, 42.0).toDouble();
     final authorGap = context.rs(5).clamp(4.0, 6.0).toDouble();
 
-    return Row(
+    return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        Semantics(
-          button: canOpenProfile,
-          label: authorName,
-          child: GestureDetector(
-            behavior: HitTestBehavior.opaque,
-            onTap: canOpenProfile ? _openAuthorProfile : null,
-            child: SizedBox.square(
-              dimension: avatarSize,
-              child: Center(
-                child: AudienceRing(
-                  restricted: _currentPost.visibility == 'category',
-                  size: avatarSize,
-                  ringWidth: 1.5,
-                  innerGap: 0.5,
-                  semanticLabel:
-                      Localizations.localeOf(context).languageCode == 'ko'
-                          ? '선택한 그룹에 공개된 포스트'
-                          : 'Post shared with selected groups',
-                  child: UserAvatar(
-                    uid: _currentPost.userId,
-                    photoUrl: _currentPost.authorPhotoURL,
-                    photoVersion: 0,
-                    isAnonymous: isAnonymous,
-                    size: avatarSize,
+        Row(
+          crossAxisAlignment: CrossAxisAlignment.center,
+          children: [
+            Semantics(
+              button: canOpenProfile,
+              label: authorName,
+              child: GestureDetector(
+                behavior: HitTestBehavior.opaque,
+                onTap: canOpenProfile ? _openAuthorProfile : null,
+                child: SizedBox.square(
+                  dimension: avatarSize,
+                  child: Center(
+                    child: AudienceRing(
+                      restricted: _currentPost.visibility == 'category',
+                      size: avatarSize,
+                      ringWidth: 1.5,
+                      innerGap: 0.5,
+                      semanticLabel:
+                          Localizations.localeOf(context).languageCode == 'ko'
+                              ? '선택한 그룹에 공개된 포스트'
+                              : 'Post shared with selected groups',
+                      child: UserAvatar(
+                        uid: _currentPost.userId,
+                        photoUrl: _currentPost.authorPhotoURL,
+                        photoVersion: 0,
+                        isAnonymous: isAnonymous,
+                        size: avatarSize,
+                      ),
+                    ),
                   ),
                 ),
               ),
             ),
-          ),
-        ),
-        SizedBox(width: authorGap),
-        Expanded(
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Row(
+            SizedBox(width: authorGap),
+            Expanded(
+              child: Row(
                 crossAxisAlignment: CrossAxisAlignment.center,
                 children: [
                   Flexible(
@@ -2695,25 +2695,25 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
                   ),
                 ],
               ),
-              if (content.isNotEmpty) ...[
-                SizedBox(height: context.rs(3).clamp(2.0, 4.0).toDouble()),
-                PostLinkifiedText(
-                  text: content,
-                  textAlign: TextAlign.left,
-                  style: TextStyle(
-                    fontFamily: 'Inter',
-                    fontFamilyFallback: const ['NotoSansKR'],
-                    fontSize: contentFontSize,
-                    fontWeight: FontWeight.w500,
-                    color: BrandColors.textPrimary,
-                    height: 1.28,
-                    letterSpacing: -0.25,
-                  ),
-                ),
-              ],
-            ],
-          ),
+            ),
+          ],
         ),
+        if (content.isNotEmpty) ...[
+          SizedBox(height: context.rs(10).clamp(8.0, 12.0).toDouble()),
+          PostLinkifiedText(
+            text: content,
+            textAlign: TextAlign.left,
+            style: TextStyle(
+              fontFamily: 'Inter',
+              fontFamilyFallback: const ['NotoSansKR'],
+              fontSize: contentFontSize,
+              fontWeight: FontWeight.w500,
+              color: BrandColors.textPrimary,
+              height: 1.28,
+              letterSpacing: -0.25,
+            ),
+          ),
+        ],
       ],
     );
   }
@@ -2739,6 +2739,34 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
           centerTitle: false,
         ),
         body: const Center(child: CircularProgressIndicator()),
+      );
+    }
+
+    final isHanyangLocked = _currentPost.requiresHanyangVerification &&
+        !authProvider.isHanyangEmailVerified;
+    if (isHanyangLocked) {
+      return Scaffold(
+        backgroundColor: Colors.white,
+        appBar: AppBar(
+          backgroundColor: Colors.white,
+          surfaceTintColor: Colors.transparent,
+          elevation: 0,
+          leading: IconButton(
+            icon: const Icon(Icons.arrow_back, color: Color(0xFF111827)),
+            onPressed: () => Navigator.pop(context),
+          ),
+          title: const SizedBox.shrink(),
+        ),
+        body: SafeArea(
+          top: false,
+          child: HanyangVerificationGate(
+            locked: true,
+            child: SingleChildScrollView(
+              physics: const NeverScrollableScrollPhysics(),
+              child: _buildEditorialPostContent(),
+            ),
+          ),
+        ),
       );
     }
 
@@ -3139,6 +3167,7 @@ class _PostLikeUser {
   final String photoURL;
   final int photoVersion;
   final String? nationality;
+  final bool isDeletedAccount;
 
   const _PostLikeUser({
     required this.uid,
@@ -3146,6 +3175,7 @@ class _PostLikeUser {
     required this.photoURL,
     required this.photoVersion,
     required this.nationality,
+    required this.isDeletedAccount,
   });
 }
 

@@ -38,6 +38,15 @@ enum AccountRegistrationState {
   complete,
 }
 
+enum HanyangVerificationStatus {
+  unknown,
+  checking,
+  verified,
+  unverified,
+  conflict,
+  unavailable,
+}
+
 /// 회원가입 화면의 언어별 이메일 인증 정책입니다.
 ///
 /// 한국어 가입은 한양대학교 메일만 허용하고, 영어 가입은 도메인과 관계없이
@@ -88,12 +97,30 @@ class AuthProvider with ChangeNotifier implements WidgetsBindingObserver {
   final FirebaseAuth _auth = FirebaseAuth.instance;
   final GoogleSignIn _googleSignIn = GoogleSignIn.instance;
   final FirebaseFirestore _firestore = FirebaseFirestore.instance;
-  final FirebaseFunctions _functions = FirebaseFunctions.instance;
+  // 배포된 callable은 기본 region(us-central1)을 사용합니다.
+  final FirebaseFunctions _functions =
+      FirebaseFunctions.instanceFor(region: 'us-central1');
   final AuthService _authService = AuthService();
 
   User? _user;
   bool _isLoading = true;
   Map<String, dynamic>? _userData;
+  StreamSubscription<DocumentSnapshot<Map<String, dynamic>>>?
+      _currentUserDocumentSubscription;
+  StreamSubscription<User?>? _authStateSubscription;
+  String? _observedUserId;
+  String? _activeAuthUid;
+  Future<void>? _userLoadInFlight;
+  String? _userLoadUid;
+  int _userLoadGeneration = 0;
+  Future<bool>? _hanyangRefreshInFlight;
+  int _hanyangRequestGeneration = 0;
+  HanyangVerificationStatus _hanyangVerificationStatus =
+      HanyangVerificationStatus.unknown;
+  String _maskedHanyangEmail = '';
+  DateTime? _hanyangVerificationCheckedAt;
+  String _hanyangVerificationSource = '';
+  String? _hanyangVerificationError;
 
   // 최근 로그인 시도에서 회원가입 필요 여부를 저장 (UI 알림 용도)
   bool _signupRequired = false;
@@ -114,7 +141,8 @@ class AuthProvider with ChangeNotifier implements WidgetsBindingObserver {
 
   AuthProvider() {
     if (kDebugMode) {
-      debugPrint('🔐 AuthProvider 생성자 시작: ${DateTime.now()}');
+      debugPrint('[HanyangVerification][AuthProvider] created '
+          'instance=${identityHashCode(this)}');
     }
 
     // 앱 포그라운드 복귀 시 FCM 재초기화를 감지하기 위해 lifecycle observer 등록
@@ -153,42 +181,47 @@ class AuthProvider with ChangeNotifier implements WidgetsBindingObserver {
       await _cleanupAbandonedSignupOnLaunch();
 
       // 사용자 인증 상태 변화 감지
-      _auth.authStateChanges().listen((User? user) async {
-        _user = user;
-        if (user != null) {
-          // 사용자 데이터 가져오기 - 크래시 방지
-          try {
-            await _loadUserData();
-          } catch (e) {
-            Logger.error('authStateChanges 내 _loadUserData 실패', e);
-            _userData = null;
-            _isLoading = false;
-            notifyListeners();
-          }
-        } else {
-          _userData = null;
-          _isLoading = false;
-          notifyListeners();
-        }
-      });
-
-      // 이미 로그인되어 있다면 데이터 로드
-      if (_user != null) {
-        try {
-          await _loadUserData();
-          // _loadUserData() 내부에서 이미 FCM 초기화를 호출하므로 여기서는 제거
-        } catch (e) {
-          Logger.error('초기 _loadUserData 실패', e);
-          _userData = null;
-          _isLoading = false;
-          notifyListeners();
-        }
-      } else {
-        _isLoading = false;
-        notifyListeners();
-      }
+      _authStateSubscription = _auth.authStateChanges().listen(
+            (user) => unawaited(_handleAuthStateChange(user)),
+          );
+      // authStateChanges의 최초 이벤트와 초기 로드가 겹쳐도 _loadUserData가
+      // 같은 UID의 in-flight Future를 공유하므로 실제 로드는 한 번만 수행됩니다.
+      await _handleAuthStateChange(_user);
     } catch (e) {
       Logger.error('_initializeAuth 전체 실패', e);
+      _isLoading = false;
+      notifyListeners();
+    }
+  }
+
+  Future<void> _handleAuthStateChange(User? user) async {
+    final previousUid = _activeAuthUid;
+    final nextUid = user?.uid;
+    _activeAuthUid = nextUid;
+    _user = user;
+    if (previousUid != nextUid) {
+      _userLoadGeneration++;
+      _hanyangRequestGeneration++;
+      _hanyangRefreshInFlight = null;
+      _hanyangVerificationStatus = HanyangVerificationStatus.unknown;
+      _maskedHanyangEmail = '';
+      _hanyangVerificationCheckedAt = null;
+      _hanyangVerificationSource = '';
+      _hanyangVerificationError = null;
+      _userData = null;
+    }
+    if (user == null) {
+      await _stopObservingCurrentUserDocument();
+      _isLoading = false;
+      notifyListeners();
+      return;
+    }
+    _observeCurrentUserDocument(user);
+    try {
+      await _loadUserData();
+    } catch (error) {
+      if (_user?.uid != user.uid) return;
+      Logger.error('authStateChanges 내 사용자 로드 실패', error);
       _isLoading = false;
       notifyListeners();
     }
@@ -250,8 +283,162 @@ class AuthProvider with ChangeNotifier implements WidgetsBindingObserver {
       _userData!.containsKey('emailVerified') &&
       _userData!['emailVerified'] == true;
 
+  HanyangVerificationStatus get hanyangVerificationStatus =>
+      _hanyangVerificationStatus;
+  String get maskedHanyangEmail => _maskedHanyangEmail;
+  DateTime? get hanyangVerificationCheckedAt => _hanyangVerificationCheckedAt;
+  String get hanyangVerificationSource => _hanyangVerificationSource;
+  String? get hanyangVerificationError => _hanyangVerificationError;
+
+  /// 화면과 접근 제어는 users 문서의 서버 관리 boolean을 단일 기준으로 쓴다.
   bool get isHanyangEmailVerified =>
       hanyang_verification.isHanyangEmailVerified(_userData);
+
+  /// Callable/Admin SDK가 학교 인증 필드를 갱신해도 앱의 오래된 메모리
+  /// 상태가 남지 않도록 현재 users/{uid} 문서를 계속 동기화합니다.
+  void _observeCurrentUserDocument(User user) {
+    if (_observedUserId == user.uid &&
+        _currentUserDocumentSubscription != null) {
+      return;
+    }
+    unawaited(_currentUserDocumentSubscription?.cancel());
+    _observedUserId = user.uid;
+    _currentUserDocumentSubscription = _firestore
+        .collection('users')
+        .doc(user.uid)
+        .snapshots()
+        .listen((snapshot) {
+      if (_user?.uid != user.uid) return;
+      if (!snapshot.exists) {
+        _userData = null;
+        notifyListeners();
+        return;
+      }
+
+      final incoming = snapshot.data();
+      Logger.log('[HanyangVerification][AuthProvider] snapshot '
+          'instance=${identityHashCode(this)} '
+          'uid=${user.uid.substring(0, user.uid.length < 8 ? user.uid.length : 8)} '
+          'source=${snapshot.metadata.isFromCache ? 'cache' : 'server'} '
+          'projection=${incoming?['hanyangEmailVerified']}');
+      // 캐시의 오래된 미인증 값이 방금 서버에서 확인한 인증 상태를 잠시
+      // 되돌리지 않게 한다. 실제 서버 스냅샷은 항상 반영한다.
+      if (snapshot.metadata.isFromCache &&
+          isHanyangEmailVerified &&
+          !hanyang_verification.isHanyangEmailVerified(incoming)) {
+        return;
+      }
+      _userData = incoming;
+      if (!snapshot.metadata.isFromCache &&
+          _hanyangVerificationStatus != HanyangVerificationStatus.checking) {
+        _hanyangVerificationStatus =
+            hanyang_verification.isHanyangEmailVerified(incoming)
+                ? HanyangVerificationStatus.verified
+                : HanyangVerificationStatus.unverified;
+      }
+      notifyListeners();
+    }, onError: (Object error) {
+      Logger.error('현재 사용자 문서 실시간 동기화 오류', error);
+    });
+  }
+
+  Future<void> _stopObservingCurrentUserDocument() async {
+    final subscription = _currentUserDocumentSubscription;
+    _currentUserDocumentSubscription = null;
+    _observedUserId = null;
+    await subscription?.cancel();
+  }
+
+  /// 학교 인증을 판단해야 하는 화면에서 캐시가 아닌 서버 문서를 기준으로
+  /// 즉시 재확인합니다. 실패 시에는 현재 상태를 유지해 오프라인에서도
+  /// 인증 사용자를 임의로 미인증 처리하지 않습니다.
+  Future<bool> refreshHanyangVerificationStatus() async {
+    final currentUser = _user;
+    if (currentUser == null) return false;
+    final existing = _hanyangRefreshInFlight;
+    if (existing != null) return existing;
+
+    final uid = currentUser.uid;
+    final generation = ++_hanyangRequestGeneration;
+    final wasVerified = isHanyangEmailVerified;
+    _hanyangVerificationStatus = HanyangVerificationStatus.checking;
+    _hanyangVerificationError = null;
+    notifyListeners();
+
+    late final Future<bool> request;
+    request = (() async {
+      try {
+        final response = await _functions
+            .httpsCallable('reconcileMyHanyangVerificationStatus')
+            .call()
+            .timeout(const Duration(seconds: 15));
+        if (_user?.uid != uid || generation != _hanyangRequestGeneration) {
+          return false;
+        }
+        final raw = response.data;
+        final data =
+            raw is Map ? Map<String, dynamic>.from(raw) : <String, dynamic>{};
+        final statusName = (data['status'] ?? '').toString();
+        _hanyangVerificationStatus = switch (statusName) {
+          'verified' => HanyangVerificationStatus.verified,
+          'unverified' => HanyangVerificationStatus.unverified,
+          'conflict' => HanyangVerificationStatus.conflict,
+          _ => HanyangVerificationStatus.unavailable,
+        };
+        _maskedHanyangEmail = (data['maskedHanyangEmail'] ?? '').toString();
+        _hanyangVerificationSource = (data['source'] ?? '').toString();
+        final checkedAtMillis = data['checkedAtMillis'];
+        _hanyangVerificationCheckedAt = checkedAtMillis is num
+            ? DateTime.fromMillisecondsSinceEpoch(checkedAtMillis.toInt())
+            : DateTime.now();
+        final schemaVersion = data['schemaVersion'];
+        if (schemaVersion != 3) {
+          Logger.error('[HanyangVerification][AuthProvider] schema mismatch '
+              'instance=${identityHashCode(this)} uid=${uid.substring(0, uid.length < 8 ? uid.length : 8)} '
+              'server=$schemaVersion client=3');
+        }
+        final snapshot = await _firestore
+            .collection('users')
+            .doc(uid)
+            .get(const GetOptions(source: Source.server))
+            .timeout(const Duration(seconds: 10));
+        if (_user?.uid == uid &&
+            generation == _hanyangRequestGeneration &&
+            snapshot.exists) {
+          _userData = snapshot.data();
+          _observeCurrentUserDocument(currentUser);
+        }
+        Logger.log('[HanyangVerification][AuthProvider] '
+            'instance=${identityHashCode(this)} uid=${uid.substring(0, uid.length < 8 ? uid.length : 8)} '
+            'generation=$generation status=$statusName '
+            'source=$_hanyangVerificationSource repaired=${data['repaired'] == true}');
+        notifyListeners();
+        return isHanyangEmailVerified;
+      } catch (error) {
+        if (_user?.uid != uid || generation != _hanyangRequestGeneration) {
+          return false;
+        }
+        _hanyangVerificationError = error.runtimeType.toString();
+        _hanyangVerificationSource = 'network_error';
+        _hanyangVerificationCheckedAt = DateTime.now();
+        _hanyangVerificationStatus = wasVerified
+            ? HanyangVerificationStatus.verified
+            : HanyangVerificationStatus.unavailable;
+        Logger.error(
+            '[HanyangVerification][AuthProvider] reconcile failed '
+            'instance=${identityHashCode(this)} generation=$generation',
+            error);
+        notifyListeners();
+        return isHanyangEmailVerified;
+      } finally {
+        if (identical(_hanyangRefreshInFlight, request)) {
+          _hanyangRefreshInFlight = null;
+        }
+      }
+    })();
+    _hanyangRefreshInFlight = request;
+    return request;
+  }
 
   bool get isRegistrationComplete =>
       _registrationStateFromData(_userData) ==
@@ -303,8 +490,28 @@ class AuthProvider with ChangeNotifier implements WidgetsBindingObserver {
   }
 
   // 사용자 데이터 로드 (재시도 로직 포함)
-  Future<void> _loadUserData() async {
-    if (_user == null) return;
+  Future<void> _loadUserData() {
+    final currentUser = _user;
+    if (currentUser == null) return Future<void>.value();
+    if (_userLoadInFlight != null && _userLoadUid == currentUser.uid) {
+      return _userLoadInFlight!;
+    }
+    final generation = ++_userLoadGeneration;
+    final request = _loadUserDataOnce(currentUser.uid, generation);
+    _userLoadUid = currentUser.uid;
+    _userLoadInFlight = request;
+    return request.whenComplete(() {
+      if (identical(_userLoadInFlight, request)) {
+        _userLoadInFlight = null;
+        _userLoadUid = null;
+      }
+    });
+  }
+
+  Future<void> _loadUserDataOnce(String uid, int generation) async {
+    final currentUser = _user;
+    if (currentUser == null || currentUser.uid != uid) return;
+    _observeCurrentUserDocument(currentUser);
 
     int retryCount = 0;
     const maxRetries = 2; // 3 → 2로 감소
@@ -312,7 +519,7 @@ class AuthProvider with ChangeNotifier implements WidgetsBindingObserver {
 
     while (retryCount < maxRetries) {
       try {
-        final docRef = _firestore.collection('users').doc(_user!.uid);
+        final docRef = _firestore.collection('users').doc(uid);
         final doc = await docRef
             .get(
           const GetOptions(source: Source.serverAndCache),
@@ -325,6 +532,7 @@ class AuthProvider with ChangeNotifier implements WidgetsBindingObserver {
           },
         );
 
+        if (_user?.uid != uid || generation != _userLoadGeneration) return;
         if (doc.exists) {
           _userData = doc.data();
 
@@ -379,8 +587,9 @@ class AuthProvider with ChangeNotifier implements WidgetsBindingObserver {
             // 마지막으로 캐시에서만 시도
             final cachedDoc = await _firestore
                 .collection('users')
-                .doc(_user!.uid)
+                .doc(uid)
                 .get(const GetOptions(source: Source.cache));
+            if (_user?.uid != uid || generation != _userLoadGeneration) return;
             _userData = cachedDoc.exists ? cachedDoc.data() : null;
           } catch (cacheError) {
             Logger.error('캐시에서도 데이터 로드 실패: $cacheError');
@@ -401,6 +610,7 @@ class AuthProvider with ChangeNotifier implements WidgetsBindingObserver {
       // 최종 가입 완료 사용자만 알림 토큰과 사용자 부가 데이터를 등록한다.
       Logger.log('🔍 [FCM 진단] 가입 완료 사용자 FCM 초기화 시작');
       unawaited(_initializeFCMIfNeeded());
+      unawaited(refreshHanyangVerificationStatus());
     }
   }
 
@@ -888,7 +1098,7 @@ class AuthProvider with ChangeNotifier implements WidgetsBindingObserver {
       });
 
       await _loadUserData();
-      return true;
+      return await refreshHanyangVerificationStatus();
     } catch (e) {
       Logger.error('닉네임 업데이트 오류: $e');
       return false;
@@ -1855,6 +2065,7 @@ class AuthProvider with ChangeNotifier implements WidgetsBindingObserver {
     required String email,
     required String password,
     required String verificationToken,
+    String signupLanguage = 'en',
     required Map<String, dynamic> profile,
   }) async {
     try {
@@ -1867,6 +2078,7 @@ class AuthProvider with ChangeNotifier implements WidgetsBindingObserver {
         'email': email.trim(),
         'password': password,
         'verificationToken': verificationToken,
+        'signupLanguage': signupLanguage,
         'profile': profile,
       }).timeout(
         const Duration(seconds: 20),
@@ -1944,7 +2156,7 @@ class AuthProvider with ChangeNotifier implements WidgetsBindingObserver {
       );
 
       await _loadUserData();
-      return true;
+      return await refreshHanyangVerificationStatus();
     } on FirebaseFunctionsException catch (e) {
       Logger.error('completeEmailVerification 함수 오류: ${e.code} ${e.message}');
       _isLoading = false;
@@ -1983,11 +2195,18 @@ class AuthProvider with ChangeNotifier implements WidgetsBindingObserver {
       );
 
       await _loadUserData();
-      return true;
+      return await refreshHanyangVerificationStatus();
     } on FirebaseFunctionsException catch (e) {
       Logger.error(
         'completeHanyangProfileVerification 오류: ${e.code} ${e.message}',
       );
+      // 다른 기기나 과거 세션에서 이미 인증이 끝났지만 로컬 메모리만
+      // 미인증이었던 경우, 서버의 현재 users 문서를 다시 받아 성공으로
+      // 처리한다. 실제 미인증 사용자는 false가 유지되어 예외를 받는다.
+      if (e.code == 'failed-precondition' &&
+          await refreshHanyangVerificationStatus()) {
+        return true;
+      }
       rethrow;
     } catch (e) {
       Logger.error('프로필 한양메일 인증 완료 처리 오류: $e');
@@ -2060,6 +2279,15 @@ class AuthProvider with ChangeNotifier implements WidgetsBindingObserver {
       } catch (_) {}
       _user = null;
       _userData = null;
+      _activeAuthUid = null;
+      _userLoadGeneration++;
+      _hanyangRequestGeneration++;
+      _hanyangRefreshInFlight = null;
+      _hanyangVerificationStatus = HanyangVerificationStatus.unknown;
+      _maskedHanyangEmail = '';
+      _hanyangVerificationCheckedAt = null;
+      _hanyangVerificationSource = '';
+      _hanyangVerificationError = null;
       _isLoading = false;
       notifyListeners();
     }
@@ -2377,6 +2605,9 @@ class AuthProvider with ChangeNotifier implements WidgetsBindingObserver {
   @override
   void didChangeAppLifecycleState(AppLifecycleState state) {
     if (state == AppLifecycleState.resumed) {
+      if (_user != null) {
+        unawaited(refreshHanyangVerificationStatus());
+      }
       // 앱이 포그라운드로 복귀할 때 FCM이 초기화되지 않았으면 재시도한다.
       // - 앱 시작 시 APNs/네트워크 미준비로 token sync가 실패한 경우를 복구한다.
       // - _fcmInitialized가 false이면 _initializeFCMIfNeeded가 재진입을 허용한다.
@@ -2428,6 +2659,11 @@ class AuthProvider with ChangeNotifier implements WidgetsBindingObserver {
   @override
   void dispose() {
     WidgetsBinding.instance.removeObserver(this);
+    unawaited(_authStateSubscription?.cancel());
+    _authStateSubscription = null;
+    unawaited(_currentUserDocumentSubscription?.cancel());
+    _currentUserDocumentSubscription = null;
+    _observedUserId = null;
     super.dispose();
   }
 }

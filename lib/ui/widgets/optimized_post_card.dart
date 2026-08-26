@@ -7,7 +7,6 @@ import 'dart:async';
 import 'dart:collection';
 import 'dart:math' as math;
 import 'package:firebase_auth/firebase_auth.dart';
-import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:cached_network_image/cached_network_image.dart';
 import '../../models/post.dart';
 import '../../models/post_category.dart';
@@ -33,6 +32,7 @@ import 'poll_post_widget.dart';
 import 'post_linkified_text.dart';
 import 'shared_link_preview_card.dart';
 import 'user_avatar.dart';
+import 'hanyang_verification_gate.dart';
 
 /// Board/Home 피드에서 사용하는 content-first 일반 게시글 카드.
 class OptimizedPostCard extends StatefulWidget {
@@ -438,14 +438,16 @@ class _OptimizedPostCardState extends State<OptimizedPostCard> {
                                     horizontal: DesignTokens.s16,
                                   ),
                                   tileColor: sheetBg,
-                                  onTap: () {
-                                    Navigator.pop(context);
-                                    _openProfileOrMyPage(
-                                      userId: u.uid,
-                                      nickname: u.nickname,
-                                      photoURL: u.photoURL,
-                                    );
-                                  },
+                                  onTap: u.isDeletedAccount
+                                      ? null
+                                      : () {
+                                          Navigator.pop(context);
+                                          _openProfileOrMyPage(
+                                            userId: u.uid,
+                                            nickname: u.nickname,
+                                            photoURL: u.photoURL,
+                                          );
+                                        },
                                   leading: UserAvatar(
                                     uid: u.uid,
                                     photoUrl: u.photoURL,
@@ -457,18 +459,24 @@ class _OptimizedPostCardState extends State<OptimizedPostCard> {
                                     children: [
                                       Flexible(
                                         child: Text(
-                                          u.nickname,
+                                          u.isDeletedAccount
+                                              ? AppLocalizations.of(context)!
+                                                  .deletedAccount
+                                              : u.nickname,
                                           overflow: TextOverflow.ellipsis,
                                           style: const TextStyle(
                                             fontFamily: 'Inter',
-                                            fontFamilyFallback: const ['NotoSansKR'],
+                                            fontFamilyFallback: const [
+                                              'NotoSansKR'
+                                            ],
                                             fontSize: 14,
                                             fontWeight: FontWeight.w600,
                                             color: Color(0xFF111827),
                                           ),
                                         ),
                                       ),
-                                      if (u.nationality != null) ...[
+                                      if (!u.isDeletedAccount &&
+                                          u.nationality != null) ...[
                                         const SizedBox(width: 6),
                                         CountryFlagCircle(
                                           nationality: u.nationality!,
@@ -481,7 +489,9 @@ class _OptimizedPostCardState extends State<OptimizedPostCard> {
                                           isKo ? '(나)' : '(You)',
                                           style: const TextStyle(
                                             fontFamily: 'Inter',
-                                            fontFamilyFallback: const ['NotoSansKR'],
+                                            fontFamilyFallback: const [
+                                              'NotoSansKR'
+                                            ],
                                             fontSize: 12,
                                             fontWeight: FontWeight.w600,
                                             color: secondaryText,
@@ -509,45 +519,34 @@ class _OptimizedPostCardState extends State<OptimizedPostCard> {
 
   Future<List<_PostLikeUser>> _fetchLikeUsers(List<String> userIds) async {
     if (userIds.isEmpty) return const <_PostLikeUser>[];
-
-    final resultById = <String, _PostLikeUser>{};
-    const chunkSize = 10;
-    for (var i = 0; i < userIds.length; i += chunkSize) {
-      final chunk = userIds.sublist(
-        i,
-        (i + chunkSize) > userIds.length ? userIds.length : (i + chunkSize),
-      );
-      final snap = await FirebaseFirestore.instance
-          .collection('users')
-          .where(FieldPath.documentId, whereIn: chunk)
-          .get();
-      for (final doc in snap.docs) {
-        final data = doc.data();
-        final nickname = (data['nickname'] ?? '').toString().trim().isNotEmpty
-            ? data['nickname'].toString().trim()
-            : 'User';
-        final photoURL = (data['photoURL'] ?? '').toString();
-        final nationalityRaw = (data['nationality'] ?? '').toString().trim();
-        final nationality = nationalityRaw.isEmpty ? null : nationalityRaw;
-        final photoVersion = (data['photoVersion'] is int)
-            ? (data['photoVersion'] as int)
-            : int.tryParse('${data['photoVersion'] ?? 0}') ?? 0;
-        resultById[doc.id] = _PostLikeUser(
-          uid: doc.id,
-          nickname: nickname,
-          photoURL: photoURL,
-          photoVersion: photoVersion,
-          nationality: nationality,
+    final profiles = await UserInfoCacheService().getUserInfoBatch(
+      userIds,
+      forceRefresh: true,
+    );
+    return userIds.map((uid) {
+      final profile = profiles[uid];
+      if (profile == null) {
+        return _PostLikeUser(
+          uid: uid,
+          nickname: 'User',
+          photoURL: '',
+          photoVersion: 0,
+          nationality: null,
+          isDeletedAccount: false,
         );
       }
-    }
-
-    final ordered = <_PostLikeUser>[];
-    for (final uid in userIds) {
-      final u = resultById[uid];
-      if (u != null) ordered.add(u);
-    }
-    return ordered;
+      final isDeleted = profile.isDeletedAccount;
+      return _PostLikeUser(
+        uid: uid,
+        nickname: isDeleted ? 'DELETED_ACCOUNT' : profile.nickname,
+        photoURL: isDeleted ? '' : profile.photoURL,
+        photoVersion: isDeleted ? 0 : profile.photoVersion,
+        nationality: isDeleted || profile.nationality.isEmpty
+            ? null
+            : profile.nationality,
+        isDeletedAccount: isDeleted,
+      );
+    }).toList(growable: false);
   }
 
   void _maybePrecacheCriticalImages() {
@@ -555,18 +554,27 @@ class _OptimizedPostCardState extends State<OptimizedPostCard> {
     if (!widget.preloadImage) return;
     final post = widget.post;
 
-    // 게시글 첫 이미지 프리캐시 (상단 카드 UX 개선 + 재다운로드 방지)
-    final firstPostImage =
-        (post.imageUrls.isNotEmpty ? post.imageUrls.first : '').trim();
-    if (firstPostImage.isNotEmpty) {
-      try {
-        final provider = CachedNetworkImageProvider(
-          firstPostImage,
-          cacheManager: AppImageCacheManager.instance,
-        );
-        // precacheImage 실패는 UX 치명적이지 않으므로 무시
-        precacheImage(provider, context).catchError((_) {});
-      } catch (_) {}
+    // 상단 카드는 첨부 이미지 전체를 병렬로 미리 받아 놓는다.
+    // 이후 페이지로 넘겨도 추가 네트워크 대기가 생기지 않는다.
+    final postImages = post.standaloneImageUrls
+        .map((url) => url.trim())
+        .where((url) => url.isNotEmpty)
+        .toSet()
+        .toList(growable: false);
+    if (postImages.isNotEmpty) {
+      unawaited(Future.wait<void>(postImages.map((url) async {
+        try {
+          await precacheImage(
+            CachedNetworkImageProvider(
+              url,
+              cacheManager: AppImageCacheManager.instance,
+            ),
+            context,
+          );
+        } catch (_) {
+          // 프리캐시 실패는 실제 카드 로딩에서 다시 처리한다.
+        }
+      })));
     }
 
     // 작성자 프로필 이미지도 프리캐시 (탭 전환 시 깜빡임 감소)
@@ -632,6 +640,10 @@ class _OptimizedPostCardState extends State<OptimizedPostCard> {
     final contentSize = context.rf(15).clamp(14.5, 16.0).toDouble();
     final hasPrimaryContent = hasContent || post.type == 'poll';
     final standaloneImageUrls = post.standaloneImageUrls;
+    final isHanyangLocked = HanyangVerificationGate.isLockedForCurrentUser(
+      context,
+      post.requiresHanyangVerification,
+    );
 
     return Container(
       margin: widget.margin,
@@ -639,7 +651,9 @@ class _OptimizedPostCardState extends State<OptimizedPostCard> {
       child: Material(
         color: Colors.transparent,
         child: InkWell(
-          onTap: widget.onTap,
+          // 한양 전용 콘텐츠는 카드 전체 탭으로 상세 화면을 우회하지 못하게
+          // 하고, 잠금 오버레이의 인증 버튼만 동작하도록 한다.
+          onTap: isHanyangLocked ? null : widget.onTap,
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
@@ -654,70 +668,75 @@ class _OptimizedPostCardState extends State<OptimizedPostCard> {
                   post,
                   theme,
                   colorScheme,
-                  threadContent: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      if (hasPrimaryContent) ...[
-                        SizedBox(height: contentTopGap),
-                        if (hasContent)
-                          _buildSmartEllipsizedText(
-                            text: unifiedText,
-                            maxLines: 4,
-                            style: TextStyle(
-                              color: BrandColors.textPrimary,
-                              fontFamily: 'Inter',
-                              fontFamilyFallback: const ['NotoSansKR'],
-                              fontWeight: FontWeight.w500,
-                              fontSize: contentSize,
-                              height: 1.24,
-                              letterSpacing: -0.3,
-                            ),
-                          ),
-                        if (post.type == 'poll') ...[
+                  threadContent: HanyangVerificationGate(
+                    locked: isHanyangLocked,
+                    compact: true,
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        if (hasPrimaryContent) ...[
+                          SizedBox(height: contentTopGap),
                           if (hasContent)
-                            const SizedBox(height: DesignTokens.s8),
-                          PollPostWidget(postId: post.id),
-                        ],
-                      ],
-                      if (post.linkPreview case final preview?) ...[
-                        SizedBox(
-                          height: hasPrimaryContent
-                              ? DesignTokens.s8
-                              : contentTopGap,
-                        ),
-                        SharedLinkPreviewCard(
-                          preview: preview,
-                          fallbackImageUrl: post.sharedLinkCardFallbackImageUrl,
-                          compact: true,
-                        ),
-                      ],
-                      if (standaloneImageUrls.isNotEmpty) ...[
-                        SizedBox(height: imageGap),
-                        _buildPostImages(standaloneImageUrls),
-                      ],
-                      Padding(
-                        padding: const EdgeInsets.only(top: DesignTokens.s2),
-                        child: Row(
-                          crossAxisAlignment: CrossAxisAlignment.center,
-                          children: [
-                            _buildPostMeta(
-                              post.copyWith(
-                                commentCount: _effectiveCommentCount(post),
+                            _buildSmartEllipsizedText(
+                              text: unifiedText,
+                              maxLines: 4,
+                              style: TextStyle(
+                                color: BrandColors.textPrimary,
+                                fontFamily: 'Inter',
+                                fontFamilyFallback: const ['NotoSansKR'],
+                                fontWeight: FontWeight.w500,
+                                fontSize: contentSize,
+                                height: 1.24,
+                                letterSpacing: -0.3,
                               ),
                             ),
-                            if (standaloneImageUrls.isNotEmpty) ...[
-                              const SizedBox(width: DesignTokens.s4),
-                              Expanded(
-                                child: Align(
-                                  alignment: Alignment.centerRight,
-                                  child: _buildPostCategoryTags(post),
+                          if (post.type == 'poll') ...[
+                            if (hasContent)
+                              const SizedBox(height: DesignTokens.s8),
+                            PollPostWidget(postId: post.id),
+                          ],
+                        ],
+                        if (post.linkPreview case final preview?) ...[
+                          SizedBox(
+                            height: hasPrimaryContent
+                                ? DesignTokens.s8
+                                : contentTopGap,
+                          ),
+                          SharedLinkPreviewCard(
+                            preview: preview,
+                            fallbackImageUrl:
+                                post.sharedLinkCardFallbackImageUrl,
+                            compact: true,
+                          ),
+                        ],
+                        if (standaloneImageUrls.isNotEmpty) ...[
+                          SizedBox(height: imageGap),
+                          _buildPostImages(standaloneImageUrls),
+                        ],
+                        Padding(
+                          padding: const EdgeInsets.only(top: DesignTokens.s2),
+                          child: Row(
+                            crossAxisAlignment: CrossAxisAlignment.center,
+                            children: [
+                              _buildPostMeta(
+                                post.copyWith(
+                                  commentCount: _effectiveCommentCount(post),
                                 ),
                               ),
+                              if (standaloneImageUrls.isNotEmpty) ...[
+                                const SizedBox(width: DesignTokens.s4),
+                                Expanded(
+                                  child: Align(
+                                    alignment: Alignment.centerRight,
+                                    child: _buildPostCategoryTags(post),
+                                  ),
+                                ),
+                              ],
                             ],
-                          ],
+                          ),
                         ),
-                      ),
-                    ],
+                      ],
+                    ),
                   ),
                 ),
               ),
@@ -837,34 +856,45 @@ class _OptimizedPostCardState extends State<OptimizedPostCard> {
     // 익명 여부에 따라 작성자 정보 결정
     final bool isAnonymous = post.isAnonymous;
     // 작성자 이름이 비어있거나 "Deleted"인 경우 탈퇴한 계정으로 표시
+    final bool isDeletedByPostSnapshot = !isAnonymous &&
+        (post.userId == 'deleted' ||
+            post.author.isEmpty ||
+            post.author == 'Deleted' ||
+            post.author == 'DELETED_ACCOUNT');
     String authorName;
     if (isAnonymous) {
       authorName = AppLocalizations.of(context)!.anonymous;
-    } else if (post.author.isEmpty || post.author == 'Deleted') {
-      authorName = AppLocalizations.of(context)!.deletedAccount ?? "";
+    } else if (isDeletedByPostSnapshot) {
+      authorName = AppLocalizations.of(context)!.deletedAccount;
     } else {
       authorName = post.author;
     }
     final String? authorImageUrl = isAnonymous
         ? null
         : (post.authorPhotoURL.isNotEmpty ? post.authorPhotoURL : null);
-    final bool canOpenProfile =
+    final bool hasProfileTarget =
         !isAnonymous && post.userId.isNotEmpty && post.userId != 'deleted';
 
     final cache = UserInfoCacheService();
-    final shouldUseLiveUserInfo = canOpenProfile;
+    final shouldUseLiveUserInfo = hasProfileTarget;
 
     Widget content({
       required String resolvedNickname,
       required String resolvedPhotoURL,
+      required bool isDeletedAccount,
     }) {
       final currentUser = FirebaseAuth.instance.currentUser;
+      final effectiveDeleted = !isAnonymous && isDeletedAccount;
+      final displayNickname = effectiveDeleted
+          ? AppLocalizations.of(context)!.deletedAccount
+          : resolvedNickname;
+      final canOpenProfile = hasProfileTarget && !effectiveDeleted;
       final canOpenActions = currentUser != null &&
-          post.userId.isNotEmpty &&
-          post.userId != 'deleted' &&
+          canOpenProfile &&
           post.userId != currentUser.uid;
-      final String? resolvedImageUrl =
-          (!isAnonymous && resolvedPhotoURL.trim().isNotEmpty)
+      final String? resolvedImageUrl = effectiveDeleted
+          ? null
+          : (!isAnonymous && resolvedPhotoURL.trim().isNotEmpty)
               ? resolvedPhotoURL.trim()
               : authorImageUrl;
 
@@ -880,14 +910,14 @@ class _OptimizedPostCardState extends State<OptimizedPostCard> {
                 // 프로필 이미지
                 Semantics(
                   button: canOpenProfile,
-                  label: resolvedNickname,
+                  label: displayNickname,
                   child: GestureDetector(
                     behavior: HitTestBehavior.opaque,
                     onTap: canOpenProfile
                         ? () {
                             _openProfileOrMyPage(
                               userId: post.userId,
-                              nickname: resolvedNickname,
+                              nickname: displayNickname,
                               photoURL: resolvedPhotoURL,
                             );
                           }
@@ -949,12 +979,12 @@ class _OptimizedPostCardState extends State<OptimizedPostCard> {
                           onTap: canOpenProfile
                               ? () => _openProfileOrMyPage(
                                     userId: post.userId,
-                                    nickname: resolvedNickname,
+                                    nickname: displayNickname,
                                     photoURL: resolvedPhotoURL,
                                   )
                               : null,
                           child: Text(
-                            resolvedNickname,
+                            displayNickname,
                             maxLines: 1,
                             overflow: TextOverflow.ellipsis,
                             style: TextStyle(
@@ -971,6 +1001,7 @@ class _OptimizedPostCardState extends State<OptimizedPostCard> {
                         ),
                       ),
                       if (!isAnonymous &&
+                          !effectiveDeleted &&
                           post.authorNationality.trim().isNotEmpty) ...[
                         const SizedBox(width: 4),
                         CountryFlagCircle(
@@ -1017,12 +1048,15 @@ class _OptimizedPostCardState extends State<OptimizedPostCard> {
                         visualDensity: VisualDensity.compact,
                         onPressed: () => _openPostActionsSheet(
                           post: post,
-                          authorName: resolvedNickname,
+                          authorName: displayNickname,
                         ),
-                        icon: const Icon(
-                          Icons.more_vert_rounded,
-                          size: 18,
-                          color: BrandColors.iconDefault,
+                        icon: Transform.translate(
+                          offset: const Offset(0, -5),
+                          child: const Icon(
+                            Icons.more_vert_rounded,
+                            size: 18,
+                            color: BrandColors.iconDefault,
+                          ),
                         ),
                       ),
                     ),
@@ -1035,7 +1069,7 @@ class _OptimizedPostCardState extends State<OptimizedPostCard> {
           Padding(
             padding: const EdgeInsets.only(
               left: _threadContentOffset,
-              top: 22,
+              top: 28,
             ),
             child: threadContent,
           ),
@@ -1047,6 +1081,7 @@ class _OptimizedPostCardState extends State<OptimizedPostCard> {
       return content(
         resolvedNickname: authorName,
         resolvedPhotoURL: post.authorPhotoURL,
+        isDeletedAccount: isDeletedByPostSnapshot,
       );
     }
 
@@ -1065,6 +1100,8 @@ class _OptimizedPostCardState extends State<OptimizedPostCard> {
         return content(
           resolvedNickname: resolvedNickname,
           resolvedPhotoURL: resolvedPhotoURL,
+          isDeletedAccount:
+              isDeletedByPostSnapshot || live?.isDeletedAccount == true,
         );
       },
     );
@@ -1132,6 +1169,8 @@ class _OptimizedPostCardState extends State<OptimizedPostCard> {
               ),
             ),
           ),
+        if (post.requiresHanyangVerification)
+          const HanyangContentBadge(compact: true),
       ],
     );
   }
@@ -1217,7 +1256,12 @@ class _OptimizedPostCardState extends State<OptimizedPostCard> {
     if (post.isAnonymous) return true; // 익명도 DM 가능 (계획 참조)
 
     // 탈퇴한 계정인 경우
-    if (post.author.isEmpty || post.author == 'Deleted') return false;
+    if (post.userId == 'deleted' ||
+        post.author.isEmpty ||
+        post.author == 'Deleted' ||
+        post.author == 'DELETED_ACCOUNT') {
+      return false;
+    }
 
     return true;
   }
@@ -1557,6 +1601,7 @@ class _PostLikeUser {
   final String photoURL;
   final int photoVersion;
   final String? nationality;
+  final bool isDeletedAccount;
 
   const _PostLikeUser({
     required this.uid,
@@ -1564,6 +1609,7 @@ class _PostLikeUser {
     required this.photoURL,
     required this.photoVersion,
     required this.nationality,
+    required this.isDeletedAccount,
   });
 }
 
@@ -1644,11 +1690,13 @@ class _ImageSlider extends StatefulWidget {
 class _ImageSliderState extends State<_ImageSlider> {
   late PageController _pageController;
   int _currentPage = 0;
+  final Set<String> _precacheRequested = <String>{};
 
   @override
   void initState() {
     super.initState();
     _pageController = PageController(initialPage: 0, keepPage: false);
+    _scheduleParallelImagePrecache();
   }
 
   @override
@@ -1658,7 +1706,33 @@ class _ImageSliderState extends State<_ImageSlider> {
       _currentPage = 0;
       _pageController.dispose();
       _pageController = PageController(initialPage: 0, keepPage: false);
+      _scheduleParallelImagePrecache();
     }
+  }
+
+  void _scheduleParallelImagePrecache() {
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!mounted) return;
+      final pendingUrls = widget.imageUrls
+          .map((url) => url.trim())
+          .where((url) => url.isNotEmpty && _precacheRequested.add(url))
+          .toList(growable: false);
+      if (pendingUrls.isEmpty) return;
+
+      unawaited(Future.wait<void>(pendingUrls.map((url) async {
+        try {
+          await precacheImage(
+            CachedNetworkImageProvider(
+              url,
+              cacheManager: AppImageCacheManager.instance,
+            ),
+            context,
+          );
+        } catch (_) {
+          // 실패한 경우 해당 페이지의 CachedNetworkImage가 재시도한다.
+        }
+      })));
+    });
   }
 
   static bool _listEquals(List<String> a, List<String> b) {

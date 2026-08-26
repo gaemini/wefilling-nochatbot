@@ -21,11 +21,13 @@ class SignUpMethodSelectionScreen extends StatefulWidget {
     this.verifiedHanyangEmail,
     this.hanyangEmailVerificationToken,
     this.skipHanyangVerification = false,
+    this.unverifiedSignupLanguage = 'en',
   });
 
   final String? verifiedHanyangEmail;
   final String? hanyangEmailVerificationToken;
   final bool skipHanyangVerification;
+  final String unverifiedSignupLanguage;
 
   @override
   State<SignUpMethodSelectionScreen> createState() =>
@@ -38,7 +40,9 @@ class _SignUpMethodSelectionScreenState
   String? _errorMessage;
   bool _agreedTerms = false;
 
-  bool get _isEnglishBypassMode => widget.skipHanyangVerification;
+  bool get _isUnverifiedHanyangSignup => widget.skipHanyangVerification;
+  bool get _isEnglishUnverifiedSignup =>
+      widget.unverifiedSignupLanguage.toLowerCase().startsWith('en');
 
   String get _verifiedHanyangEmail => widget.verifiedHanyangEmail?.trim() ?? '';
   String get _hanyangVerificationToken =>
@@ -91,7 +95,7 @@ class _SignUpMethodSelectionScreenState
       if (await _blockIfCompletedAccount(providerLabel: 'Google')) return;
       if (!mounted) return;
 
-      if (!_isEnglishBypassMode &&
+      if (!_isUnverifiedHanyangSignup &&
           (_verifiedHanyangEmail.isEmpty ||
               _hanyangVerificationToken.isEmpty)) {
         setState(() {
@@ -105,9 +109,12 @@ class _SignUpMethodSelectionScreenState
         MaterialPageRoute(
           builder: (_) => NicknameSetupScreen(
             pendingSignup: PendingSignupSession(
-              kind: _isEnglishBypassMode
-                  ? PendingSignupKind.englishSocial
+              kind: _isUnverifiedHanyangSignup
+                  ? (_isEnglishUnverifiedSignup
+                      ? PendingSignupKind.englishSocial
+                      : PendingSignupKind.generalSocial)
                   : PendingSignupKind.hanyangSocial,
+              signupLanguage: widget.unverifiedSignupLanguage,
               verifiedEmail: _verifiedHanyangEmail,
               verificationToken: _hanyangVerificationToken,
             ),
@@ -151,7 +158,7 @@ class _SignUpMethodSelectionScreenState
       if (await _blockIfCompletedAccount(providerLabel: 'Apple')) return;
       if (!mounted) return;
 
-      if (!_isEnglishBypassMode &&
+      if (!_isUnverifiedHanyangSignup &&
           (_verifiedHanyangEmail.isEmpty ||
               _hanyangVerificationToken.isEmpty)) {
         setState(() {
@@ -165,9 +172,12 @@ class _SignUpMethodSelectionScreenState
         MaterialPageRoute(
           builder: (_) => NicknameSetupScreen(
             pendingSignup: PendingSignupSession(
-              kind: _isEnglishBypassMode
-                  ? PendingSignupKind.englishSocial
+              kind: _isUnverifiedHanyangSignup
+                  ? (_isEnglishUnverifiedSignup
+                      ? PendingSignupKind.englishSocial
+                      : PendingSignupKind.generalSocial)
                   : PendingSignupKind.hanyangSocial,
+              signupLanguage: widget.unverifiedSignupLanguage,
               verifiedEmail: _verifiedHanyangEmail,
               verificationToken: _hanyangVerificationToken,
             ),
@@ -188,7 +198,9 @@ class _SignUpMethodSelectionScreenState
     Navigator.push(
       context,
       MaterialPageRoute(
-        builder: (_) => const HanyangEmailVerificationScreen.general(),
+        builder: (_) => HanyangEmailVerificationScreen.general(
+          signupLanguage: widget.unverifiedSignupLanguage,
+        ),
       ),
     );
   }
@@ -218,7 +230,7 @@ class _SignUpMethodSelectionScreenState
   Widget build(BuildContext context) {
     final l10n = AppLocalizations.of(context)!;
     final showApple = Platform.isIOS;
-    final showEmail = _isEnglishBypassMode;
+    final showEmail = _isUnverifiedHanyangSignup;
 
     return PopScope(
       canPop: false,
@@ -327,7 +339,9 @@ class _SignUpMethodSelectionScreenState
                                             textAlign: TextAlign.left,
                                             style: const TextStyle(
                                               fontFamily: 'Inter',
-                                              fontFamilyFallback: const ['NotoSansKR'],
+                                              fontFamilyFallback: const [
+                                                'NotoSansKR'
+                                              ],
                                               fontSize: 13,
                                               fontWeight: FontWeight.w400,
                                               color: Color(0xFF475569),

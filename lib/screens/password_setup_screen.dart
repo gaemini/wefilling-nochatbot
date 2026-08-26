@@ -18,12 +18,14 @@ class PasswordSetupScreen extends StatefulWidget {
     required this.loginEmail,
     this.generalEmailVerificationToken,
     this.hanyangEmailVerificationToken,
+    this.signupLanguage = 'en',
   });
 
   final String verifiedHanyangEmail;
   final String loginEmail;
   final String? generalEmailVerificationToken;
   final String? hanyangEmailVerificationToken;
+  final String signupLanguage;
 
   @override
   State<PasswordSetupScreen> createState() => _PasswordSetupScreenState();
@@ -104,6 +106,7 @@ class _PasswordSetupScreenState extends State<PasswordSetupScreen> {
               verificationToken: _isGeneralEmailSignup
                   ? widget.generalEmailVerificationToken!
                   : (widget.hanyangEmailVerificationToken ?? ''),
+              signupLanguage: widget.signupLanguage,
             ),
           ),
         ),

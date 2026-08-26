@@ -208,6 +208,32 @@ service firebase.storage {
       allow write: if isSignedIn();
     }
 
+    // Instagram 링크 미리보기는 일반 첨부 이미지와 분리해 postId별 한
+    // 객체로 보관한다. 포스트 문서 생성 전에 업로드되므로 경로 소유권과
+    // immutable metadata를 기준으로 쓰기를 검증한다.
+    match /post_link_previews/{userId}/{postId}/{fileName} {
+      allow read: if true;
+      allow create, update: if currentUserAccountAllowed()
+        && request.auth.uid == userId
+        && postId.matches('^[A-Za-z0-9]{20}$')
+        && fileName == 'instagram.jpg'
+        && request.resource.size > 0
+        && request.resource.size <= 8 * 1024 * 1024
+        && request.resource.contentType == 'image/jpeg'
+        && request.resource.metadata.provider == 'instagram'
+        && request.resource.metadata.ownerUid == request.auth.uid
+        && request.resource.metadata.postId == postId
+        && (
+          request.resource.metadata.source == 'share_payload'
+          || request.resource.metadata.source == 'local_preview'
+        );
+      allow delete: if currentUserAccountAllowed()
+        && request.auth.uid == userId
+        && resource.metadata.provider == 'instagram'
+        && resource.metadata.ownerUid == request.auth.uid
+        && resource.metadata.postId == postId;
+    }
+
     // 모임 이미지 (meetupId 기반)
     match /meetup_images/{meetupId}/{fileName} {
       allow read: if canReadMeetup(meetupId);

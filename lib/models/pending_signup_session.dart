@@ -4,6 +4,7 @@
 /// 성공한 뒤에만 서버의 정식 사용자 문서가 생성됩니다.
 enum PendingSignupKind {
   generalEmail,
+  generalSocial,
   hanyangEmail,
   englishSocial,
   hanyangSocial,
@@ -16,6 +17,7 @@ class PendingSignupSession {
     this.password = '',
     this.verifiedEmail = '',
     this.verificationToken = '',
+    this.signupLanguage = 'en',
   });
 
   final PendingSignupKind kind;
@@ -23,6 +25,7 @@ class PendingSignupSession {
   final String password;
   final String verifiedEmail;
   final String verificationToken;
+  final String signupLanguage;
 
   bool get isEmailPassword =>
       kind == PendingSignupKind.generalEmail ||

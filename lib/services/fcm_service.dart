@@ -22,6 +22,8 @@ import '../utils/logger.dart';
 import 'dart:io';
 
 const String _pushSessionUserIdPreferenceKey = 'active_push_session_user_id';
+const String _snackNotificationGroupPreferencePrefix =
+    'snack_notification_group_key:';
 
 enum PushInitState {
   idle,
@@ -46,6 +48,19 @@ Future<void> firebaseMessagingBackgroundHandler(RemoteMessage message) async {
     final activeUserId =
         preferences.getString(_pushSessionUserIdPreferenceKey) ?? '';
     if (activeUserId != recipientUserId) return;
+
+    final snackChatId = (message.data['snackChatId'] ?? '').toString().trim();
+    final notificationGroupKey = (message.data['notificationThreadKey'] ??
+            message.data['notificationGroupKey'] ??
+            '')
+        .toString()
+        .trim();
+    if (snackChatId.isNotEmpty && notificationGroupKey.isNotEmpty) {
+      await preferences.setString(
+        '$_snackNotificationGroupPreferencePrefix$snackChatId',
+        notificationGroupKey,
+      );
+    }
 
     final badgeStr = message.data['badge'];
     if (badgeStr != null) {
@@ -441,6 +456,9 @@ class FCMService {
                           SnackChatActiveConversation.isActive(snackChatId));
 
               if (isActiveConversation) {
+                if (isSnackChat) {
+                  unawaited(cancelSnackChatNotification(snackChatId));
+                }
                 return;
               }
 
@@ -631,13 +649,17 @@ class FCMService {
       final snackChatId = (message.data['snackChatId'] ?? '').toString().trim();
       final isGroupedSnackChat =
           type == 'snack_chat_message' && snackChatId.isNotEmpty;
-      final notificationGroupKey =
-          (message.data['notificationGroupKey'] ?? '').toString().trim();
+      final notificationGroupKey = (message.data['notificationThreadKey'] ??
+              message.data['notificationGroupKey'] ??
+              '')
+          .toString()
+          .trim();
       final effectiveGroupKey = notificationGroupKey.isNotEmpty
           ? notificationGroupKey
           : 'snack_$snackChatId';
       final unreadCount = int.tryParse(
-        (message.data['unreadCount'] ?? '').toString(),
+        (message.data['roomUnreadCount'] ?? message.data['unreadCount'] ?? '')
+            .toString(),
       );
       final String androidChannelId =
           _isMeetupType(type) ? _channelMeetupId : _channelHighImportanceId;
@@ -674,9 +696,17 @@ class FCMService {
         iOS: iosDetails,
       );
 
+      if (isGroupedSnackChat) {
+        final preferences = await SharedPreferences.getInstance();
+        await preferences.setString(
+          '$_snackNotificationGroupPreferencePrefix$snackChatId',
+          effectiveGroupKey,
+        );
+      }
+
       await _localNotifications.show(
         isGroupedSnackChat
-            ? _stableNotificationId('snack_chat:$snackChatId')
+            ? _stableNotificationId('snack_chat:$effectiveGroupKey')
             : message.hashCode,
         title,
         body,
@@ -697,6 +727,42 @@ class FCMService {
       hash = (hash * 0x01000193) & 0x7FFFFFFF;
     }
     return hash;
+  }
+
+  /// Removes only the local notification slot associated with [snackChatId].
+  /// Android requires both the stable id and the server-issued tag. iOS uses
+  /// the same stable id for foreground local notifications; APNs itself keeps
+  /// remote deliveries collapsed through the room thread/collapse id.
+  Future<void> cancelSnackChatNotification(String snackChatId) async {
+    final normalized = snackChatId.trim();
+    if (normalized.isEmpty || kIsWeb) return;
+    try {
+      final preferences = await SharedPreferences.getInstance();
+      final preferenceKey =
+          '$_snackNotificationGroupPreferencePrefix$normalized';
+      final tag = preferences.getString(preferenceKey);
+      final effectiveGroupKey =
+          tag?.trim().isNotEmpty == true ? tag!.trim() : 'snack_$normalized';
+      await _localNotifications.cancel(
+        _stableNotificationId('snack_chat:$effectiveGroupKey'),
+        tag: tag,
+      );
+      // Background FCM notifications that Android itself displayed use the
+      // room tag with the platform default id. Clear that exact room slot as
+      // well, without touching DM or any other Snack Chat room.
+      if (tag?.trim().isNotEmpty == true) {
+        await _localNotifications.cancel(0, tag: tag);
+      }
+      // One-version compatibility for foreground notifications created by
+      // the previous room-id-only stable-id implementation.
+      await _localNotifications.cancel(
+        _stableNotificationId('snack_chat:$normalized'),
+        tag: tag,
+      );
+      await preferences.remove(preferenceKey);
+    } catch (error) {
+      Logger.error('Snack Chat 방별 알림 정리 실패', error);
+    }
   }
 
   bool _isMeetupType(String type) {

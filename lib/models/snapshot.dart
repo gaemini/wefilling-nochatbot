@@ -137,7 +137,7 @@ class SnapshotItem {
       visibility: SnapshotVisibility.fromValue(
         map['visibilityMode'] ?? map['visibility'],
       ),
-      createdAt: _asDateTime(map['createdAt']),
+      createdAt: _asDateTime(map['createdAt'] ?? map['serverCreatedAt']),
       expiresAt: _asDateTime(map['expiresAt']),
       aspectRatio: _asDouble(map['aspectRatio'], .8).clamp(.4, 2.5),
       overlay: SnapshotOverlay.fromMap(map['overlay']),
@@ -165,6 +165,7 @@ class SnapshotViewer {
     required this.nationality,
     required this.university,
     required this.viewedAt,
+    this.reaction = '',
   });
 
   final String userId;
@@ -174,6 +175,28 @@ class SnapshotViewer {
   final String nationality;
   final String university;
   final DateTime viewedAt;
+  final String reaction;
+
+  SnapshotViewer copyWith({
+    String? displayName,
+    String? photoUrl,
+    int? photoVersion,
+    String? nationality,
+    String? university,
+    DateTime? viewedAt,
+    String? reaction,
+  }) {
+    return SnapshotViewer(
+      userId: userId,
+      displayName: displayName ?? this.displayName,
+      photoUrl: photoUrl ?? this.photoUrl,
+      photoVersion: photoVersion ?? this.photoVersion,
+      nationality: nationality ?? this.nationality,
+      university: university ?? this.university,
+      viewedAt: viewedAt ?? this.viewedAt,
+      reaction: reaction ?? this.reaction,
+    );
+  }
 
   factory SnapshotViewer.fromFirestore(
     DocumentSnapshot<Map<String, dynamic>> document,
@@ -200,6 +223,7 @@ class SnapshotViewer {
             data['createdAt'] ??
             data['viewedAtMillis'],
       ),
+      reaction: (data['reaction'] ?? '').toString().trim(),
     );
   }
 }

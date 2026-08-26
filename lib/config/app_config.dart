@@ -17,10 +17,10 @@ class AppConfig {
   }
 
   /// 앱 버전 정보
-  static const String appVersion = '1.0.57';
+  static const String appVersion = '1.0.58';
 
   /// pubspec.yaml의 Android/iOS 빌드 번호와 함께 관리한다.
-  static const String buildNumber = '69';
+  static const String buildNumber = '70';
 
   static String get fullVersion => '$appVersion ($buildNumber)';
 

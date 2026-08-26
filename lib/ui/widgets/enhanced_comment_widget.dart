@@ -795,6 +795,9 @@ class _EnhancedCommentWidgetState extends State<EnhancedCommentWidget> {
     if (widget.comment.userId.isEmpty || widget.comment.userId == 'deleted') {
       return;
     }
+    final cachedAuthor =
+        UserInfoCacheService().getCachedUserInfo(widget.comment.userId);
+    if (cachedAuthor?.isDeletedAccount == true) return;
 
     final me = FirebaseAuth.instance.currentUser?.uid;
     if (me != null && widget.comment.userId == me) {
@@ -1047,7 +1050,11 @@ class _EnhancedCommentWidgetState extends State<EnhancedCommentWidget> {
     Widget buildContent({
       required String displayName,
       required String photoUrl,
+      required bool isDeletedAccount,
     }) {
+      final effectiveDisplayName = isDeletedAccount
+          ? AppLocalizations.of(context)!.deletedAccount
+          : displayName;
       return GestureDetector(
         behavior: HitTestBehavior.translucent,
         onLongPress: () {
@@ -1083,7 +1090,8 @@ class _EnhancedCommentWidgetState extends State<EnhancedCommentWidget> {
                   // 익명 게시글이 아닐 때만 프로필 이미지 표시
                   if (!widget.isAnonymousPost) ...[
                     GestureDetector(
-                      onTap: _openCommentAuthorProfile,
+                      onTap:
+                          isDeletedAccount ? null : _openCommentAuthorProfile,
                       child: Container(
                         width: 32,
                         height: 32,
@@ -1126,7 +1134,7 @@ class _EnhancedCommentWidgetState extends State<EnhancedCommentWidget> {
                             // 익명 게시글이면 클릭 불가능한 텍스트, 아니면 클릭 가능
                             widget.isAnonymousPost
                                 ? Text(
-                                    displayName,
+                                    effectiveDisplayName,
                                     style: const TextStyle(
                                       fontFamily: 'Inter',
                                       fontFamilyFallback: const ['NotoSansKR'],
@@ -1136,12 +1144,16 @@ class _EnhancedCommentWidgetState extends State<EnhancedCommentWidget> {
                                     ),
                                   )
                                 : GestureDetector(
-                                    onTap: _openCommentAuthorProfile,
+                                    onTap: isDeletedAccount
+                                        ? null
+                                        : _openCommentAuthorProfile,
                                     child: Text(
-                                      displayName,
+                                      effectiveDisplayName,
                                       style: const TextStyle(
                                         fontFamily: 'Inter',
-                                        fontFamilyFallback: const ['NotoSansKR'],
+                                        fontFamilyFallback: const [
+                                          'NotoSansKR'
+                                        ],
                                         fontSize: 14,
                                         fontWeight: FontWeight.w700,
                                         color: Color(0xFF111827),
@@ -1244,13 +1256,19 @@ class _EnhancedCommentWidgetState extends State<EnhancedCommentWidget> {
       return buildContent(
         displayName: anonymousDisplayName,
         photoUrl: '',
+        isDeletedAccount: false,
       );
     }
 
     if (!canUseLiveUserInfo) {
       return buildContent(
-        displayName: widget.comment.authorNickname,
-        photoUrl: widget.comment.authorPhotoUrl,
+        displayName: widget.comment.userId == 'deleted'
+            ? AppLocalizations.of(context)!.deletedAccount
+            : widget.comment.authorNickname,
+        photoUrl: widget.comment.userId == 'deleted'
+            ? ''
+            : widget.comment.authorPhotoUrl,
+        isDeletedAccount: widget.comment.userId == 'deleted',
       );
     }
 
@@ -1262,10 +1280,17 @@ class _EnhancedCommentWidgetState extends State<EnhancedCommentWidget> {
         final liveName = (live?.nickname ?? '').trim();
         final livePhoto = (live?.photoURL ?? '').trim();
         return buildContent(
-          displayName:
-              liveName.isNotEmpty ? liveName : widget.comment.authorNickname,
-          photoUrl:
-              livePhoto.isNotEmpty ? livePhoto : widget.comment.authorPhotoUrl,
+          displayName: live?.isDeletedAccount == true
+              ? ''
+              : (liveName.isNotEmpty
+                  ? liveName
+                  : widget.comment.authorNickname),
+          photoUrl: live?.isDeletedAccount == true
+              ? ''
+              : (livePhoto.isNotEmpty
+                  ? livePhoto
+                  : widget.comment.authorPhotoUrl),
+          isDeletedAccount: live?.isDeletedAccount == true,
         );
       },
     );

@@ -1,6 +1,9 @@
 import * as admin from 'firebase-admin';
 import * as functions from 'firebase-functions';
 import * as https from 'https';
+import * as dns from 'dns';
+import * as net from 'net';
+import * as crypto from 'crypto';
 
 type YouTubeThumbnail = {
   url?: unknown;
@@ -61,9 +64,15 @@ type ParsedSharedLink =
 
 const CACHE_COLLECTION = 'linkPreviewCache';
 const CACHE_TTL_MS = 3 * 24 * 60 * 60 * 1000;
-const INSTAGRAM_METADATA_VERSION = 2;
+// v5 adds support for the serialized media payload used by the current
+// Instagram embed page.  Bumping this invalidates cached generic previews
+// that were created before cover images/captions could be extracted.
+const INSTAGRAM_METADATA_VERSION = 5;
 const REQUEST_TIMEOUT_MS = 5_000;
-const MAX_RESPONSE_BYTES = 512 * 1024;
+const MAX_JSON_RESPONSE_BYTES = 512 * 1024;
+const MAX_HTML_RESPONSE_BYTES = 1024 * 1024;
+const MAX_INSTAGRAM_IMAGE_BYTES = 8 * 1024 * 1024;
+const MAX_INSTAGRAM_IMAGE_REDIRECTS = 3;
 const META_GRAPH_API_VERSION = 'v25.0';
 const INSTAGRAM_OEMBED_ENDPOINT =
   `https://graph.facebook.com/${META_GRAPH_API_VERSION}/instagram_oembed`;
@@ -228,7 +237,7 @@ function fetchJson(url: URL, allowedHostname: string): Promise<Record<string, un
       let receivedBytes = 0;
       response.on('data', (chunk: Buffer) => {
         receivedBytes += chunk.length;
-        if (receivedBytes > MAX_RESPONSE_BYTES) {
+        if (receivedBytes > MAX_JSON_RESPONSE_BYTES) {
           request.destroy(new Error('Metadata response exceeded the size limit.'));
           return;
         }
@@ -285,7 +294,7 @@ function fetchHtml(url: URL, allowedHostname: string): Promise<string> {
       let receivedBytes = 0;
       response.on('data', (chunk: Buffer) => {
         receivedBytes += chunk.length;
-        if (receivedBytes > MAX_RESPONSE_BYTES) {
+        if (receivedBytes > MAX_HTML_RESPONSE_BYTES) {
           request.destroy(new Error('Instagram page exceeded the size limit.'));
           return;
         }
@@ -378,6 +387,118 @@ function instagramImageFromHtml(html: string, metadata: Map<string, string>): st
     if (image) return image;
   }
   return null;
+}
+
+/**
+ * Instagram's current /embed page does not always expose og:image or a
+ * rendered <img> in the initial response.  The same response does contain a
+ * ServerJS payload, but it is JSON serialized inside another JavaScript
+ * string, for example:
+ *
+ *   \"thumbnail_src\":\"https:\\\/\\\/scontent...jpg\",\"thumbnail_resources\"
+ *
+ * This decoder deliberately handles only string escapes.  It never executes
+ * the page's JavaScript or accepts a host outside instagramImageUrl().
+ */
+function decodeInstagramSerializedValue(value: string): string {
+  let decoded = value;
+  for (let pass = 0; pass < 4; pass++) {
+    const next = decoded
+      .replace(/\\\\/g, '\\')
+      .replace(/\\\//g, '/')
+      .replace(/\\u([0-9a-f]{4})/gi, (_match, raw: string) =>
+        String.fromCodePoint(parseInt(raw, 16)))
+      .replace(/\\n/g, '\n')
+      .replace(/\\r/g, '\r')
+      .replace(/\\t/g, '\t')
+      .replace(/\\"/g, '"');
+    if (next === decoded) break;
+    decoded = next;
+  }
+  return decodeHtml(decoded);
+}
+
+function instagramImageFromSerializedState(html: string): string | null {
+  // Bound each capture so a malformed upstream page cannot make the parser
+  // scan an unbounded value.  Prefer the uncropped reel/post cover.
+  for (const pattern of [
+    /\\"thumbnail_src\\"\s*:\s*\\"([\s\S]{1,4096}?)\\"\s*,\s*\\"thumbnail_resources\\"/i,
+    /\\"display_url\\"\s*:\s*\\"([\s\S]{1,4096}?)\\"\s*,\s*\\"display_resources\\"/i,
+  ]) {
+    const match = pattern.exec(html);
+    const image = instagramImageUrl(
+      match ? decodeInstagramSerializedValue(match[1]) : '',
+    );
+    if (image) return image;
+  }
+  return null;
+}
+
+function instagramCaptionFromSerializedState(html: string): string {
+  const match = /\\"edge_media_to_caption\\"\s*:\s*\{\s*\\"edges\\"\s*:\s*\[\s*\{\s*\\"node\\"\s*:\s*\{\s*\\"text\\"\s*:\s*\\"([\s\S]{0,20_000}?)\\"\s*\}\s*\}\s*\]\s*\}/i
+    .exec(html);
+  return stringValue(
+    match ? decodeInstagramSerializedValue(match[1]) : '',
+    300,
+  );
+}
+
+function instagramAuthorFromSerializedState(html: string): string {
+  const match = /\\"owner\\"\s*:\s*\{[\s\S]{0,2000}?\\"username\\"\s*:\s*\\"([\s\S]{1,320}?)\\"\s*,\s*\\"is_verified\\"/i
+    .exec(html);
+  return stringValue(
+    match ? decodeInstagramSerializedValue(match[1]) : '',
+    160,
+  );
+}
+
+function instagramEmbeddedMediaImage(html: string): string | null {
+  for (const match of html.matchAll(/<img\b[^>]*>/gi)) {
+    const attributes = tagAttributes(match[0]);
+    const classes = (attributes.class ?? '').split(/\s+/);
+    if (!classes.includes('EmbeddedMediaImage')) continue;
+    const image = instagramImageUrl(decodeHtml(attributes.src ?? ''));
+    if (image) return image;
+  }
+  return null;
+}
+
+function htmlTextContent(value: string): string {
+  return decodeHtml(value
+    .replace(/<script\b[^>]*>[\s\S]*?<\/script>/gi, ' ')
+    .replace(/<style\b[^>]*>[\s\S]*?<\/style>/gi, ' ')
+    .replace(/<br\s*\/?>/gi, ' ')
+    .replace(/<[^>]+>/g, ' '));
+}
+
+function instagramAuthorFromEmbedPage(html: string): string {
+  const match = /<a\b[^>]*class=(?:"[^"]*\bCaptionUsername\b[^"]*"|'[^']*\bCaptionUsername\b[^']*')[^>]*>([\s\S]*?)<\/a>/i
+    .exec(html);
+  return stringValue(match ? htmlTextContent(match[1]) : '', 160);
+}
+
+function instagramCaptionFromEmbedPage(html: string): string {
+  const startMatch = /<div\b[^>]*class=(?:"[^"]*\bCaption\b[^"]*"|'[^']*\bCaption\b[^']*')[^>]*>/i
+    .exec(html);
+  if (!startMatch || startMatch.index == null) return '';
+  const start = startMatch.index + startMatch[0].length;
+  const commentsIndex = html.slice(start).search(
+    /class=(?:"[^"]*\bCaptionComments\b[^"]*"|'[^']*\bCaptionComments\b[^']*')/i,
+  );
+  const end = commentsIndex >= 0
+    ? start + commentsIndex
+    : Math.min(html.length, start + 20_000);
+  let block = html.slice(start, end);
+  const username = /<a\b[^>]*class=(?:"[^"]*\bCaptionUsername\b[^"]*"|'[^']*\bCaptionUsername\b[^']*')[^>]*>[\s\S]*?<\/a>/i
+    .exec(block);
+  if (username?.index != null) {
+    block = block.slice(username.index + username[0].length);
+  }
+  const caption = htmlTextContent(block)
+    .replace(/^Verified\s*/i, '')
+    .replace(/\s*(View all comments|See more)\s*$/i, '')
+    .trim();
+  return stringValue(caption, 300);
 }
 
 function instagramCaptionFromEmbed(html: string): string {
@@ -691,8 +812,11 @@ async function fetchInstagramPreview(
     }
   }
   const thumbnail = instagramImageUrl(response.thumbnail_url) ??
+    instagramEmbeddedMediaImage(embedPageHtml) ??
+    instagramImageFromSerializedState(embedPageHtml) ??
     instagramImageFromHtml(pageHtml, pageMetadata) ??
-    instagramImageFromHtml(embedPageHtml, embedPageMetadata);
+    instagramImageFromHtml(embedPageHtml, embedPageMetadata) ??
+    instagramImageFromSerializedState(pageHtml);
   const thumbnailWidth = Number(response.thumbnail_width);
   const thumbnailHeight = Number(response.thumbnail_height);
   const metadataWidth = Number(pageMetadata.get('og:image:width') ??
@@ -706,14 +830,20 @@ async function fetchInstagramPreview(
   const aspectRatio = Number.isFinite(resolvedWidth) &&
       Number.isFinite(resolvedHeight) && resolvedWidth > 0 && resolvedHeight > 0
     ? Math.min(2.4, Math.max(0.5, resolvedWidth / resolvedHeight))
-    : 1;
+    : (contentType === 'reel' ? 4 / 5 : 1);
   const title = stringValue(response.title, 300) ||
     instagramCaptionFromEmbed(rawEmbedHtml) ||
+    instagramCaptionFromEmbedPage(embedPageHtml) ||
+    instagramCaptionFromSerializedState(embedPageHtml) ||
     instagramCaptionFromPage(pageMetadata) ||
-    instagramCaptionFromPage(embedPageMetadata);
+    instagramCaptionFromPage(embedPageMetadata) ||
+    instagramCaptionFromSerializedState(pageHtml);
   const authorName = stringValue(response.author_name, 160) ||
+    instagramAuthorFromEmbedPage(embedPageHtml) ||
+    instagramAuthorFromSerializedState(embedPageHtml) ||
     instagramAuthorFromPage(pageMetadata) ||
-    instagramAuthorFromPage(embedPageMetadata);
+    instagramAuthorFromPage(embedPageMetadata) ||
+    instagramAuthorFromSerializedState(pageHtml);
   if (!safeEmbedHtml && !thumbnail) {
     throw callableError(
       'unavailable',
@@ -763,6 +893,477 @@ async function writeInstagramPreviewCache(preview: InstagramLinkPreview): Promis
     });
   }
 }
+
+type InstagramImageDownload = {
+  bytes: Buffer;
+  contentType: 'image/jpeg' | 'image/png' | 'image/webp';
+  width: number;
+  height: number;
+};
+
+type PersistedInstagramThumbnail = {
+  thumbnailUrl: string;
+  thumbnailStoragePath: string;
+  thumbnailSource: 'remote_resolver';
+  aspectRatio: number;
+  width: number;
+  height: number;
+  created: boolean;
+};
+
+function isAllowedInstagramImageHost(hostname: string): boolean {
+  const host = hostname.toLowerCase().replace(/\.$/, '');
+  return host === 'instagram.com' || host.endsWith('.instagram.com') ||
+    host === 'cdninstagram.com' || host.endsWith('.cdninstagram.com') ||
+    host === 'fbcdn.net' || host.endsWith('.fbcdn.net');
+}
+
+function isPrivateNetworkAddress(address: string): boolean {
+  if (net.isIPv4(address)) {
+    const parts = address.split('.').map(Number);
+    return parts[0] === 0 || parts[0] === 10 || parts[0] === 127 ||
+      (parts[0] === 169 && parts[1] === 254) ||
+      (parts[0] === 172 && parts[1] >= 16 && parts[1] <= 31) ||
+      (parts[0] === 192 && parts[1] === 168) || parts[0] >= 224;
+  }
+  if (!net.isIPv6(address)) return true;
+  const normalized = address.toLowerCase().split('%')[0];
+  if (normalized.startsWith('::ffff:')) {
+    return isPrivateNetworkAddress(normalized.slice('::ffff:'.length));
+  }
+  return normalized === '::' || normalized === '::1' ||
+    normalized.startsWith('fc') || normalized.startsWith('fd') ||
+    /^fe[89ab]/.test(normalized);
+}
+
+async function assertPublicInstagramHost(hostname: string): Promise<void> {
+  if (!isAllowedInstagramImageHost(hostname)) {
+    throw new Error('instagram-image-redirect-rejected');
+  }
+  const addresses = await dns.promises.lookup(hostname, {all: true, verbatim: true});
+  if (addresses.length === 0 ||
+      addresses.some((entry) => isPrivateNetworkAddress(entry.address))) {
+    throw new Error('instagram-image-redirect-rejected');
+  }
+}
+
+function detectedImageContentType(
+  bytes: Buffer,
+): 'image/jpeg' | 'image/png' | 'image/webp' | null {
+  if (bytes.length >= 3 && bytes[0] === 0xff && bytes[1] === 0xd8 && bytes[2] === 0xff) {
+    return 'image/jpeg';
+  }
+  if (bytes.length >= 8 && bytes.subarray(0, 8).equals(
+    Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]),
+  )) {
+    return 'image/png';
+  }
+  if (bytes.length >= 12 && bytes.toString('ascii', 0, 4) === 'RIFF' &&
+      bytes.toString('ascii', 8, 12) === 'WEBP') {
+    return 'image/webp';
+  }
+  return null;
+}
+
+function jpegDimensions(bytes: Buffer): {width: number; height: number} | null {
+  if (detectedImageContentType(bytes) !== 'image/jpeg') return null;
+  let offset = 2;
+  while (offset + 8 < bytes.length) {
+    if (bytes[offset] !== 0xff) {
+      offset++;
+      continue;
+    }
+    const marker = bytes[offset + 1];
+    offset += 2;
+    if (marker === 0xd8 || marker === 0xd9) continue;
+    if (offset + 2 > bytes.length) return null;
+    const segmentLength = bytes.readUInt16BE(offset);
+    if (segmentLength < 2 || offset + segmentLength > bytes.length) return null;
+    const isStartOfFrame = marker >= 0xc0 && marker <= 0xcf &&
+      ![0xc4, 0xc8, 0xcc].includes(marker);
+    if (isStartOfFrame && segmentLength >= 7) {
+      return {
+        height: bytes.readUInt16BE(offset + 3),
+        width: bytes.readUInt16BE(offset + 5),
+      };
+    }
+    offset += segmentLength;
+  }
+  return null;
+}
+
+function webpDimensions(bytes: Buffer): {width: number; height: number} | null {
+  if (detectedImageContentType(bytes) !== 'image/webp' || bytes.length < 30) return null;
+  const chunk = bytes.toString('ascii', 12, 16);
+  if (chunk === 'VP8X') {
+    return {
+      width: 1 + bytes.readUIntLE(24, 3),
+      height: 1 + bytes.readUIntLE(27, 3),
+    };
+  }
+  if (chunk === 'VP8L' && bytes.length >= 25 && bytes[20] === 0x2f) {
+    const bits = bytes.readUInt32LE(21);
+    return {
+      width: 1 + (bits & 0x3fff),
+      height: 1 + ((bits >> 14) & 0x3fff),
+    };
+  }
+  if (chunk === 'VP8 ' && bytes.length >= 30 &&
+      bytes[23] === 0x9d && bytes[24] === 0x01 && bytes[25] === 0x2a) {
+    return {
+      width: bytes.readUInt16LE(26) & 0x3fff,
+      height: bytes.readUInt16LE(28) & 0x3fff,
+    };
+  }
+  return null;
+}
+
+function imageDimensions(
+  bytes: Buffer,
+  contentType: 'image/jpeg' | 'image/png' | 'image/webp',
+): {width: number; height: number} | null {
+  if (contentType === 'image/jpeg') return jpegDimensions(bytes);
+  if (contentType === 'image/webp') return webpDimensions(bytes);
+  if (bytes.length < 24) return null;
+  return {width: bytes.readUInt32BE(16), height: bytes.readUInt32BE(20)};
+}
+
+async function downloadInstagramImage(
+  input: URL,
+  redirectCount = 0,
+): Promise<InstagramImageDownload> {
+  if (input.protocol !== 'https:' || input.username || input.password || input.port) {
+    throw new Error('instagram-image-redirect-rejected');
+  }
+  await assertPublicInstagramHost(input.hostname);
+
+  return new Promise((resolve, reject) => {
+    let settled = false;
+    const fail = (error: Error) => {
+      if (settled) return;
+      settled = true;
+      reject(error);
+    };
+    const succeed = (value: InstagramImageDownload) => {
+      if (settled) return;
+      settled = true;
+      resolve(value);
+    };
+    const request = https.get(input, {
+      headers: {
+        Accept: 'image/jpeg,image/png,image/webp',
+        Referer: 'https://www.instagram.com/',
+        'User-Agent': 'Mozilla/5.0 (compatible; WefillingPreview/1.0)',
+      },
+    }, (response) => {
+      const status = response.statusCode ?? 0;
+      if ([301, 302, 303, 307, 308].includes(status)) {
+        const location = response.headers.location;
+        response.resume();
+        if (!location || redirectCount >= MAX_INSTAGRAM_IMAGE_REDIRECTS) {
+          fail(new Error('instagram-image-redirect-rejected'));
+          return;
+        }
+        let redirected: URL;
+        try {
+          redirected = new URL(location, input);
+        } catch (_) {
+          fail(new Error('instagram-image-redirect-rejected'));
+          return;
+        }
+        downloadInstagramImage(redirected, redirectCount + 1).then(succeed, fail);
+        return;
+      }
+      if (status !== 200) {
+        response.resume();
+        fail(new Error('instagram-thumbnail-unavailable'));
+        return;
+      }
+      const declaredType = (response.headers['content-type'] ?? '')
+        .toString().split(';')[0].trim().toLowerCase();
+      if (!['image/jpeg', 'image/png', 'image/webp'].includes(declaredType)) {
+        response.resume();
+        fail(new Error('instagram-image-invalid-content-type'));
+        return;
+      }
+      const contentLength = Number(response.headers['content-length'] ?? 0);
+      if (contentLength > MAX_INSTAGRAM_IMAGE_BYTES) {
+        response.resume();
+        fail(new Error('instagram-image-too-large'));
+        return;
+      }
+      const chunks: Buffer[] = [];
+      let received = 0;
+      response.on('data', (chunk: Buffer) => {
+        received += chunk.length;
+        if (received > MAX_INSTAGRAM_IMAGE_BYTES) {
+          response.destroy(new Error('instagram-image-too-large'));
+          return;
+        }
+        chunks.push(chunk);
+      });
+      response.on('error', fail);
+      response.on('end', () => {
+        if (settled) return;
+        const bytes = Buffer.concat(chunks);
+        const detectedType = detectedImageContentType(bytes);
+        if (!detectedType || detectedType !== declaredType || bytes.length === 0) {
+          fail(new Error('instagram-image-invalid-content-type'));
+          return;
+        }
+        const dimensions = imageDimensions(bytes, detectedType);
+        if (!dimensions || dimensions.width <= 0 || dimensions.height <= 0) {
+          fail(new Error('instagram-image-invalid-content-type'));
+          return;
+        }
+        succeed({bytes, contentType: detectedType, ...dimensions});
+      });
+    });
+    request.setTimeout(REQUEST_TIMEOUT_MS, () => {
+      request.destroy(new Error('instagram-thumbnail-unavailable'));
+    });
+    request.on('error', fail);
+  });
+}
+
+function firebaseDownloadUrl(
+  bucketName: string,
+  storagePath: string,
+  token: string,
+): string {
+  return `https://firebasestorage.googleapis.com/v0/b/${encodeURIComponent(bucketName)}` +
+    `/o/${encodeURIComponent(storagePath)}?alt=media&token=${encodeURIComponent(token)}`;
+}
+
+async function existingPersistedInstagramThumbnail(
+  ownerUid: string,
+  postId: string,
+): Promise<PersistedInstagramThumbnail | null> {
+  const bucket = admin.storage().bucket();
+  for (const extension of ['jpg', 'png', 'webp']) {
+    const storagePath = `post_link_previews/${ownerUid}/${postId}/instagram.${extension}`;
+    const file = bucket.file(storagePath);
+    const [exists] = await file.exists();
+    if (!exists) continue;
+    const [metadata] = await file.getMetadata();
+    const custom = metadata.metadata ?? {};
+    const token = stringValue(custom.firebaseStorageDownloadTokens, 200) ||
+      stringValue(custom.downloadToken, 200);
+    const width = Number(custom.width);
+    const height = Number(custom.height);
+    if (!token || !Number.isFinite(width) || !Number.isFinite(height) ||
+        width <= 0 || height <= 0) continue;
+    return {
+      thumbnailUrl: firebaseDownloadUrl(bucket.name, storagePath, token),
+      thumbnailStoragePath: storagePath,
+      thumbnailSource: 'remote_resolver',
+      aspectRatio: Math.min(2.4, Math.max(0.5, width / height)),
+      width,
+      height,
+      created: false,
+    };
+  }
+  return null;
+}
+
+async function persistInstagramThumbnailForOwner(
+  ownerUid: string,
+  postId: string,
+  parsed: {
+    shortcode: string;
+    contentType: 'post' | 'reel';
+    canonicalUrl: string;
+  },
+): Promise<PersistedInstagramThumbnail> {
+  const existing = await existingPersistedInstagramThumbnail(ownerUid, postId);
+  if (existing) return existing;
+
+  let resolvedThumbnail = '';
+  try {
+    const metadata = await fetchInstagramPreview(
+      parsed.canonicalUrl,
+      parsed.shortcode,
+      parsed.contentType,
+      parsed.canonicalUrl,
+    );
+    resolvedThumbnail = metadata.thumbnailUrl ?? '';
+  } catch (error) {
+    functions.logger.warn('[InstagramPreview][remote-fallback] metadata unavailable.', {
+      postId,
+      shortcode: parsed.shortcode,
+      reason: error instanceof Error ? error.message : 'unknown',
+    });
+  }
+
+  const candidates = Array.from(new Set([
+    resolvedThumbnail,
+    `${parsed.canonicalUrl}media/?size=l`,
+  ].filter(Boolean)));
+  let downloaded: InstagramImageDownload | null = null;
+  for (const candidate of candidates) {
+    try {
+      downloaded = await downloadInstagramImage(new URL(candidate));
+      break;
+    } catch (error) {
+      functions.logger.warn('[InstagramPreview][remote-fallback] image rejected.', {
+        postId,
+        shortcode: parsed.shortcode,
+        reason: error instanceof Error ? error.message : 'unknown',
+      });
+    }
+  }
+  if (!downloaded) {
+    throw callableError(
+      'unavailable',
+      'instagram-thumbnail-unavailable',
+      'Instagram thumbnail is unavailable.',
+    );
+  }
+
+  const extension = downloaded.contentType === 'image/jpeg'
+    ? 'jpg'
+    : (downloaded.contentType === 'image/png' ? 'png' : 'webp');
+  const storagePath =
+    `post_link_previews/${ownerUid}/${postId}/instagram.${extension}`;
+  const token = crypto.randomUUID();
+  const bucket = admin.storage().bucket();
+  await bucket.file(storagePath).save(downloaded.bytes, {
+    resumable: false,
+    contentType: downloaded.contentType,
+    metadata: {
+      cacheControl: 'public,max-age=31536000,immutable',
+      metadata: {
+        firebaseStorageDownloadTokens: token,
+        provider: 'instagram',
+        postId,
+        ownerUid,
+        source: 'remote_resolver',
+        width: `${downloaded.width}`,
+        height: `${downloaded.height}`,
+      },
+    },
+  });
+  return {
+    thumbnailUrl: firebaseDownloadUrl(bucket.name, storagePath, token),
+    thumbnailStoragePath: storagePath,
+    thumbnailSource: 'remote_resolver',
+    aspectRatio: Math.min(2.4, Math.max(0.5, downloaded.width / downloaded.height)),
+    width: downloaded.width,
+    height: downloaded.height,
+    created: true,
+  };
+}
+
+export const persistInstagramPreviewThumbnail = functions.runWith({
+  timeoutSeconds: 45,
+  memory: '512MB',
+}).https.onCall(async (raw, context): Promise<PersistedInstagramThumbnail> => {
+  requireAuthenticatedUser(context);
+  const uid = context.auth!.uid;
+  const data = raw && typeof raw === 'object'
+    ? raw as Record<string, unknown>
+    : {};
+  const postId = stringValue(data.postId, 20);
+  if (!/^[A-Za-z0-9]{20}$/.test(postId)) {
+    throw callableError('invalid-argument', 'invalid-post-id', 'Invalid post id.');
+  }
+  const canonicalUrl = stringValue(data.canonicalUrl, 2048);
+  const parsed = parseInstagramUrl(canonicalUrl);
+  if (stringValue(data.shortcode, 100) !== parsed.shortcode ||
+      stringValue(data.contentType, 20) !== parsed.contentType) {
+    throw callableError(
+      'invalid-argument',
+      'instagram-content-mismatch',
+      'Instagram content does not match the canonical URL.',
+    );
+  }
+  functions.logger.info('[InstagramPreview][remote-fallback] start.', {
+    postId,
+    shortcode: parsed.shortcode,
+  });
+  return persistInstagramThumbnailForOwner(uid, postId, parsed);
+});
+
+export const backfillInstagramPreviewThumbnails = functions.runWith({
+  timeoutSeconds: 300,
+  memory: '512MB',
+}).https.onCall(async (raw, context) => {
+  requireAuthenticatedUser(context);
+  if (context.auth?.token.admin !== true) {
+    throw callableError('permission-denied', 'admin-required', 'Admin access is required.');
+  }
+  const data = raw && typeof raw === 'object'
+    ? raw as Record<string, unknown>
+    : {};
+  const requestedLimit = Number(data.limit ?? 20);
+  const limit = Number.isInteger(requestedLimit)
+    ? Math.min(50, Math.max(1, requestedLimit))
+    : 20;
+  const cursor = stringValue(data.cursor, 100);
+  let query: FirebaseFirestore.Query = admin.firestore()
+    .collection('posts')
+    .where('linkPreview.provider', '==', 'instagram')
+    .orderBy(admin.firestore.FieldPath.documentId())
+    .limit(limit);
+  if (cursor) query = query.startAfter(cursor);
+  const snapshot = await query.get();
+  let updated = 0;
+  const failures: Array<{postId: string; reason: string}> = [];
+
+  for (const document of snapshot.docs) {
+    const post = document.data();
+    const preview = post.linkPreview && typeof post.linkPreview === 'object'
+      ? post.linkPreview as Record<string, unknown>
+      : {};
+    const thumbnail = stringValue(preview.thumbnailUrl, 2048);
+    const thumbnailHost = (() => {
+      try {
+        return new URL(thumbnail).hostname.toLowerCase();
+      } catch (_) {
+        return '';
+      }
+    })();
+    if (thumbnailHost === 'firebasestorage.googleapis.com' ||
+        thumbnailHost === 'storage.googleapis.com') continue;
+    const ownerUid = stringValue(post.ownerId ?? post.userId, 128);
+    try {
+      const parsed = parseInstagramUrl(stringValue(preview.canonicalUrl, 2048));
+      const persisted = await persistInstagramThumbnailForOwner(
+        ownerUid,
+        document.id,
+        parsed,
+      );
+      await document.ref.update({
+        linkPreview: {
+          ...preview,
+          thumbnailUrl: persisted.thumbnailUrl,
+          thumbnailStoragePath: persisted.thumbnailStoragePath,
+          thumbnailSource: persisted.thumbnailSource,
+          thumbnailWidth: persisted.width,
+          thumbnailHeight: persisted.height,
+          aspectRatio: persisted.aspectRatio,
+          previewMode: 'image',
+          previewStatus: 'ready',
+          previewVersion: INSTAGRAM_METADATA_VERSION,
+        },
+      });
+      updated++;
+    } catch (error) {
+      failures.push({
+        postId: document.id,
+        reason: error instanceof Error ? error.message : 'unknown',
+      });
+    }
+  }
+  return {
+    processed: snapshot.size,
+    updated,
+    failures,
+    nextCursor: snapshot.docs.length > 0
+      ? snapshot.docs[snapshot.docs.length - 1].id
+      : '',
+  };
+});
 
 export const resolveSharedLink = functions.runWith({
   timeoutSeconds: 15,

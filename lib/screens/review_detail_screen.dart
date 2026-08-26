@@ -13,6 +13,8 @@ import 'review_comments_screen.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import '../ui/widgets/fullscreen_image_viewer.dart';
 import '../utils/logger.dart';
+import '../utils/account_status_helper.dart';
+import '../services/user_info_cache_service.dart';
 
 class ReviewDetailScreen extends StatefulWidget {
   final ReviewPost review;
@@ -35,7 +37,7 @@ class _ReviewDetailScreenState extends State<ReviewDetailScreen> {
   List<Map<String, dynamic>> _participants = [];
   int _currentImageIndex = 0; // 현재 이미지 인덱스
   final PageController _pageController = PageController();
-  
+
   @override
   void initState() {
     super.initState();
@@ -47,7 +49,6 @@ class _ReviewDetailScreenState extends State<ReviewDetailScreen> {
     _pageController.dispose();
     super.dispose();
   }
-  
 
   Future<void> _loadParticipants() async {
     try {
@@ -59,7 +60,8 @@ class _ReviewDetailScreenState extends State<ReviewDetailScreen> {
       String? hostId;
 
       // 1) meetup_reviews에서 호스트 확인
-      if (widget.review.sourceReviewId != null && widget.review.sourceReviewId!.isNotEmpty) {
+      if (widget.review.sourceReviewId != null &&
+          widget.review.sourceReviewId!.isNotEmpty) {
         try {
           final reviewDoc = await _firestore
               .collection('meetup_reviews')
@@ -126,47 +128,52 @@ class _ReviewDetailScreenState extends State<ReviewDetailScreen> {
       Logger.error('❌ 참여자 로드 오류: $e');
     }
   }
-  
+
   Future<void> _processParticipants(Map<String, dynamic> reviewData) async {
     final authorId = reviewData['authorId'] as String;
-    final approvedParticipants = List<String>.from(reviewData['approvedParticipants'] ?? []);
-    
+    final approvedParticipants =
+        List<String>.from(reviewData['approvedParticipants'] ?? []);
+
     Logger.log('👥 호스트: $authorId');
     Logger.log('👥 수락한 참여자: ${approvedParticipants.length}명');
     Logger.log('📋 수락한 참여자 ID 목록: $approvedParticipants');
-    
+
     // 모든 참여자 ID (호스트 + 수락한 참여자)
     final allParticipantIds = [authorId, ...approvedParticipants];
-    Logger.log('📋 전체 참여자 ID 목록 (${allParticipantIds.length}명): $allParticipantIds');
-    
+    Logger.log(
+        '📋 전체 참여자 ID 목록 (${allParticipantIds.length}명): $allParticipantIds');
+
     // 각 참여자의 정보 가져오기
     final participantsList = <Map<String, dynamic>>[];
-    
+
     for (int i = 0; i < allParticipantIds.length; i++) {
       final userId = allParticipantIds[i];
       Logger.log('🔄 [${i + 1}/${allParticipantIds.length}] 참여자 처리 중: $userId');
       await _addParticipantInfo(participantsList, userId, userId == authorId);
     }
-    
+
     if (mounted) {
       setState(() {
         _participants = participantsList;
       });
       Logger.log('✅ 최종 참여자 ${_participants.length}명 로드 완료');
-      Logger.log('📋 최종 참여자 목록: ${_participants.map((p) => p['nickname']).toList()}');
+      Logger.log(
+          '📋 최종 참여자 목록: ${_participants.map((p) => p['nickname']).toList()}');
     }
   }
-  
-  Future<void> _addParticipantInfo(List<Map<String, dynamic>> list, String userId, bool isHost) async {
+
+  Future<void> _addParticipantInfo(
+      List<Map<String, dynamic>> list, String userId, bool isHost) async {
     try {
       Logger.log('🔍 참여자 정보 조회 시작: userId=$userId');
-      
+
       final userDoc = await _firestore.collection('users').doc(userId).get();
-      
-      if (!userDoc.exists) {
+
+      if (!userDoc.exists || isUnavailableUserAccountData(userDoc.data())) {
         Logger.log('❌ 사용자 문서 없음 (탈퇴한 사용자): $userId');
         // 탈퇴한 사용자 정보 추가
-        final deletedLabel = AppLocalizations.of(context)?.deletedAccount ?? '탈퇴한 계정';
+        final deletedLabel =
+            AppLocalizations.of(context)?.deletedAccount ?? '탈퇴한 계정';
         final participantInfo = {
           'userId': userId,
           'nickname': deletedLabel,
@@ -177,31 +184,29 @@ class _ReviewDetailScreenState extends State<ReviewDetailScreen> {
         Logger.log('✅ 탈퇴한 참여자 추가 완료 - 현재 총 ${list.length}명');
         return;
       }
-      
+
       final userData = userDoc.data();
       if (userData == null) {
         Logger.log('❌ 사용자 데이터 null: $userId');
         return;
       }
-      
+
       // 닉네임 우선, 없으면 displayName, 둘 다 없으면 익명
-      final nickname = userData['nickname'];
-      // nickname 단일 소스
       final displayName = (userData['nickname'] ?? '').toString().trim();
-      final finalName = nickname ?? displayName ?? '익명';
-      
-      Logger.log('📋 사용자 정보: nickname=$nickname, displayName=$displayName, final=$finalName');
-      
+      final finalName = displayName.isEmpty ? '익명' : displayName;
+
+      Logger.log('📋 사용자 정보: displayName=$displayName, final=$finalName');
+
       final participantInfo = {
         'userId': userId,
         'nickname': finalName,
         'photoURL': userData['photoURL'] ?? '',
         'isHost': isHost,
       };
-      
+
       list.add(participantInfo);
-      Logger.log('✅ 참여자 추가 완료: $finalName (${isHost ? "호스트" : "참여자"}) - 현재 총 ${list.length}명');
-      
+      Logger.log(
+          '✅ 참여자 추가 완료: $finalName (${isHost ? "호스트" : "참여자"}) - 현재 총 ${list.length}명');
     } catch (e, stackTrace) {
       Logger.error('❌ 참여자 정보 조회 오류: $userId');
       Logger.error('   에러: $e');
@@ -213,20 +218,22 @@ class _ReviewDetailScreenState extends State<ReviewDetailScreen> {
   Widget build(BuildContext context) {
     final l10n = AppLocalizations.of(context);
     final currentUser = _auth.currentUser;
-    
+
     return Scaffold(
       backgroundColor: Colors.white,
       body: StreamBuilder<ReviewPost?>(
-        stream: _reviewService.getReviewStream(widget.review.id, widget.review.authorId),
+        stream: _reviewService.getReviewStream(
+            widget.review.id, widget.review.authorId),
         initialData: widget.review,
         builder: (context, snapshot) {
           // 로딩 중
-          if (snapshot.connectionState == ConnectionState.waiting && !snapshot.hasData) {
+          if (snapshot.connectionState == ConnectionState.waiting &&
+              !snapshot.hasData) {
             return const Center(
               child: CircularProgressIndicator(),
             );
           }
-          
+
           // 데이터 없음
           if (!snapshot.hasData || snapshot.data == null) {
             return Center(
@@ -243,7 +250,8 @@ class _ReviewDetailScreenState extends State<ReviewDetailScreen> {
           }
 
           final review = snapshot.data!;
-          final isLiked = currentUser != null && review.isLikedByUser(currentUser.uid);
+          final isLiked =
+              currentUser != null && review.isLikedByUser(currentUser.uid);
 
           return CustomScrollView(
             slivers: [
@@ -275,29 +283,29 @@ class _ReviewDetailScreenState extends State<ReviewDetailScreen> {
                   children: [
                     // 작성자 정보
                     _buildAuthorHeader(review, l10n),
-                    
+
                     // 게시글 내용 (이미지 위에 표시)
                     _buildContent(review, l10n),
-                    
+
                     // 이미지
                     _buildImage(review),
-                    
+
                     // 좋아요/댓글 액션 버튼
                     _buildActionButtons(review, isLiked, currentUser),
-                    
+
                     // 좋아요 수
                     _buildLikeCount(review, l10n),
-                    
+
                     // 작성 시간
                     _buildTimestamp(review),
-                    
+
                     const SizedBox(height: 16),
                     Divider(height: 1, color: BrandColors.neutral200),
-                    
+
                     // 참여자 섹션
                     if (_participants.isNotEmpty)
                       _buildParticipantsSection(l10n),
-                    
+
                     // 하단 네비게이션 바를 고려한 여백 추가
                     SizedBox(
                       height: MediaQuery.of(context).padding.bottom + 80,
@@ -313,6 +321,40 @@ class _ReviewDetailScreenState extends State<ReviewDetailScreen> {
   }
 
   Widget _buildAuthorHeader(ReviewPost review, AppLocalizations? l10n) {
+    final deletedLabel = l10n?.deletedAccount ?? 'Deleted Account';
+    if (review.authorId.isEmpty || review.authorId == 'deleted') {
+      return _buildAuthorHeaderContent(
+        displayName: deletedLabel,
+        photoURL: '',
+      );
+    }
+    final cache = UserInfoCacheService();
+    return StreamBuilder<DMUserInfo?>(
+      stream: cache.watchUserInfo(review.authorId),
+      initialData: cache.getCachedUserInfo(review.authorId),
+      builder: (context, snapshot) {
+        final latest = snapshot.data;
+        final isDeleted = latest?.isDeletedAccount == true;
+        return _buildAuthorHeaderContent(
+          displayName: isDeleted
+              ? deletedLabel
+              : ((latest?.nickname ?? '').trim().isNotEmpty
+                  ? latest!.nickname
+                  : review.authorName),
+          photoURL: isDeleted
+              ? ''
+              : ((latest?.photoURL ?? '').trim().isNotEmpty
+                  ? latest!.photoURL
+                  : review.authorProfileImage),
+        );
+      },
+    );
+  }
+
+  Widget _buildAuthorHeaderContent({
+    required String displayName,
+    required String photoURL,
+  }) {
     return Padding(
       padding: const EdgeInsets.all(16),
       child: Row(
@@ -320,20 +362,19 @@ class _ReviewDetailScreenState extends State<ReviewDetailScreen> {
           // 프로필 이미지
           CircleAvatar(
             radius: 20,
-            backgroundImage: review.authorProfileImage.isNotEmpty
-                ? NetworkImage(review.authorProfileImage)
-                : null,
+            backgroundImage:
+                photoURL.isNotEmpty ? NetworkImage(photoURL) : null,
             backgroundColor: BrandColors.neutral100,
-            child: review.authorProfileImage.isEmpty
+            child: photoURL.isEmpty
                 ? Icon(Icons.person, color: BrandColors.textSecondary, size: 20)
                 : null,
           ),
           const SizedBox(width: 12),
-          
+
           // 작성자 이름
           Expanded(
             child: Text(
-              review.authorName,
+              displayName,
               style: TextStyle(
                 fontFamily: 'Inter',
                 fontFamilyFallback: const ['NotoSansKR'],
@@ -411,7 +452,7 @@ class _ReviewDetailScreenState extends State<ReviewDetailScreen> {
             },
           ),
         ),
-        
+
         // 이미지 개수 인디케이터 (2장 이상일 때 항상 표시)
         if (review.imageUrls.length > 1)
           Positioned(
@@ -435,7 +476,7 @@ class _ReviewDetailScreenState extends State<ReviewDetailScreen> {
               ),
             ),
           ),
-        
+
         // 도트 인디케이터 (2장 이상일 때 표시)
         if (review.imageUrls.length > 1)
           Positioned(
@@ -464,9 +505,10 @@ class _ReviewDetailScreenState extends State<ReviewDetailScreen> {
     );
   }
 
-  Widget _buildActionButtons(ReviewPost review, bool isLiked, User? currentUser) {
+  Widget _buildActionButtons(
+      ReviewPost review, bool isLiked, User? currentUser) {
     final l10n = AppLocalizations.of(context);
-    
+
     return Padding(
       padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
       child: Row(
@@ -485,7 +527,7 @@ class _ReviewDetailScreenState extends State<ReviewDetailScreen> {
             ),
           ),
           const SizedBox(width: 16),
-          
+
           // 댓글 버튼
           GestureDetector(
             onTap: () => _navigateToComments(review),
@@ -496,7 +538,7 @@ class _ReviewDetailScreenState extends State<ReviewDetailScreen> {
             ),
           ),
           const SizedBox(width: 16),
-          
+
           // View all comments 버튼
           Expanded(
             child: GestureDetector(
@@ -504,8 +546,8 @@ class _ReviewDetailScreenState extends State<ReviewDetailScreen> {
               child: Row(
                 children: [
                   Text(
-                    review.commentCount > 0 
-                            ? l10n!.viewAllComments(review.commentCount)
+                    review.commentCount > 0
+                        ? l10n!.viewAllComments(review.commentCount)
                         : l10n?.writeComment ?? "",
                     style: TextStyle(
                       fontFamily: 'Inter',
@@ -516,7 +558,8 @@ class _ReviewDetailScreenState extends State<ReviewDetailScreen> {
                     ),
                   ),
                   const SizedBox(width: 4),
-                  Icon(Icons.chevron_right, color: BrandColors.textTertiary, size: 18),
+                  Icon(Icons.chevron_right,
+                      color: BrandColors.textTertiary, size: 18),
                 ],
               ),
             ),
@@ -534,7 +577,7 @@ class _ReviewDetailScreenState extends State<ReviewDetailScreen> {
     return Padding(
       padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 4),
       child: Text(
-            l10n!.likesCount(review.likeCount),
+        l10n!.likesCount(review.likeCount),
         style: TextStyle(
           fontFamily: 'Inter',
           fontFamilyFallback: const ['NotoSansKR'],
@@ -554,7 +597,7 @@ class _ReviewDetailScreenState extends State<ReviewDetailScreen> {
         children: [
           // 카테고리 배지 제거 (요청사항)
           const SizedBox(height: 4),
-          
+
           // 후기 내용 (작성자 이름 제거 - 헤더에 이미 표시됨)
           Text(
             review.content,
@@ -577,7 +620,7 @@ class _ReviewDetailScreenState extends State<ReviewDetailScreen> {
     final isKorean = locale.languageCode.toLowerCase() == 'ko';
     final pattern = isKorean ? 'yyyy년 M월 d일' : 'MMM d, yyyy';
     final dateFormat = DateFormat(pattern, locale.toLanguageTag());
-    
+
     return Padding(
       padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 4),
       child: Text(
@@ -612,7 +655,7 @@ class _ReviewDetailScreenState extends State<ReviewDetailScreen> {
               ),
               const SizedBox(width: 6),
               Text(
-                    l10n!.meetupParticipants(_participants.length),
+                l10n!.meetupParticipants(_participants.length),
                 style: TextStyle(
                   fontFamily: 'Inter',
                   fontFamilyFallback: const ['NotoSansKR'],
@@ -624,7 +667,7 @@ class _ReviewDetailScreenState extends State<ReviewDetailScreen> {
             ],
           ),
         ),
-        
+
         // 참여자 목록 (하단바를 고려한 padding 추가)
         SingleChildScrollView(
           scrollDirection: Axis.horizontal,
@@ -641,17 +684,18 @@ class _ReviewDetailScreenState extends State<ReviewDetailScreen> {
                         // 프로필 이미지
                         CircleAvatar(
                           radius: 28,
-                          backgroundImage: participant['photoURL'] != null && 
+                          backgroundImage: participant['photoURL'] != null &&
                                   participant['photoURL'].toString().isNotEmpty
                               ? NetworkImage(participant['photoURL'])
                               : null,
                           backgroundColor: BrandColors.neutral100,
-                          child: participant['photoURL'] == null || 
+                          child: participant['photoURL'] == null ||
                                   participant['photoURL'].toString().isEmpty
-                              ? Icon(Icons.person, color: BrandColors.textSecondary, size: 28)
+                              ? Icon(Icons.person,
+                                  color: BrandColors.textSecondary, size: 28)
                               : null,
                         ),
-                        
+
                         // 호스트 배지
                         if (participant['isHost'] == true)
                           Positioned(
@@ -662,7 +706,8 @@ class _ReviewDetailScreenState extends State<ReviewDetailScreen> {
                               decoration: BoxDecoration(
                                 color: BrandColors.primary,
                                 shape: BoxShape.circle,
-                                border: Border.all(color: Colors.white, width: 2),
+                                border:
+                                    Border.all(color: Colors.white, width: 2),
                               ),
                               child: const Icon(
                                 Icons.star,
@@ -696,12 +741,11 @@ class _ReviewDetailScreenState extends State<ReviewDetailScreen> {
             }).toList(),
           ),
         ),
-        
+
         const SizedBox(height: 8),
       ],
     );
   }
-
 
   Future<void> _handleLike() async {
     if (_isLiking) return;

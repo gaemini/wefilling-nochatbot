@@ -34,6 +34,7 @@ class Meetup {
   final List<String> allowedUserIds; // 그룹 공개 대상 사용자 ID(주최자 포함)
   final int visibilitySchemaVersion;
   final DateTime? visibilityLockedAt;
+  final bool requiresHanyangVerification;
 
   String? get ownerId => userId;
   String get visibilityMode => visibility;
@@ -77,6 +78,7 @@ class Meetup {
     this.allowedUserIds = const [],
     this.visibilitySchemaVersion = 0,
     this.visibilityLockedAt,
+    this.requiresHanyangVerification = false,
     this.isCompleted = false, // 기본값: 미완료
     this.hasReview = false, // 기본값: 후기 없음
     this.groupChatEnabled = false, // 기본값: 비활성
@@ -115,6 +117,7 @@ class Meetup {
     List<String>? allowedUserIds,
     int? visibilitySchemaVersion,
     DateTime? visibilityLockedAt,
+    bool? requiresHanyangVerification,
     bool? isCompleted,
     bool? hasReview,
     bool? groupChatEnabled,
@@ -153,6 +156,8 @@ class Meetup {
       visibilitySchemaVersion:
           visibilitySchemaVersion ?? this.visibilitySchemaVersion,
       visibilityLockedAt: visibilityLockedAt ?? this.visibilityLockedAt,
+      requiresHanyangVerification:
+          requiresHanyangVerification ?? this.requiresHanyangVerification,
       isCompleted: isCompleted ?? this.isCompleted,
       hasReview: hasReview ?? this.hasReview,
       groupChatEnabled: groupChatEnabled ?? this.groupChatEnabled,
@@ -579,6 +584,7 @@ class Meetup {
       visibilityLockedAt: json['visibilityLockedAt'] == null
           ? null
           : _parseFirestoreDate(json['visibilityLockedAt']),
+      requiresHanyangVerification: json['requiresHanyangVerification'] == true,
       isCompleted: json['isCompleted'] ?? false,
       hasReview: json['hasReview'] ?? false,
       groupChatEnabled: json['groupChatEnabled'] ?? false,
@@ -640,6 +646,7 @@ class Meetup {
       'sourceGroupIds': sourceGroupIds,
       'visibilitySchemaVersion': visibilitySchemaVersion,
       if (visibilityLockedAt != null) 'visibilityLockedAt': visibilityLockedAt,
+      'requiresHanyangVerification': requiresHanyangVerification,
       'isCompleted': isCompleted,
       'hasReview': hasReview,
       'groupChatEnabled': groupChatEnabled,

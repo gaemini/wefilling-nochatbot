@@ -766,34 +766,34 @@ export const getSnapshotViewers = functions.https.onCall(async (raw, context) =>
 
   // orderBy(viewedAt)는 해당 필드가 없는 레거시 조회 문서를 결과에서
   // 제외한다. 전체 영수증을 읽은 뒤 호환 타임스탬프로 서버에서 정렬한다.
-  const views = await readAllQueryDocuments(snapshotRef.collection('views'));
-  const documents = [...views].sort((a, b) => {
-    const aData = a.data();
-    const bData = b.data();
-    const aTime = timestampMillis(
-      aData.viewedAt ?? aData.lastViewedAt ?? aData.firstViewedAt ?? aData.createdAt,
-    );
-    const bTime = timestampMillis(
-      bData.viewedAt ?? bData.lastViewedAt ?? bData.firstViewedAt ?? bData.createdAt,
-    );
-    return bTime - aTime;
-  });
+  const [views, reactions] = await Promise.all([
+    readAllQueryDocuments(snapshotRef.collection('views')),
+    readAllQueryDocuments(snapshotRef.collection('reactions')),
+  ]);
+  const viewByUser = new Map(views.map((document) => [document.id, document]));
+  const reactionByUser = new Map(reactions.map((document) => [document.id, document]));
+  const userIds = new Set([...viewByUser.keys(), ...reactionByUser.keys()]);
+  const documents = [...userIds].map((userId) => {
+    const view = viewByUser.get(userId)?.data() ?? {};
+    const reaction = reactionByUser.get(userId)?.data() ?? {};
+    const activityAt = view.viewedAt ?? view.lastViewedAt ??
+      view.firstViewedAt ?? view.createdAt ?? reaction.createdAt;
+    return {
+      userId,
+      displayName: text(view.displayName ?? view.nickname ??
+        reaction.displayName ?? reaction.nickname) || 'User',
+      photoUrl: text(view.photoUrl ?? view.photoURL ??
+        reaction.photoUrl ?? reaction.photoURL),
+      photoVersion: Math.max(0, Number(view.photoVersion ??
+        reaction.photoVersion ?? 0) || 0),
+      nationality: text(view.nationality ?? reaction.nationality),
+      university: text(view.university ?? reaction.university),
+      reaction: text(reaction.reaction),
+      viewedAtMillis: timestampMillis(activityAt),
+    };
+  }).sort((a, b) => b.viewedAtMillis - a.viewedAtMillis);
   return {
-    viewers: documents.map((document) => {
-      const viewer = document.data();
-      return {
-        userId: text(viewer.userId) || document.id,
-        displayName: text(viewer.displayName ?? viewer.nickname) || 'User',
-        photoUrl: text(viewer.photoUrl ?? viewer.photoURL),
-        photoVersion: Math.max(0, Number(viewer.photoVersion ?? 0) || 0),
-        nationality: text(viewer.nationality),
-        university: text(viewer.university),
-        viewedAtMillis: timestampMillis(
-          viewer.viewedAt ?? viewer.lastViewedAt ??
-          viewer.firstViewedAt ?? viewer.createdAt,
-        ),
-      };
-    }),
+    viewers: documents,
   };
 });
 
@@ -907,6 +907,11 @@ export const toggleSnapshotReaction = functions.https.onCall(async (raw, context
     transaction.create(reactionRef, {
       userId: uid,
       reaction,
+      displayName: actorName,
+      photoUrl: text(actorData.photoURL ?? actorData.photoUrl),
+      photoVersion: Math.max(0, Number(actorData.photoVersion ?? 0) || 0),
+      nationality: text(actorData.nationality),
+      university: text(actorData.university),
       createdAt: admin.firestore.FieldValue.serverTimestamp(),
     });
     transaction.update(ref, {

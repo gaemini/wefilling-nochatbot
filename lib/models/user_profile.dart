@@ -5,6 +5,7 @@
 import 'package:cloud_firestore/cloud_firestore.dart';
 import '../utils/hanyang_verification_helper.dart';
 import '../utils/profile_photo_policy.dart';
+import '../utils/account_status_helper.dart';
 import 'student_type.dart';
 
 class UserProfile {
@@ -24,6 +25,7 @@ class UserProfile {
   final bool showDepartment;
   final bool showGrade;
   final bool isSchoolVerified;
+  final bool isDeletedAccount;
   final StudentType? studentType;
   final bool todoOnboardingCompleted;
   final String? languageCode;
@@ -51,6 +53,7 @@ class UserProfile {
     this.showDepartment = false,
     this.showGrade = false,
     this.isSchoolVerified = false,
+    this.isDeletedAccount = false,
     this.studentType,
     this.todoOnboardingCompleted = false,
     this.languageCode,
@@ -104,6 +107,7 @@ class UserProfile {
       showDepartment: data['showDepartment'] == true,
       showGrade: data['showGrade'] == true,
       isSchoolVerified: isHanyangEmailVerified(data),
+      isDeletedAccount: isUnavailableUserAccountData(data),
       studentType: StudentType.tryParse(data['studentType']),
       todoOnboardingCompleted: data['todoOnboardingCompleted'] == true,
       languageCode: nullableString('languageCode'),

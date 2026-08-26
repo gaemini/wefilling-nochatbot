@@ -12,6 +12,7 @@ import 'meetup_detail_screen.dart';
 import 'post_detail_screen.dart';
 import '../l10n/app_localizations.dart';
 import '../utils/logger.dart';
+import '../services/user_info_cache_service.dart';
 
 class SearchResultPage extends StatefulWidget {
   final String boardType; // 'meeting' 또는 'info'
@@ -479,14 +480,7 @@ class _SearchResultPageState extends State<SearchResultPage> {
                       // 닉네임 + 시간
                       Row(
                         children: [
-                          Text(
-                            post.author,
-                            style: TextStyle(
-                              fontSize: 13,
-                              color: Colors.black.withOpacity(0.87),
-                              fontWeight: FontWeight.w500,
-                            ),
-                          ),
+                          _buildPostAuthor(post),
                           const SizedBox(width: 8),
                           Text(
                             post.getFormattedTime(context),
@@ -517,6 +511,34 @@ class _SearchResultPageState extends State<SearchResultPage> {
             ),
           ),
         );
+      },
+    );
+  }
+
+  Widget _buildPostAuthor(Post post) {
+    final style = TextStyle(
+      fontSize: 13,
+      color: Colors.black.withOpacity(0.87),
+      fontWeight: FontWeight.w500,
+    );
+    final l10n = AppLocalizations.of(context)!;
+    if (post.isAnonymous) return Text(l10n.anonymous, style: style);
+    if (post.userId.isEmpty || post.userId == 'deleted') {
+      return Text(l10n.deletedAccount, style: style);
+    }
+
+    final cache = UserInfoCacheService();
+    return StreamBuilder<DMUserInfo?>(
+      stream: cache.watchUserInfo(post.userId),
+      initialData: cache.getCachedUserInfo(post.userId),
+      builder: (context, snapshot) {
+        final latest = snapshot.data;
+        final name = latest?.isDeletedAccount == true
+            ? l10n.deletedAccount
+            : ((latest?.nickname ?? '').trim().isNotEmpty
+                ? latest!.nickname
+                : post.author);
+        return Text(name, style: style);
       },
     );
   }

@@ -8,6 +8,7 @@ import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:hive/hive.dart';
 
+import '../utils/account_status_helper.dart';
 import '../utils/logger.dart';
 
 /// 사용자 정보 데이터 클래스 (DM용)
@@ -16,18 +17,23 @@ class DMUserInfo {
   final String nickname;
   final String photoURL;
   final int photoVersion;
+  final String nationality;
   final bool isFromCache;
+  final bool isDeletedAccount;
 
   DMUserInfo({
     required this.uid,
     required this.nickname,
     required this.photoURL,
     this.photoVersion = 0,
+    this.nationality = '',
     this.isFromCache = false,
+    this.isDeletedAccount = false,
   });
 
   @override
-  String toString() => 'DMUserInfo(uid: $uid, nickname: $nickname)';
+  String toString() =>
+      'DMUserInfo(uid: $uid, nickname: $nickname, deleted: $isDeletedAccount)';
 }
 
 /// 사용자 정보 캐싱 및 실시간 조회 서비스
@@ -109,7 +115,9 @@ class UserInfoCacheService {
         photoVersion: raw['photoVersion'] is num
             ? (raw['photoVersion'] as num).toInt()
             : 0,
+        nationality: (raw['nationality'] ?? '').toString(),
         isFromCache: true,
+        isDeletedAccount: raw['isDeletedAccount'] == true,
       );
       _cache[key] = info;
       final savedAt = raw['savedAtMs'];
@@ -140,6 +148,8 @@ class UserInfoCacheService {
         'nickname': info.nickname,
         'photoURL': info.photoURL,
         'photoVersion': info.photoVersion,
+        'nationality': info.nationality,
+        'isDeletedAccount': info.isDeletedAccount,
         'savedAtMs': DateTime.now().millisecondsSinceEpoch,
       });
     } catch (error) {
@@ -205,11 +215,31 @@ class UserInfoCacheService {
       if (_auth.currentUser?.uid != ownerUidAtStart) return null;
 
       if (!doc.exists) {
-        invalidateUser(userId);
-        return null;
+        final deletedUser = DMUserInfo(
+          uid: userId,
+          nickname: 'DELETED_ACCOUNT',
+          photoURL: '',
+          isDeletedAccount: true,
+        );
+        _cache[key] = deletedUser;
+        _cacheTimestamps[key] = DateTime.now();
+        unawaited(_persistUser(ownerUidAtStart, deletedUser));
+        return deletedUser;
       }
 
       final data = doc.data()!;
+      if (isUnavailableUserAccountData(data)) {
+        final deletedUser = DMUserInfo(
+          uid: userId,
+          nickname: 'DELETED_ACCOUNT',
+          photoURL: '',
+          isDeletedAccount: true,
+        );
+        _cache[key] = deletedUser;
+        _cacheTimestamps[key] = DateTime.now();
+        unawaited(_persistUser(ownerUidAtStart, deletedUser));
+        return deletedUser;
+      }
       final userInfo = DMUserInfo(
         uid: userId,
         nickname: (data['nickname'] ?? '').toString().trim().isNotEmpty
@@ -219,6 +249,8 @@ class UserInfoCacheService {
         photoVersion: (data['photoVersion'] is int)
             ? (data['photoVersion'] as int)
             : int.tryParse('${data['photoVersion'] ?? 0}') ?? 0,
+        nationality:
+            (data['nationality'] ?? data['country'] ?? '').toString().trim(),
       );
 
       // 3단계: 캐시 업데이트
@@ -258,13 +290,40 @@ class UserInfoCacheService {
           // An empty local Firestore cache is not evidence of account
           // deletion. Keep the persisted label until the server confirms it.
           if (doc.metadata.isFromCache) return _cache[key];
-          // 문서가 없으면(탈퇴 등) 캐시도 제거
-          invalidateUser(userId);
-          return null;
+          final deletedUser = DMUserInfo(
+            uid: userId,
+            nickname: 'DELETED_ACCOUNT',
+            photoURL: '',
+            isDeletedAccount: true,
+          );
+          _cache[key] = deletedUser;
+          _cacheTimestamps[key] = DateTime.now();
+          if (ownerUid != null) {
+            unawaited(_persistUser(ownerUid, deletedUser));
+          }
+          return deletedUser;
         }
 
         final data = doc.data()!;
         final fromCache = doc.metadata.isFromCache;
+
+        if (isUnavailableUserAccountData(data)) {
+          final deletedUser = DMUserInfo(
+            uid: userId,
+            nickname: 'DELETED_ACCOUNT',
+            photoURL: '',
+            isFromCache: fromCache,
+            isDeletedAccount: true,
+          );
+          _cache[key] = deletedUser;
+          if (!fromCache) {
+            _cacheTimestamps[key] = DateTime.now();
+            if (ownerUid != null) {
+              unawaited(_persistUser(ownerUid, deletedUser));
+            }
+          }
+          return deletedUser;
+        }
 
         final userInfo = DMUserInfo(
           uid: userId,
@@ -275,6 +334,8 @@ class UserInfoCacheService {
           photoVersion: (data['photoVersion'] is int)
               ? (data['photoVersion'] as int)
               : int.tryParse('${data['photoVersion'] ?? 0}') ?? 0,
+          nationality:
+              (data['nationality'] ?? data['country'] ?? '').toString().trim(),
           isFromCache: fromCache,
         );
 
@@ -294,6 +355,8 @@ class UserInfoCacheService {
         return prev.nickname == next.nickname &&
             prev.photoURL == next.photoURL &&
             prev.photoVersion == next.photoVersion &&
+            prev.nationality == next.nationality &&
+            prev.isDeletedAccount == next.isDeletedAccount &&
             prev.isFromCache == next.isFromCache;
       }).handleError((e) {
         Logger.error('사용자 정보 스트림 오류', e);

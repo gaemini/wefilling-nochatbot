@@ -11,6 +11,7 @@ import '../models/relationship_status.dart';
 import '../widgets/user_tile.dart';
 import '../ui/widgets/app_icon_button.dart';
 import '../l10n/app_localizations.dart';
+import 'friend_profile_screen.dart';
 
 class SearchUsersPage extends StatefulWidget {
   const SearchUsersPage({super.key});
@@ -55,7 +56,7 @@ class _SearchUsersPageState extends State<SearchUsersPage> {
   /// 사용자 검색
   void _searchUsers(String query) {
     if (!mounted) return;
-    
+
     if (query.trim().isEmpty) {
       context.read<RelationshipProvider>().clearSearchResults();
       return;
@@ -71,19 +72,20 @@ class _SearchUsersPageState extends State<SearchUsersPage> {
   /// 친구요청 보내기
   Future<void> _sendFriendRequest(String toUid) async {
     if (!mounted) return;
-    
+
     final provider = context.read<RelationshipProvider>();
     final success = await provider.sendFriendRequest(toUid);
-    
+
     if (!mounted) return;
-    
+
     final l10n = AppLocalizations.of(context);
 
     if (success) {
       _showSnackBar(l10n?.friendRequestSent ?? "", Colors.green);
     } else {
       // Provider의 구체적인 오류 메시지 표시
-      final errorMessage = provider.errorMessage ?? l10n?.friendRequestFailed ?? "";
+      final errorMessage =
+          provider.errorMessage ?? l10n?.friendRequestFailed ?? "";
       _showSnackBar(errorMessage, Colors.red);
     }
   }
@@ -91,12 +93,12 @@ class _SearchUsersPageState extends State<SearchUsersPage> {
   /// 친구요청 취소
   Future<void> _cancelFriendRequest(String toUid) async {
     if (!mounted) return;
-    
+
     final provider = context.read<RelationshipProvider>();
     final success = await provider.cancelFriendRequest(toUid);
-    
+
     if (!mounted) return;
-    
+
     final l10n = AppLocalizations.of(context);
 
     if (success) {
@@ -109,7 +111,7 @@ class _SearchUsersPageState extends State<SearchUsersPage> {
   /// 친구 삭제
   Future<void> _unfriend(String otherUid) async {
     if (!mounted) return;
-    
+
     final l10n = AppLocalizations.of(context);
     final confirmed = await _showConfirmDialog(
       l10n?.removeFriend ?? "",
@@ -133,7 +135,7 @@ class _SearchUsersPageState extends State<SearchUsersPage> {
   // 사용자 차단 기능 - 현재 미사용
   // Future<void> _blockUser(String targetUid) async {
   //   if (!mounted) return;
-  //   
+  //
   //   final l10n = AppLocalizations.of(context);
   //   final confirmed = await _showConfirmDialog(
   //     l10n?.blockUser ?? "",
@@ -157,7 +159,7 @@ class _SearchUsersPageState extends State<SearchUsersPage> {
   /// 사용자 차단 해제
   Future<void> _unblockUser(String targetUid) async {
     if (!mounted) return;
-    
+
     final l10n = AppLocalizations.of(context);
     final confirmed = await _showConfirmDialog(
       l10n?.unblockUser ?? "",
@@ -200,6 +202,22 @@ class _SearchUsersPageState extends State<SearchUsersPage> {
     }
   }
 
+  void _openUserProfile(UserProfile user) {
+    FocusScope.of(context).unfocus();
+    Navigator.of(context).push(
+      MaterialPageRoute<void>(
+        builder: (_) => FriendProfileScreen(
+          userId: user.uid,
+          nickname: user.displayNameOrNickname,
+          photoURL: user.photoURL,
+          email: user.email,
+          university: user.university,
+          allowNonFriendsPreview: true,
+        ),
+      ),
+    );
+  }
+
   /// 스낵바 표시
   void _showSnackBar(String message, Color color) {
     ScaffoldMessenger.of(context).showSnackBar(
@@ -216,25 +234,24 @@ class _SearchUsersPageState extends State<SearchUsersPage> {
     final l10n = AppLocalizations.of(context);
     final result = await showDialog<bool>(
       context: context,
-      builder:
-          (context) => AlertDialog(
-            title: Text(title),
-            content: Text(message),
-            actions: [
-              TextButton(
-                onPressed: () => Navigator.of(context).pop(false),
-                child: Text(l10n?.cancel ?? ""),
-              ),
-              ElevatedButton(
-                onPressed: () => Navigator.of(context).pop(true),
-                style: ElevatedButton.styleFrom(
-                  backgroundColor: Colors.red,
-                  foregroundColor: Colors.white,
-                ),
-                child: Text(l10n?.confirm ?? ""),
-              ),
-            ],
+      builder: (context) => AlertDialog(
+        title: Text(title),
+        content: Text(message),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(context).pop(false),
+            child: Text(l10n?.cancel ?? ""),
           ),
+          ElevatedButton(
+            onPressed: () => Navigator.of(context).pop(true),
+            style: ElevatedButton.styleFrom(
+              backgroundColor: Colors.red,
+              foregroundColor: Colors.white,
+            ),
+            child: Text(l10n?.confirm ?? ""),
+          ),
+        ],
+      ),
     );
 
     return result ?? false;
@@ -251,45 +268,45 @@ class _SearchUsersPageState extends State<SearchUsersPage> {
         },
         child: Column(
           children: [
-          // 검색바
-          _buildSearchBar(),
+            // 검색바
+            _buildSearchBar(),
 
-          // 검색 결과 또는 안내 메시지
-          Expanded(
-            child: Consumer<RelationshipProvider>(
-              builder: (context, provider, child) {
-                if (!_isInitialized) {
-                  return const Center(child: CircularProgressIndicator());
-                }
+            // 검색 결과 또는 안내 메시지
+            Expanded(
+              child: Consumer<RelationshipProvider>(
+                builder: (context, provider, child) {
+                  if (!_isInitialized) {
+                    return const Center(child: CircularProgressIndicator());
+                  }
 
-                if (provider.isLoading) {
-                  return const Center(child: CircularProgressIndicator());
-                }
+                  if (provider.isLoading) {
+                    return const Center(child: CircularProgressIndicator());
+                  }
 
-                if (provider.errorMessage != null) {
-                  return _buildErrorState(provider.errorMessage!);
-                }
+                  if (provider.errorMessage != null) {
+                    return _buildErrorState(provider.errorMessage!);
+                  }
 
-                if (_searchController.text.trim().isEmpty) {
-                  return Center(
-                    child: _buildEmptyState(),
-                  );
-                }
+                  if (_searchController.text.trim().isEmpty) {
+                    return Center(
+                      child: _buildEmptyState(),
+                    );
+                  }
 
-                if (provider.searchResults.isEmpty) {
-                  return SingleChildScrollView(
-                    physics: const BouncingScrollPhysics(),
-                    child: Padding(
-                      padding: const EdgeInsets.symmetric(vertical: 40),
-                      child: _buildNoResultsState(),
-                    ),
-                  );
-                }
+                  if (provider.searchResults.isEmpty) {
+                    return SingleChildScrollView(
+                      physics: const BouncingScrollPhysics(),
+                      child: Padding(
+                        padding: const EdgeInsets.symmetric(vertical: 40),
+                        child: _buildNoResultsState(),
+                      ),
+                    );
+                  }
 
-                return _buildSearchResults(provider);
-              },
+                  return _buildSearchResults(provider);
+                },
+              ),
             ),
-          ),
           ],
         ),
       ),
@@ -317,18 +334,17 @@ class _SearchUsersPageState extends State<SearchUsersPage> {
         decoration: InputDecoration(
           hintText: AppLocalizations.of(context)!.enterSearchQuery,
           prefixIcon: const Icon(Icons.search),
-          suffixIcon:
-              _searchController.text.isNotEmpty
-                  ? AppIconButton(
-                    icon: Icons.clear,
-                    onPressed: () {
-                      _searchController.clear();
-                      context.read<RelationshipProvider>().clearSearchResults();
-                    },
-                    semanticLabel: AppLocalizations.of(context)!.clearSearchQuery,
-                    tooltip: AppLocalizations.of(context)!.close,
-                  )
-                  : null,
+          suffixIcon: _searchController.text.isNotEmpty
+              ? AppIconButton(
+                  icon: Icons.clear,
+                  onPressed: () {
+                    _searchController.clear();
+                    context.read<RelationshipProvider>().clearSearchResults();
+                  },
+                  semanticLabel: AppLocalizations.of(context)!.clearSearchQuery,
+                  tooltip: AppLocalizations.of(context)!.close,
+                )
+              : null,
           border: OutlineInputBorder(
             borderRadius: BorderRadius.circular(25),
             borderSide: BorderSide.none,
@@ -350,7 +366,7 @@ class _SearchUsersPageState extends State<SearchUsersPage> {
   Widget _buildSearchResults(RelationshipProvider provider) {
     // 안드로이드 하단 네비게이션 바 높이 감지
     final bottomPadding = MediaQuery.of(context).padding.bottom;
-    
+
     return ListView.builder(
       padding: EdgeInsets.only(
         top: 8,
@@ -365,12 +381,7 @@ class _SearchUsersPageState extends State<SearchUsersPage> {
           user: user,
           relationshipStatus: status,
           onActionPressed: () => _handleAction(user, status),
-          onTilePressed: () {
-            // 사용자 프로필 화면으로 이동 (나중에 구현)
-            // Navigator.push(context, MaterialPageRoute(
-            //   builder: (context) => UserProfilePage(user: user),
-            // ));
-          },
+          onTilePressed: () => _openUserProfile(user),
         );
       },
     );

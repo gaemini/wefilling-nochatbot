@@ -49,6 +49,19 @@ void main() {
       );
     });
 
+    test('uses the server timestamp when createdAt is not materialized yet', () {
+      final serverCreatedAt = DateTime.utc(2026, 8, 26, 3, 15);
+      final item = SnapshotItem.fromMap('snapshot-id', {
+        'ownerId': 'author',
+        'imageStoragePath': 'snapshots/snapshot-id/final.jpg',
+        'visibilityMode': 'friends',
+        'serverCreatedAt': serverCreatedAt,
+        'expiresAt': serverCreatedAt.add(const Duration(hours: 24)),
+      });
+
+      expect(item.createdAt, serverCreatedAt);
+    });
+
     test('normalizes overlay coordinates and reaction counts', () {
       final item = SnapshotItem.fromMap('snapshot-id', {
         'authorId': 'author',
@@ -85,6 +98,7 @@ void main() {
           'photoVersion': 3,
           'nationality': 'KR',
           'university': 'Hanyang',
+          'reaction': '❤️',
           // Legacy receipts may only have the original first-view timestamp.
           'firstViewedAt': DateTime.utc(2026, 8, 10, 4, 30),
         },
@@ -95,6 +109,8 @@ void main() {
       expect(viewer.photoUrl, 'https://example.com/avatar.jpg');
       expect(viewer.photoVersion, 3);
       expect(viewer.viewedAt, DateTime.utc(2026, 8, 10, 4, 30));
+      expect(viewer.reaction, '❤️');
+      expect(viewer.copyWith(reaction: '').reaction, isEmpty);
     });
   });
 }

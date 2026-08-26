@@ -19,6 +19,7 @@ void main() {
         nationality: '대한민국',
         university: '아주 긴 대학교 이름을 사용하는 반응형 화면 테스트 캠퍼스',
         viewedAt: DateTime.now().subtract(const Duration(minutes: 4)),
+        reaction: '❤️',
       ),
       SnapshotViewer(
         userId: 'viewer-2',
@@ -60,6 +61,12 @@ void main() {
 
       expect(find.text('조회한 사람'), findsOneWidget);
       expect(find.text('2명이 이 스낵을 확인했어요'), findsOneWidget);
+      expect(
+        find.byKey(
+          const ValueKey<String>('snapshot-viewer-reaction-viewer-1'),
+        ),
+        findsOneWidget,
+      );
       expect(tester.takeException(), isNull, reason: 'width=$width');
     }
   });

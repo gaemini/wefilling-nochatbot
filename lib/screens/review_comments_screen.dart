@@ -7,6 +7,7 @@ import '../services/comment_service.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import '../models/comment.dart';
 import '../l10n/app_localizations.dart';
+import '../services/user_info_cache_service.dart';
 
 class ReviewCommentsScreen extends StatefulWidget {
   final ReviewPost review;
@@ -75,11 +76,13 @@ class _ReviewCommentsScreenState extends State<ReviewCommentsScreen> {
           children: [
             Expanded(
               child: StreamBuilder(
-                stream: _commentService.getCommentsWithReplies(widget.review.id),
+                stream:
+                    _commentService.getCommentsWithReplies(widget.review.id),
                 builder: (context, snapshot) {
                   if (snapshot.hasError) {
                     return Center(
-                      child: Text('${l10n?.loadingComments ?? ""}: ${snapshot.error}'),
+                      child: Text(
+                          '${l10n?.loadingComments ?? ""}: ${snapshot.error}'),
                     );
                   }
 
@@ -89,11 +92,18 @@ class _ReviewCommentsScreenState extends State<ReviewCommentsScreen> {
                       child: Column(
                         mainAxisAlignment: MainAxisAlignment.center,
                         children: [
-                          Icon(Icons.mode_comment_outlined, size: 64, color: Colors.grey[400]),
+                          Icon(Icons.mode_comment_outlined,
+                              size: 64, color: Colors.grey[400]),
                           const SizedBox(height: 16),
-                          Text(l10n?.noCommentsYet ?? "", style: TextStyle(fontSize: 16, color: Colors.grey[600], fontWeight: FontWeight.w500)),
+                          Text(l10n?.noCommentsYet ?? "",
+                              style: TextStyle(
+                                  fontSize: 16,
+                                  color: Colors.grey[600],
+                                  fontWeight: FontWeight.w500)),
                           const SizedBox(height: 8),
-                          Text(l10n?.beFirstToComment ?? "", style: TextStyle(fontSize: 14, color: Colors.grey[500])),
+                          Text(l10n?.beFirstToComment ?? "",
+                              style: TextStyle(
+                                  fontSize: 14, color: Colors.grey[500])),
                         ],
                       ),
                     );
@@ -106,71 +116,107 @@ class _ReviewCommentsScreenState extends State<ReviewCommentsScreen> {
                     separatorBuilder: (_, __) => const SizedBox(height: 8),
                     itemBuilder: (context, index) {
                       final c = comments[index];
-                      return Row(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: [
-                          // 작성자 아바타
-                          CircleAvatar(
-                            radius: 16,
-                            backgroundColor: Colors.grey[300],
-                            backgroundImage: c.authorPhotoUrl.isNotEmpty
-                                ? NetworkImage(c.authorPhotoUrl)
-                                : null,
-                            child: c.authorPhotoUrl.isEmpty
-                                ? Icon(Icons.person, color: Colors.grey[600], size: 16)
-                                : null,
-                          ),
-                          const SizedBox(width: 8),
-                          // 본문 카드
-                          Expanded(
-                            child: Container(
-                              padding: const EdgeInsets.all(12),
-                              decoration: BoxDecoration(
-                                color: Colors.grey[100],
-                                borderRadius: BorderRadius.circular(12),
-                              ),
-                              child: Column(
-                                crossAxisAlignment: CrossAxisAlignment.start,
-                                children: [
-                                  Row(
-                                    children: [
-                                      Expanded(
-                                        child: Text(
-                                          c.authorNickname,
-                                          style: const TextStyle(
-                                            fontSize: 13,
-                                            fontWeight: FontWeight.w600,
-                                          ),
-                                        ),
-                                      ),
-                                      Text(
-                                        c.getFormattedTime(context),
-                                        style: TextStyle(fontSize: 11, color: Colors.grey[500]),
-                                      ),
-                                    ],
-                                  ),
-                                  const SizedBox(height: 6),
-                                  Text(
-                                    c.content,
-                                    style: const TextStyle(fontSize: 14, color: Colors.black87),
-                                  ),
-                                ],
-                              ),
-                            ),
-                          ),
-                        ],
+                      if (c.userId.isEmpty || c.userId == 'deleted') {
+                        return _buildCommentRow(
+                          context,
+                          c,
+                          displayName:
+                              l10n?.deletedAccount ?? 'Deleted Account',
+                          photoURL: '',
+                        );
+                      }
+                      final cache = UserInfoCacheService();
+                      return StreamBuilder<DMUserInfo?>(
+                        stream: cache.watchUserInfo(c.userId),
+                        initialData: cache.getCachedUserInfo(c.userId),
+                        builder: (context, snapshot) {
+                          final latest = snapshot.data;
+                          final isDeleted = latest?.isDeletedAccount == true;
+                          return _buildCommentRow(
+                            context,
+                            c,
+                            displayName: isDeleted
+                                ? (l10n?.deletedAccount ?? 'Deleted Account')
+                                : ((latest?.nickname ?? '').trim().isNotEmpty
+                                    ? latest!.nickname
+                                    : c.authorNickname),
+                            photoURL: isDeleted
+                                ? ''
+                                : ((latest?.photoURL ?? '').trim().isNotEmpty
+                                    ? latest!.photoURL
+                                    : c.authorPhotoUrl),
+                          );
+                        },
                       );
                     },
                   );
                 },
               ),
             ),
-            
+
             // 댓글 입력창
             _buildCommentInput(l10n),
           ],
         ),
       ),
+    );
+  }
+
+  Widget _buildCommentRow(
+    BuildContext context,
+    Comment comment, {
+    required String displayName,
+    required String photoURL,
+  }) {
+    return Row(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        CircleAvatar(
+          radius: 16,
+          backgroundColor: Colors.grey[300],
+          backgroundImage: photoURL.isNotEmpty ? NetworkImage(photoURL) : null,
+          child: photoURL.isEmpty
+              ? Icon(Icons.person, color: Colors.grey[600], size: 16)
+              : null,
+        ),
+        const SizedBox(width: 8),
+        Expanded(
+          child: Container(
+            padding: const EdgeInsets.all(12),
+            decoration: BoxDecoration(
+              color: Colors.grey[100],
+              borderRadius: BorderRadius.circular(12),
+            ),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Row(
+                  children: [
+                    Expanded(
+                      child: Text(
+                        displayName,
+                        style: const TextStyle(
+                          fontSize: 13,
+                          fontWeight: FontWeight.w600,
+                        ),
+                      ),
+                    ),
+                    Text(
+                      comment.getFormattedTime(context),
+                      style: TextStyle(fontSize: 11, color: Colors.grey[500]),
+                    ),
+                  ],
+                ),
+                const SizedBox(height: 6),
+                Text(
+                  comment.content,
+                  style: const TextStyle(fontSize: 14, color: Colors.black87),
+                ),
+              ],
+            ),
+          ),
+        ),
+      ],
     );
   }
 
@@ -253,7 +299,8 @@ class _ReviewCommentsScreenState extends State<ReviewCommentsScreen> {
                         height: 20,
                         child: CircularProgressIndicator(
                           strokeWidth: 2,
-                          valueColor: AlwaysStoppedAnimation<Color>(Colors.white),
+                          valueColor:
+                              AlwaysStoppedAnimation<Color>(Colors.white),
                         ),
                       )
                     : const Icon(
@@ -282,7 +329,10 @@ class _ReviewCommentsScreenState extends State<ReviewCommentsScreen> {
       if (user == null) {
         if (mounted) {
           ScaffoldMessenger.of(context).showSnackBar(
-            SnackBar(content: Text(AppLocalizations.of(context)!.loginRequired ?? ""), backgroundColor: Colors.red),
+            SnackBar(
+                content:
+                    Text(AppLocalizations.of(context)!.loginRequired ?? ""),
+                backgroundColor: Colors.red),
           );
         }
         return;
@@ -298,7 +348,10 @@ class _ReviewCommentsScreenState extends State<ReviewCommentsScreen> {
       if (mounted) {
         if (!ok) {
           ScaffoldMessenger.of(context).showSnackBar(
-            SnackBar(content: Text(AppLocalizations.of(context)!.commentSubmitFailed ?? ""), backgroundColor: Colors.red),
+            SnackBar(
+                content: Text(
+                    AppLocalizations.of(context)!.commentSubmitFailed ?? ""),
+                backgroundColor: Colors.red),
           );
         } else {
           _commentController.clear();
@@ -308,7 +361,10 @@ class _ReviewCommentsScreenState extends State<ReviewCommentsScreen> {
     } catch (e) {
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text(AppLocalizations.of(context)!.commentSubmitFailed ?? ""), backgroundColor: Colors.red),
+          SnackBar(
+              content:
+                  Text(AppLocalizations.of(context)!.commentSubmitFailed ?? ""),
+              backgroundColor: Colors.red),
         );
       }
     } finally {
@@ -320,4 +376,3 @@ class _ReviewCommentsScreenState extends State<ReviewCommentsScreen> {
     }
   }
 }
-

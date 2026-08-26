@@ -19,6 +19,7 @@ import 'dart:async';
 import 'dart:io';
 import '../utils/logger.dart';
 import 'participation_cache_service.dart';
+import 'user_info_cache_service.dart';
 
 class MeetupService {
   final FirebaseFirestore _firestore = FirebaseFirestore.instance;
@@ -26,6 +27,41 @@ class MeetupService {
   final NotificationService _notificationService = NotificationService();
   final ParticipationCacheService _cacheService = ParticipationCacheService();
   final ViewHistoryService _viewHistory = ViewHistoryService();
+  final UserInfoCacheService _userInfoCache = UserInfoCacheService();
+
+  Future<List<MeetupParticipant>> _resolveLatestParticipantProfiles(
+    List<MeetupParticipant> participants,
+  ) async {
+    final userIds = participants
+        .map((participant) => participant.userId.trim())
+        .where((userId) => userId.isNotEmpty && userId != 'host')
+        .toSet()
+        .toList(growable: false);
+    if (userIds.isEmpty) return participants;
+
+    final profiles = await _userInfoCache.getUserInfoBatch(
+      userIds,
+      forceRefresh: true,
+    );
+    return participants.map((participant) {
+      final profile = profiles[participant.userId];
+      if (profile == null) return participant;
+      if (profile.isDeletedAccount) {
+        return participant.copyWith(
+          userName: 'DELETED_ACCOUNT',
+          userProfileImage: '',
+          userCountry: '',
+          isDeletedAccount: true,
+        );
+      }
+      return participant.copyWith(
+        userName: profile.nickname,
+        userProfileImage: profile.photoURL,
+        userCountry: profile.nationality,
+        isDeletedAccount: false,
+      );
+    }).toList(growable: false);
+  }
 
   // Firestore 인스턴스 getter 추가
   FirebaseFirestore get firestore => _firestore;
@@ -277,6 +313,7 @@ class MeetupService {
     String visibility = 'public', // 공개 범위
     List<String> visibleToCategoryIds = const [], // 특정 카테고리에만 공개
     int? publicDurationHours, // null: 제한 없음, 그 외 1~12시간
+    bool requiresHanyangVerification = false,
   }) async {
     try {
       final user = _auth.currentUser;
@@ -361,6 +398,7 @@ class MeetupService {
           'visibility': visibility,
           'visibleToCategoryIds': normalizedCategoryIds,
           'publicDurationHours': publicDurationHours,
+          'requiresHanyangVerification': requiresHanyangVerification,
         }).timeout(const Duration(seconds: 30));
       } catch (error) {
         // 서버가 생성한 뒤 응답만 유실된 경우를 실패/중복으로 처리하지 않는다.
@@ -979,6 +1017,8 @@ class MeetupService {
         visibilityLockedAt: data['visibilityLockedAt'] is Timestamp
             ? (data['visibilityLockedAt'] as Timestamp).toDate()
             : null,
+        requiresHanyangVerification:
+            data['requiresHanyangVerification'] == true,
         isCompleted: data['isCompleted'] ?? false,
         hasReview: data['hasReview'] ?? false,
         groupChatEnabled: data['groupChatEnabled'] ?? false,
@@ -1064,6 +1104,8 @@ class MeetupService {
         visibilityLockedAt: data['visibilityLockedAt'] is Timestamp
             ? (data['visibilityLockedAt'] as Timestamp).toDate()
             : null,
+        requiresHanyangVerification:
+            data['requiresHanyangVerification'] == true,
         isCompleted: data['isCompleted'] ?? false, // 모임 완료 여부
         hasReview: data['hasReview'] ?? false, // 후기 작성 여부
         isConfirmed: data['isConfirmed'] ?? false,
@@ -1555,9 +1597,10 @@ class MeetupService {
           .where('meetupId', isEqualTo: meetupId)
           .get();
 
-      final participants = querySnapshot.docs
+      var participants = querySnapshot.docs
           .map((doc) => MeetupParticipant.fromJson(doc.data()))
           .toList();
+      participants = await _resolveLatestParticipantProfiles(participants);
       participants.sort((a, b) => a.joinedAt.compareTo(b.joinedAt));
       return participants;
     } catch (e) {
@@ -1583,10 +1626,12 @@ class MeetupService {
 
       Logger.log('📊 조회 결과: ${querySnapshot.docs.length}명의 참여자');
 
-      final participants = querySnapshot.docs.map((doc) {
+      var participants = querySnapshot.docs.map((doc) {
         Logger.log('  - 참여자: ${doc.data()['userName']} (${doc.id})');
         return MeetupParticipant.fromJson(doc.data());
       }).toList();
+
+      participants = await _resolveLatestParticipantProfiles(participants);
 
       // 클라이언트 측에서 정렬
       participants.sort((a, b) => a.joinedAt.compareTo(b.joinedAt));
@@ -2972,19 +3017,21 @@ class MeetupService {
         .where('meetupId', isEqualTo: meetupId)
         .where('status', isEqualTo: ParticipantStatus.approved)
         .snapshots()
-        .map((snapshot) {
+        .asyncMap((snapshot) async {
       Logger.log(
           '🔄 [PARTICIPANTS_STREAM] 스냅샷 수신 - 문서 수: ${snapshot.docs.length}');
       Logger.log(
           '🔍 [PARTICIPANTS_STREAM] 메타데이터 - fromCache: ${snapshot.metadata.isFromCache}, hasPendingWrites: ${snapshot.metadata.hasPendingWrites}');
 
-      final participants = snapshot.docs.map((doc) {
+      var participants = snapshot.docs.map((doc) {
         final data = doc.data();
         data['id'] = doc.id;
         final participant = MeetupParticipant.fromJson(data);
         Logger.log('  - 참여자: ${participant.userName} (${participant.userId})');
         return participant;
       }).toList();
+
+      participants = await _resolveLatestParticipantProfiles(participants);
 
       // 클라이언트 측에서 정렬
       participants.sort((a, b) => a.joinedAt.compareTo(b.joinedAt));

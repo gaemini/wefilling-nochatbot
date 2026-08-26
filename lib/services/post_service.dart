@@ -15,6 +15,7 @@ import '../models/shared_link_preview.dart';
 import '../security/frozen_audience_policy.dart';
 import 'notification_service.dart';
 import 'storage_service.dart';
+import 'instagram_preview_persistence_service.dart';
 import 'content_filter_service.dart';
 import 'content_hide_service.dart';
 import 'cache/post_cache_manager.dart';
@@ -78,7 +79,7 @@ class PostService {
   // 실시간 피드는 상위 N개만 구독해 비용/지연을 줄입니다.
   // - 전체 히스토리까지 실시간으로 받을 필요가 없고,
   // - 일부 계정에서 docs 수가 커지면 파싱/필터링이 느려져 UI가 "로딩처럼" 보일 수 있음
-  static const int _feedRealtimeLimit = 300;
+  static const int _feedRealtimeLimit = 10;
   static const Duration _categoryQueryTimeout = Duration(seconds: 8);
   static const Duration _allPostsQueryTimeout = Duration(seconds: 8);
 
@@ -86,6 +87,8 @@ class PostService {
   final FirebaseAuth _auth = FirebaseAuth.instance;
   final NotificationService _notificationService = NotificationService();
   final StorageService _storageService = StorageService();
+  final InstagramPreviewPersistenceService _instagramPreviewPersistence =
+      InstagramPreviewPersistenceService.instance;
   final PostCacheManager _cache = PostCacheManager();
   final ViewHistoryService _viewHistory = ViewHistoryService();
   final Map<String, PostCategoryPage> _categoryFirstPageCache = {};
@@ -104,6 +107,50 @@ class PostService {
   int _debugPostsStartLogs = 0;
   int _debugPostsSnapshotLogs = 0;
   int _debugEmitFilteredLogs = 0;
+
+  /// Callable에는 실제 포스트 생성에 필요한 링크 필드만 전달한다.
+  /// Instagram oEmbed의 HTML/시간 객체처럼 플랫폼별 부가 데이터가 섞이면
+  /// 서버의 엄격한 스키마 검증에서 정상 공유도 거절될 수 있다.
+  Map<String, dynamic> _createPostLinkPreviewPayload(
+    SharedLinkPreview preview,
+  ) {
+    String limited(String value, int maxLength) =>
+        String.fromCharCodes(value.trim().runes.take(maxLength));
+
+    final provider = preview.provider.trim().toLowerCase();
+    final canonicalUrl = preview.canonicalUrl.trim().isNotEmpty
+        ? preview.canonicalUrl.trim()
+        : preview.originalUrl.trim();
+    final contentId = provider == 'instagram'
+        ? (preview.shortcode.trim().isNotEmpty
+            ? preview.shortcode.trim()
+            : preview.contentId.trim())
+        : preview.contentId.trim();
+
+    return <String, dynamic>{
+      'provider': provider,
+      'originalUrl': preview.originalUrl.trim().isNotEmpty
+          ? preview.originalUrl.trim()
+          : canonicalUrl,
+      'canonicalUrl': canonicalUrl,
+      'contentId': contentId,
+      if (provider == 'instagram' && contentId.isNotEmpty)
+        'shortcode': contentId,
+      'contentType': preview.contentType.trim(),
+      'title': limited(preview.title, 300),
+      'authorName': limited(preview.authorName, 160),
+      'thumbnailUrl': preview.thumbnailUrl.trim(),
+      'thumbnailStoragePath': preview.thumbnailStoragePath.trim(),
+      'thumbnailSource': preview.thumbnailSource.trim(),
+      if (preview.thumbnailWidth > 0) 'thumbnailWidth': preview.thumbnailWidth,
+      if (preview.thumbnailHeight > 0)
+        'thumbnailHeight': preview.thumbnailHeight,
+      'previewMode': preview.previewMode.trim(),
+      'aspectRatio': preview.aspectRatio.clamp(0.5, 2.4).toDouble(),
+      'previewVersion': preview.previewVersion,
+      'previewStatus': preview.previewStatus.trim(),
+    };
+  }
 
   /// 차단/차단해제 직후 "즉시 피드 제거/복구"를 위해 마지막 posts를 기준으로 재필터링해서 다시 emit합니다.
   /// - Firestore snapshots(특히 blocks)가 도착하기 전에도 UI가 즉시 반영되게 함
@@ -205,8 +252,13 @@ class PostService {
       streams.length,
       (_) => const <Post>[],
     );
+    final hasInitialValue = List<bool>.filled(streams.length, false);
 
     void emit() {
+      // 공개/대상/내 글 쿼리의 첫 스냅샷을 모두 받은 뒤 합친 목록을 한 번
+      // 방출한다. 초기 부분 목록 때문에 같은 화면과 필터가 연속 갱신되는
+      // 비용과 깜빡임을 줄이되 이후 실시간 변경은 그대로 전달한다.
+      if (hasInitialValue.any((seen) => !seen)) return;
       final byId = <String, Post>{};
       for (final posts in latest) {
         for (final post in posts) {
@@ -226,6 +278,7 @@ class PostService {
         for (var i = 0; i < streams.length; i++) {
           subscriptions.add(streams[i].listen((posts) {
             latest[i] = posts;
+            hasInitialValue[i] = true;
             emit();
           }, onError: controller.addError));
         }
@@ -303,6 +356,11 @@ class PostService {
       createdAt = DateTime.fromMillisecondsSinceEpoch(rawCreatedAt);
     }
 
+    final parsedLinkPreview = data['linkPreview'] is Map
+        ? SharedLinkPreview.fromMap(
+            Map<String, dynamic>.from(data['linkPreview'] as Map),
+          )
+        : null;
     return Post(
       id: id,
       title: data['title'] ?? '',
@@ -320,11 +378,7 @@ class PostService {
       viewCount: data['viewCount'] ?? 0,
       likedBy: _parseStringList(data['likedBy']),
       imageUrls: _parseStringList(data['imageUrls']),
-      linkPreview: data['linkPreview'] is Map
-          ? SharedLinkPreview.fromMap(
-              Map<String, dynamic>.from(data['linkPreview'] as Map),
-            )
-          : null,
+      linkPreview: parsedLinkPreview,
       visibility: data['visibilityMode'] ?? data['visibility'] ?? 'public',
       isAnonymous: data['isAnonymous'] ?? false,
       visibleToCategoryIds: _parseStringList(
@@ -338,6 +392,7 @@ class PostService {
       visibilityLockedAt: data['visibilityLockedAt'] is Timestamp
           ? (data['visibilityLockedAt'] as Timestamp).toDate()
           : null,
+      requiresHanyangVerification: data['requiresHanyangVerification'] == true,
       type: data['type'] ?? 'text',
       pollOptions: _parsePollOptions(data['pollOptions']),
       pollTotalVotes: data['pollTotalVotes'] ?? 0,
@@ -353,10 +408,14 @@ class PostService {
     String visibility = 'public', // 공개 범위
     bool isAnonymous = false, // 익명 여부
     List<String> visibleToCategoryIds = const [], // 공개할 카테고리 ID 목록
+    bool requiresHanyangVerification = false,
     String type = 'text', // 'text' | 'poll'
     List<String> pollOptions = const [], // type == 'poll'일 때만 사용
     SharedLinkPreview? linkPreview,
     File? linkPreviewImageFile,
+    String linkPreviewImageSource = 'local_preview',
+    String externalShareRequestId = '',
+    void Function()? onLinkPreviewPersistenceFailed,
     String? requestedPostId,
     void Function(String postId)? onCreated,
   }) async {
@@ -391,6 +450,12 @@ class PostService {
           '그룹 공개 게시글은 익명으로 작성할 수 없습니다.',
         );
       }
+      if (requiresHanyangVerification &&
+          (visibility != 'public' || isAnonymous)) {
+        throw ArgumentError(
+          '한양대학생 전용 공개범위는 다른 공개범위 또는 익명 공개와 함께 사용할 수 없습니다.',
+        );
+      }
 
       // 요청 시작 시 ID를 고정해 재시도/응답 유실 시에도 같은 콘텐츠를
       // 식별할 수 있게 한다. Callable은 동일 ID+작성자의 중복 요청을 멱등 처리한다.
@@ -400,17 +465,27 @@ class PostService {
               ? normalizedRequestedPostId
               : _firestore.collection('posts').doc().id;
 
-      // Instagram 작성 화면의 미디어는 피드/상세에서 WebView 없이도 동일하게
-      // 보이도록 첫 번째 포스트 미디어로 고정한다. 사용자가 첨부한 이미지에
-      // 이미 포함된 파일이면 경로 기준으로 중복 업로드하지 않는다.
-      final previewImagePath = linkPreviewImageFile?.path.trim() ?? '';
-      final hasPreviewImageFile = previewImagePath.isNotEmpty &&
-          linkPreviewImageFile != null &&
-          linkPreviewImageFile.existsSync();
-      final orderedImageFiles = <File>[
-        if (hasPreviewImageFile) linkPreviewImageFile,
-        ...?imageFiles?.where((file) => file.path != previewImagePath),
-      ];
+      // posts 문서는 createPostSecure(Admin SDK)만 생성한다. 생성 전의
+      // 존재하지 않는 문서를 클라이언트가 get()하면 Firestore Rules가
+      // 작성자를 판정할 수 없어 permission-denied가 발생한다. 외부 공유
+      // 재시도의 중복 여부는 동일 postId를 받는 Callable이 멱등 처리한다.
+
+      final isExternalSocialShare = externalShareRequestId.trim().isNotEmpty &&
+          const {'instagram', 'youtube'}
+              .contains(linkPreview?.provider.trim().toLowerCase());
+      // 작성 화면뿐 아니라 서비스 경계에서도 외부 Instagram/YouTube
+      // 공유 요청의 일반 첨부 이미지를 제거한다. Instagram payload 이미지는
+      // 아래 전용 preview persistence 경로에서 썸네일로만 처리된다.
+      final orderedImageFiles = isExternalSocialShare
+          ? <File>[]
+          : List<File>.from(imageFiles ?? const <File>[]);
+      if (orderedImageFiles.length > 15) {
+        throw ArgumentError.value(
+          orderedImageFiles.length,
+          'imageFiles',
+          'A post can contain up to 15 attached images.',
+        );
+      }
 
       // 이미지 파일이 있는 경우 업로드 (병렬 처리로 성능 향상)
       List<String> imageUrls = [];
@@ -449,6 +524,23 @@ class PostService {
         }
       }
 
+      InstagramPreviewPersistenceResult? previewPersistence;
+      var persistedLinkPreview = linkPreview;
+      if (linkPreview?.provider == 'instagram') {
+        previewPersistence = await _instagramPreviewPersistence.persist(
+          preview: linkPreview!,
+          ownerUid: user.uid,
+          postId: postId,
+          localImageFile: linkPreviewImageFile,
+          localImageSource: linkPreviewImageSource,
+          requestId: externalShareRequestId,
+        );
+        persistedLinkPreview = previewPersistence.preview;
+        if (!persistedLinkPreview.isPersistentThumbnail) {
+          onLinkPreviewPersistenceFailed?.call();
+        }
+      }
+
       // 투표형 게시글 데이터 검증. 실제 문서와 frozen audience는 서버에서 만든다.
       var cleanedPollOptions = const <String>[];
       if (type == 'poll') {
@@ -470,46 +562,67 @@ class PostService {
         cleanedPollOptions = cleaned;
       }
 
+      final createPostPayload = <String, dynamic>{
+        'postId': postId,
+        'title': title,
+        'content': content,
+        'categoryKey': normalizedCategoryKeys.first,
+        'categoryKeys': normalizedCategoryKeys,
+        'imageUrls': imageUrls,
+        'visibility': visibility,
+        'visibleToCategoryIds': normalizedCategoryIds,
+        'isAnonymous': isAnonymous,
+        'requiresHanyangVerification': requiresHanyangVerification,
+        'type': type,
+        'pollOptions': cleanedPollOptions,
+        if (persistedLinkPreview != null)
+          'linkPreview': _createPostLinkPreviewPayload(persistedLinkPreview),
+      };
+      final createPostCallable =
+          FirebaseFunctions.instance.httpsCallable('createPostSecure');
+      Future<void> createSecurePost() async {
+        await createPostCallable
+            .call(createPostPayload)
+            .timeout(const Duration(seconds: 30));
+      }
+
       try {
-        final persistedLinkPreview = linkPreview != null && hasPreviewImageFile
-            ? linkPreview.copyWith(
-                // Callable이 검증을 마친 뒤 imageUrls.first의 영구
-                // Firebase URL을 thumbnailUrl로 설정하게 한다.
-                thumbnailUrl: '',
-                previewStatus: 'ready',
-              )
-            : linkPreview;
-        await FirebaseFunctions.instance
-            .httpsCallable('createPostSecure')
-            .call(<String, dynamic>{
-          'postId': postId,
-          'title': title,
-          'content': content,
-          'categoryKey': normalizedCategoryKeys.first,
-          'categoryKeys': normalizedCategoryKeys,
-          'imageUrls': imageUrls,
-          'visibility': visibility,
-          'visibleToCategoryIds': normalizedCategoryIds,
-          'isAnonymous': isAnonymous,
-          'type': type,
-          'pollOptions': cleanedPollOptions,
-          if (persistedLinkPreview != null)
-            'linkPreview': persistedLinkPreview.toMap(),
-        }).timeout(const Duration(seconds: 30));
-      } catch (error) {
-        // Callable 응답만 유실됐을 수 있다. 동일 ID의 서버 문서를 먼저 확인해
-        // 성공한 게시글 이미지를 지우거나 중복 게시하지 않도록 한다.
+        Logger.log(
+          '[InstagramPreview][firestore-write] postId=$postId '
+          'status=${persistedLinkPreview?.previewStatus ?? 'none'}',
+        );
+        await createSecurePost();
+      } catch (error, stackTrace) {
+        if (error is FirebaseFunctionsException) {
+          Logger.error(
+            '포스트 생성 서버 거절: code=${error.code} '
+            'message=${error.message ?? ''}',
+          );
+        }
+        // 응답이 유실될 수 있는 오류에서만 같은 postId로 Callable을 한 번
+        // 재호출한다. createPostSecure가 작성자+postId 기준으로 멱등하므로
+        // 이미 생성된 경우에도 성공으로 돌아오며, 존재하지 않는 Firestore
+        // 문서를 클라이언트가 직접 읽어 permission-denied를 만들지 않는다.
         var created = false;
-        try {
-          final document = await _firestore
-              .collection('posts')
-              .doc(postId)
-              .get()
-              .timeout(const Duration(seconds: 5));
-          final data = document.data();
-          created = document.exists &&
-              (data?['ownerId'] == user.uid || data?['userId'] == user.uid);
-        } catch (_) {}
+        final retryable = error is TimeoutException ||
+            (error is FirebaseFunctionsException &&
+                const {
+                  'cancelled',
+                  'deadline-exceeded',
+                  'internal',
+                  'unavailable',
+                  'unknown',
+                }.contains(error.code));
+        if (retryable) {
+          try {
+            await createSecurePost();
+            created = true;
+          } catch (retryError) {
+            Logger.warning(
+              '포스트 생성 재시도 실패: ${retryError.runtimeType}',
+            );
+          }
+        }
         if (!created) {
           // 문서 생성 전에 올린 파일은 best-effort로 정리해 orphan을 줄인다.
           for (final url in imageUrls) {
@@ -517,7 +630,15 @@ class PostService {
               await _storageService.deleteImage(url);
             } catch (_) {}
           }
-          Error.throwWithStackTrace(error, StackTrace.current);
+          if (previewPersistence?.createdStorageObject == true &&
+              persistedLinkPreview != null) {
+            try {
+              await _instagramPreviewPersistence.deleteUnused(
+                persistedLinkPreview,
+              );
+            } catch (_) {}
+          }
+          Error.throwWithStackTrace(error, stackTrace);
         }
       }
 

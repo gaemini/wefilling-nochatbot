@@ -53,7 +53,7 @@ class _SnapshotDetailScreenState extends State<SnapshotDetailScreen>
   bool _isHolding = false;
   bool _isAppInactive = false;
   bool _isComposingComment = false;
-  bool _reactionSlotAvailable = true;
+  bool _reactionSlotAvailable = false;
   bool _showFeedPosition = false;
   String? _mediaReadyId;
   double _horizontalDragDistance = 0;
@@ -258,7 +258,7 @@ class _SnapshotDetailScreenState extends State<SnapshotDetailScreen>
     setState(() {
       _items = filtered;
       _index = resolvedIndex;
-      if (currentChanged) _reactionSlotAvailable = true;
+      if (currentChanged) _reactionSlotAvailable = false;
     });
     _recordCurrentView();
     _restartPlayback();
@@ -276,9 +276,8 @@ class _SnapshotDetailScreenState extends State<SnapshotDetailScreen>
     setState(() {
       _index = targetIndex;
       _isSwitching = true;
-      // 새 스낵의 반응 여부를 확인하는 동안에는 하트 자리를 유지해
-      // 비동기 결과로 입력창이 겹치지 않도록 한다.
-      _reactionSlotAvailable = true;
+      // 새 스낵의 영구 반응 문서를 확인하기 전에는 하트를 노출하지 않는다.
+      _reactionSlotAvailable = false;
     });
     _recordCurrentView();
     _restartPlayback();
@@ -662,10 +661,12 @@ class _SnapshotDetailPage extends StatefulWidget {
 class _SnapshotDetailPageState extends State<_SnapshotDetailPage>
     with SingleTickerProviderStateMixin {
   late Stream<SnapshotItem?> _accessStream;
-  late Future<bool> _reactionStatus;
+  StreamSubscription<bool>? _reactionSubscription;
   late final AnimationController _heartBurstController;
   bool _submittingReaction = false;
   bool _reactedLocally = false;
+  bool _reactionStatusResolved = false;
+  bool _hasReacted = true;
 
   @override
   void initState() {
@@ -678,7 +679,7 @@ class _SnapshotDetailPageState extends State<_SnapshotDetailPage>
       widget.snapshot.id,
       initial: widget.snapshot,
     );
-    _refreshReactionStatus();
+    _watchReactionStatus();
   }
 
   @override
@@ -691,7 +692,7 @@ class _SnapshotDetailPageState extends State<_SnapshotDetailPage>
       );
       _submittingReaction = false;
       _reactedLocally = false;
-      _refreshReactionStatus();
+      _watchReactionStatus();
       _heartBurstController.reset();
     }
   }
@@ -703,36 +704,44 @@ class _SnapshotDetailPageState extends State<_SnapshotDetailPage>
     });
   }
 
-  void _refreshReactionStatus() {
+  void _watchReactionStatus() {
     final snapshotId = widget.snapshot.id;
-    final status = widget.service.hasReacted(snapshotId);
-    _reactionStatus = status;
-    unawaited(
-      status.then(
-        (hasReacted) {
-          if (!mounted || widget.snapshot.id != snapshotId) return;
-          _reportReactionAvailability(
-            snapshotId,
-            !hasReacted && !_reactedLocally,
-          );
-        },
-        onError: (_) {
-          // 상태를 확인하지 못하면 하트 입력도 열지 않는다. 코멘트 입력창은
-          // 불필요한 빈 슬롯 없이 사용할 수 있게 한다.
-          _reportReactionAvailability(snapshotId, false);
-        },
-      ),
+    unawaited(_reactionSubscription?.cancel());
+    _reactionStatusResolved = false;
+    _hasReacted = true;
+    _reportReactionAvailability(snapshotId, false);
+    _reactionSubscription = widget.service.watchMyReaction(snapshotId).listen(
+      (hasReacted) {
+        if (!mounted || widget.snapshot.id != snapshotId) return;
+        setState(() {
+          _reactionStatusResolved = true;
+          _hasReacted = hasReacted;
+        });
+        _reportReactionAvailability(
+          snapshotId,
+          !hasReacted && !_reactedLocally,
+        );
+      },
+      onError: (_) {
+        if (!mounted || widget.snapshot.id != snapshotId) return;
+        setState(() {
+          _reactionStatusResolved = false;
+          _hasReacted = true;
+        });
+        _reportReactionAvailability(snapshotId, false);
+      },
     );
   }
 
   @override
   void dispose() {
+    unawaited(_reactionSubscription?.cancel());
     _heartBurstController.dispose();
     super.dispose();
   }
 
   Future<void> _submitReaction(String reaction) async {
-    if (_submittingReaction || _reactedLocally) return;
+    if (_submittingReaction || _reactedLocally || _hasReacted) return;
     final snapshotId = widget.snapshot.id;
     setState(() {
       _submittingReaction = true;
@@ -751,8 +760,8 @@ class _SnapshotDetailPageState extends State<_SnapshotDetailPage>
       if (!mounted || widget.snapshot.id != snapshotId) return;
       setState(() {
         _reactedLocally = false;
-        _refreshReactionStatus();
       });
+      _watchReactionStatus();
       _heartBurstController.reset();
       AppSnackBar.show(
         context,
@@ -812,7 +821,8 @@ class _SnapshotDetailPageState extends State<_SnapshotDetailPage>
                 bottom: keyboardInset + 8,
                 child: _SnapshotInteractionArea(
                   showReactions: !keyboardOpen,
-                  reactionStatus: _reactionStatus,
+                  reactionStatusResolved: _reactionStatusResolved,
+                  hasReacted: _hasReacted,
                   reactedLocally: _reactedLocally,
                   submittingReaction: _submittingReaction,
                   strings: strings,
@@ -1366,7 +1376,8 @@ class _SnapshotAuthorHeader extends StatelessWidget {
 class _SnapshotInteractionArea extends StatelessWidget {
   const _SnapshotInteractionArea({
     required this.showReactions,
-    required this.reactionStatus,
+    required this.reactionStatusResolved,
+    required this.hasReacted,
     required this.reactedLocally,
     required this.submittingReaction,
     required this.strings,
@@ -1374,7 +1385,8 @@ class _SnapshotInteractionArea extends StatelessWidget {
   });
 
   final bool showReactions;
-  final Future<bool> reactionStatus;
+  final bool reactionStatusResolved;
+  final bool hasReacted;
   final bool reactedLocally;
   final bool submittingReaction;
   final SnapshotStrings strings;
@@ -1388,39 +1400,25 @@ class _SnapshotInteractionArea extends StatelessWidget {
       children: [
         KeyedSubtree(
           key: const ValueKey<String>('snapshot-reaction-area'),
-          child: showReactions
-              ? FutureBuilder<bool>(
-                  future: reactionStatus,
-                  builder: (context, reactionState) {
-                    // 반응 여부가 확정되기 전에는 입력을 열지 않는다.
-                    // 이전에는 FutureBuilder의 초기 data(null)를 false처럼 처리해
-                    // 이미 반응한 스낵에도 하트가 한 프레임 노출될 수 있었다.
-                    final isStatusResolved =
-                        reactionState.connectionState == ConnectionState.done &&
-                            !reactionState.hasError;
-                    final hasReacted =
-                        reactedLocally || reactionState.data == true;
-                    if (!isStatusResolved || hasReacted) {
-                      return const SizedBox.shrink();
-                    }
-
-                    return Padding(
-                      padding: const EdgeInsets.only(bottom: 4),
-                      child: IgnorePointer(
-                        ignoring: submittingReaction,
-                        child: AnimatedOpacity(
-                          duration: const Duration(milliseconds: 120),
-                          opacity: submittingReaction ? 0 : 1,
-                          child: _SnapshotReactionBar(
-                            strings: strings,
-                            onReact: onReact,
-                          ),
-                        ),
+          child: !showReactions ||
+                  !reactionStatusResolved ||
+                  hasReacted ||
+                  reactedLocally
+              ? const SizedBox.shrink()
+              : Padding(
+                  padding: const EdgeInsets.only(bottom: 4),
+                  child: IgnorePointer(
+                    ignoring: submittingReaction,
+                    child: AnimatedOpacity(
+                      duration: const Duration(milliseconds: 120),
+                      opacity: submittingReaction ? 0 : 1,
+                      child: _SnapshotReactionBar(
+                        strings: strings,
+                        onReact: onReact,
                       ),
-                    );
-                  },
-                )
-              : const SizedBox.shrink(),
+                    ),
+                  ),
+                ),
         ),
       ],
     );

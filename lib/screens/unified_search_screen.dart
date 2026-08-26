@@ -14,9 +14,11 @@ import '../models/user_profile.dart';
 import '../models/relationship_status.dart';
 import '../providers/relationship_provider.dart';
 import '../screens/meetup_detail_screen.dart';
+import '../screens/friend_profile_screen.dart';
 import '../services/meetup_service.dart';
 import '../services/post_service.dart';
 import '../ui/widgets/app_icon_button.dart';
+import '../ui/widgets/hanyang_verification_gate.dart';
 import '../widgets/post_search_card.dart';
 import '../widgets/user_tile.dart';
 
@@ -63,7 +65,8 @@ class _UnifiedSearchScreenState extends State<UnifiedSearchScreen>
     super.initState();
 
     final initialIndex = widget.initialTabIndex.clamp(0, _tabCount - 1);
-    _tabController = TabController(length: _tabCount, vsync: this, initialIndex: initialIndex);
+    _tabController = TabController(
+        length: _tabCount, vsync: this, initialIndex: initialIndex);
     _tabController.addListener(_onTabChanged);
 
     _searchController.addListener(() {
@@ -236,7 +239,9 @@ class _UnifiedSearchScreenState extends State<UnifiedSearchScreen>
     ScaffoldMessenger.of(context).showSnackBar(
       SnackBar(
         content: Text(
-          success ? (l10n?.friendRequestCancelled ?? '') : (l10n?.friendRequestCancelFailed ?? ''),
+          success
+              ? (l10n?.friendRequestCancelled ?? '')
+              : (l10n?.friendRequestCancelFailed ?? ''),
         ),
         backgroundColor: success ? Colors.orange : Colors.red,
         duration: const Duration(seconds: 2),
@@ -274,7 +279,9 @@ class _UnifiedSearchScreenState extends State<UnifiedSearchScreen>
     if (!mounted) return;
     ScaffoldMessenger.of(context).showSnackBar(
       SnackBar(
-        content: Text(success ? (l10n?.unfriendedUser ?? '') : (l10n?.unfriendFailed ?? '')),
+        content: Text(success
+            ? (l10n?.unfriendedUser ?? '')
+            : (l10n?.unfriendFailed ?? '')),
         backgroundColor: success ? Colors.orange : Colors.red,
         duration: const Duration(seconds: 2),
       ),
@@ -311,7 +318,9 @@ class _UnifiedSearchScreenState extends State<UnifiedSearchScreen>
     if (!mounted) return;
     ScaffoldMessenger.of(context).showSnackBar(
       SnackBar(
-        content: Text(success ? (l10n?.userUnblocked ?? '') : (l10n?.unblockFailed ?? '')),
+        content: Text(success
+            ? (l10n?.userUnblocked ?? '')
+            : (l10n?.unblockFailed ?? '')),
         backgroundColor: success ? Colors.green : Colors.red,
         duration: const Duration(seconds: 2),
       ),
@@ -336,6 +345,22 @@ class _UnifiedSearchScreenState extends State<UnifiedSearchScreen>
       case RelationshipStatus.blockedBy:
         break;
     }
+  }
+
+  void _openUserProfile(UserProfile user) {
+    FocusScope.of(context).unfocus();
+    Navigator.of(context).push(
+      MaterialPageRoute<void>(
+        builder: (_) => FriendProfileScreen(
+          userId: user.uid,
+          nickname: user.displayNameOrNickname,
+          photoURL: user.photoURL,
+          email: user.email,
+          university: user.university,
+          allowNonFriendsPreview: true,
+        ),
+      ),
+    );
   }
 
   // ---- UI ----
@@ -479,7 +504,9 @@ class _UnifiedSearchScreenState extends State<UnifiedSearchScreen>
           semanticLabel: AppLocalizations.of(context)!.back,
         ),
         title: Text(
-          Localizations.localeOf(context).languageCode == 'ko' ? '검색창' : 'Search',
+          Localizations.localeOf(context).languageCode == 'ko'
+              ? '검색창'
+              : 'Search',
           style: const TextStyle(
             fontSize: 18,
             fontWeight: FontWeight.bold,
@@ -546,7 +573,9 @@ class _UnifiedSearchScreenState extends State<UnifiedSearchScreen>
       return _buildEmptyPrompt(
         icon: Icons.search,
         title: isKo ? '사용자를 검색해보세요' : 'Search for users',
-        subtitle: isKo ? '닉네임이나 이름으로 검색하여\n새로운 친구를 찾아보세요' : 'Search by nickname or name\nto find new friends',
+        subtitle: isKo
+            ? '닉네임이나 이름으로 검색하여\n새로운 친구를 찾아보세요'
+            : 'Search by nickname or name\nto find new friends',
       );
     }
 
@@ -586,7 +615,7 @@ class _UnifiedSearchScreenState extends State<UnifiedSearchScreen>
               user: user,
               relationshipStatus: status,
               onActionPressed: () => _handleUserAction(user, status),
-              onTilePressed: () {},
+              onTilePressed: () => _openUserProfile(user),
             );
           },
         );
@@ -603,9 +632,8 @@ class _UnifiedSearchScreenState extends State<UnifiedSearchScreen>
       return _buildEmptyPrompt(
         icon: Icons.search,
         title: isKo ? '포스트를 검색해보세요' : 'Search posts',
-        subtitle: isKo
-            ? '제목/내용 기준으로\n포스트를 찾아볼 수 있어요'
-            : 'Search by title/content',
+        subtitle:
+            isKo ? '제목/내용 기준으로\n포스트를 찾아볼 수 있어요' : 'Search by title/content',
       );
     }
 
@@ -647,7 +675,9 @@ class _UnifiedSearchScreenState extends State<UnifiedSearchScreen>
       return _buildEmptyPrompt(
         icon: Icons.search,
         title: isKo ? '모임을 검색해보세요' : 'Search meetups',
-        subtitle: isKo ? '제목/설명/위치/호스트 기준으로\n모임을 찾아볼 수 있어요' : 'Search by title/description/location/host',
+        subtitle: isKo
+            ? '제목/설명/위치/호스트 기준으로\n모임을 찾아볼 수 있어요'
+            : 'Search by title/description/location/host',
       );
     }
 
@@ -677,108 +707,123 @@ class _UnifiedSearchScreenState extends State<UnifiedSearchScreen>
       separatorBuilder: (_, __) => const SizedBox(height: 12),
       itemBuilder: (context, index) {
         final meetup = _meetupResults[index];
-        return InkWell(
-          onTap: () {
-            Navigator.push(
-              context,
-              MaterialPageRoute(
-                builder: (_) => MeetupDetailScreen(
-                  meetup: meetup,
-                  meetupId: meetup.id,
-                  onMeetupDeleted: () {
-                    final q = _searchController.text.trim();
-                    if (q.isNotEmpty) {
-                      _searchMeetups(q);
-                    }
+        final isHanyangLocked = HanyangVerificationGate.isLockedForCurrentUser(
+          context,
+          meetup.requiresHanyangVerification,
+        );
+        return HanyangVerificationGate(
+          locked: isHanyangLocked,
+          compact: true,
+          child: InkWell(
+            onTap: isHanyangLocked
+                ? null
+                : () {
+                    Navigator.push(
+                      context,
+                      MaterialPageRoute(
+                        builder: (_) => MeetupDetailScreen(
+                          meetup: meetup,
+                          meetupId: meetup.id,
+                          onMeetupDeleted: () {
+                            final q = _searchController.text.trim();
+                            if (q.isNotEmpty) {
+                              _searchMeetups(q);
+                            }
+                          },
+                        ),
+                      ),
+                    );
                   },
-                ),
+            borderRadius: BorderRadius.circular(16),
+            child: Container(
+              decoration: BoxDecoration(
+                color: const Color(0xFFE9F1FF),
+                borderRadius: BorderRadius.circular(16),
               ),
-            );
-          },
-          borderRadius: BorderRadius.circular(16),
-          child: Container(
-            decoration: BoxDecoration(
-              color: const Color(0xFFE9F1FF),
-              borderRadius: BorderRadius.circular(16),
-            ),
-            padding: const EdgeInsets.all(16),
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Row(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Expanded(
-                      child: Text(
-                        meetup.title,
-                        style: const TextStyle(
-                          fontSize: 16,
-                          fontWeight: FontWeight.bold,
-                          color: Colors.black,
+              padding: const EdgeInsets.all(16),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Row(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Expanded(
+                        child: Text(
+                          meetup.title,
+                          style: const TextStyle(
+                            fontSize: 16,
+                            fontWeight: FontWeight.bold,
+                            color: Colors.black,
+                          ),
                         ),
                       ),
-                    ),
-                    const SizedBox(width: 8),
-                    Container(
-                      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
-                      decoration: BoxDecoration(
-                        color: Colors.blue,
-                        borderRadius: BorderRadius.circular(8),
-                      ),
-                      child: Text(
-                        meetup.getFormattedDate(context),
-                        style: const TextStyle(
-                          fontSize: 11,
-                          color: Colors.white,
-                          fontWeight: FontWeight.w700,
+                      const SizedBox(width: 8),
+                      Container(
+                        padding: const EdgeInsets.symmetric(
+                            horizontal: 8, vertical: 4),
+                        decoration: BoxDecoration(
+                          color: Colors.blue,
+                          borderRadius: BorderRadius.circular(8),
+                        ),
+                        child: Text(
+                          meetup.getFormattedDate(context),
+                          style: const TextStyle(
+                            fontSize: 11,
+                            color: Colors.white,
+                            fontWeight: FontWeight.w700,
+                          ),
                         ),
                       ),
-                    ),
-                  ],
-                ),
-                const SizedBox(height: 6),
-                Text(
-                  '${AppLocalizations.of(context)!.host}: ${meetup.host}',
-                  style: TextStyle(
-                    fontSize: 12,
-                    color: Colors.black.withOpacity(0.7),
-                    fontWeight: FontWeight.w500,
+                    ],
                   ),
-                ),
-                const SizedBox(height: 10),
-                Text(
-                  meetup.description,
-                  style: TextStyle(fontSize: 14, color: Colors.black.withOpacity(0.6)),
-                  maxLines: 2,
-                  overflow: TextOverflow.ellipsis,
-                ),
-                const SizedBox(height: 12),
-                Row(
-                  children: [
-                    Icon(Icons.location_on, size: 14, color: Colors.red.shade400),
-                    const SizedBox(width: 4),
-                    Expanded(
-                      child: Text(
-                        meetup.location,
-                        style: TextStyle(fontSize: 12, color: Colors.black.withOpacity(0.6)),
-                        maxLines: 1,
-                        overflow: TextOverflow.ellipsis,
-                      ),
+                  const SizedBox(height: 6),
+                  Text(
+                    '${AppLocalizations.of(context)!.host}: ${meetup.host}',
+                    style: TextStyle(
+                      fontSize: 12,
+                      color: Colors.black.withOpacity(0.7),
+                      fontWeight: FontWeight.w500,
                     ),
-                    const SizedBox(width: 12),
-                    Icon(Icons.people, size: 16, color: Colors.blue.shade700),
-                    const SizedBox(width: 4),
-                    Text(
-                      '${meetup.currentParticipants}/${meetup.maxParticipants}',
-                      style: TextStyle(
-                        fontSize: 14,
-                        color: Colors.blue.shade700,
-                        fontWeight: FontWeight.w600,
+                  ),
+                  const SizedBox(height: 10),
+                  Text(
+                    meetup.description,
+                    style: TextStyle(
+                        fontSize: 14, color: Colors.black.withOpacity(0.6)),
+                    maxLines: 2,
+                    overflow: TextOverflow.ellipsis,
+                  ),
+                  const SizedBox(height: 12),
+                  Row(
+                    children: [
+                      Icon(Icons.location_on,
+                          size: 14, color: Colors.red.shade400),
+                      const SizedBox(width: 4),
+                      Expanded(
+                        child: Text(
+                          meetup.location,
+                          style: TextStyle(
+                              fontSize: 12,
+                              color: Colors.black.withOpacity(0.6)),
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                        ),
                       ),
-                    ),
-                  ],
-                ),
-              ],
+                      const SizedBox(width: 12),
+                      Icon(Icons.people, size: 16, color: Colors.blue.shade700),
+                      const SizedBox(width: 4),
+                      Text(
+                        '${meetup.currentParticipants}/${meetup.maxParticipants}',
+                        style: TextStyle(
+                          fontSize: 14,
+                          color: Colors.blue.shade700,
+                          fontWeight: FontWeight.w600,
+                        ),
+                      ),
+                    ],
+                  ),
+                ],
+              ),
             ),
           ),
         );
@@ -786,4 +831,3 @@ class _UnifiedSearchScreenState extends State<UnifiedSearchScreen>
     );
   }
 }
-

@@ -1,11 +1,10 @@
 import 'dart:async';
 import 'dart:io';
-import 'dart:ui' as ui;
 
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:image_picker/image_picker.dart';
-import 'package:path_provider/path_provider.dart';
+import 'package:provider/provider.dart';
 import 'package:wechat_assets_picker/wechat_assets_picker.dart';
 
 import '../constants/app_constants.dart';
@@ -16,9 +15,10 @@ import '../models/external_share_request.dart';
 import '../models/post_category.dart';
 import '../models/shared_link_preview.dart';
 import '../models/user_profile.dart';
+import '../providers/auth_provider.dart' as app_auth;
 import '../repositories/users_repository.dart';
-import '../services/friend_category_service.dart';
 import '../services/cache/app_image_cache_manager.dart';
+import '../services/friend_category_service.dart';
 import '../services/post_service.dart';
 import '../services/shared_link_preview_service.dart';
 import '../ui/widgets/fullscreen_file_image_viewer.dart';
@@ -80,6 +80,7 @@ class _CreatePostScreenState extends State<CreatePostScreen> {
   int _stepIndex = 0;
 
   String _visibility = 'public';
+  bool _requiresHanyangVerification = false;
   bool _isAnonymous = false;
   List<String> _selectedCategoryIds = [];
   bool _showCategoryRequiredHint = false;
@@ -91,13 +92,33 @@ class _CreatePostScreenState extends State<CreatePostScreen> {
   Future<void>? _sharedLinkResolveFuture;
   String _sharedPayloadImagePath = '';
 
+  String get _externalSocialShareProvider {
+    final request = widget.initialSharedRequest;
+    if (request == null) return '';
+
+    final source = request.source.trim().toLowerCase();
+    if (source == 'instagram' || source == 'youtube') return source;
+
+    final previewProvider =
+        request.preview?.provider.trim().toLowerCase() ?? '';
+    if (previewProvider == 'instagram' || previewProvider == 'youtube') {
+      return previewProvider;
+    }
+
+    final provider = SharedLinkPreviewService.instance.providerForUrl(
+      request.normalizedUrl.trim(),
+    );
+    return provider == 'instagram' || provider == 'youtube' ? provider : '';
+  }
+
+  bool get _isExternalSocialShare => _externalSocialShareProvider.isNotEmpty;
+
   bool get _hasSharedPayloadImage {
     final path = _sharedPayloadImagePath.trim();
     return path.isNotEmpty && File(path).existsSync();
   }
 
-  int get _expectedResolvedImageCount =>
-      _selectedAssets.length + (_hasSharedPayloadImage ? 1 : 0);
+  int get _expectedResolvedImageCount => _selectedAssets.length;
 
   @override
   void initState() {
@@ -159,9 +180,12 @@ class _CreatePostScreenState extends State<CreatePostScreen> {
     if (!isYouTubeShare &&
         imagePath.isNotEmpty &&
         File(imagePath).existsSync()) {
-      _selectedImages.add(File(imagePath));
       if (detectedProvider == 'instagram') {
+        // Instagram 공유 이미지는 일반 첨부(최대 15장)와 분리한다. 게시
+        // 직전에 linkPreview 전용 Storage 경로로 영구 저장된다.
         _sharedPayloadImagePath = imagePath;
+      } else {
+        _selectedImages.add(File(imagePath));
       }
     }
     if (!request.hasUrl) return;
@@ -218,21 +242,23 @@ class _CreatePostScreenState extends State<CreatePostScreen> {
     _checkCanProceed();
   }
 
-  /// Instagram Embed는 작성 화면에서 실시간으로 보이지만 게시 후에는 피드마다
-  /// WebView를 만들 수 없다. 공유 payload 이미지가 없으면 현재 확인된 썸네일을
-  /// 게시 직전에 로컬 파일로 고정해 Firebase Storage에 영구 보관한다.
-  Future<File?> _resolvePersistentSharedPreviewImage() async {
-    if (_sharedLinkRemoved) return null;
-
-    if (_hasSharedPayloadImage) {
-      return File(_sharedPayloadImagePath);
+  /// 공유 payload 이미지가 없더라도 작성 화면에서 이미 확인한 Instagram
+  /// 썸네일은 서버 재조회보다 먼저 영구 저장에 사용한다. 실제 이미지 형식,
+  /// 용량, 디코딩 가능 여부는 전용 persistence service에서 다시 검증한다.
+  Future<File?> _resolveLocalInstagramPreviewFile() async {
+    if (_sharedLinkRemoved || _hasSharedPayloadImage) {
+      return _hasSharedPayloadImage ? File(_sharedPayloadImagePath) : null;
     }
 
     final preview = _sharedLinkPreview;
-    if (preview == null || preview.provider != 'instagram') return null;
-
+    if (preview == null ||
+        preview.provider != 'instagram' ||
+        preview.isPersistentThumbnail) {
+      return null;
+    }
     final thumbnailUrl = preview.thumbnailUrl.trim();
-    if (thumbnailUrl.isEmpty) return null;
+    final uri = Uri.tryParse(thumbnailUrl);
+    if (uri == null || uri.scheme != 'https') return null;
 
     try {
       final cached = await AppImageCacheManager.instance.getSingleFile(
@@ -242,33 +268,13 @@ class _CreatePostScreenState extends State<CreatePostScreen> {
           HttpHeaders.refererHeader: 'https://www.instagram.com/',
         },
       ).timeout(const Duration(seconds: 15));
-      final bytes = await cached.readAsBytes();
-      if (bytes.isEmpty || bytes.length > 20 * 1024 * 1024) return null;
-
-      final codec = await ui.instantiateImageCodec(
-        bytes,
-        targetWidth: 8,
-        targetHeight: 8,
-      );
-      final frame = await codec.getNextFrame();
-      final isValid = frame.image.width > 0 && frame.image.height > 0;
-      frame.image.dispose();
-      codec.dispose();
-      if (!isValid) return null;
-
-      // 캐시 파일의 확장자는 응답에 따라 생략될 수 있다. 업로드 압축기가
-      // 안정적으로 처리하도록 실제 게시용 임시 파일은 jpg 경로로 고정한다.
-      final directory = await getTemporaryDirectory();
-      final requestId = widget.initialSharedRequest?.id
-              .replaceAll(RegExp(r'[^A-Za-z0-9_-]'), '') ??
-          DateTime.now().microsecondsSinceEpoch.toString();
-      final file = File(
-        '${directory.path}/wefilling-instagram-preview-$requestId.jpg',
-      );
-      await file.writeAsBytes(bytes, flush: true);
-      return file;
+      if (!await cached.exists()) return null;
+      final length = await cached.length();
+      return length > 0 && length <= 20 * 1024 * 1024 ? cached : null;
     } catch (error) {
-      Logger.error('Instagram 게시용 썸네일 준비 실패: $error');
+      Logger.warning(
+        '[InstagramPreview][local-preview] unavailable=${error.runtimeType}',
+      );
       return null;
     }
   }
@@ -327,7 +333,7 @@ class _CreatePostScreenState extends State<CreatePostScreen> {
 
   void _checkCanProceed() {
     final contentNotEmpty = _contentController.text.trim().isNotEmpty;
-    final hasImages = _selectedImages.isNotEmpty;
+    final hasImages = !_isExternalSocialShare && _selectedImages.isNotEmpty;
     final hasSharedLink = _sharedLinkPreview != null && !_sharedLinkRemoved;
     final canProceed = _selectedPostTags.isNotEmpty &&
         (contentNotEmpty || hasImages || hasSharedLink);
@@ -414,17 +420,17 @@ class _CreatePostScreenState extends State<CreatePostScreen> {
     setState(() {
       _selectedImages
         ..clear()
-        ..addAll(
-          _hasSharedPayloadImage
-              ? <File>[File(_sharedPayloadImagePath)]
-              : const <File>[],
-        )
         ..addAll(files);
       _isResolvingSelectedImages = false;
     });
   }
 
   Future<void> _selectImages() async {
+    // Instagram/YouTube 공유 포스트는 링크 미리보기가 미디어 역할을 한다.
+    // 외부 앱이 함께 전달한 이미지는 Instagram 썸네일 후보로만 사용하며,
+    // 일반 포스트 첨부 이미지 목록에는 추가하지 않는다.
+    if (_isExternalSocialShare) return;
+
     if (Platform.isAndroid) {
       final remaining = 15 - _selectedImages.length;
       if (remaining <= 0) return;
@@ -453,7 +459,7 @@ class _CreatePostScreenState extends State<CreatePostScreen> {
       return;
     }
 
-    final maxAssets = 15 - (_hasSharedPayloadImage ? 1 : 0);
+    final maxAssets = 15;
     if (maxAssets <= 0) return;
     final pickedAssets = await AssetPicker.pickAssets(
       context,
@@ -521,21 +527,13 @@ class _CreatePostScreenState extends State<CreatePostScreen> {
 
   Future<void> _removeImage(int index) async {
     if (index < 0 || index >= _selectedImages.length) return;
-    if (_selectedImages[index].path == _sharedPayloadImagePath) {
-      setState(() {
-        _selectedImages.removeAt(index);
-        _sharedPayloadImagePath = '';
-      });
-      _checkCanProceed();
-      return;
-    }
     if (Platform.isAndroid) {
       setState(() => _selectedImages.removeAt(index));
       _checkCanProceed();
       return;
     }
     setState(() {
-      final assetIndex = index - (_hasSharedPayloadImage ? 1 : 0);
+      final assetIndex = index;
       if (assetIndex >= 0 && assetIndex < _selectedAssets.length) {
         _selectedAssets.removeAt(assetIndex);
       }
@@ -808,6 +806,26 @@ class _CreatePostScreenState extends State<CreatePostScreen> {
       return;
     }
 
+    if (_requiresHanyangVerification &&
+        !context.read<app_auth.AuthProvider>().isHanyangEmailVerified) {
+      setState(() {
+        _visibility = 'public';
+        _isAnonymous = false;
+        _requiresHanyangVerification = false;
+        _selectedCategoryIds = [];
+      });
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(
+            Localizations.localeOf(context).languageCode == 'ko'
+                ? '한양메일 인증 후 한양대학생 전용으로 게시할 수 있어요.'
+                : 'Verify your Hanyang email to use Hanyang-only visibility.',
+          ),
+        ),
+      );
+      return;
+    }
+
     if (_isResolvingSelectedImages) {
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(content: Text(l10n.postPreparingImages)),
@@ -837,10 +855,10 @@ class _CreatePostScreenState extends State<CreatePostScreen> {
       }
       if (!mounted) return;
 
-      final sharedPreviewImage = await _resolvePersistentSharedPreviewImage();
+      final sharedPreviewImage = await _resolveLocalInstagramPreviewFile();
       if (!mounted) return;
 
-      if (_selectedImages.isNotEmpty) {
+      if (!_isExternalSocialShare && _selectedImages.isNotEmpty) {
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
             content: Text(l10n.postImageUploading),
@@ -855,14 +873,33 @@ class _CreatePostScreenState extends State<CreatePostScreen> {
         _contentController.text.trim(),
         categoryKeys:
             _selectedPostTags.map((category) => category.key).toList(),
-        imageFiles: _selectedImages.isNotEmpty ? _selectedImages : null,
+        imageFiles: !_isExternalSocialShare && _selectedImages.isNotEmpty
+            ? _selectedImages
+            : null,
         visibility: _visibility,
         isAnonymous: _isAnonymous,
+        requiresHanyangVerification: _requiresHanyangVerification,
         visibleToCategoryIds: _selectedCategoryIds,
         type: 'text',
         pollOptions: const [],
         linkPreview: _sharedLinkRemoved ? null : _sharedLinkPreview,
         linkPreviewImageFile: sharedPreviewImage,
+        linkPreviewImageSource:
+            _hasSharedPayloadImage ? 'share_payload' : 'local_preview',
+        externalShareRequestId: widget.initialSharedRequest?.id ?? '',
+        onLinkPreviewPersistenceFailed: () {
+          if (!mounted) return;
+          final isKo = Localizations.localeOf(context).languageCode == 'ko';
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(
+              content: Text(
+                isKo
+                    ? 'Instagram 미리보기를 저장하지 못했어요. 링크만 포함해서 게시합니다.'
+                    : 'The Instagram preview could not be saved. The link will still be posted.',
+              ),
+            ),
+          );
+        },
         requestedPostId: _externalPostId(),
         onCreated: (postId) => createdPostId = postId,
       );
@@ -1205,27 +1242,30 @@ class _CreatePostScreenState extends State<CreatePostScreen> {
                 },
               ),
               SizedBox(height: context.rs(20).clamp(16, 22).toDouble()),
-              _buildSectionLabel(
-                imageLabel,
-                trailing: '${_selectedImages.length}/15',
-              ),
-              _buildAddImageButton(l10n),
-              if (_selectedImages.isNotEmpty) ...[
-                SizedBox(height: context.rs(4)),
-                _buildSelectedImagesStrip(),
-                SizedBox(height: context.rs(6)),
-              ],
-              Text(
-                l10n.postComposeImageHelper,
-                style: TextStyle(
-                  fontFamily: 'Inter',
-                  fontFamilyFallback: const ['NotoSansKR'],
-                  fontSize: context.rf(12).clamp(11, 13).toDouble(),
-                  fontWeight: FontWeight.w500,
-                  color: const Color(0xFF6B7280),
+              if (!_isExternalSocialShare) ...[
+                _buildSectionLabel(
+                  imageLabel,
+                  trailing: '${_selectedImages.length}/15',
                 ),
-              ),
-              SizedBox(height: context.rs(22).clamp(18, 24).toDouble()),
+                _buildAddImageButton(l10n),
+                if (_selectedImages.isNotEmpty) ...[
+                  SizedBox(height: context.rs(4)),
+                  _buildSelectedImagesStrip(),
+                  SizedBox(height: context.rs(6)),
+                ],
+                Text(
+                  l10n.postComposeImageHelper,
+                  style: TextStyle(
+                    fontFamily: 'Inter',
+                    fontFamilyFallback: const ['NotoSansKR'],
+                    fontSize: context.rf(12).clamp(11, 13).toDouble(),
+                    fontWeight: FontWeight.w500,
+                    color: const Color(0xFF6B7280),
+                  ),
+                ),
+                SizedBox(height: context.rs(22).clamp(18, 24).toDouble()),
+              ] else
+                SizedBox(height: context.rs(4).clamp(2, 6).toDouble()),
               _buildSectionLabel(l10n.content),
               const Divider(height: 18, color: Color(0xFFE5E7EB)),
               TextField(
@@ -1497,6 +1537,8 @@ class _CreatePostScreenState extends State<CreatePostScreen> {
 
   Widget _buildVisibilityBody() {
     final l10n = AppLocalizations.of(context)!;
+    final isHanyangEmailVerified =
+        context.watch<app_auth.AuthProvider>().isHanyangEmailVerified;
     final screenWidth = MediaQuery.sizeOf(context).width;
     final systemBottomInset = MediaQuery.viewPaddingOf(context).bottom;
     final horizontalPadding = screenWidth < 360
@@ -1535,11 +1577,15 @@ class _CreatePostScreenState extends State<CreatePostScreen> {
                 icon: Icons.public_outlined,
                 title: l10n.postVisibilityPublicTitle,
                 description: l10n.postVisibilityPublicDescription,
-                selected: _visibility == 'public' && !_isAnonymous,
+                selected: _visibility == 'public' &&
+                    !_isAnonymous &&
+                    !_requiresHanyangVerification,
                 onTap: () {
                   setState(() {
                     _visibility = 'public';
                     _isAnonymous = false;
+                    _requiresHanyangVerification = false;
+                    _selectedCategoryIds = [];
                     _showCategoryRequiredHint = false;
                   });
                 },
@@ -1549,24 +1595,57 @@ class _CreatePostScreenState extends State<CreatePostScreen> {
                 icon: Icons.visibility_off_outlined,
                 title: l10n.postVisibilityAnonymousTitle,
                 description: l10n.postVisibilityAnonymousDescription,
-                selected: _visibility == 'public' && _isAnonymous,
+                selected: _visibility == 'public' &&
+                    _isAnonymous &&
+                    !_requiresHanyangVerification,
                 onTap: () {
                   setState(() {
                     _visibility = 'public';
                     _isAnonymous = true;
+                    _requiresHanyangVerification = false;
+                    _selectedCategoryIds = [];
                     _showCategoryRequiredHint = false;
                   });
                 },
               ),
+              if (isHanyangEmailVerified) ...[
+                const Divider(
+                  height: 1,
+                  indent: 40,
+                  color: Color(0xFFEAECF0),
+                ),
+                _buildVisibilityOption(
+                  icon: Icons.school_outlined,
+                  title: Localizations.localeOf(context).languageCode == 'ko'
+                      ? '한양대학생만'
+                      : 'Hanyang students only',
+                  description: Localizations.localeOf(context).languageCode ==
+                          'ko'
+                      ? '카드는 모두에게 보이고, 인증된 사용자만 내용을 볼 수 있어요.'
+                      : 'Everyone sees the card, but only verified users can view its content.',
+                  selected: _requiresHanyangVerification,
+                  onTap: () {
+                    setState(() {
+                      _visibility = 'public';
+                      _isAnonymous = false;
+                      _requiresHanyangVerification = true;
+                      _selectedCategoryIds = [];
+                      _showCategoryRequiredHint = false;
+                    });
+                  },
+                ),
+              ],
               const Divider(height: 1, indent: 40, color: Color(0xFFEAECF0)),
               _buildVisibilityOption(
                 icon: Icons.group_outlined,
                 title: l10n.postVisibilityGroupTitle,
                 description: l10n.postVisibilityGroupDescription,
-                selected: _visibility == 'category',
+                selected:
+                    _visibility == 'category' && !_requiresHanyangVerification,
                 onTap: () {
                   setState(() {
                     _visibility = 'category';
+                    _requiresHanyangVerification = false;
                     // 그룹 공개는 작성자 정보가 보이는 공개 방식만 지원한다.
                     // 익명 공개를 선택한 상태에서 그룹으로 전환하면 즉시 해제한다.
                     _isAnonymous = false;

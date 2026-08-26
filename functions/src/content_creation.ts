@@ -2,6 +2,7 @@ import * as functions from 'firebase-functions';
 import * as admin from 'firebase-admin';
 import * as crypto from 'crypto';
 import {COL} from './firestore_paths';
+import {hasActiveHanyangClaim} from './hanyang_verification';
 import {
   isActiveUserData,
   resolveFriendNotificationAudience,
@@ -76,29 +77,41 @@ function supportedSharedLink(value: string, allowHttp = false): URL {
   return parsed;
 }
 
-function validatedInstagramEmbedHtml(raw: unknown, canonicalUrl: string): string {
-  const html = text(raw, 100000, 'linkPreview.embedHtml');
-  if (!html) return '';
-  const lower = html.toLowerCase();
-  const forbiddenMarkup = /<(script|style|iframe|object|embed|form|input|meta|link|base|img)\b/i;
-  const eventHandler = /\son[a-z]+\s*=/i;
-  if (
-    !lower.includes('class="instagram-media"') ||
-    !html.includes(canonicalUrl) ||
-    forbiddenMarkup.test(html) ||
-    eventHandler.test(html) ||
-    /\ssrc\s*=/i.test(html) ||
-    lower.includes('javascript:') ||
-    lower.includes('data:text/html')
-  ) {
-    throw new functions.https.HttpsError('invalid-argument', 'Invalid Instagram embed HTML.');
-  }
-  return html;
+function firebaseStorageObjectPath(value: string): string {
+  try {
+    const url = new URL(value);
+    const host = url.hostname.toLowerCase().replace(/\.$/, '');
+    if (url.protocol !== 'https:' || url.username || url.password) return '';
+    if (host === 'firebasestorage.googleapis.com') {
+      const marker = '/o/';
+      const index = url.pathname.indexOf(marker);
+      return index >= 0 ? decodeURIComponent(url.pathname.slice(index + marker.length)) : '';
+    }
+    if (host === 'storage.googleapis.com') {
+      const segments = url.pathname.split('/').filter(Boolean);
+      return segments.length >= 2 ? decodeURIComponent(segments.slice(1).join('/')) : '';
+    }
+  } catch (_) {}
+  return '';
+}
+
+function isPersistentInstagramThumbnail(
+  thumbnailUrl: string,
+  storagePath: string,
+  ownerUid: string,
+  postId: string,
+): boolean {
+  const expectedPrefix = `post_link_previews/${ownerUid}/${postId}/`;
+  return /^instagram\.(jpg|png|webp)$/.test(storagePath.slice(expectedPrefix.length)) &&
+    storagePath.startsWith(expectedPrefix) &&
+    firebaseStorageObjectPath(thumbnailUrl) === storagePath;
 }
 
 function sharedLinkPreview(
   raw: unknown,
   now: admin.firestore.Timestamp,
+  ownerUid: string,
+  postId: string,
 ): FirebaseFirestore.DocumentData | null {
   if (raw == null) return null;
   const value = object(raw);
@@ -134,7 +147,31 @@ function sharedLinkPreview(
     throw new functions.https.HttpsError('invalid-argument', 'Invalid canonical shared link.');
   }
 
-  const thumbnailUrl = text(value.thumbnailUrl, 2048, 'linkPreview.thumbnailUrl');
+  let thumbnailUrl = text(value.thumbnailUrl, 2048, 'linkPreview.thumbnailUrl');
+  let thumbnailStoragePath = text(
+    value.thumbnailStoragePath,
+    500,
+    'linkPreview.thumbnailStoragePath',
+  );
+  let thumbnailSource = text(value.thumbnailSource, 40, 'linkPreview.thumbnailSource');
+  let thumbnailWidth = integer(
+    value.thumbnailWidth ?? 0,
+    0,
+    10000,
+    'linkPreview.thumbnailWidth',
+  );
+  let thumbnailHeight = integer(
+    value.thumbnailHeight ?? 0,
+    0,
+    10000,
+    'linkPreview.thumbnailHeight',
+  );
+  let previewVersion = integer(
+    value.previewVersion ?? 0,
+    0,
+    100,
+    'linkPreview.previewVersion',
+  );
   if (thumbnailUrl) {
     let thumbnail: URL;
     try {
@@ -148,12 +185,24 @@ function sharedLinkPreview(
     const thumbnailHost = thumbnail.hostname.toLowerCase().replace(/\.$/, '');
     const allowedThumbnail = inferredProvider === 'youtube'
       ? thumbnailHost === 'i.ytimg.com' || thumbnailHost === 'img.youtube.com'
-      : thumbnailHost === 'cdninstagram.com' ||
-        thumbnailHost.endsWith('.cdninstagram.com') ||
-        thumbnailHost === 'fbcdn.net' || thumbnailHost.endsWith('.fbcdn.net') ||
-        thumbnailHost === 'instagram.com' || thumbnailHost.endsWith('.instagram.com');
-    if (!allowedThumbnail) {
+      : isPersistentInstagramThumbnail(
+        thumbnailUrl,
+        thumbnailStoragePath,
+        ownerUid,
+        postId,
+      );
+    if (!allowedThumbnail && inferredProvider === 'youtube') {
       throw new functions.https.HttpsError('invalid-argument', 'Unsupported thumbnail host.');
+    }
+    if (!allowedThumbnail && inferredProvider === 'instagram') {
+      // Meta CDN과 /media URL은 캐시용 후보일 뿐 게시 문서의 영구
+      // thumbnailUrl로 저장하지 않는다.
+      thumbnailUrl = '';
+      thumbnailStoragePath = '';
+      thumbnailSource = '';
+      thumbnailWidth = 0;
+      thumbnailHeight = 0;
+      previewVersion = Math.max(previewVersion, 4);
     }
   }
 
@@ -169,14 +218,8 @@ function sharedLinkPreview(
   const normalizedCanonicalUrl = inferredProvider === 'instagram'
     ? `https://www.instagram.com/${instagramRoute}/${canonicalContentId}/`
     : canonicalUrl;
-  const requestedPreviewMode = text(value.previewMode, 20, 'linkPreview.previewMode');
-  const embedHtml = inferredProvider === 'instagram'
-    ? validatedInstagramEmbedHtml(value.embedHtml, normalizedCanonicalUrl)
-    : '';
   const previewMode = inferredProvider === 'instagram'
-    ? (requestedPreviewMode === 'embed' && embedHtml
-      ? 'embed'
-      : (requestedPreviewMode === 'image' && thumbnailUrl ? 'image' : 'link'))
+    ? (thumbnailUrl ? 'image' : 'link')
     : 'image';
 
   return {
@@ -190,33 +233,76 @@ function sharedLinkPreview(
       (inferredProvider === 'instagram' ? 'Instagram에서 공유된 게시물' : ''),
     authorName: text(value.authorName, 160, 'linkPreview.authorName'),
     thumbnailUrl,
+    ...(thumbnailUrl ? {
+      thumbnailStoragePath,
+      thumbnailSource: ['share_payload', 'local_preview', 'remote_resolver']
+        .includes(thumbnailSource)
+        ? thumbnailSource
+        : 'local_preview',
+      ...(thumbnailWidth > 0 ? {thumbnailWidth} : {}),
+      ...(thumbnailHeight > 0 ? {thumbnailHeight} : {}),
+      previewVersion: Math.max(previewVersion, 4),
+    } : {thumbnailStoragePath: '', thumbnailSource: '', previewVersion}),
     aspectRatio,
     previewMode,
-    ...(previewMode === 'embed' ? {embedHtml} : {}),
     fetchedAt: now,
     previewStatus: previewStatus === 'ready' &&
-        (inferredProvider === 'youtube' || previewMode !== 'link')
+        (inferredProvider === 'youtube' || thumbnailUrl)
       ? 'ready'
       : 'unavailable',
   };
 }
 
-function sharedLinkPreviewWithImageFallback(
+async function verifiedPersistedLinkPreview(
   preview: FirebaseFirestore.DocumentData | null,
-  imageUrls: string[],
-): FirebaseFirestore.DocumentData | null {
-  if (!preview || imageUrls.length === 0) return preview;
-  if (text(preview.thumbnailUrl, 2048, 'linkPreview.thumbnailUrl')) return preview;
-  if (preview.provider !== 'youtube' && preview.provider !== 'instagram') return preview;
-
-  // This URL has already been accepted as post media (or was uploaded by this
-  // function). Persisting it on the preview lets feed cards stay image-based
-  // even when Instagram oEmbed omits thumbnail_url.
-  return {
-    ...preview,
-    thumbnailUrl: imageUrls[0],
-    previewStatus: 'ready',
-  };
+  ownerUid: string,
+  postId: string,
+): Promise<FirebaseFirestore.DocumentData | null> {
+  if (!preview || preview.provider !== 'instagram' || !preview.thumbnailUrl) {
+    return preview;
+  }
+  const storagePath = text(
+    preview.thumbnailStoragePath,
+    500,
+    'linkPreview.thumbnailStoragePath',
+  );
+  if (!isPersistentInstagramThumbnail(
+    text(preview.thumbnailUrl, 2048, 'linkPreview.thumbnailUrl'),
+    storagePath,
+    ownerUid,
+    postId,
+  )) {
+    return {
+      ...preview,
+      thumbnailUrl: '',
+      thumbnailStoragePath: '',
+      thumbnailSource: '',
+      previewMode: 'link',
+      previewStatus: 'unavailable',
+    };
+  }
+  try {
+    const file = admin.storage().bucket().file(storagePath);
+    const [exists] = await file.exists();
+    if (!exists) throw new Error('storage-object-not-found');
+    const [metadata] = await file.getMetadata();
+    const custom = metadata.metadata ?? {};
+    if (!['image/jpeg', 'image/png', 'image/webp'].includes(metadata.contentType ?? '') ||
+        custom.ownerUid !== ownerUid || custom.postId !== postId ||
+        custom.provider !== 'instagram') {
+      throw new Error('storage-object-metadata-mismatch');
+    }
+    return preview;
+  } catch (_) {
+    return {
+      ...preview,
+      thumbnailUrl: '',
+      thumbnailStoragePath: '',
+      thumbnailSource: '',
+      previewMode: 'link',
+      previewStatus: 'unavailable',
+    };
+  }
 }
 
 async function profile(uid: string): Promise<FirebaseFirestore.DocumentData> {
@@ -248,6 +334,32 @@ function externalShareJpeg(raw: unknown): Buffer | null {
     throw new functions.https.HttpsError('invalid-argument', 'Invalid shared JPEG image.');
   }
   return bytes;
+}
+
+function jpegImageDimensions(bytes: Buffer): {width: number; height: number} | null {
+  let offset = 2;
+  while (offset + 8 < bytes.length) {
+    if (bytes[offset] !== 0xff) {
+      offset++;
+      continue;
+    }
+    const marker = bytes[offset + 1];
+    offset += 2;
+    if (marker === 0xd8 || marker === 0xd9) continue;
+    if (offset + 2 > bytes.length) return null;
+    const segmentLength = bytes.readUInt16BE(offset);
+    if (segmentLength < 2 || offset + segmentLength > bytes.length) return null;
+    const isStartOfFrame = marker >= 0xc0 && marker <= 0xcf &&
+      ![0xc4, 0xc8, 0xcc].includes(marker);
+    if (isStartOfFrame && segmentLength >= 7) {
+      return {
+        height: bytes.readUInt16BE(offset + 3),
+        width: bytes.readUInt16BE(offset + 5),
+      };
+    }
+    offset += segmentLength;
+  }
+  return null;
 }
 
 /**
@@ -311,19 +423,32 @@ export const createPostSecure = functions.runWith({timeoutSeconds: 120, memory: 
         'Group posts cannot be anonymous.',
       );
     }
+    const requiresHanyangVerification =
+      data.requiresHanyangVerification === true;
+    if (requiresHanyangVerification &&
+        (frozen.visibilityMode !== 'public' || isAnonymous)) {
+      throw new functions.https.HttpsError(
+        'invalid-argument',
+        'Hanyang-only visibility cannot be combined with another visibility mode or anonymity.',
+      );
+    }
     const notificationAudienceUserIdsFrozen = frozen.visibilityMode === 'public'
       ? await resolveFriendNotificationAudience(uid)
       : frozen.audienceUserIdsFrozen.filter((userId) => userId !== uid);
     const user = await profile(uid);
+    if (requiresHanyangVerification && !(await hasActiveHanyangClaim(uid))) {
+      throw new functions.https.HttpsError(
+        'permission-denied',
+        'Hanyang email verification is required for Hanyang-only posts.',
+      );
+    }
     const now = admin.firestore.Timestamp.now();
-    const rawLinkPreview = sharedLinkPreview(data.linkPreview, now);
-    // 최대 15개의 사용자 첨부 이미지에 Instagram 카드용 영구 썸네일
-    // 한 장이 앞에 추가될 수 있다.
-    const imageUrls = stringList(data.imageUrls, 16);
-    const linkPreview = sharedLinkPreviewWithImageFallback(
-      rawLinkPreview,
-      imageUrls,
+    const linkPreview = await verifiedPersistedLinkPreview(
+      sharedLinkPreview(data.linkPreview, now, uid, postId),
+      uid,
+      postId,
     );
+    const imageUrls = stringList(data.imageUrls, 15);
     const type = text(data.type, 20, 'type') || 'text';
     const content = text(data.content, 10000, 'content');
     const pollOptions = stringList(data.pollOptions, 2, 200);
@@ -353,6 +478,7 @@ export const createPostSecure = functions.runWith({timeoutSeconds: 120, memory: 
       notificationAudienceUserIdsFrozen,
       visibilityLockedAt: now,
       visibilitySchemaVersion: VISIBILITY_SCHEMA_VERSION,
+      requiresHanyangVerification,
       isAnonymous,
       likes: 0,
       likedBy: [],
@@ -429,12 +555,28 @@ export const createExternalSharePost = functions
       );
     }
 
+    const requiresHanyangVerification =
+      data.requiresHanyangVerification === true;
+    if (requiresHanyangVerification &&
+        (frozen.visibilityMode !== 'public' || isAnonymous)) {
+      throw new functions.https.HttpsError(
+        'invalid-argument',
+        'Hanyang-only visibility cannot be combined with another visibility mode or anonymity.',
+      );
+    }
+
     const user = await profile(uid);
+    if (requiresHanyangVerification && !(await hasActiveHanyangClaim(uid))) {
+      throw new functions.https.HttpsError(
+        'permission-denied',
+        'Hanyang email verification is required for Hanyang-only posts.',
+      );
+    }
     const now = admin.firestore.Timestamp.now();
-    const rawLinkPreview = sharedLinkPreview(data.linkPreview, now);
+    let linkPreview = sharedLinkPreview(data.linkPreview, now, uid, postId);
     const content = text(data.content, 10000, 'content');
     const image = externalShareJpeg(data.imageBase64);
-    if (!content && !rawLinkPreview && !image) {
+    if (!content && !linkPreview && !image) {
       throw new functions.https.HttpsError('invalid-argument', 'Post content is empty.');
     }
 
@@ -443,29 +585,63 @@ export const createExternalSharePost = functions
       : frozen.audienceUserIdsFrozen.filter((userId) => userId !== uid);
 
     let uploadedPath = '';
+    let uploadedPreviewPath = '';
     let imageUrls: string[] = [];
     if (image) {
-      uploadedPath = `posts/external-${postId}.jpg`;
       const token = crypto.randomUUID();
       const bucket = admin.storage().bucket();
-      await bucket.file(uploadedPath).save(image, {
-        resumable: false,
-        contentType: 'image/jpeg',
-        metadata: {
-          cacheControl: 'public,max-age=31536000,immutable',
-          metadata: {firebaseStorageDownloadTokens: token},
-        },
-      });
-      imageUrls = [
-        `https://firebasestorage.googleapis.com/v0/b/${encodeURIComponent(bucket.name)}` +
-        `/o/${encodeURIComponent(uploadedPath)}?alt=media&token=${encodeURIComponent(token)}`,
-      ];
+      if (linkPreview?.provider === 'instagram') {
+        uploadedPreviewPath = `post_link_previews/${uid}/${postId}/instagram.jpg`;
+        const dimensions = jpegImageDimensions(image);
+        await bucket.file(uploadedPreviewPath).save(image, {
+          resumable: false,
+          contentType: 'image/jpeg',
+          metadata: {
+            cacheControl: 'public,max-age=31536000,immutable',
+            metadata: {
+              firebaseStorageDownloadTokens: token,
+              provider: 'instagram',
+              postId,
+              ownerUid: uid,
+              source: 'share_payload',
+              width: `${dimensions?.width ?? 0}`,
+              height: `${dimensions?.height ?? 0}`,
+            },
+          },
+        });
+        const thumbnailUrl =
+          `https://firebasestorage.googleapis.com/v0/b/${encodeURIComponent(bucket.name)}` +
+          `/o/${encodeURIComponent(uploadedPreviewPath)}?alt=media&token=${encodeURIComponent(token)}`;
+        linkPreview = {
+          ...linkPreview,
+          thumbnailUrl,
+          thumbnailStoragePath: uploadedPreviewPath,
+          thumbnailSource: 'share_payload',
+          ...(dimensions ? {
+            thumbnailWidth: dimensions.width,
+            thumbnailHeight: dimensions.height,
+            aspectRatio: Math.min(2.4, Math.max(0.5, dimensions.width / dimensions.height)),
+          } : {}),
+          previewMode: 'image',
+          previewStatus: 'ready',
+          previewVersion: 4,
+        };
+      } else {
+        uploadedPath = `posts/external-${postId}.jpg`;
+        await bucket.file(uploadedPath).save(image, {
+          resumable: false,
+          contentType: 'image/jpeg',
+          metadata: {
+            cacheControl: 'public,max-age=31536000,immutable',
+            metadata: {firebaseStorageDownloadTokens: token},
+          },
+        });
+        imageUrls = [
+          `https://firebasestorage.googleapis.com/v0/b/${encodeURIComponent(bucket.name)}` +
+          `/o/${encodeURIComponent(uploadedPath)}?alt=media&token=${encodeURIComponent(token)}`,
+        ];
+      }
     }
-
-    const linkPreview = sharedLinkPreviewWithImageFallback(
-      rawLinkPreview,
-      imageUrls,
-    );
     const document: FirebaseFirestore.DocumentData = {
       userId: uid,
       ownerId: uid,
@@ -488,6 +664,7 @@ export const createExternalSharePost = functions
       notificationAudienceUserIdsFrozen,
       visibilityLockedAt: now,
       visibilitySchemaVersion: VISIBILITY_SCHEMA_VERSION,
+      requiresHanyangVerification,
       isAnonymous,
       likes: 0,
       likedBy: [],
@@ -510,6 +687,10 @@ export const createExternalSharePost = functions
         await admin.storage().bucket().file(uploadedPath).delete({ignoreNotFound: true})
           .catch(() => undefined);
       }
+      if (uploadedPreviewPath) {
+        await admin.storage().bucket().file(uploadedPreviewPath).delete({ignoreNotFound: true})
+          .catch(() => undefined);
+      }
       throw error;
     }
 
@@ -530,10 +711,24 @@ export const createMeetupSecure = functions.runWith({timeoutSeconds: 120, memory
       data.visibility,
       data.visibleToCategoryIds,
     );
+    const requiresHanyangVerification =
+      data.requiresHanyangVerification === true;
+    if (requiresHanyangVerification && frozen.visibilityMode !== 'public') {
+      throw new functions.https.HttpsError(
+        'invalid-argument',
+        'Hanyang-only visibility cannot be combined with another visibility mode.',
+      );
+    }
     const notificationAudienceUserIdsFrozen = frozen.visibilityMode === 'public'
       ? await resolveFriendNotificationAudience(uid)
       : frozen.audienceUserIdsFrozen.filter((userId) => userId !== uid);
     const user = await profile(uid);
+    if (requiresHanyangVerification && !(await hasActiveHanyangClaim(uid))) {
+      throw new functions.https.HttpsError(
+        'permission-denied',
+        'Hanyang email verification is required for Hanyang-only meetups.',
+      );
+    }
     const dateMillis = integer(data.dateMillis, 0, 8640000000000000, 'date');
     const startsAtMillis = integer(data.startsAtMillis, 0, 8640000000000000, 'startsAt');
     const endsAtMillis = integer(data.endsAtMillis, startsAtMillis, 8640000000000000, 'endsAt');
@@ -578,6 +773,7 @@ export const createMeetupSecure = functions.runWith({timeoutSeconds: 120, memory
       notificationAudienceUserIdsFrozen,
       visibilityLockedAt: now,
       visibilitySchemaVersion: VISIBILITY_SCHEMA_VERSION,
+      requiresHanyangVerification,
       isConfirmed: false,
       publicWindowStatus: publicDurationHours == null ? 'unlimited' : 'timed',
       ...(publicDurationHours == null ? {} : {

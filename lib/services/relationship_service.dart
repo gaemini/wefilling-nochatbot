@@ -46,6 +46,11 @@ class RelationshipService {
         throw Exception('자기 자신에게 친구요청을 보낼 수 없습니다.');
       }
 
+      final targetIsActive = await _usersRepository.isActiveUserAccount(toUid);
+      if (!targetIsActive) {
+        throw Exception('탈퇴했거나 이용할 수 없는 계정입니다.');
+      }
+
       // 🔥 iOS 크래시 방지: 네이티브 gRPC 통신에 명시적 타임아웃 추가
       final callable = _functions.httpsCallable('sendFriendRequest');
       final result = await callable.call({'toUid': toUid}).timeout(
@@ -67,7 +72,7 @@ class RelationshipService {
     } on FirebaseFunctionsException catch (e) {
       // Firebase Functions 오류 메시지를 정확히 파싱
       Logger.error('친구요청 전송 오류 (Functions): ${e.code} - ${e.message}');
-      
+
       String userMessage;
       switch (e.code) {
         case 'already-exists':
@@ -85,7 +90,7 @@ class RelationshipService {
         default:
           userMessage = e.message ?? '친구요청 전송 중 오류가 발생했습니다.';
       }
-      
+
       throw Exception(userMessage);
     } catch (e) {
       Logger.error('친구요청 전송 오류: $e');
@@ -144,10 +149,10 @@ class RelationshipService {
       final success = result.data['success'] as bool? ?? false;
       if (success) {
         Logger.log('친구요청 수락 성공: $fromUid');
-        
+
         // 캐시 무효화 (새로운 친구 추가됨)
         invalidateUserCache(fromUid);
-        
+
         return true;
       } else {
         final error = result.data['error'] as String? ?? '알 수 없는 오류';
@@ -210,10 +215,10 @@ class RelationshipService {
       final success = result.data['success'] as bool? ?? false;
       if (success) {
         Logger.log('친구 삭제 성공: $otherUid');
-        
+
         // 캐시 무효화 (친구 삭제됨)
         invalidateUserCache(otherUid);
-        
+
         return true;
       } else {
         final error = result.data['error'] as String? ?? '알 수 없는 오류';
@@ -336,6 +341,7 @@ class RelationshipService {
   Future<bool> canSendFriendRequest(String toUid) async {
     try {
       if (!isLoggedIn || currentUserId == toUid) return false;
+      if (!await _usersRepository.isActiveUserAccount(toUid)) return false;
 
       final status = await getRelationshipStatus(toUid);
       return status.canSendRequest;

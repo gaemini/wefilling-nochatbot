@@ -17,6 +17,7 @@ import '../config/snack_chat_file_policy.dart';
 import '../l10n/app_localizations.dart';
 import '../services/cache/app_image_cache_manager.dart';
 import '../services/badge_service.dart';
+import '../services/fcm_service.dart';
 import '../services/snack_chat_active_conversation.dart';
 import '../services/snack_chat_document_import_service.dart';
 import '../services/snack_chat_local_cache_service.dart';
@@ -187,6 +188,15 @@ class _SnackChatScreenState extends State<SnackChatScreen>
   int _cacheHydrationGeneration = 0;
   String? _cachedRoomWriteToken;
   DateTime? _lastOptimisticCreatedAt;
+  int _entryBootstrapGeneration = 0;
+  String? _firstUnreadMessageId;
+  int? _firstUnreadSequence;
+  bool _entryContextResolved = false;
+  bool _entryPositionSettled = false;
+  bool _entryReadSyncAllowed = false;
+  bool _entryPositionInFlight = false;
+  Timer? _entryRetryTimer;
+  int _entryRetryAttempt = 0;
 
   @override
   void initState() {
@@ -201,7 +211,7 @@ class _SnackChatScreenState extends State<SnackChatScreen>
     _scrollController.addListener(_onScroll);
     _messageController.addListener(_onDraftChanged);
     unawaited(_hydrateLocalState());
-    _subscribeToMessages();
+    unawaited(_prepareEntryAndSubscribe());
     _subscribeToAuxiliaryState();
     _subscribeToFileTransfers();
     unawaited(_restoreFileTransfers());
@@ -223,7 +233,7 @@ class _SnackChatScreenState extends State<SnackChatScreen>
       SnackChatActiveConversation.setActive(null);
     }
     final oldReadBoundary = _latestLoadedSequence();
-    if (oldReadBoundary > 0) {
+    if (oldReadBoundary > 0 && _entryReadSyncAllowed && _entryPositionSettled) {
       unawaited(
         _flushReadBoundary(
           roomId: oldWidget.snackChatId,
@@ -249,6 +259,7 @@ class _SnackChatScreenState extends State<SnackChatScreen>
     _messageRetryTimer?.cancel();
     _fileExpiryTimer?.cancel();
     _roomRetryTimer?.cancel();
+    _entryRetryTimer?.cancel();
     _restoringDraft = true;
     _messageController.clear();
     _restoringDraft = false;
@@ -298,12 +309,21 @@ class _SnackChatScreenState extends State<SnackChatScreen>
     _hasReceivedFirstLiveBatch = false;
     _cachedRoomWriteToken = null;
     _lastOptimisticCreatedAt = null;
+    _entryBootstrapGeneration++;
+    _firstUnreadMessageId = null;
+    _firstUnreadSequence = null;
+    _entryContextResolved = false;
+    _entryPositionSettled = false;
+    _entryReadSyncAllowed = false;
+    _entryPositionInFlight = false;
+    _entryRetryTimer = null;
+    _entryRetryAttempt = 0;
     _roomStream = _snackChatService.watchSnackChat(widget.snackChatId);
     if (_appLifecycleState == AppLifecycleState.resumed) {
       SnackChatActiveConversation.setActive(widget.snackChatId);
     }
     unawaited(_hydrateLocalState());
-    _subscribeToMessages();
+    unawaited(_prepareEntryAndSubscribe());
     _subscribeToAuxiliaryState();
     _subscribeToFileTransfers();
     unawaited(_restoreFileTransfers());
@@ -531,6 +551,175 @@ class _SnackChatScreenState extends State<SnackChatScreen>
     return operation;
   }
 
+  Future<void> _prepareEntryAndSubscribe() async {
+    final roomId = widget.snackChatId;
+    final generation = ++_entryBootstrapGeneration;
+    try {
+      await _ensureMyMembershipReady();
+      final entry = await _snackChatService.getEntryContext(roomId);
+      if (!mounted ||
+          generation != _entryBootstrapGeneration ||
+          roomId != widget.snackChatId) {
+        return;
+      }
+
+      List<SnackChatMessage> anchorWindow = const <SnackChatMessage>[];
+      if (entry.hasUnreadAnchor) {
+        anchorWindow = await _snackChatService
+            .fetchMessageWindowAroundSequence(
+              roomId,
+              messageId: entry.firstUnreadMessageId!,
+              sequence: entry.firstUnreadSequence!,
+            )
+            .timeout(const Duration(seconds: 14));
+        if (!anchorWindow.any(
+          (message) => message.id == entry.firstUnreadMessageId,
+        )) {
+          throw StateError('The unread Snack Chat anchor is unavailable.');
+        }
+      }
+      if (!mounted ||
+          generation != _entryBootstrapGeneration ||
+          roomId != widget.snackChatId) {
+        return;
+      }
+
+      setState(() {
+        _entryRetryTimer?.cancel();
+        _entryRetryTimer = null;
+        _entryRetryAttempt = 0;
+        _entryContextResolved = true;
+        _entryReadSyncAllowed = entry.canAdvanceReadCursor;
+        _confirmedReadSequence = entry.lastReadSequence;
+        _pendingReadSequence = entry.lastReadSequence;
+        _firstUnreadMessageId = entry.firstUnreadMessageId;
+        _firstUnreadSequence = entry.firstUnreadSequence;
+        for (final message in anchorWindow) {
+          if (_messageIds.add(message.id)) _messages.add(message);
+        }
+        if (_messages.isNotEmpty) {
+          _sortMessages();
+          _oldestMessage = _messages.last;
+          _isInitialLoading = false;
+        }
+        _isNearLatest = !entry.hasUnreadAnchor;
+        _entryPositionSettled = !entry.hasUnreadAnchor;
+      });
+      _subscribeToMessages();
+      if (entry.hasUnreadAnchor) {
+        _scheduleEntryAnchorPosition(generation: generation);
+      } else if (_entryReadSyncAllowed) {
+        _scheduleActiveReadSync();
+      }
+    } catch (error, stackTrace) {
+      Logger.error(
+        'Snack Chat 첫 안 읽은 메시지 경계 조회 실패',
+        error,
+        stackTrace,
+      );
+      if (!mounted ||
+          generation != _entryBootstrapGeneration ||
+          roomId != widget.snackChatId) {
+        return;
+      }
+      // 연결 실패 시에는 최신 화면만 보여 주고 읽음 커서를 추측해서
+      // 진행하지 않는다. 다음 진입/재연결에서 서버 경계를 다시 구한다.
+      setState(() {
+        _entryContextResolved = true;
+        _entryPositionSettled = true;
+        _entryReadSyncAllowed = false;
+        _firstUnreadMessageId = null;
+        _firstUnreadSequence = null;
+        _isNearLatest = true;
+      });
+      _subscribeToMessages();
+      if (_entryRetryAttempt < 3 && _entryRetryTimer == null) {
+        _entryRetryAttempt++;
+        final retryGeneration = generation;
+        _entryRetryTimer = Timer(
+          Duration(seconds: 1 << _entryRetryAttempt),
+          () {
+            _entryRetryTimer = null;
+            if (mounted &&
+                retryGeneration == _entryBootstrapGeneration &&
+                roomId == widget.snackChatId) {
+              unawaited(_prepareEntryAndSubscribe());
+            }
+          },
+        );
+      }
+    }
+  }
+
+  void _scheduleEntryAnchorPosition({
+    required int generation,
+    int attempt = 0,
+  }) {
+    if (!mounted ||
+        generation != _entryBootstrapGeneration ||
+        _entryPositionSettled) {
+      return;
+    }
+    _entryPositionInFlight = true;
+    WidgetsBinding.instance.addPostFrameCallback((_) async {
+      if (!mounted ||
+          generation != _entryBootstrapGeneration ||
+          _entryPositionSettled) {
+        return;
+      }
+      final anchorId = _firstUnreadMessageId;
+      final anchorContext =
+          anchorId == null ? null : _messageKeys[anchorId]?.currentContext;
+      if (anchorContext != null) {
+        await Scrollable.ensureVisible(
+          anchorContext,
+          alignment: .18,
+          duration:
+              attempt == 0 ? Duration.zero : const Duration(milliseconds: 140),
+          curve: Curves.easeOutCubic,
+        );
+        if (!mounted || generation != _entryBootstrapGeneration) return;
+        setState(() {
+          _entryPositionInFlight = false;
+          _entryPositionSettled = true;
+          _isNearLatest = _scrollController.hasClients &&
+              _scrollController.position.pixels <= 72;
+        });
+        _scheduleActiveReadSync();
+        return;
+      }
+
+      if (_scrollController.hasClients) {
+        final position = _scrollController.position;
+        final anchorIndex = anchorId == null
+            ? -1
+            : _messages.indexWhere((message) => message.id == anchorId);
+        final estimatedTarget = anchorIndex < 0 || _messages.length <= 1
+            ? position.maxScrollExtent
+            : position.maxScrollExtent *
+                (anchorIndex / (_messages.length - 1)).clamp(0.0, 1.0);
+        if ((estimatedTarget - position.pixels).abs() > .5) {
+          position.jumpTo(estimatedTarget);
+        }
+      }
+      if (attempt < 6) {
+        _scheduleEntryAnchorPosition(
+          generation: generation,
+          attempt: attempt + 1,
+        );
+        return;
+      }
+
+      // The context was valid but its widget could not be laid out. Keep the
+      // cursor frozen rather than clearing unread messages from a guessed spot.
+      setState(() {
+        _entryPositionInFlight = false;
+        _entryPositionSettled = true;
+        _entryReadSyncAllowed = false;
+      });
+    });
+  }
+
   @override
   void didChangeAppLifecycleState(AppLifecycleState state) {
     _appLifecycleState = state;
@@ -599,6 +788,7 @@ class _SnackChatScreenState extends State<SnackChatScreen>
             .markAsRead(roomId, throughSequence: throughSequence)
             .timeout(const Duration(seconds: 16));
         if (cleared > 0) await BadgeService.refreshNow();
+        await FCMService().cancelSnackChatNotification(roomId);
         return;
       } catch (error) {
         lastError = error;
@@ -616,6 +806,9 @@ class _SnackChatScreenState extends State<SnackChatScreen>
   /// 실행되는 것도 막는다.
   void _scheduleActiveReadSync() {
     if (!mounted ||
+        !_entryContextResolved ||
+        !_entryPositionSettled ||
+        !_entryReadSyncAllowed ||
         _isLeavingRoom ||
         _roomWasLeft ||
         _roomAccessTerminated ||
@@ -669,7 +862,12 @@ class _SnackChatScreenState extends State<SnackChatScreen>
   }
 
   void _startBackgroundReadFlush() {
-    if (_roomWasLeft || _roomAccessTerminated || _exitReadFlushStarted) {
+    if (!_entryContextResolved ||
+        !_entryPositionSettled ||
+        !_entryReadSyncAllowed ||
+        _roomWasLeft ||
+        _roomAccessTerminated ||
+        _exitReadFlushStarted) {
       return;
     }
     _exitReadFlushStarted = true;
@@ -769,7 +967,9 @@ class _SnackChatScreenState extends State<SnackChatScreen>
         _scheduleFileExpiryRefresh();
         _scheduleOutboxRecovery();
         _scheduleActiveReadSync();
-        if (wasNearLatest && (incoming.isNotEmpty || !hadLiveBatch)) {
+        if (_entryPositionSettled &&
+            wasNearLatest &&
+            (incoming.isNotEmpty || !hadLiveBatch)) {
           WidgetsBinding.instance.addPostFrameCallback((_) {
             if (mounted && _isNearLatest) _scrollToLatest(animated: true);
           });
@@ -1047,7 +1247,8 @@ class _SnackChatScreenState extends State<SnackChatScreen>
       });
     }
     // 리스트가 끝(오래된 메시지 방향)에 다가오면 추가 로드
-    if (_scrollController.position.pixels >=
+    if (!_entryPositionInFlight &&
+        _scrollController.position.pixels >=
             _scrollController.position.maxScrollExtent - 300 &&
         !_isLoadingMore &&
         _hasMore) {
@@ -1132,6 +1333,12 @@ class _SnackChatScreenState extends State<SnackChatScreen>
 
   String _safeUserLabel(String? value) {
     final candidate = value?.trim() ?? '';
+    if (candidate == 'DELETED_ACCOUNT' || candidate == 'Deleted') {
+      return AppLocalizations.of(context)?.deletedAccount ??
+          (Localizations.localeOf(context).languageCode == 'ko'
+              ? '탈퇴한 계정'
+              : 'Deleted Account');
+    }
     if (candidate.isEmpty || _looksLikeInternalIdentifier(candidate)) {
       return _genericUserLabel;
     }
@@ -1192,6 +1399,7 @@ class _SnackChatScreenState extends State<SnackChatScreen>
     _messageRetryTimer?.cancel();
     _fileExpiryTimer?.cancel();
     _roomRetryTimer?.cancel();
+    _entryRetryTimer?.cancel();
     _messageController.removeListener(_onDraftChanged);
     if (!_roomWasLeft) {
       unawaited(
@@ -3135,12 +3343,16 @@ class _SnackChatScreenState extends State<SnackChatScreen>
         final isMe = message.senderId == _uid;
         final showDateDivider = _shouldShowDateDivider(index);
         final groupedWithNewer = index > 0 &&
+            !_hasUnreadBoundaryBetween(message, _messages[index - 1]) &&
             shouldGroupSnackChatMessages(message, _messages[index - 1]);
         final groupedWithOlder = index < _messages.length - 1 &&
+            !_hasUnreadBoundaryBetween(message, _messages[index + 1]) &&
             shouldGroupSnackChatMessages(message, _messages[index + 1]);
         final row = Column(
           children: [
             if (showDateDivider) _buildDateDivider(message.createdAt),
+            if (message.id == _firstUnreadMessageId)
+              _buildUnreadDivider(isKo: isKo),
             _buildMessageBubble(
               message: message,
               isMe: isMe,
@@ -4272,6 +4484,47 @@ class _SnackChatScreenState extends State<SnackChatScreen>
     return currentDate.year != prevDate.year ||
         currentDate.month != prevDate.month ||
         currentDate.day != prevDate.day;
+  }
+
+  bool _hasUnreadBoundaryBetween(
+    SnackChatMessage first,
+    SnackChatMessage second,
+  ) {
+    final boundary = _firstUnreadSequence;
+    if (boundary == null) return false;
+    final firstSequence = first.sequence;
+    final secondSequence = second.sequence;
+    if (firstSequence == null || secondSequence == null) return false;
+    return (firstSequence >= boundary && secondSequence < boundary) ||
+        (secondSequence >= boundary && firstSequence < boundary);
+  }
+
+  Widget _buildUnreadDivider({required bool isKo}) {
+    return Padding(
+      padding: EdgeInsets.symmetric(
+        vertical: context.rs(10).clamp(8, 13).toDouble(),
+        horizontal: context.rs(6).clamp(4, 8).toDouble(),
+      ),
+      child: Row(
+        children: [
+          const Expanded(child: Divider(height: 1, color: Color(0xFFD0D5DD))),
+          Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 10),
+            child: Text(
+              isKo ? '여기서부터 읽지 않은 메시지' : 'Unread messages',
+              style: TextStyle(
+                fontFamily: 'Inter',
+                fontFamilyFallback: const ['NotoSansKR'],
+                fontSize: context.rf(11.5).clamp(10.5, 12).toDouble(),
+                fontWeight: FontWeight.w600,
+                color: const Color(0xFF667085),
+              ),
+            ),
+          ),
+          const Expanded(child: Divider(height: 1, color: Color(0xFFD0D5DD))),
+        ],
+      ),
+    );
   }
 
   // 날짜 구분선 UI

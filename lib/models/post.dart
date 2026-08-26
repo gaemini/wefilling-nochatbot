@@ -92,6 +92,7 @@ class Post {
   final List<String> allowedUserIds; // 이 게시글을 볼 수 있는 사용자 ID 목록 (비공개용)
   final int visibilitySchemaVersion;
   final DateTime? visibilityLockedAt;
+  final bool requiresHanyangVerification;
 
   String get ownerId => userId;
   String get visibilityMode => visibility;
@@ -129,6 +130,7 @@ class Post {
     this.allowedUserIds = const [], // 허용된 사용자 ID 목록 (기본값: 빈 리스트)
     this.visibilitySchemaVersion = 0,
     this.visibilityLockedAt,
+    this.requiresHanyangVerification = false,
   })  : categoryKeys = _normalizePostCategoryKeys(
           categoryKeys,
           (categoryKey?.trim().isNotEmpty ?? false) ? categoryKey : category,
@@ -158,7 +160,8 @@ class Post {
     if (preview.provider != 'youtube' && preview.provider != 'instagram') {
       return '';
     }
-    return imageUrls.first.trim();
+    final first = imageUrls.first.trim();
+    return preview.thumbnailUrl.trim() == first ? first : '';
   }
 
   /// 첫 첨부 이미지를 링크 카드가 대신 표시하는 경우 본문 갤러리에서는
@@ -172,7 +175,7 @@ class Post {
 
     final first = imageUrls.first.trim();
     final thumbnail = preview.thumbnailUrl.trim();
-    final firstIsCardImage = thumbnail.isEmpty || thumbnail == first;
+    final firstIsCardImage = thumbnail == first;
     if (!firstIsCardImage) return imageUrls;
     return List<String>.unmodifiable(imageUrls.skip(1));
   }
@@ -273,6 +276,7 @@ class Post {
     List<String>? allowedUserIds,
     int? visibilitySchemaVersion,
     DateTime? visibilityLockedAt,
+    bool? requiresHanyangVerification,
   }) {
     return Post(
       id: id ?? this.id,
@@ -303,6 +307,8 @@ class Post {
       visibilitySchemaVersion:
           visibilitySchemaVersion ?? this.visibilitySchemaVersion,
       visibilityLockedAt: visibilityLockedAt ?? this.visibilityLockedAt,
+      requiresHanyangVerification:
+          requiresHanyangVerification ?? this.requiresHanyangVerification,
     );
   }
 
@@ -340,6 +346,7 @@ class Post {
       'visibilitySchemaVersion': visibilitySchemaVersion,
       if (visibilityLockedAt != null)
         'visibilityLockedAt': visibilityLockedAt!.millisecondsSinceEpoch,
+      'requiresHanyangVerification': requiresHanyangVerification,
     };
   }
 
@@ -394,6 +401,7 @@ class Post {
       visibilityLockedAt: map['visibilityLockedAt'] is int
           ? DateTime.fromMillisecondsSinceEpoch(map['visibilityLockedAt'])
           : null,
+      requiresHanyangVerification: map['requiresHanyangVerification'] == true,
     );
   }
 }

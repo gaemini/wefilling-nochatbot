@@ -88,9 +88,7 @@ class BoardScreenState extends State<BoardScreen> {
   double? _lastScrollOffset;
   double _directionalScrollDistance = 0;
   ScrollDirection _lastScrollDirection = ScrollDirection.idle;
-  Timer? _chromeRestoreTimer;
   static const double _chromeDirectionThreshold = 14;
-  static const Duration _chromeRestoreDelay = Duration(milliseconds: 650);
   static const String _psTodayOffsetId = 'board.todayScrollOffset.v1';
   static const String _psAllOffsetId = 'board.allScrollOffset.v1';
 
@@ -138,6 +136,21 @@ class BoardScreenState extends State<BoardScreen> {
       final dateOrder = right.createdAt.compareTo(left.createdAt);
       return dateOrder != 0 ? dateOrder : right.id.compareTo(left.id);
     });
+    return posts;
+  }
+
+  List<Post> _mergeVisibleTodayPosts(List<Post> realtimePosts) {
+    final byId = <String, Post>{
+      for (final post in realtimePosts.where(_isPostInToday)) post.id: post,
+    };
+    for (final post in _pagedPosts.where(_isPostInToday)) {
+      byId[post.id] = post;
+    }
+    final posts = byId.values.toList()
+      ..sort((left, right) {
+        final dateOrder = right.createdAt.compareTo(left.createdAt);
+        return dateOrder != 0 ? dateOrder : right.id.compareTo(left.id);
+      });
     return posts;
   }
 
@@ -466,7 +479,6 @@ class BoardScreenState extends State<BoardScreen> {
   void dispose() {
     Logger.log('🔄 BoardScreen dispose 시작');
     _midnightTimer?.cancel();
-    _chromeRestoreTimer?.cancel();
     if (_controllersInitialized) {
       // 마지막 상태 저장
       try {
@@ -554,18 +566,16 @@ class BoardScreenState extends State<BoardScreen> {
       _lastScrollOffset = offset;
       _directionalScrollDistance = 0;
       _lastScrollDirection = ScrollDirection.idle;
-      _chromeRestoreTimer?.cancel();
       _setScrollChromeVisibility(true);
       return;
     }
 
     if (direction == ScrollDirection.idle) {
       _lastScrollOffset = offset;
-      _scheduleChromeRestore();
+      // 스크롤이 멈추면 현재 chrome 상태를 그대로 유지한다.
+      // 위로 스크롤하거나 맨 위에 도달했을 때만 다시 노출한다.
       return;
     }
-
-    _chromeRestoreTimer?.cancel();
 
     if (direction != _lastScrollDirection) {
       _directionalScrollDistance = 0;
@@ -586,25 +596,9 @@ class BoardScreenState extends State<BoardScreen> {
     if (notification.metrics.axis != Axis.vertical || notification.depth != 0) {
       return false;
     }
-    if (notification is ScrollStartNotification ||
-        notification is ScrollUpdateNotification) {
-      _chromeRestoreTimer?.cancel();
-    } else if (notification is ScrollEndNotification ||
-        notification is UserScrollNotification &&
-            notification.direction == ScrollDirection.idle) {
-      _scheduleChromeRestore();
-    }
+    // ScrollEnd/idle에서 자동 복원하지 않는다. 방향 판별은
+    // ScrollController listener에서만 처리해 멈춤 상태가 유지되게 한다.
     return false;
-  }
-
-  void _scheduleChromeRestore() {
-    _chromeRestoreTimer?.cancel();
-    _chromeRestoreTimer = Timer(_chromeRestoreDelay, () {
-      if (!mounted) return;
-      _directionalScrollDistance = 0;
-      _lastScrollDirection = ScrollDirection.idle;
-      _setScrollChromeVisibility(true);
-    });
   }
 
   void _setScrollChromeVisibility(bool shouldShow) {
@@ -1146,7 +1140,7 @@ class BoardScreenState extends State<BoardScreen> {
     return Padding(
       padding: EdgeInsets.fromLTRB(
         _sectionHorizontalPadding,
-        14,
+        28,
         _sectionHorizontalPadding,
         8,
       ),
@@ -1263,9 +1257,10 @@ class BoardScreenState extends State<BoardScreen> {
                     (hiddenTodayMeetupCount > 0 ? 1 : 0)
                 : 1);
 
-        final List<dynamic> todayCombined = <dynamic>[...todayPosts]..sort(
-            (a, b) => _getTodayCombinedCreatedAt(b)
-                .compareTo(_getTodayCombinedCreatedAt(a)));
+        final visibleTodayPosts = _mergeVisibleTodayPosts(todayPosts);
+        final List<dynamic> todayCombined = <dynamic>[...visibleTodayPosts]
+          ..sort((a, b) => _getTodayCombinedCreatedAt(b)
+              .compareTo(_getTodayCombinedCreatedAt(a)));
         final historicalPosts = _historicalPosts;
 
         final postsCount = isPostsLoading

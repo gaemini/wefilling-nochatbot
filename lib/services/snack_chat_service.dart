@@ -14,6 +14,34 @@ import '../utils/snack_chat_list_policy.dart';
 
 const Duration _snackChatFirstEventDeadline = Duration(seconds: 12);
 
+/// Immutable server entry boundary captured before the room advances its read
+/// cursor. Keeping this separate from the live unread aggregate prevents a
+/// newly arrived message from moving the divider while the screen is open.
+class SnackChatEntryContext {
+  const SnackChatEntryContext({
+    required this.lastReadSequence,
+    required this.roomLastSequence,
+    required this.roomUnreadCount,
+    required this.canAdvanceReadCursor,
+    this.firstUnreadMessageId,
+    this.firstUnreadSequence,
+  });
+
+  final int lastReadSequence;
+  final int roomLastSequence;
+  final int roomUnreadCount;
+  final bool canAdvanceReadCursor;
+  final String? firstUnreadMessageId;
+  final int? firstUnreadSequence;
+
+  bool get hasUnreadAnchor =>
+      roomUnreadCount > 0 &&
+      firstUnreadMessageId != null &&
+      firstUnreadMessageId!.isNotEmpty &&
+      firstUnreadSequence != null &&
+      firstUnreadSequence! > lastReadSequence;
+}
+
 /// Bounds only the initial connection phase of a Firestore listener.
 ///
 /// `Stream.timeout` is deliberately not used here because it would also fail a
@@ -535,6 +563,206 @@ class SnackChatService {
       operation: 'Snack Chat messages',
     ).map((snap) =>
         snap.docs.map((doc) => SnackChatMessage.fromFirestore(doc)).toList());
+  }
+
+  /// Captures the first unread message before the chat screen marks anything
+  /// as read. The callable is authoritative. The Firestore fallback uses the
+  /// same server-owned member cursor so clients already installed while the
+  /// callable rolls out still enter safely without guessing from list length.
+  Future<SnackChatEntryContext> getEntryContext(String snackChatId) async {
+    try {
+      final result = await _functions
+          .httpsCallable('getSnackChatEntryContext')
+          .call(<String, dynamic>{'snackChatId': snackChatId}).timeout(
+              const Duration(seconds: 12));
+      final data = result.data;
+      if (data is! Map) {
+        throw const FormatException('Invalid Snack Chat entry context.');
+      }
+      return _entryContextFromMap(Map<String, dynamic>.from(data));
+    } on FirebaseFunctionsException catch (error) {
+      if (error.code != 'not-found' && error.code != 'unimplemented') {
+        rethrow;
+      }
+      Logger.log(
+        'Snack Chat entry callable is not available yet; using server cursor fallback.',
+      );
+      return _getEntryContextFromFirestore(snackChatId);
+    }
+  }
+
+  SnackChatEntryContext _entryContextFromMap(Map<String, dynamic> data) {
+    int intValue(Object? value) => value is num
+        ? value.toInt().clamp(0, 1 << 31).toInt()
+        : int.tryParse((value ?? '').toString())?.clamp(0, 1 << 31).toInt() ??
+            0;
+    final anchorId = (data['firstUnreadMessageId'] ?? '').toString().trim();
+    final anchorSequence = intValue(data['firstUnreadSequence']);
+    return SnackChatEntryContext(
+      lastReadSequence: intValue(data['lastReadSequence']),
+      roomLastSequence: intValue(data['roomLastSequence']),
+      roomUnreadCount: intValue(data['roomUnreadCount']),
+      canAdvanceReadCursor: data['canAdvanceReadCursor'] == true,
+      firstUnreadMessageId: anchorId.isEmpty ? null : anchorId,
+      firstUnreadSequence: anchorSequence <= 0 ? null : anchorSequence,
+    );
+  }
+
+  bool _sequenceIsInMembership(
+    Map<String, dynamic> memberData,
+    int sequence,
+  ) {
+    final periods = (memberData['periods'] as List? ?? const <Object>[])
+        .map(SnackChatMembershipPeriod.fromMap)
+        .toList(growable: true);
+    if (periods.isEmpty && memberData.containsKey('joinedAfterSequence')) {
+      periods.add(
+        SnackChatMembershipPeriod.fromMap(<String, dynamic>{
+          'joinedAfterSequence': memberData['joinedAfterSequence'],
+          'leftAfterSequence': memberData['leftAfterSequence'],
+        }),
+      );
+    }
+    // Legacy member documents without a recorded boundary predate membership
+    // periods and are treated as continuously eligible, matching the server.
+    return periods.isEmpty || periods.any((period) => period.includes(sequence));
+  }
+
+  Future<SnackChatEntryContext> _getEntryContextFromFirestore(
+    String snackChatId,
+  ) async {
+    final uid = _uid;
+    if (uid == null) throw StateError('로그인이 필요합니다.');
+    final roomRef = _collection.doc(snackChatId);
+    final results =
+        await Future.wait(<Future<DocumentSnapshot<Map<String, dynamic>>>>[
+      roomRef.get(const GetOptions(source: Source.server)),
+      roomRef
+          .collection('members')
+          .doc(uid)
+          .get(const GetOptions(source: Source.server)),
+    ]).timeout(const Duration(seconds: 12));
+    final room = results[0];
+    final member = results[1];
+    final roomData = room.data() ?? const <String, dynamic>{};
+    final memberData = member.data() ?? const <String, dynamic>{};
+    final participants = (roomData['participantIds'] as List? ?? const [])
+        .map((value) => value.toString())
+        .toSet();
+    if (!room.exists ||
+        !member.exists ||
+        !participants.contains(uid) ||
+        (memberData['status'] ?? '').toString() != 'active') {
+      throw StateError('Snack Chat 멤버십을 확인할 수 없습니다.');
+    }
+    int intValue(Object? value) => value is num
+        ? value.toInt().clamp(0, 1 << 31).toInt()
+        : int.tryParse((value ?? '').toString())?.clamp(0, 1 << 31).toInt() ??
+            0;
+    final lastRead = intValue(memberData['lastReadSequence']);
+    final roomLast = intValue(roomData['lastMessageSequence']);
+    final unreadMap = roomData['unreadCount'];
+    final unread = intValue(unreadMap is Map ? unreadMap[uid] : null);
+    if (unread == 0 || lastRead >= roomLast) {
+      return SnackChatEntryContext(
+        lastReadSequence: lastRead,
+        roomLastSequence: roomLast,
+        roomUnreadCount: unread,
+        canAdvanceReadCursor: true,
+      );
+    }
+
+    var cursor = lastRead;
+    for (var page = 0; page < 10 && cursor < roomLast; page++) {
+      final snapshot = await roomRef
+          .collection('messages')
+          .where('sequence', isGreaterThan: cursor)
+          .orderBy('sequence')
+          .limit(100)
+          .get(const GetOptions(source: Source.server))
+          .timeout(const Duration(seconds: 12));
+      if (snapshot.docs.isEmpty) break;
+      for (final document in snapshot.docs) {
+        final data = document.data();
+        final sequence = intValue(data['sequence']);
+        if (sequence > cursor) cursor = sequence;
+        if (sequence <= lastRead || sequence > roomLast) continue;
+        if ((data['senderId'] ?? '').toString() == uid ||
+            (data['type'] ?? '').toString() == 'system' ||
+            !_sequenceIsInMembership(memberData, sequence)) {
+          continue;
+        }
+        final delivered =
+            (data['deliveryRecipientIds'] as List? ?? const <Object>[])
+                .map((value) => value.toString())
+                .toSet();
+        // Modern messages use deliveryRecipientIds. Legacy messages did not;
+        // the positive canonical room unread count is the compatibility proof.
+        if (delivered.isNotEmpty && !delivered.contains(uid)) continue;
+        return SnackChatEntryContext(
+          lastReadSequence: lastRead,
+          roomLastSequence: roomLast,
+          roomUnreadCount: unread,
+          canAdvanceReadCursor: true,
+          firstUnreadMessageId: document.id,
+          firstUnreadSequence: sequence,
+        );
+      }
+      if (snapshot.docs.length < 100) break;
+    }
+    return SnackChatEntryContext(
+      lastReadSequence: lastRead,
+      roomLastSequence: roomLast,
+      roomUnreadCount: unread,
+      canAdvanceReadCursor: false,
+    );
+  }
+
+  /// Loads a small bounded context around the frozen unread anchor. This is a
+  /// one-shot fetch; the existing bounded latest listener remains responsible
+  /// for live messages and reaction/poll aggregate updates.
+  Future<List<SnackChatMessage>> fetchMessageWindowAroundSequence(
+    String snackChatId, {
+    required String messageId,
+    required int sequence,
+    int olderCount = 10,
+    int newerCount = 20,
+  }) async {
+    final messages = _collection.doc(snackChatId).collection('messages');
+    final results = await Future.wait([
+      messages
+          .where('sequence', isLessThan: sequence)
+          .orderBy('sequence', descending: true)
+          .limit(olderCount)
+          .get(const GetOptions(source: Source.server)),
+      messages.doc(messageId).get(const GetOptions(source: Source.server)),
+      messages
+          .where('sequence', isGreaterThan: sequence)
+          .orderBy('sequence')
+          .limit(newerCount)
+          .get(const GetOptions(source: Source.server)),
+    ]).timeout(const Duration(seconds: 12));
+    final byId = <String, SnackChatMessage>{};
+    for (final document
+        in (results[0] as QuerySnapshot<Map<String, dynamic>>).docs) {
+      byId[document.id] = SnackChatMessage.fromFirestore(document);
+    }
+    final anchor = results[1] as DocumentSnapshot<Map<String, dynamic>>;
+    if (anchor.exists) {
+      byId[anchor.id] = SnackChatMessage.fromFirestore(anchor);
+    }
+    for (final document
+        in (results[2] as QuerySnapshot<Map<String, dynamic>>).docs) {
+      byId[document.id] = SnackChatMessage.fromFirestore(document);
+    }
+    final window = byId.values.toList(growable: false)
+      ..sort((a, b) {
+        final bySequence = (b.sequence ?? 0).compareTo(a.sequence ?? 0);
+        if (bySequence != 0) return bySequence;
+        final byTime = b.createdAt.compareTo(a.createdAt);
+        return byTime != 0 ? byTime : b.id.compareTo(a.id);
+      });
+    return window;
   }
 
   Future<SnackChatMessage?> getMessage(

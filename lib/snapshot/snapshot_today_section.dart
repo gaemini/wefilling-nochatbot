@@ -89,10 +89,19 @@ class _SnapshotTodaySectionState extends State<SnapshotTodaySection>
         stream: _stream,
         builder: (context, snapshot) {
           final items = snapshot.data ?? const <SnapshotItem>[];
-          final ownIndex = items.indexWhere((item) => item.authorId == uid);
-          final own = ownIndex >= 0 ? items[ownIndex] : null;
-          final visibleItems = items
-              .where((item) => own == null || item.id != own.id)
+          // The service is newest-first. putIfAbsent therefore keeps exactly
+          // one current tray item per owner without allowing an expired/older
+          // duplicate to reorder the row when snapshots update concurrently.
+          final latestByAuthor = <String, SnapshotItem>{};
+          for (final item in items) {
+            latestByAuthor.putIfAbsent(item.authorId, () => item);
+          }
+          final trayItems = latestByAuthor.values.toList(growable: false);
+          final own = latestByAuthor[uid];
+          final ownIndex =
+              own == null ? -1 : items.indexWhere((item) => item.id == own.id);
+          final visibleItems = trayItems
+              .where((item) => item.authorId != uid)
               .toList(growable: false);
           final loading = snapshot.connectionState == ConnectionState.waiting &&
               !snapshot.hasData;

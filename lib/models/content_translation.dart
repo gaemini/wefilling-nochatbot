@@ -27,6 +27,11 @@ class ContentTranslationResult {
     required this.targetLanguage,
     required this.translatedFields,
     this.sourceLanguage = '',
+    this.modelUsed = '',
+    this.translationVersion = 0,
+    this.promptVersion = 0,
+    this.translatedAt,
+    this.cacheSource = '',
   });
 
   final String status;
@@ -34,6 +39,11 @@ class ContentTranslationResult {
   final String sourceLanguage;
   final String targetLanguage;
   final Map<String, String> translatedFields;
+  final String modelUsed;
+  final int translationVersion;
+  final int promptVersion;
+  final int? translatedAt;
+  final String cacheSource;
 
   bool get isReady => status == 'completed' || status == 'same_language';
   bool get isSameLanguage =>
@@ -46,6 +56,11 @@ class ContentTranslationResult {
         'sourceLanguage': sourceLanguage,
         'targetLanguage': targetLanguage,
         'translatedFields': translatedFields,
+        'modelUsed': modelUsed,
+        'translationVersion': translationVersion,
+        'promptVersion': promptVersion,
+        if (translatedAt != null) 'translatedAt': translatedAt,
+        'cacheSource': cacheSource,
         'cachedAt': DateTime.now().millisecondsSinceEpoch,
         'lastAccessAt': DateTime.now().millisecondsSinceEpoch,
       };
@@ -57,11 +72,23 @@ class ContentTranslationResult {
       sourceHash: map['sourceHash']?.toString() ?? '',
       sourceLanguage: map['sourceLanguage']?.toString() ?? '',
       targetLanguage: map['targetLanguage']?.toString() ?? '',
+      modelUsed: map['modelUsed']?.toString() ?? '',
+      translationVersion: _asInt(map['translationVersion']),
+      promptVersion: _asInt(map['promptVersion']),
+      translatedAt:
+          map['translatedAt'] == null ? null : _asInt(map['translatedAt']),
+      cacheSource: map['cacheSource']?.toString() ?? '',
       translatedFields: rawFields is Map
           ? rawFields.map(
               (key, value) => MapEntry(key.toString(), value.toString()),
             )
           : const <String, String>{},
     );
+  }
+
+  static int _asInt(dynamic value) {
+    if (value is int) return value;
+    if (value is num) return value.toInt();
+    return int.tryParse(value?.toString() ?? '') ?? 0;
   }
 }

@@ -32,9 +32,33 @@ class ContentTranslationService extends ChangeNotifier {
   static const String _boxName = 'content_translations_v1';
   static const String _preferredCodeKey = 'preferred_translation_language_code';
   static const String _preferredNameKey = 'preferred_translation_language';
+  static const String _preferredSourceKey =
+      'preferred_translation_language_source';
+  static const int _translationVersion = 5;
+  static const int _promptVersion = 5;
+  static const String _baseModel = 'gemini-3.5-flash-lite';
+  static const Set<String> _currentModels = <String>{
+    'gemini-3.5-flash-lite',
+    'gemini-3.5-flash',
+    'same-language',
+    'on-device',
+  };
+  static const String _translationPolicyVersion = '2026-08-faithful-v5';
+  static const String _legacyTranslationPolicyVersion = '2026-08-faithful-v4';
   static const int _maxMemoryEntries = 500;
   static const int _maxPersistentEntries = 1500;
   static const int _persistentPruneTarget = 1350;
+  static final RegExp _protectedTranslationTokenPattern = RegExp(
+    r'(?:https?://|www\.)[^\s<>()]+'
+    r'|[A-Za-z0-9._%+\-]+@[A-Za-z0-9.\-]+\.[A-Za-z]{2,}'
+    r'|@[\p{L}\p{N}_.\-]+'
+    r'|#[\p{L}\p{N}_.\-]+'
+    r'|(?:[\u{1F1E6}-\u{1F1FF}]{2}|[\u{1F300}-\u{1FAFF}\u{2600}-\u{27BF}]'
+    r'(?:[\u{FE0E}\u{FE0F}])?(?:[\u{1F3FB}-\u{1F3FF}])?'
+    r'(?:\u{200D}[\u{1F300}-\u{1FAFF}\u{2600}-\u{27BF}]'
+    r'(?:[\u{FE0E}\u{FE0F}])?(?:[\u{1F3FB}-\u{1F3FF}])?)*)',
+    unicode: true,
+  );
 
   static const Map<String, String> supportedLanguages = <String, String>{
     'ko': '한국어',
@@ -54,6 +78,10 @@ class ContentTranslationService extends ChangeNotifier {
     'id': 'Bahasa Indonesia',
     'ms': 'Bahasa Melayu',
     'tr': 'Türkçe',
+    'nl': 'Nederlands',
+    'pl': 'Polski',
+    'uk': 'Українська',
+    'mn': 'Монгол',
   };
 
   // translateContentBatch는 us-central1에 배포된 callable이다. 기기나
@@ -68,6 +96,7 @@ class ContentTranslationService extends ChangeNotifier {
   final Map<String, _QueuedTranslation> _queue = <String, _QueuedTranslation>{};
   final Set<String> _showOriginalScopes = <String>{};
   final Set<String> _translatableScopes = <String>{};
+  final Map<String, String> _scopeSourceLanguages = <String, String>{};
   final Set<String> _loadedRoomScopes = <String>{};
   final Map<String, Map<Object, ScopeTranslationLoader>> _scopeLoaders =
       <String, Map<Object, ScopeTranslationLoader>>{};
@@ -96,6 +125,7 @@ class ContentTranslationService extends ChangeNotifier {
     _memory.clear();
     _showOriginalScopes.clear();
     _translatableScopes.clear();
+    _scopeSourceLanguages.clear();
     _loadedRoomScopes.clear();
     _loadingScopes.clear();
     for (final queued in _queue.values) {
@@ -132,6 +162,10 @@ class ContentTranslationService extends ChangeNotifier {
           'indonesian': 'id',
           'malay': 'ms',
           'turkish': 'tr',
+          'dutch': 'nl',
+          'polish': 'pl',
+          'ukrainian': 'uk',
+          'mongolian': 'mn',
         }[normalized] ??
         '';
   }
@@ -140,7 +174,7 @@ class ContentTranslationService extends ChangeNotifier {
     final keys = fields.keys.toList(growable: false)..sort();
     final canonical = keys
         .map((key) =>
-            '$key\u0000${fields[key]!.replaceAll('\r\n', '\n').trim()}')
+            '$key\u0000${fields[key]!.replaceAll('\r\n', '\n').replaceAll('\r', '\n')}')
         .join('\u0001');
     return sha256.convert(utf8.encode(canonical)).toString();
   }
@@ -151,7 +185,40 @@ class ContentTranslationService extends ChangeNotifier {
     String sourceHash,
   ) {
     final uid = _auth.currentUser?.uid ?? 'signed_out';
-    return '$uid|${request.serverId}|$targetLanguage|$sourceHash';
+    return '$_translationPolicyVersion|v$_translationVersion|p$_promptVersion|'
+        '$_baseModel|$uid|${request.serverId}|$targetLanguage|$sourceHash';
+  }
+
+  String _legacyCacheKey(
+    ContentTranslationRequest request,
+    String targetLanguage,
+    String sourceHash,
+  ) {
+    final uid = _auth.currentUser?.uid ?? 'signed_out';
+    return '$_legacyTranslationPolicyVersion|$uid|${request.serverId}|'
+        '$targetLanguage|$sourceHash';
+  }
+
+  bool _isCurrentResult(
+    ContentTranslationResult result, {
+    required String sourceHash,
+    required String targetLanguage,
+  }) {
+    return result.sourceHash == sourceHash &&
+        result.targetLanguage == targetLanguage &&
+        result.translationVersion == _translationVersion &&
+        result.promptVersion == _promptVersion &&
+        _currentModels.contains(result.modelUsed);
+  }
+
+  int _metadataInt(dynamic value) {
+    if (value is int) return value;
+    if (value is num) return value.toInt();
+    if (value is Map) {
+      final seconds = value['_seconds'] ?? value['seconds'];
+      if (seconds is num) return seconds.toInt() * 1000;
+    }
+    return int.tryParse(value?.toString() ?? '') ?? 0;
   }
 
   Future<Box<dynamic>?> _ensureBox() async {
@@ -179,42 +246,130 @@ class ContentTranslationService extends ChangeNotifier {
   String _nationalityLanguage(String? nationality) {
     final value = (nationality ?? '').trim().toLowerCase();
     const map = <String, String>{
+      'kr': 'ko',
+      'kor': 'ko',
+      'ko': 'ko',
       '한국': 'ko',
       '대한민국': 'ko',
       'korea': 'ko',
       'south korea': 'ko',
+      '🇰🇷': 'ko',
+      'jp': 'ja',
+      'jpn': 'ja',
+      'ja': 'ja',
       '일본': 'ja',
       'japan': 'ja',
+      '🇯🇵': 'ja',
+      'cn': 'zh',
+      'chn': 'zh',
+      'zh': 'zh',
       '중국': 'zh',
       'china': 'zh',
       '대만': 'zh',
       'taiwan': 'zh',
+      '🇨🇳': 'zh',
+      '🇹🇼': 'zh',
+      'vn': 'vi',
+      'vnm': 'vi',
       '베트남': 'vi',
       'vietnam': 'vi',
+      '🇻🇳': 'vi',
+      'th': 'th',
+      'tha': 'th',
       '태국': 'th',
       'thailand': 'th',
+      '🇹🇭': 'th',
+      'id': 'id',
+      'idn': 'id',
       '인도네시아': 'id',
       'indonesia': 'id',
+      '🇮🇩': 'id',
+      'my': 'ms',
+      'mys': 'ms',
+      'ms': 'ms',
       '말레이시아': 'ms',
       'malaysia': 'ms',
+      '🇲🇾': 'ms',
+      'fr': 'fr',
+      'fra': 'fr',
       '프랑스': 'fr',
       'france': 'fr',
+      '🇫🇷': 'fr',
+      'de': 'de',
+      'deu': 'de',
       '독일': 'de',
       'germany': 'de',
+      '🇩🇪': 'de',
+      'es': 'es',
+      'esp': 'es',
       '스페인': 'es',
       'spain': 'es',
+      '🇪🇸': 'es',
+      'ru': 'ru',
+      'rus': 'ru',
       '러시아': 'ru',
       'russia': 'ru',
+      '🇷🇺': 'ru',
+      'br': 'pt',
+      'bra': 'pt',
       '브라질': 'pt',
       'brazil': 'pt',
+      '🇧🇷': 'pt',
+      'it': 'it',
+      'ita': 'it',
       '이탈리아': 'it',
       'italy': 'it',
+      '🇮🇹': 'it',
+      'tr': 'tr',
+      'tur': 'tr',
       '튀르키예': 'tr',
       'turkey': 'tr',
+      '🇹🇷': 'tr',
+      'in': 'hi',
+      'ind': 'hi',
       '인도': 'hi',
       'india': 'hi',
+      '🇮🇳': 'hi',
+      'us': 'en',
+      'usa': 'en',
+      'united states': 'en',
+      '미국': 'en',
+      '🇺🇸': 'en',
+      'gb': 'en',
+      'gbr': 'en',
+      'united kingdom': 'en',
+      '영국': 'en',
+      '🇬🇧': 'en',
+      'ca': 'en',
+      'can': 'en',
+      'canada': 'en',
+      '캐나다': 'en',
+      '🇨🇦': 'en',
+      'au': 'en',
+      'aus': 'en',
+      'australia': 'en',
+      '호주': 'en',
+      '🇦🇺': 'en',
+      'sg': 'en',
+      'sgp': 'en',
+      'singapore': 'en',
+      '싱가포르': 'en',
+      '🇸🇬': 'en',
     };
     return map[value] ?? '';
+  }
+
+  String _profileLanguage(Map<String, dynamic> data) {
+    for (final key in const <String>[
+      'countryCode',
+      'nationalityCode',
+      'country',
+      'nationality',
+    ]) {
+      final language = _nationalityLanguage(data[key]?.toString());
+      if (language.isNotEmpty) return language;
+    }
+    return '';
   }
 
   Future<String> targetLanguage({String? uiLanguageCode}) {
@@ -227,7 +382,11 @@ class ContentTranslationService extends ChangeNotifier {
     final localPreferred = _normalizeCode(
       prefs.getString(_accountPreferenceKey(_preferredCodeKey)),
     );
-    if (localPreferred.isNotEmpty) return localPreferred;
+    final localSource =
+        prefs.getString(_accountPreferenceKey(_preferredSourceKey));
+    if (localPreferred.isNotEmpty && localSource == 'manual') {
+      return localPreferred;
+    }
 
     final uid = _auth.currentUser?.uid;
     if (uid != null) {
@@ -238,7 +397,9 @@ class ContentTranslationService extends ChangeNotifier {
           data['preferredTranslationLanguageCode']?.toString() ??
               data['preferredTranslationLanguage']?.toString(),
         );
-        if (serverPreferred.isNotEmpty) {
+        final serverSource =
+            data['preferredTranslationLanguageSource']?.toString();
+        if (serverPreferred.isNotEmpty && serverSource == 'manual') {
           await prefs.setString(
             _accountPreferenceKey(_preferredCodeKey),
             serverPreferred,
@@ -247,10 +408,13 @@ class ContentTranslationService extends ChangeNotifier {
             _accountPreferenceKey(_preferredNameKey),
             supportedLanguages[serverPreferred]!,
           );
+          await prefs.setString(
+            _accountPreferenceKey(_preferredSourceKey),
+            'manual',
+          );
           return serverPreferred;
         }
-        final nationality =
-            _nationalityLanguage(data['nationality']?.toString());
+        final nationality = _profileLanguage(data);
         if (nationality.isNotEmpty) {
           await prefs.setString(
             _accountPreferenceKey(_preferredCodeKey),
@@ -260,25 +424,21 @@ class ContentTranslationService extends ChangeNotifier {
             _accountPreferenceKey(_preferredNameKey),
             supportedLanguages[nationality]!,
           );
-          try {
-            await _firestore.collection('users').doc(uid).set(
-              <String, dynamic>{
-                'preferredTranslationLanguageCode': nationality,
-                'preferredTranslationLanguage': supportedLanguages[nationality],
-                'preferredTranslationLanguageUpdatedAt':
-                    FieldValue.serverTimestamp(),
-              },
-              SetOptions(merge: true),
-            );
-          } catch (_) {
-            // 기기 기본값 저장은 성공했으므로 번역 흐름은 계속한다.
-          }
+          await prefs.setString(
+            _accountPreferenceKey(_preferredSourceKey),
+            'profile',
+          );
           return nationality;
+        }
+        if (serverPreferred.isNotEmpty) {
+          return serverPreferred;
         }
       } catch (_) {
         // 설정 조회 실패는 UI 언어/영어 fallback으로 자연스럽게 이어진다.
       }
     }
+
+    if (localPreferred.isNotEmpty) return localPreferred;
 
     final ui = _normalizeCode(
       uiLanguageCode ?? prefs.getString('app_language'),
@@ -298,32 +458,51 @@ class ContentTranslationService extends ChangeNotifier {
       _accountPreferenceKey(_preferredNameKey),
       supportedLanguages[normalized]!,
     );
-    final uid = _auth.currentUser?.uid;
-    if (uid != null) {
-      await _firestore.collection('users').doc(uid).set(<String, dynamic>{
-        'preferredTranslationLanguageCode': normalized,
-        'preferredTranslationLanguage': supportedLanguages[normalized],
-        'preferredTranslationLanguageUpdatedAt': FieldValue.serverTimestamp(),
-      }, SetOptions(merge: true));
-    }
+    await prefs.setString(
+      _accountPreferenceKey(_preferredSourceKey),
+      'manual',
+    );
+
+    // 사용자가 선택한 대상 언어는 네트워크 상태와 무관하게 즉시 화면에
+    // 반영한다. 서버 저장은 다른 기기와의 설정 동기화를 위한 후속 작업이다.
     _targetLanguageFuture = Future<String>.value(normalized);
     _languageRevision++;
     _memory.clear();
+    _showOriginalScopes.clear();
     _translatableScopes.clear();
+    _scopeSourceLanguages.clear();
+    _loadedRoomScopes.clear();
     notifyListeners();
+
+    final uid = _auth.currentUser?.uid;
+    if (uid != null) {
+      try {
+        await _firestore.collection('users').doc(uid).set(<String, dynamic>{
+          'preferredTranslationLanguageCode': normalized,
+          'preferredTranslationLanguage': supportedLanguages[normalized],
+          'preferredTranslationLanguageSource': 'manual',
+          'preferredTranslationLanguageUpdatedAt': FieldValue.serverTimestamp(),
+        }, SetOptions(merge: true));
+      } catch (error) {
+        if (kDebugMode) {
+          debugPrint(
+            'Translation language preference sync failed: ${error.runtimeType}',
+          );
+        }
+      }
+    }
   }
 
   Future<String?> preferredLanguageCode() async {
-    final prefs = await SharedPreferences.getInstance();
-    final code = _normalizeCode(
-      prefs.getString(_accountPreferenceKey(_preferredCodeKey)),
-    );
+    final code = await targetLanguage();
     return code.isEmpty ? null : code;
   }
 
   bool showsOriginal(String scope) => _showOriginalScopes.contains(scope);
 
   bool canToggleScope(String scope) => _translatableScopes.contains(scope);
+
+  String? sourceLanguageForScope(String scope) => _scopeSourceLanguages[scope];
 
   bool isScopeLoading(String scope) => _loadingScopes.contains(scope);
 
@@ -342,8 +521,17 @@ class ContentTranslationService extends ChangeNotifier {
     if (loaders?.isEmpty ?? false) _scopeLoaders.remove(scope);
   }
 
-  void registerTranslatableScope(String scope) {
-    if (_translatableScopes.add(scope)) notifyListeners();
+  void registerTranslatableScope(
+    String scope, {
+    String? sourceLanguage,
+  }) {
+    var changed = _translatableScopes.add(scope);
+    final normalized = (sourceLanguage ?? '').trim().toLowerCase();
+    if (normalized.isNotEmpty && _scopeSourceLanguages[scope] != normalized) {
+      _scopeSourceLanguages[scope] = normalized;
+      changed = true;
+    }
+    if (changed) notifyListeners();
   }
 
   void toggleScope(String scope) {
@@ -405,20 +593,37 @@ class ContentTranslationService extends ChangeNotifier {
     final hash = _sourceHash(request.sourceFields);
     final key = _cacheKey(request, target, hash);
     final memory = _memory[key];
-    if (memory != null) return memory;
+    if (memory != null) {
+      if (_isCurrentResult(
+        memory,
+        sourceHash: hash,
+        targetLanguage: target,
+      )) {
+        return memory;
+      }
+      _memory.remove(key);
+    }
 
     final box = await _ensureBox();
     final stored = box?.get(key);
     if (stored is Map) {
       final result = ContentTranslationResult.fromMap(stored);
-      if (result.sourceHash == hash && result.targetLanguage == target) {
+      if (_isCurrentResult(
+        result,
+        sourceHash: hash,
+        targetLanguage: target,
+      )) {
         final touched = Map<dynamic, dynamic>.from(stored)
           ..['lastAccessAt'] = DateTime.now().millisecondsSinceEpoch;
         unawaited(box?.put(key, touched));
         _putMemory(key, result);
         return result;
       }
+      unawaited(box?.delete(key));
     }
+    // Only migrate the viewed item. Old-version entries elsewhere are left
+    // untouched until accessed and remain ineligible for reads.
+    unawaited(box?.delete(_legacyCacheKey(request, target, hash)));
 
     final existing = _queue[key];
     if (existing != null) return existing.completer.future;
@@ -458,6 +663,9 @@ class ContentTranslationService extends ChangeNotifier {
     'id': TranslateLanguage.indonesian,
     'ms': TranslateLanguage.malay,
     'tr': TranslateLanguage.turkish,
+    'nl': TranslateLanguage.dutch,
+    'pl': TranslateLanguage.polish,
+    'uk': TranslateLanguage.ukrainian,
   };
 
   String _scriptLanguage(String text) {
@@ -469,6 +677,109 @@ class ContentTranslationService extends ChangeNotifier {
     if (RegExp(r'[\u0400-\u04FF]').hasMatch(text)) return 'ru';
     if (RegExp(r'[A-Za-z]').hasMatch(text)) return 'en';
     return '';
+  }
+
+  Future<String> _translateLinePreservingTokens(
+    OnDeviceTranslator translator,
+    String line,
+  ) async {
+    if (line.trim().isEmpty) return line;
+
+    final leadingWhitespace = RegExp(r'^\s*').firstMatch(line)?.group(0) ?? '';
+    final trailingWhitespace = RegExp(r'\s*$').firstMatch(line)?.group(0) ?? '';
+    final bodyEnd = line.length - trailingWhitespace.length;
+    final body = line.substring(
+      leadingWhitespace.length,
+      bodyEnd < leadingWhitespace.length ? leadingWhitespace.length : bodyEnd,
+    );
+    if (body.isEmpty) return line;
+
+    final protectedTokens = <String, String>{};
+    var tokenIndex = 0;
+    final protectedBody = body.replaceAllMapped(
+      _protectedTranslationTokenPattern,
+      (match) {
+        final marker = String.fromCharCode(0xE000 + tokenIndex++);
+        protectedTokens[marker] = match.group(0)!;
+        return marker;
+      },
+    );
+
+    var translated = await translator.translateText(protectedBody);
+    var markersIntact = true;
+    for (final entry in protectedTokens.entries) {
+      if (!translated.contains(entry.key)) {
+        markersIntact = false;
+        break;
+      }
+      translated = translated.replaceAll(entry.key, entry.value);
+    }
+    // 일부 기기의 ML Kit는 private-use 보호 문자를 제거한다. 이때 문장
+    // 전체를 원문으로 되돌리지 않고 텍스트 구간만 번역한 뒤 URL/이모지를
+    // 원래 위치에 그대로 합쳐 이모지가 있는 줄도 정상적으로 번역한다.
+    if (!markersIntact) {
+      translated = await _translateProtectedSegments(translator, body);
+    }
+    return '$leadingWhitespace$translated$trailingWhitespace';
+  }
+
+  Future<String> _translateProtectedSegments(
+    OnDeviceTranslator translator,
+    String text,
+  ) async {
+    final output = StringBuffer();
+    var cursor = 0;
+    for (final match in _protectedTranslationTokenPattern.allMatches(text)) {
+      if (match.start > cursor) {
+        output.write(
+          await _translatePlainSegment(
+            translator,
+            text.substring(cursor, match.start),
+          ),
+        );
+      }
+      output.write(match.group(0));
+      cursor = match.end;
+    }
+    if (cursor < text.length) {
+      output.write(
+        await _translatePlainSegment(translator, text.substring(cursor)),
+      );
+    }
+    return output.toString();
+  }
+
+  Future<String> _translatePlainSegment(
+    OnDeviceTranslator translator,
+    String segment,
+  ) async {
+    if (segment.trim().isEmpty) return segment;
+    final leadingWhitespace =
+        RegExp(r'^\s*').firstMatch(segment)?.group(0) ?? '';
+    final trailingWhitespace =
+        RegExp(r'\s*$').firstMatch(segment)?.group(0) ?? '';
+    final bodyEnd = segment.length - trailingWhitespace.length;
+    final body = segment.substring(
+      leadingWhitespace.length,
+      bodyEnd < leadingWhitespace.length ? leadingWhitespace.length : bodyEnd,
+    );
+    if (body.isEmpty) return segment;
+    final translated = await translator.translateText(body);
+    return '$leadingWhitespace$translated$trailingWhitespace';
+  }
+
+  Future<String> _translatePreservingLayout(
+    OnDeviceTranslator translator,
+    String original,
+  ) async {
+    final normalized = original.replaceAll('\r\n', '\n').replaceAll('\r', '\n');
+    final translatedLines = <String>[];
+    for (final line in normalized.split('\n')) {
+      translatedLines.add(
+        await _translateLinePreservingTokens(translator, line),
+      );
+    }
+    return translatedLines.join('\n');
   }
 
   Future<ContentTranslationResult?> _translateOnDevice(
@@ -505,6 +816,11 @@ class ContentTranslationService extends ChangeNotifier {
         sourceLanguage: sourceCode,
         targetLanguage: queued.targetLanguage,
         translatedFields: queued.request.sourceFields,
+        modelUsed: 'same-language',
+        translationVersion: _translationVersion,
+        promptVersion: _promptVersion,
+        translatedAt: DateTime.now().millisecondsSinceEpoch,
+        cacheSource: 'same_language',
       );
     }
     if (sourceLanguage == null || targetLanguage == null) return null;
@@ -516,12 +832,14 @@ class ContentTranslationService extends ChangeNotifier {
     try {
       final translatedFields = <String, String>{};
       for (final entry in queued.request.sourceFields.entries) {
-        final value = entry.value.trim();
-        if (value.isEmpty) {
+        if (entry.value.trim().isEmpty) {
           translatedFields[entry.key] = entry.value;
           continue;
         }
-        translatedFields[entry.key] = await translator.translateText(value);
+        translatedFields[entry.key] = await _translatePreservingLayout(
+          translator,
+          entry.value,
+        );
       }
       return ContentTranslationResult(
         status: 'completed',
@@ -529,6 +847,11 @@ class ContentTranslationService extends ChangeNotifier {
         sourceLanguage: sourceCode,
         targetLanguage: queued.targetLanguage,
         translatedFields: translatedFields,
+        modelUsed: 'on-device',
+        translationVersion: _translationVersion,
+        promptVersion: _promptVersion,
+        translatedAt: DateTime.now().millisecondsSinceEpoch,
+        cacheSource: 'on_device',
       );
     } catch (error) {
       if (kDebugMode) {
@@ -595,19 +918,30 @@ class ContentTranslationService extends ChangeNotifier {
         final fields = raw['translatedFields'];
         final result = ContentTranslationResult(
           status: raw['status']?.toString() ?? 'failed',
-          // The server resolves the authoritative source again. The local
-          // cache still keys invalidation to the exact source rendered by
-          // this widget so legacy title/content normalization cannot create
-          // a permanent cache miss.
-          sourceHash: queued.sourceHash,
+          sourceHash: raw['sourceHash']?.toString() ?? '',
           sourceLanguage: raw['sourceLanguage']?.toString() ?? '',
-          targetLanguage: queued.targetLanguage,
+          targetLanguage: raw['targetLanguage']?.toString() ?? '',
           translatedFields: fields is Map
               ? fields.map(
                   (key, value) => MapEntry(key.toString(), value.toString()),
                 )
               : const <String, String>{},
+          modelUsed: raw['modelUsed']?.toString() ?? '',
+          translationVersion: _metadataInt(raw['translationVersion']),
+          promptVersion: _metadataInt(raw['promptVersion']),
+          translatedAt: raw['translatedAt'] == null
+              ? null
+              : _metadataInt(raw['translatedAt']),
+          cacheSource: raw['cacheSource']?.toString() ?? 'server',
         );
+        if (!_isCurrentResult(
+          result,
+          sourceHash: queued.sourceHash,
+          targetLanguage: queued.targetLanguage,
+        )) {
+          queued.completer.complete(null);
+          continue;
+        }
         _putMemory(entry.key, result);
         await box?.put(entry.key, result.toMap());
         await _prunePersistentCacheIfNeeded(box);

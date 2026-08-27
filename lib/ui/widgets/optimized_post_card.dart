@@ -631,6 +631,8 @@ class _OptimizedPostCardState extends State<OptimizedPostCard> {
     final contentSize = context.rf(15).clamp(14.5, 16.0).toDouble();
     final hasPrimaryContent = hasContent || post.type == 'poll';
     final standaloneImageUrls = post.standaloneImageUrls;
+    final hasCategoryMetadata =
+        post.postCategories.isNotEmpty || post.requiresHanyangVerification;
     final isHanyangLocked = HanyangVerificationGate.isLockedForCurrentUser(
       context,
       post.requiresHanyangVerification,
@@ -678,7 +680,7 @@ class _OptimizedPostCardState extends State<OptimizedPostCard> {
                               ),
                               scope: 'post:${post.id}',
                               showToggle: false,
-                              loadOnDemand: true,
+                              loadOnDemand: false,
                               builder: (context, fields) =>
                                   _buildSmartEllipsizedText(
                                 text: fields['content'] ?? unifiedText,
@@ -727,7 +729,7 @@ class _OptimizedPostCardState extends State<OptimizedPostCard> {
                                   commentCount: _effectiveCommentCount(post),
                                 ),
                               ),
-                              if (standaloneImageUrls.isNotEmpty) ...[
+                              if (hasCategoryMetadata) ...[
                                 const SizedBox(width: DesignTokens.s4),
                                 Expanded(
                                   child: Align(
@@ -907,8 +909,9 @@ class _OptimizedPostCardState extends State<OptimizedPostCard> {
               ? resolvedPhotoURL.trim()
               : authorImageUrl;
 
-      return Stack(
-        clipBehavior: Clip.none,
+      return Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        mainAxisSize: MainAxisSize.min,
         children: [
           // 프로필 정보 (프로필 이미지 + 작성자 이름 + 국적 + 시간)
           ConstrainedBox(
@@ -979,106 +982,105 @@ class _OptimizedPostCardState extends State<OptimizedPostCard> {
 
                 const SizedBox(width: 4),
 
-                // 작성자 이름과 시간
+                // 작성자 정보 아래에 번역 전환을 바로 이어 배치한다.
                 Expanded(
-                  child: Row(
-                    crossAxisAlignment: CrossAxisAlignment.center,
+                  child: Column(
+                    mainAxisSize: MainAxisSize.min,
+                    crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
-                      Flexible(
-                        child: GestureDetector(
-                          onTap: canOpenProfile
-                              ? () => _openProfileOrMyPage(
-                                    userId: post.userId,
-                                    nickname: displayNickname,
-                                    photoURL: resolvedPhotoURL,
-                                  )
-                              : null,
-                          child: Text(
-                            displayNickname,
+                      Row(
+                        crossAxisAlignment: CrossAxisAlignment.center,
+                        children: [
+                          Flexible(
+                            child: GestureDetector(
+                              onTap: canOpenProfile
+                                  ? () => _openProfileOrMyPage(
+                                        userId: post.userId,
+                                        nickname: displayNickname,
+                                        photoURL: resolvedPhotoURL,
+                                      )
+                                  : null,
+                              child: Text(
+                                displayNickname,
+                                maxLines: 1,
+                                overflow: TextOverflow.ellipsis,
+                                style: TextStyle(
+                                  fontFamily: 'Inter',
+                                  fontFamilyFallback: const ['NotoSansKR'],
+                                  fontSize: context
+                                      .rf(15)
+                                      .clamp(14.0, 15.5)
+                                      .toDouble(),
+                                  fontWeight: FontWeight.w700,
+                                  color: BrandColors.textPrimary,
+                                  height: 1.22,
+                                  letterSpacing: -0.25,
+                                ),
+                              ),
+                            ),
+                          ),
+                          if (!isAnonymous &&
+                              !effectiveDeleted &&
+                              post.authorNationality.trim().isNotEmpty) ...[
+                            const SizedBox(width: 4),
+                            CountryFlagCircle(
+                              nationality: post.authorNationality,
+                              size: 12,
+                            ),
+                          ],
+                          const SizedBox(width: 4),
+                          const Text(
+                            '·',
+                            style: TextStyle(color: BrandColors.textTertiary),
+                          ),
+                          const SizedBox(width: 4),
+                          Text(
+                            _formatTimeAgo(post.createdAt),
                             maxLines: 1,
-                            overflow: TextOverflow.ellipsis,
-                            style: TextStyle(
+                            style: theme.textTheme.bodySmall?.copyWith(
+                              color: BrandColors.textTertiary,
                               fontFamily: 'Inter',
                               fontFamilyFallback: const ['NotoSansKR'],
                               fontSize:
-                                  context.rf(15).clamp(14.0, 15.5).toDouble(),
-                              fontWeight: FontWeight.w700,
-                              color: BrandColors.textPrimary,
+                                  context.rf(14).clamp(13.0, 14.5).toDouble(),
+                              fontWeight: FontWeight.w400,
                               height: 1.22,
-                              letterSpacing: -0.25,
+                              letterSpacing: -0.15,
                             ),
                           ),
-                        ),
-                      ),
-                      if (!isAnonymous &&
-                          !effectiveDeleted &&
-                          post.authorNationality.trim().isNotEmpty) ...[
-                        const SizedBox(width: 4),
-                        CountryFlagCircle(
-                          nationality: post.authorNationality,
-                          size: 12,
-                        ),
-                      ],
-                      const SizedBox(width: 4),
-                      const Text(
-                        '·',
-                        style: TextStyle(color: BrandColors.textTertiary),
-                      ),
-                      const SizedBox(width: 4),
-                      Text(
-                        _formatTimeAgo(post.createdAt),
-                        maxLines: 1,
-                        style: theme.textTheme.bodySmall?.copyWith(
-                          color: BrandColors.textTertiary,
-                          fontFamily: 'Inter',
-                          fontFamilyFallback: const ['NotoSansKR'],
-                          fontSize: context.rf(14).clamp(13.0, 14.5).toDouble(),
-                          fontWeight: FontWeight.w400,
-                          height: 1.22,
-                          letterSpacing: -0.15,
-                        ),
-                      ),
-                      if (isFriendsOnly) ...[
-                        const SizedBox(width: 4),
-                        const Text(
-                          '·',
-                          style: TextStyle(color: BrandColors.textTertiary),
-                        ),
-                        const SizedBox(width: 4),
-                        Flexible(
-                          flex: 2,
-                          child: _FriendsOnlyIndicator(
-                            isKorean:
-                                Localizations.localeOf(context).languageCode ==
+                          if (isFriendsOnly) ...[
+                            const SizedBox(width: 4),
+                            const Text(
+                              '·',
+                              style: TextStyle(color: BrandColors.textTertiary),
+                            ),
+                            const SizedBox(width: 4),
+                            Flexible(
+                              flex: 2,
+                              child: _FriendsOnlyIndicator(
+                                isKorean: Localizations.localeOf(context)
+                                        .languageCode ==
                                     'ko',
-                          ),
-                        ),
-                      ],
+                              ),
+                            ),
+                          ],
+                        ],
+                      ),
+                      const SizedBox(height: 1),
+                      TranslationScopeToggle(
+                        scope: 'post:${post.id}',
+                        postCardHeader: true,
+                      ),
                     ],
                   ),
                 ),
               ],
             ),
           ),
-          // 번역 버튼은 메타데이터 행에서 분리해 긴 아이디가 잘리지 않게
-          // 하고, 아이디 바로 아래에서 항상 같은 위치에 보이게 한다.
+          const SizedBox(height: 2),
+          // TranslatableContent가 이 영역 안에서 원문과 번역문만 교체한다.
           Padding(
-            padding: const EdgeInsets.only(
-              left: _threadContentOffset,
-              top: 22,
-            ),
-            child: TranslationScopeToggle(
-              scope: 'post:${post.id}',
-              postCardHeader: true,
-            ),
-          ),
-          // 번역 버튼 다음에 본문을 배치한다. 번역 결과가 도착하면
-          // TranslatableContent가 같은 영역의 텍스트만 교체한다.
-          Padding(
-            padding: const EdgeInsets.only(
-              left: _threadContentOffset,
-              top: 48,
-            ),
+            padding: const EdgeInsets.only(left: _threadContentOffset),
             child: threadContent,
           ),
         ],

@@ -8,6 +8,62 @@ typedef TranslatedContentBuilder = Widget Function(
   Map<String, String> fields,
 );
 
+String _sourceLanguageLabel(BuildContext context, String? code) {
+  final normalized = (code ?? '').trim().toLowerCase().split('-').first;
+  if (normalized.isEmpty) return '';
+  final isKo = Localizations.localeOf(context).languageCode == 'ko';
+  const koreanNames = <String, String>{
+    'ko': '한국어',
+    'en': '영어',
+    'ja': '일본어',
+    'zh': '중국어',
+    'es': '스페인어',
+    'fr': '프랑스어',
+    'de': '독일어',
+    'ru': '러시아어',
+    'pt': '포르투갈어',
+    'it': '이탈리아어',
+    'ar': '아랍어',
+    'hi': '힌디어',
+    'th': '태국어',
+    'vi': '베트남어',
+    'id': '인도네시아어',
+    'ms': '말레이어',
+    'tr': '튀르키예어',
+    'nl': '네덜란드어',
+    'pl': '폴란드어',
+    'uk': '우크라이나어',
+    'mn': '몽골어',
+  };
+  const englishNames = <String, String>{
+    'ko': 'Korean',
+    'en': 'English',
+    'ja': 'Japanese',
+    'zh': 'Chinese',
+    'es': 'Spanish',
+    'fr': 'French',
+    'de': 'German',
+    'ru': 'Russian',
+    'pt': 'Portuguese',
+    'it': 'Italian',
+    'ar': 'Arabic',
+    'hi': 'Hindi',
+    'th': 'Thai',
+    'vi': 'Vietnamese',
+    'id': 'Indonesian',
+    'ms': 'Malay',
+    'tr': 'Turkish',
+    'nl': 'Dutch',
+    'pl': 'Polish',
+    'uk': 'Ukrainian',
+    'mn': 'Mongolian',
+  };
+  final language =
+      (isKo ? koreanNames[normalized] : englishNames[normalized]) ??
+          normalized.toUpperCase();
+  return isKo ? '원문 언어 $language' : 'Original language $language';
+}
+
 class TranslatableContent extends StatefulWidget {
   const TranslatableContent({
     super.key,
@@ -99,10 +155,14 @@ class _TranslatableContentState extends State<TranslatableContent> {
   void _handleServiceChange() {
     if (!mounted) return;
     if (_languageRevision != _service.languageRevision) {
+      final wasRequested = _requested;
       _languageRevision = _service.languageRevision;
       _result = null;
       _requested = false;
-      if (!widget.loadOnDemand) {
+      // 이미 화면에 번역이 표시된 콘텐츠는 사용자가 대상 언어를 바꾸면
+      // 새 언어로 즉시 다시 요청한다. 아직 열지 않은 피드 항목까지 한꺼번에
+      // 번역하지는 않아 기존 지연 로딩과 비용 최적화는 유지한다.
+      if (!widget.loadOnDemand || wasRequested) {
         _requested = true;
         _load();
       }
@@ -121,7 +181,10 @@ class _TranslatableContentState extends State<TranslatableContent> {
     if (result?.isReady == true &&
         result?.isSameLanguage != true &&
         result!.translatedFields.isNotEmpty) {
-      _service.registerTranslatableScope(widget.scope);
+      _service.registerTranslatableScope(
+        widget.scope,
+        sourceLanguage: result.sourceLanguage,
+      );
     }
     setState(() => _result = result);
     return result?.isReady == true;
@@ -207,10 +270,12 @@ class TranslationScopeToggle extends StatelessWidget {
     super.key,
     required this.scope,
     this.postCardHeader = false,
+    this.appBarAction = false,
   });
 
   final String scope;
   final bool postCardHeader;
+  final bool appBarAction;
 
   @override
   Widget build(BuildContext context) {
@@ -222,58 +287,109 @@ class TranslationScopeToggle extends StatelessWidget {
         final canToggle = service.canToggleScope(scope);
         final showingOriginal = service.showsOriginal(scope);
         final loading = service.isScopeLoading(scope);
+        final sourceLanguage = _sourceLanguageLabel(
+            context, service.sourceLanguageForScope(scope));
         final label = canToggle && !showingOriginal
             ? (isKo ? '원문 보기' : 'Original')
             : (isKo ? '번역 보기' : 'Translate');
+
+        if (appBarAction) {
+          final compactLabel = canToggle && !showingOriginal
+              ? (isKo ? '원문' : 'Original')
+              : (isKo ? '번역' : 'Translate');
+
+          return Semantics(
+            button: true,
+            label: label,
+            child: TextButton.icon(
+              onPressed:
+                  loading ? null : () => service.requestOrToggleScope(scope),
+              style: TextButton.styleFrom(
+                foregroundColor: const Color(0xFF2F9BE8),
+                padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                minimumSize: const Size(0, 40),
+                tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                shape: RoundedRectangleBorder(
+                  borderRadius: BorderRadius.circular(8),
+                ),
+              ),
+              icon: loading
+                  ? const SizedBox.square(
+                      dimension: 14,
+                      child: CircularProgressIndicator(
+                        strokeWidth: 1.8,
+                        color: Color(0xFF2F9BE8),
+                      ),
+                    )
+                  : const Icon(Icons.translate_rounded, size: 17),
+              label: Text(
+                compactLabel,
+                style: const TextStyle(
+                  fontFamily: 'Inter',
+                  fontFamilyFallback: ['NotoSansKR'],
+                  fontSize: 12.5,
+                  fontWeight: FontWeight.w700,
+                  height: 1,
+                ),
+              ),
+            ),
+          );
+        }
 
         if (postCardHeader) {
           return Semantics(
             button: true,
             label: label,
-            child: ConstrainedBox(
-              constraints: BoxConstraints(
-                minHeight: 24,
-                maxWidth: isKo ? 82 : 80,
-              ),
-              child: TextButton.icon(
-                // 로딩 중에도 버튼 자체를 비활성화하지 않는다. 서비스가 같은
-                // scope의 중복 요청을 차단하므로 파란 버튼은 항상 유지된다.
-                onPressed: () => service.requestOrToggleScope(scope),
-                style: TextButton.styleFrom(
-                  foregroundColor: const Color(0xFF2F9BE8),
-                  disabledForegroundColor: const Color(0xFF2F9BE8),
-                  padding:
-                      const EdgeInsets.symmetric(horizontal: 0, vertical: 2),
-                  minimumSize: const Size(0, 24),
-                  tapTargetSize: MaterialTapTargetSize.shrinkWrap,
-                  visualDensity: VisualDensity.compact,
-                  shape: RoundedRectangleBorder(
-                    borderRadius: BorderRadius.circular(8),
-                  ),
-                ),
-                icon: loading
-                    ? const SizedBox.square(
+            child: InkWell(
+              onTap: () => service.requestOrToggleScope(scope),
+              borderRadius: BorderRadius.circular(6),
+              child: Padding(
+                padding: const EdgeInsets.symmetric(vertical: 2),
+                child: Wrap(
+                  crossAxisAlignment: WrapCrossAlignment.center,
+                  spacing: 4,
+                  runSpacing: 1,
+                  children: [
+                    if (loading)
+                      const SizedBox.square(
                         dimension: 12,
                         child: CircularProgressIndicator(
                           strokeWidth: 1.5,
                           color: Color(0xFF2F9BE8),
                         ),
                       )
-                    : const Icon(Icons.translate_rounded, size: 13),
-                label: FittedBox(
-                  fit: BoxFit.scaleDown,
-                  child: Text(
-                    label,
-                    maxLines: 1,
-                    style: const TextStyle(
-                      fontFamily: 'Inter',
-                      fontFamilyFallback: ['NotoSansKR'],
-                      fontSize: 11.5,
-                      fontWeight: FontWeight.w600,
-                      height: 1.1,
-                      letterSpacing: -0.15,
+                    else
+                      const Icon(
+                        Icons.translate_rounded,
+                        size: 13,
+                        color: Color(0xFF6F7D8D),
+                      ),
+                    if (sourceLanguage.isNotEmpty)
+                      Text(
+                        sourceLanguage,
+                        style: const TextStyle(
+                          fontFamily: 'Inter',
+                          fontFamilyFallback: ['NotoSansKR'],
+                          fontSize: 11.5,
+                          fontWeight: FontWeight.w400,
+                          color: Color(0xFF6F7D8D),
+                          height: 1.05,
+                          letterSpacing: -0.15,
+                        ),
+                      ),
+                    Text(
+                      label,
+                      style: const TextStyle(
+                        fontFamily: 'Inter',
+                        fontFamilyFallback: ['NotoSansKR'],
+                        fontSize: 11.5,
+                        fontWeight: FontWeight.w600,
+                        color: Color(0xFF2F9BE8),
+                        height: 1.05,
+                        letterSpacing: -0.15,
+                      ),
                     ),
-                  ),
+                  ],
                 ),
               ),
             ),

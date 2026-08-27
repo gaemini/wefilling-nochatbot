@@ -2655,6 +2655,7 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
               sourceFields: <String, String>{'content': content},
             ),
             scope: 'post:${_currentPost.id}',
+            showToggle: false,
             builder: (context, fields) => PostLinkifiedText(
               text: fields['content'] ?? content,
               textAlign: TextAlign.left,
@@ -2740,6 +2741,11 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
         title: const SizedBox.shrink(),
         centerTitle: false,
         actions: [
+          TranslationScopeToggle(
+            scope: 'post:${_currentPost.id}',
+            appBarAction: true,
+          ),
+          const SizedBox(width: DesignTokens.s2),
           IconButton(
             tooltip: AppLocalizations.of(context)!.moreOptions,
             onPressed: _openPostActionsSheet,
@@ -2766,13 +2772,18 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
                       _buildEditorialPostContent(),
 
                       // 댓글 섹션 헤더에서 "Comments" 텍스트 제거 (요구사항)
-                      SizedBox(height: _currentPost.imageUrls.isEmpty ? 8 : 16),
-                      Align(
-                        alignment: Alignment.centerRight,
-                        child: TranslationScopeToggle(
-                          scope: 'post-comments:${_currentPost.id}',
+                      const SizedBox(height: DesignTokens.s4),
+                      Padding(
+                        padding: const EdgeInsets.only(right: DesignTokens.s12),
+                        child: Align(
+                          alignment: Alignment.centerRight,
+                          child: TranslationScopeToggle(
+                            scope: 'post-comments:${_currentPost.id}',
+                            postCardHeader: true,
+                          ),
                         ),
                       ),
+                      const SizedBox(height: DesignTokens.s2),
 
                       // 확장된 댓글 목록 (대댓글 + 좋아요 지원)
                       StreamBuilder<List<Comment>>(

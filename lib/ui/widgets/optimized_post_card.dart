@@ -35,6 +35,7 @@ import 'shared_link_preview_card.dart';
 import 'user_avatar.dart';
 import 'hanyang_verification_gate.dart';
 import 'translatable_content.dart';
+import '../sheets/translation_language_sheet.dart';
 
 /// Board/Home 피드에서 사용하는 content-first 일반 게시글 카드.
 class OptimizedPostCard extends StatefulWidget {
@@ -103,8 +104,12 @@ class _OptimizedPostCardState extends State<OptimizedPostCard> {
   bool _likeSheetOpenedByHold = false;
 
   static const double _imageRadius = DesignTokens.r12;
-  static const double _threadContentOffset = 44;
   static const String _overflowSuffix = '\u00A0\u00A0....'; // 2칸 + ....
+  // 피드에서는 원본 사진을 그대로 디코딩하지 않는다. 디스크/메모리/프리캐시가
+  // 같은 provider key를 사용해야 스크롤로 카드가 다시 만들어져도 재디코딩과
+  // 중복 파일 변환 없이 즉시 재사용된다.
+  static const int _feedImageCacheWidth = 800;
+  static const int _avatarCacheWidth = 160;
 
   @override
   void initState() {
@@ -135,9 +140,18 @@ class _OptimizedPostCardState extends State<OptimizedPostCard> {
       _liveCommentCount = null;
       _liveViewCount = null;
       _cachedAuthorInfoStream = null;
+      _didPrecache = false;
       _syncLocalLikeStateFromWidget();
       _subscribeToCachedEngagement();
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (mounted) _maybePrecacheCriticalImages();
+      });
       return;
+    }
+    if (!oldWidget.preloadImage && widget.preloadImage) {
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (mounted) _maybePrecacheCriticalImages();
+      });
     }
     // 공통 캐시가 아직 없다면 새 위젯 모델을 초기값으로 사용한다. 이미 카드나
     // 상세가 갱신한 공통 값은 오래된 피드 모델로 되돌리지 않는다.
@@ -169,11 +183,27 @@ class _OptimizedPostCardState extends State<OptimizedPostCard> {
       (engagement) {
         if (!mounted || widget.post.id != postId) return;
         final me = FirebaseAuth.instance.currentUser?.uid;
+        final nextLiked = me != null && engagement.likedBy.contains(me);
+        final changesVisibleValue = _effectiveCommentCount(widget.post) !=
+                engagement.commentCount ||
+            (_liveViewCount ?? widget.post.viewCount) != engagement.viewCount ||
+            _likesOverride != engagement.likes ||
+            _isLikedOverride != nextLiked;
+        if (!changesVisibleValue) {
+          // Behavior/cache stream의 첫 seed는 카드 snapshot과 보통 같다.
+          // 같은 값으로 카드 전체를 두 번째 build하지 않고 내부 기준값만
+          // 확정해 이미지·링크·번역 subtree의 불필요한 재생성을 피한다.
+          _liveCommentCount = engagement.commentCount;
+          _liveViewCount = engagement.viewCount;
+          _likesOverride = engagement.likes;
+          _isLikedOverride = nextLiked;
+          return;
+        }
         setState(() {
           _liveCommentCount = engagement.commentCount;
           _liveViewCount = engagement.viewCount;
           _likesOverride = engagement.likes;
-          _isLikedOverride = me != null && engagement.likedBy.contains(me);
+          _isLikedOverride = nextLiked;
         });
       },
       onError: (Object error) {
@@ -558,20 +588,26 @@ class _OptimizedPostCardState extends State<OptimizedPostCard> {
     if (!widget.preloadImage) return;
     final post = widget.post;
 
-    // 상단 카드는 첨부 이미지 전체를 병렬로 미리 받아 놓는다.
-    // 이후 페이지로 넘겨도 추가 네트워크 대기가 생기지 않는다.
+    // 상단 카드의 첫 이미지만 미리 준비한다. 여러 장 포스트의 모든 원본을
+    // 동시에 받으면 빠른 세로 스크롤 중 네트워크/디코더가 포화되므로 나머지는
+    // 실제 가로 페이지 이동 시 _ImageSlider가 인접 항목만 준비한다.
     final postImages = post.standaloneImageUrls
         .map((url) => url.trim())
         .where((url) => url.isNotEmpty)
         .toSet()
+        .take(1)
         .toList(growable: false);
     if (postImages.isNotEmpty) {
       unawaited(Future.wait<void>(postImages.map((url) async {
         try {
           await precacheImage(
-            CachedNetworkImageProvider(
-              url,
-              cacheManager: AppImageCacheManager.instance,
+            ResizeImage.resizeIfNeeded(
+              _feedImageCacheWidth,
+              null,
+              CachedNetworkImageProvider(
+                url,
+                cacheManager: AppImageCacheManager.instance,
+              ),
             ),
             context,
           );
@@ -585,9 +621,13 @@ class _OptimizedPostCardState extends State<OptimizedPostCard> {
     final authorPhoto = post.authorPhotoURL.trim();
     if (!post.isAnonymous && authorPhoto.isNotEmpty) {
       try {
-        final provider = CachedNetworkImageProvider(
-          authorPhoto,
-          cacheManager: AppImageCacheManager.instance,
+        final provider = ResizeImage.resizeIfNeeded(
+          _avatarCacheWidth,
+          null,
+          CachedNetworkImageProvider(
+            authorPhoto,
+            cacheManager: AppImageCacheManager.instance,
+          ),
         );
         precacheImage(provider, context).catchError((_) {});
       } catch (_) {}
@@ -613,6 +653,10 @@ class _OptimizedPostCardState extends State<OptimizedPostCard> {
     );
   }
 
+  Future<void> _openTranslationLanguageSettings() async {
+    await showTranslationLanguageSheet(context);
+  }
+
   // 투표 배지는 제거됨: 카드 본문에 투표 항목을 직접 노출한다.
 
   @override
@@ -621,7 +665,7 @@ class _OptimizedPostCardState extends State<OptimizedPostCard> {
     final colorScheme = theme.colorScheme;
     final post = widget.post;
     final unifiedText = _getUnifiedBodyText(post);
-    final hasContent = unifiedText.isNotEmpty;
+    final hasContent = unifiedText.trim().isNotEmpty;
     final contentInsets =
         widget.contentPadding.resolve(Directionality.of(context));
     final imageGap = context.rs(4).clamp(3.0, 5.0).toDouble();
@@ -661,6 +705,7 @@ class _OptimizedPostCardState extends State<OptimizedPostCard> {
                   post,
                   theme,
                   colorScheme,
+                  showTranslationToggle: hasContent,
                   threadContent: HanyangVerificationGate(
                     locked: isHanyangLocked,
                     compact: true,
@@ -671,6 +716,10 @@ class _OptimizedPostCardState extends State<OptimizedPostCard> {
                           SizedBox(height: contentTopGap),
                           if (hasContent)
                             TranslatableContent(
+                              key: ValueKey<String>(
+                                'post-translation:${post.id}:'
+                                '${unifiedText.hashCode}',
+                              ),
                               request: ContentTranslationRequest(
                                 contentType: 'post',
                                 contentId: post.id,
@@ -859,6 +908,7 @@ class _OptimizedPostCardState extends State<OptimizedPostCard> {
     Post post,
     ThemeData theme,
     ColorScheme colorScheme, {
+    required bool showTranslationToggle,
     required Widget threadContent,
   }) {
     // 익명 여부에 따라 작성자 정보 결정
@@ -914,174 +964,171 @@ class _OptimizedPostCardState extends State<OptimizedPostCard> {
         mainAxisSize: MainAxisSize.min,
         children: [
           // 프로필 정보 (프로필 이미지 + 작성자 이름 + 국적 + 시간)
-          ConstrainedBox(
-            constraints: const BoxConstraints(minHeight: 40),
-            child: Row(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                // 프로필 이미지
-                Semantics(
-                  button: canOpenProfile,
-                  label: displayNickname,
-                  child: GestureDetector(
-                    behavior: HitTestBehavior.opaque,
-                    onTap: canOpenProfile
-                        ? () {
-                            _openProfileOrMyPage(
-                              userId: post.userId,
-                              nickname: displayNickname,
-                              photoURL: resolvedPhotoURL,
-                            );
-                          }
-                        : null,
-                    child: SizedBox.square(
-                      dimension: 40,
-                      child: Center(
-                        child: AudienceRing(
-                          restricted: usesLimitedAudienceIdentity,
-                          size: 40,
-                          ringWidth: usesLimitedAudienceIdentity ? 4 : 1.5,
-                          innerGap: usesLimitedAudienceIdentity ? 0.75 : 0.5,
-                          emphasized: usesLimitedAudienceIdentity,
-                          semanticLabel:
-                              Localizations.localeOf(context).languageCode ==
-                                      'ko'
-                                  ? '공개 범위가 제한된 포스트'
-                                  : 'Limited audience post',
-                          child: ColoredBox(
-                            color: Colors.grey.shade300,
-                            child: (resolvedImageUrl != null && !isAnonymous)
-                                ? CachedNetworkImage(
-                                    imageUrl: resolvedImageUrl,
-                                    cacheManager: AppImageCacheManager.instance,
-                                    fit: BoxFit.cover,
-                                    fadeInDuration:
-                                        const Duration(milliseconds: 120),
-                                    fadeOutDuration:
-                                        const Duration(milliseconds: 120),
-                                    placeholder: (_, __) => ColoredBox(
-                                      color: Colors.grey.shade300,
-                                    ),
-                                    errorWidget: (_, __, ___) => const Icon(
-                                      Icons.person_outline_rounded,
-                                      size: 20,
-                                      color: BrandColors.iconDefault,
-                                    ),
-                                  )
-                                : const Icon(
+          Row(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              // 프로필 이미지
+              Semantics(
+                button: canOpenProfile,
+                label: displayNickname,
+                child: GestureDetector(
+                  behavior: HitTestBehavior.opaque,
+                  onTap: canOpenProfile
+                      ? () {
+                          _openProfileOrMyPage(
+                            userId: post.userId,
+                            nickname: displayNickname,
+                            photoURL: resolvedPhotoURL,
+                          );
+                        }
+                      : null,
+                  child: SizedBox.square(
+                    dimension: 40,
+                    child: Center(
+                      child: AudienceRing(
+                        restricted: usesLimitedAudienceIdentity,
+                        size: 40,
+                        ringWidth: usesLimitedAudienceIdentity ? 4 : 1.5,
+                        innerGap: usesLimitedAudienceIdentity ? 0.75 : 0.5,
+                        emphasized: usesLimitedAudienceIdentity,
+                        semanticLabel:
+                            Localizations.localeOf(context).languageCode == 'ko'
+                                ? '공개 범위가 제한된 포스트'
+                                : 'Limited audience post',
+                        child: ColoredBox(
+                          color: Colors.grey.shade300,
+                          child: (resolvedImageUrl != null && !isAnonymous)
+                              ? CachedNetworkImage(
+                                  imageUrl: resolvedImageUrl,
+                                  cacheManager: AppImageCacheManager.instance,
+                                  memCacheWidth: _avatarCacheWidth,
+                                  fit: BoxFit.cover,
+                                  useOldImageOnUrlChange: true,
+                                  fadeInDuration: Duration.zero,
+                                  fadeOutDuration: Duration.zero,
+                                  placeholder: (_, __) => ColoredBox(
+                                    color: Colors.grey.shade300,
+                                  ),
+                                  errorWidget: (_, __, ___) => const Icon(
                                     Icons.person_outline_rounded,
                                     size: 20,
                                     color: BrandColors.iconDefault,
                                   ),
-                          ),
+                                )
+                              : const Icon(
+                                  Icons.person_outline_rounded,
+                                  size: 20,
+                                  color: BrandColors.iconDefault,
+                                ),
                         ),
                       ),
                     ),
                   ),
                 ),
+              ),
 
-                const SizedBox(width: 4),
+              const SizedBox(width: 4),
 
-                // 작성자 정보 아래에 번역 전환을 바로 이어 배치한다.
-                Expanded(
-                  child: Column(
-                    mainAxisSize: MainAxisSize.min,
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Row(
-                        crossAxisAlignment: CrossAxisAlignment.center,
-                        children: [
-                          Flexible(
-                            child: GestureDetector(
-                              onTap: canOpenProfile
-                                  ? () => _openProfileOrMyPage(
-                                        userId: post.userId,
-                                        nickname: displayNickname,
-                                        photoURL: resolvedPhotoURL,
-                                      )
-                                  : null,
-                              child: Text(
-                                displayNickname,
-                                maxLines: 1,
-                                overflow: TextOverflow.ellipsis,
-                                style: TextStyle(
-                                  fontFamily: 'Inter',
-                                  fontFamilyFallback: const ['NotoSansKR'],
-                                  fontSize: context
-                                      .rf(15)
-                                      .clamp(14.0, 15.5)
-                                      .toDouble(),
-                                  fontWeight: FontWeight.w700,
-                                  color: BrandColors.textPrimary,
-                                  height: 1.22,
-                                  letterSpacing: -0.25,
-                                ),
+              // 작성자 정보, 번역 전환, 본문을 같은 열에 배치한다. 번역할
+              // 내용이 없어 전환 버튼이 숨겨지면 본문이 작성자명 바로 아래로
+              // 올라오며, 아바타 높이만큼 빈 공간을 남기지 않는다.
+              Expanded(
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Row(
+                      crossAxisAlignment: CrossAxisAlignment.center,
+                      children: [
+                        Flexible(
+                          child: GestureDetector(
+                            onTap: canOpenProfile
+                                ? () => _openProfileOrMyPage(
+                                      userId: post.userId,
+                                      nickname: displayNickname,
+                                      photoURL: resolvedPhotoURL,
+                                    )
+                                : null,
+                            child: Text(
+                              displayNickname,
+                              maxLines: 1,
+                              overflow: TextOverflow.ellipsis,
+                              style: TextStyle(
+                                fontFamily: 'Inter',
+                                fontFamilyFallback: const ['NotoSansKR'],
+                                fontSize:
+                                    context.rf(15).clamp(14.0, 15.5).toDouble(),
+                                fontWeight: FontWeight.w700,
+                                color: BrandColors.textPrimary,
+                                height: 1.22,
+                                letterSpacing: -0.25,
                               ),
                             ),
                           ),
-                          if (!isAnonymous &&
-                              !effectiveDeleted &&
-                              post.authorNationality.trim().isNotEmpty) ...[
-                            const SizedBox(width: 4),
-                            CountryFlagCircle(
-                              nationality: post.authorNationality,
-                              size: 12,
-                            ),
-                          ],
+                        ),
+                        if (!isAnonymous &&
+                            !effectiveDeleted &&
+                            post.authorNationality.trim().isNotEmpty) ...[
+                          const SizedBox(width: 4),
+                          CountryFlagCircle(
+                            nationality: post.authorNationality,
+                            size: 12,
+                          ),
+                        ],
+                        const SizedBox(width: 4),
+                        const Text(
+                          '·',
+                          style: TextStyle(color: BrandColors.textTertiary),
+                        ),
+                        const SizedBox(width: 4),
+                        Text(
+                          _formatTimeAgo(post.createdAt),
+                          maxLines: 1,
+                          style: theme.textTheme.bodySmall?.copyWith(
+                            color: BrandColors.textTertiary,
+                            fontFamily: 'Inter',
+                            fontFamilyFallback: const ['NotoSansKR'],
+                            fontSize:
+                                context.rf(14).clamp(13.0, 14.5).toDouble(),
+                            fontWeight: FontWeight.w400,
+                            height: 1.22,
+                            letterSpacing: -0.15,
+                          ),
+                        ),
+                        if (isFriendsOnly) ...[
                           const SizedBox(width: 4),
                           const Text(
                             '·',
                             style: TextStyle(color: BrandColors.textTertiary),
                           ),
                           const SizedBox(width: 4),
-                          Text(
-                            _formatTimeAgo(post.createdAt),
-                            maxLines: 1,
-                            style: theme.textTheme.bodySmall?.copyWith(
-                              color: BrandColors.textTertiary,
-                              fontFamily: 'Inter',
-                              fontFamilyFallback: const ['NotoSansKR'],
-                              fontSize:
-                                  context.rf(14).clamp(13.0, 14.5).toDouble(),
-                              fontWeight: FontWeight.w400,
-                              height: 1.22,
-                              letterSpacing: -0.15,
+                          Flexible(
+                            flex: 2,
+                            child: _FriendsOnlyIndicator(
+                              isKorean: Localizations.localeOf(context)
+                                      .languageCode ==
+                                  'ko',
                             ),
                           ),
-                          if (isFriendsOnly) ...[
-                            const SizedBox(width: 4),
-                            const Text(
-                              '·',
-                              style: TextStyle(color: BrandColors.textTertiary),
-                            ),
-                            const SizedBox(width: 4),
-                            Flexible(
-                              flex: 2,
-                              child: _FriendsOnlyIndicator(
-                                isKorean: Localizations.localeOf(context)
-                                        .languageCode ==
-                                    'ko',
-                              ),
-                            ),
-                          ],
                         ],
-                      ),
+                      ],
+                    ),
+                    if (showTranslationToggle) ...[
                       const SizedBox(height: 1),
                       TranslationScopeToggle(
                         scope: 'post:${post.id}',
                         postCardHeader: true,
+                        onSettingsPressed: _openTranslationLanguageSettings,
                       ),
                     ],
-                  ),
+                    const SizedBox(height: 2),
+                    // TranslatableContent가 이 영역 안에서 원문과 번역문만
+                    // 교체한다.
+                    threadContent,
+                  ],
                 ),
-              ],
-            ),
-          ),
-          const SizedBox(height: 2),
-          // TranslatableContent가 이 영역 안에서 원문과 번역문만 교체한다.
-          Padding(
-            padding: const EdgeInsets.only(left: _threadContentOffset),
-            child: threadContent,
+              ),
+            ],
           ),
         ],
       );
@@ -1131,10 +1178,11 @@ class _OptimizedPostCardState extends State<OptimizedPostCard> {
           child: CachedNetworkImage(
             imageUrl: imageUrls.first,
             cacheManager: AppImageCacheManager.instance,
-            memCacheWidth: 800,
+            memCacheWidth: _feedImageCacheWidth,
             fit: BoxFit.cover,
-            fadeInDuration: const Duration(milliseconds: 100),
-            fadeOutDuration: const Duration(milliseconds: 80),
+            useOldImageOnUrlChange: true,
+            fadeInDuration: Duration.zero,
+            fadeOutDuration: Duration.zero,
             placeholder: (_, __) => const _PostImagePlaceholder(),
             errorWidget: (_, __, ___) => const _PostImageError(),
           ),
@@ -1146,6 +1194,7 @@ class _OptimizedPostCardState extends State<OptimizedPostCard> {
     return _ImageSlider(
       imageUrls: imageUrls,
       imageRadius: _imageRadius,
+      preloadAdjacent: widget.preloadImage,
     );
   }
 
@@ -1743,10 +1792,12 @@ class _PostImageError extends StatelessWidget {
 class _ImageSlider extends StatefulWidget {
   final List<String> imageUrls;
   final double imageRadius;
+  final bool preloadAdjacent;
 
   const _ImageSlider({
     required this.imageUrls,
     required this.imageRadius,
+    required this.preloadAdjacent,
   });
 
   @override
@@ -1762,7 +1813,7 @@ class _ImageSliderState extends State<_ImageSlider> {
   void initState() {
     super.initState();
     _pageController = PageController(initialPage: 0, keepPage: false);
-    _scheduleParallelImagePrecache();
+    if (widget.preloadAdjacent) _scheduleAdjacentImagePrecache(0);
   }
 
   @override
@@ -1770,16 +1821,24 @@ class _ImageSliderState extends State<_ImageSlider> {
     super.didUpdateWidget(oldWidget);
     if (!_listEquals(oldWidget.imageUrls, widget.imageUrls)) {
       _currentPage = 0;
+      _precacheRequested.clear();
       _pageController.dispose();
       _pageController = PageController(initialPage: 0, keepPage: false);
-      _scheduleParallelImagePrecache();
+      if (widget.preloadAdjacent) _scheduleAdjacentImagePrecache(0);
+    } else if (!oldWidget.preloadAdjacent && widget.preloadAdjacent) {
+      _scheduleAdjacentImagePrecache(_currentPage);
     }
   }
 
-  void _scheduleParallelImagePrecache() {
+  /// 사용자가 보고 있는 페이지의 바로 다음 이미지만 준비한다. 기존에는 카드가
+  /// viewport 밖에서 생성되기만 해도 첨부 사진 전체를 원본 크기로 병렬 decode해
+  /// 세로 스크롤 프레임과 네트워크 대역폭을 함께 점유했다.
+  void _scheduleAdjacentImagePrecache(int currentIndex) {
     WidgetsBinding.instance.addPostFrameCallback((_) {
       if (!mounted) return;
-      final pendingUrls = widget.imageUrls
+      final nextIndex = currentIndex + 1;
+      if (nextIndex >= widget.imageUrls.length) return;
+      final pendingUrls = <String>[widget.imageUrls[nextIndex]]
           .map((url) => url.trim())
           .where((url) => url.isNotEmpty && _precacheRequested.add(url))
           .toList(growable: false);
@@ -1788,9 +1847,13 @@ class _ImageSliderState extends State<_ImageSlider> {
       unawaited(Future.wait<void>(pendingUrls.map((url) async {
         try {
           await precacheImage(
-            CachedNetworkImageProvider(
-              url,
-              cacheManager: AppImageCacheManager.instance,
+            ResizeImage.resizeIfNeeded(
+              _OptimizedPostCardState._feedImageCacheWidth,
+              null,
+              CachedNetworkImageProvider(
+                url,
+                cacheManager: AppImageCacheManager.instance,
+              ),
             ),
             context,
           );
@@ -1831,6 +1894,7 @@ class _ImageSliderState extends State<_ImageSlider> {
                 setState(() {
                   _currentPage = index;
                 });
+                _scheduleAdjacentImagePrecache(index);
               },
               itemBuilder: (context, index) {
                 return ColoredBox(
@@ -1838,10 +1902,11 @@ class _ImageSliderState extends State<_ImageSlider> {
                   child: CachedNetworkImage(
                     imageUrl: widget.imageUrls[index],
                     cacheManager: AppImageCacheManager.instance,
-                    memCacheWidth: 800,
+                    memCacheWidth: _OptimizedPostCardState._feedImageCacheWidth,
                     fit: index == 0 ? BoxFit.cover : BoxFit.contain,
-                    fadeInDuration: const Duration(milliseconds: 100),
-                    fadeOutDuration: const Duration(milliseconds: 80),
+                    useOldImageOnUrlChange: true,
+                    fadeInDuration: Duration.zero,
+                    fadeOutDuration: Duration.zero,
                     placeholder: (_, __) => const _PostImagePlaceholder(),
                     errorWidget: (_, __, ___) => const _PostImageError(),
                   ),

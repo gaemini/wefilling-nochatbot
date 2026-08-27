@@ -8,10 +8,38 @@ import {hasActiveHanyangClaim} from './hanyang_verification';
 const GEMINI_API_VERSION = 'v1beta';
 const GEMINI_MODEL = 'gemini-3.5-flash-lite';
 const GEMINI_FALLBACK_MODEL = 'gemini-3.5-flash';
-const TRANSLATION_VERSION = 5;
-const PROMPT_VERSION = 5;
-const TRANSLATION_POLICY_VERSION = '2026-08-faithful-v5';
+const TRANSLATION_VERSION = 6;
+const PROMPT_VERSION = 6;
+const TRANSLATION_POLICY_VERSION = '2026-08-context-quality-v6';
+const GLOSSARY_VERSION = 1;
+const QUALITY_POLICY_VERSION = 1;
 const CURRENT_MODELS = new Set([GEMINI_MODEL, GEMINI_FALLBACK_MODEL]);
+const SOURCE_INTENTS = new Set([
+  'question',
+  'statement',
+  'answer',
+  'suggestion',
+  'request',
+  'command',
+  'exclamation',
+  'unknown',
+]);
+const TYPO_HINTS: Record<string, string> = {
+  '뮤슨': '무슨의 명백한 오타일 가능성이 높음',
+  '해염': '해요의 구어체·오타 표현',
+  '머해': '뭐 해의 구어체 표현',
+  '할려구': '하려고의 구어체·오타 표현',
+  'ㅇㅋ': '오케이의 축약형 표현',
+  'ㄱㄱ': '가자 또는 진행하자는 뜻의 축약형 표현',
+};
+const WEFILLING_GLOSSARY: Record<string, string> = {
+  '위필링': 'Wefilling',
+  '스낵챗': 'Snack Chat',
+  '스낵샷': 'Snackshot',
+  '밋업': 'Meetup',
+  '한양대 ERICA': 'Hanyang University ERICA',
+};
+const PRESERVE_IF_UNCERTAIN = ['섭픽'];
 const TARGET_LANGUAGE_NAMES: Record<string, string> = {
   ko: 'Korean',
   en: 'English',
@@ -35,9 +63,17 @@ const TARGET_LANGUAGE_NAMES: Record<string, string> = {
   uk: 'Ukrainian',
   mn: 'Mongolian',
 };
-const MAX_BATCH_SIZE = 10;
+const MAX_BATCH_SIZE = 5;
+const SNACK_CONTEXT_HISTORY_LIMIT = 3;
 const PENDING_TTL_MS = 60_000;
+// The client retries a rejected translation after two seconds and a provider
+// outage after fifteen seconds. Keeping every failure for fifteen seconds made
+// the fast retry read the same failed document and exhaust without regenerating.
+const QUALITY_FAILED_RETRY_TTL_MS = 1_250;
+const PROVIDER_FAILED_RETRY_TTL_MS = 12_000;
 const MAX_SOURCE_CHARS = 12_000;
+const MAX_CONTEXT_FIELD_CHARS = 1_500;
+const MAX_CONTEXT_CHARS = 6_000;
 const SUPPORTED_TYPES = new Set([
   'post',
   'comment',
@@ -53,12 +89,25 @@ type TranslationRequest = {
 
 type ResolvedContent = TranslationRequest & {
   fields: Record<string, string>;
+  context: Record<string, string>;
+  contextHash: string;
+  typoHints: string[];
+  matchedGlossary: Array<{source: string; preferred: string}>;
+  preserveIfUncertain: string[];
+  contextSeed: Record<string, unknown>;
   sourceHash: string;
+};
+
+type ResolutionCache = {
+  snackRooms: Map<string, Promise<admin.firestore.DocumentSnapshot>>;
 };
 
 type GeminiTranslation = {
   id: string;
   sourceLanguage: string;
+  sourceIntent: string;
+  coverageComplete: boolean;
+  uncertainTerms: string[];
   translations: Record<string, string>;
   modelUsed: string;
 };
@@ -119,9 +168,16 @@ function requestKey(item: TranslationRequest): string {
 }
 
 function cacheId(item: TranslationRequest, targetLanguage: string): string {
-  return sha256(
-    `${TRANSLATION_VERSION}:${PROMPT_VERSION}:${GEMINI_MODEL}:${requestKey(item)}:${targetLanguage}`,
-  );
+  return sha256([
+    TRANSLATION_VERSION,
+    PROMPT_VERSION,
+    TRANSLATION_POLICY_VERSION,
+    GLOSSARY_VERSION,
+    QUALITY_POLICY_VERSION,
+    GEMINI_MODEL,
+    requestKey(item),
+    targetLanguage,
+  ].join(':'));
 }
 
 function timestampMillis(value: unknown): number | null {
@@ -160,12 +216,21 @@ function isCurrentCompletedCache(
   return hasMatchingIdentity(cached, item, targetLanguage) &&
     cached.translationVersion === TRANSLATION_VERSION &&
     cached.promptVersion === PROMPT_VERSION &&
+    cached.translationPolicyVersion === TRANSLATION_POLICY_VERSION &&
+    cached.glossaryVersion === GLOSSARY_VERSION &&
+    cached.qualityPolicyVersion === QUALITY_POLICY_VERSION &&
+    SOURCE_INTENTS.has(stringValue(cached.sourceIntent)) &&
+    typeof cached.contextHash === 'string' && cached.contextHash.length > 0 &&
+    cached.coverageComplete === true &&
+    Array.isArray(cached.uncertainTerms) &&
     CURRENT_MODELS.has(stringValue(cached.modelUsed)) &&
     expectedFields.every((field) =>
       typeof (translatedFields as Record<string, unknown>)[field] === 'string' &&
       isPlausibleTranslation(
         item.fields[field],
         (translatedFields as Record<string, string>)[field],
+        targetLanguage,
+        false,
       ),
     );
 }
@@ -180,23 +245,88 @@ function isCurrentPendingCache(
   return hasMatchingIdentity(cached, item, targetLanguage) &&
     cached.translationVersion === TRANSLATION_VERSION &&
     cached.promptVersion === PROMPT_VERSION &&
+    cached.translationPolicyVersion === TRANSLATION_POLICY_VERSION &&
+    cached.glossaryVersion === GLOSSARY_VERSION &&
+    cached.qualityPolicyVersion === QUALITY_POLICY_VERSION &&
     cached.modelUsed === GEMINI_MODEL &&
     Date.now() - pendingAt < PENDING_TTL_MS;
 }
 
-const PROTECTED_TEXT_PATTERN = /https?:\/\/[^\s]+|www\.[^\s]+|[\p{L}\p{N}._%+-]+@[\p{L}\p{N}.-]+\.[\p{L}]{2,}|@[\p{L}\p{N}_.-]+|#[\p{L}\p{N}_.-]+|\bChIJ[A-Za-z0-9_-]+\b|(?:place[_ ]?id\s*[:=]\s*)[A-Za-z0-9_-]+|-?\d{1,3}\.\d+\s*[,/]\s*-?\d{1,3}\.\d+|\b\d{1,4}[./:-]\d{1,2}(?:[./:-]\d{1,4})?(?:\s*(?:AM|PM|오전|오후))?\b|\+?\d[\d\s().-]{5,}\d|\p{Extended_Pictographic}(?:\uFE0F|\p{Emoji_Modifier}|\u200D\p{Extended_Pictographic})*/giu;
+function isCurrentFailedCache(
+  cached: Record<string, unknown> | undefined,
+  item: ResolvedContent,
+  targetLanguage: string,
+): cached is Record<string, unknown> {
+  if (!cached || cached.status !== 'failed') return false;
+  const failedAt = timestampMillis(cached.failedAt) ?? 0;
+  const retryTtlMs = stringValue(cached.errorCode) ===
+    'provider_unavailable' ?
+    PROVIDER_FAILED_RETRY_TTL_MS : QUALITY_FAILED_RETRY_TTL_MS;
+  return hasMatchingIdentity(cached, item, targetLanguage) &&
+    cached.translationVersion === TRANSLATION_VERSION &&
+    cached.promptVersion === PROMPT_VERSION &&
+    cached.translationPolicyVersion === TRANSLATION_POLICY_VERSION &&
+    cached.glossaryVersion === GLOSSARY_VERSION &&
+    cached.qualityPolicyVersion === QUALITY_POLICY_VERSION &&
+    Date.now() - failedAt < retryTtlMs;
+}
+
+function cachedFailureResponse(
+  item: ResolvedContent,
+  targetLanguage: string,
+  cached: Record<string, unknown>,
+): Record<string, unknown> {
+  return {
+    id: requestKey(item),
+    status: 'failed',
+    sourceHash: item.sourceHash,
+    targetLanguage,
+    modelUsed: stringValue(cached.modelUsed) || GEMINI_MODEL,
+    translationVersion: TRANSLATION_VERSION,
+    promptVersion: PROMPT_VERSION,
+    translationPolicyVersion: TRANSLATION_POLICY_VERSION,
+    glossaryVersion: GLOSSARY_VERSION,
+    qualityPolicyVersion: QUALITY_POLICY_VERSION,
+    contextHash: stringValue(cached.contextHash),
+    translatedAt: timestampMillis(cached.failedAt) ?? Date.now(),
+    cacheSource: 'firestore',
+    errorCode: stringValue(cached.errorCode) || 'quality_validation_failed',
+  };
+}
+
+const PROTECTED_TEXT_PATTERN = /https?:\/\/[^\s]+|www\.[^\s]+|[\p{L}\p{N}._%+-]+@[\p{L}\p{N}.-]+\.[\p{L}]{2,}|@[\p{L}\p{N}_.-]+|#[\p{L}\p{N}_.-]+|\bChIJ[A-Za-z0-9_-]+\b|(?:place[_ ]?id\s*[:=]\s*)[A-Za-z0-9_-]+|-?\d{1,3}\.\d+\s*[,/]\s*-?\d{1,3}\.\d+|\b\d{1,4}[./:-]\d{1,2}(?:[./:-]\d{1,4})?(?:\s*(?:AM|PM|오전|오후))?\b|[$€£¥₩]\s?\d+(?:[.,]\d+)*|\+?\d[\d\s().-]{5,}\d|\d+(?:[.,]\d+)*(?:\s?(?:%|원|달러|시|분|초))?|\p{Extended_Pictographic}(?:\uFE0F|\p{Emoji_Modifier}|\u200D\p{Extended_Pictographic})*/giu;
 
 function looksLikeSameLanguage(text: string, target: string): boolean {
   const meaningful = text
     .replace(PROTECTED_TEXT_PATTERN, '')
     .trim();
   if (!meaningful) return true;
-  if (target === 'ko') return /[가-힣]/.test(meaningful) && !/[A-Za-z]{4,}/.test(meaningful);
-  if (target === 'ja') return /[ぁ-んァ-ン]/.test(meaningful);
-  if (target === 'zh') return /[\u3400-\u9FFF]/.test(meaningful) && !/[ぁ-んァ-ン]/.test(meaningful);
-  if (target === 'ru' || target === 'uk') return /[\u0400-\u04FF]/.test(meaningful);
-  if (target === 'ar') return /[\u0600-\u06FF]/.test(meaningful);
-  if (target === 'th') return /[\u0E00-\u0E7F]/.test(meaningful);
+  const letters = meaningful.match(/\p{L}/gu) ?? [];
+  const ratio = (pattern: RegExp) =>
+    (meaningful.match(pattern) ?? []).length / Math.max(letters.length, 1);
+  if (target === 'ko') {
+    const hangul = meaningful.match(/[가-힣]/g) ?? [];
+    return hangul.length >= 2 && ratio(/[가-힣]/g) >= 0.85;
+  }
+  if (target === 'ja') {
+    return /[ぁ-んァ-ン]/.test(meaningful) &&
+      !/[가-힣]/.test(meaningful) &&
+      ratio(/[ぁ-ン\u3400-\u9FFF]/g) >= 0.85;
+  }
+  if (target === 'zh') {
+    return (meaningful.match(/[\u3400-\u9FFF]/g) ?? []).length >= 2 &&
+      !/[ぁ-ン가-힣]/.test(meaningful) &&
+      ratio(/[\u3400-\u9FFF]/g) >= 0.9;
+  }
+  if (target === 'ru' || target === 'uk') {
+    return ratio(/[\u0400-\u04FF]/g) >= 0.9 && letters.length >= 3;
+  }
+  if (target === 'ar') {
+    return ratio(/[\u0600-\u06FF]/g) >= 0.9 && letters.length >= 3;
+  }
+  if (target === 'th') {
+    return ratio(/[\u0E00-\u0E7F]/g) >= 0.9 && letters.length >= 3;
+  }
   const latinHints: Record<string, Set<string>> = {
     en: new Set(['the', 'and', 'is', 'are', 'this', 'that', 'hello', 'thanks', 'with', 'for']),
     es: new Set(['el', 'la', 'los', 'las', 'es', 'hola', 'gracias', 'con', 'para', 'que']),
@@ -214,7 +344,10 @@ function looksLikeSameLanguage(text: string, target: string): boolean {
     const words = meaningful.toLocaleLowerCase()
       .match(/[\p{L}]+/gu) ?? [];
     const hits = words.filter((word) => hints.has(word)).length;
-    return hits >= 2 && hits / Math.max(words.length, 1) >= 0.2;
+    const latinRatio = ratio(/[A-Za-zÀ-ỹ]/g);
+    if (words.length === 1) return hits === 1 && latinRatio === 1;
+    return words.length >= 3 && hits >= 2 && latinRatio >= 0.9 &&
+      hits / words.length >= 0.3;
   }
   return false;
 }
@@ -250,6 +383,7 @@ function restoreProtectedText(
     if (restored.split(token).length - 1 !== 1) return null;
     restored = restored.split(token).join(original);
   }
+  if (/__WF_KEEP_\d+__/.test(restored)) return null;
   return restored;
 }
 
@@ -271,11 +405,13 @@ async function canReadAudienceDocument(
 async function resolveContent(
   uid: string,
   request: TranslationRequest,
+  resolutionCache?: ResolutionCache,
 ): Promise<ResolvedContent> {
   const db = admin.firestore();
   const contentType = request.contentType;
   const contentId = request.contentId;
   let fields: Record<string, string> = {};
+  let contextSeed: Record<string, unknown> = {};
 
   if (contentType === 'post') {
     const snap = await db.collection(COL.posts).doc(contentId).get();
@@ -286,8 +422,17 @@ async function resolveContent(
     }
     const rawContent = stringValue(data.content);
     const rawTitle = stringValue(data.title);
-    const content = rawContent.trim().length > 0 ? rawContent : rawTitle;
+    // Post.displayText trims the value on the client. Hash and translate the
+    // same normalized source so legacy documents with surrounding whitespace
+    // are not rejected as stale after a successful server translation.
+    const content = rawContent.trim().length > 0 ?
+      rawContent.trim() : rawTitle.trim();
     fields = {content};
+    contextSeed = {
+      title: rawContent.trim().length > 0 ? rawTitle : '',
+      category: data.category,
+      type: data.type,
+    };
   } else if (contentType === 'meetup') {
     const snap = await db.collection(COL.meetups).doc(contentId).get();
     if (!snap.exists) throw new functions.https.HttpsError('not-found', 'Meetup not found.');
@@ -296,9 +441,12 @@ async function resolveContent(
       throw new functions.https.HttpsError('permission-denied', 'Meetup is not accessible.');
     }
     fields = {
-      title: stringValue(data.title),
       description: stringValue(data.description),
       location: stringValue(data.location),
+    };
+    contextSeed = {
+      category: data.category,
+      type: data.type,
     };
   } else if (contentType === 'comment') {
     const snap = await db.collection(COL.comments).doc(contentId).get();
@@ -318,25 +466,65 @@ async function resolveContent(
         !(await canReadAudienceDocument(uid, parent.data() as Record<string, unknown>))) {
       throw new functions.https.HttpsError('permission-denied', 'Comment is not accessible.');
     }
+    const parentData = parent.data() as Record<string, unknown>;
     fields = {content: stringValue(data.content)};
+    contextSeed = {
+      parentTitle: parentData.title,
+      parentBody: post.exists ? parentData.content : parentData.description,
+      parentType: post.exists ? 'post' : 'meetup',
+      parentCommentId: data.parentCommentId,
+      replyToCommentId: data.replyToCommentId,
+      createdAt: data.createdAt,
+    };
     request.parentId = parentId;
   } else {
     const roomId = safeId(request.parentId, 'parentId');
-    const room = await db.collection(COL.snackChats).doc(roomId).get();
+    const roomRef = db.collection(COL.snackChats).doc(roomId);
+    let roomRequest = resolutionCache?.snackRooms.get(roomId);
+    if (!roomRequest) {
+      roomRequest = roomRef.get();
+      resolutionCache?.snackRooms.set(roomId, roomRequest);
+    }
+    const room = await roomRequest;
     if (!room.exists || !stringList(room.data()?.participantIds).includes(uid)) {
       throw new functions.https.HttpsError('permission-denied', 'Snack Chat is not accessible.');
     }
     const message = await room.ref.collection('messages').doc(contentId).get();
     if (!message.exists) throw new functions.https.HttpsError('not-found', 'Message not found.');
     const data = message.data() as Record<string, unknown>;
-    if (data.isDeleted === true || stringValue(data.type) === 'system') {
+    const messageType = stringValue(data.type);
+    if (data.isDeleted === true || messageType === 'system') {
       throw new functions.https.HttpsError('failed-precondition', 'Message cannot be translated.');
     }
-    fields = {text: stringValue(data.text)};
+    const rawPoll = messageType === 'poll' && data.poll &&
+      typeof data.poll === 'object' && !Array.isArray(data.poll) ?
+      data.poll as Record<string, unknown> : undefined;
+    fields = {
+      text: stringValue(rawPoll?.question || data.text),
+    };
+    const pollOptions = Array.isArray(rawPoll?.options) ?
+      rawPoll.options : [];
+    pollOptions.forEach((rawOption, index) => {
+      const option = rawOption && typeof rawOption === 'object' &&
+        !Array.isArray(rawOption) ?
+        rawOption as Record<string, unknown> : {};
+      const text = stringValue(option.text);
+      if (text.trim()) fields[`pollOption${index}`] = text;
+    });
+    contextSeed = {
+      roomPath: room.ref.path,
+      messageType,
+      replyToMessageId: data.replyToMessageId,
+      senderId: data.senderId,
+      sequence: data.sequence,
+      createdAt: data.createdAt,
+    };
   }
 
+  const sourceHashFields: Record<string, string> = {};
   for (const [key, value] of Object.entries(fields)) {
     const normalized = value.slice(0, MAX_SOURCE_CHARS);
+    sourceHashFields[key] = normalized;
     if (normalized.trim().length > 0) {
       fields[key] = normalized;
     } else {
@@ -346,7 +534,213 @@ async function resolveContent(
   if (!Object.values(fields).some((value) => value.trim().length > 0)) {
     throw new functions.https.HttpsError('failed-precondition', 'Content is empty.');
   }
-  return {...request, fields, sourceHash: sha256(canonicalFields(fields))};
+  return {
+    ...request,
+    fields,
+    context: {},
+    contextHash: '',
+    typoHints: [],
+    matchedGlossary: [],
+    preserveIfUncertain: [],
+    contextSeed,
+    sourceHash: sha256(canonicalFields(sourceHashFields)),
+  };
+}
+
+function storedDocumentId(value: unknown): string {
+  const id = stringValue(value).trim();
+  return id && id.length <= 160 && !id.includes('/') ? id : '';
+}
+
+function addContextField(
+  context: Record<string, string>,
+  key: string,
+  value: unknown,
+): void {
+  const used = Object.values(context).reduce(
+    (total, field) => total + field.length,
+    0,
+  );
+  const available = Math.max(0, MAX_CONTEXT_CHARS - used);
+  if (available === 0) return;
+  const normalized = stringValue(value)
+    .replace(/\r\n?/g, '\n')
+    .slice(0, Math.min(MAX_CONTEXT_FIELD_CHARS, available));
+  if (normalized.trim()) context[key] = normalized;
+}
+
+function readableContextText(data: Record<string, unknown>): string {
+  if (data.isDeleted === true || stringValue(data.type) === 'system') return '';
+  const poll = data.poll && typeof data.poll === 'object' &&
+    !Array.isArray(data.poll) ? data.poll as Record<string, unknown> : null;
+  if (stringValue(data.type) === 'poll' && poll) {
+    return stringValue(poll.question);
+  }
+  return stringValue(data.content || data.text);
+}
+
+function snackContextKey(
+  base: string,
+  contextSenderId: unknown,
+  targetSenderId: unknown,
+): string {
+  const contextSender = stringValue(contextSenderId).trim();
+  const targetSender = stringValue(targetSenderId).trim();
+  if (!contextSender || !targetSender) return base;
+  return `${base}_${contextSender === targetSender ?
+    'sameSpeaker' : 'otherSpeaker'}`;
+}
+
+async function buildTranslationContext(
+  item: ResolvedContent,
+): Promise<ResolvedContent> {
+  const db = admin.firestore();
+  const context: Record<string, string> = {};
+  const seed = item.contextSeed;
+
+  if (item.contentType === 'post') {
+    addContextField(context, 'postTitle', seed.title);
+    addContextField(context, 'category', seed.category);
+    addContextField(context, 'postType', seed.type);
+  } else if (item.contentType === 'meetup') {
+    addContextField(context, 'category', seed.category);
+    addContextField(context, 'meetupType', seed.type);
+  } else if (item.contentType === 'comment') {
+    addContextField(context, 'parentContentType', seed.parentType);
+    addContextField(context, 'parentTitle', seed.parentTitle);
+    addContextField(context, 'parentExcerpt', seed.parentBody);
+
+    const threadParentId = storedDocumentId(seed.parentCommentId);
+    const replyToCommentId = storedDocumentId(seed.replyToCommentId);
+    const directIds = [...new Set([
+      threadParentId,
+      replyToCommentId,
+    ].filter(Boolean))];
+    if (directIds.length > 0) {
+      try {
+        const direct = await Promise.all(directIds.map((id) =>
+          db.collection(COL.comments).doc(id).get(),
+        ));
+        for (const snap of direct) {
+          if (!snap.exists) continue;
+          const data = snap.data() as Record<string, unknown>;
+          if (stringValue(data.postId) !== item.parentId) continue;
+          const text = readableContextText(data);
+          if (!text) continue;
+          addContextField(
+            context,
+            snap.id === replyToCommentId ?
+              'replyToComment' : 'threadParentComment',
+            text,
+          );
+        }
+      } catch (_) {
+        // Context is optional. Translation safely continues without it.
+      }
+    }
+
+    const createdAt = seed.createdAt;
+    const rootId = threadParentId || replyToCommentId;
+    if (rootId && createdAt instanceof admin.firestore.Timestamp) {
+      try {
+        const recent = await db.collection(COL.comments)
+          .where('postId', '==', item.parentId)
+          .orderBy('createdAt', 'desc')
+          .startAfter(createdAt)
+          .limit(6)
+          .get();
+        const directIdSet = new Set(directIds);
+        const related = recent.docs.filter((snap) => {
+          const data = snap.data() as Record<string, unknown>;
+          return !directIdSet.has(snap.id) &&
+            stringValue(data.parentCommentId) === rootId;
+        }).slice(0, 2).reverse();
+        related.forEach((snap, index) => {
+          addContextField(
+            context,
+            `previousReply${index + 1}`,
+            readableContextText(snap.data() as Record<string, unknown>),
+          );
+        });
+      } catch (_) {
+        // Missing indexes must not change the existing comment read path.
+      }
+    }
+  } else if (item.contentType === 'snack_chat_message') {
+    const roomPath = stringValue(seed.roomPath);
+    const replyToMessageId = storedDocumentId(seed.replyToMessageId);
+    const targetSenderId = seed.senderId;
+    addContextField(context, 'messageType', seed.messageType);
+    if (roomPath) {
+      const messages = db.doc(roomPath).collection('messages');
+      if (replyToMessageId) {
+        try {
+          const reply = await messages.doc(replyToMessageId).get();
+          if (reply.exists) {
+            addContextField(
+              context,
+              snackContextKey(
+                'replyToMessage',
+                (reply.data() as Record<string, unknown>).senderId,
+                targetSenderId,
+              ),
+              readableContextText(reply.data() as Record<string, unknown>),
+            );
+          }
+        } catch (_) {
+          // Reply context is optional.
+        }
+      }
+
+      try {
+        let previousDocs: admin.firestore.QueryDocumentSnapshot[] = [];
+        if (typeof seed.sequence === 'number') {
+          previousDocs = (await messages
+            .where('sequence', '<', seed.sequence)
+            .orderBy('sequence', 'desc')
+            .limit(SNACK_CONTEXT_HISTORY_LIMIT)
+            .get()).docs;
+        } else if (seed.createdAt instanceof admin.firestore.Timestamp) {
+          previousDocs = (await messages
+            .orderBy('createdAt', 'desc')
+            .orderBy(admin.firestore.FieldPath.documentId(), 'desc')
+            .startAfter(seed.createdAt, item.contentId)
+            .limit(SNACK_CONTEXT_HISTORY_LIMIT)
+            .get()).docs;
+        }
+        previousDocs
+          .filter((snap) => snap.id !== replyToMessageId)
+          .reverse()
+          .forEach((snap, index) => {
+            addContextField(
+              context,
+              snackContextKey(
+                `previousMessage${index + 1}`,
+                (snap.data() as Record<string, unknown>).senderId,
+                targetSenderId,
+              ),
+              readableContextText(snap.data() as Record<string, unknown>),
+            );
+          });
+      } catch (_) {
+        // If ordering needs a new index, omit history instead of changing data.
+      }
+    }
+  }
+
+  const targetText = Object.values(item.fields).join('\n');
+  const allText = [targetText, ...Object.values(context)].join('\n');
+  item.context = context;
+  item.contextHash = sha256(canonicalFields(context));
+  item.typoHints = Object.entries(TYPO_HINTS)
+    .filter(([source]) => allText.includes(source))
+    .map(([source, hint]) => `${source}: ${hint}`);
+  item.matchedGlossary = Object.entries(WEFILLING_GLOSSARY)
+    .filter(([source]) => allText.includes(source))
+    .map(([source, preferred]) => ({source, preferred}));
+  item.preserveIfUncertain = PRESERVE_IF_UNCERTAIN
+    .filter((term) => targetText.includes(term));
+  return item;
 }
 
 function postJson(url: string, apiKey: string, body: unknown): Promise<unknown> {
@@ -433,6 +827,18 @@ function geminiErrorLogFields(error: unknown): {
   return {errorCategory: 'unknown'};
 }
 
+function isProviderUnavailableError(error: unknown): boolean {
+  const message = error instanceof Error ? error.message : '';
+  const code = stringValue(
+    error && typeof error === 'object' ?
+      (error as Record<string, unknown>).code : '',
+  );
+  return /GEMINI_API_KEY|Gemini HTTP|timed out|socket hang up|network/i
+    .test(message) ||
+    /^(?:ECONNRESET|ECONNREFUSED|ENOTFOUND|EAI_AGAIN|ETIMEDOUT)$/i
+      .test(code);
+}
+
 async function callGeminiModel(
   items: ResolvedContent[],
   targetLanguage: string,
@@ -457,9 +863,20 @@ async function callGeminiModel(
     return {
       id: requestKey(item),
       contentType: item.contentType,
-      fields,
+      CONTEXT: item.context,
+      TARGET: fields,
+      typoHints: item.typoHints,
+      matchedGlossary: item.matchedGlossary,
+      preserveIfUncertain: item.preserveIfUncertain,
     };
   });
+  // 투표 문항은 pollOption0, pollOption1처럼 동적으로 늘어난다. 고정 schema가
+  // 이를 막으면 Gemini가 옵션을 반환할 수 없어 Lite 재시도와 Flash fallback을
+  // 연달아 호출하게 된다. 현재 batch에 실제로 존재하는 필드만 허용한다.
+  const translationFieldProperties = Object.fromEntries(
+    [...new Set(items.flatMap((item) => Object.keys(item.fields)))]
+      .map((field) => [field, {type: 'string'}]),
+  );
   const response = await postJson(
     `https://generativelanguage.googleapis.com/${GEMINI_API_VERSION}/models/${model}:generateContent`,
     apiKey,
@@ -468,6 +885,13 @@ async function callGeminiModel(
         `Translate every field into ${targetLanguageName} (${targetLanguage}) as a professional native translator.`,
         'Complete preservation of the source meaning takes priority over naturalness; achieve both without dropping content.',
         'Return sourceLanguage as an ISO 639-1 language code.',
+        'CONTEXT is read-only evidence for meaning, speaker/listener roles, and references. Never translate it and never return any CONTEXT field.',
+        'TARGET contains the only fields that may be translated and returned.',
+        'typoHints are conservative interpretation hints only. Do not rewrite the source or treat names, brands, memes, or nicknames as typos.',
+        'matchedGlossary contains only terms present in this item. Use each preferred form exactly without inventing glossary entries.',
+        'If a TARGET term is in preserveIfUncertain or its meaning is genuinely uncertain, keep the original term verbatim and include it in uncertainTerms.',
+        'Set coverageComplete to true only after confirming that every TARGET meaning unit is represented.',
+        'Set sourceIntent to exactly one of question, statement, answer, suggestion, request, command, exclamation, or unknown.',
         'Preserve every __WF_KEEP_N__ placeholder exactly, including its spelling and position.',
         'Produce idiomatic, publication-ready text for a native reader; do not use awkward word-for-word phrasing.',
         'Preserve meaning, nuance, tone, emotion, repetition, laughter, slang, and intentional informality.',
@@ -484,7 +908,7 @@ async function callGeminiModel(
         strict ?
           'Before returning, verify sentence by sentence that no meaning unit was omitted, every protected token remains exactly once, paragraph structure is unchanged, and the result is fluent.' :
           'Before returning, verify completeness and fluency without adding any explanation.',
-        'Return only JSON shaped exactly as {"items":[{"id":"input id","sourceLanguage":"ISO 639-1 code","translations":{"field name":"translated text"}}]}.',
+        'Return only JSON shaped exactly as {"items":[{"id":"input id","sourceLanguage":"ISO 639-1 code","sourceIntent":"question","coverageComplete":true,"uncertainTerms":[],"translations":{"TARGET field name":"translated text"}}]}.',
         JSON.stringify(compactItems),
       ].join('\n')}]}],
       generationConfig: {
@@ -502,23 +926,33 @@ async function callGeminiModel(
               items: {
                 type: 'object',
                 additionalProperties: false,
-                required: ['id', 'sourceLanguage', 'translations'],
+                required: [
+                  'id',
+                  'sourceLanguage',
+                  'sourceIntent',
+                  'coverageComplete',
+                  'uncertainTerms',
+                  'translations',
+                ],
                 properties: {
                   id: {
                     type: 'string',
                     enum: compactItems.map((item) => item.id),
                   },
                   sourceLanguage: {type: 'string'},
+                  sourceIntent: {
+                    type: 'string',
+                    enum: [...SOURCE_INTENTS],
+                  },
+                  coverageComplete: {type: 'boolean'},
+                  uncertainTerms: {
+                    type: 'array',
+                    items: {type: 'string'},
+                  },
                   translations: {
                     type: 'object',
                     additionalProperties: false,
-                    properties: {
-                      content: {type: 'string'},
-                      title: {type: 'string'},
-                      description: {type: 'string'},
-                      location: {type: 'string'},
-                      text: {type: 'string'},
-                    },
+                    properties: translationFieldProperties,
                   },
                 },
               },
@@ -545,19 +979,98 @@ async function callGeminiModel(
       }
       const protections = protectedItems.get(item.id) ?? {};
       const translations: Record<string, string> = {};
+      let invalidTranslationField = false;
       for (const [field, value] of Object.entries(item.translations)) {
         const protection = protections[field];
-        if (!protection) continue;
+        if (!protection) {
+          invalidTranslationField = true;
+          break;
+        }
         const restored = restoreProtectedText(stringValue(value), protection);
         if (restored != null) translations[field] = restored;
       }
-      results.set(item.id, {...item, translations, modelUsed: model});
+      if (!invalidTranslationField) {
+        results.set(item.id, {...item, translations, modelUsed: model});
+      }
     }
   }
   return results;
 }
 
-function isPlausibleTranslation(source: string, translated: string): boolean {
+function immutableTokens(value: string): string[] {
+  return value.match(PROTECTED_TEXT_PATTERN) ?? [];
+}
+
+function inferredSourceIntent(value: string): string {
+  const text = value.trim();
+  if (!text) return 'unknown';
+  if (/[?？؟]/.test(text) ||
+      /(?:무슨|뭐|왜|어떻게|어디|누구|언제|몇|어느).*(?:나요|까요|인가요|습니까|니|냐|건가요)\s*[.!~]*$/u.test(text) ||
+      /(?:나요|인가요|습니까|건가요)\s*[.!~]*$/u.test(text)) {
+    return 'question';
+  }
+  if (/(?:해주세요|해\s*주세요|부탁(?:해|드려|합니다))/u.test(text)) {
+    return 'request';
+  }
+  if (/(?:하지\s*마|해라|하세요)\s*[.!~]*$/u.test(text)) return 'command';
+  if (/(?:하자|어때요|어때|하는\s*게\s*어때)\s*[.!~]*$/u.test(text)) {
+    return 'suggestion';
+  }
+  if (/^\s*(?:네|예|응|아니요|아뇨)(?:[\s,.!~]|$)/u.test(text)) {
+    return 'answer';
+  }
+  if (/!|！/.test(text)) return 'exclamation';
+  return 'unknown';
+}
+
+function intentIsCompatible(inferred: string, returned: string): boolean {
+  if (inferred === 'unknown') return true;
+  if (inferred === 'question') return returned === 'question';
+  if (inferred === 'request') {
+    return returned === 'request' || returned === 'command';
+  }
+  if (inferred === 'command') {
+    return returned === 'command' || returned === 'request';
+  }
+  if (inferred === 'suggestion') {
+    return returned === 'suggestion' || returned === 'question';
+  }
+  if (inferred === 'answer') {
+    return returned === 'answer' || returned === 'statement';
+  }
+  if (inferred === 'exclamation') {
+    return returned === 'exclamation' || returned === 'statement';
+  }
+  return inferred === returned;
+}
+
+function looksLikeTranslatedQuestion(value: string, target: string): boolean {
+  const text = value.trim();
+  if (/[?？؟¿]/.test(text)) return true;
+  if (target === 'en') {
+    return /^(?:who|what|when|where|why|how|which|whose|do|does|did|is|are|am|was|were|can|could|will|would|should|have|has)\b/i.test(text);
+  }
+  if (target === 'ko') return /(?:나요|까요|인가요|습니까|니|냐)\s*[.!~]*$/u.test(text);
+  if (target === 'ja') return /(?:か|の)\s*[。！!~]*$/u.test(text);
+  if (target === 'zh') return /(?:吗|呢|么)\s*[。！!~]*$/u.test(text);
+  if (target === 'ar') return /^\s*هل\b/u.test(text);
+  return false;
+}
+
+function hasNegation(value: string): boolean {
+  return /(?:^|[\s,.!?])(?:안(?:\s+|해|돼|되|가|오|먹|보)|못(?:\s+|해|하|가|오|먹|보)|아니(?=$|[\s,.!?])|아니(?:야|에요|예요|다|고|면)|없|않|하지\s*마|말고)|(?:not|no|never|none|nothing|without|n't)\b|\b(?:ne|pas|non|nicht|kein|ningún|nunca|não|sem|нет|не|без)\b|[不没無ない]/iu.test(value);
+}
+
+function isShortReaction(value: string): boolean {
+  return /^(?:ㅋ+|ㅎ+|응+|네+|예+|ㅇㅇ|ok(?:ay)?|yes|no)[\s.!?~]*$/iu.test(value.trim());
+}
+
+function isPlausibleTranslation(
+  source: string,
+  translated: string,
+  targetLanguage: string,
+  requireLexicalNegation = true,
+): boolean {
   const normalizedSource = source.replace(/\r\n?/g, '\n');
   const normalizedTranslation = translated.replace(/\r\n?/g, '\n');
   const sourceLength = normalizedSource.trim().length;
@@ -567,22 +1080,161 @@ function isPlausibleTranslation(source: string, translated: string): boolean {
       (normalizedTranslation.match(/\n/g) ?? []).length) {
     return false;
   }
-  if (sourceLength >= 20) {
-    const minimumLength = Math.max(2, Math.floor(sourceLength * 0.15));
+  const sourceTokens = immutableTokens(normalizedSource);
+  const translatedTokens = immutableTokens(normalizedTranslation);
+  if (sourceTokens.length !== translatedTokens.length ||
+      sourceTokens.some((token, index) => token !== translatedTokens[index])) {
+    return false;
+  }
+  if (sourceLength >= 12 && !isShortReaction(normalizedSource)) {
+    const sourceWords = normalizedSource.match(/\p{L}+/gu) ?? [];
+    let minimumRatio = sourceWords.length >= 4 ? 0.35 : 0.25;
+    if (targetLanguage === 'en' && /[가-힣]/.test(normalizedSource)) {
+      minimumRatio = Math.max(minimumRatio, 0.58);
+    }
+    const minimumLength = Math.max(2, Math.floor(sourceLength * minimumRatio));
     const maximumLength = sourceLength * 6 + 200;
     if (translatedLength < minimumLength || translatedLength > maximumLength) {
       return false;
     }
   }
+  if (requireLexicalNegation &&
+      hasNegation(normalizedSource) &&
+      !hasNegation(normalizedTranslation)) {
+    return false;
+  }
   return true;
+}
+
+function hasUngroundedEnglishProperNoun(
+  item: ResolvedContent,
+  result: GeminiTranslation,
+  targetLanguage: string,
+): boolean {
+  if (targetLanguage !== 'en') return false;
+  const grounding = [
+    ...Object.values(item.fields),
+    ...Object.values(item.context),
+    ...item.matchedGlossary.flatMap((entry) => [
+      entry.source,
+      entry.preferred,
+    ]),
+  ].join(' ').toLocaleLowerCase();
+  const allowed = new Set([
+    'i', 'monday', 'tuesday', 'wednesday', 'thursday', 'friday',
+    'saturday', 'sunday', 'january', 'february', 'march', 'april',
+    'may', 'june', 'july', 'august', 'september', 'october',
+    'november', 'december', 'korean', 'english', 'japanese', 'chinese',
+  ]);
+  for (const translated of Object.values(result.translations)) {
+    const properNounPattern = /\b[A-Z][a-z]{2,}\b/g;
+    let match: RegExpExecArray | null;
+    while ((match = properNounPattern.exec(translated)) !== null) {
+      const word = match[0];
+      const offset = match.index;
+      const prefix = translated.slice(0, offset).trimEnd();
+      const sentenceInitial = prefix.length === 0 || /[.!?\n]\s*$/.test(prefix);
+      if (!sentenceInitial && !allowed.has(word.toLocaleLowerCase()) &&
+          !grounding.includes(word.toLocaleLowerCase())) {
+        // Be conservative: transliterated real place/person names can also be
+        // new Latin tokens. Reject only when the item already contains an
+        // explicit typo/uncertainty signal.
+        if (item.typoHints.length > 0 || result.uncertainTerms.length > 0) {
+          return true;
+        }
+      }
+    }
+  }
+  return false;
 }
 
 function isValidItemTranslation(
   item: ResolvedContent,
   result: GeminiTranslation | undefined,
+  targetLanguage: string,
 ): result is GeminiTranslation {
   if (!result || !result.translations ||
       typeof result.translations !== 'object') {
+    return false;
+  }
+  if (result.id !== requestKey(item) ||
+      !/^[a-z]{2}$/i.test(stringValue(result.sourceLanguage)) ||
+      !SOURCE_INTENTS.has(stringValue(result.sourceIntent)) ||
+      result.coverageComplete !== true ||
+      !Array.isArray(result.uncertainTerms) ||
+      result.uncertainTerms.some((term) =>
+        typeof term !== 'string' || !term.trim()
+      ) ||
+      new Set(result.uncertainTerms).size !== result.uncertainTerms.length) {
+    return false;
+  }
+  const expectedFields = Object.keys(item.fields).sort();
+  const actualFields = Object.keys(result.translations).sort();
+  if (expectedFields.length !== actualFields.length ||
+      expectedFields.some((field, index) => field !== actualFields[index])) {
+    return false;
+  }
+  if (!expectedFields.every((field) =>
+    isPlausibleTranslation(
+      item.fields[field],
+      result.translations[field],
+      targetLanguage,
+    ),
+  )) return false;
+
+  const sourceText = Object.values(item.fields).join('\n');
+  const translatedText = Object.values(result.translations).join('\n');
+  const inferredIntent = inferredSourceIntent(sourceText);
+  if (!intentIsCompatible(inferredIntent, result.sourceIntent)) return false;
+  if ((inferredIntent === 'question' || result.sourceIntent === 'question') &&
+      !looksLikeTranslatedQuestion(translatedText, targetLanguage)) {
+    return false;
+  }
+  for (const field of expectedFields) {
+    if (inferredSourceIntent(item.fields[field]) === 'question' &&
+        !looksLikeTranslatedQuestion(
+          result.translations[field],
+          targetLanguage,
+        )) {
+      return false;
+    }
+  }
+  const uncertainTerms = result.uncertainTerms.map((term) => term.trim());
+  if (uncertainTerms.some((term) =>
+    !sourceText.includes(term) || !translatedText.includes(term)
+  )) return false;
+  if (item.preserveIfUncertain.some((term) =>
+    !uncertainTerms.includes(term) || !translatedText.includes(term)
+  )) return false;
+
+  if (targetLanguage === 'en') {
+    const hasFirstPerson = /(?:저는|제가|나는|내가|우리는|우리가)/u.test(sourceText);
+    const hasSecondPerson = /(?:당신은|당신이|너는|네가|니가|여러분)/u.test(sourceText);
+    if (hasFirstPerson && !/\b(?:I|me|my|mine|we|us|our|ours)\b/i.test(translatedText)) {
+      return false;
+    }
+    if (hasSecondPerson && !/\b(?:you|your|yours)\b/i.test(translatedText)) {
+      return false;
+    }
+  }
+  return !hasUngroundedEnglishProperNoun(item, result, targetLanguage);
+}
+
+// Gemini occasionally returns a complete, usable translation whose auxiliary
+// intent/uncertainty metadata fails one of the stricter quality heuristics. We
+// still prefer a fully validated result, but after both the strict Lite retry
+// and the Flash fallback have been exhausted it is better to use a structurally
+// safe candidate than to leave the card/message untranslated and repeatedly
+// spend another request on the same source.
+function isSafeFallbackItemTranslation(
+  item: ResolvedContent,
+  result: GeminiTranslation | undefined,
+  targetLanguage: string,
+): result is GeminiTranslation {
+  if (!result || result.id !== requestKey(item) ||
+      !/^[a-z]{2}$/i.test(stringValue(result.sourceLanguage)) ||
+      result.coverageComplete !== true ||
+      !result.translations || typeof result.translations !== 'object') {
     return false;
   }
   const expectedFields = Object.keys(item.fields).sort();
@@ -592,14 +1244,53 @@ function isValidItemTranslation(
     return false;
   }
   return expectedFields.every((field) =>
-    isPlausibleTranslation(item.fields[field], result.translations[field]),
+    isPlausibleTranslation(
+      item.fields[field],
+      result.translations[field],
+      targetLanguage,
+      false,
+    ),
   );
+}
+
+function safeFallbackFailureCode(
+  item: ResolvedContent,
+  result: GeminiTranslation | undefined,
+  targetLanguage: string,
+): string {
+  if (!result) return 'missing_result';
+  if (result.id !== requestKey(item)) return 'id_mismatch';
+  if (!/^[a-z]{2}$/i.test(stringValue(result.sourceLanguage))) {
+    return 'invalid_source_language';
+  }
+  if (result.coverageComplete !== true) return 'coverage_incomplete';
+  if (!result.translations || typeof result.translations !== 'object') {
+    return 'missing_translations';
+  }
+  const expectedFields = Object.keys(item.fields).sort();
+  const actualFields = Object.keys(result.translations).sort();
+  if (expectedFields.length !== actualFields.length ||
+      expectedFields.some((field, index) => field !== actualFields[index])) {
+    return 'field_mismatch';
+  }
+  if (!expectedFields.every((field) =>
+    isPlausibleTranslation(
+      item.fields[field],
+      result.translations[field],
+      targetLanguage,
+      false,
+    ),
+  )) return 'semantic_or_structure_guard';
+  return 'strict_metadata_guard';
 }
 
 async function callGemini(
   items: ResolvedContent[],
   targetLanguage: string,
-): Promise<Map<string, GeminiTranslation>> {
+): Promise<{
+  translations: Map<string, GeminiTranslation>;
+  providerUnavailable: boolean;
+}> {
   // Keep the normal batch fast and inexpensive. Only malformed or incomplete
   // items are retried, so a single bad result never discards valid siblings.
   let batch = new Map<string, GeminiTranslation>();
@@ -611,8 +1302,7 @@ async function callGemini(
       false,
     );
   } catch (error) {
-    const message = error instanceof Error ? error.message : 'unknown';
-    if (/GEMINI_API_KEY|Gemini HTTP|timed out/i.test(message)) throw error;
+    if (isProviderUnavailableError(error)) throw error;
     console.warn('content_translation_batch_structure_retry', {
       targetLanguage,
       modelUsed: GEMINI_MODEL,
@@ -623,35 +1313,48 @@ async function callGemini(
     });
   }
   const results = new Map<string, GeminiTranslation>();
+  const safeFallbacks = new Map<string, GeminiTranslation>();
+  const latestCandidates = new Map<string, GeminiTranslation>(batch);
+  let providerUnavailable = false;
   for (const item of items) {
     const key = requestKey(item);
     const result = batch.get(key);
-    if (isValidItemTranslation(item, result)) results.set(key, result);
+    if (isValidItemTranslation(item, result, targetLanguage)) {
+      results.set(key, result);
+    } else if (isSafeFallbackItemTranslation(item, result, targetLanguage)) {
+      safeFallbacks.set(key, result);
+    }
   }
 
-  for (const item of items) {
-    const key = requestKey(item);
-    if (results.has(key)) continue;
-
-    let qualityFallbackRequired = false;
+  // Retry every rejected sibling in one strict request. The previous
+  // per-item loop serialized up to ten provider calls for a five-item batch,
+  // which made one difficult chat message block the rest of the viewport.
+  const strictItems = items.filter((item) => !results.has(requestKey(item)));
+  if (strictItems.length > 0) {
     try {
       const retried = await callGeminiModel(
-        [item],
+        strictItems,
         targetLanguage,
         GEMINI_MODEL,
         true,
       );
-      const result = retried.get(key);
-      if (isValidItemTranslation(item, result)) {
-        results.set(key, result);
-        continue;
+      for (const item of strictItems) {
+        const key = requestKey(item);
+        const result = retried.get(key);
+        if (result) latestCandidates.set(key, result);
+        if (isValidItemTranslation(item, result, targetLanguage)) {
+          results.set(key, result);
+        } else if (isSafeFallbackItemTranslation(
+          item,
+          result,
+          targetLanguage,
+        )) {
+          safeFallbacks.set(key, result);
+        }
       }
-      qualityFallbackRequired = true;
     } catch (error) {
-      const message = error instanceof Error ? error.message : 'unknown';
       console.warn('content_translation_item_retry_failed', {
-        contentType: item.contentType,
-        contentId: item.contentId,
+        itemCount: strictItems.length,
         targetLanguage,
         modelUsed: GEMINI_MODEL,
         translationVersion: TRANSLATION_VERSION,
@@ -659,24 +1362,40 @@ async function callGemini(
         cacheSource: 'gemini',
         ...geminiErrorLogFields(error),
       });
-      qualityFallbackRequired =
-        !/GEMINI_API_KEY|Gemini HTTP|timed out/i.test(message);
+      providerUnavailable = isProviderUnavailableError(error);
     }
+  }
 
-    if (!qualityFallbackRequired) continue;
+  // A structurally complete strict result has already preserved fields,
+  // protected tokens, line breaks, length and negation. Auxiliary intent or
+  // uncertainty metadata should not force another multi-second model call or
+  // leave the message untranslated.
+  for (const [key, result] of safeFallbacks) {
+    if (!results.has(key)) results.set(key, result);
+  }
+
+  const fallbackItems = providerUnavailable ? [] :
+    items.filter((item) => !results.has(requestKey(item)));
+  if (fallbackItems.length > 0) {
     try {
       const fallback = await callGeminiModel(
-        [item],
+        fallbackItems,
         targetLanguage,
         GEMINI_FALLBACK_MODEL,
         true,
       );
-      const result = fallback.get(key);
-      if (isValidItemTranslation(item, result)) results.set(key, result);
+      for (const item of fallbackItems) {
+        const key = requestKey(item);
+        const result = fallback.get(key);
+        if (result) latestCandidates.set(key, result);
+        if (isValidItemTranslation(item, result, targetLanguage) ||
+            isSafeFallbackItemTranslation(item, result, targetLanguage)) {
+          results.set(key, result);
+        }
+      }
     } catch (error) {
       console.warn('content_translation_item_fallback_failed', {
-        contentType: item.contentType,
-        contentId: item.contentId,
+        itemCount: fallbackItems.length,
         targetLanguage,
         modelUsed: GEMINI_FALLBACK_MODEL,
         translationVersion: TRANSLATION_VERSION,
@@ -684,9 +1403,27 @@ async function callGemini(
         cacheSource: 'gemini',
         ...geminiErrorLogFields(error),
       });
+      providerUnavailable = isProviderUnavailableError(error);
     }
   }
-  return results;
+
+  for (const item of items) {
+    const key = requestKey(item);
+    if (results.has(key)) continue;
+    console.warn('content_translation_quality_rejected', {
+      contentType: item.contentType,
+      targetLanguage,
+      modelUsed: GEMINI_FALLBACK_MODEL,
+      translationVersion: TRANSLATION_VERSION,
+      promptVersion: PROMPT_VERSION,
+      reason: safeFallbackFailureCode(
+        item,
+        latestCandidates.get(key),
+        targetLanguage,
+      ),
+    });
+  }
+  return {translations: results, providerUnavailable};
 }
 
 export const translateContentBatch = functions
@@ -697,7 +1434,7 @@ export const translateContentBatch = functions
     const data = raw && typeof raw === 'object' ? raw as Record<string, unknown> : {};
     const targetLanguage = normalizeLanguageCode(data.targetLanguage);
     if (!Array.isArray(data.items) || data.items.length < 1 || data.items.length > MAX_BATCH_SIZE) {
-      throw new functions.https.HttpsError('invalid-argument', 'Provide 1 to 10 items.');
+      throw new functions.https.HttpsError('invalid-argument', 'Provide 1 to 5 items.');
     }
     const requests = data.items.map((value): TranslationRequest => {
       const item = value && typeof value === 'object' ? value as Record<string, unknown> : {};
@@ -718,12 +1455,27 @@ export const translateContentBatch = functions
     const startedAt = Date.now();
     const responses = new Map<string, Record<string, unknown>>();
     const db = admin.firestore();
+    const resolutionCache: ResolutionCache = {
+      // 한 callable batch의 스낵챗 메시지는 보통 모두 같은 방에 속한다.
+      // 참여 권한 원본인 방 문서를 메시지마다 다시 과금/조회하지 않는다.
+      snackRooms: new Map(),
+    };
     const resolvedAttempts = await Promise.all(requests.map(async (item) => {
       try {
-        return await resolveContent(uid, item);
-      } catch (_) {
+        return await resolveContent(uid, item, resolutionCache);
+      } catch (error) {
         const key = requestKey(item);
-        responses.set(key, {id: key, status: 'failed'});
+        const errorCode = error instanceof functions.https.HttpsError ?
+          error.code : 'internal';
+        responses.set(key, {
+          id: key,
+          status: 'failed',
+          errorCode,
+        });
+        console.warn('content_translation_source_resolution_failed', {
+          contentType: item.contentType,
+          errorCode,
+        });
         return null;
       }
     }));
@@ -734,9 +1486,15 @@ export const translateContentBatch = functions
     let cacheHits = 0;
     let pendingBlocked = 0;
 
-    for (const item of resolved) {
+    // Every cache document is independent. Resolve the five cache locks in
+    // parallel so a warm viewport pays one Firestore round trip instead of up
+    // to five serial round trips before Gemini can even start.
+    await Promise.all(resolved.map(async (item) => {
       const key = requestKey(item);
       if (looksLikeSameLanguage(Object.values(item.fields).join('\n'), targetLanguage)) {
+        const sourceIntent = inferredSourceIntent(
+          Object.values(item.fields).join('\n'),
+        );
         responses.set(key, {
           id: key,
           status: 'same_language',
@@ -747,10 +1505,17 @@ export const translateContentBatch = functions
           modelUsed: 'same-language',
           translationVersion: TRANSLATION_VERSION,
           promptVersion: PROMPT_VERSION,
+          translationPolicyVersion: TRANSLATION_POLICY_VERSION,
+          glossaryVersion: GLOSSARY_VERSION,
+          qualityPolicyVersion: QUALITY_POLICY_VERSION,
+          sourceIntent,
+          contextHash: sha256(canonicalFields({})),
+          coverageComplete: true,
+          uncertainTerms: [],
           translatedAt: Date.now(),
           cacheSource: 'same_language',
         });
-        continue;
+        return;
       }
       const ref = db.collection(COL.contentTranslations).doc(cacheId(item, targetLanguage));
       const acquiredLock = await db.runTransaction(async (transaction) => {
@@ -768,9 +1533,25 @@ export const translateContentBatch = functions
             modelUsed: stringValue(cached.modelUsed),
             translationVersion: TRANSLATION_VERSION,
             promptVersion: PROMPT_VERSION,
+            translationPolicyVersion: TRANSLATION_POLICY_VERSION,
+            glossaryVersion: GLOSSARY_VERSION,
+            qualityPolicyVersion: QUALITY_POLICY_VERSION,
+            sourceIntent: stringValue(cached.sourceIntent),
+            contextHash: stringValue(cached.contextHash),
+            coverageComplete: true,
+            uncertainTerms: Array.isArray(cached.uncertainTerms) ?
+              cached.uncertainTerms : [],
             translatedAt: timestampMillis(cached.translatedAt) ?? Date.now(),
             cacheSource: 'firestore',
           });
+          return false;
+        }
+        if (isCurrentFailedCache(cached, item, targetLanguage)) {
+          cacheHits++;
+          responses.set(
+            key,
+            cachedFailureResponse(item, targetLanguage, cached),
+          );
           return false;
         }
         if (isCurrentPendingCache(cached, item, targetLanguage)) {
@@ -786,6 +1567,9 @@ export const translateContentBatch = functions
           modelUsed: GEMINI_MODEL,
           translationVersion: TRANSLATION_VERSION,
           promptVersion: PROMPT_VERSION,
+          translationPolicyVersion: TRANSLATION_POLICY_VERSION,
+          glossaryVersion: GLOSSARY_VERSION,
+          qualityPolicyVersion: QUALITY_POLICY_VERSION,
           status: 'pending',
           pendingAt: admin.firestore.FieldValue.serverTimestamp(),
           updatedAt: admin.firestore.FieldValue.serverTimestamp(),
@@ -793,11 +1577,13 @@ export const translateContentBatch = functions
         return true;
       });
       if (acquiredLock) acquired.push(item);
-    }
+    }));
 
     if (acquired.length > 0) {
       try {
-        const translated = await callGemini(acquired, targetLanguage);
+        await Promise.all(acquired.map(buildTranslationContext));
+        const gemini = await callGemini(acquired, targetLanguage);
+        const translated = gemini.translations;
         await Promise.all(acquired.map(async (item) => {
           const key = requestKey(item);
           const result = translated.get(key);
@@ -824,6 +1610,12 @@ export const translateContentBatch = functions
             translationVersion: TRANSLATION_VERSION,
             promptVersion: PROMPT_VERSION,
             translationPolicyVersion: TRANSLATION_POLICY_VERSION,
+            glossaryVersion: GLOSSARY_VERSION,
+            qualityPolicyVersion: QUALITY_POLICY_VERSION,
+            sourceIntent: result?.sourceIntent ?? 'unknown',
+            contextHash: item.contextHash,
+            coverageComplete: result?.coverageComplete === true,
+            uncertainTerms: result?.uncertainTerms ?? [],
             cacheSource: 'gemini',
             translatedAt: admin.firestore.FieldValue.serverTimestamp(),
             completedAt: admin.firestore.FieldValue.serverTimestamp(),
@@ -838,6 +1630,12 @@ export const translateContentBatch = functions
             modelUsed: result?.modelUsed ?? GEMINI_MODEL,
             translationVersion: TRANSLATION_VERSION,
             promptVersion: PROMPT_VERSION,
+            translationPolicyVersion: TRANSLATION_POLICY_VERSION,
+            glossaryVersion: GLOSSARY_VERSION,
+            qualityPolicyVersion: QUALITY_POLICY_VERSION,
+            contextHash: item.contextHash,
+            errorCode: gemini.providerUnavailable ?
+              'provider_unavailable' : 'quality_validation_failed',
             failedAt: admin.firestore.FieldValue.serverTimestamp(),
             updatedAt: admin.firestore.FieldValue.serverTimestamp(),
           }, {merge: true});
@@ -851,6 +1649,13 @@ export const translateContentBatch = functions
             modelUsed: result?.modelUsed ?? GEMINI_MODEL,
             translationVersion: TRANSLATION_VERSION,
             promptVersion: PROMPT_VERSION,
+            translationPolicyVersion: TRANSLATION_POLICY_VERSION,
+            glossaryVersion: GLOSSARY_VERSION,
+            qualityPolicyVersion: QUALITY_POLICY_VERSION,
+            sourceIntent: result?.sourceIntent ?? 'unknown',
+            contextHash: item.contextHash,
+            coverageComplete: result?.coverageComplete === true,
+            uncertainTerms: result?.uncertainTerms ?? [],
             translatedAt: Date.now(),
             cacheSource: 'gemini',
           } : {
@@ -861,22 +1666,27 @@ export const translateContentBatch = functions
             modelUsed: result?.modelUsed ?? GEMINI_MODEL,
             translationVersion: TRANSLATION_VERSION,
             promptVersion: PROMPT_VERSION,
+            translationPolicyVersion: TRANSLATION_POLICY_VERSION,
+            glossaryVersion: GLOSSARY_VERSION,
+            qualityPolicyVersion: QUALITY_POLICY_VERSION,
+            contextHash: item.contextHash,
+            errorCode: gemini.providerUnavailable ?
+              'provider_unavailable' : 'quality_validation_failed',
             translatedAt: Date.now(),
             cacheSource: 'gemini',
           });
         }));
       } catch (error) {
-        const errorMessage = error instanceof Error ? error.message : 'unknown';
-        const providerQuotaExhausted =
-          /Gemini HTTP 429/i.test(errorMessage) &&
-          /credits|quota|resource_exhausted/i.test(errorMessage);
+        const providerUnavailable = isProviderUnavailableError(error);
+        const failureCode = providerUnavailable ?
+          'provider_unavailable' : 'translation_failed';
         console.warn('content_translation_gemini_failed', {
           targetLanguage,
           modelUsed: GEMINI_MODEL,
           translationVersion: TRANSLATION_VERSION,
           promptVersion: PROMPT_VERSION,
           cacheSource: 'gemini',
-          providerQuotaExhausted,
+          providerUnavailable,
           ...geminiErrorLogFields(error),
         });
         await Promise.all(acquired.map(async (item) => {
@@ -892,6 +1702,11 @@ export const translateContentBatch = functions
               modelUsed: GEMINI_MODEL,
               translationVersion: TRANSLATION_VERSION,
               promptVersion: PROMPT_VERSION,
+              translationPolicyVersion: TRANSLATION_POLICY_VERSION,
+              glossaryVersion: GLOSSARY_VERSION,
+              qualityPolicyVersion: QUALITY_POLICY_VERSION,
+              contextHash: item.contextHash || sha256(canonicalFields({})),
+              errorCode: failureCode,
               failedAt: admin.firestore.FieldValue.serverTimestamp(),
               updatedAt: admin.firestore.FieldValue.serverTimestamp(),
             }, {merge: true});
@@ -903,13 +1718,13 @@ export const translateContentBatch = functions
             modelUsed: GEMINI_MODEL,
             translationVersion: TRANSLATION_VERSION,
             promptVersion: PROMPT_VERSION,
+            translationPolicyVersion: TRANSLATION_POLICY_VERSION,
+            glossaryVersion: GLOSSARY_VERSION,
+            qualityPolicyVersion: QUALITY_POLICY_VERSION,
+            contextHash: item.contextHash || sha256(canonicalFields({})),
             translatedAt: Date.now(),
             cacheSource: 'gemini',
-            // resolveContent() already verified this user can read the source.
-            // Only quota exhaustion may fall back to an on-device translator;
-            // permission and validation failures never receive this flag.
-            allowClientFallback: providerQuotaExhausted,
-            errorCode: providerQuotaExhausted ? 'provider_quota_exhausted' : 'provider_error',
+            errorCode: failureCode,
           });
         }));
       }
@@ -921,19 +1736,35 @@ export const translateContentBatch = functions
       const snap = await db.collection(COL.contentTranslations)
         .doc(cacheId(item, targetLanguage)).get();
       const cached = snap.data();
-      responses.set(key, isCurrentCompletedCache(cached, item, targetLanguage) ? {
-        id: key,
-        status: 'completed',
-        sourceHash: item.sourceHash,
-        sourceLanguage: stringValue(cached.sourceLanguage),
-        targetLanguage,
-        translatedFields: cached.translatedFields ?? {},
-        modelUsed: stringValue(cached.modelUsed),
-        translationVersion: TRANSLATION_VERSION,
-        promptVersion: PROMPT_VERSION,
-        translatedAt: timestampMillis(cached.translatedAt) ?? Date.now(),
-        cacheSource: 'firestore',
-      } : {
+      if (isCurrentCompletedCache(cached, item, targetLanguage)) {
+        responses.set(key, {
+          id: key,
+          status: 'completed',
+          sourceHash: item.sourceHash,
+          sourceLanguage: stringValue(cached.sourceLanguage),
+          targetLanguage,
+          translatedFields: cached.translatedFields ?? {},
+          modelUsed: stringValue(cached.modelUsed),
+          translationVersion: TRANSLATION_VERSION,
+          promptVersion: PROMPT_VERSION,
+          translationPolicyVersion: TRANSLATION_POLICY_VERSION,
+          glossaryVersion: GLOSSARY_VERSION,
+          qualityPolicyVersion: QUALITY_POLICY_VERSION,
+          sourceIntent: stringValue(cached.sourceIntent),
+          contextHash: stringValue(cached.contextHash),
+          coverageComplete: true,
+          uncertainTerms: Array.isArray(cached.uncertainTerms) ?
+            cached.uncertainTerms : [],
+          translatedAt: timestampMillis(cached.translatedAt) ?? Date.now(),
+          cacheSource: 'firestore',
+        });
+      } else if (isCurrentFailedCache(cached, item, targetLanguage)) {
+        responses.set(
+          key,
+          cachedFailureResponse(item, targetLanguage, cached),
+        );
+      } else {
+        responses.set(key, {
         id: key,
         status: 'pending',
         sourceHash: item.sourceHash,
@@ -941,9 +1772,13 @@ export const translateContentBatch = functions
         modelUsed: GEMINI_MODEL,
         translationVersion: TRANSLATION_VERSION,
         promptVersion: PROMPT_VERSION,
+        translationPolicyVersion: TRANSLATION_POLICY_VERSION,
+        glossaryVersion: GLOSSARY_VERSION,
+        qualityPolicyVersion: QUALITY_POLICY_VERSION,
         translatedAt: Date.now(),
         cacheSource: 'firestore',
-      });
+        });
+      }
     }
 
     const durationMs = Date.now() - startedAt;
@@ -954,6 +1789,7 @@ export const translateContentBatch = functions
       cacheHits,
       cacheMisses: acquired.length,
       pendingBlocked,
+      snackRoomReads: resolutionCache.snackRooms.size,
       completed: [...responses.values()].filter((item) => item.status === 'completed').length,
       failed: [...responses.values()].filter((item) => item.status === 'failed').length,
       durationMs,

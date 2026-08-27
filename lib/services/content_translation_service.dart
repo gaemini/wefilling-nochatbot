@@ -6,14 +6,26 @@ import 'package:cloud_functions/cloud_functions.dart';
 import 'package:crypto/crypto.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/foundation.dart';
-import 'package:google_mlkit_language_id/google_mlkit_language_id.dart';
-import 'package:google_mlkit_translation/google_mlkit_translation.dart';
 import 'package:hive/hive.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
 import '../models/content_translation.dart';
 
 typedef ScopeTranslationLoader = Future<bool> Function();
+
+@visibleForTesting
+String resolveAutomaticTranslationTarget({
+  required String uiLanguage,
+  String profileLanguage = '',
+  String serverPreferred = '',
+  String localPreferred = '',
+}) {
+  if (uiLanguage.isNotEmpty) return uiLanguage;
+  if (profileLanguage.isNotEmpty) return profileLanguage;
+  if (serverPreferred.isNotEmpty) return serverPreferred;
+  if (localPreferred.isNotEmpty) return localPreferred;
+  return 'en';
+}
 
 /// Gemini 번역의 단일 진입점입니다.
 ///
@@ -34,31 +46,79 @@ class ContentTranslationService extends ChangeNotifier {
   static const String _preferredNameKey = 'preferred_translation_language';
   static const String _preferredSourceKey =
       'preferred_translation_language_source';
-  static const int _translationVersion = 5;
-  static const int _promptVersion = 5;
+  static const int _translationVersion = 6;
+  static const int _promptVersion = 6;
+  static const int _glossaryVersion = 1;
+  static const int _qualityPolicyVersion = 1;
   static const String _baseModel = 'gemini-3.5-flash-lite';
   static const Set<String> _currentModels = <String>{
     'gemini-3.5-flash-lite',
     'gemini-3.5-flash',
     'same-language',
-    'on-device',
   };
-  static const String _translationPolicyVersion = '2026-08-faithful-v5';
-  static const String _legacyTranslationPolicyVersion = '2026-08-faithful-v4';
+  static const String _translationPolicyVersion = '2026-08-context-quality-v6';
+  static const String _legacyV5TranslationPolicyVersion = '2026-08-faithful-v5';
+  static const String _legacyV4TranslationPolicyVersion = '2026-08-faithful-v4';
   static const int _maxMemoryEntries = 500;
   static const int _maxPersistentEntries = 1500;
   static const int _persistentPruneTarget = 1350;
-  static final RegExp _protectedTranslationTokenPattern = RegExp(
-    r'(?:https?://|www\.)[^\s<>()]+'
-    r'|[A-Za-z0-9._%+\-]+@[A-Za-z0-9.\-]+\.[A-Za-z]{2,}'
+  static const int _maxSourceChars = 12000;
+  static const int _maxBatchSize = 5;
+  static const int _maxConcurrentBatches = 2;
+  static const int _maxAutomaticFailureRetries = 1;
+  static const Duration _manualRetryCooldown = Duration(seconds: 15);
+  static const Duration _batchWindow = Duration(milliseconds: 12);
+  static final Object _manualRetryZoneKey = Object();
+  static final String _emptyContextHash =
+      sha256.convert(const <int>[]).toString();
+  static final RegExp _protectedSameLanguageTokenPattern = RegExp(
+    r'(?:https?://|www\.)[^\s]+'
+    r'|[\p{L}\p{N}._%+\-]+@[\p{L}\p{N}.\-]+\.[\p{L}]{2,}'
     r'|@[\p{L}\p{N}_.\-]+'
     r'|#[\p{L}\p{N}_.\-]+'
-    r'|(?:[\u{1F1E6}-\u{1F1FF}]{2}|[\u{1F300}-\u{1FAFF}\u{2600}-\u{27BF}]'
+    r'|\bChIJ[A-Za-z0-9_\-]+\b'
+    r'|(?:place[_ ]?id\s*[:=]\s*)[A-Za-z0-9_\-]+'
+    r'|-?\d{1,3}\.\d+\s*[,/]\s*-?\d{1,3}\.\d+'
+    r'|\b\d{1,4}[./:\-]\d{1,2}(?:[./:\-]\d{1,4})?'
+    r'(?:\s*(?:AM|PM|오전|오후))?\b'
+    r'|[$€£¥₩]\s?\d+(?:[.,]\d+)*'
+    r'|\+?\d[\d\s().\-]{5,}\d'
+    r'|\d+(?:[.,]\d+)*(?:\s?(?:%|원|달러|시|분|초))?'
+    r'|(?:[\u{1F1E6}-\u{1F1FF}]{2}|'
+    r'[\u{1F300}-\u{1FAFF}\u{2600}-\u{27BF}]'
     r'(?:[\u{FE0E}\u{FE0F}])?(?:[\u{1F3FB}-\u{1F3FF}])?'
     r'(?:\u{200D}[\u{1F300}-\u{1FAFF}\u{2600}-\u{27BF}]'
     r'(?:[\u{FE0E}\u{FE0F}])?(?:[\u{1F3FB}-\u{1F3FF}])?)*)',
+    caseSensitive: false,
     unicode: true,
   );
+  static final RegExp _letterPattern = RegExp(r'\p{L}', unicode: true);
+  static final RegExp _hangulPattern = RegExp(r'[가-힣]');
+  static final RegExp _kanaPattern = RegExp(r'[ぁ-んァ-ン]');
+  static final RegExp _japaneseLetterPattern = RegExp(r'[ぁ-んァ-ン\u3400-\u9FFF]');
+  static final RegExp _hanPattern = RegExp(r'[\u3400-\u9FFF]');
+  static final RegExp _cyrillicPattern = RegExp(r'[\u0400-\u04FF]');
+  static final RegExp _arabicPattern = RegExp(r'[\u0600-\u06FF]');
+  static final RegExp _thaiPattern = RegExp(r'[\u0E00-\u0E7F]');
+  static final RegExp _latinPattern =
+      RegExp(r'[A-Za-z\u00C0-\u024F\u1E00-\u1EFF]');
+  static final RegExp _nonLatinScriptPattern = RegExp(
+    r'[가-힣ぁ-んァ-ン\u3400-\u9FFF\u0400-\u04FF'
+    r'\u0600-\u06FF\u0900-\u097F\u0E00-\u0E7F]',
+  );
+  static const List<Duration> _pendingRetryDelays = <Duration>[
+    Duration(milliseconds: 350),
+    Duration(milliseconds: 800),
+    Duration(milliseconds: 1600),
+    Duration(milliseconds: 3200),
+    Duration(milliseconds: 6400),
+    Duration(milliseconds: 10000),
+    Duration(milliseconds: 15000),
+    // A server lock may live for 60 seconds after a function is interrupted.
+    // This final probe intentionally lands after that boundary instead of
+    // exhausting against a still-pending document at roughly 57 seconds.
+    Duration(milliseconds: 24000),
+  ];
 
   static const Map<String, String> supportedLanguages = <String, String>{
     'ko': '한국어',
@@ -94,13 +154,21 @@ class ContentTranslationService extends ChangeNotifier {
   final Map<String, ContentTranslationResult> _memory =
       <String, ContentTranslationResult>{};
   final Map<String, _QueuedTranslation> _queue = <String, _QueuedTranslation>{};
+  final Map<String, _QueuedTranslation> _pending =
+      <String, _QueuedTranslation>{};
+  final Map<String, ContentTranslationResult> _latestResults =
+      <String, ContentTranslationResult>{};
+  final Map<String, _BlockedTranslationFailure> _blockedFailures =
+      <String, _BlockedTranslationFailure>{};
   final Set<String> _showOriginalScopes = <String>{};
   final Set<String> _translatableScopes = <String>{};
   final Map<String, String> _scopeSourceLanguages = <String, String>{};
+  final Map<String, Map<Object, _ScopeTranslationState>> _scopeItemStates =
+      <String, Map<Object, _ScopeTranslationState>>{};
   final Set<String> _loadedRoomScopes = <String>{};
   final Map<String, Map<Object, ScopeTranslationLoader>> _scopeLoaders =
       <String, Map<Object, ScopeTranslationLoader>>{};
-  final Set<String> _loadingScopes = <String>{};
+  final Map<String, Set<Object>> _scopeLoadingTokens = <String, Set<Object>>{};
 
   Box<dynamic>? _box;
   Future<Box<dynamic>?>? _openingBox;
@@ -108,6 +176,8 @@ class ContentTranslationService extends ChangeNotifier {
   Timer? _flushTimer;
   String? _lastUid;
   int _languageRevision = 0;
+  int _requestGeneration = 0;
+  int _activeBatchCount = 0;
   int _persistentWritesSincePrune = 0;
 
   int get languageRevision => _languageRevision;
@@ -121,20 +191,29 @@ class ContentTranslationService extends ChangeNotifier {
     if (_lastUid == user?.uid) return;
     _lastUid = user?.uid;
     _languageRevision++;
+    _cancelPendingTranslations();
     _targetLanguageFuture = null;
     _memory.clear();
+    _latestResults.clear();
+    _blockedFailures.clear();
     _showOriginalScopes.clear();
     _translatableScopes.clear();
     _scopeSourceLanguages.clear();
+    _scopeItemStates.clear();
     _loadedRoomScopes.clear();
-    _loadingScopes.clear();
-    for (final queued in _queue.values) {
+    _scopeLoadingTokens.clear();
+    notifyListeners();
+  }
+
+  void _cancelPendingTranslations() {
+    _requestGeneration++;
+    for (final queued in _pending.values) {
       if (!queued.completer.isCompleted) queued.completer.complete(null);
     }
+    _pending.clear();
     _queue.clear();
     _flushTimer?.cancel();
     _flushTimer = null;
-    notifyListeners();
   }
 
   String _normalizeCode(String? value) {
@@ -172,12 +251,220 @@ class ContentTranslationService extends ChangeNotifier {
 
   String _sourceHash(Map<String, String> fields) {
     final keys = fields.keys.toList(growable: false)..sort();
-    final canonical = keys
-        .map((key) =>
-            '$key\u0000${fields[key]!.replaceAll('\r\n', '\n').replaceAll('\r', '\n')}')
-        .join('\u0001');
+    final canonical = keys.map((key) {
+      final normalized =
+          fields[key]!.replaceAll('\r\n', '\n').replaceAll('\r', '\n');
+      final bounded = normalized.length <= _maxSourceChars
+          ? normalized
+          : normalized.substring(0, _maxSourceChars);
+      return '$key\u0000$bounded';
+    }).join('\u0001');
     return sha256.convert(utf8.encode(canonical)).toString();
   }
+
+  /// 서버의 same-language 판정과 같은 방향이지만 더 높은 script 비율을
+  /// 요구한다. 혼합 언어는 서버가 문맥을 보고 판단하도록 false로 남긴다.
+  bool _looksObviouslySameLanguage(
+    Map<String, String> fields,
+    String targetLanguage,
+  ) {
+    final meaningful = fields.values
+        .join('\n')
+        .replaceAll(_protectedSameLanguageTokenPattern, '')
+        .trim();
+    if (meaningful.isEmpty) return true;
+
+    final letterCount = _letterPattern.allMatches(meaningful).length;
+    if (letterCount == 0) return true;
+    double ratio(RegExp pattern) =>
+        pattern.allMatches(meaningful).length / letterCount;
+
+    switch (targetLanguage) {
+      case 'ko':
+        final hangulCount = _hangulPattern.allMatches(meaningful).length;
+        return hangulCount >= 2 && ratio(_hangulPattern) >= 0.95;
+      case 'ja':
+        return _kanaPattern.hasMatch(meaningful) &&
+            !_hangulPattern.hasMatch(meaningful) &&
+            ratio(_japaneseLetterPattern) >= 0.95;
+      case 'zh':
+        return _hanPattern.allMatches(meaningful).length >= 2 &&
+            !_kanaPattern.hasMatch(meaningful) &&
+            !_hangulPattern.hasMatch(meaningful) &&
+            ratio(_hanPattern) >= 0.97;
+      case 'ru':
+      case 'uk':
+        return letterCount >= 3 && ratio(_cyrillicPattern) >= 0.97;
+      case 'ar':
+        return letterCount >= 3 && ratio(_arabicPattern) >= 0.97;
+      case 'th':
+        return letterCount >= 3 && ratio(_thaiPattern) >= 0.97;
+    }
+
+    const latinHints = <String, Set<String>>{
+      'en': <String>{
+        'the',
+        'and',
+        'is',
+        'are',
+        'this',
+        'that',
+        'hello',
+        'thanks',
+        'with',
+        'for',
+      },
+      'es': <String>{
+        'el',
+        'la',
+        'los',
+        'las',
+        'es',
+        'hola',
+        'gracias',
+        'con',
+        'para',
+        'que',
+      },
+      'fr': <String>{
+        'le',
+        'la',
+        'les',
+        'est',
+        'bonjour',
+        'merci',
+        'avec',
+        'pour',
+        'que',
+        'des',
+      },
+      'de': <String>{
+        'der',
+        'die',
+        'das',
+        'ist',
+        'hallo',
+        'danke',
+        'mit',
+        'für',
+        'und',
+        'ein',
+      },
+      'pt': <String>{
+        'o',
+        'a',
+        'os',
+        'as',
+        'é',
+        'olá',
+        'obrigado',
+        'com',
+        'para',
+        'que',
+      },
+      'it': <String>{
+        'il',
+        'la',
+        'gli',
+        'è',
+        'ciao',
+        'grazie',
+        'con',
+        'per',
+        'che',
+        'un',
+      },
+      'tr': <String>{
+        'bir',
+        've',
+        'bu',
+        'ile',
+        'için',
+        'merhaba',
+        'teşekkürler',
+        'çok',
+      },
+      'id': <String>{
+        'dan',
+        'ini',
+        'itu',
+        'dengan',
+        'untuk',
+        'halo',
+        'terima',
+        'kasih',
+      },
+      'ms': <String>{
+        'dan',
+        'ini',
+        'itu',
+        'dengan',
+        'untuk',
+        'hai',
+        'terima',
+        'kasih',
+      },
+      'vi': <String>{
+        'và',
+        'là',
+        'này',
+        'với',
+        'cho',
+        'xin',
+        'chào',
+        'cảm',
+        'ơn',
+      },
+    };
+    final hints = latinHints[targetLanguage];
+    if (hints == null ||
+        !_latinPattern.hasMatch(meaningful) ||
+        _nonLatinScriptPattern.hasMatch(meaningful)) {
+      return false;
+    }
+    final words = RegExp(r'[\p{L}]+', unicode: true)
+        .allMatches(meaningful.toLowerCase())
+        .map((match) => match.group(0)!)
+        .toList(growable: false);
+    final hasConflictingLanguageHint = latinHints.entries.any(
+      (entry) =>
+          entry.key != targetLanguage &&
+          words.any((word) => entry.value.contains(word)),
+    );
+    if (hasConflictingLanguageHint) return false;
+    final hits = words.where(hints.contains).length;
+    final latinRatio = ratio(_latinPattern);
+    if (words.length == 1) return hits == 1 && latinRatio == 1;
+    return words.length >= 3 &&
+        hits >= 2 &&
+        latinRatio >= 0.97 &&
+        hits / words.length >= 0.4;
+  }
+
+  ContentTranslationResult _clientSameLanguageResult(
+    ContentTranslationRequest request,
+    String targetLanguage,
+    String sourceHash,
+  ) =>
+      ContentTranslationResult(
+        status: 'same_language',
+        sourceHash: sourceHash,
+        sourceLanguage: targetLanguage,
+        targetLanguage: targetLanguage,
+        translatedFields: Map<String, String>.unmodifiable(
+          request.sourceFields,
+        ),
+        modelUsed: 'same-language',
+        translationVersion: _translationVersion,
+        promptVersion: _promptVersion,
+        translationPolicyVersion: _translationPolicyVersion,
+        glossaryVersion: _glossaryVersion,
+        qualityPolicyVersion: _qualityPolicyVersion,
+        sourceIntent: 'statement',
+        contextHash: _emptyContextHash,
+        translatedAt: DateTime.now().millisecondsSinceEpoch,
+        cacheSource: 'client_same_language',
+      );
 
   String _cacheKey(
     ContentTranslationRequest request,
@@ -186,16 +473,27 @@ class ContentTranslationService extends ChangeNotifier {
   ) {
     final uid = _auth.currentUser?.uid ?? 'signed_out';
     return '$_translationPolicyVersion|v$_translationVersion|p$_promptVersion|'
-        '$_baseModel|$uid|${request.serverId}|$targetLanguage|$sourceHash';
+        'g$_glossaryVersion|q$_qualityPolicyVersion|$_baseModel|$uid|'
+        '${request.serverId}|$targetLanguage|$sourceHash';
   }
 
-  String _legacyCacheKey(
+  String _legacyV5CacheKey(
     ContentTranslationRequest request,
     String targetLanguage,
     String sourceHash,
   ) {
     final uid = _auth.currentUser?.uid ?? 'signed_out';
-    return '$_legacyTranslationPolicyVersion|$uid|${request.serverId}|'
+    return '$_legacyV5TranslationPolicyVersion|v5|p5|$_baseModel|$uid|'
+        '${request.serverId}|$targetLanguage|$sourceHash';
+  }
+
+  String _legacyV4CacheKey(
+    ContentTranslationRequest request,
+    String targetLanguage,
+    String sourceHash,
+  ) {
+    final uid = _auth.currentUser?.uid ?? 'signed_out';
+    return '$_legacyV4TranslationPolicyVersion|$uid|${request.serverId}|'
         '$targetLanguage|$sourceHash';
   }
 
@@ -208,6 +506,11 @@ class ContentTranslationService extends ChangeNotifier {
         result.targetLanguage == targetLanguage &&
         result.translationVersion == _translationVersion &&
         result.promptVersion == _promptVersion &&
+        result.translationPolicyVersion == _translationPolicyVersion &&
+        result.glossaryVersion == _glossaryVersion &&
+        result.qualityPolicyVersion == _qualityPolicyVersion &&
+        result.sourceIntent.isNotEmpty &&
+        result.contextHash.isNotEmpty &&
         _currentModels.contains(result.modelUsed);
   }
 
@@ -388,12 +691,21 @@ class ContentTranslationService extends ChangeNotifier {
       return localPreferred;
     }
 
+    // 사용자가 따로 선택하지 않은 첫 가입/자동 설정 계정은 국적이 아니라
+    // 실제 앱 UI 언어로 번역 결과를 본다. 영어 UI로 가입한 한국 국적 사용자도
+    // 영어가 기본 대상 언어가 되어야 한다.
+    final ui = _normalizeCode(
+      uiLanguageCode ?? prefs.getString('app_language'),
+    );
+
+    var serverPreferred = '';
+    var profileLanguage = '';
     final uid = _auth.currentUser?.uid;
     if (uid != null) {
       try {
         final snap = await _firestore.collection('users').doc(uid).get();
         final data = snap.data() ?? const <String, dynamic>{};
-        final serverPreferred = _normalizeCode(
+        serverPreferred = _normalizeCode(
           data['preferredTranslationLanguageCode']?.toString() ??
               data['preferredTranslationLanguage']?.toString(),
         );
@@ -414,36 +726,107 @@ class ContentTranslationService extends ChangeNotifier {
           );
           return serverPreferred;
         }
-        final nationality = _profileLanguage(data);
-        if (nationality.isNotEmpty) {
-          await prefs.setString(
-            _accountPreferenceKey(_preferredCodeKey),
-            nationality,
-          );
-          await prefs.setString(
-            _accountPreferenceKey(_preferredNameKey),
-            supportedLanguages[nationality]!,
-          );
-          await prefs.setString(
-            _accountPreferenceKey(_preferredSourceKey),
-            'profile',
-          );
-          return nationality;
-        }
-        if (serverPreferred.isNotEmpty) {
-          return serverPreferred;
-        }
+        profileLanguage = _profileLanguage(data);
       } catch (_) {
         // 설정 조회 실패는 UI 언어/영어 fallback으로 자연스럽게 이어진다.
       }
     }
 
-    if (localPreferred.isNotEmpty) return localPreferred;
-
-    final ui = _normalizeCode(
-      uiLanguageCode ?? prefs.getString('app_language'),
+    final automatic = resolveAutomaticTranslationTarget(
+      uiLanguage: ui,
+      profileLanguage: profileLanguage,
+      serverPreferred: serverPreferred,
+      localPreferred: localPreferred,
     );
-    return ui.isNotEmpty ? ui : 'en';
+    if (ui.isNotEmpty) {
+      await _cacheAutomaticUiPreference(prefs, ui);
+    } else if (profileLanguage.isNotEmpty) {
+      await prefs.setString(
+        _accountPreferenceKey(_preferredCodeKey),
+        profileLanguage,
+      );
+      await prefs.setString(
+        _accountPreferenceKey(_preferredNameKey),
+        supportedLanguages[profileLanguage]!,
+      );
+      await prefs.setString(
+        _accountPreferenceKey(_preferredSourceKey),
+        'profile',
+      );
+    }
+    return automatic;
+  }
+
+  Future<void> _cacheAutomaticUiPreference(
+    SharedPreferences prefs,
+    String code,
+  ) async {
+    if (prefs.getString(_accountPreferenceKey(_preferredCodeKey)) == code &&
+        prefs.getString(_accountPreferenceKey(_preferredSourceKey)) == 'ui') {
+      return;
+    }
+    await prefs.setString(
+      _accountPreferenceKey(_preferredCodeKey),
+      code,
+    );
+    await prefs.setString(
+      _accountPreferenceKey(_preferredNameKey),
+      supportedLanguages[code]!,
+    );
+    await prefs.setString(
+      _accountPreferenceKey(_preferredSourceKey),
+      'ui',
+    );
+  }
+
+  /// 앱 시작 시 저장된 UI 언어가 늦게 복원되더라도, 먼저 만들어진 포스트가
+  /// 초기 한국어 fallback에 고정되지 않도록 자동 대상 언어를 정렬한다.
+  /// 사용자가 직접 고른 수동 설정은 절대 덮어쓰지 않는다.
+  Future<void> synchronizeAutomaticLanguageWithUi(String code) async {
+    final normalized = _normalizeCode(code);
+    if (normalized.isEmpty) return;
+    final prefs = await SharedPreferences.getInstance();
+    if (prefs.getString(_accountPreferenceKey(_preferredSourceKey)) ==
+        'manual') {
+      return;
+    }
+
+    final existingFuture = _targetLanguageFuture;
+    if (existingFuture == null) {
+      await _cacheAutomaticUiPreference(prefs, normalized);
+      return;
+    }
+
+    String? existing;
+    try {
+      existing = await existingFuture;
+    } catch (_) {
+      existing = null;
+    }
+    // 기존 future가 서버의 수동 설정을 발견했을 수 있으므로 await 뒤에
+    // source를 다시 확인한다.
+    if (prefs.getString(_accountPreferenceKey(_preferredSourceKey)) ==
+        'manual') {
+      return;
+    }
+    await _cacheAutomaticUiPreference(prefs, normalized);
+    if (existing != normalized) _activateTargetLanguage(normalized);
+  }
+
+  void _activateTargetLanguage(String code) {
+    _cancelPendingTranslations();
+    _targetLanguageFuture = Future<String>.value(code);
+    _languageRevision++;
+    _memory.clear();
+    _latestResults.clear();
+    _blockedFailures.clear();
+    _showOriginalScopes.clear();
+    _translatableScopes.clear();
+    _scopeSourceLanguages.clear();
+    _scopeItemStates.clear();
+    _loadedRoomScopes.clear();
+    _scopeLoadingTokens.clear();
+    notifyListeners();
   }
 
   Future<void> setPreferredLanguage(String code) async {
@@ -465,30 +848,30 @@ class ContentTranslationService extends ChangeNotifier {
 
     // 사용자가 선택한 대상 언어는 네트워크 상태와 무관하게 즉시 화면에
     // 반영한다. 서버 저장은 다른 기기와의 설정 동기화를 위한 후속 작업이다.
-    _targetLanguageFuture = Future<String>.value(normalized);
-    _languageRevision++;
-    _memory.clear();
-    _showOriginalScopes.clear();
-    _translatableScopes.clear();
-    _scopeSourceLanguages.clear();
-    _loadedRoomScopes.clear();
-    notifyListeners();
+    _activateTargetLanguage(normalized);
 
+    // 화면 전환은 로컬 설정만 저장되면 완료한다. 다른 기기와의 동기화를
+    // 위한 Firestore 쓰기는 뒤에서 처리해 느린 네트워크 때문에 시트와
+    // 포스트 갱신이 멈춰 보이지 않게 한다.
     final uid = _auth.currentUser?.uid;
     if (uid != null) {
-      try {
-        await _firestore.collection('users').doc(uid).set(<String, dynamic>{
-          'preferredTranslationLanguageCode': normalized,
-          'preferredTranslationLanguage': supportedLanguages[normalized],
-          'preferredTranslationLanguageSource': 'manual',
-          'preferredTranslationLanguageUpdatedAt': FieldValue.serverTimestamp(),
-        }, SetOptions(merge: true));
-      } catch (error) {
-        if (kDebugMode) {
-          debugPrint(
-            'Translation language preference sync failed: ${error.runtimeType}',
-          );
-        }
+      unawaited(_syncManualPreference(uid, normalized));
+    }
+  }
+
+  Future<void> _syncManualPreference(String uid, String code) async {
+    try {
+      await _firestore.collection('users').doc(uid).set(<String, dynamic>{
+        'preferredTranslationLanguageCode': code,
+        'preferredTranslationLanguage': supportedLanguages[code],
+        'preferredTranslationLanguageSource': 'manual',
+        'preferredTranslationLanguageUpdatedAt': FieldValue.serverTimestamp(),
+      }, SetOptions(merge: true));
+    } catch (error) {
+      if (kDebugMode) {
+        debugPrint(
+          'Translation language preference sync failed: ${error.runtimeType}',
+        );
       }
     }
   }
@@ -500,11 +883,72 @@ class ContentTranslationService extends ChangeNotifier {
 
   bool showsOriginal(String scope) => _showOriginalScopes.contains(scope);
 
-  bool canToggleScope(String scope) => _translatableScopes.contains(scope);
+  bool canToggleScope(String scope) =>
+      _translatableScopes.contains(scope) ||
+      (_scopeItemStates[scope]
+              ?.values
+              .contains(_ScopeTranslationState.translatable) ??
+          false);
+
+  bool isScopeResolvedSameLanguage(String scope) {
+    if (canToggleScope(scope) || isScopeLoading(scope)) return false;
+    final states = _scopeItemStates[scope]?.values;
+    return states != null &&
+        states.isNotEmpty &&
+        states.every((state) => state == _ScopeTranslationState.sameLanguage);
+  }
 
   String? sourceLanguageForScope(String scope) => _scopeSourceLanguages[scope];
 
-  bool isScopeLoading(String scope) => _loadingScopes.contains(scope);
+  bool isScopeLoading(String scope) =>
+      _scopeLoadingTokens[scope]?.isNotEmpty == true;
+
+  bool hasExhaustedRetryForScope(String scope) =>
+      _blockedFailures.values.any((failure) => failure.scopes.contains(scope));
+
+  bool canRetryScope(String scope) {
+    final now = DateTime.now();
+    return _blockedFailures.values.any(
+      (failure) =>
+          failure.scopes.contains(scope) &&
+          !now.isBefore(failure.manualRetryAt),
+    );
+  }
+
+  String _latestResultKey(
+    ContentTranslationRequest request,
+    String sourceHash,
+  ) =>
+      '${request.serverId}|$sourceHash';
+
+  /// 같은 콘텐츠를 표시하는 카드와 상세 화면이 서버 요청을 중복하지 않고
+  /// 먼저 도착한 번역을 즉시 공유할 수 있도록 현재 언어의 최신 결과를 준다.
+  ContentTranslationResult? latestResultFor(
+    ContentTranslationRequest request,
+  ) {
+    final hash = _sourceHash(request.sourceFields);
+    final result = _latestResults[_latestResultKey(request, hash)];
+    if (result == null || result.sourceHash != hash || !result.isReady) {
+      return null;
+    }
+    return result;
+  }
+
+  void beginScopeLoading(String scope, Object token) {
+    final tokens = _scopeLoadingTokens[scope] ??= <Object>{};
+    final wasEmpty = tokens.isEmpty;
+    tokens.add(token);
+    if (wasEmpty) notifyListeners();
+  }
+
+  void endScopeLoading(String scope, Object token) {
+    final tokens = _scopeLoadingTokens[scope];
+    if (tokens == null || !tokens.remove(token)) return;
+    if (tokens.isEmpty) {
+      _scopeLoadingTokens.remove(scope);
+      notifyListeners();
+    }
+  }
 
   void attachScopeLoader(
     String scope,
@@ -534,32 +978,88 @@ class ContentTranslationService extends ChangeNotifier {
     if (changed) notifyListeners();
   }
 
+  /// 한 scope 안의 개별 콘텐츠 결과를 stable token 단위로 추적한다. 따라서
+  /// 댓글 중 하나만 same-language인 혼합 scope를 통째로 숨기지 않는다.
+  void resolveScopeTranslation(
+    String scope,
+    Object token,
+    ContentTranslationResult? result,
+  ) {
+    final state = result?.isSameLanguage == true
+        ? _ScopeTranslationState.sameLanguage
+        : result?.isReady == true && result!.translatedFields.isNotEmpty
+            ? _ScopeTranslationState.translatable
+            : _ScopeTranslationState.failed;
+    final states =
+        _scopeItemStates[scope] ??= <Object, _ScopeTranslationState>{};
+    var changed = states[token] != state;
+    states[token] = state;
+    if (state == _ScopeTranslationState.translatable) {
+      final normalized = (result?.sourceLanguage ?? '').trim().toLowerCase();
+      if (normalized.isNotEmpty && _scopeSourceLanguages[scope] != normalized) {
+        _scopeSourceLanguages[scope] = normalized;
+        changed = true;
+      }
+    } else if (!canToggleScope(scope) &&
+        _scopeSourceLanguages.remove(scope) != null) {
+      changed = true;
+    }
+    if (changed) notifyListeners();
+  }
+
+  /// 페이지 coordinator가 전체 항목이 same-language임을 확인했을 때 사용한다.
+  void registerSameLanguageScope(String scope, Object token) {
+    var changed = _translatableScopes.remove(scope);
+    final previous = _scopeItemStates[scope];
+    changed = changed ||
+        previous == null ||
+        previous.length != 1 ||
+        previous[token] != _ScopeTranslationState.sameLanguage;
+    _scopeItemStates[scope] = <Object, _ScopeTranslationState>{
+      token: _ScopeTranslationState.sameLanguage,
+    };
+    if (!canToggleScope(scope) && _scopeSourceLanguages.remove(scope) != null) {
+      changed = true;
+    }
+    if (changed) notifyListeners();
+  }
+
+  void clearScopeTranslation(
+    String scope,
+    Object token, {
+    bool notify = true,
+  }) {
+    final states = _scopeItemStates[scope];
+    if (states == null || states.remove(token) == null) return;
+    if (states.isEmpty) _scopeItemStates.remove(scope);
+    if (!canToggleScope(scope)) _scopeSourceLanguages.remove(scope);
+    if (notify) notifyListeners();
+  }
+
   void toggleScope(String scope) {
     if (!_showOriginalScopes.add(scope)) _showOriginalScopes.remove(scope);
     notifyListeners();
   }
 
-  /// 이미 번역된 범위는 원문/번역을 전환하고, 아직 번역되지 않은 범위는
-  /// 현재 화면에 연결된 콘텐츠 로더를 실행합니다. 실패 후 다시 누르면 같은
-  /// 경로로 재시도하므로 번역 버튼을 항상 노출할 수 있습니다.
+  /// 준비된 번역은 원문/번역 표시만 전환한다. 한정된 자동 재시도까지
+  /// 실패한 경우에만 cooldown 뒤 명시적인 사용자 탭으로 scope 로더를
+  /// 다시 실행한다.
   Future<void> requestOrToggleScope(String scope) async {
     if (canToggleScope(scope)) {
       toggleScope(scope);
       return;
     }
-    if (!_loadingScopes.add(scope)) return;
-    notifyListeners();
-    try {
-      final loaders = List<ScopeTranslationLoader>.of(
-        _scopeLoaders[scope]?.values ?? const <ScopeTranslationLoader>[],
-      );
-      if (loaders.isNotEmpty) {
+    if (!canRetryScope(scope) || isScopeLoading(scope)) return;
+    final loaders = List<ScopeTranslationLoader>.of(
+      _scopeLoaders[scope]?.values ?? const <ScopeTranslationLoader>[],
+    );
+    if (loaders.isEmpty) return;
+    await runZoned<Future<void>>(
+      () async {
         await Future.wait(loaders.map((loader) => loader()));
-      }
-    } finally {
-      _loadingScopes.remove(scope);
-      notifyListeners();
-    }
+      },
+      zoneValues: <Object?, Object?>{_manualRetryZoneKey: true},
+    );
   }
 
   Future<void> loadSnackRoomMode(String roomId) async {
@@ -585,13 +1085,45 @@ class ContentTranslationService extends ChangeNotifier {
     );
   }
 
+  String _failureIdentity(
+    ContentTranslationRequest request,
+    String targetLanguage,
+  ) =>
+      '${request.serverId}|$targetLanguage';
+
+  void _removeScopeFromOtherFailures(
+    String scope,
+    String currentKey,
+    String requestIdentity,
+  ) {
+    for (final entry in _blockedFailures.entries) {
+      if (entry.key != currentKey &&
+          entry.value.requestIdentity == requestIdentity) {
+        entry.value.scopes.remove(scope);
+      }
+    }
+  }
+
   Future<ContentTranslationResult?> request(
     ContentTranslationRequest request, {
     String? uiLanguageCode,
+    String? scope,
+    bool manualRetry = false,
   }) async {
+    final isManualRetry =
+        manualRetry || Zone.current[_manualRetryZoneKey] == true;
+    final generation = _requestGeneration;
     final target = await targetLanguage(uiLanguageCode: uiLanguageCode);
+    if (generation != _requestGeneration) return null;
     final hash = _sourceHash(request.sourceFields);
     final key = _cacheKey(request, target, hash);
+    if (scope != null && scope.isNotEmpty) {
+      _removeScopeFromOtherFailures(
+        scope,
+        key,
+        _failureIdentity(request, target),
+      );
+    }
     final memory = _memory[key];
     if (memory != null) {
       if (_isCurrentResult(
@@ -599,12 +1131,14 @@ class ContentTranslationService extends ChangeNotifier {
         sourceHash: hash,
         targetLanguage: target,
       )) {
+        _publishLatest(request, hash, memory);
         return memory;
       }
       _memory.remove(key);
     }
 
     final box = await _ensureBox();
+    if (generation != _requestGeneration) return null;
     final stored = box?.get(key);
     if (stored is Map) {
       final result = ContentTranslationResult.fromMap(stored);
@@ -617,23 +1151,57 @@ class ContentTranslationService extends ChangeNotifier {
           ..['lastAccessAt'] = DateTime.now().millisecondsSinceEpoch;
         unawaited(box?.put(key, touched));
         _putMemory(key, result);
+        _publishLatest(request, hash, result);
         return result;
       }
       unawaited(box?.delete(key));
     }
     // Only migrate the viewed item. Old-version entries elsewhere are left
     // untouched until accessed and remain ineligible for reads.
-    unawaited(box?.delete(_legacyCacheKey(request, target, hash)));
+    unawaited(box?.delete(_legacyV5CacheKey(request, target, hash)));
+    unawaited(box?.delete(_legacyV4CacheKey(request, target, hash)));
 
-    final existing = _queue[key];
-    if (existing != null) return existing.completer.future;
+    // 확실한 same-language만 로컬에서 종결한다. 원문은 그대로 사용하고
+    // 동일한 버전 메타데이터로 캐시하여 다음 화면에서는 언어 판정조차 생략한다.
+    if (_looksObviouslySameLanguage(request.sourceFields, target)) {
+      final result = _clientSameLanguageResult(request, target, hash);
+      _blockedFailures.remove(key);
+      _putMemory(key, result);
+      _publishLatest(request, hash, result);
+      unawaited(_persistResult(key, result));
+      return result;
+    }
+
+    // _queue에서 이미 꺼내 네트워크 호출 중인 항목까지 _pending에 남겨
+    // 카드/상세/실시간 메시지가 같은 번역을 동시에 중복 요청하지 않게 한다.
+    final existing = _pending[key];
+    if (existing != null) {
+      if (scope != null && scope.isNotEmpty) existing.scopes.add(scope);
+      return existing.completer.future;
+    }
+
+    final blockedFailure = _blockedFailures[key];
+    if (blockedFailure != null) {
+      if (scope != null && scope.isNotEmpty) {
+        blockedFailure.scopes.add(scope);
+      }
+      if (!isManualRetry ||
+          DateTime.now().isBefore(blockedFailure.manualRetryAt)) {
+        return blockedFailure.result;
+      }
+      _blockedFailures.remove(key);
+    }
+
     final queued = _QueuedTranslation(
       request: request,
       targetLanguage: target,
       sourceHash: hash,
+      generation: generation,
+      scopes: <String>{if (scope != null && scope.isNotEmpty) scope},
     );
+    _pending[key] = queued;
     _queue[key] = queued;
-    _flushTimer ??= Timer(const Duration(milliseconds: 32), _flushQueue);
+    _scheduleFlush();
     return queued.completer.future;
   }
 
@@ -644,237 +1212,193 @@ class ContentTranslationService extends ChangeNotifier {
     _memory[key] = result;
   }
 
-  static const Map<String, TranslateLanguage> _onDeviceLanguages =
-      <String, TranslateLanguage>{
-    'ko': TranslateLanguage.korean,
-    'en': TranslateLanguage.english,
-    'ja': TranslateLanguage.japanese,
-    'zh': TranslateLanguage.chinese,
-    'es': TranslateLanguage.spanish,
-    'fr': TranslateLanguage.french,
-    'de': TranslateLanguage.german,
-    'ru': TranslateLanguage.russian,
-    'pt': TranslateLanguage.portuguese,
-    'it': TranslateLanguage.italian,
-    'ar': TranslateLanguage.arabic,
-    'hi': TranslateLanguage.hindi,
-    'th': TranslateLanguage.thai,
-    'vi': TranslateLanguage.vietnamese,
-    'id': TranslateLanguage.indonesian,
-    'ms': TranslateLanguage.malay,
-    'tr': TranslateLanguage.turkish,
-    'nl': TranslateLanguage.dutch,
-    'pl': TranslateLanguage.polish,
-    'uk': TranslateLanguage.ukrainian,
-  };
-
-  String _scriptLanguage(String text) {
-    if (RegExp(r'[가-힣]').hasMatch(text)) return 'ko';
-    if (RegExp(r'[ぁ-んァ-ン]').hasMatch(text)) return 'ja';
-    if (RegExp(r'[\u3400-\u9FFF]').hasMatch(text)) return 'zh';
-    if (RegExp(r'[\u0600-\u06FF]').hasMatch(text)) return 'ar';
-    if (RegExp(r'[\u0E00-\u0E7F]').hasMatch(text)) return 'th';
-    if (RegExp(r'[\u0400-\u04FF]').hasMatch(text)) return 'ru';
-    if (RegExp(r'[A-Za-z]').hasMatch(text)) return 'en';
-    return '';
+  void _publishLatest(
+    ContentTranslationRequest request,
+    String sourceHash,
+    ContentTranslationResult result,
+  ) {
+    final key = _latestResultKey(request, sourceHash);
+    if (identical(_latestResults[key], result)) return;
+    _latestResults[key] = result;
+    notifyListeners();
   }
 
-  Future<String> _translateLinePreservingTokens(
-    OnDeviceTranslator translator,
-    String line,
-  ) async {
-    if (line.trim().isEmpty) return line;
-
-    final leadingWhitespace = RegExp(r'^\s*').firstMatch(line)?.group(0) ?? '';
-    final trailingWhitespace = RegExp(r'\s*$').firstMatch(line)?.group(0) ?? '';
-    final bodyEnd = line.length - trailingWhitespace.length;
-    final body = line.substring(
-      leadingWhitespace.length,
-      bodyEnd < leadingWhitespace.length ? leadingWhitespace.length : bodyEnd,
-    );
-    if (body.isEmpty) return line;
-
-    final protectedTokens = <String, String>{};
-    var tokenIndex = 0;
-    final protectedBody = body.replaceAllMapped(
-      _protectedTranslationTokenPattern,
-      (match) {
-        final marker = String.fromCharCode(0xE000 + tokenIndex++);
-        protectedTokens[marker] = match.group(0)!;
-        return marker;
-      },
-    );
-
-    var translated = await translator.translateText(protectedBody);
-    var markersIntact = true;
-    for (final entry in protectedTokens.entries) {
-      if (!translated.contains(entry.key)) {
-        markersIntact = false;
-        break;
+  bool _hasCompleteFields(
+    ContentTranslationRequest request,
+    ContentTranslationResult result,
+  ) {
+    for (final source in request.sourceFields.entries) {
+      if (!result.translatedFields.containsKey(source.key)) return false;
+      if (source.value.trim().isNotEmpty &&
+          (result.translatedFields[source.key] ?? '').trim().isEmpty) {
+        return false;
       }
-      translated = translated.replaceAll(entry.key, entry.value);
     }
-    // 일부 기기의 ML Kit는 private-use 보호 문자를 제거한다. 이때 문장
-    // 전체를 원문으로 되돌리지 않고 텍스트 구간만 번역한 뒤 URL/이모지를
-    // 원래 위치에 그대로 합쳐 이모지가 있는 줄도 정상적으로 번역한다.
-    if (!markersIntact) {
-      translated = await _translateProtectedSegments(translator, body);
-    }
-    return '$leadingWhitespace$translated$trailingWhitespace';
+    return true;
   }
 
-  Future<String> _translateProtectedSegments(
-    OnDeviceTranslator translator,
-    String text,
-  ) async {
-    final output = StringBuffer();
-    var cursor = 0;
-    for (final match in _protectedTranslationTokenPattern.allMatches(text)) {
-      if (match.start > cursor) {
-        output.write(
-          await _translatePlainSegment(
-            translator,
-            text.substring(cursor, match.start),
-          ),
-        );
-      }
-      output.write(match.group(0));
-      cursor = match.end;
+  void _scheduleFlush() {
+    if (_queue.isEmpty ||
+        _flushTimer != null ||
+        _activeBatchCount >= _maxConcurrentBatches) {
+      return;
     }
-    if (cursor < text.length) {
-      output.write(
-        await _translatePlainSegment(translator, text.substring(cursor)),
-      );
-    }
-    return output.toString();
+    _flushTimer = Timer(_batchWindow, _flushQueue);
   }
 
-  Future<String> _translatePlainSegment(
-    OnDeviceTranslator translator,
-    String segment,
-  ) async {
-    if (segment.trim().isEmpty) return segment;
-    final leadingWhitespace =
-        RegExp(r'^\s*').firstMatch(segment)?.group(0) ?? '';
-    final trailingWhitespace =
-        RegExp(r'\s*$').firstMatch(segment)?.group(0) ?? '';
-    final bodyEnd = segment.length - trailingWhitespace.length;
-    final body = segment.substring(
-      leadingWhitespace.length,
-      bodyEnd < leadingWhitespace.length ? leadingWhitespace.length : bodyEnd,
-    );
-    if (body.isEmpty) return segment;
-    final translated = await translator.translateText(body);
-    return '$leadingWhitespace$translated$trailingWhitespace';
-  }
+  bool _isActive(String key, _QueuedTranslation queued) =>
+      queued.generation == _requestGeneration &&
+      identical(_pending[key], queued) &&
+      !queued.completer.isCompleted;
 
-  Future<String> _translatePreservingLayout(
-    OnDeviceTranslator translator,
-    String original,
-  ) async {
-    final normalized = original.replaceAll('\r\n', '\n').replaceAll('\r', '\n');
-    final translatedLines = <String>[];
-    for (final line in normalized.split('\n')) {
-      translatedLines.add(
-        await _translateLinePreservingTokens(translator, line),
-      );
-    }
-    return translatedLines.join('\n');
-  }
-
-  Future<ContentTranslationResult?> _translateOnDevice(
+  void _completeSuccess(
+    String key,
     _QueuedTranslation queued,
-  ) async {
-    if (kIsWeb ||
-        !(defaultTargetPlatform == TargetPlatform.android ||
-            defaultTargetPlatform == TargetPlatform.iOS)) {
-      return null;
-    }
-    final sourceText = queued.request.sourceFields.values
-        .where((value) => value.trim().isNotEmpty)
-        .join('\n');
-    if (sourceText.isEmpty) return null;
+    ContentTranslationResult result,
+  ) {
+    if (!_isActive(key, queued)) return;
+    _pending.remove(key);
+    _blockedFailures.remove(key);
+    _putMemory(key, result);
+    _publishLatest(queued.request, queued.sourceHash, result);
+    if (!queued.completer.isCompleted) queued.completer.complete(result);
+    unawaited(_persistResult(key, result));
+  }
 
-    final identifier = LanguageIdentifier(confidenceThreshold: 0.25);
-    String sourceCode;
-    try {
-      sourceCode = _normalizeCode(
-        await identifier.identifyLanguage(sourceText),
-      );
-    } catch (_) {
-      sourceCode = '';
-    } finally {
-      await identifier.close();
-    }
-    sourceCode = sourceCode.isEmpty ? _scriptLanguage(sourceText) : sourceCode;
-    final sourceLanguage = _onDeviceLanguages[sourceCode];
-    final targetLanguage = _onDeviceLanguages[queued.targetLanguage];
-    if (sourceCode == queued.targetLanguage) {
-      return ContentTranslationResult(
-        status: 'same_language',
+  ContentTranslationResult _failureResult(
+    _QueuedTranslation queued,
+    String errorCode, {
+    String status = 'failed',
+  }) =>
+      ContentTranslationResult(
+        status: status,
         sourceHash: queued.sourceHash,
-        sourceLanguage: sourceCode,
         targetLanguage: queued.targetLanguage,
-        translatedFields: queued.request.sourceFields,
-        modelUsed: 'same-language',
+        translatedFields: const <String, String>{},
         translationVersion: _translationVersion,
         promptVersion: _promptVersion,
-        translatedAt: DateTime.now().millisecondsSinceEpoch,
-        cacheSource: 'same_language',
+        translationPolicyVersion: _translationPolicyVersion,
+        glossaryVersion: _glossaryVersion,
+        qualityPolicyVersion: _qualityPolicyVersion,
+        errorCode: errorCode,
+        automaticRetryExhausted: true,
       );
-    }
-    if (sourceLanguage == null || targetLanguage == null) return null;
 
-    final translator = OnDeviceTranslator(
-      sourceLanguage: sourceLanguage,
-      targetLanguage: targetLanguage,
+  void _completeFailure(
+    String key,
+    _QueuedTranslation queued,
+    String errorCode, {
+    String status = 'failed',
+  }) {
+    if (!_isActive(key, queued)) return;
+    _pending.remove(key);
+    final result = _failureResult(queued, errorCode, status: status);
+    final failure = _BlockedTranslationFailure(
+      result: result,
+      manualRetryAt: DateTime.now().add(_manualRetryCooldown),
+      scopes: Set<String>.of(queued.scopes),
+      requestIdentity: _failureIdentity(
+        queued.request,
+        queued.targetLanguage,
+      ),
     );
-    try {
-      final translatedFields = <String, String>{};
-      for (final entry in queued.request.sourceFields.entries) {
-        if (entry.value.trim().isEmpty) {
-          translatedFields[entry.key] = entry.value;
-          continue;
-        }
-        translatedFields[entry.key] = await _translatePreservingLayout(
-          translator,
-          entry.value,
-        );
-      }
-      return ContentTranslationResult(
-        status: 'completed',
-        sourceHash: queued.sourceHash,
-        sourceLanguage: sourceCode,
-        targetLanguage: queued.targetLanguage,
-        translatedFields: translatedFields,
-        modelUsed: 'on-device',
-        translationVersion: _translationVersion,
-        promptVersion: _promptVersion,
-        translatedAt: DateTime.now().millisecondsSinceEpoch,
-        cacheSource: 'on_device',
+    _blockedFailures[key] = failure;
+    if (kDebugMode) {
+      debugPrint(
+        'Content translation exhausted: '
+        'type=${queued.request.contentType}, code=$errorCode',
       );
+    }
+    Timer(_manualRetryCooldown, () {
+      if (identical(_blockedFailures[key], failure)) notifyListeners();
+    });
+    if (!queued.completer.isCompleted) queued.completer.complete(result);
+  }
+
+  bool _scheduleFailureRetry(
+    String key,
+    _QueuedTranslation queued,
+    String errorCode,
+  ) {
+    const retryableCodes = <String>{
+      'quality_validation_failed',
+      'translation_failed',
+      'provider_unavailable',
+      'missing_server_response',
+      'network_error',
+      'unavailable',
+      'deadline-exceeded',
+      'internal',
+      'unknown',
+    };
+    if (!_isActive(key, queued) ||
+        !retryableCodes.contains(errorCode) ||
+        queued.failureRetryCount >= _maxAutomaticFailureRetries) {
+      return false;
+    }
+    queued.failureRetryCount++;
+    queued.pendingRetryCount = 0;
+    final delay = errorCode == 'provider_unavailable'
+        ? const Duration(seconds: 15)
+        : const Duration(seconds: 2);
+    Timer(delay, () {
+      if (!_isActive(key, queued)) return;
+      _queue[key] = queued;
+      _scheduleFlush();
+    });
+    return true;
+  }
+
+  bool _schedulePendingRetry(
+    String key,
+    _QueuedTranslation queued,
+  ) {
+    if (!_isActive(key, queued)) return false;
+    if (queued.pendingRetryCount >= _pendingRetryDelays.length) {
+      _completeFailure(key, queued, 'pending_timeout', status: 'pending');
+      return false;
+    }
+    final delay = _pendingRetryDelays[queued.pendingRetryCount++];
+    Timer(delay, () {
+      if (!_isActive(key, queued)) return;
+      _queue[key] = queued;
+      _scheduleFlush();
+    });
+    return true;
+  }
+
+  Future<void> _persistResult(
+    String key,
+    ContentTranslationResult result,
+  ) async {
+    try {
+      final box = await _ensureBox();
+      await box?.put(key, result.toMap());
+      await _prunePersistentCacheIfNeeded(box);
     } catch (error) {
       if (kDebugMode) {
         debugPrint(
-            'On-device translation fallback failed: ${error.runtimeType}');
+          'Translation cache write failed: ${error.runtimeType}',
+        );
       }
-      return null;
-    } finally {
-      await translator.close();
     }
   }
 
   Future<void> _flushQueue() async {
     _flushTimer = null;
-    if (_queue.isEmpty) return;
+    if (_queue.isEmpty || _activeBatchCount >= _maxConcurrentBatches) return;
     final firstTarget = _queue.values.first.targetLanguage;
     final batchEntries = _queue.entries
         .where((entry) => entry.value.targetLanguage == firstTarget)
-        .take(10)
+        .take(_maxBatchSize)
         .toList(growable: false);
     for (final entry in batchEntries) {
       _queue.remove(entry.key);
     }
+    _activeBatchCount++;
+    // 큰 댓글 목록도 첫 다섯 개가 끝날 때까지 기다리지 않고, 최대 두 배치만
+    // 병렬로 처리해 지연과 순간 호출량을 함께 제한한다.
+    _scheduleFlush();
 
     try {
       final callable = _functions.httpsCallable('translateContentBatch');
@@ -893,26 +1417,37 @@ class ContentTranslationService extends ChangeNotifier {
           if (raw['id'] != null)
             raw['id'].toString(): Map<String, dynamic>.from(raw),
       };
-      final box = await _ensureBox();
       for (final entry in batchEntries) {
+        final key = entry.key;
         final queued = entry.value;
+        if (!_isActive(key, queued)) continue;
         final raw = byId[queued.request.serverId];
-        if (raw != null &&
-            raw['status'] == 'failed' &&
-            raw['allowClientFallback'] == true) {
-          final fallback = await _translateOnDevice(queued);
-          if (fallback != null) {
-            _putMemory(entry.key, fallback);
-            await box?.put(entry.key, fallback.toMap());
-            await _prunePersistentCacheIfNeeded(box);
-            queued.completer.complete(fallback);
-            continue;
+        if (raw == null) {
+          if (!_scheduleFailureRetry(
+            key,
+            queued,
+            'missing_server_response',
+          )) {
+            _completeFailure(key, queued, 'missing_server_response');
           }
+          continue;
         }
-        if (raw == null ||
-            (raw['status'] != 'completed' &&
-                raw['status'] != 'same_language')) {
-          queued.completer.complete(null);
+        final status = raw['status']?.toString() ?? 'failed';
+        if (status == 'pending') {
+          _schedulePendingRetry(key, queued);
+          continue;
+        }
+        if (status != 'completed' && status != 'same_language') {
+          final errorCode =
+              raw['errorCode']?.toString() ?? 'translation_failed';
+          if (!_scheduleFailureRetry(key, queued, errorCode)) {
+            _completeFailure(
+              key,
+              queued,
+              errorCode,
+              status: status,
+            );
+          }
           continue;
         }
         final fields = raw['translatedFields'];
@@ -929,25 +1464,29 @@ class ContentTranslationService extends ChangeNotifier {
           modelUsed: raw['modelUsed']?.toString() ?? '',
           translationVersion: _metadataInt(raw['translationVersion']),
           promptVersion: _metadataInt(raw['promptVersion']),
+          translationPolicyVersion:
+              raw['translationPolicyVersion']?.toString() ?? '',
+          glossaryVersion: _metadataInt(raw['glossaryVersion']),
+          qualityPolicyVersion: _metadataInt(raw['qualityPolicyVersion']),
+          sourceIntent: raw['sourceIntent']?.toString() ?? '',
+          contextHash: raw['contextHash']?.toString() ?? '',
           translatedAt: raw['translatedAt'] == null
               ? null
               : _metadataInt(raw['translatedAt']),
           cacheSource: raw['cacheSource']?.toString() ?? 'server',
+          errorCode: raw['errorCode']?.toString() ?? '',
         );
         if (!_isCurrentResult(
-          result,
-          sourceHash: queued.sourceHash,
-          targetLanguage: queued.targetLanguage,
-        )) {
-          queued.completer.complete(null);
+              result,
+              sourceHash: queued.sourceHash,
+              targetLanguage: queued.targetLanguage,
+            ) ||
+            !_hasCompleteFields(queued.request, result)) {
+          _completeFailure(key, queued, 'stale_or_incomplete_result');
           continue;
         }
-        _putMemory(entry.key, result);
-        await box?.put(entry.key, result.toMap());
-        await _prunePersistentCacheIfNeeded(box);
-        queued.completer.complete(result);
+        _completeSuccess(key, queued, result);
       }
-      notifyListeners();
     } catch (error) {
       if (kDebugMode) {
         if (error is FirebaseFunctionsException) {
@@ -962,14 +1501,15 @@ class ContentTranslationService extends ChangeNotifier {
         }
       }
       for (final entry in batchEntries) {
-        if (!entry.value.completer.isCompleted) {
-          entry.value.completer.complete(null);
+        final errorCode =
+            error is FirebaseFunctionsException ? error.code : 'network_error';
+        if (!_scheduleFailureRetry(entry.key, entry.value, errorCode)) {
+          _completeFailure(entry.key, entry.value, errorCode);
         }
       }
     } finally {
-      if (_queue.isNotEmpty && _flushTimer == null) {
-        _flushTimer = Timer(const Duration(milliseconds: 32), _flushQueue);
-      }
+      _activeBatchCount--;
+      _scheduleFlush();
     }
   }
 
@@ -1006,11 +1546,37 @@ class _QueuedTranslation {
     required this.request,
     required this.targetLanguage,
     required this.sourceHash,
+    required this.generation,
+    required this.scopes,
   });
 
   final ContentTranslationRequest request;
   final String targetLanguage;
   final String sourceHash;
+  final int generation;
+  final Set<String> scopes;
+  int pendingRetryCount = 0;
+  int failureRetryCount = 0;
   final Completer<ContentTranslationResult?> completer =
       Completer<ContentTranslationResult?>();
+}
+
+class _BlockedTranslationFailure {
+  const _BlockedTranslationFailure({
+    required this.result,
+    required this.manualRetryAt,
+    required this.scopes,
+    required this.requestIdentity,
+  });
+
+  final ContentTranslationResult result;
+  final DateTime manualRetryAt;
+  final Set<String> scopes;
+  final String requestIdentity;
+}
+
+enum _ScopeTranslationState {
+  translatable,
+  sameLanguage,
+  failed,
 }

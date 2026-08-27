@@ -6,16 +6,20 @@ import 'package:flutter/material.dart';
 import 'package:cached_network_image/cached_network_image.dart';
 import '../models/ad_banner.dart';
 import '../services/ad_banner_service.dart';
+import '../services/cache/app_image_cache_manager.dart';
 import '../screens/ad_showcase_screen.dart';
 import '../constants/app_constants.dart';
 import '../design/tokens.dart';
+import '../utils/logger.dart';
 
 class AdBannerWidget extends StatefulWidget {
   final String? widgetId;
+  final Stream<List<AdBanner>>? bannersStream;
 
   const AdBannerWidget({
     super.key,
     this.widgetId,
+    this.bannersStream,
   });
 
   @override
@@ -23,32 +27,79 @@ class AdBannerWidget extends StatefulWidget {
 }
 
 class _AdBannerWidgetState extends State<AdBannerWidget> {
-  final AdBannerService _adBannerService = AdBannerService();
+  AdBannerService? _adBannerService;
   Timer? _autoScrollTimer;
+  StreamSubscription<List<AdBanner>>? _bannerSubscription;
   int _currentIndex = 0;
   List<AdBanner> _banners = [];
+  bool _hasReceivedLiveBanners = false;
 
   @override
   void initState() {
     super.initState();
-    _loadBanners();
+    if (widget.bannersStream == null) _loadBanners();
+    _listenForBannerUpdates();
+  }
+
+  AdBannerService get _service => _adBannerService ??= AdBannerService();
+
+  @override
+  void didUpdateWidget(covariant AdBannerWidget oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (identical(oldWidget.bannersStream, widget.bannersStream)) return;
+    unawaited(_bannerSubscription?.cancel());
+    _bannerSubscription = null;
+    _hasReceivedLiveBanners = false;
+    if (widget.bannersStream == null) _loadBanners();
+    _listenForBannerUpdates();
   }
 
   Future<void> _loadBanners() async {
     if (!mounted) return;
 
     try {
-      final banners = await _adBannerService.getActiveBanners();
-      if (mounted && banners.isNotEmpty) {
-        setState(() {
-          _banners = banners;
-        });
-        _startAutoScroll();
-        _preloadImages();
+      final banners = await _service.getActiveBanners();
+      // Firestore의 최신 snapshot이 먼저 도착했다면 오래된 로컬 캐시로
+      // 화면을 되돌리지 않는다.
+      if (mounted && !_hasReceivedLiveBanners && banners.isNotEmpty) {
+        _applyBanners(banners);
       }
     } catch (e) {
       // 광고 배너 로드 오류 (조용히 처리)
     }
+  }
+
+  void _listenForBannerUpdates() {
+    _bannerSubscription =
+        (widget.bannersStream ?? _service.getActiveBannersStream()).listen(
+      (banners) {
+        if (!mounted) return;
+        _hasReceivedLiveBanners = true;
+        _applyBanners(banners);
+      },
+      // 네트워크/권한 오류가 나도 먼저 표시한 로컬 캐시는 유지한다.
+      onError: (_) {},
+    );
+  }
+
+  void _applyBanners(List<AdBanner> banners) {
+    final currentBannerId = _banners.isNotEmpty &&
+            _currentIndex >= 0 &&
+            _currentIndex < _banners.length
+        ? _banners[_currentIndex].id
+        : null;
+    final nextBanners = List<AdBanner>.unmodifiable(banners);
+    var nextIndex = currentBannerId == null
+        ? 0
+        : nextBanners.indexWhere((banner) => banner.id == currentBannerId);
+    if (nextIndex < 0) nextIndex = 0;
+
+    setState(() {
+      _banners = nextBanners;
+      _currentIndex = nextIndex;
+    });
+    _startAutoScroll();
+    _preloadImages();
   }
 
   // 이미지 프리로딩
@@ -58,9 +109,12 @@ class _AdBannerWidgetState extends State<AdBannerWidget> {
     for (final banner in _banners) {
       if (banner.imageUrl != null && banner.imageUrl!.isNotEmpty) {
         precacheImage(
-          CachedNetworkImageProvider(banner.imageUrl!),
+          CachedNetworkImageProvider(
+            banner.imageUrl!,
+            cacheManager: AppImageCacheManager.instance,
+          ),
           context,
-        );
+        ).catchError((_) {});
       }
     }
   }
@@ -96,6 +150,8 @@ class _AdBannerWidgetState extends State<AdBannerWidget> {
   void dispose() {
     _autoScrollTimer?.cancel();
     _autoScrollTimer = null;
+    unawaited(_bannerSubscription?.cancel());
+    _bannerSubscription = null;
     super.dispose();
   }
 
@@ -214,6 +270,7 @@ class _AdBannerWidgetState extends State<AdBannerWidget> {
                   borderRadius: BorderRadius.circular(compact ? 10 : 12),
                   child: CachedNetworkImage(
                     imageUrl: banner.imageUrl!,
+                    cacheManager: AppImageCacheManager.instance,
                     width: imageSize,
                     height: imageSize,
                     fit: BoxFit.cover,
@@ -231,6 +288,10 @@ class _AdBannerWidgetState extends State<AdBannerWidget> {
                       ),
                     ),
                     errorWidget: (context, url, error) {
+                      Logger.error(
+                        '광고 이미지 로드 실패: ${banner.id} '
+                        '(${error.runtimeType}: $error)',
+                      );
                       return _buildIconPlaceholder(imageSize);
                     },
                     memCacheWidth: 200,

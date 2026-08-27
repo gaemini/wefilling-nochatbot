@@ -60,6 +60,11 @@ class BoardScreenState extends State<BoardScreen> {
   final Map<String, int> _commentCountOverrideSources = {};
 
   static const int _maxTodayMeetups = 3;
+  // 1000px 선행 빌드는 이미지가 많은 카드 여러 개를 한 프레임에 생성해
+  // 디코딩과 자동 번역을 동시에 시작했다. 약 반 화면만 준비해 빠른 스크롤의
+  // 여유는 유지하면서 화면 밖 작업이 현재 프레임을 방해하지 않게 한다.
+  static const ScrollCacheExtent _postFeedCacheExtent =
+      ScrollCacheExtent.pixels(480);
 
   // 일반 게시물은 그림자 대신 콘텐츠 여백과 divider로 구분한다.
   static const EdgeInsets _boardPostCardMargin = EdgeInsets.zero;
@@ -1029,7 +1034,7 @@ class BoardScreenState extends State<BoardScreen> {
             key: const PageStorageKey('board_today_list'),
             controller: _todayScrollController,
             physics: const AlwaysScrollableScrollPhysics(),
-            scrollCacheExtent: const ScrollCacheExtent.pixels(1000),
+            scrollCacheExtent: _postFeedCacheExtent,
             padding: const EdgeInsets.only(top: 4, bottom: 90),
             itemCount: 1 + // AdBanner
                 1 + // meetups header
@@ -1441,7 +1446,7 @@ class BoardScreenState extends State<BoardScreen> {
             key: const PageStorageKey('board_today_list_unified'),
             controller: _todayScrollController,
             physics: const AlwaysScrollableScrollPhysics(),
-            scrollCacheExtent: const ScrollCacheExtent.pixels(1000),
+            scrollCacheExtent: _postFeedCacheExtent,
             padding: const EdgeInsets.only(top: 4, bottom: 90),
             itemCount: itemCount,
             itemBuilder: (context, index) {
@@ -1765,7 +1770,7 @@ class BoardScreenState extends State<BoardScreen> {
         key: const PageStorageKey('board_all_list'),
         controller: _allScrollController,
         physics: const AlwaysScrollableScrollPhysics(),
-        scrollCacheExtent: const ScrollCacheExtent.pixels(1000),
+        scrollCacheExtent: _postFeedCacheExtent,
         padding: const EdgeInsets.symmetric(vertical: 4),
         itemCount: _calculateAllItemCount(grouped),
         itemBuilder: (context, index) {

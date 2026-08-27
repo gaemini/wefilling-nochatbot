@@ -17,6 +17,7 @@ import 'package:firebase_app_check/firebase_app_check.dart';
 import 'package:firebase_messaging/firebase_messaging.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_crashlytics/firebase_crashlytics.dart';
+import 'package:cached_network_image/cached_network_image.dart';
 import 'package:image_picker_android/image_picker_android.dart';
 import 'package:image_picker_platform_interface/image_picker_platform_interface.dart';
 import 'package:provider/provider.dart';
@@ -33,6 +34,8 @@ import 'services/fcm_service.dart';
 import 'services/language_service.dart';
 import 'services/semester_todo_service.dart';
 import 'services/cache/cache_manager.dart';
+import 'services/cache/app_image_cache_manager.dart';
+import 'services/content_translation_service.dart';
 import 'l10n/app_localizations.dart';
 import 'services/navigation_service.dart';
 import 'screens/admin_migration_screen.dart';
@@ -187,6 +190,11 @@ void main() {
       // 6. 캐시 시스템 초기화
       try {
         await CacheManager.initialize();
+        // 명시적으로 cacheManager를 전달하지 않은 썸네일/상세 이미지도
+        // 포스트 피드와 같은 디스크 저장소를 사용해 화면 이동 시 재다운로드와
+        // 중복 파일 보관이 생기지 않게 한다.
+        CachedNetworkImageProvider.defaultCacheManager =
+            AppImageCacheManager.instance;
         if (kDebugMode) {
           debugPrint('💾 캐시 시스템 초기화 완료');
         }
@@ -211,6 +219,10 @@ void main() {
           if (kDebugMode) {
             debugPrint('🗃️ Firestore 설정 시작');
           }
+          // 상세 SDK 로깅은 데이터 흐름과 무관하며, 네트워크가 불안정할 때
+          // WatchStream 재연결 스택을 대량으로 출력할 수 있다. 경고/오류와
+          // Firestore 자체 재시도 동작은 그대로 두고 상세 로깅만 끈다.
+          await FirebaseFirestore.setLoggingEnabled(false);
           final firestore = FirebaseFirestore.instance;
           firestore.settings = const Settings(
             persistenceEnabled: true,
@@ -384,6 +396,10 @@ class _MeetupAppState extends State<MeetupApp> {
         _locale = Locale(languageCode);
       });
     }
+    unawaited(
+      ContentTranslationService.instance
+          .synchronizeAutomaticLanguageWithUi(languageCode),
+    );
     // 푸시 i18n을 위해 서버에도 동기화
     unawaited(_syncLanguageToFirestore(languageCode));
     if (kDebugMode) {
@@ -398,6 +414,10 @@ class _MeetupAppState extends State<MeetupApp> {
         _locale = Locale(languageCode);
       });
       unawaited(_saveLanguageAndRefreshNotifications(languageCode));
+      unawaited(
+        ContentTranslationService.instance
+            .synchronizeAutomaticLanguageWithUi(languageCode),
+      );
       // 푸시 i18n을 위해 서버에도 동기화
       unawaited(_syncLanguageToFirestore(languageCode));
       if (kDebugMode) {

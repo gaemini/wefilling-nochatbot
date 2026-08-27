@@ -25,7 +25,7 @@ void main() {
     expect(tester.takeException(), isNull);
   });
 
-  testWidgets('ALL 화면은 최신순 포스트를 스크롤할 때 10개씩 요청한다', (tester) async {
+  testWidgets('ALL 화면은 최신순 포스트를 스크롤할 때 5개씩 요청한다', (tester) async {
     await tester.binding.setSurfaceSize(const Size(390, 600));
     addTearDown(() => tester.binding.setSurfaceSize(null));
 
@@ -45,7 +45,7 @@ void main() {
 
     Future<AllPostsPage> loadPage({
       AllPostsCursor? startAfter,
-      int pageSize = 10,
+      int pageSize = 5,
     }) async {
       requestedPageSizes.add(pageSize);
       final start = startAfter == null
@@ -82,19 +82,28 @@ void main() {
     );
     await tester.pumpAndSettle();
 
-    expect(requestedPageSizes, <int>[10]);
+    expect(requestedPageSizes, <int>[5]);
 
     await tester.drag(find.byType(CustomScrollView), const Offset(0, -1000));
     await tester.pumpAndSettle();
-    expect(requestedPageSizes, <int>[10, 10]);
+    expect(requestedPageSizes, everyElement(5));
+    expect(requestedPageSizes.length, greaterThan(1));
 
     await tester.drag(find.byType(CustomScrollView), const Offset(0, -1600));
     await tester.pumpAndSettle();
-    expect(requestedPageSizes, <int>[10, 10, 10]);
+    expect(requestedPageSizes, everyElement(5));
+
+    final completedRequestCount = requestedPageSizes.length;
+    await tester.drag(find.byType(CustomScrollView), const Offset(0, -3000));
+    await tester.pumpAndSettle();
+    expect(requestedPageSizes, everyElement(5));
+    expect(
+        requestedPageSizes.length, greaterThanOrEqualTo(completedRequestCount));
+    expect(requestedPageSizes.length, 5);
 
     await tester.drag(find.byType(CustomScrollView), const Offset(0, -3000));
     await tester.pumpAndSettle();
-    expect(requestedPageSizes, <int>[10, 10, 10]);
+    expect(requestedPageSizes.length, 5);
     expect(find.text('모든 포스트를 확인했어요.'), findsOneWidget);
   });
 }

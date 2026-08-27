@@ -53,6 +53,12 @@ class StorageService {
         compressedFile,
         SettableMetadata(
           contentType: 'image/jpeg',
+          // 게시글 이미지는 UUID 경로에 한 번 업로드된 뒤 덮어쓰지 않는다.
+          // Firebase 기본 7일 유효기간에 의존하면 파일이 디스크에 있어도
+          // 주기적으로 재검증되므로 immutable 캐시 정책을 명시한다.
+          // 공개 범위가 제한된 포스트도 있으므로 shared proxy/CDN 캐시는
+          // 허용하지 않고 사용자 기기의 private cache만 장기 재사용한다.
+          cacheControl: 'private,max-age=31536000,immutable',
           customMetadata: {
             'fileName': fileName,
             'uploaded': DateTime.now().toString(),

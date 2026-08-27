@@ -30,7 +30,6 @@ import '../ui/widgets/fullscreen_image_viewer.dart';
 import '../ui/widgets/snack_chat_message_extras.dart';
 import '../ui/widgets/snack_chat_chrome.dart';
 import '../ui/widgets/user_avatar.dart';
-import '../ui/widgets/translatable_content.dart';
 import '../services/content_translation_service.dart';
 import '../ui/dialogs/block_dialog.dart';
 import '../ui/dialogs/report_dialog.dart';
@@ -94,6 +93,18 @@ class _ScrollAnchor {
   final double globalDy;
 }
 
+class _SnackTranslationOutcome {
+  const _SnackTranslationOutcome({
+    required this.message,
+    required this.requestKey,
+    required this.result,
+  });
+
+  final SnackChatMessage message;
+  final String requestKey;
+  final ContentTranslationResult? result;
+}
+
 class _SnackChatScreenState extends State<SnackChatScreen>
     with WidgetsBindingObserver {
   static const Color _chatBackground = SnackChatBackdrop.backgroundColor;
@@ -105,6 +116,10 @@ class _SnackChatScreenState extends State<SnackChatScreen>
   static const Color _composerAction = Color(0xFF4B4E55);
   static const Color _composerActionDisabled = Color(0xFF36383D);
   static const Duration _peopleLookupDeadline = Duration(seconds: 8);
+  static const int _translationPrimaryBatchSize = 5;
+  static const int _translationOverflowBatchSize = 2;
+  static const int _maxConcurrentTranslationBatches = 2;
+  static const int _maxTranslationRequestsInFlight = 7;
 
   final SnackChatService _snackChatService = SnackChatService();
   final StorageService _storageService = StorageService();
@@ -114,6 +129,8 @@ class _SnackChatScreenState extends State<SnackChatScreen>
       SnackChatDocumentImportService.instance;
   final SnackChatFileTransferService _fileTransfer =
       SnackChatFileTransferService.instance;
+  final ContentTranslationService _translationService =
+      ContentTranslationService.instance;
   final TextEditingController _messageController = TextEditingController();
   final FocusNode _messageFocusNode = FocusNode();
   final ScrollController _scrollController = ScrollController();
@@ -139,6 +156,8 @@ class _SnackChatScreenState extends State<SnackChatScreen>
   final Map<String, Future<String>> _senderNameFutures = {};
   final Set<String> _senderProfileRefreshStarted = <String>{};
   final Map<String, GlobalKey> _messageKeys = {};
+  final GlobalKey _messageViewportKey =
+      GlobalKey(debugLabel: 'snack-chat-message-viewport');
   String? get _uid => FirebaseAuth.instance.currentUser?.uid;
   late Stream<SnackChat?> _roomStream;
   Future<void>? _membershipReady;
@@ -206,15 +225,59 @@ class _SnackChatScreenState extends State<SnackChatScreen>
   Timer? _entryRetryTimer;
   int _entryRetryAttempt = 0;
 
+  // Only the messages currently laid out in this room are translated. Results
+  // live here for an immediate rebuild while the shared service remains the
+  // source of truth for memory/Hive/server cache reuse.
+  final Map<String, ContentTranslationResult> _messageTranslations =
+      <String, ContentTranslationResult>{};
+  final Map<String, String> _translationSourceSignatures = <String, String>{};
+  final Set<String> _translationRequestsInFlight = <String>{};
+  final Map<String, int> _translationFailures = <String, int>{};
+  final Map<String, DateTime> _translationRetryAfter = <String, DateTime>{};
+  final Map<String, _SnackTranslationOutcome> _deferredTranslationOutcomes =
+      <String, _SnackTranslationOutcome>{};
+  Timer? _translationScanDebounce;
+  Timer? _translationRetryTimer;
+  bool _translationScanScheduled = false;
+  int _translationBatchesInFlight = 0;
+  bool _translationModeReady = false;
+  bool _manualTranslationRetryPending = false;
+  bool _isUserScrolling = false;
+  int _userScrollRevision = 0;
+  bool _translationRestoreScheduled = false;
+  int _translationRestoreGeneration = 0;
+  _ScrollAnchor? _pendingTranslationAnchor;
+  bool _pendingTranslationKeepAtLatest = false;
+  int _translationStateGeneration = 0;
+  late int _translationLanguageRevision;
+  late bool _translationShowsOriginal;
+  late bool _translationProviderRetryExhausted;
+  late bool _translationProviderRetryAvailable;
+
+  String get _translationScope => 'snack-room:${widget.snackChatId}';
+  bool get _translationBatchRunning => _translationBatchesInFlight > 0;
+  bool get _hasLocalTranslationFailures =>
+      _translationFailures.values.any((count) => count >= 2);
+  bool get _hasPendingAutomaticTranslationRetry =>
+      _translationRetryTimer != null;
+  bool get _canStartTranslationBatch =>
+      !_isUserScrolling &&
+      _translationBatchesInFlight < _maxConcurrentTranslationBatches &&
+      _translationRequestsInFlight.length < _maxTranslationRequestsInFlight;
+
   @override
   void initState() {
     super.initState();
     WidgetsBinding.instance.addObserver(this);
-    unawaited(
-      ContentTranslationService.instance.loadSnackRoomMode(
-        widget.snackChatId,
-      ),
-    );
+    _translationLanguageRevision = _translationService.languageRevision;
+    _translationShowsOriginal =
+        _translationService.showsOriginal(_translationScope);
+    _translationProviderRetryExhausted =
+        _translationService.hasExhaustedRetryForScope(_translationScope);
+    _translationProviderRetryAvailable =
+        _translationService.canRetryScope(_translationScope);
+    _translationService.addListener(_handleTranslationServiceChange);
+    unawaited(_prepareTranslationMode());
     _appLifecycleState =
         WidgetsBinding.instance.lifecycleState ?? AppLifecycleState.detached;
     if (_appLifecycleState == AppLifecycleState.resumed) {
@@ -235,15 +298,684 @@ class _SnackChatScreenState extends State<SnackChatScreen>
     unawaited(_restoreFileTransfers());
   }
 
+  void _resetTranslationStateForRoom() {
+    _translationStateGeneration++;
+    _translationScanDebounce?.cancel();
+    _translationScanDebounce = null;
+    _translationRetryTimer?.cancel();
+    _translationRetryTimer = null;
+    _translationScanScheduled = false;
+    _translationBatchesInFlight = 0;
+    _translationModeReady = false;
+    _manualTranslationRetryPending = false;
+    _isUserScrolling = false;
+    _userScrollRevision++;
+    _cancelPendingTranslationRestore();
+    _messageTranslations.clear();
+    _translationSourceSignatures.clear();
+    _translationRequestsInFlight.clear();
+    _deferredTranslationOutcomes.clear();
+    _translationFailures.clear();
+    _translationRetryAfter.clear();
+    _translationLanguageRevision = _translationService.languageRevision;
+    _translationShowsOriginal =
+        _translationService.showsOriginal(_translationScope);
+    _translationProviderRetryExhausted =
+        _translationService.hasExhaustedRetryForScope(_translationScope);
+    _translationProviderRetryAvailable =
+        _translationService.canRetryScope(_translationScope);
+  }
+
+  Future<void> _prepareTranslationMode() async {
+    final roomId = widget.snackChatId;
+    final generation = _translationStateGeneration;
+    await _translationService.loadSnackRoomMode(roomId);
+    if (!mounted ||
+        generation != _translationStateGeneration ||
+        roomId != widget.snackChatId) {
+      return;
+    }
+    setState(() {
+      _translationModeReady = true;
+      _translationShowsOriginal =
+          _translationService.showsOriginal(_translationScope);
+    });
+    if (!_translationShowsOriginal) _scheduleVisibleTranslations();
+  }
+
+  void _handleTranslationServiceChange() {
+    if (!mounted) return;
+    final revision = _translationService.languageRevision;
+    final showingOriginal =
+        _translationService.showsOriginal(_translationScope);
+    final languageChanged = revision != _translationLanguageRevision;
+    final modeChanged = showingOriginal != _translationShowsOriginal;
+    final retryExhausted =
+        _translationService.hasExhaustedRetryForScope(_translationScope);
+    final retryAvailable = _translationService.canRetryScope(_translationScope);
+    final retryPresentationChanged =
+        retryExhausted != _translationProviderRetryExhausted ||
+            retryAvailable != _translationProviderRetryAvailable;
+    if (!languageChanged && !modeChanged) {
+      // 다른 화면과 메시지의 캐시 적중도 서비스 알림을 발생시킨다. 재시도
+      // 표시가 실제로 달라질 때만 전체 채팅 화면을 다시 빌드한다.
+      if (!retryPresentationChanged) return;
+      setState(() {
+        _translationProviderRetryExhausted = retryExhausted;
+        _translationProviderRetryAvailable = retryAvailable;
+      });
+      return;
+    }
+
+    _cancelPendingTranslationRestore();
+    final canRestoreScroll = !_isUserScrolling;
+    final keepAtLatest = canRestoreScroll && _isNearLatest;
+    final anchor =
+        canRestoreScroll && !keepAtLatest ? _captureScrollAnchor() : null;
+    setState(() {
+      _translationLanguageRevision = revision;
+      _translationShowsOriginal = showingOriginal;
+      _translationProviderRetryExhausted = retryExhausted;
+      _translationProviderRetryAvailable = retryAvailable;
+      if (languageChanged) {
+        _translationStateGeneration++;
+        _translationBatchesInFlight = 0;
+        _translationModeReady = false;
+        _manualTranslationRetryPending = false;
+        _messageTranslations.clear();
+        _translationSourceSignatures.clear();
+        _translationRequestsInFlight.clear();
+        _deferredTranslationOutcomes.clear();
+        _translationFailures.clear();
+        _translationRetryAfter.clear();
+        _translationRetryTimer?.cancel();
+        _translationRetryTimer = null;
+      }
+    });
+    if (canRestoreScroll) {
+      _restoreAfterTranslationChange(
+        anchor,
+        keepAtLatest: keepAtLatest,
+      );
+    }
+    if (languageChanged) {
+      unawaited(_prepareTranslationMode());
+    } else if (_translationModeReady && !showingOriginal) {
+      _scheduleVisibleTranslations();
+    }
+  }
+
+  bool _canTranslateMessage(SnackChatMessage message) {
+    if (message.isDeleted ||
+        message.isPending ||
+        message.hasFailed ||
+        message.type == SnackChatMessageType.system ||
+        message.type == SnackChatMessageType.file ||
+        message.id.isEmpty ||
+        _blockedUserIds.contains(message.senderId)) {
+      return false;
+    }
+    return _translationSourceFields(message).values.any(
+          (value) => value.trim().isNotEmpty,
+        );
+  }
+
+  Map<String, String> _translationSourceFields(SnackChatMessage message) {
+    final poll =
+        message.type == SnackChatMessageType.poll ? message.poll : null;
+    if (poll == null) {
+      return message.text.trim().isEmpty
+          ? const <String, String>{}
+          : <String, String>{'text': message.text};
+    }
+
+    final fields = <String, String>{};
+    if (poll.question.trim().isNotEmpty) fields['text'] = poll.question;
+    for (var index = 0; index < poll.options.length; index++) {
+      final optionText = poll.options[index].text;
+      if (optionText.trim().isNotEmpty) {
+        fields['pollOption$index'] = optionText;
+      }
+    }
+    return fields;
+  }
+
+  String _translationSourceSignature(SnackChatMessage message) {
+    final fields = _translationSourceFields(message);
+    final keys = fields.keys.toList(growable: false)..sort();
+    return keys.map((key) {
+      final value = fields[key]!;
+      return '${key.length}:$key${value.length}:$value';
+    }).join('|');
+  }
+
+  String _translationRequestKey(SnackChatMessage message) =>
+      '${message.id}\u0000${_translationSourceSignature(message)}';
+
+  ContentTranslationRequest _translationRequestForMessage(
+    SnackChatMessage message, {
+    String? roomId,
+  }) =>
+      ContentTranslationRequest(
+        contentType: 'snack_chat_message',
+        contentId: message.id,
+        parentId: roomId ?? widget.snackChatId,
+        sourceFields: _translationSourceFields(message),
+      );
+
+  bool _isCompleteTranslationForMessage(
+    SnackChatMessage message,
+    ContentTranslationResult? result,
+  ) {
+    if (result?.isReady != true) return false;
+    final sourceFields = _translationSourceFields(message);
+    if (sourceFields.isEmpty) return false;
+    for (final entry in sourceFields.entries) {
+      if (entry.value.trim().isNotEmpty &&
+          (result!.translatedFields[entry.key] ?? '').trim().isEmpty) {
+        return false;
+      }
+    }
+    return true;
+  }
+
+  ContentTranslationResult? _currentTranslationForMessage(
+    SnackChatMessage message,
+  ) {
+    final signature = _translationSourceSignature(message);
+    if (_translationSourceSignatures[message.id] == signature) {
+      final localResult = _messageTranslations[message.id];
+      if (_isCompleteTranslationForMessage(message, localResult)) {
+        return localResult;
+      }
+    }
+
+    // 같은 앱 세션에서 이미 조회한 결과는 방 재진입 시 첫 프레임부터 바로
+    // 사용한다. 화면별 Map을 다시 채우기 위한 비동기 요청을 기다리지 않는다.
+    final sharedResult = _translationService.latestResultFor(
+      _translationRequestForMessage(message),
+    );
+    return _isCompleteTranslationForMessage(message, sharedResult)
+        ? sharedResult
+        : null;
+  }
+
+  bool _hasCurrentTranslation(SnackChatMessage message) {
+    return _currentTranslationForMessage(message) != null;
+  }
+
+  void _scheduleVisibleTranslations({
+    Duration delay = Duration.zero,
+  }) {
+    if (!mounted ||
+        !_translationModeReady ||
+        _translationShowsOriginal ||
+        !_canStartTranslationBatch ||
+        _appLifecycleState != AppLifecycleState.resumed ||
+        _isLeavingRoom ||
+        _roomAccessTerminated) {
+      return;
+    }
+    if (delay > Duration.zero) {
+      _translationScanDebounce?.cancel();
+      _translationScanDebounce = Timer(delay, () {
+        _translationScanDebounce = null;
+        _scheduleTranslationScanAfterLayout();
+      });
+      return;
+    }
+    _scheduleTranslationScanAfterLayout();
+  }
+
+  void _scheduleTranslationScanAfterLayout() {
+    if (_translationScanScheduled) return;
+    _translationScanScheduled = true;
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      _translationScanScheduled = false;
+      if (!mounted ||
+          !_translationModeReady ||
+          _translationShowsOriginal ||
+          !_canStartTranslationBatch ||
+          _appLifecycleState != AppLifecycleState.resumed ||
+          _isLeavingRoom ||
+          _roomAccessTerminated) {
+        return;
+      }
+      unawaited(_translateNextVisibleBatch());
+    });
+  }
+
+  void _debounceVisibleTranslationScan() {
+    if (!_translationModeReady ||
+        _translationShowsOriginal ||
+        _isUserScrolling) {
+      return;
+    }
+    _translationScanDebounce?.cancel();
+    _translationScanDebounce = Timer(const Duration(milliseconds: 110), () {
+      _translationScanDebounce = null;
+      _scheduleTranslationScanAfterLayout();
+    });
+  }
+
+  List<SnackChatMessage> _visibleMessagesNeedingTranslation({
+    required int limit,
+  }) {
+    final viewportRenderObject =
+        _messageViewportKey.currentContext?.findRenderObject();
+    final viewportBox =
+        viewportRenderObject is RenderBox && viewportRenderObject.attached
+            ? viewportRenderObject
+            : null;
+    final viewportTop = viewportBox?.localToGlobal(Offset.zero).dy ?? 0;
+    final viewportBottom = viewportBox == null
+        ? MediaQuery.sizeOf(context).height
+        : viewportTop + viewportBox.size.height;
+    final now = DateTime.now();
+    final visible = <MapEntry<double, SnackChatMessage>>[];
+
+    for (final message in _messages) {
+      if (!_canTranslateMessage(message) || _hasCurrentTranslation(message)) {
+        continue;
+      }
+      final requestKey = _translationRequestKey(message);
+      if (_translationRequestsInFlight.contains(requestKey) ||
+          (_translationFailures[requestKey] ?? 0) >= 2) {
+        continue;
+      }
+      final retryAfter = _translationRetryAfter[requestKey];
+      if (retryAfter != null && retryAfter.isAfter(now)) continue;
+
+      final renderObject =
+          _messageKeys[message.id]?.currentContext?.findRenderObject();
+      if (renderObject is! RenderBox || !renderObject.attached) continue;
+      final top = renderObject.localToGlobal(Offset.zero).dy;
+      final bottom = top + renderObject.size.height;
+      if (bottom <= viewportTop || top >= viewportBottom) continue;
+      visible.add(MapEntry(top, message));
+    }
+
+    visible.sort(
+      (a, b) => _isNearLatest ? b.key.compareTo(a.key) : a.key.compareTo(b.key),
+    );
+    return visible
+        .take(limit)
+        .map((entry) => entry.value)
+        .toList(growable: false);
+  }
+
+  int get _nextAdaptiveTranslationBatchSize {
+    if (!_canStartTranslationBatch) return 0;
+    final remainingCapacity =
+        _maxTranslationRequestsInFlight - _translationRequestsInFlight.length;
+    if (remainingCapacity <= 0) return 0;
+    final preferred = _translationBatchesInFlight == 0
+        ? _translationPrimaryBatchSize
+        : _translationOverflowBatchSize;
+    return preferred.clamp(1, remainingCapacity).toInt();
+  }
+
+  Future<void> _translateNextVisibleBatch() async {
+    if (!_canStartTranslationBatch ||
+        !_translationModeReady ||
+        _translationShowsOriginal ||
+        _appLifecycleState != AppLifecycleState.resumed) {
+      return;
+    }
+    final batchSize = _nextAdaptiveTranslationBatchSize;
+    if (batchSize <= 0) return;
+    final candidates = _visibleMessagesNeedingTranslation(limit: batchSize);
+    if (candidates.isEmpty) return;
+
+    final manualRetry = _manualTranslationRetryPending;
+    _manualTranslationRetryPending = false;
+    await _translateMessageBatch(candidates, manualRetry: manualRetry);
+  }
+
+  Future<void> _translateMessageBatch(
+    List<SnackChatMessage> candidates, {
+    bool manualRetry = false,
+  }) async {
+    if (candidates.isEmpty ||
+        !_canStartTranslationBatch ||
+        !_translationModeReady ||
+        _translationShowsOriginal ||
+        _appLifecycleState != AppLifecycleState.resumed) {
+      return;
+    }
+
+    final availableCapacity =
+        _maxTranslationRequestsInFlight - _translationRequestsInFlight.length;
+    if (availableCapacity <= 0) return;
+    final boundedCandidates = candidates
+        .where(
+          (message) => !_translationRequestsInFlight.contains(
+            _translationRequestKey(message),
+          ),
+        )
+        .take(availableCapacity)
+        .toList(growable: false);
+    if (boundedCandidates.isEmpty) return;
+
+    final generation = _translationStateGeneration;
+    final languageRevision = _translationLanguageRevision;
+    final roomId = widget.snackChatId;
+    final uiLanguageCode = Localizations.localeOf(context).languageCode;
+    for (final message in boundedCandidates) {
+      _translationRequestsInFlight.add(_translationRequestKey(message));
+    }
+    setState(() => _translationBatchesInFlight++);
+
+    final readyOutcomes = <String, _SnackTranslationOutcome>{};
+    Timer? earlyCommitTimer;
+
+    void commitReadyOutcomesEarly() {
+      earlyCommitTimer = null;
+      if (!mounted ||
+          generation != _translationStateGeneration ||
+          languageRevision != _translationLanguageRevision ||
+          roomId != widget.snackChatId ||
+          readyOutcomes.isEmpty) {
+        return;
+      }
+      final outcomes = readyOutcomes.values.toList(growable: false);
+      readyOutcomes.clear();
+      if (_isUserScrolling || _appLifecycleState != AppLifecycleState.resumed) {
+        setState(() {
+          for (final outcome in outcomes) {
+            _translationRequestsInFlight.remove(outcome.requestKey);
+            _deferredTranslationOutcomes[outcome.requestKey] = outcome;
+          }
+        });
+        return;
+      }
+      // Hive/메모리 캐시 적중 결과는 느린 네트워크 miss를 기다리지 않고 한
+      // 프레임 단위로 묶어 먼저 표시한다. 네트워크 결과는 기존처럼 배치로
+      // 도착하므로 말풍선 높이 변화도 과도하게 잘게 나뉘지 않는다.
+      _commitTranslationOutcomes(
+        outcomes,
+        completesBatch: false,
+        scheduleNextBatch: false,
+      );
+    }
+
+    final outcomeFutures = boundedCandidates.map((message) {
+      final future = _loadVisibleMessageTranslation(
+        message,
+        roomId: roomId,
+        uiLanguageCode: uiLanguageCode,
+        manualRetry: manualRetry,
+      );
+      unawaited(future.then((outcome) {
+        if (!mounted || generation != _translationStateGeneration) return;
+        readyOutcomes[outcome.requestKey] = outcome;
+        earlyCommitTimer ??= Timer(
+          const Duration(milliseconds: 24),
+          commitReadyOutcomesEarly,
+        );
+      }));
+      return future;
+    }).toList(growable: false);
+
+    await Future.wait<_SnackTranslationOutcome>(outcomeFutures);
+    earlyCommitTimer?.cancel();
+    earlyCommitTimer = null;
+    if (!mounted ||
+        generation != _translationStateGeneration ||
+        languageRevision != _translationLanguageRevision ||
+        roomId != widget.snackChatId) {
+      return;
+    }
+
+    final remainingOutcomes = readyOutcomes.values.toList(growable: false);
+    readyOutcomes.clear();
+    if (_isUserScrolling || _appLifecycleState != AppLifecycleState.resumed) {
+      // Do not change bubble heights during a drag/fling. Cache completed
+      // outcomes and publish them together after scrolling becomes idle.
+      setState(() {
+        for (final outcome in remainingOutcomes) {
+          _translationRequestsInFlight.remove(outcome.requestKey);
+          _deferredTranslationOutcomes[outcome.requestKey] = outcome;
+        }
+        if (_translationBatchesInFlight > 0) _translationBatchesInFlight--;
+      });
+      return;
+    }
+
+    if (remainingOutcomes.isEmpty) {
+      _finishTranslationBatch();
+    } else {
+      _commitTranslationOutcomes(remainingOutcomes, completesBatch: true);
+    }
+  }
+
+  void _commitTranslationOutcomes(
+    List<_SnackTranslationOutcome> outcomes, {
+    required bool completesBatch,
+    bool scheduleNextBatch = true,
+  }) {
+    if (!mounted || outcomes.isEmpty) return;
+
+    // Capture exactly once immediately before the batch changes layout.
+    // Concurrent completions share the post-frame restore below.
+    final canRestoreScroll = !_isUserScrolling && !_translationShowsOriginal;
+    final keepAtLatest = canRestoreScroll && _isNearLatest;
+    final anchor =
+        canRestoreScroll && !keepAtLatest ? _captureScrollAnchor() : null;
+    var hasRetryableFailure = false;
+    final successfulResults = <ContentTranslationResult>[];
+    setState(() {
+      for (final outcome in outcomes) {
+        final result = outcome.result;
+        _translationRequestsInFlight.remove(outcome.requestKey);
+        if (result != null &&
+            _isCompleteTranslationForMessage(outcome.message, result)) {
+          _messageTranslations[outcome.message.id] = result;
+          _translationSourceSignatures[outcome.message.id] =
+              _translationSourceSignature(outcome.message);
+          _translationFailures.remove(outcome.requestKey);
+          _translationRetryAfter.remove(outcome.requestKey);
+          if (!result.isSameLanguage) successfulResults.add(result);
+        } else {
+          final failureCount = result?.automaticRetryExhausted == true
+              ? 2
+              : (_translationFailures[outcome.requestKey] ?? 0) + 1;
+          _translationFailures[outcome.requestKey] = failureCount;
+          if (failureCount < 2) {
+            hasRetryableFailure = true;
+            _translationRetryAfter[outcome.requestKey] =
+                DateTime.now().add(const Duration(seconds: 2));
+          } else {
+            _translationRetryAfter.remove(outcome.requestKey);
+          }
+        }
+      }
+      if (completesBatch && _translationBatchesInFlight > 0) {
+        _translationBatchesInFlight--;
+      }
+    });
+
+    if (canRestoreScroll) {
+      _restoreAfterTranslationChange(
+        anchor,
+        keepAtLatest: keepAtLatest,
+      );
+    }
+    for (final result in successfulResults) {
+      _translationService.registerTranslatableScope(
+        _translationScope,
+        sourceLanguage: result.sourceLanguage,
+      );
+    }
+    if (hasRetryableFailure) _scheduleTranslationRetry();
+    if (scheduleNextBatch && !_translationShowsOriginal) {
+      _scheduleVisibleTranslations();
+    }
+  }
+
+  void _finishTranslationBatch() {
+    if (!mounted) return;
+    setState(() {
+      if (_translationBatchesInFlight > 0) _translationBatchesInFlight--;
+    });
+    if (!_translationShowsOriginal) _scheduleVisibleTranslations();
+  }
+
+  void _commitDeferredTranslationOutcomes() {
+    if (!mounted || _isUserScrolling || _deferredTranslationOutcomes.isEmpty) {
+      return;
+    }
+    final outcomes = _deferredTranslationOutcomes.values.toList(
+      growable: false,
+    );
+    _deferredTranslationOutcomes.clear();
+    _commitTranslationOutcomes(outcomes, completesBatch: false);
+  }
+
+  void _translateNewLiveMessages(Iterable<SnackChatMessage> messages) {
+    if (!_translationModeReady ||
+        _translationShowsOriginal ||
+        !_canStartTranslationBatch ||
+        _appLifecycleState != AppLifecycleState.resumed) {
+      return;
+    }
+    final batchSize = _nextAdaptiveTranslationBatchSize;
+    if (batchSize <= 0) return;
+    final candidates = <SnackChatMessage>[];
+    for (final message in messages) {
+      if (!_canTranslateMessage(message) || _hasCurrentTranslation(message)) {
+        continue;
+      }
+      final requestKey = _translationRequestKey(message);
+      if (_translationRequestsInFlight.contains(requestKey) ||
+          (_translationFailures[requestKey] ?? 0) >= 2) {
+        continue;
+      }
+      candidates.add(message);
+      if (candidates.length == batchSize) break;
+    }
+    if (candidates.isNotEmpty) {
+      unawaited(_translateMessageBatch(candidates));
+    }
+  }
+
+  Future<_SnackTranslationOutcome> _loadVisibleMessageTranslation(
+    SnackChatMessage message, {
+    required String roomId,
+    required String uiLanguageCode,
+    required bool manualRetry,
+  }) async {
+    final requestKey = _translationRequestKey(message);
+    ContentTranslationResult? result;
+    try {
+      result = await _translationService.request(
+        _translationRequestForMessage(message, roomId: roomId),
+        uiLanguageCode: uiLanguageCode,
+        scope: _translationScope,
+        manualRetry: manualRetry,
+      );
+    } catch (_) {
+      result = null;
+    }
+    return _SnackTranslationOutcome(
+      message: message,
+      requestKey: requestKey,
+      result: result,
+    );
+  }
+
+  void _scheduleTranslationRetry() {
+    if (_translationRetryTimer != null || _translationRetryAfter.isEmpty) {
+      return;
+    }
+    final now = DateTime.now();
+    final nextRetry = _translationRetryAfter.values.reduce(
+      (a, b) => a.isBefore(b) ? a : b,
+    );
+    final delay =
+        nextRetry.isAfter(now) ? nextRetry.difference(now) : Duration.zero;
+    _translationRetryTimer = Timer(delay, () {
+      _translationRetryTimer = null;
+      if (mounted && !_translationShowsOriginal) {
+        _scheduleVisibleTranslations();
+      }
+    });
+  }
+
+  void _restoreAfterTranslationChange(
+    _ScrollAnchor? anchor, {
+    required bool keepAtLatest,
+  }) {
+    if (_isUserScrolling || (!keepAtLatest && anchor == null)) return;
+    if (keepAtLatest) {
+      _pendingTranslationKeepAtLatest = true;
+      _pendingTranslationAnchor = null;
+    } else if (!_pendingTranslationKeepAtLatest) {
+      _pendingTranslationAnchor ??= anchor;
+    }
+    if (_translationRestoreScheduled) return;
+    _translationRestoreScheduled = true;
+    final generation = _translationRestoreGeneration;
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!mounted ||
+          generation != _translationRestoreGeneration ||
+          _isUserScrolling) {
+        return;
+      }
+      final restoreLatest = _pendingTranslationKeepAtLatest;
+      final restoreAnchor = _pendingTranslationAnchor;
+      _translationRestoreScheduled = false;
+      _pendingTranslationKeepAtLatest = false;
+      _pendingTranslationAnchor = null;
+      if (restoreLatest) {
+        if (_isNearLatest) _scrollToLatest(animated: false);
+      } else {
+        _applyScrollAnchorNow(restoreAnchor);
+      }
+    });
+  }
+
+  void _cancelPendingTranslationRestore() {
+    _translationRestoreGeneration++;
+    _translationRestoreScheduled = false;
+    _pendingTranslationKeepAtLatest = false;
+    _pendingTranslationAnchor = null;
+  }
+
+  Future<void> _toggleSnackTranslation() async {
+    if (!_translationModeReady) return;
+    final providerRetryExhausted =
+        _translationService.hasExhaustedRetryForScope(_translationScope);
+    if (providerRetryExhausted || _hasLocalTranslationFailures) {
+      if (providerRetryExhausted &&
+          !_translationService.canRetryScope(_translationScope)) {
+        return;
+      }
+      setState(() {
+        _manualTranslationRetryPending = true;
+        _translationFailures.clear();
+        _translationRetryAfter.clear();
+        _translationRetryTimer?.cancel();
+        _translationRetryTimer = null;
+      });
+      _scheduleVisibleTranslations();
+      return;
+    }
+    if (_translationShowsOriginal) {
+      _translationFailures.clear();
+      _translationRetryAfter.clear();
+      _translationRetryTimer?.cancel();
+      _translationRetryTimer = null;
+    }
+    await _translationService.toggleSnackRoom(widget.snackChatId);
+  }
+
   @override
   void didUpdateWidget(covariant SnackChatScreen oldWidget) {
     super.didUpdateWidget(oldWidget);
     if (oldWidget.snackChatId == widget.snackChatId) return;
-    unawaited(
-      ContentTranslationService.instance.loadSnackRoomMode(
-        widget.snackChatId,
-      ),
-    );
+    _resetTranslationStateForRoom();
+    unawaited(_prepareTranslationMode());
     unawaited(
       _localCache.saveDraft(oldWidget.snackChatId, _messageController.text),
     );
@@ -774,7 +1506,8 @@ class _SnackChatScreenState extends State<SnackChatScreen>
     WidgetsBinding.instance.addPostFrameCallback((_) async {
       if (!mounted ||
           generation != _entryBootstrapGeneration ||
-          _entryPositionSettled) {
+          _entryPositionSettled ||
+          _isUserScrolling) {
         return;
       }
       final anchorId = _firstUnreadMessageId;
@@ -799,7 +1532,7 @@ class _SnackChatScreenState extends State<SnackChatScreen>
         return;
       }
 
-      if (_scrollController.hasClients) {
+      if (_scrollController.hasClients && !_isUserScrolling) {
         final position = _scrollController.position;
         final anchorIndex = anchorId == null
             ? -1
@@ -835,6 +1568,11 @@ class _SnackChatScreenState extends State<SnackChatScreen>
     _appLifecycleState = state;
     if (state == AppLifecycleState.resumed) {
       SnackChatActiveConversation.setActive(widget.snackChatId);
+      if (_isUserScrolling) {
+        _isUserScrolling = false;
+        _userScrollRevision++;
+        _cancelPendingTranslationRestore();
+      }
       // 백그라운드 전환 이후 도착한 메시지는 다음 화면 종료 시점에
       // 별도의 읽음 경계로 반영할 수 있도록 종료 플러시를 다시 연다.
       _exitReadFlushStarted = false;
@@ -846,9 +1584,27 @@ class _SnackChatScreenState extends State<SnackChatScreen>
       unawaited(_fileTransfer.retryRoom(widget.snackChatId));
       unawaited(_fileTransfer.purgeExpiredCache());
       _scheduleActiveReadSync();
+      _translationFailures.clear();
+      _translationRetryAfter.clear();
+      _translationRetryTimer?.cancel();
+      _translationRetryTimer = null;
+      if (_translationModeReady && !_translationShowsOriginal) {
+        if (_deferredTranslationOutcomes.isNotEmpty) {
+          _commitDeferredTranslationOutcomes();
+        } else {
+          _scheduleVisibleTranslations();
+        }
+      }
       if (mounted) setState(() {});
     } else if (state == AppLifecycleState.inactive ||
         state == AppLifecycleState.paused) {
+      if (_isUserScrolling) {
+        _isUserScrolling = false;
+        _userScrollRevision++;
+        _translationScanDebounce?.cancel();
+        _translationScanDebounce = null;
+        _cancelPendingTranslationRestore();
+      }
       _startBackgroundReadFlush();
       if (SnackChatActiveConversation.isActive(widget.snackChatId)) {
         SnackChatActiveConversation.setActive(null);
@@ -1020,6 +1776,7 @@ class _SnackChatScreenState extends State<SnackChatScreen>
         var addedRemoteMessages = 0;
         final wasNearLatest = _isNearLatest;
         final hadLiveBatch = _hasReceivedFirstLiveBatch;
+        final liveTranslationCandidates = <SnackChatMessage>[];
         setState(() {
           _isInitialLoading = false;
           _messageStreamError = null;
@@ -1035,11 +1792,22 @@ class _SnackChatScreenState extends State<SnackChatScreen>
             if (index < 0) {
               _messageIds.add(serverMessage.id);
               _messages.add(serverMessage);
+              if (hadLiveBatch && wasNearLatest) {
+                liveTranslationCandidates.add(serverMessage);
+              }
               if (hadLiveBatch && serverMessage.senderId != _uid) {
                 addedRemoteMessages++;
               }
             } else {
               final local = _messages[index];
+              if (hadLiveBatch &&
+                  wasNearLatest &&
+                  (local.text != serverMessage.text ||
+                      (local.sendStatus != MessageSendStatus.sent &&
+                          serverMessage.sendStatus ==
+                              MessageSendStatus.sent))) {
+                liveTranslationCandidates.add(serverMessage);
+              }
               final keepOptimisticReaction =
                   _reactionMutationsInFlight.contains(serverMessage.id) ||
                       _pendingReactionTargets.containsKey(serverMessage.id);
@@ -1071,6 +1839,7 @@ class _SnackChatScreenState extends State<SnackChatScreen>
             _newMessageCount += addedRemoteMessages;
           }
         });
+        _translateNewLiveMessages(liveTranslationCandidates);
         _scheduleMessageCacheWrite();
         _scheduleFileExpiryRefresh();
         _scheduleOutboxRecovery();
@@ -1304,24 +2073,30 @@ class _SnackChatScreenState extends State<SnackChatScreen>
   }
 
   void _restoreScrollAnchor(_ScrollAnchor? anchor) {
-    if (anchor == null) return;
+    if (anchor == null || _isUserScrolling) return;
     WidgetsBinding.instance.addPostFrameCallback((_) {
-      if (!mounted || !_scrollController.hasClients) return;
-      final renderObject =
-          _messageKeys[anchor.messageId]?.currentContext?.findRenderObject();
-      if (renderObject is! RenderBox || !renderObject.attached) return;
-      final newDy = renderObject.localToGlobal(Offset.zero).dy;
-      final globalDelta = newDy - anchor.globalDy;
-      if (globalDelta.abs() < .5) return;
-      final position = _scrollController.position;
-      final offsetDelta = position.axisDirection == AxisDirection.up
-          ? -globalDelta
-          : globalDelta;
-      final target = (position.pixels + offsetDelta)
-          .clamp(position.minScrollExtent, position.maxScrollExtent)
-          .toDouble();
-      if ((target - position.pixels).abs() >= .5) position.jumpTo(target);
+      if (!mounted || _isUserScrolling) return;
+      _applyScrollAnchorNow(anchor);
     });
+  }
+
+  void _applyScrollAnchorNow(_ScrollAnchor? anchor) {
+    if (anchor == null || _isUserScrolling || !_scrollController.hasClients) {
+      return;
+    }
+    final renderObject =
+        _messageKeys[anchor.messageId]?.currentContext?.findRenderObject();
+    if (renderObject is! RenderBox || !renderObject.attached) return;
+    final newDy = renderObject.localToGlobal(Offset.zero).dy;
+    final globalDelta = newDy - anchor.globalDy;
+    if (globalDelta.abs() < .5) return;
+    final position = _scrollController.position;
+    final offsetDelta =
+        position.axisDirection == AxisDirection.up ? -globalDelta : globalDelta;
+    final target = (position.pixels + offsetDelta)
+        .clamp(position.minScrollExtent, position.maxScrollExtent)
+        .toDouble();
+    if ((target - position.pixels).abs() >= .5) position.jumpTo(target);
   }
 
   void _sortMessages() {
@@ -1337,6 +2112,7 @@ class _SnackChatScreenState extends State<SnackChatScreen>
   }
 
   void _onScroll() {
+    _debounceVisibleTranslationScan();
     final nearLatest = _scrollController.position.pixels <= 72;
     if (nearLatest != _isNearLatest || (nearLatest && _newMessageCount > 0)) {
       setState(() {
@@ -1352,6 +2128,49 @@ class _SnackChatScreenState extends State<SnackChatScreen>
         _hasMore) {
       _loadMoreMessages();
     }
+  }
+
+  bool _handleMessageScrollNotification(ScrollNotification notification) {
+    if (notification.depth != 0) return false;
+    final beginsUserScroll = (notification is ScrollStartNotification &&
+            notification.dragDetails != null) ||
+        (notification is ScrollUpdateNotification &&
+            notification.dragDetails != null);
+    if (beginsUserScroll && !_isUserScrolling) {
+      _isUserScrolling = true;
+      _userScrollRevision++;
+      if (_entryPositionInFlight && !_entryPositionSettled) {
+        // A real gesture always wins over the initial unread-anchor jump.
+        // Freeze read advancement because the automated boundary was not
+        // reached, but release pagination and never fight the user's drag.
+        _entryPositionInFlight = false;
+        _entryPositionSettled = true;
+        _entryReadSyncAllowed = false;
+      }
+      _translationScanDebounce?.cancel();
+      _translationScanDebounce = null;
+      _cancelPendingTranslationRestore();
+    } else if (notification is ScrollEndNotification && _isUserScrolling) {
+      _isUserScrolling = false;
+      // Wait for the reverse viewport to settle after ballistic scrolling,
+      // publish all results that arrived mid-gesture in one layout change,
+      // then translate only the messages that actually remained visible.
+      final scrollRevision = _userScrollRevision;
+      _translationScanDebounce?.cancel();
+      _translationScanDebounce = Timer(const Duration(milliseconds: 140), () {
+        _translationScanDebounce = null;
+        if (mounted &&
+            !_isUserScrolling &&
+            scrollRevision == _userScrollRevision) {
+          if (_deferredTranslationOutcomes.isNotEmpty) {
+            _commitDeferredTranslationOutcomes();
+          } else {
+            _scheduleTranslationScanAfterLayout();
+          }
+        }
+      });
+    }
+    return false;
   }
 
   Future<void> _loadMoreMessages() async {
@@ -1387,7 +2206,7 @@ class _SnackChatScreenState extends State<SnackChatScreen>
   }
 
   void _scrollToLatest({bool animated = true}) {
-    if (!_scrollController.hasClients) return;
+    if (_isUserScrolling || !_scrollController.hasClients) return;
     if (_newMessageCount != 0 || !_isNearLatest) {
       setState(() {
         _newMessageCount = 0;
@@ -1498,6 +2317,12 @@ class _SnackChatScreenState extends State<SnackChatScreen>
     _fileExpiryTimer?.cancel();
     _roomRetryTimer?.cancel();
     _entryRetryTimer?.cancel();
+    _translationScanDebounce?.cancel();
+    _translationRetryTimer?.cancel();
+    _cancelPendingTranslationRestore();
+    _deferredTranslationOutcomes.clear();
+    _translationStateGeneration++;
+    _translationService.removeListener(_handleTranslationServiceChange);
     _messageController.removeListener(_onDraftChanged);
     if (!_roomWasLeft) {
       unawaited(
@@ -3294,48 +4119,6 @@ class _SnackChatScreenState extends State<SnackChatScreen>
                     l10n.snackChatParticipantCount(room.participantCount),
               ),
               actions: [
-                ListenableBuilder(
-                  listenable: ContentTranslationService.instance,
-                  builder: (context, _) {
-                    final translation = ContentTranslationService.instance;
-                    final scope = 'snack-room:${widget.snackChatId}';
-                    if (!translation.canToggleScope(scope)) {
-                      return const SizedBox.shrink();
-                    }
-                    final original = translation.showsOriginal(scope);
-                    final label = original
-                        ? (isKo ? '번역' : 'Translate')
-                        : (isKo ? '원문' : 'Original');
-                    return Tooltip(
-                      message: original
-                          ? (isKo ? '번역 보기' : 'View translation')
-                          : (isKo ? '원문 보기' : 'View original'),
-                      child: TextButton(
-                        onPressed: () => translation.toggleSnackRoom(
-                          widget.snackChatId,
-                        ),
-                        style: TextButton.styleFrom(
-                          foregroundColor: const Color(0xFF2F9BE8),
-                          minimumSize: const Size(0, 40),
-                          padding: const EdgeInsets.symmetric(horizontal: 6),
-                          tapTargetSize: MaterialTapTargetSize.shrinkWrap,
-                        ),
-                        child: Text(
-                          label,
-                          maxLines: 1,
-                          overflow: TextOverflow.fade,
-                          softWrap: false,
-                          style: const TextStyle(
-                            fontFamily: 'Inter',
-                            fontFamilyFallback: ['NotoSansKR'],
-                            fontSize: 11.5,
-                            fontWeight: FontWeight.w600,
-                          ),
-                        ),
-                      ),
-                    );
-                  },
-                ),
                 IconButton(
                   onPressed: _isLeavingRoom ? null : () => _openRoomInfo(room),
                   icon: const Icon(
@@ -3356,13 +4139,25 @@ class _SnackChatScreenState extends State<SnackChatScreen>
             body: Column(
               children: [
                 Expanded(
-                  child: SnackChatBackdrop(
-                    child: Center(
-                      child: ConstrainedBox(
-                        constraints: const BoxConstraints(maxWidth: 760),
-                        child: _buildMessageContent(isKo: isKo),
+                  child: Stack(
+                    children: [
+                      Positioned.fill(
+                        child: SnackChatBackdrop(
+                          child: Center(
+                            child: ConstrainedBox(
+                              constraints: const BoxConstraints(maxWidth: 760),
+                              child: _buildMessageContent(isKo: isKo),
+                            ),
+                          ),
+                        ),
                       ),
-                    ),
+                      Positioned(
+                        top: 0,
+                        left: 0,
+                        right: 0,
+                        child: _buildTranslationControl(isKo: isKo),
+                      ),
+                    ],
                   ),
                 ),
                 _buildMessageComposer(isKo: isKo),
@@ -3371,6 +4166,107 @@ class _SnackChatScreenState extends State<SnackChatScreen>
           ),
         );
       },
+    );
+  }
+
+  Widget _buildTranslationControl({required bool isKo}) {
+    final showingOriginal = _translationShowsOriginal;
+    final providerRetryExhausted = _translationProviderRetryExhausted;
+    final retryNeeded = providerRetryExhausted || _hasLocalTranslationFailures;
+    final retryAvailable =
+        !providerRetryExhausted || _translationProviderRetryAvailable;
+    final label = retryNeeded
+        ? (isKo ? '다시 번역' : 'Retry')
+        : showingOriginal
+            ? (isKo ? '번역' : 'Translate')
+            : (isKo ? '원문' : 'Original');
+    final tooltip = retryNeeded
+        ? (isKo ? '번역 다시 시도' : 'Retry translation')
+        : showingOriginal
+            ? (isKo ? '번역 보기' : 'View translation')
+            : (isKo ? '원문 보기' : 'View original');
+    final loading = !_translationModeReady ||
+        (_translationBatchRunning && !showingOriginal) ||
+        _hasPendingAutomaticTranslationRetry;
+    final foreground =
+        retryNeeded ? const Color(0xFFB54708) : const Color(0xFF087BB5);
+    final background =
+        retryNeeded ? const Color(0xFFFFF4E5) : const Color(0xFFEAF6FD);
+    final border =
+        retryNeeded ? const Color(0xFFFDBA74) : const Color(0xFF9CD8F5);
+
+    return Material(
+      color: Colors.transparent,
+      child: Center(
+        child: ConstrainedBox(
+          constraints: const BoxConstraints(maxWidth: 760),
+          child: Align(
+            alignment: Alignment.centerRight,
+            child: Padding(
+              padding: const EdgeInsets.fromLTRB(0, 4, 12, 4),
+              child: Semantics(
+                button: true,
+                label: tooltip,
+                child: Tooltip(
+                  message: tooltip,
+                  child: TextButton(
+                    onPressed: _translationModeReady &&
+                            (!retryNeeded || retryAvailable)
+                        ? _toggleSnackTranslation
+                        : null,
+                    style: TextButton.styleFrom(
+                      foregroundColor: foreground,
+                      disabledForegroundColor:
+                          foreground.withValues(alpha: 0.5),
+                      backgroundColor: background,
+                      disabledBackgroundColor:
+                          background.withValues(alpha: 0.7),
+                      minimumSize: const Size(0, 32),
+                      padding: const EdgeInsets.symmetric(horizontal: 10),
+                      tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                      side: BorderSide(color: border),
+                      shape: RoundedRectangleBorder(
+                        borderRadius: BorderRadius.circular(16),
+                      ),
+                    ),
+                    child: Row(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        if (loading)
+                          SizedBox.square(
+                            dimension: 14,
+                            child: CircularProgressIndicator(
+                              strokeWidth: 1.8,
+                              color: foreground,
+                            ),
+                          )
+                        else if (retryNeeded)
+                          const Icon(Icons.refresh_rounded, size: 15)
+                        else
+                          const Icon(Icons.translate_rounded, size: 15),
+                        const SizedBox(width: 2),
+                        Text(
+                          label,
+                          maxLines: 1,
+                          overflow: TextOverflow.fade,
+                          softWrap: false,
+                          style: const TextStyle(
+                            fontFamily: 'Inter',
+                            fontFamilyFallback: ['NotoSansKR'],
+                            fontSize: 11.5,
+                            fontWeight: FontWeight.w600,
+                            height: 1,
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                ),
+              ),
+            ),
+          ),
+        ),
+      ),
     );
   }
 
@@ -3442,77 +4338,83 @@ class _SnackChatScreenState extends State<SnackChatScreen>
         ),
       );
     }
-    final messageList = ListView.builder(
-      controller: _scrollController,
-      reverse: true,
-      keyboardDismissBehavior: ScrollViewKeyboardDismissBehavior.onDrag,
-      scrollCacheExtent: ScrollCacheExtent.pixels(
-        MediaQuery.sizeOf(context).height * 1.25,
-      ),
-      padding: EdgeInsets.fromLTRB(
-        context.rs(10).clamp(8, 14).toDouble(),
-        context.rs(10).clamp(8, 14).toDouble(),
-        context.rs(10).clamp(8, 14).toDouble(),
-        context.rs(6).clamp(4, 8).toDouble(),
-      ),
-      itemCount: _messages.length + (_hasMore ? 1 : 0),
-      itemBuilder: (context, index) {
-        if (index == _messages.length) {
-          return Padding(
-            padding: const EdgeInsets.symmetric(vertical: 12),
-            child: Center(
-              child: _isLoadingMore
-                  ? const SizedBox.square(
-                      dimension: 20,
-                      child: CircularProgressIndicator(
-                        strokeWidth: 2,
-                        color: _secondaryText,
-                      ),
-                    )
-                  : _loadMoreError != null
-                      ? TextButton.icon(
-                          onPressed: _loadMoreMessages,
-                          icon: const Icon(Icons.refresh_rounded, size: 18),
-                          label: Text(
-                              isKo ? '이전 메시지 다시 불러오기' : 'Retry older messages'),
-                        )
-                      : const SizedBox.shrink(),
-            ),
+    _scheduleVisibleTranslations();
+    final messageList = NotificationListener<ScrollNotification>(
+      onNotification: _handleMessageScrollNotification,
+      child: ListView.builder(
+        key: _messageViewportKey,
+        controller: _scrollController,
+        reverse: true,
+        keyboardDismissBehavior: ScrollViewKeyboardDismissBehavior.onDrag,
+        scrollCacheExtent: ScrollCacheExtent.pixels(
+          MediaQuery.sizeOf(context).height * 1.25,
+        ),
+        padding: EdgeInsets.fromLTRB(
+          context.rs(10).clamp(8, 14).toDouble(),
+          context.rs(10).clamp(8, 14).toDouble(),
+          context.rs(10).clamp(8, 14).toDouble(),
+          context.rs(6).clamp(4, 8).toDouble(),
+        ),
+        itemCount: _messages.length + (_hasMore ? 1 : 0),
+        itemBuilder: (context, index) {
+          if (index == _messages.length) {
+            return Padding(
+              padding: const EdgeInsets.symmetric(vertical: 12),
+              child: Center(
+                child: _isLoadingMore
+                    ? const SizedBox.square(
+                        dimension: 20,
+                        child: CircularProgressIndicator(
+                          strokeWidth: 2,
+                          color: _secondaryText,
+                        ),
+                      )
+                    : _loadMoreError != null
+                        ? TextButton.icon(
+                            onPressed: _loadMoreMessages,
+                            icon: const Icon(Icons.refresh_rounded, size: 18),
+                            label: Text(isKo
+                                ? '이전 메시지 다시 불러오기'
+                                : 'Retry older messages'),
+                          )
+                        : const SizedBox.shrink(),
+              ),
+            );
+          }
+          final message = _messages[index];
+          final isMe = message.senderId == _uid;
+          final showDateDivider = _shouldShowDateDivider(index);
+          final groupedWithNewer = index > 0 &&
+              !_hasUnreadBoundaryBetween(message, _messages[index - 1]) &&
+              shouldGroupSnackChatMessages(message, _messages[index - 1]);
+          final groupedWithOlder = index < _messages.length - 1 &&
+              !_hasUnreadBoundaryBetween(message, _messages[index + 1]) &&
+              shouldGroupSnackChatMessages(message, _messages[index + 1]);
+          final row = Column(
+            children: [
+              if (showDateDivider) _buildDateDivider(message.createdAt),
+              if (message.id == _firstUnreadMessageId)
+                _buildUnreadDivider(isKo: isKo),
+              _buildMessageBubble(
+                message: message,
+                isMe: isMe,
+                timeText: _formatTime(message.createdAt),
+                showTimeText: !groupedWithNewer,
+                showSenderName: !isMe && !groupedWithOlder,
+                groupedWithNewer: groupedWithNewer,
+                groupedWithOlder: groupedWithOlder,
+              ),
+            ],
           );
-        }
-        final message = _messages[index];
-        final isMe = message.senderId == _uid;
-        final showDateDivider = _shouldShowDateDivider(index);
-        final groupedWithNewer = index > 0 &&
-            !_hasUnreadBoundaryBetween(message, _messages[index - 1]) &&
-            shouldGroupSnackChatMessages(message, _messages[index - 1]);
-        final groupedWithOlder = index < _messages.length - 1 &&
-            !_hasUnreadBoundaryBetween(message, _messages[index + 1]) &&
-            shouldGroupSnackChatMessages(message, _messages[index + 1]);
-        final row = Column(
-          children: [
-            if (showDateDivider) _buildDateDivider(message.createdAt),
-            if (message.id == _firstUnreadMessageId)
-              _buildUnreadDivider(isKo: isKo),
-            _buildMessageBubble(
-              message: message,
-              isMe: isMe,
-              timeText: _formatTime(message.createdAt),
-              showTimeText: !groupedWithNewer,
-              showSenderName: !isMe && !groupedWithOlder,
-              groupedWithNewer: groupedWithNewer,
-              groupedWithOlder: groupedWithOlder,
+          return KeyedSubtree(
+            key: _messageKeys.putIfAbsent(
+              message.id,
+              () => GlobalKey(debugLabel: 'snack-chat-${message.id}'),
             ),
-          ],
-        );
-        return KeyedSubtree(
-          key: _messageKeys.putIfAbsent(
-            message.id,
-            () => GlobalKey(debugLabel: 'snack-chat-${message.id}'),
-          ),
-          child: row,
-        );
-      },
+            child: row,
+          );
+        },
+      ),
     );
     return Stack(
       children: [
@@ -3825,6 +4727,70 @@ class _SnackChatScreenState extends State<SnackChatScreen>
     );
   }
 
+  Widget _buildTranslatedMessageText({
+    required SnackChatMessage message,
+    required TextStyle textStyle,
+  }) {
+    final result = _currentTranslationForMessage(message);
+    final translatedText = result?.translatedFields['text'] ?? '';
+    final canShowTranslation = _translationModeReady &&
+        !_translationShowsOriginal &&
+        result?.isReady == true &&
+        result?.isSameLanguage != true &&
+        translatedText.trim().isNotEmpty;
+    final displayText = canShowTranslation ? translatedText : message.text;
+
+    return Linkify(
+      key: ValueKey<String>(
+        '${message.id}:${canShowTranslation ? result!.sourceHash : 'original'}',
+      ),
+      text: displayText,
+      onOpen: (link) => _openExternalUrl(link.url),
+      style: textStyle,
+      linkStyle: textStyle.copyWith(
+        decoration: TextDecoration.underline,
+        decorationColor: textStyle.color,
+      ),
+    );
+  }
+
+  SnackChatPoll _displayPollForMessage(SnackChatMessage message) {
+    final poll = message.poll!;
+    final result = _currentTranslationForMessage(message);
+    if (!_translationModeReady ||
+        _translationShowsOriginal ||
+        result == null ||
+        result.isSameLanguage) {
+      return poll;
+    }
+
+    // Translation results for a poll are atomic. The completeness check in
+    // _currentTranslationForMessage guarantees every non-empty question and
+    // option is present before any translated poll text reaches the UI.
+    final translatedQuestion = result.translatedFields['text'];
+    return SnackChatPoll(
+      question: translatedQuestion?.trim().isNotEmpty == true
+          ? translatedQuestion!
+          : poll.question,
+      options: <SnackChatPollOption>[
+        for (var index = 0; index < poll.options.length; index++)
+          SnackChatPollOption(
+            id: poll.options[index].id,
+            text: (result.translatedFields['pollOption$index'] ?? '')
+                    .trim()
+                    .isNotEmpty
+                ? result.translatedFields['pollOption$index']!
+                : poll.options[index].text,
+          ),
+      ],
+      allowMultiple: poll.allowMultiple,
+      isAnonymous: poll.isAnonymous,
+      closesAt: poll.closesAt,
+      voteCounts: poll.voteCounts,
+      totalVoters: poll.totalVoters,
+    );
+  }
+
   Widget _buildMessageBubble({
     required SnackChatMessage message,
     required bool isMe,
@@ -3949,7 +4915,7 @@ class _SnackChatScreenState extends State<SnackChatScreen>
                 const SizedBox(height: 8),
               if (message.poll != null)
                 SnackChatPollCard(
-                  poll: message.poll!,
+                  poll: _displayPollForMessage(message),
                   myOptionIds: _myVotes[message.id] ?? const <String>{},
                   isOutgoing: isMe,
                   enabled: !message.isPending &&
@@ -3958,24 +4924,9 @@ class _SnackChatScreenState extends State<SnackChatScreen>
                   onVote: (ids) => _castVote(message, ids),
                 )
               else if (hasText)
-                TranslatableContent(
-                  request: ContentTranslationRequest(
-                    contentType: 'snack_chat_message',
-                    contentId: message.id,
-                    parentId: widget.snackChatId,
-                    sourceFields: <String, String>{'text': message.text},
-                  ),
-                  scope: 'snack-room:${widget.snackChatId}',
-                  showToggle: false,
-                  builder: (context, fields) => Linkify(
-                    text: fields['text'] ?? message.text,
-                    onOpen: (link) => _openExternalUrl(link.url),
-                    style: textStyle,
-                    linkStyle: textStyle.copyWith(
-                      decoration: TextDecoration.underline,
-                      decorationColor: textStyle.color,
-                    ),
-                  ),
+                _buildTranslatedMessageText(
+                  message: message,
+                  textStyle: textStyle,
                 )
               else if (!hasImage && !hasFile)
                 Text(

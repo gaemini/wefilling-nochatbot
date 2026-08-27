@@ -1,0 +1,4 @@
+// Keep the embedded Share Extension on the exact same marketing/build version
+// as the containing Flutter app. App Store validation rejects mismatched
+// extension versions.
+#include "Generated.xcconfig"

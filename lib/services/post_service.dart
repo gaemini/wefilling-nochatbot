@@ -111,7 +111,7 @@ class PostService {
   // 실시간 피드는 상위 N개만 구독해 비용/지연을 줄입니다.
   // - 전체 히스토리까지 실시간으로 받을 필요가 없고,
   // - 일부 계정에서 docs 수가 커지면 파싱/필터링이 느려져 UI가 "로딩처럼" 보일 수 있음
-  static const int _feedRealtimeLimit = 10;
+  static const int _feedRealtimeLimit = 5;
   static const Duration _categoryQueryTimeout = Duration(seconds: 8);
   static const Duration _allPostsQueryTimeout = Duration(seconds: 8);
 
@@ -1595,7 +1595,7 @@ class PostService {
   /// 화면에는 항상 [pageSize]개 이하만 반환합니다.
   Future<AllPostsPage> getAllPostsPage({
     AllPostsCursor? startAfter,
-    int pageSize = 10,
+    int pageSize = 5,
   }) async {
     final normalizedPageSize = pageSize.clamp(1, 30);
     final user = _auth.currentUser;

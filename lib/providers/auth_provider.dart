@@ -140,10 +140,8 @@ class AuthProvider with ChangeNotifier implements WidgetsBindingObserver {
   final List<VoidCallback> _streamCleanupCallbacks = [];
 
   AuthProvider() {
-    if (kDebugMode) {
-      debugPrint('[HanyangVerification][AuthProvider] created '
-          'instance=${identityHashCode(this)}');
-    }
+    Logger.log('[HanyangVerification][AuthProvider] created '
+        'instance=${identityHashCode(this)}');
 
     // 앱 포그라운드 복귀 시 FCM 재초기화를 감지하기 위해 lifecycle observer 등록
     WidgetsBinding.instance.addObserver(this);
@@ -151,20 +149,13 @@ class AuthProvider with ChangeNotifier implements WidgetsBindingObserver {
     // 초기화를 Future.microtask로 지연 - 크래시 방지
     Future.microtask(() async {
       try {
-        if (kDebugMode) {
-          debugPrint('🔐 AuthProvider microtask 시작: ${DateTime.now()}');
-        }
+        Logger.log('🔐 AuthProvider microtask 시작: ${DateTime.now()}');
         await _initializeAuth();
-        if (kDebugMode) {
-          debugPrint('🔐 AuthProvider 초기화 완료: ${DateTime.now()}');
-        }
+        Logger.log('🔐 AuthProvider 초기화 완료: ${DateTime.now()}');
       } catch (e) {
         Logger.error('AuthProvider 초기화 실패 - 앱은 계속 실행', e);
         _isLoading = false;
         notifyListeners();
-        if (kDebugMode) {
-          debugPrint('⚠️ AuthProvider 초기화 실패했지만 앱 계속 실행: ${DateTime.now()}');
-        }
       }
     });
   }
@@ -547,9 +538,7 @@ class AuthProvider with ChangeNotifier implements WidgetsBindingObserver {
                 existingData: _userData,
               );
 
-              if (kDebugMode) {
-                debugPrint('🔄 스키마 보정 완료 - 문서 재로드');
-              }
+              Logger.log('🔄 스키마 보정 완료 - 문서 재로드');
               final updatedDoc = await docRef
                   .get(
                 const GetOptions(source: Source.serverAndCache),
@@ -563,9 +552,7 @@ class AuthProvider with ChangeNotifier implements WidgetsBindingObserver {
               );
               if (updatedDoc.exists) {
                 _userData = updatedDoc.data();
-                if (kDebugMode) {
-                  debugPrint('✅ 스키마 보정 후 문서 재로드 완료');
-                }
+                Logger.log('✅ 스키마 보정 후 문서 재로드 완료');
               }
             } catch (e) {
               Logger.error('⚠️ users 문서 스키마 보정 실패(무시): $e');
@@ -2352,9 +2339,7 @@ class AuthProvider with ChangeNotifier implements WidgetsBindingObserver {
         Logger.log('🔍 [FCM 진단] iOS 1초 대기 완료');
       }
 
-      if (kDebugMode) {
-        debugPrint('📱 FCM 초기화 시작: uid=$uid');
-      }
+      Logger.log('📱 FCM 초기화 시작: uid=$uid');
 
       Logger.log('🔍 [FCM 진단] _fcmService.initialize() 호출 직전');
       await _fcmService.initialize(uid);

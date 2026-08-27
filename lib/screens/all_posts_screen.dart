@@ -46,7 +46,7 @@ class AllPostsScreen extends StatefulWidget {
 }
 
 class _AllPostsScreenState extends State<AllPostsScreen> {
-  static const int _pageSize = 10;
+  static const int _pageSize = 5;
   static const double _loadMoreThreshold = 520;
 
   PostService? _postService;

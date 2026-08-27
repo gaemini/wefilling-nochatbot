@@ -8,6 +8,7 @@ import 'package:flutter/services.dart';
 
 import '../models/external_share_request.dart';
 import '../screens/create_post_screen.dart';
+import '../utils/logger.dart';
 import 'navigation_service.dart';
 
 enum _ExternalShareRoutingState {
@@ -453,7 +454,7 @@ class ExternalShareService with WidgetsBindingObserver {
   }
 
   void _log(String message) {
-    if (kDebugMode) {
+    if (kDebugMode && Logger.verboseLoggingEnabled) {
       debugPrint('[ExternalShare][Flutter] $message');
     }
   }

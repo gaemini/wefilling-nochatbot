@@ -1,6 +1,8 @@
 import 'package:flutter/foundation.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
+import '../utils/logger.dart';
+
 /// 언어 설정을 관리하는 서비스
 /// SharedPreferences를 사용하여 사용자가 선택한 언어를 저장/불러오기
 class LanguageService {
@@ -12,9 +14,7 @@ class LanguageService {
     try {
       final prefs = await SharedPreferences.getInstance();
       await prefs.setString(_key, languageCode);
-      if (kDebugMode) {
-        debugPrint('✅ 언어 저장 완료: $languageCode');
-      }
+      Logger.log('✅ 언어 저장 완료: $languageCode');
     } catch (e) {
       if (kDebugMode) {
         debugPrint('❌ 언어 저장 실패: $e');
@@ -27,20 +27,17 @@ class LanguageService {
     try {
       final prefs = await SharedPreferences.getInstance();
       String? language = prefs.getString(_key);
-      
+
       // locale이 없거나 비정상인 경우 기본값 저장
-      if (language == null || language.isEmpty || 
+      if (language == null ||
+          language.isEmpty ||
           (language != 'ko' && language != 'en')) {
         language = _defaultLanguage;
         await prefs.setString(_key, language);
-        if (kDebugMode) {
-          debugPrint('✅ 기본 언어 강제 설정: $language');
-        }
+        Logger.log('✅ 기본 언어 강제 설정: $language');
       }
-      
-      if (kDebugMode) {
-        debugPrint('📖 저장된 언어: $language');
-      }
+
+      Logger.log('📖 저장된 언어: $language');
       return language;
     } catch (e) {
       if (kDebugMode) {
@@ -59,5 +56,3 @@ class LanguageService {
     }
   }
 }
-
-

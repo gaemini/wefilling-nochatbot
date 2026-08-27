@@ -18,6 +18,7 @@ import '../models/comment.dart';
 import '../models/content_translation.dart';
 import '../services/post_service.dart';
 import '../services/comment_service.dart';
+import '../services/content_translation_service.dart';
 import '../services/dm_service.dart';
 import 'dm_chat_screen.dart';
 import '../providers/auth_provider.dart' as app_auth;
@@ -48,6 +49,7 @@ import '../ui/widgets/shared_link_preview_card.dart';
 import '../utils/responsive_helper.dart';
 import '../ui/widgets/hanyang_verification_gate.dart';
 import '../services/user_info_cache_service.dart';
+import '../services/cache/app_image_cache_manager.dart';
 
 class PostDetailScreen extends StatefulWidget {
   final Post post;
@@ -61,6 +63,8 @@ class PostDetailScreen extends StatefulWidget {
 class _PostDetailScreenState extends State<PostDetailScreen> {
   final PostService _postService = PostService();
   final CommentService _commentService = CommentService();
+  final ContentTranslationService _translationService =
+      ContentTranslationService.instance;
   final DMService _dmService = DMService();
   final FirebaseFirestore _firestore = FirebaseFirestore.instance;
   Timer? _likeHoldTimer;
@@ -69,10 +73,6 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
   final ScrollController _scrollController = ScrollController();
   final FocusNode _commentFocusNode = FocusNode();
 
-  // "맨 위로" 버튼 노출 상태 (상세 화면에서 글/댓글이 길 때 UX 개선)
-  bool _showScrollToTop = false;
-  static const double _scrollToTopShowOffset = 520;
-  static const double _scrollToTopHideOffset = 160;
   bool _isAuthor = false;
   bool _isDeleting = false;
   bool _isSubmittingComment = false;
@@ -93,7 +93,8 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
   Map<String, int> _imageRetryCount = {}; // URL별 재시도 횟수
   Map<String, bool> _imageRetrying = {}; // URL별 재시도 중 상태
   static const int _maxRetryCount = 3; // 최대 재시도 횟수
-  static const int _maxPrefetchImages = 15; // 게시글 첨부 최대 수를 병렬 프리패치
+  static const int _maxPrefetchImages = 2;
+  static const int _detailImageCacheWidth = 1200;
   bool _didPrefetchImages = false;
   Future<List<_PostAudienceUser>>? _audienceUsersFuture;
   bool _audienceExpanded = false;
@@ -117,10 +118,37 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
   // 댓글 스트림(목록/카운트) - 단일 스트림을 공유해서 UI/카운트 동기화
   late final Stream<List<Comment>> _commentsStream;
 
+  // 댓글과 답글은 개별 위젯이 아니라 상세 화면이 하나의 scope로 관리한다.
+  // 일부 항목만 성공한 상태에서 scope 전체가 번역 완료로 바뀌는 것을 막고,
+  // 현재 조회된 전체 스레드가 준비된 뒤 한 프레임에 함께 전환한다.
+  static const int _commentTranslationBatchSize = 5;
+  static const List<Duration> _commentTranslationRetryDelays = <Duration>[
+    Duration(seconds: 4),
+    Duration(seconds: 12),
+    Duration(seconds: 30),
+  ];
+  static const List<Comment> _commentsRecoveryPlaceholder = <Comment>[];
+  final Object _commentsScopeLoaderToken = Object();
+  String _commentsScope = '';
+  String? _attachedCommentsScope;
+  String _commentsTranslationSignature = '';
+  List<Comment> _commentsToTranslate = const <Comment>[];
+  Map<String, String> _translatedCommentContents = const <String, String>{};
+  bool _commentTranslationsReady = false;
+  bool _hasTranslatedComment = false;
+  Future<bool>? _commentsTranslationInFlight;
+  String? _commentsTranslationInFlightKey;
+  Timer? _commentsTranslationRetryTimer;
+  int _commentsTranslationRetryAttempt = 0;
+  late int _translationLanguageRevision;
+  bool _commentsWereShowingOriginal = false;
+
   @override
   void initState() {
     super.initState();
     _currentPost = widget.post;
+    _translationLanguageRevision = _translationService.languageRevision;
+    _translationService.addListener(_handleTranslationServiceChanged);
 
     // 작성자 여부/좋아요 상태는 로컬 데이터로 즉시 결정 (초기 렌더 품질/깜빡임 방지)
     final user = FirebaseAuth.instance.currentUser;
@@ -141,7 +169,8 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
     // ⚠️ 주의: asBroadcastStream + 선구독(카운트) + 후구독(UI) 조합은
     // 첫 스냅샷이 UI에 전달되지 않아 StreamBuilder가 무한 로딩에 빠질 수 있음.
     // → 단일 구독(StreamBuilder)로만 사용하고, 카운트는 builder에서 동기화.
-    _commentsStream = _commentService.getCommentsWithReplies(_currentPost.id);
+    _commentsScope = 'post-comments:${_currentPost.id}:empty';
+    _commentsStream = _createResilientCommentsStream(_currentPost.id);
     _engagementSubscription = _postService
         .watchPostEngagement(_currentPost.id, seed: _currentPost)
         .listen(
@@ -151,9 +180,6 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
       },
     );
 
-    // 스크롤 상태 감지 → "맨 위로" 버튼 자연스러운 노출/숨김
-    _scrollController.addListener(_handleScrollChanged);
-
     // 여러 이미지는 진입 시 병렬 프리패치로 "넘길 때 바로 보이게" 최적화
     WidgetsBinding.instance.addPostFrameCallback((_) {
       _prefetchPostImages(initial: true);
@@ -162,7 +188,12 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
 
   Future<void> _validateAccessAndRefreshPost() async {
     try {
-      final refreshed = await _postService.getPostById(widget.post.id);
+      // 네트워크/Firestore 작업이 드물게 완료되지 않아 상세 재진입 화면이
+      // 영구 로딩 상태에 머무는 것을 방지한다. 실패는 기존 접근 거부 경로로
+      // 처리하되, 호출 자체는 반드시 유한 시간 안에 끝나게 한다.
+      final refreshed = await _postService
+          .getPostById(widget.post.id)
+          .timeout(const Duration(seconds: 12));
       if (!mounted) return;
 
       if (refreshed == null) {
@@ -209,6 +240,403 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
       );
       Navigator.of(context).pop();
     }
+  }
+
+  /// Firestore의 첫 댓글 스냅샷 후처리가 멈추더라도 화면이 무한 로딩되지
+  /// 않게 하고, 사용자가 새로고침하지 않아도 새 구독으로 자동 복구한다.
+  Stream<List<Comment>> _createResilientCommentsStream(String postId) {
+    late final StreamController<List<Comment>> controller;
+    StreamSubscription<List<Comment>>? subscription;
+    Timer? firstSnapshotWatchdog;
+    var subscriptionGeneration = 0;
+    var emittedFallback = false;
+
+    void subscribe() {
+      if (controller.isClosed || !controller.hasListener) return;
+      final generation = ++subscriptionGeneration;
+      var receivedData = false;
+      firstSnapshotWatchdog?.cancel();
+      firstSnapshotWatchdog = Timer(const Duration(seconds: 10), () {
+        if (controller.isClosed || generation != subscriptionGeneration) return;
+        // StreamBuilder의 waiting 상태를 먼저 해제한다. 이후 즉시 새 Firestore
+        // listener를 붙여 실제 데이터는 별도 사용자 동작 없이 다시 받는다.
+        if (!receivedData && !emittedFallback) {
+          emittedFallback = true;
+          controller.add(_commentsRecoveryPlaceholder);
+        }
+        subscriptionGeneration++;
+        final staleSubscription = subscription;
+        subscription = null;
+        if (staleSubscription != null) {
+          unawaited(staleSubscription.cancel());
+        }
+        subscribe();
+      });
+
+      subscription = _commentService.getCommentsWithReplies(postId).listen(
+        (comments) {
+          if (controller.isClosed || generation != subscriptionGeneration) {
+            return;
+          }
+          receivedData = true;
+          firstSnapshotWatchdog?.cancel();
+          controller.add(comments);
+        },
+        onError: (Object error, StackTrace stackTrace) {
+          if (controller.isClosed || generation != subscriptionGeneration) {
+            return;
+          }
+          firstSnapshotWatchdog?.cancel();
+          controller.addError(error, stackTrace);
+          subscriptionGeneration++;
+          final staleSubscription = subscription;
+          subscription = null;
+          if (staleSubscription != null) {
+            unawaited(staleSubscription.cancel());
+          }
+          Timer(const Duration(milliseconds: 400), subscribe);
+        },
+      );
+    }
+
+    controller = StreamController<List<Comment>>.broadcast(
+      onListen: subscribe,
+      onCancel: () {
+        subscriptionGeneration++;
+        firstSnapshotWatchdog?.cancel();
+        final currentSubscription = subscription;
+        subscription = null;
+        if (currentSubscription != null) {
+          unawaited(currentSubscription.cancel());
+        }
+      },
+    );
+    return controller.stream;
+  }
+
+  void _handleTranslationServiceChanged() {
+    if (!mounted) return;
+    var needsBuild = false;
+    final revision = _translationService.languageRevision;
+    if (_translationLanguageRevision != revision) {
+      _translationLanguageRevision = revision;
+      _translatedCommentContents = const <String, String>{};
+      _commentTranslationsReady = _commentsToTranslate.isEmpty;
+      _hasTranslatedComment = false;
+      _commentsTranslationInFlight = null;
+      _commentsTranslationInFlightKey = null;
+      _commentsTranslationRetryTimer?.cancel();
+      _commentsTranslationRetryTimer = null;
+      _commentsTranslationRetryAttempt = 0;
+      if (_commentsToTranslate.isNotEmpty) {
+        WidgetsBinding.instance.addPostFrameCallback((_) {
+          if (mounted) unawaited(_translateCurrentCommentScope());
+        });
+      }
+      needsBuild = true;
+    }
+    final showingOriginal = _translationService.showsOriginal(_commentsScope);
+    if (showingOriginal != _commentsWereShowingOriginal) {
+      _commentsWereShowingOriginal = showingOriginal;
+      needsBuild = true;
+    }
+    if (needsBuild) setState(() {});
+  }
+
+  String _commentSetSignature(List<Comment> comments) {
+    return Object.hashAll(
+      comments.map((comment) => Object.hash(comment.id, comment.content)),
+    ).toUnsigned(32).toRadixString(16);
+  }
+
+  ContentTranslationRequest _commentTranslationRequest(Comment comment) =>
+      ContentTranslationRequest(
+        contentType: 'comment',
+        contentId: comment.id,
+        parentId: _currentPost.id,
+        sourceFields: <String, String>{'content': comment.content},
+      );
+
+  /// StreamBuilder가 받은 전체 유효 스레드를 하나의 번역 scope에 등록한다.
+  /// 좋아요처럼 원문에 영향 없는 스냅샷 변화에는 scope를 다시 만들지 않는다.
+  void _syncCommentTranslationScope(List<Comment> allComments) {
+    final candidates = allComments
+        .where((comment) =>
+            !comment.isDeleted && comment.content.trim().isNotEmpty)
+        .toList(growable: false);
+    final signature = _commentSetSignature(candidates);
+    if (_commentsTranslationSignature == signature) return;
+
+    final previousScope = _attachedCommentsScope;
+    if (previousScope != null) {
+      // StreamBuilder build 중 scope가 바뀔 수 있으므로 여기서는 동기
+      // notification 없이 이전 coordinator token만 정리한다.
+      _translationService.clearScopeTranslation(
+        previousScope,
+        _commentsScopeLoaderToken,
+        notify: false,
+      );
+      _translationService.detachScopeLoader(
+        previousScope,
+        _commentsScopeLoaderToken,
+      );
+    }
+
+    _commentsTranslationSignature = signature;
+    _commentsToTranslate = candidates;
+    _commentsScope = 'post-comments:${_currentPost.id}:$signature';
+    _commentsWereShowingOriginal =
+        _translationService.showsOriginal(_commentsScope);
+    _attachedCommentsScope = _commentsScope;
+    _translatedCommentContents = const <String, String>{};
+    _commentTranslationsReady = candidates.isEmpty;
+    _hasTranslatedComment = false;
+    _commentsTranslationInFlight = null;
+    _commentsTranslationInFlightKey = null;
+    _commentsTranslationRetryTimer?.cancel();
+    _commentsTranslationRetryTimer = null;
+    _commentsTranslationRetryAttempt = 0;
+    _translationService.attachScopeLoader(
+      _commentsScope,
+      _commentsScopeLoaderToken,
+      _translateCurrentCommentScope,
+    );
+
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (mounted && _commentsTranslationSignature == signature) {
+        // 헤더의 TranslationScopeToggle도 같은 새 scope를 바라보게 한 뒤
+        // 자동 번역을 시작한다.
+        setState(() {});
+        if (candidates.isNotEmpty) {
+          unawaited(_translateCurrentCommentScope());
+        }
+      }
+    });
+  }
+
+  Future<bool> _translateCurrentCommentScope() {
+    final revision = _translationService.languageRevision;
+    final signature = _commentsTranslationSignature;
+    final inFlightKey = '$revision:$signature';
+    final existing = _commentsTranslationInFlight;
+    if (existing != null && _commentsTranslationInFlightKey == inFlightKey) {
+      return existing;
+    }
+
+    final comments = List<Comment>.unmodifiable(_commentsToTranslate);
+    final scope = _commentsScope;
+    final future = _performCommentTranslation(
+      comments: comments,
+      scope: scope,
+      signature: signature,
+      languageRevision: revision,
+    );
+    _commentsTranslationInFlightKey = inFlightKey;
+    _commentsTranslationInFlight = future;
+    final loadingToken = Object();
+    _translationService.beginScopeLoading(scope, loadingToken);
+    future.whenComplete(() {
+      _translationService.endScopeLoading(scope, loadingToken);
+      if (_commentsTranslationInFlightKey == inFlightKey) {
+        _commentsTranslationInFlightKey = null;
+        _commentsTranslationInFlight = null;
+      }
+    });
+    return future;
+  }
+
+  Future<bool> _performCommentTranslation({
+    required List<Comment> comments,
+    required String scope,
+    required String signature,
+    required int languageRevision,
+  }) async {
+    if (comments.isEmpty) return true;
+
+    final results = <String, ContentTranslationResult>{};
+    final pendingComments = <Comment>[];
+    for (final comment in comments) {
+      final cached = _translationService.latestResultFor(
+        _commentTranslationRequest(comment),
+      );
+      if (cached?.isReady == true &&
+          (cached!.translatedFields['content'] ?? '').trim().isNotEmpty) {
+        results[comment.id] = cached;
+      } else {
+        pendingComments.add(comment);
+      }
+    }
+    var hasRetryableFailure = false;
+    final chunks = <List<Comment>>[
+      for (var start = 0;
+          start < pendingComments.length;
+          start += _commentTranslationBatchSize)
+        pendingComments.sublist(
+          start,
+          math.min(
+            start + _commentTranslationBatchSize,
+            pendingComments.length,
+          ),
+        ),
+    ];
+    final uiLanguageCode = Localizations.localeOf(context).languageCode;
+
+    // 공통 서비스가 최대 두 개의 5개 batch를 병렬 처리하므로 같은 크기로
+    // 두 chunk씩 enqueue한다. 정상 완료 결과는 아래에서 한 번만 commit하고,
+    // 일부 실패 때만 성공한 형제 댓글을 살리기 위한 부분 결과를 표시한다.
+    for (var waveStart = 0; waveStart < chunks.length; waveStart += 2) {
+      if (!mounted ||
+          languageRevision != _translationService.languageRevision ||
+          signature != _commentsTranslationSignature) {
+        return false;
+      }
+      final wave = chunks.sublist(
+        waveStart,
+        math.min(waveStart + 2, chunks.length),
+      );
+      late final List<List<ContentTranslationResult?>> waveResults;
+      try {
+        waveResults = await Future.wait<List<ContentTranslationResult?>>(
+          wave.map(
+            (chunk) => Future.wait<ContentTranslationResult?>(
+              chunk.map(
+                (comment) => _translationService.request(
+                  _commentTranslationRequest(comment),
+                  uiLanguageCode: uiLanguageCode,
+                  scope: scope,
+                ),
+              ),
+              eagerError: false,
+            ),
+          ),
+          eagerError: false,
+        );
+      } catch (error) {
+        final waveItemCount = wave.fold<int>(
+          0,
+          (total, chunk) => total + chunk.length,
+        );
+        Logger.warning('댓글 번역 일괄 요청 오류($waveItemCount개): $error');
+        _scheduleCommentTranslationRetry(
+          signature: signature,
+          languageRevision: languageRevision,
+        );
+        return false;
+      }
+      for (var chunkIndex = 0; chunkIndex < wave.length; chunkIndex++) {
+        final chunk = wave[chunkIndex];
+        final chunkResults = waveResults[chunkIndex];
+        for (var index = 0; index < chunk.length; index++) {
+          final result = chunkResults[index];
+          if (result?.isReady == true &&
+              result!.translatedFields.containsKey('content')) {
+            results[chunk[index].id] = result;
+          } else if (result == null || result.isRetryableFailure) {
+            // 언어/화면 revision은 아래에서 별도로 걸러진다. 현재 요청이
+            // null로 끝난 경우에는 service에 수동 재시도 상태가 남지 않을 수
+            // 있으므로, 제한된 화면 단위 재시도로 영구 원문 고착을 피한다.
+            hasRetryableFailure = true;
+          }
+        }
+      }
+    }
+
+    if (!mounted ||
+        languageRevision != _translationService.languageRevision ||
+        signature != _commentsTranslationSignature) {
+      return false;
+    }
+    final translatedContents = <String, String>{
+      for (final entry in results.entries)
+        entry.key: entry.value.translatedFields['content']!,
+    };
+    final translatedResult =
+        results.values.cast<ContentTranslationResult?>().firstWhere(
+              (result) => result?.isSameLanguage != true,
+              orElse: () => null,
+            );
+    if (results.length != comments.length) {
+      // One difficult comment must not hide valid sibling translations. Keep
+      // successful results visible while only the missing items retry. The
+      // section remains in retry state until every item is resolved, so users
+      // can still explicitly recover an exhausted item.
+      if (results.isNotEmpty) {
+        setState(() {
+          _translatedCommentContents = Map<String, String>.unmodifiable(
+            translatedContents,
+          );
+          _commentTranslationsReady = true;
+          _hasTranslatedComment = translatedResult != null;
+        });
+      }
+      if (hasRetryableFailure) {
+        _scheduleCommentTranslationRetry(
+          signature: signature,
+          languageRevision: languageRevision,
+        );
+      }
+      return false;
+    }
+
+    setState(() {
+      _translatedCommentContents = Map<String, String>.unmodifiable(
+        translatedContents,
+      );
+      _commentTranslationsReady = true;
+      _hasTranslatedComment = translatedResult != null;
+      _commentsTranslationRetryTimer?.cancel();
+      _commentsTranslationRetryTimer = null;
+      _commentsTranslationRetryAttempt = 0;
+    });
+    if (translatedResult != null) {
+      _translationService.resolveScopeTranslation(
+        scope,
+        _commentsScopeLoaderToken,
+        translatedResult,
+      );
+    } else {
+      // 모든 댓글/답글이 이미 대상 언어라면 번역 완료로 취급하되,
+      // 전환할 별도 결과가 없으므로 scope 토글은 노출하지 않는다.
+      _translationService.registerSameLanguageScope(
+        scope,
+        _commentsScopeLoaderToken,
+      );
+    }
+    return true;
+  }
+
+  void _scheduleCommentTranslationRetry({
+    required String signature,
+    required int languageRevision,
+  }) {
+    if (!mounted ||
+        signature != _commentsTranslationSignature ||
+        languageRevision != _translationService.languageRevision ||
+        _commentsTranslationRetryTimer?.isActive == true ||
+        _commentsTranslationRetryAttempt >=
+            _commentTranslationRetryDelays.length) {
+      return;
+    }
+    final delay =
+        _commentTranslationRetryDelays[_commentsTranslationRetryAttempt++];
+    _commentsTranslationRetryTimer = Timer(delay, () {
+      _commentsTranslationRetryTimer = null;
+      if (!mounted ||
+          signature != _commentsTranslationSignature ||
+          languageRevision != _translationService.languageRevision) {
+        return;
+      }
+      unawaited(_translateCurrentCommentScope());
+    });
+  }
+
+  String? _translatedContentFor(Comment comment) {
+    if (!_commentTranslationsReady ||
+        !_hasTranslatedComment ||
+        _translationService.showsOriginal(_commentsScope)) {
+      return null;
+    }
+    return _translatedCommentContents[comment.id];
   }
 
   /// 현재 게시글은 제목/본문 구분 없이 content를 사용한다.
@@ -370,9 +798,22 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
   @override
   void dispose() {
     _engagementSubscription?.cancel();
+    final commentsScope = _attachedCommentsScope;
+    if (commentsScope != null) {
+      _translationService.clearScopeTranslation(
+        commentsScope,
+        _commentsScopeLoaderToken,
+        notify: false,
+      );
+      _translationService.detachScopeLoader(
+        commentsScope,
+        _commentsScopeLoaderToken,
+      );
+    }
+    _translationService.removeListener(_handleTranslationServiceChanged);
+    _commentsTranslationRetryTimer?.cancel();
     _likeHoldTimer?.cancel();
     _commentController.dispose();
-    _scrollController.removeListener(_handleScrollChanged);
     _scrollController.dispose();
     _commentFocusNode.dispose();
     _imagePageController.dispose();
@@ -397,20 +838,6 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
     });
   }
 
-  void _handleScrollChanged() {
-    if (!mounted) return;
-    if (!_scrollController.hasClients) return;
-
-    final offset = _scrollController.offset;
-    final shouldShow = _showScrollToTop
-        ? offset > _scrollToTopHideOffset
-        : offset > _scrollToTopShowOffset;
-
-    if (shouldShow != _showScrollToTop) {
-      setState(() => _showScrollToTop = shouldShow);
-    }
-  }
-
   Widget _buildPostCategoryTags(AppLocalizations l10n) {
     return Wrap(
       spacing: 10,
@@ -432,72 +859,6 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
         if (_currentPost.requiresHanyangVerification)
           const HanyangContentBadge(),
       ],
-    );
-  }
-
-  void _scrollToTop() {
-    if (!_scrollController.hasClients) return;
-    _scrollController.animateTo(
-      _scrollController.position.minScrollExtent,
-      duration: const Duration(milliseconds: 280),
-      curve: Curves.easeOutCubic,
-    );
-  }
-
-  Widget _buildScrollToTopOverlay() {
-    final isKeyboardOpen = MediaQuery.of(context).viewInsets.bottom > 0;
-    final visible = _showScrollToTop && !isKeyboardOpen;
-
-    // 하단 댓글 입력 영역과 겹치지 않도록 약간 위로 띄움
-    final bottom = MediaQuery.of(context).padding.bottom + 86;
-
-    return Positioned(
-      left: 0,
-      right: 0,
-      bottom: bottom,
-      child: IgnorePointer(
-        ignoring: !visible,
-        child: AnimatedSlide(
-          offset: visible ? Offset.zero : const Offset(0, 0.35),
-          duration: const Duration(milliseconds: 180),
-          curve: Curves.easeOutCubic,
-          child: AnimatedOpacity(
-            opacity: visible ? 1 : 0,
-            duration: const Duration(milliseconds: 180),
-            curve: Curves.easeOut,
-            child: Center(
-              child: Semantics(
-                button: true,
-                label: '맨 위로 이동',
-                child: Material(
-                  color: const Color(0xFFF3F4F6),
-                  elevation: 2,
-                  shadowColor: const Color(0x14000000),
-                  borderRadius: BorderRadius.circular(999),
-                  child: InkWell(
-                    onTap: _scrollToTop,
-                    borderRadius: BorderRadius.circular(999),
-                    child: Container(
-                      width: 44,
-                      height: 44,
-                      decoration: BoxDecoration(
-                        borderRadius: BorderRadius.circular(999),
-                        border: Border.all(
-                            color: const Color(0xFFE5E7EB), width: 1),
-                      ),
-                      child: const Icon(
-                        Icons.keyboard_arrow_up_rounded,
-                        size: 22,
-                        color: Color(0xFF374151),
-                      ),
-                    ),
-                  ),
-                ),
-              ),
-            ),
-          ),
-        ),
-      ),
     );
   }
 
@@ -2105,7 +2466,10 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
     Future.delayed(Duration(seconds: delaySeconds), () {
       if (mounted) {
         // 캐시를 비우고 다시 요청 (일시적 403/네트워크 오류 대응)
-        CachedNetworkImage.evictFromCache(imageUrl);
+        CachedNetworkImage.evictFromCache(
+          imageUrl,
+          cacheManager: AppImageCacheManager.instance,
+        );
         setState(() {
           _imageRetrying[imageUrl] = false;
         });
@@ -2139,7 +2503,15 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
     final futures = targets.map((url) async {
       try {
         await precacheImage(
-          CachedNetworkImageProvider(url, headers: _imageHttpHeaders),
+          ResizeImage.resizeIfNeeded(
+            _detailImageCacheWidth,
+            null,
+            CachedNetworkImageProvider(
+              url,
+              headers: _imageHttpHeaders,
+              cacheManager: AppImageCacheManager.instance,
+            ),
+          ),
           context,
         );
       } catch (_) {
@@ -2197,6 +2569,8 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
       key: ValueKey('$imageUrl:$retryCount'),
       imageUrl: imageUrl,
       httpHeaders: _imageHttpHeaders,
+      cacheManager: AppImageCacheManager.instance,
+      memCacheWidth: isFullScreen ? null : _detailImageCacheWidth,
       fit: fit,
       fadeInDuration: const Duration(milliseconds: 140),
       fadeOutDuration: const Duration(milliseconds: 120),
@@ -2287,7 +2661,10 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
                 // 수동 재시도 버튼 (최대 재시도 후에만 표시)
                 ElevatedButton.icon(
                   onPressed: () {
-                    CachedNetworkImage.evictFromCache(imageUrl);
+                    CachedNetworkImage.evictFromCache(
+                      imageUrl,
+                      cacheManager: AppImageCacheManager.instance,
+                    );
                     setState(() {
                       _imageRetryCount[imageUrl] = 0;
                       _imageRetrying[imageUrl] = false;
@@ -2377,6 +2754,7 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
                   borderRadius: BorderRadius.circular(DesignTokens.r12),
                   child: AdaptivePostImageFrame(
                     imageUrl: standaloneImageUrls.first,
+                    cacheWidth: _detailImageCacheWidth,
                     child: Stack(
                       fit: StackFit.expand,
                       children: [
@@ -2646,7 +3024,7 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
             ),
           ],
         ),
-        if (content.isNotEmpty) ...[
+        if (content.trim().isNotEmpty) ...[
           SizedBox(height: context.rs(10).clamp(8.0, 12.0).toDouble()),
           TranslatableContent(
             request: ContentTranslationRequest(
@@ -2727,6 +3105,9 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
       );
     }
 
+    final hasTranslatablePostText =
+        _getUnifiedBodyText(_currentPost).trim().isNotEmpty;
+
     return Scaffold(
       resizeToAvoidBottomInset: true,
       backgroundColor: Colors.white, // 상세 화면은 흰색 배경 유지
@@ -2741,11 +3122,13 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
         title: const SizedBox.shrink(),
         centerTitle: false,
         actions: [
-          TranslationScopeToggle(
-            scope: 'post:${_currentPost.id}',
-            appBarAction: true,
-          ),
-          const SizedBox(width: DesignTokens.s2),
+          if (hasTranslatablePostText) ...[
+            TranslationScopeToggle(
+              scope: 'post:${_currentPost.id}',
+              appBarAction: true,
+            ),
+            const SizedBox(width: DesignTokens.s2),
+          ],
           IconButton(
             tooltip: AppLocalizations.of(context)!.moreOptions,
             onPressed: _openPostActionsSheet,
@@ -2772,18 +3155,21 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
                       _buildEditorialPostContent(),
 
                       // 댓글 섹션 헤더에서 "Comments" 텍스트 제거 (요구사항)
-                      const SizedBox(height: DesignTokens.s4),
-                      Padding(
-                        padding: const EdgeInsets.only(right: DesignTokens.s12),
-                        child: Align(
-                          alignment: Alignment.centerRight,
-                          child: TranslationScopeToggle(
-                            scope: 'post-comments:${_currentPost.id}',
-                            postCardHeader: true,
+                      if (_commentsToTranslate.isNotEmpty) ...[
+                        const SizedBox(height: DesignTokens.s4),
+                        Padding(
+                          padding:
+                              const EdgeInsets.only(right: DesignTokens.s12),
+                          child: Align(
+                            alignment: Alignment.centerRight,
+                            child: TranslationScopeToggle(
+                              scope: _commentsScope,
+                              postCardHeader: true,
+                            ),
                           ),
                         ),
-                      ),
-                      const SizedBox(height: DesignTokens.s2),
+                        const SizedBox(height: DesignTokens.s2),
+                      ],
 
                       // 확장된 댓글 목록 (대댓글 + 좋아요 지원)
                       StreamBuilder<List<Comment>>(
@@ -2808,6 +3194,35 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
                             );
                           }
 
+                          if (identical(
+                            snapshot.data,
+                            _commentsRecoveryPlaceholder,
+                          )) {
+                            final isKo =
+                                Localizations.localeOf(context).languageCode ==
+                                    'ko';
+                            return Padding(
+                              padding: const EdgeInsets.all(16),
+                              child: Row(
+                                mainAxisAlignment: MainAxisAlignment.center,
+                                children: [
+                                  const SizedBox.square(
+                                    dimension: 16,
+                                    child: CircularProgressIndicator(
+                                      strokeWidth: 1.8,
+                                    ),
+                                  ),
+                                  const SizedBox(width: 8),
+                                  Text(
+                                    isKo
+                                        ? '댓글을 자동으로 다시 불러오는 중입니다.'
+                                        : 'Reconnecting comments automatically…',
+                                  ),
+                                ],
+                              ),
+                            );
+                          }
+
                           // NOTE: 부모 댓글이 먼저 삭제되고 대댓글은 서버 트리거로 지워지는 동안,
                           // "고아 대댓글"이 잠깐 남아 commentCount가 튀는 UX를 방지하기 위해
                           // 화면에서는 부모가 존재하는 대댓글만 집계/표시한다.
@@ -2823,6 +3238,7 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
                           );
                           final topLevelComments =
                               allComments.where((c) => c.isTopLevel).toList();
+                          _syncCommentTranslationScope(allComments);
                           final currentUser = FirebaseAuth.instance.currentUser;
                           final activeCommentCount =
                               CommentService.countActiveThreadComments(
@@ -2897,6 +3313,8 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
                                       );
                                     },
                               parentTopLevelCommentId: parentTopId,
+                              externallyManagedTranslation: true,
+                              translatedContent: _translatedContentFor(comment),
                             );
                           }
 
@@ -2939,6 +3357,9 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
                                         );
                                       },
                                 parentTopLevelCommentId: comment.id,
+                                externallyManagedTranslation: true,
+                                translatedContent:
+                                    _translatedContentFor(comment),
                                 // 대댓글을 위한 빌더: 각 대댓글마다 개별 콜백 생성
                                 replyWidgetBuilder: (reply) =>
                                     buildCommentWidget(reply, comment.id),
@@ -3119,7 +3540,6 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
               ),
             ],
           ),
-          _buildScrollToTopOverlay(),
         ],
       ),
     );

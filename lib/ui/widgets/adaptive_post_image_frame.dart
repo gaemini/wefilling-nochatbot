@@ -4,20 +4,23 @@ import 'dart:math' as math;
 import 'package:cached_network_image/cached_network_image.dart';
 import 'package:flutter/material.dart';
 
-import '../../design/tokens.dart';
 import '../../services/cache/app_image_cache_manager.dart';
 
 /// 원본 비율을 사용하되 소셜 피드에서 과도하게 크거나 납작해지지 않도록
 /// 4:5~1.91:1 범위와 화면 기준 최대 높이를 적용한다.
 class AdaptivePostImageFrame extends StatefulWidget {
+  static const int defaultCacheWidth = 800;
+
   const AdaptivePostImageFrame({
     super.key,
     required this.imageUrl,
     required this.child,
+    this.cacheWidth = defaultCacheWidth,
   });
 
   final String imageUrl;
   final Widget child;
+  final int cacheWidth;
 
   @override
   State<AdaptivePostImageFrame> createState() => _AdaptivePostImageFrameState();
@@ -29,6 +32,9 @@ class _AdaptivePostImageFrameState extends State<AdaptivePostImageFrame> {
   static const double _maximumAspectRatio = 1.91;
   static const double _absoluteMaximumHeight = 480;
   static const int _maximumCachedRatios = 300;
+  // Feed images use the same provider size as their visible child. Resolving
+  // the original image here would create a second full-resolution decode just
+  // to discover its aspect ratio.
   static final LinkedHashMap<String, double> _aspectRatioCache =
       LinkedHashMap<String, double>();
 
@@ -66,9 +72,13 @@ class _AdaptivePostImageFrameState extends State<AdaptivePostImageFrame> {
       return;
     }
 
-    final provider = CachedNetworkImageProvider(
-      url,
-      cacheManager: AppImageCacheManager.instance,
+    final provider = ResizeImage.resizeIfNeeded(
+      widget.cacheWidth,
+      null,
+      CachedNetworkImageProvider(
+        url,
+        cacheManager: AppImageCacheManager.instance,
+      ),
     );
     final stream = provider.resolve(createLocalImageConfiguration(context));
     late final ImageStreamListener listener;
@@ -137,15 +147,13 @@ class _AdaptivePostImageFrameState extends State<AdaptivePostImageFrame> {
         final desiredHeight = availableWidth / aspectRatio;
         final height = math.min(desiredHeight, maximumHeight);
 
-        return AnimatedSize(
-          duration: DesignTokens.normal,
-          curve: Curves.easeOutCubic,
-          alignment: Alignment.topCenter,
-          child: SizedBox(
-            width: double.infinity,
-            height: height,
-            child: widget.child,
-          ),
+        // AnimatedSize relaid out the surrounding sliver on every animation
+        // frame as multiple image ratios arrived. A single size update keeps
+        // the scroll position stable and avoids repeated feed layout work.
+        return SizedBox(
+          width: double.infinity,
+          height: height,
+          child: widget.child,
         );
       },
     );

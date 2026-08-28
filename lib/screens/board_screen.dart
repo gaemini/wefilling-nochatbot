@@ -51,6 +51,7 @@ class BoardScreenState extends State<BoardScreen> {
   final CommentService _commentService = CommentService();
   final MeetupService _meetupService = MeetupService();
   Timer? _midnightTimer;
+  late final Stream<List<Post>> _postsStream;
   late final Stream<List<Meetup>> _todayMeetupsStream;
 
   List<Meetup>? _cachedTodayMeetups;
@@ -59,7 +60,6 @@ class BoardScreenState extends State<BoardScreen> {
   final Map<String, int> _commentCountOverrides = {};
   final Map<String, int> _commentCountOverrideSources = {};
 
-  static const int _maxTodayMeetups = 3;
   // 1000px 선행 빌드는 이미지가 많은 카드 여러 개를 한 프레임에 생성해
   // 디코딩과 자동 번역을 동시에 시작했다. 약 반 화면만 준비해 빠른 스크롤의
   // 여유는 유지하면서 화면 밖 작업이 현재 프레임을 방해하지 않게 한다.
@@ -239,6 +239,10 @@ class BoardScreenState extends State<BoardScreen> {
   @override
   void initState() {
     super.initState();
+    // 탭 전환이나 하단 내비게이션 애니메이션으로 build가 다시 호출돼도
+    // 동일 스트림 구독을 유지한다. 목록과 스크롤 위치가 그대로 보존되고,
+    // 다른 탭에 있는 동안 들어온 최신 포스트도 기존 구독으로 반영된다.
+    _postsStream = _postService.getPostsStream();
     unawaited(_bootstrapFeed());
     _scheduleMidnightRefresh();
     // Today 밋업 섹션은 현재 사용자의 공개 범위 안에서:
@@ -797,7 +801,7 @@ class BoardScreenState extends State<BoardScreen> {
             child: NotificationListener<ScrollNotification>(
               onNotification: _handleBoardScrollNotification,
               child: StreamBuilder<List<Post>>(
-                stream: _postService.getPostsStream(),
+                stream: _postsStream,
                 builder: (context, postSnap) {
                   return _buildTodayPostsTab(postSnap);
                 },
@@ -922,6 +926,8 @@ class BoardScreenState extends State<BoardScreen> {
     required IconData icon,
     required String title,
     bool isLoading = false,
+    String? actionLabel,
+    VoidCallback? onAction,
   }) {
     final horizontal = _sectionHorizontalPadding;
     final iconSize = context.ri(18).clamp(17.0, 19.0).toDouble();
@@ -955,6 +961,29 @@ class BoardScreenState extends State<BoardScreen> {
                 dimension: 14,
                 child: CircularProgressIndicator(strokeWidth: 2),
               ),
+            if (actionLabel != null && onAction != null) ...[
+              SizedBox(width: gap),
+              TextButton(
+                key: const ValueKey('today_meetups_all_button'),
+                onPressed: onAction,
+                style: TextButton.styleFrom(
+                  foregroundColor: const Color(0xFF475467),
+                  minimumSize: const Size(44, 36),
+                  padding: const EdgeInsets.symmetric(horizontal: 8),
+                  tapTargetSize: MaterialTapTargetSize.padded,
+                  visualDensity: VisualDensity.compact,
+                ),
+                child: Text(
+                  actionLabel,
+                  style: TextStyle(
+                    fontFamily: 'Inter',
+                    fontFamilyFallback: const ['NotoSansKR'],
+                    fontSize: context.rf(12.5).clamp(12.0, 13.0).toDouble(),
+                    fontWeight: FontWeight.w800,
+                  ),
+                ),
+              ),
+            ],
           ],
         ),
       ),
@@ -1404,17 +1433,8 @@ class BoardScreenState extends State<BoardScreen> {
         final todayMeetups =
             meetupSnapshot.data ?? _cachedTodayMeetups ?? const <Meetup>[];
 
-        final visibleTodayMeetups =
-            todayMeetups.take(_maxTodayMeetups).toList(growable: false);
-        final hiddenTodayMeetupCount =
-            todayMeetups.length - visibleTodayMeetups.length;
-
-        final meetupsCount = isMeetupsLoading
-            ? 2
-            : (todayMeetups.isNotEmpty
-                ? visibleTodayMeetups.length +
-                    (hiddenTodayMeetupCount > 0 ? 1 : 0)
-                : 1);
+        // 로딩/빈 상태/캐러셀 모두 기존 한 칸 높이를 사용한다.
+        final meetupsCount = 1;
 
         final visibleTodayPosts = _mergeVisibleTodayPosts(todayPosts);
         final List<dynamic> todayCombined = <dynamic>[...visibleTodayPosts]
@@ -1473,6 +1493,11 @@ class BoardScreenState extends State<BoardScreen> {
                   icon: Icons.event_available_rounded,
                   title: todayMeetupsTitle,
                   isLoading: isMeetupsLoading,
+                  actionLabel:
+                      Localizations.localeOf(context).languageCode == 'ko'
+                          ? '모두 보기'
+                          : 'ALL',
+                  onAction: widget.onOpenMeetups,
                 );
               }
               i -= 1;
@@ -1489,32 +1514,7 @@ class BoardScreenState extends State<BoardScreen> {
                   return _buildTodaySectionMessage(noTodayMeetupsText);
                 }
 
-                if (i >= visibleTodayMeetups.length) {
-                  return _buildTodayMeetupsMoreButton(
-                    hiddenMeetupCount: hiddenTodayMeetupCount,
-                  );
-                }
-
-                final meetup = visibleTodayMeetups[i];
-                return Padding(
-                  padding: _boardPostCardMargin,
-                  child: StreamBuilder<int>(
-                    stream: _meetupService.participantCountStream(
-                      meetup.id,
-                      fallback: meetup.currentParticipants,
-                    ),
-                    builder: (context, countSnap) {
-                      final count =
-                          countSnap.data ?? meetup.currentParticipants;
-                      return BoardMeetupCard(
-                        key: ValueKey('board_meetup_${meetup.id}'),
-                        meetup: meetup,
-                        currentParticipants: count,
-                        onTap: () => _navigateToMeetupDetail(meetup),
-                      );
-                    },
-                  ),
-                );
+                return _buildTodayMeetupCarousel(todayMeetups);
               }
               i -= meetupsCount;
 
@@ -1620,52 +1620,39 @@ class BoardScreenState extends State<BoardScreen> {
     );
   }
 
-  Widget _buildTodayMeetupsMoreButton({required int hiddenMeetupCount}) {
-    final isKo = Localizations.localeOf(context).languageCode == 'ko';
-    final label = _safeL10n((l) => l.moreOptions, '더보기');
-    final semanticsLabel = isKo
-        ? '$label, 밋업 $hiddenMeetupCount개 더 보기'
-        : '$label, view $hiddenMeetupCount more meetups';
-
-    return Padding(
-      padding: EdgeInsets.fromLTRB(
-        _sectionHorizontalPadding,
-        0,
-        _sectionHorizontalPadding,
-        6,
-      ),
-      child: Center(
-        child: Semantics(
-          key: const ValueKey('today_meetups_more_button'),
-          button: true,
-          label: semanticsLabel,
-          excludeSemantics: true,
-          child: TextButton(
-            onPressed: widget.onOpenMeetups,
-            style: TextButton.styleFrom(
-              foregroundColor: const Color(0xFF475467),
-              minimumSize: const Size(88, 44),
-              padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
-              tapTargetSize: MaterialTapTargetSize.padded,
-            ),
-            child: Row(
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                Text(
-                  label,
-                  style: TextStyle(
-                    fontFamily: 'Inter',
-                    fontFamilyFallback: const ['NotoSansKR'],
-                    fontSize: context.rf(13).clamp(12.5, 14.0).toDouble(),
-                    fontWeight: FontWeight.w700,
-                  ),
+  Widget _buildTodayMeetupCarousel(List<Meetup> meetups) {
+    return SizedBox(
+      height: context.rh(108, min: 104, max: 116),
+      child: PageView.builder(
+        key: const PageStorageKey('board_today_meetups_carousel'),
+        physics: meetups.length > 1
+            ? const PageScrollPhysics()
+            : const NeverScrollableScrollPhysics(),
+        itemCount: meetups.length,
+        itemBuilder: (context, index) {
+          final meetup = meetups[index];
+          return Semantics(
+            label: '${index + 1} / ${meetups.length}',
+            child: Padding(
+              padding: _boardPostCardMargin,
+              child: StreamBuilder<int>(
+                stream: _meetupService.participantCountStream(
+                  meetup.id,
+                  fallback: meetup.currentParticipants,
                 ),
-                const SizedBox(width: 2),
-                const Icon(Icons.chevron_right_rounded, size: 18),
-              ],
+                builder: (context, countSnap) {
+                  final count = countSnap.data ?? meetup.currentParticipants;
+                  return BoardMeetupCard(
+                    key: ValueKey('board_meetup_${meetup.id}'),
+                    meetup: meetup,
+                    currentParticipants: count,
+                    onTap: () => _navigateToMeetupDetail(meetup),
+                  );
+                },
+              ),
             ),
-          ),
-        ),
+          );
+        },
       ),
     );
   }

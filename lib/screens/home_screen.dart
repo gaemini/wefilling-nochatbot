@@ -21,6 +21,7 @@ import '../services/meetup_calendar_cache_service.dart';
 import '../services/preload_service.dart';
 import '../ui/snackbar/app_snackbar.dart';
 import '../ui/widgets/app_fab.dart';
+import '../ui/widgets/audience_ring.dart';
 import '../ui/widgets/empty_state.dart';
 import '../ui/widgets/meetup_home_card.dart';
 import '../ui/widgets/skeletons.dart';
@@ -35,10 +36,10 @@ class MeetupHomePage extends StatefulWidget {
   const MeetupHomePage({super.key, this.initialMeetupId});
 
   @override
-  State<MeetupHomePage> createState() => _MeetupHomePageState();
+  State<MeetupHomePage> createState() => MeetupHomePageState();
 }
 
-class _MeetupHomePageState extends State<MeetupHomePage> with PreloadMixin {
+class MeetupHomePageState extends State<MeetupHomePage> with PreloadMixin {
   final MeetupService _meetupService = MeetupService();
   final MeetupCalendarCacheService _calendarCache =
       MeetupCalendarCacheService.instance;
@@ -66,6 +67,7 @@ class _MeetupHomePageState extends State<MeetupHomePage> with PreloadMixin {
 
   // 참여/나가기 연타 방지 + 최소 로딩 표시(1초)
   final Set<String> _joinLeaveInFlight = <String>{};
+  Timer? _calendarMarkerRefreshTimer;
 
   // 참여 상태 Stream 구독 관리
   final Map<String, StreamSubscription?> _participationSubscriptions = {};
@@ -89,6 +91,11 @@ class _MeetupHomePageState extends State<MeetupHomePage> with PreloadMixin {
     _calendarCache.start();
     _calendarCache.addListener(_onCalendarCacheChanged);
     unawaited(_calendarCache.warmMonth(_focusedMonth));
+    // 모임 일정이 지나면 Firestore 변경이 없어도 테두리가 사라져야 한다.
+    _calendarMarkerRefreshTimer =
+        Timer.periodic(const Duration(seconds: 30), (_) {
+      if (mounted && _isCalendarExpanded) setState(() {});
+    });
 
     WidgetsBinding.instance.addPostFrameCallback((_) {
       // 알림에서 전달받은 모임이 있으면 상세로 이동
@@ -101,6 +108,7 @@ class _MeetupHomePageState extends State<MeetupHomePage> with PreloadMixin {
   @override
   void dispose() {
     _pageController.dispose();
+    _calendarMarkerRefreshTimer?.cancel();
     _calendarCache.removeListener(_onCalendarCacheChanged);
     for (final subscription in _participationSubscriptions.values) {
       subscription?.cancel();
@@ -125,6 +133,35 @@ class _MeetupHomePageState extends State<MeetupHomePage> with PreloadMixin {
     _streamMonthKey = key;
     _visibleMonthStream = _meetupService.watchVisibleMeetupsForMonth(key);
     _myRelevantMonthStream = _meetupService.watchMyRelevantMeetupsForMonth(key);
+  }
+
+  /// 포스트의 `오늘의 밋업`에서 진입할 때 기존 탭 상태와 무관하게 오늘을 연다.
+  void showToday() {
+    if (!mounted) return;
+
+    final today = _dayKey(DateTime.now());
+    final targetPage =
+        _initialPageIndex + today.difference(_dayKey(_baseDate)).inDays;
+
+    setState(() {
+      _selectedDay = today;
+      _focusedMonth = DateTime(today.year, today.month);
+      _ensureMonthStreams(_focusedMonth);
+    });
+
+    void moveToToday() {
+      if (!mounted || !_pageController.hasClients) return;
+      _pageController.jumpToPage(targetPage);
+    }
+
+    if (_pageController.hasClients) {
+      moveToToday();
+    } else {
+      WidgetsBinding.instance.addPostFrameCallback((_) => moveToToday());
+    }
+
+    unawaited(_calendarCache.warmMonth(_focusedMonth));
+    unawaited(_calendarCache.warmDay(today));
   }
 
   // ===== 날짜/포맷 유틸 =====
@@ -790,13 +827,13 @@ class _MeetupHomePageState extends State<MeetupHomePage> with PreloadMixin {
         },
         child: SizedBox(
           height: headerHeight,
-          child: Row(
-            children: [
-              SizedBox(width: iconSize), // 좌우 균형(아이콘 자리)
-              Expanded(
-                child: Center(
-                  child: MediaQuery.withClampedTextScaling(
-                    maxScaleFactor: 1.2,
+          child: Center(
+            child: MediaQuery.withClampedTextScaling(
+              maxScaleFactor: 1.2,
+              child: Row(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  Flexible(
                     child: Text(
                       label,
                       maxLines: 1,
@@ -811,16 +848,17 @@ class _MeetupHomePageState extends State<MeetupHomePage> with PreloadMixin {
                       ),
                     ),
                   ),
-                ),
+                  const SizedBox(width: 3),
+                  Icon(
+                    _isCalendarExpanded
+                        ? Icons.arrow_drop_up_rounded
+                        : Icons.arrow_drop_down_rounded,
+                    size: iconSize,
+                    color: const Color(0xFF111827),
+                  ),
+                ],
               ),
-              Icon(
-                _isCalendarExpanded
-                    ? Icons.keyboard_arrow_up
-                    : Icons.keyboard_arrow_down,
-                size: iconSize,
-                color: const Color(0xFF111827),
-              ),
-            ],
+            ),
           ),
         ),
       ),
@@ -828,7 +866,6 @@ class _MeetupHomePageState extends State<MeetupHomePage> with PreloadMixin {
   }
 
   Widget _buildCalendar({
-    required Map<DateTime, List<Meetup>> visibleByDay,
     required Map<DateTime, List<Meetup>> myByDay,
   }) {
     final lang = Localizations.localeOf(context).languageCode;
@@ -841,13 +878,11 @@ class _MeetupHomePageState extends State<MeetupHomePage> with PreloadMixin {
       return (myByDay[key]?.isNotEmpty ?? false);
     }
 
-    bool hasFriendsOnlyBadgeMeetupOnFutureDay(DateTime day) {
+    bool hasVisibleFriendMeetupOnDay(DateTime day) {
       final key = _dayKey(day);
-      if (!key.isAfter(today)) return false; // 미래만 (오늘 제외)
-      // ✅ 요구사항: 해당 날짜 모임 중 "Friends Only 배지"가 있는 모임만 주황 세모 표시
-      // - 카드 배지 기준: visibility == 'category'
-      final meetups = visibleByDay[key] ?? const <Meetup>[];
-      return meetups.any((m) => m.visibility == 'category');
+      // 친구가 만든 모임 중 현재 사용자가 카드를 볼 수 있고, 공개 시간과
+      // 실제 일정이 모두 만료되지 않은 모임이 하나라도 있을 때 표시한다.
+      return _calendarCache.hasFriendMeetupOnDay(key);
     }
 
     return AnimatedSize(
@@ -933,9 +968,7 @@ class _MeetupHomePageState extends State<MeetupHomePage> with PreloadMixin {
                       isToday: isSameDay(day, DateTime.now()),
                       // ✅ 요구사항: 과거에 참여했던 모임이 있는 날만 빨간 체크
                       showCheck: hasPastParticipatedMeetupOnDay(day),
-                      // ✅ 요구사항: 미래 날짜 중 Friends Only 배지 모임이 있는 날만 주황 세모
-                      showFriendOnlyTriangle:
-                          hasFriendsOnlyBadgeMeetupOnFutureDay(day),
+                      showFriendMeetupBorder: hasVisibleFriendMeetupOnDay(day),
                     );
                   },
                   todayBuilder: (context, day, focusedDay) {
@@ -945,8 +978,7 @@ class _MeetupHomePageState extends State<MeetupHomePage> with PreloadMixin {
                       isToday: true,
                       // ✅ 요구사항: 오늘은 체크 표시하지 않음
                       showCheck: false,
-                      // ✅ 요구사항: 오늘은 "미래"가 아니므로 주황 세모도 표시하지 않음
-                      showFriendOnlyTriangle: false,
+                      showFriendMeetupBorder: hasVisibleFriendMeetupOnDay(day),
                     );
                   },
                   selectedBuilder: (context, day, focusedDay) {
@@ -955,8 +987,7 @@ class _MeetupHomePageState extends State<MeetupHomePage> with PreloadMixin {
                       isSelected: true,
                       isToday: isSameDay(day, DateTime.now()),
                       showCheck: hasPastParticipatedMeetupOnDay(day),
-                      showFriendOnlyTriangle:
-                          hasFriendsOnlyBadgeMeetupOnFutureDay(day),
+                      showFriendMeetupBorder: hasVisibleFriendMeetupOnDay(day),
                     );
                   },
                   markerBuilder: (_, __, ___) => const SizedBox.shrink(),
@@ -1038,8 +1069,7 @@ class _MeetupHomePageState extends State<MeetupHomePage> with PreloadMixin {
                     _buildCategoryChips(),
                     // 상단 고정: 달력 헤더 + (펼침 시) 달력
                     _buildCalendarHeader(),
-                    _buildCalendar(
-                        visibleByDay: visibleByDay, myByDay: myByDay),
+                    _buildCalendar(myByDay: myByDay),
                     const SizedBox(height: 4),
                     // PageView로 날짜별 리스트 슬라이드
                     Expanded(
@@ -1306,14 +1336,14 @@ class _CalendarDayCell extends StatelessWidget {
   final bool isSelected;
   final bool isToday;
   final bool showCheck;
-  final bool showFriendOnlyTriangle;
+  final bool showFriendMeetupBorder;
 
   const _CalendarDayCell({
     required this.day,
     required this.isSelected,
     required this.isToday,
     required this.showCheck,
-    required this.showFriendOnlyTriangle,
+    required this.showFriendMeetupBorder,
   });
 
   Color _weekdayColor(DateTime d) {
@@ -1335,6 +1365,36 @@ class _CalendarDayCell extends StatelessWidget {
         : (isSelected
             ? const Color(0xFF4B5563)
             : _weekdayColor(day)); // 선택된 날짜도 부드러운 회색
+    final dateContent = Container(
+      alignment: Alignment.center,
+      decoration: BoxDecoration(
+        color: fill,
+        shape: BoxShape.circle,
+      ),
+      child: Text(
+        '${day.day}',
+        style: TextStyle(
+          fontFamily: 'Inter',
+          fontFamilyFallback: const ['NotoSansKR'],
+          fontSize: 14,
+          fontWeight:
+              (isToday || isSelected) ? FontWeight.w700 : FontWeight.w600,
+          color: textColor,
+        ),
+      ),
+    );
+    final dayContent = showFriendMeetupBorder
+        ? AudienceRing(
+            restricted: true,
+            emphasized: true,
+            size: 38,
+            ringWidth: 2.5,
+            semanticLabel: Localizations.localeOf(context).languageCode == 'ko'
+                ? '볼 수 있는 친구 모임이 있는 날짜'
+                : 'Date with a visible friend meetup',
+            child: dateContent,
+          )
+        : dateContent;
 
     return Center(
       child: SizedBox(
@@ -1344,25 +1404,7 @@ class _CalendarDayCell extends StatelessWidget {
           clipBehavior: Clip.none,
           children: [
             Positioned.fill(
-              child: Container(
-                alignment: Alignment.center,
-                decoration: BoxDecoration(
-                  color: fill,
-                  shape: BoxShape.circle,
-                ),
-                child: Text(
-                  '${day.day}',
-                  style: TextStyle(
-                    fontFamily: 'Inter',
-                    fontFamilyFallback: const ['NotoSansKR'],
-                    fontSize: 14,
-                    fontWeight: (isToday || isSelected)
-                        ? FontWeight.w700
-                        : FontWeight.w600,
-                    color: textColor,
-                  ),
-                ),
-              ),
+              child: dayContent,
             ),
             if (showCheck && !isToday)
               const Positioned(
@@ -1374,61 +1416,11 @@ class _CalendarDayCell extends StatelessWidget {
                   strokeWidth: 2.6,
                 ),
               ),
-            if (showFriendOnlyTriangle)
-              const Positioned(
-                bottom: -7,
-                left: 0,
-                right: 0,
-                child: Center(
-                  child: _OrangeTriangleMarker(size: 11),
-                ),
-              ),
           ],
         ),
       ),
     );
   }
-}
-
-class _OrangeTriangleMarker extends StatelessWidget {
-  final double size;
-
-  const _OrangeTriangleMarker({required this.size});
-
-  @override
-  Widget build(BuildContext context) {
-    return SizedBox(
-      width: size,
-      height: size,
-      child: CustomPaint(
-        painter: _OrangeTrianglePainter(),
-      ),
-    );
-  }
-}
-
-class _OrangeTrianglePainter extends CustomPainter {
-  @override
-  void paint(Canvas canvas, Size size) {
-    const color = Color(0xFFF97316); // orange
-    final paint = Paint()
-      ..color = color
-      ..style = PaintingStyle.fill;
-
-    final w = size.width;
-    final h = size.height;
-
-    final path = Path()
-      ..moveTo(w * 0.5, 0)
-      ..lineTo(0, h)
-      ..lineTo(w, h)
-      ..close();
-
-    canvas.drawPath(path, paint);
-  }
-
-  @override
-  bool shouldRepaint(covariant CustomPainter oldDelegate) => false;
 }
 
 class _MeetupCheckMark extends StatelessWidget {

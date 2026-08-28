@@ -241,7 +241,7 @@ class _SnackChatScreenState extends State<SnackChatScreen>
   bool _translationScanScheduled = false;
   int _translationBatchesInFlight = 0;
   bool _translationModeReady = false;
-  bool _manualTranslationRetryPending = false;
+  bool _manualTranslationRetryInFlight = false;
   bool _isUserScrolling = false;
   int _userScrollRevision = 0;
   bool _translationRestoreScheduled = false;
@@ -307,7 +307,7 @@ class _SnackChatScreenState extends State<SnackChatScreen>
     _translationScanScheduled = false;
     _translationBatchesInFlight = 0;
     _translationModeReady = false;
-    _manualTranslationRetryPending = false;
+    _manualTranslationRetryInFlight = false;
     _isUserScrolling = false;
     _userScrollRevision++;
     _cancelPendingTranslationRestore();
@@ -381,7 +381,7 @@ class _SnackChatScreenState extends State<SnackChatScreen>
         _translationStateGeneration++;
         _translationBatchesInFlight = 0;
         _translationModeReady = false;
-        _manualTranslationRetryPending = false;
+        _manualTranslationRetryInFlight = false;
         _messageTranslations.clear();
         _translationSourceSignatures.clear();
         _translationRequestsInFlight.clear();
@@ -627,9 +627,7 @@ class _SnackChatScreenState extends State<SnackChatScreen>
     final candidates = _visibleMessagesNeedingTranslation(limit: batchSize);
     if (candidates.isEmpty) return;
 
-    final manualRetry = _manualTranslationRetryPending;
-    _manualTranslationRetryPending = false;
-    await _translateMessageBatch(candidates, manualRetry: manualRetry);
+    await _translateMessageBatch(candidates);
   }
 
   Future<void> _translateMessageBatch(
@@ -944,30 +942,51 @@ class _SnackChatScreenState extends State<SnackChatScreen>
 
   Future<void> _toggleSnackTranslation() async {
     if (!_translationModeReady) return;
-    final providerRetryExhausted =
-        _translationService.hasExhaustedRetryForScope(_translationScope);
-    if (providerRetryExhausted || _hasLocalTranslationFailures) {
-      if (providerRetryExhausted &&
-          !_translationService.canRetryScope(_translationScope)) {
-        return;
+    await _translationService.toggleSnackRoom(widget.snackChatId);
+  }
+
+  SnackChatMessage? _nextFailedMessageForManualRetry() {
+    for (final message in _messages) {
+      if (!_canTranslateMessage(message) || _hasCurrentTranslation(message)) {
+        continue;
       }
-      setState(() {
-        _manualTranslationRetryPending = true;
-        _translationFailures.clear();
-        _translationRetryAfter.clear();
-        _translationRetryTimer?.cancel();
-        _translationRetryTimer = null;
-      });
-      _scheduleVisibleTranslations();
+      final requestKey = _translationRequestKey(message);
+      if ((_translationFailures[requestKey] ?? 0) < 2 ||
+          _translationRequestsInFlight.contains(requestKey)) {
+        continue;
+      }
+      return message;
+    }
+    return null;
+  }
+
+  Future<void> _retryOneFailedTranslation() async {
+    if (!_translationModeReady ||
+        _translationShowsOriginal ||
+        _manualTranslationRetryInFlight ||
+        !_canStartTranslationBatch) {
       return;
     }
-    if (_translationShowsOriginal) {
-      _translationFailures.clear();
-      _translationRetryAfter.clear();
-      _translationRetryTimer?.cancel();
-      _translationRetryTimer = null;
+    final providerRetryExhausted =
+        _translationService.hasExhaustedRetryForScope(_translationScope);
+    if (providerRetryExhausted &&
+        !_translationService.canRetryScope(_translationScope)) {
+      return;
     }
-    await _translationService.toggleSnackRoom(widget.snackChatId);
+    final message = _nextFailedMessageForManualRetry();
+    if (message == null) return;
+
+    setState(() => _manualTranslationRetryInFlight = true);
+    try {
+      // 사용자가 누를 때마다 실패한 메시지 하나만 재시도한다. 기존 배치 크기나
+      // 전체 대화 스캔을 재사용하지 않아 불필요한 번역 비용을 만들지 않는다.
+      await _translateMessageBatch(
+        <SnackChatMessage>[message],
+        manualRetry: true,
+      );
+    } finally {
+      if (mounted) setState(() => _manualTranslationRetryInFlight = false);
+    }
   }
 
   @override
@@ -4171,29 +4190,86 @@ class _SnackChatScreenState extends State<SnackChatScreen>
 
   Widget _buildTranslationControl({required bool isKo}) {
     final showingOriginal = _translationShowsOriginal;
-    final providerRetryExhausted = _translationProviderRetryExhausted;
-    final retryNeeded = providerRetryExhausted || _hasLocalTranslationFailures;
-    final retryAvailable =
-        !providerRetryExhausted || _translationProviderRetryAvailable;
-    final label = retryNeeded
-        ? (isKo ? '다시 번역' : 'Retry')
-        : showingOriginal
-            ? (isKo ? '번역' : 'Translate')
-            : (isKo ? '원문' : 'Original');
-    final tooltip = retryNeeded
-        ? (isKo ? '번역 다시 시도' : 'Retry translation')
-        : showingOriginal
-            ? (isKo ? '번역 보기' : 'View translation')
-            : (isKo ? '원문 보기' : 'View original');
-    final loading = !_translationModeReady ||
+    final toggleLabel = showingOriginal
+        ? (isKo ? '번역 보기' : 'View translation')
+        : (isKo ? '원문 보기' : 'View original');
+    final toggleTooltip = showingOriginal
+        ? (isKo ? '번역 보기' : 'View translation')
+        : (isKo ? '원문 보기' : 'View original');
+    final toggleLoading = !_translationModeReady ||
         (_translationBatchRunning && !showingOriginal) ||
         _hasPendingAutomaticTranslationRetry;
-    final foreground =
-        retryNeeded ? const Color(0xFFB54708) : const Color(0xFF087BB5);
-    final background =
-        retryNeeded ? const Color(0xFFFFF4E5) : const Color(0xFFEAF6FD);
-    final border =
-        retryNeeded ? const Color(0xFFFDBA74) : const Color(0xFF9CD8F5);
+    final showRetry = !showingOriginal && _hasLocalTranslationFailures;
+    final retryAvailable = (!_translationProviderRetryExhausted ||
+            _translationProviderRetryAvailable) &&
+        !_manualTranslationRetryInFlight &&
+        _canStartTranslationBatch;
+
+    Widget pill({
+      required Key key,
+      required String label,
+      required String tooltip,
+      required Color foreground,
+      required Color background,
+      required Color border,
+      required IconData icon,
+      required bool busy,
+      required VoidCallback? onPressed,
+    }) {
+      return Semantics(
+        button: true,
+        label: tooltip,
+        child: Tooltip(
+          message: tooltip,
+          child: TextButton(
+            key: key,
+            onPressed: onPressed,
+            style: TextButton.styleFrom(
+              foregroundColor: foreground,
+              disabledForegroundColor: foreground.withValues(alpha: 0.5),
+              backgroundColor: background,
+              disabledBackgroundColor: background.withValues(alpha: 0.7),
+              minimumSize: const Size(0, 32),
+              padding: const EdgeInsets.symmetric(horizontal: 10),
+              tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+              side: BorderSide(color: border),
+              shape: RoundedRectangleBorder(
+                borderRadius: BorderRadius.circular(16),
+              ),
+            ),
+            child: Row(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                if (busy)
+                  SizedBox.square(
+                    dimension: 14,
+                    child: CircularProgressIndicator(
+                      strokeWidth: 1.8,
+                      color: foreground,
+                    ),
+                  )
+                else
+                  Icon(icon, size: 15),
+                const SizedBox(width: 2),
+                Text(
+                  label,
+                  maxLines: 1,
+                  overflow: TextOverflow.fade,
+                  softWrap: false,
+                  style: const TextStyle(
+                    fontFamily: 'Inter',
+                    fontFamilyFallback: ['NotoSansKR'],
+                    fontSize: 11.5,
+                    fontWeight: FontWeight.w600,
+                    height: 1,
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ),
+      );
+    }
 
     return Material(
       color: Colors.transparent,
@@ -4204,64 +4280,40 @@ class _SnackChatScreenState extends State<SnackChatScreen>
             alignment: Alignment.centerRight,
             child: Padding(
               padding: const EdgeInsets.fromLTRB(0, 4, 12, 4),
-              child: Semantics(
-                button: true,
-                label: tooltip,
-                child: Tooltip(
-                  message: tooltip,
-                  child: TextButton(
-                    onPressed: _translationModeReady &&
-                            (!retryNeeded || retryAvailable)
-                        ? _toggleSnackTranslation
-                        : null,
-                    style: TextButton.styleFrom(
-                      foregroundColor: foreground,
-                      disabledForegroundColor:
-                          foreground.withValues(alpha: 0.5),
-                      backgroundColor: background,
-                      disabledBackgroundColor:
-                          background.withValues(alpha: 0.7),
-                      minimumSize: const Size(0, 32),
-                      padding: const EdgeInsets.symmetric(horizontal: 10),
-                      tapTargetSize: MaterialTapTargetSize.shrinkWrap,
-                      side: BorderSide(color: border),
-                      shape: RoundedRectangleBorder(
-                        borderRadius: BorderRadius.circular(16),
-                      ),
-                    ),
-                    child: Row(
-                      mainAxisSize: MainAxisSize.min,
-                      children: [
-                        if (loading)
-                          SizedBox.square(
-                            dimension: 14,
-                            child: CircularProgressIndicator(
-                              strokeWidth: 1.8,
-                              color: foreground,
-                            ),
-                          )
-                        else if (retryNeeded)
-                          const Icon(Icons.refresh_rounded, size: 15)
-                        else
-                          const Icon(Icons.translate_rounded, size: 15),
-                        const SizedBox(width: 2),
-                        Text(
-                          label,
-                          maxLines: 1,
-                          overflow: TextOverflow.fade,
-                          softWrap: false,
-                          style: const TextStyle(
-                            fontFamily: 'Inter',
-                            fontFamilyFallback: ['NotoSansKR'],
-                            fontSize: 11.5,
-                            fontWeight: FontWeight.w600,
-                            height: 1,
-                          ),
-                        ),
-                      ],
-                    ),
+              child: Wrap(
+                alignment: WrapAlignment.end,
+                crossAxisAlignment: WrapCrossAlignment.center,
+                spacing: 6,
+                runSpacing: 4,
+                children: [
+                  pill(
+                    key: const ValueKey('snack_translation_toggle'),
+                    label: toggleLabel,
+                    tooltip: toggleTooltip,
+                    foreground: const Color(0xFF087BB5),
+                    background: const Color(0xFFEAF6FD),
+                    border: const Color(0xFF9CD8F5),
+                    icon: Icons.translate_rounded,
+                    busy: toggleLoading,
+                    onPressed:
+                        _translationModeReady ? _toggleSnackTranslation : null,
                   ),
-                ),
+                  if (showRetry)
+                    pill(
+                      key: const ValueKey('snack_translation_retry'),
+                      label: isKo ? '다시 번역' : 'Retry',
+                      tooltip: isKo
+                          ? '실패한 메시지 하나 다시 번역'
+                          : 'Retry one failed message',
+                      foreground: const Color(0xFFB54708),
+                      background: const Color(0xFFFFF4E5),
+                      border: const Color(0xFFFDBA74),
+                      icon: Icons.refresh_rounded,
+                      busy: _manualTranslationRetryInFlight,
+                      onPressed:
+                          retryAvailable ? _retryOneFailedTranslation : null,
+                    ),
+                ],
               ),
             ),
           ),

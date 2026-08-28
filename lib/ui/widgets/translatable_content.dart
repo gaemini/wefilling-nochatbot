@@ -504,49 +504,77 @@ class _TranslationScopeToggleState extends State<TranslationScopeToggle> {
               ? (isKo ? '원문' : 'Original')
               : (isKo ? '번역' : 'Translate');
 
-      return Semantics(
-        button: true,
-        label: label,
-        child: TextButton(
-          onPressed: canToggle || retryAvailable
-              ? () => service.requestOrToggleScope(scope)
-              : null,
-          style: TextButton.styleFrom(
-            foregroundColor: const Color(0xFF2F9BE8),
-            padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
-            minimumSize: const Size(0, 40),
-            tapTargetSize: MaterialTapTargetSize.shrinkWrap,
-            shape: RoundedRectangleBorder(
-              borderRadius: BorderRadius.circular(8),
+      return Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Semantics(
+            button: true,
+            label: label,
+            child: TextButton(
+              onPressed: canToggle || retryAvailable
+                  ? () => service.requestOrToggleScope(scope)
+                  : null,
+              style: TextButton.styleFrom(
+                foregroundColor: const Color(0xFF2F9BE8),
+                padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                minimumSize: const Size(0, 40),
+                tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                shape: RoundedRectangleBorder(
+                  borderRadius: BorderRadius.circular(8),
+                ),
+              ),
+              child: Row(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  if (loading && !canToggle)
+                    const SizedBox.square(
+                      dimension: 14,
+                      child: CircularProgressIndicator(
+                        strokeWidth: 1.8,
+                        color: Color(0xFF2F9BE8),
+                      ),
+                    )
+                  else
+                    const Icon(Icons.translate_rounded, size: 17),
+                  const SizedBox(width: 2),
+                  Text(
+                    compactLabel,
+                    style: const TextStyle(
+                      fontFamily: 'Inter',
+                      fontFamilyFallback: ['NotoSansKR'],
+                      fontSize: 12.5,
+                      fontWeight: FontWeight.w600,
+                      height: 1,
+                    ),
+                  ),
+                ],
+              ),
             ),
           ),
-          child: Row(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              if (loading && !canToggle)
-                const SizedBox.square(
-                  dimension: 14,
-                  child: CircularProgressIndicator(
-                    strokeWidth: 1.8,
-                    color: Color(0xFF2F9BE8),
-                  ),
-                )
-              else
-                const Icon(Icons.translate_rounded, size: 17),
-              const SizedBox(width: 2),
-              Text(
-                compactLabel,
+          if (retryExhausted && canToggle)
+            TextButton.icon(
+              key: const ValueKey('translation_scope_retry_app_bar'),
+              onPressed: retryAvailable
+                  ? () => service.retryOneFailedScopeItem(scope)
+                  : null,
+              style: TextButton.styleFrom(
+                foregroundColor: const Color(0xFFB54708),
+                padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 4),
+                minimumSize: const Size(0, 40),
+                tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+              ),
+              icon: const Icon(Icons.refresh_rounded, size: 16),
+              label: Text(
+                isKo ? '재시도' : 'Retry',
                 style: const TextStyle(
                   fontFamily: 'Inter',
                   fontFamilyFallback: ['NotoSansKR'],
-                  fontSize: 12.5,
+                  fontSize: 12,
                   fontWeight: FontWeight.w600,
-                  height: 1,
                 ),
               ),
-            ],
-          ),
-        ),
+            ),
+        ],
       );
     }
 
@@ -614,6 +642,49 @@ class _TranslationScopeToggleState extends State<TranslationScopeToggle> {
               ),
             ),
           ),
+          if (retryExhausted && canToggle) ...[
+            const SizedBox(width: 4),
+            Semantics(
+              button: true,
+              label: isKo ? '번역 재시도' : 'Retry translation',
+              child: InkWell(
+                key: const ValueKey('translation_scope_retry_header'),
+                onTap: retryAvailable
+                    ? () => service.retryOneFailedScopeItem(scope)
+                    : null,
+                borderRadius: BorderRadius.circular(6),
+                child: Padding(
+                  padding: const EdgeInsets.symmetric(vertical: 2),
+                  child: Row(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      Icon(
+                        Icons.refresh_rounded,
+                        size: 13,
+                        color: retryAvailable
+                            ? const Color(0xFFB54708)
+                            : const Color(0xFF9AA5B1),
+                      ),
+                      const SizedBox(width: 1),
+                      Text(
+                        isKo ? '재시도' : 'Retry',
+                        style: TextStyle(
+                          fontFamily: 'Inter',
+                          fontFamilyFallback: const ['NotoSansKR'],
+                          fontSize: 11.5,
+                          fontWeight: FontWeight.w600,
+                          color: retryAvailable
+                              ? const Color(0xFFB54708)
+                              : const Color(0xFF9AA5B1),
+                          height: 1.05,
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+              ),
+            ),
+          ],
           if (widget.onSettingsPressed != null) ...[
             const SizedBox(width: 3),
             Tooltip(
@@ -643,25 +714,54 @@ class _TranslationScopeToggleState extends State<TranslationScopeToggle> {
       );
     }
 
-    return TextButton(
-      onPressed: canToggle || retryAvailable
-          ? () => service.requestOrToggleScope(scope)
-          : null,
-      style: TextButton.styleFrom(
-        foregroundColor: const Color(0xFF2F9BE8),
-        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
-        minimumSize: const Size(0, 36),
-        tapTargetSize: MaterialTapTargetSize.shrinkWrap,
-      ),
-      child: Text(
-        label,
-        style: const TextStyle(
-          fontFamily: 'Inter',
-          fontFamilyFallback: ['NotoSansKR'],
-          fontSize: 12,
-          fontWeight: FontWeight.w600,
+    return Wrap(
+      crossAxisAlignment: WrapCrossAlignment.center,
+      spacing: 4,
+      children: [
+        TextButton(
+          onPressed: canToggle || retryAvailable
+              ? () => service.requestOrToggleScope(scope)
+              : null,
+          style: TextButton.styleFrom(
+            foregroundColor: const Color(0xFF2F9BE8),
+            padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+            minimumSize: const Size(0, 36),
+            tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+          ),
+          child: Text(
+            label,
+            style: const TextStyle(
+              fontFamily: 'Inter',
+              fontFamilyFallback: ['NotoSansKR'],
+              fontSize: 12,
+              fontWeight: FontWeight.w600,
+            ),
+          ),
         ),
-      ),
+        if (retryExhausted && canToggle)
+          TextButton.icon(
+            key: const ValueKey('translation_scope_retry_default'),
+            onPressed: retryAvailable
+                ? () => service.retryOneFailedScopeItem(scope)
+                : null,
+            style: TextButton.styleFrom(
+              foregroundColor: const Color(0xFFB54708),
+              padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 6),
+              minimumSize: const Size(0, 36),
+              tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+            ),
+            icon: const Icon(Icons.refresh_rounded, size: 15),
+            label: Text(
+              isKo ? '재시도' : 'Retry',
+              style: const TextStyle(
+                fontFamily: 'Inter',
+                fontFamilyFallback: ['NotoSansKR'],
+                fontSize: 12,
+                fontWeight: FontWeight.w600,
+              ),
+            ),
+          ),
+      ],
     );
   }
 }

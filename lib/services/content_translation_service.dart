@@ -1049,14 +1049,28 @@ class ContentTranslationService extends ChangeNotifier {
       toggleScope(scope);
       return;
     }
+    await retryOneFailedScopeItem(scope);
+  }
+
+  /// 한 번의 사용자 동작으로 실패한 항목 하나만 재시도한다. 성공한 항목이나
+  /// 같은 scope의 나머지 댓글/메시지를 다시 순회하지 않아 비용을 제한한다.
+  Future<void> retryOneFailedScopeItem(String scope) async {
     if (!canRetryScope(scope) || isScopeLoading(scope)) return;
-    final loaders = List<ScopeTranslationLoader>.of(
-      _scopeLoaders[scope]?.values ?? const <ScopeTranslationLoader>[],
-    );
-    if (loaders.isEmpty) return;
+    final states = _scopeItemStates[scope];
+    final loaders = _scopeLoaders[scope];
+    if (states == null || loaders == null) return;
+
+    ScopeTranslationLoader? failedLoader;
+    for (final entry in states.entries) {
+      if (entry.value != _ScopeTranslationState.failed) continue;
+      failedLoader = loaders[entry.key];
+      if (failedLoader != null) break;
+    }
+    if (failedLoader == null) return;
+
     await runZoned<Future<void>>(
       () async {
-        await Future.wait(loaders.map((loader) => loader()));
+        await failedLoader!();
       },
       zoneValues: <Object?, Object?>{_manualRetryZoneKey: true},
     );

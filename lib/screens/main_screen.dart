@@ -67,6 +67,8 @@ class _MainScreenState extends State<MainScreen>
   // BoardScreen 스크롤 제어를 위한 GlobalKey
   final GlobalKey<BoardScreenState> _boardScreenKey =
       GlobalKey<BoardScreenState>();
+  final GlobalKey<MeetupHomePageState> _meetupHomeKey =
+      GlobalKey<MeetupHomePageState>();
 
   @override
   void initState() {
@@ -173,12 +175,15 @@ class _MainScreenState extends State<MainScreen>
       case 0:
         return BoardScreen(
           key: _boardScreenKey,
-          onOpenMeetups: () => _onItemTapped(1),
+          onOpenMeetups: _openTodayMeetups,
           onChromeVisibilityChanged: _handleBoardChromeVisibilityChanged,
         );
       case 1:
         // 알림에서 온 모임은 최초 1회만 자동 오픈되도록 전달
-        return MeetupHomePage(initialMeetupId: _pendingMeetupId);
+        return MeetupHomePage(
+          key: _meetupHomeKey,
+          initialMeetupId: _pendingMeetupId,
+        );
       case 2:
         return FriendCategoriesScreen(
           initialTabIndex: widget.initialGroupTabIndex,
@@ -210,6 +215,15 @@ class _MainScreenState extends State<MainScreen>
       _chromeController.reverse();
     }
   }
+
+  void _openTodayMeetups() {
+    _onItemTapped(1);
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!mounted) return;
+      _meetupHomeKey.currentState?.showToday();
+    });
+  }
+
   // 프로덕션 배포: 디버그 헬퍼 제거
   // final FirebaseDebugHelper _firebaseDebugHelper = FirebaseDebugHelper();
 

@@ -6,6 +6,7 @@ import 'package:flutter/foundation.dart';
 
 import '../models/meetup.dart';
 import '../services/content_filter_service.dart';
+import '../utils/meetup_calendar_marker_policy.dart';
 import '../utils/logger.dart';
 
 /// 내 모임 달력 화면의 "친구가 만든 미래 모임"을 효율적으로 캐싱/조회하기 위한 서비스.
@@ -29,7 +30,6 @@ class MeetupCalendarCacheService extends ChangeNotifier {
   bool _started = false;
   DateTime? _friendContextFetchedAt;
   Set<String> _friendIds = <String>{};
-  Map<String, String> _userCategoryOwners = <String, String>{};
 
   final Map<String, _MonthCache> _monthCaches = <String, _MonthCache>{};
 
@@ -142,10 +142,14 @@ class MeetupCalendarCacheService extends ChangeNotifier {
       // ✅ 달력에서는 "친구가 만든 모임"만 필요
       final todayKey = _dayKey(DateTime.now());
       final friendMeetups = meetups
-          .where((m) => m.userId != null && _friendIds.contains(m.userId))
           .where((m) => !_dayKey(m.date).isBefore(todayKey)) // 오늘 포함, 미래만
-          .where((m) => _canSeeMeetup(m, user.uid))
-          .where((m) => m.isPublishedAt())
+          .where(
+            (m) => shouldShowFriendMeetupGradientBorder(
+              meetup: m,
+              viewerId: user.uid,
+              friendIds: _friendIds,
+            ),
+          )
           .toList();
 
       final filteredByBlock =
@@ -178,17 +182,23 @@ class MeetupCalendarCacheService extends ChangeNotifier {
   }
 
   List<Meetup> friendMeetupsForDay(DateTime dayKey) {
+    final user = _auth.currentUser;
+    if (user == null) return const <Meetup>[];
     final cache = _monthCaches[_monthKey(dayKey)];
     final cached = cache?.byDayKey[dayKey] ?? const <Meetup>[];
-    return cached.where((meetup) => meetup.isPublishedAt()).toList(
-          growable: false,
-        );
+    return cached
+        .where(
+          (meetup) => shouldShowFriendMeetupGradientBorder(
+            meetup: meetup,
+            viewerId: user.uid,
+            friendIds: _friendIds,
+          ),
+        )
+        .toList(growable: false);
   }
 
   bool hasFriendMeetupOnDay(DateTime dayKey) {
-    final cache = _monthCaches[_monthKey(dayKey)];
-    final list = cache?.byDayKey[dayKey];
-    return list != null && list.any((meetup) => meetup.isPublishedAt());
+    return friendMeetupsForDay(dayKey).isNotEmpty;
   }
 
   Future<void> _loadFriendContextIfNeeded() async {
@@ -218,43 +228,12 @@ class MeetupCalendarCacheService extends ChangeNotifier {
         }
       }
 
-      final catSnap = await _firestore
-          .collection('friend_categories')
-          .where('friendIds', arrayContains: user.uid)
-          .get();
-      final categoryOwners = <String, String>{
-        for (final doc in catSnap.docs)
-          doc.id: (doc.data()['userId'] ?? '').toString(),
-      };
-
       _friendIds = friendIds;
-      _userCategoryOwners = categoryOwners;
       _friendContextFetchedAt = DateTime.now();
     } catch (e) {
       Logger.error('친구 컨텍스트 로드 오류: $e');
       // 실패해도 TTL 갱신은 하지 않음(다음 warm에서 재시도)
     }
-  }
-
-  bool _canSeeMeetup(Meetup meetup, String myUid) {
-    // 내 모임은 항상
-    if (meetup.userId == myUid) return true;
-
-    final visibility = meetup.visibility.trim();
-    if (visibility == 'public') return true;
-
-    if (visibility == 'friends') {
-      return meetup.userId != null && _friendIds.contains(meetup.userId);
-    }
-
-    if (visibility == 'category') {
-      return meetup.visibleToCategoryIds.any(
-        (id) => _userCategoryOwners[id] == meetup.userId,
-      );
-    }
-
-    // 알 수 없는 값은 안전하게 숨김
-    return false;
   }
 
   String _monthKey(DateTime d) {

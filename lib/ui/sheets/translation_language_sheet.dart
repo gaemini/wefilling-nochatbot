@@ -2,7 +2,10 @@ import 'package:flutter/material.dart';
 
 import '../../services/content_translation_service.dart';
 
-Future<String?> showTranslationLanguageSheet(BuildContext context) async {
+Future<String?> showTranslationLanguageSheet(
+  BuildContext context, {
+  bool forSnackChat = false,
+}) async {
   final service = ContentTranslationService.instance;
   final selected = await service.targetLanguage(
     uiLanguageCode: Localizations.localeOf(context).languageCode,
@@ -19,6 +22,7 @@ Future<String?> showTranslationLanguageSheet(BuildContext context) async {
     ),
     builder: (sheetContext) => TranslationLanguageSheet(
       selectedCode: selected,
+      forSnackChat: forSnackChat,
       onSelected: (code) async {
         await service.setPreferredLanguage(code);
         if (sheetContext.mounted) Navigator.pop(sheetContext, code);
@@ -32,10 +36,12 @@ class TranslationLanguageSheet extends StatefulWidget {
     super.key,
     required this.selectedCode,
     required this.onSelected,
+    this.forSnackChat = false,
   });
 
   final String selectedCode;
   final Future<void> Function(String code) onSelected;
+  final bool forSnackChat;
 
   @override
   State<TranslationLanguageSheet> createState() =>
@@ -117,9 +123,13 @@ class _TranslationLanguageSheetState extends State<TranslationLanguageSheet> {
                       const SizedBox(width: 8),
                       Expanded(
                         child: Text(
-                          isKo
-                              ? '원문의 언어가 아니라, 포스트와 댓글을 번역해서 보고 싶은 언어를 선택해 주세요.'
-                              : 'Choose the language you want posts and comments translated into, not the language of the original text.',
+                          widget.forSnackChat
+                              ? (isKo
+                                  ? '상대방 메시지를 번역해서 보고 싶은 언어를 선택해 주세요. 내 메시지는 입력한 원문으로 표시됩니다.'
+                                  : 'Choose the language for translating messages from other people. Your messages stay in the original text.')
+                              : (isKo
+                                  ? '원문의 언어가 아니라, 포스트와 댓글을 번역해서 보고 싶은 언어를 선택해 주세요.'
+                                  : 'Choose the language you want posts and comments translated into, not the language of the original text.'),
                           key: const ValueKey(
                             'translation_language_sheet_guidance',
                           ),

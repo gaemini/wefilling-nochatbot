@@ -306,17 +306,17 @@ function looksLikeSameLanguage(text: string, target: string): boolean {
     (meaningful.match(pattern) ?? []).length / Math.max(letters.length, 1);
   if (target === 'ko') {
     const hangul = meaningful.match(/[가-힣]/g) ?? [];
-    return hangul.length >= 2 && ratio(/[가-힣]/g) >= 0.85;
+    return hangul.length >= 2 && ratio(/[가-힣]/g) >= 0.95;
   }
   if (target === 'ja') {
     return /[ぁ-んァ-ン]/.test(meaningful) &&
       !/[가-힣]/.test(meaningful) &&
-      ratio(/[ぁ-ン\u3400-\u9FFF]/g) >= 0.85;
+      ratio(/[ぁ-ン\u3400-\u9FFF]/g) >= 0.95;
   }
   if (target === 'zh') {
     return (meaningful.match(/[\u3400-\u9FFF]/g) ?? []).length >= 2 &&
       !/[ぁ-ン가-힣]/.test(meaningful) &&
-      ratio(/[\u3400-\u9FFF]/g) >= 0.9;
+      ratio(/[\u3400-\u9FFF]/g) >= 0.97;
   }
   if (target === 'ru' || target === 'uk') {
     return ratio(/[\u0400-\u04FF]/g) >= 0.9 && letters.length >= 3;
@@ -345,7 +345,9 @@ function looksLikeSameLanguage(text: string, target: string): boolean {
       .match(/[\p{L}]+/gu) ?? [];
     const hits = words.filter((word) => hints.has(word)).length;
     const latinRatio = ratio(/[A-Za-zÀ-ỹ]/g);
-    if (words.length === 1) return hits === 1 && latinRatio === 1;
+    // One-word Latin messages are ambiguous (shared vocabulary or names), so
+    // they must not become a permanent same-language cache entry.
+    if (words.length === 1) return false;
     return words.length >= 3 && hits >= 2 && latinRatio >= 0.9 &&
       hits / words.length >= 0.3;
   }
@@ -427,7 +429,18 @@ async function resolveContent(
     // are not rejected as stale after a successful server translation.
     const content = rawContent.trim().length > 0 ?
       rawContent.trim() : rawTitle.trim();
-    fields = {content};
+    if (content) fields.content = content;
+    if (stringValue(data.type) === 'poll' && Array.isArray(data.pollOptions)) {
+      data.pollOptions.forEach((rawOption, index) => {
+        const option = rawOption && typeof rawOption === 'object' &&
+          !Array.isArray(rawOption) ?
+          rawOption as Record<string, unknown> : {};
+        const optionText = stringValue(option.text);
+        if (!optionText.trim()) return;
+        const optionId = stringValue(option.id).trim() || `index${index}`;
+        fields[`pollOption:${optionId}`] = optionText;
+      });
+    }
     contextSeed = {
       title: rawContent.trim().length > 0 ? rawTitle : '',
       category: data.category,

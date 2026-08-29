@@ -1,7 +1,8 @@
+import 'dart:async';
+
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/material.dart';
 
-import '../l10n/app_localizations.dart';
 import '../models/snack_chat.dart';
 import '../services/snack_chat_service.dart';
 import '../ui/sheets/snack_chat_unfavorite_sheet.dart';
@@ -18,21 +19,29 @@ class SnackChatTabView extends StatefulWidget {
 class _SnackChatTabViewState extends State<SnackChatTabView> {
   // 서비스 인스턴스를 State에 보관해 rebuild마다 재생성되지 않도록 함
   late SnackChatService _service;
-  late Stream<List<SnackChat>> _todayStream;
-  late Stream<List<SnackChat>> _allStream;
+  late Stream<List<SnackChat>> _snackChatsStream;
   late Stream<Set<String>> _mutedIdsStream;
+  Timer? _remainingTimeTicker;
 
   @override
   void initState() {
     super.initState();
     _resetStreams();
+    _remainingTimeTicker = Timer.periodic(const Duration(minutes: 1), (_) {
+      if (mounted) setState(() {});
+    });
   }
 
   void _resetStreams() {
     _service = SnackChatService();
-    _todayStream = _service.getTodaySnackChats();
-    _allStream = _service.getAllSnackChats();
+    _snackChatsStream = _service.getSnackChats();
     _mutedIdsStream = _service.watchMutedSnackChatIds();
+  }
+
+  @override
+  void dispose() {
+    _remainingTimeTicker?.cancel();
+    super.dispose();
   }
 
   void _retryStreams() {
@@ -55,7 +64,6 @@ class _SnackChatTabViewState extends State<SnackChatTabView> {
 
   @override
   Widget build(BuildContext context) {
-    final l10n = AppLocalizations.of(context)!;
     final isKo = Localizations.localeOf(context).languageCode == 'ko';
     final currentUserId = FirebaseAuth.instance.currentUser?.uid;
     return StreamBuilder<Set<String>>(
@@ -63,140 +71,65 @@ class _SnackChatTabViewState extends State<SnackChatTabView> {
       initialData: const <String>{},
       builder: (context, mutedSnapshot) {
         final mutedIds = mutedSnapshot.data ?? const <String>{};
-        return ListView(
-          padding: const EdgeInsets.only(bottom: 76),
-          children: [
-            _SectionTitle(title: l10n.today),
-            StreamBuilder<List<SnackChat>>(
-              stream: _todayStream,
-              builder: (context, snapshot) {
-                final items = snapshot.data ?? const <SnackChat>[];
-                if (snapshot.connectionState == ConnectionState.waiting &&
-                    !snapshot.hasData) {
-                  return const _SectionLoading();
-                }
-                if (snapshot.hasError && items.isEmpty) {
-                  return _SectionError(onRetry: _retryStreams);
-                }
-                if (items.isEmpty) {
-                  return _SectionEmpty(
-                    message: isKo
-                        ? '진행 중인 Snack Chat이 없어요.'
-                        : 'No active Snack Chats.',
+        return StreamBuilder<List<SnackChat>>(
+          stream: _snackChatsStream,
+          builder: (context, snapshot) {
+            final items = snapshot.data ?? const <SnackChat>[];
+            if (snapshot.connectionState == ConnectionState.waiting &&
+                !snapshot.hasData) {
+              return const _SectionLoading();
+            }
+            if (snapshot.hasError && items.isEmpty) {
+              return _SectionError(onRetry: _retryStreams);
+            }
+            if (items.isEmpty) {
+              return _SectionEmpty(
+                message: isKo ? '참여 중인 스낵챗이 없어요.' : 'No Snack Chats yet.',
+              );
+            }
+
+            _service.prefetchRoomEntryData(items);
+            final errorOffset = snapshot.hasError ? 1 : 0;
+            final bottomInset = MediaQuery.paddingOf(context).bottom;
+            return ListView.builder(
+              key: const PageStorageKey<String>('snack_chat_list'),
+              physics: const AlwaysScrollableScrollPhysics(),
+              padding: EdgeInsets.fromLTRB(0, 4, 0, 88 + bottomInset),
+              itemCount: items.length + errorOffset,
+              itemBuilder: (context, index) {
+                if (snapshot.hasError && index == 0) {
+                  return _SectionError(
+                    onRetry: _retryStreams,
+                    compact: true,
                   );
                 }
-                _service.prefetchRoomEntryData(items);
-                return Column(children: [
-                  if (snapshot.hasError)
-                    _SectionError(onRetry: _retryStreams, compact: true),
-                  ...items.map(
-                    (chat) => SnackChatCard(
-                      snackChat: chat,
-                      currentUserId: currentUserId,
-                      isMuted: mutedIds.contains(chat.id),
-                      onTap: () {
-                        Navigator.push(
-                          context,
-                          MaterialPageRoute(
-                            builder: (_) => SnackChatScreen(
-                              snackChatId: chat.id,
-                              initialRoom: chat,
-                              initialEntryContext:
-                                  _service.peekEntryContext(chat.id),
-                            ),
-                          ),
-                        );
-                      },
-                      onToggleFavorite: () {
-                        _handleToggleFavorite(chat, currentUserId);
-                      },
-                    ),
-                  ),
-                ]);
+                final chat = items[index - errorOffset];
+                return SnackChatCard(
+                  snackChat: chat,
+                  currentUserId: currentUserId,
+                  isMuted: mutedIds.contains(chat.id),
+                  onTap: () {
+                    Navigator.push(
+                      context,
+                      MaterialPageRoute(
+                        builder: (_) => SnackChatScreen(
+                          snackChatId: chat.id,
+                          initialRoom: chat,
+                          initialEntryContext:
+                              _service.peekEntryContext(chat.id),
+                        ),
+                      ),
+                    );
+                  },
+                  onToggleFavorite: () {
+                    _handleToggleFavorite(chat, currentUserId);
+                  },
+                );
               },
-            ),
-            const SizedBox(height: 6),
-            _SectionTitle(title: l10n.all),
-            StreamBuilder<List<SnackChat>>(
-              stream: _allStream,
-              builder: (context, snapshot) {
-                final items = snapshot.data ?? const <SnackChat>[];
-                if (snapshot.connectionState == ConnectionState.waiting &&
-                    !snapshot.hasData) {
-                  return const _SectionLoading();
-                }
-                if (snapshot.hasError && items.isEmpty) {
-                  return _SectionError(onRetry: _retryStreams);
-                }
-                if (items.isEmpty) {
-                  return _SectionEmpty(
-                    message: isKo
-                        ? '보관된 Snack Chat이 없어요.'
-                        : 'No archived Snack Chats.',
-                  );
-                }
-                _service.prefetchRoomEntryData(items);
-                return Column(children: [
-                  if (snapshot.hasError)
-                    _SectionError(onRetry: _retryStreams, compact: true),
-                  ...items.map(
-                    (chat) => SnackChatCard(
-                      snackChat: chat,
-                      currentUserId: currentUserId,
-                      isMuted: mutedIds.contains(chat.id),
-                      onTap: () {
-                        Navigator.push(
-                          context,
-                          MaterialPageRoute(
-                            builder: (_) => SnackChatScreen(
-                              snackChatId: chat.id,
-                              initialRoom: chat,
-                              initialEntryContext:
-                                  _service.peekEntryContext(chat.id),
-                            ),
-                          ),
-                        );
-                      },
-                      onToggleFavorite: () {
-                        _handleToggleFavorite(chat, currentUserId);
-                      },
-                    ),
-                  ),
-                ]);
-              },
-            ),
-          ],
+            );
+          },
         );
       },
-    );
-  }
-}
-
-class _SectionTitle extends StatelessWidget {
-  final String title;
-  const _SectionTitle({required this.title});
-
-  @override
-  Widget build(BuildContext context) {
-    final horizontalPadding =
-        (MediaQuery.sizeOf(context).width * 0.045).clamp(14.0, 20.0).toDouble();
-    return Padding(
-      padding: EdgeInsets.fromLTRB(
-        horizontalPadding,
-        7,
-        horizontalPadding,
-        6,
-      ),
-      child: Text(
-        title,
-        style: const TextStyle(
-          fontFamily: 'Inter',
-          fontFamilyFallback: const ['NotoSansKR'],
-          fontSize: 15,
-          fontWeight: FontWeight.w700,
-          color: Color(0xFF111827),
-        ),
-      ),
     );
   }
 }
@@ -221,21 +154,24 @@ class _SectionEmpty extends StatelessWidget {
   Widget build(BuildContext context) {
     final horizontalPadding =
         (MediaQuery.sizeOf(context).width * 0.045).clamp(14.0, 20.0).toDouble();
-    return Padding(
-      padding: EdgeInsets.fromLTRB(
-        horizontalPadding,
-        2,
-        horizontalPadding,
-        12,
-      ),
-      child: Text(
-        message,
-        style: const TextStyle(
-          fontFamily: 'Inter',
-          fontFamilyFallback: const ['NotoSansKR'],
-          fontSize: 13,
-          fontWeight: FontWeight.w500,
-          color: Color(0xFF6B7280),
+    return Center(
+      child: Padding(
+        padding: EdgeInsets.fromLTRB(
+          horizontalPadding,
+          24,
+          horizontalPadding,
+          88 + MediaQuery.paddingOf(context).bottom,
+        ),
+        child: Text(
+          message,
+          textAlign: TextAlign.center,
+          style: const TextStyle(
+            fontFamily: 'Inter',
+            fontFamilyFallback: ['NotoSansKR'],
+            fontSize: 13,
+            fontWeight: FontWeight.w500,
+            color: Color(0xFF6B7280),
+          ),
         ),
       ),
     );

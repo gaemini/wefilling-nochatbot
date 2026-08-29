@@ -16,12 +16,10 @@ import 'friend_profile_screen.dart';
 
 class SnackChatInfoScreen extends StatefulWidget {
   final String snackChatId;
-  final Future<void> Function()? onLeave;
 
   const SnackChatInfoScreen({
     super.key,
     required this.snackChatId,
-    this.onLeave,
   });
 
   @override
@@ -34,13 +32,13 @@ class _SnackChatInfoScreenState extends State<SnackChatInfoScreen> {
 
   bool _isInviting = false;
   bool _isInviteSheetOpen = false;
-  bool _isLeaving = false;
   bool _isMuted = false;
   bool _isUpdatingMute = false;
   bool _isUpdatingFavorite = false;
   int _muteMutationGeneration = 0;
   bool _isUpdatingTitle = false;
   bool _isSendingAnnouncement = false;
+  bool _isCreatorTextDialogOpen = false;
   String? _pendingAnnouncementBody;
   String? _pendingAnnouncementEventId;
   Future<List<UserProfile>>? _participantsFuture;
@@ -65,7 +63,7 @@ class _SnackChatInfoScreenState extends State<SnackChatInfoScreen> {
   }
 
   void _retryRoomStream() {
-    if (!mounted || _isLeaving) return;
+    if (!mounted) return;
     setState(() {
       _roomStream = _snackChatService.watchSnackChat(widget.snackChatId);
     });
@@ -509,9 +507,13 @@ class _SnackChatInfoScreenState extends State<SnackChatInfoScreen> {
     required int maxLength,
     required int maxLines,
     String initialValue = '',
-  }) {
-    return showDialog<String>(
+  }) async {
+    if (_isCreatorTextDialogOpen || !mounted) return null;
+    _isCreatorTextDialogOpen = true;
+    final dialogRoute = DialogRoute<String>(
       context: context,
+      barrierDismissible: true,
+      barrierLabel: MaterialLocalizations.of(context).modalBarrierDismissLabel,
       builder: (_) => _CreatorTextDialog(
         title: title,
         hintText: hintText,
@@ -521,6 +523,19 @@ class _SnackChatInfoScreenState extends State<SnackChatInfoScreen> {
         initialValue: initialValue,
       ),
     );
+    try {
+      final result = await Navigator.of(
+        context,
+        rootNavigator: true,
+      ).push<String>(dialogRoute);
+      // Route.popped는 reverse transition 시작 시 완료된다. 다이얼로그의
+      // element가 overlay에서 완전히 제거된 뒤 부모 화면 상태를 바꿔야
+      // _InactiveElements 해제 경합이 발생하지 않는다.
+      await dialogRoute.completed;
+      return result;
+    } finally {
+      _isCreatorTextDialogOpen = false;
+    }
   }
 
   Future<void> _changeRoomTitle(SnackChat room) async {
@@ -616,12 +631,12 @@ class _SnackChatInfoScreenState extends State<SnackChatInfoScreen> {
     }
   }
 
-  Future<void> _leaveRoom(SnackChat room) async {
-    if (_isLeaving) return;
-    final isKo = Localizations.localeOf(context).languageCode == 'ko';
-    final confirm = await showDialog<bool>(
+  Future<void> _leaveRoom() async {
+    final dialogRoute = DialogRoute<bool>(
       context: context,
       barrierColor: const Color(0x99000000),
+      barrierDismissible: true,
+      barrierLabel: MaterialLocalizations.of(context).modalBarrierDismissLabel,
       builder: (dialogContext) {
         final dialogIsKo =
             Localizations.localeOf(dialogContext).languageCode == 'ko';
@@ -739,34 +754,21 @@ class _SnackChatInfoScreenState extends State<SnackChatInfoScreen> {
         );
       },
     );
-    if (confirm != true || !mounted) return;
-    setState(() => _isLeaving = true);
-    try {
-      // StreamBuilder가 구독을 먼저 해제하도록 한 프레임 양보한다.
-      // 트랜잭션 성공 직후 읽기 권한이 사라져 기존 listener가
-      // permission-denied를 내는 경합을 방지한다.
-      await WidgetsBinding.instance.endOfFrame;
-      final leave = widget.onLeave;
-      if (leave != null) {
-        await leave();
-      } else {
-        await _snackChatService.leaveRoom(room.id);
-      }
-      if (!mounted) return;
-      // 채팅 화면이 결과를 받아 자신의 스트림과 라우트를 정리하도록 한다.
-      // 여러 라우트를 여기서 한 번에 제거하면 dispose 중인 위젯의
-      // inherited dependency가 남는 Flutter framework assertion이 발생할 수 있다.
-      Navigator.of(context).pop(true);
-    } catch (e) {
-      if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          content: Text(isKo ? '나가기 실패: $e' : 'Failed to leave: $e'),
-        ),
-      );
-    } finally {
-      if (mounted) setState(() => _isLeaving = false);
-    }
+    final confirm = await Navigator.of(
+      context,
+      rootNavigator: true,
+    ).push<bool>(dialogRoute);
+    if (confirm != true) return;
+    // DialogRoute.popped는 reverse transition이 끝나기 전에 완료된다.
+    // overlay가 완전히 제거된 다음 정보 화면을 닫아 연속 route teardown을
+    // 만들지 않는다.
+    await dialogRoute.completed;
+    if (!mounted) return;
+    // 서버 응답을 기다리며 정보 화면과 채팅 화면의 StreamBuilder를 동시에
+    // 해제하면 라우트 teardown과 참여자 변경 이벤트가 경합할 수 있다.
+    // 정보 화면은 결과만 반환하고, 완전히 닫힌 뒤 부모 채팅 화면이 실제
+    // 나가기 요청과 자신의 라우트 종료를 한 곳에서 처리한다.
+    Navigator.of(context).pop(true);
   }
 
   Widget _buildRoomSummary(
@@ -933,9 +935,9 @@ class _SnackChatInfoScreenState extends State<SnackChatInfoScreen> {
     final isKo = Localizations.localeOf(context).languageCode == 'ko';
     final l10n = AppLocalizations.of(context)!;
     return PopScope(
-      canPop: !_isLeaving,
+      canPop: true,
       child: StreamBuilder<SnackChat?>(
-        stream: _isLeaving ? null : _roomStream,
+        stream: _roomStream,
         builder: (context, snap) {
           final incomingRoom = snap.data;
           if (incomingRoom != null) _lastRoom = incomingRoom;
@@ -1241,35 +1243,29 @@ class _SnackChatInfoScreenState extends State<SnackChatInfoScreen> {
                             ),
                           ),
                         SizedBox(height: context.rs(14)),
-                        if (_isLeaving)
-                          const SizedBox.square(
-                            dimension: 18,
-                            child: CircularProgressIndicator(strokeWidth: 2),
-                          )
-                        else
-                          Align(
-                            alignment: Alignment.centerLeft,
-                            child: TextButton.icon(
-                              onPressed: () => _leaveRoom(room),
-                              style: TextButton.styleFrom(
-                                foregroundColor: const Color(0xFF667085),
-                                padding: const EdgeInsets.symmetric(
-                                  horizontal: 4,
-                                  vertical: 8,
-                                ),
+                        Align(
+                          alignment: Alignment.centerLeft,
+                          child: TextButton.icon(
+                            onPressed: _leaveRoom,
+                            style: TextButton.styleFrom(
+                              foregroundColor: const Color(0xFF667085),
+                              padding: const EdgeInsets.symmetric(
+                                horizontal: 4,
+                                vertical: 8,
                               ),
-                              icon: const Icon(Icons.logout_rounded, size: 17),
-                              label: Text(
-                                isKo ? '채팅방 나가기' : 'Leave Room',
-                                style: const TextStyle(
-                                  fontFamily: 'Inter',
-                                  fontFamilyFallback: const ['NotoSansKR'],
-                                  fontSize: 13,
-                                  fontWeight: FontWeight.w600,
-                                ),
+                            ),
+                            icon: const Icon(Icons.logout_rounded, size: 17),
+                            label: Text(
+                              isKo ? '채팅방 나가기' : 'Leave Room',
+                              style: const TextStyle(
+                                fontFamily: 'Inter',
+                                fontFamilyFallback: const ['NotoSansKR'],
+                                fontSize: 13,
+                                fontWeight: FontWeight.w600,
                               ),
                             ),
                           ),
+                        ),
                       ],
                     );
                   },
@@ -1307,6 +1303,7 @@ class _CreatorTextDialog extends StatefulWidget {
 class _CreatorTextDialogState extends State<_CreatorTextDialog> {
   late final TextEditingController _controller;
   late bool _canSubmit;
+  bool _isClosing = false;
 
   @override
   void initState() {
@@ -1325,9 +1322,17 @@ class _CreatorTextDialogState extends State<_CreatorTextDialog> {
   }
 
   void _submit() {
+    if (_isClosing) return;
     final value = _controller.text.trim();
     if (value.isEmpty) return;
+    _isClosing = true;
     Navigator.of(context).pop(value);
+  }
+
+  void _cancel() {
+    if (_isClosing) return;
+    _isClosing = true;
+    Navigator.of(context).pop();
   }
 
   @override
@@ -1365,6 +1370,7 @@ class _CreatorTextDialogState extends State<_CreatorTextDialog> {
           onSubmitted:
               widget.maxLines == 1 && _canSubmit ? (_) => _submit() : null,
           onChanged: (value) {
+            if (_isClosing) return;
             final next = value.trim().isNotEmpty;
             if (next != _canSubmit) setState(() => _canSubmit = next);
           },
@@ -1397,7 +1403,7 @@ class _CreatorTextDialogState extends State<_CreatorTextDialog> {
       ),
       actions: [
         TextButton(
-          onPressed: () => Navigator.of(context).pop(),
+          onPressed: _cancel,
           child: Text(isKo ? '취소' : 'Cancel'),
         ),
         TextButton(

@@ -12,7 +12,6 @@ import '../ui/widgets/shape_icon.dart';
 import '../constants/app_constants.dart';
 import '../design/tokens.dart';
 import '../ui/widgets/app_fab.dart';
-import '../ui/widgets/empty_state.dart';
 import '../ui/widgets/category_shapes_illustration.dart';
 import '../providers/auth_provider.dart';
 import 'category_detail_screen.dart';
@@ -124,65 +123,71 @@ class _FriendCategoriesScreenState extends State<FriendCategoriesScreen>
         backgroundColor: Colors.white,
         bottom: PreferredSize(
           preferredSize: const Size.fromHeight(48),
-          child: TabBar(
-            controller: _tabController,
-            indicator: const UnderlineTabIndicator(
-              borderSide: BorderSide(
-                color: AppColors.pointColor,
-                width: 2.5,
-              ),
-              borderRadius: BorderRadius.vertical(top: Radius.circular(2)),
-            ),
-            labelColor: const Color(0xFF111827),
-            unselectedLabelColor: const Color(0xFF9CA3AF),
-            labelStyle: const TextStyle(
-              fontFamily: 'Inter',
-              fontFamilyFallback: const ['NotoSansKR'],
-              fontSize: 14,
-              fontWeight: FontWeight.w600,
-            ),
-            unselectedLabelStyle: const TextStyle(
-              fontFamily: 'Inter',
-              fontFamilyFallback: const ['NotoSansKR'],
-              fontSize: 14,
-              fontWeight: FontWeight.w500,
-            ),
-            tabs: [
-              Tab(
-                height: 46,
-                child: Semantics(
-                  label: l10n.snackChatTabSemantic,
-                  selected: _tabController.index == snackChatTabIndex,
-                  button: true,
-                  excludeSemantics: true,
-                  child: Text(l10n.snackChat),
+          child: MediaQuery.withClampedTextScaling(
+            maxScaleFactor: 1.25,
+            child: TabBar(
+              controller: _tabController,
+              indicator: const UnderlineTabIndicator(
+                borderSide: BorderSide(
+                  color: AppColors.pointColor,
+                  width: 2.5,
                 ),
+                borderRadius: BorderRadius.vertical(top: Radius.circular(2)),
               ),
-              Tab(
-                height: 46,
-                child: Semantics(
-                  label: l10n.groupsTabSemantic,
-                  selected: _tabController.index == groupsTabIndex,
-                  button: true,
-                  excludeSemantics: true,
-                  child: Text(l10n.groups),
+              labelColor: const Color(0xFF111827),
+              unselectedLabelColor: const Color(0xFF9CA3AF),
+              labelStyle: const TextStyle(
+                fontFamily: 'Inter',
+                fontFamilyFallback: const ['NotoSansKR'],
+                fontSize: 14,
+                fontWeight: FontWeight.w600,
+              ),
+              unselectedLabelStyle: const TextStyle(
+                fontFamily: 'Inter',
+                fontFamilyFallback: const ['NotoSansKR'],
+                fontSize: 14,
+                fontWeight: FontWeight.w500,
+              ),
+              tabs: [
+                Tab(
+                  height: 46,
+                  child: Semantics(
+                    label: l10n.snackChatTabSemantic,
+                    selected: _tabController.index == snackChatTabIndex,
+                    button: true,
+                    excludeSemantics: true,
+                    child: Text(l10n.snackChat),
+                  ),
                 ),
-              ),
-            ],
+                Tab(
+                  height: 46,
+                  child: Semantics(
+                    label: l10n.groupsTabSemantic,
+                    selected: _tabController.index == groupsTabIndex,
+                    button: true,
+                    excludeSemantics: true,
+                    child: Text(l10n.groups),
+                  ),
+                ),
+              ],
+            ),
           ),
         ),
       ),
-      body: Center(
-        child: ConstrainedBox(
-          constraints: const BoxConstraints(maxWidth: 720),
-          child: SizedBox(
-            width: double.infinity,
-            child: TabBarView(
-              controller: _tabController,
-              children: [
-                const SnackChatTabView(),
-                _buildGroupsTab(),
-              ],
+      body: MediaQuery.withClampedTextScaling(
+        maxScaleFactor: 1.25,
+        child: Center(
+          child: ConstrainedBox(
+            constraints: const BoxConstraints(maxWidth: 720),
+            child: SizedBox(
+              width: double.infinity,
+              child: TabBarView(
+                controller: _tabController,
+                children: [
+                  const SnackChatTabView(),
+                  _buildGroupsTab(),
+                ],
+              ),
             ),
           ),
         ),
@@ -231,18 +236,7 @@ class _FriendCategoriesScreenState extends State<FriendCategoriesScreen>
     }
 
     if (_categories.isEmpty) {
-      return SafeArea(
-        child: AppEmptyState(
-          icon: IconStyles.group,
-          title: AppLocalizations.of(context)!.createFirstCategory,
-          description:
-              AppLocalizations.of(context)!.createFirstCategoryDescription,
-          illustration: const Center(
-            child: CategoryShapesIllustration(),
-          ),
-          centerVertically: true,
-        ),
-      );
+      return _buildGroupsEmptyState();
     }
 
     // 안드로이드 하단 네비게이션 바 높이 감지
@@ -252,18 +246,12 @@ class _FriendCategoriesScreenState extends State<FriendCategoriesScreen>
 
     return SafeArea(
       child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
-          Container(
-            width: double.infinity,
+          Padding(
             padding: EdgeInsets.symmetric(
               horizontal: horizontalPadding,
-              vertical: 10,
-            ),
-            decoration: const BoxDecoration(
-              color: BrandColors.surface,
-              border: Border(
-                bottom: BorderSide(color: BrandColors.divider),
-              ),
+              vertical: 12,
             ),
             child: Text(
               isKo ? '그룹을 통해 공개범위를 설정하세요.' : 'Set visibility through groups.',
@@ -288,6 +276,68 @@ class _FriendCategoriesScreenState extends State<FriendCategoriesScreen>
             ),
           ),
         ],
+      ),
+    );
+  }
+
+  Widget _buildGroupsEmptyState() {
+    final l10n = AppLocalizations.of(context)!;
+    final width = MediaQuery.sizeOf(context).width;
+    final compact = width < 360;
+    final horizontal = _responsiveHorizontalPadding(context);
+
+    return SafeArea(
+      minimum: const EdgeInsets.only(bottom: 76),
+      child: LayoutBuilder(
+        builder: (context, constraints) {
+          return SingleChildScrollView(
+            padding: EdgeInsets.symmetric(horizontal: horizontal),
+            child: ConstrainedBox(
+              constraints: BoxConstraints(minHeight: constraints.maxHeight),
+              child: Center(
+                child: ConstrainedBox(
+                  constraints: const BoxConstraints(maxWidth: 420),
+                  child: MediaQuery.withClampedTextScaling(
+                    maxScaleFactor: 1.25,
+                    child: Column(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        CategoryShapesIllustration(size: compact ? 72 : 82),
+                        SizedBox(height: compact ? 20 : 24),
+                        Text(
+                          l10n.createFirstCategory,
+                          textAlign: TextAlign.center,
+                          style: TextStyle(
+                            fontFamily: 'Inter',
+                            fontFamilyFallback: const ['NotoSansKR'],
+                            fontSize: compact ? 17 : 18,
+                            fontWeight: FontWeight.w700,
+                            color: const Color(0xFF111827),
+                            height: 1.25,
+                            letterSpacing: -0.25,
+                          ),
+                        ),
+                        const SizedBox(height: 8),
+                        Text(
+                          l10n.createFirstCategoryDescription,
+                          textAlign: TextAlign.center,
+                          style: TextStyle(
+                            fontFamily: 'Inter',
+                            fontFamilyFallback: const ['NotoSansKR'],
+                            fontSize: compact ? 13 : 14,
+                            fontWeight: FontWeight.w400,
+                            color: const Color(0xFF667085),
+                            height: 1.5,
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                ),
+              ),
+            ),
+          );
+        },
       ),
     );
   }

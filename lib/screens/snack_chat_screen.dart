@@ -37,9 +37,12 @@ import '../ui/dialogs/report_dialog.dart';
 import '../ui/dialogs/snack_chat_poll_dialog.dart';
 import '../ui/sheets/snack_chat_attachment_sheet.dart';
 import '../ui/sheets/snack_chat_file_confirmation_sheet.dart';
+import '../ui/sheets/snack_chat_image_confirmation_sheet.dart';
+import '../ui/sheets/translation_language_sheet.dart';
 import '../utils/responsive_helper.dart';
 import '../utils/logger.dart';
 import '../utils/snack_chat_message_grouping.dart';
+import '../utils/snack_chat_translation_policy.dart';
 import 'friend_categories_screen.dart';
 import 'main_screen.dart';
 import 'snack_chat_info_screen.dart';
@@ -249,6 +252,7 @@ class _SnackChatScreenState extends State<SnackChatScreen>
   bool _translationScanScheduled = false;
   int _translationBatchesInFlight = 0;
   bool _translationModeReady = false;
+  bool _translationLanguageSheetOpen = false;
   bool _manualTranslationRetryInFlight = false;
   bool _isUserScrolling = false;
   int _userScrollRevision = 0;
@@ -263,11 +267,6 @@ class _SnackChatScreenState extends State<SnackChatScreen>
   late bool _translationProviderRetryAvailable;
 
   String get _translationScope => 'snack-room:${widget.snackChatId}';
-  bool get _translationBatchRunning => _translationBatchesInFlight > 0;
-  bool get _hasLocalTranslationFailures =>
-      _translationFailures.values.any((count) => count >= 2);
-  bool get _hasPendingAutomaticTranslationRetry =>
-      _translationRetryTimer != null;
   bool get _canStartTranslationBatch =>
       !_isUserScrolling &&
       _translationBatchesInFlight < _maxConcurrentTranslationBatches &&
@@ -414,7 +413,17 @@ class _SnackChatScreenState extends State<SnackChatScreen>
   }
 
   bool _canTranslateMessage(SnackChatMessage message) {
-    if (message.isDeleted ||
+    final currentUid = _uid?.trim() ?? '';
+    final senderId = message.senderId.trim();
+    // Do not guess ownership before immutable IDs are available. No failure or
+    // skip state is recorded here, so the next bounded visible scan can
+    // evaluate the bubble normally once authentication/message data settles.
+    if (currentUid.isEmpty || senderId.isEmpty) return false;
+    if (isOwnSnackChatMessage(
+          senderId: senderId,
+          currentUserId: currentUid,
+        ) ||
+        message.isDeleted ||
         message.isPending ||
         message.hasFailed ||
         message.type == SnackChatMessageType.system ||
@@ -423,9 +432,9 @@ class _SnackChatScreenState extends State<SnackChatScreen>
         _blockedUserIds.contains(message.senderId)) {
       return false;
     }
-    return _translationSourceFields(message).values.any(
-          (value) => value.trim().isNotEmpty,
-        );
+    return _translationSourceFields(message)
+        .values
+        .any(hasTranslatableSnackChatText);
   }
 
   Map<String, String> _translationSourceFields(SnackChatMessage message) {
@@ -490,6 +499,10 @@ class _SnackChatScreenState extends State<SnackChatScreen>
   ContentTranslationResult? _currentTranslationForMessage(
     SnackChatMessage message,
   ) {
+    // 과거 버전에서 저장된 캐시가 있더라도 내 메시지와 번역 제외 콘텐츠에는
+    // 적용하지 않는다. 이는 현재 화면의 auth uid 기준 정책일 뿐이므로 다른
+    // 참여자는 자신의 목표 언어로 이 메시지를 번역할 수 있다.
+    if (!_canTranslateMessage(message)) return null;
     final signature = _translationSourceSignature(message);
     if (_translationSourceSignatures[message.id] == signature) {
       final localResult = _messageTranslations[message.id];
@@ -772,13 +785,31 @@ class _SnackChatScreenState extends State<SnackChatScreen>
     final successfulResults = <ContentTranslationResult>[];
     setState(() {
       for (final outcome in outcomes) {
-        final result = outcome.result;
         _translationRequestsInFlight.remove(outcome.requestKey);
+
+        // 요청 후 메시지가 수정·삭제되거나 계정/발신자 판정이 달라졌다면 늦게
+        // 도착한 결과가 현재 말풍선을 덮어쓰지 않게 최신 목록을 다시 검증한다.
+        SnackChatMessage? currentMessage;
+        for (final message in _messages) {
+          if (message.id == outcome.message.id) {
+            currentMessage = message;
+            break;
+          }
+        }
+        if (currentMessage == null ||
+            !_canTranslateMessage(currentMessage) ||
+            _translationRequestKey(currentMessage) != outcome.requestKey) {
+          _translationFailures.remove(outcome.requestKey);
+          _translationRetryAfter.remove(outcome.requestKey);
+          continue;
+        }
+
+        final result = outcome.result;
         if (result != null &&
-            _isCompleteTranslationForMessage(outcome.message, result)) {
-          _messageTranslations[outcome.message.id] = result;
-          _translationSourceSignatures[outcome.message.id] =
-              _translationSourceSignature(outcome.message);
+            _isCompleteTranslationForMessage(currentMessage, result)) {
+          _messageTranslations[currentMessage.id] = result;
+          _translationSourceSignatures[currentMessage.id] =
+              _translationSourceSignature(currentMessage);
           _translationFailures.remove(outcome.requestKey);
           _translationRetryAfter.remove(outcome.requestKey);
           if (!result.isSameLanguage) successfulResults.add(result);
@@ -953,26 +984,31 @@ class _SnackChatScreenState extends State<SnackChatScreen>
     await _translationService.toggleSnackRoom(widget.snackChatId);
   }
 
-  SnackChatMessage? _nextFailedMessageForManualRetry() {
-    for (final message in _messages) {
-      if (!_canTranslateMessage(message) || _hasCurrentTranslation(message)) {
-        continue;
-      }
-      final requestKey = _translationRequestKey(message);
-      if ((_translationFailures[requestKey] ?? 0) < 2 ||
-          _translationRequestsInFlight.contains(requestKey)) {
-        continue;
-      }
-      return message;
+  Future<void> _openSnackTranslationLanguageSettings() async {
+    if (_translationLanguageSheetOpen) return;
+    _translationLanguageSheetOpen = true;
+    try {
+      await showTranslationLanguageSheet(
+        context,
+        forSnackChat: true,
+      );
+    } finally {
+      _translationLanguageSheetOpen = false;
     }
-    return null;
   }
 
-  Future<void> _retryOneFailedTranslation() async {
+  Future<void> _retryFailedTranslation(SnackChatMessage message) async {
     if (!_translationModeReady ||
         _translationShowsOriginal ||
         _manualTranslationRetryInFlight ||
-        !_canStartTranslationBatch) {
+        !_canStartTranslationBatch ||
+        !_canTranslateMessage(message) ||
+        _hasCurrentTranslation(message)) {
+      return;
+    }
+    final requestKey = _translationRequestKey(message);
+    if ((_translationFailures[requestKey] ?? 0) < 2 ||
+        _translationRequestsInFlight.contains(requestKey)) {
       return;
     }
     final providerRetryExhausted =
@@ -981,9 +1017,6 @@ class _SnackChatScreenState extends State<SnackChatScreen>
         !_translationService.canRetryScope(_translationScope)) {
       return;
     }
-    final message = _nextFailedMessageForManualRetry();
-    if (message == null) return;
-
     setState(() => _manualTranslationRetryInFlight = true);
     try {
       // 사용자가 누를 때마다 실패한 메시지 하나만 재시도한다. 기존 배치 크기나
@@ -2753,6 +2786,14 @@ class _SnackChatScreenState extends State<SnackChatScreen>
       if (picked == null) return;
       if (!mounted || roomId != widget.snackChatId) return;
 
+      final imageFile = File(picked.path);
+      final confirmed = await showSnackChatImageConfirmationSheet(
+        context,
+        imageFile: imageFile,
+      );
+      if (!confirmed || !mounted || roomId != widget.snackChatId) return;
+      unawaited(HapticFeedback.selectionClick());
+
       final messageId = _snackChatService.createMessageId(roomId);
       pendingMessageId = messageId;
       final reply = _replyPreviewForCurrentTarget();
@@ -2773,7 +2814,7 @@ class _SnackChatScreenState extends State<SnackChatScreen>
       });
       await _enqueueOutbound(roomId, () async {
         final upload = await _storageService.uploadPrivateSnackChatImage(
-          File(picked.path),
+          imageFile,
           userId: uid,
           snackChatId: roomId,
         );
@@ -4169,15 +4210,13 @@ class _SnackChatScreenState extends State<SnackChatScreen>
     ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(text)));
   }
 
-  /// 방을 나가기 전에 Firestore 구독을 먼저 중단한다.
-  /// 현재 화면에 로드된 메시지 sequence까지만 읽음으로 반영한 후
-  /// 나가기를 실행해 새 메시지와 참여자 제거가 경합하지 않게 한다.
-  Future<void> _leaveRoomFromInfo() async {
-    if (_isLeavingRoom) return;
-    if (!mounted) {
-      throw StateError('채팅 화면이 이미 닫혔습니다.');
-    }
-    setState(() => _isLeavingRoom = true);
+  /// 정보 화면이 완전히 닫힌 뒤 현재 채팅 화면을 즉시 종료하고, 서버의
+  /// 원자적 참여자 제거는 백그라운드에서 완료한다. 라우트가 겹친 상태에서
+  /// StreamBuilder를 재구성하지 않아 Flutter teardown assertion을 피한다.
+  void _leaveRoomAndExit() {
+    if (_isLeavingRoom || !mounted) return;
+    _isLeavingRoom = true;
+    _roomWasLeft = true;
     _draftSaveDebounce?.cancel();
     _messageCacheDebounce?.cancel();
     _outboxRetryTimer?.cancel();
@@ -4186,72 +4225,43 @@ class _SnackChatScreenState extends State<SnackChatScreen>
     _auxiliarySubscriptionGeneration++;
     _auxiliaryRetryTimer?.cancel();
     _auxiliaryRetryTimer = null;
+    _messageSubscriptionGeneration++;
+    _readSyncGeneration++;
 
-    // 아래 StreamBuilder까지 null stream으로 교체되는 프레임을 기다려
-    // 방 문서 접근 권한이 제거된 뒤 기존 listener가 재조회하지 않게 한다.
-    await WidgetsBinding.instance.endOfFrame;
-
-    final messageSubscription = _msgSub;
-    final memberSubscription = _memberSub;
-    final reactionSubscription = _reactionSub;
-    final voteSubscription = _voteSub;
-    final blockSubscription = _blockSub;
+    final subscriptions = <StreamSubscription<dynamic>?>[
+      _msgSub,
+      _memberSub,
+      _reactionSub,
+      _voteSub,
+      _blockSub,
+      _fileTransferSub,
+    ];
     _msgSub = null;
     _memberSub = null;
     _reactionSub = null;
     _voteSub = null;
     _blockSub = null;
-
-    try {
-      await Future.wait<void>([
-        if (messageSubscription != null) messageSubscription.cancel(),
-        if (memberSubscription != null) memberSubscription.cancel(),
-        if (reactionSubscription != null) reactionSubscription.cancel(),
-        if (voteSubscription != null) voteSubscription.cancel(),
-        if (blockSubscription != null) blockSubscription.cancel(),
-      ]);
-      await _flushReadBoundary(
-        roomId: widget.snackChatId,
-        throughSequence: _latestLoadedSequence(),
-      ).timeout(const Duration(seconds: 18));
-      await _snackChatService.leaveRoom(widget.snackChatId);
-      await _localCache.clearRoom(widget.snackChatId);
-      _roomWasLeft = true;
-    } catch (_) {
-      // 나가기에 실패했다면 현재 채팅 화면을 계속 사용할 수 있도록
-      // 중단했던 구독과 읽음 처리를 복구한다.
-      if (mounted) {
-        setState(() => _isLeavingRoom = false);
-        _subscribeToMessages();
-        _subscribeToAuxiliaryState();
-      } else {
-        _isLeavingRoom = false;
-      }
-      rethrow;
+    _fileTransferSub = null;
+    for (final subscription in subscriptions) {
+      if (subscription != null) unawaited(subscription.cancel());
     }
-  }
 
-  Future<void> _openRoomInfo(SnackChat room) async {
-    if (_isLeavingRoom) return;
-    final infoRoute = MaterialPageRoute<bool>(
-      builder: (_) => SnackChatInfoScreen(
-        snackChatId: room.id,
-        onLeave: _leaveRoomFromInfo,
+    final roomId = widget.snackChatId;
+    final isKo = Localizations.localeOf(context).languageCode == 'ko';
+    final messenger = ScaffoldMessenger.maybeOf(context);
+    final leaveFuture = _snackChatService.leaveRoom(roomId);
+    unawaited(
+      _finishRoomLeave(
+        roomId: roomId,
+        leaveFuture: leaveFuture,
+        messenger: messenger,
+        isKo: isKo,
       ),
     );
-    final didLeave = await Navigator.of(context).push<bool>(infoRoute);
-    if (!mounted || didLeave != true) return;
 
-    // push()의 Future는 reverse transition이 끝나기 전에 완료될 수 있다.
-    // 정보 화면의 overlay가 완전히 제거된 뒤 채팅 화면을 닫아 연속 pop으로
-    // 인한 framework dependency assertion을 방지한다.
-    await infoRoute.completed;
-    if (!mounted) return;
-
-    if (SnackChatActiveConversation.isActive(widget.snackChatId)) {
+    if (SnackChatActiveConversation.isActive(roomId)) {
       SnackChatActiveConversation.setActive(null);
     }
-
     if (widget.fromPush) {
       Navigator.of(context).pushAndRemoveUntil(
         MaterialPageRoute(
@@ -4264,6 +4274,52 @@ class _SnackChatScreenState extends State<SnackChatScreen>
       return;
     }
     Navigator.of(context).pop(true);
+  }
+
+  Future<void> _finishRoomLeave({
+    required String roomId,
+    required Future<void> leaveFuture,
+    required ScaffoldMessengerState? messenger,
+    required bool isKo,
+  }) async {
+    try {
+      await leaveFuture;
+      await _localCache.clearRoom(roomId);
+      await FCMService().cancelSnackChatNotification(roomId);
+      unawaited(BadgeService.refreshNow());
+    } catch (error, stackTrace) {
+      Logger.error('Snack Chat 나가기 백그라운드 처리 실패', error, stackTrace);
+      if (messenger?.mounted ?? false) {
+        messenger!.showSnackBar(
+          SnackBar(
+            content: Text(
+              isKo
+                  ? '채팅방에서 나가지 못했습니다. 다시 시도해 주세요.'
+                  : 'Could not leave the chat. Please try again.',
+            ),
+          ),
+        );
+      }
+    }
+  }
+
+  Future<void> _openRoomInfo(SnackChat room) async {
+    if (_isLeavingRoom) return;
+    final infoRoute = MaterialPageRoute<bool>(
+      builder: (_) => SnackChatInfoScreen(
+        snackChatId: room.id,
+      ),
+    );
+    final didLeave = await Navigator.of(context).push<bool>(infoRoute);
+    if (!mounted || didLeave != true) return;
+
+    // push()의 Future는 reverse transition이 끝나기 전에 완료될 수 있다.
+    // 정보 화면의 overlay가 완전히 제거된 뒤 채팅 화면을 닫아 연속 pop으로
+    // 인한 framework dependency assertion을 방지한다.
+    await infoRoute.completed;
+    if (!mounted) return;
+
+    _leaveRoomAndExit();
   }
 
   @override
@@ -4424,80 +4480,8 @@ class _SnackChatScreenState extends State<SnackChatScreen>
     final toggleTooltip = showingOriginal
         ? (isKo ? '번역 보기' : 'View translation')
         : (isKo ? '원문 보기' : 'View original');
-    final toggleLoading = !_translationModeReady ||
-        (_translationBatchRunning && !showingOriginal) ||
-        _hasPendingAutomaticTranslationRetry;
-    final showRetry = !showingOriginal && _hasLocalTranslationFailures;
-    final retryAvailable = (!_translationProviderRetryExhausted ||
-            _translationProviderRetryAvailable) &&
-        !_manualTranslationRetryInFlight &&
-        _canStartTranslationBatch;
-
-    Widget pill({
-      required Key key,
-      required String label,
-      required String tooltip,
-      required Color foreground,
-      required Color background,
-      required Color border,
-      required IconData icon,
-      required bool busy,
-      required VoidCallback? onPressed,
-    }) {
-      return Semantics(
-        button: true,
-        label: tooltip,
-        child: Tooltip(
-          message: tooltip,
-          child: TextButton(
-            key: key,
-            onPressed: onPressed,
-            style: TextButton.styleFrom(
-              foregroundColor: foreground,
-              disabledForegroundColor: foreground.withValues(alpha: 0.5),
-              backgroundColor: background,
-              disabledBackgroundColor: background.withValues(alpha: 0.7),
-              minimumSize: const Size(0, 32),
-              padding: const EdgeInsets.symmetric(horizontal: 10),
-              tapTargetSize: MaterialTapTargetSize.shrinkWrap,
-              side: BorderSide(color: border),
-              shape: RoundedRectangleBorder(
-                borderRadius: BorderRadius.circular(16),
-              ),
-            ),
-            child: Row(
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                if (busy)
-                  SizedBox.square(
-                    dimension: 14,
-                    child: CircularProgressIndicator(
-                      strokeWidth: 1.8,
-                      color: foreground,
-                    ),
-                  )
-                else
-                  Icon(icon, size: 15),
-                const SizedBox(width: 2),
-                Text(
-                  label,
-                  maxLines: 1,
-                  overflow: TextOverflow.fade,
-                  softWrap: false,
-                  style: const TextStyle(
-                    fontFamily: 'Inter',
-                    fontFamilyFallback: ['NotoSansKR'],
-                    fontSize: 11.5,
-                    fontWeight: FontWeight.w600,
-                    height: 1,
-                  ),
-                ),
-              ],
-            ),
-          ),
-        ),
-      );
-    }
+    final settingsTooltip = isKo ? '번역 언어 설정' : 'Translation language';
+    final toggleLoading = !_translationModeReady;
 
     return Material(
       color: Colors.transparent,
@@ -4507,41 +4491,98 @@ class _SnackChatScreenState extends State<SnackChatScreen>
           child: Align(
             alignment: Alignment.centerRight,
             child: Padding(
-              padding: const EdgeInsets.fromLTRB(0, 4, 12, 4),
-              child: Wrap(
-                alignment: WrapAlignment.end,
-                crossAxisAlignment: WrapCrossAlignment.center,
-                spacing: 6,
-                runSpacing: 4,
-                children: [
-                  pill(
-                    key: const ValueKey('snack_translation_toggle'),
-                    label: toggleLabel,
-                    tooltip: toggleTooltip,
-                    foreground: const Color(0xFF087BB5),
-                    background: const Color(0xFFEAF6FD),
-                    border: const Color(0xFF9CD8F5),
-                    icon: Icons.translate_rounded,
-                    busy: toggleLoading,
-                    onPressed:
-                        _translationModeReady ? _toggleSnackTranslation : null,
-                  ),
-                  if (showRetry)
-                    pill(
-                      key: const ValueKey('snack_translation_retry'),
-                      label: isKo ? '다시 번역' : 'Retry',
-                      tooltip: isKo
-                          ? '실패한 메시지 하나 다시 번역'
-                          : 'Retry one failed message',
-                      foreground: const Color(0xFFB54708),
-                      background: const Color(0xFFFFF4E5),
-                      border: const Color(0xFFFDBA74),
-                      icon: Icons.refresh_rounded,
-                      busy: _manualTranslationRetryInFlight,
-                      onPressed:
-                          retryAvailable ? _retryOneFailedTranslation : null,
+              padding: EdgeInsets.fromLTRB(
+                12,
+                context.rs(6).clamp(5, 8).toDouble(),
+                12,
+                4,
+              ),
+              child: DecoratedBox(
+                decoration: BoxDecoration(
+                  color: const Color(0xFFEEF8FE),
+                  borderRadius: BorderRadius.circular(14),
+                ),
+                child: Row(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    Semantics(
+                      button: true,
+                      label: toggleTooltip,
+                      child: Tooltip(
+                        message: toggleTooltip,
+                        child: TextButton(
+                          key: const ValueKey('snack_translation_toggle'),
+                          onPressed: _translationModeReady
+                              ? _toggleSnackTranslation
+                              : null,
+                          style: TextButton.styleFrom(
+                            foregroundColor: const Color(0xFF087BB5),
+                            disabledForegroundColor: const Color(0xFF76AFCB),
+                            minimumSize: const Size(0, 28),
+                            maximumSize: const Size(double.infinity, 28),
+                            padding: const EdgeInsets.fromLTRB(8, 0, 3, 0),
+                            tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                            shape: const StadiumBorder(),
+                          ),
+                          child: Row(
+                            mainAxisSize: MainAxisSize.min,
+                            children: [
+                              if (toggleLoading)
+                                const SizedBox.square(
+                                  dimension: 14,
+                                  child: CircularProgressIndicator(
+                                    strokeWidth: 1.8,
+                                    color: Color(0xFF76AFCB),
+                                  ),
+                                )
+                              else
+                                const Icon(Icons.translate_rounded, size: 15),
+                              const SizedBox(width: 3),
+                              Text(
+                                toggleLabel,
+                                maxLines: 1,
+                                overflow: TextOverflow.ellipsis,
+                                softWrap: false,
+                                style: TextStyle(
+                                  fontFamily: 'Inter',
+                                  fontFamilyFallback: const ['NotoSansKR'],
+                                  fontSize:
+                                      context.rf(11).clamp(10.5, 12).toDouble(),
+                                  fontWeight: FontWeight.w600,
+                                  height: 1,
+                                ),
+                              ),
+                            ],
+                          ),
+                        ),
+                      ),
                     ),
-                ],
+                    Semantics(
+                      button: true,
+                      label: settingsTooltip,
+                      child: Tooltip(
+                        message: settingsTooltip,
+                        child: IconButton(
+                          key: const ValueKey(
+                            'snack_translation_language_settings',
+                          ),
+                          onPressed: _openSnackTranslationLanguageSettings,
+                          icon: const Icon(Icons.settings_outlined),
+                          color: const Color(0xFF526779),
+                          iconSize: 15,
+                          padding: EdgeInsets.zero,
+                          style: IconButton.styleFrom(
+                            minimumSize: const Size(28, 28),
+                            maximumSize: const Size(28, 28),
+                            padding: EdgeInsets.zero,
+                            tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                            visualDensity: VisualDensity.compact,
+                          ),
+                        ),
+                      ),
+                    ),
+                  ],
+                ),
               ),
             ),
           ),
@@ -4631,7 +4672,10 @@ class _SnackChatScreenState extends State<SnackChatScreen>
         ),
         padding: EdgeInsets.fromLTRB(
           context.rs(10).clamp(8, 14).toDouble(),
-          context.rs(10).clamp(8, 14).toDouble(),
+          // The translation control floats above the list. Keep its visual
+          // footprint inside the scrollable top inset so the oldest bubble
+          // can always settle fully below the control when pulled to the top.
+          context.rs(48).clamp(44, 52).toDouble(),
           context.rs(10).clamp(8, 14).toDouble(),
           context.rs(6).clamp(4, 8).toDouble(),
         ),
@@ -5007,35 +5051,122 @@ class _SnackChatScreenState extends State<SnackChatScreen>
 
   Widget _buildTranslatedMessageText({
     required SnackChatMessage message,
+    required bool isMe,
     required TextStyle textStyle,
   }) {
     final result = _currentTranslationForMessage(message);
     final translatedText = result?.translatedFields['text'] ?? '';
-    final canShowTranslation = _translationModeReady &&
+    final canShowTranslation = !isMe &&
+        _translationModeReady &&
         !_translationShowsOriginal &&
         result?.isReady == true &&
         result?.isSameLanguage != true &&
         translatedText.trim().isNotEmpty;
     final displayText = canShowTranslation ? translatedText : message.text;
 
-    return Linkify(
-      key: ValueKey<String>(
-        '${message.id}:${canShowTranslation ? result!.sourceHash : 'original'}',
-      ),
-      text: displayText,
-      onOpen: (link) => _openExternalUrl(link.url),
-      style: textStyle,
-      linkStyle: textStyle.copyWith(
-        decoration: TextDecoration.underline,
-        decorationColor: textStyle.color,
-      ),
+    final requestKey = _translationRequestKey(message);
+    final translationFailed = !isMe &&
+        !_translationShowsOriginal &&
+        (_translationFailures[requestKey] ?? 0) >= 2 &&
+        result == null;
+    final retryInFlight = _translationRequestsInFlight.contains(requestKey);
+    final initialTranslationInFlight = !isMe &&
+        _translationModeReady &&
+        !_translationShowsOriginal &&
+        result == null &&
+        !translationFailed &&
+        retryInFlight;
+    final retryAvailable = (!_translationProviderRetryExhausted ||
+            _translationProviderRetryAvailable) &&
+        !_manualTranslationRetryInFlight &&
+        !retryInFlight &&
+        _canStartTranslationBatch;
+    final isKo = Localizations.localeOf(context).languageCode == 'ko';
+
+    return Column(
+      key: ValueKey<String>('message-text:${message.id}'),
+      mainAxisSize: MainAxisSize.min,
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Row(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.end,
+          children: [
+            Flexible(
+              fit: FlexFit.loose,
+              child: Linkify(
+                text: displayText,
+                onOpen: (link) => _openExternalUrl(link.url),
+                style: textStyle,
+                linkStyle: textStyle.copyWith(
+                  decoration: TextDecoration.underline,
+                  decorationColor: textStyle.color,
+                ),
+              ),
+            ),
+            if (initialTranslationInFlight) ...[
+              const SizedBox(width: 5),
+              Semantics(
+                label: isKo ? '번역 중' : 'Translating',
+                child: const Padding(
+                  padding: EdgeInsets.only(bottom: 3),
+                  child: SizedBox.square(
+                    dimension: 10,
+                    child: CircularProgressIndicator(
+                      strokeWidth: 1.4,
+                      color: Color(0xFF98A2B3),
+                    ),
+                  ),
+                ),
+              ),
+            ],
+          ],
+        ),
+        if (translationFailed)
+          Padding(
+            padding: const EdgeInsets.only(top: 3),
+            child: TextButton.icon(
+              key: ValueKey<String>('translation-retry:${message.id}'),
+              onPressed: retryAvailable
+                  ? () => _retryFailedTranslation(message)
+                  : null,
+              style: TextButton.styleFrom(
+                foregroundColor: const Color(0xFF667085),
+                disabledForegroundColor:
+                    const Color(0xFF98A2B3).withValues(alpha: 0.8),
+                minimumSize: const Size(0, 26),
+                padding: const EdgeInsets.symmetric(horizontal: 2),
+                tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+              ),
+              icon: retryInFlight
+                  ? const SizedBox.square(
+                      dimension: 12,
+                      child: CircularProgressIndicator(strokeWidth: 1.5),
+                    )
+                  : const Icon(Icons.refresh_rounded, size: 14),
+              label: Text(
+                isKo ? '다시 번역' : 'Retry translation',
+                style: const TextStyle(
+                  fontFamily: 'Inter',
+                  fontFamilyFallback: ['NotoSansKR'],
+                  fontSize: 11,
+                  fontWeight: FontWeight.w600,
+                ),
+              ),
+            ),
+          ),
+      ],
     );
   }
 
-  SnackChatPoll _displayPollForMessage(SnackChatMessage message) {
+  SnackChatPoll _displayPollForMessage(
+    SnackChatMessage message, {
+    required bool isMe,
+  }) {
     final poll = message.poll!;
     final result = _currentTranslationForMessage(message);
-    if (!_translationModeReady ||
+    if (isMe ||
+        !_translationModeReady ||
         _translationShowsOriginal ||
         result == null ||
         result.isSameLanguage) {
@@ -5193,7 +5324,7 @@ class _SnackChatScreenState extends State<SnackChatScreen>
                 const SizedBox(height: 8),
               if (message.poll != null)
                 SnackChatPollCard(
-                  poll: _displayPollForMessage(message),
+                  poll: _displayPollForMessage(message, isMe: isMe),
                   myOptionIds: _myVotes[message.id] ?? const <String>{},
                   isOutgoing: isMe,
                   enabled: !message.isPending &&
@@ -5204,6 +5335,7 @@ class _SnackChatScreenState extends State<SnackChatScreen>
               else if (hasText)
                 _buildTranslatedMessageText(
                   message: message,
+                  isMe: isMe,
                   textStyle: textStyle,
                 )
               else if (!hasImage && !hasFile)

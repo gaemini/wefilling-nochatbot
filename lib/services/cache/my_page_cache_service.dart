@@ -28,10 +28,56 @@ class MyPageCacheService {
   /// 같은 앱 실행 중에는 Hive 접근조차 반복하지 않도록 하는 1차 메모리 캐시.
   /// 영구 저장소(Hive)는 앱 재실행 후 복원용 2차 캐시로 사용한다.
   static final Map<String, _RawCacheEntry> _memoryCache = {};
+  static final Map<String, int> _friendCountMemoryCache = {};
 
   Future<Box<dynamic>>? _openingBox;
 
-  static void clearMemory() => _memoryCache.clear();
+  static void clearMemory() {
+    _memoryCache.clear();
+    _friendCountMemoryCache.clear();
+  }
+
+  /// 현재 사용자 프로필의 친구 수를 기존 마이페이지 캐시에 함께 보관한다.
+  /// 친구 목록은 저장하지 않으며 숫자 한 건만 복원한다.
+  Future<int?> readFriendCount(String userId) async {
+    final key = _key(userId, 'friends_count');
+    final memoryValue = _friendCountMemoryCache[key];
+    if (memoryValue != null) return memoryValue;
+
+    try {
+      final box = await _box();
+      if (box == null) return null;
+
+      final value = box.get(key);
+      if (value is! Map) return null;
+      final count = Map<dynamic, dynamic>.from(value)['count'];
+      if (count is! num) return null;
+
+      final safeCount = count.toInt() < 0 ? 0 : count.toInt();
+      _friendCountMemoryCache[key] = safeCount;
+      return safeCount;
+    } catch (error) {
+      Logger.error('마이페이지 친구 수 캐시 읽기 실패', error);
+      return null;
+    }
+  }
+
+  Future<void> saveFriendCount(String userId, int count) async {
+    final key = _key(userId, 'friends_count');
+    final safeCount = count < 0 ? 0 : count;
+    _friendCountMemoryCache[key] = safeCount;
+
+    try {
+      final box = await _box();
+      if (box == null) return;
+      await box.put(key, <String, dynamic>{
+        'count': safeCount,
+        'cachedAt': DateTime.now().millisecondsSinceEpoch,
+      });
+    } catch (error) {
+      Logger.error('마이페이지 친구 수 캐시 저장 실패', error);
+    }
+  }
 
   Future<MyPageCacheEntry<Post>?> readUserPosts(String userId) {
     return _readPosts(_key(userId, 'posts'));

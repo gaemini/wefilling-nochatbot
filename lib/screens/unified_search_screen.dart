@@ -21,6 +21,7 @@ import '../ui/widgets/app_icon_button.dart';
 import '../ui/widgets/hanyang_verification_gate.dart';
 import '../widgets/post_search_card.dart';
 import '../widgets/user_tile.dart';
+import '../utils/responsive_helper.dart';
 
 class UnifiedSearchScreen extends StatefulWidget {
   /// 0: 이름(유저), 1: 게시글, 2: 모임
@@ -381,77 +382,101 @@ class _UnifiedSearchScreenState extends State<UnifiedSearchScreen>
 
   Widget _buildSearchField(BuildContext context) {
     final l10n = AppLocalizations.of(context)!;
+    final width = MediaQuery.sizeOf(context).width;
+    final compact = width < 360;
+    final horizontal = (width * 0.045).clamp(14.0, 24.0).toDouble();
     final showCenteredPlaceholder =
         _searchController.text.trim().isEmpty && !_searchFocusNode.hasFocus;
     return Padding(
-      padding: const EdgeInsets.fromLTRB(16, 12, 16, 8),
-      child: Container(
-        decoration: BoxDecoration(
-          color: const Color(0xFFF5F6F8),
-          borderRadius: BorderRadius.circular(22),
-        ),
-        child: Stack(
-          alignment: Alignment.center,
-          children: [
-            Row(
-              children: [
-                const SizedBox(
-                  width: 44,
-                  child: Center(
-                    child: Icon(Icons.search, color: Colors.black54, size: 20),
-                  ),
-                ),
-                Expanded(
-                  child: TextField(
-                    controller: _searchController,
-                    focusNode: _searchFocusNode,
-                    autofocus: true,
-                    textAlign: TextAlign.start, // 입력은 항상 왼쪽부터
-                    decoration: const InputDecoration(
-                      border: InputBorder.none,
-                      isDense: true,
-                      contentPadding:
-                          EdgeInsets.symmetric(horizontal: 0, vertical: 12),
+      padding: EdgeInsets.fromLTRB(horizontal, 10, horizontal, 8),
+      child: SizedBox(
+        height: compact ? 44 : 46,
+        child: DecoratedBox(
+          decoration: BoxDecoration(
+            color: const Color(0xFFF4F5F7),
+            borderRadius: BorderRadius.circular(compact ? 14 : 16),
+          ),
+          child: Stack(
+            alignment: Alignment.center,
+            children: [
+              Row(
+                children: [
+                  SizedBox(
+                    width: compact ? 40 : 44,
+                    child: const Center(
+                      child: Icon(
+                        Icons.search_rounded,
+                        color: Color(0xFF667085),
+                        size: 20,
+                      ),
                     ),
-                    style: const TextStyle(fontSize: 14),
-                    textInputAction: TextInputAction.search,
-                    onChanged: _onQueryChanged,
                   ),
-                ),
-                SizedBox(
-                  width: 44,
-                  child: _searchController.text.isNotEmpty
-                      ? GestureDetector(
-                          onTap: () {
-                            _searchController.clear();
-                            _clearAllResults();
-                            FocusScope.of(context).unfocus();
-                          },
-                          child: const Icon(
-                            Icons.clear,
-                            color: Colors.black54,
-                            size: 18,
-                          ),
-                        )
-                      : const SizedBox.shrink(),
-                ),
-              ],
-            ),
-            if (showCenteredPlaceholder)
-              IgnorePointer(
-                child: Padding(
-                  // 좌/우 아이콘 영역을 제외하고 가운데 배치
-                  padding: const EdgeInsets.symmetric(horizontal: 44),
-                  child: Text(
-                    l10n.enterSearchQuery,
-                    textAlign: TextAlign.center,
-                    maxLines: 1,
-                    overflow: TextOverflow.ellipsis,
-                    style: const TextStyle(color: Colors.black54, fontSize: 14),
+                  Expanded(
+                    child: TextField(
+                      controller: _searchController,
+                      focusNode: _searchFocusNode,
+                      autofocus: true,
+                      textAlign: TextAlign.start, // 입력은 항상 왼쪽부터
+                      decoration: const InputDecoration(
+                        border: InputBorder.none,
+                        isDense: true,
+                        contentPadding:
+                            EdgeInsets.symmetric(horizontal: 0, vertical: 12),
+                      ),
+                      style: TextStyle(
+                        fontFamily: 'Inter',
+                        fontFamilyFallback: const ['NotoSansKR'],
+                        fontSize: context.rf(14).clamp(13.5, 15).toDouble(),
+                        fontWeight: FontWeight.w500,
+                        color: const Color(0xFF111827),
+                      ),
+                      textInputAction: TextInputAction.search,
+                      onChanged: _onQueryChanged,
+                    ),
                   ),
-                ),
+                  SizedBox(
+                    width: compact ? 40 : 44,
+                    child: _searchController.text.isNotEmpty
+                        ? GestureDetector(
+                            onTap: () {
+                              _searchController.clear();
+                              _clearAllResults();
+                              FocusScope.of(context).unfocus();
+                            },
+                            child: const Icon(
+                              Icons.close_rounded,
+                              color: Color(0xFF667085),
+                              size: 19,
+                            ),
+                          )
+                        : const SizedBox.shrink(),
+                  ),
+                ],
               ),
-          ],
+              if (showCenteredPlaceholder)
+                IgnorePointer(
+                  child: Padding(
+                    // 좌/우 아이콘 영역을 제외하고 가운데 배치
+                    padding: EdgeInsets.symmetric(
+                      horizontal: compact ? 40 : 44,
+                    ),
+                    child: Text(
+                      l10n.enterSearchQuery,
+                      textAlign: TextAlign.center,
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      style: TextStyle(
+                        fontFamily: 'Inter',
+                        fontFamilyFallback: const ['NotoSansKR'],
+                        color: const Color(0xFF98A2B3),
+                        fontSize: context.rf(14).clamp(13, 15).toDouble(),
+                        fontWeight: FontWeight.w500,
+                      ),
+                    ),
+                  ),
+                ),
+            ],
+          ),
         ),
       ),
     );
@@ -462,30 +487,54 @@ class _UnifiedSearchScreenState extends State<UnifiedSearchScreen>
     required String title,
     required String subtitle,
   }) {
-    return Center(
-      child: Column(
-        mainAxisAlignment: MainAxisAlignment.center,
-        crossAxisAlignment: CrossAxisAlignment.center,
-        children: [
-          // 중앙 안내가 너무 흐리지 않게 톤 업
-          Icon(icon, size: 72, color: Colors.grey.shade400),
-          const SizedBox(height: 18),
-          Text(
-            title,
-            textAlign: TextAlign.center,
-            style: TextStyle(
-              fontSize: 18,
-              fontWeight: FontWeight.w600,
-              color: Colors.grey.shade800,
+    return LayoutBuilder(
+      builder: (context, constraints) => SingleChildScrollView(
+        padding: const EdgeInsets.fromLTRB(24, 24, 24, 72),
+        child: ConstrainedBox(
+          constraints: BoxConstraints(
+            minHeight: (constraints.maxHeight - 96).clamp(0.0, double.infinity),
+          ),
+          child: Center(
+            child: ConstrainedBox(
+              constraints: const BoxConstraints(maxWidth: 380),
+              child: MediaQuery.withClampedTextScaling(
+                maxScaleFactor: 1.25,
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    Icon(icon, size: 36, color: const Color(0xFF98A2B3)),
+                    const SizedBox(height: 16),
+                    Text(
+                      title,
+                      textAlign: TextAlign.center,
+                      style: const TextStyle(
+                        fontFamily: 'Inter',
+                        fontFamilyFallback: ['NotoSansKR'],
+                        fontSize: 17,
+                        fontWeight: FontWeight.w700,
+                        color: Color(0xFF111827),
+                        height: 1.3,
+                      ),
+                    ),
+                    const SizedBox(height: 7),
+                    Text(
+                      subtitle,
+                      textAlign: TextAlign.center,
+                      style: const TextStyle(
+                        fontFamily: 'Inter',
+                        fontFamilyFallback: ['NotoSansKR'],
+                        fontSize: 13.5,
+                        fontWeight: FontWeight.w400,
+                        color: Color(0xFF667085),
+                        height: 1.5,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
             ),
           ),
-          const SizedBox(height: 8),
-          Text(
-            subtitle,
-            textAlign: TextAlign.center,
-            style: TextStyle(fontSize: 14, color: Colors.grey.shade600),
-          ),
-        ],
+        ),
       ),
     );
   }
@@ -496,66 +545,83 @@ class _UnifiedSearchScreenState extends State<UnifiedSearchScreen>
       backgroundColor: Colors.white,
       appBar: AppBar(
         backgroundColor: Colors.white,
-        elevation: 0.5,
-        shadowColor: Colors.black12,
+        surfaceTintColor: Colors.white,
+        elevation: 0,
+        toolbarHeight: 56,
+        centerTitle: true,
         leading: AppIconButton(
-          icon: Icons.arrow_back,
+          icon: Icons.arrow_back_rounded,
           onPressed: () => Navigator.pop(context),
           semanticLabel: AppLocalizations.of(context)!.back,
         ),
         title: Text(
           Localizations.localeOf(context).languageCode == 'ko'
-              ? '검색창'
+              ? '검색'
               : 'Search',
           style: const TextStyle(
+            fontFamily: 'Inter',
+            fontFamilyFallback: ['NotoSansKR'],
             fontSize: 18,
-            fontWeight: FontWeight.bold,
-            color: Colors.black,
+            fontWeight: FontWeight.w700,
+            color: Color(0xFF111827),
+            letterSpacing: -0.2,
           ),
         ),
+        actions: const [SizedBox(width: 48)],
       ),
-      body: Column(
-        children: [
-          _buildSearchField(context),
-          TabBar(
-            controller: _tabController,
-            isScrollable: false,
-            labelColor: const Color(0xFF111827),
-            unselectedLabelColor: const Color(0xFF6B7280),
-            labelStyle: const TextStyle(
-              fontFamily: 'Inter',
-              fontFamilyFallback: const ['NotoSansKR'],
-              fontSize: 17,
-              fontWeight: FontWeight.w800,
-              letterSpacing: -0.2,
-            ),
-            unselectedLabelStyle: const TextStyle(
-              fontFamily: 'Inter',
-              fontFamilyFallback: const ['NotoSansKR'],
-              fontSize: 16,
-              fontWeight: FontWeight.w600,
-              letterSpacing: -0.2,
-            ),
-            indicatorColor: AppColors.pointColor,
-            indicatorWeight: 3,
-            indicatorSize: TabBarIndicatorSize.label,
-            tabs: List.generate(
-              _tabCount,
-              (i) => Tab(text: _tabLabel(context, i)),
+      body: MediaQuery.withClampedTextScaling(
+        maxScaleFactor: 1.25,
+        child: SafeArea(
+          top: false,
+          child: Center(
+            child: ConstrainedBox(
+              constraints: const BoxConstraints(maxWidth: 720),
+              child: Column(
+                children: [
+                  _buildSearchField(context),
+                  TabBar(
+                    controller: _tabController,
+                    isScrollable: false,
+                    labelColor: const Color(0xFF111827),
+                    unselectedLabelColor: const Color(0xFF6B7280),
+                    labelStyle: const TextStyle(
+                      fontFamily: 'Inter',
+                      fontFamilyFallback: const ['NotoSansKR'],
+                      fontSize: 14,
+                      fontWeight: FontWeight.w700,
+                      letterSpacing: -0.1,
+                    ),
+                    unselectedLabelStyle: const TextStyle(
+                      fontFamily: 'Inter',
+                      fontFamilyFallback: const ['NotoSansKR'],
+                      fontSize: 14,
+                      fontWeight: FontWeight.w500,
+                      letterSpacing: -0.1,
+                    ),
+                    indicatorColor: AppColors.pointColor,
+                    indicatorWeight: 2.5,
+                    indicatorSize: TabBarIndicatorSize.label,
+                    tabs: List.generate(
+                      _tabCount,
+                      (i) => Tab(text: _tabLabel(context, i)),
+                    ),
+                  ),
+                  const Divider(height: 1, color: Color(0xFFEAECF0)),
+                  Expanded(
+                    child: TabBarView(
+                      controller: _tabController,
+                      children: [
+                        _buildUsersTab(),
+                        _buildPostsTab(),
+                        _buildMeetupsTab(),
+                      ],
+                    ),
+                  ),
+                ],
+              ),
             ),
           ),
-          const Divider(height: 1),
-          Expanded(
-            child: TabBarView(
-              controller: _tabController,
-              children: [
-                _buildUsersTab(),
-                _buildPostsTab(),
-                _buildMeetupsTab(),
-              ],
-            ),
-          ),
-        ],
+        ),
       ),
     );
   }
@@ -616,6 +682,7 @@ class _UnifiedSearchScreenState extends State<UnifiedSearchScreen>
               relationshipStatus: status,
               onActionPressed: () => _handleUserAction(user, status),
               onTilePressed: () => _openUserProfile(user),
+              minimal: true,
             );
           },
         );
@@ -657,8 +724,9 @@ class _UnifiedSearchScreenState extends State<UnifiedSearchScreen>
       );
     }
 
+    final bottomPadding = MediaQuery.paddingOf(context).bottom;
     return ListView.builder(
-      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+      padding: EdgeInsets.only(top: 6, bottom: bottomPadding + 12),
       itemCount: _postResults.length,
       itemBuilder: (context, index) {
         return PostSearchCard(post: _postResults[index]);
@@ -701,10 +769,20 @@ class _UnifiedSearchScreenState extends State<UnifiedSearchScreen>
       );
     }
 
+    final width = MediaQuery.sizeOf(context).width;
+    final horizontal = (width * 0.045).clamp(14.0, 24.0).toDouble();
+    final compact = width < 360;
+    final bottomPadding = MediaQuery.paddingOf(context).bottom;
     return ListView.separated(
-      padding: const EdgeInsets.all(16),
+      padding: EdgeInsets.only(top: 4, bottom: bottomPadding + 12),
       itemCount: _meetupResults.length,
-      separatorBuilder: (_, __) => const SizedBox(height: 12),
+      separatorBuilder: (_, __) => Divider(
+        height: 1,
+        thickness: 1,
+        indent: horizontal,
+        endIndent: horizontal,
+        color: const Color(0xFFEAECF0),
+      ),
       itemBuilder: (context, index) {
         final meetup = _meetupResults[index];
         final isHanyangLocked = HanyangVerificationGate.isLockedForCurrentUser(
@@ -714,115 +792,137 @@ class _UnifiedSearchScreenState extends State<UnifiedSearchScreen>
         return HanyangVerificationGate(
           locked: isHanyangLocked,
           compact: true,
-          child: InkWell(
-            onTap: isHanyangLocked
-                ? null
-                : () {
-                    Navigator.push(
-                      context,
-                      MaterialPageRoute(
-                        builder: (_) => MeetupDetailScreen(
-                          meetup: meetup,
-                          meetupId: meetup.id,
-                          onMeetupDeleted: () {
-                            final q = _searchController.text.trim();
-                            if (q.isNotEmpty) {
-                              _searchMeetups(q);
-                            }
-                          },
-                        ),
-                      ),
-                    );
-                  },
-            borderRadius: BorderRadius.circular(16),
-            child: Container(
-              decoration: BoxDecoration(
-                color: const Color(0xFFE9F1FF),
-                borderRadius: BorderRadius.circular(16),
-              ),
-              padding: const EdgeInsets.all(16),
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Row(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Expanded(
-                        child: Text(
-                          meetup.title,
-                          style: const TextStyle(
-                            fontSize: 16,
-                            fontWeight: FontWeight.bold,
-                            color: Colors.black,
+          child: Material(
+            color: Colors.white,
+            child: InkWell(
+              onTap: isHanyangLocked
+                  ? null
+                  : () {
+                      Navigator.push(
+                        context,
+                        MaterialPageRoute(
+                          builder: (_) => MeetupDetailScreen(
+                            meetup: meetup,
+                            meetupId: meetup.id,
+                            onMeetupDeleted: () {
+                              final q = _searchController.text.trim();
+                              if (q.isNotEmpty) _searchMeetups(q);
+                            },
                           ),
                         ),
-                      ),
-                      const SizedBox(width: 8),
-                      Container(
-                        padding: const EdgeInsets.symmetric(
-                            horizontal: 8, vertical: 4),
-                        decoration: BoxDecoration(
-                          color: Colors.blue,
-                          borderRadius: BorderRadius.circular(8),
+                      );
+                    },
+              child: Padding(
+                padding: EdgeInsets.symmetric(
+                  horizontal: horizontal,
+                  vertical: compact ? 12 : 14,
+                ),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Row(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Expanded(
+                          child: Text(
+                            meetup.title,
+                            maxLines: 2,
+                            overflow: TextOverflow.ellipsis,
+                            style: TextStyle(
+                              fontFamily: 'Inter',
+                              fontFamilyFallback: const ['NotoSansKR'],
+                              fontSize: compact ? 14.5 : 15.5,
+                              fontWeight: FontWeight.w700,
+                              color: const Color(0xFF111827),
+                              height: 1.35,
+                              letterSpacing: -0.2,
+                            ),
+                          ),
                         ),
-                        child: Text(
+                        const SizedBox(width: 12),
+                        Text(
                           meetup.getFormattedDate(context),
+                          maxLines: 1,
                           style: const TextStyle(
-                            fontSize: 11,
-                            color: Colors.white,
-                            fontWeight: FontWeight.w700,
+                            fontFamily: 'Inter',
+                            fontFamilyFallback: ['NotoSansKR'],
+                            fontSize: 12,
+                            color: Color(0xFF667085),
+                            fontWeight: FontWeight.w600,
                           ),
                         ),
-                      ),
-                    ],
-                  ),
-                  const SizedBox(height: 6),
-                  Text(
-                    '${AppLocalizations.of(context)!.host}: ${meetup.host}',
-                    style: TextStyle(
-                      fontSize: 12,
-                      color: Colors.black.withOpacity(0.7),
-                      fontWeight: FontWeight.w500,
+                      ],
                     ),
-                  ),
-                  const SizedBox(height: 10),
-                  Text(
-                    meetup.description,
-                    style: TextStyle(
-                        fontSize: 14, color: Colors.black.withOpacity(0.6)),
-                    maxLines: 2,
-                    overflow: TextOverflow.ellipsis,
-                  ),
-                  const SizedBox(height: 12),
-                  Row(
-                    children: [
-                      Icon(Icons.location_on,
-                          size: 14, color: Colors.red.shade400),
-                      const SizedBox(width: 4),
-                      Expanded(
-                        child: Text(
-                          meetup.location,
-                          style: TextStyle(
+                    const SizedBox(height: 5),
+                    Text(
+                      '${AppLocalizations.of(context)!.host}: ${meetup.host}',
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      style: const TextStyle(
+                        fontFamily: 'Inter',
+                        fontFamilyFallback: ['NotoSansKR'],
+                        fontSize: 12.5,
+                        color: Color(0xFF667085),
+                        fontWeight: FontWeight.w500,
+                      ),
+                    ),
+                    const SizedBox(height: 8),
+                    Text(
+                      meetup.description,
+                      style: const TextStyle(
+                        fontFamily: 'Inter',
+                        fontFamilyFallback: ['NotoSansKR'],
+                        fontSize: 13.5,
+                        color: Color(0xFF475467),
+                        height: 1.45,
+                      ),
+                      maxLines: 2,
+                      overflow: TextOverflow.ellipsis,
+                    ),
+                    const SizedBox(height: 10),
+                    Row(
+                      children: [
+                        const Icon(
+                          Icons.location_on_outlined,
+                          size: 15,
+                          color: Color(0xFF667085),
+                        ),
+                        const SizedBox(width: 4),
+                        Expanded(
+                          child: Text(
+                            meetup.location,
+                            style: const TextStyle(
+                              fontFamily: 'Inter',
+                              fontFamilyFallback: ['NotoSansKR'],
                               fontSize: 12,
-                              color: Colors.black.withOpacity(0.6)),
-                          maxLines: 1,
-                          overflow: TextOverflow.ellipsis,
+                              color: Color(0xFF667085),
+                              fontWeight: FontWeight.w500,
+                            ),
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis,
+                          ),
                         ),
-                      ),
-                      const SizedBox(width: 12),
-                      Icon(Icons.people, size: 16, color: Colors.blue.shade700),
-                      const SizedBox(width: 4),
-                      Text(
-                        '${meetup.currentParticipants}/${meetup.maxParticipants}',
-                        style: TextStyle(
-                          fontSize: 14,
-                          color: Colors.blue.shade700,
-                          fontWeight: FontWeight.w600,
+                        const SizedBox(width: 12),
+                        const Icon(
+                          Icons.people_outline_rounded,
+                          size: 16,
+                          color: Color(0xFF667085),
                         ),
-                      ),
-                    ],
-                  ),
-                ],
+                        const SizedBox(width: 4),
+                        Text(
+                          '${meetup.currentParticipants}/${meetup.maxParticipants}',
+                          style: const TextStyle(
+                            fontFamily: 'Inter',
+                            fontFamilyFallback: ['NotoSansKR'],
+                            fontSize: 12,
+                            color: Color(0xFF475467),
+                            fontWeight: FontWeight.w600,
+                          ),
+                        ),
+                      ],
+                    ),
+                  ],
+                ),
               ),
             ),
           ),

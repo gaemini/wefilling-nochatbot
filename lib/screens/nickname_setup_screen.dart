@@ -1,6 +1,7 @@
+import 'dart:async';
 import 'dart:io';
 
-import 'package:cloud_firestore/cloud_firestore.dart';
+import 'package:cloud_functions/cloud_functions.dart';
 import 'package:flutter/material.dart';
 import 'package:image_picker/image_picker.dart';
 import 'package:provider/provider.dart';
@@ -42,12 +43,18 @@ class _NicknameSetupScreenState extends State<NicknameSetupScreen> {
   var _activities = <String>[];
   StudentType? _studentType;
   var _isLoading = false;
+  Timer? _nicknameDebounce;
+  int _nicknameCheckGeneration = 0;
+  bool _isCheckingNickname = false;
+  bool? _isNicknameAvailable;
+  String? _nicknameAvailabilityError;
   File? _selectedImage;
 
   bool get _isKorean => Localizations.localeOf(context).languageCode == 'ko';
 
   @override
   void dispose() {
+    _nicknameDebounce?.cancel();
     _pageController.dispose();
     _nicknameController.dispose();
     _bioController.dispose();
@@ -118,21 +125,66 @@ class _NicknameSetupScreenState extends State<NicknameSetupScreen> {
     );
   }
 
-  Future<bool> _nicknameAvailable(String nickname) async {
-    final authProvider = context.read<AuthProvider>();
-    final uid = authProvider.user?.uid;
-    // 일반 이메일 가입은 마지막 제출 전까지 Firebase Auth 계정도 만들지
-    // 않는다. 이 경로의 중복 검사는 최종 Callable 내부에서 원자적으로 한다.
-    if (uid == null &&
-        widget.pendingSignup?.kind == PendingSignupKind.generalEmail) {
-      return true;
+  void _onNicknameChanged(String raw) {
+    _nicknameDebounce?.cancel();
+    final generation = ++_nicknameCheckGeneration;
+    final validation = SocialProfileValidation.nicknameError(
+      raw,
+      Localizations.localeOf(context).languageCode,
+    );
+    setState(() {
+      _isNicknameAvailable = null;
+      _nicknameAvailabilityError = null;
+      _isCheckingNickname = false;
+    });
+    if (validation != null) return;
+    _nicknameDebounce = Timer(const Duration(milliseconds: 480), () {
+      _checkNickname(raw, generation: generation);
+    });
+  }
+
+  Future<bool> _checkNickname(
+    String raw, {
+    required int generation,
+    bool force = false,
+  }) async {
+    final input = raw.trim();
+    if (generation != _nicknameCheckGeneration ||
+        input != _nicknameController.text.trim()) {
+      return false;
     }
-    final result = await FirebaseFirestore.instance
-        .collection('users')
-        .where('nickname', isEqualTo: nickname)
-        .limit(2)
-        .get();
-    return result.docs.every((doc) => doc.id == uid);
+    setState(() {
+      _isCheckingNickname = true;
+      _nicknameAvailabilityError = null;
+    });
+    try {
+      final result = await context
+          .read<AuthProvider>()
+          .checkNicknameAvailability(input, force: force);
+      if (!mounted ||
+          generation != _nicknameCheckGeneration ||
+          input != _nicknameController.text.trim()) {
+        return false;
+      }
+      setState(() {
+        _isCheckingNickname = false;
+        _isNicknameAvailable = result.available;
+      });
+      return result.available;
+    } catch (_) {
+      if (mounted &&
+          generation == _nicknameCheckGeneration &&
+          input == _nicknameController.text.trim()) {
+        setState(() {
+          _isCheckingNickname = false;
+          _isNicknameAvailable = null;
+          _nicknameAvailabilityError = _isKorean
+              ? '인터넷 연결을 확인해 주세요.'
+              : 'Check your internet connection.';
+        });
+      }
+      return false;
+    }
   }
 
   Future<void> _submit() async {
@@ -158,14 +210,21 @@ class _NicknameSetupScreenState extends State<NicknameSetupScreen> {
 
     setState(() => _isLoading = true);
     try {
-      if (!await _nicknameAvailable(nickname)) {
+      _nicknameDebounce?.cancel();
+      final generation = ++_nicknameCheckGeneration;
+      if (!await _checkNickname(
+        nickname,
+        generation: generation,
+        force: true,
+      )) {
         if (!mounted) return;
         _moveTo(0);
         messenger.showSnackBar(
           SnackBar(
             content: Text(_isKorean
-                ? '이미 사용 중인 닉네임이에요.'
-                : 'This nickname is already in use.'),
+                ? (_nicknameAvailabilityError ?? '이미 사용 중인 닉네임이에요.')
+                : (_nicknameAvailabilityError ??
+                    'This nickname is already in use.')),
           ),
         );
         return;
@@ -268,11 +327,25 @@ class _NicknameSetupScreenState extends State<NicknameSetupScreen> {
       );
     } catch (error) {
       if (!mounted) return;
+      final networkError = error is TimeoutException ||
+          (error is FirebaseFunctionsException &&
+              (error.code == 'unavailable' ||
+                  error.code == 'deadline-exceeded'));
+      final nicknameTaken =
+          error is FirebaseFunctionsException && error.code == 'already-exists';
       messenger.showSnackBar(
         SnackBar(
-          content: Text(_isKorean
-              ? '프로필을 저장하지 못했어요. 다시 시도해 주세요.'
-              : 'Could not save your profile. Please try again.'),
+          content: Text(nicknameTaken
+              ? (_isKorean
+                  ? '이미 사용 중인 닉네임이에요.'
+                  : 'This nickname is already in use.')
+              : networkError
+                  ? (_isKorean
+                      ? '인터넷 연결을 확인해 주세요. 입력한 내용은 유지됩니다.'
+                      : 'Check your internet connection. Your input was kept.')
+                  : (_isKorean
+                      ? '프로필을 저장하지 못했어요. 다시 시도해 주세요.'
+                      : 'Could not save your profile. Please try again.')),
         ),
       );
     } finally {
@@ -543,13 +616,27 @@ class _NicknameSetupScreenState extends State<NicknameSetupScreen> {
           children: [
             TextFormField(
               controller: _nicknameController,
+              onChanged: _onNicknameChanged,
               maxLength: 20,
               textInputAction: TextInputAction.next,
               decoration: socialProfileInputDecoration(
                 hintText: _isKorean ? '닉네임' : 'Nickname',
-                helperText: _isKorean
-                    ? '친구들이 기억하기 쉬운 이름을 사용해 주세요.'
-                    : 'Use a name your friends can easily remember.',
+                helperText: _nicknameAvailabilityError ??
+                    (_isCheckingNickname
+                        ? (_isKorean
+                            ? '사용 가능 여부 확인 중…'
+                            : 'Checking availability…')
+                        : _isNicknameAvailable == true
+                            ? (_isKorean
+                                ? '사용할 수 있는 닉네임이에요.'
+                                : 'This nickname is available.')
+                            : _isNicknameAvailable == false
+                                ? (_isKorean
+                                    ? '이미 사용 중인 닉네임이에요.'
+                                    : 'This nickname is already in use.')
+                                : (_isKorean
+                                    ? '친구들이 기억하기 쉬운 이름을 사용해 주세요.'
+                                    : 'Use a name your friends can easily remember.')),
               ),
               validator: (value) => SocialProfileValidation.nicknameError(
                 value,

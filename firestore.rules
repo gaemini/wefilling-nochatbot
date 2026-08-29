@@ -239,6 +239,11 @@ service cloud.firestore {
     match /email_claims/{emailId} {
       allow read, write: if false;
     }
+    // Nickname uniqueness is enforced by Cloud Functions transactions only.
+    // It is not a searchable nickname directory.
+    match /nicknameClaims/{nicknameKey} {
+      allow read, write: if false;
+    }
     // ===== 이메일 인증 코드 컬렉션 =====
     // 앱 클라이언트에서 직접 접근하지 못하도록 전면 차단 (클라우드 함수 전용)
     match /email_verifications/{emailId} {
@@ -261,7 +266,9 @@ service cloud.firestore {
         // 클라이언트가 배지/메시지 카운터를 임의 변경할 수 없다.
         && !request.resource.data.diff(resource.data).affectedKeys().hasAny([
           'dmUnreadTotal', 'dmUnreadCounterVersion',
-          'notificationUnreadTotal'
+          'notificationUnreadTotal',
+          'friendsCount',
+          'nickname', 'nicknameKey', 'nicknameUpdatedAt'
         ]);
       allow delete: if false; // 사용자 삭제는 금지
       

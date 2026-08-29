@@ -26,6 +26,7 @@ import '../../ui/dialogs/block_dialog.dart';
 import '../../ui/dialogs/report_dialog.dart';
 import '../../utils/logger.dart';
 import '../../utils/responsive_helper.dart';
+import '../../utils/post_translation_policy.dart';
 import 'adaptive_post_image_frame.dart';
 import 'audience_ring.dart';
 import 'post_action_group.dart';
@@ -664,8 +665,13 @@ class _OptimizedPostCardState extends State<OptimizedPostCard> {
     final theme = Theme.of(context);
     final colorScheme = theme.colorScheme;
     final post = widget.post;
+    final isOwnPost = isOwnPostForTranslation(
+      post,
+      FirebaseAuth.instance.currentUser?.uid,
+    );
     final unifiedText = _getUnifiedBodyText(post);
     final hasContent = unifiedText.trim().isNotEmpty;
+    final hasTranslationSource = postTranslationSourceFields(post).isNotEmpty;
     final contentInsets =
         widget.contentPadding.resolve(Directionality.of(context));
     final imageGap = context.rs(4).clamp(3.0, 5.0).toDouble();
@@ -705,7 +711,7 @@ class _OptimizedPostCardState extends State<OptimizedPostCard> {
                   post,
                   theme,
                   colorScheme,
-                  showTranslationToggle: hasContent,
+                  showTranslationToggle: hasTranslationSource && !isOwnPost,
                   threadContent: HanyangVerificationGate(
                     locked: isHanyangLocked,
                     compact: true,
@@ -715,24 +721,9 @@ class _OptimizedPostCardState extends State<OptimizedPostCard> {
                         if (hasPrimaryContent) ...[
                           SizedBox(height: contentTopGap),
                           if (hasContent)
-                            TranslatableContent(
-                              key: ValueKey<String>(
-                                'post-translation:${post.id}:'
-                                '${unifiedText.hashCode}',
-                              ),
-                              request: ContentTranslationRequest(
-                                contentType: 'post',
-                                contentId: post.id,
-                                sourceFields: <String, String>{
-                                  'content': unifiedText,
-                                },
-                              ),
-                              scope: 'post:${post.id}',
-                              showToggle: false,
-                              loadOnDemand: false,
-                              builder: (context, fields) =>
-                                  _buildSmartEllipsizedText(
-                                text: fields['content'] ?? unifiedText,
+                            if (isOwnPost)
+                              _buildSmartEllipsizedText(
+                                text: unifiedText,
                                 maxLines: 4,
                                 style: TextStyle(
                                   color: BrandColors.textPrimary,
@@ -743,12 +734,45 @@ class _OptimizedPostCardState extends State<OptimizedPostCard> {
                                   height: 1.24,
                                   letterSpacing: -0.3,
                                 ),
+                              )
+                            else
+                              TranslatableContent(
+                                key: ValueKey<String>(
+                                  'post-translation:${post.id}:'
+                                  '${unifiedText.hashCode}',
+                                ),
+                                request: ContentTranslationRequest(
+                                  contentType: 'post',
+                                  contentId: post.id,
+                                  sourceFields:
+                                      postTranslationSourceFields(post),
+                                ),
+                                scope: 'post:${post.id}',
+                                showToggle: false,
+                                loadOnDemand: false,
+                                builder: (context, fields) =>
+                                    _buildSmartEllipsizedText(
+                                  text: fields['content'] ?? unifiedText,
+                                  maxLines: 4,
+                                  style: TextStyle(
+                                    color: BrandColors.textPrimary,
+                                    fontFamily: 'Inter',
+                                    fontFamilyFallback: const ['NotoSansKR'],
+                                    fontWeight: FontWeight.w500,
+                                    fontSize: contentSize,
+                                    height: 1.24,
+                                    letterSpacing: -0.3,
+                                  ),
+                                ),
                               ),
-                            ),
                           if (post.type == 'poll') ...[
                             if (hasContent)
                               const SizedBox(height: DesignTokens.s8),
-                            PollPostWidget(postId: post.id),
+                            PollPostWidget(
+                              postId: post.id,
+                              post: post,
+                              translationEnabled: !isOwnPost,
+                            ),
                           ],
                         ],
                         if (post.linkPreview case final preview?) ...[

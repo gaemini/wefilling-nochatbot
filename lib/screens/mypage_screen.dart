@@ -17,7 +17,6 @@ import '../providers/relationship_provider.dart';
 import '../services/user_stats_service.dart';
 import '../services/review_service.dart';
 import '../services/post_service.dart';
-import '../services/relationship_service.dart';
 import '../services/cache/app_image_cache_manager.dart';
 import '../services/cache/my_page_cache_service.dart';
 import '../models/review_post.dart';
@@ -54,7 +53,6 @@ class _MyPageScreenState extends State<MyPageScreen>
   final UserStatsService _userStatsService = UserStatsService();
   final ReviewService _reviewService = ReviewService();
   final PostService _postService = PostService();
-  final RelationshipService _relationshipService = RelationshipService();
   final MyPageCacheService _myPageCacheService = MyPageCacheService();
   late TabController _tabController;
   bool _showPostsAsGrid = false;
@@ -66,7 +64,7 @@ class _MyPageScreenState extends State<MyPageScreen>
   List<Post>? _userPosts;
   List<ReviewPost>? _userReviews;
   List<Post>? _savedPosts;
-  Stream<int>? _friendCountStream;
+  int? _friendCount;
   bool _isLoadingUserPosts = true;
   bool _isLoadingReviews = true;
   bool _isLoadingSavedPosts = true;
@@ -80,13 +78,17 @@ class _MyPageScreenState extends State<MyPageScreen>
     super.initState();
     _tabController = TabController(length: 3, vsync: this);
 
-    // ✅ 마이페이지에서도 친구요청 뱃지/상태가 즉시 갱신되도록 관계 스트림 초기화
+    // 마이페이지에서는 친구요청 뱃지에 필요한 요청 스트림만 유지한다.
+    // 친구 목록은 Friends 화면에 진입할 때 기존 방식으로 조회한다.
     WidgetsBinding.instance.addPostFrameCallback((_) async {
       try {
         final authProvider = context.read<AuthProvider>();
         final relationshipProvider = context.read<RelationshipProvider>();
         relationshipProvider.setAuthProvider(authProvider);
-        await relationshipProvider.initialize();
+        await Future.wait([
+          relationshipProvider.loadIncomingRequests(),
+          relationshipProvider.loadOutgoingRequests(),
+        ]);
       } catch (_) {
         // 초기화 실패는 UI를 막지 않음 (배지는 0으로 표시됨)
       }
@@ -96,16 +98,29 @@ class _MyPageScreenState extends State<MyPageScreen>
   @override
   void didChangeDependencies() {
     super.didChangeDependencies();
-    final userId = context.read<AuthProvider>().user?.uid;
-    if (_myPageCacheUserId == userId) return;
+    final authProvider = context.read<AuthProvider>();
+    final userId = authProvider.user?.uid;
+    final profileFriendCount = _parseFriendCount(authProvider.userData);
+
+    // AuthProvider의 users/{uid} 캐시/스냅샷이 갱신되면 전체 프로필이나
+    // 친구 목록을 다시 읽지 않고 숫자만 반영한다.
+    if (_myPageCacheUserId == userId) {
+      if (userId != null &&
+          profileFriendCount != null &&
+          profileFriendCount != _friendCount) {
+        _friendCount = profileFriendCount;
+        unawaited(
+          _myPageCacheService.saveFriendCount(userId, profileFriendCount),
+        );
+      }
+      return;
+    }
 
     _myPageCacheUserId = userId;
     final loadToken = ++_myPageLoadToken;
     unawaited(_savedPostsSubscription?.cancel());
     _savedPostsSubscription = null;
-    _friendCountStream = userId == null
-        ? Stream<int>.value(0)
-        : _relationshipService.getFriendCount();
+    _friendCount = profileFriendCount;
     _userPosts = null;
     _userReviews = null;
     _savedPosts = null;
@@ -117,8 +132,35 @@ class _MyPageScreenState extends State<MyPageScreen>
     _isLoadingSavedPosts = userId != null;
 
     if (userId != null && userId.isNotEmpty) {
+      unawaited(
+        _hydrateFriendCount(userId, loadToken, profileFriendCount),
+      );
       _loadMyPageTabs(userId, loadToken);
     }
+  }
+
+  int? _parseFriendCount(Map<String, dynamic>? userData) {
+    if (userData == null || !userData.containsKey('friendsCount')) return null;
+    final value = userData['friendsCount'];
+    if (value is num) return value.toInt() < 0 ? 0 : value.toInt();
+    final parsed = int.tryParse(value?.toString() ?? '');
+    if (parsed == null) return null;
+    return parsed < 0 ? 0 : parsed;
+  }
+
+  Future<void> _hydrateFriendCount(
+    String userId,
+    int loadToken,
+    int? profileFriendCount,
+  ) async {
+    if (profileFriendCount != null) {
+      await _myPageCacheService.saveFriendCount(userId, profileFriendCount);
+      return;
+    }
+
+    final cachedCount = await _myPageCacheService.readFriendCount(userId);
+    if (cachedCount == null || !_isCurrentLoad(userId, loadToken)) return;
+    setState(() => _friendCount = cachedCount);
   }
 
   bool _isCurrentLoad(String userId, int loadToken) {
@@ -631,18 +673,15 @@ class _MyPageScreenState extends State<MyPageScreen>
                 onTap: null,
               ),
               Container(width: 1, height: 50, color: const Color(0xFFE5E7EB)),
-              Consumer<RelationshipProvider>(
-                builder: (context, provider, _) {
-                  return _buildStatItem(
-                    AppLocalizations.of(context)!.friends,
-                    isFriends: true,
-                    icon: Icons.people,
-                    color: AppColors.pointColor,
-                    showIcon: false,
-                    countStream: _friendCountStream,
-                    onTap: () => _navigateToFriendsPage(),
-                  );
-                },
+              _buildStatItem(
+                AppLocalizations.of(context)!.friends,
+                isFriends: true,
+                icon: Icons.people,
+                color: AppColors.pointColor,
+                showIcon: false,
+                usesCachedCount: true,
+                countValue: _friendCount,
+                onTap: () => _navigateToFriendsPage(),
               ),
               Container(width: 1, height: 50, color: const Color(0xFFE5E7EB)),
               _buildStatItem(
@@ -1576,13 +1615,11 @@ class _MyPageScreenState extends State<MyPageScreen>
           )
         : StreamBuilder<int>(
             stream: countStream ??
-                (isFriends
-                    ? _relationshipService.getFriendCount()
-                    : isJoined
+                (isJoined
                         ? _userStatsService.getJoinedMeetupCount()
-                        : isPosts
-                            ? _userStatsService.getUserPostCount()
-                            : _userStatsService.getHostedMeetupCount()),
+                    : isPosts
+                        ? _userStatsService.getUserPostCount()
+                        : _userStatsService.getHostedMeetupCount()),
             initialData: _statCountCache[cacheKey],
             builder: (context, snapshot) {
               final live = snapshot.data;

@@ -15,6 +15,17 @@ import {
   hanyangProjectionEvidence,
   reconcileHanyangVerificationForUid,
 } from './hanyang_verification';
+import {
+  normalizeNickname,
+  prepareNicknameReservation,
+  releaseNicknameClaimIfOwned,
+} from './nickname_claims';
+
+export {
+  checkNicknameAvailability,
+  onDeletedAuthUserNicknameCleanup,
+  updateMyNicknameSecure,
+} from './nickname_claims';
 
 export {
   createPostSecure,
@@ -775,12 +786,8 @@ type CompletedRegistrationProfile = {
 
 function parseCompletedRegistrationProfile(raw: any): CompletedRegistrationProfile {
   const profile = raw && typeof raw === 'object' ? raw : {};
-  const nickname = String(profile.nickname || '').trim();
+  const nickname = normalizeNickname(profile.nickname).nickname;
   const nationality = String(profile.nationality || '').trim();
-  if (nickname.length < 2 || nickname.length > 20 ||
-      !/^[a-zA-Z0-9가-힣_.]+$/.test(nickname)) {
-    throw new functions.https.HttpsError('invalid-argument', '닉네임 형식이 올바르지 않습니다.');
-  }
   if (!nationality || nationality.length > 80) {
     throw new functions.https.HttpsError('invalid-argument', '국적 정보를 확인해주세요.');
   }
@@ -819,8 +826,10 @@ function parseCompletedRegistrationProfile(raw: any): CompletedRegistrationProfi
 }
 
 function completedProfileFields(profile: CompletedRegistrationProfile) {
+  const normalizedNickname = normalizeNickname(profile.nickname);
   return {
-    nickname: profile.nickname,
+    nickname: normalizedNickname.nickname,
+    nicknameKey: normalizedNickname.nicknameKey,
     nationality: profile.nationality,
     bio: profile.bio,
     interests: profile.interests,
@@ -898,14 +907,6 @@ export const finalizeHanyangEmailVerification = functions.https.onCall(async (da
     const expectedTokenHash = hashEmailVerificationToken(verificationToken);
     const profile = parseCompletedRegistrationProfile(data?.profile);
 
-    const nicknameOwner = await db.collection(COL.users)
-      .where('nickname', '==', profile.nickname)
-      .get();
-    if (nicknameOwner.docs.some((doc) =>
-      doc.id !== uid && isCompletedRegistrationData(doc.data()))) {
-      throw new functions.https.HttpsError('already-exists', '이미 사용 중인 닉네임입니다.');
-    }
-
     const result = await db.runTransaction(async (tx) => {
       const claimRef = db.collection(COL.emailClaims).doc(email);
       const userRef = db.collection(COL.users).doc(uid);
@@ -934,6 +935,12 @@ export const finalizeHanyangEmailVerification = functions.https.onCall(async (da
       // ✅ "계정 하나당 한양메일 하나" 강제
       // - 이미 다른 한양메일이 등록된 계정은 추가 등록을 막는다.
       const userSnap = await tx.get(userRef);
+      const nicknameReservation = await prepareNicknameReservation(
+        tx,
+        uid,
+        profile.nickname,
+        userSnap.data() || {},
+      );
       if (userSnap.exists) {
         const userData = userSnap.data() as any;
         const existingEmailRaw = (userData?.hanyangEmail || '').toString();
@@ -986,6 +993,8 @@ export const finalizeHanyangEmailVerification = functions.https.onCall(async (da
           }, { merge: true });
         }
       }
+
+      nicknameReservation.apply();
 
       // 사용자 문서 업데이트
       // ✅ users/{uid} 문서 스키마를 "가입 경로 무관하게" 동일하게 유지한다.
@@ -1208,18 +1217,16 @@ export const finalizeEnglishSocialSignup = functions.https.onCall(async (data, c
       );
     }
 
-    const nicknameOwner = await db.collection(COL.users)
-      .where('nickname', '==', profile.nickname)
-      .get();
-    if (nicknameOwner.docs.some((doc) =>
-      doc.id !== uid && isCompletedRegistrationData(doc.data()))) {
-      throw new functions.https.HttpsError('already-exists', '이미 사용 중인 닉네임입니다.');
-    }
-
     const result = await db.runTransaction(async (tx) => {
       const userRef = db.collection(COL.users).doc(uid);
       const userSnap = await tx.get(userRef);
       const existing = (userSnap.exists ? (userSnap.data() as any) : {}) || {};
+      const nicknameReservation = await prepareNicknameReservation(
+        tx,
+        uid,
+        profile.nickname,
+        existing,
+      );
 
       const missing = (k: string) => existing[k] === undefined || existing[k] === null;
       const schemaFill: Record<string, any> = {};
@@ -1258,6 +1265,7 @@ export const finalizeEnglishSocialSignup = functions.https.onCall(async (data, c
             : 'social_ko_without_hanyang';
         }
       }
+      nicknameReservation.apply();
       tx.set(userRef, {
         ...schemaFill,
         ...completedProfileFields(profile),
@@ -3301,14 +3309,6 @@ export const createGeneralEmailSignup = functions.https.onCall(async (data, cont
     throw new functions.https.HttpsError('failed-precondition', '이메일 인증을 먼저 완료해주세요.');
   }
 
-  const nicknameOwner = await db.collection(COL.users)
-    .where('nickname', '==', profile.nickname)
-    .get();
-  if (nicknameOwner.docs.some((doc) =>
-    isCompletedRegistrationData(doc.data()))) {
-    throw new functions.https.HttpsError('already-exists', '이미 사용 중인 닉네임입니다.');
-  }
-
   const normalizedEmail = normalizeEmail(email);
   const verificationRef = db.collection(COL.emailVerifications).doc(normalizedEmail);
   const consumeId = crypto.randomBytes(16).toString('hex');
@@ -3388,43 +3388,74 @@ export const createGeneralEmailSignup = functions.https.onCall(async (data, cont
 
     const uid = authUser.uid;
     const schoolVerification = await reconcileHanyangVerificationForUid(uid);
-    const now = admin.firestore.FieldValue.serverTimestamp();
-    const missingSchoolDefaults: Record<string, any> = {};
-    if (!schoolVerification.verified) {
-      if (existingUserData?.hanyangEmail == null) missingSchoolDefaults.hanyangEmail = '';
-      if (existingUserData?.hanyangEmailVerified == null) {
-        missingSchoolDefaults.hanyangEmailVerified = false;
+    await db.runTransaction(async (transaction) => {
+      const userRef = db.collection(COL.users).doc(uid);
+      const [verificationSnap, userSnap] = await Promise.all([
+        transaction.get(verificationRef),
+        transaction.get(userRef),
+      ]);
+      const verification = verificationSnap.data() || {};
+      if (!verificationSnap.exists ||
+          verification.status !== 'consuming' ||
+          verification.consumeId !== consumeId) {
+        throw new functions.https.HttpsError(
+          'failed-precondition',
+          '이메일 인증 정보가 변경되었습니다. 다시 시도해주세요.',
+        );
       }
-      if (existingUserData?.hanyangEmailVerifiedAt == null) {
-        missingSchoolDefaults.hanyangEmailVerifiedAt = null;
+
+      const current = userSnap.exists
+        ? userSnap.data() || {}
+        : existingUserData || {};
+      const nicknameReservation = await prepareNicknameReservation(
+        transaction,
+        uid,
+        profile.nickname,
+        current,
+      );
+      const now = admin.firestore.FieldValue.serverTimestamp();
+      const missingSchoolDefaults: Record<string, any> = {};
+      if (!schoolVerification.verified) {
+        if (current.hanyangEmail == null) missingSchoolDefaults.hanyangEmail = '';
+        if (current.hanyangEmailVerified == null) {
+          missingSchoolDefaults.hanyangEmailVerified = false;
+        }
+        if (current.hanyangEmailVerifiedAt == null) {
+          missingSchoolDefaults.hanyangEmailVerifiedAt = null;
+        }
+        if (current.schoolVerificationMethod == null) {
+          missingSchoolDefaults.schoolVerificationMethod = '';
+        }
+        if (current.verificationMethod == null) {
+          missingSchoolDefaults.verificationMethod = 'email_code';
+        }
       }
-      if (existingUserData?.schoolVerificationMethod == null) {
-        missingSchoolDefaults.schoolVerificationMethod = '';
-      }
-      if (existingUserData?.verificationMethod == null) {
-        missingSchoolDefaults.verificationMethod = 'email_code';
-      }
-    }
-    await db.collection(COL.users).doc(uid).set({
-      uid,
-      email: normalizedEmail,
-      ...missingSchoolDefaults,
-      ...completedProfileFields(profile),
-      photoURL: String(existingUserData?.photoURL || ''),
-      photoPath: String(existingUserData?.photoPath || ''),
-      photoAccessToken: String(existingUserData?.photoAccessToken || ''),
-      postCount: Number(existingUserData?.postCount || 0),
-      friendCount: Number(existingUserData?.friendCount || 0),
-      reviewCount: Number(existingUserData?.reviewCount || 0),
-      preferredLanguage: String(existingUserData?.preferredLanguage || signupLanguage),
-      signupLanguage,
-      signupProvider: 'password',
-      termsAccepted: true,
-      termsAcceptedAt: existingUserData?.termsAcceptedAt || now,
-      createdAt: existingUserData?.createdAt || now,
-      updatedAt: now,
-      lastLogin: now,
-    }, { merge: true });
+
+      nicknameReservation.apply();
+      transaction.set(userRef, {
+        uid,
+        email: normalizedEmail,
+        ...missingSchoolDefaults,
+        ...completedProfileFields(profile),
+        photoURL: String(current.photoURL || ''),
+        photoPath: String(current.photoPath || ''),
+        photoAccessToken: String(current.photoAccessToken || ''),
+        postCount: Number(current.postCount || 0),
+        friendsCount: Number(
+          current.friendsCount ?? current.friendCount ?? 0
+        ),
+        reviewCount: Number(current.reviewCount || 0),
+        preferredLanguage: String(current.preferredLanguage || signupLanguage),
+        signupLanguage,
+        signupProvider: 'password',
+        termsAccepted: true,
+        termsAcceptedAt: current.termsAcceptedAt || now,
+        createdAt: current.createdAt || now,
+        updatedAt: now,
+        lastLogin: now,
+      }, {merge: true});
+      transaction.delete(verificationRef);
+    });
 
     // Custom token 서명은 런타임 서비스 계정의 signBlob 권한에 의존한다.
     // 권한이 일시적으로 누락돼도 이미 검증된 이메일/비밀번호 계정 가입 자체가
@@ -3438,7 +3469,6 @@ export const createGeneralEmailSignup = functions.https.onCall(async (data, cont
         { uid, code: (tokenError as any)?.code || 'unknown' }
       );
     }
-    await verificationRef.delete();
     return {
       success: true,
       customToken,
@@ -3788,9 +3818,19 @@ export const acceptFriendRequest = functions.https.onCall(async (data, context) 
     // 트랜잭션으로 친구요청 수락
     const result = await db.runTransaction(async (transaction) => {
       const requestId = `${fromUid}_${toUid}`;
-      const requestDoc = await transaction.get(
-        db.collection('friend_requests').doc(requestId)
-      );
+      const requestRef = db.collection('friend_requests').doc(requestId);
+      const sortedIds = [fromUid, toUid].sort();
+      const friendshipId = `${sortedIds[0]}__${sortedIds[1]}`;
+      const friendshipRef = db.collection('friendships').doc(friendshipId);
+      const fromUserRef = db.collection('users').doc(fromUid);
+      const toUserRef = db.collection('users').doc(toUid);
+      const [requestDoc, friendshipDoc, fromUserDoc, toUserDoc] =
+        await transaction.getAll(
+          requestRef,
+          friendshipRef,
+          fromUserRef,
+          toUserRef,
+        );
 
       if (!requestDoc.exists) {
         throw new functions.https.HttpsError(
@@ -3814,44 +3854,63 @@ export const acceptFriendRequest = functions.https.onCall(async (data, context) 
         );
       }
 
-      // 친구 관계 생성
-      const sortedIds = [fromUid, toUid].sort();
-      const friendshipId = `${sortedIds[0]}__${sortedIds[1]}`;
-      
-      transaction.set(
-        db.collection('friendships').doc(friendshipId),
-        {
+      if (!fromUserDoc.exists || !toUserDoc.exists) {
+        throw new functions.https.HttpsError(
+          'not-found',
+          '사용자 정보를 찾을 수 없습니다.'
+        );
+      }
+
+      const friendshipAlreadyExists = friendshipDoc.exists;
+      const fromFriendsCount = toNonNegativeInt(
+        fromUserDoc.data()?.friendsCount
+      );
+      const toFriendsCount = toNonNegativeInt(
+        toUserDoc.data()?.friendsCount
+      );
+      const nextFromFriendsCount = friendshipAlreadyExists
+        ? fromFriendsCount
+        : fromFriendsCount + 1;
+      const nextToFriendsCount = friendshipAlreadyExists
+        ? toFriendsCount
+        : toFriendsCount + 1;
+
+      // 동일 관계가 이미 존재하면 요청 상태만 정리하고 카운트는 올리지 않는다.
+      if (!friendshipAlreadyExists) {
+        transaction.set(friendshipRef, {
           uids: [fromUid, toUid],
           createdAt: admin.firestore.FieldValue.serverTimestamp(),
-        }
-      );
+        });
+      }
 
       // 요청 상태를 ACCEPTED로 변경
       transaction.update(
-        db.collection('friend_requests').doc(requestId),
+        requestRef,
         {
           status: 'ACCEPTED',
           updatedAt: admin.firestore.FieldValue.serverTimestamp(),
         }
       );
 
-      // 카운터 업데이트
-      const fromUserRef = db.collection('users').doc(fromUid);
-      const toUserRef = db.collection('users').doc(toUid);
-
       transaction.update(fromUserRef, {
-        outgoingCount: admin.firestore.FieldValue.increment(-1),
-        friendsCount: admin.firestore.FieldValue.increment(1),
+        outgoingCount: Math.max(
+          0,
+          toNonNegativeInt(fromUserDoc.data()?.outgoingCount) - 1,
+        ),
+        friendsCount: nextFromFriendsCount,
         updatedAt: admin.firestore.FieldValue.serverTimestamp(),
       });
 
       transaction.update(toUserRef, {
-        incomingCount: admin.firestore.FieldValue.increment(-1),
-        friendsCount: admin.firestore.FieldValue.increment(1),
+        incomingCount: Math.max(
+          0,
+          toNonNegativeInt(toUserDoc.data()?.incomingCount) - 1,
+        ),
+        friendsCount: nextToFriendsCount,
         updatedAt: admin.firestore.FieldValue.serverTimestamp(),
       });
 
-      return { success: true };
+      return { success: true, friendsCount: nextToFriendsCount };
     });
 
     return result;
@@ -3993,12 +4052,17 @@ export const unfriend = functions.https.onCall(async (data, context) => {
 
     // 트랜잭션으로 친구 삭제
     const result = await db.runTransaction(async (transaction) => {
-      // 친구 관계 확인
       const sortedIds = [currentUid, otherUid].sort();
       const friendshipId = `${sortedIds[0]}__${sortedIds[1]}`;
-      const friendshipDoc = await transaction.get(
-        db.collection('friendships').doc(friendshipId)
-      );
+      const friendshipRef = db.collection('friendships').doc(friendshipId);
+      const currentUserRef = db.collection('users').doc(currentUid);
+      const otherUserRef = db.collection('users').doc(otherUid);
+      const [friendshipDoc, currentUserDoc, otherUserDoc] =
+        await transaction.getAll(
+          friendshipRef,
+          currentUserRef,
+          otherUserRef,
+        );
 
       if (!friendshipDoc.exists) {
         throw new functions.https.HttpsError(
@@ -4007,26 +4071,36 @@ export const unfriend = functions.https.onCall(async (data, context) => {
         );
       }
 
-      // 친구 관계 삭제
-      transaction.delete(
-        db.collection('friendships').doc(friendshipId)
+      if (!currentUserDoc.exists || !otherUserDoc.exists) {
+        throw new functions.https.HttpsError(
+          'not-found',
+          '사용자 정보를 찾을 수 없습니다.'
+        );
+      }
+
+      const currentFriendsCount = Math.max(
+        0,
+        toNonNegativeInt(currentUserDoc.data()?.friendsCount) - 1,
+      );
+      const otherFriendsCount = Math.max(
+        0,
+        toNonNegativeInt(otherUserDoc.data()?.friendsCount) - 1,
       );
 
-      // 카운터 감소
-      const currentUserRef = db.collection('users').doc(currentUid);
-      const otherUserRef = db.collection('users').doc(otherUid);
+      // 친구 관계 삭제
+      transaction.delete(friendshipRef);
 
       transaction.update(currentUserRef, {
-        friendsCount: admin.firestore.FieldValue.increment(-1),
+        friendsCount: currentFriendsCount,
         updatedAt: admin.firestore.FieldValue.serverTimestamp(),
       });
 
       transaction.update(otherUserRef, {
-        friendsCount: admin.firestore.FieldValue.increment(-1),
+        friendsCount: otherFriendsCount,
         updatedAt: admin.firestore.FieldValue.serverTimestamp(),
       });
 
-      return { success: true };
+      return { success: true, friendsCount: currentFriendsCount };
     });
 
     return result;
@@ -4120,6 +4194,27 @@ export const blockUser = functions.https.onCall(async (data, context) => {
       // 소유권을 뒤집은 뒤 스스로 해제할 수 있다.
       const reverseBlockDoc = await transaction.get(reverseBlockRef);
 
+      // 친구 관계 삭제가 필요한 경우에도 카운트를 0 미만으로 만들지 않도록
+      // 사용자 문서를 쓰기 전에 함께 읽는다.
+      const blockerUserRef = db.collection('users').doc(blockerUid);
+      const blockedUserRef = db.collection('users').doc(targetUid);
+      const [blockerUserDoc, blockedUserDoc] = await transaction.getAll(
+        blockerUserRef,
+        blockedUserRef,
+      );
+      const blockerFriendsCount = toNonNegativeInt(
+        blockerUserDoc.data()?.friendsCount
+      );
+      const blockedFriendsCount = toNonNegativeInt(
+        blockedUserDoc.data()?.friendsCount
+      );
+      const nextBlockerFriendsCount = friendshipDoc.exists
+        ? Math.max(0, blockerFriendsCount - 1)
+        : blockerFriendsCount;
+      const nextBlockedFriendsCount = friendshipDoc.exists
+        ? Math.max(0, blockedFriendsCount - 1)
+        : blockedFriendsCount;
+
       // ✅ 모든 읽기 완료, 이제 쓰기 작업 시작
       
       // 4. A → B 차단 관계 생성 (현재 호출자가 설정한 실제 차단)
@@ -4159,17 +4254,13 @@ export const blockUser = functions.https.onCall(async (data, context) => {
           db.collection('friendships').doc(friendshipId)
         );
 
-        // 친구 카운터 감소
-        const blockerUserRef = db.collection('users').doc(blockerUid);
-        const blockedUserRef = db.collection('users').doc(targetUid);
-
         transaction.update(blockerUserRef, {
-          friendsCount: admin.firestore.FieldValue.increment(-1),
+          friendsCount: nextBlockerFriendsCount,
           updatedAt: admin.firestore.FieldValue.serverTimestamp(),
         });
 
         transaction.update(blockedUserRef, {
-          friendsCount: admin.firestore.FieldValue.increment(-1),
+          friendsCount: nextBlockedFriendsCount,
           updatedAt: admin.firestore.FieldValue.serverTimestamp(),
         });
       }
@@ -4238,7 +4329,7 @@ export const blockUser = functions.https.onCall(async (data, context) => {
         });
       }
 
-      return { success: true };
+      return { success: true, friendsCount: nextBlockerFriendsCount };
     });
 
     // Developer notification for blocking (Guideline 1.2)
@@ -4716,6 +4807,7 @@ export const deleteAccountImmediately = functions.https.onCall(async (data, cont
     // 탈퇴 전 사용자 정보 수집 (관리자 이메일용)
     let userInfo = {
       nickname: '(정보 없음)',
+      nicknameKey: '',
       email: '(정보 없음)',
       hanyangEmail: '(정보 없음)',
       createdAt: '(정보 없음)',
@@ -4725,8 +4817,17 @@ export const deleteAccountImmediately = functions.https.onCall(async (data, cont
       const userDoc = await userRef.get();
       if (userDoc.exists) {
         const userData = userDoc.data()!;
+        let nicknameKey = String(userData.nicknameKey || '').trim();
+        if (!nicknameKey && userData.nickname) {
+          try {
+            nicknameKey = normalizeNickname(userData.nickname).nicknameKey;
+          } catch (_) {
+            nicknameKey = '';
+          }
+        }
         userInfo = {
           nickname: userData.nickname || '(닉네임 없음)',
+          nicknameKey,
           email: userData.email || '(이메일 없음)',
           hanyangEmail: userData.hanyangEmail || '(한양메일 없음)',
           createdAt: userData.createdAt 
@@ -4932,6 +5033,7 @@ export const deleteAccountImmediately = functions.https.onCall(async (data, cont
     await userRef.set({
       uid,
       nickname: 'DELETED_ACCOUNT',
+      nicknameKey: userInfo.nicknameKey,
       displayName: 'DELETED_ACCOUNT',
       photoURL: '',
       isDeleted: true,
@@ -4944,6 +5046,20 @@ export const deleteAccountImmediately = functions.https.onCall(async (data, cont
 
     // 4) Auth 계정 삭제
     await admin.auth().deleteUser(uid);
+
+    // Auth 삭제가 성공한 후에만 해당 UID가 소유한 닉네임을
+    // 해제한다. 재인증/Auth 삭제 실패 시에는 이 코드에 도달하지 않는다.
+    try {
+      const released = await releaseNicknameClaimIfOwned(
+        uid,
+        userInfo.nicknameKey,
+      );
+      console.log(`👤 닉네임 claim 해제: ${released ? '완료' : '스킵'}`);
+    } catch (error) {
+      // Auth 삭제 후의 단일 claim 정리는 재시도 가능한 복구 경계다.
+      // 다른 사용자 claim은 ownerUid 검증으로 절대 삭제하지 않는다.
+      console.error('닉네임 claim 해제 실패:', error);
+    }
 
     console.log(`✅ 계정 삭제 완료: ${uid}`);
 

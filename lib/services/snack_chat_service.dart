@@ -373,6 +373,12 @@ class SnackChatService {
     return _watchListSection(SnackChatListSection.all);
   }
 
+  /// 날짜 섹션을 나누지 않고 현재 사용자에게 보이는 방을 한 번에 제공한다.
+  /// Today/All 두 스트림을 동시에 구독하지 않아 조회 비용도 늘어나지 않는다.
+  Stream<List<SnackChat>> getSnackChats() {
+    return _watchListSection(SnackChatListSection.unified);
+  }
+
   Stream<List<SnackChat>> _watchListSection(SnackChatListSection section) {
     final uid = _uid;
     if (uid == null) return Stream.value(const <SnackChat>[]);
@@ -427,7 +433,9 @@ class SnackChatService {
           const Duration(milliseconds: 100);
       dateBoundaryTimer = Timer(delay, () {
         emitCurrentSection();
-        scheduleDateBoundaryRefresh();
+        if (section != SnackChatListSection.unified) {
+          scheduleDateBoundaryRefresh();
+        }
       });
     }
 
@@ -449,7 +457,9 @@ class SnackChatService {
             if (!controller.isClosed) controller.close();
           },
         );
-        scheduleDateBoundaryRefresh();
+        if (section != SnackChatListSection.unified) {
+          scheduleDateBoundaryRefresh();
+        }
       },
       onCancel: () {
         dateBoundaryTimer?.cancel();
@@ -1894,7 +1904,7 @@ class SnackChatService {
   }
 }
 
-enum SnackChatListSection { today, all }
+enum SnackChatListSection { today, all, unified }
 
 List<SnackChat> filterSnackChatsBySection(
   List<SnackChat> chats, {
@@ -1917,6 +1927,8 @@ List<SnackChat> filterSnackChatsBySection(
     )) {
       return false;
     }
+    if (section == SnackChatListSection.unified) return true;
+
     final createdAt = chat.createdAt.toLocal();
     final wasCreatedToday = !createdAt.isBefore(startOfToday) &&
         createdAt.isBefore(startOfTomorrow);

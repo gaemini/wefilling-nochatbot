@@ -114,6 +114,8 @@ class AuthProvider with ChangeNotifier implements WidgetsBindingObserver {
   String? _userLoadUid;
   int _userLoadGeneration = 0;
   Future<bool>? _hanyangRefreshInFlight;
+  final Map<String, _NicknameAvailabilityCacheEntry>
+      _nicknameAvailabilityCache = {};
   int _hanyangRequestGeneration = 0;
   HanyangVerificationStatus _hanyangVerificationStatus =
       HanyangVerificationStatus.unknown;
@@ -1079,10 +1081,7 @@ class AuthProvider with ChangeNotifier implements WidgetsBindingObserver {
       _isLoading = true;
       notifyListeners();
 
-      await _firestore.collection('users').doc(_user!.uid).update({
-        'nickname': nickname,
-        'updatedAt': FieldValue.serverTimestamp(),
-      });
+      await _updateNicknameSecure(nickname);
 
       await _loadUserData();
       return await refreshHanyangVerificationStatus();
@@ -1093,6 +1092,68 @@ class AuthProvider with ChangeNotifier implements WidgetsBindingObserver {
       _isLoading = false;
       notifyListeners();
     }
+  }
+
+  /// Exact one-document nickname claim check. This is used only by nickname
+  /// input screens and intentionally has no Firestore listener or disk cache.
+  Future<NicknameAvailabilityResult> checkNicknameAvailability(
+    String nickname, {
+    bool force = false,
+  }) async {
+    final input = nickname.trim();
+    final localKey = input.toLowerCase();
+    final cached = _nicknameAvailabilityCache[localKey];
+    if (!force &&
+        cached != null &&
+        DateTime.now().difference(cached.checkedAt) <
+            const Duration(seconds: 20)) {
+      return cached.result;
+    }
+
+    final response = await _functions
+        .httpsCallable('checkNicknameAvailability')
+        .call(<String, dynamic>{'nickname': input}).timeout(
+            const Duration(seconds: 10));
+    final raw = response.data;
+    final data =
+        raw is Map ? Map<String, dynamic>.from(raw) : <String, dynamic>{};
+    final result = NicknameAvailabilityResult(
+      available: data['available'] == true,
+      nickname: (data['nickname'] ?? input).toString(),
+      nicknameKey: (data['nicknameKey'] ?? '').toString(),
+    );
+    _nicknameAvailabilityCache[localKey] = _NicknameAvailabilityCacheEntry(
+      result: result,
+      checkedAt: DateTime.now(),
+    );
+    return result;
+  }
+
+  Future<NicknameAvailabilityResult> _updateNicknameSecure(
+    String nickname,
+  ) async {
+    final response = await _functions
+        .httpsCallable('updateMyNicknameSecure')
+        .call(<String, dynamic>{'nickname': nickname.trim()}).timeout(
+            const Duration(seconds: 15));
+    final raw = response.data;
+    final data =
+        raw is Map ? Map<String, dynamic>.from(raw) : <String, dynamic>{};
+    if (data['success'] != true) {
+      throw StateError('닉네임을 저장하지 못했습니다.');
+    }
+    final result = NicknameAvailabilityResult(
+      available: true,
+      nickname: (data['nickname'] ?? nickname).toString(),
+      nicknameKey: (data['nicknameKey'] ?? '').toString(),
+    );
+    _userData = <String, dynamic>{
+      ...?_userData,
+      'nickname': result.nickname,
+      'nicknameKey': result.nicknameKey,
+    };
+    _nicknameAvailabilityCache.clear();
+    return result;
   }
 
   // 닉네임 및 국적 설정 (재시도 로직 포함)
@@ -1224,16 +1285,12 @@ class AuthProvider with ChangeNotifier implements WidgetsBindingObserver {
 
           // Firestore users 컬렉션 업데이트 데이터 준비
           final updateData = {
-            'nickname': nicknameToWrite,
             'nationality': nationalityToWrite,
             'updatedAt': FieldValue.serverTimestamp(),
           };
           // 가입 완료 여부는 마지막 회원가입 단계의 서버 함수만 확정한다.
           // 일반 프로필 편집에서 이 값을 만들거나 바꾸면 중단 계정이 정상
           // 회원으로 승격될 수 있으므로 registration 필드는 절대 쓰지 않는다.
-          if (nicknameChanged && nicknameAllowed) {
-            updateData['nicknameUpdatedAt'] = FieldValue.serverTimestamp();
-          }
           if (nationalityChanged && nationalityAllowed) {
             updateData['nationalityUpdatedAt'] = FieldValue.serverTimestamp();
           }
@@ -1305,7 +1362,10 @@ class AuthProvider with ChangeNotifier implements WidgetsBindingObserver {
           } else {
             // 기존 문서 업데이트
             await docRef.update(updateData);
-            Logger.log("✅ Firestore 업데이트 완료 (nickname)");
+            if (nicknameChanged && nicknameAllowed) {
+              await _updateNicknameSecure(nicknameToWrite);
+            }
+            Logger.log("✅ Firestore 프로필 업데이트 완료");
           }
 
           // photoURL이 제공된 경우 Firebase Auth도 업데이트
@@ -1368,13 +1428,23 @@ class AuthProvider with ChangeNotifier implements WidgetsBindingObserver {
 
           // - 우리 앱의 유저정보 메모리 캐시도 무효화 (Firestore 스트림이 최신으로 재채움)
           try {
-            UserInfoCacheService().invalidateUser(_user!.uid);
             UsersRepository().invalidateCache(_user!.uid);
           } catch (e) {
             Logger.error('⚠️ 프로필 캐시 invalidate 실패(무시): $e');
           }
 
           await _loadUserData();
+          final latest = _userData ?? const <String, dynamic>{};
+          await UserInfoCacheService().updateCurrentUserProfile(
+            uid: _user!.uid,
+            nickname: (latest['nickname'] ?? nicknameToWrite).toString(),
+            photoURL: (latest['photoURL'] ?? finalPhotoURL).toString(),
+            photoVersion: latest['photoVersion'] is num
+                ? (latest['photoVersion'] as num).toInt()
+                : nextPhotoVersion,
+            nationality:
+                (latest['nationality'] ?? nationalityToWrite).toString(),
+          );
           return ProfileUpdateResult.success(
             nicknameApplied: nicknameApplied,
             nationalityApplied: nationalityApplied,
@@ -1382,6 +1452,13 @@ class AuthProvider with ChangeNotifier implements WidgetsBindingObserver {
             nationalityDaysRemaining: nationalityDaysRemaining,
           );
         } catch (e) {
+          if (e is FirebaseFunctionsException &&
+              (e.code == 'already-exists' ||
+                  e.code == 'invalid-argument' ||
+                  e.code == 'failed-precondition' ||
+                  e.code == 'unavailable')) {
+            rethrow;
+          }
           retryCount++;
           Logger.error('프로필 업데이트 오류 (시도 $retryCount/$maxRetries): $e');
 
@@ -1397,6 +1474,7 @@ class AuthProvider with ChangeNotifier implements WidgetsBindingObserver {
       return const ProfileUpdateResult.failure();
     } catch (e) {
       Logger.error('프로필 업데이트 최종 실패: $e');
+      if (e is FirebaseFunctionsException) rethrow;
       return const ProfileUpdateResult.failure();
     } finally {
       _isLoading = false;
@@ -2545,11 +2623,11 @@ class AuthProvider with ChangeNotifier implements WidgetsBindingObserver {
     if (missing('profileCompletion')) updates['profileCompletion'] = 0;
     if (missing('profileUpdatedAt')) updates['profileUpdatedAt'] = null;
     if (missing('nationality')) updates['nationality'] = '';
-    if (missing('nicknameUpdatedAt')) updates['nicknameUpdatedAt'] = null;
     if (missing('nationalityUpdatedAt')) updates['nationalityUpdatedAt'] = null;
 
     // 카운터들
-    if (missing('friendsCount')) updates['friendsCount'] = 0;
+    // friendsCount는 친구 관계와 같은 서버 트랜잭션 및 일회성 관리
+    // 마이그레이션에서만 유지한다. 누락 값을 클라이언트가 0으로 덮지 않는다.
     if (missing('incomingCount')) updates['incomingCount'] = 0;
     if (missing('outgoingCount')) updates['outgoingCount'] = 0;
     // 미읽음 카운터는 Cloud Functions만 생성/수정한다.
@@ -2689,4 +2767,26 @@ class ProfileUpdateResult {
         );
 
   bool get hasRestrictedFields => !nicknameApplied || !nationalityApplied;
+}
+
+class NicknameAvailabilityResult {
+  const NicknameAvailabilityResult({
+    required this.available,
+    required this.nickname,
+    required this.nicknameKey,
+  });
+
+  final bool available;
+  final String nickname;
+  final String nicknameKey;
+}
+
+class _NicknameAvailabilityCacheEntry {
+  const _NicknameAvailabilityCacheEntry({
+    required this.result,
+    required this.checkedAt,
+  });
+
+  final NicknameAvailabilityResult result;
+  final DateTime checkedAt;
 }

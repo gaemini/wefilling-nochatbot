@@ -33,6 +33,8 @@ class UserTile extends StatelessWidget {
       final width = MediaQuery.sizeOf(context).width;
       final isCompact = width < 360;
       final horizontalPadding = isCompact ? 12.0 : (width < 600 ? 16.0 : 24.0);
+      final avatarSize = isCompact ? 42.0 : 46.0;
+      final actionMaxWidth = (width * 0.36).clamp(104.0, 144.0).toDouble();
 
       return Center(
         child: ConstrainedBox(
@@ -47,22 +49,33 @@ class UserTile extends StatelessWidget {
                   child: Padding(
                     padding: EdgeInsets.fromLTRB(
                       horizontalPadding,
-                      10,
+                      12,
                       horizontalPadding,
-                      10,
+                      12,
                     ),
                     child: MediaQuery.withClampedTextScaling(
                       maxScaleFactor: 1.2,
                       child: Row(
                         children: [
-                          _buildProfileImage(size: isCompact ? 40 : 44),
-                          SizedBox(width: isCompact ? 10 : 12),
+                          _buildProfileImage(size: avatarSize),
+                          SizedBox(width: isCompact ? 11 : 13),
                           Expanded(
-                              child: _buildUserInfo(context, compact: true)),
-                          const SizedBox(width: 8),
-                          Flexible(
-                              child:
-                                  _buildActionButton(context, compact: true)),
+                            child: _buildUserInfo(context, compact: true),
+                          ),
+                          SizedBox(width: isCompact ? 6 : 10),
+                          ConstrainedBox(
+                            constraints: BoxConstraints(
+                              maxWidth: actionMaxWidth,
+                            ),
+                            child: Align(
+                              alignment: Alignment.centerRight,
+                              widthFactor: 1,
+                              child: _buildActionButton(
+                                context,
+                                compact: true,
+                              ),
+                            ),
+                          ),
                         ],
                       ),
                     ),
@@ -72,7 +85,7 @@ class UserTile extends StatelessWidget {
               Divider(
                 height: 1,
                 thickness: 1,
-                indent: horizontalPadding + (isCompact ? 50 : 56),
+                indent: horizontalPadding + avatarSize + (isCompact ? 11 : 13),
                 endIndent: horizontalPadding,
                 color: const Color(0xFFEAECF0),
               ),
@@ -275,19 +288,19 @@ class UserTile extends StatelessWidget {
         style: TextButton.styleFrom(
           foregroundColor: const Color(0xFF344054),
           disabledForegroundColor: const Color(0xFF98A2B3),
-          minimumSize: const Size(0, 40),
+          minimumSize: const Size(0, 36),
           tapTargetSize: MaterialTapTargetSize.shrinkWrap,
-          padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 6),
+          padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 5),
           visualDensity: VisualDensity.compact,
         ),
         child: Text(
           _labelForStatus(context, relationshipStatus),
           maxLines: 1,
           overflow: TextOverflow.ellipsis,
-          style: const TextStyle(
+          style: TextStyle(
             fontFamily: 'Inter',
             fontFamilyFallback: const ['NotoSansKR'],
-            fontSize: 12,
+            fontSize: context.rf(12.5).clamp(11.5, 13).toDouble(),
             fontWeight: FontWeight.w700,
           ),
         ),

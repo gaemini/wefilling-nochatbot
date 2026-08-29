@@ -2368,6 +2368,7 @@ export const leaveSnackChatSecure = functions
     const request = objectValue(raw);
     const snackChatId = firestoreId(request.snackChatId, 'Snack Chat id');
     const roomRef = db().collection(SNACK_CHATS).doc(snackChatId);
+    const memberRef = roomRef.collection('members').doc(userId);
 
     const left = await db().runTransaction(async (transaction) => {
       const room = await transaction.get(roomRef);
@@ -2380,6 +2381,19 @@ export const leaveSnackChatSecure = functions
       const participants = uniqueStrings(room.get('participantIds'));
       if (!participants.includes(userId)) return false;
       transaction.update(roomRef, snackChatDepartureUpdate(room, userId));
+      // participantIds is the canonical membership source. Materialize the
+      // immediately visible member state in the same transaction as well;
+      // the room trigger subsequently closes the full history period and
+      // merges its authoritative event metadata into this document.
+      transaction.set(memberRef, {
+        userId,
+        status: 'left',
+        leftAfterSequence: nonNegativeInteger(
+          room.get('lastMessageSequence'),
+        ),
+        leftAt: FieldValue.serverTimestamp(),
+        membershipUpdatedAt: FieldValue.serverTimestamp(),
+      }, {merge: true});
       return true;
     });
     return {success: true, left};

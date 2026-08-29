@@ -16,22 +16,16 @@ typedef ScopeTranslationLoader = Future<bool> Function();
 @visibleForTesting
 String resolveAutomaticTranslationTarget({
   required String uiLanguage,
-  String profileLanguage = '',
-  String serverPreferred = '',
-  String localPreferred = '',
 }) {
   if (uiLanguage.isNotEmpty) return uiLanguage;
-  if (profileLanguage.isNotEmpty) return profileLanguage;
-  if (serverPreferred.isNotEmpty) return serverPreferred;
-  if (localPreferred.isNotEmpty) return localPreferred;
   return 'en';
 }
 
 /// Gemini 번역의 단일 진입점입니다.
 ///
 /// 원문은 클라이언트가 Cloud Function에 보내지 않습니다. 콘텐츠 ID만 보내고
-/// 서버가 접근 권한을 확인한 뒤 원문을 읽습니다. 메모리/Hive/서버 캐시는 모두
-/// 사용자, 콘텐츠, 대상 언어, 원문 hash 단위로 분리됩니다.
+/// 서버가 접근 권한을 확인한 뒤 원문을 읽습니다. 메모리/Hive 캐시는 계정별로
+/// 분리하고, 서버 캐시는 같은 메시지·대상 언어 결과를 방 참여자끼리 공유합니다.
 class ContentTranslationService extends ChangeNotifier {
   ContentTranslationService._() {
     _lastUid = _auth.currentUser?.uid;
@@ -434,7 +428,9 @@ class ContentTranslationService extends ChangeNotifier {
     if (hasConflictingLanguageHint) return false;
     final hits = words.where(hints.contains).length;
     final latinRatio = ratio(_latinPattern);
-    if (words.length == 1) return hits == 1 && latinRatio == 1;
+    // A single Latin word is frequently a name or shared vocabulary. Treating
+    // it as a permanent same-language hit can strand a real short message.
+    if (words.length == 1) return false;
     return words.length >= 3 &&
         hits >= 2 &&
         latinRatio >= 0.97 &&
@@ -514,6 +510,35 @@ class ContentTranslationService extends ChangeNotifier {
         _currentModels.contains(result.modelUsed);
   }
 
+  bool _isUsableCachedResult(
+    ContentTranslationRequest request,
+    ContentTranslationResult result, {
+    required String sourceHash,
+    required String targetLanguage,
+  }) =>
+      result.isReady &&
+      _isCurrentResult(
+        result,
+        sourceHash: sourceHash,
+        targetLanguage: targetLanguage,
+      ) &&
+      _hasCompleteFields(request, result);
+
+  void _debugTranslationState(
+    String reason,
+    ContentTranslationRequest request,
+    String sourceHash,
+    String targetLanguage,
+  ) {
+    if (!kDebugMode) return;
+    final shortHash =
+        sourceHash.length <= 10 ? sourceHash : sourceHash.substring(0, 10);
+    debugPrint(
+      'Content translation state: reason=$reason, '
+      'id=${request.serverId}, hash=$shortHash, target=$targetLanguage',
+    );
+  }
+
   int _metadataInt(dynamic value) {
     if (value is int) return value;
     if (value is num) return value.toInt();
@@ -546,135 +571,6 @@ class ContentTranslationService extends ChangeNotifier {
     return _openingBox;
   }
 
-  String _nationalityLanguage(String? nationality) {
-    final value = (nationality ?? '').trim().toLowerCase();
-    const map = <String, String>{
-      'kr': 'ko',
-      'kor': 'ko',
-      'ko': 'ko',
-      '한국': 'ko',
-      '대한민국': 'ko',
-      'korea': 'ko',
-      'south korea': 'ko',
-      '🇰🇷': 'ko',
-      'jp': 'ja',
-      'jpn': 'ja',
-      'ja': 'ja',
-      '일본': 'ja',
-      'japan': 'ja',
-      '🇯🇵': 'ja',
-      'cn': 'zh',
-      'chn': 'zh',
-      'zh': 'zh',
-      '중국': 'zh',
-      'china': 'zh',
-      '대만': 'zh',
-      'taiwan': 'zh',
-      '🇨🇳': 'zh',
-      '🇹🇼': 'zh',
-      'vn': 'vi',
-      'vnm': 'vi',
-      '베트남': 'vi',
-      'vietnam': 'vi',
-      '🇻🇳': 'vi',
-      'th': 'th',
-      'tha': 'th',
-      '태국': 'th',
-      'thailand': 'th',
-      '🇹🇭': 'th',
-      'id': 'id',
-      'idn': 'id',
-      '인도네시아': 'id',
-      'indonesia': 'id',
-      '🇮🇩': 'id',
-      'my': 'ms',
-      'mys': 'ms',
-      'ms': 'ms',
-      '말레이시아': 'ms',
-      'malaysia': 'ms',
-      '🇲🇾': 'ms',
-      'fr': 'fr',
-      'fra': 'fr',
-      '프랑스': 'fr',
-      'france': 'fr',
-      '🇫🇷': 'fr',
-      'de': 'de',
-      'deu': 'de',
-      '독일': 'de',
-      'germany': 'de',
-      '🇩🇪': 'de',
-      'es': 'es',
-      'esp': 'es',
-      '스페인': 'es',
-      'spain': 'es',
-      '🇪🇸': 'es',
-      'ru': 'ru',
-      'rus': 'ru',
-      '러시아': 'ru',
-      'russia': 'ru',
-      '🇷🇺': 'ru',
-      'br': 'pt',
-      'bra': 'pt',
-      '브라질': 'pt',
-      'brazil': 'pt',
-      '🇧🇷': 'pt',
-      'it': 'it',
-      'ita': 'it',
-      '이탈리아': 'it',
-      'italy': 'it',
-      '🇮🇹': 'it',
-      'tr': 'tr',
-      'tur': 'tr',
-      '튀르키예': 'tr',
-      'turkey': 'tr',
-      '🇹🇷': 'tr',
-      'in': 'hi',
-      'ind': 'hi',
-      '인도': 'hi',
-      'india': 'hi',
-      '🇮🇳': 'hi',
-      'us': 'en',
-      'usa': 'en',
-      'united states': 'en',
-      '미국': 'en',
-      '🇺🇸': 'en',
-      'gb': 'en',
-      'gbr': 'en',
-      'united kingdom': 'en',
-      '영국': 'en',
-      '🇬🇧': 'en',
-      'ca': 'en',
-      'can': 'en',
-      'canada': 'en',
-      '캐나다': 'en',
-      '🇨🇦': 'en',
-      'au': 'en',
-      'aus': 'en',
-      'australia': 'en',
-      '호주': 'en',
-      '🇦🇺': 'en',
-      'sg': 'en',
-      'sgp': 'en',
-      'singapore': 'en',
-      '싱가포르': 'en',
-      '🇸🇬': 'en',
-    };
-    return map[value] ?? '';
-  }
-
-  String _profileLanguage(Map<String, dynamic> data) {
-    for (final key in const <String>[
-      'countryCode',
-      'nationalityCode',
-      'country',
-      'nationality',
-    ]) {
-      final language = _nationalityLanguage(data[key]?.toString());
-      if (language.isNotEmpty) return language;
-    }
-    return '';
-  }
-
   Future<String> targetLanguage({String? uiLanguageCode}) {
     return _targetLanguageFuture ??=
         _resolveTargetLanguage(uiLanguageCode: uiLanguageCode);
@@ -699,7 +595,6 @@ class ContentTranslationService extends ChangeNotifier {
     );
 
     var serverPreferred = '';
-    var profileLanguage = '';
     final uid = _auth.currentUser?.uid;
     if (uid != null) {
       try {
@@ -726,33 +621,14 @@ class ContentTranslationService extends ChangeNotifier {
           );
           return serverPreferred;
         }
-        profileLanguage = _profileLanguage(data);
       } catch (_) {
         // 설정 조회 실패는 UI 언어/영어 fallback으로 자연스럽게 이어진다.
       }
     }
 
-    final automatic = resolveAutomaticTranslationTarget(
-      uiLanguage: ui,
-      profileLanguage: profileLanguage,
-      serverPreferred: serverPreferred,
-      localPreferred: localPreferred,
-    );
+    final automatic = resolveAutomaticTranslationTarget(uiLanguage: ui);
     if (ui.isNotEmpty) {
       await _cacheAutomaticUiPreference(prefs, ui);
-    } else if (profileLanguage.isNotEmpty) {
-      await prefs.setString(
-        _accountPreferenceKey(_preferredCodeKey),
-        profileLanguage,
-      );
-      await prefs.setString(
-        _accountPreferenceKey(_preferredNameKey),
-        supportedLanguages[profileLanguage]!,
-      );
-      await prefs.setString(
-        _accountPreferenceKey(_preferredSourceKey),
-        'profile',
-      );
     }
     return automatic;
   }
@@ -928,7 +804,13 @@ class ContentTranslationService extends ChangeNotifier {
   ) {
     final hash = _sourceHash(request.sourceFields);
     final result = _latestResults[_latestResultKey(request, hash)];
-    if (result == null || result.sourceHash != hash || !result.isReady) {
+    if (result == null ||
+        !_isUsableCachedResult(
+          request,
+          result,
+          sourceHash: hash,
+          targetLanguage: result.targetLanguage,
+        )) {
       return null;
     }
     return result;
@@ -1212,14 +1094,17 @@ class ContentTranslationService extends ChangeNotifier {
     }
     final memory = _memory[key];
     if (memory != null) {
-      if (_isCurrentResult(
+      if (_isUsableCachedResult(
+        request,
         memory,
         sourceHash: hash,
         targetLanguage: target,
       )) {
+        _debugTranslationState('cacheHitMemory', request, hash, target);
         _publishLatest(request, hash, memory);
         return memory;
       }
+      _debugTranslationState('cacheEmpty', request, hash, target);
       _memory.remove(key);
     }
 
@@ -1228,11 +1113,13 @@ class ContentTranslationService extends ChangeNotifier {
     final stored = box?.get(key);
     if (stored is Map) {
       final result = ContentTranslationResult.fromMap(stored);
-      if (_isCurrentResult(
+      if (_isUsableCachedResult(
+        request,
         result,
         sourceHash: hash,
         targetLanguage: target,
       )) {
+        _debugTranslationState('cacheHitHive', request, hash, target);
         final touched = Map<dynamic, dynamic>.from(stored)
           ..['lastAccessAt'] = DateTime.now().millisecondsSinceEpoch;
         unawaited(box?.put(key, touched));
@@ -1263,6 +1150,7 @@ class ContentTranslationService extends ChangeNotifier {
     final existing = _pending[key];
     if (existing != null) {
       if (scope != null && scope.isNotEmpty) existing.scopes.add(scope);
+      _debugTranslationState('inFlight', request, hash, target);
       return existing.completer.future;
     }
 
@@ -1273,6 +1161,14 @@ class ContentTranslationService extends ChangeNotifier {
       }
       if (!isManualRetry ||
           DateTime.now().isBefore(blockedFailure.manualRetryAt)) {
+        _debugTranslationState(
+          blockedFailure.result.isRetryableFailure
+              ? 'transientFailure'
+              : 'nonRetryableFailure',
+          request,
+          hash,
+          target,
+        );
         return blockedFailure.result;
       }
       _blockedFailures.remove(key);
@@ -1411,7 +1307,12 @@ class ContentTranslationService extends ChangeNotifier {
       'translation_failed',
       'provider_unavailable',
       'missing_server_response',
+      'empty_translation',
       'network_error',
+      'timeout',
+      'resource-exhausted',
+      'too-many-requests',
+      'aborted',
       'unavailable',
       'deadline-exceeded',
       'internal',
@@ -1424,9 +1325,18 @@ class ContentTranslationService extends ChangeNotifier {
     }
     queued.failureRetryCount++;
     queued.pendingRetryCount = 0;
-    final delay = errorCode == 'provider_unavailable'
-        ? const Duration(seconds: 15)
-        : const Duration(seconds: 2);
+    if (errorCode == 'missing_server_response') {
+      // A missing sibling must be retried alone so another malformed batch
+      // item cannot keep suppressing the same response.
+      queued.forceSingleItemRetry = true;
+    }
+    final baseMilliseconds = errorCode == 'provider_unavailable' ? 15000 : 1800;
+    final jitter = queued.sourceHash.codeUnits.fold<int>(
+          0,
+          (value, unit) => (value + unit) % 401,
+        ) -
+        200;
+    final delay = Duration(milliseconds: baseMilliseconds + jitter);
     Timer(delay, () {
       if (!_isActive(key, queued)) return;
       _queue[key] = queued;
@@ -1473,11 +1383,18 @@ class ContentTranslationService extends ChangeNotifier {
   Future<void> _flushQueue() async {
     _flushTimer = null;
     if (_queue.isEmpty || _activeBatchCount >= _maxConcurrentBatches) return;
-    final firstTarget = _queue.values.first.targetLanguage;
-    final batchEntries = _queue.entries
-        .where((entry) => entry.value.targetLanguage == firstTarget)
-        .take(_maxBatchSize)
-        .toList(growable: false);
+    final firstEntry = _queue.entries.first;
+    final firstTarget = firstEntry.value.targetLanguage;
+    final batchEntries = firstEntry.value.forceSingleItemRetry
+        ? <MapEntry<String, _QueuedTranslation>>[firstEntry]
+        : _queue.entries
+            .where(
+              (entry) =>
+                  entry.value.targetLanguage == firstTarget &&
+                  !entry.value.forceSingleItemRetry,
+            )
+            .take(_maxBatchSize)
+            .toList(growable: false);
     for (final entry in batchEntries) {
       _queue.remove(entry.key);
     }
@@ -1509,6 +1426,12 @@ class ContentTranslationService extends ChangeNotifier {
         if (!_isActive(key, queued)) continue;
         final raw = byId[queued.request.serverId];
         if (raw == null) {
+          _debugTranslationState(
+            'batchMissingItem',
+            queued.request,
+            queued.sourceHash,
+            queued.targetLanguage,
+          );
           if (!_scheduleFailureRetry(
             key,
             queued,
@@ -1563,13 +1486,44 @@ class ContentTranslationService extends ChangeNotifier {
           errorCode: raw['errorCode']?.toString() ?? '',
         );
         if (!_isCurrentResult(
-              result,
-              sourceHash: queued.sourceHash,
-              targetLanguage: queued.targetLanguage,
-            ) ||
-            !_hasCompleteFields(queued.request, result)) {
-          _completeFailure(key, queued, 'stale_or_incomplete_result');
+          result,
+          sourceHash: queued.sourceHash,
+          targetLanguage: queued.targetLanguage,
+        )) {
+          _debugTranslationState(
+            result.sourceHash != queued.sourceHash
+                ? 'staleSourceHash'
+                : 'staleTargetLanguage',
+            queued.request,
+            queued.sourceHash,
+            queued.targetLanguage,
+          );
+          _completeFailure(key, queued, 'stale_translation_result');
           continue;
+        }
+        if (!_hasCompleteFields(queued.request, result)) {
+          _debugTranslationState(
+            'emptyTranslation',
+            queued.request,
+            queued.sourceHash,
+            queued.targetLanguage,
+          );
+          if (!_scheduleFailureRetry(
+            key,
+            queued,
+            'empty_translation',
+          )) {
+            _completeFailure(key, queued, 'empty_translation');
+          }
+          continue;
+        }
+        if (result.cacheSource == 'firestore') {
+          _debugTranslationState(
+            'cacheHitFirestore',
+            queued.request,
+            queued.sourceHash,
+            queued.targetLanguage,
+          );
         }
         _completeSuccess(key, queued, result);
       }
@@ -1643,6 +1597,7 @@ class _QueuedTranslation {
   final Set<String> scopes;
   int pendingRetryCount = 0;
   int failureRetryCount = 0;
+  bool forceSingleItemRetry = false;
   final Completer<ContentTranslationResult?> completer =
       Completer<ContentTranslationResult?>();
 }

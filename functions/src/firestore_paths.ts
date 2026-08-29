@@ -9,6 +9,7 @@
 export const COL = {
   // Auth / Verification
   users: 'users',
+  nicknameClaims: 'nicknameClaims',
   emailClaims: 'email_claims',
   emailVerifications: 'email_verifications',
 

@@ -1189,13 +1189,13 @@ class _EnhancedCommentWidgetState extends State<EnhancedCommentWidget> {
                         const SizedBox(height: 2),
 
                         // @아이디를 본문과 "같은 텍스트 흐름"으로 합쳐 줄바꿈까지 자연스럽게 처리
-                        if (widget.externallyManagedTranslation)
+                        if (widget.externallyManagedTranslation || isMyComment)
                           AnimatedSwitcher(
                             duration: const Duration(milliseconds: 190),
                             child: RichText(
                               key: ValueKey<String>(
                                 '${widget.comment.id}:'
-                                '${widget.translatedContent == null ? 'original' : 'translated'}',
+                                '${isMyComment || widget.translatedContent == null ? 'original' : 'translated'}',
                               ),
                               text: TextSpan(
                                 children: [
@@ -1206,8 +1206,10 @@ class _EnhancedCommentWidgetState extends State<EnhancedCommentWidget> {
                                       style: mentionStyle,
                                     ),
                                   ..._buildLinkifiedSpans(
-                                    text: widget.translatedContent ??
-                                        widget.comment.content,
+                                    text: isMyComment
+                                        ? widget.comment.content
+                                        : widget.translatedContent ??
+                                            widget.comment.content,
                                     style: bodyStyle,
                                     linkStyle: linkStyle,
                                   ),

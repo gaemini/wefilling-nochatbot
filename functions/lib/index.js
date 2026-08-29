@@ -3,9 +3,9 @@
 // Cloud Functions 메인 진입점
 // 친구요청 관련 함수들을 export
 Object.defineProperty(exports, "__esModule", { value: true });
-exports.onSnackChatFileUploadJobDeleted = exports.onSnackChatFileMessageDeleted = exports.cancelSnackChatFileUpload = exports.commitSnackChatFileUpload = exports.prepareSnackChatFileUpload = exports.reportSnackChatMessage = exports.fetchSnackChatLinkPreview = exports.createSnackChatAnnouncementSecure = exports.updateSnackChatTitleSecure = exports.onDeletedUserDocumentSnackChatCleanup = exports.onDeletedAuthUserSnackChatCleanup = exports.reconcileSnackChatParticipantsSecure = exports.leaveSnackChatSecure = exports.markSnackChatReadSecure = exports.getSnackChatEntryContext = exports.ensureSnackChatMembershipSecure = exports.joinMeetupSnackChatSecure = exports.inviteSnackChatParticipants = exports.createMeetupSnackChatSecure = exports.createSnackChatSecure = exports.onSnapshotBlockChanged = exports.cleanupOrphanSnapshotUploads = exports.cleanupExpiredSnapshots = exports.deleteSnapshot = exports.replySnapshotComment = exports.sendSnapshotComment = exports.toggleSnapshotReaction = exports.getSnapshotCommentLetter = exports.getSnapshotCommentStatus = exports.getSnapshotReactionStatus = exports.getSnapshotViewers = exports.recordSnapshotView = exports.updateSnapshotVisibility = exports.syncMySnapshotFeed = exports.createSnapshot = exports.getSnapshotServerTime = exports.translateContentBatch = exports.backfillHanyangVerificationStates = exports.reconcileMyHanyangVerificationStatus = exports.backfillInstagramPreviewThumbnails = exports.persistInstagramPreviewThumbnail = exports.resolveSharedLink = exports.reconcileDMUnreadTotalSecure = exports.markDMConversationReadSecure = exports.expireTimedMeetups = exports.confirmMeetupSecure = exports.createMeetupSecure = exports.getExternalShareComposerContext = exports.createExternalSharePost = exports.createPostSecure = void 0;
-exports.onNotificationCreated = exports.unregisterFcmToken = exports.registerFcmToken = exports.fixDeletedAccountsInConversations = exports.deleteAccountImmediately = exports.onReportCreated = exports.reportUser = exports.unhideAnonymousComment = exports.hideAnonymousComment = exports.unblockAnonymousPost = exports.blockAnonymousPost = exports.unblockUser = exports.blockUser = exports.unfriend = exports.rejectFriendRequest = exports.acceptFriendRequest = exports.cancelFriendRequest = exports.sendFriendRequest = exports.cleanupExpiredEmailVerifications = exports.createGeneralEmailSignup = exports.verifyEmailCode = exports.sendEmailVerificationCode = exports.onPostLiked = exports.onCommentLiked = exports.onCommentSoftDeleted = exports.onCommentDeleted = exports.onCommentCreated = exports.onMeetupDeleted = exports.onMeetupUpdated = exports.onAdBannerChanged = exports.onFriendRequestCreated = exports.joinMeetupSecure = exports.onPrivatePostCreated = exports.onUserCreated = exports.backfillEmailClaims = exports.cancelPendingEmailSignup = exports.discardIncompleteRegistration = exports.finalizeEnglishSocialSignup = exports.completeHanyangProfileVerification = exports.finalizeHanyangEmailVerification = exports.migrateEmailVerified = exports.initializeAds = exports.onUserProfileUpdatedPropagateAuthorInfo = exports.getUserProfileStats = exports.onSnackChatVoteWritten = exports.onSnackChatReactionWritten = exports.notifyClosedSnackChatPolls = exports.onSnackChatMessageCreated = exports.onSnackChatRoomWritten = exports.cleanupExpiredSnackChatFiles = void 0;
-exports.fixNegativeUnreadCounts = exports.onDMMessageRead = exports.onDMMessageCreated = exports.onMeetupReviewCreatedDeleteMeetupChat = exports.onMeetupReviewDeleted = exports.onMeetupReviewUpdated = exports.onReviewRequestUpdated = exports.onReviewRequestCreated = exports.onMeetupCreated = exports.onMeetupParticipantJoined = exports.onNotificationDeletedSyncUnreadCounter = exports.onNotificationUpdatedSyncUnreadCounter = void 0;
+exports.commitSnackChatFileUpload = exports.prepareSnackChatFileUpload = exports.reportSnackChatMessage = exports.fetchSnackChatLinkPreview = exports.createSnackChatAnnouncementSecure = exports.updateSnackChatTitleSecure = exports.onDeletedUserDocumentSnackChatCleanup = exports.onDeletedAuthUserSnackChatCleanup = exports.reconcileSnackChatParticipantsSecure = exports.leaveSnackChatSecure = exports.markSnackChatReadSecure = exports.getSnackChatEntryContext = exports.ensureSnackChatMembershipSecure = exports.joinMeetupSnackChatSecure = exports.inviteSnackChatParticipants = exports.createMeetupSnackChatSecure = exports.createSnackChatSecure = exports.onSnapshotBlockChanged = exports.cleanupOrphanSnapshotUploads = exports.cleanupExpiredSnapshots = exports.deleteSnapshot = exports.replySnapshotComment = exports.sendSnapshotComment = exports.toggleSnapshotReaction = exports.getSnapshotCommentLetter = exports.getSnapshotCommentStatus = exports.getSnapshotReactionStatus = exports.getSnapshotViewers = exports.recordSnapshotView = exports.updateSnapshotVisibility = exports.syncMySnapshotFeed = exports.createSnapshot = exports.getSnapshotServerTime = exports.translateContentBatch = exports.backfillHanyangVerificationStates = exports.reconcileMyHanyangVerificationStatus = exports.backfillInstagramPreviewThumbnails = exports.persistInstagramPreviewThumbnail = exports.resolveSharedLink = exports.reconcileDMUnreadTotalSecure = exports.markDMConversationReadSecure = exports.expireTimedMeetups = exports.confirmMeetupSecure = exports.createMeetupSecure = exports.getExternalShareComposerContext = exports.createExternalSharePost = exports.createPostSecure = exports.updateMyNicknameSecure = exports.onDeletedAuthUserNicknameCleanup = exports.checkNicknameAvailability = void 0;
+exports.fixDeletedAccountsInConversations = exports.deleteAccountImmediately = exports.onReportCreated = exports.reportUser = exports.unhideAnonymousComment = exports.hideAnonymousComment = exports.unblockAnonymousPost = exports.blockAnonymousPost = exports.unblockUser = exports.blockUser = exports.unfriend = exports.rejectFriendRequest = exports.acceptFriendRequest = exports.cancelFriendRequest = exports.sendFriendRequest = exports.cleanupExpiredEmailVerifications = exports.createGeneralEmailSignup = exports.verifyEmailCode = exports.sendEmailVerificationCode = exports.onPostLiked = exports.onCommentLiked = exports.onCommentSoftDeleted = exports.onCommentDeleted = exports.onCommentCreated = exports.onMeetupDeleted = exports.onMeetupUpdated = exports.onAdBannerChanged = exports.onFriendRequestCreated = exports.joinMeetupSecure = exports.onPrivatePostCreated = exports.onUserCreated = exports.backfillEmailClaims = exports.cancelPendingEmailSignup = exports.discardIncompleteRegistration = exports.finalizeEnglishSocialSignup = exports.completeHanyangProfileVerification = exports.finalizeHanyangEmailVerification = exports.migrateEmailVerified = exports.initializeAds = exports.onUserProfileUpdatedPropagateAuthorInfo = exports.getUserProfileStats = exports.onSnackChatVoteWritten = exports.onSnackChatReactionWritten = exports.notifyClosedSnackChatPolls = exports.onSnackChatMessageCreated = exports.onSnackChatRoomWritten = exports.cleanupExpiredSnackChatFiles = exports.onSnackChatFileUploadJobDeleted = exports.onSnackChatFileMessageDeleted = exports.cancelSnackChatFileUpload = void 0;
+exports.fixNegativeUnreadCounts = exports.onDMMessageRead = exports.onDMMessageCreated = exports.onMeetupReviewCreatedDeleteMeetupChat = exports.onMeetupReviewDeleted = exports.onMeetupReviewUpdated = exports.onReviewRequestUpdated = exports.onReviewRequestCreated = exports.onMeetupCreated = exports.onMeetupParticipantJoined = exports.onNotificationDeletedSyncUnreadCounter = exports.onNotificationUpdatedSyncUnreadCounter = exports.onNotificationCreated = exports.unregisterFcmToken = exports.registerFcmToken = void 0;
 const functions = require("firebase-functions");
 const admin = require("firebase-admin");
 const nodemailer = require("nodemailer");
@@ -14,6 +14,11 @@ const firestore_paths_1 = require("./firestore_paths");
 const frozen_audience_1 = require("./frozen_audience");
 const snack_chat_1 = require("./snack_chat");
 const hanyang_verification_1 = require("./hanyang_verification");
+const nickname_claims_1 = require("./nickname_claims");
+var nickname_claims_2 = require("./nickname_claims");
+Object.defineProperty(exports, "checkNicknameAvailability", { enumerable: true, get: function () { return nickname_claims_2.checkNicknameAvailability; } });
+Object.defineProperty(exports, "onDeletedAuthUserNicknameCleanup", { enumerable: true, get: function () { return nickname_claims_2.onDeletedAuthUserNicknameCleanup; } });
+Object.defineProperty(exports, "updateMyNicknameSecure", { enumerable: true, get: function () { return nickname_claims_2.updateMyNicknameSecure; } });
 var content_creation_1 = require("./content_creation");
 Object.defineProperty(exports, "createPostSecure", { enumerable: true, get: function () { return content_creation_1.createPostSecure; } });
 Object.defineProperty(exports, "createExternalSharePost", { enumerable: true, get: function () { return content_creation_1.createExternalSharePost; } });
@@ -665,12 +670,8 @@ function assertHanyangDomain(email) {
 }
 function parseCompletedRegistrationProfile(raw) {
     const profile = raw && typeof raw === 'object' ? raw : {};
-    const nickname = String(profile.nickname || '').trim();
+    const nickname = (0, nickname_claims_1.normalizeNickname)(profile.nickname).nickname;
     const nationality = String(profile.nationality || '').trim();
-    if (nickname.length < 2 || nickname.length > 20 ||
-        !/^[a-zA-Z0-9가-힣_.]+$/.test(nickname)) {
-        throw new functions.https.HttpsError('invalid-argument', '닉네임 형식이 올바르지 않습니다.');
-    }
     if (!nationality || nationality.length > 80) {
         throw new functions.https.HttpsError('invalid-argument', '국적 정보를 확인해주세요.');
     }
@@ -705,8 +706,10 @@ function parseCompletedRegistrationProfile(raw) {
     };
 }
 function completedProfileFields(profile) {
+    const normalizedNickname = (0, nickname_claims_1.normalizeNickname)(profile.nickname);
     return {
-        nickname: profile.nickname,
+        nickname: normalizedNickname.nickname,
+        nicknameKey: normalizedNickname.nicknameKey,
         nationality: profile.nationality,
         bio: profile.bio,
         interests: profile.interests,
@@ -773,12 +776,6 @@ exports.finalizeHanyangEmailVerification = functions.https.onCall(async (data, c
         }
         const expectedTokenHash = hashEmailVerificationToken(verificationToken);
         const profile = parseCompletedRegistrationProfile(data === null || data === void 0 ? void 0 : data.profile);
-        const nicknameOwner = await db.collection(firestore_paths_1.COL.users)
-            .where('nickname', '==', profile.nickname)
-            .get();
-        if (nicknameOwner.docs.some((doc) => doc.id !== uid && isCompletedRegistrationData(doc.data()))) {
-            throw new functions.https.HttpsError('already-exists', '이미 사용 중인 닉네임입니다.');
-        }
         const result = await db.runTransaction(async (tx) => {
             const claimRef = db.collection(firestore_paths_1.COL.emailClaims).doc(email);
             const userRef = db.collection(firestore_paths_1.COL.users).doc(uid);
@@ -802,6 +799,7 @@ exports.finalizeHanyangEmailVerification = functions.https.onCall(async (data, c
             // ✅ "계정 하나당 한양메일 하나" 강제
             // - 이미 다른 한양메일이 등록된 계정은 추가 등록을 막는다.
             const userSnap = await tx.get(userRef);
+            const nicknameReservation = await (0, nickname_claims_1.prepareNicknameReservation)(tx, uid, profile.nickname, userSnap.data() || {});
             if (userSnap.exists) {
                 const userData = userSnap.data();
                 const existingEmailRaw = ((userData === null || userData === void 0 ? void 0 : userData.hanyangEmail) || '').toString();
@@ -850,6 +848,7 @@ exports.finalizeHanyangEmailVerification = functions.https.onCall(async (data, c
                     }, { merge: true });
                 }
             }
+            nicknameReservation.apply();
             // 사용자 문서 업데이트
             // ✅ users/{uid} 문서 스키마를 "가입 경로 무관하게" 동일하게 유지한다.
             // - 과거/레거시/부분 업데이트로 필드가 누락된 문서가 생기는 것을 방지
@@ -1052,16 +1051,11 @@ exports.finalizeEnglishSocialSignup = functions.https.onCall(async (data, contex
         if (providerId !== 'google.com' && providerId !== 'apple.com') {
             throw new functions.https.HttpsError('permission-denied', 'Google/Apple 계정으로만 가입할 수 있습니다.');
         }
-        const nicknameOwner = await db.collection(firestore_paths_1.COL.users)
-            .where('nickname', '==', profile.nickname)
-            .get();
-        if (nicknameOwner.docs.some((doc) => doc.id !== uid && isCompletedRegistrationData(doc.data()))) {
-            throw new functions.https.HttpsError('already-exists', '이미 사용 중인 닉네임입니다.');
-        }
         const result = await db.runTransaction(async (tx) => {
             const userRef = db.collection(firestore_paths_1.COL.users).doc(uid);
             const userSnap = await tx.get(userRef);
             const existing = (userSnap.exists ? userSnap.data() : {}) || {};
+            const nicknameReservation = await (0, nickname_claims_1.prepareNicknameReservation)(tx, uid, profile.nickname, existing);
             const missing = (k) => existing[k] === undefined || existing[k] === null;
             const schemaFill = {};
             if (missing('uid'))
@@ -1127,6 +1121,7 @@ exports.finalizeEnglishSocialSignup = functions.https.onCall(async (data, contex
                         : 'social_ko_without_hanyang';
                 }
             }
+            nicknameReservation.apply();
             tx.set(userRef, Object.assign(Object.assign(Object.assign({}, schemaFill), completedProfileFields(profile)), { uid, email: authEmail, signupLanguage, signupProvider: providerId, preferredLanguage: signupLanguage, preferredLanguageUpdatedAt: admin.firestore.FieldValue.serverTimestamp(), updatedAt: admin.firestore.FieldValue.serverTimestamp(), lastLogin: admin.firestore.FieldValue.serverTimestamp() }), { merge: true });
             return { success: true, provider: providerId };
         });
@@ -2947,12 +2942,6 @@ exports.createGeneralEmailSignup = functions.https.onCall(async (data, context) 
     if (!verificationToken) {
         throw new functions.https.HttpsError('failed-precondition', '이메일 인증을 먼저 완료해주세요.');
     }
-    const nicknameOwner = await db.collection(firestore_paths_1.COL.users)
-        .where('nickname', '==', profile.nickname)
-        .get();
-    if (nicknameOwner.docs.some((doc) => isCompletedRegistrationData(doc.data()))) {
-        throw new functions.https.HttpsError('already-exists', '이미 사용 중인 닉네임입니다.');
-    }
     const normalizedEmail = normalizeEmail(email);
     const verificationRef = db.collection(firestore_paths_1.COL.emailVerifications).doc(normalizedEmail);
     const consumeId = crypto.randomBytes(16).toString('hex');
@@ -3022,25 +3011,45 @@ exports.createGeneralEmailSignup = functions.https.onCall(async (data, context) 
         }
         const uid = authUser.uid;
         const schoolVerification = await (0, hanyang_verification_1.reconcileHanyangVerificationForUid)(uid);
-        const now = admin.firestore.FieldValue.serverTimestamp();
-        const missingSchoolDefaults = {};
-        if (!schoolVerification.verified) {
-            if ((existingUserData === null || existingUserData === void 0 ? void 0 : existingUserData.hanyangEmail) == null)
-                missingSchoolDefaults.hanyangEmail = '';
-            if ((existingUserData === null || existingUserData === void 0 ? void 0 : existingUserData.hanyangEmailVerified) == null) {
-                missingSchoolDefaults.hanyangEmailVerified = false;
+        await db.runTransaction(async (transaction) => {
+            var _a, _b;
+            const userRef = db.collection(firestore_paths_1.COL.users).doc(uid);
+            const [verificationSnap, userSnap] = await Promise.all([
+                transaction.get(verificationRef),
+                transaction.get(userRef),
+            ]);
+            const verification = verificationSnap.data() || {};
+            if (!verificationSnap.exists ||
+                verification.status !== 'consuming' ||
+                verification.consumeId !== consumeId) {
+                throw new functions.https.HttpsError('failed-precondition', '이메일 인증 정보가 변경되었습니다. 다시 시도해주세요.');
             }
-            if ((existingUserData === null || existingUserData === void 0 ? void 0 : existingUserData.hanyangEmailVerifiedAt) == null) {
-                missingSchoolDefaults.hanyangEmailVerifiedAt = null;
+            const current = userSnap.exists
+                ? userSnap.data() || {}
+                : existingUserData || {};
+            const nicknameReservation = await (0, nickname_claims_1.prepareNicknameReservation)(transaction, uid, profile.nickname, current);
+            const now = admin.firestore.FieldValue.serverTimestamp();
+            const missingSchoolDefaults = {};
+            if (!schoolVerification.verified) {
+                if (current.hanyangEmail == null)
+                    missingSchoolDefaults.hanyangEmail = '';
+                if (current.hanyangEmailVerified == null) {
+                    missingSchoolDefaults.hanyangEmailVerified = false;
+                }
+                if (current.hanyangEmailVerifiedAt == null) {
+                    missingSchoolDefaults.hanyangEmailVerifiedAt = null;
+                }
+                if (current.schoolVerificationMethod == null) {
+                    missingSchoolDefaults.schoolVerificationMethod = '';
+                }
+                if (current.verificationMethod == null) {
+                    missingSchoolDefaults.verificationMethod = 'email_code';
+                }
             }
-            if ((existingUserData === null || existingUserData === void 0 ? void 0 : existingUserData.schoolVerificationMethod) == null) {
-                missingSchoolDefaults.schoolVerificationMethod = '';
-            }
-            if ((existingUserData === null || existingUserData === void 0 ? void 0 : existingUserData.verificationMethod) == null) {
-                missingSchoolDefaults.verificationMethod = 'email_code';
-            }
-        }
-        await db.collection(firestore_paths_1.COL.users).doc(uid).set(Object.assign(Object.assign(Object.assign({ uid, email: normalizedEmail }, missingSchoolDefaults), completedProfileFields(profile)), { photoURL: String((existingUserData === null || existingUserData === void 0 ? void 0 : existingUserData.photoURL) || ''), photoPath: String((existingUserData === null || existingUserData === void 0 ? void 0 : existingUserData.photoPath) || ''), photoAccessToken: String((existingUserData === null || existingUserData === void 0 ? void 0 : existingUserData.photoAccessToken) || ''), postCount: Number((existingUserData === null || existingUserData === void 0 ? void 0 : existingUserData.postCount) || 0), friendCount: Number((existingUserData === null || existingUserData === void 0 ? void 0 : existingUserData.friendCount) || 0), reviewCount: Number((existingUserData === null || existingUserData === void 0 ? void 0 : existingUserData.reviewCount) || 0), preferredLanguage: String((existingUserData === null || existingUserData === void 0 ? void 0 : existingUserData.preferredLanguage) || signupLanguage), signupLanguage, signupProvider: 'password', termsAccepted: true, termsAcceptedAt: (existingUserData === null || existingUserData === void 0 ? void 0 : existingUserData.termsAcceptedAt) || now, createdAt: (existingUserData === null || existingUserData === void 0 ? void 0 : existingUserData.createdAt) || now, updatedAt: now, lastLogin: now }), { merge: true });
+            nicknameReservation.apply();
+            transaction.set(userRef, Object.assign(Object.assign(Object.assign({ uid, email: normalizedEmail }, missingSchoolDefaults), completedProfileFields(profile)), { photoURL: String(current.photoURL || ''), photoPath: String(current.photoPath || ''), photoAccessToken: String(current.photoAccessToken || ''), postCount: Number(current.postCount || 0), friendsCount: Number((_b = (_a = current.friendsCount) !== null && _a !== void 0 ? _a : current.friendCount) !== null && _b !== void 0 ? _b : 0), reviewCount: Number(current.reviewCount || 0), preferredLanguage: String(current.preferredLanguage || signupLanguage), signupLanguage, signupProvider: 'password', termsAccepted: true, termsAcceptedAt: current.termsAcceptedAt || now, createdAt: current.createdAt || now, updatedAt: now, lastLogin: now }), { merge: true });
+            transaction.delete(verificationRef);
+        });
         // Custom token 서명은 런타임 서비스 계정의 signBlob 권한에 의존한다.
         // 권한이 일시적으로 누락돼도 이미 검증된 이메일/비밀번호 계정 가입 자체가
         // 실패하지 않도록 클라이언트가 비밀번호 로그인으로 이어갈 수 있게 한다.
@@ -3051,7 +3060,6 @@ exports.createGeneralEmailSignup = functions.https.onCall(async (data, context) 
         catch (tokenError) {
             console.warn('createGeneralEmailSignup custom token 생성 실패; 비밀번호 로그인으로 대체합니다.', { uid, code: (tokenError === null || tokenError === void 0 ? void 0 : tokenError.code) || 'unknown' });
         }
-        await verificationRef.delete();
         return {
             success: true,
             customToken,
@@ -3294,8 +3302,15 @@ exports.acceptFriendRequest = functions.https.onCall(async (data, context) => {
         }
         // 트랜잭션으로 친구요청 수락
         const result = await db.runTransaction(async (transaction) => {
+            var _a, _b, _c, _d;
             const requestId = `${fromUid}_${toUid}`;
-            const requestDoc = await transaction.get(db.collection('friend_requests').doc(requestId));
+            const requestRef = db.collection('friend_requests').doc(requestId);
+            const sortedIds = [fromUid, toUid].sort();
+            const friendshipId = `${sortedIds[0]}__${sortedIds[1]}`;
+            const friendshipRef = db.collection('friendships').doc(friendshipId);
+            const fromUserRef = db.collection('users').doc(fromUid);
+            const toUserRef = db.collection('users').doc(toUid);
+            const [requestDoc, friendshipDoc, fromUserDoc, toUserDoc] = await transaction.getAll(requestRef, friendshipRef, fromUserRef, toUserRef);
             if (!requestDoc.exists) {
                 throw new functions.https.HttpsError('not-found', '친구요청을 찾을 수 없습니다.');
             }
@@ -3306,32 +3321,41 @@ exports.acceptFriendRequest = functions.https.onCall(async (data, context) => {
             if (requestData.toUid !== toUid) {
                 throw new functions.https.HttpsError('permission-denied', '본인이 받은 친구요청만 수락할 수 있습니다.');
             }
-            // 친구 관계 생성
-            const sortedIds = [fromUid, toUid].sort();
-            const friendshipId = `${sortedIds[0]}__${sortedIds[1]}`;
-            transaction.set(db.collection('friendships').doc(friendshipId), {
-                uids: [fromUid, toUid],
-                createdAt: admin.firestore.FieldValue.serverTimestamp(),
-            });
+            if (!fromUserDoc.exists || !toUserDoc.exists) {
+                throw new functions.https.HttpsError('not-found', '사용자 정보를 찾을 수 없습니다.');
+            }
+            const friendshipAlreadyExists = friendshipDoc.exists;
+            const fromFriendsCount = toNonNegativeInt((_a = fromUserDoc.data()) === null || _a === void 0 ? void 0 : _a.friendsCount);
+            const toFriendsCount = toNonNegativeInt((_b = toUserDoc.data()) === null || _b === void 0 ? void 0 : _b.friendsCount);
+            const nextFromFriendsCount = friendshipAlreadyExists
+                ? fromFriendsCount
+                : fromFriendsCount + 1;
+            const nextToFriendsCount = friendshipAlreadyExists
+                ? toFriendsCount
+                : toFriendsCount + 1;
+            // 동일 관계가 이미 존재하면 요청 상태만 정리하고 카운트는 올리지 않는다.
+            if (!friendshipAlreadyExists) {
+                transaction.set(friendshipRef, {
+                    uids: [fromUid, toUid],
+                    createdAt: admin.firestore.FieldValue.serverTimestamp(),
+                });
+            }
             // 요청 상태를 ACCEPTED로 변경
-            transaction.update(db.collection('friend_requests').doc(requestId), {
+            transaction.update(requestRef, {
                 status: 'ACCEPTED',
                 updatedAt: admin.firestore.FieldValue.serverTimestamp(),
             });
-            // 카운터 업데이트
-            const fromUserRef = db.collection('users').doc(fromUid);
-            const toUserRef = db.collection('users').doc(toUid);
             transaction.update(fromUserRef, {
-                outgoingCount: admin.firestore.FieldValue.increment(-1),
-                friendsCount: admin.firestore.FieldValue.increment(1),
+                outgoingCount: Math.max(0, toNonNegativeInt((_c = fromUserDoc.data()) === null || _c === void 0 ? void 0 : _c.outgoingCount) - 1),
+                friendsCount: nextFromFriendsCount,
                 updatedAt: admin.firestore.FieldValue.serverTimestamp(),
             });
             transaction.update(toUserRef, {
-                incomingCount: admin.firestore.FieldValue.increment(-1),
-                friendsCount: admin.firestore.FieldValue.increment(1),
+                incomingCount: Math.max(0, toNonNegativeInt((_d = toUserDoc.data()) === null || _d === void 0 ? void 0 : _d.incomingCount) - 1),
+                friendsCount: nextToFriendsCount,
                 updatedAt: admin.firestore.FieldValue.serverTimestamp(),
             });
-            return { success: true };
+            return { success: true, friendsCount: nextToFriendsCount };
         });
         return result;
     }
@@ -3417,27 +3441,32 @@ exports.unfriend = functions.https.onCall(async (data, context) => {
         }
         // 트랜잭션으로 친구 삭제
         const result = await db.runTransaction(async (transaction) => {
-            // 친구 관계 확인
+            var _a, _b;
             const sortedIds = [currentUid, otherUid].sort();
             const friendshipId = `${sortedIds[0]}__${sortedIds[1]}`;
-            const friendshipDoc = await transaction.get(db.collection('friendships').doc(friendshipId));
+            const friendshipRef = db.collection('friendships').doc(friendshipId);
+            const currentUserRef = db.collection('users').doc(currentUid);
+            const otherUserRef = db.collection('users').doc(otherUid);
+            const [friendshipDoc, currentUserDoc, otherUserDoc] = await transaction.getAll(friendshipRef, currentUserRef, otherUserRef);
             if (!friendshipDoc.exists) {
                 throw new functions.https.HttpsError('not-found', '친구 관계를 찾을 수 없습니다.');
             }
+            if (!currentUserDoc.exists || !otherUserDoc.exists) {
+                throw new functions.https.HttpsError('not-found', '사용자 정보를 찾을 수 없습니다.');
+            }
+            const currentFriendsCount = Math.max(0, toNonNegativeInt((_a = currentUserDoc.data()) === null || _a === void 0 ? void 0 : _a.friendsCount) - 1);
+            const otherFriendsCount = Math.max(0, toNonNegativeInt((_b = otherUserDoc.data()) === null || _b === void 0 ? void 0 : _b.friendsCount) - 1);
             // 친구 관계 삭제
-            transaction.delete(db.collection('friendships').doc(friendshipId));
-            // 카운터 감소
-            const currentUserRef = db.collection('users').doc(currentUid);
-            const otherUserRef = db.collection('users').doc(otherUid);
+            transaction.delete(friendshipRef);
             transaction.update(currentUserRef, {
-                friendsCount: admin.firestore.FieldValue.increment(-1),
+                friendsCount: currentFriendsCount,
                 updatedAt: admin.firestore.FieldValue.serverTimestamp(),
             });
             transaction.update(otherUserRef, {
-                friendsCount: admin.firestore.FieldValue.increment(-1),
+                friendsCount: otherFriendsCount,
                 updatedAt: admin.firestore.FieldValue.serverTimestamp(),
             });
-            return { success: true };
+            return { success: true, friendsCount: currentFriendsCount };
         });
         return result;
     }
@@ -3480,6 +3509,7 @@ exports.blockUser = functions.https.onCall(async (data, context) => {
         }
         // 트랜잭션으로 사용자 차단
         const result = await db.runTransaction(async (transaction) => {
+            var _a, _b;
             // ⚠️ 중요: 모든 읽기 작업을 먼저 실행해야 함
             const directBlockRef = db.collection('blocks')
                 .doc(`${blockerUid}_${targetUid}`);
@@ -3498,6 +3528,19 @@ exports.blockUser = functions.https.onCall(async (data, context) => {
             // 차단을 현재 호출자의 implicit 문서로 덮어쓰면 피차단자가 차단
             // 소유권을 뒤집은 뒤 스스로 해제할 수 있다.
             const reverseBlockDoc = await transaction.get(reverseBlockRef);
+            // 친구 관계 삭제가 필요한 경우에도 카운트를 0 미만으로 만들지 않도록
+            // 사용자 문서를 쓰기 전에 함께 읽는다.
+            const blockerUserRef = db.collection('users').doc(blockerUid);
+            const blockedUserRef = db.collection('users').doc(targetUid);
+            const [blockerUserDoc, blockedUserDoc] = await transaction.getAll(blockerUserRef, blockedUserRef);
+            const blockerFriendsCount = toNonNegativeInt((_a = blockerUserDoc.data()) === null || _a === void 0 ? void 0 : _a.friendsCount);
+            const blockedFriendsCount = toNonNegativeInt((_b = blockedUserDoc.data()) === null || _b === void 0 ? void 0 : _b.friendsCount);
+            const nextBlockerFriendsCount = friendshipDoc.exists
+                ? Math.max(0, blockerFriendsCount - 1)
+                : blockerFriendsCount;
+            const nextBlockedFriendsCount = friendshipDoc.exists
+                ? Math.max(0, blockedFriendsCount - 1)
+                : blockedFriendsCount;
             // ✅ 모든 읽기 완료, 이제 쓰기 작업 시작
             // 4. A → B 차단 관계 생성 (현재 호출자가 설정한 실제 차단)
             transaction.set(directBlockRef, {
@@ -3525,15 +3568,12 @@ exports.blockUser = functions.https.onCall(async (data, context) => {
             // 5. 기존 친구 관계가 있다면 삭제
             if (friendshipDoc.exists) {
                 transaction.delete(db.collection('friendships').doc(friendshipId));
-                // 친구 카운터 감소
-                const blockerUserRef = db.collection('users').doc(blockerUid);
-                const blockedUserRef = db.collection('users').doc(targetUid);
                 transaction.update(blockerUserRef, {
-                    friendsCount: admin.firestore.FieldValue.increment(-1),
+                    friendsCount: nextBlockerFriendsCount,
                     updatedAt: admin.firestore.FieldValue.serverTimestamp(),
                 });
                 transaction.update(blockedUserRef, {
-                    friendsCount: admin.firestore.FieldValue.increment(-1),
+                    friendsCount: nextBlockedFriendsCount,
                     updatedAt: admin.firestore.FieldValue.serverTimestamp(),
                 });
             }
@@ -3585,7 +3625,7 @@ exports.blockUser = functions.https.onCall(async (data, context) => {
                     updatedAt: admin.firestore.FieldValue.serverTimestamp(),
                 });
             }
-            return { success: true };
+            return { success: true, friendsCount: nextBlockerFriendsCount };
         });
         // Developer notification for blocking (Guideline 1.2)
         // - Reuse existing reports pipeline (onReportCreated trigger sends email)
@@ -3980,6 +4020,7 @@ exports.deleteAccountImmediately = functions.https.onCall(async (data, context) 
         // 탈퇴 전 사용자 정보 수집 (관리자 이메일용)
         let userInfo = {
             nickname: '(정보 없음)',
+            nicknameKey: '',
             email: '(정보 없음)',
             hanyangEmail: '(정보 없음)',
             createdAt: '(정보 없음)',
@@ -3988,8 +4029,18 @@ exports.deleteAccountImmediately = functions.https.onCall(async (data, context) 
             const userDoc = await userRef.get();
             if (userDoc.exists) {
                 const userData = userDoc.data();
+                let nicknameKey = String(userData.nicknameKey || '').trim();
+                if (!nicknameKey && userData.nickname) {
+                    try {
+                        nicknameKey = (0, nickname_claims_1.normalizeNickname)(userData.nickname).nicknameKey;
+                    }
+                    catch (_) {
+                        nicknameKey = '';
+                    }
+                }
                 userInfo = {
                     nickname: userData.nickname || '(닉네임 없음)',
+                    nicknameKey,
                     email: userData.email || '(이메일 없음)',
                     hanyangEmail: userData.hanyangEmail || '(한양메일 없음)',
                     createdAt: userData.createdAt
@@ -4178,6 +4229,7 @@ exports.deleteAccountImmediately = functions.https.onCall(async (data, context) 
         await userRef.set({
             uid,
             nickname: 'DELETED_ACCOUNT',
+            nicknameKey: userInfo.nicknameKey,
             displayName: 'DELETED_ACCOUNT',
             photoURL: '',
             isDeleted: true,
@@ -4189,6 +4241,17 @@ exports.deleteAccountImmediately = functions.https.onCall(async (data, context) 
         });
         // 4) Auth 계정 삭제
         await admin.auth().deleteUser(uid);
+        // Auth 삭제가 성공한 후에만 해당 UID가 소유한 닉네임을
+        // 해제한다. 재인증/Auth 삭제 실패 시에는 이 코드에 도달하지 않는다.
+        try {
+            const released = await (0, nickname_claims_1.releaseNicknameClaimIfOwned)(uid, userInfo.nicknameKey);
+            console.log(`👤 닉네임 claim 해제: ${released ? '완료' : '스킵'}`);
+        }
+        catch (error) {
+            // Auth 삭제 후의 단일 claim 정리는 재시도 가능한 복구 경계다.
+            // 다른 사용자 claim은 ownerUid 검증으로 절대 삭제하지 않는다.
+            console.error('닉네임 claim 해제 실패:', error);
+        }
         console.log(`✅ 계정 삭제 완료: ${uid}`);
         // 관리자에게 탈퇴 알림 이메일 전송
         try {

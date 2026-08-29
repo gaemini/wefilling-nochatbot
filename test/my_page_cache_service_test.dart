@@ -77,6 +77,24 @@ void main() {
     expect(userB!.items.single.id, 'b-post');
   });
 
+  test('restores the current user friend count without a friend list', () async {
+    await service.saveFriendCount('user-1', 49);
+    MyPageCacheService.clearMemory();
+
+    final cachedCount =
+        await MyPageCacheService().readFriendCount('user-1');
+
+    expect(cachedCount, 49);
+    expect(await service.readFriendCount('user-2'), isNull);
+  });
+
+  test('never persists a negative friend count', () async {
+    await service.saveFriendCount('user-1', -1);
+    MyPageCacheService.clearMemory();
+
+    expect(await MyPageCacheService().readFriendCount('user-1'), 0);
+  });
+
   test('keeps every tag when a multi-tag saved post is restored', () async {
     final post = Post(
       id: 'multi-tag-saved-post',

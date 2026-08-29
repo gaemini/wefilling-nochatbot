@@ -2,12 +2,14 @@
 // 사용자 프로필 편집 화면
 // 닉네임 및 국적 정보 수정 기능 제공
 
+import 'dart:async';
 import 'dart:io';
 import 'dart:convert';
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import 'package:image_picker/image_picker.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
+import 'package:cloud_functions/cloud_functions.dart';
 import '../providers/auth_provider.dart';
 import '../services/storage_service.dart';
 import '../services/post_service.dart';
@@ -50,6 +52,11 @@ class _ProfileEditScreenState extends State<ProfileEditScreen> {
   bool _useDefaultImage = false; // 기본 이미지 사용 여부
 
   bool _isSubmitting = false;
+  Timer? _nicknameDebounce;
+  int _nicknameCheckGeneration = 0;
+  bool _isCheckingNickname = false;
+  bool? _isNicknameAvailable;
+  String? _nicknameAvailabilityError;
   bool _isForceUpdating = false;
   bool _nicknameLocked = false;
   bool _nationalityLocked = false;
@@ -201,6 +208,7 @@ class _ProfileEditScreenState extends State<ProfileEditScreen> {
 
   @override
   void dispose() {
+    _nicknameDebounce?.cancel();
     _nicknameController.dispose();
     _bioController.dispose();
     _conversationController.dispose();
@@ -208,6 +216,72 @@ class _ProfileEditScreenState extends State<ProfileEditScreen> {
     _departmentController.dispose();
     _gradeController.dispose();
     super.dispose();
+  }
+
+  void _onNicknameChanged(String raw) {
+    _nicknameDebounce?.cancel();
+    final generation = ++_nicknameCheckGeneration;
+    final current = (context.read<AuthProvider>().userData?['nickname'] ?? '')
+        .toString()
+        .trim();
+    final validation = SocialProfileValidation.nicknameError(
+      raw,
+      Localizations.localeOf(context).languageCode,
+    );
+    setState(() {
+      _isCheckingNickname = false;
+      _isNicknameAvailable = raw.trim() == current ? true : null;
+      _nicknameAvailabilityError = null;
+    });
+    if (validation != null || raw.trim() == current) return;
+    _nicknameDebounce = Timer(const Duration(milliseconds: 480), () {
+      _checkNickname(raw, generation: generation);
+    });
+  }
+
+  Future<bool> _checkNickname(
+    String raw, {
+    required int generation,
+    bool force = false,
+  }) async {
+    final input = raw.trim();
+    if (generation != _nicknameCheckGeneration ||
+        input != _nicknameController.text.trim()) {
+      return false;
+    }
+    setState(() {
+      _isCheckingNickname = true;
+      _nicknameAvailabilityError = null;
+    });
+    try {
+      final result = await context
+          .read<AuthProvider>()
+          .checkNicknameAvailability(input, force: force);
+      if (!mounted ||
+          generation != _nicknameCheckGeneration ||
+          input != _nicknameController.text.trim()) {
+        return false;
+      }
+      setState(() {
+        _isCheckingNickname = false;
+        _isNicknameAvailable = result.available;
+      });
+      return result.available;
+    } catch (_) {
+      if (mounted &&
+          generation == _nicknameCheckGeneration &&
+          input == _nicknameController.text.trim()) {
+        setState(() {
+          _isCheckingNickname = false;
+          _isNicknameAvailable = null;
+          _nicknameAvailabilityError =
+              Localizations.localeOf(context).languageCode == 'ko'
+                  ? '인터넷 연결을 확인해 주세요.'
+                  : 'Check your internet connection.';
+        });
+      }
+      return false;
+    }
   }
 
   // 이미지 선택
@@ -323,20 +397,21 @@ class _ProfileEditScreenState extends State<ProfileEditScreen> {
         final currentNickname =
             (authProvider.userData?['nickname'] ?? '').toString().trim();
         if (requestedNickname != currentNickname) {
-          final matches = await FirebaseFirestore.instance
-              .collection('users')
-              .where('nickname', isEqualTo: requestedNickname)
-              .limit(2)
-              .get();
-          final uid = authProvider.user?.uid;
-          if (matches.docs.any((doc) => doc.id != uid)) {
+          _nicknameDebounce?.cancel();
+          final generation = ++_nicknameCheckGeneration;
+          if (!await _checkNickname(
+            requestedNickname,
+            generation: generation,
+            force: true,
+          )) {
             if (!mounted) return;
             ScaffoldMessenger.of(context).showSnackBar(
               SnackBar(
                 content: Text(
-                  Localizations.localeOf(context).languageCode == 'ko'
-                      ? '이미 사용 중인 닉네임이에요.'
-                      : 'This nickname is already in use.',
+                  _nicknameAvailabilityError ??
+                      (Localizations.localeOf(context).languageCode == 'ko'
+                          ? '이미 사용 중인 닉네임이에요.'
+                          : 'This nickname is already in use.'),
                 ),
               ),
             );
@@ -507,10 +582,23 @@ class _ProfileEditScreenState extends State<ProfileEditScreen> {
         }
       } catch (e) {
         if (mounted) {
+          final nicknameTaken =
+              e is FirebaseFunctionsException && e.code == 'already-exists';
+          final networkError = e is TimeoutException ||
+              (e is FirebaseFunctionsException &&
+                  (e.code == 'unavailable' || e.code == 'deadline-exceeded'));
           ScaffoldMessenger.of(
             context,
           ).showSnackBar(SnackBar(
-              content: Text('${AppLocalizations.of(context)!.error}: $e')));
+              content: Text(nicknameTaken
+                  ? (Localizations.localeOf(context).languageCode == 'ko'
+                      ? '이미 사용 중인 닉네임이에요.'
+                      : 'This nickname is already in use.')
+                  : networkError
+                      ? (Localizations.localeOf(context).languageCode == 'ko'
+                          ? '인터넷 연결을 확인해 주세요.'
+                          : 'Check your internet connection.')
+                      : '${AppLocalizations.of(context)!.error}: $e')));
         }
       } finally {
         if (mounted) {
@@ -862,13 +950,33 @@ class _ProfileEditScreenState extends State<ProfileEditScreen> {
                   const SizedBox(height: 8),
                   TextFormField(
                     controller: _nicknameController,
+                    onChanged: _onNicknameChanged,
                     enabled: !_nicknameLocked,
                     decoration: socialProfileInputDecoration(
                       hintText: '닉네임을 입력하세요',
-                      helperText:
-                          Localizations.localeOf(context).languageCode == 'ko'
-                              ? '친구들이 기억하기 쉬운 이름을 사용해 주세요.'
-                              : 'Use a name friends can easily remember.',
+                      helperText: _nicknameAvailabilityError ??
+                          (_isCheckingNickname
+                              ? (Localizations.localeOf(context).languageCode ==
+                                      'ko'
+                                  ? '사용 가능 여부 확인 중…'
+                                  : 'Checking availability…')
+                              : _isNicknameAvailable == true
+                                  ? (Localizations.localeOf(context)
+                                              .languageCode ==
+                                          'ko'
+                                      ? '사용할 수 있는 닉네임이에요.'
+                                      : 'This nickname is available.')
+                                  : _isNicknameAvailable == false
+                                      ? (Localizations.localeOf(context)
+                                                  .languageCode ==
+                                              'ko'
+                                          ? '이미 사용 중인 닉네임이에요.'
+                                          : 'This nickname is already in use.')
+                                      : (Localizations.localeOf(context)
+                                                  .languageCode ==
+                                              'ko'
+                                          ? '친구들이 기억하기 쉬운 이름을 사용해 주세요.'
+                                          : 'Use a name friends can easily remember.')),
                     ),
                     style: const TextStyle(
                       fontFamily: 'Inter',

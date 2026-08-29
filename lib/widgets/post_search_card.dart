@@ -43,87 +43,116 @@ class PostSearchCard extends StatelessWidget {
       post.requiresHanyangVerification,
     );
 
-    return InkWell(
-      onTap: isHanyangLocked
-          ? null
-          : () {
-              // 게시글 상세 페이지로 직접 이동
-              Navigator.push(
-                context,
-                MaterialPageRoute(
-                  builder: (context) => PostDetailScreen(post: post),
-                ),
-              );
-            },
-      borderRadius: DesignTokens.radiusM,
-      child: Container(
-        margin: DesignTokens.paddingVerticalS,
-        decoration: ComponentStyles.cardDecoration,
-        child: Padding(
-          padding: DesignTokens.paddingM,
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              // 작성자 정보
-              _buildLatestAuthor(context, l10n),
+    final width = MediaQuery.sizeOf(context).width;
+    final compact = width < 360;
+    final horizontal = (width * 0.045).clamp(14.0, 24.0).toDouble();
 
-              HanyangVerificationGate(
-                locked: isHanyangLocked,
-                compact: true,
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    SizedBox(height: DesignTokens.s12),
+    return Material(
+      color: Colors.white,
+      child: InkWell(
+        onTap: isHanyangLocked
+            ? null
+            : () {
+                Navigator.push(
+                  context,
+                  MaterialPageRoute(
+                    builder: (context) => PostDetailScreen(post: post),
+                  ),
+                );
+              },
+        child: Column(
+          children: [
+            Padding(
+              padding: EdgeInsets.symmetric(
+                horizontal: horizontal,
+                vertical: compact ? 12 : 14,
+              ),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  // 작성자 정보
+                  _buildLatestAuthor(context, l10n),
 
-                    // 제목/본문 구분이 없는 현재 포스트의 단일 본문
-                    Text(
-                      post.displayText,
-                      style: TypographyStyles.titleLarge,
-                      maxLines: 3,
-                      overflow: TextOverflow.ellipsis,
-                    ),
-
-                    SizedBox(height: DesignTokens.s12),
-
-                    // 통계 정보 (좋아요수, 댓글수)
-                    Row(
+                  HanyangVerificationGate(
+                    locked: isHanyangLocked,
+                    compact: true,
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
-                        Icon(
-                          isLiked
-                              ? IconStyles.favoriteFilled
-                              : IconStyles.favorite,
-                          size: DesignTokens.iconSmall,
-                          color: isLiked
-                              ? BrandColors.textSecondary
-                              : BrandColors.textTertiary,
-                        ),
-                        SizedBox(width: DesignTokens.s4),
+                        const SizedBox(height: 10),
+
+                        // 제목/본문 구분이 없는 현재 포스트의 단일 본문
                         Text(
-                          '${post.likes}',
-                          style: TypographyStyles.labelSmall.copyWith(
-                            color: BrandColors.textTertiary,
+                          post.displayText,
+                          style: TextStyle(
+                            fontFamily: 'Inter',
+                            fontFamilyFallback: const ['NotoSansKR'],
+                            fontSize: compact ? 14.5 : 15.5,
+                            fontWeight: FontWeight.w600,
+                            color: const Color(0xFF111827),
+                            height: 1.45,
+                            letterSpacing: -0.15,
                           ),
+                          maxLines: 3,
+                          overflow: TextOverflow.ellipsis,
                         ),
-                        SizedBox(width: DesignTokens.s16),
-                        Icon(
-                          Icons.chat_bubble_outline,
-                          size: DesignTokens.iconSmall,
-                          color: BrandColors.accent,
-                        ),
-                        SizedBox(width: DesignTokens.s4),
-                        Text(
-                          '${post.commentCount}',
-                          style: TypographyStyles.labelSmall.copyWith(
-                            color: BrandColors.textTertiary,
-                          ),
+
+                        const SizedBox(height: 10),
+
+                        // 통계 정보 (좋아요수, 댓글수)
+                        Row(
+                          children: [
+                            Icon(
+                              isLiked
+                                  ? IconStyles.favoriteFilled
+                                  : IconStyles.favorite,
+                              size: 15,
+                              color: isLiked
+                                  ? BrandColors.textSecondary
+                                  : BrandColors.textTertiary,
+                            ),
+                            const SizedBox(width: 4),
+                            Text(
+                              '${post.likes}',
+                              style: const TextStyle(
+                                fontFamily: 'Inter',
+                                fontSize: 12,
+                                fontWeight: FontWeight.w500,
+                                color: Color(0xFF667085),
+                              ),
+                            ),
+                            const SizedBox(width: 14),
+                            Icon(
+                              Icons.chat_bubble_outline,
+                              size: 15,
+                              color: const Color(0xFF667085),
+                            ),
+                            const SizedBox(width: 4),
+                            Text(
+                              '${post.commentCount}',
+                              style: const TextStyle(
+                                fontFamily: 'Inter',
+                                fontSize: 12,
+                                fontWeight: FontWeight.w500,
+                                color: Color(0xFF667085),
+                              ),
+                            ),
+                          ],
                         ),
                       ],
                     ),
-                  ],
-                ),
+                  ),
+                ],
               ),
-            ],
-          ),
+            ),
+            Divider(
+              height: 1,
+              thickness: 1,
+              indent: horizontal,
+              endIndent: horizontal,
+              color: const Color(0xFFEAECF0),
+            ),
+          ],
         ),
       ),
     );
@@ -170,27 +199,45 @@ class PostSearchCard extends StatelessWidget {
     return Row(
       children: [
         CircleAvatar(
-          radius: 18,
+          radius: 17,
           backgroundColor: BrandColors.neutral200,
           backgroundImage: photoURL.isNotEmpty ? NetworkImage(photoURL) : null,
           child: photoURL.isEmpty
               ? Icon(
                   IconStyles.person,
-                  size: 18,
+                  size: 17,
                   color: BrandColors.textTertiary,
                 )
               : null,
         ),
-        SizedBox(width: DesignTokens.s8),
+        const SizedBox(width: 10),
         Expanded(
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              Text(name, style: TypographyStyles.username),
-              SizedBox(height: DesignTokens.s2),
+              Text(
+                name,
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+                style: const TextStyle(
+                  fontFamily: 'Inter',
+                  fontFamilyFallback: ['NotoSansKR'],
+                  fontSize: 13.5,
+                  fontWeight: FontWeight.w700,
+                  color: Color(0xFF111827),
+                  height: 1.2,
+                ),
+              ),
+              const SizedBox(height: 2),
               Text(
                 _getFormattedDate(context, post.createdAt),
-                style: TypographyStyles.timestamp,
+                style: const TextStyle(
+                  fontFamily: 'Inter',
+                  fontFamilyFallback: ['NotoSansKR'],
+                  fontSize: 11.5,
+                  fontWeight: FontWeight.w500,
+                  color: Color(0xFF98A2B3),
+                ),
               ),
             ],
           ),

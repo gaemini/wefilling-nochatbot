@@ -3,24 +3,17 @@ import 'package:wefilling/services/content_translation_service.dart';
 
 void main() {
   group('automatic translation target language', () {
-    test('English UI wins over a Korean profile for a new user', () {
+    test('uses the app UI language when no explicit setting exists', () {
       expect(
-        resolveAutomaticTranslationTarget(
-          uiLanguage: 'en',
-          profileLanguage: 'ko',
-        ),
+        resolveAutomaticTranslationTarget(uiLanguage: 'en'),
         'en',
       );
     });
 
-    test('profile fallback remains available when UI language is unavailable',
-        () {
+    test('default language is used instead of profile inference', () {
       expect(
-        resolveAutomaticTranslationTarget(
-          uiLanguage: '',
-          profileLanguage: 'ja',
-        ),
-        'ja',
+        resolveAutomaticTranslationTarget(uiLanguage: ''),
+        'en',
       );
     });
   });

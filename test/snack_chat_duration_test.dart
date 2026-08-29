@@ -196,6 +196,27 @@ void main() {
     expect(today, isEmpty);
   });
 
+  test('unified list contains visible rooms without date sections', () {
+    final today = _chat(
+      durationHours: 24,
+      expiresAt: DateTime(2026, 7, 26),
+      createdAt: DateTime(2026, 7, 25, 10),
+    );
+    final previous = _chat(
+      durationHours: 0,
+      expiresAt: SnackChat.noExpirationDate,
+      createdAt: DateTime(2026, 7, 24, 10),
+    );
+
+    final unified = filterSnackChatsBySection(
+      [today, previous],
+      section: SnackChatListSection.unified,
+      now: DateTime(2026, 7, 25, 12),
+    );
+
+    expect(unified, containsAll([today, previous]));
+  });
+
   test('a room from yesterday is not Today even when under 24 hours old', () {
     final chat = _chat(
       durationHours: 0,

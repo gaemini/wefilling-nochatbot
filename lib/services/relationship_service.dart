@@ -7,6 +7,7 @@ import 'package:cloud_functions/cloud_functions.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'content_filter_service.dart';
 import 'post_service.dart';
+import 'cache/my_page_cache_service.dart';
 import '../models/user_profile.dart';
 import '../models/friend_request.dart';
 import '../models/relationship_status.dart';
@@ -17,6 +18,7 @@ class RelationshipService {
   final FirebaseFunctions _functions = FirebaseFunctions.instance;
   final FirebaseAuth _auth = FirebaseAuth.instance;
   final UsersRepository _usersRepository = UsersRepository();
+  final MyPageCacheService _myPageCacheService = MyPageCacheService();
 
   // 에뮬레이터 사용 여부 (개발 환경에서 설정)
   bool _useEmulator = false;
@@ -149,6 +151,7 @@ class RelationshipService {
       final success = result.data['success'] as bool? ?? false;
       if (success) {
         Logger.log('친구요청 수락 성공: $fromUid');
+        _cacheCurrentFriendCount(result.data);
 
         // 캐시 무효화 (새로운 친구 추가됨)
         invalidateUserCache(fromUid);
@@ -215,6 +218,7 @@ class RelationshipService {
       final success = result.data['success'] as bool? ?? false;
       if (success) {
         Logger.log('친구 삭제 성공: $otherUid');
+        _cacheCurrentFriendCount(result.data);
 
         // 캐시 무효화 (친구 삭제됨)
         invalidateUserCache(otherUid);
@@ -254,6 +258,7 @@ class RelationshipService {
       final success = result.data['success'] as bool? ?? false;
       if (success) {
         Logger.log('사용자 차단 성공: $targetUid');
+        _cacheCurrentFriendCount(result.data);
         // ✅ 즉시 피드에서 제거되도록 in-memory 캐시 업데이트 + 재필터 emit
         ContentFilterService.addBlockedUserId(targetUid);
         PostService.instance.requestReemitWithCurrentFilters();
@@ -325,6 +330,14 @@ class RelationshipService {
   /// 친구 수 스트림
   Stream<int> getFriendCount() {
     return getFriends().map((friends) => friends.length);
+  }
+
+  void _cacheCurrentFriendCount(dynamic resultData) {
+    final userId = currentUserId;
+    if (userId == null || resultData is! Map) return;
+    final value = resultData['friendsCount'];
+    if (value is! num) return;
+    unawaited(_myPageCacheService.saveFriendCount(userId, value.toInt()));
   }
 
   /// 사용자 검색

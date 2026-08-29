@@ -47,6 +47,7 @@ import '../ui/widgets/instagram_embed_preview.dart';
 import '../ui/widgets/translatable_content.dart';
 import '../ui/widgets/shared_link_preview_card.dart';
 import '../utils/responsive_helper.dart';
+import '../utils/post_translation_policy.dart';
 import '../ui/widgets/hanyang_verification_gate.dart';
 import '../services/user_info_cache_service.dart';
 import '../services/cache/app_image_cache_manager.dart';
@@ -142,6 +143,11 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
   int _commentsTranslationRetryAttempt = 0;
   late int _translationLanguageRevision;
   bool _commentsWereShowingOriginal = false;
+
+  bool get _isOwnPostTranslation => isOwnPostForTranslation(
+        _currentPost,
+        FirebaseAuth.instance.currentUser?.uid,
+      );
 
   @override
   void initState() {
@@ -360,9 +366,12 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
   /// StreamBuilder가 받은 전체 유효 스레드를 하나의 번역 scope에 등록한다.
   /// 좋아요처럼 원문에 영향 없는 스냅샷 변화에는 scope를 다시 만들지 않는다.
   void _syncCommentTranslationScope(List<Comment> allComments) {
+    final currentUserId = FirebaseAuth.instance.currentUser?.uid;
     final candidates = allComments
         .where((comment) =>
-            !comment.isDeleted && comment.content.trim().isNotEmpty)
+            !comment.isDeleted &&
+            comment.content.trim().isNotEmpty &&
+            !isOwnCommentForTranslation(comment, currentUserId))
         .toList(growable: false);
     final signature = _commentSetSignature(candidates);
     if (_commentsTranslationSignature == signature) return;
@@ -631,7 +640,11 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
   }
 
   String? _translatedContentFor(Comment comment) {
-    if (!_commentTranslationsReady ||
+    if (isOwnCommentForTranslation(
+          comment,
+          FirebaseAuth.instance.currentUser?.uid,
+        ) ||
+        !_commentTranslationsReady ||
         !_hasTranslatedComment ||
         _translationService.showsOriginal(_commentsScope)) {
       return null;
@@ -2885,7 +2898,11 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
               horizontalPadding,
               0,
             ),
-            child: PollPostWidget(postId: _currentPost.id),
+            child: PollPostWidget(
+              postId: _currentPost.id,
+              post: _currentPost,
+              translationEnabled: !_isOwnPostTranslation,
+            ),
           ),
         Padding(
           padding: EdgeInsets.fromLTRB(
@@ -3026,16 +3043,9 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
         ),
         if (content.trim().isNotEmpty) ...[
           SizedBox(height: context.rs(10).clamp(8.0, 12.0).toDouble()),
-          TranslatableContent(
-            request: ContentTranslationRequest(
-              contentType: 'post',
-              contentId: _currentPost.id,
-              sourceFields: <String, String>{'content': content},
-            ),
-            scope: 'post:${_currentPost.id}',
-            showToggle: false,
-            builder: (context, fields) => PostLinkifiedText(
-              text: fields['content'] ?? content,
+          if (_isOwnPostTranslation)
+            PostLinkifiedText(
+              text: content,
               textAlign: TextAlign.left,
               style: TextStyle(
                 fontFamily: 'Inter',
@@ -3046,8 +3056,30 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
                 height: 1.28,
                 letterSpacing: -0.25,
               ),
+            )
+          else
+            TranslatableContent(
+              request: ContentTranslationRequest(
+                contentType: 'post',
+                contentId: _currentPost.id,
+                sourceFields: postTranslationSourceFields(_currentPost),
+              ),
+              scope: 'post:${_currentPost.id}',
+              showToggle: false,
+              builder: (context, fields) => PostLinkifiedText(
+                text: fields['content'] ?? content,
+                textAlign: TextAlign.left,
+                style: TextStyle(
+                  fontFamily: 'Inter',
+                  fontFamilyFallback: const ['NotoSansKR'],
+                  fontSize: contentFontSize,
+                  fontWeight: FontWeight.w500,
+                  color: BrandColors.textPrimary,
+                  height: 1.28,
+                  letterSpacing: -0.25,
+                ),
+              ),
             ),
-          ),
         ],
       ],
     );
@@ -3106,7 +3138,7 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
     }
 
     final hasTranslatablePostText =
-        _getUnifiedBodyText(_currentPost).trim().isNotEmpty;
+        postTranslationSourceFields(_currentPost).isNotEmpty;
 
     return Scaffold(
       resizeToAvoidBottomInset: true,
@@ -3122,7 +3154,7 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
         title: const SizedBox.shrink(),
         centerTitle: false,
         actions: [
-          if (hasTranslatablePostText) ...[
+          if (hasTranslatablePostText && !_isOwnPostTranslation) ...[
             TranslationScopeToggle(
               scope: 'post:${_currentPost.id}',
               appBarAction: true,

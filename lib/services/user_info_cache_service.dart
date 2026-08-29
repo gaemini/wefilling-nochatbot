@@ -372,6 +372,30 @@ class UserInfoCacheService {
     return _cache[_cacheKey(userId)];
   }
 
+  /// Write through only the signed-in user's own profile after a successful
+  /// server profile transaction. No other profile cache is cleared or fetched.
+  Future<void> updateCurrentUserProfile({
+    required String uid,
+    required String nickname,
+    required String photoURL,
+    required int photoVersion,
+    required String nationality,
+  }) async {
+    final ownerUid = _auth.currentUser?.uid;
+    if (ownerUid == null || ownerUid != uid) return;
+    final key = '$ownerUid::$uid';
+    final info = DMUserInfo(
+      uid: uid,
+      nickname: nickname,
+      photoURL: photoURL,
+      photoVersion: photoVersion,
+      nationality: nationality,
+    );
+    _cache[key] = info;
+    _cacheTimestamps[key] = DateTime.now();
+    await _persistUser(ownerUid, info);
+  }
+
   /// 피드 카드용 휴대폰 캐시 전용 스트림입니다.
   ///
   /// 카드가 스크롤로 다시 생성될 때 Firestore listener를 열지 않고 메모리와

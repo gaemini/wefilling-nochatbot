@@ -48,6 +48,20 @@ class SnackChatCard extends StatelessWidget {
     return isKo ? '$period $hour:$minute' : '$hour:$minute $period';
   }
 
+  String? _remainingTimeLabel({required bool isKo}) {
+    if (snackChat.activeDurationHours != 24) return null;
+    final remaining = snackChat.expiresAt.difference(DateTime.now());
+    if (remaining <= Duration.zero) return isKo ? '만료됨' : 'Expired';
+    if (remaining.inSeconds < 60) return isKo ? '곧 만료' : 'Ending soon';
+
+    final minutes = (remaining.inSeconds / 60).ceil();
+    if (minutes < 60) {
+      return isKo ? '$minutes분 남음' : '$minutes min left';
+    }
+    final hours = (minutes / 60).ceil();
+    return isKo ? '$hours시간 남음' : '$hours h left';
+  }
+
   String _localizedSystemPreview(String raw, {required bool isKo}) {
     RegExpMatch? match =
         RegExp(r'^(.+) joined the Snack Chat\.$').firstMatch(raw);
@@ -102,6 +116,7 @@ class SnackChatCard extends StatelessWidget {
         (screenWidth * 0.045).clamp(14.0, 20.0).toDouble();
     final isCompact = screenWidth < 360;
     final is24HourChat = snackChat.activeDurationHours == 24;
+    final remainingTimeLabel = _remainingTimeLabel(isKo: isKo);
     final isFavorited = snackChat.isFavoritedBy(currentUserId);
     final unreadCount =
         currentUserId == null ? 0 : snackChat.getMyUnreadCount(currentUserId!);
@@ -125,188 +140,222 @@ class SnackChatCard extends StatelessWidget {
       child: InkWell(
         onTap: onTap,
         onLongPress: onLongPress,
-        child: Container(
-          constraints: const BoxConstraints(minHeight: 68),
-          padding: EdgeInsets.fromLTRB(
-            horizontalPadding,
-            6,
-            isCompact ? 10 : 12,
-            6,
-          ),
-          decoration: const BoxDecoration(
-            border: Border(
-              bottom: BorderSide(color: BrandColors.divider),
+        child: MediaQuery.withClampedTextScaling(
+          maxScaleFactor: 1.3,
+          child: Container(
+            constraints: const BoxConstraints(minHeight: 68),
+            padding: EdgeInsets.fromLTRB(
+              horizontalPadding,
+              7,
+              isCompact ? 10 : 12,
+              7,
             ),
-          ),
-          child: Row(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              if (is24HourChat)
-                AudienceRing(
-                  restricted: true,
-                  size: 52,
-                  ringWidth: 3,
-                  innerGap: 1.5,
-                  borderRadius: BorderRadius.circular(11),
-                  semanticLabel: isKo ? '24시간 스낵챗' : '24-hour Snack Chat',
-                  child: _ParticipantAvatarMosaic(
+            decoration: const BoxDecoration(
+              border: Border(
+                bottom: BorderSide(color: BrandColors.divider),
+              ),
+            ),
+            child: Row(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                if (is24HourChat)
+                  AudienceRing(
+                    restricted: true,
+                    size: 52,
+                    ringWidth: 3,
+                    innerGap: 1.5,
+                    borderRadius: BorderRadius.circular(11),
+                    semanticLabel: isKo ? '24시간 스낵챗' : '24-hour Snack Chat',
+                    child: _ParticipantAvatarMosaic(
+                      participantIds: snackChat.participantIds,
+                      currentUserId: currentUserId,
+                    ),
+                  )
+                else
+                  _ParticipantAvatarMosaic(
                     participantIds: snackChat.participantIds,
                     currentUserId: currentUserId,
                   ),
-                )
-              else
-                _ParticipantAvatarMosaic(
-                  participantIds: snackChat.participantIds,
-                  currentUserId: currentUserId,
-                ),
-              SizedBox(width: isCompact ? 9 : 11),
-              Expanded(
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Row(
-                      children: [
-                        Flexible(
-                          child: Text(
-                            snackChat.title,
-                            maxLines: 1,
-                            overflow: TextOverflow.ellipsis,
-                            style: TextStyle(
-                              fontFamily: 'Inter',
-                              fontFamilyFallback: const ['NotoSansKR'],
-                              fontSize: 17,
-                              height: 1.25,
-                              fontWeight:
-                                  hasUnread ? FontWeight.w800 : FontWeight.w700,
-                              color: BrandColors.textPrimary,
-                            ),
-                          ),
-                        ),
-                        const SizedBox(width: 5),
-                        Text(
-                          '${snackChat.participantCount}',
-                          style: const TextStyle(
-                            fontFamily: 'Inter',
-                            fontFamilyFallback: const ['NotoSansKR'],
-                            fontSize: 14,
-                            height: 1.25,
-                            fontWeight: FontWeight.w600,
-                            color: BrandColors.neutral500,
-                          ),
-                        ),
-                        if (isMuted) ...[
-                          const SizedBox(width: 3),
-                          const Icon(
-                            Icons.notifications_off_rounded,
-                            size: 14,
-                            color: BrandColors.neutral500,
-                          ),
-                        ],
-                      ],
-                    ),
-                    const SizedBox(height: 4),
-                    Text(
-                      lastMessage,
-                      maxLines: 1,
-                      overflow: TextOverflow.ellipsis,
-                      style: TextStyle(
-                        fontFamily: 'Inter',
-                        fontFamilyFallback: const ['NotoSansKR'],
-                        fontSize: 13,
-                        height: 1.35,
-                        fontWeight:
-                            hasUnread ? FontWeight.w600 : FontWeight.w400,
-                        color: rawLastMessage.isEmpty
-                            ? BrandColors.textHint
-                            : hasUnread
-                                ? BrandColors.textPrimary
-                                : BrandColors.neutral500,
-                      ),
-                    ),
-                  ],
-                ),
-              ),
-              const SizedBox(width: 6),
-              SizedBox(
-                width: 54,
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.end,
-                  children: [
-                    Text(
-                      _formattedListTime(context),
-                      maxLines: 1,
-                      overflow: TextOverflow.ellipsis,
-                      style: TextStyle(
-                        fontFamily: 'Inter',
-                        fontFamilyFallback: const ['NotoSansKR'],
-                        fontSize: 11,
-                        height: 1.25,
-                        fontWeight:
-                            hasUnread ? FontWeight.w700 : FontWeight.w500,
-                        color: hasUnread
-                            ? BrandColors.textPrimary
-                            : BrandColors.neutral500,
-                      ),
-                    ),
-                    const SizedBox(height: 5),
-                    Row(
-                      mainAxisAlignment: MainAxisAlignment.end,
-                      children: [
-                        if (hasUnread) ...[
-                          Container(
-                            constraints: const BoxConstraints(minWidth: 19),
-                            padding: const EdgeInsets.symmetric(
-                              horizontal: 5,
-                              vertical: 2,
-                            ),
-                            decoration: BoxDecoration(
-                              color: BrandColors.info,
-                              borderRadius: BorderRadius.circular(999),
-                            ),
+                SizedBox(width: isCompact ? 9 : 11),
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Row(
+                        children: [
+                          Flexible(
                             child: Text(
-                              unreadCount > 99 ? '99+' : '$unreadCount',
-                              textAlign: TextAlign.center,
-                              style: const TextStyle(
+                              snackChat.title,
+                              maxLines: 1,
+                              overflow: TextOverflow.ellipsis,
+                              style: TextStyle(
                                 fontFamily: 'Inter',
                                 fontFamilyFallback: const ['NotoSansKR'],
-                                fontSize: 9.5,
-                                height: 1.2,
-                                fontWeight: FontWeight.w700,
-                                color: Colors.white,
+                                fontSize: 17,
+                                height: 1.25,
+                                fontWeight: hasUnread
+                                    ? FontWeight.w800
+                                    : FontWeight.w700,
+                                color: BrandColors.textPrimary,
                               ),
                             ),
                           ),
-                          const SizedBox(width: 3),
+                          const SizedBox(width: 5),
+                          Text(
+                            '${snackChat.participantCount}',
+                            style: const TextStyle(
+                              fontFamily: 'Inter',
+                              fontFamilyFallback: ['NotoSansKR'],
+                              fontSize: 14,
+                              height: 1.25,
+                              fontWeight: FontWeight.w600,
+                              color: BrandColors.neutral500,
+                            ),
+                          ),
+                          if (isMuted) ...[
+                            const SizedBox(width: 3),
+                            const Icon(
+                              Icons.notifications_off_rounded,
+                              size: 14,
+                              color: BrandColors.neutral500,
+                            ),
+                          ],
                         ],
-                        Semantics(
-                          button: true,
-                          selected: isFavorited,
-                          label: isFavorited
-                              ? (isKo ? '즐겨찾기 해제' : 'Remove favorite')
-                              : (isKo ? '즐겨찾기' : 'Favorite'),
-                          child: InkResponse(
-                            onTap: onToggleFavorite,
-                            radius: 18,
-                            child: Padding(
-                              padding: const EdgeInsets.all(4),
+                      ),
+                      const SizedBox(height: 4),
+                      Text(
+                        lastMessage,
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                        style: TextStyle(
+                          fontFamily: 'Inter',
+                          fontFamilyFallback: const ['NotoSansKR'],
+                          fontSize: 13,
+                          height: 1.35,
+                          fontWeight:
+                              hasUnread ? FontWeight.w600 : FontWeight.w400,
+                          color: rawLastMessage.isEmpty
+                              ? BrandColors.textHint
+                              : hasUnread
+                                  ? BrandColors.textPrimary
+                                  : BrandColors.neutral500,
+                        ),
+                      ),
+                      if (remainingTimeLabel != null) ...[
+                        const SizedBox(height: 2),
+                        Row(
+                          children: [
+                            const ExcludeSemantics(
                               child: Icon(
-                                isFavorited
-                                    ? Icons.star_rounded
-                                    : Icons.star_border_rounded,
-                                size: 18,
-                                color: isFavorited
-                                    ? BrandColors.warning
-                                    : BrandColors.neutral400,
+                                Icons.schedule_rounded,
+                                size: 12,
+                                color: BrandColors.neutral500,
                               ),
                             ),
-                          ),
+                            const SizedBox(width: 3),
+                            Flexible(
+                              child: Text(
+                                remainingTimeLabel,
+                                maxLines: 1,
+                                overflow: TextOverflow.ellipsis,
+                                style: const TextStyle(
+                                  fontFamily: 'Inter',
+                                  fontFamilyFallback: ['NotoSansKR'],
+                                  fontSize: 10.5,
+                                  height: 1.2,
+                                  fontWeight: FontWeight.w600,
+                                  color: BrandColors.neutral500,
+                                ),
+                              ),
+                            ),
+                          ],
                         ),
                       ],
-                    ),
-                  ],
+                    ],
+                  ),
                 ),
-              ),
-            ],
+                const SizedBox(width: 6),
+                SizedBox(
+                  width: 54,
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.end,
+                    children: [
+                      Text(
+                        _formattedListTime(context),
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                        style: TextStyle(
+                          fontFamily: 'Inter',
+                          fontFamilyFallback: const ['NotoSansKR'],
+                          fontSize: 11,
+                          height: 1.25,
+                          fontWeight:
+                              hasUnread ? FontWeight.w700 : FontWeight.w500,
+                          color: hasUnread
+                              ? BrandColors.textPrimary
+                              : BrandColors.neutral500,
+                        ),
+                      ),
+                      const SizedBox(height: 5),
+                      Row(
+                        mainAxisAlignment: MainAxisAlignment.end,
+                        children: [
+                          if (hasUnread) ...[
+                            Container(
+                              constraints: const BoxConstraints(minWidth: 19),
+                              padding: const EdgeInsets.symmetric(
+                                horizontal: 5,
+                                vertical: 2,
+                              ),
+                              decoration: BoxDecoration(
+                                color: BrandColors.info,
+                                borderRadius: BorderRadius.circular(999),
+                              ),
+                              child: Text(
+                                unreadCount > 99 ? '99+' : '$unreadCount',
+                                textAlign: TextAlign.center,
+                                style: const TextStyle(
+                                  fontFamily: 'Inter',
+                                  fontFamilyFallback: ['NotoSansKR'],
+                                  fontSize: 9.5,
+                                  height: 1.2,
+                                  fontWeight: FontWeight.w700,
+                                  color: Colors.white,
+                                ),
+                              ),
+                            ),
+                            const SizedBox(width: 3),
+                          ],
+                          Semantics(
+                            button: true,
+                            selected: isFavorited,
+                            label: isFavorited
+                                ? (isKo ? '즐겨찾기 해제' : 'Remove favorite')
+                                : (isKo ? '즐겨찾기' : 'Favorite'),
+                            child: InkResponse(
+                              onTap: onToggleFavorite,
+                              radius: 18,
+                              child: Padding(
+                                padding: const EdgeInsets.all(4),
+                                child: Icon(
+                                  isFavorited
+                                      ? Icons.star_rounded
+                                      : Icons.star_border_rounded,
+                                  size: 18,
+                                  color: isFavorited
+                                      ? BrandColors.warning
+                                      : BrandColors.neutral400,
+                                ),
+                              ),
+                            ),
+                          ),
+                        ],
+                      ),
+                    ],
+                  ),
+                ),
+              ],
+            ),
           ),
         ),
       ),

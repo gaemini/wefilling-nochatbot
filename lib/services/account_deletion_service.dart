@@ -1,10 +1,11 @@
 import 'dart:async';
-import 'dart:io' show Platform;
 import 'package:cloud_functions/cloud_functions.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:google_sign_in/google_sign_in.dart';
 import '../config/app_config.dart';
+import '../repositories/users_repository.dart';
 import '../utils/logger.dart';
+import 'user_info_cache_service.dart';
 
 class AccountDeletionService {
   final FirebaseFunctions _functions = FirebaseFunctions.instance;
@@ -20,18 +21,19 @@ class AccountDeletionService {
     try {
       // Google Sign-In 7.x API 사용
       final GoogleSignIn googleSignIn = GoogleSignIn.instance;
-      
+
       // 플랫폼별 clientId 분기 (iOS/macOS만)
       final clientId = AppConfig.getGoogleClientId();
       await googleSignIn.initialize(clientId: clientId);
-      
+
       // 기존 로그인 세션 초기화
       await googleSignIn.signOut();
-      
+
       // authenticate 메소드로 재인증
       final GoogleSignInAccount googleUser = await googleSignIn.authenticate();
 
-      final GoogleSignInAuthentication googleAuth = await googleUser.authentication;
+      final GoogleSignInAuthentication googleAuth =
+          await googleUser.authentication;
 
       final credential = GoogleAuthProvider.credential(
         idToken: googleAuth.idToken,
@@ -63,6 +65,7 @@ class AccountDeletionService {
   }
 
   Future<void> deleteAccountImmediately({required String reason}) async {
+    final deletingUid = _auth.currentUser?.uid;
     // 🔥 iOS 크래시 방지: 네이티브 gRPC 통신에 명시적 타임아웃 추가
     final callable = _functions.httpsCallable('deleteAccountImmediately');
     await callable.call({
@@ -74,5 +77,9 @@ class AccountDeletionService {
         throw TimeoutException('계정 삭제 시간 초과');
       },
     );
+    if (deletingUid != null) {
+      UserInfoCacheService().invalidateUser(deletingUid);
+      UsersRepository().invalidateCache(deletingUid);
+    }
   }
 }

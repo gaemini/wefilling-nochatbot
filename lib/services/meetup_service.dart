@@ -457,8 +457,14 @@ class MeetupService {
 
     List<Meetup> latestA = const [];
     List<Meetup> latestB = const [];
+    var hasA = false;
+    var hasB = false;
 
     void emit() {
+      // 초기 구독에서 한쪽 쿼리의 빈 기본값을 완성된 결과처럼 먼저
+      // 방출하면 목록이 잠깐 사라졌다 다시 나타난다. 양쪽 첫 결과가
+      // 준비된 뒤부터 병합해 PageView의 불필요한 레이아웃 교체를 막는다.
+      if (!hasA || !hasB) return;
       final byId = <String, Meetup>{};
       for (final m in latestA) {
         byId[m.id] = m;
@@ -480,12 +486,22 @@ class MeetupService {
       onListen: () {
         subA = a.listen((v) {
           latestA = v;
+          hasA = true;
           emit();
-        }, onError: controller.addError);
+        }, onError: (Object error, StackTrace stackTrace) {
+          hasA = true;
+          controller.addError(error, stackTrace);
+          emit();
+        });
         subB = b.listen((v) {
           latestB = v;
+          hasB = true;
           emit();
-        }, onError: controller.addError);
+        }, onError: (Object error, StackTrace stackTrace) {
+          hasB = true;
+          controller.addError(error, stackTrace);
+          emit();
+        });
       },
       onCancel: () async {
         await subA?.cancel();
@@ -671,10 +687,22 @@ class MeetupService {
   /// - dateKey range + Timestamp range를 병합(중복 제거)합니다.
   /// - 공개범위(친구/카테고리) 필터 + 차단 필터를 적용합니다.
   Stream<List<Meetup>> watchVisibleMeetupsForMonth(DateTime focusedMonth) {
-    final monthStart = _monthStart(focusedMonth);
-    final monthEnd = _monthEnd(focusedMonth);
-    final startKey = _dateKey(monthStart);
-    final endKey = _dateKey(monthEnd);
+    return watchVisibleMeetupsForMonthRange(
+      firstMonth: focusedMonth,
+      lastMonth: focusedMonth,
+    );
+  }
+
+  /// 날짜 PageView가 월 경계를 넘을 때 목록 스트림을 즉시 교체하지 않도록
+  /// 인접한 여러 달을 하나의 제한된 실시간 범위로 조회합니다.
+  Stream<List<Meetup>> watchVisibleMeetupsForMonthRange({
+    required DateTime firstMonth,
+    required DateTime lastMonth,
+  }) {
+    final rangeStart = _monthStart(firstMonth);
+    final rangeEnd = _monthEnd(lastMonth);
+    final startKey = _dateKey(rangeStart);
+    final endKey = _dateKey(rangeEnd);
 
     final byDateKeyRange = _watchAudienceScopedMeetupQuery(_firestore
         .collection('meetups')
@@ -684,8 +712,8 @@ class MeetupService {
 
     final byTimestampRange = _watchAudienceScopedMeetupQuery(_firestore
         .collection('meetups')
-        .where('date', isGreaterThanOrEqualTo: monthStart)
-        .where('date', isLessThanOrEqualTo: monthEnd)
+        .where('date', isGreaterThanOrEqualTo: rangeStart)
+        .where('date', isLessThanOrEqualTo: rangeEnd)
         .orderBy('date', descending: false));
 
     return _combineMeetupStreams(byDateKeyRange, byTimestampRange);

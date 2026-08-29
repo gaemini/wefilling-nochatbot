@@ -43,6 +43,10 @@ const MAX_REDIRECTS = 4;
 const LINK_CACHE_TTL_MS = 24 * 60 * 60 * 1000;
 const EVENT_TTL_MS = 30 * 24 * 60 * 60 * 1000;
 const CURRENT_LIST_POLICY_VERSION = 2;
+// Version 3 re-audits rooms that were marked clean while deleted-account
+// cleanup triggers were not deployed. Each legacy room pays this read cost
+// only once; future account deletions are handled by the deletion triggers.
+const CURRENT_PARTICIPANT_INTEGRITY_VERSION = 3;
 const MAX_ROOM_PARTICIPANTS = 50;
 const MAX_PUSH_TOKENS_PER_USER = 20;
 const MAX_MEMBERSHIP_EVENT_WINDOW = 64;
@@ -150,12 +154,37 @@ function nextRoomMessageTimestamp(
 }
 
 function activeUserData(data: Data): boolean {
-  return data.isDeleted !== true &&
-    data.deleted !== true &&
-    data.disabled !== true &&
-    data.isSuspended !== true &&
-    data.status !== 'deleted' &&
-    data.status !== 'suspended';
+  const status = stringValue(data.status ?? data.accountStatus).toLowerCase();
+  const registrationStatus = stringValue(data.registrationStatus)
+    .toLowerCase();
+  const nickname = stringValue(data.nickname ?? data.displayName);
+  if (data.isDeleted === true ||
+      data.deleted === true ||
+      data.disabled === true ||
+      data.isSuspended === true ||
+      data.deletedAt != null ||
+      status === 'deleted' ||
+      status === 'suspended' ||
+      registrationStatus === 'deleted' ||
+      nickname === 'DELETED_ACCOUNT' ||
+      nickname === 'Deleted') {
+    return false;
+  }
+
+  // A delayed token/profile merge can recreate an empty users/{uid} shell
+  // after account deletion. Match the client rule so this shell is never
+  // counted as a current Snack Chat participant.
+  const email = stringValue(data.email);
+  const hanyangEmail = stringValue(data.hanyangEmail);
+  return nickname.length > 0 || email.length > 0 || hanyangEmail.length > 0;
+}
+
+function deletedUserData(data: Data): boolean {
+  return data.isDeleted === true ||
+    data.deleted === true ||
+    data.status === 'deleted' ||
+    data.accountStatus === 'deleted' ||
+    data.registrationStatus === 'deleted';
 }
 
 function requireUid(context: functions.https.CallableContext): string {
@@ -283,6 +312,32 @@ function assertFriendshipSnapshot(
       'Only friends can be invited to a Snack Chat.',
     );
   }
+}
+
+/**
+ * Invitation authority belongs to every current participant, not only the
+ * room creator. Membership additions still go through the Admin transaction
+ * below so clients cannot forge participantIds or unread counters.
+ */
+function requireSnackChatInviteParticipants(
+  room: FirebaseFirestore.DocumentSnapshot,
+  inviterId: string,
+): string[] {
+  const current = uniqueStrings(room.get('participantIds'));
+  if (!current.includes(inviterId)) {
+    throw new functions.https.HttpsError(
+      'permission-denied',
+      'Only current room participants can invite participants.',
+    );
+  }
+  if (room.get('allowMeetupJoin') === true ||
+      stringValue(room.get('meetupId')).length > 0) {
+    throw new functions.https.HttpsError(
+      'failed-precondition',
+      'Meetup Snack Chat participants must join through the Meetup.',
+    );
+  }
+  return current;
 }
 
 function meetupAudienceAllows(data: Data, userId: string): boolean {
@@ -1543,6 +1598,7 @@ export const createSnackChatSecure = functions
         visibleToCategoryIds,
         createdAt: now,
         listPolicyVersion: CURRENT_LIST_POLICY_VERSION,
+        participantIntegrityVersion: CURRENT_PARTICIPANT_INTEGRITY_VERSION,
         activeDurationHours,
         expiresAt,
         favoriteUserIds: [],
@@ -1817,6 +1873,7 @@ export const createMeetupSnackChatSecure = functions
         allowMeetupJoin: true,
         createdAt: now,
         listPolicyVersion: CURRENT_LIST_POLICY_VERSION,
+        participantIntegrityVersion: CURRENT_PARTICIPANT_INTEGRITY_VERSION,
         activeDurationHours: 24,
         expiresAt,
         favoriteUserIds: [],
@@ -1868,20 +1925,7 @@ export const inviteSnackChatParticipants = functions
           'Snack Chat not found.',
         );
       }
-      const current = uniqueStrings(room.get('participantIds'));
-      if (!current.includes(inviterId)) {
-        throw new functions.https.HttpsError(
-          'permission-denied',
-          'Only current room participants can invite participants.',
-        );
-      }
-      if (room.get('allowMeetupJoin') === true ||
-          stringValue(room.get('meetupId')).length > 0) {
-        throw new functions.https.HttpsError(
-          'failed-precondition',
-          'Meetup Snack Chat participants must join through the Meetup.',
-        );
-      }
+      const current = requireSnackChatInviteParticipants(room, inviterId);
       const currentSet = new Set(current);
       const toAdd = requestedIds.filter((id) => !currentSet.has(id));
       if (toAdd.length === 0) return [];
@@ -2335,26 +2379,218 @@ export const leaveSnackChatSecure = functions
       }
       const participants = uniqueStrings(room.get('participantIds'));
       if (!participants.includes(userId)) return false;
-
-      const nextParticipants = participants.filter((id) => id !== userId);
-      const previousUnread = normalizedCountMap(room.get('unreadCount'));
-      const unreadCount: Record<string, number> = {};
-      nextParticipants.forEach((id) => {
-        unreadCount[id] = previousUnread[id] ?? 0;
-      });
-
-      const update: Record<string, unknown> = {
-        participantIds: nextParticipants,
-        unreadCount,
-        updatedAt: FieldValue.serverTimestamp(),
-      };
-      if (stringValue(room.get('creatorId')) === userId) {
-        update.creatorId = nextParticipants[0] ?? '';
-      }
-      transaction.update(roomRef, update);
+      transaction.update(roomRef, snackChatDepartureUpdate(room, userId));
       return true;
     });
     return {success: true, left};
+  });
+
+/**
+ * Builds the canonical room update for both an explicit leave and account
+ * deletion. Current membership is the sole source for participant counts;
+ * historical member periods and messages remain intact.
+ */
+function snackChatDepartureUpdate(
+  room: FirebaseFirestore.DocumentSnapshot,
+  userId: string,
+): Record<string, unknown> {
+  return snackChatParticipantRemovalUpdate(room, new Set([userId]));
+}
+
+function snackChatParticipantRemovalUpdate(
+  room: FirebaseFirestore.DocumentSnapshot,
+  removedUserIds: Set<string>,
+): Record<string, unknown> {
+  const participants = uniqueStrings(room.get('participantIds'));
+  const nextParticipants = participants.filter(
+    (id) => !removedUserIds.has(id),
+  );
+  const previousUnread = normalizedCountMap(room.get('unreadCount'));
+  const unreadCount: Record<string, number> = {};
+  nextParticipants.forEach((id) => {
+    unreadCount[id] = previousUnread[id] ?? 0;
+  });
+
+  const update: Record<string, unknown> = {
+    participantIds: nextParticipants,
+    unreadCount,
+    updatedAt: FieldValue.serverTimestamp(),
+  };
+  if (removedUserIds.has(stringValue(room.get('creatorId')))) {
+    update.creatorId = nextParticipants[0] ?? '';
+  }
+  const favorites = uniqueStrings(room.get('favoriteUserIds'));
+  if (favorites.some((id) => removedUserIds.has(id))) {
+    update.favoriteUserIds = favorites.filter(
+      (id) => !removedUserIds.has(id),
+    );
+  }
+  return update;
+}
+
+/**
+ * Removes a user from every current Snack Chat membership. Each room uses a
+ * transaction so a concurrent message/unread update or invitation is never
+ * overwritten by a stale account-deletion snapshot. Calling this repeatedly
+ * is safe and returns the number of rooms changed by this invocation.
+ */
+export async function removeUserFromAllSnackChats(
+  rawUserId: string,
+): Promise<number> {
+  const userId = stringValue(rawUserId);
+  if (!userId) return 0;
+
+  const rooms = await db().collection(SNACK_CHATS)
+    .where('participantIds', 'array-contains', userId)
+    .get();
+  let removedRoomCount = 0;
+  await runWithConcurrency(rooms.docs, 8, async (roomSnapshot) => {
+    const removed = await db().runTransaction(async (transaction) => {
+      const currentRoom = await transaction.get(roomSnapshot.ref);
+      if (!currentRoom.exists) return false;
+      const participants = uniqueStrings(currentRoom.get('participantIds'));
+      if (!participants.includes(userId)) return false;
+      transaction.update(
+        currentRoom.ref,
+        snackChatDepartureUpdate(currentRoom, userId),
+      );
+      return true;
+    });
+    if (removed) removedRoomCount += 1;
+  });
+  return removedRoomCount;
+}
+
+/**
+ * Audits each legacy room once. New rooms and future membership mutations are
+ * already authoritative; the persisted version prevents recurring profile
+ * reads after this one-time repair has completed.
+ */
+export const reconcileSnackChatParticipantsSecure = functions
+  .runWith({timeoutSeconds: 30, memory: '256MB'})
+  .https.onCall(async (raw, context) => {
+    const callerId = requireUid(context);
+    await requireActiveUser(callerId);
+    const request = objectValue(raw);
+    const snackChatId = firestoreId(request.snackChatId, 'Snack Chat id');
+    const roomRef = db().collection(SNACK_CHATS).doc(snackChatId);
+
+    return db().runTransaction(async (transaction) => {
+      const room = await transaction.get(roomRef);
+      if (!room.exists) {
+        throw new functions.https.HttpsError(
+          'not-found',
+          'Snack Chat not found.',
+        );
+      }
+      const participants = uniqueStrings(room.get('participantIds'));
+      if (!participants.includes(callerId)) {
+        throw new functions.https.HttpsError(
+          'permission-denied',
+          'Only a current participant can reconcile this Snack Chat.',
+        );
+      }
+      if (nonNegativeInteger(room.get('participantIntegrityVersion')) >=
+          CURRENT_PARTICIPANT_INTEGRITY_VERSION) {
+        return {
+          success: true,
+          removedUserIds: [],
+          participantCount: participants.length,
+        };
+      }
+
+      const userReferences = participants.map((id) =>
+        db().collection(USERS).doc(id));
+      const memberReferences = participants.map((id) =>
+        roomRef.collection('members').doc(id));
+      const participantDocuments = await transaction.getAll(
+        ...userReferences,
+        ...memberReferences,
+      );
+      const userDocuments = participantDocuments.slice(0, participants.length);
+      const memberDocuments = participantDocuments.slice(participants.length);
+      const removedUserIds = participants.filter((userId, index) => {
+        const user = userDocuments[index];
+        const member = memberDocuments[index];
+        const unavailableAccount =
+          !user.exists || !activeUserData(user.data() ?? {});
+        // A missing legacy member projection is not evidence of departure.
+        // An explicit `left` projection is safe to reconcile, except for the
+        // authenticated caller whose current room access was just verified.
+        const explicitlyLeft = userId !== callerId &&
+          member.exists && stringValue(member.get('status')) === 'left';
+        return unavailableAccount || explicitlyLeft;
+      });
+      const removed = new Set(removedUserIds);
+      const update = removed.size > 0
+        ? snackChatParticipantRemovalUpdate(room, removed)
+        : {
+          updatedAt: FieldValue.serverTimestamp(),
+        };
+      transaction.update(
+        roomRef,
+        {
+          ...update,
+          participantIntegrityVersion:
+            CURRENT_PARTICIPANT_INTEGRITY_VERSION,
+          participantIntegrityCheckedAt: FieldValue.serverTimestamp(),
+        },
+      );
+      return {
+        success: true,
+        removedUserIds,
+        participantCount: participants.filter((id) => !removed.has(id)).length,
+      };
+    });
+  });
+
+/**
+ * Backstop for account deletion paths outside the primary callable. The
+ * cleanup is idempotent, so the normal pre-delete cleanup and this Auth event
+ * may safely overlap or retry.
+ */
+export const onDeletedAuthUserSnackChatCleanup = functions
+  .runWith({
+    timeoutSeconds: 300,
+    memory: '512MB',
+    failurePolicy: true,
+  })
+  .auth.user()
+  .onDelete(async (user) => {
+    const removedRoomCount = await removeUserFromAllSnackChats(user.uid);
+    console.log(
+      'Deleted account removed from Snack Chats.',
+      {userId: user.uid, removedRoomCount},
+    );
+  });
+
+/**
+ * Covers account-removal flows that delete/tombstone the Firestore profile
+ * before (or without) the Auth delete event. The same idempotent transaction
+ * helper is shared with the callable and Auth trigger, so concurrent retries
+ * cannot double-decrement a room.
+ */
+export const onDeletedUserDocumentSnackChatCleanup = functions
+  .runWith({
+    timeoutSeconds: 300,
+    memory: '512MB',
+    failurePolicy: true,
+  })
+  .firestore.document('users/{userId}')
+  .onWrite(async (change, context) => {
+    const beforeData = change.before.data() ?? {};
+    const afterData = change.after.data() ?? {};
+    const wasDeleted = !change.before.exists || deletedUserData(beforeData);
+    const isDeleted = !change.after.exists || deletedUserData(afterData);
+    if (wasDeleted || !isDeleted) return null;
+
+    const userId = stringValue(context.params.userId);
+    const removedRoomCount = await removeUserFromAllSnackChats(userId);
+    console.log(
+      'Deleted user document removed from Snack Chats.',
+      {userId, removedRoomCount},
+    );
+    return null;
   });
 
 /** Creator-only title update. The existing room-write trigger emits the
@@ -3335,6 +3571,11 @@ export const onSnackChatRoomWrittenSecure = functions
 
     const before = change.before.data() ?? {};
     const beforeParticipants = new Set(uniqueStrings(before.participantIds));
+    const isLegacyParticipantIntegrityRepair =
+      nonNegativeInteger(before.participantIntegrityVersion) <
+        CURRENT_PARTICIPANT_INTEGRITY_VERSION &&
+      nonNegativeInteger(after.participantIntegrityVersion) >=
+        CURRENT_PARTICIPANT_INTEGRITY_VERSION;
     const added = Array.from(afterParticipants)
       .filter((userId) => !beforeParticipants.has(userId))
       .sort();
@@ -3361,23 +3602,28 @@ export const onSnackChatRoomWrittenSecure = functions
       }),
     );
 
-    await runWithConcurrency(membershipChanges, 4, async (membership) => {
-      const name = await userDisplayName(membership.userId);
-      const joined = membership.kind === 'join';
-      await createSystemMessage({
-        roomRef,
-        sourceEventId: context.eventId,
-        discriminator: membership.kind + ':' + membership.userId,
-        text: name + (joined
-          ? ' joined the Snack Chat.'
-          : ' left the Snack Chat.'),
-        metadata: {
-          systemType: joined ? 'member_joined' : 'member_left',
-          userId: membership.userId,
-          userName: name,
-        },
+    // A legacy integrity audit repairs historical source-of-truth drift. It
+    // must close membership periods but must not append a duplicate, present-
+    // day "left" message for an event that happened in the past.
+    if (!isLegacyParticipantIntegrityRepair) {
+      await runWithConcurrency(membershipChanges, 4, async (membership) => {
+        const name = await userDisplayName(membership.userId);
+        const joined = membership.kind === 'join';
+        await createSystemMessage({
+          roomRef,
+          sourceEventId: context.eventId,
+          discriminator: membership.kind + ':' + membership.userId,
+          text: name + (joined
+            ? ' joined the Snack Chat.'
+            : ' left the Snack Chat.'),
+          metadata: {
+            systemType: joined ? 'member_joined' : 'member_left',
+            userId: membership.userId,
+            userName: name,
+          },
+        });
       });
-    });
+    }
 
     const beforeTitle = boundedString(before.title, 40);
     const afterTitle = boundedString(after.title, 40);

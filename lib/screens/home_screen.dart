@@ -40,6 +40,7 @@ class MeetupHomePage extends StatefulWidget {
 }
 
 class MeetupHomePageState extends State<MeetupHomePage> with PreloadMixin {
+  static const int _maxCachedMeetupMonths = 12;
   final MeetupService _meetupService = MeetupService();
   final MeetupCalendarCacheService _calendarCache =
       MeetupCalendarCacheService.instance;
@@ -58,11 +59,19 @@ class MeetupHomePageState extends State<MeetupHomePage> with PreloadMixin {
   // ✅ 월 스트림 캐시(리빌드마다 재구독 방지 → 깜빡임 감소)
   late Stream<List<Meetup>> _visibleMonthStream;
   late Stream<List<Meetup>> _myRelevantMonthStream;
-  DateTime _streamMonthKey = DateTime(1970, 1, 1);
+  late Stream<List<Meetup>> _allUpcomingMeetupsStream;
+  DateTime _visibleRangeStart = DateTime(1970, 1, 1);
+  DateTime _visibleRangeEnd = DateTime(1970, 1, 1);
+  DateTime _myStreamMonthKey = DateTime(1970, 1, 1);
+  final Map<DateTime, List<Meetup>> _visibleMeetupMonthCache =
+      <DateTime, List<Meetup>>{};
+  final Map<DateTime, List<Meetup>> _myMeetupMonthCache =
+      <DateTime, List<Meetup>>{};
 
   // 참여 상태 캐시 (깜빡임 방지)
   final Map<String, bool> _participationStatusCache = {};
   final Map<String, DateTime> _participationCacheTime = {};
+  final ValueNotifier<int> _meetupCardRevision = ValueNotifier<int>(0);
   static const Duration _cacheValidDuration = Duration(minutes: 5);
 
   // 참여/나가기 연타 방지 + 최소 로딩 표시(1초)
@@ -86,6 +95,9 @@ class MeetupHomePageState extends State<MeetupHomePage> with PreloadMixin {
     _pageController = PageController(initialPage: _initialPageIndex);
 
     _ensureMonthStreams(_focusedMonth);
+    // 전체 목록은 화면 진입 때 한 번만 스트림을 만들고 재사용한다. 빌드마다
+    // 새 Firestore 구독을 만들지 않아 기존 월간 화면의 조회 흐름에 영향을 주지 않는다.
+    _allUpcomingMeetupsStream = _meetupService.getMeetupsByCategory('전체');
 
     // 친구공개(친구 모임) 마커 캐시 구동
     _calendarCache.start();
@@ -110,6 +122,7 @@ class MeetupHomePageState extends State<MeetupHomePage> with PreloadMixin {
     _pageController.dispose();
     _calendarMarkerRefreshTimer?.cancel();
     _calendarCache.removeListener(_onCalendarCacheChanged);
+    _meetupCardRevision.dispose();
     for (final subscription in _participationSubscriptions.values) {
       subscription?.cancel();
     }
@@ -129,11 +142,50 @@ class MeetupHomePageState extends State<MeetupHomePage> with PreloadMixin {
 
   void _ensureMonthStreams(DateTime month) {
     final key = _monthKey(month);
-    if (key == _streamMonthKey) return;
-    _streamMonthKey = key;
-    _visibleMonthStream = _meetupService.watchVisibleMeetupsForMonth(key);
-    _myRelevantMonthStream = _meetupService.watchMyRelevantMeetupsForMonth(key);
+    final visibleRangeContainsMonth =
+        !key.isBefore(_visibleRangeStart) && !key.isAfter(_visibleRangeEnd);
+    if (!visibleRangeContainsMonth) {
+      // 현재 월 양옆을 같은 스트림에 포함해 한 달 경계의 첫 스와이프가
+      // 네트워크 재구독과 스켈레톤 전환을 기다리지 않게 한다.
+      _visibleRangeStart = DateTime(key.year, key.month - 1, 1);
+      _visibleRangeEnd = DateTime(key.year, key.month + 1, 1);
+      _visibleMonthStream = _meetupService.watchVisibleMeetupsForMonthRange(
+        firstMonth: _visibleRangeStart,
+        lastMonth: _visibleRangeEnd,
+      );
+    }
+    if (key != _myStreamMonthKey) {
+      _myStreamMonthKey = key;
+      _myRelevantMonthStream =
+          _meetupService.watchMyRelevantMeetupsForMonth(key);
+    }
   }
+
+  void _cacheMeetupsByMonth(
+    Map<DateTime, List<Meetup>> cache,
+    Iterable<Meetup> meetups,
+    Iterable<DateTime> months,
+  ) {
+    final grouped = <DateTime, List<Meetup>>{};
+    for (final meetup in meetups) {
+      (grouped[_monthKey(meetup.date)] ??= <Meetup>[]).add(meetup);
+    }
+    for (final rawMonth in months) {
+      final month = _monthKey(rawMonth);
+      cache.remove(month);
+      cache[month] = grouped[month] ?? const <Meetup>[];
+    }
+    while (cache.length > _maxCachedMeetupMonths) {
+      cache.remove(cache.keys.first);
+    }
+  }
+
+  List<Meetup> _cachedVisibleRangeMeetups() => <Meetup>[
+        for (var month = _visibleRangeStart;
+            !month.isAfter(_visibleRangeEnd);
+            month = DateTime(month.year, month.month + 1, 1))
+          ...?_visibleMeetupMonthCache[month],
+      ];
 
   /// 포스트의 `오늘의 밋업`에서 진입할 때 기존 탭 상태와 무관하게 오늘을 연다.
   void showToday() {
@@ -348,6 +400,7 @@ class MeetupHomePageState extends State<MeetupHomePage> with PreloadMixin {
   void _updateParticipationCache(String meetupId, bool isParticipating) {
     _participationStatusCache[meetupId] = isParticipating;
     _participationCacheTime[meetupId] = DateTime.now();
+    _meetupCardRevision.value++;
   }
 
   Future<void> _loadParticipationStatus(String meetupId) async {
@@ -448,6 +501,24 @@ class MeetupHomePageState extends State<MeetupHomePage> with PreloadMixin {
         ),
       ),
     );
+  }
+
+  Future<void> _navigateToAllMeetups() async {
+    await Navigator.push(
+      context,
+      MaterialPageRoute(
+        builder: (_) => _AllMeetupsScreen(
+          meetupsStream: _allUpcomingMeetupsStream,
+          categoryKeyOf: (meetup) => _normalizeCategoryKey(meetup.category),
+          meetupCardBuilder: _buildMeetupCard,
+          meetupSkeletonBuilder: _buildMeetupSkeleton,
+          meetupCardRevision: _meetupCardRevision,
+          onCreateMeetup: _navigateToCreateMeetup,
+        ),
+      ),
+    );
+
+    if (mounted) setState(() {});
   }
 
   // ===== 후기 확인/수락 화면 =====
@@ -772,34 +843,41 @@ class MeetupHomePageState extends State<MeetupHomePage> with PreloadMixin {
       {'key': 'etc', 'label': AppLocalizations.of(context)!.other},
     ];
 
-    return Container(
-      padding: EdgeInsets.symmetric(
-        horizontal: isCompact ? 10 : (isExpanded ? 16 : 12),
-        vertical: outerVerticalPadding,
-      ),
+    return ColoredBox(
       color: Colors.white,
-      child: SingleChildScrollView(
-        scrollDirection: Axis.horizontal,
-        child: SizedBox(
-          height: itemHeight,
-          child: Row(
-            children: [
-              for (var i = 0; i < categories.length; i++) ...[
-                if (i != 0) SizedBox(width: isCompact ? 5 : 8),
-                _CategoryTabItem(
-                  label: categories[i]['label']!,
-                  selected: _selectedCategoryKey == categories[i]['key']!,
-                  height: itemHeight,
-                  fontSize: labelSize,
-                  horizontalPadding: isCompact ? 8 : 10,
-                  onTap: () {
-                    setState(() {
-                      _selectedCategoryKey = categories[i]['key']!;
-                    });
-                  },
+      child: Center(
+        child: ConstrainedBox(
+          constraints: const BoxConstraints(maxWidth: 720),
+          child: Padding(
+            padding: EdgeInsets.symmetric(
+              horizontal: isCompact ? 10 : (isExpanded ? 20 : 14),
+              vertical: outerVerticalPadding,
+            ),
+            child: SingleChildScrollView(
+              scrollDirection: Axis.horizontal,
+              child: SizedBox(
+                height: itemHeight,
+                child: Row(
+                  children: [
+                    for (var i = 0; i < categories.length; i++) ...[
+                      if (i != 0) SizedBox(width: isCompact ? 5 : 8),
+                      _CategoryTabItem(
+                        label: categories[i]['label']!,
+                        selected: _selectedCategoryKey == categories[i]['key']!,
+                        height: itemHeight,
+                        fontSize: labelSize,
+                        horizontalPadding: isCompact ? 8 : 10,
+                        onTap: () {
+                          setState(() {
+                            _selectedCategoryKey = categories[i]['key']!;
+                          });
+                        },
+                      ),
+                    ],
+                  ],
                 ),
-              ],
-            ],
+              ),
+            ),
           ),
         ),
       ),
@@ -810,53 +888,120 @@ class MeetupHomePageState extends State<MeetupHomePage> with PreloadMixin {
     final screenWidth = MediaQuery.sizeOf(context).width;
     final isCompact = screenWidth < 360;
     final isExpanded = screenWidth >= 600;
-    final headerHeight = isCompact ? 44.0 : (isExpanded ? 50.0 : 48.0);
+    final useShortAllLabel =
+        screenWidth < 370 || MediaQuery.textScalerOf(context).scale(14) > 17;
+    final headerHeight = isCompact ? 48.0 : (isExpanded ? 54.0 : 52.0);
     final labelSize = isCompact ? 14.0 : (isExpanded ? 16.0 : 15.0);
-    final iconSize = isCompact ? 22.0 : 24.0;
+    final iconSize = isCompact ? 20.0 : 22.0;
     final label = _isCalendarExpanded
         ? _expandedHeaderLabel(context, _focusedMonth)
         : _collapsedHeaderLabel(context, _selectedDay);
+    final l10n = AppLocalizations.of(context)!;
 
-    return Material(
+    return ColoredBox(
       color: Colors.white,
-      child: InkWell(
-        onTap: () {
-          setState(() {
-            _isCalendarExpanded = !_isCalendarExpanded;
-          });
-        },
-        child: SizedBox(
-          height: headerHeight,
-          child: Center(
-            child: MediaQuery.withClampedTextScaling(
-              maxScaleFactor: 1.2,
-              child: Row(
-                mainAxisSize: MainAxisSize.min,
-                children: [
-                  Flexible(
-                    child: Text(
-                      label,
-                      maxLines: 1,
-                      overflow: TextOverflow.ellipsis,
-                      style: TextStyle(
-                        fontFamily: 'Inter',
-                        fontFamilyFallback: const ['NotoSansKR'],
-                        fontSize: labelSize,
-                        fontWeight: FontWeight.w900,
-                        color: const Color(0xFF4B5563),
-                        height: 1.15,
+      child: Center(
+        child: ConstrainedBox(
+          constraints: const BoxConstraints(maxWidth: 720),
+          child: SizedBox(
+            height: headerHeight,
+            child: Padding(
+              padding: EdgeInsets.only(
+                left: isCompact ? 12 : (isExpanded ? 22 : 16),
+                right: isCompact ? 4 : (isExpanded ? 12 : 8),
+              ),
+              child: MediaQuery.withClampedTextScaling(
+                maxScaleFactor: 1.2,
+                child: Row(
+                  children: [
+                    Expanded(
+                      child: Align(
+                        alignment: Alignment.centerLeft,
+                        child: Material(
+                          color: Colors.transparent,
+                          child: InkWell(
+                            key: const Key('meetup_date_selector'),
+                            onTap: () {
+                              setState(() {
+                                _isCalendarExpanded = !_isCalendarExpanded;
+                              });
+                            },
+                            borderRadius: BorderRadius.circular(6),
+                            child: ConstrainedBox(
+                              constraints: const BoxConstraints(minHeight: 44),
+                              child: Row(
+                                mainAxisSize: MainAxisSize.min,
+                                children: [
+                                  Icon(
+                                    Icons.calendar_today_outlined,
+                                    size: isCompact ? 17 : 18,
+                                    color: const Color(0xFF475467),
+                                  ),
+                                  SizedBox(width: isCompact ? 7 : 8),
+                                  Flexible(
+                                    child: Text(
+                                      label,
+                                      maxLines: 1,
+                                      overflow: TextOverflow.ellipsis,
+                                      style: TextStyle(
+                                        fontFamily: 'Inter',
+                                        fontFamilyFallback: const [
+                                          'NotoSansKR'
+                                        ],
+                                        fontSize: labelSize,
+                                        fontWeight: FontWeight.w800,
+                                        color: const Color(0xFF111827),
+                                        height: 1.15,
+                                        letterSpacing: -0.15,
+                                      ),
+                                    ),
+                                  ),
+                                  const SizedBox(width: 2),
+                                  Icon(
+                                    _isCalendarExpanded
+                                        ? Icons.arrow_drop_up_rounded
+                                        : Icons.arrow_drop_down_rounded,
+                                    size: iconSize,
+                                    color: const Color(0xFF475467),
+                                  ),
+                                ],
+                              ),
+                            ),
+                          ),
+                        ),
                       ),
                     ),
-                  ),
-                  const SizedBox(width: 3),
-                  Icon(
-                    _isCalendarExpanded
-                        ? Icons.arrow_drop_up_rounded
-                        : Icons.arrow_drop_down_rounded,
-                    size: iconSize,
-                    color: const Color(0xFF111827),
-                  ),
-                ],
+                    const SizedBox(width: 8),
+                    TextButton.icon(
+                      key: const Key('all_meetups_button'),
+                      onPressed: _navigateToAllMeetups,
+                      style: TextButton.styleFrom(
+                        foregroundColor: const Color(0xFF475467),
+                        minimumSize: const Size(44, 44),
+                        padding: EdgeInsets.symmetric(
+                          horizontal: isCompact ? 6 : 8,
+                        ),
+                        tapTargetSize: MaterialTapTargetSize.padded,
+                      ),
+                      icon: Icon(
+                        Icons.format_list_bulleted_rounded,
+                        size: isCompact ? 18 : 19,
+                      ),
+                      label: Text(
+                        useShortAllLabel ? l10n.all : l10n.allMeetups,
+                        maxLines: 1,
+                        overflow: TextOverflow.fade,
+                        softWrap: false,
+                        style: TextStyle(
+                          fontFamily: 'Inter',
+                          fontFamilyFallback: const ['NotoSansKR'],
+                          fontSize: isCompact ? 12.5 : 13,
+                          fontWeight: FontWeight.w700,
+                        ),
+                      ),
+                    ),
+                  ],
+                ),
               ),
             ),
           ),
@@ -867,6 +1012,8 @@ class MeetupHomePageState extends State<MeetupHomePage> with PreloadMixin {
 
   Widget _buildCalendar({
     required Map<DateTime, List<Meetup>> myByDay,
+    required Map<DateTime, List<Meetup>> visibleByDay,
+    required double maxHeight,
   }) {
     final lang = Localizations.localeOf(context).languageCode;
     final today = _dayKey(DateTime.now());
@@ -882,133 +1029,156 @@ class MeetupHomePageState extends State<MeetupHomePage> with PreloadMixin {
       final key = _dayKey(day);
       // 친구가 만든 모임 중 현재 사용자가 카드를 볼 수 있고, 공개 시간과
       // 실제 일정이 모두 만료되지 않은 모임이 하나라도 있을 때 표시한다.
-      return _calendarCache.hasFriendMeetupOnDay(key);
+      // 목록은 실시간 쿼리 결과이므로 마지막 모임 문서가 삭제된 순간 false가
+      // 되어 10분 TTL 월 캐시의 오래된 테두리가 남지 않는다.
+      return visibleByDay[key]?.any(_calendarCache.isVisibleFriendMeetup) ??
+          false;
     }
 
     return AnimatedSize(
       duration: const Duration(milliseconds: 200),
       curve: Curves.easeOut,
       child: _isCalendarExpanded
-          ? Container(
-              color: Colors.white,
-              padding: const EdgeInsets.fromLTRB(12, 0, 12, 10),
-              child: TableCalendar<Meetup>(
-                firstDay: DateTime.utc(2020, 1, 1),
-                lastDay: DateTime.utc(2035, 12, 31),
-                focusedDay: _focusedMonth,
-                locale: lang == 'ko' ? 'ko_KR' : 'en_US',
-                calendarFormat: CalendarFormat.month,
-                rowHeight: MediaQuery.sizeOf(context).width < 360 ? 40 : 44,
-                daysOfWeekHeight: 30,
-                startingDayOfWeek: StartingDayOfWeek.sunday,
-                onPageChanged: (focusedDay) {
-                  setState(() {
-                    _focusedMonth = focusedDay;
-                    _ensureMonthStreams(focusedDay);
-                  });
-                  unawaited(_calendarCache.warmMonth(focusedDay));
-                },
-                selectedDayPredicate: (day) => isSameDay(_selectedDay, day),
-                onDaySelected: (selectedDay, focusedDay) {
-                  final newDateKey = _dayKey(selectedDay);
-                  setState(() {
-                    _selectedDay = newDateKey;
-                    _focusedMonth = focusedDay;
-                    _ensureMonthStreams(focusedDay);
-                  });
+          ? ConstrainedBox(
+              constraints: BoxConstraints(maxHeight: maxHeight),
+              child: SingleChildScrollView(
+                physics: const ClampingScrollPhysics(),
+                child: Center(
+                  child: ConstrainedBox(
+                    constraints: const BoxConstraints(maxWidth: 720),
+                    child: ColoredBox(
+                      color: Colors.white,
+                      child: Padding(
+                        padding: const EdgeInsets.fromLTRB(12, 0, 12, 10),
+                        child: TableCalendar<Meetup>(
+                          firstDay: DateTime.utc(2020, 1, 1),
+                          lastDay: DateTime.utc(2035, 12, 31),
+                          focusedDay: _focusedMonth,
+                          locale: lang == 'ko' ? 'ko_KR' : 'en_US',
+                          calendarFormat: CalendarFormat.month,
+                          rowHeight:
+                              MediaQuery.sizeOf(context).width < 360 ? 40 : 44,
+                          daysOfWeekHeight: 30,
+                          startingDayOfWeek: StartingDayOfWeek.sunday,
+                          onPageChanged: (focusedDay) {
+                            setState(() {
+                              _focusedMonth = focusedDay;
+                              _ensureMonthStreams(focusedDay);
+                            });
+                            unawaited(_calendarCache.warmMonth(focusedDay));
+                          },
+                          selectedDayPredicate: (day) =>
+                              isSameDay(_selectedDay, day),
+                          onDaySelected: (selectedDay, focusedDay) {
+                            final newDateKey = _dayKey(selectedDay);
+                            setState(() {
+                              _selectedDay = newDateKey;
+                              _focusedMonth = focusedDay;
+                              _ensureMonthStreams(focusedDay);
+                            });
 
-                  // PageView도 선택된 날짜로 이동
-                  final daysDiff = newDateKey.difference(_baseDate).inDays;
-                  final targetPage = _initialPageIndex + daysDiff;
-                  _pageController.jumpToPage(targetPage);
+                            // PageView도 선택된 날짜로 이동
+                            final daysDiff =
+                                newDateKey.difference(_baseDate).inDays;
+                            final targetPage = _initialPageIndex + daysDiff;
+                            _pageController.jumpToPage(targetPage);
 
-                  unawaited(_calendarCache.warmDay(selectedDay));
-                },
-                // 마커는 직접 그릴 것이므로 비활성
-                eventLoader: (_) => const <Meetup>[],
-                calendarBuilders: CalendarBuilders<Meetup>(
-                  dowBuilder: (context, day) {
-                    final isSat = day.weekday == DateTime.saturday;
-                    final isSun = day.weekday == DateTime.sunday;
-                    final color = isSun
-                        ? const Color(0xFFEF4444)
-                        : (isSat
-                            ? const Color(0xFF3B82F6)
-                            : const Color(0xFF6B7280));
-                    final label = lang == 'ko'
-                        ? const [
-                            '일',
-                            '월',
-                            '화',
-                            '수',
-                            '목',
-                            '금',
-                            '토'
-                          ][day.weekday % 7]
-                        : DateFormat('EEE', 'en_US')
-                            .format(day)
-                            .substring(0, 1);
-                    return Center(
-                      child: Text(
-                        label,
-                        style: TextStyle(
-                          fontFamily: 'Inter',
-                          fontFamilyFallback: const ['NotoSansKR'],
-                          fontSize: 12,
-                          fontWeight: FontWeight.w800,
-                          color: color,
+                            unawaited(_calendarCache.warmDay(selectedDay));
+                          },
+                          // 마커는 직접 그릴 것이므로 비활성
+                          eventLoader: (_) => const <Meetup>[],
+                          calendarBuilders: CalendarBuilders<Meetup>(
+                            dowBuilder: (context, day) {
+                              final isSat = day.weekday == DateTime.saturday;
+                              final isSun = day.weekday == DateTime.sunday;
+                              final color = isSun
+                                  ? const Color(0xFFEF4444)
+                                  : (isSat
+                                      ? const Color(0xFF3B82F6)
+                                      : const Color(0xFF6B7280));
+                              final label = lang == 'ko'
+                                  ? const [
+                                      '일',
+                                      '월',
+                                      '화',
+                                      '수',
+                                      '목',
+                                      '금',
+                                      '토'
+                                    ][day.weekday % 7]
+                                  : DateFormat('EEE', 'en_US')
+                                      .format(day)
+                                      .substring(0, 1);
+                              return Center(
+                                child: Text(
+                                  label,
+                                  style: TextStyle(
+                                    fontFamily: 'Inter',
+                                    fontFamilyFallback: const ['NotoSansKR'],
+                                    fontSize: 12,
+                                    fontWeight: FontWeight.w800,
+                                    color: color,
+                                  ),
+                                ),
+                              );
+                            },
+                            defaultBuilder: (context, day, focusedDay) {
+                              return _CalendarDayCell(
+                                day: day,
+                                isSelected: isSameDay(day, _selectedDay),
+                                isToday: isSameDay(day, DateTime.now()),
+                                // ✅ 요구사항: 과거에 참여했던 모임이 있는 날만 빨간 체크
+                                showCheck: hasPastParticipatedMeetupOnDay(day),
+                                showFriendMeetupBorder:
+                                    hasVisibleFriendMeetupOnDay(day),
+                              );
+                            },
+                            todayBuilder: (context, day, focusedDay) {
+                              return _CalendarDayCell(
+                                day: day,
+                                isSelected: isSameDay(day, _selectedDay),
+                                isToday: true,
+                                // ✅ 요구사항: 오늘은 체크 표시하지 않음
+                                showCheck: false,
+                                showFriendMeetupBorder:
+                                    hasVisibleFriendMeetupOnDay(day),
+                              );
+                            },
+                            selectedBuilder: (context, day, focusedDay) {
+                              return _CalendarDayCell(
+                                day: day,
+                                isSelected: true,
+                                isToday: isSameDay(day, DateTime.now()),
+                                showCheck: hasPastParticipatedMeetupOnDay(day),
+                                showFriendMeetupBorder:
+                                    hasVisibleFriendMeetupOnDay(day),
+                              );
+                            },
+                            markerBuilder: (_, __, ___) =>
+                                const SizedBox.shrink(),
+                          ),
+                          headerStyle: const HeaderStyle(
+                            titleCentered: true,
+                            formatButtonVisible: false,
+                            leftChevronVisible: false,
+                            rightChevronVisible: false,
+                            headerPadding: EdgeInsets.zero,
+                            titleTextStyle: TextStyle(fontSize: 0),
+                          ),
+                          calendarStyle: const CalendarStyle(
+                            outsideDaysVisible: false,
+                            todayDecoration: BoxDecoration(
+                              color: Colors.transparent,
+                              shape: BoxShape.circle,
+                            ),
+                            selectedDecoration: BoxDecoration(
+                              color: Colors.transparent,
+                              shape: BoxShape.circle,
+                            ),
+                          ),
                         ),
                       ),
-                    );
-                  },
-                  defaultBuilder: (context, day, focusedDay) {
-                    return _CalendarDayCell(
-                      day: day,
-                      isSelected: isSameDay(day, _selectedDay),
-                      isToday: isSameDay(day, DateTime.now()),
-                      // ✅ 요구사항: 과거에 참여했던 모임이 있는 날만 빨간 체크
-                      showCheck: hasPastParticipatedMeetupOnDay(day),
-                      showFriendMeetupBorder: hasVisibleFriendMeetupOnDay(day),
-                    );
-                  },
-                  todayBuilder: (context, day, focusedDay) {
-                    return _CalendarDayCell(
-                      day: day,
-                      isSelected: isSameDay(day, _selectedDay),
-                      isToday: true,
-                      // ✅ 요구사항: 오늘은 체크 표시하지 않음
-                      showCheck: false,
-                      showFriendMeetupBorder: hasVisibleFriendMeetupOnDay(day),
-                    );
-                  },
-                  selectedBuilder: (context, day, focusedDay) {
-                    return _CalendarDayCell(
-                      day: day,
-                      isSelected: true,
-                      isToday: isSameDay(day, DateTime.now()),
-                      showCheck: hasPastParticipatedMeetupOnDay(day),
-                      showFriendMeetupBorder: hasVisibleFriendMeetupOnDay(day),
-                    );
-                  },
-                  markerBuilder: (_, __, ___) => const SizedBox.shrink(),
-                ),
-                headerStyle: const HeaderStyle(
-                  titleCentered: true,
-                  formatButtonVisible: false,
-                  leftChevronVisible: false,
-                  rightChevronVisible: false,
-                  headerPadding: EdgeInsets.zero,
-                  titleTextStyle: TextStyle(fontSize: 0),
-                ),
-                calendarStyle: const CalendarStyle(
-                  outsideDaysVisible: false,
-                  todayDecoration: BoxDecoration(
-                    color: Colors.transparent,
-                    shape: BoxShape.circle,
-                  ),
-                  selectedDecoration: BoxDecoration(
-                    color: Colors.transparent,
-                    shape: BoxShape.circle,
+                    ),
                   ),
                 ),
               ),
@@ -1049,126 +1219,166 @@ class MeetupHomePageState extends State<MeetupHomePage> with PreloadMixin {
       body: SafeArea(
         top: false,
         child: StreamBuilder<List<Meetup>>(
+          key: ValueKey<String>(
+            'meetup-visible-${_visibleRangeStart.year}-'
+            '${_visibleRangeStart.month}-${_visibleRangeEnd.year}-'
+            '${_visibleRangeEnd.month}',
+          ),
           stream: _visibleMonthStream,
           builder: (context, visibleSnap) {
             return StreamBuilder<List<Meetup>>(
+              key: ValueKey<String>(
+                'meetup-my-${_myStreamMonthKey.year}-'
+                '${_myStreamMonthKey.month}',
+              ),
               stream: _myRelevantMonthStream,
               builder: (context, mySnap) {
-                final visibleMeetupsRaw = visibleSnap.data ?? const <Meetup>[];
-                final myMeetupsRaw = mySnap.data ?? const <Meetup>[];
+                if (visibleSnap.hasData) {
+                  _cacheMeetupsByMonth(
+                    _visibleMeetupMonthCache,
+                    visibleSnap.data ?? const <Meetup>[],
+                    <DateTime>[
+                      _visibleRangeStart,
+                      DateTime(
+                        _visibleRangeStart.year,
+                        _visibleRangeStart.month + 1,
+                        1,
+                      ),
+                      _visibleRangeEnd,
+                    ],
+                  );
+                }
+                if (mySnap.hasData) {
+                  _cacheMeetupsByMonth(
+                    _myMeetupMonthCache,
+                    mySnap.data ?? const <Meetup>[],
+                    <DateTime>[_myStreamMonthKey],
+                  );
+                }
+                final visibleMeetupsRaw =
+                    visibleSnap.data ?? _cachedVisibleRangeMeetups();
+                final myMeetupsRaw = mySnap.data ??
+                    _myMeetupMonthCache[_myStreamMonthKey] ??
+                    const <Meetup>[];
 
                 final visibleMeetups = _applyCategoryFilter(visibleMeetupsRaw);
                 final myMeetups = _applyCategoryFilter(myMeetupsRaw);
 
                 final visibleByDay = _groupByDay(visibleMeetups);
+                final calendarVisibleByDay = _groupByDay(visibleMeetupsRaw);
                 final myByDay = _groupByDay(myMeetups);
 
-                return Column(
-                  children: [
-                    // 상단 고정: 카테고리 칩
-                    _buildCategoryChips(),
-                    // 상단 고정: 달력 헤더 + (펼침 시) 달력
-                    _buildCalendarHeader(),
-                    _buildCalendar(myByDay: myByDay),
-                    const SizedBox(height: 4),
-                    // PageView로 날짜별 리스트 슬라이드
-                    Expanded(
-                      child: PageView.builder(
-                        controller: _pageController,
-                        onPageChanged: _onPageChanged,
-                        itemBuilder: (context, pageIndex) {
-                          // 현재 페이지의 날짜 계산
-                          final pageDate = _getDateFromPageIndex(pageIndex);
-                          final pageDateKey = _dayKey(pageDate);
-                          final isPagePast = _isPastDay(pageDateKey);
+                return LayoutBuilder(
+                  builder: (context, constraints) {
+                    // 작은 안드로이드 화면과 가로 모드에서도 달력이 목록 영역을
+                    // 밀어내지 않도록 최소 목록 높이를 먼저 확보한다. 필요한 경우
+                    // 달력만 세로 스크롤되며 날짜/목록의 기존 동작은 그대로 유지된다.
+                    final calendarMaxHeight = (constraints.maxHeight - 196)
+                        .clamp(0.0, 320.0)
+                        .toDouble();
+                    return Column(
+                      children: [
+                        // 상단 고정: 카테고리 칩
+                        _buildCategoryChips(),
+                        // 상단 고정: 달력 헤더 + (펼침 시) 달력
+                        _buildCalendarHeader(),
+                        _buildCalendar(
+                          myByDay: myByDay,
+                          visibleByDay: calendarVisibleByDay,
+                          maxHeight: calendarMaxHeight,
+                        ),
+                        const SizedBox(height: 4),
+                        // PageView로 날짜별 리스트 슬라이드
+                        Expanded(
+                          child: PageView.builder(
+                            controller: _pageController,
+                            onPageChanged: _onPageChanged,
+                            itemBuilder: (context, pageIndex) {
+                              // 현재 페이지의 날짜 계산
+                              final pageDate = _getDateFromPageIndex(pageIndex);
+                              final pageDateKey = _dayKey(pageDate);
+                              final isPagePast = _isPastDay(pageDateKey);
 
-                          // 전체 공개 모임은 가입 시점과 관계없이 과거/만료 후에도
-                          // 기록으로 확인할 수 있어야 한다. 접근 가능한 그룹 모임도
-                          // 동일한 visible 스트림에서 기존 공개 범위대로 유지한다.
-                          final pageMeetups =
-                              (visibleByDay[pageDateKey] ?? const <Meetup>[])
+                              // 전체 공개 모임은 가입 시점과 관계없이 과거/만료 후에도
+                              // 기록으로 확인할 수 있어야 한다. 접근 가능한 그룹 모임도
+                              // 동일한 visible 스트림에서 기존 공개 범위대로 유지한다.
+                              final pageMeetups = (visibleByDay[pageDateKey] ??
+                                      const <Meetup>[])
                                   .toList();
 
-                          // 스켈레톤 표시 여부
-                          final pageShowSkeleton =
-                              visibleSnap.connectionState ==
-                                      ConnectionState.waiting &&
-                                  !visibleSnap.hasData;
+                              // 스켈레톤 표시 여부
+                              final pageMonthKey = _monthKey(pageDateKey);
+                              final pageShowSkeleton =
+                                  visibleSnap.connectionState ==
+                                          ConnectionState.waiting &&
+                                      !visibleSnap.hasData &&
+                                      !_visibleMeetupMonthCache
+                                          .containsKey(pageMonthKey);
 
-                          return pageShowSkeleton
-                              ? ListView(
-                                  padding: EdgeInsets.fromLTRB(
-                                    0,
-                                    4,
-                                    0,
-                                    88 + MediaQuery.paddingOf(context).bottom,
-                                  ),
-                                  children: List.generate(
-                                    3,
-                                    (i) => Padding(
-                                      padding: const EdgeInsets.only(bottom: 4),
-                                      child: _buildMeetupSkeleton(),
-                                    ),
-                                  ),
-                                )
-                              : (pageMeetups.isEmpty
+                              return pageShowSkeleton
                                   ? ListView(
-                                      children: [
-                                        SizedBox(
-                                          height: MediaQuery.of(context)
-                                                  .size
-                                                  .height *
-                                              0.55,
-                                          child: AppEmptyState.noMeetups(
-                                            context: context,
-                                            onCreateMeetup:
-                                                _navigateToCreateMeetup,
-                                            centerVertically: true,
-                                          ),
-                                        ),
-                                      ],
-                                    )
-                                  : RefreshIndicator(
-                                      color: AppColors.pointColor,
-                                      backgroundColor: Colors.white,
-                                      onRefresh: () async {
-                                        setState(() {});
-                                        await Future.delayed(
-                                          const Duration(milliseconds: 350),
-                                        );
-                                      },
-                                      child: ListView.builder(
-                                        physics:
-                                            const AlwaysScrollableScrollPhysics(),
-                                        padding: EdgeInsets.fromLTRB(
-                                          0,
-                                          4,
-                                          0,
-                                          88 +
-                                              MediaQuery.paddingOf(context)
-                                                  .bottom,
-                                        ),
-                                        itemCount: pageMeetups.length,
-                                        itemBuilder: (context, index) {
-                                          final meetup = pageMeetups[index];
-                                          return Padding(
-                                            padding: const EdgeInsets.only(
-                                                bottom: 4),
-                                            child: _buildMeetupCard(
-                                              meetup,
-                                              forceIsParticipating:
-                                                  isPagePast ? false : null,
-                                              disableParticipationLookup:
-                                                  isPagePast,
-                                            ),
-                                          );
-                                        },
+                                      padding: EdgeInsets.fromLTRB(
+                                        0,
+                                        4,
+                                        0,
+                                        88 +
+                                            MediaQuery.paddingOf(context)
+                                                .bottom,
                                       ),
-                                    ));
-                        },
-                      ),
-                    ),
-                  ],
+                                      children: List.generate(
+                                        3,
+                                        (i) => Padding(
+                                          padding:
+                                              const EdgeInsets.only(bottom: 4),
+                                          child: _buildMeetupSkeleton(),
+                                        ),
+                                      ),
+                                    )
+                                  : (pageMeetups.isEmpty
+                                      ? const _MeetupEmptyContent()
+                                      : RefreshIndicator(
+                                          color: AppColors.pointColor,
+                                          backgroundColor: Colors.white,
+                                          onRefresh: () async {
+                                            setState(() {});
+                                            await Future.delayed(
+                                              const Duration(milliseconds: 350),
+                                            );
+                                          },
+                                          child: ListView.builder(
+                                            physics:
+                                                const AlwaysScrollableScrollPhysics(),
+                                            padding: EdgeInsets.fromLTRB(
+                                              0,
+                                              4,
+                                              0,
+                                              88 +
+                                                  MediaQuery.paddingOf(context)
+                                                      .bottom,
+                                            ),
+                                            itemCount: pageMeetups.length,
+                                            itemBuilder: (context, index) {
+                                              final meetup = pageMeetups[index];
+                                              return Padding(
+                                                padding: const EdgeInsets.only(
+                                                    bottom: 4),
+                                                child: _buildMeetupCard(
+                                                  meetup,
+                                                  forceIsParticipating:
+                                                      isPagePast ? false : null,
+                                                  disableParticipationLookup:
+                                                      isPagePast,
+                                                ),
+                                              );
+                                            },
+                                          ),
+                                        ));
+                            },
+                          ),
+                        ),
+                      ],
+                    );
+                  },
                 );
               },
             );
@@ -1178,10 +1388,9 @@ class MeetupHomePageState extends State<MeetupHomePage> with PreloadMixin {
       floatingActionButton: SafeArea(
         top: false,
         minimum: const EdgeInsets.only(bottom: 8),
-        child: AppFab(
-          icon: Icons.add,
+        child: AppFab.createMeetup(
           onPressed: _navigateToCreateMeetup,
-          semanticLabel: '모임 생성',
+          heroTag: 'meetup_home_create_fab',
         ),
       ),
     );
@@ -1264,6 +1473,309 @@ class MeetupHomePageState extends State<MeetupHomePage> with PreloadMixin {
           ),
         ],
       ),
+    );
+  }
+}
+
+class _AllMeetupsScreen extends StatefulWidget {
+  final Stream<List<Meetup>> meetupsStream;
+  final String Function(Meetup meetup) categoryKeyOf;
+  final Widget Function(Meetup meetup) meetupCardBuilder;
+  final Widget Function() meetupSkeletonBuilder;
+  final ValueNotifier<int> meetupCardRevision;
+  final VoidCallback onCreateMeetup;
+
+  const _AllMeetupsScreen({
+    required this.meetupsStream,
+    required this.categoryKeyOf,
+    required this.meetupCardBuilder,
+    required this.meetupSkeletonBuilder,
+    required this.meetupCardRevision,
+    required this.onCreateMeetup,
+  });
+
+  @override
+  State<_AllMeetupsScreen> createState() => _AllMeetupsScreenState();
+}
+
+class _AllMeetupsScreenState extends State<_AllMeetupsScreen> {
+  String _selectedCategoryKey = 'all';
+
+  List<Map<String, String>> _categories(BuildContext context) => [
+        {'key': 'all', 'label': AppLocalizations.of(context)!.all},
+        {'key': 'study', 'label': AppLocalizations.of(context)!.study},
+        {'key': 'meal', 'label': AppLocalizations.of(context)!.meal},
+        {'key': 'cafe', 'label': AppLocalizations.of(context)!.cafe},
+        {'key': 'hangout', 'label': AppLocalizations.of(context)!.hangout},
+        {'key': 'culture', 'label': AppLocalizations.of(context)!.culture},
+        {'key': 'etc', 'label': AppLocalizations.of(context)!.other},
+      ];
+
+  List<Meetup> _filteredAndSorted(List<Meetup> source) {
+    final filtered = _selectedCategoryKey == 'all'
+        ? source.toList()
+        : source
+            .where((meetup) =>
+                widget.categoryKeyOf(meetup) == _selectedCategoryKey)
+            .toList();
+    filtered.sort((a, b) {
+      final byDate = a.date.toLocal().compareTo(b.date.toLocal());
+      if (byDate != 0) return byDate;
+      return a.time.compareTo(b.time);
+    });
+    return filtered;
+  }
+
+  PreferredSizeWidget _buildAppBar(BuildContext context) {
+    final width = MediaQuery.sizeOf(context).width;
+    return AppBar(
+      backgroundColor: Colors.white,
+      surfaceTintColor: Colors.white,
+      elevation: 0,
+      scrolledUnderElevation: 0,
+      toolbarHeight: width < 360 ? 52 : 56,
+      leadingWidth: 48,
+      leading: IconButton(
+        onPressed: () => Navigator.pop(context),
+        icon: const Icon(
+          Icons.arrow_back_rounded,
+          color: Color(0xFF111827),
+          size: 22,
+        ),
+        tooltip: MaterialLocalizations.of(context).backButtonTooltip,
+      ),
+      centerTitle: true,
+      title: MediaQuery.withClampedTextScaling(
+        maxScaleFactor: 1.2,
+        child: Text(
+          AppLocalizations.of(context)!.allMeetups,
+          maxLines: 1,
+          overflow: TextOverflow.ellipsis,
+          style: TextStyle(
+            fontFamily: 'Inter',
+            fontFamilyFallback: const ['NotoSansKR'],
+            fontSize: width < 360 ? 17 : 18,
+            fontWeight: FontWeight.w700,
+            color: const Color(0xFF111827),
+            letterSpacing: -0.2,
+          ),
+        ),
+      ),
+    );
+  }
+
+  Widget _buildCategoryFilter(BuildContext context) {
+    final width = MediaQuery.sizeOf(context).width;
+    final isCompact = width < 360;
+    final isExpanded = width >= 600;
+    final categories = _categories(context);
+
+    return ColoredBox(
+      color: Colors.white,
+      child: Center(
+        child: ConstrainedBox(
+          constraints: const BoxConstraints(maxWidth: 720),
+          child: Padding(
+            padding: EdgeInsets.fromLTRB(
+              isCompact ? 10 : (isExpanded ? 20 : 14),
+              isCompact ? 5 : 7,
+              isCompact ? 10 : (isExpanded ? 20 : 14),
+              isCompact ? 7 : 9,
+            ),
+            child: SingleChildScrollView(
+              scrollDirection: Axis.horizontal,
+              child: SizedBox(
+                height: isCompact ? 30 : 32,
+                child: Row(
+                  children: [
+                    for (var index = 0; index < categories.length; index++) ...[
+                      if (index != 0) SizedBox(width: isCompact ? 5 : 8),
+                      _CategoryTabItem(
+                        label: categories[index]['label']!,
+                        selected:
+                            _selectedCategoryKey == categories[index]['key']!,
+                        height: isCompact ? 30 : 32,
+                        fontSize: isCompact ? 12.5 : 13,
+                        horizontalPadding: isCompact ? 8 : 10,
+                        onTap: () {
+                          setState(() {
+                            _selectedCategoryKey = categories[index]['key']!;
+                          });
+                        },
+                      ),
+                    ],
+                  ],
+                ),
+              ),
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+
+  Widget _buildLoadingList(BuildContext context) {
+    return ListView.builder(
+      padding: const EdgeInsets.fromLTRB(0, 8, 0, 88),
+      itemCount: 5,
+      itemBuilder: (_, __) => Padding(
+        padding: const EdgeInsets.only(bottom: 4),
+        child: widget.meetupSkeletonBuilder(),
+      ),
+    );
+  }
+
+  Widget _buildMeetupList(BuildContext context, List<Meetup> meetups) {
+    if (meetups.isEmpty) return const _MeetupEmptyContent();
+
+    return ValueListenableBuilder<int>(
+      valueListenable: widget.meetupCardRevision,
+      builder: (context, _, __) {
+        return Center(
+          child: ConstrainedBox(
+            constraints: const BoxConstraints(maxWidth: 720),
+            child: ListView.builder(
+              key: const PageStorageKey<String>('all_meetups_list'),
+              physics: const AlwaysScrollableScrollPhysics(),
+              padding: const EdgeInsets.fromLTRB(0, 4, 0, 88),
+              itemCount: meetups.length,
+              itemBuilder: (context, index) {
+                final meetup = meetups[index];
+                return Padding(
+                  padding: const EdgeInsets.only(bottom: 4),
+                  child: widget.meetupCardBuilder(meetup),
+                );
+              },
+            ),
+          ),
+        );
+      },
+    );
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Scaffold(
+      backgroundColor: Colors.white,
+      appBar: _buildAppBar(context),
+      body: SafeArea(
+        top: false,
+        child: Column(
+          children: [
+            _buildCategoryFilter(context),
+            Expanded(
+              child: StreamBuilder<List<Meetup>>(
+                stream: widget.meetupsStream,
+                builder: (context, snapshot) {
+                  if (snapshot.connectionState == ConnectionState.waiting &&
+                      !snapshot.hasData) {
+                    return _buildLoadingList(context);
+                  }
+                  if (snapshot.hasError) {
+                    return AppErrorState(
+                      description:
+                          AppLocalizations.of(context)!.meetupLoadError,
+                    );
+                  }
+                  return _buildMeetupList(
+                    context,
+                    _filteredAndSorted(snapshot.data ?? const <Meetup>[]),
+                  );
+                },
+              ),
+            ),
+          ],
+        ),
+      ),
+      floatingActionButton: SafeArea(
+        top: false,
+        minimum: const EdgeInsets.only(bottom: 8),
+        child: AppFab.createMeetup(
+          onPressed: widget.onCreateMeetup,
+          heroTag: 'all_meetups_create_fab',
+        ),
+      ),
+    );
+  }
+}
+
+class _MeetupEmptyContent extends StatelessWidget {
+  const _MeetupEmptyContent();
+
+  @override
+  Widget build(BuildContext context) {
+    final size = MediaQuery.sizeOf(context);
+    final compact = size.width < 360 || size.height < 650;
+    final horizontal = size.width < 360 ? 20.0 : 28.0;
+    final padding = EdgeInsets.fromLTRB(
+      horizontal,
+      compact ? 18 : 28,
+      horizontal,
+      88,
+    );
+    final l10n = AppLocalizations.of(context)!;
+
+    return LayoutBuilder(
+      builder: (context, constraints) {
+        final minHeight = constraints.hasBoundedHeight
+            ? (constraints.maxHeight - padding.vertical)
+                .clamp(0.0, double.infinity)
+                .toDouble()
+            : 0.0;
+        return SingleChildScrollView(
+          physics: const AlwaysScrollableScrollPhysics(),
+          padding: padding,
+          child: ConstrainedBox(
+            constraints: BoxConstraints(minHeight: minHeight),
+            child: Center(
+              child: ConstrainedBox(
+                constraints: const BoxConstraints(maxWidth: 520),
+                child: MediaQuery.withClampedTextScaling(
+                  maxScaleFactor: 1.2,
+                  child: Column(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      Image.asset(
+                        'assets/images/wefilling_logo.png',
+                        width: compact ? 58 : 66,
+                        height: compact ? 58 : 66,
+                        fit: BoxFit.contain,
+                      ),
+                      SizedBox(height: compact ? 18 : 24),
+                      Text(
+                        l10n.wefillingMeaning,
+                        textAlign: TextAlign.center,
+                        style: TextStyle(
+                          fontFamily: 'Inter',
+                          fontFamilyFallback: const ['NotoSansKR'],
+                          fontSize: compact ? 18 : 20,
+                          fontWeight: FontWeight.w700,
+                          color: const Color(0xFF111827),
+                          height: 1.3,
+                          letterSpacing: -0.25,
+                        ),
+                      ),
+                      SizedBox(height: compact ? 10 : 12),
+                      Text(
+                        l10n.wefillingExplanation,
+                        textAlign: TextAlign.center,
+                        style: TextStyle(
+                          fontFamily: 'Inter',
+                          fontFamilyFallback: const ['NotoSansKR'],
+                          fontSize: compact ? 13.5 : 14.5,
+                          fontWeight: FontWeight.w400,
+                          color: const Color(0xFF667085),
+                          height: 1.5,
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+              ),
+            ),
+          ),
+        );
+      },
     );
   }
 }

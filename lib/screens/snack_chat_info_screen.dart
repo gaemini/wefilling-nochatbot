@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/material.dart';
 
@@ -104,8 +106,9 @@ class _SnackChatInfoScreenState extends State<SnackChatInfoScreen> {
 
   Future<List<UserProfile>> _loadParticipants(SnackChat room) async {
     if (room.participantIds.isEmpty) return const <UserProfile>[];
+    unawaited(_snackChatService.ensureParticipantIntegrity(room));
     final users =
-        await _usersRepository.getUserProfilesBatch(room.participantIds);
+        await _usersRepository.getFreshUserProfilesBatch(room.participantIds);
     users.sort(
         (a, b) => a.displayNameOrNickname.compareTo(b.displayNameOrNickname));
     return users;
@@ -121,12 +124,7 @@ class _SnackChatInfoScreenState extends State<SnackChatInfoScreen> {
   }
 
   Future<void> _openInviteSheet(SnackChat room) async {
-    if (_uid == null ||
-        !room.participantIds.contains(_uid) ||
-        _isInviting ||
-        _isInviteSheetOpen ||
-        room.allowMeetupJoin ||
-        (room.meetupId?.isNotEmpty ?? false)) {
+    if (!room.canInviteMembers(_uid) || _isInviting || _isInviteSheetOpen) {
       return;
     }
     _isInviteSheetOpen = true;
@@ -336,7 +334,9 @@ class _SnackChatInfoScreenState extends State<SnackChatInfoScreen> {
                                       textAlign: TextAlign.center,
                                       style: const TextStyle(
                                         fontFamily: 'Inter',
-                                        fontFamilyFallback: const ['NotoSansKR'],
+                                        fontFamilyFallback: const [
+                                          'NotoSansKR'
+                                        ],
                                         fontSize: 13,
                                         fontWeight: FontWeight.w500,
                                         color: Color(0xFF667085),
@@ -772,8 +772,9 @@ class _SnackChatInfoScreenState extends State<SnackChatInfoScreen> {
   Widget _buildRoomSummary(
     BuildContext context,
     SnackChat room,
-    AppLocalizations l10n,
-  ) {
+    AppLocalizations l10n, {
+    required int participantCount,
+  }) {
     return Padding(
       padding: EdgeInsets.symmetric(
         vertical: context.rs(16).clamp(14, 18).toDouble(),
@@ -816,7 +817,7 @@ class _SnackChatInfoScreenState extends State<SnackChatInfoScreen> {
                   crossAxisAlignment: WrapCrossAlignment.center,
                   children: [
                     Text(
-                      l10n.snackChatParticipantCount(room.participantCount),
+                      l10n.snackChatParticipantCount(participantCount),
                       style: TextStyle(
                         fontFamily: 'Inter',
                         fontFamilyFallback: const ['NotoSansKR'],
@@ -982,9 +983,7 @@ class _SnackChatInfoScreenState extends State<SnackChatInfoScreen> {
           _ensureParticipantsFuture(room);
 
           final isHost = _uid == room.creatorId;
-          final canInviteMembers = room.participantIds.contains(_uid) &&
-              !room.allowMeetupJoin &&
-              !(room.meetupId?.isNotEmpty ?? false);
+          final canInviteMembers = room.canInviteMembers(_uid);
           final screenWidth = MediaQuery.sizeOf(context).width;
           final pagePadding = screenWidth < 360
               ? 16.0
@@ -1040,7 +1039,16 @@ class _SnackChatInfoScreenState extends State<SnackChatInfoScreen> {
                         24 + MediaQuery.paddingOf(context).bottom,
                       ),
                       children: [
-                        _buildRoomSummary(context, room, l10n),
+                        _buildRoomSummary(
+                          context,
+                          room,
+                          l10n,
+                          // 멤버 목록과 같은 활성 프로필 결과를
+                          // 사용해 탈퇴 계정을 인원에 포함하지 않는다.
+                          participantCount: usersSnap.hasData
+                              ? participants.length
+                              : room.participantCount,
+                        ),
                         if (isHost)
                           Padding(
                             padding: EdgeInsets.only(
@@ -1186,10 +1194,10 @@ class _SnackChatInfoScreenState extends State<SnackChatInfoScreen> {
                                           ),
                                         )
                                       : Icon(
-                                          Icons.person_add_alt_1_rounded,
+                                          Icons.add_rounded,
                                           size: context
-                                              .ri(19)
-                                              .clamp(18, 20)
+                                              .ri(26)
+                                              .clamp(24, 28)
                                               .toDouble(),
                                           color: const Color(0xFF475467),
                                         ),

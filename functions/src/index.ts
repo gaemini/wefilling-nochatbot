@@ -8,6 +8,7 @@ import * as nodemailer from 'nodemailer';
 import * as crypto from 'crypto';
 import { COL } from './firestore_paths';
 import {resolveFriendNotificationAudience} from './frozen_audience';
+import {removeUserFromAllSnackChats} from './snack_chat';
 import {
   HANYANG_VERIFICATION_SCHEMA_VERSION,
   hasActiveHanyangClaim,
@@ -69,6 +70,9 @@ export {
   getSnackChatEntryContext,
   markSnackChatReadSecure,
   leaveSnackChatSecure,
+  reconcileSnackChatParticipantsSecure,
+  onDeletedAuthUserSnackChatCleanup,
+  onDeletedUserDocumentSnackChatCleanup,
   updateSnackChatTitleSecure,
   createSnackChatAnnouncementSecure,
   fetchSnackChatLinkPreview,
@@ -4848,33 +4852,11 @@ export const deleteAccountImmediately = functions.https.onCall(async (data, cont
       });
     });
 
-    // 1-8. Snack Chat 현재 멤버십 종료. 과거 메시지는 보존하되 현재
-    // participant/unread 대상에서는 제거한다. 이 room update는 서버의
-    // membership trigger가 열린 period를 닫고 leave system message를 만든다.
-    const snackChatsSnap = await db.collection('snack_chats')
-      .where('participantIds', 'array-contains', uid)
-      .get();
-    snackChatsSnap.forEach((doc) => {
-      const room = doc.data() || {};
-      const currentParticipants = Array.isArray(room.participantIds)
-        ? room.participantIds.map((value: unknown) => String(value))
-        : [];
-      const nextParticipants = currentParticipants.filter((id: string) => id !== uid);
-      const unreadCount = room.unreadCount && typeof room.unreadCount === 'object'
-        ? { ...room.unreadCount }
-        : {};
-      delete unreadCount[uid];
-
-      const update: Record<string, unknown> = {
-        participantIds: nextParticipants,
-        unreadCount,
-        updatedAt: admin.firestore.FieldValue.serverTimestamp(),
-      };
-      if (String(room.creatorId || '') === uid) {
-        update.creatorId = nextParticipants.length > 0 ? nextParticipants[0] : '';
-      }
-      accountWriter.update(doc.ref, update);
-    });
+    // 1-8. Snack Chat 현재 멤버십 종료. 일반적인 방 나가기와 동일한
+    // transaction 정책을 사용해 participantIds/unread/방장 위임을 정리한다.
+    // 이 변경은 membership trigger가 열린 period를 닫도록 한다.
+    const removedSnackChatCount = await removeUserFromAllSnackChats(uid);
+    console.log(`💬 Snack Chat 탈퇴 처리: ${removedSnackChatCount}개 방`);
 
     await accountWriter.close();
 

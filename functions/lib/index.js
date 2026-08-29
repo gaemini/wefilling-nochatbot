@@ -3,15 +3,16 @@
 // Cloud Functions 메인 진입점
 // 친구요청 관련 함수들을 export
 Object.defineProperty(exports, "__esModule", { value: true });
-exports.onSnackChatMessageCreated = exports.onSnackChatRoomWritten = exports.cleanupExpiredSnackChatFiles = exports.onSnackChatFileUploadJobDeleted = exports.onSnackChatFileMessageDeleted = exports.cancelSnackChatFileUpload = exports.commitSnackChatFileUpload = exports.prepareSnackChatFileUpload = exports.reportSnackChatMessage = exports.fetchSnackChatLinkPreview = exports.createSnackChatAnnouncementSecure = exports.updateSnackChatTitleSecure = exports.leaveSnackChatSecure = exports.markSnackChatReadSecure = exports.getSnackChatEntryContext = exports.ensureSnackChatMembershipSecure = exports.joinMeetupSnackChatSecure = exports.inviteSnackChatParticipants = exports.createMeetupSnackChatSecure = exports.createSnackChatSecure = exports.onSnapshotBlockChanged = exports.cleanupOrphanSnapshotUploads = exports.cleanupExpiredSnapshots = exports.deleteSnapshot = exports.replySnapshotComment = exports.sendSnapshotComment = exports.toggleSnapshotReaction = exports.getSnapshotCommentLetter = exports.getSnapshotCommentStatus = exports.getSnapshotReactionStatus = exports.getSnapshotViewers = exports.recordSnapshotView = exports.updateSnapshotVisibility = exports.syncMySnapshotFeed = exports.createSnapshot = exports.getSnapshotServerTime = exports.translateContentBatch = exports.backfillHanyangVerificationStates = exports.reconcileMyHanyangVerificationStatus = exports.backfillInstagramPreviewThumbnails = exports.persistInstagramPreviewThumbnail = exports.resolveSharedLink = exports.reconcileDMUnreadTotalSecure = exports.markDMConversationReadSecure = exports.expireTimedMeetups = exports.confirmMeetupSecure = exports.createMeetupSecure = exports.getExternalShareComposerContext = exports.createExternalSharePost = exports.createPostSecure = void 0;
-exports.onMeetupParticipantJoined = exports.onNotificationDeletedSyncUnreadCounter = exports.onNotificationUpdatedSyncUnreadCounter = exports.onNotificationCreated = exports.unregisterFcmToken = exports.registerFcmToken = exports.fixDeletedAccountsInConversations = exports.deleteAccountImmediately = exports.onReportCreated = exports.reportUser = exports.unhideAnonymousComment = exports.hideAnonymousComment = exports.unblockAnonymousPost = exports.blockAnonymousPost = exports.unblockUser = exports.blockUser = exports.unfriend = exports.rejectFriendRequest = exports.acceptFriendRequest = exports.cancelFriendRequest = exports.sendFriendRequest = exports.cleanupExpiredEmailVerifications = exports.createGeneralEmailSignup = exports.verifyEmailCode = exports.sendEmailVerificationCode = exports.onPostLiked = exports.onCommentLiked = exports.onCommentSoftDeleted = exports.onCommentDeleted = exports.onCommentCreated = exports.onMeetupDeleted = exports.onMeetupUpdated = exports.onAdBannerChanged = exports.onFriendRequestCreated = exports.joinMeetupSecure = exports.onPrivatePostCreated = exports.onUserCreated = exports.backfillEmailClaims = exports.cancelPendingEmailSignup = exports.discardIncompleteRegistration = exports.finalizeEnglishSocialSignup = exports.completeHanyangProfileVerification = exports.finalizeHanyangEmailVerification = exports.migrateEmailVerified = exports.initializeAds = exports.onUserProfileUpdatedPropagateAuthorInfo = exports.getUserProfileStats = exports.onSnackChatVoteWritten = exports.onSnackChatReactionWritten = exports.notifyClosedSnackChatPolls = void 0;
-exports.fixNegativeUnreadCounts = exports.onDMMessageRead = exports.onDMMessageCreated = exports.onMeetupReviewCreatedDeleteMeetupChat = exports.onMeetupReviewDeleted = exports.onMeetupReviewUpdated = exports.onReviewRequestUpdated = exports.onReviewRequestCreated = exports.onMeetupCreated = void 0;
+exports.onSnackChatFileUploadJobDeleted = exports.onSnackChatFileMessageDeleted = exports.cancelSnackChatFileUpload = exports.commitSnackChatFileUpload = exports.prepareSnackChatFileUpload = exports.reportSnackChatMessage = exports.fetchSnackChatLinkPreview = exports.createSnackChatAnnouncementSecure = exports.updateSnackChatTitleSecure = exports.onDeletedUserDocumentSnackChatCleanup = exports.onDeletedAuthUserSnackChatCleanup = exports.reconcileSnackChatParticipantsSecure = exports.leaveSnackChatSecure = exports.markSnackChatReadSecure = exports.getSnackChatEntryContext = exports.ensureSnackChatMembershipSecure = exports.joinMeetupSnackChatSecure = exports.inviteSnackChatParticipants = exports.createMeetupSnackChatSecure = exports.createSnackChatSecure = exports.onSnapshotBlockChanged = exports.cleanupOrphanSnapshotUploads = exports.cleanupExpiredSnapshots = exports.deleteSnapshot = exports.replySnapshotComment = exports.sendSnapshotComment = exports.toggleSnapshotReaction = exports.getSnapshotCommentLetter = exports.getSnapshotCommentStatus = exports.getSnapshotReactionStatus = exports.getSnapshotViewers = exports.recordSnapshotView = exports.updateSnapshotVisibility = exports.syncMySnapshotFeed = exports.createSnapshot = exports.getSnapshotServerTime = exports.translateContentBatch = exports.backfillHanyangVerificationStates = exports.reconcileMyHanyangVerificationStatus = exports.backfillInstagramPreviewThumbnails = exports.persistInstagramPreviewThumbnail = exports.resolveSharedLink = exports.reconcileDMUnreadTotalSecure = exports.markDMConversationReadSecure = exports.expireTimedMeetups = exports.confirmMeetupSecure = exports.createMeetupSecure = exports.getExternalShareComposerContext = exports.createExternalSharePost = exports.createPostSecure = void 0;
+exports.onNotificationCreated = exports.unregisterFcmToken = exports.registerFcmToken = exports.fixDeletedAccountsInConversations = exports.deleteAccountImmediately = exports.onReportCreated = exports.reportUser = exports.unhideAnonymousComment = exports.hideAnonymousComment = exports.unblockAnonymousPost = exports.blockAnonymousPost = exports.unblockUser = exports.blockUser = exports.unfriend = exports.rejectFriendRequest = exports.acceptFriendRequest = exports.cancelFriendRequest = exports.sendFriendRequest = exports.cleanupExpiredEmailVerifications = exports.createGeneralEmailSignup = exports.verifyEmailCode = exports.sendEmailVerificationCode = exports.onPostLiked = exports.onCommentLiked = exports.onCommentSoftDeleted = exports.onCommentDeleted = exports.onCommentCreated = exports.onMeetupDeleted = exports.onMeetupUpdated = exports.onAdBannerChanged = exports.onFriendRequestCreated = exports.joinMeetupSecure = exports.onPrivatePostCreated = exports.onUserCreated = exports.backfillEmailClaims = exports.cancelPendingEmailSignup = exports.discardIncompleteRegistration = exports.finalizeEnglishSocialSignup = exports.completeHanyangProfileVerification = exports.finalizeHanyangEmailVerification = exports.migrateEmailVerified = exports.initializeAds = exports.onUserProfileUpdatedPropagateAuthorInfo = exports.getUserProfileStats = exports.onSnackChatVoteWritten = exports.onSnackChatReactionWritten = exports.notifyClosedSnackChatPolls = exports.onSnackChatMessageCreated = exports.onSnackChatRoomWritten = exports.cleanupExpiredSnackChatFiles = void 0;
+exports.fixNegativeUnreadCounts = exports.onDMMessageRead = exports.onDMMessageCreated = exports.onMeetupReviewCreatedDeleteMeetupChat = exports.onMeetupReviewDeleted = exports.onMeetupReviewUpdated = exports.onReviewRequestUpdated = exports.onReviewRequestCreated = exports.onMeetupCreated = exports.onMeetupParticipantJoined = exports.onNotificationDeletedSyncUnreadCounter = exports.onNotificationUpdatedSyncUnreadCounter = void 0;
 const functions = require("firebase-functions");
 const admin = require("firebase-admin");
 const nodemailer = require("nodemailer");
 const crypto = require("crypto");
 const firestore_paths_1 = require("./firestore_paths");
 const frozen_audience_1 = require("./frozen_audience");
+const snack_chat_1 = require("./snack_chat");
 const hanyang_verification_1 = require("./hanyang_verification");
 var content_creation_1 = require("./content_creation");
 Object.defineProperty(exports, "createPostSecure", { enumerable: true, get: function () { return content_creation_1.createPostSecure; } });
@@ -49,30 +50,33 @@ Object.defineProperty(exports, "deleteSnapshot", { enumerable: true, get: functi
 Object.defineProperty(exports, "cleanupExpiredSnapshots", { enumerable: true, get: function () { return snapshot_1.cleanupExpiredSnapshots; } });
 Object.defineProperty(exports, "cleanupOrphanSnapshotUploads", { enumerable: true, get: function () { return snapshot_1.cleanupOrphanSnapshotUploads; } });
 Object.defineProperty(exports, "onSnapshotBlockChanged", { enumerable: true, get: function () { return snapshot_1.onSnapshotBlockChanged; } });
-var snack_chat_1 = require("./snack_chat");
-Object.defineProperty(exports, "createSnackChatSecure", { enumerable: true, get: function () { return snack_chat_1.createSnackChatSecure; } });
-Object.defineProperty(exports, "createMeetupSnackChatSecure", { enumerable: true, get: function () { return snack_chat_1.createMeetupSnackChatSecure; } });
-Object.defineProperty(exports, "inviteSnackChatParticipants", { enumerable: true, get: function () { return snack_chat_1.inviteSnackChatParticipants; } });
-Object.defineProperty(exports, "joinMeetupSnackChatSecure", { enumerable: true, get: function () { return snack_chat_1.joinMeetupSnackChatSecure; } });
-Object.defineProperty(exports, "ensureSnackChatMembershipSecure", { enumerable: true, get: function () { return snack_chat_1.ensureSnackChatMembershipSecure; } });
-Object.defineProperty(exports, "getSnackChatEntryContext", { enumerable: true, get: function () { return snack_chat_1.getSnackChatEntryContext; } });
-Object.defineProperty(exports, "markSnackChatReadSecure", { enumerable: true, get: function () { return snack_chat_1.markSnackChatReadSecure; } });
-Object.defineProperty(exports, "leaveSnackChatSecure", { enumerable: true, get: function () { return snack_chat_1.leaveSnackChatSecure; } });
-Object.defineProperty(exports, "updateSnackChatTitleSecure", { enumerable: true, get: function () { return snack_chat_1.updateSnackChatTitleSecure; } });
-Object.defineProperty(exports, "createSnackChatAnnouncementSecure", { enumerable: true, get: function () { return snack_chat_1.createSnackChatAnnouncementSecure; } });
-Object.defineProperty(exports, "fetchSnackChatLinkPreview", { enumerable: true, get: function () { return snack_chat_1.fetchSnackChatLinkPreview; } });
-Object.defineProperty(exports, "reportSnackChatMessage", { enumerable: true, get: function () { return snack_chat_1.reportSnackChatMessage; } });
-Object.defineProperty(exports, "prepareSnackChatFileUpload", { enumerable: true, get: function () { return snack_chat_1.prepareSnackChatFileUpload; } });
-Object.defineProperty(exports, "commitSnackChatFileUpload", { enumerable: true, get: function () { return snack_chat_1.commitSnackChatFileUpload; } });
-Object.defineProperty(exports, "cancelSnackChatFileUpload", { enumerable: true, get: function () { return snack_chat_1.cancelSnackChatFileUpload; } });
-Object.defineProperty(exports, "onSnackChatFileMessageDeleted", { enumerable: true, get: function () { return snack_chat_1.onSnackChatFileMessageDeleted; } });
-Object.defineProperty(exports, "onSnackChatFileUploadJobDeleted", { enumerable: true, get: function () { return snack_chat_1.onSnackChatFileUploadJobDeleted; } });
-Object.defineProperty(exports, "cleanupExpiredSnackChatFiles", { enumerable: true, get: function () { return snack_chat_1.cleanupExpiredSnackChatFiles; } });
-Object.defineProperty(exports, "onSnackChatRoomWritten", { enumerable: true, get: function () { return snack_chat_1.onSnackChatRoomWrittenSecure; } });
-Object.defineProperty(exports, "onSnackChatMessageCreated", { enumerable: true, get: function () { return snack_chat_1.onSnackChatMessageCreatedSecure; } });
-Object.defineProperty(exports, "notifyClosedSnackChatPolls", { enumerable: true, get: function () { return snack_chat_1.notifyClosedSnackChatPolls; } });
-Object.defineProperty(exports, "onSnackChatReactionWritten", { enumerable: true, get: function () { return snack_chat_1.onSnackChatReactionWritten; } });
-Object.defineProperty(exports, "onSnackChatVoteWritten", { enumerable: true, get: function () { return snack_chat_1.onSnackChatVoteWritten; } });
+var snack_chat_2 = require("./snack_chat");
+Object.defineProperty(exports, "createSnackChatSecure", { enumerable: true, get: function () { return snack_chat_2.createSnackChatSecure; } });
+Object.defineProperty(exports, "createMeetupSnackChatSecure", { enumerable: true, get: function () { return snack_chat_2.createMeetupSnackChatSecure; } });
+Object.defineProperty(exports, "inviteSnackChatParticipants", { enumerable: true, get: function () { return snack_chat_2.inviteSnackChatParticipants; } });
+Object.defineProperty(exports, "joinMeetupSnackChatSecure", { enumerable: true, get: function () { return snack_chat_2.joinMeetupSnackChatSecure; } });
+Object.defineProperty(exports, "ensureSnackChatMembershipSecure", { enumerable: true, get: function () { return snack_chat_2.ensureSnackChatMembershipSecure; } });
+Object.defineProperty(exports, "getSnackChatEntryContext", { enumerable: true, get: function () { return snack_chat_2.getSnackChatEntryContext; } });
+Object.defineProperty(exports, "markSnackChatReadSecure", { enumerable: true, get: function () { return snack_chat_2.markSnackChatReadSecure; } });
+Object.defineProperty(exports, "leaveSnackChatSecure", { enumerable: true, get: function () { return snack_chat_2.leaveSnackChatSecure; } });
+Object.defineProperty(exports, "reconcileSnackChatParticipantsSecure", { enumerable: true, get: function () { return snack_chat_2.reconcileSnackChatParticipantsSecure; } });
+Object.defineProperty(exports, "onDeletedAuthUserSnackChatCleanup", { enumerable: true, get: function () { return snack_chat_2.onDeletedAuthUserSnackChatCleanup; } });
+Object.defineProperty(exports, "onDeletedUserDocumentSnackChatCleanup", { enumerable: true, get: function () { return snack_chat_2.onDeletedUserDocumentSnackChatCleanup; } });
+Object.defineProperty(exports, "updateSnackChatTitleSecure", { enumerable: true, get: function () { return snack_chat_2.updateSnackChatTitleSecure; } });
+Object.defineProperty(exports, "createSnackChatAnnouncementSecure", { enumerable: true, get: function () { return snack_chat_2.createSnackChatAnnouncementSecure; } });
+Object.defineProperty(exports, "fetchSnackChatLinkPreview", { enumerable: true, get: function () { return snack_chat_2.fetchSnackChatLinkPreview; } });
+Object.defineProperty(exports, "reportSnackChatMessage", { enumerable: true, get: function () { return snack_chat_2.reportSnackChatMessage; } });
+Object.defineProperty(exports, "prepareSnackChatFileUpload", { enumerable: true, get: function () { return snack_chat_2.prepareSnackChatFileUpload; } });
+Object.defineProperty(exports, "commitSnackChatFileUpload", { enumerable: true, get: function () { return snack_chat_2.commitSnackChatFileUpload; } });
+Object.defineProperty(exports, "cancelSnackChatFileUpload", { enumerable: true, get: function () { return snack_chat_2.cancelSnackChatFileUpload; } });
+Object.defineProperty(exports, "onSnackChatFileMessageDeleted", { enumerable: true, get: function () { return snack_chat_2.onSnackChatFileMessageDeleted; } });
+Object.defineProperty(exports, "onSnackChatFileUploadJobDeleted", { enumerable: true, get: function () { return snack_chat_2.onSnackChatFileUploadJobDeleted; } });
+Object.defineProperty(exports, "cleanupExpiredSnackChatFiles", { enumerable: true, get: function () { return snack_chat_2.cleanupExpiredSnackChatFiles; } });
+Object.defineProperty(exports, "onSnackChatRoomWritten", { enumerable: true, get: function () { return snack_chat_2.onSnackChatRoomWrittenSecure; } });
+Object.defineProperty(exports, "onSnackChatMessageCreated", { enumerable: true, get: function () { return snack_chat_2.onSnackChatMessageCreatedSecure; } });
+Object.defineProperty(exports, "notifyClosedSnackChatPolls", { enumerable: true, get: function () { return snack_chat_2.notifyClosedSnackChatPolls; } });
+Object.defineProperty(exports, "onSnackChatReactionWritten", { enumerable: true, get: function () { return snack_chat_2.onSnackChatReactionWritten; } });
+Object.defineProperty(exports, "onSnackChatVoteWritten", { enumerable: true, get: function () { return snack_chat_2.onSnackChatVoteWritten; } });
 // Firebase Admin 초기화
 admin.initializeApp();
 // Firestore 인스턴스
@@ -4095,31 +4099,11 @@ exports.deleteAccountImmediately = functions.https.onCall(async (data, context) 
                 updatedAt: admin.firestore.FieldValue.serverTimestamp(),
             });
         });
-        // 1-8. Snack Chat 현재 멤버십 종료. 과거 메시지는 보존하되 현재
-        // participant/unread 대상에서는 제거한다. 이 room update는 서버의
-        // membership trigger가 열린 period를 닫고 leave system message를 만든다.
-        const snackChatsSnap = await db.collection('snack_chats')
-            .where('participantIds', 'array-contains', uid)
-            .get();
-        snackChatsSnap.forEach((doc) => {
-            const room = doc.data() || {};
-            const currentParticipants = Array.isArray(room.participantIds)
-                ? room.participantIds.map((value) => String(value))
-                : [];
-            const nextParticipants = currentParticipants.filter((id) => id !== uid);
-            const unreadCount = room.unreadCount && typeof room.unreadCount === 'object'
-                ? Object.assign({}, room.unreadCount) : {};
-            delete unreadCount[uid];
-            const update = {
-                participantIds: nextParticipants,
-                unreadCount,
-                updatedAt: admin.firestore.FieldValue.serverTimestamp(),
-            };
-            if (String(room.creatorId || '') === uid) {
-                update.creatorId = nextParticipants.length > 0 ? nextParticipants[0] : '';
-            }
-            accountWriter.update(doc.ref, update);
-        });
+        // 1-8. Snack Chat 현재 멤버십 종료. 일반적인 방 나가기와 동일한
+        // transaction 정책을 사용해 participantIds/unread/방장 위임을 정리한다.
+        // 이 변경은 membership trigger가 열린 period를 닫도록 한다.
+        const removedSnackChatCount = await (0, snack_chat_1.removeUserFromAllSnackChats)(uid);
+        console.log(`💬 Snack Chat 탈퇴 처리: ${removedSnackChatCount}개 방`);
         await accountWriter.close();
         // 부모 문서 delete만으로는 savedPosts/devices 등 서브컬렉션이
         // 남으므로 계정 트리 전체를 재귀적으로 제거한다.

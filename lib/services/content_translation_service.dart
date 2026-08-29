@@ -934,6 +934,78 @@ class ContentTranslationService extends ChangeNotifier {
     return result;
   }
 
+  /// 화면 재진입 시 저장된 번역만 한 번에 복원합니다.
+  ///
+  /// 메모리/Hive 캐시에 없는 항목은 결과에서 제외하며 번역 큐나 Cloud
+  /// Function을 절대 호출하지 않습니다. 따라서 긴 대화방을 복원해도 번역
+  /// 비용이 발생하지 않고, 실제 화면에 남은 미번역 메시지만 기존 가시 영역
+  /// 스케줄러가 제한된 배치로 처리합니다.
+  Future<Map<String, ContentTranslationResult>> cachedResultsFor(
+    Iterable<ContentTranslationRequest> requests, {
+    String? uiLanguageCode,
+  }) async {
+    final uniqueRequests = <String, ContentTranslationRequest>{
+      for (final request in requests) request.serverId: request,
+    };
+    if (uniqueRequests.isEmpty) {
+      return const <String, ContentTranslationResult>{};
+    }
+
+    final generation = _requestGeneration;
+    final target = await targetLanguage(uiLanguageCode: uiLanguageCode);
+    if (generation != _requestGeneration) {
+      return const <String, ContentTranslationResult>{};
+    }
+    final box = await _ensureBox();
+    if (generation != _requestGeneration) {
+      return const <String, ContentTranslationResult>{};
+    }
+
+    final results = <String, ContentTranslationResult>{};
+    var latestChanged = false;
+    for (final request in uniqueRequests.values) {
+      final hash = _sourceHash(request.sourceFields);
+      final key = _cacheKey(request, target, hash);
+      var result = _memory[key];
+      if (result != null &&
+          (!_isCurrentResult(
+                result,
+                sourceHash: hash,
+                targetLanguage: target,
+              ) ||
+              !_hasCompleteFields(request, result))) {
+        _memory.remove(key);
+        result = null;
+      }
+      if (result == null) {
+        final stored = box?.get(key);
+        if (stored is Map) {
+          final decoded = ContentTranslationResult.fromMap(stored);
+          if (_isCurrentResult(
+                decoded,
+                sourceHash: hash,
+                targetLanguage: target,
+              ) &&
+              _hasCompleteFields(request, decoded)) {
+            result = decoded;
+            _putMemory(key, decoded);
+          } else {
+            unawaited(box?.delete(key));
+          }
+        }
+      }
+      if (result == null || !result.isReady) continue;
+      results[request.serverId] = result;
+      final latestKey = _latestResultKey(request, hash);
+      if (!identical(_latestResults[latestKey], result)) {
+        _latestResults[latestKey] = result;
+        latestChanged = true;
+      }
+    }
+    if (latestChanged) notifyListeners();
+    return results;
+  }
+
   void beginScopeLoading(String scope, Object token) {
     final tokens = _scopeLoadingTokens[scope] ??= <Object>{};
     final wasEmpty = tokens.isEmpty;

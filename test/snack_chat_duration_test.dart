@@ -9,6 +9,8 @@ SnackChat _chat({
   DateTime? createdAt,
   List<String> participants = const ['owner', 'friend'],
   List<String> favorites = const [],
+  int participantIntegrityVersion =
+      SnackChat.currentParticipantIntegrityVersion,
 }) {
   final now = createdAt ?? DateTime(2026, 1, 1);
   return SnackChat(
@@ -16,6 +18,7 @@ SnackChat _chat({
     title: 'Topic',
     creatorId: 'owner',
     participantIds: participants,
+    participantIntegrityVersion: participantIntegrityVersion,
     visibleToCategoryIds: const [],
     createdAt: now,
     activeDurationHours: durationHours,
@@ -74,6 +77,34 @@ void main() {
     );
 
     expect(chat.participantCount, 20);
+    expect(chat.hasVerifiedParticipantIntegrity, isTrue);
+  });
+
+  test('previous participant projection is rechecked without hiding its count',
+      () {
+    final chat = _chat(
+      durationHours: 0,
+      expiresAt: SnackChat.noExpirationDate,
+      participantIntegrityVersion: 1,
+    );
+
+    expect(chat.hasVerifiedParticipantIntegrity, isFalse);
+    // 서버의 1회 보정이 끝나기 전에도 UI는 이미 내려온 참여자 목록으로
+    // 숫자를 즉시 표시할 수 있어야 한다.
+    expect(chat.participantCount, 2);
+    expect(chat.toFirestore()['participantIntegrityVersion'], 1);
+  });
+
+  test('every current participant can invite members to a regular room', () {
+    final chat = _chat(
+      durationHours: 0,
+      expiresAt: SnackChat.noExpirationDate,
+    );
+
+    expect(chat.canInviteMembers('owner'), isTrue);
+    expect(chat.canInviteMembers('friend'), isTrue);
+    expect(chat.canInviteMembers('not-a-participant'), isFalse);
+    expect(chat.canInviteMembers(null), isFalse);
   });
 
   test('meetup-linked chats can start with the host only', () {
@@ -102,6 +133,7 @@ void main() {
     expect(chat.participantCount, 1);
     expect(chat.meetupId, 'meetup-1');
     expect(chat.allowMeetupJoin, isTrue);
+    expect(chat.canInviteMembers('owner'), isFalse);
     expect(chat.hasNoExpiration, isFalse);
     expect(chat.expiresAt, expiresAt);
     expect(chat.toFirestore()['activeDurationHours'], 24);

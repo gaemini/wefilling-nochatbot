@@ -182,19 +182,22 @@ class MeetupCalendarCacheService extends ChangeNotifier {
   }
 
   List<Meetup> friendMeetupsForDay(DateTime dayKey) {
-    final user = _auth.currentUser;
-    if (user == null) return const <Meetup>[];
     final cache = _monthCaches[_monthKey(dayKey)];
     final cached = cache?.byDayKey[dayKey] ?? const <Meetup>[];
-    return cached
-        .where(
-          (meetup) => shouldShowFriendMeetupGradientBorder(
-            meetup: meetup,
-            viewerId: user.uid,
-            friendIds: _friendIds,
-          ),
-        )
-        .toList(growable: false);
+    return cached.where(isVisibleFriendMeetup).toList(growable: false);
+  }
+
+  /// 실시간 밋업 쿼리에서 받은 항목이 친구 테두리 대상인지 판정한다.
+  /// 날짜별 마커는 TTL 월 캐시가 아니라 이 판정과 실시간 목록을 결합해야
+  /// 삭제된 문서가 즉시 달력에서도 사라진다.
+  bool isVisibleFriendMeetup(Meetup meetup) {
+    final user = _auth.currentUser;
+    if (user == null) return false;
+    return shouldShowFriendMeetupGradientBorder(
+      meetup: meetup,
+      viewerId: user.uid,
+      friendIds: _friendIds,
+    );
   }
 
   bool hasFriendMeetupOnDay(DateTime dayKey) {

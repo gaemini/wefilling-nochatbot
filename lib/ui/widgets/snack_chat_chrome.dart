@@ -51,17 +51,15 @@ class _SnackChatBackdropPainter extends CustomPainter {
   bool shouldRepaint(covariant _SnackChatBackdropPainter oldDelegate) => false;
 }
 
-/// 방 제목 아래에 화면 종류와 참여 인원을 함께 표시해 DM과의 혼동을 줄인다.
+/// 방 제목 옆에 현재 참여 인원만 간결하게 표시한다.
 class SnackChatHeaderTitle extends StatelessWidget {
   const SnackChatHeaderTitle({
     super.key,
     required this.roomTitle,
-    required this.contextLabel,
     required this.participantLabel,
   });
 
   final String roomTitle;
-  final String contextLabel;
   final String participantLabel;
 
   @override
@@ -70,53 +68,53 @@ class SnackChatHeaderTitle extends StatelessWidget {
       maxScaleFactor: 1.15,
       child: Semantics(
         header: true,
-        label: '$roomTitle, $contextLabel, $participantLabel',
+        label: '$roomTitle, $participantLabel',
         excludeSemantics: true,
-        child: Column(
+        child: Row(
           mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.center,
           children: [
-            Text(
-              roomTitle,
-              maxLines: 1,
-              overflow: TextOverflow.ellipsis,
-              textAlign: TextAlign.center,
-              style: TextStyle(
-                fontFamily: 'Inter',
-                fontFamilyFallback: const ['NotoSansKR'],
-                fontSize: context.rf(16).clamp(15, 17).toDouble(),
-                fontWeight: FontWeight.w700,
-                color: const Color(0xFF111827),
-                height: 1.12,
+            Flexible(
+              child: Text(
+                roomTitle,
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+                textAlign: TextAlign.center,
+                style: TextStyle(
+                  fontFamily: 'Inter',
+                  fontFamilyFallback: const ['NotoSansKR'],
+                  fontSize: context.rf(16).clamp(15, 17).toDouble(),
+                  fontWeight: FontWeight.w700,
+                  color: const Color(0xFF111827),
+                  height: 1.12,
+                ),
               ),
             ),
-            const SizedBox(height: 2),
-            Row(
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                Icon(
-                  Icons.forum_outlined,
-                  size: context.ri(12.5).clamp(12, 14).toDouble(),
-                  color: const Color(0xFF667085),
+            SizedBox(width: context.rs(7).clamp(5, 8).toDouble()),
+            Container(
+              key: const ValueKey('snack_chat_participant_badge'),
+              padding: EdgeInsets.symmetric(
+                horizontal: context.rs(7).clamp(6, 8).toDouble(),
+                vertical: context.rs(3).clamp(2, 4).toDouble(),
+              ),
+              decoration: BoxDecoration(
+                color: const Color(0xFFF2F4F7),
+                borderRadius: BorderRadius.circular(999),
+              ),
+              child: Text(
+                participantLabel,
+                maxLines: 1,
+                overflow: TextOverflow.fade,
+                softWrap: false,
+                style: TextStyle(
+                  fontFamily: 'Inter',
+                  fontFamilyFallback: const ['NotoSansKR'],
+                  fontSize: context.rf(10.5).clamp(10, 11.5).toDouble(),
+                  fontWeight: FontWeight.w600,
+                  color: const Color(0xFF475467),
+                  height: 1.1,
                 ),
-                const SizedBox(width: 4),
-                Flexible(
-                  child: Text(
-                    '$contextLabel · $participantLabel',
-                    key: const ValueKey('snack_chat_context_label'),
-                    maxLines: 1,
-                    overflow: TextOverflow.ellipsis,
-                    textAlign: TextAlign.center,
-                    style: TextStyle(
-                      fontFamily: 'Inter',
-                      fontFamilyFallback: const ['NotoSansKR'],
-                      fontSize: context.rf(11).clamp(10.5, 12).toDouble(),
-                      fontWeight: FontWeight.w600,
-                      color: const Color(0xFF667085),
-                      height: 1.1,
-                    ),
-                  ),
-                ),
-              ],
+              ),
             ),
           ],
         ),

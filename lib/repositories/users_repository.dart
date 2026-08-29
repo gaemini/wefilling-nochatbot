@@ -71,7 +71,20 @@ class UsersRepository {
   }
 
   /// 여러 사용자 프로필을 배치로 조회 (성능 최적화)
-  Future<List<UserProfile>> getUserProfilesBatch(List<String> userIds) async {
+  Future<List<UserProfile>> getUserProfilesBatch(List<String> userIds) =>
+      _getUserProfilesBatch(userIds, forceRefresh: false);
+
+  /// 참여자 수처럼 탈퇴 계정이 바로 반영되어야 하는 경계에서는
+  /// 메모리 캐시를 건너뛰고 서버 상태를 한 번 확인한다.
+  Future<List<UserProfile>> getFreshUserProfilesBatch(
+    List<String> userIds,
+  ) =>
+      _getUserProfilesBatch(userIds, forceRefresh: true);
+
+  Future<List<UserProfile>> _getUserProfilesBatch(
+    List<String> userIds, {
+    required bool forceRefresh,
+  }) async {
     try {
       if (userIds.isEmpty) return [];
 
@@ -80,7 +93,7 @@ class UsersRepository {
 
       // 1. 캐시에서 먼저 가져오기
       for (final userId in userIds) {
-        if (_profileCache.containsKey(userId)) {
+        if (!forceRefresh && _profileCache.containsKey(userId)) {
           final cacheTime = _cacheTimestamps[userId];
           if (cacheTime != null &&
               DateTime.now().difference(cacheTime) < _cacheExpiry) {
@@ -110,7 +123,9 @@ class UsersRepository {
         final snapshot = await _firestore
             .collection(_usersCollection)
             .where(FieldPath.documentId, whereIn: batch)
-            .get();
+            .get(forceRefresh
+                ? const GetOptions(source: Source.server)
+                : const GetOptions());
 
         for (final doc in snapshot.docs) {
           if (doc.exists && !isUnavailableUserAccountData(doc.data())) {
@@ -121,6 +136,17 @@ class UsersRepository {
             _profileCache[doc.id] = profile;
             _cacheTimestamps[doc.id] = DateTime.now();
           }
+        }
+      }
+
+      if (forceRefresh) {
+        final activeIds = profiles.map((profile) => profile.uid).toSet();
+        for (final userId in userIds) {
+          if (activeIds.contains(userId)) continue;
+          // 서버에서 삭제되었거나 탈퇴 상태로 확인된 계정이
+          // 이전 메모리 캐시로 다시 참여자에 포함되지 않게 한다.
+          _profileCache.remove(userId);
+          _cacheTimestamps.remove(userId);
         }
       }
 

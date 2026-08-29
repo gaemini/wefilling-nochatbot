@@ -170,6 +170,8 @@ class SnackChatService {
   final Map<String, Future<void>> _messagePrefetchInFlight = {};
   final Map<String, Future<void>> _roomEntryPrefetchInFlight = {};
   final Map<String, String> _roomEntryPrefetchTokens = {};
+  final Map<String, Future<void>> _participantIntegrityInFlight = {};
+  final Map<String, DateTime> _participantIntegrityRetryAfter = {};
   String? _entryCacheOwnerUid;
 
   static const Duration _entryContextCacheLifetime = Duration(seconds: 30);
@@ -185,6 +187,8 @@ class SnackChatService {
     _messagePrefetchInFlight.clear();
     _roomEntryPrefetchInFlight.clear();
     _roomEntryPrefetchTokens.clear();
+    _participantIntegrityInFlight.clear();
+    _participantIntegrityRetryAfter.clear();
   }
 
   SnackChat? _latestRoom(String snackChatId) {
@@ -640,6 +644,7 @@ class SnackChatService {
     for (final room in selected) {
       unawaited(_localCache.saveRoom(room.id, room));
       unawaited(_prefetchRoomEntry(room, uid));
+      unawaited(ensureParticipantIntegrity(room));
 
       final displayIds = room.participantIds.toSet().toList(growable: true)
         ..sort((left, right) {
@@ -1502,6 +1507,50 @@ class SnackChatService {
     if (data is! Map || data['success'] != true) {
       throw StateError('Snack Chat 멤버십을 준비하지 못했습니다.');
     }
+  }
+
+  /// Audits only legacy rooms that have never received the current participant
+  /// integrity projection. A successful audit is persisted on the room, while
+  /// in-flight merging and a retry cooldown prevent repeated callable costs.
+  Future<void> ensureParticipantIntegrity(SnackChat room) {
+    final uid = _uid;
+    if (uid == null ||
+        room.hasVerifiedParticipantIntegrity ||
+        !room.participantIds.contains(uid)) {
+      return Future<void>.value();
+    }
+    final key = '$uid::${room.id}';
+    final existing = _participantIntegrityInFlight[key];
+    if (existing != null) return existing;
+    final retryAfter = _participantIntegrityRetryAfter[key];
+    if (retryAfter != null && DateTime.now().isBefore(retryAfter)) {
+      return Future<void>.value();
+    }
+
+    late final Future<void> operation;
+    operation = () async {
+      final result = await _functions
+          .httpsCallable('reconcileSnackChatParticipantsSecure')
+          .call(<String, dynamic>{
+        'snackChatId': room.id,
+      }).timeout(const Duration(seconds: 12));
+      final data = result.data;
+      if (data is! Map || data['success'] != true) {
+        throw StateError('Snack Chat 참여자 정보를 확인하지 못했습니다.');
+      }
+      _participantIntegrityRetryAfter.remove(key);
+    }()
+        .catchError((Object error) {
+      _participantIntegrityRetryAfter[key] =
+          DateTime.now().add(const Duration(minutes: 1));
+      Logger.warning('Snack Chat 참여자 정보 정리 실패: $error');
+    }).whenComplete(() {
+      if (identical(_participantIntegrityInFlight[key], operation)) {
+        _participantIntegrityInFlight.remove(key);
+      }
+    });
+    _participantIntegrityInFlight[key] = operation;
+    return operation;
   }
 
   /// 화면을 나갈 때 UI에 로드되어 있던 [throughSequence]까지만 읽는다.

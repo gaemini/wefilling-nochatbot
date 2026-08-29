@@ -31,7 +31,6 @@ void main() {
                 ],
                 title: const SnackChatHeaderTitle(
                   roomTitle: '아주 긴 스낵챗 대화방 제목입니다',
-                  contextLabel: '스낵챗',
                   participantLabel: '128명 참여',
                 ),
               ),
@@ -43,10 +42,11 @@ void main() {
 
       expect(tester.takeException(), isNull);
       expect(
-        find.byKey(const ValueKey('snack_chat_context_label')),
+        find.byKey(const ValueKey('snack_chat_participant_badge')),
         findsOneWidget,
       );
-      expect(find.byIcon(Icons.forum_outlined), findsOneWidget);
+      expect(find.text('128명 참여'), findsOneWidget);
+      expect(find.byIcon(Icons.forum_outlined), findsNothing);
       expect(find.byType(CustomPaint), findsWidgets);
       expect(SnackChatBackdrop.backgroundColor, const Color(0xFFFBFAF7));
       expect(

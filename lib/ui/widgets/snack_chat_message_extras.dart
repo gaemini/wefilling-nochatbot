@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'dart:collection';
 import 'dart:typed_data';
 
 import 'package:cached_network_image/cached_network_image.dart';
@@ -32,8 +33,13 @@ class SnackChatStorageImage extends StatefulWidget {
 
 class _SnackChatStorageImageState extends State<SnackChatStorageImage> {
   static const int _maxBytes = 15 * 1024 * 1024;
+  static const int _maxMemoryEntries = 12;
+  static const int _maxMemoryBytes = 32 * 1024 * 1024;
   static final Map<String, Future<Uint8List?>> _memoryRequests =
       <String, Future<Uint8List?>>{};
+  static final LinkedHashMap<String, Uint8List> _memoryBytes =
+      LinkedHashMap<String, Uint8List>();
+  static int _memoryByteCount = 0;
   late Future<Uint8List?> _bytes;
 
   @override
@@ -56,45 +62,68 @@ class _SnackChatStorageImageState extends State<SnackChatStorageImage> {
       return Future<Uint8List?>.value(null);
     }
     final requestKey = '$viewerId::$path';
-    if (!_memoryRequests.containsKey(requestKey) &&
-        _memoryRequests.length >= 4) {
-      _memoryRequests.remove(_memoryRequests.keys.first);
+    final cachedBytes = _memoryBytes.remove(requestKey);
+    if (cachedBytes != null) {
+      _memoryBytes[requestKey] = cachedBytes;
+      return Future<Uint8List?>.value(cachedBytes);
     }
-    return _memoryRequests.putIfAbsent(
-      requestKey,
-      () async {
-        try {
-          final cached = await SnackChatMediaCacheService.instance.read(
-            userId: viewerId,
-            storagePath: path,
-          );
-          if (cached != null && cached.isNotEmpty) return cached;
-          final data = await FirebaseStorage.instance
+    final existingRequest = _memoryRequests[requestKey];
+    if (existingRequest != null) return existingRequest;
+
+    late final Future<Uint8List?> operation;
+    operation = () async {
+      try {
+        var data = await SnackChatMediaCacheService.instance.read(
+          userId: viewerId,
+          storagePath: path,
+        );
+        if (data == null || data.isEmpty) {
+          data = await FirebaseStorage.instance
               .ref(path)
               .getData(_maxBytes)
               .timeout(const Duration(seconds: 15));
-          if (data == null || data.isEmpty) {
-            _memoryRequests.remove(requestKey);
-            return null;
-          }
+          if (data == null || data.isEmpty) return null;
           await SnackChatMediaCacheService.instance.write(
             userId: viewerId,
             storagePath: path,
             bytes: data,
           );
-          return data;
-        } catch (_) {
-          _memoryRequests.remove(requestKey);
-          return null;
         }
-      },
-    );
+        _rememberBytes(requestKey, data);
+        return data;
+      } catch (_) {
+        return null;
+      }
+    }()
+        .whenComplete(() {
+      if (identical(_memoryRequests[requestKey], operation)) {
+        _memoryRequests.remove(requestKey);
+      }
+    });
+    _memoryRequests[requestKey] = operation;
+    return operation;
+  }
+
+  static void _rememberBytes(String key, Uint8List bytes) {
+    final previous = _memoryBytes.remove(key);
+    if (previous != null) _memoryByteCount -= previous.lengthInBytes;
+    _memoryBytes[key] = bytes;
+    _memoryByteCount += bytes.lengthInBytes;
+    while (_memoryBytes.length > _maxMemoryEntries ||
+        _memoryByteCount > _maxMemoryBytes) {
+      final oldestKey = _memoryBytes.keys.first;
+      final removed = _memoryBytes.remove(oldestKey);
+      if (removed != null) _memoryByteCount -= removed.lengthInBytes;
+    }
   }
 
   void _retry() {
     final viewerId = FirebaseAuth.instance.currentUser?.uid;
     if (viewerId != null) {
-      _memoryRequests.remove('$viewerId::${widget.storagePath}');
+      final key = '$viewerId::${widget.storagePath}';
+      _memoryRequests.remove(key);
+      final removed = _memoryBytes.remove(key);
+      if (removed != null) _memoryByteCount -= removed.lengthInBytes;
     }
     setState(() => _bytes = _load(widget.storagePath));
   }
@@ -153,23 +182,68 @@ class SnackChatAdaptiveImage extends StatefulWidget {
     required this.imageProvider,
     required this.maxWidth,
     required this.maxHeight,
+    this.cacheKey,
     this.error,
   });
 
   final ImageProvider imageProvider;
   final double maxWidth;
   final double maxHeight;
+  final String? cacheKey;
   final Widget? error;
+
+  static const int _maxAspectRatioEntries = 240;
+  static final LinkedHashMap<String, double> _aspectRatios =
+      LinkedHashMap<String, double>();
+
+  /// Keeps recycled chat rows at the decoded image height from their first
+  /// frame. This stores dimensions only; image bytes remain in the bounded
+  /// media cache.
+  static double? cachedAspectRatioFor(String? cacheKey) {
+    if (cacheKey == null || cacheKey.isEmpty) return null;
+    final ratio = _aspectRatios.remove(cacheKey);
+    if (ratio != null) _aspectRatios[cacheKey] = ratio;
+    return ratio;
+  }
+
+  static void _rememberAspectRatio(String? cacheKey, double ratio) {
+    if (cacheKey == null || cacheKey.isEmpty || !ratio.isFinite || ratio <= 0) {
+      return;
+    }
+    _aspectRatios.remove(cacheKey);
+    _aspectRatios[cacheKey] = ratio;
+    while (_aspectRatios.length > _maxAspectRatioEntries) {
+      _aspectRatios.remove(_aspectRatios.keys.first);
+    }
+  }
+
+  static Size displaySizeFor({
+    required double maxWidth,
+    required double maxHeight,
+    double? aspectRatio,
+  }) {
+    final ratio = aspectRatio ?? 4 / 3;
+    final boundsRatio = maxWidth / maxHeight;
+    if (ratio >= boundsRatio) {
+      return Size(maxWidth, maxWidth / ratio);
+    }
+    return Size(maxHeight * ratio, maxHeight);
+  }
 
   @override
   State<SnackChatAdaptiveImage> createState() => _SnackChatAdaptiveImageState();
 }
 
-class _SnackChatAdaptiveImageState extends State<SnackChatAdaptiveImage>
-    with SingleTickerProviderStateMixin {
+class _SnackChatAdaptiveImageState extends State<SnackChatAdaptiveImage> {
   ImageStream? _imageStream;
   ImageStreamListener? _imageStreamListener;
   double? _aspectRatio;
+
+  @override
+  void initState() {
+    super.initState();
+    _aspectRatio = SnackChatAdaptiveImage.cachedAspectRatioFor(widget.cacheKey);
+  }
 
   @override
   void didChangeDependencies() {
@@ -180,8 +254,10 @@ class _SnackChatAdaptiveImageState extends State<SnackChatAdaptiveImage>
   @override
   void didUpdateWidget(covariant SnackChatAdaptiveImage oldWidget) {
     super.didUpdateWidget(oldWidget);
-    if (oldWidget.imageProvider != widget.imageProvider) {
-      _aspectRatio = null;
+    if (oldWidget.imageProvider != widget.imageProvider ||
+        oldWidget.cacheKey != widget.cacheKey) {
+      _aspectRatio =
+          SnackChatAdaptiveImage.cachedAspectRatioFor(widget.cacheKey);
       _resolveImage();
     }
   }
@@ -200,6 +276,7 @@ class _SnackChatAdaptiveImageState extends State<SnackChatAdaptiveImage>
         final height = image.image.height.toDouble();
         if (width <= 0 || height <= 0 || !mounted) return;
         final ratio = width / height;
+        SnackChatAdaptiveImage._rememberAspectRatio(widget.cacheKey, ratio);
         if (_aspectRatio == ratio) return;
         if (synchronousCall) {
           _aspectRatio = ratio;
@@ -222,13 +299,11 @@ class _SnackChatAdaptiveImageState extends State<SnackChatAdaptiveImage>
   }
 
   Size _displaySize() {
-    // Use a compact loading frame, then animate to the decoded image ratio.
-    final ratio = _aspectRatio ?? 4 / 3;
-    final boundsRatio = widget.maxWidth / widget.maxHeight;
-    if (ratio >= boundsRatio) {
-      return Size(widget.maxWidth, widget.maxWidth / ratio);
-    }
-    return Size(widget.maxHeight * ratio, widget.maxHeight);
+    return SnackChatAdaptiveImage.displaySizeFor(
+      maxWidth: widget.maxWidth,
+      maxHeight: widget.maxHeight,
+      aspectRatio: _aspectRatio,
+    );
   }
 
   @override
@@ -240,21 +315,19 @@ class _SnackChatAdaptiveImageState extends State<SnackChatAdaptiveImage>
   @override
   Widget build(BuildContext context) {
     final size = _displaySize();
-    return AnimatedSize(
-      duration: const Duration(milliseconds: 160),
-      curve: Curves.easeOutCubic,
-      alignment: Alignment.center,
-      child: SizedBox(
-        width: size.width,
-        height: size.height,
-        child: Image(
-          image: widget.imageProvider,
-          fit: BoxFit.contain,
-          gaplessPlayback: true,
-          errorBuilder: (_, __, ___) =>
-              widget.error ??
-              const Center(child: Icon(Icons.broken_image_outlined)),
-        ),
+    // SliverList가 스크롤 중인 동안 여러 프레임에 걸쳐 높이를 애니메이션하면
+    // reverse 목록의 최대 범위가 계속 변해 손가락 반대 방향으로 튕긴다.
+    // 비율은 한 번에 적용하고 다음 빌드부터 위의 비율 캐시를 재사용한다.
+    return SizedBox(
+      width: size.width,
+      height: size.height,
+      child: Image(
+        image: widget.imageProvider,
+        fit: BoxFit.contain,
+        gaplessPlayback: true,
+        errorBuilder: (_, __, ___) =>
+            widget.error ??
+            const Center(child: Icon(Icons.broken_image_outlined)),
       ),
     );
   }

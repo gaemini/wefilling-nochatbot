@@ -121,4 +121,21 @@ void main() {
       isFalse,
     );
   });
+
+  test('실시간 날짜 목록에서 마지막 친구 모임이 삭제되면 테두리가 사라진다', () {
+    final liveMeetupsForDay = <Meetup>[_meetup()];
+
+    bool hasBorder() => liveMeetupsForDay.any(
+          (meetup) => shouldShowFriendMeetupGradientBorder(
+            meetup: meetup,
+            viewerId: 'viewer',
+            friendIds: const <String>{'friend'},
+            now: now,
+          ),
+        );
+
+    expect(hasBorder(), isTrue);
+    liveMeetupsForDay.removeWhere((meetup) => meetup.id == 'meetup-1');
+    expect(hasBorder(), isFalse);
+  });
 }

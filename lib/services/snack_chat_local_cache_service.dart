@@ -45,6 +45,7 @@ class SnackChatLocalCacheService {
 
   static const String _boxName = 'snack_chat_state_v1';
   static const int _maxMessagesPerRoom = 400;
+  static const int _maxMemoryRooms = 8;
 
   final FirebaseAuth _auth = FirebaseAuth.instance;
   Box<dynamic>? _box;
@@ -52,6 +53,8 @@ class SnackChatLocalCacheService {
   bool _disabled = false;
   final Map<String, Future<void>> _messageWriteQueues =
       <String, Future<void>>{};
+  final Map<String, _MemoryMessageSnapshot> _messageMemory =
+      <String, _MemoryMessageSnapshot>{};
 
   String? get _ownerUid => _auth.currentUser?.uid;
 
@@ -87,23 +90,44 @@ class SnackChatLocalCacheService {
     int limit = 120,
   }) async {
     final ownerUid = _ownerUid;
+    if (ownerUid == null) return const <SnackChatMessage>[];
+    final baseKey = _baseKey(ownerUid, roomId);
+    final memory = _touchMemory(baseKey);
+    if (memory?.complete == true) {
+      return _takeMessages(memory!.messages, limit);
+    }
     final box = await _ensureBox();
-    if (ownerUid == null || box == null) return const <SnackChatMessage>[];
+    if (box == null) {
+      return memory == null
+          ? const <SnackChatMessage>[]
+          : _takeMessages(memory.messages, limit);
+    }
     Object? raw;
     try {
-      raw = box.get('${_baseKey(ownerUid, roomId)}::messages');
+      raw = box.get('$baseKey::messages');
     } catch (error) {
       Logger.error('SnackChatLocalCacheService: message read failed: $error');
-      return const <SnackChatMessage>[];
+      return memory == null
+          ? const <SnackChatMessage>[]
+          : _takeMessages(memory.messages, limit);
     }
-    if (raw is! List) return const <SnackChatMessage>[];
-    final messages = raw
-        .map(_decodeMessage)
-        .whereType<SnackChatMessage>()
-        .toList(growable: true)
+    final byId = <String, SnackChatMessage>{};
+    if (raw is List) {
+      for (final item in raw) {
+        final message = _decodeMessage(item);
+        if (message != null) byId[message.id] = message;
+      }
+    }
+    // 화면 종료 저장과 다음 화면 진입이 겹치더라도 아직 Hive에 쓰이지 않은
+    // 최신 메시지/로컬 이미지 경로를 메모리 스냅샷에서 잃지 않는다.
+    for (final message in memory?.messages ?? const <SnackChatMessage>[]) {
+      byId[message.id] = message;
+    }
+    final messages = byId.values.toList(growable: true)
       ..sort(_compareMessagesDescending);
-    if (messages.length <= limit) return messages;
-    return messages.take(limit).toList(growable: false);
+    final bounded = messages.take(_maxMessagesPerRoom).toList(growable: false);
+    _storeMemory(baseKey, bounded, complete: true);
+    return _takeMessages(bounded, limit);
   }
 
   Future<void> upsertMessages(
@@ -113,9 +137,12 @@ class SnackChatLocalCacheService {
     final incoming = messages.toList(growable: false);
     if (incoming.isEmpty) return;
     final ownerUid = _ownerUid;
+    if (ownerUid == null) return;
+    final baseKey = _baseKey(ownerUid, roomId);
+    _mergeIntoMemory(baseKey, incoming);
     final box = await _ensureBox();
-    if (ownerUid == null || box == null) return;
-    final key = '${_baseKey(ownerUid, roomId)}::messages';
+    if (box == null) return;
+    final key = '$baseKey::messages';
     try {
       await _serializeMessageWrite(key, () async {
         final existing = box.get(key);
@@ -131,7 +158,10 @@ class SnackChatLocalCacheService {
         }
         final ordered = byId.values.toList(growable: true)
           ..sort(_compareMessagesDescending);
-        final limited = ordered.take(_maxMessagesPerRoom).map(_encodeMessage);
+        final bounded =
+            ordered.take(_maxMessagesPerRoom).toList(growable: false);
+        _storeMemory(baseKey, bounded, complete: true);
+        final limited = bounded.map(_encodeMessage);
         try {
           await box.put(key, limited.toList(growable: false));
         } catch (error) {
@@ -146,9 +176,21 @@ class SnackChatLocalCacheService {
 
   Future<void> removeMessage(String roomId, String messageId) async {
     final ownerUid = _ownerUid;
+    if (ownerUid == null) return;
+    final baseKey = _baseKey(ownerUid, roomId);
+    final memory = _touchMemory(baseKey);
+    if (memory != null) {
+      _storeMemory(
+        baseKey,
+        memory.messages
+            .where((message) => message.id != messageId)
+            .toList(growable: false),
+        complete: memory.complete,
+      );
+    }
     final box = await _ensureBox();
-    if (ownerUid == null || box == null) return;
-    final key = '${_baseKey(ownerUid, roomId)}::messages';
+    if (box == null) return;
+    final key = '$baseKey::messages';
     try {
       await _serializeMessageWrite(key, () async {
         final raw = box.get(key);
@@ -177,6 +219,7 @@ class SnackChatLocalCacheService {
   Future<void> clearPrivateFileStateForAccount(String ownerUid) async {
     final normalizedUid = ownerUid.trim();
     if (normalizedUid.isEmpty) return;
+    _messageMemory.removeWhere((key, _) => key.startsWith('$normalizedUid::'));
     final box = await _ensureBox();
     if (box == null) return;
     final prefix = '$normalizedUid::';
@@ -352,9 +395,11 @@ class SnackChatLocalCacheService {
 
   Future<void> clearRoom(String roomId) async {
     final ownerUid = _ownerUid;
-    final box = await _ensureBox();
-    if (ownerUid == null || box == null) return;
+    if (ownerUid == null) return;
     final base = _baseKey(ownerUid, roomId);
+    _messageMemory.remove(base);
+    final box = await _ensureBox();
+    if (box == null) return;
     try {
       final messagesKey = '$base::messages';
       await _serializeMessageWrite(messagesKey, () => box.delete(messagesKey));
@@ -374,6 +419,55 @@ class SnackChatLocalCacheService {
     }
     final byTime = b.createdAt.compareTo(a.createdAt);
     return byTime != 0 ? byTime : b.id.compareTo(a.id);
+  }
+
+  List<SnackChatMessage> _takeMessages(
+    List<SnackChatMessage> messages,
+    int limit,
+  ) {
+    if (messages.length <= limit) return List<SnackChatMessage>.of(messages);
+    return messages.take(limit).toList(growable: false);
+  }
+
+  _MemoryMessageSnapshot? _touchMemory(String key) {
+    final existing = _messageMemory.remove(key);
+    if (existing != null) _messageMemory[key] = existing;
+    return existing;
+  }
+
+  void _storeMemory(
+    String key,
+    List<SnackChatMessage> messages, {
+    required bool complete,
+  }) {
+    _messageMemory.remove(key);
+    _messageMemory[key] = _MemoryMessageSnapshot(
+      messages: List<SnackChatMessage>.unmodifiable(messages),
+      complete: complete,
+    );
+    while (_messageMemory.length > _maxMemoryRooms) {
+      _messageMemory.remove(_messageMemory.keys.first);
+    }
+  }
+
+  void _mergeIntoMemory(
+    String key,
+    Iterable<SnackChatMessage> incoming,
+  ) {
+    final existing = _touchMemory(key);
+    final byId = <String, SnackChatMessage>{
+      for (final message in existing?.messages ?? const <SnackChatMessage>[])
+        message.id: message,
+      for (final message in incoming)
+        if (message.id.isNotEmpty) message.id: message,
+    };
+    final ordered = byId.values.toList(growable: true)
+      ..sort(_compareMessagesDescending);
+    _storeMemory(
+      key,
+      ordered.take(_maxMessagesPerRoom).toList(growable: false),
+      complete: existing?.complete ?? false,
+    );
   }
 
   SnackChatMessageType _decodeType(Object? raw) {
@@ -624,6 +718,7 @@ class SnackChatLocalCacheService {
         'title': room.title,
         'creatorId': room.creatorId,
         'participantIds': room.participantIds,
+        'participantIntegrityVersion': room.participantIntegrityVersion,
         'visibleToCategoryIds': room.visibleToCategoryIds,
         'createdAtMs': room.createdAt.millisecondsSinceEpoch,
         'activeDurationHours': room.activeDurationHours,
@@ -656,6 +751,9 @@ class SnackChatLocalCacheService {
         title: (map['title'] ?? '').toString(),
         creatorId: (map['creatorId'] ?? '').toString(),
         participantIds: _stringList(map['participantIds']),
+        participantIntegrityVersion: map['participantIntegrityVersion'] is num
+            ? (map['participantIntegrityVersion'] as num).toInt()
+            : 0,
         visibleToCategoryIds: _stringList(map['visibleToCategoryIds']),
         createdAt: DateTime.fromMillisecondsSinceEpoch(
           (map['createdAtMs'] as num).toInt(),
@@ -705,4 +803,14 @@ class SnackChatLocalCacheService {
       return null;
     }
   }
+}
+
+class _MemoryMessageSnapshot {
+  const _MemoryMessageSnapshot({
+    required this.messages,
+    required this.complete,
+  });
+
+  final List<SnackChatMessage> messages;
+  final bool complete;
 }

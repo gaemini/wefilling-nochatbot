@@ -23,8 +23,10 @@ enum StudentType {
   String title(BuildContext context) {
     final koreanUi = Localizations.localeOf(context).languageCode == 'ko';
     return switch (this) {
-      StudentType.exchange => koreanUi ? '교환학생' : 'Exchange student',
-      StudentType.korean => koreanUi ? '한국인 학생' : 'Korean student',
+      // 저장 키는 기존 사용자 호환을 위해 exchange를 유지하고, 사용자에게
+      // 보이는 이메일 가입 명칭만 더 넓은 학생 구분으로 표시한다.
+      StudentType.exchange => koreanUi ? '외국인 학생' : 'International student',
+      StudentType.korean => koreanUi ? '한국 학생' : 'Korean student',
     };
   }
 
@@ -35,8 +37,8 @@ enum StudentType {
           ? '한국 생활, 학교 행사와 교류 활동을 중심으로 안내해요.'
           : 'Get guidance for campus life, local events, and cultural exchange.',
       StudentType.korean => koreanUi
-          ? '학사 일정, 교내 활동과 교환학생 교류 기회를 중심으로 안내해요.'
-          : 'Get guidance for academics, campus activities, and exchange events.',
+          ? '학사 일정, 교내 활동과 외국인 학생 교류 기회를 중심으로 안내해요.'
+          : 'Get guidance for academics, campus activities, and international student events.',
     };
   }
 }

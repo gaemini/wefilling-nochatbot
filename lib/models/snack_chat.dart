@@ -9,11 +9,13 @@ List<Object?> _safeSnackChatList(Object? raw) =>
 
 class SnackChat {
   static final DateTime noExpirationDate = DateTime.utc(9999, 12, 31);
+  static const int currentParticipantIntegrityVersion = 3;
 
   final String id;
   final String title;
   final String creatorId;
   final List<String> participantIds;
+  final int participantIntegrityVersion;
   final List<String> visibleToCategoryIds;
   final DateTime createdAt;
   final int activeDurationHours;
@@ -36,6 +38,7 @@ class SnackChat {
     required this.title,
     required this.creatorId,
     required this.participantIds,
+    this.participantIntegrityVersion = 0,
     required this.visibleToCategoryIds,
     required this.createdAt,
     required this.activeDurationHours,
@@ -58,6 +61,8 @@ class SnackChat {
         );
 
   int get participantCount => participantIds.length;
+  bool get hasVerifiedParticipantIntegrity =>
+      participantIntegrityVersion >= currentParticipantIntegrityVersion;
   bool get hasNoExpiration => activeDurationHours == 0;
 
   bool isExpired([DateTime? now]) {
@@ -73,6 +78,15 @@ class SnackChat {
   bool isFavoritedBy(String? userId) {
     if (userId == null || userId.isEmpty) return false;
     return favoriteUserIds.contains(userId);
+  }
+
+  /// 일반 Snack Chat은 방장 여부와 관계없이 현재 참여자 누구나 자신의
+  /// 친구를 초대할 수 있다. Meetup 연결 방은 Meetup 참여 흐름만 사용한다.
+  bool canInviteMembers(String? userId) {
+    if (userId == null || userId.isEmpty) return false;
+    return participantIds.contains(userId) &&
+        !allowMeetupJoin &&
+        !(meetupId?.isNotEmpty ?? false);
   }
 
   int getMyUnreadCount(String currentUserId) {
@@ -106,6 +120,12 @@ class SnackChat {
       participantIds: _safeSnackChatList(data['participantIds'])
           .map((e) => e.toString())
           .toList(),
+      participantIntegrityVersion: data['participantIntegrityVersion'] is num
+          ? (data['participantIntegrityVersion'] as num)
+              .toInt()
+              .clamp(0, 100)
+              .toInt()
+          : 0,
       visibleToCategoryIds: _safeSnackChatList(data['visibleToCategoryIds'])
           .map((e) => e.toString())
           .toList(),
@@ -159,6 +179,7 @@ class SnackChat {
       'title': title,
       'creatorId': creatorId,
       'participantIds': participantIds,
+      'participantIntegrityVersion': participantIntegrityVersion,
       'visibleToCategoryIds': visibleToCategoryIds,
       'createdAt': Timestamp.fromDate(createdAt),
       'activeDurationHours': activeDurationHours,
@@ -199,6 +220,7 @@ class SnackChat {
       title: title ?? this.title,
       creatorId: creatorId,
       participantIds: participantIds,
+      participantIntegrityVersion: participantIntegrityVersion,
       visibleToCategoryIds: visibleToCategoryIds,
       createdAt: createdAt,
       activeDurationHours: activeDurationHours,

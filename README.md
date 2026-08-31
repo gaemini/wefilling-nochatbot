@@ -85,7 +85,9 @@ flutter pub get
 ### 6. 실행
 
 ```bash
-# Android 디버그 모드 (Play Store 앱과 별도 설치)
+# Android 개발 모드
+# 현재 development와 production은 같은 applicationId를 사용합니다.
+# Play Store 업데이트 확인용 기기에는 로컬 빌드를 설치하지 마세요.
 fvm flutter run --flavor development
 
 # 프로필 모드 (성능 테스트)
@@ -112,8 +114,16 @@ fvm flutter build apk --release --split-per-abi --flavor production
 ### Android App Bundle (Play Store)
 
 ```bash
+# 현재 versionCode가 이전 배포보다 높은지 먼저 확인
+scripts/android_release.sh check
+
+# 이 명령이 만든 dist/android의 이름 있는 AAB만 Play Console에 업로드
 scripts/android_release.sh build
 ```
+
+Play Store 업데이트 검증은 로컬 APK/AAB를 설치하지 않은 기기에서 진행하세요.
+연결된 기기에 배포 예정 `versionCode` 이상인 로컬 앱이 설치돼 있으면 릴리스
+스크립트가 빌드를 중단하고 원인을 안내합니다.
 
 ### iOS
 

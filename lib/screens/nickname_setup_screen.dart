@@ -49,6 +49,7 @@ class _NicknameSetupScreenState extends State<NicknameSetupScreen> {
   bool? _isNicknameAvailable;
   String? _nicknameAvailabilityError;
   File? _selectedImage;
+  bool _finalizationAttempted = false;
 
   bool get _isKorean => Localizations.localeOf(context).languageCode == 'ko';
 
@@ -146,7 +147,6 @@ class _NicknameSetupScreenState extends State<NicknameSetupScreen> {
   Future<bool> _checkNickname(
     String raw, {
     required int generation,
-    bool force = false,
   }) async {
     final input = raw.trim();
     if (generation != _nicknameCheckGeneration ||
@@ -158,9 +158,8 @@ class _NicknameSetupScreenState extends State<NicknameSetupScreen> {
       _nicknameAvailabilityError = null;
     });
     try {
-      final result = await context
-          .read<AuthProvider>()
-          .checkNicknameAvailability(input, force: force);
+      final result =
+          await context.read<AuthProvider>().checkNicknameAvailability(input);
       if (!mounted ||
           generation != _nicknameCheckGeneration ||
           input != _nicknameController.text.trim()) {
@@ -171,6 +170,23 @@ class _NicknameSetupScreenState extends State<NicknameSetupScreen> {
         _isNicknameAvailable = result.available;
       });
       return result.available;
+    } on NicknameAvailabilityException catch (error) {
+      if (mounted &&
+          generation == _nicknameCheckGeneration &&
+          input == _nicknameController.text.trim()) {
+        setState(() {
+          _isCheckingNickname = false;
+          _isNicknameAvailable = null;
+          _nicknameAvailabilityError = error.isNetwork
+              ? (_isKorean
+                  ? '인터넷 연결을 확인해 주세요.'
+                  : 'Check your internet connection.')
+              : (_isKorean
+                  ? '닉네임을 확인하지 못했어요. 잠시 후 다시 시도해 주세요.'
+                  : 'Could not check the nickname. Please try again shortly.');
+        });
+      }
+      return false;
     } catch (_) {
       if (mounted &&
           generation == _nicknameCheckGeneration &&
@@ -179,8 +195,8 @@ class _NicknameSetupScreenState extends State<NicknameSetupScreen> {
           _isCheckingNickname = false;
           _isNicknameAvailable = null;
           _nicknameAvailabilityError = _isKorean
-              ? '인터넷 연결을 확인해 주세요.'
-              : 'Check your internet connection.';
+              ? '닉네임을 확인하지 못했어요. 잠시 후 다시 시도해 주세요.'
+              : 'Could not check the nickname. Please try again shortly.';
         });
       }
       return false;
@@ -208,27 +224,28 @@ class _NicknameSetupScreenState extends State<NicknameSetupScreen> {
     final authProvider = context.read<AuthProvider>();
     final nickname = nicknameValue;
 
+    // A known duplicate can be rejected locally without another callable.
+    // A null/pending result still proceeds because the final transaction is
+    // the authoritative race-safe check.
+    if (_isNicknameAvailable == false && _nicknameAvailabilityError == null) {
+      _moveTo(0);
+      messenger.showSnackBar(
+        SnackBar(
+          content: Text(_isKorean
+              ? '이미 사용 중인 닉네임이에요.'
+              : 'This nickname is already in use.'),
+        ),
+      );
+      return;
+    }
+
     setState(() => _isLoading = true);
     try {
+      // Availability is checked only by the input debounce. The final sign-up
+      // transaction is the authority and checks the claim again atomically.
       _nicknameDebounce?.cancel();
-      final generation = ++_nicknameCheckGeneration;
-      if (!await _checkNickname(
-        nickname,
-        generation: generation,
-        force: true,
-      )) {
-        if (!mounted) return;
-        _moveTo(0);
-        messenger.showSnackBar(
-          SnackBar(
-            content: Text(_isKorean
-                ? (_nicknameAvailabilityError ?? '이미 사용 중인 닉네임이에요.')
-                : (_nicknameAvailabilityError ??
-                    'This nickname is already in use.')),
-          ),
-        );
-        return;
-      }
+      ++_nicknameCheckGeneration;
+      _isCheckingNickname = false;
 
       String? photoUrl;
       String? photoPath;
@@ -253,6 +270,7 @@ class _NicknameSetupScreenState extends State<NicknameSetupScreen> {
       final pending = widget.pendingSignup;
       var finalized = true;
       if (pending != null) {
+        _finalizationAttempted = true;
         switch (pending.kind) {
           case PendingSignupKind.generalEmail:
             finalized = await authProvider.signUpWithVerifiedGeneralEmail(
@@ -357,20 +375,51 @@ class _NicknameSetupScreenState extends State<NicknameSetupScreen> {
     if (_isLoading || !await showSignupExitConfirmation(context) || !mounted) {
       return;
     }
+    setState(() => _isLoading = true);
     final authProvider = context.read<AuthProvider>();
     final pending = widget.pendingSignup;
-    if (pending != null) {
-      if (authProvider.user != null) {
-        await authProvider.discardIncompleteRegistration();
+    var cleanupCompleted = true;
+    var signupWasAlreadyCompleted = false;
+    try {
+      if (pending != null) {
+        if (authProvider.user != null) {
+          cleanupCompleted = await authProvider.discardIncompleteRegistration();
+        }
+        if (cleanupCompleted && pending.verificationToken.isNotEmpty) {
+          final cancellation = await authProvider.cancelPendingEmailSignup(
+            email: pending.verifiedEmail,
+            verificationToken: pending.verificationToken,
+          );
+          signupWasAlreadyCompleted = cancellation ==
+              PendingEmailSignupCancellationResult.alreadyCompleted;
+          if (pending.kind == PendingSignupKind.generalEmail &&
+              _finalizationAttempted &&
+              cancellation != PendingEmailSignupCancellationResult.cancelled) {
+            cleanupCompleted = false;
+          }
+        }
       }
-      if (pending.verificationToken.isNotEmpty) {
-        await authProvider.cancelPendingEmailSignup(
-          email: pending.verifiedEmail,
-          verificationToken: pending.verificationToken,
-        );
-      }
+    } catch (_) {
+      cleanupCompleted = false;
+    } finally {
+      if (mounted) setState(() => _isLoading = false);
     }
-    if (mounted) Navigator.pop(context);
+    if (!mounted) return;
+    if (!cleanupCompleted) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(signupWasAlreadyCompleted
+              ? (_isKorean
+                  ? '가입 완료 기록이 확인됐어요. 완료 버튼을 다시 눌러 계정 상태를 불러와 주세요.'
+                  : 'Sign-up was completed. Tap the final button again to restore your account state.')
+              : (_isKorean
+                  ? '인터넷 연결 후 다시 시도해 주세요. 계정 정리가 끝나기 전에는 가입 화면을 종료하지 않아요.'
+                  : 'Reconnect and try again. This screen stays open until the unfinished account is removed.')),
+        ),
+      );
+      return;
+    }
+    Navigator.pop(context);
   }
 
   void _primaryAction() {
@@ -398,6 +447,9 @@ class _NicknameSetupScreenState extends State<NicknameSetupScreen> {
   @override
   Widget build(BuildContext context) {
     final bottomInset = MediaQuery.viewInsetsOf(context).bottom;
+    final horizontalPadding =
+        MediaQuery.sizeOf(context).width < 360 ? 18.0 : 24.0;
+    final canSkipCurrentStep = _currentStep > 1;
 
     return PopScope(
       canPop: false,
@@ -431,26 +483,6 @@ class _NicknameSetupScreenState extends State<NicknameSetupScreen> {
             ),
           ),
           centerTitle: true,
-          actions: [
-            if (_currentStep > 1)
-              TextButton(
-                onPressed: _isLoading
-                    ? null
-                    : () => _currentStep == 4
-                        ? _submit()
-                        : _moveTo(_currentStep + 1),
-                child: Text(
-                  _isKorean ? '건너뛰기' : 'Skip',
-                  style: const TextStyle(
-                    fontFamily: 'Inter',
-                    fontFamilyFallback: const ['NotoSansKR'],
-                    fontSize: 14,
-                    fontWeight: FontWeight.w600,
-                    color: Color(0xFF64748B),
-                  ),
-                ),
-              ),
-          ],
         ),
         body: Column(
           children: [
@@ -497,41 +529,85 @@ class _NicknameSetupScreenState extends State<NicknameSetupScreen> {
             top: false,
             // 시스템 내비게이션 영역 위에 여유를 한 번 더 확보해 Android의
             // 3-button/gesture bar와 다음 버튼이 붙어 보이지 않게 한다.
-            minimum: const EdgeInsets.fromLTRB(24, 8, 24, 24),
-            child: SizedBox(
-              height: 52,
-              child: ElevatedButton(
-                onPressed: _isLoading ? null : _primaryAction,
-                style: ElevatedButton.styleFrom(
-                  elevation: 0,
-                  backgroundColor: AppColors.pointColor,
-                  foregroundColor: Colors.white,
-                  disabledBackgroundColor: const Color(0xFFE2E8F0),
-                  shape: RoundedRectangleBorder(
-                    borderRadius: BorderRadius.circular(12),
-                  ),
-                ),
-                child: _isLoading
-                    ? const SizedBox(
-                        width: 20,
-                        height: 20,
-                        child: CircularProgressIndicator(
-                          strokeWidth: 2,
-                          color: Colors.white,
-                        ),
-                      )
-                    : Text(
-                        _currentStep == 4
-                            ? (_isKorean ? '프로필 완성' : 'Finish profile')
-                            : (_isKorean ? '다음' : 'Next'),
+            minimum: EdgeInsets.fromLTRB(
+              horizontalPadding,
+              8,
+              horizontalPadding,
+              24,
+            ),
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                if (canSkipCurrentStep) ...[
+                  SizedBox(
+                    height: 40,
+                    child: TextButton(
+                      onPressed: _isLoading
+                          ? null
+                          : () => _currentStep == 4
+                              ? _submit()
+                              : _moveTo(_currentStep + 1),
+                      style: TextButton.styleFrom(
+                        foregroundColor: const Color(0xFF64748B),
+                        disabledForegroundColor: const Color(0xFFCBD5E1),
+                        padding: const EdgeInsets.symmetric(horizontal: 16),
+                        minimumSize: const Size(96, 40),
+                        tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                      ),
+                      child: Text(
+                        _isKorean ? '건너뛰기' : 'Skip',
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
                         style: const TextStyle(
                           fontFamily: 'Inter',
-                          fontFamilyFallback: const ['NotoSansKR'],
-                          fontSize: 16,
-                          fontWeight: FontWeight.w700,
+                          fontFamilyFallback: ['NotoSansKR'],
+                          fontSize: 14,
+                          fontWeight: FontWeight.w600,
                         ),
                       ),
-              ),
+                    ),
+                  ),
+                  const SizedBox(height: 6),
+                ],
+                SizedBox(
+                  height: 52,
+                  width: double.infinity,
+                  child: ElevatedButton(
+                    onPressed: _isLoading ? null : _primaryAction,
+                    style: ElevatedButton.styleFrom(
+                      elevation: 0,
+                      backgroundColor: AppColors.pointColor,
+                      foregroundColor: Colors.white,
+                      disabledBackgroundColor: const Color(0xFFE2E8F0),
+                      shape: RoundedRectangleBorder(
+                        borderRadius: BorderRadius.circular(12),
+                      ),
+                    ),
+                    child: _isLoading
+                        ? const SizedBox(
+                            width: 20,
+                            height: 20,
+                            child: CircularProgressIndicator(
+                              strokeWidth: 2,
+                              color: Colors.white,
+                            ),
+                          )
+                        : Text(
+                            _currentStep == 4
+                                ? (_isKorean ? '프로필 완성' : 'Finish profile')
+                                : (_isKorean ? '다음' : 'Next'),
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis,
+                            style: const TextStyle(
+                              fontFamily: 'Inter',
+                              fontFamilyFallback: ['NotoSansKR'],
+                              fontSize: 16,
+                              fontWeight: FontWeight.w700,
+                            ),
+                          ),
+                  ),
+                ),
+              ],
             ),
           ),
         ),

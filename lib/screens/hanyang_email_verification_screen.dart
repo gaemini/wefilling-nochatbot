@@ -2,6 +2,8 @@
 // 한양대학교 이메일 인증 화면 (회원가입용)
 // Google 로그인 후 한양메일 인증 필요
 
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import 'package:cloud_functions/cloud_functions.dart';
@@ -176,6 +178,15 @@ class _HanyangEmailVerificationScreenState
           });
         }
       }
+    } on TimeoutException {
+      if (mounted) {
+        setState(() {
+          _errorMessage = Localizations.localeOf(context).languageCode == 'ko'
+              ? '인터넷 연결을 확인한 뒤 다시 시도해 주세요.'
+              : 'Check your internet connection and try again.';
+          _isLoading = false;
+        });
+      }
     } catch (e) {
       if (mounted) {
         setState(() {
@@ -320,6 +331,14 @@ class _HanyangEmailVerificationScreenState
           _errorMessage = e.message?.trim().isNotEmpty == true
               ? e.message!.trim()
               : AppLocalizations.of(context)!.error;
+        });
+      }
+    } on TimeoutException {
+      if (mounted) {
+        setState(() {
+          _errorMessage = Localizations.localeOf(context).languageCode == 'ko'
+              ? '인터넷 연결을 확인해 주세요. 입력한 인증번호는 유지됩니다.'
+              : 'Check your internet connection. Your verification code was kept.';
         });
       }
     } catch (e) {

@@ -744,6 +744,131 @@ function normalizeEmail(email: string): string {
 const GENERAL_EMAIL_SIGNUP_PURPOSE = 'general_signup';
 const HANYANG_EMAIL_SIGNUP_PURPOSE = 'hanyang_signup';
 
+function createEmailVerificationCode(previousCode: unknown): string {
+  const previous = typeof previousCode === 'string' ? previousCode : '';
+  let next = '';
+  do {
+    // Math.random() 대신 Node의 암호학적 난수를 사용한다. 같은 이메일에
+    // 연속으로 발급할 때는 직전 코드와 반드시 다른 값만 반환한다.
+    next = crypto.randomInt(1000, 10000).toString();
+  } while (next === previous);
+  return next;
+}
+
+function buildEmailVerificationMessage(
+  verificationCode: string,
+  isKorean: boolean,
+): {subject: string; text: string; html: string} {
+  const copy = isKorean ? {
+    language: 'ko',
+    preheader: 'Wefilling 회원가입을 위한 이메일 인증번호입니다.',
+    subject: '[Wefilling] 이메일 인증번호',
+    eyebrow: 'EMAIL VERIFICATION',
+    title: '이메일을 인증해 주세요',
+    description: '아래 4자리 인증번호를 Wefilling 앱에 입력해 주세요.',
+    expires: '인증번호는 5분 동안 유효해요.',
+    attempts: '최대 3회까지 입력할 수 있어요.',
+    ignore: '요청하지 않은 메일이라면 안전하게 무시해 주세요.',
+    footer: 'Wefilling에서 자동으로 보낸 메일입니다.',
+  } : {
+    language: 'en',
+    preheader: 'Your Wefilling email verification code.',
+    subject: '[Wefilling] Email verification code',
+    eyebrow: 'EMAIL VERIFICATION',
+    title: 'Verify your email',
+    description: 'Enter this 4-digit code in the Wefilling app.',
+    expires: 'This code is valid for 5 minutes.',
+    attempts: 'You can enter the code up to 3 times.',
+    ignore: 'If you did not request this email, you can safely ignore it.',
+    footer: 'This is an automated email from Wefilling.',
+  };
+
+  const text = [
+    copy.title,
+    '',
+    copy.description,
+    verificationCode,
+    '',
+    copy.expires,
+    copy.attempts,
+    copy.ignore,
+    '',
+    copy.footer,
+  ].join('\n');
+
+  const html = `<!doctype html>
+<html lang="${copy.language}">
+  <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <meta name="color-scheme" content="light only">
+    <title>${copy.subject}</title>
+    <style>
+      @media only screen and (max-width: 520px) {
+        .email-shell { padding: 16px 12px !important; }
+        .email-content { padding: 28px 22px !important; }
+        .verification-code { font-size: 30px !important; letter-spacing: 8px !important; }
+      }
+    </style>
+  </head>
+  <body style="margin:0; padding:0; background:#F8FAFC; color:#0F172A;">
+    <div style="display:none; max-height:0; overflow:hidden; opacity:0;">
+      ${copy.preheader}
+    </div>
+    <table role="presentation" width="100%" cellspacing="0" cellpadding="0"
+      style="width:100%; background:#F8FAFC; border-collapse:collapse;">
+      <tr>
+        <td class="email-shell" align="center" style="padding:32px 16px;">
+          <table role="presentation" width="100%" cellspacing="0" cellpadding="0"
+            style="width:100%; max-width:560px; background:#FFFFFF; border-collapse:separate; border-spacing:0; border-radius:18px;">
+            <tr>
+              <td class="email-content" style="padding:36px 40px; font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Arial,'Noto Sans KR',sans-serif;">
+                <div style="font-size:24px; line-height:1; font-weight:800; letter-spacing:-0.6px; color:#4990E2;">
+                  Wefilling
+                </div>
+                <div style="height:28px;"></div>
+                <div style="font-size:12px; line-height:1.4; font-weight:700; letter-spacing:1.4px; color:#4990E2;">
+                  ${copy.eyebrow}
+                </div>
+                <h1 style="margin:8px 0 0; font-size:26px; line-height:1.3; font-weight:800; letter-spacing:-0.5px; color:#0F172A;">
+                  ${copy.title}
+                </h1>
+                <p style="margin:12px 0 0; font-size:15px; line-height:1.65; color:#64748B;">
+                  ${copy.description}
+                </p>
+                <div class="verification-code" style="margin:28px 0 22px; padding:18px 12px; border-radius:12px; background:#EFF8FF; text-align:center; font-size:34px; line-height:1.2; font-weight:800; letter-spacing:10px; color:#1D78C1;">
+                  ${verificationCode}
+                </div>
+                <table role="presentation" width="100%" cellspacing="0" cellpadding="0"
+                  style="width:100%; border-collapse:collapse;">
+                  <tr>
+                    <td style="padding:7px 0; font-size:14px; line-height:1.55; color:#475569;">&#8226;&nbsp; ${copy.expires}</td>
+                  </tr>
+                  <tr>
+                    <td style="padding:7px 0; font-size:14px; line-height:1.55; color:#475569;">&#8226;&nbsp; ${copy.attempts}</td>
+                  </tr>
+                  <tr>
+                    <td style="padding:7px 0; font-size:14px; line-height:1.55; color:#475569;">&#8226;&nbsp; ${copy.ignore}</td>
+                  </tr>
+                </table>
+                <div style="height:28px;"></div>
+                <div style="height:1px; background:#E2E8F0;"></div>
+                <p style="margin:20px 0 0; font-size:12px; line-height:1.55; color:#94A3B8;">
+                  ${copy.footer}<br>
+                  wefilling@gmail.com
+                </p>
+              </td>
+            </tr>
+          </table>
+        </td>
+      </tr>
+    </table>
+  </body>
+</html>`;
+
+  return {subject: copy.subject, text, html};
+}
+
 function hashEmailVerificationToken(token: string): string {
   return crypto.createHash('sha256').update(token).digest('hex');
 }
@@ -1308,15 +1433,35 @@ export const discardIncompleteRegistration = functions.https.onCall(async (data,
     );
   }
 
+  let nicknameKey = String(userData?.nicknameKey || '').trim();
+  if (!nicknameKey && userData?.nickname) {
+    try {
+      nicknameKey = normalizeNickname(userData.nickname).nicknameKey;
+    } catch (_) {
+      nicknameKey = '';
+    }
+  }
+  // 완료되지 않은 프로필이 선점한 닉네임은 가입 이탈 즉시 재사용 가능하게
+  // 한다. ownerUid 조건 검증으로 다른 사용자의 예약은 건드리지 않는다.
+  if (nicknameKey) {
+    await releaseNicknameClaimIfOwned(uid, nicknameKey);
+  }
+
   const claims = await db.collection(COL.emailClaims).where('uid', '==', uid).get();
   const batch = db.batch();
   if (userSnap.exists) batch.delete(userRef);
   for (const claim of claims.docs) batch.delete(claim.ref);
+  const authEmail = typeof context.auth.token.email === 'string'
+    ? normalizeEmail(String(context.auth.token.email))
+    : '';
+  if (authEmail) {
+    batch.delete(db.collection(COL.emailVerifications).doc(authEmail));
+  }
   await batch.commit();
   await admin.auth().deleteUser(uid).catch((error) => {
     if ((error as any)?.code !== 'auth/user-not-found') throw error;
   });
-  return {success: true};
+  return {success: true, discardedUid: uid};
 });
 
 /// Auth 계정이 아직 생성되지 않은 이메일 가입 흐름의 일회성 인증 토큰을
@@ -1326,12 +1471,12 @@ export const cancelPendingEmailSignup = functions.https.onCall(async (data) => {
   const token = typeof data?.verificationToken === 'string'
     ? data.verificationToken.trim()
     : '';
-  if (!email || !token) return {success: true};
+  if (!email || !token) return {success: true, cancelled: false};
 
   const ref = db.collection(COL.emailVerifications).doc(email);
-  await db.runTransaction(async (tx) => {
+  const outcome = await db.runTransaction(async (tx) => {
     const snap = await tx.get(ref);
-    if (!snap.exists) return;
+    if (!snap.exists) return 'missing';
     const verification = snap.data() || {};
     const storedHashes = [
       String(verification.verificationTokenHash || ''),
@@ -1344,10 +1489,19 @@ export const cancelPendingEmailSignup = functions.https.onCall(async (data) => {
       return stored.length === expected.length && crypto.timingSafeEqual(stored, expected);
     });
     if (matches) {
+      // 가입 완료 응답이 유실된 뒤 사용자가 이탈을 눌러도 완료 영수증을
+      // 지워 실제 계정 상태를 숨기지 않는다.
+      if (verification.status === 'completed') return 'completed';
       tx.delete(ref);
+      return 'cancelled';
     }
+    return 'not-owned';
   });
-  return {success: true};
+  return {
+    success: outcome !== 'completed',
+    cancelled: outcome === 'cancelled' || outcome === 'missing',
+    alreadyCompleted: outcome === 'completed',
+  };
 });
 
 // 기존 사용자 백필: emailVerified==true 인 사용자들의 email_claims 생성/정합성 보정 (관리자 전용)
@@ -2933,25 +3087,30 @@ export const sendEmailVerificationCode = functions.https.onCall(async (data, con
     // 문서 키는 정규화(소문자/trim)해서 저장: 대소문자/공백 차이로 검증 실패(INTERNAL) 방지
     const emailDocId = emailNormalized;
 
-    // 4자리 랜덤 인증번호 생성 (메일 발송 가능할 때만 생성/저장)
-    const verificationCode = Math.floor(1000 + Math.random() * 9000).toString();
+    // 같은 이메일의 재요청도 직전 번호와 겹치지 않도록 서버 트랜잭션에서
+    // 기존 코드를 읽은 뒤 암호학적 난수로 새 4자리 번호를 확정한다.
+    const verificationRef = db.collection(COL.emailVerifications).doc(emailDocId);
+    let verificationCode = '';
     const cancellationToken = crypto.randomBytes(32).toString('hex');
-    
+
     // 만료 시간 (5분 후)
     const expiresAt = new Date();
     expiresAt.setMinutes(expiresAt.getMinutes() + 5);
 
-    // Firestore에 인증번호 저장
-    await db.collection(COL.emailVerifications).doc(emailDocId).set({
-      code: verificationCode,
-      email: emailTrimmed, // 원본 이메일(표시/메일 발송용)
-      emailNormalized: emailDocId, // 조회/정합성용
-      purpose,
-      status: 'issued',
-      cancellationTokenHash: hashEmailVerificationToken(cancellationToken),
-      expiresAt: admin.firestore.Timestamp.fromDate(expiresAt),
-      createdAt: admin.firestore.FieldValue.serverTimestamp(),
-      attempts: 0, // 시도 횟수
+    await db.runTransaction(async (transaction) => {
+      const previous = await transaction.get(verificationRef);
+      verificationCode = createEmailVerificationCode(previous.data()?.code);
+      transaction.set(verificationRef, {
+        code: verificationCode,
+        email: emailTrimmed, // 원본 이메일(표시/메일 발송용)
+        emailNormalized: emailDocId, // 조회/정합성용
+        purpose,
+        status: 'issued',
+        cancellationTokenHash: hashEmailVerificationToken(cancellationToken),
+        expiresAt: admin.firestore.Timestamp.fromDate(expiresAt),
+        createdAt: admin.firestore.FieldValue.serverTimestamp(),
+        attempts: 0, // 시도 횟수
+      });
     });
 
     // 컬렉션이 비어도 콘솔에서 경로를 쉽게 찾을 수 있도록 메타 문서를 유지
@@ -2976,65 +3135,14 @@ export const sendEmailVerificationCode = functions.https.onCall(async (data, con
     const lang = typeof locale === 'string' ? String(locale) : '';
     const isKo = lang.toLowerCase().startsWith('ko');
 
-    const subject = isKo ? '[Wefilling] 이메일 인증번호' : '[Wefilling] Email Verification Code';
-
-    const htmlKo = `
-        <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto; padding: 20px;">
-          <div style="text-align: center; margin-bottom: 30px;">
-            <h1 style="color: #1976d2; margin: 0;">Wefilling</h1>
-            <p style="color: #666; margin: 5px 0;">함께하는 커뮤니티</p>
-          </div>
-          <div style="background-color: #f8f9fa; padding: 30px; border-radius: 10px; text-align: center; margin-bottom: 30px;">
-            <h2 style="color: #333; margin: 0 0 20px 0;">이메일 인증번호</h2>
-            <p style="color: #666; margin: 0 0 20px 0; font-size: 16px;">아래 인증번호를 앱에 입력해주세요.</p>
-            <div style="background-color: #1976d2; color: white; font-size: 32px; font-weight: bold; padding: 20px; border-radius: 8px; letter-spacing: 8px; margin: 20px 0;">${verificationCode}</div>
-            <p style="color: #ff6b6b; font-size: 14px; margin: 20px 0 0 0;">⏰ 인증번호는 5분 후 만료됩니다.</p>
-          </div>
-          <div style="background-color: #e3f2fd; padding: 20px; border-radius: 8px; margin-bottom: 20px;">
-            <h3 style="color: #1976d2; margin: 0 0 10px 0; font-size: 16px;">📋 안내사항</h3>
-            <ul style="color: #666; margin: 0; padding-left: 20px; font-size: 14px;">
-              <li>인증번호는 5분간 유효합니다.</li>
-              <li>인증번호는 3회까지 입력할 수 있습니다.</li>
-              <li>본인이 요청하지 않은 경우 이 이메일을 무시하세요.</li>
-            </ul>
-          </div>
-          <div style="text-align: center; color: #999; font-size: 12px;">
-            <p>이 이메일은 Wefilling 앱에서 자동으로 발송된 이메일입니다.</p>
-            <p>문의사항이 있으시면 wefilling@gmail.com으로 연락해주세요.</p>
-          </div>
-        </div>`;
-
-    const htmlEn = `
-        <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto; padding: 20px;">
-          <div style="text-align: center; margin-bottom: 30px;">
-            <h1 style="color: #1976d2; margin: 0;">Wefilling</h1>
-            <p style="color: #666; margin: 5px 0;">Community Together</p>
-          </div>
-          <div style="background-color: #f8f9fa; padding: 30px; border-radius: 10px; text-align: center; margin-bottom: 30px;">
-            <h2 style="color: #333; margin: 0 0 20px 0;">Email Verification Code</h2>
-            <p style="color: #666; margin: 0 0 20px 0; font-size: 16px;">Please enter the code below in the app.</p>
-            <div style="background-color: #1976d2; color: white; font-size: 32px; font-weight: bold; padding: 20px; border-radius: 8px; letter-spacing: 8px; margin: 20px 0;">${verificationCode}</div>
-            <p style="color: #ff6b6b; font-size: 14px; margin: 20px 0 0 0;">⏰ The code expires in 5 minutes.</p>
-          </div>
-          <div style="background-color: #e3f2fd; padding: 20px; border-radius: 8px; margin-bottom: 20px;">
-            <h3 style="color: #1976d2; margin: 0 0 10px 0; font-size: 16px;">📋 Notes</h3>
-            <ul style="color: #666; margin: 0; padding-left: 20px; font-size: 14px;">
-              <li>The code is valid for 5 minutes.</li>
-              <li>You can try entering the code up to 3 times.</li>
-              <li>If you didn’t request this, you can ignore this email.</li>
-            </ul>
-          </div>
-          <div style="text-align: center; color: #999; font-size: 12px;">
-            <p>This email was sent automatically by the Wefilling app.</p>
-            <p>If you have any questions, contact us at wefilling@gmail.com.</p>
-          </div>
-        </div>`;
+    const emailMessage = buildEmailVerificationMessage(verificationCode, isKo);
 
     const mailOptions = {
-      from: gmailUser,
+      from: `Wefilling <${gmailUser}>`,
       to: emailTrimmed,
-      subject,
-      html: isKo ? htmlKo : htmlEn,
+      subject: emailMessage.subject,
+      text: emailMessage.text,
+      html: emailMessage.html,
     };
 
     await mailTransporter.sendMail(mailOptions);
@@ -3314,8 +3422,10 @@ export const createGeneralEmailSignup = functions.https.onCall(async (data, cont
   const consumeId = crypto.randomBytes(16).toString('hex');
   const expectedTokenHash = hashEmailVerificationToken(verificationToken);
 
-  // 인증 토큰을 원자적으로 잠가 동시 요청/재사용을 차단한다.
-  await db.runTransaction(async (transaction) => {
+  // 인증 토큰을 원자적으로 잠가 동시 요청/재사용을 차단한다. 직전 호출이
+  // 가입을 완료했지만 응답만 유실된 경우에는 같은 토큰에 기록된 UID를
+  // 반환해 새 계정을 만들지 않고 동일한 완료 결과를 재사용한다.
+  const completedUid = await db.runTransaction(async (transaction) => {
     const snap = await transaction.get(verificationRef);
     if (!snap.exists) {
       throw new functions.https.HttpsError('not-found', '이메일 인증 정보가 없습니다. 다시 인증해주세요.');
@@ -3328,6 +3438,21 @@ export const createGeneralEmailSignup = functions.https.onCall(async (data, cont
     const expectedBuffer = Buffer.from(expectedTokenHash);
     const tokenMatches = storedBuffer.length === expectedBuffer.length &&
       crypto.timingSafeEqual(storedBuffer, expectedBuffer);
+
+    if (verification?.purpose === GENERAL_EMAIL_SIGNUP_PURPOSE &&
+        verification?.status === 'completed' &&
+        verifiedExpiresAt &&
+        verifiedExpiresAt.getTime() > Date.now() &&
+        tokenMatches) {
+      const retryUid = String(verification?.completedUid || '').trim();
+      if (!retryUid) {
+        throw new functions.https.HttpsError(
+          'failed-precondition',
+          '완료된 가입 정보가 손상되었습니다. 다시 인증해주세요.'
+        );
+      }
+      return retryUid;
+    }
 
     const tokenAvailable = verification?.status === 'verified' ||
       (verification?.status === 'consuming' &&
@@ -3349,7 +3474,48 @@ export const createGeneralEmailSignup = functions.https.onCall(async (data, cont
       consumeId,
       consumeExpiresAt: admin.firestore.Timestamp.fromMillis(Date.now() + 2 * 60 * 1000),
     });
+    return null;
   });
+
+  if (completedUid) {
+    try {
+      const [completedAuthUser, completedUserSnap] = await Promise.all([
+        admin.auth().getUser(completedUid),
+        db.collection(COL.users).doc(completedUid).get(),
+      ]);
+      const completedData = completedUserSnap.data() || {};
+      if (!completedUserSnap.exists ||
+          !isCompletedRegistrationData(completedData) ||
+          normalizeEmail(completedAuthUser.email || '') !== normalizedEmail) {
+        throw new functions.https.HttpsError(
+          'failed-precondition',
+          '이전 가입 완료 상태를 확인할 수 없습니다. 다시 인증해주세요.'
+        );
+      }
+      let customToken = '';
+      try {
+        customToken = await admin.auth().createCustomToken(completedUid);
+      } catch (tokenError) {
+        console.warn(
+          'createGeneralEmailSignup 재시도 custom token 생성 실패; 비밀번호 로그인으로 대체합니다.',
+          {uid: completedUid, code: (tokenError as any)?.code || 'unknown'},
+        );
+      }
+      return {
+        success: true,
+        customToken,
+        signInWithPassword: customToken.length === 0,
+        recoveredCompletedAttempt: true,
+      };
+    } catch (error) {
+      if (error instanceof functions.https.HttpsError) throw error;
+      console.error('완료된 일반 이메일 가입 재확인 오류:', error);
+      throw new functions.https.HttpsError(
+        'internal',
+        '완료된 회원가입 상태를 확인하지 못했습니다.'
+      );
+    }
+  }
 
   let authUser: admin.auth.UserRecord | null = null;
   let createdNewAuthUser = false;
@@ -3454,7 +3620,17 @@ export const createGeneralEmailSignup = functions.https.onCall(async (data, cont
         updatedAt: now,
         lastLogin: now,
       }, {merge: true});
-      transaction.delete(verificationRef);
+      // 응답 유실 시 같은 인증 토큰으로 안전하게 완료 결과를 다시 받을 수
+      // 있도록 토큰 만료 시점까지만 작은 완료 영수증을 남긴다. 주기 정리 함수가
+      // 기존 expiresAt 기준으로 삭제하므로 영구 데이터나 새 스캐너는 생기지 않는다.
+      transaction.update(verificationRef, {
+        status: 'completed',
+        completedUid: uid,
+        completedAt: now,
+        consumeId: admin.firestore.FieldValue.delete(),
+        consumeExpiresAt: admin.firestore.FieldValue.delete(),
+        code: admin.firestore.FieldValue.delete(),
+      });
     });
 
     // Custom token 서명은 런타임 서비스 계정의 signBlob 권한에 의존한다.

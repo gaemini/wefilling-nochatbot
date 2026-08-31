@@ -141,22 +141,47 @@ export async function releaseNicknameClaimIfOwned(
   });
 }
 
-export const checkNicknameAvailability = functions.https.onCall(
-  async (data, context) => {
-    const identity = normalizeNickname(data?.nickname);
-    const snap = await admin.firestore()
-      .collection(COL.nicknameClaims)
-      .doc(identity.nicknameKey)
-      .get();
-    const ownerUid = snap.exists ? String(snap.get('ownerUid') ?? '') : '';
-    return {
-      available: !snap.exists ||
-        (Boolean(context.auth?.uid) && ownerUid === context.auth?.uid),
-      nickname: identity.nickname,
-      nicknameKey: identity.nicknameKey,
-    };
-  },
-);
+export const checkNicknameAvailability = functions
+  .runWith({timeoutSeconds: 15, memory: '256MB'})
+  .https.onCall(async (data, context) => {
+    // Deliberately exclude uid, email, nickname, and token values. These fields
+    // only show whether a request reached the callable handler after the SDK's
+    // authentication and App Check processing.
+    functions.logger.info('nickname check entered', {
+      authenticated: Boolean(context.auth?.uid),
+      appCheckPresent: Boolean(context.app),
+    });
+
+    try {
+      const identity = normalizeNickname(data?.nickname);
+      const snap = await admin.firestore()
+        .collection(COL.nicknameClaims)
+        .doc(identity.nicknameKey)
+        .get();
+      const ownerUid = snap.exists ? String(snap.get('ownerUid') ?? '') : '';
+      const available = !snap.exists ||
+        (Boolean(context.auth?.uid) && ownerUid === context.auth?.uid);
+      functions.logger.info('nickname check completed', {
+        authenticated: Boolean(context.auth?.uid),
+        appCheckPresent: Boolean(context.app),
+        available,
+      });
+      return {
+        available,
+        nickname: identity.nickname,
+        nicknameKey: identity.nicknameKey,
+      };
+    } catch (error) {
+      functions.logger.error('nickname check function error', {
+        authenticated: Boolean(context.auth?.uid),
+        appCheckPresent: Boolean(context.app),
+        code: error instanceof functions.https.HttpsError
+          ? error.code
+          : 'internal',
+      });
+      throw error;
+    }
+  });
 
 export const updateMyNicknameSecure = functions.https.onCall(
   async (data, context) => {

@@ -209,21 +209,42 @@ class _SignUpMethodSelectionScreenState
     if (_isLoading || !await showSignupExitConfirmation(context) || !mounted) {
       return;
     }
+    setState(() => _isLoading = true);
     final authProvider = context.read<AuthProvider>();
     // 이 화면에서 만들어진 Auth 사용자는 아직 가입 확정 전이다. 별도 상태
     // 조회가 실패해 이탈 자체가 막히지 않도록 서버 정리 함수를 바로 호출한다.
     // 완료 계정은 서버가 failed-precondition으로 보호하므로 삭제되지 않는다.
-    if (authProvider.user != null) {
-      await authProvider.discardIncompleteRegistration();
+    var cleanupCompleted = true;
+    try {
+      if (authProvider.user != null) {
+        cleanupCompleted = await authProvider.discardIncompleteRegistration();
+      }
+      if (cleanupCompleted &&
+          _verifiedHanyangEmail.isNotEmpty &&
+          _hanyangVerificationToken.isNotEmpty) {
+        await authProvider.cancelPendingEmailSignup(
+          email: _verifiedHanyangEmail,
+          verificationToken: _hanyangVerificationToken,
+        );
+      }
+    } catch (_) {
+      cleanupCompleted = false;
+    } finally {
+      if (mounted) setState(() => _isLoading = false);
     }
-    if (_verifiedHanyangEmail.isNotEmpty &&
-        _hanyangVerificationToken.isNotEmpty) {
-      await authProvider.cancelPendingEmailSignup(
-        email: _verifiedHanyangEmail,
-        verificationToken: _hanyangVerificationToken,
+    if (!mounted) return;
+    if (!cleanupCompleted) {
+      final isKorean = Localizations.localeOf(context).languageCode == 'ko';
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(isKorean
+              ? '인터넷 연결 후 다시 시도해 주세요. 미완료 계정을 먼저 정리할게요.'
+              : 'Reconnect and try again so the unfinished account can be removed.'),
+        ),
       );
+      return;
     }
-    if (mounted) Navigator.pop(context);
+    Navigator.pop(context);
   }
 
   @override

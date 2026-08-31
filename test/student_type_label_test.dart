@@ -30,4 +30,25 @@ void main() {
     expect(find.text('교환학생'), findsNothing);
     expect(find.text('한국인 학생'), findsNothing);
   });
+
+  testWidgets('English signup uses Foreign student label', (tester) async {
+    await tester.pumpWidget(
+      Localizations(
+        locale: const Locale('en'),
+        delegates: const <LocalizationsDelegate<dynamic>>[
+          DefaultWidgetsLocalizations.delegate,
+        ],
+        child: Directionality(
+          textDirection: TextDirection.ltr,
+          child: Builder(
+            builder: (context) => Text(StudentType.exchange.title(context)),
+          ),
+        ),
+      ),
+    );
+
+    expect(find.text('Foreign student'), findsOneWidget);
+    expect(find.text('Exchange student'), findsNothing);
+    expect(find.text('International student'), findsNothing);
+  });
 }

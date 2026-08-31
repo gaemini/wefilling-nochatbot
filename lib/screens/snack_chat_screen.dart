@@ -38,6 +38,7 @@ import '../ui/dialogs/snack_chat_poll_dialog.dart';
 import '../ui/sheets/snack_chat_attachment_sheet.dart';
 import '../ui/sheets/snack_chat_file_confirmation_sheet.dart';
 import '../ui/sheets/snack_chat_image_confirmation_sheet.dart';
+import '../ui/sheets/snack_chat_people_sheet.dart';
 import '../ui/sheets/translation_language_sheet.dart';
 import '../utils/responsive_helper.dart';
 import '../utils/logger.dart';
@@ -109,6 +110,20 @@ class _SnackTranslationOutcome {
   final ContentTranslationResult? result;
 }
 
+enum _SnackTranslationPriority { live, visible, adjacent }
+
+class _SnackTranslationCandidate {
+  const _SnackTranslationCandidate({
+    required this.message,
+    required this.priority,
+    required this.distanceFromViewportCenter,
+  });
+
+  final SnackChatMessage message;
+  final _SnackTranslationPriority priority;
+  final double distanceFromViewportCenter;
+}
+
 class _SnackChatScreenState extends State<SnackChatScreen>
     with WidgetsBindingObserver {
   static const Color _chatBackground = SnackChatBackdrop.backgroundColor;
@@ -125,6 +140,9 @@ class _SnackChatScreenState extends State<SnackChatScreen>
   static const int _maxConcurrentTranslationBatches = 2;
   static const int _maxTranslationRequestsInFlight = 7;
   static const int _maxLiveMessageWindow = 200;
+  static const int _translationAdjacentPrefetchLimit = 2;
+  static const Duration _translationMicroBatchWindow =
+      Duration(milliseconds: 70);
 
   final SnackChatService _snackChatService = SnackChatService();
   final UsersRepository _usersRepository = UsersRepository();
@@ -247,7 +265,12 @@ class _SnackChatScreenState extends State<SnackChatScreen>
   final Map<String, DateTime> _translationRetryAfter = <String, DateTime>{};
   final Map<String, _SnackTranslationOutcome> _deferredTranslationOutcomes =
       <String, _SnackTranslationOutcome>{};
-  Timer? _translationScanDebounce;
+  final Set<String> _translationCacheLookupsInFlight = <String>{};
+  final Map<String, _SnackTranslationCandidate>
+      _translationMicroBatchCandidates = <String, _SnackTranslationCandidate>{};
+  final Map<String, DateTime> _liveTranslationPriorityUntil =
+      <String, DateTime>{};
+  Timer? _translationMicroBatchTimer;
   Timer? _translationRetryTimer;
   bool _translationScanScheduled = false;
   int _translationBatchesInFlight = 0;
@@ -255,7 +278,6 @@ class _SnackChatScreenState extends State<SnackChatScreen>
   bool _translationLanguageSheetOpen = false;
   bool _manualTranslationRetryInFlight = false;
   bool _isUserScrolling = false;
-  int _userScrollRevision = 0;
   bool _translationRestoreScheduled = false;
   int _translationRestoreGeneration = 0;
   _ScrollAnchor? _pendingTranslationAnchor;
@@ -268,7 +290,6 @@ class _SnackChatScreenState extends State<SnackChatScreen>
 
   String get _translationScope => 'snack-room:${widget.snackChatId}';
   bool get _canStartTranslationBatch =>
-      !_isUserScrolling &&
       _translationBatchesInFlight < _maxConcurrentTranslationBatches &&
       _translationRequestsInFlight.length < _maxTranslationRequestsInFlight;
 
@@ -307,8 +328,8 @@ class _SnackChatScreenState extends State<SnackChatScreen>
 
   void _resetTranslationStateForRoom() {
     _translationStateGeneration++;
-    _translationScanDebounce?.cancel();
-    _translationScanDebounce = null;
+    _translationMicroBatchTimer?.cancel();
+    _translationMicroBatchTimer = null;
     _translationRetryTimer?.cancel();
     _translationRetryTimer = null;
     _translationScanScheduled = false;
@@ -316,11 +337,13 @@ class _SnackChatScreenState extends State<SnackChatScreen>
     _translationModeReady = false;
     _manualTranslationRetryInFlight = false;
     _isUserScrolling = false;
-    _userScrollRevision++;
     _cancelPendingTranslationRestore();
     _messageTranslations.clear();
     _translationSourceSignatures.clear();
     _translationRequestsInFlight.clear();
+    _translationCacheLookupsInFlight.clear();
+    _translationMicroBatchCandidates.clear();
+    _liveTranslationPriorityUntil.clear();
     _deferredTranslationOutcomes.clear();
     _translationFailures.clear();
     _translationRetryAfter.clear();
@@ -386,17 +409,29 @@ class _SnackChatScreenState extends State<SnackChatScreen>
       _translationProviderRetryAvailable = retryAvailable;
       if (languageChanged) {
         _translationStateGeneration++;
+        _translationMicroBatchTimer?.cancel();
+        _translationMicroBatchTimer = null;
         _translationBatchesInFlight = 0;
         _translationModeReady = false;
         _manualTranslationRetryInFlight = false;
         _messageTranslations.clear();
         _translationSourceSignatures.clear();
         _translationRequestsInFlight.clear();
+        _translationCacheLookupsInFlight.clear();
+        _translationMicroBatchCandidates.clear();
+        _liveTranslationPriorityUntil.clear();
         _deferredTranslationOutcomes.clear();
         _translationFailures.clear();
         _translationRetryAfter.clear();
         _translationRetryTimer?.cancel();
         _translationRetryTimer = null;
+      } else if (showingOriginal) {
+        // Keep completed cache entries, but do not let a queued miss start a
+        // server request after the room has switched back to original mode.
+        _translationMicroBatchTimer?.cancel();
+        _translationMicroBatchTimer = null;
+        _translationMicroBatchCandidates.clear();
+        _liveTranslationPriorityUntil.clear();
       }
     });
     if (canRestoreScroll) {
@@ -525,24 +560,13 @@ class _SnackChatScreenState extends State<SnackChatScreen>
     return _currentTranslationForMessage(message) != null;
   }
 
-  void _scheduleVisibleTranslations({
-    Duration delay = Duration.zero,
-  }) {
+  void _scheduleVisibleTranslations() {
     if (!mounted ||
         !_translationModeReady ||
         _translationShowsOriginal ||
-        !_canStartTranslationBatch ||
         _appLifecycleState != AppLifecycleState.resumed ||
         _isLeavingRoom ||
         _roomAccessTerminated) {
-      return;
-    }
-    if (delay > Duration.zero) {
-      _translationScanDebounce?.cancel();
-      _translationScanDebounce = Timer(delay, () {
-        _translationScanDebounce = null;
-        _scheduleTranslationScanAfterLayout();
-      });
       return;
     }
     _scheduleTranslationScanAfterLayout();
@@ -556,32 +580,34 @@ class _SnackChatScreenState extends State<SnackChatScreen>
       if (!mounted ||
           !_translationModeReady ||
           _translationShowsOriginal ||
-          !_canStartTranslationBatch ||
           _appLifecycleState != AppLifecycleState.resumed ||
           _isLeavingRoom ||
           _roomAccessTerminated) {
         return;
       }
-      unawaited(_translateNextVisibleBatch());
+      // A frame callback is enough to coalesce repeated scroll/rebuild events.
+      // Do not wait for ScrollEnd: cache lookup starts while the newly visible
+      // bubble is still moving through the viewport.
+      unawaited(_primeVisibleTranslationCandidates());
     });
   }
 
-  void _debounceVisibleTranslationScan() {
-    if (!_translationModeReady ||
-        _translationShowsOriginal ||
-        _isUserScrolling) {
-      return;
-    }
-    _translationScanDebounce?.cancel();
-    _translationScanDebounce = Timer(const Duration(milliseconds: 110), () {
-      _translationScanDebounce = null;
-      _scheduleTranslationScanAfterLayout();
-    });
+  void _scheduleVisibleTranslationScanFromScroll() {
+    if (!_translationModeReady || _translationShowsOriginal) return;
+    _scheduleTranslationScanAfterLayout();
   }
 
-  List<SnackChatMessage> _visibleMessagesNeedingTranslation({
+  bool _isTranslationWorkPending(String requestKey) =>
+      _translationRequestsInFlight.contains(requestKey) ||
+      _translationCacheLookupsInFlight.contains(requestKey) ||
+      _translationMicroBatchCandidates.containsKey(requestKey) ||
+      _deferredTranslationOutcomes.containsKey(requestKey);
+
+  List<_SnackTranslationCandidate> _translationCandidatesNearViewport({
     required int limit,
+    bool includeQueued = false,
   }) {
+    if (limit <= 0) return const <_SnackTranslationCandidate>[];
     final viewportRenderObject =
         _messageViewportKey.currentContext?.findRenderObject();
     final viewportBox =
@@ -592,8 +618,14 @@ class _SnackChatScreenState extends State<SnackChatScreen>
     final viewportBottom = viewportBox == null
         ? MediaQuery.sizeOf(context).height
         : viewportTop + viewportBox.size.height;
+    final viewportHeight = (viewportBottom - viewportTop).abs();
+    final adjacentExtent = viewportHeight * 0.22;
+    final viewportCenter = (viewportTop + viewportBottom) / 2;
     final now = DateTime.now();
-    final visible = <MapEntry<double, SnackChatMessage>>[];
+    _liveTranslationPriorityUntil.removeWhere(
+      (_, expiresAt) => !expiresAt.isAfter(now),
+    );
+    final candidates = <_SnackTranslationCandidate>[];
 
     for (final message in _messages) {
       if (!_canTranslateMessage(message) || _hasCurrentTranslation(message)) {
@@ -601,28 +633,66 @@ class _SnackChatScreenState extends State<SnackChatScreen>
       }
       final requestKey = _translationRequestKey(message);
       if (_translationRequestsInFlight.contains(requestKey) ||
-          (_translationFailures[requestKey] ?? 0) >= 2) {
+          _translationCacheLookupsInFlight.contains(requestKey) ||
+          _deferredTranslationOutcomes.containsKey(requestKey) ||
+          (!includeQueued &&
+              _translationMicroBatchCandidates.containsKey(requestKey))) {
         continue;
       }
+      final failureCount = _translationFailures[requestKey] ?? 0;
+      if (failureCount >= 3) continue;
       final retryAfter = _translationRetryAfter[requestKey];
       if (retryAfter != null && retryAfter.isAfter(now)) continue;
+      // An exhausted/non-retryable failure has no retry deadline. Keep it for
+      // the explicit retry button instead of automatically spending again.
+      if (failureCount >= 2 && retryAfter == null) continue;
 
       final renderObject =
           _messageKeys[message.id]?.currentContext?.findRenderObject();
       if (renderObject is! RenderBox || !renderObject.attached) continue;
       final top = renderObject.localToGlobal(Offset.zero).dy;
       final bottom = top + renderObject.size.height;
-      if (bottom <= viewportTop || top >= viewportBottom) continue;
-      visible.add(MapEntry(top, message));
+      final isVisible = bottom > viewportTop && top < viewportBottom;
+      final isAdjacent = bottom > viewportTop - adjacentExtent &&
+          top < viewportBottom + adjacentExtent;
+      if (!isAdjacent) continue;
+      final isLivePriority =
+          _liveTranslationPriorityUntil[message.id]?.isAfter(now) == true;
+      candidates.add(
+        _SnackTranslationCandidate(
+          message: message,
+          priority: isLivePriority
+              ? _SnackTranslationPriority.live
+              : isVisible
+                  ? _SnackTranslationPriority.visible
+                  : _SnackTranslationPriority.adjacent,
+          distanceFromViewportCenter:
+              (((top + bottom) / 2) - viewportCenter).abs(),
+        ),
+      );
     }
 
-    visible.sort(
-      (a, b) => _isNearLatest ? b.key.compareTo(a.key) : a.key.compareTo(b.key),
-    );
-    return visible
-        .take(limit)
-        .map((entry) => entry.value)
-        .toList(growable: false);
+    candidates.sort((a, b) {
+      final byPriority = a.priority.index.compareTo(b.priority.index);
+      if (byPriority != 0) return byPriority;
+      return a.distanceFromViewportCenter.compareTo(
+        b.distanceFromViewportCenter,
+      );
+    });
+    final selected = <_SnackTranslationCandidate>[];
+    var adjacentCount = 0;
+    for (final candidate in candidates) {
+      if (candidate.priority == _SnackTranslationPriority.adjacent &&
+          adjacentCount >= _translationAdjacentPrefetchLimit) {
+        continue;
+      }
+      selected.add(candidate);
+      if (candidate.priority == _SnackTranslationPriority.adjacent) {
+        adjacentCount++;
+      }
+      if (selected.length == limit) break;
+    }
+    return selected;
   }
 
   int get _nextAdaptiveTranslationBatchSize {
@@ -636,19 +706,190 @@ class _SnackChatScreenState extends State<SnackChatScreen>
     return preferred.clamp(1, remainingCapacity).toInt();
   }
 
-  Future<void> _translateNextVisibleBatch() async {
-    if (!_canStartTranslationBatch ||
-        !_translationModeReady ||
+  Future<void> _primeVisibleTranslationCandidates() async {
+    if (!_translationModeReady ||
         _translationShowsOriginal ||
         _appLifecycleState != AppLifecycleState.resumed) {
       return;
     }
-    final batchSize = _nextAdaptiveTranslationBatchSize;
-    if (batchSize <= 0) return;
-    final candidates = _visibleMessagesNeedingTranslation(limit: batchSize);
+    // Local cache probes are cheap and must not wait behind an active network
+    // batch. Network capacity is enforced later at micro-batch flush time.
+    final availableCapacity = _maxTranslationRequestsInFlight -
+        _translationCacheLookupsInFlight.length;
+    if (availableCapacity <= 0) return;
+    final candidates = _translationCandidatesNearViewport(
+      limit: availableCapacity,
+    );
     if (candidates.isEmpty) return;
 
-    await _translateMessageBatch(candidates);
+    final generation = _translationStateGeneration;
+    final languageRevision = _translationLanguageRevision;
+    final roomId = widget.snackChatId;
+    final uiLanguageCode = Localizations.localeOf(context).languageCode;
+    final keys = <String>{
+      for (final candidate in candidates)
+        _translationRequestKey(candidate.message),
+    };
+    setState(() => _translationCacheLookupsInFlight.addAll(keys));
+
+    Map<String, ContentTranslationResult> cached;
+    try {
+      // This method reads memory and the account-scoped Hive box only. It
+      // never queues a Cloud Function, so local hits are not delayed by the
+      // API micro-batch window below.
+      cached = await _translationService.cachedResultsFor(
+        <ContentTranslationRequest>[
+          for (final candidate in candidates)
+            _translationRequestForMessage(
+              candidate.message,
+              roomId: roomId,
+            ),
+        ],
+        uiLanguageCode: uiLanguageCode,
+      );
+    } catch (_) {
+      cached = const <String, ContentTranslationResult>{};
+    }
+    if (!mounted ||
+        generation != _translationStateGeneration ||
+        languageRevision != _translationLanguageRevision ||
+        roomId != widget.snackChatId) {
+      return;
+    }
+    if (_appLifecycleState != AppLifecycleState.resumed ||
+        _isLeavingRoom ||
+        _roomAccessTerminated) {
+      setState(() => _translationCacheLookupsInFlight.removeAll(keys));
+      return;
+    }
+
+    ContentTranslationResult? firstTranslatedResult;
+    setState(() {
+      for (final candidate in candidates) {
+        final message = candidate.message;
+        final requestKey = _translationRequestKey(message);
+        _translationCacheLookupsInFlight.remove(requestKey);
+
+        SnackChatMessage? currentMessage;
+        for (final current in _messages) {
+          if (current.id == message.id) {
+            currentMessage = current;
+            break;
+          }
+        }
+        if (currentMessage == null ||
+            !_canTranslateMessage(currentMessage) ||
+            _translationRequestKey(currentMessage) != requestKey) {
+          continue;
+        }
+        final request = _translationRequestForMessage(
+          currentMessage,
+          roomId: roomId,
+        );
+        final result = cached[request.serverId];
+        if (_isCompleteTranslationForMessage(currentMessage, result)) {
+          _messageTranslations[currentMessage.id] = result!;
+          _translationSourceSignatures[currentMessage.id] =
+              _translationSourceSignature(currentMessage);
+          _translationFailures.remove(requestKey);
+          _translationRetryAfter.remove(requestKey);
+          _liveTranslationPriorityUntil.remove(currentMessage.id);
+          if (!result.isSameLanguage) firstTranslatedResult ??= result;
+          continue;
+        }
+        if (!_translationShowsOriginal &&
+            !_translationRequestsInFlight.contains(requestKey) &&
+            !_deferredTranslationOutcomes.containsKey(requestKey)) {
+          _translationMicroBatchCandidates[requestKey] =
+              _SnackTranslationCandidate(
+            message: currentMessage,
+            priority: candidate.priority,
+            distanceFromViewportCenter: candidate.distanceFromViewportCenter,
+          );
+        }
+      }
+    });
+    _registerCachedTranslationScope(firstTranslatedResult);
+    _scheduleTranslationMicroBatch();
+  }
+
+  void _scheduleTranslationMicroBatch() {
+    if (_translationMicroBatchCandidates.isEmpty ||
+        _translationMicroBatchTimer != null) {
+      return;
+    }
+    _translationMicroBatchTimer = Timer(_translationMicroBatchWindow, () {
+      _translationMicroBatchTimer = null;
+      unawaited(_flushTranslationMicroBatch());
+    });
+  }
+
+  Future<void> _flushTranslationMicroBatch() async {
+    if (!mounted ||
+        !_translationModeReady ||
+        _translationShowsOriginal ||
+        !_canStartTranslationBatch ||
+        _appLifecycleState != AppLifecycleState.resumed ||
+        _isLeavingRoom ||
+        _roomAccessTerminated) {
+      if (mounted && (_translationShowsOriginal || _isLeavingRoom)) {
+        setState(() => _translationMicroBatchCandidates.clear());
+      }
+      return;
+    }
+    final batchSize = _nextAdaptiveTranslationBatchSize;
+    if (batchSize <= 0) {
+      _scheduleTranslationMicroBatch();
+      return;
+    }
+
+    // Re-evaluate geometry after the short window. Messages that only flashed
+    // through the viewport during a fast fling never reach the server/API.
+    final current = _translationCandidatesNearViewport(
+      limit: _translationMicroBatchCandidates.length +
+          _translationAdjacentPrefetchLimit,
+      includeQueued: true,
+    );
+    final currentByKey = <String, _SnackTranslationCandidate>{
+      for (final candidate in current)
+        _translationRequestKey(candidate.message): candidate,
+    };
+    final selected = <_SnackTranslationCandidate>[];
+    for (final entry in _translationMicroBatchCandidates.entries) {
+      final currentCandidate = currentByKey[entry.key];
+      if (currentCandidate == null) continue;
+      selected.add(
+        _SnackTranslationCandidate(
+          message: currentCandidate.message,
+          priority: entry.value.priority.index < currentCandidate.priority.index
+              ? entry.value.priority
+              : currentCandidate.priority,
+          distanceFromViewportCenter:
+              currentCandidate.distanceFromViewportCenter,
+        ),
+      );
+    }
+    selected.sort((a, b) {
+      final byPriority = a.priority.index.compareTo(b.priority.index);
+      if (byPriority != 0) return byPriority;
+      return a.distanceFromViewportCenter.compareTo(
+        b.distanceFromViewportCenter,
+      );
+    });
+    _translationMicroBatchCandidates.clear();
+    final messages = selected
+        .take(batchSize)
+        .map((candidate) => candidate.message)
+        .toList(growable: false);
+    if (messages.isEmpty) {
+      if (mounted) setState(() {});
+      return;
+    }
+    final manualRetry = messages.any(
+      (message) =>
+          (_translationFailures[_translationRequestKey(message)] ?? 0) >= 2,
+    );
+    await _translateMessageBatch(messages, manualRetry: manualRetry);
   }
 
   Future<void> _translateMessageBatch(
@@ -758,6 +999,7 @@ class _SnackChatScreenState extends State<SnackChatScreen>
         }
         if (_translationBatchesInFlight > 0) _translationBatchesInFlight--;
       });
+      _scheduleTranslationMicroBatch();
       return;
     }
 
@@ -812,16 +1054,24 @@ class _SnackChatScreenState extends State<SnackChatScreen>
               _translationSourceSignature(currentMessage);
           _translationFailures.remove(outcome.requestKey);
           _translationRetryAfter.remove(outcome.requestKey);
+          _liveTranslationPriorityUntil.remove(currentMessage.id);
           if (!result.isSameLanguage) successfulResults.add(result);
         } else {
-          final failureCount = result?.automaticRetryExhausted == true
-              ? 2
-              : (_translationFailures[outcome.requestKey] ?? 0) + 1;
+          final previousFailureCount =
+              _translationFailures[outcome.requestKey] ?? 0;
+          var failureCount = previousFailureCount + 1;
+          if (result?.automaticRetryExhausted == true && failureCount < 2) {
+            failureCount = 2;
+          }
           _translationFailures[outcome.requestKey] = failureCount;
-          if (failureCount < 2) {
+          final retryable = result == null || result.isRetryableFailure;
+          if (retryable && failureCount <= 2) {
             hasRetryableFailure = true;
-            _translationRetryAfter[outcome.requestKey] =
-                DateTime.now().add(const Duration(seconds: 2));
+            _translationRetryAfter[outcome.requestKey] = DateTime.now().add(
+              failureCount >= 2
+                  ? const Duration(seconds: 15)
+                  : const Duration(seconds: 2),
+            );
           } else {
             _translationRetryAfter.remove(outcome.requestKey);
           }
@@ -845,6 +1095,7 @@ class _SnackChatScreenState extends State<SnackChatScreen>
       );
     }
     if (hasRetryableFailure) _scheduleTranslationRetry();
+    if (completesBatch) _scheduleTranslationMicroBatch();
     if (scheduleNextBatch && !_translationShowsOriginal) {
       _scheduleVisibleTranslations();
     }
@@ -855,6 +1106,7 @@ class _SnackChatScreenState extends State<SnackChatScreen>
     setState(() {
       if (_translationBatchesInFlight > 0) _translationBatchesInFlight--;
     });
+    _scheduleTranslationMicroBatch();
     if (!_translationShowsOriginal) _scheduleVisibleTranslations();
   }
 
@@ -872,28 +1124,27 @@ class _SnackChatScreenState extends State<SnackChatScreen>
   void _translateNewLiveMessages(Iterable<SnackChatMessage> messages) {
     if (!_translationModeReady ||
         _translationShowsOriginal ||
-        !_canStartTranslationBatch ||
         _appLifecycleState != AppLifecycleState.resumed) {
       return;
     }
-    final batchSize = _nextAdaptiveTranslationBatchSize;
-    if (batchSize <= 0) return;
-    final candidates = <SnackChatMessage>[];
+    final priorityUntil = DateTime.now().add(const Duration(seconds: 1));
+    var hasCandidate = false;
     for (final message in messages) {
       if (!_canTranslateMessage(message) || _hasCurrentTranslation(message)) {
         continue;
       }
       final requestKey = _translationRequestKey(message);
-      if (_translationRequestsInFlight.contains(requestKey) ||
-          (_translationFailures[requestKey] ?? 0) >= 2) {
-        continue;
-      }
-      candidates.add(message);
-      if (candidates.length == batchSize) break;
+      if (_isTranslationWorkPending(requestKey)) continue;
+      _liveTranslationPriorityUntil[message.id] = priorityUntil;
+      hasCandidate = true;
     }
-    if (candidates.isNotEmpty) {
-      unawaited(_translateMessageBatch(candidates));
-    }
+    if (!hasCandidate) return;
+
+    // The stream callback has just inserted the bubble. Inspect geometry on
+    // the immediately following frame instead of waiting for a scroll event.
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (mounted) unawaited(_primeVisibleTranslationCandidates());
+    });
   }
 
   Future<_SnackTranslationOutcome> _loadVisibleMessageTranslation(
@@ -1729,7 +1980,6 @@ class _SnackChatScreenState extends State<SnackChatScreen>
       SnackChatActiveConversation.setActive(widget.snackChatId);
       if (_isUserScrolling) {
         _isUserScrolling = false;
-        _userScrollRevision++;
         _cancelPendingTranslationRestore();
       }
       // 백그라운드 전환 이후 도착한 메시지는 다음 화면 종료 시점에
@@ -1762,11 +2012,12 @@ class _SnackChatScreenState extends State<SnackChatScreen>
         state == AppLifecycleState.paused) {
       if (_isUserScrolling) {
         _isUserScrolling = false;
-        _userScrollRevision++;
-        _translationScanDebounce?.cancel();
-        _translationScanDebounce = null;
         _cancelPendingTranslationRestore();
       }
+      _translationMicroBatchTimer?.cancel();
+      _translationMicroBatchTimer = null;
+      _translationMicroBatchCandidates.clear();
+      _liveTranslationPriorityUntil.clear();
       _startBackgroundReadFlush();
       if (SnackChatActiveConversation.isActive(widget.snackChatId)) {
         SnackChatActiveConversation.setActive(null);
@@ -2330,7 +2581,7 @@ class _SnackChatScreenState extends State<SnackChatScreen>
   }
 
   void _onScroll() {
-    _debounceVisibleTranslationScan();
+    _scheduleVisibleTranslationScanFromScroll();
     final nearLatest = _scrollController.position.pixels <= 72;
     if (nearLatest != _isNearLatest || (nearLatest && _newMessageCount > 0)) {
       setState(() {
@@ -2356,7 +2607,6 @@ class _SnackChatScreenState extends State<SnackChatScreen>
             notification.dragDetails != null);
     if (beginsUserScroll && !_isUserScrolling) {
       _isUserScrolling = true;
-      _userScrollRevision++;
       if (_entryPositionInFlight && !_entryPositionSettled) {
         // A real gesture always wins over the initial unread-anchor jump.
         // Freeze read advancement because the automated boundary was not
@@ -2365,31 +2615,18 @@ class _SnackChatScreenState extends State<SnackChatScreen>
         _entryPositionSettled = true;
         _entryReadSyncAllowed = false;
       }
-      _translationScanDebounce?.cancel();
-      _translationScanDebounce = null;
       _cancelPendingTranslationRestore();
     } else if (notification is ScrollEndNotification && _isUserScrolling) {
       _isUserScrolling = false;
       if (_messageWindowExpansionPending) {
         _scheduleMessageWindowExpansion();
       }
-      // Wait for the reverse viewport to settle after ballistic scrolling,
-      // publish all results that arrived mid-gesture in one layout change,
-      // then translate only the messages that actually remained visible.
-      final scrollRevision = _userScrollRevision;
-      _translationScanDebounce?.cancel();
-      _translationScanDebounce = Timer(const Duration(milliseconds: 140), () {
-        _translationScanDebounce = null;
-        if (mounted &&
-            !_isUserScrolling &&
-            scrollRevision == _userScrollRevision) {
-          if (_deferredTranslationOutcomes.isNotEmpty) {
-            _commitDeferredTranslationOutcomes();
-          } else {
-            _scheduleTranslationScanAfterLayout();
-          }
-        }
-      });
+      // Requests already started while scrolling. Only the layout-changing
+      // result commit is deferred until the gesture settles.
+      if (_deferredTranslationOutcomes.isNotEmpty) {
+        _commitDeferredTranslationOutcomes();
+      }
+      _scheduleTranslationScanAfterLayout();
     }
     return false;
   }
@@ -2594,10 +2831,13 @@ class _SnackChatScreenState extends State<SnackChatScreen>
     _fileExpiryTimer?.cancel();
     _roomRetryTimer?.cancel();
     _entryRetryTimer?.cancel();
-    _translationScanDebounce?.cancel();
+    _translationMicroBatchTimer?.cancel();
     _translationRetryTimer?.cancel();
     _cancelPendingTranslationRestore();
     _deferredTranslationOutcomes.clear();
+    _translationCacheLookupsInFlight.clear();
+    _translationMicroBatchCandidates.clear();
+    _liveTranslationPriorityUntil.clear();
     _translationStateGeneration++;
     _translationService.removeListener(_handleTranslationServiceChange);
     _messageController.removeListener(_onDraftChanged);
@@ -3882,24 +4122,35 @@ class _SnackChatScreenState extends State<SnackChatScreen>
   }) async {
     final initialCached = _cachedPeople(userIds);
     final isKo = Localizations.localeOf(context).languageCode == 'ko';
+    // Android edge-to-edge 환경에서는 modal route 내부 MediaQuery가 하단
+    // 시스템 영역을 0으로 돌려줄 수 있어 호출 화면의 값을 함께 보존한다.
+    final rootSystemBottomInset = MediaQuery.viewPaddingOf(context).bottom;
     var peopleFuture = _loadPeople(userIds);
     await showModalBottomSheet<void>(
       context: context,
-      useSafeArea: true,
+      useSafeArea: false,
       showDragHandle: true,
-      builder: (context) => StatefulBuilder(
-        builder: (context, setSheetState) =>
+      isScrollControlled: true,
+      backgroundColor: Colors.white,
+      barrierColor: Colors.black.withValues(alpha: 0.46),
+      elevation: 0,
+      clipBehavior: Clip.antiAlias,
+      constraints: const BoxConstraints(maxWidth: 600),
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(24)),
+      ),
+      builder: (sheetContext) => StatefulBuilder(
+        builder: (sheetContext, setSheetState) =>
             FutureBuilder<Map<String, DMUserInfo?>>(
           future: peopleFuture,
           initialData: initialCached,
-          builder: (context, snapshot) {
+          builder: (sheetContext, snapshot) {
             final users = _cachedPeople(userIds);
             final loaded = snapshot.data;
             if (loaded != null) users.addAll(loaded);
             final loading = snapshot.connectionState != ConnectionState.done;
-            return ListView(
-              shrinkWrap: true,
-              padding: const EdgeInsets.fromLTRB(20, 0, 20, 24),
+            return SnackChatPeopleSheetContent(
+              rootSystemBottomInset: rootSystemBottomInset,
               children: [
                 if (snapshot.hasError)
                   _peopleLoadRetry(
@@ -5065,21 +5316,23 @@ class _SnackChatScreenState extends State<SnackChatScreen>
     final displayText = canShowTranslation ? translatedText : message.text;
 
     final requestKey = _translationRequestKey(message);
+    final translationWorkPending = _isTranslationWorkPending(requestKey);
     final translationFailed = !isMe &&
         !_translationShowsOriginal &&
         (_translationFailures[requestKey] ?? 0) >= 2 &&
-        result == null;
+        result == null &&
+        !translationWorkPending;
     final retryInFlight = _translationRequestsInFlight.contains(requestKey);
     final initialTranslationInFlight = !isMe &&
         _translationModeReady &&
         !_translationShowsOriginal &&
         result == null &&
         !translationFailed &&
-        retryInFlight;
+        translationWorkPending;
     final retryAvailable = (!_translationProviderRetryExhausted ||
             _translationProviderRetryAvailable) &&
         !_manualTranslationRetryInFlight &&
-        !retryInFlight &&
+        !translationWorkPending &&
         _canStartTranslationBatch;
     final isKo = Localizations.localeOf(context).languageCode == 'ko';
 

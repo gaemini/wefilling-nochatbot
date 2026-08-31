@@ -39,8 +39,11 @@ installed_version_code() {
 if command -v adb >/dev/null 2>&1 && adb get-state >/dev/null 2>&1; then
   for package_name in "$PRODUCTION_APP_ID" "${DEVELOPMENT_APP_IDS[@]}"; do
     installed_code="$(installed_version_code "$package_name")"
-    if [[ "$installed_code" =~ ^[0-9]+$ ]] && (( installed_code > version_code )); then
-      echo "WARNING: installed $package_name versionCode $installed_code is higher than release $version_code." >&2
+    if [[ "$installed_code" =~ ^[0-9]+$ ]] && (( installed_code >= version_code )); then
+      echo "ERROR: installed $package_name versionCode $installed_code is not lower than release $version_code." >&2
+      echo "Google Play only shows Update when the store versionCode is higher than the installed app." >&2
+      echo "Increase pubspec.yaml +versionCode, or remove the locally installed non-Play build before testing the store update." >&2
+      exit 1
     fi
   done
 fi
@@ -80,6 +83,8 @@ cd "$REPO_ROOT"
 "${flutter_command[@]}" build appbundle \
   --release \
   --flavor production \
+  --build-name="$version_name" \
+  --build-number="$version_code" \
   --dart-define="APP_VERSION_NAME=$version_name" \
   --dart-define="APP_VERSION_CODE=$version_code"
 
@@ -89,6 +94,15 @@ if [[ ! -f "$built_aab" ]]; then
   exit 1
 fi
 
+recorded_code="$(sed -nE 's/^lastUsedVersionCode=([0-9]+)$/\1/p' "$RELEASE_STATE" | head -n 1)"
+recorded_name="$(sed -nE 's/^lastUsedVersionName=(.+)$/\1/p' "$RELEASE_STATE" | head -n 1)"
+if [[ "$recorded_code" != "$version_code" || "$recorded_name" != "$version_name" ]]; then
+  echo "ERROR: the production build did not record the expected release version." >&2
+  echo "Expected $version_name+$version_code, recorded ${recorded_name:-missing}+${recorded_code:-missing}." >&2
+  exit 1
+fi
+
 mkdir -p "$output_dir"
 cp "$built_aab" "$named_aab"
 echo "AAB: $named_aab"
+echo "Upload this named production artifact to Google Play. Do not upload an AAB from build/app directly."

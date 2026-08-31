@@ -74,99 +74,7 @@ class _LoginScreenState extends State<LoginScreen>
 
       final authProvider = Provider.of<AuthProvider>(context, listen: false);
       if (authProvider.consumeSignupRequiredFlag()) {
-        // 동일한 다이얼로그를 재사용
-        showDialog(
-          context: context,
-          barrierDismissible: false,
-          builder: (dialogContext) => AlertDialog(
-            shape: RoundedRectangleBorder(
-              borderRadius: BorderRadius.circular(20),
-            ),
-            contentPadding: const EdgeInsets.all(24),
-            title: Column(
-              children: [
-                Icon(
-                  Icons.info_outline,
-                  color: Colors.blue.shade600,
-                  size: 48,
-                ),
-                const SizedBox(height: 16),
-                Text(
-                  AppLocalizations.of(context)!.registrationRequired,
-                  style: const TextStyle(
-                    fontFamily: 'Inter',
-                    fontFamilyFallback: const ['NotoSansKR'],
-                    fontSize: 22,
-                    fontWeight: FontWeight.w700,
-                    color: Color(0xFF1E293B),
-                    letterSpacing: -0.5,
-                  ),
-                  textAlign: TextAlign.center,
-                ),
-              ],
-            ),
-            content: Column(
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                Text(
-                  AppLocalizations.of(context)!.signupRequired,
-                  style: const TextStyle(
-                    fontFamily: 'Inter',
-                    fontFamilyFallback: const ['NotoSansKR'],
-                    fontSize: 16,
-                    fontWeight: FontWeight.w400,
-                    height: 1.6,
-                    color: Color(0xFF475569),
-                    letterSpacing: -0.3,
-                  ),
-                  textAlign: TextAlign.center,
-                ),
-                const SizedBox(height: 20),
-                Container(
-                  padding: const EdgeInsets.all(16),
-                  decoration: BoxDecoration(
-                    color: const Color(0xFFF0F9FF),
-                    borderRadius: BorderRadius.circular(12),
-                    border: Border.all(
-                      color: const Color(0xFFBAE6FD),
-                      width: 1,
-                    ),
-                  ),
-                  child: Row(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Icon(
-                        Icons.lightbulb_outline,
-                        color: Colors.blue.shade700,
-                        size: 22,
-                      ),
-                      const SizedBox(width: 12),
-                      Expanded(
-                        child: Text(
-                          AppLocalizations.of(context)!.signUpFirstMessage,
-                          style: TextStyle(
-                            fontFamily: 'Inter',
-                            fontFamilyFallback: const ['NotoSansKR'],
-                            fontSize: 14,
-                            fontWeight: FontWeight.w500,
-                            color: Colors.blue.shade900,
-                            height: 1.5,
-                            letterSpacing: -0.2,
-                          ),
-                        ),
-                      ),
-                    ],
-                  ),
-                ),
-                const SizedBox(height: 24),
-                AppButton(
-                  label: AppLocalizations.of(context)!.confirm,
-                  onPressed: () => Navigator.of(dialogContext).pop(),
-                ),
-              ],
-            ),
-          ),
-        );
+        _showRegistrationRequiredDialog();
       }
     });
   }
@@ -175,6 +83,110 @@ class _LoginScreenState extends State<LoginScreen>
   void dispose() {
     _animationController.dispose();
     super.dispose();
+  }
+
+  Future<void> _showRegistrationRequiredDialog() async {
+    if (!mounted) return;
+
+    final shouldStartSignup = await showDialog<bool>(
+      context: context,
+      barrierDismissible: true,
+      useSafeArea: true,
+      builder: (dialogContext) {
+        final l10n = AppLocalizations.of(dialogContext)!;
+        final screenSize = MediaQuery.sizeOf(dialogContext);
+        final isCompactWidth = screenSize.width < 360;
+
+        return Dialog(
+          insetPadding: EdgeInsets.symmetric(
+            horizontal: isCompactWidth ? 16 : 24,
+            vertical: 24,
+          ),
+          elevation: 0,
+          backgroundColor: Colors.white,
+          shape: RoundedRectangleBorder(
+            borderRadius: BorderRadius.circular(24),
+          ),
+          child: ConstrainedBox(
+            constraints: BoxConstraints(
+              maxWidth: 380,
+              maxHeight: screenSize.height * 0.82,
+            ),
+            child: SingleChildScrollView(
+              padding: EdgeInsets.fromLTRB(
+                isCompactWidth ? 20 : 24,
+                12,
+                isCompactWidth ? 20 : 24,
+                16,
+              ),
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  Align(
+                    alignment: Alignment.centerRight,
+                    child: IconButton(
+                      onPressed: () => Navigator.of(dialogContext).pop(false),
+                      tooltip: l10n.close,
+                      visualDensity: VisualDensity.compact,
+                      icon: const Icon(
+                        Icons.close_rounded,
+                        size: 22,
+                        color: Color(0xFF64748B),
+                      ),
+                    ),
+                  ),
+                  const Icon(
+                    Icons.person_add_alt_1_rounded,
+                    size: 36,
+                    color: Color(0xFF2F9AE5),
+                  ),
+                  const SizedBox(height: 14),
+                  Text(
+                    l10n.registrationRequired,
+                    textAlign: TextAlign.center,
+                    style: TextStyle(
+                      fontFamily: 'Inter',
+                      fontFamilyFallback: const ['NotoSansKR'],
+                      fontSize: isCompactWidth ? 20 : 22,
+                      fontWeight: FontWeight.w700,
+                      height: 1.25,
+                      letterSpacing: -0.4,
+                      color: const Color(0xFF111827),
+                    ),
+                  ),
+                  const SizedBox(height: 12),
+                  Text(
+                    l10n.signUpFirstMessage,
+                    textAlign: TextAlign.center,
+                    style: TextStyle(
+                      fontFamily: 'Inter',
+                      fontFamilyFallback: const ['NotoSansKR'],
+                      fontSize: isCompactWidth ? 14 : 15,
+                      fontWeight: FontWeight.w400,
+                      height: 1.55,
+                      letterSpacing: -0.2,
+                      color: const Color(0xFF64748B),
+                    ),
+                  ),
+                  const SizedBox(height: 24),
+                  AppButton(
+                    label: l10n.signUp,
+                    onPressed: () => Navigator.of(dialogContext).pop(true),
+                    leading: const Icon(
+                      Icons.arrow_forward_rounded,
+                      size: 19,
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ),
+        );
+      },
+    );
+
+    if (!mounted || shouldStartSignup != true) return;
+    _navigateToSignUpFlow(context);
   }
 
   @override
@@ -667,117 +679,7 @@ class _LoginScreenState extends State<LoginScreen>
           // signupRequired 플래그 확인 (취소가 아닌 실제 회원가입 필요한 경우만)
           if (authProvider.consumeSignupRequiredFlag()) {
             Logger.log("회원가입 필요 메시지 표시");
-            showDialog(
-              context: context,
-              barrierDismissible: false, // 바깥 영역 터치로 닫히지 않음
-              builder: (dialogContext) => AlertDialog(
-                shape: RoundedRectangleBorder(
-                  borderRadius: BorderRadius.circular(20),
-                ),
-                contentPadding: const EdgeInsets.all(24),
-                title: Column(
-                  children: [
-                    Icon(
-                      Icons.info_outline,
-                      color: Colors.blue.shade600,
-                      size: 48,
-                    ),
-                    const SizedBox(height: 16),
-                    Text(
-                      AppLocalizations.of(context)!.registrationRequired,
-                      style: const TextStyle(
-                        fontFamily: 'Inter',
-                        fontFamilyFallback: const ['NotoSansKR'],
-                        fontSize: 22,
-                        fontWeight: FontWeight.w700,
-                        color: Color(0xFF1E293B),
-                        letterSpacing: -0.5,
-                      ),
-                      textAlign: TextAlign.center,
-                    ),
-                  ],
-                ),
-                content: Column(
-                  mainAxisSize: MainAxisSize.min,
-                  children: [
-                    Text(
-                      AppLocalizations.of(context)!.signupRequired,
-                      style: const TextStyle(
-                        fontFamily: 'Inter',
-                        fontFamilyFallback: const ['NotoSansKR'],
-                        fontSize: 16,
-                        fontWeight: FontWeight.w400,
-                        height: 1.6,
-                        color: Color(0xFF475569),
-                        letterSpacing: -0.3,
-                      ),
-                      textAlign: TextAlign.center,
-                    ),
-                    const SizedBox(height: 20),
-                    Container(
-                      padding: const EdgeInsets.all(16),
-                      decoration: BoxDecoration(
-                        color: const Color(0xFFF0F9FF),
-                        borderRadius: BorderRadius.circular(12),
-                        border: Border.all(
-                          color: const Color(0xFFBAE6FD),
-                          width: 1,
-                        ),
-                      ),
-                      child: Row(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: [
-                          Icon(
-                            Icons.lightbulb_outline,
-                            color: Colors.blue.shade700,
-                            size: 22,
-                          ),
-                          const SizedBox(width: 12),
-                          Expanded(
-                            child: Text(
-                              AppLocalizations.of(context)!.signUpFirstMessage,
-                              style: TextStyle(
-                                fontFamily: 'Inter',
-                                fontFamilyFallback: const ['NotoSansKR'],
-                                fontSize: 14,
-                                fontWeight: FontWeight.w500,
-                                color: Colors.blue.shade900,
-                                height: 1.5,
-                                letterSpacing: -0.2,
-                              ),
-                            ),
-                          ),
-                        ],
-                      ),
-                    ),
-                    const SizedBox(height: 24),
-                    Row(
-                      children: [
-                        Expanded(
-                          child: AppButton(
-                            label: AppLocalizations.of(context)!.close,
-                            onPressed: () => Navigator.of(dialogContext).pop(),
-                            variant: AppButtonVariant.outline,
-                            size: AppButtonSize.m,
-                          ),
-                        ),
-                        const SizedBox(width: 12),
-                        Expanded(
-                          child: AppButton(
-                            label: AppLocalizations.of(context)!.signUp,
-                            onPressed: () {
-                              Navigator.of(dialogContext).pop();
-                              _navigateToSignUpFlow(context);
-                            },
-                            size: AppButtonSize.m,
-                          ),
-                        ),
-                      ],
-                    ),
-                  ],
-                ),
-              ),
-            );
+            _showRegistrationRequiredDialog();
           } else {
             Logger.error("로그인 취소 또는 기타 실패 - 조용히 처리");
           }
@@ -840,117 +742,7 @@ class _LoginScreenState extends State<LoginScreen>
           // signupRequired 플래그 확인 (취소가 아닌 실제 회원가입 필요한 경우만)
           if (authProvider.consumeSignupRequiredFlag()) {
             Logger.log("회원가입 필요 메시지 표시");
-            showDialog(
-              context: context,
-              barrierDismissible: false, // 바깥 영역 터치로 닫히지 않음
-              builder: (dialogContext) => AlertDialog(
-                shape: RoundedRectangleBorder(
-                  borderRadius: BorderRadius.circular(20),
-                ),
-                contentPadding: const EdgeInsets.all(24),
-                title: Column(
-                  children: [
-                    Icon(
-                      Icons.info_outline,
-                      color: Colors.blue.shade600,
-                      size: 48,
-                    ),
-                    const SizedBox(height: 16),
-                    Text(
-                      AppLocalizations.of(context)!.registrationRequired,
-                      style: const TextStyle(
-                        fontFamily: 'Inter',
-                        fontFamilyFallback: const ['NotoSansKR'],
-                        fontSize: 22,
-                        fontWeight: FontWeight.w700,
-                        color: Color(0xFF1E293B),
-                        letterSpacing: -0.5,
-                      ),
-                      textAlign: TextAlign.center,
-                    ),
-                  ],
-                ),
-                content: Column(
-                  mainAxisSize: MainAxisSize.min,
-                  children: [
-                    Text(
-                      AppLocalizations.of(context)!.signupRequired,
-                      style: const TextStyle(
-                        fontFamily: 'Inter',
-                        fontFamilyFallback: const ['NotoSansKR'],
-                        fontSize: 16,
-                        fontWeight: FontWeight.w400,
-                        height: 1.6,
-                        color: Color(0xFF475569),
-                        letterSpacing: -0.3,
-                      ),
-                      textAlign: TextAlign.center,
-                    ),
-                    const SizedBox(height: 20),
-                    Container(
-                      padding: const EdgeInsets.all(16),
-                      decoration: BoxDecoration(
-                        color: const Color(0xFFF0F9FF),
-                        borderRadius: BorderRadius.circular(12),
-                        border: Border.all(
-                          color: const Color(0xFFBAE6FD),
-                          width: 1,
-                        ),
-                      ),
-                      child: Row(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: [
-                          Icon(
-                            Icons.lightbulb_outline,
-                            color: Colors.blue.shade700,
-                            size: 22,
-                          ),
-                          const SizedBox(width: 12),
-                          Expanded(
-                            child: Text(
-                              AppLocalizations.of(context)!.signUpFirstMessage,
-                              style: TextStyle(
-                                fontFamily: 'Inter',
-                                fontFamilyFallback: const ['NotoSansKR'],
-                                fontSize: 14,
-                                fontWeight: FontWeight.w500,
-                                color: Colors.blue.shade900,
-                                height: 1.5,
-                                letterSpacing: -0.2,
-                              ),
-                            ),
-                          ),
-                        ],
-                      ),
-                    ),
-                    const SizedBox(height: 24),
-                    Row(
-                      children: [
-                        Expanded(
-                          child: AppButton(
-                            label: AppLocalizations.of(context)!.close,
-                            onPressed: () => Navigator.of(dialogContext).pop(),
-                            variant: AppButtonVariant.outline,
-                            size: AppButtonSize.m,
-                          ),
-                        ),
-                        const SizedBox(width: 12),
-                        Expanded(
-                          child: AppButton(
-                            label: AppLocalizations.of(context)!.signUp,
-                            onPressed: () {
-                              Navigator.of(dialogContext).pop();
-                              _navigateToSignUpFlow(context);
-                            },
-                            size: AppButtonSize.m,
-                          ),
-                        ),
-                      ],
-                    ),
-                  ],
-                ),
-              ),
-            );
+            _showRegistrationRequiredDialog();
           } else {
             Logger.error("로그인 취소 또는 기타 실패 - 조용히 처리");
           }

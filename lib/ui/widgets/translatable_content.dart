@@ -75,6 +75,7 @@ class TranslatableContent extends StatefulWidget {
     this.showToggle = true,
     this.compactToggle = true,
     this.loadOnDemand = false,
+    this.onLoaderAttached,
   });
 
   final ContentTranslationRequest request;
@@ -83,9 +84,11 @@ class TranslatableContent extends StatefulWidget {
   final bool showToggle;
   final bool compactToggle;
 
-  /// 이전 호출부 호환용입니다. 현재 화면에 만들어진 콘텐츠는 캐시를 먼저
-  /// 확인한 뒤 자동 번역하므로 이 값과 무관하게 로드됩니다.
+  /// 피드처럼 선행 빌드되는 목록은 실제 가시 영역 coordinator가 scope
+  /// 로더를 호출할 때까지 번역을 미룹니다. 상세 화면 등은 기본값대로 즉시
+  /// 기존 캐시 → 서버 번역 경로를 시작합니다.
   final bool loadOnDemand;
+  final VoidCallback? onLoaderAttached;
 
   @override
   State<TranslatableContent> createState() => _TranslatableContentState();
@@ -115,7 +118,8 @@ class _TranslatableContentState extends State<TranslatableContent> {
   void didChangeDependencies() {
     super.didChangeDependencies();
     _attachScopeLoader();
-    if (!_requested) {
+    _restoreLatestResult();
+    if (!_requested && !widget.loadOnDemand) {
       _requested = true;
       unawaited(_load());
     }
@@ -143,6 +147,13 @@ class _TranslatableContentState extends State<TranslatableContent> {
       if (scopeChanged) _captureScopePresentationState();
       _activeLoad = null;
       _result = null;
+      _requested = false;
+      _restoreLatestResult();
+      if (!widget.loadOnDemand) {
+        _requested = true;
+        unawaited(_load());
+      }
+    } else if (oldWidget.loadOnDemand && !widget.loadOnDemand && !_requested) {
       _requested = true;
       unawaited(_load());
     }
@@ -175,6 +186,12 @@ class _TranslatableContentState extends State<TranslatableContent> {
     }
     _attachedScope = widget.scope;
     _service.attachScopeLoader(widget.scope, _scopeLoaderToken, _load);
+    final callback = widget.onLoaderAttached;
+    if (callback != null) {
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (mounted && _attachedScope == widget.scope) callback();
+      });
+    }
   }
 
   void _handleServiceChange() {
@@ -183,8 +200,12 @@ class _TranslatableContentState extends State<TranslatableContent> {
     if (_languageRevision != _service.languageRevision) {
       _languageRevision = _service.languageRevision;
       _activeLoad = null;
-      _requested = true;
-      unawaited(_load());
+      _result = null;
+      _requested = false;
+      if (!widget.loadOnDemand) {
+        _requested = true;
+        unawaited(_load());
+      }
       needsBuild = true;
     }
 
@@ -208,6 +229,14 @@ class _TranslatableContentState extends State<TranslatableContent> {
     _scopeWasShowingOriginal = _service.showsOriginal(widget.scope);
     _scopeWasLoading = _service.isScopeLoading(widget.scope);
     _scopeCouldRetry = _service.canRetryScope(widget.scope);
+  }
+
+  void _restoreLatestResult() {
+    final latest = _service.latestResultFor(widget.request);
+    if (latest == null) return;
+    _result = latest;
+    _requested = true;
+    _registerResultAfterNotification(latest);
   }
 
   bool _scopePresentationStateChanged() {

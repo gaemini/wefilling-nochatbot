@@ -14,12 +14,16 @@ class PollPostWidget extends StatefulWidget {
   final String postId;
   final Post? post;
   final bool translationEnabled;
+  final bool deferTranslationUntilVisible;
+  final VoidCallback? onTranslationLoaderAttached;
 
   const PollPostWidget({
     super.key,
     required this.postId,
     this.post,
     this.translationEnabled = true,
+    this.deferTranslationUntilVisible = false,
+    this.onTranslationLoaderAttached,
   });
 
   @override
@@ -352,6 +356,8 @@ class _PollPostWidgetState extends State<PollPostWidget> {
             ),
             scope: 'post:${widget.postId}',
             showToggle: false,
+            loadOnDemand: widget.deferTranslationUntilVisible,
+            onLoaderAttached: widget.onTranslationLoaderAttached,
             builder: (context, fields) => buildCard(
               hasVoted: hasVoted,
               votedOptionId: votedOptionId,

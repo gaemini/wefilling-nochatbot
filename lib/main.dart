@@ -142,15 +142,22 @@ void main() {
           const AndroidAppCheckProvider androidProvider = kDebugMode
               ? AndroidDebugProvider()
               : AndroidPlayIntegrityProvider();
-          const AppleAppCheckProvider appleProvider = kReleaseMode
-              ? AppleAppAttestWithDeviceCheckFallbackProvider()
-              : AppleDebugProvider();
+          // Only an actual Debug build may use the debug provider. Profile
+          // builds exercise the same production attestation path as
+          // Release/TestFlight so a profiling archive can never depend on a
+          // locally registered debug token.
+          const AppleAppCheckProvider appleProvider = kDebugMode
+              ? AppleDebugProvider()
+              : AppleAppAttestWithDeviceCheckFallbackProvider();
           await FirebaseAppCheck.instance.activate(
             providerAndroid: androidProvider,
             providerApple: appleProvider,
           );
+          await FirebaseAppCheck.instance.setTokenAutoRefreshEnabled(true);
           if (kDebugMode) {
-            debugPrint('🛡️ App Check 활성화 완료 (debug provider)');
+            debugPrint('🛡️ App Check 활성화 완료 (debug provider, '
+                'project=${Firebase.app().options.projectId}, '
+                'appId=${Firebase.app().options.appId})');
           }
         }
       } catch (e) {
@@ -341,6 +348,7 @@ class _MeetupAppState extends State<MeetupApp> {
   final LanguageService _languageService = LanguageService();
   StreamSubscription<User?>? _authSub;
   String? _lastSyncedLanguageCode;
+  Future<void>? _languageSyncInFlight;
 
   @override
   void initState() {
@@ -359,16 +367,50 @@ class _MeetupAppState extends State<MeetupApp> {
 
     // 동일 세션에서 중복 쓰기 최소화
     if (_lastSyncedLanguageCode == languageCode) return;
-    _lastSyncedLanguageCode = languageCode;
+
+    final activeSync = _languageSyncInFlight;
+    if (activeSync != null) {
+      await activeSync;
+      if (_lastSyncedLanguageCode == languageCode) return;
+    }
+
+    final request = _syncLanguageToExistingUser(
+      uid: user.uid,
+      languageCode: languageCode,
+    );
+    _languageSyncInFlight = request;
+    await request.whenComplete(() {
+      if (identical(_languageSyncInFlight, request)) {
+        _languageSyncInFlight = null;
+      }
+    });
+  }
+
+  Future<void> _syncLanguageToExistingUser({
+    required String uid,
+    required String languageCode,
+  }) async {
+    if (FirebaseAuth.instance.currentUser?.uid != uid) return;
 
     try {
-      final uid = user.uid;
       final firestore = FirebaseFirestore.instance;
+      final userRef = firestore.collection('users').doc(uid);
 
-      // ⚠️ 주의: users/{uid} 문서의 "존재 여부"는 회원가입 완료 여부 판단에 사용된다.
-      // 따라서 여기서 merge set으로 문서를 "새로 생성"하면 스키마가 부분만 생기거나
-      // 가입 흐름이 왜곡될 수 있으므로, 문서가 있을 때만 update로 반영한다.
-      await firestore.collection('users').doc(uid).update({
+      // Social Auth creates an Auth session before the final sign-up function
+      // creates users/{uid}. Do not turn that expected pending state into a
+      // permission-denied write, and never create a partial users document
+      // from language synchronization.
+      final userSnapshot = await userRef.get(const GetOptions(
+        source: Source.server,
+      ));
+      if (!userSnapshot.exists) {
+        if (kDebugMode) {
+          debugPrint('ℹ️ 언어 Firestore 동기화 보류: 회원가입 완료 전');
+        }
+        return;
+      }
+
+      await userRef.update({
         'preferredLanguage': languageCode,
         'preferredLanguageUpdatedAt': FieldValue.serverTimestamp(),
       });
@@ -378,6 +420,9 @@ class _MeetupAppState extends State<MeetupApp> {
         'updated_at': FieldValue.serverTimestamp(),
       }, SetOptions(merge: true));
 
+      if (FirebaseAuth.instance.currentUser?.uid == uid) {
+        _lastSyncedLanguageCode = languageCode;
+      }
       if (kDebugMode) {
         debugPrint('✅ 언어 Firestore 동기화 완료: $languageCode (uid=$uid)');
       }

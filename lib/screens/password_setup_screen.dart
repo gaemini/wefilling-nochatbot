@@ -145,16 +145,43 @@ class _PasswordSetupScreenState extends State<PasswordSetupScreen> {
     if (_isLoading || !await showSignupExitConfirmation(context) || !mounted) {
       return;
     }
+    setState(() => _isLoading = true);
     final provider = context.read<app_auth.AuthProvider>();
-    await provider.cancelPendingEmailSignup(
-      email: _isGeneralEmailSignup
-          ? widget.loginEmail
-          : widget.verifiedHanyangEmail,
-      verificationToken: _isGeneralEmailSignup
-          ? (widget.generalEmailVerificationToken ?? '')
-          : (widget.hanyangEmailVerificationToken ?? ''),
-    );
-    if (mounted) Navigator.pop(context);
+    var cleanupCompleted = true;
+    try {
+      // 한양 이메일 경로는 이 단계에서 Auth 계정이 이미 만들어질 수 있다.
+      // 화면 이탈 전에 서버 삭제까지 확인해 Auth-only 계정이 남지 않게 한다.
+      if (provider.user != null) {
+        cleanupCompleted = await provider.discardIncompleteRegistration();
+      }
+      if (cleanupCompleted) {
+        await provider.cancelPendingEmailSignup(
+          email: _isGeneralEmailSignup
+              ? widget.loginEmail
+              : widget.verifiedHanyangEmail,
+          verificationToken: _isGeneralEmailSignup
+              ? (widget.generalEmailVerificationToken ?? '')
+              : (widget.hanyangEmailVerificationToken ?? ''),
+        );
+      }
+    } catch (_) {
+      cleanupCompleted = false;
+    } finally {
+      if (mounted) setState(() => _isLoading = false);
+    }
+    if (!mounted) return;
+    if (!cleanupCompleted) {
+      final isKorean = Localizations.localeOf(context).languageCode == 'ko';
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(isKorean
+              ? '인터넷 연결 후 다시 시도해 주세요. 미완료 계정을 먼저 정리할게요.'
+              : 'Reconnect and try again so the unfinished account can be removed.'),
+        ),
+      );
+      return;
+    }
+    Navigator.pop(context);
   }
 
   @override

@@ -50,6 +50,8 @@ class OptimizedPostCard extends StatefulWidget {
   final bool preloadImage;
   final bool useGlassmorphism;
   final bool showBottomDivider;
+  final bool deferTranslationUntilVisible;
+  final VoidCallback? onTranslationLoaderAttached;
   final EdgeInsetsGeometry margin;
   final EdgeInsetsGeometry contentPadding;
 
@@ -63,6 +65,8 @@ class OptimizedPostCard extends StatefulWidget {
     this.preloadImage = false,
     this.useGlassmorphism = false,
     this.showBottomDivider = true,
+    this.deferTranslationUntilVisible = false,
+    this.onTranslationLoaderAttached,
     this.margin = EdgeInsets.zero,
     this.contentPadding = const EdgeInsets.fromLTRB(8, 7, 8, 3),
   });
@@ -749,7 +753,10 @@ class _OptimizedPostCardState extends State<OptimizedPostCard> {
                                 ),
                                 scope: 'post:${post.id}',
                                 showToggle: false,
-                                loadOnDemand: false,
+                                loadOnDemand:
+                                    widget.deferTranslationUntilVisible,
+                                onLoaderAttached:
+                                    widget.onTranslationLoaderAttached,
                                 builder: (context, fields) =>
                                     _buildSmartEllipsizedText(
                                   text: fields['content'] ?? unifiedText,
@@ -772,6 +779,10 @@ class _OptimizedPostCardState extends State<OptimizedPostCard> {
                               postId: post.id,
                               post: post,
                               translationEnabled: !isOwnPost,
+                              deferTranslationUntilVisible:
+                                  widget.deferTranslationUntilVisible,
+                              onTranslationLoaderAttached:
+                                  widget.onTranslationLoaderAttached,
                             ),
                           ],
                         ],

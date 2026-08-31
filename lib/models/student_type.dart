@@ -25,7 +25,7 @@ enum StudentType {
     return switch (this) {
       // 저장 키는 기존 사용자 호환을 위해 exchange를 유지하고, 사용자에게
       // 보이는 이메일 가입 명칭만 더 넓은 학생 구분으로 표시한다.
-      StudentType.exchange => koreanUi ? '외국인 학생' : 'International student',
+      StudentType.exchange => koreanUi ? '외국인 학생' : 'Foreign student',
       StudentType.korean => koreanUi ? '한국 학생' : 'Korean student',
     };
   }

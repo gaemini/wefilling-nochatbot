@@ -737,12 +737,15 @@ class ContentTranslationService extends ChangeNotifier {
 
   Future<void> _syncManualPreference(String uid, String code) async {
     try {
-      await _firestore.collection('users').doc(uid).set(<String, dynamic>{
+      // Never let a preference write create the partial users/{uid} document
+      // used by the sign-up completion gate. A completed profile already
+      // exists here; a pending sign-up simply keeps the local preference.
+      await _firestore.collection('users').doc(uid).update(<String, dynamic>{
         'preferredTranslationLanguageCode': code,
         'preferredTranslationLanguage': supportedLanguages[code],
         'preferredTranslationLanguageSource': 'manual',
         'preferredTranslationLanguageUpdatedAt': FieldValue.serverTimestamp(),
-      }, SetOptions(merge: true));
+      });
     } catch (error) {
       if (kDebugMode) {
         debugPrint(
@@ -787,6 +790,18 @@ class ContentTranslationService extends ChangeNotifier {
     return _blockedFailures.values.any(
       (failure) =>
           failure.scopes.contains(scope) &&
+          !now.isBefore(failure.manualRetryAt),
+    );
+  }
+
+  /// 현재 화면에 다시 보이는 콘텐츠가 일시적 실패에서 복구 가능한지 확인한다.
+  /// 영구 오류는 자동으로 재요청하지 않고 기존 수동 재시도 정책에 남긴다.
+  bool canAutomaticallyRetryScope(String scope) {
+    final now = DateTime.now();
+    return _blockedFailures.values.any(
+      (failure) =>
+          failure.scopes.contains(scope) &&
+          _isRetryableFailureCode(failure.result.errorCode) &&
           !now.isBefore(failure.manualRetryAt),
     );
   }
@@ -917,6 +932,36 @@ class ContentTranslationService extends ChangeNotifier {
     final loaders = _scopeLoaders[scope];
     loaders?.remove(token);
     if (loaders?.isEmpty ?? false) _scopeLoaders.remove(scope);
+  }
+
+  /// 이미 화면에 장착된 콘텐츠 로더만 실행한다. 피드 coordinator가 실제
+  /// 가시 카드를 확인한 뒤 호출하므로 화면 밖 카드나 다른 탭을 번역하지 않는다.
+  Future<bool> loadAttachedScope(
+    String scope, {
+    bool retryBlockedFailure = false,
+  }) async {
+    if (isScopeLoading(scope)) return true;
+    final loaders = _scopeLoaders[scope]?.values.toList(growable: false);
+    if (loaders == null || loaders.isEmpty) return false;
+
+    Future<bool> runLoader(ScopeTranslationLoader loader) async {
+      try {
+        return await loader();
+      } catch (_) {
+        return false;
+      }
+    }
+
+    Future<List<bool>> runLoaders() => Future.wait<bool>(
+          loaders.map(runLoader),
+        );
+    final results = retryBlockedFailure
+        ? await runZoned<Future<List<bool>>>(
+            runLoaders,
+            zoneValues: <Object?, Object?>{_manualRetryZoneKey: true},
+          )
+        : await runLoaders();
+    return results.any((loaded) => loaded);
   }
 
   void registerTranslatableScope(
@@ -1302,24 +1347,8 @@ class ContentTranslationService extends ChangeNotifier {
     _QueuedTranslation queued,
     String errorCode,
   ) {
-    const retryableCodes = <String>{
-      'quality_validation_failed',
-      'translation_failed',
-      'provider_unavailable',
-      'missing_server_response',
-      'empty_translation',
-      'network_error',
-      'timeout',
-      'resource-exhausted',
-      'too-many-requests',
-      'aborted',
-      'unavailable',
-      'deadline-exceeded',
-      'internal',
-      'unknown',
-    };
     if (!_isActive(key, queued) ||
-        !retryableCodes.contains(errorCode) ||
+        !_isRetryableFailureCode(errorCode) ||
         queued.failureRetryCount >= _maxAutomaticFailureRetries) {
       return false;
     }
@@ -1343,6 +1372,26 @@ class ContentTranslationService extends ChangeNotifier {
       _scheduleFlush();
     });
     return true;
+  }
+
+  bool _isRetryableFailureCode(String errorCode) {
+    const retryableCodes = <String>{
+      'quality_validation_failed',
+      'translation_failed',
+      'provider_unavailable',
+      'missing_server_response',
+      'empty_translation',
+      'network_error',
+      'timeout',
+      'resource-exhausted',
+      'too-many-requests',
+      'aborted',
+      'unavailable',
+      'deadline-exceeded',
+      'internal',
+      'unknown',
+    };
+    return retryableCodes.contains(errorCode);
   }
 
   bool _schedulePendingRetry(

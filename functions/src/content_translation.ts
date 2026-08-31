@@ -231,6 +231,12 @@ function isCurrentCompletedCache(
         (translatedFields as Record<string, string>)[field],
         targetLanguage,
         false,
+      ) &&
+      !isUnexpectedlyUnchangedTranslation(
+        item.fields[field],
+        (translatedFields as Record<string, string>)[field],
+        stringValue(cached.sourceLanguage),
+        targetLanguage,
       ),
     );
 }
@@ -295,6 +301,41 @@ function cachedFailureResponse(
 }
 
 const PROTECTED_TEXT_PATTERN = /https?:\/\/[^\s]+|www\.[^\s]+|[\p{L}\p{N}._%+-]+@[\p{L}\p{N}.-]+\.[\p{L}]{2,}|@[\p{L}\p{N}_.-]+|#[\p{L}\p{N}_.-]+|\bChIJ[A-Za-z0-9_-]+\b|(?:place[_ ]?id\s*[:=]\s*)[A-Za-z0-9_-]+|-?\d{1,3}\.\d+\s*[,/]\s*-?\d{1,3}\.\d+|\b\d{1,4}[./:-]\d{1,2}(?:[./:-]\d{1,4})?(?:\s*(?:AM|PM|오전|오후))?\b|[$€£¥₩]\s?\d+(?:[.,]\d+)*|\+?\d[\d\s().-]{5,}\d|\d+(?:[.,]\d+)*(?:\s?(?:%|원|달러|시|분|초))?|\p{Extended_Pictographic}(?:\uFE0F|\p{Emoji_Modifier}|\u200D\p{Extended_Pictographic})*/giu;
+
+function isUnexpectedlyUnchangedTranslation(
+  source: string,
+  translated: string,
+  sourceLanguage: string,
+  targetLanguage: string,
+): boolean {
+  const sourceCode = sourceLanguage.trim().toLowerCase().split('-')[0];
+  const targetCode = targetLanguage.trim().toLowerCase().split('-')[0];
+  if (!targetCode) return false;
+
+  const normalizedSource = source.replace(/\s+/gu, ' ').trim();
+  const normalizedTranslation = translated.replace(/\s+/gu, ' ').trim();
+  if (!normalizedSource || normalizedSource !== normalizedTranslation) {
+    return false;
+  }
+  const meaningful = normalizedSource
+    .replace(PROTECTED_TEXT_PATTERN, '')
+    .trim();
+  const letters = meaningful.match(/\p{L}/gu) ?? [];
+  if (letters.length < 4) return false;
+
+  const latinTargets = new Set([
+    'en', 'es', 'fr', 'de', 'pt', 'it', 'nl', 'pl', 'tr', 'vi', 'id', 'ms',
+  ]);
+  const clearlyNonLatin = /[가-힣ぁ-ゟ゠-ヿ一-龯\u0400-\u04FF\u0600-\u06FF\u0E00-\u0E7F]/u
+    .test(meaningful);
+  if (latinTargets.has(targetCode) && clearlyNonLatin) return true;
+  if (!sourceCode || sourceCode === targetCode) return false;
+
+  // 긴 문장이 다른 목표 언어로 요청됐는데 완전히 동일하면 번역 누락으로
+  // 본다. 짧은 사람·장소 이름과 보호 토큰은 위 조건에서 제외한다.
+  const words = meaningful.match(/\p{L}+/gu) ?? [];
+  return words.length >= 4 && meaningful.length >= 16;
+}
 
 function looksLikeSameLanguage(text: string, target: string): boolean {
   const meaningful = text
@@ -1192,6 +1233,12 @@ function isValidItemTranslation(
       item.fields[field],
       result.translations[field],
       targetLanguage,
+    ) &&
+    !isUnexpectedlyUnchangedTranslation(
+      item.fields[field],
+      result.translations[field],
+      result.sourceLanguage,
+      targetLanguage,
     ),
   )) return false;
 
@@ -1262,6 +1309,12 @@ function isSafeFallbackItemTranslation(
       result.translations[field],
       targetLanguage,
       false,
+    ) &&
+    !isUnexpectedlyUnchangedTranslation(
+      item.fields[field],
+      result.translations[field],
+      result.sourceLanguage,
+      targetLanguage,
     ),
   );
 }

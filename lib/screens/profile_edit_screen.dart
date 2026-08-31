@@ -242,7 +242,6 @@ class _ProfileEditScreenState extends State<ProfileEditScreen> {
   Future<bool> _checkNickname(
     String raw, {
     required int generation,
-    bool force = false,
   }) async {
     final input = raw.trim();
     if (generation != _nicknameCheckGeneration ||
@@ -254,9 +253,8 @@ class _ProfileEditScreenState extends State<ProfileEditScreen> {
       _nicknameAvailabilityError = null;
     });
     try {
-      final result = await context
-          .read<AuthProvider>()
-          .checkNicknameAvailability(input, force: force);
+      final result =
+          await context.read<AuthProvider>().checkNicknameAvailability(input);
       if (!mounted ||
           generation != _nicknameCheckGeneration ||
           input != _nicknameController.text.trim()) {
@@ -267,6 +265,24 @@ class _ProfileEditScreenState extends State<ProfileEditScreen> {
         _isNicknameAvailable = result.available;
       });
       return result.available;
+    } on NicknameAvailabilityException catch (error) {
+      if (mounted &&
+          generation == _nicknameCheckGeneration &&
+          input == _nicknameController.text.trim()) {
+        setState(() {
+          _isCheckingNickname = false;
+          _isNicknameAvailable = null;
+          final isKorean = Localizations.localeOf(context).languageCode == 'ko';
+          _nicknameAvailabilityError = error.isNetwork
+              ? (isKorean
+                  ? '인터넷 연결을 확인해 주세요.'
+                  : 'Check your internet connection.')
+              : (isKorean
+                  ? '닉네임을 확인하지 못했어요. 잠시 후 다시 시도해 주세요.'
+                  : 'Could not check the nickname. Please try again shortly.');
+        });
+      }
+      return false;
     } catch (_) {
       if (mounted &&
           generation == _nicknameCheckGeneration &&
@@ -276,8 +292,8 @@ class _ProfileEditScreenState extends State<ProfileEditScreen> {
           _isNicknameAvailable = null;
           _nicknameAvailabilityError =
               Localizations.localeOf(context).languageCode == 'ko'
-                  ? '인터넷 연결을 확인해 주세요.'
-                  : 'Check your internet connection.';
+                  ? '닉네임을 확인하지 못했어요. 잠시 후 다시 시도해 주세요.'
+                  : 'Could not check the nickname. Please try again shortly.';
         });
       }
       return false;
@@ -397,26 +413,24 @@ class _ProfileEditScreenState extends State<ProfileEditScreen> {
         final currentNickname =
             (authProvider.userData?['nickname'] ?? '').toString().trim();
         if (requestedNickname != currentNickname) {
-          _nicknameDebounce?.cancel();
-          final generation = ++_nicknameCheckGeneration;
-          if (!await _checkNickname(
-            requestedNickname,
-            generation: generation,
-            force: true,
-          )) {
-            if (!mounted) return;
+          if (_isNicknameAvailable == false &&
+              _nicknameAvailabilityError == null) {
             ScaffoldMessenger.of(context).showSnackBar(
               SnackBar(
                 content: Text(
-                  _nicknameAvailabilityError ??
-                      (Localizations.localeOf(context).languageCode == 'ko'
-                          ? '이미 사용 중인 닉네임이에요.'
-                          : 'This nickname is already in use.'),
+                  Localizations.localeOf(context).languageCode == 'ko'
+                      ? '이미 사용 중인 닉네임이에요.'
+                      : 'This nickname is already in use.',
                 ),
               ),
             );
             return;
           }
+          // Do not repeat the UX availability call on Save. The secure server
+          // transaction below is the final uniqueness check.
+          _nicknameDebounce?.cancel();
+          ++_nicknameCheckGeneration;
+          _isCheckingNickname = false;
         }
         final social = SocialProfileData(
           bio: _bioController.text.trim(),

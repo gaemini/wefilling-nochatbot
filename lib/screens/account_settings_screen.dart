@@ -20,6 +20,7 @@ import '../constants/app_constants.dart';
 import '../config/app_config.dart';
 import '../services/content_translation_service.dart';
 import '../ui/sheets/translation_language_sheet.dart';
+import 'release_diagnostics_screen.dart';
 
 class AccountSettingsScreen extends StatefulWidget {
   const AccountSettingsScreen({Key? key}) : super(key: key);
@@ -135,7 +136,6 @@ class _AccountSettingsScreenState extends State<AccountSettingsScreen> {
                       );
                     },
                   ),
-
                   const SizedBox(height: 32),
 
                   // 법적 정보 섹션
@@ -213,6 +213,19 @@ class _AccountSettingsScreenState extends State<AccountSettingsScreen> {
                     _showAppInfoDialog,
                     subtitle:
                         '${AppLocalizations.of(context)!.appVersion} ${AppConfig.fullVersion}',
+                  ),
+                  _buildDivider(),
+                  _buildListItem(
+                    Localizations.localeOf(context).languageCode == 'ko'
+                        ? '릴리스 진단'
+                        : 'Release diagnostics',
+                    Icons.fact_check_outlined,
+                    () => Navigator.push(
+                      context,
+                      MaterialPageRoute(
+                        builder: (_) => const ReleaseDiagnosticsScreen(),
+                      ),
+                    ),
                   ),
 
                   const SizedBox(height: 32),

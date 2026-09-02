@@ -43,6 +43,7 @@ class _MeetupCategorySelectScreenState
     'study',
     'meal',
     'cafe',
+    'trip',
     'hangout',
     'culture',
     'etc',
@@ -54,6 +55,7 @@ class _MeetupCategorySelectScreenState
     final initialKey = widget.initialSelectedCategoryKey?.trim().toLowerCase();
     _selectedCategoryKey = switch (initialKey) {
       'drink' || 'drinks' || '술' || '행아웃' => 'hangout',
+      'travel' || '여행' => 'trip',
       _ => initialKey,
     };
     if (_selectedCategoryKey != null) {
@@ -71,6 +73,8 @@ class _MeetupCategorySelectScreenState
         return l10n.meal;
       case 'cafe':
         return l10n.cafe;
+      case 'trip':
+        return l10n.trip;
       case 'hangout':
         return l10n.hangout;
       case 'culture':

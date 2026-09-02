@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 
 import '../constants/app_constants.dart';
 import '../models/social_profile_data.dart';
+import '../utils/responsive_helper.dart';
 
 class ProfileSectionHeading extends StatelessWidget {
   const ProfileSectionHeading({
@@ -26,12 +27,14 @@ class ProfileSectionHeading extends StatelessWidget {
             Expanded(
               child: Text(
                 title,
-                style: const TextStyle(
+                maxLines: 2,
+                overflow: TextOverflow.ellipsis,
+                style: TextStyle(
                   fontFamily: 'Inter',
-                  fontFamilyFallback: const ['NotoSansKR'],
-                  fontSize: 20,
+                  fontFamilyFallback: const <String>['NotoSansKR'],
+                  fontSize: context.rf(20).clamp(18, 21).toDouble(),
                   fontWeight: FontWeight.w800,
-                  color: Color(0xFF0F172A),
+                  color: const Color(0xFF111827),
                   height: 1.3,
                   letterSpacing: -0.5,
                 ),
@@ -44,12 +47,12 @@ class ProfileSectionHeading extends StatelessWidget {
           const SizedBox(height: 6),
           Text(
             description!,
-            style: const TextStyle(
+            style: TextStyle(
               fontFamily: 'Inter',
-              fontFamilyFallback: const ['NotoSansKR'],
-              fontSize: 14,
-              fontWeight: FontWeight.w400,
-              color: Color(0xFF64748B),
+              fontFamilyFallback: const <String>['NotoSansKR'],
+              fontSize: context.rf(14).clamp(13, 15).toDouble(),
+              fontWeight: FontWeight.w500,
+              color: const Color(0xFF667085),
               height: 1.45,
               letterSpacing: -0.2,
             ),
@@ -78,54 +81,90 @@ class SocialProfileTagSelector extends StatelessWidget {
   Widget build(BuildContext context) {
     final languageCode = Localizations.localeOf(context).languageCode;
 
-    return Wrap(
-      spacing: 8,
-      runSpacing: 10,
-      children: options.map((option) {
-        final selected = selectedIds.contains(option.id);
-        return FilterChip(
-          selected: selected,
-          showCheckmark: false,
-          label: Text(option.label(languageCode)),
-          labelStyle: TextStyle(
-            fontFamily: 'Inter',
-            fontFamilyFallback: const ['NotoSansKR'],
-            fontSize: 14,
-            fontWeight: selected ? FontWeight.w700 : FontWeight.w500,
-            color: selected ? Colors.white : const Color(0xFF475569),
-          ),
-          backgroundColor: Colors.white,
-          selectedColor: AppColors.pointColor,
-          side: selected
-              ? BorderSide.none
-              : const BorderSide(color: Color(0xFFE2E8F0)),
-          shape: const StadiumBorder(),
-          padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 5),
-          onSelected: (value) {
-            final next = List<String>.of(selectedIds);
-            if (value) {
-              if (next.length >= maxSelection) {
-                ScaffoldMessenger.of(context)
-                  ..hideCurrentSnackBar()
-                  ..showSnackBar(
-                    SnackBar(
-                      content: Text(
-                        languageCode == 'ko'
-                            ? '최대 $maxSelection개까지 선택할 수 있어요.'
-                            : 'You can select up to $maxSelection.',
-                      ),
+    return LayoutBuilder(
+      builder: (context, constraints) => Wrap(
+        spacing: context.rs(7).clamp(6, 9).toDouble(),
+        runSpacing: context.rs(7).clamp(6, 9).toDouble(),
+        children: options.map((option) {
+          final selected = selectedIds.contains(option.id);
+          final foreground =
+              selected ? const Color(0xFF157DB8) : const Color(0xFF475467);
+          return Semantics(
+            button: true,
+            selected: selected,
+            label: option.label(languageCode),
+            child: Material(
+              color:
+                  selected ? const Color(0xFFEAF6FC) : const Color(0xFFF5F6F8),
+              borderRadius: BorderRadius.circular(18),
+              child: InkWell(
+                borderRadius: BorderRadius.circular(18),
+                onTap: () {
+                  final next = List<String>.of(selectedIds);
+                  if (!selected) {
+                    if (next.length >= maxSelection) {
+                      ScaffoldMessenger.of(context)
+                        ..hideCurrentSnackBar()
+                        ..showSnackBar(
+                          SnackBar(
+                            content: Text(
+                              languageCode == 'ko'
+                                  ? '최대 $maxSelection개까지 선택할 수 있어요.'
+                                  : 'You can select up to $maxSelection.',
+                            ),
+                          ),
+                        );
+                      return;
+                    }
+                    next.add(option.id);
+                  } else {
+                    next.remove(option.id);
+                  }
+                  onChanged(next);
+                },
+                child: ConstrainedBox(
+                  constraints: BoxConstraints(
+                    minHeight: 40,
+                    maxWidth: constraints.maxWidth,
+                  ),
+                  child: Padding(
+                    padding:
+                        const EdgeInsets.symmetric(horizontal: 11, vertical: 8),
+                    child: Row(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        Icon(
+                          selected
+                              ? Icons.check_circle_rounded
+                              : Icons.tag_rounded,
+                          size: context.ri(17).clamp(16, 18).toDouble(),
+                          color: foreground,
+                        ),
+                        SizedBox(width: context.rs(6).clamp(5, 7).toDouble()),
+                        Flexible(
+                          child: Text(
+                            option.label(languageCode),
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis,
+                            style: TextStyle(
+                              fontFamily: 'Inter',
+                              fontFamilyFallback: const <String>['NotoSansKR'],
+                              fontSize: context.rf(13).clamp(12, 14).toDouble(),
+                              fontWeight:
+                                  selected ? FontWeight.w800 : FontWeight.w600,
+                              color: foreground,
+                            ),
+                          ),
+                        ),
+                      ],
                     ),
-                  );
-                return;
-              }
-              next.add(option.id);
-            } else {
-              next.remove(option.id);
-            }
-            onChanged(next);
-          },
-        );
-      }).toList(growable: false),
+                  ),
+                ),
+              ),
+            ),
+          );
+        }).toList(growable: false),
+      ),
     );
   }
 }
@@ -326,7 +365,7 @@ class _SocialProfilePromptFieldState extends State<SocialProfilePromptField> {
                     ),
                     style: const TextStyle(
                       fontFamily: 'Inter',
-                      fontFamilyFallback: const ['NotoSansKR'],
+                      fontFamilyFallback: ['NotoSansKR'],
                       fontSize: 15,
                       fontWeight: FontWeight.w500,
                       color: Color(0xFF0F172A),
@@ -349,19 +388,25 @@ InputDecoration socialProfileInputDecoration({
     hintText: hintText,
     helperText: helperText,
     prefixIcon: prefixIcon,
+    prefixIconConstraints: prefixIcon == null
+        ? null
+        : const BoxConstraints(minWidth: 38, minHeight: 44),
     hintStyle: const TextStyle(
       fontFamily: 'Inter',
-      fontFamilyFallback: const ['NotoSansKR'],
+      fontFamilyFallback: ['NotoSansKR'],
       fontSize: 15,
       fontWeight: FontWeight.w400,
       color: Color(0xFF94A3B8),
     ),
     helperStyle: const TextStyle(
       fontFamily: 'Inter',
-      fontFamilyFallback: const ['NotoSansKR'],
+      fontFamilyFallback: ['NotoSansKR'],
       fontSize: 12,
       color: Color(0xFF64748B),
+      height: 1.35,
     ),
+    helperMaxLines: 2,
+    errorMaxLines: 2,
     contentPadding: const EdgeInsets.symmetric(vertical: 13),
     enabledBorder: const UnderlineInputBorder(
       borderSide: BorderSide(color: Color(0xFFE2E8F0)),
@@ -431,7 +476,7 @@ class SocialProfilePreview extends StatelessWidget {
                     overflow: TextOverflow.ellipsis,
                     style: const TextStyle(
                       fontFamily: 'Inter',
-                      fontFamilyFallback: const ['NotoSansKR'],
+                      fontFamilyFallback: ['NotoSansKR'],
                       fontSize: 20,
                       fontWeight: FontWeight.w800,
                       color: Color(0xFF0F172A),
@@ -445,7 +490,7 @@ class SocialProfilePreview extends StatelessWidget {
                       overflow: TextOverflow.ellipsis,
                       style: const TextStyle(
                         fontFamily: 'Inter',
-                        fontFamilyFallback: const ['NotoSansKR'],
+                        fontFamilyFallback: ['NotoSansKR'],
                         fontSize: 14,
                         color: Color(0xFF475569),
                         height: 1.4,
@@ -481,7 +526,7 @@ class SocialProfilePreview extends StatelessWidget {
             friendshipPrompt.trim(),
             style: const TextStyle(
               fontFamily: 'Inter',
-              fontFamilyFallback: const ['NotoSansKR'],
+              fontFamilyFallback: ['NotoSansKR'],
               fontSize: 15,
               fontWeight: FontWeight.w600,
               color: Color(0xFF334155),
@@ -540,7 +585,7 @@ class _PreviewSection extends StatelessWidget {
           title,
           style: const TextStyle(
             fontFamily: 'Inter',
-            fontFamilyFallback: const ['NotoSansKR'],
+            fontFamilyFallback: ['NotoSansKR'],
             fontSize: 13,
             fontWeight: FontWeight.w700,
             color: Color(0xFF64748B),
@@ -556,7 +601,7 @@ class _PreviewSection extends StatelessWidget {
                   '#$value',
                   style: const TextStyle(
                     fontFamily: 'Inter',
-                    fontFamilyFallback: const ['NotoSansKR'],
+                    fontFamilyFallback: ['NotoSansKR'],
                     fontSize: 14,
                     fontWeight: FontWeight.w600,
                     color: AppColors.pointColor,

@@ -8,7 +8,8 @@ import '../utils/logger.dart';
 import 'user_info_cache_service.dart';
 
 class AccountDeletionService {
-  final FirebaseFunctions _functions = FirebaseFunctions.instance;
+  final FirebaseFunctions _functions =
+      FirebaseFunctions.instanceFor(region: 'us-central1');
   final FirebaseAuth _auth = FirebaseAuth.instance;
 
   /// Google 계정으로 재인증
@@ -32,14 +33,16 @@ class AccountDeletionService {
       // authenticate 메소드로 재인증
       final GoogleSignInAccount googleUser = await googleSignIn.authenticate();
 
-      final GoogleSignInAuthentication googleAuth =
-          await googleUser.authentication;
+      final GoogleSignInAuthentication googleAuth = googleUser.authentication;
 
       final credential = GoogleAuthProvider.credential(
         idToken: googleAuth.idToken,
       );
 
       await user.reauthenticateWithCredential(credential);
+      await user.getIdToken(true);
+    } on FirebaseAuthException {
+      rethrow;
     } catch (e) {
       throw Exception('Google 재인증 실패: $e');
     }
@@ -59,9 +62,38 @@ class AccountDeletionService {
       appleProvider.addScope('name');
 
       await user.reauthenticateWithProvider(appleProvider);
+      await user.getIdToken(true);
+    } on FirebaseAuthException {
+      rethrow;
     } catch (e) {
       throw Exception('Apple 재인증 실패: $e');
     }
+  }
+
+  /// 이메일/비밀번호 계정으로 재인증한다. 비밀번호는 Firebase Auth에만
+  /// 전달하고 Firestore 또는 Cloud Functions에는 전송하지 않는다.
+  Future<void> reauthenticateWithPassword(String password) async {
+    final user = _auth.currentUser;
+    final email = user?.email?.trim() ?? '';
+    if (user == null || email.isEmpty) {
+      throw FirebaseAuthException(
+        code: 'user-not-found',
+        message: '로그인된 이메일 계정을 찾을 수 없습니다.',
+      );
+    }
+    if (!user.providerData.any((info) => info.providerId == 'password')) {
+      throw FirebaseAuthException(
+        code: 'operation-not-allowed',
+        message: '이메일/비밀번호 로그인 계정이 아닙니다.',
+      );
+    }
+
+    final credential = EmailAuthProvider.credential(
+      email: email,
+      password: password,
+    );
+    await user.reauthenticateWithCredential(credential);
+    await user.getIdToken(true);
   }
 
   Future<void> deleteAccountImmediately({required String reason}) async {

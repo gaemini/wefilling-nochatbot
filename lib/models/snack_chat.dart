@@ -80,8 +80,9 @@ class SnackChat {
     return favoriteUserIds.contains(userId);
   }
 
-  /// 일반 Snack Chat은 방장 여부와 관계없이 현재 참여자 누구나 자신의
-  /// 친구를 초대할 수 있다. Meetup 연결 방은 Meetup 참여 흐름만 사용한다.
+  /// 일반 Snack Chat은 방장 여부와 관계없이 현재 참여자 누구나 친구 또는
+  /// 사용자 ID로 찾은 사람을 초대할 수 있다. Meetup 연결 방은 Meetup 참여
+  /// 흐름만 사용한다.
   bool canInviteMembers(String? userId) {
     if (userId == null || userId.isEmpty) return false;
     return participantIds.contains(userId) &&

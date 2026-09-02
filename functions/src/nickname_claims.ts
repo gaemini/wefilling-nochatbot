@@ -1,5 +1,6 @@
 import * as admin from 'firebase-admin';
 import * as functions from 'firebase-functions';
+import * as crypto from 'crypto';
 
 import {COL} from './firestore_paths';
 
@@ -52,7 +53,14 @@ function timestampMillis(value: unknown): number | null {
   return null;
 }
 
+function nicknameKeyFingerprint(value: string): string {
+  if (!value) return 'none';
+  return crypto.createHash('sha256').update(value).digest('hex').slice(0, 10);
+}
+
 export type PreparedNicknameReservation = NicknameIdentity & {
+  claimExists: boolean;
+  claimOwnedByCurrentUser: boolean;
   apply: () => void;
 };
 
@@ -95,6 +103,14 @@ export async function prepareNicknameReservation(
     ? String(nextSnap.get('ownerUid') ?? '')
     : '';
   if (nextSnap.exists && nextOwner !== uid) {
+    functions.logger.warn('nickname save', {
+      uid,
+      oldNicknameKeyHash: nicknameKeyFingerprint(currentKey),
+      newNicknameKeyHash: nicknameKeyFingerprint(identity.nicknameKey),
+      claimExists: true,
+      claimOwnedByCurrentUser: false,
+      result: 'nicknameTaken',
+    });
     throw new functions.https.HttpsError(
       'already-exists',
       '이미 사용 중인 닉네임입니다.',
@@ -103,6 +119,8 @@ export async function prepareNicknameReservation(
 
   return {
     ...identity,
+    claimExists: nextSnap.exists,
+    claimOwnedByCurrentUser: nextSnap.exists && nextOwner === uid,
     apply: () => {
       transaction.set(nextRef, {
         ownerUid: uid,
@@ -142,7 +160,7 @@ export async function releaseNicknameClaimIfOwned(
 }
 
 export const checkNicknameAvailability = functions
-  .runWith({timeoutSeconds: 15, memory: '256MB'})
+  .runWith({timeoutSeconds: 15, memory: '256MB', enforceAppCheck: true})
   .https.onCall(async (data, context) => {
     // Deliberately exclude uid, email, nickname, and token values. These fields
     // only show whether a request reached the callable handler after the SDK's
@@ -183,7 +201,9 @@ export const checkNicknameAvailability = functions
     }
   });
 
-export const updateMyNicknameSecure = functions.https.onCall(
+export const updateMyNicknameSecure = functions
+  .runWith({enforceAppCheck: true})
+  .https.onCall(
   async (data, context) => {
     const uid = context.auth?.uid;
     if (!uid) {
@@ -196,7 +216,7 @@ export const updateMyNicknameSecure = functions.https.onCall(
     const db = admin.firestore();
     const userRef = db.collection(COL.users).doc(uid);
 
-    return db.runTransaction(async (transaction) => {
+    const outcome = await db.runTransaction(async (transaction) => {
       const userSnap = await transaction.get(userRef);
       if (!userSnap.exists) {
         throw new functions.https.HttpsError(
@@ -215,7 +235,16 @@ export const updateMyNicknameSecure = functions.https.onCall(
       }
 
       const currentNickname = String(existing.nickname ?? '').trim();
-      if (currentNickname !== requested.nickname) {
+      let currentNicknameKey = String(existing.nicknameKey ?? '').trim();
+      if (!currentNicknameKey && currentNickname) {
+        try {
+          currentNicknameKey = normalizeNickname(currentNickname).nicknameKey;
+        } catch (_) {
+          currentNicknameKey = '';
+        }
+      }
+      const nicknameKeyChanged = currentNicknameKey !== requested.nicknameKey;
+      if (nicknameKeyChanged) {
         const lastChangedAt = timestampMillis(existing.nicknameUpdatedAt);
         if (lastChangedAt != null) {
           const remainingMs = NICKNAME_COOLDOWN_MS - (Date.now() - lastChangedAt);
@@ -248,11 +277,26 @@ export const updateMyNicknameSecure = functions.https.onCall(
       }
       transaction.update(userRef, update);
       return {
-        success: true,
-        nickname: reservation.nickname,
-        nicknameKey: reservation.nicknameKey,
+        response: {
+          success: true,
+          nickname: reservation.nickname,
+          nicknameKey: reservation.nicknameKey,
+        },
+        oldNicknameKeyHash: nicknameKeyFingerprint(currentNicknameKey),
+        newNicknameKeyHash: nicknameKeyFingerprint(reservation.nicknameKey),
+        claimExists: reservation.claimExists,
+        claimOwnedByCurrentUser: reservation.claimOwnedByCurrentUser,
       };
     });
+    functions.logger.info('nickname save', {
+      uid,
+      oldNicknameKeyHash: outcome.oldNicknameKeyHash,
+      newNicknameKeyHash: outcome.newNicknameKeyHash,
+      claimExists: outcome.claimExists,
+      claimOwnedByCurrentUser: outcome.claimOwnedByCurrentUser,
+      result: 'success',
+    });
+    return outcome.response;
   },
 );
 

@@ -1,14 +1,13 @@
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/material.dart';
 
-import '../constants/app_constants.dart';
 import '../l10n/app_localizations.dart';
 import '../models/friend_category.dart';
 import '../models/user_profile.dart';
 import '../repositories/users_repository.dart';
 import '../services/friend_category_service.dart';
-import '../services/notification_service.dart';
 import '../services/snack_chat_service.dart';
+import '../ui/widgets/snack_chat_participant_picker.dart';
 import '../utils/logger.dart';
 import '../utils/responsive_helper.dart';
 import 'snack_chat_screen.dart';
@@ -27,18 +26,15 @@ class CreateSnackChatScreen extends StatefulWidget {
 
 class _CreateSnackChatScreenState extends State<CreateSnackChatScreen> {
   final _titleController = TextEditingController();
-  final _searchController = TextEditingController();
   final _friendCategoryService = FriendCategoryService();
   final _usersRepository = UsersRepository();
   final _snackChatService = SnackChatService();
-  final _notificationService = NotificationService();
 
   List<String> _selectedCategoryIds = <String>[];
   List<UserProfile> _candidateFriends = <UserProfile>[];
-  Set<String> _selectedParticipantIds = <String>{};
+  Map<String, UserProfile> _selectedParticipants = <String, UserProfile>{};
   int _activeDurationHours = 24;
   int _stepIndex = 0;
-  String _searchQuery = '';
   bool _isLoading = true;
   bool _isSubmitting = false;
 
@@ -48,12 +44,6 @@ class _CreateSnackChatScreenState extends State<CreateSnackChatScreen> {
   void initState() {
     super.initState();
     _titleController.addListener(_refreshButtonState);
-    _searchController.addListener(() {
-      final next = _searchController.text.trim().toLowerCase();
-      if (next != _searchQuery && mounted) {
-        setState(() => _searchQuery = next);
-      }
-    });
     _init();
   }
 
@@ -94,7 +84,10 @@ class _CreateSnackChatScreenState extends State<CreateSnackChatScreen> {
           ? allCategoryIds
           : <String>[initialAudienceCategory.id];
       _candidateFriends = friends;
-      _selectedParticipantIds = initialParticipantIds;
+      _selectedParticipants = <String, UserProfile>{
+        for (final friend in friends)
+          if (initialParticipantIds.contains(friend.uid)) friend.uid: friend,
+      };
       _isLoading = false;
     });
   }
@@ -103,21 +96,18 @@ class _CreateSnackChatScreenState extends State<CreateSnackChatScreen> {
   void dispose() {
     _titleController.removeListener(_refreshButtonState);
     _titleController.dispose();
-    _searchController.dispose();
     _friendCategoryService.dispose();
     super.dispose();
   }
 
-  void _toggleParticipant(String uid) {
-    final next = Set<String>.from(_selectedParticipantIds);
-    if (next.contains(uid)) {
-      next.remove(uid);
+  void _toggleParticipant(UserProfile profile) {
+    final next = Map<String, UserProfile>.from(_selectedParticipants);
+    if (next.containsKey(profile.uid)) {
+      next.remove(profile.uid);
     } else {
-      next.add(uid);
+      next[profile.uid] = profile;
     }
-    setState(() {
-      _selectedParticipantIds = next;
-    });
+    setState(() => _selectedParticipants = next);
   }
 
   Future<void> _create() async {
@@ -131,7 +121,7 @@ class _CreateSnackChatScreenState extends State<CreateSnackChatScreen> {
       );
       return;
     }
-    if (_selectedParticipantIds.isEmpty) {
+    if (_selectedParticipants.isEmpty) {
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(content: Text(l10n.snackChatSelectFriend)),
       );
@@ -142,7 +132,7 @@ class _CreateSnackChatScreenState extends State<CreateSnackChatScreen> {
     try {
       final id = await _snackChatService.createSnackChat(
         title: title,
-        participantIds: _selectedParticipantIds.toList(),
+        participantIds: _selectedParticipants.keys.toList(),
         visibleToCategoryIds: _selectedCategoryIds,
         activeDurationHours: _activeDurationHours,
       );
@@ -154,33 +144,6 @@ class _CreateSnackChatScreenState extends State<CreateSnackChatScreen> {
         return;
       }
 
-      // Firestore에서 실제 닉네임 조회 (Firebase Auth displayName은 앱 닉네임과 다를 수 있음)
-      String creatorName = '';
-      try {
-        if (_uid != null) {
-          final profile = await _usersRepository.getUserProfile(_uid!);
-          creatorName = profile?.nickname?.trim() ?? '';
-          if (creatorName.isEmpty) {
-            creatorName = profile?.displayNameOrNickname.trim() ?? '';
-          }
-        }
-      } catch (_) {}
-      if (creatorName.isEmpty) {
-        creatorName =
-            FirebaseAuth.instance.currentUser?.displayName?.trim() ?? '';
-      }
-
-      await _notificationService.sendSnackChatInviteNotification(
-        participantIds: <String>{
-          ..._selectedParticipantIds,
-          if (_uid != null) _uid!
-        }.toList(),
-        snackChatId: id,
-        snackChatName: title,
-        creatorId: _uid ?? '',
-        creatorName: creatorName,
-      );
-      if (!mounted) return;
       Navigator.pushReplacement(
         context,
         MaterialPageRoute(builder: (_) => SnackChatScreen(snackChatId: id)),
@@ -202,8 +165,10 @@ class _CreateSnackChatScreenState extends State<CreateSnackChatScreen> {
   @override
   Widget build(BuildContext context) {
     final l10n = AppLocalizations.of(context)!;
-    final canContinue = _selectedParticipantIds.isNotEmpty;
+    final canContinue = _selectedParticipants.isNotEmpty;
     final canCreate = _titleController.text.trim().isNotEmpty;
+    final pageTitle =
+        _stepIndex == 0 ? l10n.snackChatInviteStepTitle : l10n.createSnackChat;
 
     return PopScope(
       canPop: _stepIndex == 0 && !_isSubmitting,
@@ -213,12 +178,14 @@ class _CreateSnackChatScreenState extends State<CreateSnackChatScreen> {
       },
       child: Scaffold(
         backgroundColor: Colors.white,
+        resizeToAvoidBottomInset: true,
         appBar: AppBar(
           backgroundColor: Colors.white,
           elevation: 0,
           surfaceTintColor: Colors.white,
           foregroundColor: const Color(0xFF111827),
-          toolbarHeight: context.rh(56, min: 54, max: 60),
+          toolbarHeight: _toolbarHeight,
+          automaticallyImplyLeading: false,
           leadingWidth: 48,
           leading: IconButton(
             iconSize: context.ri(22).clamp(21, 24).toDouble(),
@@ -233,24 +200,7 @@ class _CreateSnackChatScreenState extends State<CreateSnackChatScreen> {
                   },
             icon: const Icon(Icons.arrow_back_rounded),
           ),
-          centerTitle: true,
-          title: MediaQuery.withClampedTextScaling(
-            maxScaleFactor: 1.2,
-            child: Text(
-              _stepIndex == 0
-                  ? l10n.snackChatInviteStepTitle
-                  : l10n.createSnackChat,
-              maxLines: 1,
-              overflow: TextOverflow.ellipsis,
-              style: TextStyle(
-                fontFamily: 'Inter',
-                fontFamilyFallback: const ['NotoSansKR'],
-                fontSize: context.rf(18).clamp(16, 19).toDouble(),
-                fontWeight: FontWeight.w700,
-                color: const Color(0xFF111827),
-              ),
-            ),
-          ),
+          flexibleSpace: _buildCenteredTitle(pageTitle),
           actions: [
             if (_stepIndex == 0)
               TextButton(
@@ -267,21 +217,21 @@ class _CreateSnackChatScreenState extends State<CreateSnackChatScreen> {
                   mainAxisSize: MainAxisSize.min,
                   children: [
                     Text(
-                      '${_selectedParticipantIds.length}',
-                      style: const TextStyle(
+                      '${_selectedParticipants.length}',
+                      style: TextStyle(
                         fontFamily: 'Inter',
                         fontFamilyFallback: const ['NotoSansKR'],
-                        fontSize: 14,
+                        fontSize: context.rf(14).clamp(13, 15).toDouble(),
                         fontWeight: FontWeight.w700,
                       ),
                     ),
                     const SizedBox(width: 6),
                     Text(
                       l10n.next,
-                      style: const TextStyle(
+                      style: TextStyle(
                         fontFamily: 'Inter',
                         fontFamilyFallback: const ['NotoSansKR'],
-                        fontSize: 14,
+                        fontSize: context.rf(14).clamp(13, 15).toDouble(),
                         fontWeight: FontWeight.w700,
                       ),
                     ),
@@ -313,10 +263,10 @@ class _CreateSnackChatScreenState extends State<CreateSnackChatScreen> {
                       )
                     : Text(
                         l10n.confirm,
-                        style: const TextStyle(
+                        style: TextStyle(
                           fontFamily: 'Inter',
                           fontFamilyFallback: const ['NotoSansKR'],
-                          fontSize: 14,
+                          fontSize: context.rf(14).clamp(13, 15).toDouble(),
                           fontWeight: FontWeight.w800,
                         ),
                       ),
@@ -340,214 +290,48 @@ class _CreateSnackChatScreenState extends State<CreateSnackChatScreen> {
   }
 
   Widget _buildInviteStep({Key? key}) {
-    final l10n = AppLocalizations.of(context)!;
-    final selected = _selectedParticipants;
-    final visibleFriends = _candidateFriends.where((friend) {
-      if (_searchQuery.isEmpty) return true;
-      return friend.displayNameOrNickname.toLowerCase().contains(_searchQuery);
-    }).toList(growable: false);
-
-    final horizontalPadding = _pageHorizontalPadding(context);
-
-    return Column(
+    return SnackChatParticipantPicker(
       key: key,
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        Padding(
-          padding: EdgeInsets.fromLTRB(
-            horizontalPadding,
-            12,
-            horizontalPadding,
-            8,
-          ),
-          child: SizedBox(
-            height: 76,
-            child: selected.isEmpty
-                ? Align(
-                    alignment: Alignment.topLeft,
-                    child: Text(
-                      l10n.snackChatNoFriendsSelected,
-                      style: const TextStyle(
-                        fontFamily: 'Inter',
-                        fontFamilyFallback: const ['NotoSansKR'],
-                        fontSize: 13,
-                        fontWeight: FontWeight.w600,
-                        color: Color(0xFF94A3B8),
-                      ),
-                    ),
-                  )
-                : ListView.separated(
-                    scrollDirection: Axis.horizontal,
-                    itemCount: selected.length,
-                    separatorBuilder: (_, __) => const SizedBox(width: 10),
-                    itemBuilder: (_, index) =>
-                        _buildFriendSlot(selected[index]),
-                  ),
-          ),
-        ),
-        Padding(
-          padding: EdgeInsets.fromLTRB(
-            horizontalPadding,
-            0,
-            horizontalPadding,
-            12,
-          ),
-          child: SizedBox(
-            height: 44,
-            child: TextField(
-              controller: _searchController,
-              textInputAction: TextInputAction.search,
-              style: const TextStyle(
-                fontFamily: 'Inter',
-                fontFamilyFallback: const ['NotoSansKR'],
-                fontSize: 14,
-              ),
-              decoration: InputDecoration(
-                hintText: l10n.searchByName,
-                hintStyle: const TextStyle(
-                  fontFamily: 'Inter',
-                  fontFamilyFallback: const ['NotoSansKR'],
-                  fontSize: 14,
-                  color: Color(0xFF6B7280),
-                ),
-                prefixIcon: const Icon(Icons.search_rounded, size: 20),
-                prefixIconConstraints: const BoxConstraints(
-                  minWidth: 44,
-                  minHeight: 44,
-                ),
-                suffixIcon: _searchQuery.isNotEmpty
-                    ? IconButton(
-                        iconSize: 18,
-                        padding: EdgeInsets.zero,
-                        constraints: const BoxConstraints.tightFor(
-                          width: 44,
-                          height: 44,
-                        ),
-                        icon: const Icon(Icons.close_rounded),
-                        onPressed: _searchController.clear,
-                      )
-                    : null,
-                suffixIconConstraints: const BoxConstraints(
-                  minWidth: 44,
-                  minHeight: 44,
-                ),
-                filled: true,
-                fillColor: const Color(0xFFF4F6F8),
-                border: OutlineInputBorder(
-                  borderRadius: BorderRadius.circular(12),
-                  borderSide: BorderSide.none,
-                ),
-                isDense: true,
-                contentPadding: const EdgeInsets.symmetric(vertical: 11),
-              ),
-            ),
-          ),
-        ),
-        Padding(
-          padding: EdgeInsets.symmetric(horizontal: horizontalPadding),
-          child: Text(
-            l10n.snackChatFriendList,
-            style: const TextStyle(
-              fontFamily: 'Inter',
-              fontFamilyFallback: const ['NotoSansKR'],
-              fontSize: 14,
-              fontWeight: FontWeight.w700,
-              color: Color(0xFF64748B),
-            ),
-          ),
-        ),
-        const SizedBox(height: 4),
-        Expanded(
-          child: visibleFriends.isEmpty
-              ? Center(
-                  child: Text(
-                    l10n.snackChatNoFriendsToInvite,
-                    style: const TextStyle(
-                      fontFamily: 'Inter',
-                      fontFamilyFallback: const ['NotoSansKR'],
-                      color: Color(0xFF64748B),
-                    ),
-                  ),
-                )
-              : ListView.builder(
-                  keyboardDismissBehavior:
-                      ScrollViewKeyboardDismissBehavior.onDrag,
-                  padding: EdgeInsets.fromLTRB(
-                    horizontalPadding - 12,
-                    0,
-                    horizontalPadding - 12,
-                    20,
-                  ),
-                  itemCount: visibleFriends.length,
-                  itemBuilder: (_, index) =>
-                      _buildFriendSelectionTile(visibleFriends[index]),
-                ),
-        ),
-      ],
+      friends: _candidateFriends,
+      selectedProfiles: _selectedParticipants,
+      onToggle: _toggleParticipant,
+      maxSelectionCount: 49,
     );
   }
 
-  Widget _buildFriendSelectionTile(UserProfile friend) {
-    final selected = _selectedParticipantIds.contains(friend.uid);
-    return Semantics(
-      button: true,
-      selected: selected,
-      label: friend.displayNameOrNickname,
-      onTap: () => _toggleParticipant(friend.uid),
-      excludeSemantics: true,
-      child: Material(
-        color: Colors.transparent,
-        child: InkWell(
-          onTap: () => _toggleParticipant(friend.uid),
-          borderRadius: BorderRadius.circular(12),
+  double get _toolbarHeight {
+    final base = context.rh(56, min: 54, max: 60);
+    final scaledTitle = MediaQuery.textScalerOf(context).scale(
+      context.rf(18).clamp(16, 19).toDouble(),
+    );
+    final accessible = scaledTitle * 1.2 + 24;
+    return accessible > base ? accessible.clamp(base, 96).toDouble() : base;
+  }
+
+  Widget _buildCenteredTitle(String title) {
+    final horizontalClearance =
+        MediaQuery.sizeOf(context).width < 360 ? 88.0 : 104.0;
+    return SafeArea(
+      bottom: false,
+      child: IgnorePointer(
+        child: Center(
           child: Padding(
-            padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 7),
-            child: Row(
-              children: [
-                _buildAvatar(
-                  size: 44,
-                  photoUrl: friend.photoURL,
-                  fallbackLabel: friend.displayNameOrNickname,
+            padding: EdgeInsets.symmetric(horizontal: horizontalClearance),
+            child: MediaQuery.withClampedTextScaling(
+              maxScaleFactor: 1.2,
+              child: Text(
+                title,
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+                textAlign: TextAlign.center,
+                style: TextStyle(
+                  fontFamily: 'Inter',
+                  fontFamilyFallback: const ['NotoSansKR'],
+                  fontSize: context.rf(18).clamp(16, 19).toDouble(),
+                  fontWeight: FontWeight.w700,
+                  color: const Color(0xFF111827),
                 ),
-                const SizedBox(width: 12),
-                Expanded(
-                  child: Text(
-                    friend.displayNameOrNickname,
-                    maxLines: 1,
-                    overflow: TextOverflow.ellipsis,
-                    style: const TextStyle(
-                      fontFamily: 'Inter',
-                      fontFamilyFallback: const ['NotoSansKR'],
-                      fontSize: 14,
-                      fontWeight: FontWeight.w600,
-                      color: Color(0xFF111827),
-                    ),
-                  ),
-                ),
-                const SizedBox(width: 8),
-                AnimatedContainer(
-                  duration: const Duration(milliseconds: 140),
-                  width: 22,
-                  height: 22,
-                  decoration: BoxDecoration(
-                    color: selected ? AppColors.pointColor : Colors.transparent,
-                    shape: BoxShape.circle,
-                    border: Border.all(
-                      color: selected
-                          ? AppColors.pointColor
-                          : const Color(0xFFB8C0CC),
-                      width: 1.5,
-                    ),
-                  ),
-                  child: selected
-                      ? const Icon(
-                          Icons.check_rounded,
-                          size: 15,
-                          color: Colors.white,
-                        )
-                      : null,
-                ),
-              ],
+              ),
             ),
           ),
         ),
@@ -690,10 +474,6 @@ class _CreateSnackChatScreenState extends State<CreateSnackChatScreen> {
     );
   }
 
-  List<UserProfile> get _selectedParticipants => _candidateFriends
-      .where((friend) => _selectedParticipantIds.contains(friend.uid))
-      .toList();
-
   Widget _buildDurationOption(int hours) {
     final selected = _activeDurationHours == hours;
     final label = hours == 24
@@ -761,107 +541,6 @@ class _CreateSnackChatScreenState extends State<CreateSnackChatScreen> {
               ],
             ),
           ),
-        ),
-      ),
-    );
-  }
-
-  Widget _buildFriendSlot(UserProfile friend) {
-    return Semantics(
-      button: true,
-      label: friend.displayNameOrNickname,
-      onTap: () => _toggleParticipant(friend.uid),
-      excludeSemantics: true,
-      child: GestureDetector(
-        onTap: () => _toggleParticipant(friend.uid),
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            Stack(
-              clipBehavior: Clip.none,
-              children: [
-                _buildAvatar(
-                  size: 52,
-                  photoUrl: friend.photoURL,
-                  fallbackLabel: friend.displayNameOrNickname,
-                ),
-                Positioned(
-                  right: -2,
-                  top: -2,
-                  child: Container(
-                    width: 16,
-                    height: 16,
-                    decoration: BoxDecoration(
-                      color: const Color(0xFF111827),
-                      shape: BoxShape.circle,
-                      border: Border.all(color: Colors.white, width: 1.25),
-                    ),
-                    child: const Icon(
-                      Icons.close,
-                      size: 10,
-                      color: Colors.white,
-                    ),
-                  ),
-                ),
-              ],
-            ),
-            const SizedBox(height: 5),
-            SizedBox(
-              width: 62,
-              child: Text(
-                friend.displayNameOrNickname,
-                maxLines: 1,
-                overflow: TextOverflow.ellipsis,
-                textAlign: TextAlign.center,
-                style: const TextStyle(
-                  fontFamily: 'Inter',
-                  fontFamilyFallback: const ['NotoSansKR'],
-                  fontSize: 12,
-                  fontWeight: FontWeight.w600,
-                  color: Color(0xFF374151),
-                ),
-              ),
-            ),
-          ],
-        ),
-      ),
-    );
-  }
-
-  Widget _buildAvatar({
-    required double size,
-    required String? photoUrl,
-    required String fallbackLabel,
-  }) {
-    return Container(
-      width: size,
-      height: size,
-      decoration: BoxDecoration(
-        color: const Color(0xFFE5E7EB),
-        borderRadius: BorderRadius.circular(size * 0.28),
-      ),
-      clipBehavior: Clip.antiAlias,
-      child: (photoUrl != null && photoUrl.trim().isNotEmpty)
-          ? Image.network(
-              photoUrl,
-              fit: BoxFit.cover,
-              errorBuilder: (_, __, ___) =>
-                  _avatarFallback(fallbackLabel, size),
-            )
-          : _avatarFallback(fallbackLabel, size),
-    );
-  }
-
-  Widget _avatarFallback(String label, double avatarSize) {
-    return Center(
-      child: Text(
-        label.isEmpty ? '?' : label[0],
-        style: TextStyle(
-          fontFamily: 'Inter',
-          fontFamilyFallback: const ['NotoSansKR'],
-          fontSize: avatarSize * 0.34,
-          fontWeight: FontWeight.w700,
-          color: const Color(0xFF6B7280),
         ),
       ),
     );

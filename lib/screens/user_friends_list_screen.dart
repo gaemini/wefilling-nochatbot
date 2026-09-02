@@ -1,10 +1,10 @@
 // lib/screens/user_friends_list_screen.dart
 // 특정 사용자의 친구 목록 화면
-// 프로필 접근 없이 목록만 표시
+// 프로필 친구 네트워크 탐색 목록
 
+import 'dart:async';
 import 'package:flutter/material.dart';
 import '../services/relationship_service.dart';
-import '../models/relationship_status.dart';
 import '../models/user_profile.dart';
 import '../constants/app_constants.dart';
 import '../widgets/country_flag_circle.dart';
@@ -29,69 +29,50 @@ class UserFriendsListScreen extends StatefulWidget {
 
 class _UserFriendsListScreenState extends State<UserFriendsListScreen> {
   final RelationshipService _relationshipService = RelationshipService();
-  List<UserProfile>? _friends;
-  Set<String>? _myFriendIds;
+  final TextEditingController _searchController = TextEditingController();
+  final ScrollController _scrollController = ScrollController();
+  List<ProfileFriendNetworkMember> _friends =
+      const <ProfileFriendNetworkMember>[];
   final Set<String> _requestingIds = <String>{};
   final Set<String> _requestedIds = <String>{};
   bool _isLoading = true;
-  bool _permissionDenied = false;
+  bool _isLoadingMore = false;
+  int? _nextCursor;
+  int _totalCount = 0;
+  int _mutualCount = 0;
+  String _query = '';
+  Timer? _searchDebounce;
   String? _errorMessage;
 
   @override
   void initState() {
     super.initState();
-    _checkPermissionAndLoad();
+    _scrollController.addListener(_handleScroll);
+    _loadFriends();
   }
 
-  Future<void> _checkPermissionAndLoad() async {
-    try {
-      final currentUserId = _relationshipService.currentUserId;
+  @override
+  void dispose() {
+    _searchDebounce?.cancel();
+    _searchController.dispose();
+    _scrollController.dispose();
+    super.dispose();
+  }
 
-      // 본인 친구 목록은 항상 허용
-      if (currentUserId != null && currentUserId == widget.userId) {
-        await _loadFriends();
-        return;
-      }
-
-      // 로그인 안 된 상태에서는 접근 불가
-      if (currentUserId == null) {
-        _denyAccess();
-        return;
-      }
-
-      // 친구가 아니면 접근 불가
-      final status =
-          await _relationshipService.getRelationshipStatus(widget.userId);
-      if (status != RelationshipStatus.friends) {
-        _denyAccess();
-        return;
-      }
-
-      await _loadFriends();
-    } catch (_) {
-      _denyAccess();
+  void _handleScroll() {
+    if (_scrollController.position.extentAfter < 260) {
+      unawaited(_loadMore());
     }
   }
 
-  void _denyAccess() {
-    if (!mounted) return;
-    setState(() {
-      _permissionDenied = true;
-      _isLoading = false;
-      _errorMessage = null;
-    });
-
-    WidgetsBinding.instance.addPostFrameCallback((_) {
+  void _onSearchChanged(String value) {
+    _searchDebounce?.cancel();
+    _searchDebounce = Timer(const Duration(milliseconds: 350), () {
       if (!mounted) return;
-      final l10n = AppLocalizations.of(context)!;
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          content: Text(l10n.myFriendsOnly),
-          backgroundColor: Colors.black87,
-          duration: const Duration(seconds: 2),
-        ),
-      );
-      Navigator.of(context).maybePop();
+      final normalized = value.trim();
+      if (normalized == _query) return;
+      setState(() => _query = normalized);
+      unawaited(_loadFriends());
     });
   }
 
@@ -101,63 +82,22 @@ class _UserFriendsListScreenState extends State<UserFriendsListScreen> {
         _isLoading = true;
         _errorMessage = null;
       });
-
-      final currentUserId = _relationshipService.currentUserId;
-
-      final results = await Future.wait([
-        _relationshipService.getUserFriends(widget.userId),
-        currentUserId != null
-            ? _relationshipService.getUserFriends(currentUserId)
-            : Future.value(<UserProfile>[]),
-      ]);
-
-      // 친구의 친구 목록에서도 "나"가 보이도록 현재 사용자 필터링을 하지 않는다.
-      // (기존: 내 uid를 제외해서 목록에서 사라짐)
-      final friends = results[0].toList(growable: false);
-
-      final myFriends = results[1];
-      final myFriendIds = myFriends.map((u) => u.uid).toSet();
-      // 내 카드가 "이미 친구" 섹션에 자연스럽게 포함되도록(액션 버튼/탭 동작 일관)
-      if (currentUserId != null) {
-        myFriendIds.add(currentUserId);
-      }
-
-      // 비친구 목록 중 "내가 이미 요청 보낸 상태"는 버튼을 요청됨으로 고정
-      final pendingOutIds = <String>{};
-      if (currentUserId != null) {
-        final nonFriends =
-            friends.where((u) => !myFriendIds.contains(u.uid)).toList();
-        if (nonFriends.isNotEmpty) {
-          final statuses = await Future.wait(
-            nonFriends.map(
-              (u) async {
-                try {
-                  return await _relationshipService
-                      .getRelationshipStatus(u.uid);
-                } catch (_) {
-                  return RelationshipStatus.none;
-                }
-              },
-            ),
-          );
-          for (var i = 0; i < nonFriends.length; i++) {
-            if (statuses[i] == RelationshipStatus.pendingOut) {
-              pendingOutIds.add(nonFriends[i].uid);
-            }
-          }
-        }
-      }
+      final page = await _relationshipService.getProfileFriendNetwork(
+        targetUid: widget.userId,
+        pageSize: 20,
+        query: _query,
+        forceRefresh: true,
+      );
 
       if (mounted) {
         setState(() {
-          _friends = friends;
-          _myFriendIds = myFriendIds;
-          _requestedIds
-            ..clear()
-            ..addAll(pendingOutIds);
+          _friends = page.friends;
+          _nextCursor = page.nextCursor;
+          _totalCount = page.totalCount;
+          _mutualCount = page.mutualCount;
           _isLoading = false;
         });
-        Logger.log('✅ ${widget.userName}의 친구 목록 로드: ${friends.length}명');
+        Logger.log('✅ ${widget.userName}의 친구 목록 로드: ${page.friends.length}명');
       }
     } catch (e) {
       Logger.error('친구 목록 로드 오류: $e');
@@ -167,6 +107,33 @@ class _UserFriendsListScreenState extends State<UserFriendsListScreen> {
           _isLoading = false;
         });
       }
+    }
+  }
+
+  Future<void> _loadMore() async {
+    final cursor = _nextCursor;
+    if (cursor == null || _isLoading || _isLoadingMore) return;
+    setState(() => _isLoadingMore = true);
+    try {
+      final page = await _relationshipService.getProfileFriendNetwork(
+        targetUid: widget.userId,
+        pageSize: 20,
+        cursor: cursor,
+        query: _query,
+      );
+      if (!mounted) return;
+      setState(() {
+        final known = _friends.map((item) => item.profile.uid).toSet();
+        _friends = [
+          ..._friends,
+          ...page.friends.where((item) => known.add(item.profile.uid)),
+        ];
+        _nextCursor = page.nextCursor;
+        _isLoadingMore = false;
+      });
+    } catch (error) {
+      Logger.error('친구 목록 추가 로드 오류: $error');
+      if (mounted) setState(() => _isLoadingMore = false);
     }
   }
 
@@ -208,70 +175,6 @@ class _UserFriendsListScreenState extends State<UserFriendsListScreen> {
   }
 
   Widget _buildBody() {
-    if (_permissionDenied) {
-      final l10n = AppLocalizations.of(context)!;
-      return Center(
-        child: Padding(
-          padding: const EdgeInsets.symmetric(horizontal: 24),
-          child: Column(
-            mainAxisAlignment: MainAxisAlignment.center,
-            children: [
-              Container(
-                width: 72,
-                height: 72,
-                decoration: BoxDecoration(
-                  color: const Color(0xFFF3F4F6),
-                  borderRadius: BorderRadius.circular(20),
-                ),
-                child: const Icon(
-                  Icons.lock_outline,
-                  color: Color(0xFF6B7280),
-                  size: 30,
-                ),
-              ),
-              const SizedBox(height: 16),
-              Text(
-                l10n.myFriendsOnly,
-                textAlign: TextAlign.center,
-                style: const TextStyle(
-                  fontFamily: 'Inter',
-                  fontFamilyFallback: const ['NotoSansKR'],
-                  fontSize: 16,
-                  fontWeight: FontWeight.w700,
-                  color: Color(0xFF111827),
-                ),
-              ),
-              const SizedBox(height: 16),
-              SizedBox(
-                width: double.infinity,
-                height: 48,
-                child: ElevatedButton(
-                  onPressed: () => Navigator.of(context).maybePop(),
-                  style: ElevatedButton.styleFrom(
-                    backgroundColor: AppColors.pointColor,
-                    foregroundColor: Colors.white,
-                    elevation: 0,
-                    shape: RoundedRectangleBorder(
-                      borderRadius: BorderRadius.circular(12),
-                    ),
-                  ),
-                  child: Text(
-                    l10n.back,
-                    style: const TextStyle(
-                      fontFamily: 'Inter',
-                      fontFamilyFallback: const ['NotoSansKR'],
-                      fontSize: 15,
-                      fontWeight: FontWeight.w700,
-                    ),
-                  ),
-                ),
-              ),
-            ],
-          ),
-        ),
-      );
-    }
-
     if (_isLoading) {
       return const Center(
         child: CircularProgressIndicator(
@@ -323,7 +226,7 @@ class _UserFriendsListScreenState extends State<UserFriendsListScreen> {
       );
     }
 
-    if (_friends == null || _friends!.isEmpty) {
+    if (_friends.isEmpty && _query.isEmpty) {
       return Center(
         child: Column(
           mainAxisAlignment: MainAxisAlignment.center,
@@ -349,12 +252,15 @@ class _UserFriendsListScreenState extends State<UserFriendsListScreen> {
       );
     }
 
-    final myFriendIds = _myFriendIds ?? <String>{};
-    final friendsGroup = _friends!
-        .where((u) => myFriendIds.contains(u.uid))
+    final mutualGroup =
+        _friends.where((member) => member.isMutual).toList(growable: false);
+    final alreadyFriendsGroup = _friends
+        .where((member) =>
+            !member.isMutual && (member.isMyFriend || member.isCurrentUser))
         .toList(growable: false);
-    final nonFriendsGroup = _friends!
-        .where((u) => !myFriendIds.contains(u.uid))
+    final otherGroup = _friends
+        .where((member) =>
+            !member.isMutual && !member.isMyFriend && !member.isCurrentUser)
         .toList(growable: false);
 
     final l10n = AppLocalizations.of(context)!;
@@ -363,61 +269,164 @@ class _UserFriendsListScreenState extends State<UserFriendsListScreen> {
       color: const Color(0xFF667085),
       onRefresh: _loadFriends,
       child: CustomScrollView(
+        controller: _scrollController,
         physics: const AlwaysScrollableScrollPhysics(
           parent: BouncingScrollPhysics(),
         ),
         slivers: [
-          const SliverToBoxAdapter(child: SizedBox(height: 4)),
-          if (friendsGroup.isNotEmpty) ...[
+          SliverToBoxAdapter(child: _buildSearchField()),
+          SliverToBoxAdapter(
+            child: Padding(
+              padding: const EdgeInsets.fromLTRB(20, 2, 20, 8),
+              child: Text(
+                Localizations.localeOf(context).languageCode == 'ko'
+                    ? '친구 $_totalCount명'
+                        '${_mutualCount > 0 ? ' · 함께 아는 친구 $_mutualCount명' : ''}'
+                    : '$_totalCount friends'
+                        '${_mutualCount > 0 ? ' · $_mutualCount mutual' : ''}',
+                style: const TextStyle(
+                  fontFamily: 'Inter',
+                  fontFamilyFallback: ['NotoSansKR'],
+                  fontSize: 13,
+                  fontWeight: FontWeight.w500,
+                  color: Color(0xFF667085),
+                ),
+              ),
+            ),
+          ),
+          if (_friends.isEmpty && _query.isNotEmpty)
+            SliverFillRemaining(
+              hasScrollBody: false,
+              child: Center(
+                child: Text(
+                  Localizations.localeOf(context).languageCode == 'ko'
+                      ? '검색 결과가 없어요.'
+                      : 'No matching friends.',
+                  style: const TextStyle(
+                    fontFamily: 'Inter',
+                    fontFamilyFallback: ['NotoSansKR'],
+                    fontSize: 14,
+                    color: Color(0xFF98A2B3),
+                  ),
+                ),
+              ),
+            ),
+          if (mutualGroup.isNotEmpty) ...[
             SliverToBoxAdapter(
               child: _SectionHeader(
-                title: l10n.alreadyFriends,
-                count: friendsGroup.length,
+                title: Localizations.localeOf(context).languageCode == 'ko'
+                    ? '함께 아는 친구'
+                    : 'Mutual friends',
+                count: mutualGroup.length,
               ),
             ),
             SliverList(
               delegate: SliverChildBuilderDelegate(
                 (context, index) => _buildFriendCard(
-                  friendsGroup[index],
-                  isFriend: true,
+                  mutualGroup[index],
                 ),
-                childCount: friendsGroup.length,
+                childCount: mutualGroup.length,
               ),
             ),
             const SliverToBoxAdapter(child: SizedBox(height: 8)),
           ],
-          if (nonFriendsGroup.isNotEmpty) ...[
+          if (alreadyFriendsGroup.isNotEmpty) ...[
             SliverToBoxAdapter(
               child: _SectionHeader(
-                title: l10n.notFriends,
-                count: nonFriendsGroup.length,
+                title: l10n.alreadyFriends,
+                count: alreadyFriendsGroup.length,
               ),
             ),
             SliverList(
               delegate: SliverChildBuilderDelegate(
                 (context, index) => _buildFriendCard(
-                  nonFriendsGroup[index],
-                  isFriend: false,
+                  alreadyFriendsGroup[index],
                 ),
-                childCount: nonFriendsGroup.length,
+                childCount: alreadyFriendsGroup.length,
               ),
             ),
           ],
-          const SliverToBoxAdapter(child: SizedBox(height: 24)),
+          if (otherGroup.isNotEmpty) ...[
+            SliverToBoxAdapter(
+              child: _SectionHeader(
+                title: l10n.notFriends,
+                count: otherGroup.length,
+              ),
+            ),
+            SliverList(
+              delegate: SliverChildBuilderDelegate(
+                (context, index) => _buildFriendCard(otherGroup[index]),
+                childCount: otherGroup.length,
+              ),
+            ),
+          ],
+          if (_isLoadingMore)
+            const SliverToBoxAdapter(
+              child: Padding(
+                padding: EdgeInsets.all(18),
+                child: Center(
+                  child: SizedBox.square(
+                    dimension: 20,
+                    child: CircularProgressIndicator(strokeWidth: 2),
+                  ),
+                ),
+              ),
+            ),
+          SliverToBoxAdapter(
+            child: SizedBox(
+              height: MediaQuery.paddingOf(context).bottom + 24,
+            ),
+          ),
         ],
       ),
     );
   }
 
+  Widget _buildSearchField() {
+    final isKo = Localizations.localeOf(context).languageCode == 'ko';
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(20, 8, 20, 12),
+      child: TextField(
+        controller: _searchController,
+        onChanged: _onSearchChanged,
+        textInputAction: TextInputAction.search,
+        decoration: InputDecoration(
+          hintText: isKo ? '닉네임 검색' : 'Search by nickname',
+          prefixIcon: const Icon(Icons.search_rounded, size: 21),
+          suffixIcon: _searchController.text.isEmpty
+              ? null
+              : IconButton(
+                  onPressed: () {
+                    _searchController.clear();
+                    _onSearchChanged('');
+                    setState(() {});
+                  },
+                  icon: const Icon(Icons.close_rounded, size: 19),
+                ),
+          filled: false,
+          isDense: true,
+          contentPadding: const EdgeInsets.symmetric(vertical: 13),
+          enabledBorder: const UnderlineInputBorder(
+            borderSide: BorderSide(color: Color(0xFFE2E8F0)),
+          ),
+          focusedBorder: const UnderlineInputBorder(
+            borderSide: BorderSide(color: Color(0xFF475569), width: 1.3),
+          ),
+        ),
+      ),
+    );
+  }
+
   Widget _buildFriendCard(
-    UserProfile friend, {
-    required bool isFriend,
-  }) {
+    ProfileFriendNetworkMember member,
+  ) {
+    final friend = member.profile;
     final l10n = AppLocalizations.of(context)!;
     final currentUserId = _relationshipService.currentUserId;
     final isMe = currentUserId != null && friend.uid == currentUserId;
     final isRequesting = _requestingIds.contains(friend.uid);
-    final isRequested = _requestedIds.contains(friend.uid);
+    final isRequested =
+        member.isPendingOut || _requestedIds.contains(friend.uid);
 
     final width = MediaQuery.sizeOf(context).width;
     final isCompact = width < 360;
@@ -433,7 +442,7 @@ class _UserFriendsListScreenState extends State<UserFriendsListScreen> {
             Material(
               color: Colors.white,
               child: InkWell(
-                onTap: (isFriend || isMe) ? () => _openProfile(friend) : null,
+                onTap: () => _openProfile(friend),
                 child: Padding(
                   padding: EdgeInsets.fromLTRB(
                     horizontalPadding,
@@ -469,6 +478,34 @@ class _UserFriendsListScreenState extends State<UserFriendsListScreen> {
                                 maxLines: 1,
                                 overflow: TextOverflow.ellipsis,
                               ),
+                              if (friend.isSchoolVerified) ...[
+                                const SizedBox(height: 3),
+                                Row(
+                                  children: [
+                                    const Icon(Icons.verified_rounded,
+                                        size: 14, color: AppColors.pointColor),
+                                    const SizedBox(width: 4),
+                                    Expanded(
+                                      child: Text(
+                                        Localizations.localeOf(context)
+                                                    .languageCode ==
+                                                'ko'
+                                            ? '학교 인증'
+                                            : 'School verified',
+                                        maxLines: 1,
+                                        overflow: TextOverflow.ellipsis,
+                                        style: const TextStyle(
+                                          fontFamily: 'Inter',
+                                          fontFamilyFallback: ['NotoSansKR'],
+                                          fontSize: 11,
+                                          fontWeight: FontWeight.w600,
+                                          color: Color(0xFF64748B),
+                                        ),
+                                      ),
+                                    ),
+                                  ],
+                                ),
+                              ],
                               if (friend.nationality != null &&
                                   friend.nationality!.isNotEmpty) ...[
                                 const SizedBox(height: 3),
@@ -503,7 +540,7 @@ class _UserFriendsListScreenState extends State<UserFriendsListScreen> {
                           ),
                         ),
                         const SizedBox(width: 4),
-                        if (isFriend || isMe)
+                        if (member.isMyFriend || isMe || member.isCurrentUser)
                           const SizedBox.square(
                             dimension: 40,
                             child: Icon(
@@ -608,6 +645,7 @@ class _UserFriendsListScreenState extends State<UserFriendsListScreen> {
           photoURL: user.photoURL,
           email: user.email,
           university: user.university,
+          allowNonFriendsPreview: true,
         ),
       ),
     );

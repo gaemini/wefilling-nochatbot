@@ -71,3 +71,6 @@ fix_*.js
 *_FIX_SUMMARY.md
 *_SETUP_COMPLETE.md
 .plan-*.md
+# Generated Remote Config snapshots/candidates can contain environment state.
+release/remoteconfig.active.json
+release/remoteconfig.candidate.json

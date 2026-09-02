@@ -122,6 +122,14 @@ val validateProductionReleaseVersion = tasks.register("validateProductionRelease
 
     doLast {
         val currentVersionCode = flutter.versionCode
+        val encodedProductionFlavor =
+            "RkxVVFRFUl9BUFBfRkxBVk9SPXByb2R1Y3Rpb24="
+        val dartDefines = project.findProperty("dart-defines")?.toString() ?: ""
+        if (!dartDefines.split(",").contains(encodedProductionFlavor)) {
+            throw GradleException(
+                "Production release requires the production Flutter flavor."
+            )
+        }
         if (currentVersionCode <= lastUsedReleaseVersionCode) {
             throw GradleException(
                 "versionCode $currentVersionCode has already been used. " +
@@ -135,14 +143,38 @@ val validateProductionReleaseVersion = tasks.register("validateProductionRelease
     }
 }
 
+val validateProductionReleaseArtifactInputs = tasks.register<Exec>("validateProductionReleaseArtifactInputs") {
+    group = "release"
+    description = "Runs the fail-closed Wefilling production Release Guard."
+    workingDir(rootProject.projectDir.parentFile)
+    commandLine(
+        "python3",
+        rootProject.file("../scripts/release_guard.py").absolutePath,
+        "--platform",
+        "android",
+        "--strict-signing"
+    )
+}
+
+// Reject the task graph before any compilation/bundling work starts. A
+// doFirst check on bundleDevelopmentRelease is too late because its dependent
+// tasks may already have written an AAB.
+gradle.taskGraph.whenReady {
+    val forbidden = allTasks.firstOrNull {
+        it.name == "bundleDevelopmentRelease" ||
+            it.name == "assembleDevelopmentRelease"
+    }
+    if (forbidden != null) {
+        throw GradleException(
+            "${forbidden.name} is disabled. Development release artifacts " +
+                "must never be generated; use the production release workflow."
+        )
+    }
+}
+
 tasks.configureEach {
     if (name == "bundleProductionRelease") {
         dependsOn(validateProductionReleaseVersion)
-        doLast {
-            releaseVersionFile.writeText(
-                "lastUsedVersionName=${flutter.versionName}\n" +
-                    "lastUsedVersionCode=${flutter.versionCode}\n"
-            )
-        }
+        dependsOn(validateProductionReleaseArtifactInputs)
     }
 }

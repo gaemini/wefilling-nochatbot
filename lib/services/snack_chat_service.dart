@@ -514,18 +514,10 @@ class SnackChatService {
     if (activeDurationHours != 0 && activeDurationHours != 24) {
       throw StateError('Snack Chat 유지 시간은 24시간 또는 종료 없음이어야 합니다.');
     }
-    // 방장은 반드시 초대 대상 모두와 친구여야 한다.
-    final myFriendIds = await _getMyFriendIdSet(uid);
-    final invitedOnly = unique.where((id) => id != uid).toSet();
-    final hasNonFriend = invitedOnly.any((id) => !myFriendIds.contains(id));
-    if (hasNonFriend) {
-      throw StateError('방장은 친구만 초대할 수 있습니다.');
-    }
-
-    // Participant and friendship authorization cannot be enforced safely for
-    // up to 50 users with per-document Security Rules access-call limits.
-    // The callable revalidates every account/friendship and writes the room
-    // with Admin SDK; the client-side check above remains only fast UX.
+    // Participant authorization cannot be enforced safely for up to 50 users
+    // with per-document Security Rules access-call limits.
+    // The callable revalidates every account and bilateral block state, then
+    // writes the room with Admin SDK.
     final result = await _functions
         .httpsCallable('createSnackChatSecure')
         .call(<String, dynamic>{
@@ -533,6 +525,7 @@ class SnackChatService {
       'participantIds': unique.toList(growable: false),
       'visibleToCategoryIds': visibleToCategoryIds,
       'activeDurationHours': activeDurationHours,
+      'notificationsHandledByServer': true,
     }).timeout(const Duration(seconds: 20));
     final data = result.data;
     if (data is! Map || data['success'] != true) {
@@ -551,13 +544,7 @@ class SnackChatService {
     if (uid == null) return <String>[];
     if (participantIds.isEmpty) return <String>[];
 
-    // 초대하는 참여자는 초대 대상 모두와 친구 관계여야 한다.
-    final myFriendIds = await _getMyFriendIdSet(uid);
     final requested = participantIds.toSet()..remove(uid);
-    final hasNonFriend = requested.any((id) => !myFriendIds.contains(id));
-    if (hasNonFriend) {
-      throw StateError('내 친구만 초대할 수 있습니다.');
-    }
     final result = await _functions
         .httpsCallable('inviteSnackChatParticipants')
         .call(<String, dynamic>{
@@ -1896,11 +1883,6 @@ class SnackChatService {
       }
       return total < 0 ? 0 : total;
     }).distinct();
-  }
-
-  Future<Set<String>> _getMyFriendIdSet(String uid) async {
-    final friends = await _usersRepository.getUserFriends(uid);
-    return friends.map((e) => e.uid).toSet();
   }
 }
 

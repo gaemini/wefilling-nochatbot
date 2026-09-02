@@ -112,6 +112,7 @@ class PostService {
   // - 전체 히스토리까지 실시간으로 받을 필요가 없고,
   // - 일부 계정에서 docs 수가 커지면 파싱/필터링이 느려져 UI가 "로딩처럼" 보일 수 있음
   static const int _feedRealtimeLimit = 5;
+  static const int _postImageUploadBatchSize = 3;
   static const Duration _categoryQueryTimeout = Duration(seconds: 8);
   static const Duration _allPostsQueryTimeout = Duration(seconds: 8);
 
@@ -432,10 +433,14 @@ class PostService {
       visibility: data['visibilityMode'] ?? data['visibility'] ?? 'public',
       isAnonymous: data['isAnonymous'] ?? false,
       visibleToCategoryIds: _parseStringList(
-        data['sourceGroupIds'] ?? data['visibleToCategoryIds'],
+        _parseStringList(data['sourceGroupIds']).isNotEmpty
+            ? data['sourceGroupIds']
+            : data['visibleToCategoryIds'],
       ),
       allowedUserIds: _parseStringList(
-        data['audienceUserIdsFrozen'] ?? data['allowedUserIds'],
+        _parseStringList(data['audienceUserIdsFrozen']).isNotEmpty
+            ? data['audienceUserIdsFrozen']
+            : data['allowedUserIds'],
       ),
       visibilitySchemaVersion:
           (data['visibilitySchemaVersion'] as num?)?.toInt() ?? 0,
@@ -537,38 +542,42 @@ class PostService {
         );
       }
 
-      // 이미지 파일이 있는 경우 업로드 (병렬 처리로 성능 향상)
+      // 이미지 파일이 있는 경우 업로드. 고해상도 이미지 15장을
+      // 한번에 압축/업로드하면 메모리와 네트워크가 순간적으로 몰릴 수
+      // 있으므로 작은 배치로 나누되, 배치 내에서는 병렬 처리한다.
       List<String> imageUrls = [];
       if (orderedImageFiles.isNotEmpty) {
-        // 한번에 하나씩 순차적으로 업로드하지 않고, 병렬로 처리
-        final futures = orderedImageFiles.map(
-          (imageFile) => _storageService.uploadImage(imageFile),
-        );
-
         try {
-          // 모든 이미지 업로드 작업 동시 실행 후 결과 수집
-          final results = await Future.wait(
-            futures,
-            eagerError: false, // 하나가 실패해도 다른 이미지 계속 업로드
-          );
+          for (var start = 0;
+              start < orderedImageFiles.length;
+              start += _postImageUploadBatchSize) {
+            final end = (start + _postImageUploadBatchSize)
+                .clamp(0, orderedImageFiles.length)
+                .toInt();
+            final batch = orderedImageFiles.sublist(start, end);
+            final results = await Future.wait(
+              batch.map(
+                (imageFile) => _storageService.uploadImage(
+                  imageFile,
+                  forceJpeg: true,
+                ),
+              ),
+              eagerError: false,
+            );
+            imageUrls.addAll(results.whereType<String>());
 
-          // null이 아닌 URL만 추가
-          imageUrls =
-              results.where((url) => url != null).cast<String>().toList();
-
-          // 사용자가 선택한 이미지 중 하나라도 실패하면 불완전한 게시글을
-          // 만들지 않는다. 이미 올라간 파일은 아래 catch에서 정리한다.
-          if (imageUrls.length != orderedImageFiles.length) {
-            for (final url in imageUrls) {
-              try {
-                await _storageService.deleteImage(url);
-              } catch (_) {}
+            if (results.any((url) => url == null)) {
+              throw StateError('post-image-upload-incomplete');
             }
-            imageUrls = [];
-            throw StateError('post-image-upload-incomplete');
           }
         } catch (e) {
           Logger.error('이미지 병렬 업로드 중 오류: $e');
+          for (final url in imageUrls) {
+            try {
+              await _storageService.deleteImage(url);
+            } catch (_) {}
+          }
+          imageUrls = [];
           // 선택한 이미지가 있는 요청은 이미지 없이 조용히 게시하지 않는다.
           rethrow;
         }

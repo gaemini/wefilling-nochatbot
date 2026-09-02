@@ -128,7 +128,11 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
     Duration(seconds: 12),
     Duration(seconds: 30),
   ];
-  static const List<Comment> _commentsRecoveryPlaceholder = <Comment>[];
+  static const List<Duration> _commentReadRetryDelays = <Duration>[
+    Duration(milliseconds: 800),
+    Duration(seconds: 2),
+  ];
+  static const Duration _commentFirstSnapshotTimeout = Duration(seconds: 8);
   final Object _commentsScopeLoaderToken = Object();
   String _commentsScope = '';
   String? _attachedCommentsScope;
@@ -143,11 +147,6 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
   int _commentsTranslationRetryAttempt = 0;
   late int _translationLanguageRevision;
   bool _commentsWereShowingOriginal = false;
-
-  bool get _isOwnPostTranslation => isOwnPostForTranslation(
-        _currentPost,
-        FirebaseAuth.instance.currentUser?.uid,
-      );
 
   @override
   void initState() {
@@ -254,29 +253,33 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
     late final StreamController<List<Comment>> controller;
     StreamSubscription<List<Comment>>? subscription;
     Timer? firstSnapshotWatchdog;
+    Timer? retryTimer;
     var subscriptionGeneration = 0;
-    var emittedFallback = false;
+    var retryAttempt = 0;
 
     void subscribe() {
       if (controller.isClosed || !controller.hasListener) return;
       final generation = ++subscriptionGeneration;
-      var receivedData = false;
       firstSnapshotWatchdog?.cancel();
-      firstSnapshotWatchdog = Timer(const Duration(seconds: 10), () {
+      firstSnapshotWatchdog = Timer(_commentFirstSnapshotTimeout, () {
         if (controller.isClosed || generation != subscriptionGeneration) return;
-        // StreamBuilder의 waiting 상태를 먼저 해제한다. 이후 즉시 새 Firestore
-        // listener를 붙여 실제 데이터는 별도 사용자 동작 없이 다시 받는다.
-        if (!receivedData && !emittedFallback) {
-          emittedFallback = true;
-          controller.add(_commentsRecoveryPlaceholder);
-        }
         subscriptionGeneration++;
         final staleSubscription = subscription;
         subscription = null;
         if (staleSubscription != null) {
           unawaited(staleSubscription.cancel());
         }
-        subscribe();
+        if (retryAttempt >= _commentReadRetryDelays.length) {
+          controller.addError(
+            TimeoutException('commentFirstSnapshotTimeout'),
+          );
+          return;
+        }
+        retryTimer?.cancel();
+        retryTimer = Timer(
+          _commentReadRetryDelays[retryAttempt++],
+          subscribe,
+        );
       });
 
       subscription = _commentService.getCommentsWithReplies(postId).listen(
@@ -284,7 +287,7 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
           if (controller.isClosed || generation != subscriptionGeneration) {
             return;
           }
-          receivedData = true;
+          retryAttempt = 0;
           firstSnapshotWatchdog?.cancel();
           controller.add(comments);
         },
@@ -300,7 +303,22 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
           if (staleSubscription != null) {
             unawaited(staleSubscription.cancel());
           }
-          Timer(const Duration(milliseconds: 400), subscribe);
+          if (error is ArgumentError ||
+              (error is FirebaseException &&
+                  const <String>{
+                    'permission-denied',
+                    'invalid-argument',
+                    'failed-precondition',
+                    'not-found',
+                  }.contains(error.code))) {
+            return;
+          }
+          if (retryAttempt >= _commentReadRetryDelays.length) return;
+          retryTimer?.cancel();
+          retryTimer = Timer(
+            _commentReadRetryDelays[retryAttempt++],
+            subscribe,
+          );
         },
       );
     }
@@ -310,6 +328,7 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
       onCancel: () {
         subscriptionGeneration++;
         firstSnapshotWatchdog?.cancel();
+        retryTimer?.cancel();
         final currentSubscription = subscription;
         subscription = null;
         if (currentSubscription != null) {
@@ -2901,7 +2920,6 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
             child: PollPostWidget(
               postId: _currentPost.id,
               post: _currentPost,
-              translationEnabled: !_isOwnPostTranslation,
             ),
           ),
         Padding(
@@ -3043,9 +3061,16 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
         ),
         if (content.trim().isNotEmpty) ...[
           SizedBox(height: context.rs(10).clamp(8.0, 12.0).toDouble()),
-          if (_isOwnPostTranslation)
-            PostLinkifiedText(
-              text: content,
+          TranslatableContent(
+            request: ContentTranslationRequest(
+              contentType: 'post',
+              contentId: _currentPost.id,
+              sourceFields: postTranslationSourceFields(_currentPost),
+            ),
+            scope: 'post:${_currentPost.id}',
+            showToggle: false,
+            builder: (context, fields) => PostLinkifiedText(
+              text: fields['content'] ?? content,
               textAlign: TextAlign.left,
               style: TextStyle(
                 fontFamily: 'Inter',
@@ -3056,30 +3081,8 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
                 height: 1.28,
                 letterSpacing: -0.25,
               ),
-            )
-          else
-            TranslatableContent(
-              request: ContentTranslationRequest(
-                contentType: 'post',
-                contentId: _currentPost.id,
-                sourceFields: postTranslationSourceFields(_currentPost),
-              ),
-              scope: 'post:${_currentPost.id}',
-              showToggle: false,
-              builder: (context, fields) => PostLinkifiedText(
-                text: fields['content'] ?? content,
-                textAlign: TextAlign.left,
-                style: TextStyle(
-                  fontFamily: 'Inter',
-                  fontFamilyFallback: const ['NotoSansKR'],
-                  fontSize: contentFontSize,
-                  fontWeight: FontWeight.w500,
-                  color: BrandColors.textPrimary,
-                  height: 1.28,
-                  letterSpacing: -0.25,
-                ),
-              ),
             ),
+          ),
         ],
       ],
     );
@@ -3154,7 +3157,7 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
         title: const SizedBox.shrink(),
         centerTitle: false,
         actions: [
-          if (hasTranslatablePostText && !_isOwnPostTranslation) ...[
+          if (hasTranslatablePostText) ...[
             TranslationScopeToggle(
               scope: 'post:${_currentPost.id}',
               appBarAction: true,
@@ -3221,36 +3224,7 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
                           if (snapshot.hasError) {
                             return Center(
                               child: Text(
-                                '${AppLocalizations.of(context)!.loadingComments}: ${snapshot.error}',
-                              ),
-                            );
-                          }
-
-                          if (identical(
-                            snapshot.data,
-                            _commentsRecoveryPlaceholder,
-                          )) {
-                            final isKo =
-                                Localizations.localeOf(context).languageCode ==
-                                    'ko';
-                            return Padding(
-                              padding: const EdgeInsets.all(16),
-                              child: Row(
-                                mainAxisAlignment: MainAxisAlignment.center,
-                                children: [
-                                  const SizedBox.square(
-                                    dimension: 16,
-                                    child: CircularProgressIndicator(
-                                      strokeWidth: 1.8,
-                                    ),
-                                  ),
-                                  const SizedBox(width: 8),
-                                  Text(
-                                    isKo
-                                        ? '댓글을 자동으로 다시 불러오는 중입니다.'
-                                        : 'Reconnecting comments automatically…',
-                                  ),
-                                ],
+                                AppLocalizations.of(context)!.loadingComments,
                               ),
                             );
                           }

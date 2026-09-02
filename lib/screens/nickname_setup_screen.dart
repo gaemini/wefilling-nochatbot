@@ -5,15 +5,16 @@ import 'package:cloud_functions/cloud_functions.dart';
 import 'package:flutter/material.dart';
 import 'package:image_picker/image_picker.dart';
 import 'package:provider/provider.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 
 import '../constants/app_constants.dart';
 import '../l10n/app_localizations.dart';
 import '../models/social_profile_data.dart';
 import '../models/pending_signup_session.dart';
-import '../models/student_type.dart';
 import '../providers/auth_provider.dart';
 import '../services/storage_service.dart';
 import '../utils/country_flag_helper.dart';
+import '../utils/responsive_helper.dart';
 import '../widgets/social_profile_fields.dart';
 import '../widgets/signup_flow_widgets.dart';
 import 'main_screen.dart';
@@ -27,21 +28,16 @@ class NicknameSetupScreen extends StatefulWidget {
   State<NicknameSetupScreen> createState() => _NicknameSetupScreenState();
 }
 
-class _NicknameSetupScreenState extends State<NicknameSetupScreen> {
+class _NicknameSetupScreenState extends State<NicknameSetupScreen>
+    with WidgetsBindingObserver {
   final _basicFormKey = GlobalKey<FormState>();
   final _pageController = PageController();
   final _nicknameController = TextEditingController();
-  final _bioController = TextEditingController();
-  final _conversationController = TextEditingController();
-  final _friendshipController = TextEditingController();
   final _picker = ImagePicker();
-  final _storageService = StorageService();
 
   var _currentStep = 0;
   var _selectedNationality = '한국';
   var _interests = <String>[];
-  var _activities = <String>[];
-  StudentType? _studentType;
   var _isLoading = false;
   Timer? _nicknameDebounce;
   int _nicknameCheckGeneration = 0;
@@ -49,19 +45,83 @@ class _NicknameSetupScreenState extends State<NicknameSetupScreen> {
   bool? _isNicknameAvailable;
   String? _nicknameAvailabilityError;
   File? _selectedImage;
-  bool _finalizationAttempted = false;
+  Timer? _draftDebounce;
 
   bool get _isKorean => Localizations.localeOf(context).languageCode == 'ko';
+
+  String get _draftKey => 'signup_profile_draft_recovery';
+
+  @override
+  void initState() {
+    super.initState();
+    WidgetsBinding.instance.addObserver(this);
+    unawaited(_restoreDraft());
+  }
 
   @override
   void dispose() {
     _nicknameDebounce?.cancel();
+    _draftDebounce?.cancel();
+    WidgetsBinding.instance.removeObserver(this);
     _pageController.dispose();
     _nicknameController.dispose();
-    _bioController.dispose();
-    _conversationController.dispose();
-    _friendshipController.dispose();
     super.dispose();
+  }
+
+  Future<void> _restoreDraft() async {
+    final preferences = await SharedPreferences.getInstance();
+    final nickname = preferences.getString('${_draftKey}_nickname') ?? '';
+    final nationality =
+        preferences.getString('${_draftKey}_nationality') ?? '';
+    final interests =
+        preferences.getStringList('${_draftKey}_interests') ?? const <String>[];
+    final step = preferences.getInt('${_draftKey}_step') ?? 0;
+    if (!mounted) return;
+    setState(() {
+      if (nickname.isNotEmpty) _nicknameController.text = nickname;
+      if (nationality.isNotEmpty) _selectedNationality = nationality;
+      if (interests.isNotEmpty) _interests = interests;
+      _currentStep = step < 0 ? 0 : (step > 1 ? 1 : step);
+    });
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (mounted && _pageController.hasClients) {
+        _pageController.jumpToPage(_currentStep);
+      }
+    });
+    if (nickname.isNotEmpty) _onNicknameChanged(nickname);
+  }
+
+  void _scheduleDraftSave() {
+    _draftDebounce?.cancel();
+    _draftDebounce =
+        Timer(const Duration(milliseconds: 250), () => unawaited(_persistDraft()));
+  }
+
+  Future<void> _persistDraft() async {
+    final preferences = await SharedPreferences.getInstance();
+    await preferences.setString(
+        '${_draftKey}_nickname', _nicknameController.text);
+    await preferences.setString(
+        '${_draftKey}_nationality', _selectedNationality);
+    await preferences.setStringList('${_draftKey}_interests', _interests);
+    await preferences.setInt('${_draftKey}_step', _currentStep);
+  }
+
+  @override
+  void didChangeAppLifecycleState(AppLifecycleState state) {
+    if (state == AppLifecycleState.inactive ||
+        state == AppLifecycleState.paused ||
+        state == AppLifecycleState.detached) {
+      _draftDebounce?.cancel();
+      unawaited(_persistDraft());
+    }
+  }
+
+  Future<void> _clearDraft() async {
+    final preferences = await SharedPreferences.getInstance();
+    for (final suffix in const ['nickname', 'nationality', 'interests', 'step']) {
+      await preferences.remove('${_draftKey}_$suffix');
+    }
   }
 
   Future<void> _pickImage(ImageSource source) async {
@@ -76,41 +136,46 @@ class _NicknameSetupScreenState extends State<NicknameSetupScreen> {
   }
 
   void _showImageOptions() {
+    FocusScope.of(context).unfocus();
     showModalBottomSheet<void>(
       context: context,
       useSafeArea: true,
       showDragHandle: true,
-      builder: (sheetContext) => Padding(
-        padding: const EdgeInsets.fromLTRB(16, 0, 16, 16),
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            ListTile(
-              leading: const Icon(Icons.photo_outlined),
-              title: Text(_isKorean ? '사진 선택' : 'Choose a photo'),
-              onTap: () {
-                Navigator.pop(sheetContext);
-                _pickImage(ImageSource.gallery);
-              },
-            ),
-            ListTile(
-              leading: const Icon(Icons.camera_alt_outlined),
-              title: Text(_isKorean ? '사진 촬영' : 'Take a photo'),
-              onTap: () {
-                Navigator.pop(sheetContext);
-                _pickImage(ImageSource.camera);
-              },
-            ),
-            if (_selectedImage != null)
+      backgroundColor: Colors.white,
+      builder: (sheetContext) => SafeArea(
+        top: false,
+        child: Padding(
+          padding: const EdgeInsets.fromLTRB(12, 0, 12, 8),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
               ListTile(
-                leading: const Icon(Icons.delete_outline_rounded),
-                title: Text(_isKorean ? '사진 삭제' : 'Remove photo'),
+                leading: const Icon(Icons.photo_outlined),
+                title: Text(_isKorean ? '사진 선택' : 'Choose a photo'),
                 onTap: () {
                   Navigator.pop(sheetContext);
-                  setState(() => _selectedImage = null);
+                  _pickImage(ImageSource.gallery);
                 },
               ),
-          ],
+              ListTile(
+                leading: const Icon(Icons.camera_alt_outlined),
+                title: Text(_isKorean ? '사진 촬영' : 'Take a photo'),
+                onTap: () {
+                  Navigator.pop(sheetContext);
+                  _pickImage(ImageSource.camera);
+                },
+              ),
+              if (_selectedImage != null)
+                ListTile(
+                  leading: const Icon(Icons.delete_outline_rounded),
+                  title: Text(_isKorean ? '사진 삭제' : 'Remove photo'),
+                  onTap: () {
+                    Navigator.pop(sheetContext);
+                    setState(() => _selectedImage = null);
+                  },
+                ),
+            ],
+          ),
         ),
       ),
     );
@@ -119,6 +184,7 @@ class _NicknameSetupScreenState extends State<NicknameSetupScreen> {
   void _moveTo(int step) {
     FocusScope.of(context).unfocus();
     setState(() => _currentStep = step);
+    _scheduleDraftSave();
     _pageController.animateToPage(
       step,
       duration: const Duration(milliseconds: 220),
@@ -127,6 +193,7 @@ class _NicknameSetupScreenState extends State<NicknameSetupScreen> {
   }
 
   void _onNicknameChanged(String raw) {
+    _scheduleDraftSave();
     _nicknameDebounce?.cancel();
     final generation = ++_nicknameCheckGeneration;
     final validation = SocialProfileValidation.nicknameError(
@@ -223,6 +290,8 @@ class _NicknameSetupScreenState extends State<NicknameSetupScreen> {
     final l10n = AppLocalizations.of(context)!;
     final authProvider = context.read<AuthProvider>();
     final nickname = nicknameValue;
+    final languageCode =
+        Localizations.localeOf(context).languageCode == 'ko' ? 'ko' : 'en';
 
     // A known duplicate can be rejected locally without another callable.
     // A null/pending result still proceeds because the final transaction is
@@ -249,28 +318,23 @@ class _NicknameSetupScreenState extends State<NicknameSetupScreen> {
 
       String? photoUrl;
       String? photoPath;
-
       final social = SocialProfileData(
-        bio: _bioController.text.trim(),
         interests: _interests,
-        preferredActivities: _activities,
-        conversationStarter: _conversationController.text.trim(),
-        friendshipPrompt: _friendshipController.text.trim(),
       );
       final profile = <String, dynamic>{
         'nickname': nickname,
         'nationality': _selectedNationality,
-        'studentType': _studentType!.value,
-        'todoOnboardingCompleted': true,
-        'languageCode':
-            Localizations.localeOf(context).languageCode == 'ko' ? 'ko' : 'en',
-        ...social.toUpdateMap(hasProfilePhoto: _selectedImage != null),
+        'todoOnboardingCompleted': false,
+        'languageCode': languageCode,
+        // 실제 Storage 업로드는 계정 생성 뒤에 진행되므로 여기서는 사진
+        // 완료율을 미리 반영하지 않는다.
+        ...social.toUpdateMap(),
       };
 
       final pending = widget.pendingSignup;
+      final wasAlreadyComplete = authProvider.isRegistrationComplete;
       var finalized = true;
       if (pending != null) {
-        _finalizationAttempted = true;
         switch (pending.kind) {
           case PendingSignupKind.generalEmail:
             finalized = await authProvider.signUpWithVerifiedGeneralEmail(
@@ -283,39 +347,58 @@ class _NicknameSetupScreenState extends State<NicknameSetupScreen> {
             break;
           case PendingSignupKind.hanyangEmail:
           case PendingSignupKind.hanyangSocial:
-            finalized = await authProvider.completeEmailVerification(
-              pending.verifiedEmail,
+            await authProvider.ensureRegistrationProgress(
+              signupLanguage: pending.signupLanguage,
+              verifiedEmail: pending.verifiedEmail,
               verificationToken: pending.verificationToken,
+            );
+            finalized = await authProvider.finalizePendingRegistration(
               profile: profile,
             );
             break;
           case PendingSignupKind.generalSocial:
           case PendingSignupKind.englishSocial:
-            finalized = await authProvider.finalizeEnglishSocialSignup(
+            await authProvider.ensureRegistrationProgress(
               signupLanguage: pending.signupLanguage,
+            );
+            finalized = await authProvider.finalizePendingRegistration(
               profile: profile,
             );
             break;
         }
+      } else if (!wasAlreadyComplete) {
+        await authProvider.ensureRegistrationProgress(
+          signupLanguage: languageCode,
+        );
+        finalized = await authProvider.finalizePendingRegistration(
+          profile: profile,
+        );
       }
       if (!finalized) throw Exception(l10n.profileSetupFailed);
 
+      // 신규 가입은 서버에서 계정을 먼저 완성한 뒤 인증된 uid로 사진을
+      // 업로드한다. 사진 업로드 실패가 가입 전체를 되돌리지는 않는다.
       final uid = authProvider.user?.uid;
       if (_selectedImage != null && uid != null) {
-        final upload = await _storageService.uploadProfileImage(
-          _selectedImage!,
-          userId: uid,
-        );
-        if (upload != null) {
-          photoUrl = upload.downloadUrl;
-          photoPath = upload.path;
+        try {
+          final upload = await StorageService().uploadProfileImage(
+            _selectedImage!,
+            userId: uid,
+          );
+          if (upload != null) {
+            photoUrl = upload.downloadUrl;
+            photoPath = upload.path;
+          }
+        } catch (_) {
+          // Profile image is optional. The completed account remains valid and
+          // the user can retry the photo from My Page.
         }
       }
 
-      // 가입 완료 문서는 위 서버 처리에서 먼저 원자적으로 생성된다. 선택 사진은
-      // 인증이 생긴 뒤 업로드하며, 사진 업로드 실패가 가입 자체를 되돌리지는 않는다.
+      // pending이 없는 구버전 진입 경로만 기존 문서를 직접 갱신한다. 신규 가입은
+      // 위 서버 처리 한 번으로 완료하며, 선택한 사진은 인증 생성 후에만 추가한다.
       ProfileUpdateResult result = const ProfileUpdateResult.success();
-      if (pending == null || _selectedImage != null) {
+      if ((pending == null && wasAlreadyComplete) || photoUrl != null) {
         result = await authProvider.updateUserProfile(
           nickname: nickname,
           nationality: _selectedNationality,
@@ -327,18 +410,19 @@ class _NicknameSetupScreenState extends State<NicknameSetupScreen> {
           conversationStarter: social.conversationStarter,
           friendshipPrompt: social.friendshipPrompt,
           profileCompletion: social.completionFor(
-            hasProfilePhoto: _selectedImage != null,
+            hasProfilePhoto: photoUrl != null,
           ),
-          studentType: _studentType!.value,
-          todoOnboardingCompleted: true,
-          languageCode: Localizations.localeOf(context).languageCode == 'ko'
-              ? 'ko'
-              : 'en',
+          todoOnboardingCompleted: false,
+          languageCode: languageCode,
         );
       }
 
       if (!mounted) return;
-      if (!result.success) throw Exception(l10n.profileSetupFailed);
+      if (!result.success && !authProvider.isRegistrationComplete) {
+        throw Exception(l10n.profileSetupFailed);
+      }
+      await _clearDraft();
+      if (!mounted) return;
       messenger.showSnackBar(SnackBar(content: Text(l10n.profileSetupSuccess)));
       navigator.pushReplacement(
         MaterialPageRoute(builder: (_) => const MainScreen()),
@@ -377,48 +461,17 @@ class _NicknameSetupScreenState extends State<NicknameSetupScreen> {
     }
     setState(() => _isLoading = true);
     final authProvider = context.read<AuthProvider>();
-    final pending = widget.pendingSignup;
-    var cleanupCompleted = true;
-    var signupWasAlreadyCompleted = false;
     try {
-      if (pending != null) {
-        if (authProvider.user != null) {
-          cleanupCompleted = await authProvider.discardIncompleteRegistration();
-        }
-        if (cleanupCompleted && pending.verificationToken.isNotEmpty) {
-          final cancellation = await authProvider.cancelPendingEmailSignup(
-            email: pending.verifiedEmail,
-            verificationToken: pending.verificationToken,
-          );
-          signupWasAlreadyCompleted = cancellation ==
-              PendingEmailSignupCancellationResult.alreadyCompleted;
-          if (pending.kind == PendingSignupKind.generalEmail &&
-              _finalizationAttempted &&
-              cancellation != PendingEmailSignupCancellationResult.cancelled) {
-            cleanupCompleted = false;
-          }
-        }
+      await _persistDraft();
+      if (authProvider.user != null) {
+        await authProvider.signOut();
       }
     } catch (_) {
-      cleanupCompleted = false;
+      // Server progress remains intact and can be resumed after login.
     } finally {
       if (mounted) setState(() => _isLoading = false);
     }
     if (!mounted) return;
-    if (!cleanupCompleted) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          content: Text(signupWasAlreadyCompleted
-              ? (_isKorean
-                  ? '가입 완료 기록이 확인됐어요. 완료 버튼을 다시 눌러 계정 상태를 불러와 주세요.'
-                  : 'Sign-up was completed. Tap the final button again to restore your account state.')
-              : (_isKorean
-                  ? '인터넷 연결 후 다시 시도해 주세요. 계정 정리가 끝나기 전에는 가입 화면을 종료하지 않아요.'
-                  : 'Reconnect and try again. This screen stays open until the unfinished account is removed.')),
-        ),
-      );
-      return;
-    }
     Navigator.pop(context);
   }
 
@@ -427,17 +480,17 @@ class _NicknameSetupScreenState extends State<NicknameSetupScreen> {
         !(_basicFormKey.currentState?.validate() ?? false)) {
       return;
     }
-    if (_currentStep == 1 && _studentType == null) {
+    if (_currentStep == 1 && _interests.isEmpty) {
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
           content: Text(_isKorean
-              ? '학생 유형을 선택해 주세요.'
-              : 'Please choose your student type.'),
+              ? '관심 있는 것을 하나 이상 선택해 주세요.'
+              : 'Choose at least one interest.'),
         ),
       );
       return;
     }
-    if (_currentStep < 4) {
+    if (_currentStep < 1) {
       _moveTo(_currentStep + 1);
     } else {
       _submit();
@@ -447,10 +500,13 @@ class _NicknameSetupScreenState extends State<NicknameSetupScreen> {
   @override
   Widget build(BuildContext context) {
     final bottomInset = MediaQuery.viewInsetsOf(context).bottom;
-    final horizontalPadding =
-        MediaQuery.sizeOf(context).width < 360 ? 18.0 : 24.0;
-    final canSkipCurrentStep = _currentStep > 1;
-
+    final screenWidth = MediaQuery.sizeOf(context).width;
+    final horizontalPadding = screenWidth < 360
+        ? 14.0
+        : screenWidth < 430
+            ? 18.0
+            : 20.0;
+    final toolbarHeight = _toolbarHeight(context);
     return PopScope(
       canPop: false,
       onPopInvokedWithResult: (didPop, _) {
@@ -463,23 +519,39 @@ class _NicknameSetupScreenState extends State<NicknameSetupScreen> {
           backgroundColor: Colors.white,
           elevation: 0,
           scrolledUnderElevation: 0,
+          surfaceTintColor: Colors.white,
+          toolbarHeight: toolbarHeight,
+          automaticallyImplyLeading: false,
+          leadingWidth: 48,
           leading: _currentStep == 0
               ? IconButton(
                   onPressed: _leaveSignup,
-                  icon: const Icon(Icons.arrow_back_ios_new_rounded, size: 22),
+                  tooltip: MaterialLocalizations.of(context).backButtonTooltip,
+                  icon: Icon(
+                    Icons.arrow_back_rounded,
+                    size: context.ri(22).clamp(21, 24).toDouble(),
+                    color: const Color(0xFF111827),
+                  ),
                 )
               : IconButton(
                   onPressed: () => _moveTo(_currentStep - 1),
-                  icon: const Icon(Icons.arrow_back_ios_new_rounded, size: 22),
+                  tooltip: MaterialLocalizations.of(context).backButtonTooltip,
+                  icon: Icon(
+                    Icons.arrow_back_rounded,
+                    size: context.ri(22).clamp(21, 24).toDouble(),
+                    color: const Color(0xFF111827),
+                  ),
                 ),
           title: Text(
             _isKorean ? '프로필 설정' : 'Set up profile',
-            style: const TextStyle(
+            maxLines: 1,
+            overflow: TextOverflow.ellipsis,
+            style: TextStyle(
               fontFamily: 'Inter',
-              fontFamilyFallback: const ['NotoSansKR'],
-              fontSize: 18,
+              fontFamilyFallback: const <String>['NotoSansKR'],
+              fontSize: context.rf(18).clamp(16, 19).toDouble(),
               fontWeight: FontWeight.w700,
-              color: Color(0xFF0F172A),
+              color: const Color(0xFF111827),
             ),
           ),
           centerTitle: true,
@@ -487,15 +559,20 @@ class _NicknameSetupScreenState extends State<NicknameSetupScreen> {
         body: Column(
           children: [
             Padding(
-              padding: const EdgeInsets.fromLTRB(24, 6, 24, 0),
+              padding: EdgeInsets.fromLTRB(
+                horizontalPadding,
+                context.rs(2).clamp(0, 4).toDouble(),
+                horizontalPadding,
+                0,
+              ),
               child: Row(
                 children: List.generate(
-                  5,
+                  2,
                   (index) => Expanded(
                     child: AnimatedContainer(
                       duration: const Duration(milliseconds: 180),
-                      height: 3,
-                      margin: EdgeInsets.only(right: index == 4 ? 0 : 6),
+                      height: 2,
+                      margin: EdgeInsets.only(right: index == 1 ? 0 : 6),
                       decoration: BoxDecoration(
                         color: index <= _currentStep
                             ? AppColors.pointColor
@@ -508,16 +585,16 @@ class _NicknameSetupScreenState extends State<NicknameSetupScreen> {
               ),
             ),
             Expanded(
-              child: PageView(
-                controller: _pageController,
-                physics: const NeverScrollableScrollPhysics(),
-                children: [
-                  _basicProfileStep(),
-                  _studentTypeStep(),
-                  _interestsStep(),
-                  _activitiesStep(),
-                  _conversationStep(),
-                ],
+              child: MediaQuery.withClampedTextScaling(
+                maxScaleFactor: 1.3,
+                child: PageView(
+                  controller: _pageController,
+                  physics: const NeverScrollableScrollPhysics(),
+                  children: [
+                    _basicProfileStep(),
+                    _interestsStep(),
+                  ],
+                ),
               ),
             ),
           ],
@@ -531,46 +608,15 @@ class _NicknameSetupScreenState extends State<NicknameSetupScreen> {
             // 3-button/gesture bar와 다음 버튼이 붙어 보이지 않게 한다.
             minimum: EdgeInsets.fromLTRB(
               horizontalPadding,
-              8,
+              6,
               horizontalPadding,
-              24,
+              14,
             ),
             child: Column(
               mainAxisSize: MainAxisSize.min,
               children: [
-                if (canSkipCurrentStep) ...[
-                  SizedBox(
-                    height: 40,
-                    child: TextButton(
-                      onPressed: _isLoading
-                          ? null
-                          : () => _currentStep == 4
-                              ? _submit()
-                              : _moveTo(_currentStep + 1),
-                      style: TextButton.styleFrom(
-                        foregroundColor: const Color(0xFF64748B),
-                        disabledForegroundColor: const Color(0xFFCBD5E1),
-                        padding: const EdgeInsets.symmetric(horizontal: 16),
-                        minimumSize: const Size(96, 40),
-                        tapTargetSize: MaterialTapTargetSize.shrinkWrap,
-                      ),
-                      child: Text(
-                        _isKorean ? '건너뛰기' : 'Skip',
-                        maxLines: 1,
-                        overflow: TextOverflow.ellipsis,
-                        style: const TextStyle(
-                          fontFamily: 'Inter',
-                          fontFamilyFallback: ['NotoSansKR'],
-                          fontSize: 14,
-                          fontWeight: FontWeight.w600,
-                        ),
-                      ),
-                    ),
-                  ),
-                  const SizedBox(height: 6),
-                ],
                 SizedBox(
-                  height: 52,
+                  height: context.rh(50, min: 48, max: 54),
                   width: double.infinity,
                   child: ElevatedButton(
                     onPressed: _isLoading ? null : _primaryAction,
@@ -580,7 +626,7 @@ class _NicknameSetupScreenState extends State<NicknameSetupScreen> {
                       foregroundColor: Colors.white,
                       disabledBackgroundColor: const Color(0xFFE2E8F0),
                       shape: RoundedRectangleBorder(
-                        borderRadius: BorderRadius.circular(12),
+                        borderRadius: BorderRadius.circular(10),
                       ),
                     ),
                     child: _isLoading
@@ -593,15 +639,15 @@ class _NicknameSetupScreenState extends State<NicknameSetupScreen> {
                             ),
                           )
                         : Text(
-                            _currentStep == 4
-                                ? (_isKorean ? '프로필 완성' : 'Finish profile')
+                            _currentStep == 1
+                                ? (_isKorean ? '가입 완료' : 'Complete signup')
                                 : (_isKorean ? '다음' : 'Next'),
                             maxLines: 1,
                             overflow: TextOverflow.ellipsis,
-                            style: const TextStyle(
+                            style: TextStyle(
                               fontFamily: 'Inter',
-                              fontFamilyFallback: ['NotoSansKR'],
-                              fontSize: 16,
+                              fontFamilyFallback: const <String>['NotoSansKR'],
+                              fontSize: context.rf(15).clamp(14, 16).toDouble(),
                               fontWeight: FontWeight.w700,
                             ),
                           ),
@@ -615,21 +661,35 @@ class _NicknameSetupScreenState extends State<NicknameSetupScreen> {
     );
   }
 
+  double _toolbarHeight(BuildContext context) {
+    final base = context.rh(56, min: 54, max: 60);
+    final scaledTitle = MediaQuery.textScalerOf(context).scale(
+      context.rf(18).clamp(16, 19).toDouble(),
+    );
+    final accessible = scaledTitle * 1.2 + 24;
+    return accessible > base ? accessible.clamp(base, 96).toDouble() : base;
+  }
+
   Widget _stepScroll(List<Widget> children) {
     return LayoutBuilder(
       builder: (context, constraints) {
-        final horizontalPadding = constraints.maxWidth < 360 ? 18.0 : 24.0;
+        final horizontalPadding = constraints.maxWidth < 360
+            ? 14.0
+            : constraints.maxWidth < 430
+                ? 18.0
+                : 20.0;
+        final compactHeight = constraints.maxHeight < 560;
         return SingleChildScrollView(
           keyboardDismissBehavior: ScrollViewKeyboardDismissBehavior.onDrag,
           padding: EdgeInsets.fromLTRB(
             horizontalPadding,
-            22,
+            compactHeight ? 14 : 20,
             horizontalPadding,
-            28,
+            compactHeight ? 20 : 28,
           ),
           child: Center(
             child: ConstrainedBox(
-              constraints: const BoxConstraints(maxWidth: 560),
+              constraints: const BoxConstraints(maxWidth: 640),
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: children,
@@ -644,59 +704,34 @@ class _NicknameSetupScreenState extends State<NicknameSetupScreen> {
   Widget _basicProfileStep() {
     return _stepScroll([
       ProfileSectionHeading(
-        title: _isKorean ? '먼저, 나를 보여주세요' : 'First, show who you are',
+        title: _isKorean ? '가입에 필요한 정보만 알려주세요' : 'Just the essentials',
         description: _isKorean
-            ? '사진은 선택 사항이에요. 친구들이 기억하기 쉬운 이름을 사용해 주세요.'
-            : 'A photo is optional. Choose a name friends can remember.',
+            ? '사진은 선택 사항이에요. 닉네임과 국적만 설정하면 다음 단계로 넘어갈 수 있어요.'
+            : 'A photo is optional. Set a nickname and nationality, then move on.',
       ),
-      const SizedBox(height: 20),
-      Center(
-        child: GestureDetector(
-          onTap: _showImageOptions,
-          child: Stack(
-            clipBehavior: Clip.none,
-            children: [
-              CircleAvatar(
-                radius: 44,
-                backgroundColor: const Color(0xFFF1F5F9),
-                backgroundImage:
-                    _selectedImage == null ? null : FileImage(_selectedImage!),
-                child: _selectedImage == null
-                    ? const Icon(Icons.person_rounded,
-                        size: 40, color: Color(0xFF94A3B8))
-                    : null,
-              ),
-              Positioned(
-                right: -2,
-                bottom: -2,
-                child: Container(
-                  width: 30,
-                  height: 30,
-                  decoration: const BoxDecoration(
-                    color: AppColors.pointColor,
-                    shape: BoxShape.circle,
-                  ),
-                  child: const Icon(Icons.camera_alt_outlined,
-                      size: 16, color: Colors.white),
-                ),
-              ),
-            ],
-          ),
-        ),
-      ),
-      const SizedBox(height: 24),
+      SizedBox(height: context.rs(20).clamp(16, 24).toDouble()),
+      _profilePhotoPicker(),
+      SizedBox(height: context.rs(24).clamp(20, 28).toDouble()),
       Form(
         key: _basicFormKey,
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
+            _fieldLabel(_isKorean ? '닉네임' : 'Nickname'),
+            SizedBox(height: context.rs(4).clamp(2, 6).toDouble()),
             TextFormField(
               controller: _nicknameController,
               onChanged: _onNicknameChanged,
               maxLength: 20,
-              textInputAction: TextInputAction.next,
+              textInputAction: TextInputAction.done,
+              onFieldSubmitted: (_) => FocusScope.of(context).unfocus(),
               decoration: socialProfileInputDecoration(
-                hintText: _isKorean ? '닉네임' : 'Nickname',
+                hintText: _isKorean ? '닉네임 입력' : 'Enter a nickname',
+                prefixIcon: Icon(
+                  Icons.alternate_email_rounded,
+                  size: context.ri(20).clamp(19, 22).toDouble(),
+                  color: const Color(0xFF667085),
+                ),
                 helperText: _nicknameAvailabilityError ??
                     (_isCheckingNickname
                         ? (_isKorean
@@ -719,27 +754,20 @@ class _NicknameSetupScreenState extends State<NicknameSetupScreen> {
                 Localizations.localeOf(context).languageCode,
               ),
             ),
-            const SizedBox(height: 16),
-            TextFormField(
-              controller: _bioController,
-              maxLength: 60,
-              minLines: 1,
-              maxLines: 2,
-              decoration: socialProfileInputDecoration(
-                hintText: _isKorean
-                    ? '예: 공강이면 새로운 카페를 찾아다녀요.'
-                    : 'e.g. I explore new cafes between classes.',
-                helperText: _isKorean
-                    ? '나의 분위기가 느껴지는 한 문장을 적어보세요.'
-                    : 'Write one line that feels like you.',
-              ),
-            ),
-            const SizedBox(height: 16),
+            SizedBox(height: context.rs(20).clamp(16, 24).toDouble()),
+            _fieldLabel(_isKorean ? '국적' : 'Nationality'),
+            SizedBox(height: context.rs(4).clamp(2, 6).toDouble()),
             DropdownButtonFormField<String>(
-              value: _selectedNationality,
+              initialValue: _selectedNationality,
               isExpanded: true,
+              menuMaxHeight: MediaQuery.sizeOf(context).height * 0.5,
               decoration: socialProfileInputDecoration(
-                hintText: _isKorean ? '국가' : 'Country',
+                hintText: _isKorean ? '국적 선택' : 'Choose nationality',
+                prefixIcon: Icon(
+                  Icons.public_rounded,
+                  size: context.ri(20).clamp(19, 22).toDouble(),
+                  color: const Color(0xFF667085),
+                ),
               ),
               items: CountryFlagHelper.allCountries.map((country) {
                 return DropdownMenuItem(
@@ -747,6 +775,7 @@ class _NicknameSetupScreenState extends State<NicknameSetupScreen> {
                   child: Text(
                     country.getLocalizedName(
                         Localizations.localeOf(context).languageCode),
+                    maxLines: 1,
                     overflow: TextOverflow.ellipsis,
                   ),
                 );
@@ -754,6 +783,7 @@ class _NicknameSetupScreenState extends State<NicknameSetupScreen> {
               onChanged: (value) {
                 if (value != null) {
                   setState(() => _selectedNationality = value);
+                  _scheduleDraftSave();
                 }
               },
             ),
@@ -763,185 +793,170 @@ class _NicknameSetupScreenState extends State<NicknameSetupScreen> {
     ]);
   }
 
-  Widget _studentTypeStep() => _stepScroll([
-        ProfileSectionHeading(
-          title: _isKorean ? '어떤 학생인가요?' : 'Which describes you?',
-          description: _isKorean
-              ? '한 학기 To-do와 추천을 나에게 맞게 안내하는 데 사용해요.'
-              : 'We use this to tailor your semester checklist and recommendations.',
-        ),
-        const SizedBox(height: 24),
-        for (final type in StudentType.values) ...[
-          Semantics(
-            button: true,
-            selected: _studentType == type,
-            child: InkWell(
-              onTap: () => setState(() => _studentType = type),
-              borderRadius: BorderRadius.circular(14),
-              child: AnimatedContainer(
-                duration: const Duration(milliseconds: 160),
-                padding:
-                    const EdgeInsets.symmetric(horizontal: 4, vertical: 16),
-                decoration: BoxDecoration(
-                  border: Border(
-                    bottom: BorderSide(
-                      color: _studentType == type
-                          ? AppColors.pointColor
-                          : const Color(0xFFE2E8F0),
-                      width: _studentType == type ? 2 : 1,
+  Widget _profilePhotoPicker() {
+    final avatarSize = context.ri(72).clamp(64, 78).toDouble();
+    final cameraSize = context.ri(27).clamp(25, 30).toDouble();
+    return Semantics(
+      button: true,
+      label: _isKorean ? '프로필 사진 선택' : 'Choose a profile photo',
+      child: InkWell(
+        onTap: _showImageOptions,
+        borderRadius: BorderRadius.circular(8),
+        child: Padding(
+          padding: const EdgeInsets.symmetric(vertical: 4),
+          child: Row(
+            children: [
+              Stack(
+                clipBehavior: Clip.none,
+                children: [
+                  CircleAvatar(
+                    radius: avatarSize / 2,
+                    backgroundColor: const Color(0xFFF1F5F9),
+                    backgroundImage: _selectedImage == null
+                        ? null
+                        : FileImage(_selectedImage!),
+                    child: _selectedImage == null
+                        ? Icon(
+                            Icons.person_rounded,
+                            size: avatarSize * 0.46,
+                            color: const Color(0xFF94A3B8),
+                          )
+                        : null,
+                  ),
+                  Positioned(
+                    right: -2,
+                    bottom: -2,
+                    child: Container(
+                      width: cameraSize,
+                      height: cameraSize,
+                      decoration: const BoxDecoration(
+                        color: AppColors.pointColor,
+                        shape: BoxShape.circle,
+                      ),
+                      child: Icon(
+                        Icons.camera_alt_outlined,
+                        size: cameraSize * 0.55,
+                        color: Colors.white,
+                      ),
                     ),
                   ),
-                ),
-                child: Row(
+                ],
+              ),
+              SizedBox(width: context.rs(16).clamp(13, 18).toDouble()),
+              Expanded(
+                child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    Icon(
-                      type == StudentType.exchange
-                          ? Icons.public_rounded
-                          : Icons.school_outlined,
-                      color: _studentType == type
-                          ? AppColors.pointColor
-                          : const Color(0xFF64748B),
-                      size: 24,
+                    Text(
+                      _isKorean ? '프로필 사진' : 'Profile photo',
+                      style: TextStyle(
+                        fontFamily: 'Inter',
+                        fontFamilyFallback: const <String>['NotoSansKR'],
+                        fontSize: context.rf(14).clamp(13, 15).toDouble(),
+                        fontWeight: FontWeight.w800,
+                        color: const Color(0xFF111827),
+                      ),
                     ),
-                    const SizedBox(width: 14),
-                    Expanded(
-                      child: Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: [
-                          Text(
-                            type.title(context),
-                            style: TextStyle(
-                              fontFamily: 'Inter',
-                              fontFamilyFallback: const ['NotoSansKR'],
-                              fontSize: 16,
-                              fontWeight: FontWeight.w700,
-                              color: _studentType == type
-                                  ? AppColors.pointColor
-                                  : const Color(0xFF0F172A),
-                            ),
-                          ),
-                          const SizedBox(height: 5),
-                          Text(
-                            type.description(context),
-                            style: const TextStyle(
-                              fontFamily: 'Inter',
-                              fontFamilyFallback: const ['NotoSansKR'],
-                              fontSize: 14,
-                              height: 1.45,
-                              color: Color(0xFF64748B),
-                            ),
-                          ),
-                        ],
+                    SizedBox(height: context.rs(4).clamp(3, 5).toDouble()),
+                    Text(
+                      _selectedImage == null
+                          ? (_isKorean
+                              ? '선택 사항 · 나중에도 추가할 수 있어요.'
+                              : 'Optional · You can add one later.')
+                          : (_isKorean
+                              ? '눌러서 사진을 변경할 수 있어요.'
+                              : 'Tap to change your photo.'),
+                      maxLines: 2,
+                      overflow: TextOverflow.ellipsis,
+                      style: TextStyle(
+                        fontFamily: 'Inter',
+                        fontFamilyFallback: const <String>['NotoSansKR'],
+                        fontSize: context.rf(12.5).clamp(12, 13.5).toDouble(),
+                        fontWeight: FontWeight.w500,
+                        color: const Color(0xFF667085),
+                        height: 1.4,
                       ),
                     ),
                   ],
                 ),
               ),
-            ),
+              Icon(
+                Icons.chevron_right_rounded,
+                size: context.ri(22).clamp(20, 24).toDouble(),
+                color: const Color(0xFF98A2B3),
+              ),
+            ],
           ),
-          const SizedBox(height: 8),
-        ],
-      ]);
+        ),
+      ),
+    );
+  }
+
+  Widget _fieldLabel(String label) {
+    return Text(
+      label,
+      style: TextStyle(
+        fontFamily: 'Inter',
+        fontFamilyFallback: const <String>['NotoSansKR'],
+        fontSize: context.rf(14).clamp(13, 15).toDouble(),
+        fontWeight: FontWeight.w800,
+        color: const Color(0xFF111827),
+      ),
+    );
+  }
 
   Widget _interestsStep() => _stepScroll([
         ProfileSectionHeading(
           title: _isKorean ? '요즘 무엇에 관심 있나요?' : 'What are you into these days?',
           description: _isKorean
-              ? '비슷한 관심사를 가진 친구를 만나는 데 도움이 돼요. 최대 5개'
-              : 'This helps you meet people with similar interests. Up to 5',
+              ? '비슷한 관심사를 가진 친구를 만나는 데 도움이 돼요. 1~5개를 선택해 주세요.'
+              : 'Choose 1–5 so we can help you meet people with similar interests.',
+          trailing: Text(
+            '${_interests.length}/5',
+            style: TextStyle(
+              fontFamily: 'Inter',
+              fontFamilyFallback: const <String>['NotoSansKR'],
+              fontSize: context.rf(13).clamp(12, 14).toDouble(),
+              fontWeight: FontWeight.w700,
+              color: const Color(0xFF667085),
+            ),
+          ),
         ),
-        const SizedBox(height: 24),
+        SizedBox(height: context.rs(20).clamp(16, 24).toDouble()),
         SocialProfileTagSelector(
           options: SocialProfileCatalog.interests,
           selectedIds: _interests,
-          onChanged: (value) => setState(() => _interests = value),
+          onChanged: (value) {
+            setState(() => _interests = value);
+            _scheduleDraftSave();
+          },
         ),
-        const SizedBox(height: 24),
-        Text(
-          _isKorean
-              ? '나중에 마이페이지에서 추가할 수 있어요.'
-              : 'You can add these later from My Page.',
-          style: const TextStyle(
-            fontFamily: 'Inter',
-            fontFamilyFallback: const ['NotoSansKR'],
-            fontSize: 13,
-            color: Color(0xFF64748B),
-          ),
+        SizedBox(height: context.rs(24).clamp(20, 28).toDouble()),
+        Row(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Icon(
+              Icons.info_outline_rounded,
+              size: context.ri(18).clamp(17, 20).toDouble(),
+              color: const Color(0xFF667085),
+            ),
+            SizedBox(width: context.rs(8).clamp(7, 10).toDouble()),
+            Expanded(
+              child: Text(
+                _isKorean
+                    ? '한 줄 소개 등 나머지 프로필은 가입 후 마이페이지에서 작성할 수 있어요.'
+                    : 'Complete your bio and the rest of your profile later from My Page.',
+                style: TextStyle(
+                  fontFamily: 'Inter',
+                  fontFamilyFallback: const <String>['NotoSansKR'],
+                  fontSize: context.rf(12.5).clamp(12, 13.5).toDouble(),
+                  fontWeight: FontWeight.w500,
+                  color: const Color(0xFF667085),
+                  height: 1.45,
+                ),
+              ),
+            ),
+          ],
         ),
-      ]);
-
-  Widget _activitiesStep() => _stepScroll([
-        ProfileSectionHeading(
-          title: _isKorean
-              ? '친구들과 무엇을 함께하고 싶나요?'
-              : 'What would you like to do together?',
-          description: _isKorean
-              ? '프로필을 본 친구가 더 쉽게 다가올 수 있어요. 최대 5개'
-              : 'This gives people an easy reason to reach out. Up to 5',
-        ),
-        const SizedBox(height: 24),
-        SocialProfileTagSelector(
-          options: SocialProfileCatalog.activities,
-          selectedIds: _activities,
-          onChanged: (value) => setState(() => _activities = value),
-        ),
-        const SizedBox(height: 24),
-        Text(
-          _isKorean
-              ? '나중에 마이페이지에서 추가할 수 있어요.'
-              : 'You can add these later from My Page.',
-          style: const TextStyle(
-            fontFamily: 'Inter',
-            fontFamilyFallback: const ['NotoSansKR'],
-            fontSize: 13,
-            color: Color(0xFF64748B),
-          ),
-        ),
-      ]);
-
-  Widget _conversationStep() => _stepScroll([
-        SocialProfilePromptField(
-          controller: _conversationController,
-          suggestions: SocialProfileCatalog.conversationStarters,
-          title: _isKorean ? '대화 시작 질문' : 'Conversation starter',
-          description: _isKorean
-              ? '친구들이 어떤 말로 대화를 시작하면 좋을까요?'
-              : 'What could a new friend ask you first?',
-          hintText: _isKorean ? '질문을 직접 적어보세요.' : 'Write your own question.',
-        ),
-        const SizedBox(height: 26),
-        SocialProfilePromptField(
-          controller: _friendshipController,
-          suggestions: SocialProfileCatalog.friendshipPrompts,
-          title: _isKorean ? '나와 친해지는 방법' : 'How to become friends with me',
-          description: _isKorean
-              ? '나의 성격을 부담 없이 보여주는 한 문장을 골라보세요.'
-              : 'Choose a light, memorable way to describe yourself.',
-          hintText: _isKorean ? '직접 적어도 좋아요.' : 'Or write your own.',
-        ),
-        const SizedBox(height: 30),
-        ProfileSectionHeading(
-          title: _isKorean ? '프로필 미리보기' : 'Profile preview',
-        ),
-        const SizedBox(height: 18),
-        AnimatedBuilder(
-          animation: Listenable.merge([
-            _nicknameController,
-            _bioController,
-            _conversationController,
-            _friendshipController,
-          ]),
-          builder: (context, _) => SocialProfilePreview(
-            nickname: _nicknameController.text,
-            bio: _bioController.text,
-            interests: _interests,
-            activities: _activities,
-            conversationStarter: _conversationController.text,
-            friendshipPrompt: _friendshipController.text,
-            avatar: _selectedImage == null ? null : FileImage(_selectedImage!),
-          ),
-        ),
-        const SizedBox(height: 24),
       ]);
 }

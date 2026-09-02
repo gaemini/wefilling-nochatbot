@@ -51,6 +51,7 @@ class _EditMeetupScreenState extends State<EditMeetupScreen> {
     'study',
     'meal',
     'cafe',
+    'trip',
     'hangout',
     'culture',
     'etc',
@@ -148,6 +149,7 @@ class _EditMeetupScreenState extends State<EditMeetupScreen> {
       '스터디': 'study',
       '식사': 'meal',
       '카페': 'cafe',
+      '여행': 'trip',
       '술': 'hangout',
       '행아웃': 'hangout',
       '문화': 'culture',
@@ -248,6 +250,8 @@ class _EditMeetupScreenState extends State<EditMeetupScreen> {
         return AppLocalizations.of(context)!.meal;
       case 'cafe':
         return AppLocalizations.of(context)!.cafe;
+      case 'trip':
+        return AppLocalizations.of(context)!.trip;
       case 'hangout':
         return AppLocalizations.of(context)!.hangout;
       case 'culture':

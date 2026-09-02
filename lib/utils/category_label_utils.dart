@@ -4,8 +4,8 @@ import '../l10n/app_localizations.dart';
 
 /// 카테고리 키/레거시 값을 사용자에게 보여줄 라벨로 변환합니다.
 ///
-/// - 최신 데이터: `study|meal|cafe|hangout|culture|other|etc|hobby|food` 같은 키가 들어올 수 있음
-/// - 레거시 데이터: `스터디|식사|카페|술|문화|기타` 같은 한글 값이 들어올 수 있음
+/// - 최신 데이터: `study|meal|cafe|trip|hangout|culture|other|etc|hobby|food` 같은 키가 들어올 수 있음
+/// - 레거시 데이터: `스터디|식사|카페|여행|술|문화|기타` 같은 한글 값이 들어올 수 있음
 ///
 /// UI 표시 목적이며, DB 저장/필터링용 값은 변경하지 않습니다.
 String localizedCategoryLabel(BuildContext context, String rawCategory) {
@@ -23,6 +23,9 @@ String localizedCategoryLabel(BuildContext context, String rawCategory) {
     case 'cafe':
     case 'hobby': // 일부 구버전/추천장소 키에서 cafe를 hobby로 사용
       return l10n.cafe;
+    case 'trip':
+    case 'travel':
+      return l10n.trip;
     case 'hangout':
     case 'drink': // Legacy value shown using the replacement category.
     case 'drinks':
@@ -43,6 +46,8 @@ String localizedCategoryLabel(BuildContext context, String rawCategory) {
       return l10n.meal;
     case '카페':
       return l10n.cafe;
+    case '여행':
+      return l10n.trip;
     case '술':
     case '행아웃':
       return l10n.hangout;

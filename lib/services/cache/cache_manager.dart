@@ -7,6 +7,8 @@ import '../../models/cache/cache_metadata.dart';
 import '../../models/cache/cached_post.dart';
 import '../../models/cache/cached_comment.dart';
 import 'my_page_cache_service.dart';
+import '../../models/release_metadata.dart';
+import 'cache_migration_service.dart';
 
 /// 캐시 시스템 관리자
 /// Hive 초기화, 어댑터 등록, 박스 열기 등을 담당합니다.
@@ -15,7 +17,7 @@ class CacheManager {
 
   /// 캐시 시스템 초기화
   /// 앱 시작 시 main()에서 호출해야 합니다.
-  static Future<void> initialize() async {
+  static Future<void> initialize({ReleaseMetadata? releaseMetadata}) async {
     if (_initialized) {
       Logger.log('⚠️ 캐시 시스템은 이미 초기화되어 있습니다.');
       return;
@@ -32,6 +34,17 @@ class CacheManager {
       // 추가 어댑터는 다음 Phase에서 등록
       // Hive.registerAdapter(CachedMeetupAdapter());
       // Hive.registerAdapter(CachedMessageAdapter());
+
+      // Any schema migration must finish before cache consumers open boxes.
+      // Failure is non-fatal; the migration remains pending and is retried on
+      // the next launch without deleting durable user data.
+      if (releaseMetadata != null) {
+        try {
+          await CacheMigrationService.instance.migrate(releaseMetadata);
+        } catch (e) {
+          Logger.error('⚠️ 선택적 캐시 마이그레이션 실패(다음 실행 재시도): $e');
+        }
+      }
 
       // 박스 열기
       await Hive.openBox<CacheMetadata>('metadata');

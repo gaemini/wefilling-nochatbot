@@ -12,6 +12,7 @@ export const COL = {
   nicknameClaims: 'nicknameClaims',
   emailClaims: 'email_claims',
   emailVerifications: 'email_verifications',
+  passwordResetCodes: 'passwordResetCodes',
 
   // Content
   posts: 'posts',
@@ -44,6 +45,7 @@ export const COL = {
   // Settings / Admin
   userSettings: 'user_settings',
   adminSettings: 'admin_settings',
+  adminNotificationReceipts: 'admin_notification_receipts',
   adBanners: 'ad_banners',
   recommendedPlaces: 'recommended_places',
   reports: 'reports',

@@ -4,10 +4,10 @@
 // 사용자 프로필 정보 저장 및 검색
 // 닉네임 업데이트 기능
 
-import 'dart:io' show Platform;
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:google_sign_in/google_sign_in.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
+import 'package:cloud_functions/cloud_functions.dart';
 import 'package:firebase_storage/firebase_storage.dart';
 import 'package:flutter/foundation.dart';
 import 'fcm_service.dart';
@@ -18,6 +18,8 @@ class AuthService {
   final FirebaseAuth _auth = FirebaseAuth.instance;
   final GoogleSignIn _googleSignIn = GoogleSignIn.instance;
   final FirebaseFirestore _firestore = FirebaseFirestore.instance;
+  final FirebaseFunctions _functions =
+      FirebaseFunctions.instanceFor(region: 'us-central1');
 
   // 현재 로그인된 사용자
   User? get currentUser => _auth.currentUser;
@@ -128,12 +130,20 @@ class AuthService {
   //   }
   // }
 
-  // 닉네임 업데이트
+  // 닉네임 업데이트는 nicknameClaims 트랜잭션을 우회하지 않는다.
   Future<void> updateNickname(String nickname) async {
-    if (currentUser != null) {
-      await _firestore.collection('users').doc(currentUser!.uid).update({
-        'nickname': nickname,
-      });
+    if (currentUser == null) {
+      throw FirebaseAuthException(
+        code: 'unauthenticated',
+        message: '로그인이 필요합니다.',
+      );
+    }
+    final response = await _functions
+        .httpsCallable('updateMyNicknameSecure')
+        .call(<String, dynamic>{'nickname': nickname.trim()});
+    final data = response.data;
+    if (data is! Map || data['success'] != true) {
+      throw StateError('닉네임을 저장하지 못했습니다.');
     }
   }
 

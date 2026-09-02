@@ -1,11 +1,13 @@
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import 'package:firebase_auth/firebase_auth.dart';
+import 'package:cloud_functions/cloud_functions.dart';
 import '../constants/app_constants.dart';
 import '../l10n/app_localizations.dart';
 import '../services/account_deletion_service.dart';
 import '../providers/auth_provider.dart' as app_auth;
 import 'login_screen.dart';
+import 'password_reset_screen.dart';
 
 class AccountDeleteStepperScreen extends StatefulWidget {
   const AccountDeleteStepperScreen({Key? key}) : super(key: key);
@@ -20,11 +22,16 @@ class _AccountDeleteStepperScreenState
   int _currentStep = 0;
   String _selectedReason = '';
   final TextEditingController _otherReasonController = TextEditingController();
+  final TextEditingController _currentPasswordController =
+      TextEditingController();
   bool _isProcessing = false;
+  bool _obscureCurrentPassword = true;
+  String? _reauthErrorMessage;
 
   @override
   void dispose() {
     _otherReasonController.dispose();
+    _currentPasswordController.dispose();
     super.dispose();
   }
 
@@ -345,16 +352,22 @@ class _AccountDeleteStepperScreenState
     final isAppleLogin =
         user?.providerData.any((info) => info.providerId == 'apple.com') ??
             false;
+    final isPasswordLogin = !isGoogleLogin &&
+        !isAppleLogin &&
+        (user?.providerData.any((info) => info.providerId == 'password') ??
+            false);
     final providerMessage = isGoogleLogin
         ? loc.deleteButtonGoogleLogin
         : isAppleLogin
             ? loc.deleteButtonAppleLogin
-            : loc.deleteButtonGoogleLogin;
+            : loc.emailPassword;
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
         Text(
-          loc.reLoginForVerification,
+          isPasswordLogin
+              ? loc.emailReauthenticationDescription
+              : loc.reLoginForVerification,
           style: const TextStyle(
             fontFamily: 'Inter',
             fontFamilyFallback: ['NotoSansKR'],
@@ -365,11 +378,146 @@ class _AccountDeleteStepperScreenState
         ),
         const SizedBox(height: 24),
         _compactLeadingMessage(
-          icon: isAppleLogin ? Icons.apple : Icons.account_circle_outlined,
+          icon: isAppleLogin
+              ? Icons.apple
+              : isPasswordLogin
+                  ? Icons.lock_outline_rounded
+                  : Icons.account_circle_outlined,
           text: providerMessage,
           color: const Color(0xFF334155),
           emphasized: true,
         ),
+        if (isPasswordLogin) ...[
+          const SizedBox(height: 24),
+          Row(
+            children: [
+              const Icon(
+                Icons.mail_outline_rounded,
+                size: 20,
+                color: Color(0xFF64748B),
+              ),
+              const SizedBox(width: 10),
+              Expanded(
+                child: Text(
+                  user?.email ?? '',
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: const TextStyle(
+                    fontFamily: 'Inter',
+                    fontFamilyFallback: ['NotoSansKR'],
+                    fontSize: 14,
+                    fontWeight: FontWeight.w600,
+                    color: Color(0xFF334155),
+                  ),
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 20),
+          Text(
+            loc.currentPassword,
+            style: const TextStyle(
+              fontFamily: 'Inter',
+              fontFamilyFallback: ['NotoSansKR'],
+              fontSize: 14,
+              fontWeight: FontWeight.w600,
+              color: Color(0xFF0F172A),
+            ),
+          ),
+          const SizedBox(height: 4),
+          TextField(
+            controller: _currentPasswordController,
+            obscureText: _obscureCurrentPassword,
+            enabled: !_isProcessing,
+            autocorrect: false,
+            enableSuggestions: false,
+            autofillHints: const [AutofillHints.password],
+            textInputAction: TextInputAction.done,
+            onChanged: (_) {
+              if (_reauthErrorMessage != null) {
+                setState(() => _reauthErrorMessage = null);
+              }
+            },
+            decoration: InputDecoration(
+              hintText: loc.currentPasswordHint,
+              hintStyle: const TextStyle(
+                fontFamily: 'Inter',
+                fontFamilyFallback: ['NotoSansKR'],
+                color: Color(0xFF94A3B8),
+                fontSize: 14,
+              ),
+              prefixIcon: const Icon(
+                Icons.lock_outline_rounded,
+                color: Color(0xFF64748B),
+                size: 20,
+              ),
+              prefixIconConstraints: const BoxConstraints(minWidth: 38),
+              suffixIcon: IconButton(
+                visualDensity: VisualDensity.compact,
+                onPressed: () {
+                  setState(() {
+                    _obscureCurrentPassword = !_obscureCurrentPassword;
+                  });
+                },
+                icon: Icon(
+                  _obscureCurrentPassword
+                      ? Icons.visibility_off_outlined
+                      : Icons.visibility_outlined,
+                  size: 20,
+                  color: const Color(0xFF64748B),
+                ),
+              ),
+              enabledBorder: const UnderlineInputBorder(
+                borderSide: BorderSide(color: Color(0xFFE2E8F0)),
+              ),
+              focusedBorder: const UnderlineInputBorder(
+                borderSide: BorderSide(
+                  color: AppColors.pointColor,
+                  width: 1.5,
+                ),
+              ),
+            ),
+          ),
+          Align(
+            alignment: Alignment.centerRight,
+            child: TextButton(
+              onPressed: _isProcessing ? null : _openPasswordReset,
+              style: TextButton.styleFrom(
+                foregroundColor: AppColors.pointColor,
+                padding: const EdgeInsets.symmetric(vertical: 8),
+                minimumSize: const Size(0, 36),
+                tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+              ),
+              child: Text(loc.forgotPassword),
+            ),
+          ),
+          if (_reauthErrorMessage != null) ...[
+            const SizedBox(height: 10),
+            Row(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                const Icon(
+                  Icons.error_outline_rounded,
+                  size: 19,
+                  color: Color(0xFFDC2626),
+                ),
+                const SizedBox(width: 8),
+                Expanded(
+                  child: Text(
+                    _reauthErrorMessage!,
+                    style: const TextStyle(
+                      fontFamily: 'Inter',
+                      fontFamilyFallback: ['NotoSansKR'],
+                      fontSize: 13,
+                      height: 1.4,
+                      color: Color(0xFFDC2626),
+                    ),
+                  ),
+                ),
+              ],
+            ),
+          ],
+        ],
         const SizedBox(height: 26),
         Text(
           loc.accountDeletedImmediatelyAfterAuth,
@@ -383,6 +531,23 @@ class _AccountDeleteStepperScreenState
           ),
         ),
       ],
+    );
+  }
+
+  Future<void> _openPasswordReset() async {
+    final email = FirebaseAuth.instance.currentUser?.email ?? '';
+    final changed = await Navigator.of(context).push<bool>(
+      MaterialPageRoute(
+        builder: (_) => PasswordResetScreen(initialEmail: email),
+      ),
+    );
+    if (!mounted || changed != true) return;
+    _currentPasswordController.clear();
+    setState(() => _reauthErrorMessage = null);
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(
+        content: Text(AppLocalizations.of(context)!.signInWithNewPassword),
+      ),
     );
   }
 
@@ -519,6 +684,26 @@ class _AccountDeleteStepperScreenState
     final authProvider =
         Provider.of<app_auth.AuthProvider>(context, listen: false);
     final service = AccountDeletionService();
+    final user = FirebaseAuth.instance.currentUser;
+    final isGoogleLogin =
+        user?.providerData.any((info) => info.providerId == 'google.com') ??
+            false;
+    final isAppleLogin =
+        user?.providerData.any((info) => info.providerId == 'apple.com') ??
+            false;
+    final isPasswordLogin = !isGoogleLogin &&
+        !isAppleLogin &&
+        (user?.providerData.any((info) => info.providerId == 'password') ??
+            false);
+
+    if (isPasswordLogin && _currentPasswordController.text.isEmpty) {
+      setState(() => _reauthErrorMessage = loc.pleaseEnterPassword);
+      return;
+    }
+    if (!isGoogleLogin && !isAppleLogin && !isPasswordLogin) {
+      setState(() => _reauthErrorMessage = loc.reauthenticationFailedTryAgain);
+      return;
+    }
 
     final confirmed = await showDialog<bool>(
       context: context,
@@ -565,24 +750,23 @@ class _AccountDeleteStepperScreenState
     );
     if (confirmed != true) return;
 
-    setState(() => _isProcessing = true);
+    setState(() {
+      _isProcessing = true;
+      _reauthErrorMessage = null;
+    });
     try {
-      // 사용자의 로그인 방식 확인
-      final user = FirebaseAuth.instance.currentUser;
-      final isGoogleLogin =
-          user?.providerData.any((info) => info.providerId == 'google.com') ??
-              false;
-      final isAppleLogin =
-          user?.providerData.any((info) => info.providerId == 'apple.com') ??
-              false;
-
       // 로그인 방식에 따라 재인증
       if (isGoogleLogin) {
         await service.reauthenticateWithGoogle();
       } else if (isAppleLogin) {
         await service.reauthenticateWithApple();
+      } else if (isPasswordLogin) {
+        await service.reauthenticateWithPassword(
+          _currentPasswordController.text,
+        );
+        _currentPasswordController.clear();
       } else {
-        throw Exception('지원하지 않는 로그인 방식입니다.');
+        throw StateError('Unsupported authentication provider.');
       }
 
       // 계정 삭제
@@ -614,78 +798,24 @@ class _AccountDeleteStepperScreenState
       );
     } on FirebaseAuthException catch (e) {
       if (!mounted) return;
-
-      // 재인증 필요 에러 처리
-      if (e.code == 'requires-recent-login') {
-        // 재로그인 안내 다이얼로그
-        final shouldRelogin = await showDialog<bool>(
-          context: context,
-          builder: (context) => AlertDialog(
-            backgroundColor: Colors.white,
-            surfaceTintColor: Colors.transparent,
-            insetPadding: const EdgeInsets.symmetric(horizontal: 24),
-            shape:
-                RoundedRectangleBorder(borderRadius: BorderRadius.circular(18)),
-            title: const Text(
-              '재인증 필요',
-              style: TextStyle(
-                fontFamily: 'Inter',
-                fontFamilyFallback: ['NotoSansKR'],
-                fontSize: 19,
-                fontWeight: FontWeight.w700,
-                color: Color(0xFF0F172A),
-              ),
-            ),
-            content: const Text(
-              '계정 삭제를 위해 다시 로그인해주세요.',
-              style: TextStyle(
-                fontFamily: 'Inter',
-                fontFamilyFallback: ['NotoSansKR'],
-                fontSize: 14,
-                height: 1.45,
-                color: Color(0xFF64748B),
-              ),
-            ),
-            actionsPadding: const EdgeInsets.fromLTRB(16, 0, 16, 12),
-            actions: [
-              TextButton(
-                onPressed: () => Navigator.pop(context, false),
-                child: Text(loc.cancel),
-              ),
-              TextButton(
-                onPressed: () => Navigator.pop(context, true),
-                child: const Text('로그인'),
-              ),
-            ],
-          ),
-        );
-
-        if (shouldRelogin == true && mounted) {
-          // 로그인 화면으로 이동 후 다시 돌아오기
-          await authProvider.signOut();
-          if (!mounted) return;
-
-          Navigator.of(context).pushAndRemoveUntil(
-            MaterialPageRoute(builder: (_) => const LoginScreen()),
-            (route) => false,
-          );
-        }
-      } else {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: Text('${loc.deletionFailed}: ${e.message}'),
-            backgroundColor: Colors.red,
-          ),
-        );
-      }
+      final message = switch (e.code) {
+        'wrong-password' || 'invalid-credential' => loc.errorWrongPassword,
+        'network-request-failed' => loc.passwordResetNetworkError,
+        'too-many-requests' => loc.errorTooManyRequests,
+        _ => loc.reauthenticationFailedTryAgain,
+      };
+      setState(() => _reauthErrorMessage = message);
+    } on FirebaseFunctionsException catch (e) {
+      if (!mounted) return;
+      final message = e.code == 'unavailable' || e.code == 'deadline-exceeded'
+          ? loc.passwordResetNetworkError
+          : loc.reauthenticationFailedTryAgain;
+      setState(() => _reauthErrorMessage = message);
     } catch (e) {
       if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          content: Text('${loc.deletionFailed}: $e'),
-          backgroundColor: Colors.red,
-        ),
-      );
+      setState(() {
+        _reauthErrorMessage = loc.reauthenticationFailedTryAgain;
+      });
     } finally {
       if (mounted) setState(() => _isProcessing = false);
     }

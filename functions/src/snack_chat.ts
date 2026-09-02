@@ -8,10 +8,11 @@ import * as https from 'https';
 import * as net from 'net';
 import {TextDecoder} from 'util';
 
+import {normalizeNickname} from './nickname_claims';
+
 const SNACK_CHATS = 'snack_chats';
 const USERS = 'users';
 const BLOCKS = 'blocks';
-const FRIENDSHIPS = 'friendships';
 const MEETUPS = 'meetups';
 const REPORTS = 'reports';
 const FUNCTION_EVENTS = '_snack_chat_function_events';
@@ -210,6 +211,185 @@ async function requireActiveUser(uid: string): Promise<Data> {
   return data;
 }
 
+/** Resolves one active, non-blocked Snack Chat invite target by unique ID. */
+export const searchSnackChatInviteUserById = functions
+  .runWith({timeoutSeconds: 20, memory: '256MB'})
+  .https.onCall(async (raw, context) => {
+    const requesterId = requireUid(context);
+    await requireActiveUser(requesterId);
+
+    const identity = normalizeNickname(objectValue(raw).nickname);
+    const claim = await db()
+      .collection('nicknameClaims')
+      .doc(identity.nicknameKey)
+      .get();
+    let targetId = claim.exists ? stringValue(claim.get('ownerUid')) : '';
+
+    // Legacy profiles may predate nickname claims/nicknameKey. Exact display
+    // variants keep those accounts discoverable until the migration is run.
+    if (!targetId) {
+      const displayVariants = Array.from(new Set([
+        identity.nickname,
+        identity.nicknameKey,
+        identity.nicknameKey.toUpperCase(),
+        identity.nicknameKey.charAt(0).toUpperCase() +
+          identity.nicknameKey.slice(1),
+      ]));
+      const snapshots = await Promise.all([
+        db().collection(USERS)
+          .where('nicknameKey', '==', identity.nicknameKey)
+          .limit(2)
+          .get(),
+        ...displayVariants.map((nickname) => db().collection(USERS)
+          .where('nickname', '==', nickname)
+          .limit(2)
+          .get()),
+      ]);
+      const candidates = new Map<string, FirebaseFirestore.DocumentSnapshot>();
+      for (const snapshot of snapshots) {
+        for (const document of snapshot.docs) {
+          const data = document.data();
+          if (!activeUserData(data)) continue;
+          try {
+            if (normalizeNickname(data.nickname).nicknameKey ===
+                identity.nicknameKey) {
+              candidates.set(document.id, document);
+            }
+          } catch (_) {
+            // Invalid legacy nicknames are never invite-directory identities.
+          }
+        }
+      }
+      if (candidates.size === 1) {
+        targetId = candidates.keys().next().value ?? '';
+      }
+    }
+
+    if (!targetId || targetId === requesterId) return {userId: null};
+    const [target, blockedByRequester, blockedByTarget] = await Promise.all([
+      db().collection(USERS).doc(targetId).get(),
+      db().collection(BLOCKS).doc(requesterId + '_' + targetId).get(),
+      db().collection(BLOCKS).doc(targetId + '_' + requesterId).get(),
+    ]);
+    if (!target.exists ||
+        !activeUserData(target.data() ?? {}) ||
+        blockedByRequester.exists ||
+        blockedByTarget.exists) {
+      return {userId: null};
+    }
+    return {userId: targetId};
+  });
+
+const SNACK_CHAT_USER_SEARCH_LIMIT = 10;
+const SNACK_CHAT_USER_SEARCH_SCAN_LIMIT = 20;
+const SNACK_CHAT_USER_SEARCH_MAX_SCANS = 3;
+
+/**
+ * Searches the authenticated user's invite directory by nickname prefix.
+ *
+ * The normalized nickname key makes matching case-insensitive and lets
+ * Firestore serve the search from its ordered single-field index. Results are
+ * deliberately limited to ten per request; only the fields needed by the
+ * participant picker leave the server.
+ */
+export const searchSnackChatInviteUsers = functions
+  .runWith({timeoutSeconds: 20, memory: '256MB'})
+  .https.onCall(async (raw, context) => {
+    const requesterId = requireUid(context);
+    await requireActiveUser(requesterId);
+
+    const input = objectValue(raw);
+    const prefix = normalizeNickname(input.query).nicknameKey;
+    const requestedCursor = stringValue(input.cursor).toLowerCase();
+    const cursor = requestedCursor &&
+      requestedCursor.length <= 20 &&
+      requestedCursor.startsWith(prefix) ? requestedCursor : '';
+    if (requestedCursor && !cursor) {
+      throw new functions.https.HttpsError(
+        'invalid-argument',
+        'Invalid search cursor.',
+      );
+    }
+
+    const users: Array<{
+      uid: string;
+      nickname: string;
+      photoURL: string;
+    }> = [];
+    let scanCursor = cursor;
+    let nextCursor = '';
+    let mayHaveMore = false;
+
+    for (let scan = 0;
+      scan < SNACK_CHAT_USER_SEARCH_MAX_SCANS &&
+      users.length < SNACK_CHAT_USER_SEARCH_LIMIT;
+      scan++) {
+      let query: FirebaseFirestore.Query = db()
+        .collection(USERS)
+        .orderBy('nicknameKey');
+      query = scanCursor ?
+        query.startAfter(scanCursor) :
+        query.startAt(prefix);
+      const snapshot = await query
+        .endAt(prefix + '\uf8ff')
+        .limit(SNACK_CHAT_USER_SEARCH_SCAN_LIMIT)
+        .get();
+      if (snapshot.empty) {
+        mayHaveMore = false;
+        break;
+      }
+
+      const candidates = snapshot.docs.filter((document) => {
+        const data = document.data();
+        return document.id !== requesterId &&
+          activeUserData(data) &&
+          stringValue(data.nicknameKey).toLowerCase().startsWith(prefix);
+      });
+      const blockSnapshots = candidates.length === 0 ? [] :
+        await db().getAll(...candidates.flatMap((document) => [
+          db().collection(BLOCKS).doc(requesterId + '_' + document.id),
+          db().collection(BLOCKS).doc(document.id + '_' + requesterId),
+        ]));
+      const blockedIds = new Set<string>();
+      for (let index = 0; index < candidates.length; index++) {
+        if (blockSnapshots[index * 2]?.exists ||
+            blockSnapshots[index * 2 + 1]?.exists) {
+          blockedIds.add(candidates[index].id);
+        }
+      }
+
+      for (const document of snapshot.docs) {
+        const data = document.data();
+        const nicknameKey = stringValue(data.nicknameKey).toLowerCase();
+        scanCursor = nicknameKey;
+        if (document.id === requesterId ||
+            !activeUserData(data) ||
+            !nicknameKey.startsWith(prefix) ||
+            blockedIds.has(document.id)) {
+          continue;
+        }
+        users.push({
+          uid: document.id,
+          nickname: stringValue(data.nickname),
+          photoURL: stringValue(data.photoURL),
+        });
+        if (users.length === SNACK_CHAT_USER_SEARCH_LIMIT) {
+          nextCursor = scanCursor;
+          break;
+        }
+      }
+
+      mayHaveMore = snapshot.size === SNACK_CHAT_USER_SEARCH_SCAN_LIMIT;
+      if (!mayHaveMore) break;
+    }
+
+    return {
+      users,
+      nextCursor: users.length === SNACK_CHAT_USER_SEARCH_LIMIT || mayHaveMore ?
+        (nextCursor || scanCursor) : null,
+    };
+  });
+
 function firestoreId(value: unknown, field: string): string {
   const id = stringValue(value);
   if (!/^[A-Za-z0-9_-]{1,256}$/.test(id)) {
@@ -278,10 +458,6 @@ function boundedStringList(
   return result;
 }
 
-function friendshipId(userA: string, userB: string): string {
-  return [userA, userB].sort().join('__');
-}
-
 function assertActiveUserSnapshot(
   snapshot: FirebaseFirestore.DocumentSnapshot,
 ): void {
@@ -289,27 +465,6 @@ function assertActiveUserSnapshot(
     throw new functions.https.HttpsError(
       'failed-precondition',
       'Every participant must have an active account.',
-    );
-  }
-}
-
-function assertFriendshipSnapshot(
-  snapshot: FirebaseFirestore.DocumentSnapshot,
-  ownerId: string,
-  invitedId: string,
-): void {
-  if (!snapshot.exists) {
-    throw new functions.https.HttpsError(
-      'permission-denied',
-      'Only friends can be invited to a Snack Chat.',
-    );
-  }
-  const members = uniqueStrings(snapshot.get('uids'));
-  if (!members.includes(ownerId) ||
-      !members.includes(invitedId)) {
-    throw new functions.https.HttpsError(
-      'permission-denied',
-      'Only friends can be invited to a Snack Chat.',
     );
   }
 }
@@ -1517,7 +1672,7 @@ export const cancelSnackChatFileUpload = functions
 
 /**
  * Creates a normal Snack Chat after authoritatively validating active accounts
- * and the creator's friendship with every invited participant.
+ * and ensuring no bilateral block exists with an invited participant.
  */
 export const createSnackChatSecure = functions
   .runWith({timeoutSeconds: 30, memory: '256MB'})
@@ -1571,13 +1726,19 @@ export const createSnackChatSecure = functions
     await db().runTransaction(async (transaction) => {
       const userRefs = participantIds.map((id) =>
         db().collection(USERS).doc(id));
-      const friendshipRefs = invitedIds.map((id) =>
-        db().collection(FRIENDSHIPS).doc(friendshipId(creatorId, id)));
+      const blockRefs = invitedIds.flatMap((id) => [
+        db().collection(BLOCKS).doc(creatorId + '_' + id),
+        db().collection(BLOCKS).doc(id + '_' + creatorId),
+      ]);
       const userDocs = await transaction.getAll(...userRefs);
-      const friendshipDocs = await transaction.getAll(...friendshipRefs);
+      const blockDocs = await transaction.getAll(...blockRefs);
       userDocs.forEach(assertActiveUserSnapshot);
-      friendshipDocs.forEach((snapshot, index) =>
-        assertFriendshipSnapshot(snapshot, creatorId, invitedIds[index]));
+      if (blockDocs.some((snapshot) => snapshot.exists)) {
+        throw new functions.https.HttpsError(
+          'permission-denied',
+          'A blocked user cannot be invited to a Snack Chat.',
+        );
+      }
 
       const now = Timestamp.now();
       const expiresAt = activeDurationHours === 0
@@ -1610,6 +1771,34 @@ export const createSnackChatSecure = functions
         unreadCount,
         updatedAt: now,
       });
+      // Older app versions still author the initial invite notifications on
+      // the client after this callable returns. The opt-in flag prevents a
+      // duplicate during the rolling app/backend deployment.
+      if (request.notificationsHandledByServer === true) {
+        const creatorName = boundedString(
+          userDocs[0].get('nickname') ?? userDocs[0].get('name') ?? 'User',
+          80,
+        ) || 'User';
+        invitedIds.forEach((recipientId) => {
+          transaction.create(db().collection('notifications').doc(), {
+            userId: recipientId,
+            title: 'Snack Chat invite',
+            message: `${creatorName} invited you to "${title}".`,
+            type: 'snack_chat_invite',
+            meetupId: null,
+            postId: null,
+            actorId: creatorId,
+            actorName: creatorName,
+            data: {
+              snackChatId: roomRef.id,
+              snackChatName: title,
+              creatorName,
+            },
+            createdAt: FieldValue.serverTimestamp(),
+            isRead: false,
+          });
+        });
+      }
     });
     return {success: true, snackChatId: roomRef.id};
   });
@@ -1902,7 +2091,7 @@ export const createMeetupSnackChatSecure = functions
     };
   });
 
-/** Adds the caller's active friends to a room the caller currently belongs to. */
+/** Adds active, non-blocked users to a room the caller currently belongs to. */
 export const inviteSnackChatParticipants = functions
   .runWith({timeoutSeconds: 30, memory: '256MB'})
   .https.onCall(async (raw, context) => {
@@ -1938,13 +2127,19 @@ export const inviteSnackChatParticipants = functions
 
       const userRefs = [inviterId, ...toAdd].map((id) =>
         db().collection(USERS).doc(id));
-      const friendshipRefs = toAdd.map((id) =>
-        db().collection(FRIENDSHIPS).doc(friendshipId(inviterId, id)));
+      const blockRefs = toAdd.flatMap((id) => [
+        db().collection(BLOCKS).doc(inviterId + '_' + id),
+        db().collection(BLOCKS).doc(id + '_' + inviterId),
+      ]);
       const userDocs = await transaction.getAll(...userRefs);
-      const friendshipDocs = await transaction.getAll(...friendshipRefs);
+      const blockDocs = await transaction.getAll(...blockRefs);
       userDocs.forEach(assertActiveUserSnapshot);
-      friendshipDocs.forEach((snapshot, index) =>
-        assertFriendshipSnapshot(snapshot, inviterId, toAdd[index]));
+      if (blockDocs.some((snapshot) => snapshot.exists)) {
+        throw new functions.https.HttpsError(
+          'permission-denied',
+          'A blocked user cannot be invited to a Snack Chat.',
+        );
+      }
 
       const nextParticipants = [...current, ...toAdd];
       const previousUnread = normalizedCountMap(room.get('unreadCount'));

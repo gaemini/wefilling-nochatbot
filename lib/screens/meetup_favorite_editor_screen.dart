@@ -66,6 +66,7 @@ class _MeetupFavoriteEditorScreenState
       _categoryKey = switch (rawCategoryKey) {
         '' => null,
         'drink' || 'drinks' || '술' || '행아웃' => 'hangout',
+        'travel' || '여행' => 'trip',
         _ => rawCategoryKey,
       };
       _isUndecidedTime = template.isUndecidedTime;
@@ -113,6 +114,9 @@ class _MeetupFavoriteEditorScreenState
         return l10n.meal;
       case 'cafe':
         return l10n.cafe;
+      case 'trip':
+      case 'travel':
+        return l10n.trip;
       case 'hangout':
         return l10n.hangout;
       case 'culture':

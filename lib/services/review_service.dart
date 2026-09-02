@@ -4,6 +4,8 @@
 
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
+import 'package:cloud_functions/cloud_functions.dart';
+import 'package:flutter/foundation.dart';
 import '../utils/profile_photo_policy.dart';
 import '../models/review_post.dart';
 import 'content_filter_service.dart';
@@ -12,6 +14,7 @@ import '../utils/logger.dart';
 class ReviewService {
   final FirebaseFirestore _firestore = FirebaseFirestore.instance;
   final FirebaseAuth _auth = FirebaseAuth.instance;
+  final FirebaseFunctions _functions = FirebaseFunctions.instance;
 
   List<String> _imageUrlsFromProfilePost(Map<String, dynamic> data) {
     final urls = List<String>.from(data['imageUrls'] ?? const <String>[])
@@ -152,7 +155,7 @@ class ReviewService {
               meetupTitle: data['meetupTitle'] ?? '모임',
               imageUrls: _imageUrlsFromProfilePost(data),
               content: data['content'] ?? '',
-              category: '모임', // 모임 후기는 항상 '모임' 카테고리
+              category: (data['category'] ?? '모임').toString(),
               rating: 5, // 기본 평점
               taggedUserIds: [],
               createdAt: data['createdAt'] is Timestamp
@@ -163,6 +166,8 @@ class ReviewService {
               privacyLevel: PrivacyLevel.public, // 모임 후기는 공개
               sourceReviewId: data['reviewId'],
               hidden: data['isHidden'] == true,
+              participationRole:
+                  (data['participationRole'] ?? 'participant').toString(),
             );
 
             reviews.add(review);
@@ -339,6 +344,9 @@ class ReviewService {
           .doc(userId)
           .collection('posts')
           .where('type', isEqualTo: 'meetup_review')
+          .where('visibility', isEqualTo: 'public')
+          .where('isHidden', isEqualTo: false)
+          .orderBy('createdAt', descending: true)
           .snapshots()
           .asyncMap((snapshot) async {
         final currentUserId = _auth.currentUser?.uid;
@@ -369,7 +377,7 @@ class ReviewService {
               meetupTitle: data['meetupTitle'] ?? '모임',
               imageUrls: _imageUrlsFromProfilePost(data),
               content: data['content'] ?? '',
-              category: '모임', // 모임 후기는 항상 '모임' 카테고리
+              category: (data['category'] ?? '모임').toString(),
               rating: 5, // 기본 평점
               taggedUserIds: [],
               createdAt: data['createdAt'] is Timestamp
@@ -380,6 +388,8 @@ class ReviewService {
               privacyLevel: PrivacyLevel.public, // 모임 후기는 공개
               sourceReviewId: data['reviewId'],
               hidden: data['isHidden'] == true,
+              participationRole:
+                  (data['participationRole'] ?? 'participant').toString(),
             );
 
             reviews.add(review);
@@ -398,6 +408,134 @@ class ReviewService {
       Logger.error('❌ 후기 스트림 오류: $e');
       return Stream.value([]);
     }
+  }
+
+  /// 프로필 첫 화면에 표시할 최근 공개 모임 후기만 일회성으로 조회한다.
+  /// App Check가 적용된 서버 함수가 원본 meetup_review의 동의 완료 상태를
+  /// 다시 검증하므로 대기·거절·비공개 후기는 외부 프로필에 노출되지 않는다.
+  Future<List<ReviewPost>> getPublicUserReviewPreview(
+    String userId, {
+    int limit = 3,
+  }) async {
+    try {
+      final currentUserId = _auth.currentUser?.uid;
+      if (currentUserId != null &&
+          currentUserId != userId &&
+          await _isAuthorExcluded(userId)) {
+        return const <ReviewPost>[];
+      }
+
+      final result = await _functions
+          .httpsCallable('getPublicProfileReviewPreview')
+          .call(<String, dynamic>{
+        'targetUid': userId,
+        'limit': limit.clamp(1, 3).toInt(),
+      });
+      final payload = result.data is Map
+          ? Map<String, dynamic>.from(result.data as Map)
+          : const <String, dynamic>{};
+      final rawReviews = payload['reviews'] is List
+          ? payload['reviews'] as List
+          : const <dynamic>[];
+      final reviews = rawReviews.whereType<Map>().map((raw) {
+        final data = Map<String, dynamic>.from(raw);
+        return _profileReviewFromData(
+          id: (data['id'] ?? data['reviewId'] ?? '').toString(),
+          userId: userId,
+          data: data,
+        );
+      }).toList(growable: false);
+      return await _filterBlockedReviews(reviews);
+    } on FirebaseFunctionsException catch (e) {
+      // 로컬 개발 중 함수가 아직 배포되지 않았거나 Debug App Check 토큰이
+      // 등록되지 않은 경우에만 레거시 직접 조회를 허용한다. 상용 release는
+      // 검증을 우회하지 않고 빈 결과로 종료한다.
+      if (!kReleaseMode &&
+          (e.code == 'not-found' || e.code == 'unauthenticated')) {
+        return _getPublicUserReviewPreviewWithoutIndex(
+          userId,
+          limit: limit,
+        );
+      }
+      Logger.error('프로필 공개 후기 미리보기 조회 오류: $e');
+      return const <ReviewPost>[];
+    } catch (e) {
+      Logger.error('프로필 공개 후기 미리보기 조회 오류: $e');
+      return const <ReviewPost>[];
+    }
+  }
+
+  Future<List<ReviewPost>> _getPublicUserReviewPreviewWithoutIndex(
+    String userId, {
+    required int limit,
+  }) async {
+    try {
+      final snapshot = await _firestore
+          .collection('users')
+          .doc(userId)
+          .collection('posts')
+          .where('type', isEqualTo: 'meetup_review')
+          .limit(24)
+          .get();
+      final reviews = snapshot.docs
+          .where((doc) {
+            final data = doc.data();
+            return data['visibility'] == 'public' && data['isHidden'] != true;
+          })
+          .map((doc) => _profileReviewFromData(
+                id: doc.id,
+                userId: userId,
+                data: doc.data(),
+              ))
+          .toList();
+      reviews.sort((a, b) => b.createdAt.compareTo(a.createdAt));
+      return await _filterBlockedReviews(
+        reviews.take(limit.clamp(1, 3).toInt()).toList(growable: false),
+      );
+    } catch (error) {
+      Logger.error('인덱스 배포 전 후기 폴백 조회 오류: $error');
+      return const <ReviewPost>[];
+    }
+  }
+
+  ReviewPost _profileReviewFromData({
+    required String id,
+    required String userId,
+    required Map<String, dynamic> data,
+  }) {
+    return ReviewPost(
+      id: id,
+      authorId: (data['authorId'] ?? userId).toString(),
+      authorName: (data['authorName'] ?? '익명').toString(),
+      authorProfileImage: (data['authorProfileImage'] ?? '').toString(),
+      meetupId: (data['meetupId'] ?? '').toString(),
+      meetupTitle: (data['meetupTitle'] ?? '모임').toString(),
+      imageUrls: _imageUrlsFromProfilePost(data),
+      content: (data['content'] ?? '').toString(),
+      category: (data['category'] ?? '모임').toString(),
+      rating: 5,
+      taggedUserIds: const <String>[],
+      createdAt: _profileReviewCreatedAt(data['createdAt']),
+      likedBy: List<String>.from(data['likedBy'] ?? const <String>[]),
+      commentCount: (data['commentCount'] as num?)?.toInt() ?? 0,
+      privacyLevel: PrivacyLevel.public,
+      sourceReviewId:
+          (data['sourceReviewId'] ?? data['reviewId'] ?? id).toString(),
+      hidden: false,
+      participationRole:
+          (data['participationRole'] ?? 'participant').toString(),
+    );
+  }
+
+  DateTime _profileReviewCreatedAt(dynamic value) {
+    if (value is Timestamp) return value.toDate();
+    if (value is num && value > 0) {
+      return DateTime.fromMillisecondsSinceEpoch(value.toInt());
+    }
+    if (value is String) {
+      return DateTime.tryParse(value) ?? DateTime.now();
+    }
+    return DateTime.now();
   }
 
   // 후기 숨김 처리

@@ -19,7 +19,6 @@ import '../models/meetup_favorite_template.dart';
 import 'meetup_favorites_screen.dart';
 import '../ui/snackbar/app_snackbar.dart';
 import '../ui/sheets/participant_count_sheet.dart';
-import '../ui/widgets/app_button.dart';
 import '../utils/responsive_helper.dart';
 
 // 모임 생성화면
@@ -169,6 +168,7 @@ class _CreateMeetupScreenState extends State<CreateMeetupScreen> {
     final selected = await showModalBottomSheet<String>(
       context: context,
       isScrollControlled: true,
+      useSafeArea: true,
       backgroundColor: Colors.white,
       showDragHandle: true,
       shape: const RoundedRectangleBorder(
@@ -179,125 +179,164 @@ class _CreateMeetupScreenState extends State<CreateMeetupScreen> {
 
         return SafeArea(
           top: false,
-          child: SingleChildScrollView(
-            padding: const EdgeInsets.fromLTRB(16, 8, 16, 16),
-            child: Column(
-              mainAxisSize: MainAxisSize.min,
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Text(
-                  l10n.timeSelection,
-                  style: const TextStyle(
-                    fontFamily: 'Inter',
-                    fontFamilyFallback: const ['NotoSansKR'],
-                    fontSize: 20,
-                    fontWeight: FontWeight.w700,
-                    color: Color(0xFF111827),
-                  ),
-                ),
-                const SizedBox(height: 12),
+          child: LayoutBuilder(
+            builder: (context, constraints) {
+              final sheetWidth = constraints.maxWidth;
+              final screenHeight = MediaQuery.sizeOf(sheetContext).height;
+              final horizontalPadding = sheetWidth < 360 ? 16.0 : 20.0;
+              final pickerHeight =
+                  (screenHeight * 0.27).clamp(176.0, 216.0).toDouble();
 
-                // 미정 빠른 선택 (선택 상태 표시만, 불필요한 chevron 제거)
-                InkWell(
-                  onTap: () => Navigator.pop(sheetContext, l10n.undecided),
-                  child: Container(
-                    padding: const EdgeInsets.symmetric(vertical: 12),
-                    decoration: const BoxDecoration(
-                      border: Border(
-                        bottom: BorderSide(color: Color(0xFFEAECF0)),
-                      ),
-                    ),
-                    child: Row(
-                      children: [
-                        Expanded(
-                          child: Text(
-                            l10n.undecided,
-                            style: _inputTextStyle,
-                          ),
-                        ),
-                        AnimatedContainer(
-                          duration: const Duration(milliseconds: 180),
-                          width: 22,
-                          height: 22,
-                          decoration: BoxDecoration(
-                            shape: BoxShape.circle,
-                            color: isUndecidedSelected
-                                ? const Color(0xFF475467)
-                                : Colors.transparent,
-                            border: Border.all(
-                              color: isUndecidedSelected
-                                  ? const Color(0xFF475467)
-                                  : const Color(0xFFD1D5DB),
-                              width: 2,
+              return SingleChildScrollView(
+                padding: EdgeInsets.fromLTRB(
+                  horizontalPadding,
+                  4,
+                  horizontalPadding,
+                  12,
+                ),
+                child: Center(
+                  child: ConstrainedBox(
+                    constraints: const BoxConstraints(maxWidth: 720),
+                    child: MediaQuery.withClampedTextScaling(
+                      maxScaleFactor: 1.2,
+                      child: Column(
+                        mainAxisSize: MainAxisSize.min,
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Text(
+                            l10n.timeSelection,
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis,
+                            style: TextStyle(
+                              fontFamily: 'Inter',
+                              fontFamilyFallback: const ['NotoSansKR'],
+                              fontSize:
+                                  sheetContext.rf(20).clamp(18, 22).toDouble(),
+                              fontWeight: FontWeight.w700,
+                              height: 1.2,
+                              color: const Color(0xFF111827),
                             ),
                           ),
-                          child: isUndecidedSelected
-                              ? const Icon(Icons.check,
-                                  size: 14, color: Colors.white)
-                              : null,
-                        ),
-                      ],
+                          SizedBox(
+                            height: sheetContext.rs(10).clamp(8, 12).toDouble(),
+                          ),
+
+                          // 미정 빠른 선택. 별도 상자나 구분선 없이 충분한 터치 영역만 유지한다.
+                          InkWell(
+                            onTap: () => Navigator.pop(
+                              sheetContext,
+                              l10n.undecided,
+                            ),
+                            borderRadius: BorderRadius.circular(10),
+                            child: SizedBox(
+                              height: sheetContext.rh(48, min: 46, max: 52),
+                              child: Row(
+                                children: [
+                                  Expanded(
+                                    child: Text(
+                                      l10n.undecided,
+                                      maxLines: 1,
+                                      overflow: TextOverflow.ellipsis,
+                                      style: _inputTextStyle.copyWith(
+                                        fontSize: sheetContext
+                                            .rf(16)
+                                            .clamp(15, 17)
+                                            .toDouble(),
+                                        fontWeight: FontWeight.w600,
+                                      ),
+                                    ),
+                                  ),
+                                  AnimatedContainer(
+                                    duration: const Duration(milliseconds: 180),
+                                    width: 24,
+                                    height: 24,
+                                    decoration: BoxDecoration(
+                                      shape: BoxShape.circle,
+                                      color: isUndecidedSelected
+                                          ? const Color(0xFF344054)
+                                          : Colors.transparent,
+                                    ),
+                                    child: isUndecidedSelected
+                                        ? const Icon(
+                                            Icons.check_rounded,
+                                            size: 16,
+                                            color: Colors.white,
+                                          )
+                                        : null,
+                                  ),
+                                ],
+                              ),
+                            ),
+                          ),
+
+                          SizedBox(
+                            height: sheetContext.rs(8).clamp(6, 10).toDouble(),
+                          ),
+
+                          // 기존 시간 선택 로직은 유지하고 시각적인 배경 상자만 제거한다.
+                          SizedBox(
+                            height: pickerHeight,
+                            child: CupertinoTheme(
+                              data: const CupertinoThemeData(
+                                textTheme: CupertinoTextThemeData(
+                                  dateTimePickerTextStyle: TextStyle(
+                                    fontFamily: 'Inter',
+                                    fontFamilyFallback: ['NotoSansKR'],
+                                    fontSize: 18,
+                                    fontWeight: FontWeight.w600,
+                                    color: Color(0xFF111827),
+                                  ),
+                                ),
+                              ),
+                              child: CupertinoDatePicker(
+                                mode: CupertinoDatePickerMode.time,
+                                minuteInterval: 10,
+                                use24hFormat: use24h,
+                                initialDateTime: initial,
+                                onDateTimeChanged: (dt) {
+                                  picked = dt;
+                                },
+                              ),
+                            ),
+                          ),
+
+                          SizedBox(
+                            height:
+                                sheetContext.rs(14).clamp(12, 18).toDouble(),
+                          ),
+                          Row(
+                            children: [
+                              Expanded(
+                                child: _buildBottomActionButton(
+                                  label: l10n.cancel,
+                                  onPressed: () => Navigator.pop(sheetContext),
+                                  isPrimary: false,
+                                ),
+                              ),
+                              SizedBox(
+                                width:
+                                    sheetContext.rs(8).clamp(8, 12).toDouble(),
+                              ),
+                              Expanded(
+                                flex: 2,
+                                child: _buildBottomActionButton(
+                                  label: l10n.done,
+                                  onPressed: () => Navigator.pop(
+                                    sheetContext,
+                                    _formatHHmm(picked),
+                                  ),
+                                  isPrimary: true,
+                                ),
+                              ),
+                            ],
+                          ),
+                        ],
+                      ),
                     ),
                   ),
                 ),
-
-                const SizedBox(height: 12),
-
-                // iOS 스타일 휠 타임피커 (높이를 고정하되, 시트가 작으면 스크롤로 자연스럽게 처리)
-                Container(
-                  height: 216,
-                  decoration: BoxDecoration(
-                    color: const Color(0xFFF9FAFB),
-                    borderRadius: BorderRadius.circular(12),
-                  ),
-                  child: CupertinoTheme(
-                    data: const CupertinoThemeData(
-                      textTheme: CupertinoTextThemeData(
-                        dateTimePickerTextStyle: TextStyle(
-                          fontFamily: 'Inter',
-                          fontFamilyFallback: const ['NotoSansKR'],
-                          fontSize: 18,
-                          fontWeight: FontWeight.w600,
-                          color: Color(0xFF111827),
-                        ),
-                      ),
-                    ),
-                    child: CupertinoDatePicker(
-                      mode: CupertinoDatePickerMode.time,
-                      minuteInterval: 10,
-                      use24hFormat: use24h,
-                      initialDateTime: initial,
-                      onDateTimeChanged: (dt) {
-                        picked = dt;
-                      },
-                    ),
-                  ),
-                ),
-
-                const SizedBox(height: 14),
-                Row(
-                  children: [
-                    Expanded(
-                      child: AppButton(
-                        label: l10n.cancel,
-                        onPressed: () => Navigator.pop(sheetContext),
-                        variant: AppButtonVariant.outline,
-                        size: AppButtonSize.m,
-                      ),
-                    ),
-                    const SizedBox(width: 12),
-                    Expanded(
-                      child: AppButton(
-                        label: l10n.done,
-                        onPressed: () =>
-                            Navigator.pop(sheetContext, _formatHHmm(picked)),
-                        size: AppButtonSize.m,
-                      ),
-                    ),
-                  ],
-                ),
-              ],
-            ),
+              );
+            },
           ),
         );
       },
@@ -583,6 +622,7 @@ class _CreateMeetupScreenState extends State<CreateMeetupScreen> {
     final l10n = AppLocalizations.of(context)!;
     final categoryKey = switch (t.categoryKey.trim().toLowerCase()) {
       'drink' || 'drinks' || '술' || '행아웃' => 'hangout',
+      'travel' || '여행' => 'trip',
       final key => key,
     };
 
@@ -1703,6 +1743,8 @@ class _CreateMeetupScreenState extends State<CreateMeetupScreen> {
         return l10n.meal;
       case 'cafe':
         return l10n.cafe;
+      case 'trip':
+        return l10n.trip;
       case 'hangout':
         return l10n.hangout;
       case 'culture':
@@ -2502,14 +2544,6 @@ class _VisibilitySegmentedControl extends StatelessWidget {
               mainAxisAlignment: MainAxisAlignment.center,
               mainAxisSize: MainAxisSize.min,
               children: [
-                Icon(
-                  Icons.change_history_rounded,
-                  size: context.ri(16).clamp(15, 18).toDouble(),
-                  color: isGroup
-                      ? const Color(0xFF344054)
-                      : const Color(0xFF98A2B3),
-                ),
-                const SizedBox(width: 4),
                 Flexible(
                   child: Text(
                     l10n.groups,

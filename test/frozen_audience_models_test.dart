@@ -28,6 +28,21 @@ void main() {
     expect(post.visibleToCategoryIds, sourceGroups);
   });
 
+  test('post parser falls back when transitional frozen lists are empty', () {
+    final post = Post.fromMap({
+      'userId': 'owner',
+      'visibility': 'category',
+      'audienceUserIdsFrozen': const <String>[],
+      'allowedUserIds': legacyAudience,
+      'sourceGroupIds': const <String>[],
+      'visibleToCategoryIds': const <String>['legacy-group'],
+      'createdAt': 1,
+    }, 'legacy-post-id');
+
+    expect(post.allowedUserIds, legacyAudience);
+    expect(post.visibleToCategoryIds, const <String>['legacy-group']);
+  });
+
   test('meetup parser prefers canonical frozen audience fields', () {
     final meetup = Meetup.fromJson({
       'id': 'meetup-id',

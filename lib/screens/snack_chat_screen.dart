@@ -5192,8 +5192,7 @@ class _SnackChatScreenState extends State<SnackChatScreen>
                                   }) =>
                                       null,
                                   keyboardType: TextInputType.multiline,
-                                  textInputAction: TextInputAction.send,
-                                  onSubmitted: (_) => _send(),
+                                  textInputAction: TextInputAction.newline,
                                   cursorColor: const Color(0xFFD1D5DB),
                                   style: TextStyle(
                                     fontFamily: 'Inter',

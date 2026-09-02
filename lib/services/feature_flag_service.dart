@@ -6,6 +6,7 @@
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:firebase_remote_config/firebase_remote_config.dart';
 import '../utils/logger.dart';
+import 'firebase_app_check_service.dart';
 
 class FeatureFlagService {
   static final FeatureFlagService _instance = FeatureFlagService._internal();
@@ -27,7 +28,7 @@ class FeatureFlagService {
     try {
       // SharedPreferences 초기화
       _prefs = await SharedPreferences.getInstance();
-      
+
       // Firebase Remote Config 초기화
       _remoteConfig = FirebaseRemoteConfig.instance;
       await _remoteConfig.setConfigSettings(RemoteConfigSettings(
@@ -41,9 +42,12 @@ class FeatureFlagService {
         FEATURE_REVIEW_CONSENSUS: false,
       });
 
-      // Remote Config에서 최신 설정 가져오기
-      await _fetchRemoteConfig();
-      
+      // Placeholder/unavailable App Check 상태에서 Remote Config 요청을
+      // 반복하지 않는다. 기능 플래그 기본값(false)은 그대로 안전하다.
+      if (FirebaseAppCheckService.instance.isReady) {
+        await _fetchRemoteConfig();
+      }
+
       _isInitialized = true;
     } catch (e) {
       Logger.error('⚠️ FeatureFlagService 초기화 오류: $e');
@@ -77,7 +81,6 @@ class FeatureFlagService {
       // 3. Firebase Remote Config 확인
       final remoteValue = _remoteConfig.getBool(featureKey);
       return remoteValue;
-
     } catch (e) {
       Logger.error('⚠️ Feature Flag 확인 오류 ($featureKey): $e');
       return false; // 안전한 기본값
@@ -161,7 +164,8 @@ class FeatureFlagService {
   }
 
   /// Review Consensus 기능 활성화 여부
-  bool get isReviewConsensusEnabled => isFeatureEnabled(FEATURE_REVIEW_CONSENSUS);
+  bool get isReviewConsensusEnabled =>
+      isFeatureEnabled(FEATURE_REVIEW_CONSENSUS);
 
   /// 모든 Feature Flag 상태 출력 (디버그용)
   void debugPrintAllFlags() {
@@ -171,7 +175,8 @@ class FeatureFlagService {
     }
 
     Logger.log('🚩 === Feature Flags 상태 ===');
-    Logger.log('🚩 FEATURE_PROFILE_GRID: ${isFeatureEnabled(FEATURE_PROFILE_GRID)}');
+    Logger.log(
+        '🚩 FEATURE_PROFILE_GRID: ${isFeatureEnabled(FEATURE_PROFILE_GRID)}');
     Logger.log('🚩 FEATURE_REVIEW_CONSENSUS: ${isReviewConsensusEnabled}');
     Logger.log('🚩 ========================');
   }

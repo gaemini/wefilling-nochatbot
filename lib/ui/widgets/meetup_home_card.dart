@@ -1,12 +1,11 @@
-import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/material.dart';
 import 'package:url_launcher/url_launcher.dart';
 
-import '../../constants/app_constants.dart';
 import '../../l10n/app_localizations.dart';
 import '../../models/meetup.dart';
 import '../../services/meetup_service.dart';
 import '../../ui/snackbar/app_snackbar.dart';
+import '../../utils/category_label_utils.dart';
 import '../../utils/responsive_helper.dart';
 import 'board_meetup_card.dart';
 
@@ -91,110 +90,27 @@ class _MeetupHomeCardState extends State<MeetupHomeCard> {
     }
   }
 
-  Widget? _buildAction(BuildContext context, int participants) {
-    final currentUser = FirebaseAuth.instance.currentUser;
-    if (currentUser == null || widget.meetup.userId == currentUser.uid) {
-      return null;
-    }
-
-    final isKo = Localizations.localeOf(context).languageCode == 'ko';
-    if (widget.meetup.isExpired() || widget.meetup.isPublicWindowExpiredAt()) {
-      return _statusText(isKo ? '만료' : 'Expired');
-    }
-
-    if (widget.isParticipationStatusLoading || widget.isParticipating == null) {
-      return SizedBox.square(
-        dimension: 34,
-        child: widget.isParticipationStatusLoading
-            ? const Padding(
-                padding: EdgeInsets.all(8),
-                child: CircularProgressIndicator(
-                  strokeWidth: 2,
-                  color: AppColors.pointColor,
-                ),
-              )
-            : null,
-      );
-    }
-
-    final participating = widget.isParticipating!;
-    if (widget.meetup.isCompleted) {
-      if (participating && widget.meetup.hasReview) {
-        return _actionButton(
-          context,
-          label: AppLocalizations.of(context)!.checkReview,
-          onPressed: widget.onViewReview,
-        );
-      }
-      return _statusText(AppLocalizations.of(context)!.closedStatus);
-    }
-
-    if (participants >= widget.meetup.maxParticipants && !participating) {
-      return _statusText(isKo ? '마감' : 'Full');
-    }
-
-    return _actionButton(
-      context,
-      label: participating
-          ? AppLocalizations.of(context)!.leaveMeetup
-          : AppLocalizations.of(context)!.joinMeetup,
-      destructive: participating,
-      loading: widget.isJoinLeaveInFlight,
-      onPressed: widget.isJoinLeaveInFlight
-          ? null
-          : () async {
-              if (participating) {
-                await widget.onLeave?.call();
-              } else {
-                await widget.onJoin?.call();
-              }
-            },
-    );
-  }
-
-  Widget _actionButton(
-    BuildContext context, {
-    required String label,
-    required VoidCallback? onPressed,
-    bool destructive = false,
-    bool loading = false,
-  }) {
-    return TextButton(
-      onPressed: onPressed,
-      style: TextButton.styleFrom(
-        minimumSize: const Size(42, 36),
-        padding: const EdgeInsets.symmetric(horizontal: 7),
-        tapTargetSize: MaterialTapTargetSize.shrinkWrap,
-        foregroundColor:
-            destructive ? const Color(0xFFB42318) : const Color(0xFF111827),
-        textStyle: TextStyle(
-          fontFamily: 'Inter',
-          fontFamilyFallback: const ['NotoSansKR'],
-          fontSize: context.rf(12).clamp(11.5, 12.5).toDouble(),
-          fontWeight: FontWeight.w800,
-        ),
+  Widget _buildCategoryHashtag(BuildContext context) {
+    final label = localizedCategoryLabel(context, widget.meetup.category);
+    return ConstrainedBox(
+      constraints: BoxConstraints(
+        maxWidth: context.rs(86).clamp(72.0, 96.0).toDouble(),
       ),
-      child: loading
-          ? const SizedBox.square(
-              dimension: 16,
-              child: CircularProgressIndicator(strokeWidth: 2),
-            )
-          : Text(label, maxLines: 1, overflow: TextOverflow.ellipsis),
-    );
-  }
-
-  Widget _statusText(String label) => Text(
-        label,
+      child: Text(
+        '#$label',
         maxLines: 1,
         overflow: TextOverflow.ellipsis,
-        style: const TextStyle(
+        style: TextStyle(
           fontFamily: 'Inter',
           fontFamilyFallback: const ['NotoSansKR'],
-          fontSize: 11.5,
+          fontSize: context.rf(11.5).clamp(11.0, 12.0).toDouble(),
           fontWeight: FontWeight.w700,
-          color: Color(0xFF667085),
+          height: 1.15,
+          color: const Color(0xFF475467),
         ),
-      );
+      ),
+    );
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -213,7 +129,7 @@ class _MeetupHomeCardState extends State<MeetupHomeCard> {
             onLocationTap: locationIsUrl
                 ? () => _openUrl(context, widget.meetup.location)
                 : null,
-            trailingAction: _buildAction(context, participants),
+            trailingAction: _buildCategoryHashtag(context),
           ),
         );
       },

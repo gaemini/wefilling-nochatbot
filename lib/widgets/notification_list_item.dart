@@ -393,6 +393,9 @@ _BadgeSpec _badgeSpecForType(String type) {
     case 'friend_request':
       return const _BadgeSpec(
           icon: Icons.person_add, color: AppColors.pointColor);
+    case 'friend_request_accepted':
+      return const _BadgeSpec(
+          icon: Icons.person_add_alt_1_rounded, color: AppColors.pointColor);
     case 'meetup_cancelled':
       return const _BadgeSpec(icon: Icons.event_busy, color: Color(0xFFEF4444));
     case 'meetup_full':

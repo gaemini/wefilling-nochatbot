@@ -48,6 +48,76 @@ class AppLocalizationsKo extends AppLocalizations {
   String get resetPassword => '비밀번호 재설정';
 
   @override
+  String get passwordResetDescription => '이메일로 받은 6자리 인증번호를 입력해 비밀번호를 재설정하세요.';
+
+  @override
+  String get emailAddress => '이메일 주소';
+
+  @override
+  String get sendCode => '인증번호 보내기';
+
+  @override
+  String get passwordResetCodeSent => '해당 이메일로 가입한 계정이 있다면 인증번호를 보냈습니다.';
+
+  @override
+  String get verificationCodeHint => '6자리 인증번호 입력';
+
+  @override
+  String get newPassword => '새 비밀번호';
+
+  @override
+  String get resendCode => '인증번호 다시 보내기';
+
+  @override
+  String resendCodeIn(int seconds) {
+    return '$seconds초 후 다시 보내기';
+  }
+
+  @override
+  String get passwordChangedSuccessfully => '비밀번호가 변경되었습니다.';
+
+  @override
+  String get signInWithNewPassword => '새 비밀번호로 로그인해 주세요.';
+
+  @override
+  String get backToEmailLogin => '이메일 로그인으로 돌아가기';
+
+  @override
+  String get invalidVerificationCode => '인증번호가 올바르지 않습니다.';
+
+  @override
+  String get expiredVerificationCode => '인증번호가 만료되었습니다. 새 인증번호를 요청해 주세요.';
+
+  @override
+  String get tooManyVerificationAttempts => '입력 횟수를 초과했습니다. 새 인증번호를 요청해 주세요.';
+
+  @override
+  String get passwordResetRateLimited => '잠시 후 인증번호를 다시 요청해 주세요.';
+
+  @override
+  String get passwordResetGenericError => '비밀번호를 재설정하지 못했어요. 잠시 후 다시 시도해 주세요.';
+
+  @override
+  String get passwordResetNetworkError => '인터넷 연결을 확인한 뒤 다시 시도해 주세요.';
+
+  @override
+  String get passwordResetRequestVerificationFailed =>
+      '요청을 확인하지 못했어요. 잠시 후 다시 시도해 주세요.';
+
+  @override
+  String get currentPassword => '현재 비밀번호';
+
+  @override
+  String get currentPasswordHint => '현재 비밀번호 입력';
+
+  @override
+  String get emailReauthenticationDescription =>
+      '안전을 위해 회원 탈퇴 전에 현재 비밀번호를 확인해 주세요.';
+
+  @override
+  String get reauthenticationFailedTryAgain => '본인 확인에 실패했습니다. 다시 시도해 주세요.';
+
+  @override
   String get sendResetEmail => '재설정 이메일 보내기';
 
   @override
@@ -1238,11 +1308,11 @@ class AppLocalizationsKo extends AppLocalizations {
   String get categoryNameHint => '예: 대학 친구';
 
   @override
-  String get createFirstCategory => '그룹으로 친구 관리하기';
+  String get createFirstCategory => '친구 그룹으로 공개 범위를 관리해요';
 
   @override
   String get createFirstCategoryDescription =>
-      '친구들을 그룹으로 관리해보세요.\n아래 추가 버튼을 통해 그룹을 만들어보세요.';
+      '친구들을 그룹으로 관리하고,\n포스트와 밋업의 공개 범위를 간편하게 설정해 보세요.';
 
   @override
   String get editAction => '수정';
@@ -1585,6 +1655,11 @@ class AppLocalizationsKo extends AppLocalizations {
   }
 
   @override
+  String friendRequestAcceptedMessage(String name) {
+    return '$name님이 회원님의 친구요청을 수락했습니다';
+  }
+
+  @override
   String get emailSignup => '이메일 회원가입';
 
   @override
@@ -1681,7 +1756,7 @@ class AppLocalizationsKo extends AppLocalizations {
   String get or => '또는';
 
   @override
-  String get appName => 'Wefilling';
+  String get appName => '위필링';
 
   @override
   String get appTagline => '함께하는 커뮤니티';
@@ -2426,6 +2501,9 @@ class AppLocalizationsKo extends AppLocalizations {
 
   @override
   String get cafe => '카페';
+
+  @override
+  String get trip => '여행';
 
   @override
   String get hangout => '행아웃';

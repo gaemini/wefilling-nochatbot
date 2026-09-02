@@ -100,7 +100,7 @@ class RecommendedPlacesService {
 
   /// 카테고리별 추천 장소 가져오기
   ///
-  /// [category]: 카테고리 키 (study, meal, cafe, hangout, culture, etc)
+  /// [category]: 카테고리 키 (study, meal, cafe, trip, hangout, culture, etc)
   ///
   /// Returns: 추천 장소 리스트 (order 기준 정렬)
   Future<List<RecommendedPlace>> getRecommendedPlaces(String category) async {

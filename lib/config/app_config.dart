@@ -3,6 +3,7 @@
 
 import 'dart:io' show Platform;
 import '../firebase_options.dart';
+import '../services/release_metadata_service.dart';
 
 class AppConfig {
   /// Google OAuth Client ID 가져오기 (플랫폼별)
@@ -17,16 +18,12 @@ class AppConfig {
   }
 
   /// 앱 버전 정보
-  static const String appVersion = String.fromEnvironment(
-    'APP_VERSION_NAME',
-    defaultValue: '1.0.59',
-  );
+  static String get appVersion =>
+      ReleaseMetadataService.instance.installed?.versionName ?? 'unknown';
 
   /// pubspec.yaml의 Android/iOS 빌드 번호와 함께 관리한다.
-  static const String buildNumber = String.fromEnvironment(
-    'APP_VERSION_CODE',
-    defaultValue: '71',
-  );
+  static String get buildNumber =>
+      ReleaseMetadataService.instance.installed?.buildNumber.toString() ?? '-';
 
   static String get fullVersion => '$appVersion ($buildNumber)';
 

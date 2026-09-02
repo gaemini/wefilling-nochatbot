@@ -15,6 +15,7 @@ import 'package:cached_network_image/cached_network_image.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import '../models/conversation.dart';
 import '../models/dm_message.dart';
+import '../models/content_translation.dart';
 import '../services/dm_service.dart';
 import '../services/dm_active_conversation.dart';
 import '../services/badge_service.dart';
@@ -23,7 +24,9 @@ import '../services/content_filter_service.dart';
 import '../services/report_service.dart';
 import '../services/storage_service.dart';
 import '../services/user_info_cache_service.dart';
+import '../services/content_translation_service.dart';
 import '../utils/time_formatter.dart';
+import '../utils/snack_chat_translation_policy.dart';
 import '../l10n/app_localizations.dart';
 import '../design/tokens.dart';
 import 'package:intl/intl.dart';
@@ -33,6 +36,7 @@ import 'dm_image_send_preview_screen.dart';
 import '../ui/widgets/user_avatar.dart';
 import '../utils/logger.dart';
 import '../ui/snackbar/app_snackbar.dart';
+import '../ui/sheets/translation_language_sheet.dart';
 
 // DM 전용 색상
 class DMColors {
@@ -51,6 +55,20 @@ class DMColors {
   static const composerActionBg = Color(0xFF3A3A3C);
   static const inputBg = Colors.transparent;
   static const inputBorder = Colors.transparent;
+}
+
+enum _DmTranslationPriority { live, visible, adjacent }
+
+class _DmTranslationCandidate {
+  const _DmTranslationCandidate({
+    required this.message,
+    required this.priority,
+    required this.distanceFromViewportCenter,
+  });
+
+  final DMMessage message;
+  final _DmTranslationPriority priority;
+  final double distanceFromViewportCenter;
 }
 
 class DMChatScreen extends StatefulWidget {
@@ -86,6 +104,35 @@ class _DMChatScreenState extends State<DMChatScreen>
   final _messageFocusNode = FocusNode();
   final _scrollController = ScrollController();
   final ImagePicker _imagePicker = ImagePicker();
+  final ContentTranslationService _translationService =
+      ContentTranslationService.instance;
+  final GlobalKey _messageViewportKey = GlobalKey();
+  final Map<String, GlobalKey> _messageLayoutKeys = <String, GlobalKey>{};
+  final Map<String, ContentTranslationResult> _messageTranslations =
+      <String, ContentTranslationResult>{};
+  final Map<String, String> _translationSourceSignatures = <String, String>{};
+  final Set<String> _translationCacheLookupsInFlight = <String>{};
+  final Set<String> _translationRequestsInFlight = <String>{};
+  final Map<String, _DmTranslationCandidate> _translationCandidates =
+      <String, _DmTranslationCandidate>{};
+  final Map<String, DateTime> _liveTranslationPriorityUntil =
+      <String, DateTime>{};
+  final Map<String, int> _translationFailures = <String, int>{};
+  final Map<String, DateTime> _translationRetryAfter = <String, DateTime>{};
+  static const Duration _translationMicroBatchWindow =
+      Duration(milliseconds: 70);
+  static const int _translationBatchSize = 5;
+  static const int _translationAdjacentPrefetchLimit = 2;
+  Timer? _translationMicroBatchTimer;
+  Timer? _translationRetryTimer;
+  bool _translationScanScheduled = false;
+  bool _translationModeReady = false;
+  bool _translationLanguageSheetOpen = false;
+  bool _translationLifecycleInitialized = false;
+  bool _receivedInitialMessageSnapshot = false;
+  int _translationStateGeneration = 0;
+  late int _translationLanguageRevision;
+  late bool _translationShowsOriginal;
   Stream<DMUserInfo?>? _otherUserInfoStream;
   // UX: 캐시 스냅샷(fromCache) → 서버 스냅샷 전환으로 인한 플리커를 방지하기 위해
   // 서버에서 확인된 최신 상대 프로필 정보를 별도로 보관한다.
@@ -123,7 +170,7 @@ class _DMChatScreenState extends State<DMChatScreen>
   final Set<String> _hydratedFromLocalCacheConversationIds = <String>{};
 
   // 첫 메시지 전송으로 실제 conversationId가 바뀔 수 있어, 화면 내에서는 별도로 추적한다.
-  late String _activeConversationId;
+  String _activeConversationId = '';
   // null: 아직 확인 전(초기 로딩), false: 없음(첫 메시지 전송 시 생성), true: 존재
   bool? _conversationExists;
   bool _isConversationInitializing = true;
@@ -144,7 +191,14 @@ class _DMChatScreenState extends State<DMChatScreen>
   bool _inputAreaDebugLogged = false; // 입력창 빌드 로그 1회만 출력
 
   void _setActiveConversationId(String conversationId) {
+    final previousConversationId = _activeConversationId;
+    final translationConversationChanged =
+        previousConversationId != conversationId;
     _activeConversationId = conversationId;
+    if (_translationLifecycleInitialized && translationConversationChanged) {
+      _resetTranslationStateForConversation();
+      unawaited(_prepareTranslationMode());
+    }
     // 포그라운드 DM 배너 억제를 위해 현재 화면의 실제 대화방 ID를 항상 동기화한다.
     if (_appLifecycleState == AppLifecycleState.resumed) {
       DMActiveConversation.setActive(conversationId);
@@ -195,6 +249,12 @@ class _DMChatScreenState extends State<DMChatScreen>
 
     // ✅ 현재 보고 있는 DM 대화방 추적 (포그라운드 DM 알림 억제에 사용)
     _setActiveConversationId(widget.conversationId);
+    _translationLanguageRevision = _translationService.languageRevision;
+    _translationShowsOriginal =
+        _translationService.showsOriginal(_translationScope);
+    _translationService.addListener(_handleTranslationServiceChange);
+    _translationLifecycleInitialized = true;
+    unawaited(_prepareTranslationMode());
     _otherUserInfoStream =
         _userInfoCacheService.watchUserInfo(widget.otherUserId);
     _scrollController.addListener(_onScroll);
@@ -217,8 +277,566 @@ class _DMChatScreenState extends State<DMChatScreen>
     if (state == AppLifecycleState.resumed) {
       DMActiveConversation.setActive(_activeConversationId);
       _scheduleAutoMarkAsRead(_messages, forceCounterReconcile: true);
+      _scheduleVisibleTranslations();
     } else if (DMActiveConversation.isActive(_activeConversationId)) {
       DMActiveConversation.setActive(null);
+      _translationMicroBatchTimer?.cancel();
+      _translationMicroBatchTimer = null;
+      _translationCandidates.clear();
+    }
+  }
+
+  String get _translationScope => 'dm-conversation:$_activeConversationId';
+
+  void _resetTranslationStateForConversation() {
+    _translationStateGeneration++;
+    _translationMicroBatchTimer?.cancel();
+    _translationMicroBatchTimer = null;
+    _translationRetryTimer?.cancel();
+    _translationRetryTimer = null;
+    _translationScanScheduled = false;
+    _translationModeReady = false;
+    _receivedInitialMessageSnapshot = false;
+    _messageTranslations.clear();
+    _translationSourceSignatures.clear();
+    _translationCacheLookupsInFlight.clear();
+    _translationRequestsInFlight.clear();
+    _translationCandidates.clear();
+    _liveTranslationPriorityUntil.clear();
+    _translationFailures.clear();
+    _translationRetryAfter.clear();
+    _messageLayoutKeys.clear();
+    _translationLanguageRevision = _translationService.languageRevision;
+    _translationShowsOriginal =
+        _translationService.showsOriginal(_translationScope);
+  }
+
+  Future<void> _prepareTranslationMode() async {
+    final conversationId = _activeConversationId;
+    if (conversationId.isEmpty) return;
+    final generation = _translationStateGeneration;
+    await _translationService.loadDmConversationMode(conversationId);
+    if (!mounted ||
+        generation != _translationStateGeneration ||
+        conversationId != _activeConversationId) {
+      return;
+    }
+    setState(() {
+      _translationModeReady = true;
+      _translationShowsOriginal =
+          _translationService.showsOriginal(_translationScope);
+    });
+    _scheduleVisibleTranslations();
+  }
+
+  void _handleTranslationServiceChange() {
+    if (!mounted) return;
+    final languageRevision = _translationService.languageRevision;
+    final showingOriginal =
+        _translationService.showsOriginal(_translationScope);
+    final languageChanged = languageRevision != _translationLanguageRevision;
+    final modeChanged = showingOriginal != _translationShowsOriginal;
+    if (!languageChanged && !modeChanged) return;
+
+    setState(() {
+      _translationLanguageRevision = languageRevision;
+      _translationShowsOriginal = showingOriginal;
+      if (languageChanged) {
+        _translationStateGeneration++;
+        _translationMicroBatchTimer?.cancel();
+        _translationMicroBatchTimer = null;
+        _translationRetryTimer?.cancel();
+        _translationRetryTimer = null;
+        _messageTranslations.clear();
+        _translationSourceSignatures.clear();
+        _translationCacheLookupsInFlight.clear();
+        _translationRequestsInFlight.clear();
+        _translationCandidates.clear();
+        _liveTranslationPriorityUntil.clear();
+        _translationFailures.clear();
+        _translationRetryAfter.clear();
+      } else if (showingOriginal) {
+        // 이미 시작된 요청은 캐시에 저장되도록 두되 아직 서버 요청 전인
+        // 후보는 제거하여 원문 보기 중 불필요한 비용이 생기지 않게 한다.
+        _translationMicroBatchTimer?.cancel();
+        _translationMicroBatchTimer = null;
+        _translationCandidates.clear();
+      }
+    });
+    if (!showingOriginal) _scheduleVisibleTranslations();
+  }
+
+  bool _canTranslateMessage(DMMessage message) {
+    final uid = _currentUser?.uid.trim() ?? '';
+    final senderId = message.senderId.trim();
+    if (uid.isEmpty || senderId.isEmpty || message.id.trim().isEmpty) {
+      return false;
+    }
+    if (senderId == uid || message.type == 'system') return false;
+    return hasTranslatableSnackChatText(message.text);
+  }
+
+  Map<String, String> _translationSourceFields(DMMessage message) =>
+      message.text.trim().isEmpty
+          ? const <String, String>{}
+          : <String, String>{'text': message.text};
+
+  String _translationSourceSignature(DMMessage message) {
+    final fields = _translationSourceFields(message);
+    final keys = fields.keys.toList(growable: false)..sort();
+    return keys.map((key) {
+      final value = fields[key]!;
+      return '${key.length}:$key${value.length}:$value';
+    }).join('|');
+  }
+
+  String _translationRequestKey(DMMessage message) =>
+      '${message.id}\u0000${_translationSourceSignature(message)}';
+
+  ContentTranslationRequest _translationRequestForMessage(
+    DMMessage message, {
+    String? conversationId,
+  }) =>
+      ContentTranslationRequest(
+        contentType: 'dm',
+        contentId: message.id,
+        parentId: conversationId ?? _activeConversationId,
+        sourceFields: _translationSourceFields(message),
+      );
+
+  bool _isCompleteTranslation(
+    DMMessage message,
+    ContentTranslationResult? result,
+  ) {
+    if (result == null || !result.isReady) return false;
+    final fields = _translationSourceFields(message);
+    if (fields.isEmpty) return false;
+    return fields.entries.every(
+      (entry) =>
+          entry.value.trim().isEmpty ||
+          (result.translatedFields[entry.key] ?? '').trim().isNotEmpty,
+    );
+  }
+
+  ContentTranslationResult? _currentTranslation(DMMessage message) {
+    if (!_canTranslateMessage(message)) return null;
+    final signature = _translationSourceSignature(message);
+    if (_translationSourceSignatures[message.id] == signature) {
+      final local = _messageTranslations[message.id];
+      if (_isCompleteTranslation(message, local)) return local;
+    }
+    final shared = _translationService.latestResultFor(
+      _translationRequestForMessage(message),
+    );
+    return _isCompleteTranslation(message, shared) ? shared : null;
+  }
+
+  String _displayTextForMessage(DMMessage message) {
+    if (_translationShowsOriginal) return message.text;
+    final result = _currentTranslation(message);
+    if (result == null || result.isSameLanguage) return message.text;
+    final translated = (result.translatedFields['text'] ?? '').trim();
+    return translated.isEmpty ? message.text : translated;
+  }
+
+  bool _isTranslationPending(DMMessage message) {
+    if (!_canTranslateMessage(message) ||
+        _translationShowsOriginal ||
+        _currentTranslation(message) != null) {
+      return false;
+    }
+    final key = _translationRequestKey(message);
+    return _translationCacheLookupsInFlight.contains(key) ||
+        _translationCandidates.containsKey(key) ||
+        _translationRequestsInFlight.contains(key);
+  }
+
+  void _scheduleVisibleTranslations() {
+    if (!mounted ||
+        !_translationModeReady ||
+        _translationShowsOriginal ||
+        _activeConversationId.isEmpty ||
+        _appLifecycleState != AppLifecycleState.resumed ||
+        !(ModalRoute.of(context)?.isCurrent ?? false)) {
+      return;
+    }
+    if (_translationScanScheduled) return;
+    _translationScanScheduled = true;
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      _translationScanScheduled = false;
+      if (!mounted ||
+          !_translationModeReady ||
+          _translationShowsOriginal ||
+          _appLifecycleState != AppLifecycleState.resumed ||
+          !(ModalRoute.of(context)?.isCurrent ?? false)) {
+        return;
+      }
+      unawaited(_primeVisibleTranslationCandidates());
+    });
+  }
+
+  List<_DmTranslationCandidate> _translationCandidatesNearViewport({
+    required int limit,
+    bool includeQueued = false,
+  }) {
+    if (limit <= 0) return const <_DmTranslationCandidate>[];
+    final viewportObject =
+        _messageViewportKey.currentContext?.findRenderObject();
+    final viewport = viewportObject is RenderBox && viewportObject.attached
+        ? viewportObject
+        : null;
+    final viewportTop = viewport?.localToGlobal(Offset.zero).dy ?? 0;
+    final viewportBottom = viewport == null
+        ? MediaQuery.sizeOf(context).height
+        : viewportTop + viewport.size.height;
+    final viewportHeight = (viewportBottom - viewportTop).abs();
+    final adjacentExtent = viewportHeight * 0.2;
+    final viewportCenter = (viewportTop + viewportBottom) / 2;
+    final now = DateTime.now();
+    _liveTranslationPriorityUntil.removeWhere(
+      (_, expiresAt) => !expiresAt.isAfter(now),
+    );
+
+    final candidates = <_DmTranslationCandidate>[];
+    for (final message in _messages) {
+      if (!_canTranslateMessage(message) ||
+          _currentTranslation(message) != null) {
+        continue;
+      }
+      final requestKey = _translationRequestKey(message);
+      if (_translationRequestsInFlight.contains(requestKey) ||
+          _translationCacheLookupsInFlight.contains(requestKey) ||
+          (!includeQueued && _translationCandidates.containsKey(requestKey))) {
+        continue;
+      }
+      final retryAfter = _translationRetryAfter[requestKey];
+      if (retryAfter != null && retryAfter.isAfter(now)) continue;
+      if ((_translationFailures[requestKey] ?? 0) >= 2) continue;
+
+      final renderObject =
+          _messageLayoutKeys[message.id]?.currentContext?.findRenderObject();
+      if (renderObject is! RenderBox || !renderObject.attached) continue;
+      final top = renderObject.localToGlobal(Offset.zero).dy;
+      final bottom = top + renderObject.size.height;
+      final visible = bottom > viewportTop && top < viewportBottom;
+      final adjacent = bottom > viewportTop - adjacentExtent &&
+          top < viewportBottom + adjacentExtent;
+      if (!adjacent) continue;
+      final live =
+          _liveTranslationPriorityUntil[message.id]?.isAfter(now) == true;
+      candidates.add(
+        _DmTranslationCandidate(
+          message: message,
+          priority: live
+              ? _DmTranslationPriority.live
+              : visible
+                  ? _DmTranslationPriority.visible
+                  : _DmTranslationPriority.adjacent,
+          distanceFromViewportCenter:
+              (((top + bottom) / 2) - viewportCenter).abs(),
+        ),
+      );
+    }
+    candidates.sort((a, b) {
+      final priority = a.priority.index.compareTo(b.priority.index);
+      if (priority != 0) return priority;
+      return a.distanceFromViewportCenter.compareTo(
+        b.distanceFromViewportCenter,
+      );
+    });
+    final selected = <_DmTranslationCandidate>[];
+    var adjacentCount = 0;
+    for (final candidate in candidates) {
+      if (candidate.priority == _DmTranslationPriority.adjacent &&
+          adjacentCount >= _translationAdjacentPrefetchLimit) {
+        continue;
+      }
+      selected.add(candidate);
+      if (candidate.priority == _DmTranslationPriority.adjacent) {
+        adjacentCount++;
+      }
+      if (selected.length >= limit) break;
+    }
+    return selected;
+  }
+
+  Future<void> _primeVisibleTranslationCandidates() async {
+    if (!_translationModeReady ||
+        _translationShowsOriginal ||
+        _appLifecycleState != AppLifecycleState.resumed ||
+        !(ModalRoute.of(context)?.isCurrent ?? false)) {
+      return;
+    }
+    final available = 10 - _translationCacheLookupsInFlight.length;
+    if (available <= 0) return;
+    final candidates = _translationCandidatesNearViewport(limit: available);
+    if (candidates.isEmpty) return;
+
+    final generation = _translationStateGeneration;
+    final revision = _translationLanguageRevision;
+    final conversationId = _activeConversationId;
+    final uiLanguage = Localizations.localeOf(context).languageCode;
+    final keys = <String>{
+      for (final candidate in candidates)
+        _translationRequestKey(candidate.message),
+    };
+    setState(() => _translationCacheLookupsInFlight.addAll(keys));
+
+    Map<String, ContentTranslationResult> cached;
+    try {
+      cached = await _translationService.cachedResultsFor(
+        <ContentTranslationRequest>[
+          for (final candidate in candidates)
+            _translationRequestForMessage(
+              candidate.message,
+              conversationId: conversationId,
+            ),
+        ],
+        uiLanguageCode: uiLanguage,
+      );
+    } catch (_) {
+      cached = const <String, ContentTranslationResult>{};
+    }
+    if (!mounted ||
+        generation != _translationStateGeneration ||
+        revision != _translationLanguageRevision ||
+        conversationId != _activeConversationId) {
+      return;
+    }
+
+    setState(() {
+      for (final candidate in candidates) {
+        final original = candidate.message;
+        final requestKey = _translationRequestKey(original);
+        _translationCacheLookupsInFlight.remove(requestKey);
+        final current = _messageById(original.id);
+        if (current == null ||
+            !_canTranslateMessage(current) ||
+            _translationRequestKey(current) != requestKey) {
+          continue;
+        }
+        final request = _translationRequestForMessage(
+          current,
+          conversationId: conversationId,
+        );
+        final result = cached[request.serverId];
+        if (_isCompleteTranslation(current, result)) {
+          _messageTranslations[current.id] = result!;
+          _translationSourceSignatures[current.id] =
+              _translationSourceSignature(current);
+          _translationFailures.remove(requestKey);
+          _translationRetryAfter.remove(requestKey);
+          _liveTranslationPriorityUntil.remove(current.id);
+        } else if (!_translationShowsOriginal) {
+          _translationCandidates[requestKey] = _DmTranslationCandidate(
+            message: current,
+            priority: candidate.priority,
+            distanceFromViewportCenter: candidate.distanceFromViewportCenter,
+          );
+        }
+      }
+    });
+    _scheduleTranslationMicroBatch();
+  }
+
+  DMMessage? _messageById(String id) {
+    for (final message in _messages) {
+      if (message.id == id) return message;
+    }
+    return null;
+  }
+
+  void _scheduleTranslationMicroBatch() {
+    if (_translationCandidates.isEmpty ||
+        _translationMicroBatchTimer != null ||
+        _translationShowsOriginal) {
+      return;
+    }
+    _translationMicroBatchTimer = Timer(
+      _translationMicroBatchWindow,
+      _flushTranslationMicroBatch,
+    );
+  }
+
+  Future<void> _flushTranslationMicroBatch() async {
+    _translationMicroBatchTimer = null;
+    if (!mounted ||
+        !_translationModeReady ||
+        _translationShowsOriginal ||
+        _appLifecycleState != AppLifecycleState.resumed ||
+        !(ModalRoute.of(context)?.isCurrent ?? false)) {
+      _translationCandidates.clear();
+      return;
+    }
+
+    // 빠른 스크롤 중 화면을 이미 벗어난 일반 후보는 API 단계 전에 버린다.
+    // 새 실시간 메시지는 짧은 live 우선순위 동안만 예외로 유지한다.
+    final stillNear = _translationCandidatesNearViewport(
+      limit: 10,
+      includeQueued: true,
+    );
+    final nearKeys = <String>{
+      for (final candidate in stillNear)
+        _translationRequestKey(candidate.message),
+    };
+    final now = DateTime.now();
+    final selected = _translationCandidates.entries
+        .where((entry) =>
+            nearKeys.contains(entry.key) ||
+            (entry.value.priority == _DmTranslationPriority.live &&
+                _liveTranslationPriorityUntil[entry.value.message.id]
+                        ?.isAfter(now) ==
+                    true))
+        .map((entry) => entry.value)
+        .toList(growable: false)
+      ..sort((a, b) {
+        final priority = a.priority.index.compareTo(b.priority.index);
+        if (priority != 0) return priority;
+        return a.distanceFromViewportCenter.compareTo(
+          b.distanceFromViewportCenter,
+        );
+      });
+    _translationCandidates.clear();
+    final messages = selected
+        .take(_translationBatchSize)
+        .map((candidate) => candidate.message)
+        .toList(growable: false);
+    if (messages.isEmpty) {
+      if (mounted) setState(() {});
+      return;
+    }
+    await _translateVisibleMessages(messages);
+  }
+
+  Future<void> _translateVisibleMessages(List<DMMessage> messages) async {
+    if (!(ModalRoute.of(context)?.isCurrent ?? false)) return;
+    final generation = _translationStateGeneration;
+    final revision = _translationLanguageRevision;
+    final conversationId = _activeConversationId;
+    final uiLanguage = Localizations.localeOf(context).languageCode;
+    final eligible = messages.where((message) {
+      final key = _translationRequestKey(message);
+      return _canTranslateMessage(message) &&
+          _currentTranslation(message) == null &&
+          !_translationRequestsInFlight.contains(key);
+    }).toList(growable: false);
+    if (eligible.isEmpty) return;
+
+    setState(() {
+      for (final message in eligible) {
+        _translationRequestsInFlight.add(_translationRequestKey(message));
+      }
+    });
+    final outcomes = await Future.wait(
+      eligible.map((message) async {
+        final key = _translationRequestKey(message);
+        final failureCount = _translationFailures[key] ?? 0;
+        ContentTranslationResult? result;
+        try {
+          result = await _translationService.request(
+            _translationRequestForMessage(
+              message,
+              conversationId: conversationId,
+            ),
+            uiLanguageCode: uiLanguage,
+            scope: _translationScope,
+            manualRetry: failureCount > 0,
+          );
+        } catch (_) {
+          result = null;
+        }
+        return (message: message, key: key, result: result);
+      }),
+    );
+    if (!mounted ||
+        generation != _translationStateGeneration ||
+        revision != _translationLanguageRevision ||
+        conversationId != _activeConversationId) {
+      return;
+    }
+
+    setState(() {
+      for (final outcome in outcomes) {
+        _translationRequestsInFlight.remove(outcome.key);
+        final current = _messageById(outcome.message.id);
+        if (current == null ||
+            !_canTranslateMessage(current) ||
+            _translationRequestKey(current) != outcome.key) {
+          _translationFailures.remove(outcome.key);
+          _translationRetryAfter.remove(outcome.key);
+          continue;
+        }
+        if (_isCompleteTranslation(current, outcome.result)) {
+          _messageTranslations[current.id] = outcome.result!;
+          _translationSourceSignatures[current.id] =
+              _translationSourceSignature(current);
+          _translationFailures.remove(outcome.key);
+          _translationRetryAfter.remove(outcome.key);
+          _liveTranslationPriorityUntil.remove(current.id);
+        } else {
+          final failures = (_translationFailures[outcome.key] ?? 0) + 1;
+          _translationFailures[outcome.key] = failures;
+          if (failures < 2 &&
+              (outcome.result == null || outcome.result!.isRetryableFailure)) {
+            _translationRetryAfter[outcome.key] = DateTime.now().add(
+              const Duration(seconds: 15),
+            );
+          } else {
+            _translationRetryAfter.remove(outcome.key);
+          }
+        }
+      }
+    });
+    _scheduleTranslationRetryScan();
+    _scheduleVisibleTranslations();
+  }
+
+  void _scheduleTranslationRetryScan() {
+    _translationRetryTimer?.cancel();
+    _translationRetryTimer = null;
+    if (_translationShowsOriginal || _translationRetryAfter.isEmpty) return;
+    final now = DateTime.now();
+    DateTime? next;
+    for (final retryAt in _translationRetryAfter.values) {
+      if (next == null || retryAt.isBefore(next)) next = retryAt;
+    }
+    if (next == null) return;
+    final delay = next.difference(now);
+    _translationRetryTimer = Timer(
+      delay.isNegative ? Duration.zero : delay,
+      () {
+        _translationRetryTimer = null;
+        _scheduleVisibleTranslations();
+      },
+    );
+  }
+
+  void _markNewIncomingMessagesForTranslation(
+    Iterable<DMMessage> messages,
+  ) {
+    final uid = _currentUser?.uid;
+    if (uid == null) return;
+    final expiresAt = DateTime.now().add(const Duration(seconds: 3));
+    for (final message in messages) {
+      if (message.senderId != uid && _canTranslateMessage(message)) {
+        _liveTranslationPriorityUntil[message.id] = expiresAt;
+      }
+    }
+  }
+
+  Future<void> _toggleDmTranslation() async {
+    if (!_translationModeReady || _activeConversationId.isEmpty) return;
+    await _translationService.toggleDmConversation(_activeConversationId);
+  }
+
+  Future<void> _openDmTranslationLanguageSettings() async {
+    if (_translationLanguageSheetOpen) return;
+    _translationLanguageSheetOpen = true;
+    try {
+      await showTranslationLanguageSheet(context, forSnackChat: true);
+    } finally {
+      _translationLanguageSheetOpen = false;
+      _scheduleVisibleTranslations();
     }
   }
 
@@ -607,6 +1225,9 @@ class _DMChatScreenState extends State<DMChatScreen>
       DMActiveConversation.setActive(null);
     }
     _autoMarkReadDebounce?.cancel();
+    _translationMicroBatchTimer?.cancel();
+    _translationRetryTimer?.cancel();
+    _translationService.removeListener(_handleTranslationServiceChange);
     WidgetsBinding.instance.removeObserver(this);
     _conversationReadSub?.cancel();
     _recentMessagesSub?.cancel();
@@ -799,6 +1420,7 @@ class _DMChatScreenState extends State<DMChatScreen>
           setState(() {
             _messages = cached..sort(_compareMessagesDesc);
           });
+          _scheduleVisibleTranslations();
         }
       }
 
@@ -812,11 +1434,18 @@ class _DMChatScreenState extends State<DMChatScreen>
       )
           .listen((recent) {
         if (!mounted) return;
+        final knownIds = _messages.map((message) => message.id).toSet();
+        final newlyReceived = _receivedInitialMessageSnapshot
+            ? recent.where((message) => !knownIds.contains(message.id))
+            : const Iterable<DMMessage>.empty();
         setState(() {
           _messages = _mergeRecentIntoAll(recent, _messages);
           _isMessagesLoading = false;
           _messagesError = null; // 이전 오류 상태 초기화
+          _receivedInitialMessageSnapshot = true;
         });
+        _markNewIncomingMessagesForTranslation(newlyReceived);
+        _scheduleVisibleTranslations();
         // ✅ 채팅 화면이 열려 있을 때 들어오는 메시지는 빠르게 읽음 처리(디바운스)
         _scheduleAutoMarkAsRead(_messages);
       }, onError: (e) {
@@ -896,6 +1525,10 @@ class _DMChatScreenState extends State<DMChatScreen>
   void _onScroll() {
     if (!mounted) return;
 
+    // 번역 가시성 판정은 스크롤 종료를 기다리지 않는다. 기존 페이지 로드
+    // 조건과 독립적으로 현재 배치된 말풍선만 다음 프레임에 확인한다.
+    _scheduleVisibleTranslations();
+
     if (_conversationExists != true) return;
     if (_isLoadingMore) return;
     if (!_hasMore) return;
@@ -954,6 +1587,7 @@ class _DMChatScreenState extends State<DMChatScreen>
           _hasMore = false;
         }
       });
+      _scheduleVisibleTranslations();
     } catch (e) {
       Logger.error('이전 메시지 로드 실패(무시): $e');
       if (!mounted) return;
@@ -1046,9 +1680,123 @@ class _DMChatScreenState extends State<DMChatScreen>
                 _conversation!.postId!.isNotEmpty &&
                 _conversation!.isOtherUserAnonymous(_currentUser.uid))
               _buildPostNavigationBanner(),
-            Expanded(child: _buildMessageList()),
+            Expanded(
+              child: Stack(
+                children: [
+                  Positioned.fill(
+                    child: KeyedSubtree(
+                      key: _messageViewportKey,
+                      child: _buildMessageList(),
+                    ),
+                  ),
+                  if (_conversationExists == true || _messages.isNotEmpty)
+                    Positioned(
+                      top: 0,
+                      left: 0,
+                      right: 0,
+                      child: _buildDmTranslationControl(),
+                    ),
+                ],
+              ),
+            ),
             _buildInputArea(),
           ],
+        ),
+      ),
+    );
+  }
+
+  Widget _buildDmTranslationControl() {
+    final isKo = Localizations.localeOf(context).languageCode == 'ko';
+    final label = _translationShowsOriginal
+        ? (isKo ? '번역 보기' : 'View translation')
+        : (isKo ? '원문 보기' : 'View original');
+    final settingsLabel = isKo ? '번역 언어 설정' : 'Translation language';
+    final compact = MediaQuery.sizeOf(context).width < 360;
+
+    return Material(
+      color: Colors.transparent,
+      child: Align(
+        alignment: Alignment.centerRight,
+        child: Padding(
+          padding: const EdgeInsets.fromLTRB(12, 6, 12, 4),
+          child: DecoratedBox(
+            decoration: BoxDecoration(
+              color: const Color(0xFFEEF8FE),
+              borderRadius: BorderRadius.circular(14),
+            ),
+            child: Row(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Tooltip(
+                  message: label,
+                  child: TextButton(
+                    key: const ValueKey('dm_translation_toggle'),
+                    onPressed:
+                        _translationModeReady ? _toggleDmTranslation : null,
+                    style: TextButton.styleFrom(
+                      foregroundColor: const Color(0xFF087BB5),
+                      disabledForegroundColor: const Color(0xFF76AFCB),
+                      minimumSize: const Size(0, 28),
+                      maximumSize: const Size(double.infinity, 28),
+                      padding: const EdgeInsets.fromLTRB(8, 0, 3, 0),
+                      tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                      shape: const StadiumBorder(),
+                    ),
+                    child: Row(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        if (!_translationModeReady)
+                          const SizedBox.square(
+                            dimension: 14,
+                            child: CircularProgressIndicator(
+                              strokeWidth: 1.8,
+                              color: Color(0xFF76AFCB),
+                            ),
+                          )
+                        else
+                          const Icon(Icons.translate_rounded, size: 15),
+                        const SizedBox(width: 3),
+                        Text(
+                          label,
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                          softWrap: false,
+                          style: TextStyle(
+                            fontFamily: 'Inter',
+                            fontFamilyFallback: const ['NotoSansKR'],
+                            fontSize: compact ? 10.5 : 11.5,
+                            fontWeight: FontWeight.w600,
+                            height: 1,
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                ),
+                Tooltip(
+                  message: settingsLabel,
+                  child: IconButton(
+                    key: const ValueKey(
+                      'dm_translation_language_settings',
+                    ),
+                    onPressed: _openDmTranslationLanguageSettings,
+                    icon: const Icon(Icons.settings_outlined),
+                    color: const Color(0xFF526779),
+                    iconSize: 15,
+                    padding: EdgeInsets.zero,
+                    style: IconButton.styleFrom(
+                      minimumSize: const Size(28, 28),
+                      maximumSize: const Size(28, 28),
+                      padding: EdgeInsets.zero,
+                      tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                      visualDensity: VisualDensity.compact,
+                    ),
+                  ),
+                ),
+              ],
+            ),
+          ),
         ),
       ),
     );
@@ -1787,6 +2535,7 @@ class _DMChatScreenState extends State<DMChatScreen>
 
     // ✅ 실시간 채팅 중에도 읽음 상태를 서버에 반영
     _scheduleAutoMarkAsRead(messages);
+    _scheduleVisibleTranslations();
 
     // ✅ 읽음/안읽음 표시는 "최신 안읽음 1개 + 최신 읽음 1개"만 노출
     final myUid = _currentUser!.uid;
@@ -1826,7 +2575,7 @@ class _DMChatScreenState extends State<DMChatScreen>
       controller: _scrollController,
       padding: EdgeInsets.fromLTRB(
         MediaQuery.sizeOf(context).width < 360 ? 10 : 14,
-        10,
+        46,
         MediaQuery.sizeOf(context).width < 360 ? 10 : 14,
         14,
       ),
@@ -1861,7 +2610,7 @@ class _DMChatScreenState extends State<DMChatScreen>
             !_isSameDay(message.createdAt, messages[index + 1].createdAt);
 
         return KeyedSubtree(
-          key: ValueKey(message.id),
+          key: _messageLayoutKeys.putIfAbsent(message.id, GlobalKey.new),
           child: Column(
             children: [
               if (showDateSeparator) _buildDateSeparator(message.createdAt),
@@ -2194,16 +2943,38 @@ class _DMChatScreenState extends State<DMChatScreen>
                     if (hasText) const SizedBox(height: 8),
                   ],
                   if (hasText)
-                    Text(
-                      message.text,
-                      style: const TextStyle(
-                        color: DMColors.otherMessageText,
-                        fontFamily: 'Inter',
-                        fontFamilyFallback: const ['NotoSansKR'],
-                        fontSize: 15,
-                        height: 1.35,
-                        fontWeight: FontWeight.w500,
-                      ),
+                    Row(
+                      mainAxisSize: MainAxisSize.min,
+                      crossAxisAlignment: CrossAxisAlignment.center,
+                      children: [
+                        Flexible(
+                          child: Text(
+                            _displayTextForMessage(message),
+                            key: ValueKey(
+                              'dm_message_text_${message.id}_'
+                              '${_translationShowsOriginal ? 'original' : 'translated'}',
+                            ),
+                            style: const TextStyle(
+                              color: DMColors.otherMessageText,
+                              fontFamily: 'Inter',
+                              fontFamilyFallback: const ['NotoSansKR'],
+                              fontSize: 15,
+                              height: 1.35,
+                              fontWeight: FontWeight.w500,
+                            ),
+                          ),
+                        ),
+                        if (_isTranslationPending(message)) ...[
+                          const SizedBox(width: 6),
+                          const SizedBox.square(
+                            dimension: 12,
+                            child: CircularProgressIndicator(
+                              strokeWidth: 1.6,
+                              color: Color(0xFF76AFCB),
+                            ),
+                          ),
+                        ],
+                      ],
                     ),
                 ],
               ),

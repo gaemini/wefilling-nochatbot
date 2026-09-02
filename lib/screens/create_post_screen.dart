@@ -57,12 +57,18 @@ class CreatePostScreen extends StatefulWidget {
 }
 
 class _CreatePostScreenState extends State<CreatePostScreen> {
+  static const int _maxPostImages = 15;
+  static const double _pickedImageMaxDimension = 2400;
+  static const int _pickedImageQuality = 88;
+
   final _contentController = TextEditingController();
   final _contentFocusNode = FocusNode();
   final _composeScrollController = ScrollController();
   final _visibilityScrollController = ScrollController();
   final List<File> _selectedImages = [];
   final List<AssetEntity> _selectedAssets = [];
+  final List<File> _standaloneImages = [];
+  final ImagePicker _imagePicker = ImagePicker();
   final PostService _postService = PostService();
   final _friendCategoryService = FriendCategoryService();
   final _usersRepository = UsersRepository();
@@ -118,7 +124,8 @@ class _CreatePostScreenState extends State<CreatePostScreen> {
     return path.isNotEmpty && File(path).existsSync();
   }
 
-  int get _expectedResolvedImageCount => _selectedAssets.length;
+  int get _expectedResolvedImageCount =>
+      _selectedAssets.length + _standaloneImages.length;
 
   @override
   void initState() {
@@ -185,7 +192,9 @@ class _CreatePostScreenState extends State<CreatePostScreen> {
         // 직전에 linkPreview 전용 Storage 경로로 영구 저장된다.
         _sharedPayloadImagePath = imagePath;
       } else {
-        _selectedImages.add(File(imagePath));
+        final sharedImage = File(imagePath);
+        _standaloneImages.add(sharedImage);
+        _selectedImages.add(sharedImage);
       }
     }
     if (!request.hasUrl) return;
@@ -420,46 +429,201 @@ class _CreatePostScreenState extends State<CreatePostScreen> {
     setState(() {
       _selectedImages
         ..clear()
-        ..addAll(files);
+        ..addAll(files)
+        ..addAll(_standaloneImages);
       _isResolvingSelectedImages = false;
     });
   }
 
-  Future<void> _selectImages() async {
+  Future<void> _showImageSourceSheet() async {
     // Instagram/YouTube 공유 포스트는 링크 미리보기가 미디어 역할을 한다.
     // 외부 앱이 함께 전달한 이미지는 Instagram 썸네일 후보로만 사용하며,
     // 일반 포스트 첨부 이미지 목록에는 추가하지 않는다.
+    if (_isExternalSocialShare || _selectedImages.length >= _maxPostImages) {
+      return;
+    }
+
+    _dismissKeyboard();
+    final l10n = AppLocalizations.of(context)!;
+    final source = await showModalBottomSheet<ImageSource>(
+      context: context,
+      useSafeArea: true,
+      backgroundColor: Colors.white,
+      showDragHandle: true,
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(22)),
+      ),
+      builder: (sheetContext) {
+        final sheetWidth = MediaQuery.sizeOf(sheetContext).width;
+        final horizontalPadding = sheetWidth < 360 ? 16.0 : 20.0;
+        return SafeArea(
+          top: false,
+          child: Padding(
+            padding: EdgeInsets.fromLTRB(
+              horizontalPadding,
+              0,
+              horizontalPadding,
+              12,
+            ),
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Row(
+                  children: [
+                    Expanded(
+                      child: Text(
+                        l10n.imageAttachment,
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                        style: TextStyle(
+                          fontFamily: 'Inter',
+                          fontFamilyFallback: const ['NotoSansKR'],
+                          fontSize: context.rf(16).clamp(15, 17).toDouble(),
+                          fontWeight: FontWeight.w800,
+                          color: const Color(0xFF111827),
+                        ),
+                      ),
+                    ),
+                    Text(
+                      '${_selectedImages.length}/$_maxPostImages',
+                      style: TextStyle(
+                        fontFamily: 'Inter',
+                        fontSize: context.rf(13).clamp(12, 14).toDouble(),
+                        fontWeight: FontWeight.w700,
+                        color: const Color(0xFF6B7280),
+                      ),
+                    ),
+                  ],
+                ),
+                const SizedBox(height: 8),
+                _buildImageSourceOption(
+                  icon: Icons.photo_library_outlined,
+                  label: l10n.selectFromGallery,
+                  onTap: () =>
+                      Navigator.of(sheetContext).pop(ImageSource.gallery),
+                ),
+                _buildImageSourceOption(
+                  icon: Icons.photo_camera_outlined,
+                  label: l10n.takePhoto,
+                  onTap: () =>
+                      Navigator.of(sheetContext).pop(ImageSource.camera),
+                ),
+              ],
+            ),
+          ),
+        );
+      },
+    );
+
+    if (!mounted || source == null) return;
+    if (source == ImageSource.camera) {
+      await _takePhoto();
+      return;
+    }
+    await _selectImagesFromGallery();
+  }
+
+  Widget _buildImageSourceOption({
+    required IconData icon,
+    required String label,
+    required VoidCallback onTap,
+  }) {
+    return Material(
+      color: Colors.transparent,
+      child: InkWell(
+        onTap: onTap,
+        child: ConstrainedBox(
+          constraints: const BoxConstraints(minHeight: 52),
+          child: Row(
+            children: [
+              SizedBox.square(
+                dimension: 34,
+                child: Icon(
+                  icon,
+                  size: context.ri(21).clamp(20, 23).toDouble(),
+                  color: const Color(0xFF475467),
+                ),
+              ),
+              const SizedBox(width: 10),
+              Expanded(
+                child: Text(
+                  label,
+                  maxLines: 2,
+                  overflow: TextOverflow.ellipsis,
+                  style: TextStyle(
+                    fontFamily: 'Inter',
+                    fontFamilyFallback: const ['NotoSansKR'],
+                    fontSize: context.rf(14).clamp(13, 15).toDouble(),
+                    fontWeight: FontWeight.w700,
+                    color: const Color(0xFF111827),
+                  ),
+                ),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+
+  Future<void> _selectImagesFromGallery() async {
     if (_isExternalSocialShare) return;
 
+    try {
+      await _selectImagesFromGalleryInternal();
+    } on PlatformException catch (error, stackTrace) {
+      Logger.error('포스트 이미지 선택 실패', error, stackTrace);
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text(AppLocalizations.of(context)!.imageSelectError)),
+      );
+    } catch (error, stackTrace) {
+      Logger.error('포스트 이미지 선택 실패', error, stackTrace);
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text(AppLocalizations.of(context)!.imageSelectError)),
+      );
+    }
+  }
+
+  Future<void> _selectImagesFromGalleryInternal() async {
     if (Platform.isAndroid) {
-      final remaining = 15 - _selectedImages.length;
+      final remaining = _maxPostImages - _selectedImages.length;
       if (remaining <= 0) return;
-      final picker = ImagePicker();
       final picked = remaining == 1
           ? <XFile>[
-              if (await picker.pickImage(
+              if (await _imagePicker.pickImage(
                 source: ImageSource.gallery,
+                imageQuality: _pickedImageQuality,
+                maxWidth: _pickedImageMaxDimension,
+                maxHeight: _pickedImageMaxDimension,
                 requestFullMetadata: false,
               )
                   case final image?)
                 image,
             ]
-          : await picker.pickMultiImage(
+          : await _imagePicker.pickMultiImage(
               limit: remaining,
+              imageQuality: _pickedImageQuality,
+              maxWidth: _pickedImageMaxDimension,
+              maxHeight: _pickedImageMaxDimension,
               requestFullMetadata: false,
             );
       if (!mounted || picked.isEmpty) return;
+      final files = picked
+          .take(remaining)
+          .map((image) => File(image.path))
+          .toList(growable: false);
       setState(() {
-        _selectedImages.addAll(
-          picked.take(remaining).map((image) => File(image.path)),
-        );
+        _standaloneImages.addAll(files);
+        _selectedImages.addAll(files);
       });
-      await _checkImagesSize();
       _checkCanProceed();
       return;
     }
 
-    final maxAssets = 15;
+    final maxAssets = _maxPostImages - _standaloneImages.length;
     if (maxAssets <= 0) return;
     final pickedAssets = await AssetPicker.pickAssets(
       context,
@@ -480,31 +644,41 @@ class _CreatePostScreenState extends State<CreatePostScreen> {
     });
 
     await _syncSelectedImagesFromAssets();
-    await _checkImagesSize();
     _checkCanProceed();
   }
 
-  Future<void> _checkImagesSize() async {
-    if (_selectedImages.isEmpty) return;
+  Future<void> _takePhoto() async {
+    if (_selectedImages.length >= _maxPostImages) return;
+    final l10n = AppLocalizations.of(context)!;
+    try {
+      final picked = await _imagePicker.pickImage(
+        source: ImageSource.camera,
+        imageQuality: _pickedImageQuality,
+        maxWidth: _pickedImageMaxDimension,
+        maxHeight: _pickedImageMaxDimension,
+        requestFullMetadata: false,
+      );
+      if (!mounted || picked == null) return;
 
-    var totalSize = 0;
-    for (final image in _selectedImages) {
-      totalSize += await image.length();
+      final file = File(picked.path);
+      setState(() {
+        _standaloneImages.add(file);
+        _selectedImages.add(file);
+      });
+      _checkCanProceed();
+    } on PlatformException catch (error, stackTrace) {
+      Logger.error('포스트 사진 촬영 실패', error, stackTrace);
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text(l10n.photoError)),
+      );
+    } catch (error, stackTrace) {
+      Logger.error('포스트 사진 촬영 실패', error, stackTrace);
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text(l10n.photoError)),
+      );
     }
-
-    final sizeInMB = totalSize / (1024 * 1024);
-    if (!mounted || sizeInMB <= 10) return;
-
-    ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(
-        content: Text(
-          AppLocalizations.of(context)!
-              .totalImageSizeWarning(sizeInMB.toStringAsFixed(1)),
-        ),
-        backgroundColor: Colors.orange,
-        duration: const Duration(seconds: 5),
-      ),
-    );
   }
 
   Future<void> _previewSelectedImages({int initialIndex = 0}) async {
@@ -527,18 +701,20 @@ class _CreatePostScreenState extends State<CreatePostScreen> {
 
   Future<void> _removeImage(int index) async {
     if (index < 0 || index >= _selectedImages.length) return;
-    if (Platform.isAndroid) {
-      setState(() => _selectedImages.removeAt(index));
-      _checkCanProceed();
-      return;
-    }
-    setState(() {
-      final assetIndex = index;
-      if (assetIndex >= 0 && assetIndex < _selectedAssets.length) {
-        _selectedAssets.removeAt(assetIndex);
+    final assetCount = _selectedAssets.length;
+    if (index < assetCount) {
+      setState(() => _selectedAssets.removeAt(index));
+      await _syncSelectedImagesFromAssets();
+    } else {
+      final standaloneIndex = index - assetCount;
+      if (standaloneIndex < 0 || standaloneIndex >= _standaloneImages.length) {
+        return;
       }
-    });
-    await _syncSelectedImagesFromAssets();
+      setState(() {
+        _standaloneImages.removeAt(standaloneIndex);
+        _selectedImages.removeAt(index);
+      });
+    }
     _checkCanProceed();
   }
 
@@ -1122,12 +1298,14 @@ class _CreatePostScreenState extends State<CreatePostScreen> {
   }
 
   Widget _buildAddImageButton(AppLocalizations l10n) {
+    final canAddImage = _selectedImages.length < _maxPostImages;
     return Align(
       alignment: Alignment.centerLeft,
       child: TextButton.icon(
-        onPressed: _selectImages,
+        onPressed: canAddImage ? _showImageSourceSheet : null,
         style: TextButton.styleFrom(
           foregroundColor: const Color(0xFF475467),
+          disabledForegroundColor: const Color(0xFF98A2B3),
           padding: const EdgeInsets.symmetric(horizontal: 2, vertical: 8),
           minimumSize: const Size(44, 44),
           tapTargetSize: MaterialTapTargetSize.padded,
@@ -1245,7 +1423,7 @@ class _CreatePostScreenState extends State<CreatePostScreen> {
               if (!_isExternalSocialShare) ...[
                 _buildSectionLabel(
                   imageLabel,
-                  trailing: '${_selectedImages.length}/15',
+                  trailing: '${_selectedImages.length}/$_maxPostImages',
                 ),
                 _buildAddImageButton(l10n),
                 if (_selectedImages.isNotEmpty) ...[

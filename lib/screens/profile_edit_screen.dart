@@ -452,6 +452,13 @@ class _ProfileEditScreenState extends State<ProfileEditScreen> {
         if (_useDefaultImage) {
           Logger.log("🗑️ 기본 이미지로 변경 요청");
 
+          // 기본 이미지 초기화는 즉시 Firestore/Storage를 변경하므로, 닉네임
+          // 충돌이 있다면 그보다 먼저 서버의 최종 claim transaction에서
+          // 거절한다. 성공 전에는 기존 사진과 프로필 캐시도 그대로 유지된다.
+          if (requestedNickname != currentNickname) {
+            await authProvider.saveUniqueNickname(requestedNickname);
+          }
+
           // resetProfilePhotoToDefault를 호출하여 Storage 이미지 삭제 및 과거 콘텐츠 업데이트
           final success = await authProvider.resetProfilePhotoToDefault();
 
@@ -601,18 +608,21 @@ class _ProfileEditScreenState extends State<ProfileEditScreen> {
           final networkError = e is TimeoutException ||
               (e is FirebaseFunctionsException &&
                   (e.code == 'unavailable' || e.code == 'deadline-exceeded'));
-          ScaffoldMessenger.of(
-            context,
-          ).showSnackBar(SnackBar(
-              content: Text(nicknameTaken
-                  ? (Localizations.localeOf(context).languageCode == 'ko'
-                      ? '이미 사용 중인 닉네임이에요.'
-                      : 'This nickname is already in use.')
-                  : networkError
-                      ? (Localizations.localeOf(context).languageCode == 'ko'
-                          ? '인터넷 연결을 확인해 주세요.'
-                          : 'Check your internet connection.')
-                      : '${AppLocalizations.of(context)!.error}: $e')));
+          final isKorean = Localizations.localeOf(context).languageCode == 'ko';
+          final message = nicknameTaken
+              ? (isKorean
+                  ? '이미 사용 중인 닉네임이에요.'
+                  : 'This nickname is already in use.')
+              : networkError
+                  ? (isKorean
+                      ? '인터넷 연결을 확인해 주세요.'
+                      : 'Check your internet connection.')
+                  : (isKorean
+                      ? '프로필을 저장하지 못했어요. 잠시 후 다시 시도해 주세요.'
+                      : 'Could not save your profile. Please try again shortly.');
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(content: Text(message)),
+          );
         }
       } finally {
         if (mounted) {

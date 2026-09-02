@@ -266,6 +266,10 @@ class MeetupHomePageState extends State<MeetupHomePage> with PreloadMixin {
       case 'cafe':
       case '카페':
         return 'cafe';
+      case 'trip':
+      case 'travel':
+      case '여행':
+        return 'trip';
       case 'drink':
       case 'drinks':
       case '술':
@@ -838,6 +842,7 @@ class MeetupHomePageState extends State<MeetupHomePage> with PreloadMixin {
       {'key': 'study', 'label': AppLocalizations.of(context)!.study},
       {'key': 'meal', 'label': AppLocalizations.of(context)!.meal},
       {'key': 'cafe', 'label': AppLocalizations.of(context)!.cafe},
+      {'key': 'trip', 'label': AppLocalizations.of(context)!.trip},
       {'key': 'hangout', 'label': AppLocalizations.of(context)!.hangout},
       {'key': 'culture', 'label': AppLocalizations.of(context)!.culture},
       {'key': 'etc', 'label': AppLocalizations.of(context)!.other},
@@ -1506,6 +1511,7 @@ class _AllMeetupsScreenState extends State<_AllMeetupsScreen> {
         {'key': 'study', 'label': AppLocalizations.of(context)!.study},
         {'key': 'meal', 'label': AppLocalizations.of(context)!.meal},
         {'key': 'cafe', 'label': AppLocalizations.of(context)!.cafe},
+        {'key': 'trip', 'label': AppLocalizations.of(context)!.trip},
         {'key': 'hangout', 'label': AppLocalizations.of(context)!.hangout},
         {'key': 'culture', 'label': AppLocalizations.of(context)!.culture},
         {'key': 'etc', 'label': AppLocalizations.of(context)!.other},

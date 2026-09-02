@@ -27,6 +27,20 @@ List<String> _normalizePostCategoryKeys(
   return <String>[PostCategory.fromPersistedValue(legacyKey).key];
 }
 
+List<String> _selectPostStringList(Object? primary, Object? legacy) {
+  List<String> parse(Object? raw) {
+    if (raw is! Iterable) return const <String>[];
+    return raw
+        .map((value) => value?.toString().trim() ?? '')
+        .where((value) => value.isNotEmpty)
+        .toSet()
+        .toList(growable: false);
+  }
+
+  final canonical = parse(primary);
+  return canonical.isNotEmpty ? canonical : parse(legacy);
+}
+
 class PollOption {
   final String id;
   final String text;
@@ -391,10 +405,13 @@ class Post {
       pollTotalVotes: map['pollTotalVotes'] ?? 0,
       visibility: map['visibilityMode'] ?? map['visibility'] ?? 'public',
       isAnonymous: map['isAnonymous'] ?? false,
-      visibleToCategoryIds: List<String>.from(
-          map['sourceGroupIds'] ?? map['visibleToCategoryIds'] ?? []),
-      allowedUserIds: List<String>.from(
-        map['audienceUserIdsFrozen'] ?? map['allowedUserIds'] ?? [],
+      visibleToCategoryIds: _selectPostStringList(
+        map['sourceGroupIds'],
+        map['visibleToCategoryIds'],
+      ),
+      allowedUserIds: _selectPostStringList(
+        map['audienceUserIdsFrozen'],
+        map['allowedUserIds'],
       ),
       visibilitySchemaVersion:
           (map['visibilitySchemaVersion'] as num?)?.toInt() ?? 0,

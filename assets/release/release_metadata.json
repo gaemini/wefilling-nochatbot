@@ -1,0 +1,38 @@
+{
+  "schemaVersion": 1,
+  "versionName": "1.3.5",
+  "buildNumber": 75,
+  "cacheSchemaVersion": 1,
+  "releaseChannel": "production",
+  "releaseId": "wefilling-1.3.5-75",
+  "firebaseProjectId": "flutterproject3-af322",
+  "android": {
+    "applicationId": "com.wefilling.app",
+    "flavor": "production",
+    "entryPoint": "lib/main.dart",
+    "firebaseAppId": "1:700373659727:android:6ed1d025e166b6b16b3a3a",
+    "storeUrl": "https://play.google.com/store/apps/details?id=com.wefilling.app",
+    "releaseState": "draft"
+  },
+  "ios": {
+    "bundleId": "com.wefilling.app",
+    "scheme": "Runner",
+    "configuration": "Release",
+    "teamId": "ULTS66B6QD",
+    "firebaseAppId": "1:700373659727:ios:87981cca82334bbf6b3a3a",
+    "appStoreId": "6756271839",
+    "storeUrl": "https://apps.apple.com/app/id6756271839",
+    "releaseState": "draft"
+  },
+  "migrations": {
+    "1": [
+      "metadata",
+      "posts",
+      "comments",
+      "my_page_tabs_v1",
+      "user_profiles_v2",
+      "content_translations_v1",
+      "wefilling_image_cache_v1"
+    ]
+  }
+}

@@ -3,16 +3,40 @@
 // Firestore에서 사용자 정보를 조회하고 관리
 
 import 'package:cloud_firestore/cloud_firestore.dart';
+import 'package:cloud_functions/cloud_functions.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import '../models/user_profile.dart';
 import '../models/relationship_status.dart';
 import '../models/friend_request.dart';
+import '../services/content_filter_service.dart';
 import '../utils/logger.dart';
 import '../utils/account_status_helper.dart';
+
+class SnackChatUserSearchPage {
+  const SnackChatUserSearchPage({
+    required this.users,
+    this.nextCursor,
+  });
+
+  final List<UserProfile> users;
+  final String? nextCursor;
+}
+
+class _SnackChatUserSearchCacheEntry {
+  const _SnackChatUserSearchCacheEntry({
+    required this.users,
+    required this.cachedAt,
+  });
+
+  final List<UserProfile> users;
+  final DateTime cachedAt;
+}
 
 class UsersRepository {
   final FirebaseFirestore _firestore = FirebaseFirestore.instance;
   final FirebaseAuth _auth = FirebaseAuth.instance;
+  final FirebaseFunctions _functions =
+      FirebaseFunctions.instanceFor(region: 'us-central1');
 
   // 컬렉션 이름 상수
   static const String _usersCollection = 'users';
@@ -24,6 +48,9 @@ class UsersRepository {
   static final Map<String, UserProfile> _profileCache = {};
   static final Map<String, DateTime> _cacheTimestamps = {};
   static const Duration _cacheExpiry = Duration(minutes: 5);
+  static final Map<String, _SnackChatUserSearchCacheEntry>
+      _snackChatSearchCache = {};
+  static const Duration _snackChatSearchCacheExpiry = Duration(minutes: 1);
 
   /// 현재 로그인한 사용자 ID 가져오기
   String? get currentUserId => _auth.currentUser?.uid;
@@ -161,6 +188,7 @@ class UsersRepository {
   void clearCache() {
     _profileCache.clear();
     _cacheTimestamps.clear();
+    _snackChatSearchCache.clear();
     Logger.log('🗑️ 프로필 캐시 초기화');
   }
 
@@ -224,6 +252,259 @@ class UsersRepository {
     } catch (e) {
       Logger.error('사용자 검색 오류: $e');
       return [];
+    }
+  }
+
+  /// Snack Chat 초대용 사용자 ID(고유 닉네임) 정확 검색.
+  ///
+  /// 전체 사용자 문서를 내려받아 부분 검색하지 않고, 가입/닉네임 변경 때
+  /// 서버가 저장한 `nicknameKey`를 이용해 한 사람만 조회한다. 차단 관계는
+  /// 양방향 모두 숨기며, 차단 상태를 확인하지 못한 경우에도 결과를 노출하지
+  /// 않는다.
+  Future<UserProfile?> searchActiveUserByNicknameId(String query) async {
+    final currentUid = currentUserId;
+    final nickname = query.trim();
+    final nicknameKey = nickname.toLowerCase();
+    if (currentUid == null || nicknameKey.length < 2) return null;
+
+    try {
+      final response = await _functions
+          .httpsCallable('searchSnackChatInviteUserById')
+          .call(<String, dynamic>{'nickname': nickname});
+      final data = response.data;
+      final userId =
+          data is Map ? (data['userId'] ?? '').toString().trim() : '';
+      if (userId.isEmpty || userId == currentUid) return null;
+      return getUserProfile(userId);
+    } on FirebaseFunctionsException catch (error) {
+      // 앱과 Functions가 순차 배포되는 동안에는 아래의 정확 조회 호환
+      // 경로를 사용한다.
+      Logger.error('Snack Chat 서버 사용자 ID 검색 오류: ${error.code}');
+    } catch (error) {
+      Logger.error('Snack Chat 서버 사용자 ID 검색 오류: $error');
+    }
+
+    try {
+      final displayVariants = <String>{
+        nickname,
+        nicknameKey,
+        nicknameKey.toUpperCase(),
+        nicknameKey.isEmpty
+            ? nicknameKey
+            : '${nicknameKey[0].toUpperCase()}${nicknameKey.substring(1)}',
+      }..removeWhere((value) => value.isEmpty);
+      final snapshots = await Future.wait([
+        _firestore
+            .collection(_usersCollection)
+            .where('nicknameKey', isEqualTo: nicknameKey)
+            .limit(2)
+            .get(const GetOptions(source: Source.server)),
+        ...displayVariants.map(
+          (value) => _firestore
+              .collection(_usersCollection)
+              .where('nickname', isEqualTo: value)
+              .limit(2)
+              .get(const GetOptions(source: Source.server)),
+        ),
+      ]);
+      final candidates =
+          <String, QueryDocumentSnapshot<Map<String, dynamic>>>{};
+      for (final snapshot in snapshots) {
+        for (final document in snapshot.docs) {
+          final storedNickname =
+              (document.data()['nickname'] ?? '').toString().trim();
+          if (document.id == currentUid ||
+              storedNickname.toLowerCase() != nicknameKey ||
+              isUnavailableUserAccountData(document.data())) {
+            continue;
+          }
+          candidates[document.id] = document;
+        }
+      }
+      if (candidates.length != 1) return null;
+
+      final document = candidates.values.single;
+      if (await _hasBlockRelationshipFailClosed(currentUid, document.id)) {
+        return null;
+      }
+
+      final profile = UserProfile.fromFirestore(document);
+      _profileCache[document.id] = profile;
+      _cacheTimestamps[document.id] = DateTime.now();
+      return profile;
+    } catch (error) {
+      Logger.error('Snack Chat 사용자 ID 검색 오류: $error');
+      rethrow;
+    }
+  }
+
+  /// 검색 페이지와 동일한 닉네임 검색으로 Snack Chat 초대 대상을 찾는다.
+  ///
+  /// 기존 검색 페이지가 사용하는 대소문자 무시 부분 문자열·한글 초성
+  /// 매칭과 관련도 정렬을 그대로 재사용한다. 검색 결과는 1분간 메모리에
+  /// 보관해 추가 페이지를 다시 다운로드하지 않고 10명씩 반환한다.
+  Future<SnackChatUserSearchPage> searchSnackChatInviteUsersLikeNameSearch(
+    String query, {
+    String? cursor,
+  }) async {
+    final currentUid = currentUserId;
+    final normalized = query.trim().toLowerCase();
+    if (currentUid == null || normalized.isEmpty) {
+      return const SnackChatUserSearchPage(users: <UserProfile>[]);
+    }
+
+    final offset = cursor == null ? 0 : int.tryParse(cursor.trim());
+    if (offset == null || offset < 0) {
+      throw const FormatException('Invalid Snack Chat search cursor');
+    }
+
+    final cacheKey = '$currentUid::$normalized';
+    final now = DateTime.now();
+    var cached = _snackChatSearchCache[cacheKey];
+    if (cached == null ||
+        now.difference(cached.cachedAt) > _snackChatSearchCacheExpiry) {
+      final results = await searchUsers(query, limit: 100);
+      final excludedUserIds = await ContentFilterService.getExcludedUserIds();
+      cached = _SnackChatUserSearchCacheEntry(
+        users: results
+            .where((profile) => !excludedUserIds.contains(profile.uid))
+            .toList(growable: false),
+        cachedAt: now,
+      );
+      _snackChatSearchCache
+        ..removeWhere(
+          (_, entry) =>
+              now.difference(entry.cachedAt) > _snackChatSearchCacheExpiry,
+        )
+        ..[cacheKey] = cached;
+    }
+
+    if (offset >= cached.users.length) {
+      return const SnackChatUserSearchPage(users: <UserProfile>[]);
+    }
+    final end = (offset + 10).clamp(0, cached.users.length);
+    return SnackChatUserSearchPage(
+      users: cached.users.sublist(offset, end),
+      nextCursor: end < cached.users.length ? '$end' : null,
+    );
+  }
+
+  /// 전체 활성 사용자를 고유 닉네임 철자로 검색한다.
+  ///
+  /// `nicknameKey` 인덱스를 이용한 대소문자 무시 접두어 검색이며, 친구
+  /// 관계와 무관하게 최대 10명씩 반환한다. 본인·탈퇴 계정·차단 관계는
+  /// 서버에서 제외한다.
+  Future<SnackChatUserSearchPage> searchActiveUsersByNicknamePrefix(
+    String query, {
+    String? cursor,
+  }) async {
+    final currentUid = currentUserId;
+    final normalized = query.trim().toLowerCase();
+    if (currentUid == null || normalized.length < 2) {
+      return const SnackChatUserSearchPage(users: <UserProfile>[]);
+    }
+
+    try {
+      final response = await _functions
+          .httpsCallable('searchSnackChatInviteUsers')
+          .call(<String, dynamic>{
+        'query': normalized,
+        if (cursor != null && cursor.isNotEmpty) 'cursor': cursor,
+      });
+      final data = response.data;
+      if (data is! Map) {
+        throw const FormatException('Invalid Snack Chat user search response');
+      }
+      final rawUsers = data['users'];
+      final now = DateTime.now();
+      final users = rawUsers is List
+          ? rawUsers.whereType<Map>().map((raw) {
+              return UserProfile(
+                uid: (raw['uid'] ?? '').toString(),
+                nickname: (raw['nickname'] ?? '').toString(),
+                photoURL: (raw['photoURL'] ?? '').toString().trim().isEmpty
+                    ? null
+                    : raw['photoURL'].toString(),
+                createdAt: now,
+                updatedAt: now,
+              );
+            }).where((profile) {
+              return profile.uid.isNotEmpty && profile.uid != currentUid;
+            }).toList(growable: false)
+          : const <UserProfile>[];
+      final nextCursor = (data['nextCursor'] ?? '').toString().trim();
+      return SnackChatUserSearchPage(
+        users: users,
+        nextCursor: nextCursor.isEmpty ? null : nextCursor,
+      );
+    } on FirebaseFunctionsException catch (error) {
+      Logger.error('Snack Chat 전체 사용자 검색 함수 오류: ${error.code}');
+    } catch (error) {
+      Logger.error('Snack Chat 전체 사용자 검색 함수 오류: $error');
+    }
+
+    // Functions 순차 배포 중에도 새 앱이 동작하도록 동일한 인덱스 조회를
+    // 사용한다. 일반 경로에서는 서버 응답 한 번으로 프로필까지 받아 N+1
+    // 읽기를 피한다.
+    try {
+      Query<Map<String, dynamic>> search = _firestore
+          .collection(_usersCollection)
+          .orderBy('nicknameKey')
+          .startAt(<Object>[normalized]).endAt(<Object>['$normalized\uf8ff']);
+      final normalizedCursor = cursor?.trim().toLowerCase() ?? '';
+      if (normalizedCursor.isNotEmpty &&
+          normalizedCursor.startsWith(normalized)) {
+        search = search.startAfter(<Object>[normalizedCursor]);
+      }
+      final snapshot =
+          await search.limit(10).get(const GetOptions(source: Source.server));
+      final active = snapshot.docs.where((document) {
+        return document.id != currentUid &&
+            !isUnavailableUserAccountData(document.data());
+      }).toList(growable: false);
+      final blocked = await Future.wait(
+        active.map(
+          (document) =>
+              _hasBlockRelationshipFailClosed(currentUid, document.id),
+        ),
+      );
+      final users = <UserProfile>[];
+      for (var index = 0; index < active.length; index++) {
+        if (blocked[index]) continue;
+        users.add(UserProfile.fromFirestore(active[index]));
+      }
+      final nextCursor = snapshot.docs.length == 10
+          ? (snapshot.docs.last.data()['nicknameKey'] ?? '').toString().trim()
+          : '';
+      return SnackChatUserSearchPage(
+        users: users,
+        nextCursor: nextCursor.isEmpty ? null : nextCursor,
+      );
+    } catch (error) {
+      Logger.error('Snack Chat 전체 사용자 호환 검색 오류: $error');
+      rethrow;
+    }
+  }
+
+  Future<bool> _hasBlockRelationshipFailClosed(
+    String currentUid,
+    String otherUid,
+  ) async {
+    try {
+      final snapshots = await Future.wait([
+        _firestore
+            .collection(_blocksCollection)
+            .doc('${currentUid}_$otherUid')
+            .get(),
+        _firestore
+            .collection(_blocksCollection)
+            .doc('${otherUid}_$currentUid')
+            .get(),
+      ]);
+      return snapshots.any((snapshot) => snapshot.exists);
+    } catch (error) {
+      Logger.error('Snack Chat 초대 차단 상태 확인 오류: $error');
+      return true;
     }
   }
 

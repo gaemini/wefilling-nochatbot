@@ -6,7 +6,7 @@ class MeetupFavoriteTemplate {
   final String title;
   final String description;
   final String location;
-  final String categoryKey; // study/meal/cafe/hangout/culture/etc
+  final String categoryKey; // study/meal/cafe/trip/hangout/culture/etc
   final String visibility; // public/friends/category
   final List<String> visibleToCategoryIds;
   final bool isUndecidedTime;

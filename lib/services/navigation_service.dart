@@ -27,6 +27,7 @@ import '../screens/snapshot_detail_screen.dart';
 import '../screens/snapshot_comment_letter_screen.dart';
 import '../screens/review_detail_screen.dart';
 import '../screens/review_approval_screen.dart';
+import '../screens/friend_profile_screen.dart';
 
 class NavigationService {
   static final GlobalKey<NavigatorState> navigatorKey =
@@ -250,6 +251,20 @@ class NavigationService {
           {
             await nav
                 .push(MaterialPageRoute(builder: (_) => const RequestsPage()));
+            return;
+          }
+        case 'friend_request_accepted':
+          {
+            final friendId = _stringValue(data, 'actorId');
+            if (friendId.isEmpty) break;
+            await nav.push(
+              MaterialPageRoute(
+                builder: (_) => FriendProfileScreen(
+                  userId: friendId,
+                  nickname: _stringValue(data, 'actorName'),
+                ),
+              ),
+            );
             return;
           }
         case 'ad_updates':

@@ -5,6 +5,7 @@
 import 'dart:async';
 import 'package:cloud_functions/cloud_functions.dart';
 import 'package:firebase_auth/firebase_auth.dart';
+import 'package:flutter/foundation.dart';
 import 'content_filter_service.dart';
 import 'post_service.dart';
 import 'cache/my_page_cache_service.dart';
@@ -19,6 +20,11 @@ class RelationshipService {
   final FirebaseAuth _auth = FirebaseAuth.instance;
   final UsersRepository _usersRepository = UsersRepository();
   final MyPageCacheService _myPageCacheService = MyPageCacheService();
+  static final Map<String, _ProfileNetworkCacheEntry> _profileNetworkCache =
+      <String, _ProfileNetworkCacheEntry>{};
+  static const Duration _profileNetworkCacheTtl = Duration(minutes: 2);
+
+  void _clearProfileNetworkCache() => _profileNetworkCache.clear();
 
   // 에뮬레이터 사용 여부 (개발 환경에서 설정)
   bool _useEmulator = false;
@@ -66,6 +72,7 @@ class RelationshipService {
       final success = result.data['success'] as bool? ?? false;
       if (success) {
         Logger.log('친구요청 전송 성공: $toUid');
+        _clearProfileNetworkCache();
         return true;
       } else {
         final error = result.data['error'] as String? ?? '알 수 없는 오류';
@@ -120,6 +127,7 @@ class RelationshipService {
       final success = result.data['success'] as bool? ?? false;
       if (success) {
         Logger.log('친구요청 취소 성공: $toUid');
+        _clearProfileNetworkCache();
         return true;
       } else {
         final error = result.data['error'] as String? ?? '알 수 없는 오류';
@@ -155,6 +163,7 @@ class RelationshipService {
 
         // 캐시 무효화 (새로운 친구 추가됨)
         invalidateUserCache(fromUid);
+        _clearProfileNetworkCache();
 
         return true;
       } else {
@@ -187,6 +196,7 @@ class RelationshipService {
       final success = result.data['success'] as bool? ?? false;
       if (success) {
         Logger.log('친구요청 거절 성공: $fromUid');
+        _clearProfileNetworkCache();
         return true;
       } else {
         final error = result.data['error'] as String? ?? '알 수 없는 오류';
@@ -222,6 +232,7 @@ class RelationshipService {
 
         // 캐시 무효화 (친구 삭제됨)
         invalidateUserCache(otherUid);
+        _clearProfileNetworkCache();
 
         return true;
       } else {
@@ -262,6 +273,7 @@ class RelationshipService {
         // ✅ 즉시 피드에서 제거되도록 in-memory 캐시 업데이트 + 재필터 emit
         ContentFilterService.addBlockedUserId(targetUid);
         PostService.instance.requestReemitWithCurrentFilters();
+        _clearProfileNetworkCache();
         return true;
       } else {
         final error = result.data['error'] as String? ?? '알 수 없는 오류';
@@ -296,6 +308,7 @@ class RelationshipService {
         // ✅ 즉시 피드에서 복구되도록 in-memory 캐시 업데이트 + 재필터 emit
         ContentFilterService.removeBlockedUserId(targetUid);
         PostService.instance.requestReemitWithCurrentFilters();
+        _clearProfileNetworkCache();
         return true;
       } else {
         final error = result.data['error'] as String? ?? '알 수 없는 오류';
@@ -445,12 +458,14 @@ class RelationshipService {
   /// 프로필 캐시 초기화
   void clearProfileCache() {
     _usersRepository.clearCache();
+    _clearProfileNetworkCache();
     Logger.log('🗑️ RelationshipService: 프로필 캐시 초기화');
   }
 
   /// 특정 사용자 프로필 캐시 무효화
   void invalidateUserCache(String userId) {
     _usersRepository.invalidateCache(userId);
+    _clearProfileNetworkCache();
     Logger.log('🗑️ RelationshipService: 프로필 캐시 무효화 - $userId');
   }
 
@@ -458,4 +473,203 @@ class RelationshipService {
   Future<List<UserProfile>> getUserFriends(String userId) async {
     return await _usersRepository.getUserFriends(userId);
   }
+
+  /// 프로필에서 사용할 친구 네트워크 페이지를 서버에서 가져온다.
+  /// 공개 범위·차단·탈퇴/정지 필터는 Cloud Function이 강제한다.
+  Future<ProfileFriendNetworkPage> getProfileFriendNetwork({
+    required String targetUid,
+    int pageSize = 6,
+    int? cursor,
+    String query = '',
+    bool forceRefresh = false,
+  }) async {
+    final cacheKey = '$currentUserId:$targetUid:$pageSize';
+    final canUseCache = cursor == null && query.trim().isEmpty;
+    final cached = _profileNetworkCache[cacheKey];
+    if (!forceRefresh &&
+        canUseCache &&
+        cached != null &&
+        DateTime.now().difference(cached.cachedAt) < _profileNetworkCacheTtl) {
+      return cached.page;
+    }
+    final dynamic result;
+    try {
+      final callable = _functions.httpsCallable('getProfileFriendNetwork');
+      result = await callable.call(<String, dynamic>{
+        'targetUid': targetUid,
+        'pageSize': pageSize,
+        if (cursor != null) 'cursor': cursor,
+        if (query.trim().isNotEmpty) 'query': query.trim(),
+      });
+    } on FirebaseFunctionsException catch (error) {
+      final message = (error.message ?? '').trim().toUpperCase();
+      final functionIsMissing = error.code == 'not-found' &&
+          (message.isEmpty || message == 'NOT_FOUND');
+      final debugAppCheckUnavailable =
+          !kReleaseMode && error.code == 'unauthenticated';
+      if (kReleaseMode || (!functionIsMissing && !debugAppCheckUnavailable)) {
+        rethrow;
+      }
+      Logger.log(
+        'ℹ️ 개발 환경 서버 조회 불가: 기존 친구 조회로 폴백',
+      );
+      return _getProfileFriendNetworkFallback(
+        targetUid: targetUid,
+        pageSize: pageSize,
+        cursor: cursor,
+        query: query,
+      );
+    }
+    final raw = Map<String, dynamic>.from(result.data as Map);
+    final items = (raw['friends'] as List? ?? const <dynamic>[])
+        .whereType<Map>()
+        .map((value) => ProfileFriendNetworkMember.fromMap(
+              Map<String, dynamic>.from(value),
+            ))
+        .toList(growable: false);
+    final page = ProfileFriendNetworkPage(
+      friends: items,
+      totalCount: (raw['totalCount'] as num?)?.toInt() ?? items.length,
+      mutualCount: (raw['mutualCount'] as num?)?.toInt() ?? 0,
+      nextCursor: (raw['nextCursor'] as num?)?.toInt(),
+    );
+    if (canUseCache) {
+      _profileNetworkCache[cacheKey] = _ProfileNetworkCacheEntry(
+        page: page,
+        cachedAt: DateTime.now(),
+      );
+    }
+    return page;
+  }
+
+  Future<ProfileFriendNetworkPage> _getProfileFriendNetworkFallback({
+    required String targetUid,
+    required int pageSize,
+    required int? cursor,
+    required String query,
+  }) async {
+    final viewerUid = currentUserId;
+    if (viewerUid == null) throw Exception('로그인이 필요합니다.');
+
+    final results = await Future.wait<List<UserProfile>>([
+      _usersRepository.getUserFriends(targetUid),
+      _usersRepository.getUserFriends(viewerUid),
+    ]);
+    Set<String> pendingOutIds = const <String>{};
+    try {
+      final pending = await _usersRepository
+          .getOutgoingRequests()
+          .first
+          .timeout(const Duration(seconds: 3));
+      pendingOutIds = pending.map((request) => request.toUid).toSet();
+    } catch (_) {
+      // 배포 전 폴백에서 요청 상태 조회가 지연되면 목록을 먼저 표시한다.
+    }
+    final excludedIds = await ContentFilterService.getExcludedUserIds();
+    final viewerFriendIds = results[1].map((profile) => profile.uid).toSet();
+    final normalizedQuery = query.trim().toLowerCase();
+    final visibleProfiles = results[0]
+        .where((profile) => !excludedIds.contains(profile.uid))
+        .where((profile) =>
+            normalizedQuery.isEmpty ||
+            profile.displayNameOrNickname
+                .toLowerCase()
+                .contains(normalizedQuery))
+        .toList(growable: false);
+
+    final mutualProfiles = viewerUid == targetUid
+        ? <UserProfile>[]
+        : visibleProfiles
+            .where((profile) =>
+                profile.uid != viewerUid &&
+                viewerFriendIds.contains(profile.uid))
+            .toList(growable: false);
+    final mutualIds = mutualProfiles.map((profile) => profile.uid).toSet();
+    final ordered = <UserProfile>[
+      ...mutualProfiles,
+      ...visibleProfiles.where((profile) => profile.uid == viewerUid),
+      ...visibleProfiles.where((profile) =>
+          profile.uid != viewerUid && !mutualIds.contains(profile.uid)),
+    ];
+    final start = (cursor ?? 0).clamp(0, ordered.length).toInt();
+    final end = (start + pageSize).clamp(start, ordered.length).toInt();
+    final members = ordered.sublist(start, end).map((profile) {
+      return ProfileFriendNetworkMember(
+        profile: profile,
+        isMutual: mutualIds.contains(profile.uid),
+        isMyFriend: viewerFriendIds.contains(profile.uid),
+        isCurrentUser: profile.uid == viewerUid,
+        isPendingOut: pendingOutIds.contains(profile.uid),
+      );
+    }).toList(growable: false);
+
+    return ProfileFriendNetworkPage(
+      friends: members,
+      totalCount: results[0]
+          .where((profile) => !excludedIds.contains(profile.uid))
+          .length,
+      mutualCount: mutualProfiles.length,
+      nextCursor: end < ordered.length ? end : null,
+    );
+  }
+}
+
+class _ProfileNetworkCacheEntry {
+  const _ProfileNetworkCacheEntry({
+    required this.page,
+    required this.cachedAt,
+  });
+
+  final ProfileFriendNetworkPage page;
+  final DateTime cachedAt;
+}
+
+class ProfileFriendNetworkPage {
+  const ProfileFriendNetworkPage({
+    required this.friends,
+    required this.totalCount,
+    required this.mutualCount,
+    this.nextCursor,
+  });
+
+  final List<ProfileFriendNetworkMember> friends;
+  final int totalCount;
+  final int mutualCount;
+  final int? nextCursor;
+}
+
+class ProfileFriendNetworkMember {
+  const ProfileFriendNetworkMember({
+    required this.profile,
+    required this.isMutual,
+    required this.isMyFriend,
+    required this.isCurrentUser,
+    required this.isPendingOut,
+  });
+
+  factory ProfileFriendNetworkMember.fromMap(Map<String, dynamic> map) {
+    final now = DateTime.now();
+    return ProfileFriendNetworkMember(
+      profile: UserProfile(
+        uid: (map['uid'] ?? '').toString(),
+        nickname: (map['nickname'] ?? '').toString(),
+        photoURL: (map['photoURL'] ?? '').toString(),
+        nationality: (map['nationality'] ?? '').toString(),
+        university: (map['university'] ?? '').toString(),
+        isSchoolVerified: map['isSchoolVerified'] == true,
+        createdAt: now,
+        updatedAt: now,
+      ),
+      isMutual: map['isMutual'] == true,
+      isMyFriend: map['isMyFriend'] == true,
+      isCurrentUser: map['isCurrentUser'] == true,
+      isPendingOut: map['isPendingOut'] == true,
+    );
+  }
+
+  final UserProfile profile;
+  final bool isMutual;
+  final bool isMyFriend;
+  final bool isCurrentUser;
+  final bool isPendingOut;
 }

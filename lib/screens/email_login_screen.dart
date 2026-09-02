@@ -11,6 +11,8 @@ import '../l10n/app_localizations.dart';
 import '../providers/auth_provider.dart' as app_auth;
 import '../screens/main_screen.dart';
 import '../screens/nickname_setup_screen.dart';
+import '../screens/hanyang_email_verification_screen.dart';
+import '../screens/password_reset_screen.dart';
 import '../utils/logger.dart';
 import '../utils/responsive_helper.dart';
 
@@ -62,11 +64,26 @@ class _EmailLoginScreenState extends State<EmailLoginScreen> {
       if (!mounted) return;
 
       if (success && authProvider.isLoggedIn) {
-        Logger.log('로그인 성공: ${authProvider.user?.email}');
+        Logger.log('이메일 로그인 성공');
 
-        // 닉네임 설정 여부 확인
-        if (!authProvider.hasNickname) {
-          Logger.log('닉네임 설정 필요 -> 닉네임 설정 화면으로 이동');
+        if (!authProvider.isRegistrationComplete) {
+          Logger.log('미완료 회원가입 -> 프로필 완료 화면으로 이동');
+          if (authProvider.registrationState ==
+              app_auth.AccountRegistrationState.authCreated) {
+            final signupLanguage =
+                (authProvider.userData?['signupLanguage'] ?? 'ko').toString();
+            Navigator.pushReplacement(
+              context,
+              MaterialPageRoute(
+                builder: (_) => signupLanguage.startsWith('en')
+                    ? const HanyangEmailVerificationScreen.general(
+                        signupLanguage: 'en',
+                      )
+                    : const HanyangEmailVerificationScreen(),
+              ),
+            );
+            return;
+          }
           Navigator.pushReplacement(
             context,
             MaterialPageRoute(builder: (_) => const NicknameSetupScreen()),
@@ -129,6 +146,25 @@ class _EmailLoginScreenState extends State<EmailLoginScreen> {
         });
       }
     }
+  }
+
+  Future<void> _openPasswordReset() async {
+    if (_isLoading) return;
+    final changed = await Navigator.of(context).push<bool>(
+      MaterialPageRoute(
+        builder: (_) => PasswordResetScreen(
+          initialEmail: _emailController.text.trim(),
+        ),
+      ),
+    );
+    if (!mounted || changed != true) return;
+    _passwordController.clear();
+    setState(() => _errorMessage = null);
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(
+        content: Text(AppLocalizations.of(context)!.signInWithNewPassword),
+      ),
+    );
   }
 
   @override
@@ -384,6 +420,32 @@ class _EmailLoginScreenState extends State<EmailLoginScreen> {
                           }
                           return null;
                         },
+                      ),
+                      Align(
+                        alignment: Alignment.centerRight,
+                        child: TextButton(
+                          onPressed: _isLoading ? null : _openPasswordReset,
+                          style: TextButton.styleFrom(
+                            foregroundColor: AppColors.pointColor,
+                            padding: EdgeInsets.symmetric(
+                              horizontal: 0,
+                              vertical:
+                                  context.rs(8).clamp(6.0, 10.0).toDouble(),
+                            ),
+                            minimumSize: const Size(0, 36),
+                            tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                          ),
+                          child: Text(
+                            l10n.forgotPassword,
+                            style: TextStyle(
+                              fontFamily: 'Inter',
+                              fontFamilyFallback: const ['NotoSansKR'],
+                              fontSize:
+                                  context.rf(13.5).clamp(13.0, 14.5).toDouble(),
+                              fontWeight: FontWeight.w600,
+                            ),
+                          ),
+                        ),
                       ),
                       if (_errorMessage != null) ...[
                         SizedBox(

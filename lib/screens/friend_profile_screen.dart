@@ -1,6 +1,5 @@
 // lib/screens/friend_profile_screen.dart
-// 친구 프로필 화면
-// 참여한 후기만 표시
+// 관계 상태와 관계없이 같은 구조를 사용하는 네트워크 프로필 화면
 
 import 'dart:async';
 
@@ -11,6 +10,7 @@ import '../services/dm_service.dart';
 import '../services/relationship_service.dart';
 import '../models/review_post.dart';
 import '../models/relationship_status.dart';
+import '../models/user_profile.dart';
 import '../constants/app_constants.dart';
 import '../widgets/country_flag_circle.dart'; // 국기 위젯 추가
 import '../l10n/app_localizations.dart';
@@ -24,7 +24,6 @@ import '../ui/widgets/profile_image_viewer.dart';
 import 'user_friends_list_screen.dart';
 import '../models/social_profile_data.dart';
 import 'social_tag_people_screen.dart';
-import '../ui/widgets/hanyang_verification_gate.dart';
 import '../utils/account_status_helper.dart';
 
 class FriendProfileScreen extends StatefulWidget {
@@ -34,8 +33,8 @@ class FriendProfileScreen extends StatefulWidget {
   final String? email;
   final String? university;
 
-  /// 게시글/댓글 등 "보드 진입"에서는 비친구라도 프로필 기본정보는 보여주되,
-  /// 리뷰(후기) 섹션은 숨기고 DM은 막는다.
+  /// 기존 호출부와의 호환을 위한 진입 힌트다. 프로필 구조는
+  /// 친구/비친구가 공유하고 관계 버튼과 DM 권한만 다르게 표시한다.
   final bool allowNonFriendsPreview;
 
   const FriendProfileScreen({
@@ -60,7 +59,6 @@ class _FriendProfileScreenState extends State<FriendProfileScreen>
   final RelationshipService _relationshipService = RelationshipService();
 
   Map<String, dynamic>? _userData;
-  Map<String, dynamic>? _viewerData;
   bool _isDeletedAccount = false;
   bool _isLoading = true;
   bool _isRelationshipLoading = true;
@@ -70,6 +68,10 @@ class _FriendProfileScreenState extends State<FriendProfileScreen>
   final Map<String, int> _statCountCache = {};
   UserProfileStats? _profileStats;
   int _statsLoadToken = 0;
+  ProfileFriendNetworkPage? _friendPreview;
+  List<ReviewPost> _reviewPreview = const <ReviewPost>[];
+  bool _isFriendPreviewLoading = true;
+  bool _isReviewPreviewLoading = true;
 
   @override
   void initState() {
@@ -78,6 +80,8 @@ class _FriendProfileScreenState extends State<FriendProfileScreen>
     _loadUserData();
     _loadRelationshipStatus();
     _loadLatestStats();
+    _loadFriendPreview();
+    _loadReviewPreview();
   }
 
   @override
@@ -117,7 +121,47 @@ class _FriendProfileScreenState extends State<FriendProfileScreen>
       _loadUserData(),
       _loadRelationshipStatus(),
       _loadLatestStats(),
+      _loadFriendPreview(forceRefresh: true),
+      _loadReviewPreview(),
     ]);
+  }
+
+  Future<void> _loadFriendPreview({bool forceRefresh = false}) async {
+    if (mounted && forceRefresh) {
+      setState(() => _isFriendPreviewLoading = true);
+    }
+    try {
+      final preview = await _relationshipService.getProfileFriendNetwork(
+        targetUid: widget.userId,
+        pageSize: 6,
+        forceRefresh: forceRefresh,
+      );
+      if (!mounted) return;
+      setState(() {
+        _friendPreview = preview;
+        _isFriendPreviewLoading = false;
+      });
+    } catch (error) {
+      Logger.error('친구 미리보기 로드 오류: $error');
+      if (mounted) setState(() => _isFriendPreviewLoading = false);
+    }
+  }
+
+  Future<void> _loadReviewPreview() async {
+    try {
+      final reviews = await _reviewService.getPublicUserReviewPreview(
+        widget.userId,
+        limit: 3,
+      );
+      if (!mounted) return;
+      setState(() {
+        _reviewPreview = reviews;
+        _isReviewPreviewLoading = false;
+      });
+    } catch (error) {
+      Logger.error('공개 후기 미리보기 로드 오류: $error');
+      if (mounted) setState(() => _isReviewPreviewLoading = false);
+    }
   }
 
   Future<void> _loadRelationshipStatus() async {
@@ -154,21 +198,11 @@ class _FriendProfileScreenState extends State<FriendProfileScreen>
 
   Future<void> _loadUserData() async {
     try {
-      final currentUserId = _relationshipService.currentUserId;
       final targetFuture = FirebaseFirestore.instance
           .collection('users')
           .doc(widget.userId)
           .get(const GetOptions(source: Source.server));
-      final viewerFuture = currentUserId == null
-          ? Future<DocumentSnapshot<Map<String, dynamic>>?>.value(null)
-          : FirebaseFirestore.instance
-              .collection('users')
-              .doc(currentUserId)
-              .get()
-              .then<DocumentSnapshot<Map<String, dynamic>>?>((value) => value);
-      final documents = await Future.wait([targetFuture, viewerFuture]);
-      final doc = documents.first!;
-      final viewerDoc = documents.last;
+      final doc = await targetFuture;
       final targetData = doc.data();
       final targetIsDeleted = !doc.exists ||
           targetData == null ||
@@ -177,7 +211,6 @@ class _FriendProfileScreenState extends State<FriendProfileScreen>
       if (!targetIsDeleted && mounted) {
         setState(() {
           _userData = targetData;
-          _viewerData = viewerDoc?.data();
           _isDeletedAccount = false;
           _isLoading = false;
         });
@@ -193,7 +226,6 @@ class _FriendProfileScreenState extends State<FriendProfileScreen>
             'photoURL': '',
             'bio': '',
           };
-          _viewerData = viewerDoc?.data();
           _isDeletedAccount = true;
           _isRelationshipLoading = false;
           _isLoading = false;
@@ -228,63 +260,89 @@ class _FriendProfileScreenState extends State<FriendProfileScreen>
     final currentUserId = _relationshipService.currentUserId;
     final isMe = currentUserId != null && currentUserId == widget.userId;
     final isFriends = _relationshipStatus == RelationshipStatus.friends;
-    // 학교 인증 정책과 친구 관계는 분리한다. 비친구도 기본 프로필과 친구요청은
-    // 사용할 수 있고, 후기/DM 같은 친구 전용 영역만 계속 숨긴다.
     final isNonFriendPreview = !isMe && !isFriends;
-    final targetIsHanyangVerified = isHanyangEmailVerified(_userData);
-    final viewerIsHanyangVerified = isHanyangEmailVerified(_viewerData);
-    final isHanyangProfileLocked =
-        !isMe && targetIsHanyangVerified && !viewerIsHanyangVerified;
+    final isBlocked = _relationshipStatus == RelationshipStatus.blocked ||
+        _relationshipStatus == RelationshipStatus.blockedBy;
 
     return Scaffold(
       appBar: AppBar(
+        toolbarHeight: MediaQuery.sizeOf(context).width < 360 ? 52 : 56,
         backgroundColor: Colors.white,
+        surfaceTintColor: Colors.white,
         elevation: 0,
+        scrolledUnderElevation: 0,
         leading: IconButton(
-          icon: const Icon(Icons.arrow_back, color: Colors.black),
+          icon: const Icon(Icons.arrow_back_rounded,
+              size: 22, color: Color(0xFF111827)),
           onPressed: () => Navigator.pop(context),
         ),
       ),
       backgroundColor: Colors.white,
       body: (_isLoading || _isRelationshipLoading)
-          ? const Center(child: CircularProgressIndicator())
+          ? _buildProfileLoadingView()
           : _isDeletedAccount
               ? _buildDeletedAccountProfile(l10n)
-              : isHanyangProfileLocked
-                  ? _buildHanyangLockedProfile(l10n)
-                  : (!isMe && !isFriends && !isNonFriendPreview)
-                      ? _buildLockedProfile(l10n)
-                      : RefreshIndicator(
-                          onRefresh: _refreshProfile,
-                          child: CustomScrollView(
-                            physics: const AlwaysScrollableScrollPhysics(),
-                            slivers: [
-                              SliverToBoxAdapter(
-                                child: _buildProfileHeader(
-                                    isNonFriendPreview: isNonFriendPreview),
-                              ),
-                              if (!isNonFriendPreview) ...[
-                                const SliverToBoxAdapter(
-                                    child: SizedBox(height: 8)),
-                                SliverToBoxAdapter(
-                                    child: _buildParticipatedReviewsHeader()),
-                                const SliverToBoxAdapter(
-                                  child: Divider(
-                                      height: 1, color: Color(0xFFE5E7EB)),
-                                ),
-                                _buildReviewGridSliver(),
-                              ],
-                              // 안드로이드 하단 네비게이션 바를 위한 여백 추가
-                              SliverToBoxAdapter(
-                                child: SizedBox(
-                                  height: bottomPadding > 0
-                                      ? bottomPadding + 16
-                                      : 16,
-                                ),
-                              ),
-                            ],
-                          ),
+              : isBlocked
+                  ? _buildLockedProfile(l10n)
+                  : RefreshIndicator(
+                      onRefresh: _refreshProfile,
+                      child: CustomScrollView(
+                        key: PageStorageKey<String>(
+                          'friend_profile_${widget.userId}',
                         ),
+                        physics: const AlwaysScrollableScrollPhysics(),
+                        slivers: [
+                          SliverToBoxAdapter(
+                            child: _buildProfileHeader(
+                                isNonFriendPreview: isNonFriendPreview),
+                          ),
+                          SliverToBoxAdapter(
+                            child: _buildFriendPreviewSection(),
+                          ),
+                          SliverToBoxAdapter(
+                            child: _buildReviewPreviewSection(),
+                          ),
+                          // 안드로이드 하단 네비게이션 바를 위한 여백 추가
+                          SliverToBoxAdapter(
+                            child: SizedBox(
+                              height:
+                                  bottomPadding > 0 ? bottomPadding + 16 : 16,
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+    );
+  }
+
+  Widget _buildProfileLoadingView() {
+    final bottom = MediaQuery.paddingOf(context).bottom;
+    return ListView(
+      physics: const NeverScrollableScrollPhysics(),
+      padding: EdgeInsets.fromLTRB(20, 20, 20, bottom + 20),
+      children: const [
+        Row(
+          children: [
+            CircleAvatar(radius: 44, backgroundColor: Color(0xFFF1F5F9)),
+            SizedBox(width: 16),
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  _SkeletonLine(width: 124, height: 18),
+                  SizedBox(height: 12),
+                  _SkeletonLine(width: 172, height: 13),
+                  SizedBox(height: 9),
+                  _SkeletonLine(width: 148, height: 13),
+                ],
+              ),
+            ),
+          ],
+        ),
+        SizedBox(height: 28),
+        _ProfileSectionSkeleton(height: 126),
+        _ProfileSectionSkeleton(height: 176),
+      ],
     );
   }
 
@@ -338,146 +396,8 @@ class _FriendProfileScreenState extends State<FriendProfileScreen>
     );
   }
 
-  Widget _buildHanyangLockedProfile(AppLocalizations l10n) {
-    final isKo = Localizations.localeOf(context).languageCode == 'ko';
-    final status = _relationshipStatus ?? RelationshipStatus.none;
-    final canRequest = status == RelationshipStatus.none ||
-        status == RelationshipStatus.blockedBy;
-    final isPending = status == RelationshipStatus.pendingOut;
-    final isFriends = status == RelationshipStatus.friends;
-    final nickname =
-        (_userData?['nickname'] ?? widget.nickname ?? l10n.user).toString();
-    final photoUrl =
-        (_userData?['photoURL'] ?? widget.photoURL ?? '').toString();
-
-    return ListView(
-      physics: const AlwaysScrollableScrollPhysics(),
-      padding: const EdgeInsets.fromLTRB(24, 28, 24, 32),
-      children: [
-        Row(
-          children: [
-            CircleAvatar(
-              radius: 34,
-              backgroundColor: const Color(0xFFF1F5F9),
-              backgroundImage:
-                  photoUrl.isNotEmpty ? NetworkImage(photoUrl) : null,
-              child: photoUrl.isEmpty
-                  ? const Icon(Icons.person_outline_rounded,
-                      size: 32, color: Color(0xFF64748B))
-                  : null,
-            ),
-            const SizedBox(width: 14),
-            Expanded(
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Text(
-                    nickname,
-                    maxLines: 1,
-                    overflow: TextOverflow.ellipsis,
-                    style: const TextStyle(
-                      fontFamily: 'Inter',
-                      fontFamilyFallback: ['NotoSansKR'],
-                      fontSize: 20,
-                      fontWeight: FontWeight.w700,
-                      color: Color(0xFF0F172A),
-                    ),
-                  ),
-                  const SizedBox(height: 5),
-                  Row(
-                    children: [
-                      const Icon(Icons.verified_rounded,
-                          size: 18, color: AppColors.pointColor),
-                      const SizedBox(width: 5),
-                      Text(
-                        isKo ? '한양대학교 인증 사용자' : 'Verified Hanyang user',
-                        style: const TextStyle(
-                          fontFamily: 'Inter',
-                          fontFamilyFallback: ['NotoSansKR'],
-                          fontSize: 13,
-                          fontWeight: FontWeight.w600,
-                          color: Color(0xFF64748B),
-                        ),
-                      ),
-                    ],
-                  ),
-                ],
-              ),
-            ),
-          ],
-        ),
-        const SizedBox(height: 42),
-        const Icon(Icons.school_outlined, size: 32, color: Color(0xFF475569)),
-        const SizedBox(height: 12),
-        Text(
-          isKo
-              ? '인증된 사용자의 프로필을 보려면\n한양메일 인증이 필요합니다.'
-              : 'Verify your Hanyang email to view\nthis verified user’s profile.',
-          textAlign: TextAlign.center,
-          style: const TextStyle(
-            fontFamily: 'Inter',
-            fontFamilyFallback: ['NotoSansKR'],
-            fontSize: 16,
-            fontWeight: FontWeight.w600,
-            height: 1.5,
-            color: Color(0xFF334155),
-          ),
-        ),
-        const SizedBox(height: 16),
-        Align(
-          child: TextButton(
-            onPressed: () async {
-              await HanyangVerificationGate.openVerification(context);
-              if (mounted) await _refreshProfile();
-            },
-            child: Text(
-              isKo ? '한양메일 인증하러 가기' : 'Verify Hanyang email',
-              style: const TextStyle(fontWeight: FontWeight.w700),
-            ),
-          ),
-        ),
-        if (isFriends) ...[
-          const SizedBox(height: 18),
-          SizedBox(
-            height: 48,
-            child: ElevatedButton.icon(
-              onPressed: _openDM,
-              icon: const Icon(Icons.message_outlined, size: 19),
-              label: Text(l10n.sendMessage),
-              style: ElevatedButton.styleFrom(
-                elevation: 0,
-                backgroundColor: const Color(0xFFF1F5F9),
-                foregroundColor: const Color(0xFF0F172A),
-              ),
-            ),
-          ),
-        ] else if (canRequest || isPending) ...[
-          const SizedBox(height: 18),
-          SizedBox(
-            height: 48,
-            child: ElevatedButton.icon(
-              onPressed: (!canRequest || _isRequestingFriend)
-                  ? null
-                  : _sendFriendRequestFromProfile,
-              icon: const Icon(Icons.person_add_alt_1_rounded, size: 19),
-              label: Text(isPending ? l10n.requestPending : l10n.friendRequest),
-              style: ElevatedButton.styleFrom(
-                elevation: 0,
-                backgroundColor: AppColors.pointColor,
-                foregroundColor: Colors.white,
-              ),
-            ),
-          ),
-        ],
-      ],
-    );
-  }
-
   Widget _buildLockedProfile(AppLocalizations l10n) {
-    final status = _relationshipStatus ?? RelationshipStatus.none;
-    final canRequest = status == RelationshipStatus.none ||
-        status == RelationshipStatus.blockedBy;
-    final isPending = status == RelationshipStatus.pendingOut;
+    final isKo = Localizations.localeOf(context).languageCode == 'ko';
 
     return Center(
       child: Padding(
@@ -500,7 +420,7 @@ class _FriendProfileScreenState extends State<FriendProfileScreen>
             ),
             const SizedBox(height: 16),
             Text(
-              l10n.friendsOnlyProfileTitle,
+              isKo ? '프로필을 볼 수 없어요' : 'Profile unavailable',
               textAlign: TextAlign.center,
               style: const TextStyle(
                 fontFamily: 'Inter',
@@ -512,7 +432,9 @@ class _FriendProfileScreenState extends State<FriendProfileScreen>
             ),
             const SizedBox(height: 8),
             Text(
-              l10n.friendsOnlyProfileSubtitle,
+              isKo
+                  ? '차단 관계에서는 프로필과 친구 목록이 표시되지 않아요.'
+                  : 'Profiles and friend lists are hidden when an account is blocked.',
               textAlign: TextAlign.center,
               style: const TextStyle(
                 fontFamily: 'Inter',
@@ -521,42 +443,6 @@ class _FriendProfileScreenState extends State<FriendProfileScreen>
                 fontWeight: FontWeight.w400,
                 color: Color(0xFF6B7280),
                 height: 1.4,
-              ),
-            ),
-            const SizedBox(height: 20),
-            SizedBox(
-              width: double.infinity,
-              height: 48,
-              child: ElevatedButton.icon(
-                onPressed: (!canRequest || _isRequestingFriend)
-                    ? null
-                    : _sendFriendRequestFromProfile,
-                icon: _isRequestingFriend
-                    ? const SizedBox(
-                        width: 18,
-                        height: 18,
-                        child: CircularProgressIndicator(strokeWidth: 2),
-                      )
-                    : const Icon(Icons.person_add_alt_1, size: 20),
-                label: Text(
-                  isPending ? l10n.requestPending : l10n.friendRequest,
-                  style: const TextStyle(
-                    fontFamily: 'Inter',
-                    fontFamilyFallback: const ['NotoSansKR'],
-                    fontSize: 15,
-                    fontWeight: FontWeight.w700,
-                  ),
-                ),
-                style: ElevatedButton.styleFrom(
-                  backgroundColor: AppColors.pointColor,
-                  foregroundColor: Colors.white,
-                  disabledBackgroundColor: const Color(0xFFE5E7EB),
-                  disabledForegroundColor: const Color(0xFF9CA3AF),
-                  elevation: 0,
-                  shape: RoundedRectangleBorder(
-                    borderRadius: BorderRadius.circular(12),
-                  ),
-                ),
               ),
             ),
           ],
@@ -624,12 +510,19 @@ class _FriendProfileScreenState extends State<FriendProfileScreen>
     final isMe = currentUserId != null && currentUserId == widget.userId;
     final isFriends = _relationshipStatus == RelationshipStatus.friends;
     final status = _relationshipStatus ?? RelationshipStatus.none;
-    final canRequest = status == RelationshipStatus.none ||
-        status == RelationshipStatus.blockedBy;
+    final canRequest = status == RelationshipStatus.none;
     final isPending = status == RelationshipStatus.pendingOut;
+    final hasIncomingRequest = status == RelationshipStatus.pendingIn;
 
+    final horizontalPadding =
+        MediaQuery.sizeOf(context).width < 360 ? 16.0 : 20.0;
     return Container(
-      padding: const EdgeInsets.fromLTRB(20, 16, 20, 20),
+      padding: EdgeInsets.fromLTRB(
+        horizontalPadding,
+        16,
+        horizontalPadding,
+        20,
+      ),
       decoration: const BoxDecoration(
         color: Colors.white,
       ),
@@ -819,9 +712,7 @@ class _FriendProfileScreenState extends State<FriendProfileScreen>
               // 친구 수 - 클릭 가능
               Expanded(
                 child: InkWell(
-                  onTap: (isMe || isFriends)
-                      ? _navigateToFriendsList
-                      : () => _showCannotViewFriendsListSnackBar(l10n),
+                  onTap: _navigateToFriendsList,
                   borderRadius: BorderRadius.circular(8),
                   child: _buildStatItemContent(
                     AppLocalizations.of(context)!.friends,
@@ -830,13 +721,13 @@ class _FriendProfileScreenState extends State<FriendProfileScreen>
                   ),
                 ),
               ),
-              Container(width: 1, height: 50, color: const Color(0xFFE5E7EB)),
+              const SizedBox(width: 8),
               _buildStatItem(
                 AppLocalizations.of(context)!.joinedMeetups,
                 cacheKey: 'friend_profile_joined_meetups',
                 isJoined: true,
               ),
-              Container(width: 1, height: 50, color: const Color(0xFFE5E7EB)),
+              const SizedBox(width: 8),
               _buildStatItem(
                 AppLocalizations.of(context)!.writtenPosts,
                 cacheKey: 'friend_profile_written_posts',
@@ -864,7 +755,14 @@ class _FriendProfileScreenState extends State<FriendProfileScreen>
                       )
                     : const Icon(Icons.person_add_alt_1, size: 20),
                 label: Text(
-                  isPending ? l10n.requestPending : l10n.friendRequest,
+                  isPending
+                      ? l10n.requestPending
+                      : hasIncomingRequest
+                          ? (Localizations.localeOf(context).languageCode ==
+                                  'ko'
+                              ? '받은 친구 요청이 있어요'
+                              : 'Friend request received')
+                          : l10n.friendRequest,
                   style: const TextStyle(
                     fontFamily: 'Inter',
                     fontFamilyFallback: const ['NotoSansKR'],
@@ -1100,27 +998,311 @@ class _FriendProfileScreenState extends State<FriendProfileScreen>
     );
   }
 
-  Widget _buildParticipatedReviewsHeader() {
-    return Padding(
-      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
-      child: Row(
-        mainAxisAlignment: MainAxisAlignment.center,
-        children: [
-          const Icon(Icons.grid_on_rounded,
-              size: 20, color: AppColors.pointColor),
-          const SizedBox(width: 8),
-          Text(
-            AppLocalizations.of(context)!.participatedReviews,
-            style: const TextStyle(
-              fontFamily: 'Inter',
-              fontFamilyFallback: const ['NotoSansKR'],
-              fontWeight: FontWeight.w600,
-              color: AppColors.pointColor,
-              fontSize: 16,
+  Widget _buildFriendPreviewSection() {
+    final isKo = Localizations.localeOf(context).languageCode == 'ko';
+    if (_isFriendPreviewLoading) {
+      return const _ProfileSectionSkeleton(height: 150);
+    }
+    final preview = _friendPreview;
+    if (preview == null) return const SizedBox.shrink();
+
+    final horizontalPadding =
+        MediaQuery.sizeOf(context).width < 360 ? 16.0 : 20.0;
+    return MediaQuery.withClampedTextScaling(
+      maxScaleFactor: 1.2,
+      child: Padding(
+        padding:
+            EdgeInsets.fromLTRB(horizontalPadding, 12, horizontalPadding, 18),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Row(
+              children: [
+                Expanded(
+                  child: Text(
+                    isKo ? '친구' : 'Friends',
+                    style: const TextStyle(
+                      fontFamily: 'Inter',
+                      fontFamilyFallback: ['NotoSansKR'],
+                      fontSize: 17,
+                      fontWeight: FontWeight.w700,
+                      color: Color(0xFF111827),
+                    ),
+                  ),
+                ),
+                TextButton(
+                  onPressed: _navigateToFriendsList,
+                  style: TextButton.styleFrom(
+                    foregroundColor: const Color(0xFF475569),
+                    padding: const EdgeInsets.symmetric(horizontal: 4),
+                    minimumSize: const Size(44, 36),
+                  ),
+                  child: Text(
+                    isKo ? '전체 보기' : 'View all',
+                    style: const TextStyle(
+                      fontFamily: 'Inter',
+                      fontFamilyFallback: ['NotoSansKR'],
+                      fontSize: 13,
+                      fontWeight: FontWeight.w600,
+                    ),
+                  ),
+                ),
+              ],
             ),
-          ),
-        ],
+            Text(
+              isKo
+                  ? '친구 ${preview.totalCount}명'
+                      '${preview.mutualCount > 0 ? ' · 함께 아는 친구 ${preview.mutualCount}명' : ''}'
+                  : '${preview.totalCount} friends'
+                      '${preview.mutualCount > 0 ? ' · ${preview.mutualCount} mutual' : ''}',
+              style: const TextStyle(
+                fontFamily: 'Inter',
+                fontFamilyFallback: ['NotoSansKR'],
+                fontSize: 13,
+                fontWeight: FontWeight.w500,
+                color: Color(0xFF64748B),
+              ),
+            ),
+            const SizedBox(height: 14),
+            if (preview.friends.isEmpty)
+              Text(
+                isKo ? '공개된 친구가 아직 없어요.' : 'No public friends yet.',
+                style: const TextStyle(
+                  fontFamily: 'Inter',
+                  fontFamilyFallback: ['NotoSansKR'],
+                  fontSize: 13,
+                  color: Color(0xFF94A3B8),
+                ),
+              )
+            else
+              SizedBox(
+                height: 82,
+                child: ListView.separated(
+                  scrollDirection: Axis.horizontal,
+                  itemCount: preview.friends.length,
+                  separatorBuilder: (_, __) => const SizedBox(width: 14),
+                  itemBuilder: (context, index) {
+                    final member = preview.friends[index];
+                    return _buildFriendPreviewMember(member);
+                  },
+                ),
+              ),
+          ],
+        ),
       ),
+    );
+  }
+
+  Widget _buildFriendPreviewMember(ProfileFriendNetworkMember member) {
+    final profile = member.profile;
+    return Semantics(
+      button: true,
+      label: profile.displayNameOrNickname,
+      child: InkWell(
+        onTap: () => _openFriendFromPreview(profile),
+        borderRadius: BorderRadius.circular(10),
+        child: SizedBox(
+          width: 62,
+          child: Column(
+            children: [
+              Stack(
+                clipBehavior: Clip.none,
+                children: [
+                  CircleAvatar(
+                    radius: 25,
+                    backgroundColor: const Color(0xFFF1F5F9),
+                    backgroundImage: profile.hasProfileImage
+                        ? NetworkImage(profile.photoURL!)
+                        : null,
+                    child: profile.hasProfileImage
+                        ? null
+                        : const Icon(Icons.person_outline_rounded,
+                            color: Color(0xFF94A3B8)),
+                  ),
+                  if (member.isMutual)
+                    const Positioned(
+                      right: -2,
+                      bottom: -1,
+                      child: CircleAvatar(
+                        radius: 8,
+                        backgroundColor: Colors.white,
+                        child: Icon(Icons.people_alt_rounded,
+                            size: 11, color: AppColors.pointColor),
+                      ),
+                    ),
+                ],
+              ),
+              const SizedBox(height: 7),
+              Text(
+                profile.displayNameOrNickname,
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+                textAlign: TextAlign.center,
+                style: const TextStyle(
+                  fontFamily: 'Inter',
+                  fontFamilyFallback: ['NotoSansKR'],
+                  fontSize: 12,
+                  fontWeight: FontWeight.w600,
+                  color: Color(0xFF334155),
+                ),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+
+  void _openFriendFromPreview(UserProfile profile) {
+    Navigator.of(context).push<void>(
+      MaterialPageRoute(
+        builder: (_) => FriendProfileScreen(
+          userId: profile.uid,
+          nickname: profile.displayNameOrNickname,
+          photoURL: profile.photoURL,
+          university: profile.university,
+          allowNonFriendsPreview: true,
+        ),
+      ),
+    );
+  }
+
+  Widget _buildReviewPreviewSection() {
+    final isKo = Localizations.localeOf(context).languageCode == 'ko';
+    if (_isReviewPreviewLoading) {
+      return const _ProfileSectionSkeleton(height: 190);
+    }
+    final horizontalPadding =
+        MediaQuery.sizeOf(context).width < 360 ? 16.0 : 20.0;
+    return MediaQuery.withClampedTextScaling(
+      maxScaleFactor: 1.2,
+      child: Padding(
+        padding:
+            EdgeInsets.fromLTRB(horizontalPadding, 8, horizontalPadding, 28),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Text(
+              isKo ? '함께한 모임 후기' : 'Meetup moments together',
+              style: const TextStyle(
+                fontFamily: 'Inter',
+                fontFamilyFallback: ['NotoSansKR'],
+                fontSize: 17,
+                fontWeight: FontWeight.w700,
+                color: Color(0xFF111827),
+              ),
+            ),
+            const SizedBox(height: 14),
+            if (_reviewPreview.isEmpty)
+              Text(
+                isKo ? '아직 공개된 모임 후기가 없어요.' : 'No public meetup reviews yet.',
+                style: const TextStyle(
+                  fontFamily: 'Inter',
+                  fontFamilyFallback: ['NotoSansKR'],
+                  fontSize: 13,
+                  color: Color(0xFF94A3B8),
+                ),
+              )
+            else
+              ..._reviewPreview.map(_buildReviewPreviewItem),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _buildReviewPreviewItem(ReviewPost review) {
+    final isKo = Localizations.localeOf(context).languageCode == 'ko';
+    final date = '${review.createdAt.year}.'
+        '${review.createdAt.month.toString().padLeft(2, '0')}.'
+        '${review.createdAt.day.toString().padLeft(2, '0')}';
+    final role = review.participationRole == 'host'
+        ? (isKo ? '모임장' : 'Host')
+        : (isKo ? '참여자' : 'Participant');
+    final imageSize = MediaQuery.sizeOf(context).width < 360 ? 68.0 : 76.0;
+    return InkWell(
+      onTap: () => Navigator.push(
+        context,
+        MaterialPageRoute(builder: (_) => ReviewDetailScreen(review: review)),
+      ),
+      child: Padding(
+        padding: const EdgeInsets.symmetric(vertical: 9),
+        child: Row(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            ClipRRect(
+              borderRadius: BorderRadius.circular(10),
+              child: SizedBox(
+                width: imageSize,
+                height: imageSize,
+                child: review.imageUrls.isNotEmpty
+                    ? Image.network(
+                        review.imageUrls.first,
+                        fit: BoxFit.cover,
+                        errorBuilder: (_, __, ___) =>
+                            _buildCompactReviewPlaceholder(),
+                      )
+                    : _buildCompactReviewPlaceholder(),
+              ),
+            ),
+            const SizedBox(width: 13),
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    review.meetupTitle,
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    style: const TextStyle(
+                      fontFamily: 'Inter',
+                      fontFamilyFallback: ['NotoSansKR'],
+                      fontSize: 14,
+                      fontWeight: FontWeight.w700,
+                      color: Color(0xFF1E293B),
+                    ),
+                  ),
+                  const SizedBox(height: 4),
+                  Text(
+                    '${review.category} · $date · $role',
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    style: const TextStyle(
+                      fontFamily: 'Inter',
+                      fontFamilyFallback: ['NotoSansKR'],
+                      fontSize: 12,
+                      fontWeight: FontWeight.w500,
+                      color: Color(0xFF64748B),
+                    ),
+                  ),
+                  if (review.content.trim().isNotEmpty) ...[
+                    const SizedBox(height: 6),
+                    Text(
+                      review.content.trim(),
+                      maxLines: 2,
+                      overflow: TextOverflow.ellipsis,
+                      style: const TextStyle(
+                        fontFamily: 'Inter',
+                        fontFamilyFallback: ['NotoSansKR'],
+                        fontSize: 12,
+                        height: 1.35,
+                        color: Color(0xFF475569),
+                      ),
+                    ),
+                  ],
+                ],
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _buildCompactReviewPlaceholder() {
+    return const ColoredBox(
+      color: Color(0xFFF1F5F9),
+      child: Icon(Icons.groups_2_outlined, color: Color(0xFF94A3B8)),
     );
   }
 
@@ -1447,16 +1629,6 @@ class _FriendProfileScreenState extends State<FriendProfileScreen>
     }
   }
 
-  void _showCannotViewFriendsListSnackBar(AppLocalizations l10n) {
-    ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(
-        content: Text(l10n.myFriendsOnly),
-        backgroundColor: Colors.black87,
-        duration: const Duration(seconds: 2),
-      ),
-    );
-  }
-
   /// DM 대화방 열기
   Future<void> _openDM() async {
     if (_isDeletedAccount) return;
@@ -1507,5 +1679,62 @@ class _FriendProfileScreenState extends State<FriendProfileScreen>
         );
       }
     }
+  }
+}
+
+class _ProfileSectionSkeleton extends StatelessWidget {
+  const _ProfileSectionSkeleton({required this.height});
+
+  final double height;
+
+  @override
+  Widget build(BuildContext context) {
+    return SizedBox(
+      height: height,
+      child: Padding(
+        padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 18),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Container(
+              width: 132,
+              height: 16,
+              decoration: BoxDecoration(
+                color: const Color(0xFFF1F5F9),
+                borderRadius: BorderRadius.circular(8),
+              ),
+            ),
+            const SizedBox(height: 14),
+            Expanded(
+              child: Container(
+                decoration: BoxDecoration(
+                  color: const Color(0xFFF8FAFC),
+                  borderRadius: BorderRadius.circular(12),
+                ),
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+class _SkeletonLine extends StatelessWidget {
+  const _SkeletonLine({required this.width, required this.height});
+
+  final double width;
+  final double height;
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      width: width,
+      height: height,
+      decoration: BoxDecoration(
+        color: const Color(0xFFF1F5F9),
+        borderRadius: BorderRadius.circular(height / 2),
+      ),
+    );
   }
 }

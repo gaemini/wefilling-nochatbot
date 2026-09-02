@@ -517,21 +517,27 @@ class _TranslationScopeToggleState extends State<TranslationScopeToggle> {
     final loading = _presentation.loading;
     final sourceLanguage =
         _sourceLanguageLabel(context, _presentation.sourceLanguage);
-    if (_presentation.sameLanguage || (!canToggle && !retryExhausted)) {
+    if (_presentation.sameLanguage ||
+        (!canToggle && !retryExhausted && !loading)) {
       return const SizedBox.shrink();
     }
-    final label = retryExhausted && !canToggle
-        ? (isKo ? '다시 번역' : 'Retry')
-        : canToggle && !showingOriginal
-            ? (isKo ? '원문 보기' : 'Original')
-            : (isKo ? '번역 보기' : 'Translate');
+    final translating = loading && !canToggle;
+    final label = translating
+        ? (isKo ? '번역 중' : 'Translating')
+        : retryExhausted && !canToggle
+            ? (isKo ? '다시 번역' : 'Retry')
+            : canToggle && !showingOriginal
+                ? (isKo ? '원문 보기' : 'Original')
+                : (isKo ? '번역 보기' : 'Translate');
 
     if (appBarAction) {
-      final compactLabel = retryExhausted && !canToggle
-          ? (isKo ? '재시도' : 'Retry')
-          : canToggle && !showingOriginal
-              ? (isKo ? '원문' : 'Original')
-              : (isKo ? '번역' : 'Translate');
+      final compactLabel = translating
+          ? (isKo ? '번역 중' : 'Translating')
+          : retryExhausted && !canToggle
+              ? (isKo ? '재시도' : 'Retry')
+              : canToggle && !showingOriginal
+                  ? (isKo ? '원문' : 'Original')
+                  : (isKo ? '번역' : 'Translate');
 
       return Row(
         mainAxisSize: MainAxisSize.min,

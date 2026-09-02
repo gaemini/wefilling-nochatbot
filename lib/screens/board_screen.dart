@@ -232,12 +232,6 @@ class BoardScreenState extends State<BoardScreen> {
   }
 
   bool _canPreparePostTranslation(Post post) {
-    if (isOwnPostForTranslation(
-      post,
-      FirebaseAuth.instance.currentUser?.uid,
-    )) {
-      return false;
-    }
     if (postTranslationSourceFields(post).isEmpty) return false;
     return !_translationService.showsOriginal('post:${post.id}');
   }

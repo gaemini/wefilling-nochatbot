@@ -95,7 +95,7 @@ class _EmailSignUpScreenState extends State<EmailSignUpScreen> {
       setState(() {
         _errorMessage = error.code == 'already-exists'
             ? l10n.hanyangEmailAlreadyUsed
-            : '${l10n.error}: ${error.message ?? error.code}';
+            : l10n.signupFailed;
         _isLoading = false;
       });
     } on FirebaseAuthException catch (error) {
@@ -113,7 +113,7 @@ class _EmailSignUpScreenState extends State<EmailSignUpScreen> {
           message = l10n.weakPassword;
           break;
         default:
-          message = '${l10n.error}: ${error.message ?? error.code}';
+          message = l10n.signupFailed;
       }
       setState(() {
         _errorMessage = message;

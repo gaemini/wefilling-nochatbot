@@ -33,16 +33,14 @@ Post _post({
 
 void main() {
   group('post translation policy', () {
-    test('identifies normal and anonymous own posts by internal uid', () {
-      expect(isOwnPostForTranslation(_post(userId: 'me'), 'me'), isTrue);
-      expect(
-        isOwnPostForTranslation(
-          _post(userId: 'me', anonymous: true),
-          'me',
-        ),
-        isTrue,
+    test('own posts keep the same translation source fields', () {
+      final ownPost = postTranslationSourceFields(_post(userId: 'me'));
+      final anonymousOwnPost = postTranslationSourceFields(
+        _post(userId: 'me', anonymous: true),
       );
-      expect(isOwnPostForTranslation(_post(userId: 'other'), 'me'), isFalse);
+
+      expect(ownPost, isNotEmpty);
+      expect(anonymousOwnPost, ownPost);
     });
 
     test('identifies my comment by internal uid', () {

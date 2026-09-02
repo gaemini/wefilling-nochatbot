@@ -24,6 +24,64 @@ class CommentService {
   final CommentCacheManager _cache = CommentCacheManager();
   final MeetupService _meetupService = MeetupService();
 
+  bool _isValidCommentTargetId(String postId) {
+    final normalized = postId.trim();
+    return normalized.isNotEmpty &&
+        normalized.length <= 1500 &&
+        !normalized.contains('/');
+  }
+
+  String _commentReadErrorCode(Object error) {
+    if (error is ArgumentError) return 'invalidPostId';
+    if (error is FirebaseException) {
+      switch (error.code) {
+        case 'permission-denied':
+          return 'permissionDenied';
+        case 'unavailable':
+        case 'deadline-exceeded':
+        case 'cancelled':
+        case 'network-request-failed':
+          return 'networkError';
+      }
+    }
+    if (error is TimeoutException) return 'networkError';
+    return 'queryError';
+  }
+
+  /// 정상 댓글 조회에는 추가 read를 만들지 않는다. 실제 query 오류가 발생한
+  /// 경우에만 원본 존재 여부와 사용되지 않는 구형 subcollection 경로를 한 번
+  /// 확인해 동일 postId의 권한/경로 문제를 구분한다.
+  Future<void> _diagnoseCommentReadFailure(
+    String postId,
+    Object error,
+    StackTrace stackTrace,
+  ) async {
+    var code = _commentReadErrorCode(error);
+    if (code != 'invalidPostId') {
+      try {
+        final post = await _firestore.collection('posts').doc(postId).get();
+        final meetup = post.exists
+            ? null
+            : await _firestore.collection('meetups').doc(postId).get();
+        if (!post.exists && meetup?.exists != true) {
+          code = 'postNotFound';
+        } else if (post.exists) {
+          final legacy =
+              await post.reference.collection('comments').limit(1).get();
+          if (legacy.docs.isNotEmpty) code = 'legacyCommentPath';
+        }
+      } catch (_) {
+        // 원래 Firestore 오류 분류를 유지한다. 진단 실패가 댓글 흐름에 새로운
+        // 오류나 재시도 요청을 추가해서는 안 된다.
+      }
+    }
+    Logger.error(
+      'commentReadFailure code=$code postId=$postId',
+      error,
+      stackTrace,
+    );
+  }
+
   // 댓글 추가 (원댓글 또는 대댓글)
   Future<bool> addComment(
     String postId,
@@ -532,14 +590,21 @@ class CommentService {
 
   // 댓글과 대댓글을 계층적으로 가져오기
   Stream<List<Comment>> getCommentsWithReplies(String postId) {
+    final normalizedPostId = postId.trim();
+    if (!_isValidCommentTargetId(normalizedPostId)) {
+      final error = ArgumentError.value(postId, 'postId', 'invalidPostId');
+      Logger.error(
+        'commentReadFailure code=invalidPostId postId=$normalizedPostId',
+        error,
+      );
+      return Stream<List<Comment>>.error(error);
+    }
     try {
       return _firestore
           .collection('comments')
-          .where('postId', isEqualTo: postId)
+          .where('postId', isEqualTo: normalizedPostId)
           .snapshots(includeMetadataChanges: true)
-          .handleError((e, st) {
-        Logger.error('댓글 스트림 오류(postId=$postId)', e);
-      }).asyncMap((snapshot) async {
+          .asyncMap((snapshot) async {
         List<Comment> allComments = snapshot.docs.map((doc) {
           return Comment.fromFirestore(doc);
         }).toList();
@@ -560,7 +625,9 @@ class CommentService {
         allComments.sort((a, b) => a.createdAt.compareTo(b.createdAt));
 
         // 신고/숨김 처리된 댓글/사용자 즉시 제외
-        await ReportService.getHiddenAnonymousCommentIdsForPost(postId);
+        await ReportService.getHiddenAnonymousCommentIdsForPost(
+          normalizedPostId,
+        );
         allComments = allComments.where((comment) {
           return !ContentHideService.shouldHideComment(
             commentId: comment.id,
@@ -569,10 +636,22 @@ class CommentService {
         }).toList();
 
         return allComments;
+      }).handleError((Object error, StackTrace stackTrace) {
+        unawaited(_diagnoseCommentReadFailure(
+          normalizedPostId,
+          error,
+          stackTrace,
+        ));
+        Error.throwWithStackTrace(error, stackTrace);
       });
     } catch (e) {
-      Logger.error('댓글 불러오기 오류: $e');
-      return Stream.empty();
+      final stackTrace = StackTrace.current;
+      unawaited(_diagnoseCommentReadFailure(
+        normalizedPostId,
+        e,
+        stackTrace,
+      ));
+      return Stream<List<Comment>>.error(e, stackTrace);
     }
   }
 

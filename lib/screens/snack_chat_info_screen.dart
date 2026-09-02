@@ -1,15 +1,16 @@
 import 'dart:async';
+import 'dart:math' as math;
 
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/material.dart';
 
-import '../constants/app_constants.dart';
 import '../l10n/app_localizations.dart';
 import '../models/snack_chat.dart';
 import '../models/user_profile.dart';
 import '../repositories/users_repository.dart';
 import '../services/snack_chat_service.dart';
 import '../ui/sheets/snack_chat_unfavorite_sheet.dart';
+import '../ui/widgets/snack_chat_participant_picker.dart';
 import '../utils/country_flag_helper.dart';
 import '../utils/responsive_helper.dart';
 import 'friend_profile_screen.dart';
@@ -127,45 +128,26 @@ class _SnackChatInfoScreenState extends State<SnackChatInfoScreen> {
     }
     _isInviteSheetOpen = true;
     final isKo = Localizations.localeOf(context).languageCode == 'ko';
-    late final List<UserProfile> myFriends;
+    List<UserProfile> myFriends = const <UserProfile>[];
     try {
       myFriends = await _usersRepository.getUserFriends(_uid!);
-    } catch (_) {
-      _isInviteSheetOpen = false;
-      if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          content: Text(
-            isKo ? '친구 목록을 불러오지 못했습니다.' : 'Could not load your friends.',
+      myFriends = myFriends
+          .where((profile) => !room.participantIds.contains(profile.uid))
+          .toList(growable: false)
+        ..sort(
+          (left, right) => left.displayNameOrNickname.compareTo(
+            right.displayNameOrNickname,
           ),
-        ),
-      );
-      return;
+        );
+    } catch (_) {
+      // 전체 탭의 사용자 ID 검색은 친구 목록 로드와 독립적으로 동작한다.
     }
-    final currentIds = room.participantIds.toSet();
-    final candidates =
-        myFriends.where((f) => !currentIds.contains(f.uid)).toList();
     if (!mounted) {
       _isInviteSheetOpen = false;
       return;
     }
 
-    if (candidates.isEmpty) {
-      _isInviteSheetOpen = false;
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          content: Text(
-            isKo ? '초대 가능한 친구가 없습니다.' : 'No friends available to invite.',
-          ),
-        ),
-      );
-      return;
-    }
-
-    final selected = <String>{};
-    var searchQuery = '';
-    var searchFieldVersion = 0;
-    var isClosing = false;
+    final selected = <String, UserProfile>{};
     Set<String>? result;
     try {
       result = await showModalBottomSheet<Set<String>>(
@@ -179,30 +161,34 @@ class _SnackChatInfoScreenState extends State<SnackChatInfoScreen> {
         builder: (sheetContext) {
           return StatefulBuilder(
             builder: (context, setSheetState) {
-              final l10n = AppLocalizations.of(context)!;
-              final visibleCandidates = candidates.where((friend) {
-                if (searchQuery.isEmpty) return true;
-                return friend.displayNameOrNickname
-                    .toLowerCase()
-                    .contains(searchQuery);
-              }).toList(growable: false);
-              final sheetHeight = (MediaQuery.sizeOf(context).height * 0.82)
-                  .clamp(420.0, 720.0)
-                  .toDouble();
+              final media = MediaQuery.of(context);
+              final keyboardHeight = media.viewInsets.bottom;
+              final availableHeight =
+                  media.size.height - keyboardHeight - media.padding.top;
+              final preferredHeight =
+                  (media.size.height * 0.86).clamp(480.0, 760.0).toDouble();
+              final sheetHeight = math.min(
+                preferredHeight,
+                math.max(0.0, availableHeight),
+              );
+              final horizontalPadding = media.size.width < 360 ? 12.0 : 16.0;
+              final keyboardVisible = keyboardHeight > 0;
 
-              return SafeArea(
-                top: false,
-                child: SizedBox(
-                  height: sheetHeight,
-                  child: MediaQuery.withClampedTextScaling(
-                    maxScaleFactor: 1.3,
+              return AnimatedPadding(
+                duration: const Duration(milliseconds: 180),
+                curve: Curves.easeOutCubic,
+                padding: EdgeInsets.only(bottom: keyboardHeight),
+                child: SafeArea(
+                  top: false,
+                  child: SizedBox(
+                    height: sheetHeight,
                     child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
+                      crossAxisAlignment: CrossAxisAlignment.stretch,
                       children: [
                         const SizedBox(height: 10),
                         Center(
                           child: Container(
-                            width: 40,
+                            width: 36,
                             height: 4,
                             decoration: BoxDecoration(
                               color: const Color(0xFFD0D5DD),
@@ -212,213 +198,117 @@ class _SnackChatInfoScreenState extends State<SnackChatInfoScreen> {
                         ),
                         Padding(
                           padding: EdgeInsets.fromLTRB(
-                            context.rs(20).clamp(16, 24).toDouble(),
-                            context.rs(18).clamp(16, 22).toDouble(),
-                            context.rs(20).clamp(16, 24).toDouble(),
-                            0,
+                            horizontalPadding,
+                            keyboardVisible ? 8 : 14,
+                            horizontalPadding,
+                            keyboardVisible ? 2 : 6,
                           ),
-                          child: Column(
-                            crossAxisAlignment: CrossAxisAlignment.start,
-                            children: [
-                              Text(
-                                l10n.snackChatSelectParticipants,
-                                style: TextStyle(
-                                  fontFamily: 'Inter',
-                                  fontFamilyFallback: const ['NotoSansKR'],
-                                  fontSize:
-                                      context.rf(18).clamp(17, 20).toDouble(),
-                                  fontWeight: FontWeight.w800,
-                                  height: 1.25,
-                                  letterSpacing: -0.2,
-                                  color: const Color(0xFF111827),
-                                ),
-                              ),
-                              const SizedBox(height: 5),
-                              Text(
-                                l10n.snackChatMaxParticipants,
-                                style: TextStyle(
-                                  fontFamily: 'Inter',
-                                  fontFamilyFallback: const ['NotoSansKR'],
-                                  fontSize: context
-                                      .rf(12.5)
-                                      .clamp(12, 13.5)
-                                      .toDouble(),
-                                  fontWeight: FontWeight.w500,
-                                  height: 1.4,
-                                  color: const Color(0xFF667085),
-                                ),
-                              ),
-                              SizedBox(
-                                height: context.rs(12).clamp(10, 14).toDouble(),
-                              ),
-                              TextField(
-                                key: ValueKey(searchFieldVersion),
-                                textInputAction: TextInputAction.search,
-                                onChanged: (value) {
-                                  setSheetState(
-                                    () => searchQuery =
-                                        value.trim().toLowerCase(),
-                                  );
-                                },
-                                style: TextStyle(
-                                  fontFamily: 'Inter',
-                                  fontFamilyFallback: const ['NotoSansKR'],
-                                  fontSize:
-                                      context.rf(14).clamp(13, 15).toDouble(),
-                                  color: const Color(0xFF111827),
-                                ),
-                                decoration: InputDecoration(
-                                  hintText: l10n.searchByName,
-                                  hintStyle: const TextStyle(
-                                    fontFamily: 'Inter',
-                                    fontFamilyFallback: const ['NotoSansKR'],
-                                    fontSize: 14,
-                                    color: Color(0xFF98A2B3),
-                                  ),
-                                  prefixIcon: const Icon(
-                                    Icons.search_rounded,
-                                    size: 20,
-                                    color: Color(0xFF667085),
-                                  ),
-                                  prefixIconConstraints: const BoxConstraints(
-                                    minWidth: 36,
-                                    minHeight: 44,
-                                  ),
-                                  suffixIcon: searchQuery.isEmpty
-                                      ? null
-                                      : IconButton(
-                                          onPressed: () {
-                                            setSheetState(() {
-                                              searchQuery = '';
-                                              searchFieldVersion++;
-                                            });
-                                          },
-                                          icon: const Icon(
-                                            Icons.close_rounded,
-                                            size: 18,
-                                          ),
+                          child: MediaQuery.withClampedTextScaling(
+                            maxScaleFactor: 1.3,
+                            child: Column(
+                              crossAxisAlignment: CrossAxisAlignment.start,
+                              children: [
+                                Row(
+                                  children: [
+                                    Expanded(
+                                      child: Text(
+                                        isKo ? '참여자 초대' : 'Invite participants',
+                                        maxLines: 1,
+                                        overflow: TextOverflow.ellipsis,
+                                        style: TextStyle(
+                                          fontFamily: 'Inter',
+                                          fontFamilyFallback: const [
+                                            'NotoSansKR',
+                                          ],
+                                          fontSize: context
+                                              .rf(18)
+                                              .clamp(16, 19)
+                                              .toDouble(),
+                                          fontWeight: FontWeight.w700,
+                                          color: const Color(0xFF111827),
                                         ),
-                                  contentPadding:
-                                      const EdgeInsets.symmetric(vertical: 10),
-                                  border: const UnderlineInputBorder(
-                                    borderSide:
-                                        BorderSide(color: Color(0xFFEAECF0)),
-                                  ),
-                                  enabledBorder: const UnderlineInputBorder(
-                                    borderSide:
-                                        BorderSide(color: Color(0xFFEAECF0)),
-                                  ),
-                                  focusedBorder: const UnderlineInputBorder(
-                                    borderSide: BorderSide(
-                                      color: Color(0xFF667085),
-                                      width: 1.4,
-                                    ),
-                                  ),
-                                ),
-                              ),
-                            ],
-                          ),
-                        ),
-                        const SizedBox(height: 6),
-                        Expanded(
-                          child: visibleCandidates.isEmpty
-                              ? Center(
-                                  child: Padding(
-                                    padding: const EdgeInsets.symmetric(
-                                      horizontal: 24,
-                                    ),
-                                    child: Text(
-                                      l10n.snackChatNoFriendsToInvite,
-                                      textAlign: TextAlign.center,
-                                      style: const TextStyle(
-                                        fontFamily: 'Inter',
-                                        fontFamilyFallback: const [
-                                          'NotoSansKR'
-                                        ],
-                                        fontSize: 13,
-                                        fontWeight: FontWeight.w500,
-                                        color: Color(0xFF667085),
                                       ),
                                     ),
+                                    const SizedBox(width: 8),
+                                    TextButton(
+                                      onPressed: selected.isEmpty
+                                          ? null
+                                          : () {
+                                              FocusManager.instance.primaryFocus
+                                                  ?.unfocus();
+                                              Navigator.of(sheetContext).pop(
+                                                selected.keys.toSet(),
+                                              );
+                                            },
+                                      style: TextButton.styleFrom(
+                                        foregroundColor:
+                                            const Color(0xFF111827),
+                                        disabledForegroundColor:
+                                            const Color(0xFFCBD5E1),
+                                        minimumSize: const Size(44, 44),
+                                        padding: const EdgeInsets.symmetric(
+                                          horizontal: 6,
+                                        ),
+                                      ),
+                                      child: Text(
+                                        isKo
+                                            ? '${selected.length}명 초대'
+                                            : 'Invite ${selected.length}',
+                                        maxLines: 1,
+                                        style: TextStyle(
+                                          fontFamily: 'Inter',
+                                          fontFamilyFallback: const [
+                                            'NotoSansKR',
+                                          ],
+                                          fontSize: context
+                                              .rf(14)
+                                              .clamp(13, 15)
+                                              .toDouble(),
+                                          fontWeight: FontWeight.w700,
+                                        ),
+                                      ),
+                                    ),
+                                  ],
+                                ),
+                                if (!keyboardVisible) ...[
+                                  const SizedBox(height: 2),
+                                  Text(
+                                    isKo
+                                        ? '친구 또는 사용자 아이디로 초대할 수 있어요.'
+                                        : 'Invite friends or search by user ID.',
+                                    style: TextStyle(
+                                      fontFamily: 'Inter',
+                                      fontFamilyFallback: const ['NotoSansKR'],
+                                      fontSize: context
+                                          .rf(12.5)
+                                          .clamp(12, 13.5)
+                                          .toDouble(),
+                                      fontWeight: FontWeight.w500,
+                                      height: 1.4,
+                                      color: const Color(0xFF667085),
+                                    ),
                                   ),
-                                )
-                              : ListView.builder(
-                                  keyboardDismissBehavior:
-                                      ScrollViewKeyboardDismissBehavior.onDrag,
-                                  padding: EdgeInsets.fromLTRB(
-                                    context.rs(8).clamp(4, 12).toDouble(),
-                                    2,
-                                    context.rs(8).clamp(4, 12).toDouble(),
-                                    12,
-                                  ),
-                                  itemCount: visibleCandidates.length,
-                                  itemBuilder: (_, index) {
-                                    final friend = visibleCandidates[index];
-                                    final checked =
-                                        selected.contains(friend.uid);
-                                    return _InviteParticipantTile(
-                                      friend: friend,
-                                      selected: checked,
-                                      onTap: () {
-                                        setSheetState(() {
-                                          if (checked) {
-                                            selected.remove(friend.uid);
-                                          } else {
-                                            selected.add(friend.uid);
-                                          }
-                                        });
-                                      },
-                                    );
-                                  },
-                                ),
-                        ),
-                        Padding(
-                          padding: EdgeInsets.fromLTRB(
-                            context.rs(20).clamp(16, 24).toDouble(),
-                            8,
-                            context.rs(20).clamp(16, 24).toDouble(),
-                            12,
-                          ),
-                          child: SizedBox(
-                            width: double.infinity,
-                            height: context.rh(48, min: 44, max: 50),
-                            child: ElevatedButton(
-                              style: ElevatedButton.styleFrom(
-                                elevation: 0,
-                                backgroundColor: const Color(0xFF344054),
-                                foregroundColor: Colors.white,
-                                disabledBackgroundColor:
-                                    const Color(0xFFD0D5DD),
-                                disabledForegroundColor:
-                                    const Color(0xFF98A2B3),
-                                shape: RoundedRectangleBorder(
-                                  borderRadius: BorderRadius.circular(12),
-                                ),
-                              ),
-                              onPressed: selected.isEmpty || isClosing
-                                  ? null
-                                  : () {
-                                      setSheetState(() => isClosing = true);
-                                      FocusScope.of(sheetContext).unfocus();
-                                      Navigator.of(sheetContext).pop(
-                                        Set<String>.from(selected),
-                                      );
-                                    },
-                              child: Text(
-                                isKo
-                                    ? '초대하기 (${selected.length}명)'
-                                    : 'Invite (${selected.length})',
-                                maxLines: 1,
-                                overflow: TextOverflow.ellipsis,
-                                style: TextStyle(
-                                  fontFamily: 'Inter',
-                                  fontFamilyFallback: const ['NotoSansKR'],
-                                  fontSize:
-                                      context.rf(15).clamp(14, 16).toDouble(),
-                                  fontWeight: FontWeight.w700,
-                                ),
-                              ),
+                                ],
+                              ],
                             ),
+                          ),
+                        ),
+                        Expanded(
+                          child: SnackChatParticipantPicker(
+                            friends: myFriends,
+                            selectedProfiles: selected,
+                            excludedUserIds: room.participantIds.toSet(),
+                            maxSelectionCount:
+                                (50 - room.participantIds.length).clamp(0, 49),
+                            onToggle: (profile) {
+                              setSheetState(() {
+                                if (selected.containsKey(profile.uid)) {
+                                  selected.remove(profile.uid);
+                                } else {
+                                  selected[profile.uid] = profile;
+                                }
+                              });
+                            },
                           ),
                         ),
                       ],
@@ -435,16 +325,13 @@ class _SnackChatInfoScreenState extends State<SnackChatInfoScreen> {
     }
 
     if (result == null || result.isEmpty || !mounted) return;
-
     setState(() => _isInviting = true);
     try {
       final invited = await _snackChatService.inviteParticipants(
         room.id,
-        participantIds: result.toList(),
+        participantIds: result.toList(growable: false),
       );
-      if (invited.isEmpty || !mounted) return;
-
-      if (!mounted) return;
+      if (!mounted || invited.isEmpty) return;
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
           content: Text(
@@ -454,12 +341,14 @@ class _SnackChatInfoScreenState extends State<SnackChatInfoScreen> {
           ),
         ),
       );
-    } catch (e) {
+    } catch (_) {
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
           content: Text(
-            isKo ? '초대 실패: $e' : 'Invite failed: $e',
+            isKo
+                ? '초대하지 못했습니다. 잠시 후 다시 시도해 주세요.'
+                : 'Could not invite. Please try again.',
           ),
         ),
       );
@@ -714,7 +603,7 @@ class _SnackChatInfoScreenState extends State<SnackChatInfoScreen> {
                               dialogIsKo ? '취소' : 'Cancel',
                               style: const TextStyle(
                                 fontFamily: 'Inter',
-                                fontFamilyFallback: const ['NotoSansKR'],
+                                fontFamilyFallback: ['NotoSansKR'],
                                 fontSize: 14,
                                 fontWeight: FontWeight.w600,
                               ),
@@ -737,7 +626,7 @@ class _SnackChatInfoScreenState extends State<SnackChatInfoScreen> {
                               dialogIsKo ? '나가기' : 'Leave',
                               style: const TextStyle(
                                 fontFamily: 'Inter',
-                                fontFamilyFallback: const ['NotoSansKR'],
+                                fontFamilyFallback: ['NotoSansKR'],
                                 fontSize: 14,
                                 fontWeight: FontWeight.w700,
                               ),
@@ -955,7 +844,7 @@ class _SnackChatInfoScreenState extends State<SnackChatInfoScreen> {
                   'Snack Chat',
                   style: TextStyle(
                     fontFamily: 'Inter',
-                    fontFamilyFallback: const ['NotoSansKR'],
+                    fontFamilyFallback: ['NotoSansKR'],
                     fontWeight: FontWeight.w800,
                   ),
                 ),
@@ -1088,7 +977,7 @@ class _SnackChatInfoScreenState extends State<SnackChatInfoScreen> {
                                     isKo ? '이름 변경' : 'Rename',
                                     style: const TextStyle(
                                       fontFamily: 'Inter',
-                                      fontFamilyFallback: const ['NotoSansKR'],
+                                      fontFamilyFallback: ['NotoSansKR'],
                                       fontSize: 13,
                                       fontWeight: FontWeight.w600,
                                     ),
@@ -1122,7 +1011,7 @@ class _SnackChatInfoScreenState extends State<SnackChatInfoScreen> {
                                     isKo ? '공지 등록' : 'Announcement',
                                     style: const TextStyle(
                                       fontFamily: 'Inter',
-                                      fontFamilyFallback: const ['NotoSansKR'],
+                                      fontFamilyFallback: ['NotoSansKR'],
                                       fontSize: 13,
                                       fontWeight: FontWeight.w600,
                                     ),
@@ -1228,7 +1117,7 @@ class _SnackChatInfoScreenState extends State<SnackChatInfoScreen> {
                               isKo ? '표시할 멤버가 없습니다.' : 'No members to show.',
                               style: const TextStyle(
                                 fontFamily: 'Inter',
-                                fontFamilyFallback: const ['NotoSansKR'],
+                                fontFamilyFallback: ['NotoSansKR'],
                                 fontSize: 13,
                                 color: Color(0xFF98A2B3),
                               ),
@@ -1259,7 +1148,7 @@ class _SnackChatInfoScreenState extends State<SnackChatInfoScreen> {
                               isKo ? '채팅방 나가기' : 'Leave Room',
                               style: const TextStyle(
                                 fontFamily: 'Inter',
-                                fontFamilyFallback: const ['NotoSansKR'],
+                                fontFamilyFallback: ['NotoSansKR'],
                                 fontSize: 13,
                                 fontWeight: FontWeight.w600,
                               ),
@@ -1385,7 +1274,7 @@ class _CreatorTextDialogState extends State<_CreatorTextDialog> {
             hintText: widget.hintText,
             hintStyle: const TextStyle(
               fontFamily: 'Inter',
-              fontFamilyFallback: const ['NotoSansKR'],
+              fontFamilyFallback: ['NotoSansKR'],
               color: Color(0xFF98A2B3),
             ),
             border: const UnderlineInputBorder(),
@@ -1411,114 +1300,6 @@ class _CreatorTextDialogState extends State<_CreatorTextDialog> {
           child: Text(widget.actionLabel),
         ),
       ],
-    );
-  }
-}
-
-class _InviteParticipantTile extends StatelessWidget {
-  final UserProfile friend;
-  final bool selected;
-  final VoidCallback onTap;
-
-  const _InviteParticipantTile({
-    required this.friend,
-    required this.selected,
-    required this.onTap,
-  });
-
-  @override
-  Widget build(BuildContext context) {
-    final name = friend.displayNameOrNickname;
-    final fallback = name.trim().isEmpty
-        ? '?'
-        : String.fromCharCode(name.trim().runes.first);
-
-    return Semantics(
-      button: true,
-      selected: selected,
-      label: name,
-      onTap: onTap,
-      excludeSemantics: true,
-      child: Material(
-        color: Colors.transparent,
-        child: InkWell(
-          onTap: onTap,
-          borderRadius: BorderRadius.circular(12),
-          child: ConstrainedBox(
-            constraints: BoxConstraints(
-              minHeight: context.rh(58, min: 54, max: 62),
-            ),
-            child: Padding(
-              padding: EdgeInsets.symmetric(
-                horizontal: context.rs(12).clamp(10, 14).toDouble(),
-                vertical: context.rs(7).clamp(6, 8).toDouble(),
-              ),
-              child: Row(
-                children: [
-                  CircleAvatar(
-                    radius: context.ri(21).clamp(20, 22).toDouble(),
-                    backgroundColor: const Color(0xFFF2F4F7),
-                    backgroundImage: friend.hasProfileImage
-                        ? NetworkImage(friend.photoURL!)
-                        : null,
-                    child: friend.hasProfileImage
-                        ? null
-                        : Text(
-                            fallback.toUpperCase(),
-                            style: TextStyle(
-                              fontFamily: 'Inter',
-                              fontFamilyFallback: const ['NotoSansKR'],
-                              fontSize: context.rf(14).clamp(13, 15).toDouble(),
-                              fontWeight: FontWeight.w700,
-                              color: const Color(0xFF475467),
-                            ),
-                          ),
-                  ),
-                  SizedBox(width: context.rs(12).clamp(10, 14).toDouble()),
-                  Expanded(
-                    child: Text(
-                      name,
-                      maxLines: 1,
-                      overflow: TextOverflow.ellipsis,
-                      style: TextStyle(
-                        fontFamily: 'Inter',
-                        fontFamilyFallback: const ['NotoSansKR'],
-                        fontSize: context.rf(14.5).clamp(13.5, 15.5).toDouble(),
-                        fontWeight: FontWeight.w600,
-                        color: const Color(0xFF111827),
-                      ),
-                    ),
-                  ),
-                  const SizedBox(width: 10),
-                  AnimatedContainer(
-                    duration: const Duration(milliseconds: 140),
-                    width: context.ri(22).clamp(21, 23).toDouble(),
-                    height: context.ri(22).clamp(21, 23).toDouble(),
-                    decoration: BoxDecoration(
-                      color:
-                          selected ? AppColors.pointColor : Colors.transparent,
-                      shape: BoxShape.circle,
-                      border: Border.all(
-                        color: selected
-                            ? AppColors.pointColor
-                            : const Color(0xFFB8C0CC),
-                        width: 1.5,
-                      ),
-                    ),
-                    child: selected
-                        ? const Icon(
-                            Icons.check_rounded,
-                            size: 15,
-                            color: Colors.white,
-                          )
-                        : null,
-                  ),
-                ],
-              ),
-            ),
-          ),
-        ),
-      ),
     );
   }
 }

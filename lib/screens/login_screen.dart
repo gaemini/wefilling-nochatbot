@@ -172,10 +172,7 @@ class _LoginScreenState extends State<LoginScreen>
                   AppButton(
                     label: l10n.signUp,
                     onPressed: () => Navigator.of(dialogContext).pop(true),
-                    leading: const Icon(
-                      Icons.arrow_forward_rounded,
-                      size: 19,
-                    ),
+                    variant: AppButtonVariant.text,
                   ),
                 ],
               ),
@@ -192,6 +189,8 @@ class _LoginScreenState extends State<LoginScreen>
   @override
   Widget build(BuildContext context) {
     final authProvider = Provider.of<AuthProvider>(context);
+    final isCompactLanguageButton = MediaQuery.sizeOf(context).width < 360;
+    final currentLanguageCode = Localizations.localeOf(context).languageCode;
 
     return Scaffold(
       body: Container(
@@ -418,14 +417,9 @@ class _LoginScreenState extends State<LoginScreen>
                                             ? null
                                             : () =>
                                                 _navigateToSignUpFlow(context),
-                                        backgroundColor:
-                                            const Color(0xFF2F9AE5),
-                                        foregroundColor: Colors.white,
-                                        leading: Icon(
-                                          Icons.person_add_alt_1_rounded,
-                                          size: isVeryShort ? 18 : 19,
-                                          color: Colors.white,
-                                        ),
+                                        backgroundColor: Colors.white,
+                                        foregroundColor:
+                                            const Color(0xFF147FC4),
                                       ),
                                       if (authProvider.isLoading)
                                         Padding(
@@ -483,135 +477,46 @@ class _LoginScreenState extends State<LoginScreen>
                 ),
               ),
 
-              // 언어 선택 버튼 (상단 우측)
+              // 언어 선택 (상단 우측)
               Positioned(
-                top: 16,
-                right: 16,
-                child: Container(
-                  decoration: BoxDecoration(
-                    color: Colors.white.withOpacity(0.9),
-                    borderRadius: BorderRadius.circular(20),
-                    boxShadow: [
-                      BoxShadow(
-                        color: Colors.black.withOpacity(0.1),
-                        blurRadius: 8,
-                        spreadRadius: 0,
-                        offset: const Offset(0, 2),
+                top: isCompactLanguageButton ? 12 : 16,
+                right: isCompactLanguageButton ? 12 : 16,
+                child: Material(
+                  color: Colors.transparent,
+                  child: Row(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      _LoginLanguageChoice(
+                        label: 'KOR',
+                        semanticsLabel: '한국어',
+                        isSelected: currentLanguageCode == 'ko',
+                        isCompact: isCompactLanguageButton,
+                        onTap: () =>
+                            MeetupApp.of(context)?.changeLanguage('ko'),
+                      ),
+                      Text(
+                        '/',
+                        style: TextStyle(
+                          fontFamily: 'Inter',
+                          fontSize: isCompactLanguageButton ? 13 : 14,
+                          fontWeight: FontWeight.w500,
+                          color: Colors.black45,
+                        ),
+                      ),
+                      _LoginLanguageChoice(
+                        label: 'ENG',
+                        semanticsLabel: 'English',
+                        isSelected: currentLanguageCode == 'en',
+                        isCompact: isCompactLanguageButton,
+                        onTap: () =>
+                            MeetupApp.of(context)?.changeLanguage('en'),
                       ),
                     ],
-                  ),
-                  child: Material(
-                    color: Colors.transparent,
-                    child: InkWell(
-                      borderRadius: BorderRadius.circular(20),
-                      onTap: () => _showLanguageDialog(context),
-                      child: Padding(
-                        padding: const EdgeInsets.symmetric(
-                          horizontal: 16,
-                          vertical: 10,
-                        ),
-                        child: Row(
-                          mainAxisSize: MainAxisSize.min,
-                          children: [
-                            Icon(
-                              Icons.language,
-                              size: 20,
-                              color: Colors.blue.shade700,
-                            ),
-                            const SizedBox(width: 8),
-                            Text(
-                              Localizations.localeOf(context).languageCode ==
-                                      'ko'
-                                  ? 'KOR'
-                                  : 'ENG',
-                              style: TextStyle(
-                                fontSize: 14,
-                                fontWeight: FontWeight.w700,
-                                color: Colors.blue.shade700,
-                              ),
-                            ),
-                          ],
-                        ),
-                      ),
-                    ),
                   ),
                 ),
               ),
             ],
           ),
-        ),
-      ),
-    );
-  }
-
-  /// 언어 선택 다이얼로그
-  void _showLanguageDialog(BuildContext context) {
-    final currentLocale = Localizations.localeOf(context).languageCode;
-
-    showDialog(
-      context: context,
-      builder: (dialogContext) => AlertDialog(
-        shape: RoundedRectangleBorder(
-          borderRadius: BorderRadius.circular(20),
-        ),
-        backgroundColor: Colors.white,
-        contentPadding: const EdgeInsets.all(24),
-        title: Text(
-          currentLocale == 'ko' ? '언어 선택' : 'Select Language',
-          style: const TextStyle(
-            fontFamily: 'Inter',
-            fontFamilyFallback: const ['NotoSansKR'],
-            fontSize: 20,
-            fontWeight: FontWeight.w700,
-            color: Color(0xFF111827),
-            letterSpacing: -0.3,
-          ),
-          textAlign: TextAlign.center,
-        ),
-        content: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            const SizedBox(height: 8),
-            _LanguageOption(
-              label: AppLocalizations.of(context)!.korean,
-              value: 'ko',
-              groupValue: currentLocale,
-              onTap: () {
-                MeetupApp.of(context)?.changeLanguage('ko');
-                Navigator.pop(dialogContext);
-              },
-            ),
-            const SizedBox(height: 12),
-            _LanguageOption(
-              label: 'English',
-              value: 'en',
-              groupValue: currentLocale,
-              onTap: () {
-                MeetupApp.of(context)?.changeLanguage('en');
-                Navigator.pop(dialogContext);
-              },
-            ),
-            const SizedBox(height: 20),
-            SizedBox(
-              width: double.infinity,
-              child: TextButton(
-                onPressed: () => Navigator.pop(dialogContext),
-                style: TextButton.styleFrom(
-                  foregroundColor: const Color(0xFF6B7280),
-                  padding: const EdgeInsets.symmetric(vertical: 13),
-                ),
-                child: Text(
-                  currentLocale == 'ko' ? '취소' : 'Cancel',
-                  style: const TextStyle(
-                    fontFamily: 'Inter',
-                    fontFamilyFallback: const ['NotoSansKR'],
-                    fontSize: 15,
-                    fontWeight: FontWeight.w700,
-                  ),
-                ),
-              ),
-            ),
-          ],
         ),
       ),
     );
@@ -649,11 +554,10 @@ class _LoginScreenState extends State<LoginScreen>
 
       // 로그인 성공한 경우
       if (success && authProvider.isLoggedIn) {
-        Logger.log("로그인 성공: ${authProvider.user?.email}");
+        Logger.log("Google 로그인 성공");
 
-        // 닉네임 설정 여부 확인
-        if (!authProvider.hasNickname) {
-          Logger.log("닉네임 설정 필요 -> 닉네임 설정 화면으로 이동");
+        if (!authProvider.isRegistrationComplete) {
+          Logger.log("미완료 회원가입 -> 프로필 완료 화면으로 이동");
           Navigator.pushReplacement(
             context,
             MaterialPageRoute(builder: (_) => const NicknameSetupScreen()),
@@ -670,6 +574,10 @@ class _LoginScreenState extends State<LoginScreen>
       }
       // 로그인 실패한 경우 (신규 사용자 또는 한양메일 미인증)
       else if (!success) {
+        if (authProvider.lastGoogleSignInWasCancelled) {
+          Logger.log("사용자가 Google 로그인을 취소함");
+          return;
+        }
         Logger.error("로그인 실패 -> 회원가입 필요 여부 확인");
 
         // 프레임 이후에 다이얼로그를 열어, 재빌드/상태변경과 충돌하지 않도록 함
@@ -690,7 +598,7 @@ class _LoginScreenState extends State<LoginScreen>
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
-            content: Text('${AppLocalizations.of(context)!.loginError}: $e'),
+            content: Text(AppLocalizations.of(context)!.loginErrorGeneric),
             backgroundColor: Colors.red,
             duration: const Duration(seconds: 3),
           ),
@@ -712,11 +620,10 @@ class _LoginScreenState extends State<LoginScreen>
 
       // 로그인 성공한 경우
       if (success && authProvider.isLoggedIn) {
-        Logger.log("로그인 성공: ${authProvider.user?.email}");
+        Logger.log("Apple 로그인 성공");
 
-        // 닉네임 설정 여부 확인
-        if (!authProvider.hasNickname) {
-          Logger.log("닉네임 설정 필요 -> 닉네임 설정 화면으로 이동");
+        if (!authProvider.isRegistrationComplete) {
+          Logger.log("미완료 회원가입 -> 프로필 완료 화면으로 이동");
           Navigator.pushReplacement(
             context,
             MaterialPageRoute(builder: (_) => const NicknameSetupScreen()),
@@ -844,14 +751,14 @@ class _LoginScreenState extends State<LoginScreen>
 class _LoginMethodButton extends StatelessWidget {
   final String label;
   final VoidCallback? onPressed;
-  final Widget leading;
+  final Widget? leading;
   final Color backgroundColor;
   final Color foregroundColor;
 
   const _LoginMethodButton({
     required this.label,
     required this.onPressed,
-    required this.leading,
+    this.leading,
     required this.backgroundColor,
     required this.foregroundColor,
   });
@@ -879,8 +786,10 @@ class _LoginMethodButton extends StatelessWidget {
           mainAxisAlignment: MainAxisAlignment.center,
           mainAxisSize: MainAxisSize.min,
           children: [
-            leading,
-            const SizedBox(width: 10),
+            if (leading != null) ...[
+              leading!,
+              const SizedBox(width: 10),
+            ],
             Flexible(
               child: Text(
                 label,
@@ -974,58 +883,59 @@ class GoogleLogoPainter extends CustomPainter {
   bool shouldRepaint(covariant CustomPainter oldDelegate) => false;
 }
 
-// 언어 선택 옵션 위젯
-class _LanguageOption extends StatelessWidget {
+// 로그인 화면 언어 선택 항목
+class _LoginLanguageChoice extends StatelessWidget {
   final String label;
-  final String value;
-  final String groupValue;
+  final String semanticsLabel;
+  final bool isSelected;
+  final bool isCompact;
   final VoidCallback onTap;
 
-  const _LanguageOption({
+  const _LoginLanguageChoice({
     required this.label,
-    required this.value,
-    required this.groupValue,
+    required this.semanticsLabel,
+    required this.isSelected,
+    required this.isCompact,
     required this.onTap,
   });
 
   @override
   Widget build(BuildContext context) {
-    final isSelected = value == groupValue;
-
-    return Material(
-      color: Colors.transparent,
-      child: InkWell(
+    return Semantics(
+      button: true,
+      selected: isSelected,
+      label: semanticsLabel,
+      child: InkResponse(
         onTap: onTap,
-        borderRadius: BorderRadius.circular(14),
-        child: AnimatedContainer(
-          duration: const Duration(milliseconds: 180),
-          padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
-          decoration: BoxDecoration(
-            color:
-                isSelected ? const Color(0xFFE8F6FC) : const Color(0xFFF5F6F8),
-            borderRadius: BorderRadius.circular(14),
+        radius: 28,
+        child: ConstrainedBox(
+          constraints: BoxConstraints(
+            minWidth: isCompact ? 42 : 46,
+            minHeight: 44,
           ),
-          child: Row(
+          child: Column(
+            mainAxisAlignment: MainAxisAlignment.center,
+            mainAxisSize: MainAxisSize.min,
             children: [
-              Expanded(
-                child: Text(
-                  label,
-                  style: const TextStyle(
-                    fontFamily: 'Inter',
-                    fontFamilyFallback: const ['NotoSansKR'],
-                    fontSize: 15,
-                    fontWeight: FontWeight.w600,
-                    color: Color(0xFF111827),
-                  ),
+              AnimatedDefaultTextStyle(
+                duration: const Duration(milliseconds: 160),
+                style: TextStyle(
+                  fontFamily: 'Inter',
+                  fontSize: isCompact ? 13 : 14,
+                  height: 1.1,
+                  fontWeight: isSelected ? FontWeight.w800 : FontWeight.w600,
+                  color: isSelected ? Colors.black : Colors.black54,
                 ),
+                child: Text(label, maxLines: 1),
               ),
-              AnimatedOpacity(
-                duration: const Duration(milliseconds: 180),
-                opacity: isSelected ? 1 : 0,
-                child: const Icon(
-                  Icons.check_circle_rounded,
-                  size: 23,
-                  color: Color(0xFF4DBCE8),
+              const SizedBox(height: 4),
+              AnimatedContainer(
+                duration: const Duration(milliseconds: 160),
+                width: isSelected ? 18 : 0,
+                height: 2,
+                decoration: BoxDecoration(
+                  color: isSelected ? Colors.black : Colors.transparent,
+                  borderRadius: BorderRadius.circular(1),
                 ),
               ),
             ],

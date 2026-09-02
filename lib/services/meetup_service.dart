@@ -2824,6 +2824,9 @@ class MeetupService {
         'imageUrls': fullReviewData['imageUrls'] ?? [], // 여러 이미지 지원
         'imageUrl': fullReviewData['imageUrl'], // 하위 호환성
         'content': fullReviewData['content'],
+        'category': fullReviewData['category'] ?? '모임',
+        'participationRole':
+            userId == fullReviewData['authorId'] ? 'host' : 'participant',
         'reviewId': reviewId,
         'createdAt':
             fullReviewData['createdAt'] ?? FieldValue.serverTimestamp(),

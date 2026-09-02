@@ -86,6 +86,13 @@ class _SignUpMethodSelectionScreenState
       if (!mounted) return;
 
       if (!loginSuccess) {
+        if (authProvider.lastGoogleSignInWasCancelled) {
+          setState(() {
+            _errorMessage = null;
+            _isLoading = false;
+          });
+          return;
+        }
         setState(() {
           _errorMessage = l10n.googleSignupLoginFailed;
           _isLoading = false;
@@ -104,6 +111,13 @@ class _SignUpMethodSelectionScreenState
         });
         return;
       }
+      await authProvider.ensureRegistrationProgress(
+        signupLanguage: widget.unverifiedSignupLanguage,
+        verifiedEmail: _isUnverifiedHanyangSignup ? '' : _verifiedHanyangEmail,
+        verificationToken:
+            _isUnverifiedHanyangSignup ? '' : _hanyangVerificationToken,
+      );
+      if (!mounted) return;
       Navigator.pushReplacement(
         context,
         MaterialPageRoute(
@@ -124,7 +138,7 @@ class _SignUpMethodSelectionScreenState
     } catch (error) {
       if (!mounted) return;
       setState(() {
-        _errorMessage = l10n.googleSignupFailedWithError(error.toString());
+        _errorMessage = l10n.signupProcessError;
         _isLoading = false;
       });
     }
@@ -167,6 +181,13 @@ class _SignUpMethodSelectionScreenState
         });
         return;
       }
+      await authProvider.ensureRegistrationProgress(
+        signupLanguage: widget.unverifiedSignupLanguage,
+        verifiedEmail: _isUnverifiedHanyangSignup ? '' : _verifiedHanyangEmail,
+        verificationToken:
+            _isUnverifiedHanyangSignup ? '' : _hanyangVerificationToken,
+      );
+      if (!mounted) return;
       Navigator.pushReplacement(
         context,
         MaterialPageRoute(
@@ -187,7 +208,7 @@ class _SignUpMethodSelectionScreenState
     } catch (error) {
       if (!mounted) return;
       setState(() {
-        _errorMessage = l10n.appleSignupFailedWithError(error.toString());
+        _errorMessage = l10n.signupProcessError;
         _isLoading = false;
       });
     }
@@ -211,39 +232,18 @@ class _SignUpMethodSelectionScreenState
     }
     setState(() => _isLoading = true);
     final authProvider = context.read<AuthProvider>();
-    // 이 화면에서 만들어진 Auth 사용자는 아직 가입 확정 전이다. 별도 상태
-    // 조회가 실패해 이탈 자체가 막히지 않도록 서버 정리 함수를 바로 호출한다.
-    // 완료 계정은 서버가 failed-precondition으로 보호하므로 삭제되지 않는다.
-    var cleanupCompleted = true;
+    // Keep the server-side progress document. A later login resumes the same
+    // uid instead of deleting and recreating an Auth account.
     try {
       if (authProvider.user != null) {
-        cleanupCompleted = await authProvider.discardIncompleteRegistration();
-      }
-      if (cleanupCompleted &&
-          _verifiedHanyangEmail.isNotEmpty &&
-          _hanyangVerificationToken.isNotEmpty) {
-        await authProvider.cancelPendingEmailSignup(
-          email: _verifiedHanyangEmail,
-          verificationToken: _hanyangVerificationToken,
-        );
+        await authProvider.signOut();
       }
     } catch (_) {
-      cleanupCompleted = false;
+      // Navigation remains available; persisted progress is server-owned.
     } finally {
       if (mounted) setState(() => _isLoading = false);
     }
     if (!mounted) return;
-    if (!cleanupCompleted) {
-      final isKorean = Localizations.localeOf(context).languageCode == 'ko';
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          content: Text(isKorean
-              ? '인터넷 연결 후 다시 시도해 주세요. 미완료 계정을 먼저 정리할게요.'
-              : 'Reconnect and try again so the unfinished account can be removed.'),
-        ),
-      );
-      return;
-    }
     Navigator.pop(context);
   }
 

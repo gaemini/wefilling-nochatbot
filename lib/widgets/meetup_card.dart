@@ -17,7 +17,7 @@ class MeetupCard extends StatelessWidget {
   final Function(Meetup) onJoinMeetup;
   final String meetupId; // 이미 String 타입
   final Function onMeetupDeleted;
-  
+
   /// 2024-2025 트렌드: Glassmorphism 스타일 사용 여부
   final bool useGlassmorphism;
 
@@ -70,6 +70,10 @@ class MeetupCard extends StatelessWidget {
       case 'cafe':
       case 'hobby':
         return AppTheme.accentEmerald; // Vibrant emerald
+      case '여행':
+      case 'trip':
+      case 'travel':
+        return AppTheme.primary;
       case '문화':
       case 'culture':
         return AppTheme.secondary; // Modern pink
@@ -93,6 +97,10 @@ class MeetupCard extends StatelessWidget {
       case 'cafe':
       case 'hobby':
         return AppTheme.emeraldGradient;
+      case '여행':
+      case 'trip':
+      case 'travel':
+        return AppTheme.primaryGradient;
       case '문화':
       case 'culture':
         return AppTheme.secondaryGradient;
@@ -116,6 +124,10 @@ class MeetupCard extends StatelessWidget {
       case 'cafe':
       case 'hobby':
         return 'emerald';
+      case '여행':
+      case 'trip':
+      case 'travel':
+        return 'primary';
       case '문화':
       case 'culture':
         return 'secondary';
@@ -190,12 +202,11 @@ class MeetupCard extends StatelessWidget {
         }
         showDialog(
           context: context,
-          builder:
-              (context) => MeetupDetailScreen(
-                meetup: meetup,
-                meetupId: meetupId, // meetup.id.toString() 변환 제거
-                onMeetupDeleted: onMeetupDeleted,
-              ),
+          builder: (context) => MeetupDetailScreen(
+            meetup: meetup,
+            meetupId: meetupId, // meetup.id.toString() 변환 제거
+            onMeetupDeleted: onMeetupDeleted,
+          ),
         );
       },
       child: Padding(
@@ -238,176 +249,174 @@ class MeetupCard extends StatelessWidget {
     bool isFull,
   ) {
     return Row(
+      children: [
+        // 시간 컬럼 - 원형 시간 표시로 개선
+        Container(
+          width: 60,
+          height: 60,
+          decoration: BoxDecoration(
+            color: Colors.blue.shade50,
+            shape: BoxShape.circle,
+            border: Border.all(color: Colors.blue.shade200, width: 2),
+          ),
+          child: Center(
+            child: Text(
+              meetup.time.split('~')[0].trim(), // 시작 시간만 표시
+              style: TextStyle(
+                fontSize: 14,
+                fontWeight: FontWeight.bold,
+                color: Colors.blue.shade700,
+              ),
+            ),
+          ),
+        ),
+        const SizedBox(width: 16),
+
+        // 모임 내용 컬럼
+        Expanded(
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              // 시간 컬럼 - 원형 시간 표시로 개선
-              Container(
-                width: 60,
-                height: 60,
-                decoration: BoxDecoration(
-                  color: Colors.blue.shade50,
-                  shape: BoxShape.circle,
-                  border: Border.all(color: Colors.blue.shade200, width: 2),
+              // 모임 제목
+              Text(
+                meetup.title,
+                style: const TextStyle(
+                  fontSize: 16,
+                  fontWeight: FontWeight.w600,
                 ),
-                child: Center(
-                  child: Text(
-                    meetup.time.split('~')[0].trim(), // 시작 시간만 표시
+              ),
+              const SizedBox(height: 6),
+
+              // 모임 위치
+              Row(
+                children: [
+                  Icon(
+                    Icons.location_on,
+                    size: 14,
+                    color: Colors.grey[600],
+                  ),
+                  const SizedBox(width: 4),
+                  Expanded(
+                    child: Text(
+                      meetup.location,
+                      style: TextStyle(
+                        fontSize: 13,
+                        color: Colors.grey[600],
+                      ),
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                    ),
+                  ),
+                ],
+              ),
+              const SizedBox(height: 8),
+
+              // 참가자 정보
+              Row(
+                children: [
+                  Icon(
+                    Icons.person,
+                    size: 14,
+                    color: Colors.blue.shade600,
+                  ),
+                  const SizedBox(width: 4),
+                  Text(
+                    '${meetup.currentParticipants}/${meetup.maxParticipants}명',
                     style: TextStyle(
-                      fontSize: 14,
-                      fontWeight: FontWeight.bold,
+                      fontSize: 13,
+                      fontWeight: FontWeight.w500,
                       color: Colors.blue.shade700,
                     ),
                   ),
-                ),
-              ),
-              const SizedBox(width: 16),
+                  const SizedBox(width: 8),
 
-              // 모임 내용 컬럼
-              Expanded(
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    // 모임 제목
-                    Text(
-                      meetup.title,
-                      style: const TextStyle(
-                        fontSize: 16,
-                        fontWeight: FontWeight.w600,
-                      ),
+                  // 주최자 정보
+                  Icon(Icons.star, size: 14, color: Colors.amber[600]),
+                  const SizedBox(width: 4),
+                  Text(
+                    meetup.host,
+                    style: TextStyle(
+                      fontSize: 13,
+                      color: Colors.grey[700],
                     ),
-                    const SizedBox(height: 6),
-
-                    // 모임 위치
-                    Row(
-                      children: [
-                        Icon(
-                          Icons.location_on,
-                          size: 14,
-                          color: Colors.grey[600],
-                        ),
-                        const SizedBox(width: 4),
-                        Expanded(
-                          child: Text(
-                            meetup.location,
-                            style: TextStyle(
-                              fontSize: 13,
-                              color: Colors.grey[600],
-                            ),
-                            maxLines: 1,
-                            overflow: TextOverflow.ellipsis,
-                          ),
-                        ),
-                      ],
-                    ),
-                    const SizedBox(height: 8),
-
-                    // 참가자 정보
-                    Row(
-                      children: [
-                        Icon(
-                          Icons.person,
-                          size: 14,
-                          color: Colors.blue.shade600,
-                        ),
-                        const SizedBox(width: 4),
-                        Text(
-                          '${meetup.currentParticipants}/${meetup.maxParticipants}명',
-                          style: TextStyle(
-                            fontSize: 13,
-                            fontWeight: FontWeight.w500,
-                            color: Colors.blue.shade700,
-                          ),
-                        ),
-                        const SizedBox(width: 8),
-
-                        // 주최자 정보
-                        Icon(Icons.star, size: 14, color: Colors.amber[600]),
-                        const SizedBox(width: 4),
-                        Text(
-                          meetup.host,
-                          style: TextStyle(
-                            fontSize: 13,
-                            color: Colors.grey[700],
-                          ),
-                          maxLines: 1,
-                          overflow: TextOverflow.ellipsis,
-                        ),
-                      ],
-                    ),
-                    const SizedBox(height: 8),
-
-                    Container(
-                      margin: const EdgeInsets.only(top: 8),
-                      padding: const EdgeInsets.symmetric(
-                        horizontal: 8,
-                        vertical: 3,
-                      ),
-                      decoration: BoxDecoration(
-                        color: _getCategoryColor(
-                          meetup.category,
-                        ).withOpacity(0.1),
-                        borderRadius: BorderRadius.circular(8),
-                        border: Border.all(
-                          color: _getCategoryColor(
-                            meetup.category,
-                          ).withOpacity(0.5),
-                          width: 1,
-                        ),
-                      ),
-                      child: Text(
-                        localizedCategoryLabel(context, meetup.category),
-                        style: TextStyle(
-                          fontSize: 12,
-                          // 카테고리 배지 텍스트는 "아주 진한 파란색"으로 고정
-                          color: _categoryTextDarkBlue,
-                          fontWeight: FontWeight.w500,
-                        ),
-                      ),
-                    ),
-                  ],
-                ),
-              ),
-
-              SizedBox(
-                width: 70,
-                child: ElevatedButton(
-                  onPressed:
-                      isFull
-                          ? null
-                          : () async {
-                              final user = FirebaseAuth.instance.currentUser;
-                              if (user != null) {
-                                final kicked = await meetupService.isUserKickedFromMeetup(
-                                  meetupId: meetupId,
-                                  userId: user.uid,
-                                );
-                                if (kicked) {
-                                  AppSnackBar.show(
-                                    context,
-                                    message: '죄송합니다. 모임에 참여할 수 없습니다',
-                                    type: AppSnackBarType.error,
-                                  );
-                                  return;
-                                }
-                              }
-                              onJoinMeetup(meetup);
-                            },
-                  style: ElevatedButton.styleFrom(
-                    backgroundColor:
-                        isFull ? Colors.grey[300] : Colors.blue.shade600,
-                    foregroundColor: Colors.white,
-                    padding: const EdgeInsets.symmetric(vertical: 8),
-                    shape: RoundedRectangleBorder(
-                      borderRadius: BorderRadius.circular(20),
-                    ),
-                    elevation: 0,
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
                   ),
-                  child: Text(
-                    status,
-                    style: TextStyle(fontWeight: FontWeight.bold, fontSize: 13),
+                ],
+              ),
+              const SizedBox(height: 8),
+
+              Container(
+                margin: const EdgeInsets.only(top: 8),
+                padding: const EdgeInsets.symmetric(
+                  horizontal: 8,
+                  vertical: 3,
+                ),
+                decoration: BoxDecoration(
+                  color: _getCategoryColor(
+                    meetup.category,
+                  ).withOpacity(0.1),
+                  borderRadius: BorderRadius.circular(8),
+                  border: Border.all(
+                    color: _getCategoryColor(
+                      meetup.category,
+                    ).withOpacity(0.5),
+                    width: 1,
+                  ),
+                ),
+                child: Text(
+                  localizedCategoryLabel(context, meetup.category),
+                  style: TextStyle(
+                    fontSize: 12,
+                    // 카테고리 배지 텍스트는 "아주 진한 파란색"으로 고정
+                    color: _categoryTextDarkBlue,
+                    fontWeight: FontWeight.w500,
                   ),
                 ),
               ),
             ],
-          );
+          ),
+        ),
+
+        SizedBox(
+          width: 70,
+          child: ElevatedButton(
+            onPressed: isFull
+                ? null
+                : () async {
+                    final user = FirebaseAuth.instance.currentUser;
+                    if (user != null) {
+                      final kicked = await meetupService.isUserKickedFromMeetup(
+                        meetupId: meetupId,
+                        userId: user.uid,
+                      );
+                      if (kicked) {
+                        AppSnackBar.show(
+                          context,
+                          message: '죄송합니다. 모임에 참여할 수 없습니다',
+                          type: AppSnackBarType.error,
+                        );
+                        return;
+                      }
+                    }
+                    onJoinMeetup(meetup);
+                  },
+            style: ElevatedButton.styleFrom(
+              backgroundColor: isFull ? Colors.grey[300] : Colors.blue.shade600,
+              foregroundColor: Colors.white,
+              padding: const EdgeInsets.symmetric(vertical: 8),
+              shape: RoundedRectangleBorder(
+                borderRadius: BorderRadius.circular(20),
+              ),
+              elevation: 0,
+            ),
+            child: Text(
+              status,
+              style: TextStyle(fontWeight: FontWeight.bold, fontSize: 13),
+            ),
+          ),
+        ),
+      ],
+    );
   }
 }

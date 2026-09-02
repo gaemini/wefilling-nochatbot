@@ -1076,24 +1076,56 @@ class ContentTranslationService extends ChangeNotifier {
   }
 
   Future<void> loadSnackRoomMode(String roomId) async {
+    await _loadConversationMode(
+      scope: 'snack-room:$roomId',
+      preferenceId: roomId,
+    );
+  }
+
+  Future<void> loadDmConversationMode(String conversationId) async {
+    await _loadConversationMode(
+      scope: 'dm-conversation:$conversationId',
+      preferenceId: 'dm:$conversationId',
+    );
+  }
+
+  Future<void> _loadConversationMode({
+    required String scope,
+    required String preferenceId,
+  }) async {
     final uid = _auth.currentUser?.uid;
-    final scope = 'snack-room:$roomId';
     if (uid == null || !_loadedRoomScopes.add(scope)) return;
     final prefs = await SharedPreferences.getInstance();
-    if (prefs.getBool('translation_original:$uid:$roomId') == true) {
+    if (prefs.getBool('translation_original:$uid:$preferenceId') == true) {
       _showOriginalScopes.add(scope);
       notifyListeners();
     }
   }
 
   Future<void> toggleSnackRoom(String roomId) async {
-    final scope = 'snack-room:$roomId';
+    await _toggleConversationMode(
+      scope: 'snack-room:$roomId',
+      preferenceId: roomId,
+    );
+  }
+
+  Future<void> toggleDmConversation(String conversationId) async {
+    await _toggleConversationMode(
+      scope: 'dm-conversation:$conversationId',
+      preferenceId: 'dm:$conversationId',
+    );
+  }
+
+  Future<void> _toggleConversationMode({
+    required String scope,
+    required String preferenceId,
+  }) async {
     toggleScope(scope);
     final uid = _auth.currentUser?.uid;
     if (uid == null) return;
     final prefs = await SharedPreferences.getInstance();
     await prefs.setBool(
-      'translation_original:$uid:$roomId',
+      'translation_original:$uid:$preferenceId',
       showsOriginal(scope),
     );
   }

@@ -20,6 +20,7 @@ import 'create_snack_chat_screen.dart';
 import 'snack_chat_tab_view.dart';
 import '../l10n/app_localizations.dart';
 import '../utils/logger.dart';
+import '../utils/responsive_helper.dart';
 
 /// Stable internal tab mapping used by direct-entry routes.
 const int snackChatTabIndex = 0;
@@ -184,7 +185,9 @@ class _FriendCategoriesScreenState extends State<FriendCategoriesScreen>
               child: TabBarView(
                 controller: _tabController,
                 children: [
-                  const SnackChatTabView(),
+                  SnackChatTabView(
+                    onCreateSnackChat: _openCreateSnackChat,
+                  ),
                   _buildGroupsTab(),
                 ],
               ),
@@ -192,41 +195,37 @@ class _FriendCategoriesScreenState extends State<FriendCategoriesScreen>
           ),
         ),
       ),
-      floatingActionButton: _tabController.index == snackChatTabIndex
-          ? _buildSnackChatFab()
-          : _buildCategoryFab(),
+      floatingActionButton: _tabController.index == groupsTabIndex &&
+              !_categoriesLoading &&
+              _categories.isNotEmpty
+          ? _buildCategoryFab()
+          : null,
     );
   }
 
-  Widget _buildSnackChatFab() {
-    return AppFab(
-      icon: IconStyles.add,
-      onPressed: () {
-        Navigator.push(
-          context,
-          MaterialPageRoute(builder: (_) => const CreateSnackChatScreen()),
-        );
-      },
-      semanticLabel: AppLocalizations.of(context)!.createSnackChat,
-      tooltip: AppLocalizations.of(context)!.createSnackChat,
-      heroTag: 'create_snack_chat_fab',
+  void _openCreateSnackChat() {
+    Navigator.push(
+      context,
+      MaterialPageRoute(builder: (_) => const CreateSnackChatScreen()),
     );
   }
 
   Widget _buildCategoryFab() {
     return AppFab(
       icon: IconStyles.add,
-      onPressed: () {
-        if (_categories.length >= _maxCategories) {
-          _showCategoryLimitReachedSnackBar();
-          return;
-        }
-        _showCreateCategoryDialog();
-      },
+      onPressed: _handleCreateCategory,
       semanticLabel: AppLocalizations.of(context)!.newCategoryCreate,
       tooltip: AppLocalizations.of(context)!.addCategory,
       heroTag: 'add_category_fab',
     );
+  }
+
+  void _handleCreateCategory() {
+    if (_categories.length >= _maxCategories) {
+      _showCategoryLimitReachedSnackBar();
+      return;
+    }
+    _showCreateCategoryDialog();
   }
 
   Widget _buildGroupsTab() {
@@ -254,7 +253,9 @@ class _FriendCategoriesScreenState extends State<FriendCategoriesScreen>
               vertical: 12,
             ),
             child: Text(
-              isKo ? '그룹을 통해 공개범위를 설정하세요.' : 'Set visibility through groups.',
+              isKo
+                  ? '친구 그룹으로 포스트와 밋업의 공개 범위를 설정하세요.'
+                  : 'Use friend groups to set post and meetup visibility.',
               style: const TextStyle(
                 fontFamily: 'Inter',
                 fontFamilyFallback: const ['NotoSansKR'],
@@ -282,52 +283,112 @@ class _FriendCategoriesScreenState extends State<FriendCategoriesScreen>
 
   Widget _buildGroupsEmptyState() {
     final l10n = AppLocalizations.of(context)!;
-    final width = MediaQuery.sizeOf(context).width;
-    final compact = width < 360;
-    final horizontal = _responsiveHorizontalPadding(context);
+    final media = MediaQuery.of(context);
+    final compact = media.size.height < 700 || context.isCompactLayout;
+    final horizontal = media.size.width < 360
+        ? 14.0
+        : media.size.width < 430
+            ? 16.0
+            : 20.0;
+    final topPadding = compact ? 16.0 : context.rs(26).clamp(20, 30);
 
     return SafeArea(
-      minimum: const EdgeInsets.only(bottom: 76),
-      child: LayoutBuilder(
-        builder: (context, constraints) {
-          return SingleChildScrollView(
-            padding: EdgeInsets.symmetric(horizontal: horizontal),
-            child: ConstrainedBox(
-              constraints: BoxConstraints(minHeight: constraints.maxHeight),
+      top: false,
+      child: CustomScrollView(
+        physics: const AlwaysScrollableScrollPhysics(),
+        slivers: [
+          SliverPadding(
+            padding: EdgeInsets.fromLTRB(
+              horizontal,
+              topPadding.toDouble(),
+              horizontal,
+              compact ? 18 : 24,
+            ),
+            sliver: SliverFillRemaining(
+              hasScrollBody: false,
               child: Center(
                 child: ConstrainedBox(
-                  constraints: const BoxConstraints(maxWidth: 420),
+                  constraints: const BoxConstraints(maxWidth: 560),
                   child: MediaQuery.withClampedTextScaling(
                     maxScaleFactor: 1.25,
                     child: Column(
-                      mainAxisSize: MainAxisSize.min,
+                      mainAxisAlignment: MainAxisAlignment.center,
+                      crossAxisAlignment: CrossAxisAlignment.stretch,
                       children: [
-                        CategoryShapesIllustration(size: compact ? 72 : 82),
-                        SizedBox(height: compact ? 20 : 24),
+                        Center(
+                          child: CategoryShapesIllustration(
+                            size: compact ? 72 : 82,
+                          ),
+                        ),
+                        SizedBox(
+                          height: context
+                              .rs(compact ? 16 : 20)
+                              .clamp(14, 22)
+                              .toDouble(),
+                        ),
                         Text(
                           l10n.createFirstCategory,
                           textAlign: TextAlign.center,
                           style: TextStyle(
                             fontFamily: 'Inter',
                             fontFamilyFallback: const ['NotoSansKR'],
-                            fontSize: compact ? 17 : 18,
-                            fontWeight: FontWeight.w700,
+                            fontSize: context.rf(19).clamp(17, 20).toDouble(),
+                            fontWeight: FontWeight.w800,
                             color: const Color(0xFF111827),
-                            height: 1.25,
-                            letterSpacing: -0.25,
+                            height: 1.35,
+                            letterSpacing: -0.3,
                           ),
                         ),
-                        const SizedBox(height: 8),
+                        SizedBox(height: context.rs(7).clamp(6, 9).toDouble()),
                         Text(
                           l10n.createFirstCategoryDescription,
                           textAlign: TextAlign.center,
                           style: TextStyle(
                             fontFamily: 'Inter',
                             fontFamilyFallback: const ['NotoSansKR'],
-                            fontSize: compact ? 13 : 14,
-                            fontWeight: FontWeight.w400,
-                            color: const Color(0xFF667085),
+                            fontSize: context.rf(13).clamp(12, 14).toDouble(),
+                            fontWeight: FontWeight.w500,
+                            color: const Color(0xFF6B7280),
                             height: 1.5,
+                          ),
+                        ),
+                        SizedBox(
+                          height: context
+                              .rs(compact ? 22 : 28)
+                              .clamp(20, 30)
+                              .toDouble(),
+                        ),
+                        SizedBox(
+                          height: context.rh(48, min: 46, max: 52),
+                          child: FilledButton.icon(
+                            key: const Key('groups_empty_create_button'),
+                            onPressed: _handleCreateCategory,
+                            icon: Icon(
+                              Icons.group_add_outlined,
+                              size: context.ri(19).clamp(18, 21).toDouble(),
+                            ),
+                            label: Text(
+                              l10n.newCategoryCreate,
+                              maxLines: 1,
+                              overflow: TextOverflow.ellipsis,
+                              style: TextStyle(
+                                fontFamily: 'Inter',
+                                fontFamilyFallback: const ['NotoSansKR'],
+                                fontSize:
+                                    context.rf(14).clamp(13, 15).toDouble(),
+                                fontWeight: FontWeight.w700,
+                              ),
+                            ),
+                            style: FilledButton.styleFrom(
+                              elevation: 0,
+                              backgroundColor: AppColors.pointColor,
+                              foregroundColor: Colors.white,
+                              padding:
+                                  const EdgeInsets.symmetric(horizontal: 16),
+                              shape: RoundedRectangleBorder(
+                                borderRadius: BorderRadius.circular(10),
+                              ),
+                            ),
                           ),
                         ),
                       ],
@@ -336,8 +397,8 @@ class _FriendCategoriesScreenState extends State<FriendCategoriesScreen>
                 ),
               ),
             ),
-          );
-        },
+          ),
+        ],
       ),
     );
   }

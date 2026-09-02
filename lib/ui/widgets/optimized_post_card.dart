@@ -669,10 +669,6 @@ class _OptimizedPostCardState extends State<OptimizedPostCard> {
     final theme = Theme.of(context);
     final colorScheme = theme.colorScheme;
     final post = widget.post;
-    final isOwnPost = isOwnPostForTranslation(
-      post,
-      FirebaseAuth.instance.currentUser?.uid,
-    );
     final unifiedText = _getUnifiedBodyText(post);
     final hasContent = unifiedText.trim().isNotEmpty;
     final hasTranslationSource = postTranslationSourceFields(post).isNotEmpty;
@@ -715,7 +711,7 @@ class _OptimizedPostCardState extends State<OptimizedPostCard> {
                   post,
                   theme,
                   colorScheme,
-                  showTranslationToggle: hasTranslationSource && !isOwnPost,
+                  showTranslationToggle: hasTranslationSource,
                   threadContent: HanyangVerificationGate(
                     locked: isHanyangLocked,
                     compact: true,
@@ -725,9 +721,24 @@ class _OptimizedPostCardState extends State<OptimizedPostCard> {
                         if (hasPrimaryContent) ...[
                           SizedBox(height: contentTopGap),
                           if (hasContent)
-                            if (isOwnPost)
-                              _buildSmartEllipsizedText(
-                                text: unifiedText,
+                            TranslatableContent(
+                              key: ValueKey<String>(
+                                'post-translation:${post.id}:'
+                                '${unifiedText.hashCode}',
+                              ),
+                              request: ContentTranslationRequest(
+                                contentType: 'post',
+                                contentId: post.id,
+                                sourceFields: postTranslationSourceFields(post),
+                              ),
+                              scope: 'post:${post.id}',
+                              showToggle: false,
+                              loadOnDemand: widget.deferTranslationUntilVisible,
+                              onLoaderAttached:
+                                  widget.onTranslationLoaderAttached,
+                              builder: (context, fields) =>
+                                  _buildSmartEllipsizedText(
+                                text: fields['content'] ?? unifiedText,
                                 maxLines: 4,
                                 style: TextStyle(
                                   color: BrandColors.textPrimary,
@@ -738,47 +749,14 @@ class _OptimizedPostCardState extends State<OptimizedPostCard> {
                                   height: 1.24,
                                   letterSpacing: -0.3,
                                 ),
-                              )
-                            else
-                              TranslatableContent(
-                                key: ValueKey<String>(
-                                  'post-translation:${post.id}:'
-                                  '${unifiedText.hashCode}',
-                                ),
-                                request: ContentTranslationRequest(
-                                  contentType: 'post',
-                                  contentId: post.id,
-                                  sourceFields:
-                                      postTranslationSourceFields(post),
-                                ),
-                                scope: 'post:${post.id}',
-                                showToggle: false,
-                                loadOnDemand:
-                                    widget.deferTranslationUntilVisible,
-                                onLoaderAttached:
-                                    widget.onTranslationLoaderAttached,
-                                builder: (context, fields) =>
-                                    _buildSmartEllipsizedText(
-                                  text: fields['content'] ?? unifiedText,
-                                  maxLines: 4,
-                                  style: TextStyle(
-                                    color: BrandColors.textPrimary,
-                                    fontFamily: 'Inter',
-                                    fontFamilyFallback: const ['NotoSansKR'],
-                                    fontWeight: FontWeight.w500,
-                                    fontSize: contentSize,
-                                    height: 1.24,
-                                    letterSpacing: -0.3,
-                                  ),
-                                ),
                               ),
+                            ),
                           if (post.type == 'poll') ...[
                             if (hasContent)
                               const SizedBox(height: DesignTokens.s8),
                             PollPostWidget(
                               postId: post.id,
                               post: post,
-                              translationEnabled: !isOwnPost,
                               deferTranslationUntilVisible:
                                   widget.deferTranslationUntilVisible,
                               onTranslationLoaderAttached:

@@ -71,12 +71,13 @@ service cloud.firestore {
         && get(/databases/$(database)/documents/users/$(userId)).data.get('status', '') != 'suspended'
         && get(/databases/$(database)/documents/users/$(userId)).data.get('accountStatus', '') != 'deleted'
         && get(/databases/$(database)/documents/users/$(userId)).data.get('accountStatus', '') != 'suspended'
-        && get(/databases/$(database)/documents/users/$(userId)).data.get('registrationStatus', '') != 'deleted'
         && (
-          get(/databases/$(database)/documents/users/$(userId)).data.get('nickname', '') != ''
-          || get(/databases/$(database)/documents/users/$(userId)).data.get('displayName', '') != ''
-          || get(/databases/$(database)/documents/users/$(userId)).data.get('email', '') != ''
-          || get(/databases/$(database)/documents/users/$(userId)).data.get('hanyangEmail', '') != ''
+          get(/databases/$(database)/documents/users/$(userId)).data.get('registrationStatus', '') == 'complete'
+          || (
+            get(/databases/$(database)/documents/users/$(userId)).data.get('registrationStatus', '') == ''
+            && get(/databases/$(database)/documents/users/$(userId)).data.get('emailVerified', false) == true
+            && get(/databases/$(database)/documents/users/$(userId)).data.get('nickname', '') != ''
+          )
         );
     }
 
@@ -91,7 +92,9 @@ service cloud.firestore {
         'hanyangEmailVerifiedAt', 'schoolVerificationMethod',
         'schoolVerificationSchemaVersion', 'schoolVerificationUpdatedAt',
         'verificationMethod', 'isAdmin',
-        'registrationStatus', 'registrationCompletedAt'
+        'pendingHanyangEmail', 'pendingHanyangVerificationLinked',
+        'pendingHanyangVerifiedAt',
+        'signupState', 'registrationStatus', 'registrationCompletedAt'
       ]);
     }
 
@@ -249,6 +252,14 @@ service cloud.firestore {
     match /email_verifications/{emailId} {
       allow read, write: if false;
     }
+    // 6자리 비밀번호 재설정 코드는 Cloud Functions에서만 관리한다.
+    match /passwordResetCodes/{emailKey} {
+      allow read, write: if false;
+    }
+    // 관리자 메일의 중복 발송 방지 영수증은 Cloud Functions만 관리한다.
+    match /admin_notification_receipts/{receiptId} {
+      allow read, write: if false;
+    }
 
     
     // ===== 사용자 컬렉션 =====
@@ -341,10 +352,12 @@ service cloud.firestore {
       
       // 사용자 프로필 게시글 (후기 등)
       match /posts/{postId} {
-        // 읽기: 모든 인증된 사용자 (isHidden이 false이거나 본인인 경우)
+        // 레거시 앱은 이 서브컬렉션을 직접 조회한다. 기존 읽기 조건을
+        // 유지하고, 신규 프로필의 공개 후기 미리보기는 App Check가 적용된
+        // getPublicProfileReviewPreview 함수에서 동의 완료 상태까지 검증한다.
         allow read: if 
           request.auth != null &&
-          (request.auth.uid == userId || 
+          (request.auth.uid == userId ||
            (!resource.data.keys().hasAny(['isHidden']) || !resource.data.isHidden));
         
         // 생성: 본인만 가능 (후기 작성 시)
@@ -1413,8 +1426,8 @@ service cloud.firestore {
       // 수행한다. 방 문서의 participantIds/unreadCount는 참여자에게만 노출한다.
       allow read: if isParticipant();
 
-      // 수정: 참여자만 + 허용 필드만 변경. 새 참여자 초대는 방장 전용 직접
-      // update가 아니라, 현재 참여자 여부와 친구 관계를 검증하는
+      // 수정: 참여자만 + 허용 필드만 변경. 새 참여자 초대는 직접 update가
+      // 아니라 현재 참여자 여부, 활성 계정, 양방향 차단 상태를 검증하는
       // inviteSnackChatParticipants callable에서만 처리한다.
       allow update: if isParticipant() && (
         onlyOwnUnreadReset()

@@ -176,6 +176,138 @@ abstract class AppLocalizations {
   /// **'비밀번호 재설정'**
   String get resetPassword;
 
+  /// No description provided for @passwordResetDescription.
+  ///
+  /// In ko, this message translates to:
+  /// **'이메일로 받은 6자리 인증번호를 입력해 비밀번호를 재설정하세요.'**
+  String get passwordResetDescription;
+
+  /// No description provided for @emailAddress.
+  ///
+  /// In ko, this message translates to:
+  /// **'이메일 주소'**
+  String get emailAddress;
+
+  /// No description provided for @sendCode.
+  ///
+  /// In ko, this message translates to:
+  /// **'인증번호 보내기'**
+  String get sendCode;
+
+  /// No description provided for @passwordResetCodeSent.
+  ///
+  /// In ko, this message translates to:
+  /// **'해당 이메일로 가입한 계정이 있다면 인증번호를 보냈습니다.'**
+  String get passwordResetCodeSent;
+
+  /// No description provided for @verificationCodeHint.
+  ///
+  /// In ko, this message translates to:
+  /// **'6자리 인증번호 입력'**
+  String get verificationCodeHint;
+
+  /// No description provided for @newPassword.
+  ///
+  /// In ko, this message translates to:
+  /// **'새 비밀번호'**
+  String get newPassword;
+
+  /// No description provided for @resendCode.
+  ///
+  /// In ko, this message translates to:
+  /// **'인증번호 다시 보내기'**
+  String get resendCode;
+
+  /// No description provided for @resendCodeIn.
+  ///
+  /// In ko, this message translates to:
+  /// **'{seconds}초 후 다시 보내기'**
+  String resendCodeIn(int seconds);
+
+  /// No description provided for @passwordChangedSuccessfully.
+  ///
+  /// In ko, this message translates to:
+  /// **'비밀번호가 변경되었습니다.'**
+  String get passwordChangedSuccessfully;
+
+  /// No description provided for @signInWithNewPassword.
+  ///
+  /// In ko, this message translates to:
+  /// **'새 비밀번호로 로그인해 주세요.'**
+  String get signInWithNewPassword;
+
+  /// No description provided for @backToEmailLogin.
+  ///
+  /// In ko, this message translates to:
+  /// **'이메일 로그인으로 돌아가기'**
+  String get backToEmailLogin;
+
+  /// No description provided for @invalidVerificationCode.
+  ///
+  /// In ko, this message translates to:
+  /// **'인증번호가 올바르지 않습니다.'**
+  String get invalidVerificationCode;
+
+  /// No description provided for @expiredVerificationCode.
+  ///
+  /// In ko, this message translates to:
+  /// **'인증번호가 만료되었습니다. 새 인증번호를 요청해 주세요.'**
+  String get expiredVerificationCode;
+
+  /// No description provided for @tooManyVerificationAttempts.
+  ///
+  /// In ko, this message translates to:
+  /// **'입력 횟수를 초과했습니다. 새 인증번호를 요청해 주세요.'**
+  String get tooManyVerificationAttempts;
+
+  /// No description provided for @passwordResetRateLimited.
+  ///
+  /// In ko, this message translates to:
+  /// **'잠시 후 인증번호를 다시 요청해 주세요.'**
+  String get passwordResetRateLimited;
+
+  /// No description provided for @passwordResetGenericError.
+  ///
+  /// In ko, this message translates to:
+  /// **'비밀번호를 재설정하지 못했어요. 잠시 후 다시 시도해 주세요.'**
+  String get passwordResetGenericError;
+
+  /// No description provided for @passwordResetNetworkError.
+  ///
+  /// In ko, this message translates to:
+  /// **'인터넷 연결을 확인한 뒤 다시 시도해 주세요.'**
+  String get passwordResetNetworkError;
+
+  /// No description provided for @passwordResetRequestVerificationFailed.
+  ///
+  /// In ko, this message translates to:
+  /// **'요청을 확인하지 못했어요. 잠시 후 다시 시도해 주세요.'**
+  String get passwordResetRequestVerificationFailed;
+
+  /// No description provided for @currentPassword.
+  ///
+  /// In ko, this message translates to:
+  /// **'현재 비밀번호'**
+  String get currentPassword;
+
+  /// No description provided for @currentPasswordHint.
+  ///
+  /// In ko, this message translates to:
+  /// **'현재 비밀번호 입력'**
+  String get currentPasswordHint;
+
+  /// No description provided for @emailReauthenticationDescription.
+  ///
+  /// In ko, this message translates to:
+  /// **'안전을 위해 회원 탈퇴 전에 현재 비밀번호를 확인해 주세요.'**
+  String get emailReauthenticationDescription;
+
+  /// No description provided for @reauthenticationFailedTryAgain.
+  ///
+  /// In ko, this message translates to:
+  /// **'본인 확인에 실패했습니다. 다시 시도해 주세요.'**
+  String get reauthenticationFailedTryAgain;
+
   /// No description provided for @sendResetEmail.
   ///
   /// In ko, this message translates to:
@@ -2489,13 +2621,13 @@ abstract class AppLocalizations {
   /// No description provided for @createFirstCategory.
   ///
   /// In ko, this message translates to:
-  /// **'그룹으로 친구 관리하기'**
+  /// **'친구 그룹으로 공개 범위를 관리해요'**
   String get createFirstCategory;
 
   /// No description provided for @createFirstCategoryDescription.
   ///
   /// In ko, this message translates to:
-  /// **'친구들을 그룹으로 관리해보세요.\n아래 추가 버튼을 통해 그룹을 만들어보세요.'**
+  /// **'친구들을 그룹으로 관리하고,\n포스트와 밋업의 공개 범위를 간편하게 설정해 보세요.'**
   String get createFirstCategoryDescription;
 
   /// No description provided for @editAction.
@@ -3098,6 +3230,12 @@ abstract class AppLocalizations {
   /// **'{name}님이 친구요청을 보냈습니다'**
   String friendRequestMessage(String name);
 
+  /// No description provided for @friendRequestAcceptedMessage.
+  ///
+  /// In ko, this message translates to:
+  /// **'{name}님이 회원님의 친구요청을 수락했습니다'**
+  String friendRequestAcceptedMessage(String name);
+
   /// No description provided for @emailSignup.
   ///
   /// In ko, this message translates to:
@@ -3287,7 +3425,7 @@ abstract class AppLocalizations {
   /// No description provided for @appName.
   ///
   /// In ko, this message translates to:
-  /// **'Wefilling'**
+  /// **'위필링'**
   String get appName;
 
   /// No description provided for @appTagline.
@@ -4675,6 +4813,12 @@ abstract class AppLocalizations {
   /// In ko, this message translates to:
   /// **'카페'**
   String get cafe;
+
+  /// No description provided for @trip.
+  ///
+  /// In ko, this message translates to:
+  /// **'여행'**
+  String get trip;
 
   /// No description provided for @hangout.
   ///

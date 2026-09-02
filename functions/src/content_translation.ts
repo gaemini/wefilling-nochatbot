@@ -79,6 +79,7 @@ const SUPPORTED_TYPES = new Set([
   'comment',
   'meetup',
   'snack_chat_message',
+  'dm',
 ]);
 
 type TranslationRequest = {
@@ -100,6 +101,7 @@ type ResolvedContent = TranslationRequest & {
 
 type ResolutionCache = {
   snackRooms: Map<string, Promise<admin.firestore.DocumentSnapshot>>;
+  dmConversations: Map<string, Promise<admin.firestore.DocumentSnapshot>>;
 };
 
 type GeminiTranslation = {
@@ -434,15 +436,39 @@ async function canReadAudienceDocument(
   uid: string,
   data: Record<string, unknown>,
 ): Promise<boolean> {
-  const ownerId = stringValue(data.ownerId || data.userId);
-  if (ownerId === uid) return true;
+  // Firestore canReadPostData/canReadMeetupData와 같은 저장 시점 snapshot만
+  // 사용한다. 현재 친구/그룹 구성은 다시 조회하지 않는다. 유효한 v2 frozen
+  // snapshot이 있으면 그것만 최종 기준으로 사용하고, 없을 때만 legacy 필드로
+  // fallback한다. 그래야 오래된 allowedUserIds가 새 권한을 덮어쓰지 않는다.
+  const frozenOwnerId = stringValue(data.ownerId);
+  const frozenVisibility = stringValue(data.visibilityMode);
+  const frozenAudience = stringList(data.audienceUserIdsFrozen);
+  const hasFrozenAudience = Number(data.visibilitySchemaVersion || 0) >= 2 &&
+    frozenOwnerId.length > 0 &&
+    ['public', 'friends', 'category'].includes(frozenVisibility) &&
+    Array.isArray(data.audienceUserIdsFrozen) &&
+    Array.isArray(data.sourceGroupIds) &&
+    data.visibilityLockedAt instanceof admin.firestore.Timestamp &&
+    frozenAudience.includes(frozenOwnerId);
+
+  if (hasFrozenAudience && frozenOwnerId === uid) return true;
+  const legacyOwnerId = stringValue(data.userId);
+  if (!hasFrozenAudience && legacyOwnerId === uid) return true;
   if (data.requiresHanyangVerification === true &&
       !(await hasActiveHanyangClaim(uid))) {
     return false;
   }
-  const visibility = stringValue(data.visibilityMode || data.visibility || 'public');
-  if (visibility === 'public' || visibility === 'anonymous') return true;
-  return stringList(data.audienceUserIdsFrozen || data.allowedUserIds).includes(uid);
+  if (hasFrozenAudience) {
+    if (frozenVisibility === 'public') return true;
+    return frozenAudience.includes(uid);
+  }
+
+  const legacyVisibility = stringValue(data.visibility);
+  if (legacyVisibility === 'public') return true;
+  if (legacyVisibility !== 'friends' && legacyVisibility !== 'category') {
+    return false;
+  }
+  return stringList(data.allowedUserIds).includes(uid);
 }
 
 async function resolveContent(
@@ -531,7 +557,7 @@ async function resolveContent(
       createdAt: data.createdAt,
     };
     request.parentId = parentId;
-  } else {
+  } else if (contentType === 'snack_chat_message') {
     const roomId = safeId(request.parentId, 'parentId');
     const roomRef = db.collection(COL.snackChats).doc(roomId);
     let roomRequest = resolutionCache?.snackRooms.get(roomId);
@@ -571,6 +597,50 @@ async function resolveContent(
       replyToMessageId: data.replyToMessageId,
       senderId: data.senderId,
       sequence: data.sequence,
+      createdAt: data.createdAt,
+    };
+  } else {
+    const conversationId = safeId(request.parentId, 'parentId');
+    const conversationRef = db.collection(COL.conversations)
+      .doc(conversationId);
+    let conversationRequest = resolutionCache?.dmConversations
+      .get(conversationId);
+    if (!conversationRequest) {
+      conversationRequest = conversationRef.get();
+      resolutionCache?.dmConversations.set(
+        conversationId,
+        conversationRequest,
+      );
+    }
+    const conversation = await conversationRequest;
+    if (!conversation.exists ||
+        !stringList(conversation.data()?.participants).includes(uid)) {
+      throw new functions.https.HttpsError(
+        'permission-denied',
+        'DM conversation is not accessible.',
+      );
+    }
+
+    const message = await conversation.ref.collection('messages')
+      .doc(contentId).get();
+    if (!message.exists) {
+      throw new functions.https.HttpsError('not-found', 'Message not found.');
+    }
+    const data = message.data() as Record<string, unknown>;
+    const messageType = stringValue(data.type) || 'text';
+    if (data.isDeleted === true || data.deleted === true ||
+        data.deletedAt != null || messageType === 'system') {
+      throw new functions.https.HttpsError(
+        'failed-precondition',
+        'Message cannot be translated.',
+      );
+    }
+    fields = {text: stringValue(data.text)};
+    contextSeed = {
+      roomPath: conversation.ref.path,
+      messageType,
+      replyToMessageId: data.replyToMessageId,
+      senderId: data.senderId,
       createdAt: data.createdAt,
     };
   }
@@ -720,7 +790,8 @@ async function buildTranslationContext(
         // Missing indexes must not change the existing comment read path.
       }
     }
-  } else if (item.contentType === 'snack_chat_message') {
+  } else if (item.contentType === 'snack_chat_message' ||
+      item.contentType === 'dm') {
     const roomPath = stringValue(seed.roomPath);
     const replyToMessageId = storedDocumentId(seed.replyToMessageId);
     const targetSenderId = seed.senderId;
@@ -957,7 +1028,7 @@ async function callGeminiModel(
         'Keep punctuation and intentional emphasis unless target-language grammar requires an equivalent natural form.',
         'Do not explain, add information, censor, invent names or brands, or rewrite proper nouns unnecessarily.',
         'Use an obvious typo only to infer the intended meaning internally. Never alter the source, and if an expression is uncertain, preserve it instead of guessing a person, brand, apology, or unrelated word.',
-        'Use natural social-post and comment language for post/comment, natural conversational language for snack_chat_message, and clear informational language for meetup.',
+        'Use natural social-post and comment language for post/comment, natural conversational language for snack_chat_message and dm, and clear informational language for meetup.',
         'Do not add explanations. Return one result per input id. A failure for one item must not remove other results.',
         strict ?
           'Before returning, verify sentence by sentence that no meaning unit was omitted, every protected token remains exactly once, paragraph structure is unchanged, and the result is fluent.' :
@@ -1525,6 +1596,7 @@ export const translateContentBatch = functions
       // 한 callable batch의 스낵챗 메시지는 보통 모두 같은 방에 속한다.
       // 참여 권한 원본인 방 문서를 메시지마다 다시 과금/조회하지 않는다.
       snackRooms: new Map(),
+      dmConversations: new Map(),
     };
     const resolvedAttempts = await Promise.all(requests.map(async (item) => {
       try {
@@ -1540,6 +1612,7 @@ export const translateContentBatch = functions
         });
         console.warn('content_translation_source_resolution_failed', {
           contentType: item.contentType,
+          contentId: item.contentId,
           errorCode,
         });
         return null;
@@ -1856,6 +1929,7 @@ export const translateContentBatch = functions
       cacheMisses: acquired.length,
       pendingBlocked,
       snackRoomReads: resolutionCache.snackRooms.size,
+      dmConversationReads: resolutionCache.dmConversations.size,
       completed: [...responses.values()].filter((item) => item.status === 'completed').length,
       failed: [...responses.values()].filter((item) => item.status === 'failed').length,
       durationMs,

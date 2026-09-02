@@ -49,6 +49,84 @@ class AppLocalizationsEn extends AppLocalizations {
   String get resetPassword => 'Reset Password';
 
   @override
+  String get passwordResetDescription =>
+      'Enter your email to receive a 6-digit verification code.';
+
+  @override
+  String get emailAddress => 'Email address';
+
+  @override
+  String get sendCode => 'Send code';
+
+  @override
+  String get passwordResetCodeSent =>
+      'If an account exists for this email, a verification code has been sent.';
+
+  @override
+  String get verificationCodeHint => 'Enter the 6-digit code';
+
+  @override
+  String get newPassword => 'New password';
+
+  @override
+  String get resendCode => 'Resend code';
+
+  @override
+  String resendCodeIn(int seconds) {
+    return 'Resend code in ${seconds}s';
+  }
+
+  @override
+  String get passwordChangedSuccessfully => 'Password changed successfully.';
+
+  @override
+  String get signInWithNewPassword => 'Please sign in with your new password.';
+
+  @override
+  String get backToEmailLogin => 'Back to Email Login';
+
+  @override
+  String get invalidVerificationCode => 'The verification code is incorrect.';
+
+  @override
+  String get expiredVerificationCode =>
+      'The verification code has expired. Request a new code.';
+
+  @override
+  String get tooManyVerificationAttempts =>
+      'Too many attempts. Request a new code.';
+
+  @override
+  String get passwordResetRateLimited =>
+      'Please wait before requesting another code.';
+
+  @override
+  String get passwordResetGenericError =>
+      'We couldn\'t reset your password. Please try again shortly.';
+
+  @override
+  String get passwordResetNetworkError =>
+      'Check your internet connection and try again.';
+
+  @override
+  String get passwordResetRequestVerificationFailed =>
+      'We couldn\'t verify this request. Please try again.';
+
+  @override
+  String get currentPassword => 'Current password';
+
+  @override
+  String get currentPasswordHint => 'Enter your current password';
+
+  @override
+  String get emailReauthenticationDescription =>
+      'For security, confirm your current password before deleting your account.';
+
+  @override
+  String get reauthenticationFailedTryAgain =>
+      'We couldn\'t verify your identity. Please try again.';
+
+  @override
   String get sendResetEmail => 'Send Reset Email';
 
   @override
@@ -1266,11 +1344,11 @@ class AppLocalizationsEn extends AppLocalizations {
   String get categoryNameHint => 'e.g., University Friends';
 
   @override
-  String get createFirstCategory => 'Manage Friends with Groups';
+  String get createFirstCategory => 'Control visibility with friend groups';
 
   @override
   String get createFirstCategoryDescription =>
-      'Manage your friends with groups.\nCreate a group using the add button below.';
+      'Organize friends into groups, then easily choose\nwho can see your posts and meetups.';
 
   @override
   String get editAction => 'Edit';
@@ -1615,6 +1693,11 @@ class AppLocalizationsEn extends AppLocalizations {
   @override
   String friendRequestMessage(String name) {
     return '$name sent you a friend request';
+  }
+
+  @override
+  String friendRequestAcceptedMessage(String name) {
+    return '$name accepted your friend request';
   }
 
   @override
@@ -2494,6 +2577,9 @@ class AppLocalizationsEn extends AppLocalizations {
 
   @override
   String get cafe => 'Cafe';
+
+  @override
+  String get trip => 'Trip';
 
   @override
   String get hangout => 'Hangout';

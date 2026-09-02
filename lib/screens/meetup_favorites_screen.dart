@@ -70,6 +70,9 @@ class _MeetupFavoritesScreenState extends State<MeetupFavoritesScreen> {
         return l10n.meal;
       case 'cafe':
         return l10n.cafe;
+      case 'trip':
+      case 'travel':
+        return l10n.trip;
       case 'hangout':
       case 'drink': // Legacy favorite templates.
       case 'drinks':

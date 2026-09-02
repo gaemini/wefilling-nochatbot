@@ -1330,6 +1330,10 @@ class _MeetupDetailScreenState extends State<MeetupDetailScreen>
       case 'cafe':
       case 'hobby':
         return Colors.green;
+      case '여행':
+      case 'trip':
+      case 'travel':
+        return Colors.teal;
       case '문화':
       case 'culture':
         return Colors.purple;

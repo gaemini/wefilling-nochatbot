@@ -13,7 +13,6 @@ import 'package:flutter/services.dart';
 import 'package:flutter_localizations/flutter_localizations.dart';
 import 'package:firebase_core/firebase_core.dart';
 import 'package:firebase_auth/firebase_auth.dart';
-import 'package:firebase_app_check/firebase_app_check.dart';
 import 'package:firebase_messaging/firebase_messaging.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_crashlytics/firebase_crashlytics.dart';
@@ -28,6 +27,8 @@ import 'models/meetup.dart';
 import 'providers/auth_provider.dart' as app_auth;
 import 'providers/relationship_provider.dart';
 import 'screens/login_screen.dart';
+import 'screens/nickname_setup_screen.dart';
+import 'screens/hanyang_email_verification_screen.dart';
 import 'firebase_options.dart';
 import 'services/feature_flag_service.dart';
 import 'services/fcm_service.dart';
@@ -42,6 +43,10 @@ import 'screens/admin_migration_screen.dart';
 import 'services/app_messenger.dart';
 import 'services/external_share_service.dart';
 import 'services/ios_shared_auth_service.dart';
+import 'services/firebase_app_check_service.dart';
+import 'services/release_metadata_service.dart';
+import 'services/app_update_service.dart';
+import 'screens/release_diagnostics_screen.dart';
 
 void main() {
   runZonedGuarded(
@@ -102,10 +107,14 @@ void main() {
         }
       }
 
-      // Firebase Auth의 기존 iOS 로그인 상태를 Share Extension과 공유되는
-      // Keychain access group으로 먼저 이전한다. 이후 AuthProvider나 외부
-      // 공유 라우터가 currentUser를 읽을 때 세션이 흔들리지 않는다.
-      await IosSharedAuthService.configure();
+      // App Check must be activated once before Firestore, Storage, Functions,
+      // Messaging, or auth-state driven app initialization can start.
+      await FirebaseAppCheckService.instance.initialize();
+
+      // The immutable artifact identity is read before caches, auth routing or
+      // app services. A mismatch disables update prompting instead of risking
+      // an update against the wrong Store listing.
+      await ReleaseMetadataService.instance.initialize();
 
       // 2. locale 초기화 (비동기로 빠르게 처리)
       try {
@@ -136,37 +145,7 @@ void main() {
         }
       }
 
-      // 4. App Check 초기화
-      try {
-        if (!kIsWeb) {
-          const AndroidAppCheckProvider androidProvider = kDebugMode
-              ? AndroidDebugProvider()
-              : AndroidPlayIntegrityProvider();
-          // Only an actual Debug build may use the debug provider. Profile
-          // builds exercise the same production attestation path as
-          // Release/TestFlight so a profiling archive can never depend on a
-          // locally registered debug token.
-          const AppleAppCheckProvider appleProvider = kDebugMode
-              ? AppleDebugProvider()
-              : AppleAppAttestWithDeviceCheckFallbackProvider();
-          await FirebaseAppCheck.instance.activate(
-            providerAndroid: androidProvider,
-            providerApple: appleProvider,
-          );
-          await FirebaseAppCheck.instance.setTokenAutoRefreshEnabled(true);
-          if (kDebugMode) {
-            debugPrint('🛡️ App Check 활성화 완료 (debug provider, '
-                'project=${Firebase.app().options.projectId}, '
-                'appId=${Firebase.app().options.appId})');
-          }
-        }
-      } catch (e) {
-        if (kDebugMode) {
-          debugPrint('⚠️ App Check 초기화 실패(무시): $e');
-        }
-      }
-
-      // 5. Crashlytics 설정
+      // 4. Crashlytics 설정
       try {
         await FirebaseCrashlytics.instance
             .setCrashlyticsCollectionEnabled(!kDebugMode);
@@ -196,7 +175,9 @@ void main() {
 
       // 6. 캐시 시스템 초기화
       try {
-        await CacheManager.initialize();
+        await CacheManager.initialize(
+          releaseMetadata: ReleaseMetadataService.instance.metadata,
+        );
         // 명시적으로 cacheManager를 전달하지 않은 썸네일/상세 이미지도
         // 포스트 피드와 같은 디스크 저장소를 사용해 화면 이동 시 재다운로드와
         // 중복 파일 보관이 생기지 않게 한다.
@@ -210,6 +191,21 @@ void main() {
           debugPrint('⚠️ 캐시 시스템 초기화 실패 (앱은 정상 작동): $e');
         }
       }
+
+      // Update policy has a bounded startup budget. Remote Config or Store
+      // outages never block login; the service falls back to a paused policy.
+      final updateInitialization = AppUpdateService.instance.initialize();
+      try {
+        await updateInitialization.timeout(const Duration(seconds: 12));
+      } on TimeoutException {
+        if (kDebugMode) {
+          debugPrint('⚠️ 업데이트 정책 확인 지연 - 정상 앱 진입 계속');
+        }
+      }
+
+      // Release identity, cache migration and update policy are settled before
+      // the first Auth read. Existing iOS sessions are then shared safely.
+      await IosSharedAuthService.configure();
 
       // 7. Firebase Auth 및 Firestore 설정 (병렬 처리로 최적화)
       try {
@@ -271,21 +267,7 @@ void main() {
         }
       }
 
-      // 8. FeatureFlagService 초기화 (백그라운드로 이동)
-      unawaited(Future(() async {
-        try {
-          await FeatureFlagService().init();
-          if (kDebugMode) {
-            debugPrint('🚩 FeatureFlagService 초기화 완료');
-          }
-        } catch (e) {
-          if (kDebugMode) {
-            debugPrint('⚠️ FeatureFlagService 초기화 오류: $e');
-          }
-        }
-      }));
-
-      // 9. 앱 시작 (대기 시간 제거)
+      // 8. 앱 시작 (가입 완료 뒤에만 앱 기능 서비스를 초기화한다.)
       if (kDebugMode) {
         debugPrint('🚀 runApp 호출: ${DateTime.now()}');
       }
@@ -304,8 +286,6 @@ void main() {
           child: const MeetupApp(),
         ),
       );
-      unawaited(ExternalShareService.instance.initialize());
-
       if (kDebugMode) {
         debugPrint('🎉 runApp 완료: ${DateTime.now()}');
       }
@@ -349,6 +329,7 @@ class _MeetupAppState extends State<MeetupApp> {
   StreamSubscription<User?>? _authSub;
   String? _lastSyncedLanguageCode;
   Future<void>? _languageSyncInFlight;
+  String? _completedServicesUid;
 
   @override
   void initState() {
@@ -356,9 +337,16 @@ class _MeetupAppState extends State<MeetupApp> {
     _loadLanguage();
     _authSub = FirebaseAuth.instance.authStateChanges().listen((user) {
       if (user == null) return;
-      // 로그인 시점에 서버에도 언어 동기화 (푸시 i18n용)
-      unawaited(_syncLanguageToFirestore(_locale.languageCode));
+      // Registration completion is checked by AuthProvider before app service
+      // initialization. Auth presence alone must not start Firebase reads.
     });
+    unawaited(
+      AppUpdateService.instance.initialize().whenComplete(() {
+        WidgetsBinding.instance.addPostFrameCallback((_) {
+          unawaited(AppUpdateService.instance.presentIfNeeded());
+        });
+      }),
+    );
   }
 
   Future<void> _syncLanguageToFirestore(String languageCode) async {
@@ -409,6 +397,12 @@ class _MeetupAppState extends State<MeetupApp> {
         }
         return;
       }
+      final userData = userSnapshot.data() ?? const <String, dynamic>{};
+      final status = (userData['registrationStatus'] ?? '').toString();
+      final legacyComplete = status.isEmpty &&
+          userData['emailVerified'] == true &&
+          (userData['nickname'] ?? '').toString().trim().isNotEmpty;
+      if (status != 'complete' && !legacyComplete) return;
 
       await userRef.update({
         'preferredLanguage': languageCode,
@@ -441,15 +435,26 @@ class _MeetupAppState extends State<MeetupApp> {
         _locale = Locale(languageCode);
       });
     }
-    unawaited(
-      ContentTranslationService.instance
-          .synchronizeAutomaticLanguageWithUi(languageCode),
-    );
-    // 푸시 i18n을 위해 서버에도 동기화
-    unawaited(_syncLanguageToFirestore(languageCode));
     if (kDebugMode) {
       debugPrint('🌐 언어 로드 완료: $languageCode');
     }
+  }
+
+  void _initializeCompletedServices(app_auth.AuthProvider authProvider) {
+    final uid = authProvider.user?.uid;
+    if (uid == null || _completedServicesUid == uid) return;
+    _completedServicesUid = uid;
+    unawaited(Future<void>(() async {
+      try {
+        await FeatureFlagService().init();
+        await ExternalShareService.instance.initialize();
+        await ContentTranslationService.instance
+            .synchronizeAutomaticLanguageWithUi(_locale.languageCode);
+        await _syncLanguageToFirestore(_locale.languageCode);
+      } catch (error) {
+        if (kDebugMode) debugPrint('완료 사용자 서비스 초기화 실패: $error');
+      }
+    }));
   }
 
   /// 언어 변경
@@ -459,12 +464,13 @@ class _MeetupAppState extends State<MeetupApp> {
         _locale = Locale(languageCode);
       });
       unawaited(_saveLanguageAndRefreshNotifications(languageCode));
-      unawaited(
-        ContentTranslationService.instance
-            .synchronizeAutomaticLanguageWithUi(languageCode),
-      );
-      // 푸시 i18n을 위해 서버에도 동기화
-      unawaited(_syncLanguageToFirestore(languageCode));
+      if (_completedServicesUid != null) {
+        unawaited(
+          ContentTranslationService.instance
+              .synchronizeAutomaticLanguageWithUi(languageCode),
+        );
+        unawaited(_syncLanguageToFirestore(languageCode));
+      }
       if (kDebugMode) {
         debugPrint('🌐 언어 변경: $languageCode');
       }
@@ -475,6 +481,7 @@ class _MeetupAppState extends State<MeetupApp> {
     String languageCode,
   ) async {
     await _languageService.saveLanguage(languageCode);
+    if (_completedServicesUid == null) return;
     try {
       await SemesterTodoService.instance
           .refreshPersonalTodoNotificationLanguage();
@@ -538,6 +545,7 @@ class _MeetupAppState extends State<MeetupApp> {
           return EditMeetupScreen(meetup: meetup);
         },
         '/admin-migration': (context) => const AdminMigrationScreen(),
+        '/release-diagnostics': (context) => const ReleaseDiagnosticsScreen(),
       },
       navigatorKey: NavigationService.navigatorKey,
       home: Consumer<app_auth.AuthProvider>(
@@ -562,8 +570,23 @@ class _MeetupAppState extends State<MeetupApp> {
             // Firebase Auth 존재 여부가 아니라 서버의 최종 가입 완료 상태를
             // 기준으로만 앱 진입을 허용한다.
             if (!authProvider.isRegistrationComplete) {
-              return const LoginScreen();
+              if (authProvider.registrationState ==
+                  app_auth.AccountRegistrationState.authCreated) {
+                final signupLanguage =
+                    (authProvider.userData?['signupLanguage'] ?? 'ko')
+                        .toString();
+                return signupLanguage.startsWith('en')
+                    ? const HanyangEmailVerificationScreen.general(
+                        signupLanguage: 'en',
+                      )
+                    : const HanyangEmailVerificationScreen();
+              }
+              return const NicknameSetupScreen();
             }
+
+            WidgetsBinding.instance.addPostFrameCallback((_) {
+              _initializeCompletedServices(authProvider);
+            });
 
             return MainScreen(
               key: ValueKey('main_session_${authProvider.user!.uid}'),

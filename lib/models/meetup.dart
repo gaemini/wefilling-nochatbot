@@ -443,6 +443,10 @@ class Meetup {
       case 'cafe':
       case 'hobby':
         return Icons.palette_outlined;
+      case '여행':
+      case 'trip':
+      case 'travel':
+        return Icons.flight_takeoff_outlined;
       case '술':
       case 'drink':
       case 'drinks':
@@ -476,6 +480,10 @@ class Meetup {
       case 'cafe':
       case 'hobby':
         return const Color(0xFF34C759); // 초록색
+      case '여행':
+      case 'trip':
+      case 'travel':
+        return const Color(0xFF0EA5A4);
       case '술':
       case 'drink':
       case 'drinks':
@@ -509,6 +517,10 @@ class Meetup {
       case 'cafe':
       case 'hobby':
         return const Color(0xFFF0FFF4); // 연한 초록색
+      case '여행':
+      case 'trip':
+      case 'travel':
+        return const Color(0xFFECFEFF);
       case '술':
       case 'drink':
       case 'drinks':

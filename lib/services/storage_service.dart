@@ -28,10 +28,16 @@ class StorageService {
   final Uuid _uuid = const Uuid();
 
   // 이미지 파일을 Firebase Storage에 업로드하고 다운로드 URL을 반환
-  Future<String?> uploadImage(File imageFile) async {
+  Future<String?> uploadImage(
+    File imageFile, {
+    bool forceJpeg = false,
+  }) async {
     try {
       // 이미지 압축
-      final compressedFile = await _compressImage(imageFile);
+      final compressedFile = await _compressImage(
+        imageFile,
+        forceJpeg: forceJpeg,
+      );
       if (compressedFile == null) {
         Logger.error('이미지 압축 실패');
         return null;

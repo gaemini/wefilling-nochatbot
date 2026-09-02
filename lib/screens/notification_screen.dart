@@ -23,6 +23,7 @@ import '../services/user_info_cache_service.dart';
 import '../services/snapshot_service.dart';
 import 'snapshot_detail_screen.dart';
 import 'snapshot_comment_letter_screen.dart';
+import 'friend_profile_screen.dart';
 
 class NotificationScreen extends StatefulWidget {
   /// true면 화면이 열릴 때 "모두 읽음"을 즉시 실행한다.
@@ -145,6 +146,9 @@ class _NotificationScreenState extends State<NotificationScreen> {
         break;
       case 'friend_request':
         await _navigateToFriendRequests();
+        break;
+      case 'friend_request_accepted':
+        await _navigateToAcceptedFriend(notification);
         break;
       case 'dm_received':
         await _navigateToDM(notification);
@@ -439,6 +443,28 @@ class _NotificationScreenState extends State<NotificationScreen> {
     }
   }
 
+  Future<void> _navigateToAcceptedFriend(
+    AppNotification notification,
+  ) async {
+    final userId = (notification.actorId ?? '').trim();
+    if (userId.isEmpty) {
+      _showStyledSnackBar(
+        AppLocalizations.of(context)!.notificationDataMissing,
+        isError: true,
+      );
+      return;
+    }
+    await Navigator.push(
+      context,
+      MaterialPageRoute(
+        builder: (_) => FriendProfileScreen(
+          userId: userId,
+          nickname: notification.actorName,
+        ),
+      ),
+    );
+  }
+
   // 후기 수락 화면으로 이동
   Future<void> _navigateToReviewApproval(AppNotification notification) async {
     try {
@@ -706,6 +732,9 @@ class _NotificationScreenState extends State<NotificationScreen> {
         case 'friend_request':
           final fromName = _getActorName(notification);
           return l10n!.friendRequestMessage(fromName);
+        case 'friend_request_accepted':
+          final acceptedByName = _getActorName(notification);
+          return l10n!.friendRequestAcceptedMessage(acceptedByName);
         case 'review_approval_request':
           final author = _getActorName(notification);
           final meetupTitle = data['meetupTitle'] ?? '';

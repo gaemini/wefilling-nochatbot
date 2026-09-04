@@ -28,6 +28,7 @@ class BadgeService {
   static StreamSubscription<int>? _snackChatsSubscription;
 
   static String? _activeUserId;
+  static String? _invalidatedUserId;
   static int _sessionGeneration = 0;
   static int? _currentBadgeCount;
 
@@ -59,6 +60,7 @@ class BadgeService {
     final userId = user.uid;
     final generation = _sessionGeneration;
     _activeUserId = userId;
+    _invalidatedUserId = null;
 
     // Never display the previous account's cached value while the new
     // account is being recounted.
@@ -124,6 +126,19 @@ class BadgeService {
     return _sessionGeneration == generation &&
         _activeUserId == userId &&
         _auth.currentUser?.uid == userId;
+  }
+
+  /// 실시간 listener가 아직 시작되지 않은 push 진입에서도 수동 갱신은
+  /// 허용하되, logout으로 무효화됐거나 이전 generation인 작업은 차단한다.
+  static bool _isCurrentAccountContext(String userId, int generation) {
+    return isBadgeAccountContextCurrent(
+      authenticatedUserId: _auth.currentUser?.uid,
+      activeUserId: _activeUserId,
+      invalidatedUserId: _invalidatedUserId,
+      currentGeneration: _sessionGeneration,
+      expectedUserId: userId,
+      expectedGeneration: generation,
+    );
   }
 
   /// 서버 카운터를 실제 값으로 동기화 (구버전 계정만 앱 시작 시 1회)
@@ -286,6 +301,7 @@ class BadgeService {
   /// - 이전 계정의 배지 숫자가 다음 세션까지 남지 않도록 강제 초기화
   static Future<void> clearBadgeOnSignOut() async {
     try {
+      _invalidatedUserId = _auth.currentUser?.uid;
       await stopRealtimeBadgeSync();
       await _setBadge(0);
       _currentBadgeCount = 0;
@@ -368,7 +384,7 @@ class BadgeService {
     bool isCurrentRequest() {
       if (_auth.currentUser?.uid != userId) return false;
       if (expectedGeneration == null) return true;
-      return _isActiveSession(userId, expectedGeneration);
+      return _isCurrentAccountContext(userId, expectedGeneration);
     }
 
     if (!isCurrentRequest()) return;
@@ -550,23 +566,34 @@ class BadgeService {
 
   /// 수동 배지 동기화 (레거시 호환용, 실시간 리스너가 없을 때 대비)
   static Future<void> syncNotificationBadge() async {
+    final userId = _auth.currentUser?.uid;
+    final generation = _sessionGeneration;
+    if (userId == null || !_isCurrentAccountContext(userId, generation)) {
+      return;
+    }
+
     // 실시간 리스너가 활성화되어 있으면 수동 동기화 불필요
     if (_userDocSubscription != null && _snackChatsSubscription != null) {
       return;
     }
 
     // 실시간 리스너가 없으면 한 번 업데이트
-    await _updateBadge();
+    await _updateBadge(
+      expectedUserId: userId,
+      expectedGeneration: generation,
+    );
   }
 
   /// 읽음 트랜잭션 직후 리스너 전달 순서와 무관하게 아이콘 배지를 다시 계산한다.
   static Future<void> refreshNow() async {
     final userId = _auth.currentUser?.uid;
     final generation = _sessionGeneration;
+    if (userId == null || !_isCurrentAccountContext(userId, generation)) {
+      return;
+    }
     await _updateBadge(
       expectedUserId: userId,
-      expectedGeneration:
-          userId != null && _activeUserId == userId ? generation : null,
+      expectedGeneration: generation,
     );
   }
 
@@ -575,15 +602,20 @@ class BadgeService {
   static Future<void> syncAfterDmRead(int dmUnreadTotal) async {
     final userId = _auth.currentUser?.uid;
     if (userId == null) return;
+    final generation = _sessionGeneration;
+    if (!_isCurrentAccountContext(userId, generation)) return;
     try {
       final counts = await Future.wait<int>([
         _getVisibleUnreadNotificationCount(userId: userId),
         _getSnackChatUnreadCount(userId: userId),
       ]);
+      if (!_isCurrentAccountContext(userId, generation)) return;
       final total = counts[0] + mathMaxZero(dmUnreadTotal) + counts[1];
       await _setBadge(total);
+      if (!_isCurrentAccountContext(userId, generation)) return;
       _currentBadgeCount = total;
     } catch (error) {
+      if (!_isCurrentAccountContext(userId, generation)) return;
       Logger.error('DM 읽음 후 배지 즉시 동기화 실패', error);
       await refreshNow();
     }
@@ -633,14 +665,17 @@ class BadgeService {
     int count, {
     required String recipientUserId,
   }) async {
-    if (recipientUserId.isEmpty || _auth.currentUser?.uid != recipientUserId) {
+    final generation = _sessionGeneration;
+    if (recipientUserId.isEmpty ||
+        !_isCurrentAccountContext(recipientUserId, generation)) {
       if (Logger.isVerboseEnabled) Logger.log('⏭️ 다른 계정 또는 계정 미지정 푸시 배지 무시');
       return;
     }
     final safeCount = count < 0 ? 0 : count;
     if (_currentBadgeCount == safeCount) return;
-    _currentBadgeCount = safeCount;
     await _setBadge(safeCount);
+    if (!_isCurrentAccountContext(recipientUserId, generation)) return;
+    _currentBadgeCount = safeCount;
   }
 
   /// 앱 포그라운드 진입 시 Android 배지를 실제 값으로 강제 동기화
@@ -648,10 +683,12 @@ class BadgeService {
     if (!Platform.isAndroid) return;
     final userId = _auth.currentUser?.uid;
     final generation = _sessionGeneration;
+    if (userId == null || !_isCurrentAccountContext(userId, generation)) {
+      return;
+    }
     await _updateBadge(
       expectedUserId: userId,
-      expectedGeneration:
-          userId != null && _activeUserId == userId ? generation : null,
+      expectedGeneration: generation,
     );
   }
 }

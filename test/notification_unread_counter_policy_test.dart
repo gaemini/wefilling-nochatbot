@@ -44,4 +44,57 @@ void main() {
       );
     });
   });
+
+  group('badge account session policy', () {
+    test('accepts the current active account', () {
+      expect(
+        isBadgeAccountContextCurrent(
+          authenticatedUserId: 'user-a',
+          activeUserId: 'user-a',
+          invalidatedUserId: null,
+          currentGeneration: 4,
+          expectedUserId: 'user-a',
+          expectedGeneration: 4,
+        ),
+        isTrue,
+      );
+    });
+
+    test('allows a push entry before realtime badge listeners start', () {
+      expect(
+        isBadgeAccountContextCurrent(
+          authenticatedUserId: 'user-a',
+          activeUserId: null,
+          invalidatedUserId: null,
+          currentGeneration: 4,
+          expectedUserId: 'user-a',
+          expectedGeneration: 4,
+        ),
+        isTrue,
+      );
+    });
+
+    test('rejects logout, stale generation, and another account', () {
+      bool current({
+        String? auth = 'user-a',
+        String? active = 'user-a',
+        String? invalidated,
+        int generation = 4,
+      }) {
+        return isBadgeAccountContextCurrent(
+          authenticatedUserId: auth,
+          activeUserId: active,
+          invalidatedUserId: invalidated,
+          currentGeneration: generation,
+          expectedUserId: 'user-a',
+          expectedGeneration: 4,
+        );
+      }
+
+      expect(current(invalidated: 'user-a'), isFalse);
+      expect(current(generation: 5), isFalse);
+      expect(current(auth: 'user-b'), isFalse);
+      expect(current(active: 'user-b'), isFalse);
+    });
+  });
 }

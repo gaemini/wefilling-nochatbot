@@ -30,6 +30,7 @@ import '../services/user_info_cache_service.dart';
 import '../ui/widgets/fullscreen_image_viewer.dart';
 import '../ui/widgets/snack_chat_message_extras.dart';
 import '../ui/widgets/snack_chat_chrome.dart';
+import '../ui/widgets/snack_chat_outgoing_entrance.dart';
 import '../ui/widgets/user_avatar.dart';
 import '../services/content_translation_service.dart';
 import '../ui/dialogs/block_dialog.dart';
@@ -226,6 +227,8 @@ class _SnackChatScreenState extends State<SnackChatScreen>
   final Set<String> _retryingMessageIds = <String>{};
   final Set<String> _sendingTextMessageIds = <String>{};
   final Map<String, Future<void>> _outboundQueues = <String, Future<void>>{};
+  final Set<String> _outboundEntranceMessageIds = <String>{};
+  final Map<String, Timer> _outboundEntranceExpiryTimers = <String, Timer>{};
   final Set<String> _removingFailedMessageIds = <String>{};
   final Set<String> _blockedUserIds = <String>{};
 
@@ -1377,6 +1380,11 @@ class _SnackChatScreenState extends State<SnackChatScreen>
     _fileExpiryTimer?.cancel();
     _roomRetryTimer?.cancel();
     _entryRetryTimer?.cancel();
+    for (final timer in _outboundEntranceExpiryTimers.values) {
+      timer.cancel();
+    }
+    _outboundEntranceExpiryTimers.clear();
+    _outboundEntranceMessageIds.clear();
     _restoringDraft = true;
     _messageController.clear();
     _restoringDraft = false;
@@ -3161,6 +3169,11 @@ class _SnackChatScreenState extends State<SnackChatScreen>
     _fileExpiryTimer?.cancel();
     _roomRetryTimer?.cancel();
     _entryRetryTimer?.cancel();
+    for (final timer in _outboundEntranceExpiryTimers.values) {
+      timer.cancel();
+    }
+    _outboundEntranceExpiryTimers.clear();
+    _outboundEntranceMessageIds.clear();
     _translationMicroBatchTimer?.cancel();
     _translationRetryTimer?.cancel();
     _cancelPendingTranslationRestore();
@@ -3297,6 +3310,7 @@ class _SnackChatScreenState extends State<SnackChatScreen>
     _messageController.clear();
     unawaited(_localCache.saveDraft(roomId, ''));
     unawaited(HapticFeedback.selectionClick());
+    _stageOutboundEntrance(messageId);
     setState(() {
       _clearReplyState();
       _insertLocalMessage(localMessage);
@@ -3320,6 +3334,23 @@ class _SnackChatScreenState extends State<SnackChatScreen>
     } finally {
       _sendingTextMessageIds.remove(messageId);
     }
+  }
+
+  void _stageOutboundEntrance(String messageId) {
+    _outboundEntranceExpiryTimers.remove(messageId)?.cancel();
+    _outboundEntranceMessageIds.add(messageId);
+    _outboundEntranceExpiryTimers[messageId] = Timer(
+      SnackChatOutgoingEntrance.claimWindow,
+      () {
+        _outboundEntranceMessageIds.remove(messageId);
+        _outboundEntranceExpiryTimers.remove(messageId);
+      },
+    );
+  }
+
+  void _claimOutboundEntrance(String messageId) {
+    _outboundEntranceMessageIds.remove(messageId);
+    _outboundEntranceExpiryTimers.remove(messageId)?.cancel();
   }
 
   Future<void> _enqueueOutbound(
@@ -3367,6 +3398,7 @@ class _SnackChatScreenState extends State<SnackChatScreen>
       final messageId = _snackChatService.createMessageId(roomId);
       pendingMessageId = messageId;
       final reply = _replyPreviewForCurrentTarget();
+      _stageOutboundEntrance(messageId);
       setState(() {
         _clearReplyState();
         _insertLocalMessage(SnackChatMessage(
@@ -3782,6 +3814,7 @@ class _SnackChatScreenState extends State<SnackChatScreen>
         poll: poll,
         sendStatus: MessageSendStatus.sending,
       );
+      _stageOutboundEntrance(messageId);
       setState(() => _insertLocalMessage(local));
       await _enqueueOutbound(roomId, () async {
         final ok = await _snackChatService.sendPollMessage(
@@ -3918,6 +3951,9 @@ class _SnackChatScreenState extends State<SnackChatScreen>
       return;
     }
     if (!mounted || roomId != widget.snackChatId) return;
+    for (final message in pending) {
+      _stageOutboundEntrance(message.id);
+    }
     setState(() {
       for (final message in pending) {
         _insertLocalMessage(message);
@@ -5392,14 +5428,20 @@ class _SnackChatScreenState extends State<SnackChatScreen>
                 ),
               if (message.id == _firstUnreadMessageId)
                 _buildUnreadDivider(isKo: isKo),
-              _buildMessageBubble(
-                message: message,
-                isMe: isMe,
-                timeText: _formatTime(message.createdAt),
-                showTimeText: !groupedWithNewer,
-                showSenderName: startsSenderIdentityGroup,
-                groupedWithNewer: groupedWithNewer,
-                groupedWithOlder: groupedWithOlder,
+              SnackChatOutgoingEntrance(
+                key: ValueKey<String>('snack-outgoing-${message.id}'),
+                animateOnMount:
+                    isMe && _outboundEntranceMessageIds.contains(message.id),
+                onAnimationClaimed: () => _claimOutboundEntrance(message.id),
+                child: _buildMessageBubble(
+                  message: message,
+                  isMe: isMe,
+                  timeText: _formatTime(message.createdAt),
+                  showTimeText: !groupedWithNewer,
+                  showSenderName: startsSenderIdentityGroup,
+                  groupedWithNewer: groupedWithNewer,
+                  groupedWithOlder: groupedWithOlder,
+                ),
               ),
             ],
           );

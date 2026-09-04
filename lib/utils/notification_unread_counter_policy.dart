@@ -29,3 +29,21 @@ bool notificationUnreadCounterNeedsReconciliation(
   }
   return trustedNotificationUnreadTotal(userData) == null;
 }
+
+/// 계정 전환 경계에서 이전 세션의 비동기 badge 결과를 적용할지 판정한다.
+///
+/// [activeUserId]가 아직 없는 push 직접 진입은 허용하지만, logout으로
+/// 무효화된 사용자와 이전 generation의 작업은 항상 거부한다.
+bool isBadgeAccountContextCurrent({
+  required String? authenticatedUserId,
+  required String? activeUserId,
+  required String? invalidatedUserId,
+  required int currentGeneration,
+  required String expectedUserId,
+  required int expectedGeneration,
+}) {
+  return currentGeneration == expectedGeneration &&
+      authenticatedUserId == expectedUserId &&
+      invalidatedUserId != expectedUserId &&
+      (activeUserId == null || activeUserId == expectedUserId);
+}

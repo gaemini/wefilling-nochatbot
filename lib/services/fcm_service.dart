@@ -411,6 +411,12 @@ class FCMService {
         _onMessageSub =
             FirebaseMessaging.onMessage.listen((RemoteMessage message) {
           try {
+            if (_isStaleEpoch(epoch) || _initializedUserId != userId) {
+              if (Logger.isVerboseEnabled) {
+                Logger.log('⏭️ 이전 로그인 세션의 포어그라운드 푸시 무시');
+              }
+              return;
+            }
             if (Logger.isVerboseEnabled)
               Logger.log('📱 포어그라운드 메시지 수신: ${message.messageId}');
             if (Logger.isVerboseEnabled)
@@ -475,6 +481,12 @@ class FCMService {
         _onMessageOpenedAppSub = FirebaseMessaging.onMessageOpenedApp
             .listen((RemoteMessage message) async {
           try {
+            if (_isStaleEpoch(epoch) || _initializedUserId != userId) {
+              if (Logger.isVerboseEnabled) {
+                Logger.log('⏭️ 이전 로그인 세션의 푸시 딥링크 무시');
+              }
+              return;
+            }
             if (Logger.isVerboseEnabled)
               Logger.log('📱 백그라운드에서 앱 열림: ${message.messageId}');
             if (Logger.isVerboseEnabled) Logger.log('📱 데이터: ${message.data}');
@@ -505,6 +517,13 @@ class FCMService {
           },
         );
         if (initialMessage != null) {
+          if (_isStaleEpoch(epoch) || _initializedUserId != userId) {
+            if (Logger.isVerboseEnabled) {
+              Logger.log('⏭️ 이전 로그인 세션의 초기 푸시 딥링크 무시');
+            }
+            completer.complete();
+            return;
+          }
           if (Logger.isVerboseEnabled)
             Logger.log('📱 앱 종료 상태에서 알림으로 열림: ${initialMessage.messageId}');
           if (Logger.isVerboseEnabled)

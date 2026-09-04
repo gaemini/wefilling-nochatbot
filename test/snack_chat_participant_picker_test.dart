@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:wefilling/models/user_profile.dart';
@@ -216,5 +218,54 @@ void main() {
 
     expect(cursors, <String?>[null, 'anto_9']);
     expect(find.text('@anto_10'), findsOneWidget);
+  });
+
+  testWidgets('ignores a stale response after the query changes',
+      (tester) async {
+    final oldResponse = Completer<SnackChatUserSearchPage>();
+    final newResponse = Completer<SnackChatUserSearchPage>();
+
+    await tester.pumpWidget(
+      MaterialApp(
+        home: Scaffold(
+          body: SnackChatParticipantPicker(
+            friends: const <UserProfile>[],
+            selectedProfiles: const <String, UserProfile>{},
+            searchUserById: (query, {cursor}) {
+              return query == 'old' ? oldResponse.future : newResponse.future;
+            },
+            onToggle: (_) {},
+          ),
+        ),
+      ),
+    );
+
+    await tester.tap(find.text('All · ID search'));
+    await tester.pumpAndSettle();
+    await tester.enterText(find.byType(TextField), 'old');
+    await tester.tap(
+      find.byKey(const Key('snack_chat_participant_search_button')),
+    );
+    await tester.pump();
+
+    await tester.enterText(find.byType(TextField), 'new');
+    await tester.tap(
+      find.byKey(const Key('snack_chat_participant_search_button')),
+    );
+    await tester.pump();
+
+    newResponse.complete(
+      SnackChatUserSearchPage(users: <UserProfile>[_profile('new', 'new_id')]),
+    );
+    await tester.pump();
+    expect(find.text('@new_id'), findsOneWidget);
+
+    oldResponse.complete(
+      SnackChatUserSearchPage(users: <UserProfile>[_profile('old', 'old_id')]),
+    );
+    await tester.pumpAndSettle();
+
+    expect(find.text('@new_id'), findsOneWidget);
+    expect(find.text('@old_id'), findsNothing);
   });
 }

@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/rendering.dart';
@@ -7,6 +9,7 @@ import '../design/tokens.dart';
 import '../l10n/app_localizations.dart';
 import '../models/post.dart';
 import '../models/post_category.dart';
+import '../services/post_media_prefetch_service.dart';
 import '../services/post_service.dart';
 import '../ui/widgets/optimized_post_card.dart';
 import '../ui/widgets/skeletons.dart';
@@ -39,6 +42,8 @@ class PostCategoryFeedScreen extends StatefulWidget {
 
 class _PostCategoryFeedScreenState extends State<PostCategoryFeedScreen> {
   PostService? _postService;
+  final PostMediaPrefetchService _postMediaPrefetch =
+      PostMediaPrefetchService.instance;
   final ScrollController _scrollController = ScrollController();
   final List<Post> _posts = [];
 
@@ -119,6 +124,7 @@ class _PostCategoryFeedScreenState extends State<PostCategoryFeedScreen> {
         _cursor = page.cursor;
         _hasMore = page.hasMore;
       });
+      unawaited(_postMediaPrefetch.prefetchPosts(page.posts, maxPosts: 6));
     } catch (error) {
       if (!mounted || generation != _requestGeneration) return;
       setState(() {
@@ -148,6 +154,7 @@ class _PostCategoryFeedScreenState extends State<PostCategoryFeedScreen> {
         // 반환해도 하단 로더가 연속 호출되는 무한 페이지네이션을 막는다.
         _hasMore = page.hasMore && additions.isNotEmpty;
       });
+      unawaited(_postMediaPrefetch.prefetchPosts(additions, maxPosts: 5));
     } catch (error) {
       if (!mounted || generation != _requestGeneration) return;
       setState(() {
@@ -280,6 +287,7 @@ class _PostCategoryFeedScreenState extends State<PostCategoryFeedScreen> {
           key: PageStorageKey('post_category_${widget.category.key}'),
           controller: _scrollController,
           physics: const AlwaysScrollableScrollPhysics(),
+          scrollCacheExtent: const ScrollCacheExtent.pixels(480),
           slivers: [
             SliverPadding(
               padding: const EdgeInsets.fromLTRB(

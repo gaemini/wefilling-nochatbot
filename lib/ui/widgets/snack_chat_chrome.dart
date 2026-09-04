@@ -122,3 +122,118 @@ class SnackChatHeaderTitle extends StatelessWidget {
     );
   }
 }
+
+/// A quiet, borderless date marker for the beginning of a message day.
+///
+/// It deliberately uses the same neutral typography as the post composer and
+/// avoids a chip/card surface so the marker separates content without adding
+/// another strong visual layer to the conversation.
+class SnackChatDateSeparator extends StatelessWidget {
+  const SnackChatDateSeparator({
+    super.key,
+    required this.date,
+    required this.languageCode,
+  });
+
+  final DateTime date;
+  final String languageCode;
+
+  static String formatDate(DateTime date, {required String languageCode}) {
+    final local = date.toLocal();
+    if (languageCode == 'ko') {
+      const weekdays = <String>[
+        '월요일',
+        '화요일',
+        '수요일',
+        '목요일',
+        '금요일',
+        '토요일',
+        '일요일',
+      ];
+      return '${local.year}년 ${local.month}월 ${local.day}일 '
+          '${weekdays[local.weekday - 1]}';
+    }
+
+    if (languageCode == 'en') {
+      const weekdays = <String>[
+        'Monday',
+        'Tuesday',
+        'Wednesday',
+        'Thursday',
+        'Friday',
+        'Saturday',
+        'Sunday',
+      ];
+      const months = <String>[
+        'January',
+        'February',
+        'March',
+        'April',
+        'May',
+        'June',
+        'July',
+        'August',
+        'September',
+        'October',
+        'November',
+        'December',
+      ];
+      return '${weekdays[local.weekday - 1]}, '
+          '${months[local.month - 1]} ${local.day}, ${local.year}';
+    }
+
+    return '${local.year}.${local.month.toString().padLeft(2, '0')}.'
+        '${local.day.toString().padLeft(2, '0')}';
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final label = formatDate(date, languageCode: languageCode);
+    return Semantics(
+      key: ValueKey<String>(
+        'snack_chat_date_${date.toLocal().year}_'
+        '${date.toLocal().month}_${date.toLocal().day}',
+      ),
+      header: true,
+      label: label,
+      excludeSemantics: true,
+      child: Padding(
+        padding: EdgeInsets.fromLTRB(
+          context.rs(8).clamp(6, 10).toDouble(),
+          context.rs(15).clamp(12, 18).toDouble(),
+          context.rs(8).clamp(6, 10).toDouble(),
+          context.rs(10).clamp(8, 12).toDouble(),
+        ),
+        child: MediaQuery.withClampedTextScaling(
+          maxScaleFactor: 1.3,
+          child: Row(
+            mainAxisAlignment: MainAxisAlignment.center,
+            children: [
+              Icon(
+                Icons.calendar_today_outlined,
+                size: context.ri(13).clamp(12, 14).toDouble(),
+                color: const Color(0xFF98A2B3),
+              ),
+              SizedBox(width: context.rs(6).clamp(5, 7).toDouble()),
+              Flexible(
+                child: Text(
+                  label,
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: TextStyle(
+                    fontFamily: 'Inter',
+                    fontFamilyFallback: const ['NotoSansKR'],
+                    fontSize: context.rf(11.5).clamp(10.5, 12).toDouble(),
+                    fontWeight: FontWeight.w600,
+                    color: const Color(0xFF667085),
+                    height: 1.25,
+                  ),
+                ),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+}

@@ -5,7 +5,6 @@ class PlatformReleaseMetadata {
     required this.applicationId,
     required this.storeUrl,
     required this.releaseState,
-    this.flavor = '',
     this.entryPoint = '',
     this.scheme = '',
     this.configuration = '',
@@ -17,7 +16,6 @@ class PlatformReleaseMetadata {
   final String applicationId;
   final String storeUrl;
   final String releaseState;
-  final String flavor;
   final String entryPoint;
   final String scheme;
   final String configuration;
@@ -34,7 +32,6 @@ class PlatformReleaseMetadata {
           (json[ios ? 'bundleId' : 'applicationId'] ?? '').toString(),
       storeUrl: (json['storeUrl'] ?? '').toString(),
       releaseState: (json['releaseState'] ?? 'draft').toString(),
-      flavor: (json['flavor'] ?? '').toString(),
       entryPoint: (json['entryPoint'] ?? '').toString(),
       scheme: (json['scheme'] ?? '').toString(),
       configuration: (json['configuration'] ?? '').toString(),

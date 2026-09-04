@@ -9,6 +9,7 @@ import * as net from 'net';
 import {TextDecoder} from 'util';
 
 import {normalizeNickname} from './nickname_claims';
+import {runtimeInfo, runtimeLogsEnabled} from './runtime_logging';
 
 const SNACK_CHATS = 'snack_chats';
 const USERS = 'users';
@@ -2767,7 +2768,7 @@ export const onDeletedAuthUserSnackChatCleanup = functions
   .auth.user()
   .onDelete(async (user) => {
     const removedRoomCount = await removeUserFromAllSnackChats(user.uid);
-    console.log(
+    runtimeLogsEnabled && runtimeInfo(
       'Deleted account removed from Snack Chats.',
       {userId: user.uid, removedRoomCount},
     );
@@ -2795,7 +2796,7 @@ export const onDeletedUserDocumentSnackChatCleanup = functions
 
     const userId = stringValue(context.params.userId);
     const removedRoomCount = await removeUserFromAllSnackChats(userId);
-    console.log(
+    runtimeLogsEnabled && runtimeInfo(
       'Deleted user document removed from Snack Chats.',
       {userId, removedRoomCount},
     );
@@ -4537,7 +4538,7 @@ export const cleanupExpiredSnackChatFiles = functions
     const batch = db().batch();
     due.forEach((document) => batch.delete(document.ref));
     await batch.commit();
-    console.log(`cleanupExpiredSnackChatFiles deleted=${due.size}`);
+    runtimeLogsEnabled && runtimeInfo(`cleanupExpiredSnackChatFiles deleted=${due.size}`);
     return null;
   });
 
@@ -4611,7 +4612,7 @@ export const notifyClosedSnackChatPolls = functions
     await runWithConcurrency(duePolls, 5, async (document) => {
       if (await closeExpiredPoll(document, observedNow)) notified += 1;
     });
-    console.log(
+    runtimeLogsEnabled && runtimeInfo(
       'Snack Chat closed poll notifications: selected=' +
       duePolls.length + ', scanned=' + scannedDocuments +
       ', notified=' + notified,

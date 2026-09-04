@@ -3,6 +3,7 @@ import '../l10n/app_localizations.dart';
 import '../models/friend_category.dart';
 import '../models/user_profile.dart';
 import '../repositories/users_repository.dart';
+import '../ui/widgets/group_audience_preview.dart';
 import '../utils/responsive_helper.dart';
 
 class MeetupVisibilityGroupSelectScreen extends StatefulWidget {
@@ -64,6 +65,13 @@ class _MeetupVisibilityGroupSelectScreenState
     return ids;
   }
 
+  List<UserProfile> _membersForCategory(FriendCategory category) {
+    final memberIds = category.friendIds.toSet();
+    return _selectedMembers
+        .where((member) => memberIds.contains(member.uid))
+        .toList(growable: false);
+  }
+
   Future<void> _refreshSelectedMembers() async {
     final currentSeq = ++_membersLoadSeq;
     final friendIds = _selectedFriendIds().toList();
@@ -96,165 +104,81 @@ class _MeetupVisibilityGroupSelectScreenState
     });
   }
 
-  Widget _buildMemberChips(AppLocalizations l10n, List<UserProfile> members) {
-    // 너무 길어지지 않도록 UI에서 일부만 보여주고 나머지는 요약
-    const maxVisible = 18;
-    final visible = members.take(maxVisible).toList();
-    final remaining = members.length - visible.length;
-
-    return Wrap(
-      spacing: 8,
-      runSpacing: 8,
-      children: [
-        for (final m in visible)
-          Text(
-            m.displayNameOrNickname,
-            style: TextStyle(
-              fontFamily: 'Inter',
-              fontFamilyFallback: const ['NotoSansKR'],
-              fontSize: context.rf(13).clamp(12, 14).toDouble(),
-              fontWeight: FontWeight.w600,
-              height: 1.2,
-              color: const Color(0xFF475467),
-            ),
-          ),
-        if (remaining > 0)
-          Text(
-            '+$remaining${l10n.people ?? ''}',
-            style: TextStyle(
-              fontFamily: 'Inter',
-              fontFamilyFallback: const ['NotoSansKR'],
-              fontSize: context.rf(13).clamp(12, 14).toDouble(),
-              fontWeight: FontWeight.w700,
-              height: 1.2,
-              color: const Color(0xFF344054),
-            ),
-          ),
-      ],
-    );
-  }
-
-  Widget _buildGroupItem(AppLocalizations l10n, FriendCategory category) {
+  Widget _buildGroupItem(FriendCategory category) {
     final isSelected = _selectedCategoryIds.contains(category.id);
 
-    return Material(
-      color: Colors.transparent,
-      child: InkWell(
-        onTap: () => _toggleSelection(category.id),
-        child: AnimatedContainer(
-          duration: const Duration(milliseconds: 180),
-          constraints: const BoxConstraints(minHeight: 54),
-          padding: const EdgeInsets.symmetric(horizontal: 2, vertical: 11),
-          decoration: const BoxDecoration(
-            border: Border(
-              bottom: BorderSide(color: Color(0xFFEAECF0)),
+    return Semantics(
+      button: true,
+      selected: isSelected,
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Material(
+            color: Colors.transparent,
+            child: InkWell(
+              onTap: () => _toggleSelection(category.id),
+              child: ConstrainedBox(
+                constraints: const BoxConstraints(minHeight: 48),
+                child: Padding(
+                  padding: const EdgeInsets.symmetric(vertical: 10),
+                  child: Row(
+                    children: [
+                      Expanded(
+                        child: Text(
+                          category.name,
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                          style: TextStyle(
+                            fontFamily: 'Inter',
+                            fontFamilyFallback: const ['NotoSansKR'],
+                            fontSize: context.rf(14).clamp(13, 15).toDouble(),
+                            fontWeight:
+                                isSelected ? FontWeight.w800 : FontWeight.w600,
+                            color: const Color(0xFF111827),
+                          ),
+                        ),
+                      ),
+                      const SizedBox(width: 8),
+                      Icon(
+                        isSelected
+                            ? Icons.check_circle_rounded
+                            : Icons.circle_outlined,
+                        size: context.ri(21).clamp(20, 23).toDouble(),
+                        color: isSelected
+                            ? const Color(0xFF475467)
+                            : const Color(0xFFD0D5DD),
+                      ),
+                    ],
+                  ),
+                ),
+              ),
             ),
           ),
-          child: Row(
-            children: [
-              Icon(
-                isSelected
-                    ? Icons.check_circle_rounded
-                    : Icons.radio_button_unchecked_rounded,
-                size: context.ri(21).clamp(20, 23).toDouble(),
-                color: isSelected
-                    ? const Color(0xFF475467)
-                    : const Color(0xFFD0D5DD),
-              ),
-              const SizedBox(width: 10),
-              Expanded(
-                child: Text(
-                  category.name,
-                  style: TextStyle(
-                    fontFamily: 'Inter',
-                    fontFamilyFallback: const ['NotoSansKR'],
-                    fontSize: context.rf(14).clamp(13, 15).toDouble(),
-                    fontWeight: isSelected ? FontWeight.w800 : FontWeight.w600,
-                    height: 1.2,
-                    color: const Color(0xFF111827),
-                  ),
-                  maxLines: 1,
-                  overflow: TextOverflow.ellipsis,
-                ),
-              ),
-              const SizedBox(width: 10),
-              Text(
-                '(${category.friendIds.length}${l10n.people ?? ''})',
-                style: TextStyle(
-                  fontFamily: 'Inter',
-                  fontFamilyFallback: const ['NotoSansKR'],
-                  fontSize: context.rf(12).clamp(11, 13).toDouble(),
-                  fontWeight: FontWeight.w600,
-                  height: 1.1,
-                  color: const Color(0xFF667085),
-                ),
-              ),
-            ],
-          ),
-        ),
+          if (isSelected)
+            GroupAudiencePreview(
+              members: _membersForCategory(category),
+              loading:
+                  _isLoadingSelectedMembers && category.friendIds.isNotEmpty,
+            ),
+        ],
       ),
     );
   }
 
-  Widget _buildSelectedMembersSection(AppLocalizations l10n) {
-    final friendCount = _selectedFriendIds().length;
-
+  Widget _buildSelectionSummary(AppLocalizations l10n) {
     return Padding(
-      padding: const EdgeInsets.fromLTRB(2, 14, 2, 4),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Text(
-            '${l10n.friends} (${friendCount}${l10n.people ?? ''})',
-            style: TextStyle(
-              fontFamily: 'Inter',
-              fontFamilyFallback: const ['NotoSansKR'],
-              fontSize: context.rf(14).clamp(13, 15).toDouble(),
-              fontWeight: FontWeight.w700,
-              height: 1.2,
-              letterSpacing: -0.1,
-              color: Color(0xFF111827),
-            ),
-          ),
-          const SizedBox(height: 10),
-          if (_selectedCategoryIds.isEmpty)
-            Text(
-              l10n.noGroupSelectedWarning,
-              style: const TextStyle(
-                fontFamily: 'Inter',
-                fontFamilyFallback: const ['NotoSansKR'],
-                fontSize: 14,
-                fontWeight: FontWeight.w500,
-                height: 1.25,
-                color: Color(0xFF6B7280),
-              ),
-            )
-          else if (_isLoadingSelectedMembers)
-            const Center(
-              child: Padding(
-                padding: EdgeInsets.symmetric(vertical: 12),
-                child: SizedBox(
-                  height: 20,
-                  width: 20,
-                  child: CircularProgressIndicator(strokeWidth: 2),
-                ),
-              ),
-            )
-          else if (_selectedMembers.isEmpty)
-            Text(
-              l10n.noFriendsYet,
-              style: const TextStyle(
-                fontFamily: 'Inter',
-                fontFamilyFallback: const ['NotoSansKR'],
-                fontSize: 14,
-                fontWeight: FontWeight.w500,
-                height: 1.25,
-                color: Color(0xFF6B7280),
-              ),
-            )
-          else
-            _buildMemberChips(l10n, _selectedMembers),
-        ],
+      padding: const EdgeInsets.only(bottom: 6),
+      child: Text(
+        _selectedCategoryIds.isEmpty
+            ? l10n.postVisibilityNoGroupsSelected
+            : l10n.postVisibilityGroupsSelected(_selectedCategoryIds.length),
+        style: const TextStyle(
+          fontFamily: 'Inter',
+          fontFamilyFallback: ['NotoSansKR'],
+          fontSize: 12,
+          fontWeight: FontWeight.w700,
+          color: Color(0xFF667085),
+        ),
       ),
     );
   }
@@ -336,9 +260,18 @@ class _MeetupVisibilityGroupSelectScreenState
                 return Center(
                   child: ConstrainedBox(
                     constraints: const BoxConstraints(maxWidth: 720),
-                    child: index < widget.categories.length
-                        ? _buildGroupItem(l10n, widget.categories[index])
-                        : _buildSelectedMembersSection(l10n),
+                    child: index == 0
+                        ? _buildSelectionSummary(l10n)
+                        : Column(
+                            children: [
+                              _buildGroupItem(widget.categories[index - 1]),
+                              if (index != widget.categories.length)
+                                const Divider(
+                                  height: 1,
+                                  color: Color(0xFFEAECF0),
+                                ),
+                            ],
+                          ),
                   ),
                 );
               },

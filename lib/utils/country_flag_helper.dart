@@ -199,6 +199,20 @@ class CountryFlagHelper {
         korean: '짐바브웨', english: 'Zimbabwe', emoji: '🇿🇼', isoCode: 'ZW'),
   ];
 
+  /// DropdownButton은 같은 value가 두 번 이상 있으면 빌드 중
+  /// assertion을 발생시킨다. 국가 목록이 늘어나더라도 UI에는 한글
+  /// 저장값을 기준으로 중복을 제거한 항목만 노출한다.
+  static final List<CountryInfo> dropdownCountries =
+      List<CountryInfo>.unmodifiable(() {
+    final seenValues = <String>{};
+    return <CountryInfo>[
+      for (final country in allCountries)
+        if (country.korean.trim().isNotEmpty &&
+            seenValues.add(country.korean.trim()))
+          country,
+    ];
+  }());
+
   /// 저장된 국적 형식과 관계없이 국가 정보를 찾습니다.
   ///
   /// 기존 프로필에는 한글명, 영문명, ISO 코드가 섞여 있을 수 있으므로
@@ -222,6 +236,16 @@ class CountryFlagHelper {
       }
     }
     return null;
+  }
+
+  /// Firestore/로컬 임시저장소에 저장된 국적을 드롭다운의 단일
+  /// canonical value(한글 국가명)로 변환한다. 빈 값이나 알 수 없는
+  /// 레거시 값은 null을 반환해 드롭다운이 힌트 상태로 안전하게
+  /// 표시되도록 한다.
+  static String? normalizeForDropdown(Object? nationality) {
+    final raw = (nationality ?? '').toString().trim();
+    if (raw.isEmpty) return null;
+    return getCountryInfo(raw)?.korean;
   }
 
   /// 현재 앱 언어에 맞는 국가명을 반환합니다.
@@ -253,9 +277,9 @@ class CountryFlagHelper {
 
   /// 한글 이름 목록 (프로필 편집에서 사용)
   static List<String> get koreanNames =>
-      allCountries.map((c) => c.korean).toList();
+      dropdownCountries.map((c) => c.korean).toList();
 
   /// 드롭다운 표시용 텍스트 목록 (영문 / 한글)
   static List<String> get displayNames =>
-      allCountries.map((c) => c.displayText).toList();
+      dropdownCountries.map((c) => c.displayText).toList();
 }

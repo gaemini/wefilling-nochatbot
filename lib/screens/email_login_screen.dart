@@ -64,10 +64,10 @@ class _EmailLoginScreenState extends State<EmailLoginScreen> {
       if (!mounted) return;
 
       if (success && authProvider.isLoggedIn) {
-        Logger.log('이메일 로그인 성공');
+        if (Logger.isVerboseEnabled) Logger.log('이메일 로그인 성공');
 
         if (!authProvider.isRegistrationComplete) {
-          Logger.log('미완료 회원가입 -> 프로필 완료 화면으로 이동');
+          if (Logger.isVerboseEnabled) Logger.log('미완료 회원가입 -> 프로필 완료 화면으로 이동');
           if (authProvider.registrationState ==
               app_auth.AccountRegistrationState.authCreated) {
             final signupLanguage =
@@ -92,7 +92,7 @@ class _EmailLoginScreenState extends State<EmailLoginScreen> {
         }
 
         // 닉네임 있으면 메인 화면
-        Logger.log('로그인 성공 -> 메인 화면으로 이동');
+        if (Logger.isVerboseEnabled) Logger.log('로그인 성공 -> 메인 화면으로 이동');
         Navigator.pushReplacement(
           context,
           MaterialPageRoute(builder: (_) => const MainScreen()),

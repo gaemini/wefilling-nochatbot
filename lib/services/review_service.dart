@@ -401,7 +401,7 @@ class ReviewService {
 
         // 메모리에서 정렬
         reviews.sort((a, b) => b.createdAt.compareTo(a.createdAt));
-        Logger.log('📋 최종 친구 후기 목록: ${reviews.length}개');
+        if (Logger.isVerboseEnabled) Logger.log('📋 최종 친구 후기 목록: ${reviews.length}개');
         return await _filterBlockedReviews(reviews);
       });
     } catch (e) {
@@ -557,7 +557,7 @@ class ReviewService {
         'updatedAt': FieldValue.serverTimestamp(),
       });
 
-      Logger.log('✅ 후기 숨김 처리 완료: $reviewId');
+      if (Logger.isVerboseEnabled) Logger.log('✅ 후기 숨김 처리 완료: $reviewId');
       return true;
     } catch (e) {
       Logger.error('❌ 후기 숨김 오류: $e');
@@ -584,7 +584,7 @@ class ReviewService {
         'updatedAt': FieldValue.serverTimestamp(),
       });
 
-      Logger.log('✅ 후기 숨김 해제 완료: $reviewId');
+      if (Logger.isVerboseEnabled) Logger.log('✅ 후기 숨김 해제 완료: $reviewId');
       return true;
     } catch (e) {
       Logger.error('❌ 후기 숨김 해제 오류: $e');
@@ -600,7 +600,7 @@ class ReviewService {
         throw Exception('로그인이 필요합니다');
       }
 
-      Logger.log('❤️ 좋아요 토글: reviewId=$reviewId, userId=$userId');
+      if (Logger.isVerboseEnabled) Logger.log('❤️ 좋아요 토글: reviewId=$reviewId, userId=$userId');
 
       // users/{userId}/posts/{reviewId} 문서 가져오기
       final reviewRef = _firestore
@@ -611,7 +611,7 @@ class ReviewService {
 
       final reviewDoc = await reviewRef.get();
       if (!reviewDoc.exists) {
-        Logger.log('❌ 후기를 찾을 수 없음');
+        if (Logger.isVerboseEnabled) Logger.log('❌ 후기를 찾을 수 없음');
         return false;
       }
 
@@ -625,14 +625,14 @@ class ReviewService {
           'likedBy': FieldValue.arrayRemove([user.uid]),
           'likeCount': FieldValue.increment(-1),
         });
-        Logger.log('💔 좋아요 취소 완료');
+        if (Logger.isVerboseEnabled) Logger.log('💔 좋아요 취소 완료');
       } else {
         // 좋아요 추가
         await reviewRef.update({
           'likedBy': FieldValue.arrayUnion([user.uid]),
           'likeCount': FieldValue.increment(1),
         });
-        Logger.log('❤️ 좋아요 추가 완료');
+        if (Logger.isVerboseEnabled) Logger.log('❤️ 좋아요 추가 완료');
       }
 
       return true;

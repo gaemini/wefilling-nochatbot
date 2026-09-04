@@ -10,7 +10,7 @@ import '../utils/category_label_utils.dart';
 import '../models/review_request.dart';
 import '../services/review_consensus_service.dart';
 import '../services/feature_flag_service.dart';
-import '../design/theme.dart';
+import '../utils/responsive_helper.dart';
 
 class ReviewRequestScreen extends StatefulWidget {
   final Meetup meetup;
@@ -187,213 +187,252 @@ class _ReviewRequestScreenState extends State<ReviewRequestScreen> {
   Widget build(BuildContext context) {
     if (!_isFeatureEnabled) {
       return Scaffold(
-        appBar: AppBar(
-          title: const Text('리뷰 요청'),
-        ),
-        body: const Center(
-          child: CircularProgressIndicator(),
+        backgroundColor: Colors.white,
+        appBar: _buildAppBar(),
+        body: const SafeArea(
+          top: false,
+          child: Center(
+            child: CircularProgressIndicator(color: Color(0xFF2E90FA)),
+          ),
         ),
       );
     }
 
     return Scaffold(
-      backgroundColor: Colors.grey[50],
-      appBar: AppBar(
-        title: const Text('리뷰 요청'),
-        backgroundColor: Colors.white,
-        foregroundColor: Colors.black,
-        elevation: 0,
-        bottom: PreferredSize(
-          preferredSize: const Size.fromHeight(1),
-          child: Container(
-            height: 1,
-            color: Colors.grey[200],
-          ),
-        ),
-      ),
-      body: Form(
-        key: _formKey,
-        child: Column(
-          children: [
-            Expanded(
-              child: SingleChildScrollView(
-                padding: const EdgeInsets.all(16),
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    // 모임 정보 카드
-                    _buildMeetupCard(),
-                    const SizedBox(height: 24),
-
-                    // 수신자 정보
-                    _buildRecipientCard(),
-                    const SizedBox(height: 24),
-
-                    // 메시지 입력
-                    _buildMessageInput(),
-                    const SizedBox(height: 24),
-
-                    // 이미지 첨부
-                    _buildImageAttachment(),
-                    const SizedBox(height: 24),
-
-                    // 안내 텍스트
-                    _buildGuideText(),
-                  ],
+      backgroundColor: Colors.white,
+      resizeToAvoidBottomInset: true,
+      appBar: _buildAppBar(),
+      body: SafeArea(
+        top: false,
+        child: Form(
+          key: _formKey,
+          child: Column(
+            children: [
+              Expanded(
+                child: SingleChildScrollView(
+                  keyboardDismissBehavior:
+                      ScrollViewKeyboardDismissBehavior.onDrag,
+                  padding: EdgeInsets.fromLTRB(
+                    _horizontalPadding,
+                    12,
+                    _horizontalPadding,
+                    28,
+                  ),
+                  child: Center(
+                    child: ConstrainedBox(
+                      constraints: const BoxConstraints(maxWidth: 720),
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          _buildMeetupCard(),
+                          const SizedBox(height: 24),
+                          _buildRecipientCard(),
+                          const SizedBox(height: 28),
+                          _buildMessageInput(),
+                          const SizedBox(height: 28),
+                          _buildImageAttachment(),
+                          const SizedBox(height: 26),
+                          _buildGuideText(),
+                        ],
+                      ),
+                    ),
+                  ),
                 ),
               ),
-            ),
-
-            // 하단 버튼
-            _buildBottomButton(),
-          ],
+              _buildBottomButton(),
+            ],
+          ),
         ),
       ),
     );
   }
 
+  PreferredSizeWidget _buildAppBar() {
+    return AppBar(
+      backgroundColor: Colors.white,
+      surfaceTintColor: Colors.white,
+      elevation: 0,
+      scrolledUnderElevation: 0,
+      centerTitle: true,
+      toolbarHeight: context.rh(56, min: 54, max: 60),
+      leadingWidth: 48,
+      leading: IconButton(
+        onPressed: () => Navigator.of(context).maybePop(),
+        icon: Icon(
+          Icons.arrow_back_rounded,
+          color: const Color(0xFF111827),
+          size: context.ri(22).clamp(21, 24).toDouble(),
+        ),
+        tooltip: MaterialLocalizations.of(context).backButtonTooltip,
+      ),
+      title: MediaQuery.withClampedTextScaling(
+        maxScaleFactor: 1.2,
+        child: Text(
+          '리뷰 요청',
+          maxLines: 1,
+          overflow: TextOverflow.ellipsis,
+          style: TextStyle(
+            fontFamily: 'Inter',
+            fontFamilyFallback: const ['NotoSansKR'],
+            color: const Color(0xFF111827),
+            fontSize: context.rf(18).clamp(16, 19).toDouble(),
+            fontWeight: FontWeight.w700,
+          ),
+        ),
+      ),
+    );
+  }
+
+  double get _horizontalPadding {
+    final width = MediaQuery.sizeOf(context).width;
+    return width < 360 ? 14 : (width < 430 ? 16 : 20);
+  }
+
   /// 모임 정보 카드
   Widget _buildMeetupCard() {
-    return Container(
-      width: double.infinity,
-      padding: const EdgeInsets.all(16),
-      decoration: BoxDecoration(
-        color: Colors.white,
-        borderRadius: BorderRadius.circular(12),
-        border: Border.all(color: const Color(0xFFE1E6EE)),
-        boxShadow: [
-          BoxShadow(
-            color: Colors.black.withOpacity(0.04),
-            blurRadius: 8,
-            offset: const Offset(0, 2),
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Text(
+          localizedCategoryLabel(context, widget.meetup.category),
+          style: const TextStyle(
+            fontFamily: 'Inter',
+            fontFamilyFallback: ['NotoSansKR'],
+            color: Color(0xFF2E90FA),
+            fontSize: 12,
+            fontWeight: FontWeight.w700,
           ),
-        ],
-      ),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Row(
-            children: [
-              Container(
-                padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
-                decoration: BoxDecoration(
-                  color: const Color(0xFF4A90E2).withOpacity(0.1),
-                  borderRadius: BorderRadius.circular(6),
-                ),
-                child: Text(
-                  localizedCategoryLabel(context, widget.meetup.category),
-                  style: const TextStyle(
-                    color: Color(0xFF4A90E2),
-                    fontSize: 12,
-                    fontWeight: FontWeight.w500,
-                  ),
-                ),
-              ),
-            ],
+        ),
+        const SizedBox(height: 7),
+        Text(
+          widget.meetup.title,
+          style: TextStyle(
+            fontFamily: 'Inter',
+            fontFamilyFallback: const ['NotoSansKR'],
+            fontSize: context.rf(18).clamp(16, 19).toDouble(),
+            fontWeight: FontWeight.w700,
+            color: const Color(0xFF111827),
+            height: 1.35,
           ),
-          const SizedBox(height: 8),
-          Text(
-            widget.meetup.title,
-            style: const TextStyle(
-              fontSize: 18,
-              fontWeight: FontWeight.w600,
-              color: Color(0xFF1A1A1A),
+        ),
+        const SizedBox(height: 10),
+        Row(
+          children: [
+            const Icon(
+              Icons.location_on_outlined,
+              size: 17,
+              color: Color(0xFF667085),
             ),
-          ),
-          const SizedBox(height: 8),
-          Row(
-            children: [
-              Icon(
-                Icons.location_on_outlined,
-                size: 16,
-                color: Colors.grey[600],
-              ),
-              const SizedBox(width: 4),
-              Expanded(
-                child: Text(
-                  widget.meetup.location,
-                  style: TextStyle(
-                    fontSize: 14,
-                    color: Colors.grey[600],
-                  ),
-                ),
-              ),
-            ],
-          ),
-          const SizedBox(height: 4),
-          Row(
-            children: [
-              Icon(
-                Icons.access_time,
-                size: 16,
-                color: Colors.grey[600],
-              ),
-              const SizedBox(width: 4),
-              Text(
-                '${widget.meetup.date.month}/${widget.meetup.date.day} ${widget.meetup.time}',
-                style: TextStyle(
+            const SizedBox(width: 6),
+            Expanded(
+              child: Text(
+                widget.meetup.location,
+                maxLines: 2,
+                overflow: TextOverflow.ellipsis,
+                style: const TextStyle(
+                  fontFamily: 'Inter',
+                  fontFamilyFallback: ['NotoSansKR'],
                   fontSize: 14,
-                  color: Colors.grey[600],
+                  color: Color(0xFF667085),
+                  height: 1.35,
                 ),
               ),
-            ],
-          ),
-        ],
-      ),
+            ),
+          ],
+        ),
+        const SizedBox(height: 7),
+        Row(
+          children: [
+            const Icon(
+              Icons.schedule_rounded,
+              size: 17,
+              color: Color(0xFF667085),
+            ),
+            const SizedBox(width: 6),
+            Expanded(
+              child: Text(
+                '${widget.meetup.date.month}/${widget.meetup.date.day} ${widget.meetup.time}',
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+                style: const TextStyle(
+                  fontFamily: 'Inter',
+                  fontFamilyFallback: ['NotoSansKR'],
+                  fontSize: 14,
+                  color: Color(0xFF667085),
+                ),
+              ),
+            ),
+          ],
+        ),
+      ],
     );
   }
 
   /// 수신자 정보 카드
   Widget _buildRecipientCard() {
-    return Container(
-      width: double.infinity,
-      padding: const EdgeInsets.all(16),
-      decoration: BoxDecoration(
-        color: const Color(0xFFF3FAFF),
-        borderRadius: BorderRadius.circular(12),
-        border: Border.all(color: const Color(0xFFE1E6EE)),
-      ),
-      child: Row(
-        children: [
-          CircleAvatar(
-            radius: 20,
-            backgroundColor: const Color(0xFF4A90E2),
-            child: Text(
-              widget.recipientName.isNotEmpty 
-                  ? widget.recipientName[0].toUpperCase()
-                  : '?',
-              style: const TextStyle(
-                color: Colors.white,
-                fontSize: 16,
-                fontWeight: FontWeight.w600,
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        const Text(
+          '요청 대상',
+          style: TextStyle(
+            fontFamily: 'Inter',
+            fontFamilyFallback: ['NotoSansKR'],
+            fontSize: 13,
+            fontWeight: FontWeight.w700,
+            color: Color(0xFF667085),
+          ),
+        ),
+        const SizedBox(height: 11),
+        Row(
+          children: [
+            CircleAvatar(
+              radius: 20,
+              backgroundColor: const Color(0xFFF2F4F7),
+              child: Text(
+                widget.recipientName.isNotEmpty
+                    ? widget.recipientName[0].toUpperCase()
+                    : '?',
+                style: const TextStyle(
+                  color: Color(0xFF475467),
+                  fontSize: 15,
+                  fontWeight: FontWeight.w700,
+                ),
               ),
             ),
-          ),
-          const SizedBox(width: 12),
-          Expanded(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Text(
-                  widget.recipientName,
-                  style: const TextStyle(
-                    fontSize: 16,
-                    fontWeight: FontWeight.w600,
-                    color: Color(0xFF1A1A1A),
+            const SizedBox(width: 11),
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    widget.recipientName,
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    style: const TextStyle(
+                      fontFamily: 'Inter',
+                      fontFamilyFallback: ['NotoSansKR'],
+                      fontSize: 15,
+                      fontWeight: FontWeight.w700,
+                      color: Color(0xFF111827),
+                    ),
                   ),
-                ),
-                Text(
-                  '리뷰를 요청받을 사용자',
-                  style: TextStyle(
-                    fontSize: 12,
-                    color: Colors.grey[600],
+                  const SizedBox(height: 2),
+                  const Text(
+                    '리뷰를 요청받을 사용자',
+                    style: TextStyle(
+                      fontFamily: 'Inter',
+                      fontFamilyFallback: ['NotoSansKR'],
+                      fontSize: 12,
+                      color: Color(0xFF98A2B3),
+                    ),
                   ),
-                ),
-              ],
+                ],
+              ),
             ),
-          ),
-        ],
-      ),
+          ],
+        ),
+      ],
     );
   }
 
@@ -402,36 +441,54 @@ class _ReviewRequestScreenState extends State<ReviewRequestScreen> {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        const Text(
+        Text(
           '요청 메시지',
           style: TextStyle(
-            fontSize: 16,
-            fontWeight: FontWeight.w600,
-            color: Color(0xFF1A1A1A),
+            fontFamily: 'Inter',
+            fontFamilyFallback: const ['NotoSansKR'],
+            fontSize: context.rf(15).clamp(14, 16).toDouble(),
+            fontWeight: FontWeight.w700,
+            color: const Color(0xFF111827),
           ),
         ),
-        const SizedBox(height: 8),
+        const SizedBox(height: 10),
         TextFormField(
           controller: _messageController,
-          maxLines: 4,
+          minLines: 4,
+          maxLines: 7,
           maxLength: 500,
           decoration: InputDecoration(
             hintText: '리뷰 요청 사유를 입력해주세요.\n예: 모임이 어땠는지 솔직한 후기를 부탁드립니다.',
-            hintStyle: TextStyle(
+            hintStyle: const TextStyle(
+              fontFamily: 'Inter',
+              fontFamilyFallback: ['NotoSansKR'],
               fontSize: 14,
-              color: Colors.grey[500],
+              color: Color(0xFF98A2B3),
+              height: 1.5,
             ),
-            filled: true,
-            fillColor: Colors.white,
-            border: OutlineInputBorder(
-              borderRadius: BorderRadius.circular(12),
-              borderSide: const BorderSide(color: Color(0xFFE6EAF0)),
+            border: const UnderlineInputBorder(
+              borderSide: BorderSide(color: Color(0xFFE5E7EB)),
             ),
-            focusedBorder: OutlineInputBorder(
-              borderRadius: BorderRadius.circular(12),
-              borderSide: const BorderSide(color: Color(0xFF4A90E2), width: 2),
+            enabledBorder: const UnderlineInputBorder(
+              borderSide: BorderSide(color: Color(0xFFE5E7EB)),
             ),
-            contentPadding: const EdgeInsets.all(16),
+            focusedBorder: const UnderlineInputBorder(
+              borderSide: BorderSide(color: Color(0xFF2E90FA), width: 1.5),
+            ),
+            counterStyle: const TextStyle(
+              fontFamily: 'Inter',
+              fontFamilyFallback: ['NotoSansKR'],
+              fontSize: 11,
+              color: Color(0xFF98A2B3),
+            ),
+            contentPadding: const EdgeInsets.symmetric(vertical: 10),
+          ),
+          style: const TextStyle(
+            fontFamily: 'Inter',
+            fontFamilyFallback: ['NotoSansKR'],
+            fontSize: 14,
+            color: Color(0xFF111827),
+            height: 1.5,
           ),
           validator: (value) {
             if (value == null || value.trim().isEmpty) {
@@ -455,111 +512,101 @@ class _ReviewRequestScreenState extends State<ReviewRequestScreen> {
         Row(
           mainAxisAlignment: MainAxisAlignment.spaceBetween,
           children: [
-            const Text(
-              '이미지 첨부 (선택사항)',
-              style: TextStyle(
-                fontSize: 16,
-                fontWeight: FontWeight.w600,
-                color: Color(0xFF1A1A1A),
+            Expanded(
+              child: Text(
+                '이미지 첨부 (선택사항)',
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+                style: TextStyle(
+                  fontFamily: 'Inter',
+                  fontFamilyFallback: const ['NotoSansKR'],
+                  fontSize: context.rf(15).clamp(14, 16).toDouble(),
+                  fontWeight: FontWeight.w700,
+                  color: const Color(0xFF111827),
+                ),
               ),
             ),
             if (_selectedImages.isNotEmpty)
               Text(
                 '${_selectedImages.length}/5',
-                style: TextStyle(
+                style: const TextStyle(
+                  fontFamily: 'Inter',
+                  fontFamilyFallback: ['NotoSansKR'],
                   fontSize: 12,
-                  color: Colors.grey[600],
+                  color: Color(0xFF667085),
                 ),
               ),
           ],
         ),
-        const SizedBox(height: 8),
-
-        // 이미지 추가 버튼
+        const SizedBox(height: 6),
         if (_selectedImages.length < 5)
-          GestureDetector(
-            onTap: _pickImages,
-            child: Container(
-              width: double.infinity,
-              height: 100,
-              decoration: BoxDecoration(
-                color: Colors.white,
-                borderRadius: BorderRadius.circular(12),
-                border: Border.all(
-                  color: const Color(0xFFE6EAF0),
-                  style: BorderStyle.solid,
-                ),
-              ),
-              child: Column(
-                mainAxisAlignment: MainAxisAlignment.center,
-                children: [
-                  Icon(
-                    Icons.add_photo_alternate_outlined,
-                    size: 32,
-                    color: Colors.grey[600],
-                  ),
-                  const SizedBox(height: 8),
-                  Text(
-                    '이미지 추가',
-                    style: TextStyle(
-                      fontSize: 14,
-                      color: Colors.grey[600],
-                    ),
-                  ),
-                ],
+          TextButton.icon(
+            onPressed: _pickImages,
+            style: TextButton.styleFrom(
+              foregroundColor: const Color(0xFF475467),
+              padding: const EdgeInsets.symmetric(horizontal: 0, vertical: 8),
+              minimumSize: const Size(0, 42),
+              tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+            ),
+            icon: const Icon(Icons.add_photo_alternate_outlined, size: 21),
+            label: const Text(
+              '이미지 추가',
+              style: TextStyle(
+                fontFamily: 'Inter',
+                fontFamilyFallback: ['NotoSansKR'],
+                fontSize: 14,
+                fontWeight: FontWeight.w600,
               ),
             ),
           ),
-
-        // 선택된 이미지들
         if (_selectedImages.isNotEmpty) ...[
-          const SizedBox(height: 12),
-          GridView.builder(
-            shrinkWrap: true,
-            physics: const NeverScrollableScrollPhysics(),
-            gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
-              crossAxisCount: 3,
-              crossAxisSpacing: 8,
-              mainAxisSpacing: 8,
+          const SizedBox(height: 6),
+          SizedBox(
+            height: 94,
+            child: ListView.separated(
+              scrollDirection: Axis.horizontal,
+              itemCount: _selectedImages.length,
+              separatorBuilder: (_, __) => const SizedBox(width: 8),
+              itemBuilder: (context, index) {
+                return SizedBox.square(
+                  dimension: 94,
+                  child: Stack(
+                    children: [
+                      Positioned.fill(
+                        child: DecoratedBox(
+                          decoration: BoxDecoration(
+                            borderRadius: BorderRadius.circular(8),
+                            image: DecorationImage(
+                              image: FileImage(_selectedImages[index]),
+                              fit: BoxFit.cover,
+                            ),
+                          ),
+                        ),
+                      ),
+                      Positioned(
+                        top: 4,
+                        right: 4,
+                        child: SizedBox.square(
+                          dimension: 30,
+                          child: IconButton.filled(
+                            onPressed: () => _removeImage(index),
+                            padding: EdgeInsets.zero,
+                            style: IconButton.styleFrom(
+                              backgroundColor: const Color(0xB3111827),
+                            ),
+                            icon: const Icon(
+                              Icons.close_rounded,
+                              color: Colors.white,
+                              size: 17,
+                            ),
+                          ),
+                        ),
+                      ),
+                    ],
+                  ),
+                );
+              },
             ),
-            itemCount: _selectedImages.length,
-            itemBuilder: (context, index) {
-              return Stack(
-                children: [
-                  Container(
-                    width: double.infinity,
-                    height: double.infinity,
-                    decoration: BoxDecoration(
-                      borderRadius: BorderRadius.circular(8),
-                      image: DecorationImage(
-                        image: FileImage(_selectedImages[index]),
-                        fit: BoxFit.cover,
-                      ),
-                    ),
-                  ),
-                  Positioned(
-                    top: 4,
-                    right: 4,
-                    child: GestureDetector(
-                      onTap: () => _removeImage(index),
-                      child: Container(
-                        width: 24,
-                        height: 24,
-                        decoration: BoxDecoration(
-                          color: Colors.black.withOpacity(0.6),
-                          shape: BoxShape.circle,
-                        ),
-                        child: const Icon(
-                          Icons.close,
-                          color: Colors.white,
-                          size: 16,
-                        ),
-                      ),
-                    ),
-                  ),
-                ],
-              );
-            },
           ),
         ],
       ],
@@ -568,97 +615,96 @@ class _ReviewRequestScreenState extends State<ReviewRequestScreen> {
 
   /// 안내 텍스트
   Widget _buildGuideText() {
-    return Container(
-      padding: const EdgeInsets.all(16),
-      decoration: BoxDecoration(
-        color: Colors.orange[50],
-        borderRadius: BorderRadius.circular(12),
-        border: Border.all(color: Colors.orange[200]!),
-      ),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Row(
+    return Row(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        const Padding(
+          padding: EdgeInsets.only(top: 1),
+          child: Icon(
+            Icons.info_outline_rounded,
+            size: 18,
+            color: Color(0xFF667085),
+          ),
+        ),
+        const SizedBox(width: 8),
+        Expanded(
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              Icon(
-                Icons.info_outlined,
-                size: 20,
-                color: Colors.orange[700],
-              ),
-              const SizedBox(width: 8),
-              Text(
+              const Text(
                 '리뷰 요청 안내',
                 style: TextStyle(
-                  fontSize: 14,
-                  fontWeight: FontWeight.w600,
-                  color: Colors.orange[700],
+                  fontFamily: 'Inter',
+                  fontFamilyFallback: ['NotoSansKR'],
+                  fontSize: 13,
+                  fontWeight: FontWeight.w700,
+                  color: Color(0xFF475467),
+                ),
+              ),
+              const SizedBox(height: 6),
+              const Text(
+                '요청은 7일 후 자동으로 만료됩니다.\n'
+                '상대방이 수락하면 리뷰 작성이 시작됩니다.\n'
+                '거절하거나 응답이 없으면 다른 참여자에게 요청할 수 있습니다.',
+                style: TextStyle(
+                  fontFamily: 'Inter',
+                  fontFamilyFallback: ['NotoSansKR'],
+                  fontSize: 12,
+                  color: Color(0xFF667085),
+                  height: 1.55,
                 ),
               ),
             ],
           ),
-          const SizedBox(height: 8),
-          Text(
-            '• 요청은 7일 후 자동으로 만료됩니다\n'
-            '• 상대방이 수락하면 리뷰 작성이 시작됩니다\n'
-            '• 거절하거나 무응답 시 다른 참여자에게 요청할 수 있습니다',
-            style: TextStyle(
-              fontSize: 12,
-              color: Colors.orange[700],
-              height: 1.4,
-            ),
-          ),
-        ],
-      ),
+        ),
+      ],
     );
   }
 
   /// 하단 버튼
   Widget _buildBottomButton() {
-    return Container(
+    return Padding(
       padding: EdgeInsets.fromLTRB(
-        16, 
-        12, 
-        16, 
-        MediaQuery.of(context).padding.bottom + 16
+        _horizontalPadding,
+        10,
+        _horizontalPadding,
+        12,
       ),
-      decoration: BoxDecoration(
-        color: Colors.white,
-        border: Border(
-          top: BorderSide(
-            color: const Color(0xFFE6EAF0),
-            width: 1,
-          ),
-        ),
-      ),
-      child: SizedBox(
-        width: double.infinity,
-        height: 48,
-        child: ElevatedButton(
-          onPressed: _isSubmitting ? null : _submitRequest,
-          style: ElevatedButton.styleFrom(
-            backgroundColor: const Color(0xFF4A90E2),
-            foregroundColor: Colors.white,
-            shape: RoundedRectangleBorder(
-              borderRadius: BorderRadius.circular(12),
-            ),
-            elevation: 0,
-          ),
-          child: _isSubmitting
-              ? const SizedBox(
-                  height: 20,
-                  width: 20,
-                  child: CircularProgressIndicator(
-                    strokeWidth: 2,
-                    color: Colors.white,
-                  ),
-                )
-              : const Text(
-                  '리뷰 요청 보내기',
-                  style: TextStyle(
-                    fontSize: 16,
-                    fontWeight: FontWeight.w600,
-                  ),
+      child: Center(
+        child: ConstrainedBox(
+          constraints: const BoxConstraints(maxWidth: 720),
+          child: SizedBox(
+            width: double.infinity,
+            height: context.rh(50, min: 48, max: 54),
+            child: FilledButton(
+              onPressed: _isSubmitting ? null : _submitRequest,
+              style: FilledButton.styleFrom(
+                backgroundColor: const Color(0xFF2E90FA),
+                foregroundColor: Colors.white,
+                disabledBackgroundColor: const Color(0xFFE4E7EC),
+                shape: RoundedRectangleBorder(
+                  borderRadius: BorderRadius.circular(12),
                 ),
+              ),
+              child: _isSubmitting
+                  ? const SizedBox.square(
+                      dimension: 20,
+                      child: CircularProgressIndicator(
+                        strokeWidth: 2,
+                        color: Colors.white,
+                      ),
+                    )
+                  : const Text(
+                      '리뷰 요청 보내기',
+                      style: TextStyle(
+                        fontFamily: 'Inter',
+                        fontFamilyFallback: ['NotoSansKR'],
+                        fontSize: 15,
+                        fontWeight: FontWeight.w700,
+                      ),
+                    ),
+            ),
+          ),
         ),
       ),
     );

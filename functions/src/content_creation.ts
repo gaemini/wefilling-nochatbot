@@ -3,6 +3,13 @@ import * as admin from 'firebase-admin';
 import * as crypto from 'crypto';
 import {COL} from './firestore_paths';
 import {hasActiveHanyangClaim} from './hanyang_verification';
+import {runtimeInfo, runtimeLogsEnabled} from './runtime_logging';
+import {
+  buildMeetupSearchIndexDocument,
+  buildPostSearchIndexDocument,
+  meetupSearchIndexRef,
+  postSearchIndexRef,
+} from './content_search';
 import {
   isActiveUserData,
   resolveFriendNotificationAudience,
@@ -497,8 +504,14 @@ export const createPostSecure = functions.runWith({timeoutSeconds: 120, memory: 
       if (existing.get('ownerId') === uid || existing.get('userId') === uid) return {postId};
       throw new functions.https.HttpsError('already-exists', 'Post already exists.');
     }
-    await ref.create(document);
-    console.log(
+    const batch = admin.firestore().batch();
+    batch.create(ref, document);
+    batch.set(
+      postSearchIndexRef(postId),
+      buildPostSearchIndexDocument(document, now),
+    );
+    await batch.commit();
+    runtimeLogsEnabled && runtimeInfo(
       `content-created type=post id=${postId} owner=${uid} ` +
       `visibility=${frozen.visibilityMode} schema=2 ` +
       `audienceCount=${frozen.audienceUserIdsFrozen.length}`,
@@ -676,7 +689,13 @@ export const createExternalSharePost = functions
     };
 
     try {
-      await postRef.create(document);
+      const batch = admin.firestore().batch();
+      batch.create(postRef, document);
+      batch.set(
+        postSearchIndexRef(postId),
+        buildPostSearchIndexDocument(document, now),
+      );
+      await batch.commit();
     } catch (error) {
       const raced = await postRef.get();
       if (raced.exists &&
@@ -694,7 +713,7 @@ export const createExternalSharePost = functions
       throw error;
     }
 
-    console.log(
+    runtimeLogsEnabled && runtimeInfo(
       `content-created type=external-share-post id=${postId} owner=${uid} ` +
       `requestId=${requestId} visibility=${frozen.visibilityMode} schema=2`,
     );
@@ -790,8 +809,14 @@ export const createMeetupSecure = functions.runWith({timeoutSeconds: 120, memory
       if (existing.get('ownerId') === uid || existing.get('userId') === uid) return {meetupId};
       throw new functions.https.HttpsError('already-exists', 'Meetup already exists.');
     }
-    await ref.create(document);
-    console.log(
+    const batch = admin.firestore().batch();
+    batch.create(ref, document);
+    batch.set(
+      meetupSearchIndexRef(meetupId),
+      buildMeetupSearchIndexDocument(document, now),
+    );
+    await batch.commit();
+    runtimeLogsEnabled && runtimeInfo(
       `content-created type=meetup id=${meetupId} owner=${uid} ` +
       `visibility=${frozen.visibilityMode} schema=2 ` +
       `audienceCount=${frozen.audienceUserIdsFrozen.length}`,
@@ -896,6 +921,6 @@ export const expireTimedMeetups = functions.pubsub
       ));
       expired += results.filter((result) => result).length;
     }
-    console.log(`expireTimedMeetups: scanned=${snapshot.size} expired=${expired}`);
+    runtimeLogsEnabled && runtimeInfo(`expireTimedMeetups: scanned=${snapshot.size} expired=${expired}`);
     return null;
   });

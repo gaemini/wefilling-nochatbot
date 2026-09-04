@@ -65,10 +65,13 @@ class _ProfileEditScreenState extends State<ProfileEditScreen> {
   String _initialProfileState = '';
   bool _allowPop = false;
 
+  String? get _nationalityDropdownValue =>
+      CountryFlagHelper.normalizeForDropdown(_selectedNationality);
+
   String _profileStateSignature() => jsonEncode(<String, dynamic>{
         'nickname': _nicknameController.text.trim(),
         'bio': _bioController.text.trim(),
-        'nationality': _selectedNationality,
+        'nationality': _nationalityDropdownValue ?? '',
         'interests': _interests,
         'preferredActivities': _preferredActivities,
         'conversationStarter': _conversationController.text.trim(),
@@ -179,13 +182,12 @@ class _ProfileEditScreenState extends State<ProfileEditScreen> {
         _studentType =
             StudentType.tryParse(authProvider.userData!['studentType']);
 
-        // 국적 설정
-        final currentNationality = authProvider.userData!['nationality'];
-        if (currentNationality != null) {
-          setState(() {
-            _selectedNationality = currentNationality;
-          });
-        }
+        // 국적 설정: 빈 값/영문명/ISO/알 수 없는 레거시 값이
+        // DropdownButton의 선택값 assertion을 발생시키지 않도록 정규화한다.
+        _selectedNationality = CountryFlagHelper.normalizeForDropdown(
+              authProvider.userData!['nationality'],
+            ) ??
+            '';
 
         // 3일 제한(닉네임/국적) 잠금 상태 계산
         final lastNick =
@@ -197,7 +199,8 @@ class _ProfileEditScreenState extends State<ProfileEditScreen> {
         final natRem = lastNat != null ? _remainingDaysForCooldown(lastNat) : 0;
         setState(() {
           _nicknameLocked = nickRem > 0;
-          _nationalityLocked = natRem > 0;
+          // 잘못된 레거시 값은 사용자가 바로 고칠 수 있어야 한다.
+          _nationalityLocked = natRem > 0 && _nationalityDropdownValue != null;
           _nicknameRemainingDays = nickRem > 0 ? nickRem : null;
           _nationalityRemainingDays = natRem > 0 ? natRem : null;
           _initialProfileState = _profileStateSignature();
@@ -402,6 +405,8 @@ class _ProfileEditScreenState extends State<ProfileEditScreen> {
   // 프로필 업데이트
   Future<void> _updateProfile() async {
     if (_formKey.currentState?.validate() ?? false) {
+      final selectedNationality = _nationalityDropdownValue;
+      if (selectedNationality == null) return;
       setState(() {
         _isSubmitting = true;
       });
@@ -450,7 +455,7 @@ class _ProfileEditScreenState extends State<ProfileEditScreen> {
 
         // 기본 이미지로 변경하는 경우
         if (_useDefaultImage) {
-          Logger.log("🗑️ 기본 이미지로 변경 요청");
+          if (Logger.isVerboseEnabled) Logger.log("🗑️ 기본 이미지로 변경 요청");
 
           // 기본 이미지 초기화는 즉시 Firestore/Storage를 변경하므로, 닉네임
           // 충돌이 있다면 그보다 먼저 서버의 최종 claim transaction에서
@@ -466,7 +471,7 @@ class _ProfileEditScreenState extends State<ProfileEditScreen> {
             // 닉네임과 국적도 함께 업데이트 (photoURL은 이미 처리됨)
             result = await authProvider.updateUserProfile(
               nickname: _nicknameController.text.trim(),
-              nationality: _selectedNationality,
+              nationality: selectedNationality,
               photoURL: '', // 빈 문자열로 유지
               bio: social.bio,
               interests: social.interests,
@@ -514,7 +519,7 @@ class _ProfileEditScreenState extends State<ProfileEditScreen> {
           // 프로필 업데이트 수행 (닉네임, 국적, photoURL 모두 포함)
           result = await authProvider.updateUserProfile(
             nickname: _nicknameController.text.trim(),
-            nationality: _selectedNationality,
+            nationality: selectedNationality,
             photoURL: upload.downloadUrl, // ✅ 새 토큰 포함 URL
             photoPath: upload.path, // ✅ 유저 폴더 내 실제 저장 경로
             bio: social.bio,
@@ -537,7 +542,7 @@ class _ProfileEditScreenState extends State<ProfileEditScreen> {
         else {
           result = await authProvider.updateUserProfile(
             nickname: _nicknameController.text.trim(),
-            nationality: _selectedNationality,
+            nationality: selectedNationality,
             bio: social.bio,
             interests: social.interests,
             preferredActivities: social.preferredActivities,
@@ -681,12 +686,15 @@ class _ProfileEditScreenState extends State<ProfileEditScreen> {
       final nickname = userData?['nickname'] ?? '익명';
       final photoURL = userData?['photoURL'];
 
-      Logger.log('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━');
-      Logger.log('🔥 수동 게시물 업데이트 시작');
-      Logger.log('   - User ID: ${user.uid}');
-      Logger.log('   - Nickname: $nickname');
-      Logger.log('   - PhotoURL: ${photoURL ?? "없음"}');
-      Logger.log('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━');
+      if (Logger.isVerboseEnabled)
+        Logger.log('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━');
+      if (Logger.isVerboseEnabled) Logger.log('🔥 수동 게시물 업데이트 시작');
+      if (Logger.isVerboseEnabled) Logger.log('   - User ID: ${user.uid}');
+      if (Logger.isVerboseEnabled) Logger.log('   - Nickname: $nickname');
+      if (Logger.isVerboseEnabled)
+        Logger.log('   - PhotoURL: ${photoURL ?? "없음"}');
+      if (Logger.isVerboseEnabled)
+        Logger.log('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━');
 
       // 1단계: users 컬렉션의 displayName을 nickname과 동기화
       try {
@@ -696,7 +704,8 @@ class _ProfileEditScreenState extends State<ProfileEditScreen> {
             .update({
           'displayName': nickname,
         });
-        Logger.log('✅ users 컬렉션의 displayName 동기화 완료: $nickname');
+        if (Logger.isVerboseEnabled)
+          Logger.log('✅ users 컬렉션의 displayName 동기화 완료: $nickname');
       } catch (e) {
         Logger.error('⚠️ displayName 동기화 실패: $e');
       }
@@ -731,7 +740,7 @@ class _ProfileEditScreenState extends State<ProfileEditScreen> {
       }
     } catch (e, stackTrace) {
       Logger.error('❌ 수동 업데이트 오류: $e');
-      Logger.log('스택 트레이스: $stackTrace');
+      if (Logger.isVerboseEnabled) Logger.log('스택 트레이스: $stackTrace');
 
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
@@ -1077,15 +1086,19 @@ class _ProfileEditScreenState extends State<ProfileEditScreen> {
                   ),
                   const SizedBox(height: 8),
                   DropdownButtonFormField<String>(
+                    key: ValueKey<String>(
+                      'profile_nationality_${_nationalityDropdownValue ?? 'unselected'}',
+                    ),
                     decoration: socialProfileInputDecoration(
                       hintText:
                           Localizations.localeOf(context).languageCode == 'ko'
                               ? '국가'
                               : 'Country',
                     ),
-                    value: _selectedNationality,
+                    initialValue: _nationalityDropdownValue,
                     isExpanded: true, // 긴 텍스트 표시를 위해
-                    items: CountryFlagHelper.allCountries.map((country) {
+                    menuMaxHeight: MediaQuery.sizeOf(context).height * 0.5,
+                    items: CountryFlagHelper.dropdownCountries.map((country) {
                       final currentLanguage =
                           Localizations.localeOf(context).languageCode;
                       return DropdownMenuItem(
@@ -1103,7 +1116,14 @@ class _ProfileEditScreenState extends State<ProfileEditScreen> {
                           overflow: TextOverflow.ellipsis,
                         ),
                       );
-                    }).toList(),
+                    }).toList(growable: false),
+                    validator: (value) {
+                      if (value != null) return null;
+                      return Localizations.localeOf(context).languageCode ==
+                              'ko'
+                          ? '국적을 선택해 주세요.'
+                          : 'Please choose your nationality.';
+                    },
                     onChanged: _nationalityLocked
                         ? null
                         : (value) {

@@ -13,6 +13,9 @@ import 'post_detail_screen.dart';
 import '../l10n/app_localizations.dart';
 import '../utils/logger.dart';
 import '../services/user_info_cache_service.dart';
+import '../utils/latest_request_guard.dart';
+import '../ui/widgets/empty_state.dart';
+import '../ui/widgets/hanyang_verification_gate.dart';
 
 class SearchResultPage extends StatefulWidget {
   final String boardType; // 'meeting' 또는 'info'
@@ -37,18 +40,22 @@ class _SearchResultPageState extends State<SearchResultPage> {
   List<dynamic> _searchResults = [];
   bool _isLoading = false;
   bool _hasSearched = false;
+  Object? _searchError;
+  final LatestRequestGuard _searchRequestGuard = LatestRequestGuard();
 
   @override
   void initState() {
     super.initState();
-    if (widget.initialQuery != null && widget.initialQuery!.isNotEmpty) {
-      _searchController.text = widget.initialQuery!;
-      _performSearch(widget.initialQuery!);
+    final initialQuery = widget.initialQuery?.trim() ?? '';
+    if (initialQuery.isNotEmpty) {
+      _searchController.text = initialQuery;
+      _performSearch(initialQuery);
     }
   }
 
   @override
   void dispose() {
+    _searchRequestGuard.invalidate();
     _searchController.dispose();
     _debounceTimer?.cancel();
     super.dispose();
@@ -56,49 +63,79 @@ class _SearchResultPageState extends State<SearchResultPage> {
 
   void _onSearchChanged(String query) {
     _debounceTimer?.cancel();
+    _searchRequestGuard.invalidate();
+    final normalizedQuery = query.trim();
+    if (normalizedQuery.isEmpty) {
+      setState(() {
+        _searchResults.clear();
+        _isLoading = false;
+        _hasSearched = false;
+        _searchError = null;
+      });
+      return;
+    }
+
+    // 디바운스 중 이전 검색어의 결과가 현재 입력의 결과처럼 보이지 않게
+    // 즉시 로딩 상태로 전환한다.
+    setState(() {
+      _searchResults.clear();
+      _isLoading = true;
+      _hasSearched = true;
+      _searchError = null;
+    });
     _debounceTimer = Timer(const Duration(milliseconds: 300), () {
-      if (query.isNotEmpty) {
-        _performSearch(query);
-      } else {
-        setState(() {
-          _searchResults.clear();
-          _hasSearched = false;
-        });
-      }
+      if (!mounted) return;
+      _performSearch(normalizedQuery);
     });
   }
 
   Future<void> _performSearch(String query) async {
-    Logger.log('🔍 검색 시작: "$query", 타입: ${widget.boardType}');
+    final normalizedQuery = query.trim();
+    if (!mounted || normalizedQuery.isEmpty) return;
+    final requestToken = _searchRequestGuard.begin();
+    if (Logger.isVerboseEnabled) {
+      Logger.log('🔍 검색 시작: "$query", 타입: ${widget.boardType}');
+    }
     setState(() {
       _isLoading = true;
       _hasSearched = true;
+      _searchError = null;
     });
 
     try {
       if (widget.boardType == 'meeting') {
         // 모임 검색
-        Logger.log('🔍 모임 검색 실행...');
-        final meetups = await _meetupService.searchMeetupsAsync(query);
-        Logger.log('🔍 모임 검색 결과: ${meetups.length}개');
+        if (Logger.isVerboseEnabled) Logger.log('🔍 모임 검색 실행...');
+        final meetups =
+            await _meetupService.searchMeetupsAsync(normalizedQuery);
+        if (!mounted || !_searchRequestGuard.isCurrent(requestToken)) return;
+        if (Logger.isVerboseEnabled) {
+          Logger.log('🔍 모임 검색 결과: ${meetups.length}개');
+        }
         setState(() {
           _searchResults = meetups;
           _isLoading = false;
         });
       } else {
         // 정보게시판 검색 - 카테고리 필터 제거하고 전체 검색
-        Logger.log('🔍 게시글 검색 실행...');
-        final posts = await _postService.searchPosts(query); // category 파라미터 제거
-        Logger.log('🔍 게시글 검색 결과: ${posts.length}개');
+        if (Logger.isVerboseEnabled) Logger.log('🔍 게시글 검색 실행...');
+        final posts =
+            await _postService.searchPosts(normalizedQuery); // category 파라미터 제거
+        if (!mounted || !_searchRequestGuard.isCurrent(requestToken)) return;
+        if (Logger.isVerboseEnabled) {
+          Logger.log('🔍 게시글 검색 결과: ${posts.length}개');
+        }
         setState(() {
           _searchResults = posts;
           _isLoading = false;
         });
       }
     } catch (e) {
+      if (!mounted || !_searchRequestGuard.isCurrent(requestToken)) return;
       setState(() {
         _searchResults.clear();
         _isLoading = false;
+        _searchError = e;
       });
       Logger.error('🔍 검색 오류: $e');
     }
@@ -106,12 +143,12 @@ class _SearchResultPageState extends State<SearchResultPage> {
 
   String _pageTitle(BuildContext context) {
     return widget.boardType == 'meeting'
-        ? (AppLocalizations.of(context)!.activityBoard ?? "")
+        ? AppLocalizations.of(context)!.activityBoard
         : AppLocalizations.of(context)!.infoBoard;
   }
 
   String _searchHint(BuildContext context) {
-    return AppLocalizations.of(context)!.enterSearchQuery ?? "";
+    return AppLocalizations.of(context)!.enterSearchQuery;
   }
 
   @override
@@ -149,6 +186,12 @@ class _SearchResultPageState extends State<SearchResultPage> {
               child: TextField(
                 controller: _searchController,
                 onChanged: _onSearchChanged,
+                onSubmitted: (query) {
+                  _debounceTimer?.cancel();
+                  _searchRequestGuard.invalidate();
+                  _performSearch(query);
+                },
+                textInputAction: TextInputAction.search,
                 autofocus: true,
                 decoration: InputDecoration(
                   hintText: _searchHint(context),
@@ -164,10 +207,14 @@ class _SearchResultPageState extends State<SearchResultPage> {
                   suffixIcon: _searchController.text.isNotEmpty
                       ? GestureDetector(
                           onTap: () {
+                            _debounceTimer?.cancel();
+                            _searchRequestGuard.invalidate();
                             _searchController.clear();
                             setState(() {
                               _searchResults.clear();
+                              _isLoading = false;
                               _hasSearched = false;
+                              _searchError = null;
                             });
                           },
                           child: const Icon(
@@ -229,6 +276,19 @@ class _SearchResultPageState extends State<SearchResultPage> {
       );
     }
 
+    if (_searchError != null) {
+      final l10n = AppLocalizations.of(context)!;
+      return AppErrorState(
+        title: l10n.error,
+        description: l10n.errorOccurred,
+        retryText: l10n.retryAction,
+        onRetry: () {
+          final query = _searchController.text.trim();
+          if (query.isNotEmpty) _performSearch(query);
+        },
+      );
+    }
+
     if (_searchResults.isEmpty) {
       return Center(
         child: Column(
@@ -241,7 +301,7 @@ class _SearchResultPageState extends State<SearchResultPage> {
             ),
             const SizedBox(height: 16),
             Text(
-              '검색 결과가 없습니다',
+              AppLocalizations.of(context)!.noSearchResults,
               style: TextStyle(
                 fontSize: 16,
                 color: Colors.grey.shade600,
@@ -267,124 +327,133 @@ class _SearchResultPageState extends State<SearchResultPage> {
       separatorBuilder: (context, index) => const SizedBox(height: 12),
       itemBuilder: (context, index) {
         final meetup = _searchResults[index] as Meetup;
-        return InkWell(
-          onTap: () {
-            _showMeetupDetail(meetup);
-          },
-          borderRadius: BorderRadius.circular(16),
-          child: Container(
-            decoration: BoxDecoration(
-              color: const Color(0xFFE9F1FF),
-              borderRadius: BorderRadius.circular(16),
-            ),
-            padding: const EdgeInsets.all(16),
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                // 상단: 제목 + 오늘 예정 라벨
-                Row(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Expanded(
-                      child: Text(
-                        meetup.title,
-                        style: const TextStyle(
-                          fontSize: 16,
-                          fontWeight: FontWeight.bold,
-                          color: Colors.black,
-                        ),
-                      ),
-                    ),
-                    const SizedBox(width: 8),
-                    Container(
-                      padding: const EdgeInsets.symmetric(
-                          horizontal: 8, vertical: 4),
-                      decoration: BoxDecoration(
-                        color: Colors.blue,
-                        borderRadius: BorderRadius.circular(8),
-                      ),
-                      child: Text(
-                        meetup.getFormattedDate(context),
-                        style: const TextStyle(
-                          fontSize: 11,
-                          color: Colors.white,
-                          fontWeight: FontWeight.w700,
-                        ),
-                      ),
-                    ),
-                  ],
-                ),
-                const SizedBox(height: 4),
-
-                // 호스트 닉네임
-                Text(
-                  '${AppLocalizations.of(context)!.host}: ${meetup.host}',
-                  style: TextStyle(
-                    fontSize: 12,
-                    color: Colors.black.withOpacity(0.7), // 0.5 → 0.7 (더 진하게)
-                    fontWeight: FontWeight.w500, // 폰트 굵기 추가
-                  ),
-                ),
-                const SizedBox(height: 8),
-
-                // 본문
-                Text(
-                  meetup.description,
-                  style: TextStyle(
-                    fontSize: 14,
-                    color: Colors.black.withOpacity(0.6),
-                  ),
-                  maxLines: 2,
-                  overflow: TextOverflow.ellipsis,
-                ),
-                const SizedBox(height: 12),
-
-                // 하단: 위치 + 참여 현황
-                Row(
-                  children: [
-                    Icon(
-                      Icons.location_on,
-                      size: 14,
-                      color: Colors.red.shade400,
-                    ),
-                    const SizedBox(width: 4),
-                    Expanded(
-                      child: Text(
-                        meetup.location,
-                        style: TextStyle(
-                          fontSize: 12,
-                          color: Colors.black.withOpacity(0.6),
-                        ),
-                        maxLines: 1,
-                        overflow: TextOverflow.ellipsis,
-                      ),
-                    ),
-                    const SizedBox(width: 12),
-                    Icon(
-                      Icons.people,
-                      size: 16,
-                      color: Colors.blue.shade700,
-                    ),
-                    const SizedBox(width: 4),
-                    FutureBuilder<int>(
-                      future: MeetupService()
-                          .getRealTimeParticipantCount(meetup.id),
-                      builder: (context, snapshot) {
-                        final participantCount =
-                            snapshot.data ?? meetup.currentParticipants;
-                        return Text(
-                          '$participantCount/${meetup.maxParticipants}',
-                          style: TextStyle(
-                            fontSize: 14,
-                            color: Colors.blue.shade700,
-                            fontWeight: FontWeight.w600,
+        final hostName = (meetup.hostNickname ?? '').trim().isNotEmpty
+            ? meetup.hostNickname!.trim()
+            : meetup.host;
+        final isHanyangLocked = HanyangVerificationGate.isLockedForCurrentUser(
+          context,
+          meetup.requiresHanyangVerification,
+        );
+        return HanyangVerificationGate(
+          locked: isHanyangLocked,
+          compact: true,
+          child: InkWell(
+            onTap: isHanyangLocked ? null : () => _showMeetupDetail(meetup),
+            borderRadius: BorderRadius.circular(16),
+            child: Container(
+              decoration: BoxDecoration(
+                color: const Color(0xFFE9F1FF),
+                borderRadius: BorderRadius.circular(16),
+              ),
+              padding: const EdgeInsets.all(16),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  // 상단: 제목 + 오늘 예정 라벨
+                  Row(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Expanded(
+                        child: Text(
+                          meetup.title,
+                          style: const TextStyle(
+                            fontSize: 16,
+                            fontWeight: FontWeight.bold,
+                            color: Colors.black,
                           ),
-                        );
-                      },
+                        ),
+                      ),
+                      const SizedBox(width: 8),
+                      Container(
+                        padding: const EdgeInsets.symmetric(
+                            horizontal: 8, vertical: 4),
+                        decoration: BoxDecoration(
+                          color: Colors.blue,
+                          borderRadius: BorderRadius.circular(8),
+                        ),
+                        child: Text(
+                          meetup.getFormattedDate(context),
+                          style: const TextStyle(
+                            fontSize: 11,
+                            color: Colors.white,
+                            fontWeight: FontWeight.w700,
+                          ),
+                        ),
+                      ),
+                    ],
+                  ),
+                  const SizedBox(height: 4),
+
+                  // 호스트 닉네임
+                  Text(
+                    '${AppLocalizations.of(context)!.host}: $hostName',
+                    style: TextStyle(
+                      fontSize: 12,
+                      color: Colors.black.withValues(alpha: 0.7),
+                      fontWeight: FontWeight.w500, // 폰트 굵기 추가
                     ),
-                  ],
-                ),
-              ],
+                  ),
+                  const SizedBox(height: 8),
+
+                  // 본문
+                  Text(
+                    meetup.description,
+                    style: TextStyle(
+                      fontSize: 14,
+                      color: Colors.black.withValues(alpha: 0.6),
+                    ),
+                    maxLines: 2,
+                    overflow: TextOverflow.ellipsis,
+                  ),
+                  const SizedBox(height: 12),
+
+                  // 하단: 위치 + 참여 현황
+                  Row(
+                    children: [
+                      Icon(
+                        Icons.location_on,
+                        size: 14,
+                        color: Colors.red.shade400,
+                      ),
+                      const SizedBox(width: 4),
+                      Expanded(
+                        child: Text(
+                          meetup.location,
+                          style: TextStyle(
+                            fontSize: 12,
+                            color: Colors.black.withValues(alpha: 0.6),
+                          ),
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                        ),
+                      ),
+                      const SizedBox(width: 12),
+                      Icon(
+                        Icons.people,
+                        size: 16,
+                        color: Colors.blue.shade700,
+                      ),
+                      const SizedBox(width: 4),
+                      FutureBuilder<int>(
+                        future: _meetupService
+                            .getRealTimeParticipantCount(meetup.id),
+                        builder: (context, snapshot) {
+                          final participantCount =
+                              snapshot.data ?? meetup.currentParticipants;
+                          return Text(
+                            '$participantCount/${meetup.maxParticipants}',
+                            style: TextStyle(
+                              fontSize: 14,
+                              color: Colors.blue.shade700,
+                              fontWeight: FontWeight.w600,
+                            ),
+                          );
+                        },
+                      ),
+                    ],
+                  ),
+                ],
+              ),
             ),
           ),
         );
@@ -402,8 +471,9 @@ class _SearchResultPageState extends State<SearchResultPage> {
           meetupId: meetup.id,
           onMeetupDeleted: () {
             // 모임이 삭제되면 검색 결과 새로고침
-            if (_searchController.text.isNotEmpty) {
-              _performSearch(_searchController.text);
+            final query = _searchController.text.trim();
+            if (query.isNotEmpty) {
+              _performSearch(query);
             }
           },
         ),
@@ -421,93 +491,99 @@ class _SearchResultPageState extends State<SearchResultPage> {
       ),
       itemBuilder: (context, index) {
         final post = _searchResults[index] as Post;
-        return InkWell(
-          onTap: () {
-            _showPostDetail(post);
-          },
-          child: Container(
-            padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
-            child: Row(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                // 좌측: 하트/댓글 아이콘
-                Column(
-                  children: [
-                    Row(
-                      children: [
-                        Icon(
-                          Icons.favorite_border,
-                          size: 16,
-                          color: Colors.red.shade400,
-                        ),
-                        const SizedBox(width: 2),
-                        Text(
-                          '${post.likes}',
-                          style: TextStyle(
-                            fontSize: 12,
-                            color: Colors.red.shade400,
-                          ),
-                        ),
-                      ],
-                    ),
-                    const SizedBox(height: 4),
-                    Row(
-                      children: [
-                        Icon(
-                          Icons.chat_bubble_outline,
-                          size: 16,
-                          color: Colors.blue.shade400,
-                        ),
-                        const SizedBox(width: 2),
-                        Text(
-                          '${post.commentCount}',
-                          style: TextStyle(
-                            fontSize: 12,
-                            color: Colors.blue.shade400,
-                          ),
-                        ),
-                      ],
-                    ),
-                  ],
-                ),
-                const SizedBox(width: 12),
-
-                // 중앙: 내용
-                Expanded(
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
+        final isHanyangLocked = HanyangVerificationGate.isLockedForCurrentUser(
+          context,
+          post.requiresHanyangVerification,
+        );
+        return HanyangVerificationGate(
+          locked: isHanyangLocked,
+          compact: true,
+          child: InkWell(
+            onTap: isHanyangLocked ? null : () => _showPostDetail(post),
+            child: Container(
+              padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+              child: Row(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  // 좌측: 하트/댓글 아이콘
+                  Column(
                     children: [
-                      // 닉네임 + 시간
                       Row(
                         children: [
-                          _buildPostAuthor(post),
-                          const SizedBox(width: 8),
+                          Icon(
+                            Icons.favorite_border,
+                            size: 16,
+                            color: Colors.red.shade400,
+                          ),
+                          const SizedBox(width: 2),
                           Text(
-                            post.getFormattedTime(context),
+                            '${post.likes}',
                             style: TextStyle(
                               fontSize: 12,
-                              color: Colors.black.withOpacity(0.87),
+                              color: Colors.red.shade400,
                             ),
                           ),
                         ],
                       ),
                       const SizedBox(height: 4),
-
-                      // 제목/본문 구분이 없는 포스트의 단일 본문
-                      Text(
-                        post.displayText,
-                        style: const TextStyle(
-                          fontSize: 14,
-                          fontWeight: FontWeight.w600,
-                          color: Colors.black,
-                        ),
-                        maxLines: 3,
-                        overflow: TextOverflow.ellipsis,
+                      Row(
+                        children: [
+                          Icon(
+                            Icons.chat_bubble_outline,
+                            size: 16,
+                            color: Colors.blue.shade400,
+                          ),
+                          const SizedBox(width: 2),
+                          Text(
+                            '${post.commentCount}',
+                            style: TextStyle(
+                              fontSize: 12,
+                              color: Colors.blue.shade400,
+                            ),
+                          ),
+                        ],
                       ),
                     ],
                   ),
-                ),
-              ],
+                  const SizedBox(width: 12),
+
+                  // 중앙: 내용
+                  Expanded(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        // 닉네임 + 시간
+                        Row(
+                          children: [
+                            _buildPostAuthor(post),
+                            const SizedBox(width: 8),
+                            Text(
+                              post.getFormattedTime(context),
+                              style: TextStyle(
+                                fontSize: 12,
+                                color: Colors.black.withValues(alpha: 0.87),
+                              ),
+                            ),
+                          ],
+                        ),
+                        const SizedBox(height: 4),
+
+                        // 제목/본문 구분이 없는 포스트의 단일 본문
+                        Text(
+                          post.displayText,
+                          style: const TextStyle(
+                            fontSize: 14,
+                            fontWeight: FontWeight.w600,
+                            color: Colors.black,
+                          ),
+                          maxLines: 3,
+                          overflow: TextOverflow.ellipsis,
+                        ),
+                      ],
+                    ),
+                  ),
+                ],
+              ),
             ),
           ),
         );
@@ -518,7 +594,7 @@ class _SearchResultPageState extends State<SearchResultPage> {
   Widget _buildPostAuthor(Post post) {
     final style = TextStyle(
       fontSize: 13,
-      color: Colors.black.withOpacity(0.87),
+      color: Colors.black.withValues(alpha: 0.87),
       fontWeight: FontWeight.w500,
     );
     final l10n = AppLocalizations.of(context)!;

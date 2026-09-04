@@ -117,8 +117,20 @@ def validate_common(meta: dict, store: dict) -> None:
         "AppleAppAttestWithDeviceCheckFallbackProvider",
     ):
         require(token in app_check, f"App Check provider missing: {token}")
-    require("kDebugMode" in app_check, "App Check providers are not build-mode separated")
-    require("RELEASE_CHANNEL" in app_check, "App Check production provider is not release-channel gated")
+    require(
+        "const productionAttestation = kReleaseMode;" in app_check,
+        "App Check providers must be selected only by Flutter build mode",
+    )
+    for forbidden_selector in (
+        "APP_CHECK_PROVIDER",
+        "USE_DEBUG_APP_CHECK",
+        "FLUTTER_APP_FLAVOR",
+        "RELEASE_CHANNEL",
+    ):
+        require(
+            forbidden_selector not in app_check,
+            f"App Check provider must not use {forbidden_selector}",
+        )
 
     forbidden = re.compile(r"(10\.0\.2\.2|127\.0\.0\.1|localhost|useFirestoreEmulator|useAuthEmulator)")
     production_sources = "\n".join(
@@ -141,12 +153,18 @@ def validate_android(meta: dict, store: dict, strict_signing: bool) -> None:
     android = meta["android"]
     expected_id = "com.wefilling.app"
     require(android.get("applicationId") == expected_id, "wrong Android applicationId")
-    require(android.get("flavor") == "production", "wrong Android flavor")
+    require("flavor" not in android, "Android release metadata must not declare a flavor")
     require(android.get("entryPoint") == "lib/main.dart", "wrong Android entry point")
 
     gradle = read_text(ROOT / "android/app/build.gradle.kts")
-    require(f'applicationId = "{expected_id}"' in gradle, "Gradle production applicationId mismatch")
-    require('create("production")' in gradle, "production flavor missing")
+    require(f'applicationId = "{expected_id}"' in gradle, "Gradle applicationId mismatch")
+    for forbidden_flavor in (
+        "flavorDimensions",
+        "productFlavors",
+        'create("development")',
+        'create("production")',
+    ):
+        require(forbidden_flavor not in gradle, f"Android flavor remains: {forbidden_flavor}")
     require('signingConfig = signingConfigs.getByName("release")' in gradle, "release signing config missing")
 
     google = read_json(ROOT / "android/app/google-services.json")
@@ -198,9 +216,10 @@ def validate_android(meta: dict, store: dict, strict_signing: bool) -> None:
         require(normalize_fingerprint(match.group(1)) == normalize_fingerprint(expected_upload), "configured Android upload certificate mismatch")
 
     script = read_text(ROOT / "scripts/android_release.sh")
-    require("--flavor production" in script or "--flavor\n  production" in script, "Android release script must build production flavor")
-    require("-t lib/main.dart" in script or '--target="lib/main.dart"' in script, "Android release script must pin lib/main.dart")
-    require("FLUTTER_APP_FLAVOR=production" in script, "Android release script must enable production App Check")
+    require("build appbundle" in script, "Android release script must build an app bundle")
+    require("--release" in script, "Android release script must build in release mode")
+    require("--flavor" not in script, "Android release script must not use a flavor")
+    require("--dart-define" not in script, "Android release script must not select App Check with dart-define")
 
 
 def validate_ios(meta: dict, store: dict, strict_signing: bool) -> None:
@@ -215,10 +234,43 @@ def validate_ios(meta: dict, store: dict, strict_signing: bool) -> None:
     runner_ids = re.findall(r"PRODUCT_BUNDLE_IDENTIFIER = ([^;]+);", project)
     require(expected_id in runner_ids, "Runner bundle identifier mismatch")
     require(ios.get("teamId") in project, "iOS development team mismatch")
-    require(
-        project.count('"CODE_SIGN_IDENTITY[sdk=iphoneos*]" = "Apple Distribution";') >= 4,
-        "Runner and Share Extension Release/Profile must use Apple Distribution",
+
+    # Both targets use Xcode automatic signing. Device builds are development
+    # signed while archiving, and `flutter build ipa` lets Xcode re-sign the
+    # exported App Store artifact with an installed distribution identity.
+    # A base `Apple Distribution` override conflicts with automatic signing in
+    # Xcode even when the sdk-specific value is Apple Development.
+    configuration_blocks: dict[tuple[str, str], str] = {}
+    block_pattern = re.compile(
+        r"(?ms)^\s*[A-F0-9]+ /\* (Debug|Release|Profile) \*/ = \{\n"
+        r"(?P<body>.*?)^\s*\};\n"
     )
+    for match in block_pattern.finditer(project):
+        body = match.group("body")
+        for target_id in (expected_id, f"{expected_id}.ShareExtension"):
+            if f"PRODUCT_BUNDLE_IDENTIFIER = {target_id};" in body:
+                configuration_blocks[(target_id, match.group(1))] = body
+
+    for target_id in (expected_id, f"{expected_id}.ShareExtension"):
+        for configuration in ("Debug", "Release", "Profile"):
+            body = configuration_blocks.get((target_id, configuration), "")
+            require(bool(body), f"missing {target_id} {configuration} configuration")
+            require(
+                "CODE_SIGN_STYLE = Automatic;" in body,
+                f"{target_id} {configuration} must use automatic signing",
+            )
+            require(
+                '"CODE_SIGN_IDENTITY[sdk=iphoneos*]" = "Apple Development";' in body,
+                f"{target_id} {configuration} device identity must use Apple Development",
+            )
+            require(
+                'CODE_SIGN_IDENTITY = "Apple Distribution";' not in body,
+                f"{target_id} {configuration} has a conflicting distribution identity override",
+            )
+            require(
+                'PROVISIONING_PROFILE_SPECIFIER = "";' in body,
+                f"{target_id} {configuration} must not pin a provisioning profile",
+            )
 
     with (ROOT / "ios/Runner/GoogleService-Info.plist").open("rb") as handle:
         firebase = plistlib.load(handle)
@@ -239,8 +291,6 @@ def validate_ios(meta: dict, store: dict, strict_signing: bool) -> None:
             entitlements.get("com.apple.developer.devicecheck.appattest-environment") == environment,
             f"{filename} App Attest environment must be {environment}",
         )
-    ios_script = read_text(ROOT / "scripts/ios_release.sh")
-    require("FLUTTER_APP_FLAVOR=production" in ios_script, "iOS release script must enable production App Check")
     verified = int(store.get("ios", {}).get("verifiedStoreBuild", 0))
     require(int(meta["buildNumber"]) > verified, f"iOS build must exceed verified Store build {verified}")
     if strict_signing:
@@ -317,6 +367,24 @@ def ios_app_from_artifact(artifact: Path, temp: Path) -> Path:
     return apps[0]
 
 
+def read_codesign_entitlements(app: Path) -> dict:
+    try:
+        result = subprocess.run(
+            ["codesign", "-d", "--entitlements", ":-", str(app)],
+            check=True,
+            capture_output=True,
+        )
+    except (OSError, subprocess.CalledProcessError) as error:
+        detail = getattr(error, "stderr", b"")
+        if isinstance(detail, bytes):
+            detail = detail.decode("utf-8", errors="replace")
+        fail(f"cannot read IPA code-sign entitlements: {str(detail).strip()}")
+    try:
+        return plistlib.loads(result.stdout)
+    except (ValueError, plistlib.InvalidFileException) as error:
+        fail(f"cannot parse IPA code-sign entitlements: {error}")
+
+
 def validate_ios_artifact(meta: dict, store: dict, artifact: Path) -> None:
     require(artifact.exists(), "iOS artifact does not exist")
     with tempfile.TemporaryDirectory(prefix="wefilling-release-") as directory:
@@ -337,9 +405,46 @@ def validate_ios_artifact(meta: dict, store: dict, artifact: Path) -> None:
         except (ValueError, plistlib.InvalidFileException) as error:
             fail(f"cannot parse IPA provisioning profile: {error}")
         profile_entitlements = profile.get("Entitlements", {})
+        profile_app_attest = profile_entitlements.get(
+            "com.apple.developer.devicecheck.appattest-environment"
+        )
+        # Apple-managed App Store profiles can authorize both environments as
+        # an array while the signed app itself selects only `production`.
+        # Accept that grant shape, then rely on the codesign entitlement check
+        # below to ensure the shipped binary actually selects production.
+        profile_authorizes_production_app_attest = (
+            profile_app_attest == "production"
+            or (
+                isinstance(profile_app_attest, list)
+                and "production" in profile_app_attest
+            )
+        )
         require(
-            profile_entitlements.get("com.apple.developer.devicecheck.appattest-environment") == "production",
+            profile_authorizes_production_app_attest,
             "IPA provisioning profile does not authorize production App Attest",
+        )
+        run(["codesign", "--verify", "--deep", "--strict", str(app)])
+        signed_entitlements = read_codesign_entitlements(app)
+        require(
+            signed_entitlements.get(
+                "com.apple.developer.devicecheck.appattest-environment"
+            ) == "production",
+            "IPA code signature must select production App Attest",
+        )
+        require(
+            signed_entitlements.get("aps-environment") == "production",
+            "IPA code signature must select production push notifications",
+        )
+        require(
+            signed_entitlements.get("get-task-allow") is False,
+            "IPA code signature must disable debugger attachment",
+        )
+        require(
+            "Default" in signed_entitlements.get(
+                "com.apple.developer.applesignin",
+                [],
+            ),
+            "IPA code signature must include Sign in with Apple",
         )
         cert_prefix = Path(directory) / "signing"
         run(["codesign", "-d", f"--extract-certificates={cert_prefix}", str(app)])

@@ -64,6 +64,44 @@ void main() {
     expect(meetup.visibleToCategoryIds, sourceGroups);
   });
 
+  test('meetup parser accepts callable epoch millis and legacy host', () {
+    final date = DateTime.utc(2026, 9, 3, 12, 30);
+    final meetup = Meetup.fromJson({
+      'id': 'search-result',
+      'host': 'legacy-host',
+      'date': date.millisecondsSinceEpoch,
+      'createdAt': date.millisecondsSinceEpoch,
+    });
+
+    expect(meetup.host, 'legacy-host');
+    expect(meetup.date.millisecondsSinceEpoch, date.millisecondsSinceEpoch);
+    expect(
+      meetup.createdAt.millisecondsSinceEpoch,
+      date.millisecondsSinceEpoch,
+    );
+  });
+
+  test('post parser accepts callable epoch millis and frozen audience', () {
+    final createdAt = DateTime.utc(2026, 9, 4, 1, 15);
+    final post = Post.fromMap({
+      'content': '검색 결과',
+      'createdAt': createdAt.millisecondsSinceEpoch,
+      'ownerId': 'owner',
+      'visibilityMode': 'category',
+      'audienceUserIdsFrozen': const ['owner', 'viewer'],
+      'sourceGroupIds': const ['group'],
+      'visibilitySchemaVersion': 2,
+      'visibilityLockedAt': createdAt.millisecondsSinceEpoch,
+    }, 'search-post');
+
+    expect(post.id, 'search-post');
+    expect(post.createdAt.millisecondsSinceEpoch,
+        createdAt.millisecondsSinceEpoch);
+    expect(post.userId, 'owner');
+    expect(post.visibility, 'category');
+    expect(post.allowedUserIds, const ['owner', 'viewer']);
+  });
+
   test('snapshot parser prefers canonical path and audience fields', () {
     final snapshot = SnapshotItem.fromMap('snapshot-id', {
       'ownerId': 'owner',

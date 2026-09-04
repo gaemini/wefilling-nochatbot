@@ -61,6 +61,7 @@ class UserInfoCacheService {
   final Map<String, DateTime> _cacheTimestamps = {};
   final Map<String, Stream<DMUserInfo?>> _watchStreams = {};
   final Map<String, Future<DMUserInfo?>> _refreshFutures = {};
+  final Map<String, Future<DMUserInfo?>> _serverFetchFutures = {};
 
   String _cacheKey(String userId) =>
       '${_auth.currentUser?.uid ?? 'signed-out'}::$userId';
@@ -200,12 +201,35 @@ class UserInfoCacheService {
           // ⚠️ Firestore 캐시 스냅샷(fromCache=true)로 들어온 값은
           // "최신"으로 간주하지 않는다. (앱 초기 진입 시 오래된 닉네임/사진 플리커 방지)
           (cached == null || cached.isFromCache == false)) {
-        Logger.log('✅ 캐시에서 사용자 정보 반환: $userId');
         return _cache[key];
       }
     }
 
-    // 2단계: 서버에서 조회
+    // 같은 프로필을 포스트·DM·스낵챗이 동시에 요청해도 서버 읽기는
+    // 한 번만 실행한다. 계정 UID가 key에 포함되어 계정 전환 중에도
+    // 다른 사용자의 in-flight 결과를 공유하지 않는다.
+    final activeFetch = _serverFetchFutures[key];
+    if (activeFetch != null) return activeFetch;
+
+    late final Future<DMUserInfo?> trackedFetch;
+    trackedFetch = _fetchUserInfoFromServer(
+      userId: userId,
+      ownerUidAtStart: ownerUidAtStart,
+      key: key,
+    ).whenComplete(() {
+      if (identical(_serverFetchFutures[key], trackedFetch)) {
+        _serverFetchFutures.remove(key);
+      }
+    });
+    _serverFetchFutures[key] = trackedFetch;
+    return trackedFetch;
+  }
+
+  Future<DMUserInfo?> _fetchUserInfoFromServer({
+    required String userId,
+    required String ownerUidAtStart,
+    required String key,
+  }) async {
     try {
       final doc = await _firestore
           .collection('users')
@@ -264,7 +288,6 @@ class UserInfoCacheService {
 
       // 4단계: 실패 시 오래된 캐시라도 반환 (Fallback)
       if (_cache.containsKey(key)) {
-        Logger.log('⚠️ 오래된 캐시 사용: $userId');
         return _cache[key];
       }
 
@@ -449,7 +472,8 @@ class UserInfoCacheService {
     _cacheTimestamps.clear();
     _watchStreams.clear();
     _refreshFutures.clear();
-    Logger.log('🗑️ UserInfoCache 클리어 완료');
+    _serverFetchFutures.clear();
+    if (Logger.isVerboseEnabled) Logger.log('🗑️ UserInfoCache 클리어 완료');
   }
 
   /// 특정 사용자 캐시 삭제
@@ -459,8 +483,9 @@ class UserInfoCacheService {
     _cacheTimestamps.remove(key);
     _watchStreams.remove(key);
     _refreshFutures.remove(key);
+    _serverFetchFutures.remove(key);
     unawaited(_deletePersistedUser(key));
-    Logger.log('🗑️ 사용자 캐시 삭제: $userId');
+    if (Logger.isVerboseEnabled) Logger.log('🗑️ 사용자 캐시 삭제: $userId');
   }
 
   Future<void> _deletePersistedUser(String key) async {

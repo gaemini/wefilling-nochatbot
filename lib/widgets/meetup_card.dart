@@ -21,7 +21,9 @@ class MeetupCard extends StatelessWidget {
   /// 2024-2025 트렌드: Glassmorphism 스타일 사용 여부
   final bool useGlassmorphism;
 
-  static const Color _categoryTextDarkBlue = Color(0xFF0B1F5B);
+  static const Color _categoryTagBlue = Color(0xFF2563EB);
+  static const Color _categoryTagBackground = Color(0xFFEFF6FF);
+  static const Color _categoryTagBorder = Color(0xFFBFDBFE);
 
   const MeetupCard({
     Key? key,
@@ -79,33 +81,6 @@ class MeetupCard extends StatelessWidget {
         return AppTheme.secondary; // Modern pink
       default:
         return AppTheme.primary;
-    }
-  }
-
-  // 2024-2025 트렌드: Category gradient
-  LinearGradient _getCategoryGradient(String category) {
-    switch (category.trim().toLowerCase()) {
-      case '스터디':
-      case 'study':
-        return AppTheme.primaryGradient;
-      case '식사':
-      case 'meal':
-      case 'food':
-      case '밥':
-        return AppTheme.amberGradient;
-      case '카페':
-      case 'cafe':
-      case 'hobby':
-        return AppTheme.emeraldGradient;
-      case '여행':
-      case 'trip':
-      case 'travel':
-        return AppTheme.primaryGradient;
-      case '문화':
-      case 'culture':
-        return AppTheme.secondaryGradient;
-      default:
-        return AppTheme.primaryGradient;
     }
   }
 
@@ -353,23 +328,15 @@ class MeetupCard extends StatelessWidget {
                   vertical: 3,
                 ),
                 decoration: BoxDecoration(
-                  color: _getCategoryColor(
-                    meetup.category,
-                  ).withOpacity(0.1),
+                  color: _categoryTagBackground,
                   borderRadius: BorderRadius.circular(8),
-                  border: Border.all(
-                    color: _getCategoryColor(
-                      meetup.category,
-                    ).withOpacity(0.5),
-                    width: 1,
-                  ),
+                  border: Border.all(color: _categoryTagBorder, width: 1),
                 ),
                 child: Text(
                   localizedCategoryLabel(context, meetup.category),
-                  style: TextStyle(
+                  style: const TextStyle(
                     fontSize: 12,
-                    // 카테고리 배지 텍스트는 "아주 진한 파란색"으로 고정
-                    color: _categoryTextDarkBlue,
+                    color: _categoryTagBlue,
                     fontWeight: FontWeight.w500,
                   ),
                 ),

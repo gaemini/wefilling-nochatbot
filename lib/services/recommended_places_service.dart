@@ -122,13 +122,13 @@ class RecommendedPlacesService {
       }
 
       if (found == null || foundId == null) {
-        Logger.log('추천 장소 문서 없음: $category (tried: ${docIds.join(", ")})');
+        if (Logger.isVerboseEnabled) Logger.log('추천 장소 문서 없음: $category (tried: ${docIds.join(", ")})');
         return [];
       }
 
       final data = found.data();
       if (data == null || !data.containsKey('places')) {
-        Logger.log('추천 장소 데이터 없음: $foundId (requested: $category)');
+        if (Logger.isVerboseEnabled) Logger.log('추천 장소 데이터 없음: $foundId (requested: $category)');
         return [];
       }
 
@@ -138,7 +138,7 @@ class RecommendedPlacesService {
                   return RecommendedPlace.fromMap(
                       place as Map<String, dynamic>);
                 } catch (e) {
-                  Logger.log('추천 장소 파싱 실패: $e');
+                  if (Logger.isVerboseEnabled) Logger.log('추천 장소 파싱 실패: $e');
                   return null;
                 }
               })
@@ -149,11 +149,11 @@ class RecommendedPlacesService {
       // order 기준으로 정렬
       places.sort((a, b) => a.order.compareTo(b.order));
 
-      Logger.log(
+      if (Logger.isVerboseEnabled) Logger.log(
           '추천 장소 로드 성공: $foundId (requested: $category, ${places.length}개)');
       return places;
     } catch (e) {
-      Logger.log('추천 장소 로드 실패: $e');
+      if (Logger.isVerboseEnabled) Logger.log('추천 장소 로드 실패: $e');
       return [];
     }
   }

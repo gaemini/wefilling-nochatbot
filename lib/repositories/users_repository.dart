@@ -2,15 +2,19 @@
 // 사용자 데이터 접근 Repository
 // Firestore에서 사용자 정보를 조회하고 관리
 
+import 'dart:async';
+
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:cloud_functions/cloud_functions.dart';
 import 'package:firebase_auth/firebase_auth.dart';
+import 'package:flutter/foundation.dart';
 import '../models/user_profile.dart';
 import '../models/relationship_status.dart';
 import '../models/friend_request.dart';
-import '../services/content_filter_service.dart';
+import '../services/firebase_app_check_service.dart';
 import '../utils/logger.dart';
 import '../utils/account_status_helper.dart';
+import '../utils/friend_request_visibility_policy.dart';
 
 class SnackChatUserSearchPage {
   const SnackChatUserSearchPage({
@@ -20,6 +24,79 @@ class SnackChatUserSearchPage {
 
   final List<UserProfile> users;
   final String? nextCursor;
+}
+
+/// Applies Snack Chat room exclusions before computing a result page.
+///
+/// Keeping this ordering explicit prevents existing room participants from
+/// consuming a ten-user page and makes every non-null cursor advance.
+@visibleForTesting
+SnackChatUserSearchPage paginateSnackChatInviteCandidates(
+  Iterable<UserProfile> candidates, {
+  required int offset,
+  required Set<String> excludedUserIds,
+  int pageSize = 10,
+}) {
+  if (offset < 0) {
+    throw const FormatException('Invalid Snack Chat search cursor');
+  }
+  final normalizedExclusions = excludedUserIds
+      .map((userId) => userId.trim())
+      .where((userId) => userId.isNotEmpty)
+      .toSet();
+  final eligibleById = <String, UserProfile>{};
+  for (final candidate in candidates) {
+    final userId = candidate.uid.trim();
+    if (userId.isEmpty || normalizedExclusions.contains(userId)) continue;
+    eligibleById.putIfAbsent(userId, () => candidate);
+  }
+  final eligible = eligibleById.values.toList(growable: false);
+  if (offset >= eligible.length) {
+    return const SnackChatUserSearchPage(users: <UserProfile>[]);
+  }
+  final safePageSize = pageSize.clamp(1, 100);
+  final end = (offset + safePageSize).clamp(0, eligible.length);
+  return SnackChatUserSearchPage(
+    users: eligible.sublist(offset, end),
+    nextCursor: end < eligible.length ? '$end' : null,
+  );
+}
+
+@visibleForTesting
+bool canUseLegacyUserSearchFallback({
+  required String errorCode,
+  required bool isReleaseMode,
+}) {
+  if (isReleaseMode) return false;
+  return errorCode == 'not-found' ||
+      errorCode == 'unimplemented' ||
+      errorCode == 'unauthenticated';
+}
+
+/// Firestore `whereIn` 조회에 넣을 UID를 안전한 크기로 나눈다.
+///
+/// 순서를 유지하고 빈 값·중복을 제거해, 스낵챗 카드와 친구 목록이
+/// 동시에 만들어져도 같은 프로필을 반복 요청하지 않게 한다.
+@visibleForTesting
+List<List<String>> buildUserProfileQueryBatches(
+  Iterable<String> userIds, {
+  int batchSize = 10,
+}) {
+  if (batchSize <= 0) {
+    throw ArgumentError.value(batchSize, 'batchSize', 'must be positive');
+  }
+  final normalized = userIds
+      .map((userId) => userId.trim())
+      .where((userId) => userId.isNotEmpty)
+      .toSet()
+      .toList(growable: false);
+  return <List<String>>[
+    for (var start = 0; start < normalized.length; start += batchSize)
+      normalized.sublist(
+        start,
+        (start + batchSize).clamp(0, normalized.length),
+      ),
+  ];
 }
 
 class _SnackChatUserSearchCacheEntry {
@@ -47,7 +124,10 @@ class UsersRepository {
   // 프로필 캐시 (메모리 캐시)
   static final Map<String, UserProfile> _profileCache = {};
   static final Map<String, DateTime> _cacheTimestamps = {};
+  static final Map<String, Future<UserProfile?>> _profileLoads = {};
   static const Duration _cacheExpiry = Duration(minutes: 5);
+  static String? _profileCacheOwnerUid;
+  static int _profileCacheGeneration = 0;
   static final Map<String, _SnackChatUserSearchCacheEntry>
       _snackChatSearchCache = {};
   static const Duration _snackChatSearchCacheExpiry = Duration(minutes: 1);
@@ -58,43 +138,54 @@ class UsersRepository {
   /// 사용자 ID가 유효한지 확인
   bool get isLoggedIn => currentUserId != null;
 
+  void _ensureProfileCacheOwner() {
+    final ownerUid = currentUserId;
+    if (_profileCacheOwnerUid == ownerUid) return;
+    _profileCache.clear();
+    _cacheTimestamps.clear();
+    _profileLoads.clear();
+    _profileCacheOwnerUid = ownerUid;
+    _profileCacheGeneration += 1;
+  }
+
+  UserProfile? _freshCachedProfile(String userId) {
+    final cached = _profileCache[userId];
+    final cachedAt = _cacheTimestamps[userId];
+    if (cached != null &&
+        cachedAt != null &&
+        DateTime.now().difference(cachedAt) < _cacheExpiry) {
+      return cached;
+    }
+    _profileCache.remove(userId);
+    _cacheTimestamps.remove(userId);
+    return null;
+  }
+
+  /// 이미 메모리에 있는 프로필을 네트워크 대기 없이 순서대로 반환한다.
+  List<UserProfile> getCachedUserProfiles(Iterable<String> userIds) {
+    _ensureProfileCacheOwner();
+    return <UserProfile>[
+      for (final userId in userIds
+          .map((value) => value.trim())
+          .where((value) => value.isNotEmpty)
+          .toSet())
+        if (_freshCachedProfile(userId) case final profile?) profile,
+    ];
+  }
+
   /// 사용자 프로필 조회 (캐싱 적용)
   Future<UserProfile?> getUserProfile(String userId) async {
-    try {
-      // 캐시 확인
-      if (_profileCache.containsKey(userId)) {
-        final cacheTime = _cacheTimestamps[userId];
-        if (cacheTime != null &&
-            DateTime.now().difference(cacheTime) < _cacheExpiry) {
-          Logger.log('💾 캐시에서 프로필 로드: $userId');
-          return _profileCache[userId];
-        } else {
-          // 캐시 만료
-          _profileCache.remove(userId);
-          _cacheTimestamps.remove(userId);
-        }
-      }
-
-      // Firestore에서 조회
-      final doc = await _firestore
-          .collection(_usersCollection)
-          .doc(userId)
-          .get(const GetOptions(source: Source.server));
-
-      if (doc.exists && !isUnavailableUserAccountData(doc.data())) {
-        final profile = UserProfile.fromFirestore(doc);
-
-        // 캐시에 저장
-        _profileCache[userId] = profile;
-        _cacheTimestamps[userId] = DateTime.now();
-
-        return profile;
-      }
-      return null;
-    } catch (e) {
-      Logger.error('사용자 프로필 조회 오류: $e');
-      return null;
-    }
+    final normalizedId = userId.trim();
+    if (normalizedId.isEmpty) return null;
+    _ensureProfileCacheOwner();
+    final cached = _freshCachedProfile(normalizedId);
+    if (cached != null) return cached;
+    final profiles = await _getUserProfilesBatch(
+      <String>[normalizedId],
+      // 기존 단건 조회와 같이 캐시 miss는 서버에서 확정한다.
+      forceRefresh: true,
+    );
+    return profiles.isEmpty ? null : profiles.first;
   }
 
   /// 여러 사용자 프로필을 배치로 조회 (성능 최적화)
@@ -111,64 +202,84 @@ class UsersRepository {
   Future<List<UserProfile>> _getUserProfilesBatch(
     List<String> userIds, {
     required bool forceRefresh,
+    bool rethrowOnError = false,
   }) async {
     try {
-      if (userIds.isEmpty) return [];
+      _ensureProfileCacheOwner();
+      final ownerUid = currentUserId;
+      final generation = _profileCacheGeneration;
+      final orderedIds = buildUserProfileQueryBatches(
+        userIds,
+        batchSize: userIds.length <= 10 ? 10 : userIds.length,
+      ).expand((batch) => batch).toList(growable: false);
+      if (orderedIds.isEmpty) return const <UserProfile>[];
 
-      final profiles = <UserProfile>[];
-      final uncachedIds = <String>[];
+      final resolved = <String, UserProfile>{};
+      final waits = <String, Future<UserProfile?>>{};
+      final claimed = <String, Completer<UserProfile?>>{};
 
-      // 1. 캐시에서 먼저 가져오기
-      for (final userId in userIds) {
-        if (!forceRefresh && _profileCache.containsKey(userId)) {
-          final cacheTime = _cacheTimestamps[userId];
-          if (cacheTime != null &&
-              DateTime.now().difference(cacheTime) < _cacheExpiry) {
-            profiles.add(_profileCache[userId]!);
-            continue;
-          } else {
-            // 캐시 만료
-            _profileCache.remove(userId);
-            _cacheTimestamps.remove(userId);
-          }
+      // 메모리 캐시 히트는 즉시 반환하고, 다른 카드가 이미 가져오는
+      // UID는 같은 Future를 기다린다. 첫 스냅챗이 오기 전의 중복 읽기를 막는다.
+      for (final userId in orderedIds) {
+        final cached = forceRefresh ? null : _freshCachedProfile(userId);
+        if (cached != null) {
+          resolved[userId] = cached;
+          continue;
         }
-        uncachedIds.add(userId);
+
+        final loadKey =
+            '$generation::$ownerUid::${forceRefresh ? 'fresh' : 'cached'}::$userId';
+        final activeLoad = _profileLoads[loadKey];
+        if (activeLoad != null) {
+          waits[userId] = activeLoad;
+          continue;
+        }
+
+        final completer = Completer<UserProfile?>();
+        claimed[userId] = completer;
+        waits[userId] = completer.future;
+        _profileLoads[loadKey] = completer.future;
       }
 
-      if (uncachedIds.isEmpty) {
-        return profiles;
+      if (claimed.isNotEmpty) {
+        unawaited(_loadClaimedProfiles(
+          claimed,
+          ownerUid: ownerUid,
+          generation: generation,
+          forceRefresh: forceRefresh,
+        ));
       }
 
-      // 2. Firestore에서 배치로 조회 (최대 10개씩)
-      final batches = <List<String>>[];
-      for (var i = 0; i < uncachedIds.length; i += 10) {
-        final end = (i + 10 > uncachedIds.length) ? uncachedIds.length : i + 10;
-        batches.add(uncachedIds.sublist(i, end));
-      }
-
-      for (final batch in batches) {
-        final snapshot = await _firestore
-            .collection(_usersCollection)
-            .where(FieldPath.documentId, whereIn: batch)
-            .get(forceRefresh
-                ? const GetOptions(source: Source.server)
-                : const GetOptions());
-
-        for (final doc in snapshot.docs) {
-          if (doc.exists && !isUnavailableUserAccountData(doc.data())) {
-            final profile = UserProfile.fromFirestore(doc);
-            profiles.add(profile);
-
-            // 캐시에 저장
-            _profileCache[doc.id] = profile;
-            _cacheTimestamps[doc.id] = DateTime.now();
-          }
+      if (waits.isNotEmpty) {
+        final entries = await Future.wait(
+          waits.entries.map((entry) async {
+            try {
+              return MapEntry(entry.key, await entry.value);
+            } catch (_) {
+              // 일반 목록은 한 배치의 일시적 실패 때문에 이미 캐시됐거나
+              // 다른 배치에서 정상 조회된 프로필까지 모두 버리지 않는다.
+              // 계정 무결성을 확인하는 호출은 아래 rethrow로 기존처럼 실패를
+              // 전파해 탈퇴 계정을 정상 사용자로 오인하지 않게 한다.
+              if (rethrowOnError) rethrow;
+              return MapEntry<String, UserProfile?>(entry.key, null);
+            }
+          }),
+          eagerError: rethrowOnError,
+        );
+        for (final entry in entries) {
+          final profile = entry.value;
+          if (profile != null) resolved[entry.key] = profile;
         }
       }
+
+      final profiles = <UserProfile>[
+        for (final userId in orderedIds)
+          if (resolved[userId] != null) resolved[userId]!,
+      ];
 
       if (forceRefresh) {
         final activeIds = profiles.map((profile) => profile.uid).toSet();
-        for (final userId in userIds) {
+        for (final userId in orderedIds) {
           if (activeIds.contains(userId)) continue;
           // 서버에서 삭제되었거나 탈퇴 상태로 확인된 계정이
           // 이전 메모리 캐시로 다시 참여자에 포함되지 않게 한다.
@@ -180,7 +291,122 @@ class UsersRepository {
       return profiles;
     } catch (e) {
       Logger.error('배치 프로필 조회 오류: $e');
+      if (rethrowOnError) rethrow;
       return [];
+    }
+  }
+
+  Future<void> _loadClaimedProfiles(
+    Map<String, Completer<UserProfile?>> claimed, {
+    required String? ownerUid,
+    required int generation,
+    required bool forceRefresh,
+  }) async {
+    final batches = buildUserProfileQueryBatches(claimed.keys);
+
+    // 최대 3개 쿼리만 동시 실행해 30명씩 빠르게 준비하되,
+    // 큰 모임·친구 목록이 네트워크와 Firestore를 순간 포화시키지 않는다.
+    const parallelQueries = 3;
+    for (var start = 0; start < batches.length; start += parallelQueries) {
+      final window = batches.sublist(
+        start,
+        (start + parallelQueries).clamp(0, batches.length),
+      );
+      await Future.wait(
+        window.map((batch) => _loadClaimedProfileBatch(
+              batch,
+              claimed,
+              ownerUid: ownerUid,
+              generation: generation,
+              forceRefresh: forceRefresh,
+            )),
+        eagerError: false,
+      );
+    }
+  }
+
+  Future<void> _loadClaimedProfileBatch(
+    List<String> batch,
+    Map<String, Completer<UserProfile?>> claimed, {
+    required String? ownerUid,
+    required int generation,
+    required bool forceRefresh,
+  }) async {
+    final profilesById = <String, UserProfile>{};
+    Object? failure;
+    StackTrace? failureStack;
+    try {
+      final snapshot = await _firestore
+          .collection(_usersCollection)
+          .where(FieldPath.documentId, whereIn: batch)
+          .get(forceRefresh
+              ? const GetOptions(source: Source.server)
+              : const GetOptions());
+      final canWriteCache = currentUserId == ownerUid &&
+          _profileCacheOwnerUid == ownerUid &&
+          _profileCacheGeneration == generation;
+      final cachedAt = DateTime.now();
+      for (final doc in snapshot.docs) {
+        if (!doc.exists || isUnavailableUserAccountData(doc.data())) continue;
+        final profile = UserProfile.fromFirestore(doc);
+        profilesById[doc.id] = profile;
+        if (canWriteCache) {
+          _profileCache[doc.id] = profile;
+          _cacheTimestamps[doc.id] = cachedAt;
+        }
+      }
+    } catch (error, stackTrace) {
+      failure = error;
+      failureStack = stackTrace;
+    } finally {
+      for (final userId in batch) {
+        final completer = claimed[userId];
+        if (completer != null && !completer.isCompleted) {
+          if (failure == null) {
+            completer.complete(profilesById[userId]);
+          } else {
+            completer.completeError(failure, failureStack);
+          }
+        }
+        final loadKey =
+            '$generation::$ownerUid::${forceRefresh ? 'fresh' : 'cached'}::$userId';
+        if (identical(_profileLoads[loadKey], completer?.future)) {
+          _profileLoads.remove(loadKey);
+        }
+      }
+    }
+  }
+
+  Future<List<FriendRequest>> _retainRequestsWithAvailableCounterparts(
+    List<FriendRequest> requests, {
+    required FriendRequestDirection direction,
+  }) async {
+    if (requests.isEmpty) return const <FriendRequest>[];
+
+    final counterpartIds = requests
+        .map(
+          (request) => direction == FriendRequestDirection.incoming
+              ? request.fromUid
+              : request.toUid,
+        )
+        .where((id) => id.isNotEmpty)
+        .toSet();
+
+    try {
+      final profiles = await _getUserProfilesBatch(
+        counterpartIds.toList(growable: false),
+        forceRefresh: true,
+        rethrowOnError: true,
+      );
+      return FriendRequestVisibilityPolicy.retainAvailableCounterparts(
+        requests,
+        availableUserIds: profiles.map((profile) => profile.uid).toSet(),
+        direction: direction,
+      );
+    } catch (e) {
+      // 일시적인 프로필 조회 실패로 정상 요청과 배지를 지우지 않는다.
+      Logger.error('친구요청 상대 계정 확인 오류: $e');
+      return requests;
     }
   }
 
@@ -188,22 +414,91 @@ class UsersRepository {
   void clearCache() {
     _profileCache.clear();
     _cacheTimestamps.clear();
+    _profileLoads.clear();
+    _profileCacheOwnerUid = currentUserId;
+    _profileCacheGeneration += 1;
     _snackChatSearchCache.clear();
-    Logger.log('🗑️ 프로필 캐시 초기화');
+    if (Logger.isVerboseEnabled) Logger.log('🗑️ 프로필 캐시 초기화');
   }
 
   /// 특정 사용자 캐시 무효화
   void invalidateCache(String userId) {
     _profileCache.remove(userId);
     _cacheTimestamps.remove(userId);
-    Logger.log('🗑️ 프로필 캐시 무효화: $userId');
+    if (Logger.isVerboseEnabled) Logger.log('🗑️ 프로필 캐시 무효화: $userId');
   }
 
   /// 사용자 검색 (닉네임으로만)
   Future<List<UserProfile>> searchUsers(String query, {int limit = 20}) async {
-    try {
-      if (query.trim().isEmpty) return [];
+    final trimmedQuery = query.trim();
+    final currentUid = currentUserId;
+    if (trimmedQuery.isEmpty || currentUid == null) return [];
 
+    try {
+      await FirebaseAppCheckService.instance.ensureReady();
+      final response = await _functions.httpsCallable('searchSocialUsers').call(
+        <String, dynamic>{
+          'query': trimmedQuery,
+          'limit': limit.clamp(1, 100),
+        },
+      ).timeout(const Duration(seconds: 15));
+      final data = response.data;
+      final rawUsers = data is Map ? data['users'] : null;
+      final exhaustive = data is Map ? data['exhaustive'] : null;
+      if (rawUsers is! List) {
+        throw const FormatException('Invalid user search response');
+      }
+      if (exhaustive != true) {
+        throw const FormatException('Incomplete user search response');
+      }
+      final now = DateTime.now();
+      return rawUsers
+          .whereType<Map>()
+          .map((raw) {
+            String? optional(String key) {
+              final value = (raw[key] ?? '').toString().trim();
+              return value.isEmpty ? null : value;
+            }
+
+            return UserProfile(
+              uid: (raw['uid'] ?? '').toString().trim(),
+              nickname: optional('nickname'),
+              photoURL: optional('photoURL'),
+              nationality: optional('nationality'),
+              university: optional('university'),
+              createdAt: now,
+              updatedAt: now,
+            );
+          })
+          .where((profile) {
+            return profile.uid.isNotEmpty && profile.uid != currentUid;
+          })
+          .take(limit.clamp(1, 100))
+          .toList(growable: false);
+    } on FirebaseFunctionsException catch (error) {
+      // 릴리스에서는 함수 미배포나 잘못된 Firebase 프로젝트를
+      // 과거의 100명 스캔으로 숨기지 않는다. 부분 가입자만 보이는 결과보다
+      // 명확한 재시도 오류가 안전하다. 호환 경로는 개발/프로파일에서만 사용한다.
+      final canUseLegacyFallback = canUseLegacyUserSearchFallback(
+        errorCode: error.code,
+        isReleaseMode: kReleaseMode,
+      );
+      Logger.error('서버 사용자 검색 오류: ${error.code}');
+      if (canUseLegacyFallback) {
+        return _searchUsersLegacy(trimmedQuery, limit: limit);
+      }
+      rethrow;
+    } catch (error) {
+      Logger.error('서버 사용자 검색 오류: $error');
+      rethrow;
+    }
+  }
+
+  Future<List<UserProfile>> _searchUsersLegacy(
+    String query, {
+    required int limit,
+  }) async {
+    try {
       final currentUid = currentUserId;
       if (currentUid == null) return [];
 
@@ -247,8 +542,21 @@ class UsersRepository {
         return bScore.compareTo(aScore); // 내림차순 정렬
       });
 
+      // 개발 빌드의 호환 경로도 운영 함수와 동일하게 양방향 차단을
+      // fail-closed로 적용한다. 운영 빌드는 이 100명 제한 경로를 사용하지
+      // 않는다.
+      final blocked = await Future.wait(
+        matchedProfiles.map(
+          (profile) => _hasBlockRelationshipFailClosed(currentUid, profile.uid),
+        ),
+      );
+      final visibleProfiles = <UserProfile>[];
+      for (var index = 0; index < matchedProfiles.length; index++) {
+        if (!blocked[index]) visibleProfiles.add(matchedProfiles[index]);
+      }
+
       // 제한된 개수만 반환
-      return matchedProfiles.take(limit).toList();
+      return visibleProfiles.take(limit).toList();
     } catch (e) {
       Logger.error('사용자 검색 오류: $e');
       return [];
@@ -346,6 +654,7 @@ class UsersRepository {
   Future<SnackChatUserSearchPage> searchSnackChatInviteUsersLikeNameSearch(
     String query, {
     String? cursor,
+    Set<String> excludedUserIds = const <String>{},
   }) async {
     final currentUid = currentUserId;
     final normalized = query.trim().toLowerCase();
@@ -358,17 +667,28 @@ class UsersRepository {
       throw const FormatException('Invalid Snack Chat search cursor');
     }
 
-    final cacheKey = '$currentUid::$normalized';
+    final explicitExclusions = excludedUserIds
+        .map((userId) => userId.trim())
+        .where((userId) => userId.isNotEmpty)
+        .toSet();
+    final exclusionParts = explicitExclusions.toList(growable: false)..sort();
+    final exclusionKey =
+        exclusionParts.map((userId) => '${userId.length}:$userId').join();
+    // 방별 기존 참여자가 다르므로 제외 목록도 캐시 정체성의
+    // 일부로 삼는다. 그렇지 않으면 다른 방의 페이지 오프셋을 재사용해
+    // 결과를 건너뛰거나 빈 페이지를 보여줄 수 있다.
+    final cacheKey = '$currentUid::$normalized::$exclusionKey';
     final now = DateTime.now();
     var cached = _snackChatSearchCache[cacheKey];
     if (cached == null ||
         now.difference(cached.cachedAt) > _snackChatSearchCacheExpiry) {
       final results = await searchUsers(query, limit: 100);
-      final excludedUserIds = await ContentFilterService.getExcludedUserIds();
+      // searchSocialUsers has already checked the caller's bilateral block
+      // relationships on the server. Re-filtering with the process-wide
+      // ContentFilterService cache could apply a previous login's block list
+      // briefly after an account switch and hide otherwise valid invitees.
       cached = _SnackChatUserSearchCacheEntry(
-        users: results
-            .where((profile) => !excludedUserIds.contains(profile.uid))
-            .toList(growable: false),
+        users: results,
         cachedAt: now,
       );
       _snackChatSearchCache
@@ -379,13 +699,10 @@ class UsersRepository {
         ..[cacheKey] = cached;
     }
 
-    if (offset >= cached.users.length) {
-      return const SnackChatUserSearchPage(users: <UserProfile>[]);
-    }
-    final end = (offset + 10).clamp(0, cached.users.length);
-    return SnackChatUserSearchPage(
-      users: cached.users.sublist(offset, end),
-      nextCursor: end < cached.users.length ? '$end' : null,
+    return paginateSnackChatInviteCandidates(
+      cached.users,
+      offset: offset,
+      excludedUserIds: explicitExclusions,
     );
   }
 
@@ -762,10 +1079,14 @@ class UsersRepository {
           .where('status', isEqualTo: 'PENDING')
           .orderBy('createdAt', descending: true)
           .snapshots()
-          .map((snapshot) {
-        return snapshot.docs
+          .asyncMap((snapshot) async {
+        final requests = snapshot.docs
             .map((doc) => FriendRequest.fromFirestore(doc))
             .toList();
+        return _retainRequestsWithAvailableCounterparts(
+          requests,
+          direction: FriendRequestDirection.incoming,
+        );
       });
     } catch (e) {
       Logger.error('받은 친구요청 조회 오류: $e');
@@ -785,10 +1106,14 @@ class UsersRepository {
           .where('status', isEqualTo: 'PENDING')
           .orderBy('createdAt', descending: true)
           .snapshots()
-          .map((snapshot) {
-        return snapshot.docs
+          .asyncMap((snapshot) async {
+        final requests = snapshot.docs
             .map((doc) => FriendRequest.fromFirestore(doc))
             .toList();
+        return _retainRequestsWithAvailableCounterparts(
+          requests,
+          direction: FriendRequestDirection.outgoing,
+        );
       });
     } catch (e) {
       Logger.error('보낸 친구요청 조회 오류: $e');
@@ -823,7 +1148,7 @@ class UsersRepository {
         }
 
         if (friendIds.isEmpty) {
-          Logger.log('👥 친구 목록: 0명');
+          if (Logger.isVerboseEnabled) Logger.log('👥 친구 목록: 0명');
           return <UserProfile>[];
         }
 
@@ -894,14 +1219,15 @@ class UsersRepository {
       }
 
       if (friendIds.isEmpty) {
-        Logger.log('👥 ${userId}의 친구: 0명');
+        if (Logger.isVerboseEnabled) Logger.log('👥 ${userId}의 친구: 0명');
         return [];
       }
 
       // 3. 배치로 프로필 조회
       final profiles = await getUserProfilesBatch(friendIds);
 
-      Logger.log('✅ ${userId}의 친구 목록: ${profiles.length}명');
+      if (Logger.isVerboseEnabled)
+        Logger.log('✅ ${userId}의 친구 목록: ${profiles.length}명');
       return profiles;
     } catch (e) {
       Logger.error('특정 사용자 친구 목록 조회 오류: $e');

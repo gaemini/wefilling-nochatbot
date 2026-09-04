@@ -9,6 +9,14 @@ service cloud.firestore {
     match /linkPreviewCache/{cacheId} {
       allow read, write: if false;
     }
+    // 부분 문자열 검색용 n-gram은 서버 전용 파생 데이터다. 원본 콘텐츠의
+    // 공개범위를 우회하거나 클라이언트가 인덱스를 오염시킬 수 없도록 한다.
+    match /post_search_index/{postId} {
+      allow read, write: if false;
+    }
+    match /meetup_search_index/{meetupId} {
+      allow read, write: if false;
+    }
 
     function isValidPostCategoryKey(value) {
       return value is string && value in [
@@ -264,8 +272,9 @@ service cloud.firestore {
     
     // ===== 사용자 컬렉션 =====
     match /users/{userId} {
-      // 본인만 민감한 필드 수정 가능
-      allow read: if request.auth != null; // 인증된 사용자만 프로필 읽기 가능
+      // 프로필 조회는 한양메일 인증 여부와 무관하다. 한양인 전용
+      // 포스트·밋업은 각 콘텐츠 규칙에서 별도로 제한한다.
+      allow read: if request.auth != null;
       // 가입 및 학교 인증 상태는 Cloud Functions(Admin SDK)만 생성한다.
       // 클라이언트가 hanyangEmailVerified=true를 직접 넣어 인증을 위조할 수
       // 없도록 users 문서의 직접 생성도 차단한다.
@@ -279,7 +288,8 @@ service cloud.firestore {
           'dmUnreadTotal', 'dmUnreadCounterVersion',
           'notificationUnreadTotal',
           'friendsCount',
-          'nickname', 'nicknameKey', 'nicknameUpdatedAt'
+          'nickname', 'nicknameKey', 'nicknameSearchTokens',
+          'nicknameUpdatedAt'
         ]);
       allow delete: if false; // 사용자 삭제는 금지
       

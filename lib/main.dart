@@ -239,28 +239,6 @@ void main() {
             debugPrint('⚠️ Firestore 설정 중 오류: $firestoreError');
           }
         }
-
-        // Firebase Auth 상태 변화 로깅 (비동기로 처리)
-        FirebaseAuth.instance.authStateChanges().listen((User? user) {
-          if (kDebugMode) {
-            debugPrint(
-              '🔐 Auth State Changed: ${user != null ? "Authenticated" : "Not Authenticated"}',
-            );
-            debugPrint('🔐 User ID: ${user?.uid ?? "null"}');
-            debugPrint('🔐 Timestamp: ${DateTime.now()}');
-          }
-        });
-
-        // 현재 로그인 상태만 확인 (대기 시간 제거)
-        final currentUser = FirebaseAuth.instance.currentUser;
-        if (kDebugMode) {
-          if (currentUser != null) {
-            debugPrint('🔐 사용자 로그인 확인: ${currentUser.email}');
-          } else {
-            debugPrint('🔐 로그인된 사용자 없음');
-          }
-          debugPrint('🔐 인증 초기화 완료: ${DateTime.now()}');
-        }
       } catch (e) {
         if (kDebugMode) {
           debugPrint('⚠️ Firebase 추가 초기화 중 오류: $e');
@@ -326,7 +304,6 @@ class MeetupApp extends StatefulWidget {
 class _MeetupAppState extends State<MeetupApp> {
   Locale _locale = const Locale('ko'); // 기본 언어: 한국어
   final LanguageService _languageService = LanguageService();
-  StreamSubscription<User?>? _authSub;
   String? _lastSyncedLanguageCode;
   Future<void>? _languageSyncInFlight;
   String? _completedServicesUid;
@@ -335,11 +312,6 @@ class _MeetupAppState extends State<MeetupApp> {
   void initState() {
     super.initState();
     _loadLanguage();
-    _authSub = FirebaseAuth.instance.authStateChanges().listen((user) {
-      if (user == null) return;
-      // Registration completion is checked by AuthProvider before app service
-      // initialization. Auth presence alone must not start Firebase reads.
-    });
     unawaited(
       AppUpdateService.instance.initialize().whenComplete(() {
         WidgetsBinding.instance.addPostFrameCallback((_) {
@@ -497,13 +469,6 @@ class _MeetupAppState extends State<MeetupApp> {
   }
 
   @override
-  void dispose() {
-    _authSub?.cancel();
-    _authSub = null;
-    super.dispose();
-  }
-
-  @override
   Widget build(BuildContext context) {
     return MaterialApp(
       title: 'Wefilling',
@@ -545,7 +510,8 @@ class _MeetupAppState extends State<MeetupApp> {
           return EditMeetupScreen(meetup: meetup);
         },
         '/admin-migration': (context) => const AdminMigrationScreen(),
-        '/release-diagnostics': (context) => const ReleaseDiagnosticsScreen(),
+        if (kDebugMode)
+          '/release-diagnostics': (context) => const ReleaseDiagnosticsScreen(),
       },
       navigatorKey: NavigationService.navigatorKey,
       home: Consumer<app_auth.AuthProvider>(

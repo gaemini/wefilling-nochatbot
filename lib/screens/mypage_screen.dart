@@ -17,6 +17,7 @@ import '../providers/relationship_provider.dart';
 import '../services/user_stats_service.dart';
 import '../services/review_service.dart';
 import '../services/post_service.dart';
+import '../services/post_media_prefetch_service.dart';
 import '../services/cache/app_image_cache_manager.dart';
 import '../services/cache/my_page_cache_service.dart';
 import '../models/review_post.dart';
@@ -53,6 +54,8 @@ class _MyPageScreenState extends State<MyPageScreen>
   final UserStatsService _userStatsService = UserStatsService();
   final ReviewService _reviewService = ReviewService();
   final PostService _postService = PostService();
+  final PostMediaPrefetchService _postMediaPrefetch =
+      PostMediaPrefetchService.instance;
   final MyPageCacheService _myPageCacheService = MyPageCacheService();
   late TabController _tabController;
   bool _showPostsAsGrid = false;
@@ -63,15 +66,11 @@ class _MyPageScreenState extends State<MyPageScreen>
   int _myPageLoadToken = 0;
   List<Post>? _userPosts;
   List<ReviewPost>? _userReviews;
-  List<Post>? _savedPosts;
   int? _friendCount;
   bool _isLoadingUserPosts = true;
   bool _isLoadingReviews = true;
-  bool _isLoadingSavedPosts = true;
   Object? _userPostsError;
   Object? _reviewsError;
-  Object? _savedPostsError;
-  StreamSubscription<List<Post>>? _savedPostsSubscription;
 
   @override
   void initState() {
@@ -118,18 +117,13 @@ class _MyPageScreenState extends State<MyPageScreen>
 
     _myPageCacheUserId = userId;
     final loadToken = ++_myPageLoadToken;
-    unawaited(_savedPostsSubscription?.cancel());
-    _savedPostsSubscription = null;
     _friendCount = profileFriendCount;
     _userPosts = null;
     _userReviews = null;
-    _savedPosts = null;
     _userPostsError = null;
     _reviewsError = null;
-    _savedPostsError = null;
     _isLoadingUserPosts = userId != null;
     _isLoadingReviews = userId != null;
-    _isLoadingSavedPosts = userId != null;
 
     if (userId != null && userId.isNotEmpty) {
       unawaited(
@@ -172,7 +166,6 @@ class _MyPageScreenState extends State<MyPageScreen>
   void _loadMyPageTabs(String userId, int loadToken) {
     _loadUserPosts(userId, loadToken);
     _loadUserReviews(userId, loadToken);
-    _loadSavedPosts(userId, loadToken);
   }
 
   Future<void> _loadUserPosts(String userId, int loadToken) async {
@@ -183,6 +176,9 @@ class _MyPageScreenState extends State<MyPageScreen>
       if (cached != null) _userPosts = cached.items;
       _isLoadingUserPosts = cached == null;
     });
+    if (cached != null) {
+      unawaited(_postMediaPrefetch.prefetchPosts(cached.items, maxPosts: 9));
+    }
     if (cached?.isFresh == true) return;
 
     try {
@@ -198,6 +194,7 @@ class _MyPageScreenState extends State<MyPageScreen>
         _isLoadingUserPosts = false;
         _userPostsError = null;
       });
+      unawaited(_postMediaPrefetch.prefetchPosts(posts, maxPosts: 9));
     } catch (error) {
       if (!_isCurrentLoad(userId, loadToken)) return;
       setState(() {
@@ -237,43 +234,8 @@ class _MyPageScreenState extends State<MyPageScreen>
     }
   }
 
-  Future<void> _loadSavedPosts(String userId, int loadToken) async {
-    final cached = await _myPageCacheService.readSavedPosts(userId);
-    if (!_isCurrentLoad(userId, loadToken)) return;
-
-    setState(() {
-      if (cached != null) _savedPosts = cached.items;
-      _isLoadingSavedPosts = cached == null;
-    });
-
-    // 저장 글은 다른 화면에서 언제든 추가/해제될 수 있다. 캐시는 초기
-    // 화면에만 즉시 사용하고, freshness와 관계없이 Firestore 스트림을
-    // 유지해야 마이페이지 탭도 같은 순간에 갱신된다.
-    await _savedPostsSubscription?.cancel();
-    if (!_isCurrentLoad(userId, loadToken)) return;
-    _savedPostsSubscription = _postService.getSavedPosts().listen(
-      (posts) async {
-        if (!_isCurrentLoad(userId, loadToken)) return;
-        setState(() {
-          _savedPosts = posts;
-          _isLoadingSavedPosts = false;
-          _savedPostsError = null;
-        });
-        await _myPageCacheService.saveSavedPosts(userId, posts);
-      },
-      onError: (Object error, StackTrace stackTrace) {
-        if (!_isCurrentLoad(userId, loadToken)) return;
-        setState(() {
-          _isLoadingSavedPosts = false;
-          if (_savedPosts == null) _savedPostsError = error;
-        });
-      },
-    );
-  }
-
   @override
   void dispose() {
-    unawaited(_savedPostsSubscription?.cancel());
     _tabController.dispose();
     super.dispose();
   }
@@ -291,7 +253,7 @@ class _MyPageScreenState extends State<MyPageScreen>
                 Localizations.localeOf(context).languageCode == 'ko';
             final postsLabel = AppLocalizations.of(context)!.posts;
             final reviewsLabel = isKorean ? '모임 후기' : 'Meetup Reviews';
-            final savedPostsLabel = isKorean ? '저장한 글' : 'Saved Posts';
+            final myMeetupsLabel = AppLocalizations.of(context)!.myMeetups;
 
             return <Widget>[
               SliverToBoxAdapter(
@@ -325,7 +287,7 @@ class _MyPageScreenState extends State<MyPageScreen>
                         sizingLabel: reviewsLabel,
                       ),
                       _buildProfileTab(
-                        savedPostsLabel,
+                        myMeetupsLabel,
                         sizingLabel: reviewsLabel,
                       ),
                     ],
@@ -346,8 +308,8 @@ class _MyPageScreenState extends State<MyPageScreen>
                 child: _buildReviewGrid(),
               ),
               _KeepAliveTab(
-                key: const PageStorageKey('mypage_saved_posts_tab'),
-                child: _buildSavedPosts(),
+                key: const PageStorageKey('mypage_my_meetups_tab'),
+                child: const UserMeetupsView(),
               ),
             ],
           ),
@@ -1101,57 +1063,6 @@ class _MyPageScreenState extends State<MyPageScreen>
     );
   }
 
-  Widget _buildSavedPosts() {
-    final authProvider = Provider.of<AuthProvider>(context, listen: false);
-    final currentUserId = authProvider.user?.uid;
-    final l10n = AppLocalizations.of(context)!;
-    final isKo = Localizations.localeOf(context).languageCode == 'ko';
-
-    if (currentUserId == null || currentUserId.isEmpty) {
-      return Center(child: Text(l10n.loginRequired));
-    }
-
-    final posts = _savedPosts;
-    if (_isLoadingSavedPosts && posts == null) {
-      return const Center(child: CircularProgressIndicator());
-    }
-    if (_savedPostsError != null && posts == null) {
-      return Center(child: Text(l10n.error));
-    }
-
-    if (posts == null || posts.isEmpty) {
-      return Center(
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            const Icon(
-              Icons.bookmark_border_rounded,
-              size: 48,
-              color: Color(0xFF9CA3AF),
-            ),
-            const SizedBox(height: 12),
-            Text(
-              isKo ? '저장한 글이 없습니다' : 'No saved posts yet',
-              style: const TextStyle(
-                fontFamily: 'Inter',
-                fontFamilyFallback: const ['NotoSansKR'],
-                fontSize: 18,
-                fontWeight: FontWeight.w700,
-                color: Color(0xFF111827),
-              ),
-            ),
-          ],
-        ),
-      );
-    }
-
-    return _buildPostCollection(
-      posts,
-      showControls: false,
-      storageKey: 'mypage_saved_posts',
-    );
-  }
-
   Widget _buildPostCollection(
     List<Post> posts, {
     required bool showControls,
@@ -1174,6 +1085,7 @@ class _MyPageScreenState extends State<MyPageScreen>
 
   Widget _buildPostCollectionControls() {
     final l10n = AppLocalizations.of(context)!;
+    final isKo = Localizations.localeOf(context).languageCode == 'ko';
     return Padding(
       padding: const EdgeInsets.fromLTRB(16, 6, 10, 4),
       child: Row(
@@ -1209,7 +1121,7 @@ class _MyPageScreenState extends State<MyPageScreen>
                   ),
                   const SizedBox(width: 4),
                   TextButton(
-                    onPressed: _navigateToUserMeetups,
+                    onPressed: _navigateToSavedPosts,
                     style: TextButton.styleFrom(
                       foregroundColor: const Color(0xFF6B7280),
                       padding: const EdgeInsets.symmetric(
@@ -1220,7 +1132,7 @@ class _MyPageScreenState extends State<MyPageScreen>
                       tapTargetSize: MaterialTapTargetSize.shrinkWrap,
                     ),
                     child: Text(
-                      l10n.myMeetups,
+                      isKo ? '저장한 글' : 'Saved Posts',
                       style: const TextStyle(
                         fontFamily: 'Inter',
                         fontFamilyFallback: const ['NotoSansKR'],
@@ -1616,7 +1528,7 @@ class _MyPageScreenState extends State<MyPageScreen>
         : StreamBuilder<int>(
             stream: countStream ??
                 (isJoined
-                        ? _userStatsService.getJoinedMeetupCount()
+                    ? _userStatsService.getJoinedMeetupCount()
                     : isPosts
                         ? _userStatsService.getUserPostCount()
                         : _userStatsService.getHostedMeetupCount()),
@@ -1955,16 +1867,6 @@ class _MyPageScreenState extends State<MyPageScreen>
                     );
                   },
                 ),
-                // 내 모임 메뉴 숨김 처리
-                // _buildMenuItem(context, AppLocalizations.of(context)!.myMeetups, Icons.group_rounded, () {
-                //   Navigator.pop(context);
-                // Navigator.push(
-                //   context,
-                //   MaterialPageRoute(
-                //     builder: (context) => const UserMeetupsScreen(),
-                //   ),
-                // );
-                // }),
                 // 내 게시글 메뉴 숨김 처리 (기존 UserPostsScreen 페이지 제거됨)
                 _buildMenuItem(
                     context,
@@ -2100,11 +2002,11 @@ class _MyPageScreenState extends State<MyPageScreen>
     );
   }
 
-  void _navigateToUserMeetups() {
+  void _navigateToSavedPosts() {
     Navigator.push(
       context,
       MaterialPageRoute(
-        builder: (context) => const UserMeetupsScreen(),
+        builder: (context) => const SavedPostsScreen(),
       ),
     );
   }

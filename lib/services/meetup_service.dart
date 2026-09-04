@@ -8,26 +8,33 @@ import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:cloud_functions/cloud_functions.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:firebase_storage/firebase_storage.dart';
+import 'package:flutter/foundation.dart';
 import '../models/meetup.dart';
 import '../models/meetup_participant.dart';
 import '../constants/meetup_limits.dart';
 import '../security/frozen_audience_policy.dart';
 import 'notification_service.dart';
 import 'content_filter_service.dart';
+import 'firebase_app_check_service.dart';
 import 'view_history_service.dart';
 import 'dart:async';
 import 'dart:io';
 import '../utils/logger.dart';
 import 'participation_cache_service.dart';
 import 'user_info_cache_service.dart';
+import 'joined_meetup_access_service.dart';
 
 class MeetupService {
   final FirebaseFirestore _firestore = FirebaseFirestore.instance;
   final FirebaseAuth _auth = FirebaseAuth.instance;
+  final FirebaseFunctions _functions =
+      FirebaseFunctions.instanceFor(region: 'us-central1');
   final NotificationService _notificationService = NotificationService();
   final ParticipationCacheService _cacheService = ParticipationCacheService();
   final ViewHistoryService _viewHistory = ViewHistoryService();
   final UserInfoCacheService _userInfoCache = UserInfoCacheService();
+  final JoinedMeetupAccessService _joinedMeetupAccess =
+      JoinedMeetupAccessService.instance;
 
   Future<List<MeetupParticipant>> _resolveLatestParticipantProfiles(
     List<MeetupParticipant> participants,
@@ -513,9 +520,13 @@ class MeetupService {
   }
 
   Future<List<Meetup>> _filterVisibleAndBlocked(
-    List<Meetup> meetups,
-  ) async {
-    final visible = await filterMeetupsForCurrentUser(meetups);
+    List<Meetup> meetups, {
+    bool includePublicationExpired = false,
+  }) async {
+    final visible = await filterMeetupsForCurrentUser(
+      meetups,
+      includePublicationExpired: includePublicationExpired,
+    );
     return ContentFilterService.filterMeetups(visible);
   }
 
@@ -574,8 +585,9 @@ class MeetupService {
   /// 분리합니다. 이 경로를 통과한 문서만 기기로 내려오며, 마지막 검사는 문서에
   /// 저장된 frozen audience와 별도 차단 정책만 사용합니다.
   Stream<List<Meetup>> _watchAudienceScopedMeetupQuery(
-    Query<Map<String, dynamic>> baseQuery,
-  ) {
+    Query<Map<String, dynamic>> baseQuery, {
+    bool includePublicationExpired = false,
+  }) {
     final user = _auth.currentUser;
     if (user == null) return Stream.value(const <Meetup>[]);
 
@@ -588,9 +600,15 @@ class MeetupService {
       // 레거시 비공개 문서에 allowedUserIds가 없어도 주최자는 복구할 수 있습니다.
       watch(baseQuery.where('userId', isEqualTo: user.uid)),
     ]);
-    return _hideExpiredMeetupsOverTime(
-      scoped.asyncMap(_filterVisibleAndBlocked),
+    final filtered = scoped.asyncMap(
+      (meetups) => _filterVisibleAndBlocked(
+        meetups,
+        includePublicationExpired: includePublicationExpired,
+      ),
     );
+    return includePublicationExpired
+        ? filtered
+        : _hideExpiredMeetupsOverTime(filtered);
   }
 
   Future<List<Meetup>> _getAudienceScopedMeetupQuery(
@@ -719,6 +737,41 @@ class MeetupService {
     return _combineMeetupStreams(byDateKeyRange, byTimestampRange);
   }
 
+  /// 과거 달력 카드용 월 범위 스트림입니다.
+  ///
+  /// 공개 시간이나 일정이 이미 끝났더라도 Firestore 공개 범위상 현재 사용자가
+  /// 읽을 수 있는 모임은 유지합니다. 차단/숨김 계정 필터와 frozen audience
+  /// 권한은 활성 모임 목록과 동일하게 적용합니다.
+  Stream<List<Meetup>> watchReadableMeetupArchiveForMonthRange({
+    required DateTime firstMonth,
+    required DateTime lastMonth,
+  }) {
+    final rangeStart = _monthStart(firstMonth);
+    final rangeEnd = _monthEnd(lastMonth);
+    final startKey = _dateKey(rangeStart);
+    final endKey = _dateKey(rangeEnd);
+
+    final byDateKeyRange = _watchAudienceScopedMeetupQuery(
+      _firestore
+          .collection('meetups')
+          .where('dateKey', isGreaterThanOrEqualTo: startKey)
+          .where('dateKey', isLessThanOrEqualTo: endKey)
+          .orderBy('dateKey', descending: false),
+      includePublicationExpired: true,
+    );
+
+    final byTimestampRange = _watchAudienceScopedMeetupQuery(
+      _firestore
+          .collection('meetups')
+          .where('date', isGreaterThanOrEqualTo: rangeStart)
+          .where('date', isLessThanOrEqualTo: rangeEnd)
+          .orderBy('date', descending: false),
+      includePublicationExpired: true,
+    );
+
+    return _combineMeetupStreams(byDateKeyRange, byTimestampRange);
+  }
+
   /// 내 참여/참가신청(approved/pending) 모임 ID 스트림.
   Stream<Set<String>> watchMyParticipatingMeetupIds() {
     final user = _auth.currentUser;
@@ -754,14 +807,14 @@ class MeetupService {
         .where('userId', isEqualTo: user.uid)
         .where('status', isEqualTo: ParticipantStatus.approved)
         .snapshots()
-        .map((snapshot) {
+        .asyncMap((snapshot) async {
       final ids = <String>{};
       for (final d in snapshot.docs) {
         final data = d.data();
         final meetupId = (data['meetupId'] ?? '').toString().trim();
         if (meetupId.isNotEmpty) ids.add(meetupId);
       }
-      return ids;
+      return _joinedMeetupAccess.resolveReadableIds(ids);
     });
   }
 
@@ -775,23 +828,30 @@ class MeetupService {
       final chunk = list.sublist(i, (i + 10).clamp(0, list.length));
       for (final id in chunk) {
         streams.add(
-          _hideExpiredMeetupsOverTime(
-            _firestore
-                .collection('meetups')
-                .doc(id)
-                .snapshots()
-                .asyncMap((doc) async {
-              if (!doc.exists || doc.data() == null) return const <Meetup>[];
-              final meetup = Meetup.fromJson(<String, dynamic>{
-                ...doc.data()!,
-                'id': doc.id,
-              });
-              return _filterVisibleAndBlocked(<Meetup>[meetup]);
-            }),
-          ).handleError((Object error) {
+          _firestore
+              .collection('meetups')
+              .doc(id)
+              .snapshots()
+              .asyncMap((doc) async {
+            if (!doc.exists || doc.data() == null) return const <Meetup>[];
+            final meetup = Meetup.fromJson(<String, dynamic>{
+              ...doc.data()!,
+              'id': doc.id,
+            });
+            // 승인 참여 기록은 공개 제한시간이 끝난 뒤에도 과거 달력의
+            // 체크 근거로 남아야 한다. 서버가 읽기 가능한 ID만 확정하고
+            // 여기서는 frozen audience와 차단 필터를 그대로 유지한다.
+            return _filterVisibleAndBlocked(
+              <Meetup>[meetup],
+              includePublicationExpired: true,
+            );
+          }).handleError((Object error) {
             // 공개 대상에서 빠진 사용자의 기존 참여 ID가 남아 있어도 문서를
             // 우회 조회하지 않고 해당 항목만 목록에서 제외합니다.
-            Logger.warning('접근할 수 없는 밋업 문서 제외($id): $error');
+            _joinedMeetupAccess.invalidate();
+            if (Logger.isVerboseEnabled) {
+              Logger.warning('접근할 수 없는 밋업 문서 제외($id): $error');
+            }
           }),
         );
       }
@@ -800,8 +860,8 @@ class MeetupService {
     return _mergeManyMeetupStreams(streams);
   }
 
-  /// 밋업 탭에서 과거 날짜용으로 사용할 "내 관련 모임(호스트 + 참여/신청)" 월 스트림.
-  /// - 과거 날짜에서는 전체 모임을 조회/표시하지 않고, 내 관련 모임만 노출하기 위함.
+  /// 밋업 탭의 과거 체크 표시에 사용할 "내 관련 모임" 월 스트림.
+  /// - 내가 주최한 모임과 승인 참여한 모임만 체크 근거로 사용한다.
   Stream<List<Meetup>> watchMyRelevantMeetupsForMonth(DateTime focusedMonth) {
     final user = _auth.currentUser;
     if (user == null) return Stream.value(const <Meetup>[]);
@@ -1003,8 +1063,8 @@ class MeetupService {
         time: data['time'] ?? '',
         maxParticipants: data['maxParticipants'] ?? 0,
         currentParticipants: data['currentParticipants'] ?? 1,
-        host: data['hostNickname'] ?? '익명',
-        hostNationality: data['hostNickname'] == 'dev99'
+        host: data['hostNickname'] ?? data['host'] ?? '익명',
+        hostNationality: (data['hostNickname'] ?? data['host']) == 'dev99'
             ? '한국'
             : (data['hostNationality'] ?? ''), // 테스트 목적으로 dev99인 경우 한국으로 설정
         hostPhotoURL: data['hostPhotoURL'] ?? '',
@@ -1091,8 +1151,8 @@ class MeetupService {
         time: data['time'] ?? '',
         maxParticipants: data['maxParticipants'] ?? 0,
         currentParticipants: data['currentParticipants'] ?? 1,
-        host: data['hostNickname'] ?? '익명',
-        hostNationality: data['hostNickname'] == 'dev99'
+        host: data['hostNickname'] ?? data['host'] ?? '익명',
+        hostNationality: (data['hostNickname'] ?? data['host']) == 'dev99'
             ? '한국'
             : (data['hostNationality'] ?? ''), // 테스트 목적으로 dev99인 경우 한국으로 설정
         hostPhotoURL: data['hostPhotoURL'] ?? '',
@@ -1175,12 +1235,15 @@ class MeetupService {
   Future<List<Meetup>> filterMeetupsForCurrentUser(
     List<Meetup> meetups, {
     List<String>? categoryIds,
+    bool includePublicationExpired = false,
   }) async {
     try {
       final user = _auth.currentUser;
       if (user == null) return [];
       return meetups.where((meetup) {
-        if (!meetup.isPublishedAt()) return false;
+        if (!includePublicationExpired && !meetup.isPublishedAt()) {
+          return false;
+        }
         final canRead = FrozenAudiencePolicy.canRead(
           viewerId: user.uid,
           ownerId: meetup.userId ?? '',
@@ -1212,42 +1275,19 @@ class MeetupService {
   }
 
   // Firebase 연결 테스트 메서드
-  Future<bool> testFirebaseConnection() async {
-    try {
-      Logger.log('🔗 [TEST] Firebase 연결 테스트 시작');
-
-      final testQuery = await _firestore
-          .collection('meetups')
-          .where('visibility', isEqualTo: 'public')
-          .limit(1)
-          .get(const GetOptions(source: Source.server));
-
-      Logger.log('✅ [TEST] Firebase 연결 성공 - 문서 수: ${testQuery.docs.length}');
-      return true;
-    } catch (e) {
-      Logger.error('❌ [TEST] Firebase 연결 실패: $e');
-      return false;
-    }
-  }
-
   // 모임 검색 메서드 추가
   Stream<List<Meetup>> searchMeetups(String query) {
-    Logger.log('🔍 [SERVICE] 검색 시작: "$query"');
-
     if (query.trim().isEmpty) {
-      Logger.log('⚠️ [SERVICE] 빈 검색어 - 빈 결과 반환');
       // 빈 검색어인 경우 빈 결과 반환
       return Stream.value([]);
     }
 
     // 소문자로 변환하여 대소문자 구분 없이 검색
     final lowercaseQuery = query.trim().toLowerCase();
-    Logger.log('🔍 [SERVICE] 정규화된 검색어: "$lowercaseQuery"');
 
     // 현재 날짜 이후의 모임 중에서 검색
     final now = DateTime.now();
     final today = DateTime(now.year, now.month, now.day);
-    Logger.log('📅 [SERVICE] 검색 기준 날짜: $today');
 
     return _watchAudienceScopedMeetupQuery(_firestore
             .collection('meetups')
@@ -1262,7 +1302,6 @@ class MeetupService {
                 .toLowerCase()
                 .contains(lowercaseQuery);
       }).toList();
-      Logger.log('📋 [SERVICE] 최종 검색 결과: ${matched.length}개');
       return matched;
     }).handleError((error) {
       Logger.error('❌ [SERVICE] 검색 스트림 오류: $error');
@@ -1272,10 +1311,58 @@ class MeetupService {
 
   // 모임 검색 (Future 버전 - SearchResultPage용)
   Future<List<Meetup>> searchMeetupsAsync(String query) async {
-    try {
-      if (query.isEmpty) return [];
+    final normalizedQuery = query.trim();
+    if (normalizedQuery.isEmpty || _auth.currentUser == null) return const [];
 
-      final lowercaseQuery = query.toLowerCase();
+    try {
+      await FirebaseAppCheckService.instance.ensureReady();
+      final now = DateTime.now();
+      final today = DateTime(now.year, now.month, now.day);
+      final response = await _functions
+          .httpsCallable('searchMeetupsSecure')
+          .call<Map<String, dynamic>>(<String, dynamic>{
+        'query': normalizedQuery,
+        'limit': 100,
+        'todayMillis': today.millisecondsSinceEpoch,
+      }).timeout(const Duration(seconds: 15));
+      final rawMeetups = response.data['meetups'];
+      if (rawMeetups is! List) {
+        throw const FormatException('Invalid meetup search response');
+      }
+      if (response.data['exhaustive'] != true) {
+        throw const FormatException('Incomplete meetup search response');
+      }
+
+      final parsed = rawMeetups
+          .whereType<Map>()
+          .map((raw) => Meetup.fromJson(Map<String, dynamic>.from(raw)))
+          .where((meetup) => meetup.id.isNotEmpty)
+          .toList(growable: false);
+      final visible = await filterMeetupsForCurrentUser(parsed);
+      return ContentFilterService.filterMeetups(visible);
+    } catch (error) {
+      if (_canUseLegacySearchFallback(error)) {
+        Logger.error('서버 모임 검색을 사용할 수 없어 레거시 검색으로 전환: $error');
+        return _searchMeetupsLegacy(normalizedQuery);
+      }
+      Logger.error('모임 검색 오류: $error');
+      rethrow;
+    }
+  }
+
+  bool _canUseLegacySearchFallback(Object error) {
+    if (error is! FirebaseFunctionsException) return false;
+    // Production must surface a missing/misrouted callable instead of showing
+    // a partial legacy scan as if it were a complete search result.
+    if (kReleaseMode) return false;
+    return error.code == 'not-found' ||
+        error.code == 'unimplemented' ||
+        error.code == 'unauthenticated';
+  }
+
+  Future<List<Meetup>> _searchMeetupsLegacy(String query) async {
+    try {
+      final lowercaseQuery = query.trim().toLowerCase();
 
       // 현재 날짜 이후의 모임 중에서 검색
       final now = DateTime.now();
@@ -1293,9 +1380,9 @@ class MeetupService {
                 .toLowerCase()
                 .contains(lowercaseQuery);
       }).toList();
-    } catch (e) {
-      Logger.error('모임 검색 오류: $e');
-      return [];
+    } catch (error) {
+      Logger.error('레거시 모임 검색 오류: $error');
+      rethrow;
     }
   }
 
@@ -1310,7 +1397,7 @@ class MeetupService {
     try {
       final user = _auth.currentUser;
       if (user == null) {
-        Logger.log('❌ 로그인 필요');
+        if (Logger.isVerboseEnabled) Logger.log('❌ 로그인 필요');
         return false;
       }
       final callable =
@@ -1321,10 +1408,11 @@ class MeetupService {
       if (response.data['joined'] != true) return false;
 
       _cacheService.invalidateCache(meetupId, user.uid);
-      Logger.log('✅ 서버 검증 기반 모임 참여 성공: $meetupId');
+      if (Logger.isVerboseEnabled) Logger.log('✅ 서버 검증 기반 모임 참여 성공: $meetupId');
       return true;
     } on FirebaseFunctionsException catch (e) {
-      Logger.warning('모임 참여 서버 차단: ${e.code} / ${e.message}');
+      if (Logger.isVerboseEnabled)
+        Logger.warning('모임 참여 서버 차단: ${e.code} / ${e.message}');
       return false;
     } catch (e) {
       Logger.error('모임 참여 오류: $e');
@@ -1417,7 +1505,8 @@ class MeetupService {
         targetUserName: targetName,
       ));
 
-      Logger.log('✅ 참여자 퇴장 처리 성공: $meetupId -> $targetUserId');
+      if (Logger.isVerboseEnabled)
+        Logger.log('✅ 참여자 퇴장 처리 성공: $meetupId -> $targetUserId');
       return true;
     } catch (e) {
       Logger.error('❌ 참여자 퇴장 처리 실패: $e');
@@ -1444,7 +1533,7 @@ class MeetupService {
 
         // 참여하지 않은 상태인지 확인
         if (!participants.contains(user.uid)) {
-          Logger.log('참여하지 않은 모임: $meetupId');
+          if (Logger.isVerboseEnabled) Logger.log('참여하지 않은 모임: $meetupId');
           return false;
         }
 
@@ -1466,7 +1555,7 @@ class MeetupService {
       });
 
       if (success) {
-        Logger.log('✅ 모임 참여 취소 성공: $meetupId');
+        if (Logger.isVerboseEnabled) Logger.log('✅ 모임 참여 취소 성공: $meetupId');
       }
 
       return success;
@@ -1485,7 +1574,8 @@ class MeetupService {
         return false;
       }
 
-      Logger.log('🗑️ 모임 삭제 시작: meetupId=$meetupId, currentUser=${user.uid}');
+      if (Logger.isVerboseEnabled)
+        Logger.log('🗑️ 모임 삭제 시작: meetupId=$meetupId, currentUser=${user.uid}');
 
       // 모임 문서 가져오기 (서버에서 최신 데이터 가져오기)
       final meetupDoc = await _firestore
@@ -1500,14 +1590,17 @@ class MeetupService {
       }
 
       final data = meetupDoc.data()!;
-      Logger.log(
-          '📄 모임 데이터: userId=${data['userId']}, hostNickname=${data['hostNickname']}, host=${data['host']}');
-      Logger.log(
-          '📄 후기 정보: hasReview=${data['hasReview']}, reviewId=${data['reviewId']}');
+      if (Logger.isVerboseEnabled)
+        Logger.log(
+            '📄 모임 데이터: userId=${data['userId']}, hostNickname=${data['hostNickname']}, host=${data['host']}');
+      if (Logger.isVerboseEnabled)
+        Logger.log(
+            '📄 후기 정보: hasReview=${data['hasReview']}, reviewId=${data['reviewId']}');
 
       // 확정된 모임은 어떤 클라이언트 경로에서도 취소(삭제)할 수 없다.
       if (data['isConfirmed'] == true) {
-        Logger.warning('⛔ 확정된 모임 삭제 차단: $meetupId');
+        if (Logger.isVerboseEnabled)
+          Logger.warning('⛔ 확정된 모임 삭제 차단: $meetupId');
         return false;
       }
 
@@ -1517,8 +1610,9 @@ class MeetupService {
       if (data['userId'] != null && data['userId'].toString().isNotEmpty) {
         // 새로운 데이터: userId로 비교
         isOwner = data['userId'] == user.uid;
-        Logger.log(
-            '🔍 userId 기반 권한 체크: ${data['userId']} == ${user.uid} → $isOwner');
+        if (Logger.isVerboseEnabled)
+          Logger.log(
+              '🔍 userId 기반 권한 체크: ${data['userId']} == ${user.uid} → $isOwner');
       } else {
         // 기존 데이터: 현재 사용자 닉네임과 비교
         final hostToCheck = data['hostNickname'] ?? data['host'];
@@ -1533,8 +1627,9 @@ class MeetupService {
             if (currentUserNickname != null && currentUserNickname.isNotEmpty) {
               isOwner =
                   hostToCheck.toString().trim() == currentUserNickname.trim();
-              Logger.log(
-                  '🔍 닉네임 기반 권한 체크: "$hostToCheck" == "$currentUserNickname" → $isOwner');
+              if (Logger.isVerboseEnabled)
+                Logger.log(
+                    '🔍 닉네임 기반 권한 체크: "$hostToCheck" == "$currentUserNickname" → $isOwner');
             }
           }
         }
@@ -1548,12 +1643,13 @@ class MeetupService {
       // 후기가 있는 경우 후기 관련 데이터도 삭제
       final reviewId = data['reviewId'] as String?;
       if (reviewId != null && reviewId.isNotEmpty) {
-        Logger.log('🗑️ 후기 관련 데이터 삭제 시작: reviewId=$reviewId');
+        if (Logger.isVerboseEnabled)
+          Logger.log('🗑️ 후기 관련 데이터 삭제 시작: reviewId=$reviewId');
 
         try {
           // 1. meetup_reviews 문서 삭제 (Cloud Function이 자동으로 users/{userId}/posts 삭제)
           await _firestore.collection('meetup_reviews').doc(reviewId).delete();
-          Logger.log('✅ meetup_reviews 삭제 완료');
+          if (Logger.isVerboseEnabled) Logger.log('✅ meetup_reviews 삭제 완료');
 
           // 2. review_requests 문서들 삭제
           final reviewRequestsSnapshot = await _firestore
@@ -1564,8 +1660,9 @@ class MeetupService {
           for (var doc in reviewRequestsSnapshot.docs) {
             await doc.reference.delete();
           }
-          Logger.log(
-              '✅ review_requests ${reviewRequestsSnapshot.docs.length}개 삭제 완료');
+          if (Logger.isVerboseEnabled)
+            Logger.log(
+                '✅ review_requests ${reviewRequestsSnapshot.docs.length}개 삭제 완료');
         } catch (e) {
           Logger.error('⚠️ 후기 데이터 삭제 중 오류 (계속 진행): $e');
         }
@@ -1581,15 +1678,16 @@ class MeetupService {
         for (var doc in participantsSnapshot.docs) {
           await doc.reference.delete();
         }
-        Logger.log(
-            '✅ meetup_participants ${participantsSnapshot.docs.length}개 삭제 완료');
+        if (Logger.isVerboseEnabled)
+          Logger.log(
+              '✅ meetup_participants ${participantsSnapshot.docs.length}개 삭제 완료');
       } catch (e) {
         Logger.error('⚠️ 참여자 데이터 삭제 중 오류 (계속 진행): $e');
       }
 
       // 4. 모임 문서 삭제
       await _firestore.collection('meetups').doc(meetupId).delete();
-      Logger.log('✅ 모임 삭제 성공: meetupId=$meetupId');
+      if (Logger.isVerboseEnabled) Logger.log('✅ 모임 삭제 성공: meetupId=$meetupId');
       return true;
     } catch (e) {
       Logger.error('❌ 모임 삭제 오류: $e');
@@ -1643,7 +1741,8 @@ class MeetupService {
     String status,
   ) async {
     try {
-      Logger.log('🔍 참여자 조회 시작: meetupId=$meetupId, status=$status');
+      if (Logger.isVerboseEnabled)
+        Logger.log('🔍 참여자 조회 시작: meetupId=$meetupId, status=$status');
 
       // orderBy 제거하여 복합 인덱스 문제 회피
       final querySnapshot = await _firestore
@@ -1652,10 +1751,12 @@ class MeetupService {
           .where('status', isEqualTo: status)
           .get();
 
-      Logger.log('📊 조회 결과: ${querySnapshot.docs.length}명의 참여자');
+      if (Logger.isVerboseEnabled)
+        Logger.log('📊 조회 결과: ${querySnapshot.docs.length}명의 참여자');
 
       var participants = querySnapshot.docs.map((doc) {
-        Logger.log('  - 참여자: ${doc.data()['userName']} (${doc.id})');
+        if (Logger.isVerboseEnabled)
+          Logger.log('  - 참여자: ${doc.data()['userName']} (${doc.id})');
         return MeetupParticipant.fromJson(doc.data());
       }).toList();
 
@@ -1682,7 +1783,8 @@ class MeetupService {
           .doc(participantId)
           .update({'status': newStatus});
 
-      Logger.log('✅ 참여자 상태 업데이트 성공: $participantId -> $newStatus');
+      if (Logger.isVerboseEnabled)
+        Logger.log('✅ 참여자 상태 업데이트 성공: $participantId -> $newStatus');
       return true;
     } catch (e) {
       Logger.error('❌ 참여자 상태 업데이트 실패: $e');
@@ -1710,7 +1812,7 @@ class MeetupService {
           .doc(participantId)
           .delete();
 
-      Logger.log('✅ 참여자 제거 성공: $participantId');
+      if (Logger.isVerboseEnabled) Logger.log('✅ 참여자 제거 성공: $participantId');
       return true;
     } catch (e) {
       Logger.error('❌ 참여자 제거 실패: $e');
@@ -1751,7 +1853,7 @@ class MeetupService {
           .doc(participantId)
           .set(participant.toJson());
 
-      Logger.log('✅ 모임 참여 신청 성공: $meetupId');
+      if (Logger.isVerboseEnabled) Logger.log('✅ 모임 참여 신청 성공: $meetupId');
       return true;
     } catch (e) {
       Logger.error('❌ 모임 참여 신청 실패: $e');
@@ -1803,7 +1905,8 @@ class MeetupService {
         if (meetupDoc.exists) {
           final currentParticipants =
               meetupDoc.data()?['currentParticipants'] ?? 1;
-          Logger.log('📋 Firestore 필드값 사용: $currentParticipants명');
+          if (Logger.isVerboseEnabled)
+            Logger.log('📋 Firestore 필드값 사용: $currentParticipants명');
           return currentParticipants;
         }
       } catch (fallbackError) {
@@ -1842,13 +1945,15 @@ class MeetupService {
 
       // 불일치 시 수정
       if (realCount != storedCount) {
-        Logger.log(
-            '⚠️ 참여자 수 불일치 감지: $meetupId (실제: $realCount, 저장된 값: $storedCount)');
+        if (Logger.isVerboseEnabled)
+          Logger.log(
+              '⚠️ 참여자 수 불일치 감지: $meetupId (실제: $realCount, 저장된 값: $storedCount)');
         await _firestore.collection('meetups').doc(meetupId).update({
           'currentParticipants': realCount,
           'updatedAt': FieldValue.serverTimestamp(),
         });
-        Logger.log('✅ 참여자 수 동기화 완료: $meetupId -> $realCount명');
+        if (Logger.isVerboseEnabled)
+          Logger.log('✅ 참여자 수 동기화 완료: $meetupId -> $realCount명');
       }
     } catch (e) {
       Logger.error('❌ 참여자 수 검증 오류: $e');
@@ -1871,7 +1976,8 @@ class MeetupService {
           .get();
 
       if (!participantDoc.exists) {
-        Logger.log('⚠️ 참여자 문서가 존재하지 않음: $participantId');
+        if (Logger.isVerboseEnabled)
+          Logger.log('⚠️ 참여자 문서가 존재하지 않음: $participantId');
         return false;
       }
 
@@ -1882,7 +1988,7 @@ class MeetupService {
       // ⛔️ 과거(만료) 모임은 나가기(상태 변경) 불가
       if (meetupData.isNotEmpty &&
           _isMeetupExpiredFromMeetupDocData(meetupData)) {
-        Logger.log('⛔️ 만료된 모임 나가기 차단: $meetupId');
+        if (Logger.isVerboseEnabled) Logger.log('⛔️ 만료된 모임 나가기 차단: $meetupId');
         return false;
       }
       final hostId = meetupData['userId']?.toString() ?? '';
@@ -1917,7 +2023,7 @@ class MeetupService {
       // 🔧 캐시 무효화 (참여 상태 변경됨)
       _cacheService.invalidateCache(meetupId, user.uid);
 
-      Logger.log('✅ 모임 참여 취소 성공: $meetupId');
+      if (Logger.isVerboseEnabled) Logger.log('✅ 모임 참여 취소 성공: $meetupId');
 
       // ✅ 나가기 이벤트 로그 + 호스트 알림
       if (hostId.isNotEmpty) {
@@ -1954,7 +2060,7 @@ class MeetupService {
       final user = _auth.currentUser;
       if (user == null) return [];
 
-      // 디버그: Logger.log('🔍 모임 필터링 시작: categoryIds = $categoryIds');
+      // 디버그: if (Logger.isVerboseEnabled) Logger.log('🔍 모임 필터링 시작: categoryIds = $categoryIds');
 
       // 1. 전체 모임 가져오기 (현재 날짜 이후만)
       final now = DateTime.now();
@@ -2014,7 +2120,8 @@ class MeetupService {
 
   /// 모임 완료 처리
   Future<bool> markMeetupAsCompleted(String meetupId) async {
-    Logger.log('🚀 [SERVICE] 모임 완료 처리 시작: $meetupId');
+    if (Logger.isVerboseEnabled)
+      Logger.log('🚀 [SERVICE] 모임 완료 처리 시작: $meetupId');
 
     try {
       final user = _auth.currentUser;
@@ -2022,10 +2129,12 @@ class MeetupService {
         Logger.error('❌ [SERVICE] 사용자 인증 필요');
         return false;
       }
-      Logger.log('👤 [SERVICE] 현재 사용자: ${user.uid}');
+      if (Logger.isVerboseEnabled)
+        Logger.log('👤 [SERVICE] 현재 사용자: ${user.uid}');
 
       // 모임 존재 및 권한 확인
-      Logger.log('📡 [SERVICE] Firestore에서 모임 문서 조회 중...');
+      if (Logger.isVerboseEnabled)
+        Logger.log('📡 [SERVICE] Firestore에서 모임 문서 조회 중...');
       final meetupDoc =
           await _firestore.collection('meetups').doc(meetupId).get();
 
@@ -2033,11 +2142,13 @@ class MeetupService {
         Logger.error('❌ [SERVICE] 모임을 찾을 수 없음: $meetupId');
         return false;
       }
-      Logger.log('✅ [SERVICE] 모임 문서 존재 확인');
+      if (Logger.isVerboseEnabled) Logger.log('✅ [SERVICE] 모임 문서 존재 확인');
 
       final meetupData = meetupDoc.data()!;
       final hostUserId = meetupData['userId'];
-      Logger.log('🔍 [SERVICE] 권한 확인 - 호스트: $hostUserId, 현재 사용자: ${user.uid}');
+      if (Logger.isVerboseEnabled)
+        Logger.log(
+            '🔍 [SERVICE] 권한 확인 - 호스트: $hostUserId, 현재 사용자: ${user.uid}');
 
       if (hostUserId != user.uid) {
         Logger.error('❌ [SERVICE] 권한 없음 - 모임장만 완료 처리 가능');
@@ -2052,36 +2163,32 @@ class MeetupService {
                   (meetupData['currentParticipants'] ?? '0').toString()) ??
               0;
       if (currentParticipants < 3) {
-        Logger.log(
-            '⏭️ [SERVICE] 완료 처리 불가: 참여자 수 부족 ($currentParticipants명, 최소 3명 필요)');
+        if (Logger.isVerboseEnabled)
+          Logger.log(
+              '⏭️ [SERVICE] 완료 처리 불가: 참여자 수 부족 ($currentParticipants명, 최소 3명 필요)');
         return false;
       }
 
       // 현재 상태 확인
       final currentCompleted = meetupData['isCompleted'] ?? false;
-      Logger.log('📋 [SERVICE] 현재 완료 상태: $currentCompleted');
+      if (Logger.isVerboseEnabled)
+        Logger.log('📋 [SERVICE] 현재 완료 상태: $currentCompleted');
 
       if (currentCompleted) {
-        Logger.log('⚠️ [SERVICE] 이미 완료된 모임');
+        if (Logger.isVerboseEnabled) Logger.log('⚠️ [SERVICE] 이미 완료된 모임');
         return true; // 이미 완료된 경우 성공으로 처리
       }
 
       // 모임 완료 상태로 업데이트
-      Logger.log('📡 [SERVICE] Firestore 업데이트 실행 중...');
+      if (Logger.isVerboseEnabled)
+        Logger.log('📡 [SERVICE] Firestore 업데이트 실행 중...');
       await _firestore.collection('meetups').doc(meetupId).update({
         'isCompleted': true,
         'updatedAt': FieldValue.serverTimestamp(),
       });
 
-      Logger.log('✅ [SERVICE] 모임 완료 처리 성공: $meetupId');
-
-      // 업데이트 확인
-      Logger.log('🔍 [SERVICE] 업데이트 결과 확인 중...');
-      final updatedDoc =
-          await _firestore.collection('meetups').doc(meetupId).get();
-      final updatedData = updatedDoc.data();
-      Logger.log(
-          '📋 [SERVICE] 업데이트 후 상태: isCompleted=${updatedData?['isCompleted']}');
+      if (Logger.isVerboseEnabled)
+        Logger.log('✅ [SERVICE] 모임 완료 처리 성공: $meetupId');
 
       return true;
     } catch (e) {
@@ -2100,7 +2207,7 @@ class MeetupService {
     try {
       final user = _auth.currentUser;
       if (user == null) {
-        Logger.log('❌ 사용자 인증 필요');
+        if (Logger.isVerboseEnabled) Logger.log('❌ 사용자 인증 필요');
         return null;
       }
 
@@ -2108,7 +2215,7 @@ class MeetupService {
       final meetupDoc =
           await _firestore.collection('meetups').doc(meetupId).get();
       if (!meetupDoc.exists) {
-        Logger.log('❌ 모임을 찾을 수 없음');
+        if (Logger.isVerboseEnabled) Logger.log('❌ 모임을 찾을 수 없음');
         return null;
       }
 
@@ -2117,18 +2224,18 @@ class MeetupService {
 
       // 모임장 확인
       if (meetup.userId != user.uid) {
-        Logger.log('❌ 모임장만 후기 작성 가능');
+        if (Logger.isVerboseEnabled) Logger.log('❌ 모임장만 후기 작성 가능');
         return null;
       }
 
       // 확정된 모임은 기존 완료 모임과 동일한 후기 플로우를 사용한다.
       if (!meetup.canStartReview) {
-        Logger.log('❌ 확정되거나 완료된 모임이 아님');
+        if (Logger.isVerboseEnabled) Logger.log('❌ 확정되거나 완료된 모임이 아님');
         return null;
       }
 
       if (meetup.hasReview) {
-        Logger.log('❌ 이미 후기가 작성된 모임');
+        if (Logger.isVerboseEnabled) Logger.log('❌ 이미 후기가 작성된 모임');
         return null;
       }
 
@@ -2188,8 +2295,9 @@ class MeetupService {
         },
       );
 
-      Logger.log(
-          '✅ 모임 후기 생성 성공 및 주최자 프로필에 게시: $reviewId (이미지 ${imageUrls.length}장)');
+      if (Logger.isVerboseEnabled)
+        Logger.log(
+            '✅ 모임 후기 생성 성공 및 주최자 프로필에 게시: $reviewId (이미지 ${imageUrls.length}장)');
       return reviewId;
     } catch (e) {
       Logger.error('❌ 모임 후기 생성 오류: $e');
@@ -2203,7 +2311,7 @@ class MeetupService {
       final reviewDoc =
           await _firestore.collection('meetup_reviews').doc(reviewId).get();
       if (!reviewDoc.exists) {
-        Logger.log('❌ 후기를 찾을 수 없음');
+        if (Logger.isVerboseEnabled) Logger.log('❌ 후기를 찾을 수 없음');
         return null;
       }
 
@@ -2221,11 +2329,13 @@ class MeetupService {
     required String content,
   }) async {
     try {
-      Logger.log('✏️ 후기 수정 시작: reviewId=$reviewId (이미지 ${imageUrls.length}장)');
+      if (Logger.isVerboseEnabled)
+        Logger.log(
+            '✏️ 후기 수정 시작: reviewId=$reviewId (이미지 ${imageUrls.length}장)');
 
       final user = _auth.currentUser;
       if (user == null) {
-        Logger.log('❌ 사용자 인증 필요');
+        if (Logger.isVerboseEnabled) Logger.log('❌ 사용자 인증 필요');
         return false;
       }
 
@@ -2233,13 +2343,13 @@ class MeetupService {
       final reviewDoc =
           await _firestore.collection('meetup_reviews').doc(reviewId).get();
       if (!reviewDoc.exists) {
-        Logger.log('❌ 후기를 찾을 수 없음');
+        if (Logger.isVerboseEnabled) Logger.log('❌ 후기를 찾을 수 없음');
         return false;
       }
 
       final reviewData = reviewDoc.data()!;
       if (reviewData['authorId'] != user.uid) {
-        Logger.log('❌ 작성자만 후기 수정 가능');
+        if (Logger.isVerboseEnabled) Logger.log('❌ 작성자만 후기 수정 가능');
         return false;
       }
 
@@ -2247,20 +2357,22 @@ class MeetupService {
           List<String>.from(reviewData['approvedParticipants'] ?? []);
       final authorId = reviewData['authorId'];
 
-      Logger.log('📋 수정 대상: 참여자 ${approvedParticipants.length}명');
+      if (Logger.isVerboseEnabled)
+        Logger.log('📋 수정 대상: 참여자 ${approvedParticipants.length}명');
 
       // 1. meetup_reviews 문서 업데이트
-      Logger.log('✏️ 1단계: meetup_reviews 문서 업데이트...');
+      if (Logger.isVerboseEnabled)
+        Logger.log('✏️ 1단계: meetup_reviews 문서 업데이트...');
       await _firestore.collection('meetup_reviews').doc(reviewId).update({
         'imageUrls': imageUrls,
         'imageUrl': imageUrls.isNotEmpty ? imageUrls.first : '', // 하위 호환성
         'content': content,
         'updatedAt': FieldValue.serverTimestamp(),
       });
-      Logger.log('✅ meetup_reviews 업데이트 완료');
+      if (Logger.isVerboseEnabled) Logger.log('✅ meetup_reviews 업데이트 완료');
 
       // 2. 본인 프로필의 후기 업데이트 (다른 사용자는 Cloud Function에서 처리)
-      Logger.log('✏️ 2단계: 본인 프로필 후기 업데이트...');
+      if (Logger.isVerboseEnabled) Logger.log('✏️ 2단계: 본인 프로필 후기 업데이트...');
       final currentUser = _auth.currentUser;
 
       if (currentUser != null) {
@@ -2285,9 +2397,9 @@ class MeetupService {
               'content': content,
               'updatedAt': FieldValue.serverTimestamp(),
             });
-            Logger.log('✅ 본인 프로필 후기 업데이트 완료');
+            if (Logger.isVerboseEnabled) Logger.log('✅ 본인 프로필 후기 업데이트 완료');
           } else {
-            Logger.log('⚠️ 본인 프로필에 후기 없음');
+            if (Logger.isVerboseEnabled) Logger.log('⚠️ 본인 프로필에 후기 없음');
           }
         } catch (e) {
           Logger.error('⚠️ 본인 프로필 후기 업데이트 실패: $e');
@@ -2295,11 +2407,13 @@ class MeetupService {
       }
 
       // 다른 참여자들의 프로필은 Cloud Function(onMeetupReviewUpdated)에서 자동 처리됨
-      Logger.log('💡 다른 참여자 프로필은 Cloud Function에서 자동 업데이트됩니다');
-      Logger.log(
-          '📋 총 대상자: ${[authorId, ...approvedParticipants].length}명 (본인 포함)');
+      if (Logger.isVerboseEnabled)
+        Logger.log('💡 다른 참여자 프로필은 Cloud Function에서 자동 업데이트됩니다');
+      if (Logger.isVerboseEnabled)
+        Logger.log(
+            '📋 총 대상자: ${[authorId, ...approvedParticipants].length}명 (본인 포함)');
 
-      Logger.log('✅ 모임 후기 수정 완료: $reviewId');
+      if (Logger.isVerboseEnabled) Logger.log('✅ 모임 후기 수정 완료: $reviewId');
       return true;
     } catch (e) {
       Logger.error('❌ 모임 후기 수정 오류: $e');
@@ -2310,31 +2424,34 @@ class MeetupService {
   /// 모임 후기 삭제
   Future<bool> deleteMeetupReview(String reviewId) async {
     try {
-      Logger.log('🗑️ 후기 삭제 시작: reviewId=$reviewId');
+      if (Logger.isVerboseEnabled)
+        Logger.log('🗑️ 후기 삭제 시작: reviewId=$reviewId');
 
       final user = _auth.currentUser;
       if (user == null) {
-        Logger.log('❌ 사용자 인증 필요');
+        if (Logger.isVerboseEnabled) Logger.log('❌ 사용자 인증 필요');
         throw Exception('로그인이 필요합니다');
       }
 
-      Logger.log('👤 현재 사용자: ${user.uid}');
+      if (Logger.isVerboseEnabled) Logger.log('👤 현재 사용자: ${user.uid}');
 
       // 후기 존재 및 권한 확인
       final reviewDoc =
           await _firestore.collection('meetup_reviews').doc(reviewId).get();
       if (!reviewDoc.exists) {
-        Logger.log('❌ 후기를 찾을 수 없음');
+        if (Logger.isVerboseEnabled) Logger.log('❌ 후기를 찾을 수 없음');
         throw Exception('후기를 찾을 수 없습니다');
       }
 
       final reviewData = reviewDoc.data()!;
-      Logger.log(
-          '📄 후기 데이터: authorId=${reviewData['authorId']}, meetupId=${reviewData['meetupId']}');
+      if (Logger.isVerboseEnabled)
+        Logger.log(
+            '📄 후기 데이터: authorId=${reviewData['authorId']}, meetupId=${reviewData['meetupId']}');
 
       if (reviewData['authorId'] != user.uid) {
-        Logger.log(
-            '❌ 작성자만 후기 삭제 가능: authorId=${reviewData['authorId']}, currentUser=${user.uid}');
+        if (Logger.isVerboseEnabled)
+          Logger.log(
+              '❌ 작성자만 후기 삭제 가능: authorId=${reviewData['authorId']}, currentUser=${user.uid}');
         throw Exception('작성자만 후기를 삭제할 수 있습니다');
       }
 
@@ -2343,48 +2460,52 @@ class MeetupService {
           List<String>.from(reviewData['approvedParticipants'] ?? []);
       final authorId = reviewData['authorId'];
 
-      Logger.log(
-          '📋 삭제 대상: meetupId=$meetupId, 참여자 ${approvedParticipants.length}명');
+      if (Logger.isVerboseEnabled)
+        Logger.log(
+            '📋 삭제 대상: meetupId=$meetupId, 참여자 ${approvedParticipants.length}명');
 
       // 1. 후기 삭제
-      Logger.log('🗑️ 1단계: meetup_reviews 문서 삭제...');
+      if (Logger.isVerboseEnabled)
+        Logger.log('🗑️ 1단계: meetup_reviews 문서 삭제...');
       await _firestore.collection('meetup_reviews').doc(reviewId).delete();
-      Logger.log('✅ meetup_reviews 삭제 완료');
+      if (Logger.isVerboseEnabled) Logger.log('✅ meetup_reviews 삭제 완료');
 
       // 2. 모임에서 후기 정보 제거
-      Logger.log('🗑️ 2단계: meetups 문서 업데이트...');
+      if (Logger.isVerboseEnabled) Logger.log('🗑️ 2단계: meetups 문서 업데이트...');
       try {
         await _firestore.collection('meetups').doc(meetupId).update({
           'hasReview': false,
           'reviewId': null,
           'updatedAt': FieldValue.serverTimestamp(),
         });
-        Logger.log('✅ meetups 업데이트 완료');
+        if (Logger.isVerboseEnabled) Logger.log('✅ meetups 업데이트 완료');
       } catch (e) {
         Logger.error('⚠️ meetups 업데이트 실패 (계속 진행): $e');
       }
 
       // 3. 관련 review_requests도 삭제
-      Logger.log('🗑️ 3단계: review_requests 삭제...');
+      if (Logger.isVerboseEnabled) Logger.log('🗑️ 3단계: review_requests 삭제...');
       try {
         final requests = await _firestore
             .collection('review_requests')
             .where('metadata.reviewId', isEqualTo: reviewId)
             .get();
 
-        Logger.log('📋 삭제할 요청: ${requests.docs.length}개');
+        if (Logger.isVerboseEnabled)
+          Logger.log('📋 삭제할 요청: ${requests.docs.length}개');
         for (final doc in requests.docs) {
           await doc.reference.delete();
         }
-        Logger.log('✅ review_requests 삭제 완료');
+        if (Logger.isVerboseEnabled) Logger.log('✅ review_requests 삭제 완료');
       } catch (e) {
         Logger.error('⚠️ review_requests 삭제 실패 (계속 진행): $e');
       }
 
       // 4. 모든 참여자 프로필에서 후기 삭제 (주최자 + 수락한 참여자)
-      Logger.log('🗑️ 4단계: 프로필 후기 삭제...');
+      if (Logger.isVerboseEnabled) Logger.log('🗑️ 4단계: 프로필 후기 삭제...');
       final allUserIds = [authorId, ...approvedParticipants];
-      Logger.log('📋 삭제 대상 사용자: ${allUserIds.length}명');
+      if (Logger.isVerboseEnabled)
+        Logger.log('📋 삭제 대상 사용자: ${allUserIds.length}명');
 
       for (final userId in allUserIds) {
         try {
@@ -2394,17 +2515,18 @@ class MeetupService {
               .collection('posts')
               .doc(reviewId)
               .delete();
-          Logger.log('✅ 프로필에서 후기 삭제: userId=$userId');
+          if (Logger.isVerboseEnabled)
+            Logger.log('✅ 프로필에서 후기 삭제: userId=$userId');
         } catch (e) {
           Logger.error('⚠️ 프로필 후기 삭제 실패 (계속 진행): userId=$userId, error=$e');
         }
       }
 
-      Logger.log('✅ 모임 후기 삭제 완료: $reviewId');
+      if (Logger.isVerboseEnabled) Logger.log('✅ 모임 후기 삭제 완료: $reviewId');
       return true;
     } catch (e, stackTrace) {
       Logger.error('❌ 모임 후기 삭제 오류: $e');
-      Logger.log('스택 트레이스: $stackTrace');
+      if (Logger.isVerboseEnabled) Logger.log('스택 트레이스: $stackTrace');
       rethrow; // 에러를 다시 던져서 UI에서 처리할 수 있도록
     }
   }
@@ -2414,7 +2536,7 @@ class MeetupService {
     try {
       final user = _auth.currentUser;
       if (user == null) {
-        Logger.log('❌ 사용자 인증 필요');
+        if (Logger.isVerboseEnabled) Logger.log('❌ 사용자 인증 필요');
         return [];
       }
 
@@ -2441,7 +2563,7 @@ class MeetupService {
     try {
       final user = _auth.currentUser;
       if (user == null) {
-        Logger.log('❌ 사용자 인증 필요');
+        if (Logger.isVerboseEnabled) Logger.log('❌ 사용자 인증 필요');
         return false;
       }
 
@@ -2449,13 +2571,13 @@ class MeetupService {
       final reviewDoc =
           await _firestore.collection('meetup_reviews').doc(reviewId).get();
       if (!reviewDoc.exists) {
-        Logger.log('❌ 후기를 찾을 수 없음');
+        if (Logger.isVerboseEnabled) Logger.log('❌ 후기를 찾을 수 없음');
         return false;
       }
 
       final reviewData = reviewDoc.data()!;
       if ((reviewData['authorId'] ?? '').toString() != user.uid) {
-        Logger.log('❌ 후기 작성자만 수락 요청을 보낼 수 있음');
+        if (Logger.isVerboseEnabled) Logger.log('❌ 후기 작성자만 수락 요청을 보낼 수 있음');
         return false;
       }
       final meetupId = reviewData['meetupId'];
@@ -2509,7 +2631,8 @@ class MeetupService {
         });
       }
 
-      Logger.log('✅ 후기 수락 요청 전송 완료: ${participantIds.length}명');
+      if (Logger.isVerboseEnabled)
+        Logger.log('✅ 후기 수락 요청 전송 완료: ${participantIds.length}명');
       return true;
     } catch (e) {
       Logger.error('❌ 후기 수락 요청 전송 오류: $e');
@@ -2591,7 +2714,7 @@ class MeetupService {
           await _firestore.collection('review_requests').doc(requestId).get();
 
       if (!requestDoc.exists) {
-        Logger.log('❌ 요청을 찾을 수 없음: $requestId');
+        if (Logger.isVerboseEnabled) Logger.log('❌ 요청을 찾을 수 없음: $requestId');
         return null;
       }
 
@@ -2610,7 +2733,7 @@ class MeetupService {
     try {
       final user = _auth.currentUser;
       if (user == null) {
-        Logger.log('❌ 사용자 인증 필요');
+        if (Logger.isVerboseEnabled) Logger.log('❌ 사용자 인증 필요');
         return false;
       }
 
@@ -2618,19 +2741,19 @@ class MeetupService {
       final requestDoc =
           await _firestore.collection('review_requests').doc(requestId).get();
       if (!requestDoc.exists) {
-        Logger.log('❌ 요청을 찾을 수 없음');
+        if (Logger.isVerboseEnabled) Logger.log('❌ 요청을 찾을 수 없음');
         return false;
       }
 
       final requestData = requestDoc.data()!;
       if (requestData['recipientId'] != user.uid) {
-        Logger.log('❌ 권한 없음');
+        if (Logger.isVerboseEnabled) Logger.log('❌ 권한 없음');
         return false;
       }
 
       final reviewId = (requestData['metadata']?['reviewId'] ?? '').toString();
       if (reviewId.isEmpty) {
-        Logger.log('❌ 후기 ID 누락');
+        if (Logger.isVerboseEnabled) Logger.log('❌ 후기 ID 누락');
         return false;
       }
 
@@ -2643,18 +2766,18 @@ class MeetupService {
           reviewId: reviewId,
           reviewData: requestData,
         );
-        Logger.log('✅ 기존 수락 후기 프로필 게시 상태 확인 완료');
+        if (Logger.isVerboseEnabled) Logger.log('✅ 기존 수락 후기 프로필 게시 상태 확인 완료');
         return true;
       }
       if (currentStatus == 'rejected') {
-        Logger.log('⚠️ 이미 거절한 요청입니다');
+        if (Logger.isVerboseEnabled) Logger.log('⚠️ 이미 거절한 요청입니다');
         return false;
       }
 
       final reviewRef = _firestore.collection('meetup_reviews').doc(reviewId);
       final reviewDoc = await reviewRef.get();
       if (!reviewDoc.exists) {
-        Logger.log('❌ 후기를 찾을 수 없음: $reviewId');
+        if (Logger.isVerboseEnabled) Logger.log('❌ 후기를 찾을 수 없음: $reviewId');
         return false;
       }
       final reviewData = reviewDoc.data()!;
@@ -2684,7 +2807,7 @@ class MeetupService {
           'respondedAt': FieldValue.serverTimestamp(),
         });
 
-        Logger.log('✅ 후기 수락 완료 및 프로필에 게시됨');
+        if (Logger.isVerboseEnabled) Logger.log('✅ 후기 수락 완료 및 프로필에 게시됨');
       } else {
         if (!rejectedParticipants.contains(user.uid)) {
           await reviewRef.update({
@@ -2696,7 +2819,7 @@ class MeetupService {
           'status': 'rejected',
           'respondedAt': FieldValue.serverTimestamp(),
         });
-        Logger.log('✅ 후기 거절 완료');
+        if (Logger.isVerboseEnabled) Logger.log('✅ 후기 거절 완료');
       }
 
       return true;
@@ -2711,7 +2834,7 @@ class MeetupService {
     try {
       final user = _auth.currentUser;
       if (user == null) {
-        Logger.log('❌ 사용자 인증 필요');
+        if (Logger.isVerboseEnabled) Logger.log('❌ 사용자 인증 필요');
         return [];
       }
 
@@ -2766,7 +2889,8 @@ class MeetupService {
       }
 
       if (repairedCount > 0) {
-        Logger.log('✅ 누락된 수락 후기 프로필 복구 완료: $repairedCount개');
+        if (Logger.isVerboseEnabled)
+          Logger.log('✅ 누락된 수락 후기 프로필 복구 완료: $repairedCount개');
       }
       return repairedCount;
     } catch (error, stackTrace) {
@@ -2782,19 +2906,22 @@ class MeetupService {
     required Map<String, dynamic> reviewData,
   }) async {
     try {
-      Logger.log('📝 프로필에 후기 게시 시작: userId=$userId, reviewId=$reviewId');
-      Logger.log('📝 reviewData: $reviewData');
+      if (Logger.isVerboseEnabled)
+        Logger.log('📝 프로필에 후기 게시 시작: userId=$userId, reviewId=$reviewId');
+      if (Logger.isVerboseEnabled) Logger.log('📝 reviewData: $reviewData');
 
       // 후기 전체 정보 가져오기
       final reviewDoc =
           await _firestore.collection('meetup_reviews').doc(reviewId).get();
       if (!reviewDoc.exists) {
-        Logger.log('❌ 후기를 찾을 수 없음: reviewId=$reviewId');
+        if (Logger.isVerboseEnabled)
+          Logger.log('❌ 후기를 찾을 수 없음: reviewId=$reviewId');
         return;
       }
 
       final fullReviewData = reviewDoc.data()!;
-      Logger.log('📊 fullReviewData: $fullReviewData');
+      if (Logger.isVerboseEnabled)
+        Logger.log('📊 fullReviewData: $fullReviewData');
 
       final profilePostRef = _firestore
           .collection('users')
@@ -2802,7 +2929,8 @@ class MeetupService {
           .collection('posts')
           .doc(reviewId);
       if ((await profilePostRef.get()).exists) {
-        Logger.log('ℹ️ 프로필 후기 이미 게시됨: userId=$userId, reviewId=$reviewId');
+        if (Logger.isVerboseEnabled)
+          Logger.log('ℹ️ 프로필 후기 이미 게시됨: userId=$userId, reviewId=$reviewId');
         return;
       }
 
@@ -2836,17 +2964,20 @@ class MeetupService {
         'commentCount': 0,
       };
 
-      Logger.log('📤 저장할 데이터: $postData');
-      Logger.log('📍 저장 경로: users/$userId/posts/$reviewId');
+      if (Logger.isVerboseEnabled) Logger.log('📤 저장할 데이터: $postData');
+      if (Logger.isVerboseEnabled)
+        Logger.log('📍 저장 경로: users/$userId/posts/$reviewId');
 
       // users/{userId}/posts 컬렉션에 후기 게시
       await profilePostRef.set(postData, SetOptions(merge: true));
 
-      Logger.log('✅ 프로필에 후기 게시 완료: userId=$userId, reviewId=$reviewId');
-      Logger.log('✅ 저장된 경로: users/$userId/posts/$reviewId');
+      if (Logger.isVerboseEnabled)
+        Logger.log('✅ 프로필에 후기 게시 완료: userId=$userId, reviewId=$reviewId');
+      if (Logger.isVerboseEnabled)
+        Logger.log('✅ 저장된 경로: users/$userId/posts/$reviewId');
     } catch (e, stackTrace) {
       Logger.error('❌ 프로필에 후기 게시 오류: $e');
-      Logger.log('❌ Stack trace: $stackTrace');
+      if (Logger.isVerboseEnabled) Logger.log('❌ Stack trace: $stackTrace');
       // 에러가 발생해도 전체 프로세스는 계속 진행
       rethrow; // 에러를 다시 던져서 상위에서 확인 가능하도록
     }
@@ -2860,7 +2991,7 @@ class MeetupService {
     try {
       final user = _auth.currentUser;
       if (user == null) {
-        Logger.log('❌ 사용자 인증 필요');
+        if (Logger.isVerboseEnabled) Logger.log('❌ 사용자 인증 필요');
         return false;
       }
 
@@ -2875,7 +3006,8 @@ class MeetupService {
         'updatedAt': FieldValue.serverTimestamp(),
       });
 
-      Logger.log('✅ 후기 ${hide ? "숨김" : "표시"} 처리 완료: $reviewId');
+      if (Logger.isVerboseEnabled)
+        Logger.log('✅ 후기 ${hide ? "숨김" : "표시"} 처리 완료: $reviewId');
       return true;
     } catch (e) {
       Logger.error('❌ 후기 숨김/표시 처리 오류: $e');
@@ -2894,7 +3026,7 @@ class MeetupService {
       await storageRef.putFile(imageFile);
       final imageUrl = await storageRef.getDownloadURL();
 
-      Logger.log('✅ 모임 이미지 업로드 완료: $imageUrl');
+      if (Logger.isVerboseEnabled) Logger.log('✅ 모임 이미지 업로드 완료: $imageUrl');
       return imageUrl;
     } catch (e) {
       Logger.error('❌ 모임 이미지 업로드 오류: $e');
@@ -2904,30 +3036,18 @@ class MeetupService {
 
   // 실시간 모임 데이터 스트림
   Stream<Meetup?> getMeetupStream(String meetupId) {
-    Logger.log('📡 [STREAM] getMeetupStream 시작: $meetupId');
-
     final source = _firestore
         .collection('meetups')
         .doc(meetupId)
         .snapshots()
         .map<List<Meetup>>((snapshot) {
-      Logger.log(
-          '🔄 [STREAM] 스냅샷 수신 - exists: ${snapshot.exists}, metadata: ${snapshot.metadata}');
-
       if (snapshot.exists && snapshot.data() != null) {
         final data = snapshot.data()!;
         data['id'] = snapshot.id;
 
         final meetup = Meetup.fromJson(data);
-        Logger.log(
-            '📋 [STREAM] 모임 데이터 파싱 완료: isCompleted=${meetup.isCompleted}, hasReview=${meetup.hasReview}');
-        Logger.log(
-            '🔍 [STREAM] 메타데이터 - fromCache: ${snapshot.metadata.isFromCache}, hasPendingWrites: ${snapshot.metadata.hasPendingWrites}');
-
         return <Meetup>[meetup];
       }
-
-      Logger.log('⚠️ [STREAM] 모임 데이터 없음 또는 삭제됨');
       return const <Meetup>[];
     });
     return _hideExpiredMeetupsOverTime(source)
@@ -2939,7 +3059,8 @@ class MeetupService {
     try {
       // 이미 조회한 모임인지 확인
       if (_viewHistory.hasViewed('meetup', meetupId)) {
-        Logger.log('⏭️ 조회수 증가 건너뜀: 이미 조회한 모임 ($meetupId)');
+        if (Logger.isVerboseEnabled)
+          Logger.log('⏭️ 조회수 증가 건너뜀: 이미 조회한 모임 ($meetupId)');
         return;
       }
 
@@ -2951,7 +3072,7 @@ class MeetupService {
       // 조회 이력에 추가
       _viewHistory.markAsViewed('meetup', meetupId);
 
-      Logger.log('✅ 모임 조회수 증가: $meetupId');
+      if (Logger.isVerboseEnabled) Logger.log('✅ 모임 조회수 증가: $meetupId');
     } catch (e) {
       Logger.error('❌ 모임 조회수 증가 오류: $e');
     }
@@ -2974,7 +3095,8 @@ class MeetupService {
         'updatedAt': FieldValue.serverTimestamp(),
       });
 
-      Logger.log('✅ 모임 댓글수 업데이트: $meetupId -> $commentCount개');
+      if (Logger.isVerboseEnabled)
+        Logger.log('✅ 모임 댓글수 업데이트: $meetupId -> $commentCount개');
     } catch (e) {
       Logger.error('❌ 모임 댓글수 업데이트 오류: $e');
     }
@@ -2983,10 +3105,11 @@ class MeetupService {
   // 간단한 마이그레이션 실행 (개발용)
   Future<void> quickMigration() async {
     try {
-      Logger.log('🚀 빠른 마이그레이션 시작...');
+      if (Logger.isVerboseEnabled) Logger.log('🚀 빠른 마이그레이션 시작...');
 
       final snapshot = await _firestore.collection('meetups').get();
-      Logger.log('📊 총 ${snapshot.docs.length}개 모임 발견');
+      if (Logger.isVerboseEnabled)
+        Logger.log('📊 총 ${snapshot.docs.length}개 모임 발견');
 
       WriteBatch batch = _firestore.batch();
       int count = 0;
@@ -2995,13 +3118,16 @@ class MeetupService {
         final data = doc.data();
         Map<String, dynamic> updates = {};
 
-        Logger.log('📋 모임 확인: ${data['title']} (${doc.id})');
-        Logger.log('   - 기존 viewCount: ${data['viewCount']}');
-        Logger.log('   - 기존 commentCount: ${data['commentCount']}');
+        if (Logger.isVerboseEnabled)
+          Logger.log('📋 모임 확인: ${data['title']} (${doc.id})');
+        if (Logger.isVerboseEnabled)
+          Logger.log('   - 기존 viewCount: ${data['viewCount']}');
+        if (Logger.isVerboseEnabled)
+          Logger.log('   - 기존 commentCount: ${data['commentCount']}');
 
         if (!data.containsKey('viewCount')) {
           updates['viewCount'] = 0;
-          Logger.log('   → viewCount 추가: 0');
+          if (Logger.isVerboseEnabled) Logger.log('   → viewCount 추가: 0');
         }
 
         if (!data.containsKey('commentCount')) {
@@ -3012,25 +3138,28 @@ class MeetupService {
               .get();
           final commentCount = commentsSnapshot.docs.length;
           updates['commentCount'] = commentCount;
-          Logger.log('   → commentCount 추가: $commentCount');
+          if (Logger.isVerboseEnabled)
+            Logger.log('   → commentCount 추가: $commentCount');
         }
 
         if (updates.isNotEmpty) {
           updates['updatedAt'] = FieldValue.serverTimestamp();
           batch.update(doc.reference, updates);
           count++;
-          Logger.log('   ✅ 업데이트 예정');
+          if (Logger.isVerboseEnabled) Logger.log('   ✅ 업데이트 예정');
         } else {
-          Logger.log('   ⏭️ 업데이트 불필요');
+          if (Logger.isVerboseEnabled) Logger.log('   ⏭️ 업데이트 불필요');
         }
       }
 
       if (count > 0) {
-        Logger.log('💾 배치 커밋 실행 중...');
+        if (Logger.isVerboseEnabled) Logger.log('💾 배치 커밋 실행 중...');
         await batch.commit();
-        Logger.log('✅ 마이그레이션 완료: ${count}개 모임 업데이트');
+        if (Logger.isVerboseEnabled)
+          Logger.log('✅ 마이그레이션 완료: ${count}개 모임 업데이트');
       } else {
-        Logger.log('ℹ️ 마이그레이션 불필요: 모든 모임이 이미 업데이트됨');
+        if (Logger.isVerboseEnabled)
+          Logger.log('ℹ️ 마이그레이션 불필요: 모든 모임이 이미 업데이트됨');
       }
     } catch (e) {
       Logger.error('❌ 마이그레이션 실패: $e');
@@ -3041,25 +3170,16 @@ class MeetupService {
 
   // 실시간 참여자 목록 스트림
   Stream<List<MeetupParticipant>> getParticipantsStream(String meetupId) {
-    Logger.log('👥 [PARTICIPANTS_STREAM] 참여자 스트림 시작: $meetupId');
-
     return _firestore
         .collection('meetup_participants')
         .where('meetupId', isEqualTo: meetupId)
         .where('status', isEqualTo: ParticipantStatus.approved)
         .snapshots()
         .asyncMap((snapshot) async {
-      Logger.log(
-          '🔄 [PARTICIPANTS_STREAM] 스냅샷 수신 - 문서 수: ${snapshot.docs.length}');
-      Logger.log(
-          '🔍 [PARTICIPANTS_STREAM] 메타데이터 - fromCache: ${snapshot.metadata.isFromCache}, hasPendingWrites: ${snapshot.metadata.hasPendingWrites}');
-
       var participants = snapshot.docs.map((doc) {
         final data = doc.data();
         data['id'] = doc.id;
-        final participant = MeetupParticipant.fromJson(data);
-        Logger.log('  - 참여자: ${participant.userName} (${participant.userId})');
-        return participant;
+        return MeetupParticipant.fromJson(data);
       }).toList();
 
       participants = await _resolveLatestParticipantProfiles(participants);
@@ -3067,7 +3187,6 @@ class MeetupService {
       // 클라이언트 측에서 정렬
       participants.sort((a, b) => a.joinedAt.compareTo(b.joinedAt));
 
-      Logger.log('✅ [PARTICIPANTS_STREAM] 참여자 목록 반환: ${participants.length}명');
       return participants;
     });
   }

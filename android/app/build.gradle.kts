@@ -80,23 +80,6 @@ android {
         versionName = flutter.versionName
     }
 
-    flavorDimensions += "environment"
-    productFlavors {
-        create("development") {
-            dimension = "environment"
-            // Plain `flutter run` must use the same Android/Firebase identity as
-            // the service app. Debug behavior is separated by build type rather
-            // than by installing an unrelated legacy applicationId.
-            applicationId = "com.wefilling.app"
-            manifestPlaceholders["appLabel"] = "Wefilling"
-        }
-        create("production") {
-            dimension = "environment"
-            applicationId = "com.wefilling.app"
-            manifestPlaceholders["appLabel"] = "Wefilling"
-        }
-    }
-
     buildTypes {
         release {
             signingConfig = signingConfigs.getByName("release")
@@ -116,34 +99,26 @@ flutter {
     source = "../.."
 }
 
-val validateProductionReleaseVersion = tasks.register("validateProductionReleaseVersion") {
+val validateReleaseVersion = tasks.register("validateReleaseVersion") {
     group = "release"
-    description = "Rejects a production AAB whose versionCode was already used."
+    description = "Rejects a release AAB whose versionCode is lower than the latest local release candidate."
 
     doLast {
         val currentVersionCode = flutter.versionCode
-        val encodedProductionFlavor =
-            "RkxVVFRFUl9BUFBfRkxBVk9SPXByb2R1Y3Rpb24="
-        val dartDefines = project.findProperty("dart-defines")?.toString() ?: ""
-        if (!dartDefines.split(",").contains(encodedProductionFlavor)) {
+        if (currentVersionCode < lastUsedReleaseVersionCode) {
             throw GradleException(
-                "Production release requires the production Flutter flavor."
-            )
-        }
-        if (currentVersionCode <= lastUsedReleaseVersionCode) {
-            throw GradleException(
-                "versionCode $currentVersionCode has already been used. " +
-                    "Increase pubspec.yaml version above $lastUsedReleaseVersionCode."
+                "versionCode $currentVersionCode is lower than the latest local release candidate " +
+                    "$lastUsedReleaseVersionCode."
             )
         }
         logger.lifecycle(
-            "Production release: versionName=${flutter.versionName}, " +
+            "Release: versionName=${flutter.versionName}, " +
                 "versionCode=$currentVersionCode, applicationId=com.wefilling.app"
         )
     }
 }
 
-val validateProductionReleaseArtifactInputs = tasks.register<Exec>("validateProductionReleaseArtifactInputs") {
+val validateReleaseArtifactInputs = tasks.register<Exec>("validateReleaseArtifactInputs") {
     group = "release"
     description = "Runs the fail-closed Wefilling production Release Guard."
     workingDir(rootProject.projectDir.parentFile)
@@ -156,25 +131,15 @@ val validateProductionReleaseArtifactInputs = tasks.register<Exec>("validateProd
     )
 }
 
-// Reject the task graph before any compilation/bundling work starts. A
-// doFirst check on bundleDevelopmentRelease is too late because its dependent
-// tasks may already have written an AAB.
-gradle.taskGraph.whenReady {
-    val forbidden = allTasks.firstOrNull {
-        it.name == "bundleDevelopmentRelease" ||
-            it.name == "assembleDevelopmentRelease"
-    }
-    if (forbidden != null) {
-        throw GradleException(
-            "${forbidden.name} is disabled. Development release artifacts " +
-                "must never be generated; use the production release workflow."
-        )
-    }
-}
-
 tasks.configureEach {
-    if (name == "bundleProductionRelease") {
-        dependsOn(validateProductionReleaseVersion)
-        dependsOn(validateProductionReleaseArtifactInputs)
+    if (name == "bundleRelease") {
+        dependsOn(validateReleaseVersion)
+        dependsOn(validateReleaseArtifactInputs)
+        doLast {
+            releaseVersionFile.writeText(
+                "lastUsedVersionName=${flutter.versionName}\n" +
+                    "lastUsedVersionCode=${flutter.versionCode}\n"
+            )
+        }
     }
 }

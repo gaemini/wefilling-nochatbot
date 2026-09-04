@@ -14,7 +14,7 @@ class LanguageService {
     try {
       final prefs = await SharedPreferences.getInstance();
       await prefs.setString(_key, languageCode);
-      Logger.log('✅ 언어 저장 완료: $languageCode');
+      if (Logger.isVerboseEnabled) Logger.log('✅ 언어 저장 완료: $languageCode');
     } catch (e) {
       if (kDebugMode) {
         debugPrint('❌ 언어 저장 실패: $e');
@@ -34,10 +34,10 @@ class LanguageService {
           (language != 'ko' && language != 'en')) {
         language = _defaultLanguage;
         await prefs.setString(_key, language);
-        Logger.log('✅ 기본 언어 강제 설정: $language');
+        if (Logger.isVerboseEnabled) Logger.log('✅ 기본 언어 강제 설정: $language');
       }
 
-      Logger.log('📖 저장된 언어: $language');
+      if (Logger.isVerboseEnabled) Logger.log('📖 저장된 언어: $language');
       return language;
     } catch (e) {
       if (kDebugMode) {

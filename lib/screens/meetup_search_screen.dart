@@ -8,6 +8,8 @@ import '../services/post_service.dart';
 import '../widgets/post_search_card.dart';
 import '../l10n/app_localizations.dart';
 import '../utils/logger.dart';
+import '../utils/latest_request_guard.dart';
+import '../ui/widgets/empty_state.dart';
 import 'package:flutter/foundation.dart';
 
 class MeetupSearchScreen extends StatefulWidget {
@@ -22,7 +24,9 @@ class _MeetupSearchScreenState extends State<MeetupSearchScreen> {
   final PostService _postService = PostService();
   String _searchQuery = '';
   bool _isLoading = false;
+  bool _hasSearchError = false;
   List<Post> _searchResults = [];
+  final LatestRequestGuard _searchRequestGuard = LatestRequestGuard();
 
   // 포커스 노드
   final FocusNode _searchFocusNode = FocusNode();
@@ -38,6 +42,7 @@ class _MeetupSearchScreenState extends State<MeetupSearchScreen> {
 
   @override
   void dispose() {
+    _searchRequestGuard.invalidate();
     _searchController.dispose();
     _searchFocusNode.dispose();
     super.dispose();
@@ -47,31 +52,36 @@ class _MeetupSearchScreenState extends State<MeetupSearchScreen> {
   Future<void> _performSearch() async {
     final query = _searchController.text.trim();
     if (query.isEmpty) {
+      _searchRequestGuard.invalidate();
       setState(() {
         _searchResults = [];
         _isLoading = false;
+        _hasSearchError = false;
+        _searchQuery = '';
       });
       return;
     }
 
-    if (query == _searchQuery) return; // 같은 검색어면 실행하지 않음
-
+    final requestToken = _searchRequestGuard.begin();
     _searchQuery = query;
-    Logger.log('🔍 게시글 검색 시작: "$_searchQuery"');
+    if (Logger.isVerboseEnabled) Logger.log('🔍 게시글 검색 시작: "$_searchQuery"');
 
     setState(() {
       _isLoading = true;
+      _hasSearchError = false;
       _searchResults = []; // 이전 결과 초기화
     });
 
     try {
-      Logger.log('📡 검색 시작');
-      
+      if (Logger.isVerboseEnabled) Logger.log('📡 검색 시작');
+
       // 게시글 서비스를 통해 검색 실행
       final searchResults = await _postService.searchPosts(_searchQuery.trim());
-      
-      Logger.log('✅ 검색 결과 수신: ${searchResults.length}개');
-      if (mounted) {
+
+      if (Logger.isVerboseEnabled) {
+        Logger.log('✅ 검색 결과 수신: ${searchResults.length}개');
+      }
+      if (mounted && _searchRequestGuard.isCurrent(requestToken)) {
         setState(() {
           _searchResults = searchResults;
           _isLoading = false;
@@ -81,16 +91,15 @@ class _MeetupSearchScreenState extends State<MeetupSearchScreen> {
       }
     } catch (e) {
       Logger.error('❌ 검색 오류: $e');
-      if (mounted) {
+      if (mounted && _searchRequestGuard.isCurrent(requestToken)) {
         setState(() {
           _isLoading = false;
+          _hasSearchError = true;
           _searchResults = [];
         });
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
-            content: Text(
-              '${Localizations.localeOf(context).languageCode == 'ko' ? '검색 중 오류가 발생했습니다' : 'Search error occurred'}: $e',
-            ),
+            content: Text(AppLocalizations.of(context)!.errorOccurred),
           ),
         );
       }
@@ -100,12 +109,12 @@ class _MeetupSearchScreenState extends State<MeetupSearchScreen> {
   // 디버그용 데이터 확인
   void _checkPostData() {
     if (!kDebugMode) return;
-    
+
     for (final post in _searchResults) {
-      Logger.log('🔍 게시글 데이터 확인: ${post.title}');
-      Logger.log('   - ID: ${post.id}');
-      Logger.log('   - 좋아요: ${post.likes}');
-      Logger.log('   - 댓글수: ${post.commentCount}');
+      if (Logger.isVerboseEnabled) Logger.log('🔍 게시글 데이터 확인: ${post.title}');
+      if (Logger.isVerboseEnabled) Logger.log('   - ID: ${post.id}');
+      if (Logger.isVerboseEnabled) Logger.log('   - 좋아요: ${post.likes}');
+      if (Logger.isVerboseEnabled) Logger.log('   - 댓글수: ${post.commentCount}');
     }
   }
 
@@ -120,7 +129,9 @@ class _MeetupSearchScreenState extends State<MeetupSearchScreen> {
           onPressed: () => Navigator.pop(context),
         ),
         title: Text(
-          AppLocalizations.of(context)!.searchMeetups,
+          Localizations.localeOf(context).languageCode == 'ko'
+              ? '포스트 검색'
+              : 'Search posts',
           style: const TextStyle(
             fontWeight: FontWeight.w700,
             fontSize: 20,
@@ -152,6 +163,7 @@ class _MeetupSearchScreenState extends State<MeetupSearchScreen> {
                         child: TextField(
                           controller: _searchController,
                           focusNode: _searchFocusNode,
+                          textInputAction: TextInputAction.search,
                           decoration: InputDecoration(
                             hintText:
                                 Localizations.localeOf(context).languageCode ==
@@ -161,8 +173,16 @@ class _MeetupSearchScreenState extends State<MeetupSearchScreen> {
                             hintStyle: TextStyle(color: Colors.grey[500]),
                             border: InputBorder.none,
                           ),
-                          onChanged: (value) {
-                            // 실시간 검색은 하지 않음
+                          onChanged: (_) {
+                            // 명시적 검색 버튼을 누르기 전에는 이전 검색어의
+                            // 결과가 현재 입력의 결과처럼 보이지 않게 한다.
+                            _searchRequestGuard.invalidate();
+                            setState(() {
+                              _searchResults = [];
+                              _searchQuery = '';
+                              _isLoading = false;
+                              _hasSearchError = false;
+                            });
                           },
                           onSubmitted: (_) {
                             _performSearch();
@@ -173,10 +193,13 @@ class _MeetupSearchScreenState extends State<MeetupSearchScreen> {
                         IconButton(
                           icon: const Icon(Icons.clear, color: Colors.grey),
                           onPressed: () {
+                            _searchRequestGuard.invalidate();
                             _searchController.clear();
                             setState(() {
                               _searchResults = [];
                               _searchQuery = '';
+                              _isLoading = false;
+                              _hasSearchError = false;
                             });
                           },
                         ),
@@ -204,50 +227,60 @@ class _MeetupSearchScreenState extends State<MeetupSearchScreen> {
                       ],
                     ),
                   )
-                : _searchResults.isEmpty
-                    ? Center(
-                        child: Column(
-                          mainAxisAlignment: MainAxisAlignment.center,
-                          children: [
-                            Icon(
-                              Icons.search_off,
-                              size: 64,
-                              color: Colors.grey[400],
-                            ),
-                            const SizedBox(height: 16),
-                            Text(
-                              _searchQuery.isEmpty
-                                  ? AppLocalizations.of(context)!.pleaseEnterSearchQuery
-                                  : AppLocalizations.of(context)!.noSearchResults,
-                              style: TextStyle(
-                                fontSize: 16,
-                                color: Colors.grey[600],
-                              ),
-                            ),
-                            if (_searchQuery.isNotEmpty) ...[
-                              const SizedBox(height: 8),
-                              Text(
-                                '"$_searchQuery"${Localizations.localeOf(context).languageCode == 'ko' ? '에 대한 결과를 찾을 수 없습니다' : ' - No results found'}',
-                                style: TextStyle(
-                                  fontSize: 14,
-                                  color: Colors.grey[500],
-                                ),
-                              ),
-                            ],
-                          ],
-                        ),
+                : _hasSearchError
+                    ? AppErrorState(
+                        title: AppLocalizations.of(context)!.error,
+                        description:
+                            AppLocalizations.of(context)!.errorOccurred,
+                        retryText: AppLocalizations.of(context)!.retryAction,
+                        onRetry: _performSearch,
                       )
-                    : Container(
-                        color: Colors.grey[50],
-                        child: ListView.builder(
-                          padding: const EdgeInsets.all(16),
-                          itemCount: _searchResults.length,
-                          itemBuilder: (context, index) {
-                            final post = _searchResults[index];
-                            return PostSearchCard(post: post);
-                          },
-                        ),
-                      ),
+                    : _searchResults.isEmpty
+                        ? Center(
+                            child: Column(
+                              mainAxisAlignment: MainAxisAlignment.center,
+                              children: [
+                                Icon(
+                                  Icons.search_off,
+                                  size: 64,
+                                  color: Colors.grey[400],
+                                ),
+                                const SizedBox(height: 16),
+                                Text(
+                                  _searchQuery.isEmpty
+                                      ? AppLocalizations.of(context)!
+                                          .pleaseEnterSearchQuery
+                                      : AppLocalizations.of(context)!
+                                          .noSearchResults,
+                                  style: TextStyle(
+                                    fontSize: 16,
+                                    color: Colors.grey[600],
+                                  ),
+                                ),
+                                if (_searchQuery.isNotEmpty) ...[
+                                  const SizedBox(height: 8),
+                                  Text(
+                                    '"$_searchQuery"${Localizations.localeOf(context).languageCode == 'ko' ? '에 대한 결과를 찾을 수 없습니다' : ' - No results found'}',
+                                    style: TextStyle(
+                                      fontSize: 14,
+                                      color: Colors.grey[500],
+                                    ),
+                                  ),
+                                ],
+                              ],
+                            ),
+                          )
+                        : Container(
+                            color: Colors.grey[50],
+                            child: ListView.builder(
+                              padding: const EdgeInsets.all(16),
+                              itemCount: _searchResults.length,
+                              itemBuilder: (context, index) {
+                                final post = _searchResults[index];
+                                return PostSearchCard(post: post);
+                              },
+                            ),
+                          ),
           ),
         ],
       ),

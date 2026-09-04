@@ -1,6 +1,7 @@
 import * as functions from 'firebase-functions';
 import * as admin from 'firebase-admin';
 import {COL} from './firestore_paths';
+import {runtimeInfo, runtimeLogsEnabled} from './runtime_logging';
 import {
   isActiveUserData,
   resolveFrozenAudience,
@@ -568,7 +569,7 @@ export const createSnapshot = functions.runWith({timeoutSeconds: 120, memory: '5
       }
       throw new functions.https.HttpsError('internal', 'Could not create snapshot.');
     }
-    console.log(
+    runtimeLogsEnabled && runtimeInfo(
       `content-created type=snapshot id=${snapshotId} owner=${uid} ` +
       `visibility=${frozen.visibilityMode} schema=${VISIBILITY_SCHEMA_VERSION} ` +
       `audienceCount=${frozen.audienceUserIdsFrozen.length} hasStoragePath=true ` +
@@ -737,11 +738,6 @@ export const recordSnapshotView = functions.https.onCall(async (raw, context) =>
       throw error;
     }
   }
-  console.log(
-    `snapshot-view-recorded snapshotId=${snapshotId} viewerId=${uid} ` +
-    `ownerId=${ownerId} visibility=${text(snapshotData.visibilityMode ?? snapshotData.visibility)} ` +
-    `created=${created}`,
-  );
   return {success: true, recorded: true, created};
 });
 
@@ -1434,7 +1430,7 @@ export const cleanupExpiredSnapshots = functions.runWith({timeoutSeconds: 540, m
       }
       if (expired.size < 100) break;
     }
-    console.log(`cleanupExpiredSnapshots deleted=${deleted}`);
+    runtimeLogsEnabled && runtimeInfo(`cleanupExpiredSnapshots deleted=${deleted}`);
     return null;
   });
 
@@ -1475,7 +1471,7 @@ export const cleanupOrphanSnapshotUploads = functions.runWith({
       }));
     }
 
-    console.log(`cleanupOrphanSnapshotUploads inspected=${inspected} deleted=${deleted}`);
+    runtimeLogsEnabled && runtimeInfo(`cleanupOrphanSnapshotUploads inspected=${inspected} deleted=${deleted}`);
     return null;
   });
 

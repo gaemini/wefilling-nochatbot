@@ -23,13 +23,13 @@ class NotificationService {
 
   // 모든 스트림 구독 정리
   void dispose() {
-    Logger.log(
+    if (Logger.isVerboseEnabled) Logger.log(
         'NotificationService: ${_activeSubscriptions.length}개 스트림 정리 중...');
     for (final subscription in _activeSubscriptions) {
       subscription.cancel();
     }
     _activeSubscriptions.clear();
-    Logger.log('NotificationService: 모든 스트림 정리 완료');
+    if (Logger.isVerboseEnabled) Logger.log('NotificationService: 모든 스트림 정리 완료');
   }
 
   // 알림 생성
@@ -48,7 +48,7 @@ class NotificationService {
       // 알림 설정 확인 - 해당 유형의 알림이 비활성화되어 있으면 알림 생성 안 함
       final isEnabled = await _settingsService.isNotificationEnabled(type);
       if (!isEnabled) {
-        Logger.log('⚠️ 알림 유형 $type 비활성화됨: 알림 생성 건너뜀');
+        if (Logger.isVerboseEnabled) Logger.log('⚠️ 알림 유형 $type 비활성화됨: 알림 생성 건너뜀');
         return false;
       }
 
@@ -68,7 +68,7 @@ class NotificationService {
 
       final docRef =
           await _firestore.collection('notifications').add(notificationData);
-      Logger.log('✅ 알림 생성 성공: $title (ID: ${docRef.id})');
+      if (Logger.isVerboseEnabled) Logger.log('✅ 알림 생성 성공: $title (ID: ${docRef.id})');
       return true;
     } catch (e) {
       Logger.error('❌ 알림 생성 오류: $e');

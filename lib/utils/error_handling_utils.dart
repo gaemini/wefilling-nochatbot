@@ -10,9 +10,6 @@ import '../ui/snackbar/app_snackbar.dart';
 class ErrorHandlingUtils {
   // 일반적인 에러 핸들링 메서드
   static void handleError(BuildContext context, dynamic error) {
-    // 에러 로깅 (개발 중에만 출력)
-    debugPrint('Error: $error');
-
     final l10n = AppLocalizations.of(context)!;
     final message = '${l10n.error}: ${_getErrorMessage(error)}';
     AppSnackBar.show(

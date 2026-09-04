@@ -554,10 +554,10 @@ class _LoginScreenState extends State<LoginScreen>
 
       // 로그인 성공한 경우
       if (success && authProvider.isLoggedIn) {
-        Logger.log("Google 로그인 성공");
+        if (Logger.isVerboseEnabled) Logger.log("Google 로그인 성공");
 
         if (!authProvider.isRegistrationComplete) {
-          Logger.log("미완료 회원가입 -> 프로필 완료 화면으로 이동");
+          if (Logger.isVerboseEnabled) Logger.log("미완료 회원가입 -> 프로필 완료 화면으로 이동");
           Navigator.pushReplacement(
             context,
             MaterialPageRoute(builder: (_) => const NicknameSetupScreen()),
@@ -566,7 +566,7 @@ class _LoginScreenState extends State<LoginScreen>
         }
 
         // 닉네임 있으면 메인 화면
-        Logger.log("로그인 성공 -> 메인 화면으로 이동");
+        if (Logger.isVerboseEnabled) Logger.log("로그인 성공 -> 메인 화면으로 이동");
         Navigator.pushReplacement(
           context,
           MaterialPageRoute(builder: (_) => const MainScreen()),
@@ -575,7 +575,7 @@ class _LoginScreenState extends State<LoginScreen>
       // 로그인 실패한 경우 (신규 사용자 또는 한양메일 미인증)
       else if (!success) {
         if (authProvider.lastGoogleSignInWasCancelled) {
-          Logger.log("사용자가 Google 로그인을 취소함");
+          if (Logger.isVerboseEnabled) Logger.log("사용자가 Google 로그인을 취소함");
           return;
         }
         Logger.error("로그인 실패 -> 회원가입 필요 여부 확인");
@@ -586,7 +586,7 @@ class _LoginScreenState extends State<LoginScreen>
 
           // signupRequired 플래그 확인 (취소가 아닌 실제 회원가입 필요한 경우만)
           if (authProvider.consumeSignupRequiredFlag()) {
-            Logger.log("회원가입 필요 메시지 표시");
+            if (Logger.isVerboseEnabled) Logger.log("회원가입 필요 메시지 표시");
             _showRegistrationRequiredDialog();
           } else {
             Logger.error("로그인 취소 또는 기타 실패 - 조용히 처리");
@@ -620,10 +620,10 @@ class _LoginScreenState extends State<LoginScreen>
 
       // 로그인 성공한 경우
       if (success && authProvider.isLoggedIn) {
-        Logger.log("Apple 로그인 성공");
+        if (Logger.isVerboseEnabled) Logger.log("Apple 로그인 성공");
 
         if (!authProvider.isRegistrationComplete) {
-          Logger.log("미완료 회원가입 -> 프로필 완료 화면으로 이동");
+          if (Logger.isVerboseEnabled) Logger.log("미완료 회원가입 -> 프로필 완료 화면으로 이동");
           Navigator.pushReplacement(
             context,
             MaterialPageRoute(builder: (_) => const NicknameSetupScreen()),
@@ -632,7 +632,7 @@ class _LoginScreenState extends State<LoginScreen>
         }
 
         // 닉네임 있으면 메인 화면
-        Logger.log("로그인 성공 -> 메인 화면으로 이동");
+        if (Logger.isVerboseEnabled) Logger.log("로그인 성공 -> 메인 화면으로 이동");
         Navigator.pushReplacement(
           context,
           MaterialPageRoute(builder: (_) => const MainScreen()),
@@ -648,7 +648,7 @@ class _LoginScreenState extends State<LoginScreen>
 
           // signupRequired 플래그 확인 (취소가 아닌 실제 회원가입 필요한 경우만)
           if (authProvider.consumeSignupRequiredFlag()) {
-            Logger.log("회원가입 필요 메시지 표시");
+            if (Logger.isVerboseEnabled) Logger.log("회원가입 필요 메시지 표시");
             _showRegistrationRequiredDialog();
           } else {
             Logger.error("로그인 취소 또는 기타 실패 - 조용히 처리");

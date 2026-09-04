@@ -655,10 +655,10 @@ class _DMListScreenState extends State<DMListScreen> {
 
     // 🔍 디버그: 익명 대화방 데이터 확인
     if (isAnonymous && kDebugMode) {
-      Logger.log('🔍 익명 대화방 데이터:');
-      Logger.log('  - ID: ${conversation.id.substring(0, 20)}...');
-      Logger.log('  - dmContent: ${dmContent ?? "null"}');
-      Logger.log('  - lastMessage: ${conversation.lastMessage}');
+      if (Logger.isVerboseEnabled) Logger.log('🔍 익명 대화방 데이터:');
+      if (Logger.isVerboseEnabled) Logger.log('  - ID: ${conversation.id.substring(0, 20)}...');
+      if (Logger.isVerboseEnabled) Logger.log('  - dmContent: ${dmContent ?? "null"}');
+      if (Logger.isVerboseEnabled) Logger.log('  - lastMessage: ${conversation.lastMessage}');
     }
 
     // 🎯 익명 대화방이고 게시글 기반인 경우 (dmContent가 있으면)
@@ -1113,17 +1113,17 @@ class _DMListScreenState extends State<DMListScreen> {
 
   /// 대화방 열기
   void _openConversation(Conversation conversation) {
-    Logger.log('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━');
-    Logger.log('🔍 [FCM 진단 2단계] DM 채팅 화면 열기 시도');
-    Logger.log('  - conversationId: ${conversation.id}');
-    Logger.log(
+    if (Logger.isVerboseEnabled) Logger.log('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━');
+    if (Logger.isVerboseEnabled) Logger.log('🔍 [FCM 진단 2단계] DM 채팅 화면 열기 시도');
+    if (Logger.isVerboseEnabled) Logger.log('  - conversationId: ${conversation.id}');
+    if (Logger.isVerboseEnabled) Logger.log(
         '  - otherUserId: ${conversation.getOtherUserId(_currentUser!.uid)}');
 
     Navigator.push(
       context,
       MaterialPageRoute(
         builder: (context) {
-          Logger.log('📱 [FCM 진단 2단계] DMChatScreen 생성됨');
+          if (Logger.isVerboseEnabled) Logger.log('📱 [FCM 진단 2단계] DMChatScreen 생성됨');
           return DMChatScreen(
             conversationId: conversation.id,
             otherUserId: conversation.getOtherUserId(_currentUser!.uid),
@@ -1131,7 +1131,7 @@ class _DMListScreenState extends State<DMListScreen> {
         },
       ),
     ).then((value) {
-      Logger.log('🔙 [FCM 진단 2단계] DM 채팅 화면에서 돌아옴');
+      if (Logger.isVerboseEnabled) Logger.log('🔙 [FCM 진단 2단계] DM 채팅 화면에서 돌아옴');
     });
   }
 
@@ -1362,7 +1362,7 @@ class _DMListScreenState extends State<DMListScreen> {
   /// 친구와 대화 시작
   Future<void> _startConversationWithFriend(UserProfile friend) async {
     try {
-      Logger.log(
+      if (Logger.isVerboseEnabled) Logger.log(
           '🚀 친구와 대화 시작: ${friend.displayNameOrNickname} (${friend.uid})');
 
       final conversationId = await _dmService.getOrCreateConversation(
@@ -1370,7 +1370,7 @@ class _DMListScreenState extends State<DMListScreen> {
         isOtherUserAnonymous: false,
       );
 
-      Logger.log('✅ 대화방 ID: $conversationId');
+      if (Logger.isVerboseEnabled) Logger.log('✅ 대화방 ID: $conversationId');
 
       if (conversationId != null && mounted) {
         // 대화방으로 이동
@@ -1384,7 +1384,7 @@ class _DMListScreenState extends State<DMListScreen> {
           ),
         );
       } else {
-        Logger.log('❌ 대화방 ID가 null입니다');
+        if (Logger.isVerboseEnabled) Logger.log('❌ 대화방 ID가 null입니다');
         if (mounted) {
           ScaffoldMessenger.of(context).showSnackBar(
             SnackBar(

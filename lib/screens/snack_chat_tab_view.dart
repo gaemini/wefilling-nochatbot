@@ -2,6 +2,7 @@ import 'dart:async';
 
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter/rendering.dart' show ScrollCacheExtent;
 
 import '../design/tokens.dart';
 import '../models/snack_chat.dart';
@@ -107,6 +108,7 @@ class _SnackChatTabViewState extends State<SnackChatTabView> {
                   child: ListView.builder(
                     key: const PageStorageKey<String>('snack_chat_list'),
                     physics: const AlwaysScrollableScrollPhysics(),
+                    scrollCacheExtent: const ScrollCacheExtent.viewport(0.75),
                     padding: EdgeInsets.fromLTRB(0, 4, 0, 88 + bottomInset),
                     itemCount: items.length + errorOffset,
                     itemBuilder: (context, index) {

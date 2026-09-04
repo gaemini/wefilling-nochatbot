@@ -74,3 +74,7 @@ fix_*.js
 # Generated Remote Config snapshots/candidates can contain environment state.
 release/remoteconfig.active.json
 release/remoteconfig.candidate.json
+
+# Release binaries
+/dist/ios/*.ipa
+/dist/android/*.aab

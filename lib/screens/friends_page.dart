@@ -3,7 +3,9 @@
 // 친구 목록 표시, 검색, 언팔 기능 제공
 
 import 'dart:async';
+import 'package:cached_network_image/cached_network_image.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter/rendering.dart' show ScrollCacheExtent;
 import 'package:provider/provider.dart';
 import '../providers/relationship_provider.dart';
 import '../providers/auth_provider.dart';
@@ -11,6 +13,7 @@ import '../models/user_profile.dart';
 import '../models/relationship_status.dart';
 import '../models/friend_category.dart';
 import '../services/friend_category_service.dart';
+import '../services/cache/app_image_cache_manager.dart';
 import '../ui/widgets/empty_state.dart';
 import '../ui/widgets/skeletons.dart';
 import '../design/tokens.dart';
@@ -196,9 +199,13 @@ class _FriendsPageState extends State<FriendsPage> {
     final q = query.trim();
     _searchDebounce?.cancel();
 
+    // 입력이 바뀐 즉시 이전 요청과 결과를 무효화한다. 새 검색이 debounce
+    // 대기 중일 때 이전 검색 응답이 도착해 현재 검색어의 결과처럼 보이는
+    // 것을 막는다.
+    context.read<RelationshipProvider>().clearSearchResults();
+
     // 검색어가 비어있으면: 유저검색 결과 클리어 + 친구 목록으로 복귀
     if (q.isEmpty) {
-      context.read<RelationshipProvider>().clearSearchResults();
       _filterFriends('');
       return;
     }
@@ -1382,9 +1389,14 @@ class _FriendsPageState extends State<FriendsPage> {
     final isExpanded = screenWidth >= 600;
     final horizontalPadding = isCompact ? 12.0 : (isExpanded ? 24.0 : 16.0);
     final avatarSize = isCompact ? 40.0 : (isExpanded ? 46.0 : 44.0);
+    final avatarCacheWidth =
+        (avatarSize * MediaQuery.devicePixelRatioOf(context))
+            .ceil()
+            .clamp(96, 256);
     final nameSize = isCompact ? 14.0 : (isExpanded ? 16.0 : 15.0);
 
     return ListView.builder(
+      scrollCacheExtent: const ScrollCacheExtent.viewport(1),
       padding: EdgeInsets.only(
         top: 0,
         bottom: bottomPadding > 0 ? bottomPadding + 12 : 12,
@@ -1427,12 +1439,22 @@ class _FriendsPageState extends State<FriendsPage> {
                               ),
                               child: friend.hasProfileImage
                                   ? ClipOval(
-                                      child: Image.network(
-                                        friend.photoURL!,
+                                      child: CachedNetworkImage(
+                                        imageUrl: friend.photoURL!,
+                                        cacheManager:
+                                            AppImageCacheManager.instance,
                                         width: avatarSize,
                                         height: avatarSize,
+                                        memCacheWidth: avatarCacheWidth,
                                         fit: BoxFit.cover,
-                                        errorBuilder: (_, __, ___) => Icon(
+                                        fadeInDuration: Duration.zero,
+                                        fadeOutDuration: Duration.zero,
+                                        placeholder: (_, __) => Icon(
+                                          Icons.person_outline_rounded,
+                                          size: avatarSize * 0.5,
+                                          color: BrandColors.textTertiary,
+                                        ),
+                                        errorWidget: (_, __, ___) => Icon(
                                           Icons.person_outline_rounded,
                                           size: avatarSize * 0.5,
                                           color: BrandColors.textTertiary,
@@ -1574,7 +1596,9 @@ class _FriendsPageState extends State<FriendsPage> {
               ),
               const SizedBox(height: 6),
               Text(
-                errorMessage,
+                // Keep backend/App Check details in logs and show a stable,
+                // localized message in the search/list UI.
+                AppLocalizations.of(context)!.errorOccurred,
                 textAlign: TextAlign.center,
                 style: const TextStyle(
                   fontFamily: 'Inter',
@@ -1587,7 +1611,14 @@ class _FriendsPageState extends State<FriendsPage> {
               const SizedBox(height: 10),
               TextButton(
                 onPressed: () {
-                  context.read<RelationshipProvider>().clearError();
+                  final provider = context.read<RelationshipProvider>();
+                  provider.clearError();
+                  final query = _searchController.text.trim();
+                  if (query.isNotEmpty) {
+                    provider.searchUsers(query);
+                  } else {
+                    provider.initialize();
+                  }
                 },
                 style: TextButton.styleFrom(
                   foregroundColor: const Color(0xFF344054),

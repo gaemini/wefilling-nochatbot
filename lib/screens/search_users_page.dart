@@ -35,6 +35,7 @@ class _SearchUsersPageState extends State<SearchUsersPage> {
 
   @override
   void dispose() {
+    _debouncer.cancel();
     _searchController.dispose();
     super.dispose();
   }
@@ -57,14 +58,21 @@ class _SearchUsersPageState extends State<SearchUsersPage> {
   void _searchUsers(String query) {
     if (!mounted) return;
 
-    if (query.trim().isEmpty) {
-      context.read<RelationshipProvider>().clearSearchResults();
+    final normalizedQuery = query.trim();
+    final provider = context.read<RelationshipProvider>();
+
+    // Invalidate both an in-flight request and a pending debounce as soon as
+    // the text changes. Otherwise an older query can be rendered under the
+    // newly typed (or already cleared) search text.
+    provider.clearSearchResults();
+    if (normalizedQuery.isEmpty) {
+      _debouncer.cancel();
       return;
     }
 
     _debouncer.run(() {
       if (mounted) {
-        context.read<RelationshipProvider>().searchUsers(query);
+        context.read<RelationshipProvider>().searchUsers(normalizedQuery);
       }
     });
   }
@@ -458,14 +466,21 @@ class _SearchUsersPageState extends State<SearchUsersPage> {
           ),
           const SizedBox(height: 8),
           Text(
-            errorMessage,
+            // Do not expose Firebase/App Check exception class names in the
+            // UI. The concrete error remains available through app logs.
+            l10n?.errorOccurred ?? errorMessage,
             textAlign: TextAlign.center,
             style: TextStyle(fontSize: 14, color: Colors.red[500]),
           ),
           const SizedBox(height: 16),
           ElevatedButton(
             onPressed: () {
-              context.read<RelationshipProvider>().clearError();
+              final provider = context.read<RelationshipProvider>();
+              provider.clearError();
+              final query = _searchController.text.trim();
+              if (query.isNotEmpty) {
+                provider.searchUsers(query);
+              }
             },
             child: Text(l10n?.retryAction ?? ""),
           ),
@@ -485,5 +500,10 @@ class Debouncer {
   void run(VoidCallback action) {
     _timer?.cancel();
     _timer = Timer(Duration(milliseconds: milliseconds), action);
+  }
+
+  void cancel() {
+    _timer?.cancel();
+    _timer = null;
   }
 }

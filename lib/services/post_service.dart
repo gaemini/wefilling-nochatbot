@@ -9,6 +9,7 @@ import 'dart:async';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:cloud_functions/cloud_functions.dart';
 import 'package:firebase_auth/firebase_auth.dart';
+import 'package:flutter/foundation.dart';
 import '../models/post.dart';
 import '../models/post_category.dart';
 import '../models/shared_link_preview.dart';
@@ -18,6 +19,7 @@ import 'storage_service.dart';
 import 'instagram_preview_persistence_service.dart';
 import 'content_filter_service.dart';
 import 'content_hide_service.dart';
+import 'firebase_app_check_service.dart';
 import 'cache/post_cache_manager.dart';
 import 'cache/cache_feature_flags.dart';
 import 'view_history_service.dart';
@@ -118,6 +120,8 @@ class PostService {
 
   final FirebaseFirestore _firestore = FirebaseFirestore.instance;
   final FirebaseAuth _auth = FirebaseAuth.instance;
+  final FirebaseFunctions _functions =
+      FirebaseFunctions.instanceFor(region: 'us-central1');
   final NotificationService _notificationService = NotificationService();
   final StorageService _storageService = StorageService();
   final InstagramPreviewPersistenceService _instagramPreviewPersistence =
@@ -155,9 +159,6 @@ class PostService {
   StreamSubscription<User?>? _authSub;
   String? _blockListenUid;
   List<Post>? _lastParsedPosts;
-  int _debugPostsStartLogs = 0;
-  int _debugPostsSnapshotLogs = 0;
-  int _debugEmitFilteredLogs = 0;
 
   /// Callable에는 실제 포스트 생성에 필요한 링크 필드만 전달한다.
   /// Instagram oEmbed의 HTML/시간 객체처럼 플랫폼별 부가 데이터가 섞이면
@@ -646,10 +647,11 @@ class PostService {
       }
 
       try {
-        Logger.log(
-          '[InstagramPreview][firestore-write] postId=$postId '
-          'status=${persistedLinkPreview?.previewStatus ?? 'none'}',
-        );
+        if (Logger.isVerboseEnabled)
+          Logger.log(
+            '[InstagramPreview][firestore-write] postId=$postId '
+            'status=${persistedLinkPreview?.previewStatus ?? 'none'}',
+          );
         await createSecurePost();
       } catch (error, stackTrace) {
         if (error is FirebaseFunctionsException) {
@@ -677,9 +679,10 @@ class PostService {
             await createSecurePost();
             created = true;
           } catch (retryError) {
-            Logger.warning(
-              '포스트 생성 재시도 실패: ${retryError.runtimeType}',
-            );
+            if (Logger.isVerboseEnabled)
+              Logger.warning(
+                '포스트 생성 재시도 실패: ${retryError.runtimeType}',
+              );
           }
         }
         if (!created) {
@@ -1081,7 +1084,8 @@ class PostService {
         _publishPostEngagement(postId, next);
       },
       onError: (Object error) {
-        Logger.warning('포스트 공통 지표 구독 오류($postId): $error');
+        if (Logger.isVerboseEnabled)
+          Logger.warning('포스트 공통 지표 구독 오류($postId): $error');
         if (!controller.isClosed) controller.addError(error);
       },
     );
@@ -1216,7 +1220,8 @@ class PostService {
       }
       _publishPostEngagement(postId, next);
     } catch (error) {
-      Logger.warning('포스트 공통 지표 서버 보정 실패($postId): $error');
+      if (Logger.isVerboseEnabled)
+        Logger.warning('포스트 공통 지표 서버 보정 실패($postId): $error');
     }
   }
 
@@ -1363,7 +1368,8 @@ class PostService {
       );
     } catch (error) {
       // 좋아요 자체는 이미 반영됐으므로 알림 실패로 UI를 롤백하지 않는다.
-      Logger.warning('좋아요 알림 전송 실패($postId): $error');
+      if (Logger.isVerboseEnabled)
+        Logger.warning('좋아요 알림 전송 실패($postId): $error');
     }
   }
 
@@ -1524,7 +1530,7 @@ class PostService {
       final nonBlocked = await ContentFilterService.filterPosts(visible);
       return ContentHideService.filterPostsSync(nonBlocked);
     } catch (error) {
-      Logger.warning('전체 포스트 캐시 읽기 실패: $error');
+      if (Logger.isVerboseEnabled) Logger.warning('전체 포스트 캐시 읽기 실패: $error');
       return const <Post>[];
     }
   }
@@ -1604,7 +1610,7 @@ class PostService {
   /// 화면에는 항상 [pageSize]개 이하만 반환합니다.
   Future<AllPostsPage> getAllPostsPage({
     AllPostsCursor? startAfter,
-    int pageSize = 5,
+    int pageSize = 10,
   }) async {
     final normalizedPageSize = pageSize.clamp(1, 30);
     final user = _auth.currentUser;
@@ -1922,12 +1928,7 @@ class PostService {
 
         Future<void> start() async {
           try {
-            if (_debugPostsStartLogs < 1) {
-              _debugPostsStartLogs++;
-              Logger.log('📰 getPostsStream start()');
-            }
             Future<void> emitFiltered() async {
-              final sw = Stopwatch()..start();
               final parsed = _lastParsedPosts ?? const <Post>[];
               final currentUser = _auth.currentUser;
 
@@ -1954,7 +1955,8 @@ class PostService {
                 nonBlocked =
                     await ContentFilterService.filterPosts(visibilityFiltered)
                         .timeout(const Duration(seconds: 2), onTimeout: () {
-                  Logger.warning('차단 필터 timeout → 필터 없이 표시');
+                  if (Logger.isVerboseEnabled)
+                    Logger.warning('차단 필터 timeout → 필터 없이 표시');
                   return visibilityFiltered;
                 });
               } catch (e) {
@@ -1973,13 +1975,6 @@ class PostService {
                   _cache.savePosts(
                       ContentHideService.filterPostsSync(nonBlocked),
                       visibility: 'public'),
-                );
-              }
-
-              if (_debugEmitFilteredLogs < 6) {
-                _debugEmitFilteredLogs++;
-                Logger.log(
-                  '📰 emitFiltered done: parsed=${parsed.length} visible=${visibilityFiltered.length} final=${nonBlocked.length} (${sw.elapsedMilliseconds}ms)',
                 );
               }
             }
@@ -2047,10 +2042,6 @@ class PostService {
             // posts snapshots
             _postsSub = _watchAccessiblePosts(limit: _feedRealtimeLimit).listen(
                 (posts) async {
-              if (_debugPostsSnapshotLogs < 6) {
-                _debugPostsSnapshotLogs++;
-                Logger.log('📰 accessible posts snapshot: ${posts.length}');
-              }
               _lastParsedPosts = posts;
               unawaited(emitFiltered());
             }, onError: (e) {
@@ -2132,14 +2123,78 @@ class PostService {
 
   // 게시글 검색 (카테고리별)
   Future<List<Post>> searchPosts(String query, {String? category}) async {
+    final normalizedQuery = query.trim();
+    if (normalizedQuery.isEmpty || _auth.currentUser == null) return const [];
+
     try {
-      if (query.isEmpty) return [];
+      await FirebaseAppCheckService.instance.ensureReady();
+      final response = await _functions
+          .httpsCallable('searchPostsSecure')
+          .call<Map<String, dynamic>>(<String, dynamic>{
+        'query': normalizedQuery,
+        'limit': 100,
+        if (category != null && category.trim().isNotEmpty)
+          'category': category.trim(),
+      }).timeout(const Duration(seconds: 15));
+      final rawPosts = response.data['posts'];
+      if (rawPosts is! List) {
+        throw const FormatException('Invalid post search response');
+      }
+      if (response.data['exhaustive'] != true) {
+        throw const FormatException('Incomplete post search response');
+      }
 
       final user = _auth.currentUser;
-      if (user == null) return [];
+      if (user == null) return const [];
+      final parsed = rawPosts
+          .whereType<Map>()
+          .map((raw) => Post.fromMap(
+                Map<String, dynamic>.from(raw),
+                (raw['id'] ?? '').toString().trim(),
+              ))
+          .where((post) =>
+              post.id.isNotEmpty &&
+              _canUserReadPost(post, user) &&
+              (category == null ||
+                  category.trim().isEmpty ||
+                  post.categoryKeys.contains(category.trim())))
+          .toList(growable: false);
 
-      final lowercaseQuery = query.toLowerCase();
+      // 로컬 숨김/익명 포스트 숨김 캐시까지 기존 검색과 같은 최종 필터를
+      // 적용한다. 서버도 양방향 차단을 검증하므로 어느 한쪽 지연으로 콘텐츠가
+      // 노출되지 않는다.
+      final filtered = await ContentFilterService.filterPosts(parsed);
+      return ContentHideService.filterPostsSync(filtered);
+    } catch (error) {
+      if (_canUseLegacySearchFallback(error)) {
+        Logger.error('서버 포스트 검색을 사용할 수 없어 레거시 검색으로 전환: $error');
+        return _searchPostsLegacy(normalizedQuery, category: category);
+      }
+      Logger.error('포스트 검색 오류: $error');
+      rethrow;
+    }
+  }
 
+  bool _canUseLegacySearchFallback(Object error) {
+    if (error is! FirebaseFunctionsException) return false;
+    // A release must never turn a missing/misrouted secure search function
+    // into a silently incomplete client-side scan. Keep the compatibility
+    // path strictly for local development while Functions are being deployed.
+    if (kReleaseMode) return false;
+    return error.code == 'not-found' ||
+        error.code == 'unimplemented' ||
+        error.code == 'unauthenticated';
+  }
+
+  Future<List<Post>> _searchPostsLegacy(
+    String query, {
+    String? category,
+  }) async {
+    final user = _auth.currentUser;
+    if (user == null) return const [];
+    final lowercaseQuery = query.trim().toLowerCase();
+
+    try {
       Future<QuerySnapshot<Map<String, dynamic>>> fetch(
         Query<Map<String, dynamic>> source,
       ) =>
@@ -2202,9 +2257,9 @@ class PostService {
       // 차단/차단당함 콘텐츠 제거
       final filtered = await ContentFilterService.filterPosts(matched);
       return ContentHideService.filterPostsSync(filtered);
-    } catch (e) {
-      Logger.error('포스트 검색 오류: $e');
-      return [];
+    } catch (error) {
+      Logger.error('레거시 포스트 검색 오류: $error');
+      rethrow;
     }
   }
 

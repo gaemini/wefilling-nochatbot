@@ -11,6 +11,9 @@
     "deploy": "firebase deploy --only functions",
     "logs": "firebase functions:log",
     "migrate:nicknames": "node scripts/migrate_nickname_claims.js",
+    "migrate:content-search": "node scripts/migrate_content_search_indexes.js",
+    "test:content-search": "node scripts/test_content_search_helpers.js",
+    "test:auth-registration": "node scripts/test_auth_registration_helpers.js",
     "migrate:friend-counts": "node scripts/migrate_friend_counts.js"
   },
   "engines": {

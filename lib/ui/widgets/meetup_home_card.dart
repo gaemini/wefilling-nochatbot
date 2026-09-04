@@ -106,7 +106,7 @@ class _MeetupHomeCardState extends State<MeetupHomeCard> {
           fontSize: context.rf(11.5).clamp(11.0, 12.0).toDouble(),
           fontWeight: FontWeight.w700,
           height: 1.15,
-          color: const Color(0xFF475467),
+          color: const Color(0xFF2563EB),
         ),
       ),
     );

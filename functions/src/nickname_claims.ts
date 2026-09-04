@@ -3,8 +3,11 @@ import * as functions from 'firebase-functions';
 import * as crypto from 'crypto';
 
 import {COL} from './firestore_paths';
+import {runtimeInfo, runtimeLogsEnabled} from './runtime_logging';
+import {buildUserSearchTokens} from './user_search_index';
 
 const NICKNAME_PATTERN = /^[a-zA-Z0-9가-힣_.]+$/;
+const NICKNAME_IDENTITY_PATTERN = /[a-zA-Z0-9가-힣]/;
 const NICKNAME_COOLDOWN_MS = 3 * 24 * 60 * 60 * 1000;
 
 function removeControlAndZeroWidth(value: string): string {
@@ -35,7 +38,8 @@ export function normalizeNickname(raw: unknown): NicknameIdentity {
     .replace(/\s+/g, ' ')
     .trim();
   if (nickname.length < 2 || nickname.length > 20 ||
-      !NICKNAME_PATTERN.test(nickname)) {
+      !NICKNAME_PATTERN.test(nickname) ||
+      !NICKNAME_IDENTITY_PATTERN.test(nickname)) {
     throw new functions.https.HttpsError(
       'invalid-argument',
       '닉네임 형식이 올바르지 않습니다.',
@@ -165,7 +169,7 @@ export const checkNicknameAvailability = functions
     // Deliberately exclude uid, email, nickname, and token values. These fields
     // only show whether a request reached the callable handler after the SDK's
     // authentication and App Check processing.
-    functions.logger.info('nickname check entered', {
+    runtimeLogsEnabled && runtimeInfo('nickname check entered', {
       authenticated: Boolean(context.auth?.uid),
       appCheckPresent: Boolean(context.app),
     });
@@ -179,7 +183,7 @@ export const checkNicknameAvailability = functions
       const ownerUid = snap.exists ? String(snap.get('ownerUid') ?? '') : '';
       const available = !snap.exists ||
         (Boolean(context.auth?.uid) && ownerUid === context.auth?.uid);
-      functions.logger.info('nickname check completed', {
+      runtimeLogsEnabled && runtimeInfo('nickname check completed', {
         authenticated: Boolean(context.auth?.uid),
         appCheckPresent: Boolean(context.app),
         available,
@@ -269,6 +273,7 @@ export const updateMyNicknameSecure = functions
       const update: Record<string, unknown> = {
         nickname: reservation.nickname,
         nicknameKey: reservation.nicknameKey,
+        nicknameSearchTokens: buildUserSearchTokens(reservation.nickname),
         updatedAt: admin.firestore.FieldValue.serverTimestamp(),
         profileUpdatedAt: admin.firestore.FieldValue.serverTimestamp(),
       };
@@ -288,7 +293,7 @@ export const updateMyNicknameSecure = functions
         claimOwnedByCurrentUser: reservation.claimOwnedByCurrentUser,
       };
     });
-    functions.logger.info('nickname save', {
+    runtimeLogsEnabled && runtimeInfo('nickname save', {
       uid,
       oldNicknameKeyHash: outcome.oldNicknameKeyHash,
       newNicknameKeyHash: outcome.newNicknameKeyHash,

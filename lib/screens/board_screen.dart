@@ -13,6 +13,7 @@ import '../models/post_category.dart';
 import '../models/meetup.dart';
 import '../constants/app_constants.dart';
 import '../services/post_service.dart';
+import '../services/post_media_prefetch_service.dart';
 import '../services/comment_service.dart';
 import '../services/meetup_service.dart';
 import '../services/content_filter_service.dart';
@@ -67,6 +68,8 @@ class BoardScreen extends StatefulWidget {
 
 class BoardScreenState extends State<BoardScreen> {
   final PostService _postService = PostService();
+  final PostMediaPrefetchService _postMediaPrefetch =
+      PostMediaPrefetchService.instance;
   final CommentService _commentService = CommentService();
   final MeetupService _meetupService = MeetupService();
   final ContentTranslationService _translationService =
@@ -338,9 +341,10 @@ class BoardScreenState extends State<BoardScreen> {
           uiLanguageCode: uiLanguageCode,
         );
       } catch (error) {
-        Logger.warning(
-          '포스트 로컬 번역 캐시 확인 실패: ${error.runtimeType}',
-        );
+        if (Logger.isVerboseEnabled)
+          Logger.warning(
+            '포스트 로컬 번역 캐시 확인 실패: ${error.runtimeType}',
+          );
       } finally {
         for (final candidate in probes) {
           final signature = _postTranslationSignature(
@@ -565,6 +569,7 @@ class BoardScreenState extends State<BoardScreen> {
         _isHistoryInitialLoading = false;
         _isHistoryLoadingMore = false;
       });
+      unawaited(_postMediaPrefetch.prefetchPosts(page.posts, maxPosts: 4));
       _scheduleHistoricalPrefetchIfNeeded();
     } catch (error) {
       if (!mounted || generation != _historyLoadGeneration) return;
@@ -618,6 +623,7 @@ class BoardScreenState extends State<BoardScreen> {
         _historyHasMore = true;
         _isHistoryLoadingMore = false;
       });
+      unawaited(_postMediaPrefetch.prefetchPosts(chunk, maxPosts: 4));
       _scheduleHistoricalPrefetchIfNeeded();
       return;
     }
@@ -653,6 +659,7 @@ class BoardScreenState extends State<BoardScreen> {
             page.hasMore && (page.posts.isNotEmpty || cursorProgressed);
         _isHistoryLoadingMore = false;
       });
+      unawaited(_postMediaPrefetch.prefetchPosts(page.posts, maxPosts: 4));
       _scheduleHistoricalPrefetchIfNeeded();
     } catch (error) {
       if (!mounted || generation != _historyLoadGeneration) return;
@@ -812,9 +819,16 @@ class BoardScreenState extends State<BoardScreen> {
             _isHistoryLoadingMore = false;
           }
         });
-        Logger.log(
-          '✅ 캐시된 게시글 로드 완료: today=${cachedPosts.length}, history=${cachedHistory.length}',
+        unawaited(
+          _postMediaPrefetch.prefetchPosts(
+            <Post>[...cachedPosts.take(3), ...firstHistoryPage.take(3)],
+            maxPosts: 6,
+          ),
         );
+        if (Logger.isVerboseEnabled)
+          Logger.log(
+            '✅ 캐시된 게시글 로드 완료: today=${cachedPosts.length}, history=${cachedHistory.length}',
+          );
       }
       return cachedHistory.isNotEmpty;
     } catch (e) {
@@ -876,7 +890,8 @@ class BoardScreenState extends State<BoardScreen> {
         break;
       } catch (error) {
         refreshError = error;
-        Logger.warning('포스트 수동 새로고침 실패(${attempt + 1}/2): $error');
+        if (Logger.isVerboseEnabled)
+          Logger.warning('포스트 수동 새로고침 실패(${attempt + 1}/2): $error');
         if (attempt == 0) {
           await Future<void>.delayed(const Duration(milliseconds: 250));
         }
@@ -892,7 +907,7 @@ class BoardScreenState extends State<BoardScreen> {
       );
     } catch (error) {
       // 댓글 재집계 실패가 포스트 목록 새로고침이나 인디케이터 종료를 막지 않는다.
-      Logger.warning('새로고침 중 댓글 수 재집계 실패: $error');
+      if (Logger.isVerboseEnabled) Logger.warning('새로고침 중 댓글 수 재집계 실패: $error');
     }
 
     if (!mounted) return;
@@ -902,6 +917,11 @@ class BoardScreenState extends State<BoardScreen> {
         _isInitialLoad = false;
       }
     });
+    if (refreshError == null) {
+      unawaited(
+        _postMediaPrefetch.prefetchPosts(refreshedTodayPosts, maxPosts: 4),
+      );
+    }
 
     if (refreshError != null) {
       final isKo = Localizations.localeOf(context).languageCode == 'ko';
@@ -917,7 +937,7 @@ class BoardScreenState extends State<BoardScreen> {
 
   @override
   void dispose() {
-    Logger.log('🔄 BoardScreen dispose 시작');
+    if (Logger.isVerboseEnabled) Logger.log('🔄 BoardScreen dispose 시작');
     _midnightTimer?.cancel();
     _translationService.removeListener(_handleTranslationServiceChanged);
     _translationMicroBatchTimer?.cancel();
@@ -932,7 +952,7 @@ class BoardScreenState extends State<BoardScreen> {
       _todayScrollController.dispose();
       _allScrollController.dispose();
     }
-    Logger.log('✅ BoardScreen dispose 완료');
+    if (Logger.isVerboseEnabled) Logger.log('✅ BoardScreen dispose 완료');
     super.dispose();
   }
 
@@ -1134,6 +1154,7 @@ class BoardScreenState extends State<BoardScreen> {
         _captureVisiblePostAnchor();
       }
       _cachedTodayPosts = todayPosts;
+      unawaited(_postMediaPrefetch.prefetchPosts(todayPosts, maxPosts: 4));
       if (_isInitialLoad) _isInitialLoad = false;
       _scheduleVisiblePostAnchorRestore();
     }

@@ -212,7 +212,7 @@ class _OptimizedPostCardState extends State<OptimizedPostCard> {
         });
       },
       onError: (Object error) {
-        Logger.warning('포스트 캐시 지표 구독 오류($postId): $error');
+        if (Logger.isVerboseEnabled) Logger.warning('포스트 캐시 지표 구독 오류($postId): $error');
       },
     );
   }
@@ -1372,16 +1372,16 @@ class _OptimizedPostCardState extends State<OptimizedPostCard> {
 
     try {
       // post.userId가 올바른 Firebase UID인지 확인
-      Logger.log('🔍 DM 대상 확인:');
-      Logger.log('  - post.id: ${post.id}');
-      Logger.log('  - post.userId: ${post.userId}');
-      Logger.log('  - post.isAnonymous: ${post.isAnonymous}');
-      Logger.log('  - post.author: ${post.author}');
-      Logger.log('  - currentUser.uid: ${currentUser.uid}');
+      if (Logger.isVerboseEnabled) Logger.log('🔍 DM 대상 확인:');
+      if (Logger.isVerboseEnabled) Logger.log('  - post.id: ${post.id}');
+      if (Logger.isVerboseEnabled) Logger.log('  - post.userId: ${post.userId}');
+      if (Logger.isVerboseEnabled) Logger.log('  - post.isAnonymous: ${post.isAnonymous}');
+      if (Logger.isVerboseEnabled) Logger.log('  - post.author: ${post.author}');
+      if (Logger.isVerboseEnabled) Logger.log('  - currentUser.uid: ${currentUser.uid}');
 
       // 본인에게 DM 전송 체크 (익명 포함)
       if (post.userId == currentUser.uid) {
-        Logger.log('❌ 본인 게시글에는 DM 불가');
+        if (Logger.isVerboseEnabled) Logger.log('❌ 본인 게시글에는 DM 불가');
         // 로딩 다이얼로그 닫기
         if (mounted) Navigator.pop(context);
         if (mounted) {
@@ -1399,7 +1399,7 @@ class _OptimizedPostCardState extends State<OptimizedPostCard> {
       // Firebase Auth UID 형식 검증 (20~30자 영숫자, 언더스코어 포함 가능)
       final uidPattern = RegExp(r'^[a-zA-Z0-9_-]{20,30}$');
       if (!uidPattern.hasMatch(post.userId)) {
-        Logger.log(
+        if (Logger.isVerboseEnabled) Logger.log(
             '❌ 잘못된 userId 형식: ${post.userId} (길이: ${post.userId.length}자)');
         // 로딩 다이얼로그 닫기
         if (mounted) Navigator.pop(context);
@@ -1417,7 +1417,7 @@ class _OptimizedPostCardState extends State<OptimizedPostCard> {
 
       // userId가 'deleted' 또는 빈 문자열인 경우 체크
       if (post.userId == 'deleted' || post.userId.isEmpty) {
-        Logger.log('❌ 탈퇴했거나 삭제된 사용자');
+        if (Logger.isVerboseEnabled) Logger.log('❌ 탈퇴했거나 삭제된 사용자');
         // 로딩 다이얼로그 닫기
         if (mounted) Navigator.pop(context);
         if (mounted) {
@@ -1446,7 +1446,7 @@ class _OptimizedPostCardState extends State<OptimizedPostCard> {
       // 로딩 다이얼로그 닫기
       if (mounted) Navigator.pop(context);
 
-      Logger.log('✅ DM conversation ID: $conversationId');
+      if (Logger.isVerboseEnabled) Logger.log('✅ DM conversation ID: $conversationId');
 
       if (mounted) {
         final originPostImageUrl =

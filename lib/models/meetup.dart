@@ -213,6 +213,12 @@ class Meetup {
     final fb = fallback ?? DateTime.fromMillisecondsSinceEpoch(0);
     if (raw == null) return fb;
     if (raw is DateTime) return raw;
+    // Cloud Functions 검색 응답은 Firestore Timestamp를 epoch millis로
+    // 직렬화한다. 캐시/서버 응답/직접 Firestore 조회가 같은 모델 생성자를
+    // 사용할 수 있도록 num도 명시적으로 지원한다.
+    if (raw is num) {
+      return DateTime.fromMillisecondsSinceEpoch(raw.toInt());
+    }
     // Firestore Timestamp 호환: dynamic 호출(toDate)
     try {
       final d = raw.toDate();

@@ -2,12 +2,14 @@
 // 사용자 목록에서 각 사용자를 표시하는 타일 위젯
 // 프로필 이미지, 이름, 관계 상태, 액션 버튼 포함
 
+import 'package:cached_network_image/cached_network_image.dart';
 import 'package:flutter/material.dart';
 import '../models/user_profile.dart';
 import '../models/relationship_status.dart';
 import '../utils/country_flag_helper.dart';
 import '../utils/responsive_helper.dart';
 import '../l10n/app_localizations.dart';
+import '../services/cache/app_image_cache_manager.dart';
 
 class UserTile extends StatelessWidget {
   final UserProfile user;
@@ -133,12 +135,21 @@ class UserTile extends StatelessWidget {
       ),
       child: user.hasProfileImage
           ? ClipOval(
-              child: Image.network(
-                user.photoURL!,
+              child: CachedNetworkImage(
+                imageUrl: user.photoURL!,
+                cacheManager: AppImageCacheManager.instance,
                 width: size,
                 height: size,
+                memCacheWidth: (size * 3).ceil().clamp(96, 256),
                 fit: BoxFit.cover,
-                errorBuilder: (_, __, ___) => Icon(
+                fadeInDuration: Duration.zero,
+                fadeOutDuration: Duration.zero,
+                placeholder: (_, __) => Icon(
+                  Icons.person_outline_rounded,
+                  size: size * 0.5,
+                  color: Colors.grey[600],
+                ),
+                errorWidget: (_, __, ___) => Icon(
                   Icons.person_outline_rounded,
                   size: size * 0.5,
                   color: Colors.grey[600],
@@ -391,12 +402,21 @@ class SimpleUserTile extends StatelessWidget {
         ),
         child: user.hasProfileImage
             ? ClipOval(
-                child: Image.network(
-                  user.photoURL!,
+                child: CachedNetworkImage(
+                  imageUrl: user.photoURL!,
+                  cacheManager: AppImageCacheManager.instance,
                   width: 40,
                   height: 40,
+                  memCacheWidth: 128,
                   fit: BoxFit.cover,
-                  errorBuilder: (_, __, ___) => Icon(
+                  fadeInDuration: Duration.zero,
+                  fadeOutDuration: Duration.zero,
+                  placeholder: (_, __) => Icon(
+                    Icons.person,
+                    size: 20,
+                    color: Colors.grey[600],
+                  ),
+                  errorWidget: (_, __, ___) => Icon(
                     Icons.person,
                     size: 20,
                     color: Colors.grey[600],

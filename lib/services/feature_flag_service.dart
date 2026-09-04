@@ -59,7 +59,7 @@ class FeatureFlagService {
   /// Feature Flag 상태 확인
   bool isFeatureEnabled(String featureKey) {
     if (!_isInitialized) {
-      Logger.log('⚠️ FeatureFlagService가 초기화되지 않음. 기본값(false) 반환');
+      if (Logger.isVerboseEnabled) Logger.log('⚠️ FeatureFlagService가 초기화되지 않음. 기본값(false) 반환');
       return false;
     }
 
@@ -67,14 +67,14 @@ class FeatureFlagService {
       // 1. 환경변수 확인 (개발/테스트용)
       final envValue = _getEnvironmentValue(featureKey);
       if (envValue != null) {
-        Logger.log('🚩 환경변수에서 $featureKey = $envValue');
+        if (Logger.isVerboseEnabled) Logger.log('🚩 환경변수에서 $featureKey = $envValue');
         return envValue;
       }
 
       // 2. SharedPreferences 확인 (로컬 오버라이드)
       final localValue = _prefs.getBool('local_$featureKey');
       if (localValue != null) {
-        Logger.log('🚩 로컬 설정에서 $featureKey = $localValue');
+        if (Logger.isVerboseEnabled) Logger.log('🚩 로컬 설정에서 $featureKey = $localValue');
         return localValue;
       }
 
@@ -115,19 +115,19 @@ class FeatureFlagService {
   /// (Legacy) 캐시 초기화 API
   /// - 현재 서비스는 별도의 in-memory 캐시를 두지 않지만, 테스트 호환을 위해 제공한다.
   void clearCache() {
-    Logger.log('🚩 FeatureFlagService.clearCache() 호출됨 (no-op)');
+    if (Logger.isVerboseEnabled) Logger.log('🚩 FeatureFlagService.clearCache() 호출됨 (no-op)');
   }
 
   /// 로컬에서 Feature Flag 오버라이드 (개발/테스트용)
   Future<void> setLocalOverride(String featureKey, bool value) async {
     if (!_isInitialized) {
-      Logger.log('⚠️ FeatureFlagService가 초기화되지 않음');
+      if (Logger.isVerboseEnabled) Logger.log('⚠️ FeatureFlagService가 초기화되지 않음');
       return;
     }
 
     try {
       await _prefs.setBool('local_$featureKey', value);
-      Logger.log('🚩 로컬 오버라이드 설정: $featureKey = $value');
+      if (Logger.isVerboseEnabled) Logger.log('🚩 로컬 오버라이드 설정: $featureKey = $value');
     } catch (e) {
       Logger.error('⚠️ 로컬 오버라이드 설정 오류: $e');
     }
@@ -139,7 +139,7 @@ class FeatureFlagService {
 
     try {
       await _prefs.remove('local_$featureKey');
-      Logger.log('🚩 로컬 오버라이드 제거: $featureKey');
+      if (Logger.isVerboseEnabled) Logger.log('🚩 로컬 오버라이드 제거: $featureKey');
     } catch (e) {
       Logger.error('⚠️ 로컬 오버라이드 제거 오류: $e');
     }
@@ -170,14 +170,14 @@ class FeatureFlagService {
   /// 모든 Feature Flag 상태 출력 (디버그용)
   void debugPrintAllFlags() {
     if (!_isInitialized) {
-      Logger.log('⚠️ FeatureFlagService가 초기화되지 않음');
+      if (Logger.isVerboseEnabled) Logger.log('⚠️ FeatureFlagService가 초기화되지 않음');
       return;
     }
 
-    Logger.log('🚩 === Feature Flags 상태 ===');
-    Logger.log(
+    if (Logger.isVerboseEnabled) Logger.log('🚩 === Feature Flags 상태 ===');
+    if (Logger.isVerboseEnabled) Logger.log(
         '🚩 FEATURE_PROFILE_GRID: ${isFeatureEnabled(FEATURE_PROFILE_GRID)}');
-    Logger.log('🚩 FEATURE_REVIEW_CONSENSUS: ${isReviewConsensusEnabled}');
-    Logger.log('🚩 ========================');
+    if (Logger.isVerboseEnabled) Logger.log('🚩 FEATURE_REVIEW_CONSENSUS: ${isReviewConsensusEnabled}');
+    if (Logger.isVerboseEnabled) Logger.log('🚩 ========================');
   }
 }

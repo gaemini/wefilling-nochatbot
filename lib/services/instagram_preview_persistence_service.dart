@@ -45,13 +45,6 @@ class InstagramPreviewPersistenceService {
     }
     if (preview.isPersistentThumbnail &&
         preview.thumbnailStoragePath.trim().isNotEmpty) {
-      _log(
-        'source',
-        requestId: requestId,
-        postId: postId,
-        shortcode: preview.shortcode,
-        details: 'persistent-existing',
-      );
       return InstagramPreviewPersistenceResult(preview: preview);
     }
     if (!RegExp(r'^[A-Za-z0-9]{20}$').hasMatch(postId) || ownerUid.isEmpty) {
@@ -131,13 +124,6 @@ class InstagramPreviewPersistenceService {
     required String requestId,
   }) async {
     final exists = await imageFile.exists();
-    _log(
-      'local-file',
-      requestId: requestId,
-      postId: postId,
-      shortcode: preview.shortcode,
-      details: 'provided=true exists=$exists',
-    );
     if (!exists) return null;
 
     try {
@@ -175,13 +161,6 @@ class InstagramPreviewPersistenceService {
       );
       if (existing != null) return existing;
 
-      _log(
-        'upload-start',
-        requestId: requestId,
-        postId: postId,
-        shortcode: preview.shortcode,
-        details: 'source=$source storagePath=$storagePath',
-      );
       final snapshot = await ref
           .putData(
             Uint8List.fromList(compressed),
@@ -210,19 +189,12 @@ class InstagramPreviewPersistenceService {
         width: persistedSize.width,
         height: persistedSize.height,
       );
-      _log(
-        'upload-success',
-        requestId: requestId,
-        postId: postId,
-        shortcode: preview.shortcode,
-        details: 'source=$source host=${Uri.tryParse(downloadUrl)?.host ?? ''}',
-      );
       return InstagramPreviewPersistenceResult(
         preview: persistedPreview,
         createdStorageObject: true,
       );
     } catch (error) {
-      Logger.warning(
+      if (Logger.isVerboseEnabled) Logger.warning(
         '[InstagramPreview][local-image-decode-or-upload-failed] '
         'type=${error.runtimeType}',
       );
@@ -258,7 +230,7 @@ class InstagramPreviewPersistenceService {
       );
     } on FirebaseException catch (error) {
       if (error.code != 'object-not-found') {
-        Logger.warning(
+        if (Logger.isVerboseEnabled) Logger.warning(
           '[InstagramPreview][existing-object-read] code=${error.code}',
         );
       }
@@ -279,13 +251,6 @@ class InstagramPreviewPersistenceService {
         : preview.contentId.trim();
     if (canonicalUrl.isEmpty || shortcode.isEmpty) return null;
 
-    _log(
-      'remote-fallback',
-      requestId: requestId,
-      postId: postId,
-      shortcode: shortcode,
-      details: 'start',
-    );
     try {
       final response = await FirebaseFunctions.instance
           .httpsCallable('persistInstagramPreviewThumbnail')
@@ -322,13 +287,13 @@ class InstagramPreviewPersistenceService {
       final reason = error.details is Map
           ? ((error.details as Map)['reason'] ?? '').toString()
           : '';
-      Logger.warning(
+      if (Logger.isVerboseEnabled) Logger.warning(
         '[InstagramPreview][remote-fallback] '
         'code=${error.code} reason=$reason',
       );
       return null;
     } catch (error) {
-      Logger.warning(
+      if (Logger.isVerboseEnabled) Logger.warning(
         '[InstagramPreview][remote-fallback] unavailable=${error.runtimeType}',
       );
       return null;
@@ -381,21 +346,6 @@ class InstagramPreviewPersistenceService {
     } finally {
       codec?.dispose();
     }
-  }
-
-  void _log(
-    String event, {
-    required String requestId,
-    required String postId,
-    required String shortcode,
-    required String details,
-  }) {
-    final safeRequestId = requestId.replaceAll(RegExp(r'[^A-Za-z0-9_-]'), '');
-    final safeShortcode = shortcode.replaceAll(RegExp(r'[^A-Za-z0-9_-]'), '');
-    Logger.log(
-      '[InstagramPreview][$event] requestId=$safeRequestId postId=$postId '
-      'shortcode=$safeShortcode $details',
-    );
   }
 }
 

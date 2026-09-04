@@ -142,6 +142,7 @@ class _SnackChatParticipantPickerState extends State<SnackChatParticipantPicker>
                   .searchSnackChatInviteUsersLikeNameSearch(
                 value,
                 cursor: cursor,
+                excludedUserIds: widget.excludedUserIds,
               );
       final page = await search(
         query,

@@ -150,10 +150,9 @@ class _OptimizedListViewState<T> extends State<OptimizedListView<T>> {
     }
 
     // 리스트 빌드
-    Widget listView =
-        widget.separatorBuilder != null
-            ? _buildSeparatedListView()
-            : _buildRegularListView();
+    Widget listView = widget.separatorBuilder != null
+        ? _buildSeparatedListView()
+        : _buildRegularListView();
 
     // 새로고침 지원
     if (widget.onRefresh != null) {
@@ -458,54 +457,5 @@ class _VirtualizedListViewState<T> extends State<VirtualizedListView<T>> {
         );
       },
     );
-  }
-}
-
-/// 성능 모니터링 위젯
-class PerformanceMonitor extends StatefulWidget {
-  final Widget child;
-  final String name;
-  final ValueChanged<Duration>? onRenderTime;
-
-  const PerformanceMonitor({
-    super.key,
-    required this.child,
-    required this.name,
-    this.onRenderTime,
-  });
-
-  @override
-  State<PerformanceMonitor> createState() => _PerformanceMonitorState();
-}
-
-class _PerformanceMonitorState extends State<PerformanceMonitor> {
-  late Stopwatch _stopwatch;
-
-  @override
-  void initState() {
-    super.initState();
-    _stopwatch = Stopwatch()..start();
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    WidgetsBinding.instance.addPostFrameCallback((_) {
-      _stopwatch.stop();
-      final renderTime = _stopwatch.elapsed;
-      widget.onRenderTime?.call(renderTime);
-
-      // 개발 모드에서만 로그 출력
-      assert(() {
-        if (renderTime.inMilliseconds > 16) {
-          // 60fps 기준
-          debugPrint(
-            'Performance Warning: ${widget.name} took ${renderTime.inMilliseconds}ms to render',
-          );
-        }
-        return true;
-      }());
-    });
-
-    return widget.child;
   }
 }

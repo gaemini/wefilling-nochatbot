@@ -4,6 +4,7 @@ import * as https from 'https';
 import * as dns from 'dns';
 import * as net from 'net';
 import * as crypto from 'crypto';
+import {runtimeInfo, runtimeLogsEnabled} from './runtime_logging';
 
 type YouTubeThumbnail = {
   url?: unknown;
@@ -1277,7 +1278,7 @@ export const persistInstagramPreviewThumbnail = functions.runWith({
       'Instagram content does not match the canonical URL.',
     );
   }
-  functions.logger.info('[InstagramPreview][remote-fallback] start.', {
+  runtimeLogsEnabled && runtimeInfo('[InstagramPreview][remote-fallback] start.', {
     postId,
     shortcode: parsed.shortcode,
   });

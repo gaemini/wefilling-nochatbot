@@ -181,7 +181,7 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
         .listen(
       _applyLiveEngagement,
       onError: (Object error) {
-        Logger.warning('포스트 상세 실시간 지표 구독 오류: $error');
+        if (Logger.isVerboseEnabled) Logger.warning('포스트 상세 실시간 지표 구독 오류: $error');
       },
     );
 
@@ -544,7 +544,7 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
           0,
           (total, chunk) => total + chunk.length,
         );
-        Logger.warning('댓글 번역 일괄 요청 오류($waveItemCount개): $error');
+        if (Logger.isVerboseEnabled) Logger.warning('댓글 번역 일괄 요청 오류($waveItemCount개): $error');
         _scheduleCommentTranslationRetry(
           signature: signature,
           languageRevision: languageRevision,
@@ -1405,15 +1405,15 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
 
     try {
       // post.userId가 올바른 Firebase UID인지 확인
-      Logger.log('🔍 DM 대상 확인 (상세페이지):');
-      Logger.log('  - post.id: ${_currentPost.id}');
-      Logger.log('  - post.userId: ${_currentPost.userId}');
-      Logger.log('  - post.isAnonymous: ${_currentPost.isAnonymous}');
-      Logger.log('  - currentUser.uid: ${currentUser.uid}');
+      if (Logger.isVerboseEnabled) Logger.log('🔍 DM 대상 확인 (상세페이지):');
+      if (Logger.isVerboseEnabled) Logger.log('  - post.id: ${_currentPost.id}');
+      if (Logger.isVerboseEnabled) Logger.log('  - post.userId: ${_currentPost.userId}');
+      if (Logger.isVerboseEnabled) Logger.log('  - post.isAnonymous: ${_currentPost.isAnonymous}');
+      if (Logger.isVerboseEnabled) Logger.log('  - currentUser.uid: ${currentUser.uid}');
 
       // 본인에게 DM 전송 체크 (익명 포함)
       if (_currentPost.userId == currentUser.uid) {
-        Logger.log('❌ 본인 게시글에는 DM 불가');
+        if (Logger.isVerboseEnabled) Logger.log('❌ 본인 게시글에는 DM 불가');
         if (mounted) {
           ScaffoldMessenger.of(context).showSnackBar(
             SnackBar(
@@ -1456,7 +1456,7 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
       // Firebase Auth UID 형식 검증 (20~30자 영숫자, 언더스코어 포함 가능)
       final uidPattern = RegExp(r'^[a-zA-Z0-9_-]{20,30}$');
       if (!uidPattern.hasMatch(_currentPost.userId)) {
-        Logger.log(
+        if (Logger.isVerboseEnabled) Logger.log(
             '❌ 잘못된 userId 형식: ${_currentPost.userId} (길이: ${_currentPost.userId.length}자)');
         if (mounted) {
           ScaffoldMessenger.of(context).showSnackBar(
@@ -1472,7 +1472,7 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
 
       // userId가 'deleted' 또는 빈 문자열인 경우 체크
       if (_currentPost.userId == 'deleted' || _currentPost.userId.isEmpty) {
-        Logger.log('❌ 탈퇴했거나 삭제된 사용자');
+        if (Logger.isVerboseEnabled) Logger.log('❌ 탈퇴했거나 삭제된 사용자');
         if (mounted) {
           ScaffoldMessenger.of(context).showSnackBar(
             SnackBar(
@@ -1497,7 +1497,7 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
         isOtherUserAnonymous: shouldUseAnonymousChat,
       );
 
-      Logger.log(
+      if (Logger.isVerboseEnabled) Logger.log(
           '✅ DM conversation ID 생성: $conversationId (익명: $shouldUseAnonymousChat)');
 
       if (mounted) {
@@ -2288,12 +2288,12 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
 
     // 댓글 작성 전 상태 로깅
     final authUser = FirebaseAuth.instance.currentUser;
-    Logger.log('💬 댓글 작성 시작');
-    Logger.log(
+    if (Logger.isVerboseEnabled) Logger.log('💬 댓글 작성 시작');
+    if (Logger.isVerboseEnabled) Logger.log(
       '💬 Auth 상태 (작성 전): ${authUser != null ? "Authenticated (${authUser.uid})" : "Not Authenticated"}',
     );
-    Logger.log('💬 Timestamp (작성 전): ${DateTime.now()}');
-    Logger.log('💬 대댓글 모드: $_isReplyMode');
+    if (Logger.isVerboseEnabled) Logger.log('💬 Timestamp (작성 전): ${DateTime.now()}');
+    if (Logger.isVerboseEnabled) Logger.log('💬 대댓글 모드: $_isReplyMode');
 
     setState(() {
       _isSubmittingComment = true;
@@ -2312,22 +2312,22 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
           replyToUserId: _replyToUserId,
           replyToUserNickname: _replyToUserName,
         );
-        Logger.log(
+        if (Logger.isVerboseEnabled) Logger.log(
             '💬 대댓글 작성 완료 (parent: $_replyParentTopLevelId, replyTo: $_replyToUserId)');
       } else {
         // 일반 댓글 작성
         success = await _commentService.addComment(widget.post.id, content);
-        Logger.log('💬 일반 댓글 작성 완료');
+        if (Logger.isVerboseEnabled) Logger.log('💬 일반 댓글 작성 완료');
       }
 
       // 댓글 작성 후 상태 로깅
       final authUserAfter = FirebaseAuth.instance.currentUser;
-      Logger.log('💬 댓글 작성 완료');
-      Logger.log(
+      if (Logger.isVerboseEnabled) Logger.log('💬 댓글 작성 완료');
+      if (Logger.isVerboseEnabled) Logger.log(
         '💬 Auth 상태 (작성 후): ${authUserAfter != null ? "Authenticated (${authUserAfter.uid})" : "Not Authenticated"}',
       );
-      Logger.log('💬 Timestamp (작성 후): ${DateTime.now()}');
-      Logger.log('💬 댓글 작성 성공: $success');
+      if (Logger.isVerboseEnabled) Logger.log('💬 Timestamp (작성 후): ${DateTime.now()}');
+      if (Logger.isVerboseEnabled) Logger.log('💬 댓글 작성 성공: $success');
 
       if (success && mounted) {
         _commentController.clear();
@@ -2473,13 +2473,13 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
   // 이미지 로딩 재시도 로직
   void _retryImageLoad(String imageUrl) {
     if (_imageRetrying[imageUrl] == true) {
-      Logger.log('🔄 이미 재시도 중인 이미지: $imageUrl');
+      if (Logger.isVerboseEnabled) Logger.log('🔄 이미 재시도 중인 이미지: $imageUrl');
       return;
     }
 
     final currentRetryCount = _imageRetryCount[imageUrl] ?? 0;
     if (currentRetryCount >= _maxRetryCount) {
-      Logger.log('❌ 최대 재시도 횟수 초과: $imageUrl (${currentRetryCount}회)');
+      if (Logger.isVerboseEnabled) Logger.log('❌ 최대 재시도 횟수 초과: $imageUrl (${currentRetryCount}회)');
       return;
     }
 
@@ -2488,7 +2488,7 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
       _imageRetryCount[imageUrl] = currentRetryCount + 1;
     });
 
-    Logger.log(
+    if (Logger.isVerboseEnabled) Logger.log(
       '🔄 이미지 재시도 시작: $imageUrl (${currentRetryCount + 1}/${_maxRetryCount}회)',
     );
 
@@ -2505,7 +2505,7 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
         setState(() {
           _imageRetrying[imageUrl] = false;
         });
-        Logger.log('🔄 이미지 재시도 실행: $imageUrl');
+        if (Logger.isVerboseEnabled) Logger.log('🔄 이미지 재시도 실행: $imageUrl');
       }
     });
   }
@@ -2558,7 +2558,7 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
   // 이미지 로딩 성공 처리
   void _onImageLoadSuccess(String imageUrl) {
     if (_imageRetryCount.containsKey(imageUrl)) {
-      Logger.log(
+      if (Logger.isVerboseEnabled) Logger.log(
           '✅ 이미지 로딩 성공: $imageUrl (${_imageRetryCount[imageUrl]}회 재시도 후)');
       setState(() {
         _imageRetryCount.remove(imageUrl);

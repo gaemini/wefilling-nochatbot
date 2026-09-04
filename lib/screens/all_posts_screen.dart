@@ -1,11 +1,13 @@
 import 'dart:async';
 
 import 'package:flutter/material.dart';
+import 'package:flutter/rendering.dart' show ScrollCacheExtent;
 
 import '../constants/app_constants.dart';
 import '../design/tokens.dart';
 import '../models/post.dart';
 import '../models/post_category.dart';
+import '../services/post_media_prefetch_service.dart';
 import '../services/post_service.dart';
 import '../ui/widgets/optimized_post_card.dart';
 import '../ui/widgets/skeletons.dart';
@@ -46,10 +48,12 @@ class AllPostsScreen extends StatefulWidget {
 }
 
 class _AllPostsScreenState extends State<AllPostsScreen> {
-  static const int _pageSize = 5;
+  static const int _pageSize = 10;
   static const double _loadMoreThreshold = 520;
 
   PostService? _postService;
+  final PostMediaPrefetchService _postMediaPrefetch =
+      PostMediaPrefetchService.instance;
   final ScrollController _scrollController = ScrollController();
   StreamSubscription<List<Post>>? _legacyPostsSubscription;
   final List<Post> _posts = <Post>[];
@@ -84,6 +88,7 @@ class _AllPostsScreenState extends State<AllPostsScreen> {
             _initialError = null;
             _hasMore = false;
           });
+          unawaited(_postMediaPrefetch.prefetchPosts(posts, maxPosts: 6));
         },
         onError: (Object error) {
           if (!mounted) return;
@@ -143,6 +148,7 @@ class _AllPostsScreenState extends State<AllPostsScreen> {
         _isInitialLoading = false;
         _isLoadingMore = false;
       });
+      unawaited(_postMediaPrefetch.prefetchPosts(page.posts, maxPosts: 6));
     } catch (error) {
       if (!mounted || generation != _loadGeneration) return;
       setState(() {
@@ -186,6 +192,7 @@ class _AllPostsScreenState extends State<AllPostsScreen> {
         _hasMore = page.hasMore && (page.posts.isNotEmpty || cursorProgressed);
         _isLoadingMore = false;
       });
+      unawaited(_postMediaPrefetch.prefetchPosts(page.posts, maxPosts: 5));
     } catch (error) {
       if (!mounted || generation != _loadGeneration) return;
       setState(() {
@@ -311,6 +318,7 @@ class _AllPostsScreenState extends State<AllPostsScreen> {
             key: const PageStorageKey('all_posts_paginated_list'),
             controller: _scrollController,
             physics: const AlwaysScrollableScrollPhysics(),
+            scrollCacheExtent: const ScrollCacheExtent.pixels(480),
             slivers: [
               if (_isInitialLoading && _posts.isEmpty)
                 SliverList.builder(

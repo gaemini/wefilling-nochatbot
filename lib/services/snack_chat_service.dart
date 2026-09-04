@@ -341,7 +341,7 @@ class SnackChatService {
           if (!chat.isHardExpired(now)) items.add(chat);
         } catch (error, stackTrace) {
           // One malformed room must never terminate both Today and All lists.
-          Logger.warning(
+          if (Logger.isVerboseEnabled) Logger.warning(
             '지원되지 않는 Snack Chat 문서를 건너뜁니다: ${doc.id} '
             '($error)\n$stackTrace',
           );
@@ -657,7 +657,7 @@ class SnackChatService {
             .getUserProfilesBatch(profileIds.take(20).toList(growable: false))
             .then<void>((_) {})
             .catchError((Object error) {
-          Logger.warning('Snack Chat 참여자 프로필 선조회 실패: $error');
+          if (Logger.isVerboseEnabled) Logger.warning('Snack Chat 참여자 프로필 선조회 실패: $error');
         }),
       );
     }
@@ -719,7 +719,7 @@ class SnackChatService {
       if (_uid == uid) _roomEntryPrefetchTokens[key] = token;
     }()
         .catchError((Object error) {
-      Logger.warning('Snack Chat 진입 데이터 선조회 실패(${room.id}): $error');
+      if (Logger.isVerboseEnabled) Logger.warning('Snack Chat 진입 데이터 선조회 실패(${room.id}): $error');
     }).whenComplete(() {
       if (identical(_roomEntryPrefetchInFlight[key], operation)) {
         _roomEntryPrefetchInFlight.remove(key);
@@ -746,7 +746,7 @@ class SnackChatService {
       await _localCache.upsertMessages(room.id, messages);
       _messagePrefetchSequences[key] = room.lastMessageSequence;
     }).catchError((Object error) {
-      Logger.warning('Snack Chat 최근 메시지 선조회 실패(${room.id}): $error');
+      if (Logger.isVerboseEnabled) Logger.warning('Snack Chat 최근 메시지 선조회 실패(${room.id}): $error');
     }).whenComplete(() {
       if (identical(_messagePrefetchInFlight[key], operation)) {
         _messagePrefetchInFlight.remove(key);
@@ -862,7 +862,7 @@ class SnackChatService {
       if (error.code != 'not-found' && error.code != 'unimplemented') {
         rethrow;
       }
-      Logger.log(
+      if (Logger.isVerboseEnabled) Logger.log(
         'Snack Chat entry callable is not available yet; using server cursor fallback.',
       );
       return _getEntryContextFromFirestore(snackChatId);
@@ -1475,7 +1475,7 @@ class SnackChatService {
         'url': url,
       }).timeout(const Duration(seconds: 12));
     } catch (error) {
-      Logger.warning('Snack Chat 링크 미리보기 생성 실패(메시지 유지): $error');
+      if (Logger.isVerboseEnabled) Logger.warning('Snack Chat 링크 미리보기 생성 실패(메시지 유지): $error');
     }
   }
 
@@ -1540,7 +1540,7 @@ class SnackChatService {
         .catchError((Object error) {
       _participantIntegrityRetryAfter[key] =
           DateTime.now().add(const Duration(minutes: 1));
-      Logger.warning('Snack Chat 참여자 정보 정리 실패: $error');
+      if (Logger.isVerboseEnabled) Logger.warning('Snack Chat 참여자 정보 정리 실패: $error');
     }).whenComplete(() {
       if (identical(_participantIntegrityInFlight[key], operation)) {
         _participantIntegrityInFlight.remove(key);
@@ -1562,7 +1562,7 @@ class SnackChatService {
     if (uid == null || throughSequence <= 0) return 0;
 
     try {
-      Logger.log(
+      if (Logger.isVerboseEnabled) Logger.log(
         '📖 [SnackChat] markAsRead: room=$snackChatId, '
         'uid=$uid, through=$throughSequence',
       );
@@ -1585,7 +1585,7 @@ class SnackChatService {
       _entryContextCache.remove('$uid::$snackChatId');
       unawaited(_localCache.clearEntryState(snackChatId));
 
-      Logger.log('✅ [SnackChat] markAsRead 완료');
+      if (Logger.isVerboseEnabled) Logger.log('✅ [SnackChat] markAsRead 완료');
       return clearedCount;
     } catch (e) {
       Logger.error('Snack Chat 읽음 처리 실패: $e');

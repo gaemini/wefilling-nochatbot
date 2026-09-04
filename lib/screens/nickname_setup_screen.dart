@@ -71,15 +71,20 @@ class _NicknameSetupScreenState extends State<NicknameSetupScreen>
   Future<void> _restoreDraft() async {
     final preferences = await SharedPreferences.getInstance();
     final nickname = preferences.getString('${_draftKey}_nickname') ?? '';
-    final nationality =
-        preferences.getString('${_draftKey}_nationality') ?? '';
+    final nationality = preferences.getString('${_draftKey}_nationality') ?? '';
     final interests =
         preferences.getStringList('${_draftKey}_interests') ?? const <String>[];
     final step = preferences.getInt('${_draftKey}_step') ?? 0;
+    final normalizedNationality =
+        CountryFlagHelper.normalizeForDropdown(nationality);
     if (!mounted) return;
     setState(() {
       if (nickname.isNotEmpty) _nicknameController.text = nickname;
-      if (nationality.isNotEmpty) _selectedNationality = nationality;
+      // 이전 버전의 빈 값·영문명·ISO 임시저장 값은 canonical
+      // 값으로 복구하고, 알 수 없는 값은 안전한 기본값을 유지한다.
+      if (normalizedNationality != null) {
+        _selectedNationality = normalizedNationality;
+      }
       if (interests.isNotEmpty) _interests = interests;
       _currentStep = step < 0 ? 0 : (step > 1 ? 1 : step);
     });
@@ -93,8 +98,8 @@ class _NicknameSetupScreenState extends State<NicknameSetupScreen>
 
   void _scheduleDraftSave() {
     _draftDebounce?.cancel();
-    _draftDebounce =
-        Timer(const Duration(milliseconds: 250), () => unawaited(_persistDraft()));
+    _draftDebounce = Timer(
+        const Duration(milliseconds: 250), () => unawaited(_persistDraft()));
   }
 
   Future<void> _persistDraft() async {
@@ -119,7 +124,12 @@ class _NicknameSetupScreenState extends State<NicknameSetupScreen>
 
   Future<void> _clearDraft() async {
     final preferences = await SharedPreferences.getInstance();
-    for (final suffix in const ['nickname', 'nationality', 'interests', 'step']) {
+    for (final suffix in const [
+      'nickname',
+      'nationality',
+      'interests',
+      'step'
+    ]) {
       await preferences.remove('${_draftKey}_$suffix');
     }
   }
@@ -758,7 +768,12 @@ class _NicknameSetupScreenState extends State<NicknameSetupScreen>
             _fieldLabel(_isKorean ? '국적' : 'Nationality'),
             SizedBox(height: context.rs(4).clamp(2, 6).toDouble()),
             DropdownButtonFormField<String>(
-              initialValue: _selectedNationality,
+              key: ValueKey<String>(
+                'signup_nationality_$_selectedNationality',
+              ),
+              initialValue: CountryFlagHelper.normalizeForDropdown(
+                _selectedNationality,
+              ),
               isExpanded: true,
               menuMaxHeight: MediaQuery.sizeOf(context).height * 0.5,
               decoration: socialProfileInputDecoration(
@@ -769,7 +784,7 @@ class _NicknameSetupScreenState extends State<NicknameSetupScreen>
                   color: const Color(0xFF667085),
                 ),
               ),
-              items: CountryFlagHelper.allCountries.map((country) {
+              items: CountryFlagHelper.dropdownCountries.map((country) {
                 return DropdownMenuItem(
                   value: country.korean,
                   child: Text(
@@ -780,6 +795,11 @@ class _NicknameSetupScreenState extends State<NicknameSetupScreen>
                   ),
                 );
               }).toList(growable: false),
+              validator: (value) => value == null
+                  ? (_isKorean
+                      ? '국적을 선택해 주세요.'
+                      : 'Please choose your nationality.')
+                  : null,
               onChanged: (value) {
                 if (value != null) {
                   setState(() => _selectedNationality = value);

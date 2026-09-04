@@ -283,6 +283,7 @@ class _SnackChatScreenState extends State<SnackChatScreen>
   _ScrollAnchor? _pendingTranslationAnchor;
   bool _pendingTranslationKeepAtLatest = false;
   int _translationStateGeneration = 0;
+  bool _initialLocalHydrationStarted = false;
   late int _translationLanguageRevision;
   late bool _translationShowsOriginal;
   late bool _translationProviderRetryExhausted;
@@ -316,7 +317,6 @@ class _SnackChatScreenState extends State<SnackChatScreen>
     _roomStream = _snackChatService.watchSnackChat(widget.snackChatId);
     _scrollController.addListener(_onScroll);
     _messageController.addListener(_onDraftChanged);
-    unawaited(_hydrateLocalState());
     // Attach the bounded listener immediately. Entry/membership preparation
     // runs alongside it and must never gate the first visible message batch.
     _subscribeToMessages();
@@ -324,6 +324,23 @@ class _SnackChatScreenState extends State<SnackChatScreen>
     _subscribeToAuxiliaryState();
     _subscribeToFileTransfers();
     unawaited(_restoreFileTransfers());
+  }
+
+  @override
+  void didChangeDependencies() {
+    super.didChangeDependencies();
+    if (_initialLocalHydrationStarted) return;
+    _initialLocalHydrationStarted = true;
+
+    // didChangeDependencies runs in the same first-frame lifecycle as
+    // initState, but inherited locale access is safe here. Live Firestore
+    // subscription has already started in initState, so cache hydration never
+    // delays the first remote message batch.
+    unawaited(
+      _hydrateLocalState(
+        uiLanguageCode: Localizations.localeOf(context).languageCode,
+      ),
+    );
   }
 
   void _resetTranslationStateForRoom() {
@@ -1393,7 +1410,11 @@ class _SnackChatScreenState extends State<SnackChatScreen>
     if (_appLifecycleState == AppLifecycleState.resumed) {
       SnackChatActiveConversation.setActive(widget.snackChatId);
     }
-    unawaited(_hydrateLocalState());
+    unawaited(
+      _hydrateLocalState(
+        uiLanguageCode: Localizations.localeOf(context).languageCode,
+      ),
+    );
     _subscribeToMessages();
     unawaited(_prepareEntryAndSubscribe());
     _subscribeToAuxiliaryState();
@@ -1488,12 +1509,11 @@ class _SnackChatScreenState extends State<SnackChatScreen>
     });
   }
 
-  Future<void> _hydrateLocalState() async {
+  Future<void> _hydrateLocalState({required String uiLanguageCode}) async {
     final roomId = widget.snackChatId;
     final ownerUid = _uid;
     final generation = ++_cacheHydrationGeneration;
     if (ownerUid == null) return;
-    final uiLanguageCode = Localizations.localeOf(context).languageCode;
     final messagesFuture = _localCache.getMessages(roomId);
     final roomFuture = _localCache.getRoom(roomId);
     final draftFuture = _localCache.getDraft(roomId);
@@ -4964,8 +4984,21 @@ class _SnackChatScreenState extends State<SnackChatScreen>
           final groupedWithOlder = index < _messages.length - 1 &&
               !_hasUnreadBoundaryBetween(message, _messages[index + 1]) &&
               shouldGroupSnackChatMessages(message, _messages[index + 1]);
+          // The list is newest-first and rendered with reverse=true. A date
+          // marker therefore belongs to the oldest message of each local day;
+          // it will appear directly above that day's message group onscreen.
+          final showDateSeparator = index == _messages.length - 1 ||
+              !isSameLocalSnackChatDay(
+                message.createdAt,
+                _messages[index + 1].createdAt,
+              );
           final row = Column(
             children: [
+              if (showDateSeparator)
+                SnackChatDateSeparator(
+                  date: message.createdAt,
+                  languageCode: isKo ? 'ko' : 'en',
+                ),
               if (message.id == _firstUnreadMessageId)
                 _buildUnreadDivider(isKo: isKo),
               _buildMessageBubble(

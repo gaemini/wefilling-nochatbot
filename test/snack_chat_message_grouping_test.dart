@@ -16,6 +16,23 @@ SnackChatMessage message({
 }
 
 void main() {
+  test('local calendar day comparison detects a date boundary', () {
+    expect(
+      isSameLocalSnackChatDay(
+        DateTime(2026, 9, 3, 23, 59),
+        DateTime(2026, 9, 4),
+      ),
+      isFalse,
+    );
+    expect(
+      isSameLocalSnackChatDay(
+        DateTime(2026, 9, 3, 9),
+        DateTime(2026, 9, 3, 22),
+      ),
+      isTrue,
+    );
+  });
+
   group('shouldGroupSnackChatMessages', () {
     test('groups consecutive messages from the same sender', () {
       final first = message(

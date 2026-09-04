@@ -10,6 +10,7 @@ import '../models/post.dart';
 import '../models/meetup.dart';
 import '../models/meetup_participant.dart';
 import '../utils/logger.dart';
+import 'joined_meetup_access_service.dart';
 
 class UserProfileStats {
   const UserProfileStats({
@@ -41,6 +42,8 @@ class UserProfileStats {
 class UserStatsService {
   final FirebaseFirestore _firestore = FirebaseFirestore.instance;
   final FirebaseAuth _auth = FirebaseAuth.instance;
+  final JoinedMeetupAccessService _joinedMeetupAccess =
+      JoinedMeetupAccessService.instance;
 
   /// 친구 프로필 헤더에 표시할 세 통계를 캐시가 아닌 서버 aggregate로 조회한다.
   Future<UserProfileStats> getLatestProfileStatsForUser(String userId) async {
@@ -109,7 +112,14 @@ class UserStatsService {
         .where('userId', isEqualTo: user.uid)
         .where('status', isEqualTo: ParticipantStatus.approved)
         .snapshots()
-        .map((snapshot) => snapshot.docs.length);
+        .asyncMap((snapshot) async {
+      final ids = snapshot.docs
+          .map((doc) => (doc.data()['meetupId'] ?? '').toString().trim())
+          .where((id) => id.isNotEmpty)
+          .toSet();
+      final readableIds = await _joinedMeetupAccess.resolveReadableIds(ids);
+      return readableIds.length;
+    });
   }
 
   // 사용자가 주최한 모임 목록
@@ -125,34 +135,7 @@ class UserStatsService {
         .snapshots()
         .map((snapshot) {
       return snapshot.docs
-          .map((doc) {
-            final data = doc.data();
-            final meetupDate = data['date'] != null
-                ? (data['date'] as Timestamp).toDate()
-                : DateTime.now();
-
-            return Meetup(
-              id: doc.id,
-              title: data['title'] ?? '',
-              description: data['description'] ?? '',
-              location: data['location'] ?? '',
-              time: data['time'] ?? '',
-              maxParticipants: data['maxParticipants'] ?? 0,
-              currentParticipants: data['currentParticipants'] ?? 0,
-              host: data['hostNickname'] ?? '',
-              imageUrl: data['imageUrl'] ?? '',
-              date: meetupDate,
-              userId: data['userId'], // 모임 주최자 ID 추가
-              hostNickname: data['hostNickname'], // 주최자 닉네임 추가
-              isConfirmed: data['isConfirmed'] == true,
-              publicDurationHours:
-                  (data['publicDurationHours'] as num?)?.toInt(),
-              publicExpiresAt: data['publicExpiresAt'] is Timestamp
-                  ? (data['publicExpiresAt'] as Timestamp).toDate()
-                  : null,
-              publicWindowStatus: (data['publicWindowStatus'] ?? '').toString(),
-            );
-          })
+          .map((doc) => Meetup.fromJson({...doc.data(), 'id': doc.id}))
           .where((meetup) => meetup.isPublishedAt())
           .toList();
     });
@@ -165,61 +148,41 @@ class UserStatsService {
       return Stream.value([]);
     }
 
+    // 현재 참여 기능은 meetups.participants 배열을 갱신하지 않고
+    // meetup_participants 문서를 단일 기준으로 사용한다.
     return _firestore
-        .collection('meetups')
-        .where('participants', arrayContains: user.uid)
+        .collection('meetup_participants')
+        .where('userId', isEqualTo: user.uid)
+        .where('status', isEqualTo: ParticipantStatus.approved)
         .snapshots()
-        .map((snapshot) {
-      try {
-        // 사용자가 주최하지 않은 모임만 필터링
-        final filteredDocs = snapshot.docs.where((doc) {
-          final data = doc.data();
-          // 'userId' 필드가 존재하고, 현재 사용자 ID와 다른 경우
-          return data['userId'] != user.uid;
-        }).toList();
-
-        // 필터링된 결과가 없을 경우 빈 배열 반환
-        if (filteredDocs.isEmpty) {
-          return <Meetup>[];
+        .asyncMap((snapshot) async {
+      final meetupIds = snapshot.docs
+          .map((doc) => (doc.data()['meetupId'] ?? '').toString().trim())
+          .where((id) => id.isNotEmpty)
+          .toSet();
+      final readableIds = await _joinedMeetupAccess.resolveReadableIds(
+        meetupIds,
+      );
+      final meetups = await Future.wait(readableIds.map((meetupId) async {
+        try {
+          final meetupDoc =
+              await _firestore.collection('meetups').doc(meetupId).get();
+          final data = meetupDoc.data();
+          if (!meetupDoc.exists || data == null) return null;
+          final meetup = Meetup.fromJson({...data, 'id': meetupDoc.id});
+          if (meetup.userId == user.uid || !meetup.isPublishedAt()) return null;
+          return meetup;
+        } catch (error) {
+          // 공개 대상이 동시에 변경되는 짧은 race에서는 다음 구독 때 서버
+          // 검증을 다시 받도록 캐시만 무효화하고 현재 항목을 제외한다.
+          _joinedMeetupAccess.invalidate();
+          if (Logger.isVerboseEnabled) {
+            Logger.warning('변경 중인 참여 모임 문서 제외($meetupId): $error');
+          }
+          return null;
         }
-
-        return filteredDocs
-            .map((doc) {
-              final data = doc.data();
-              final meetupDate = data['date'] != null
-                  ? (data['date'] as Timestamp).toDate()
-                  : DateTime.now();
-
-              return Meetup(
-                id: doc.id,
-                title: data['title'] ?? '',
-                description: data['description'] ?? '',
-                location: data['location'] ?? '',
-                time: data['time'] ?? '',
-                maxParticipants: data['maxParticipants'] ?? 0,
-                currentParticipants: data['currentParticipants'] ?? 0,
-                host: data['hostNickname'] ?? '',
-                hostPhotoURL: data['hostPhotoURL'] ?? '', // 주최자 프로필 사진 추가
-                imageUrl: data['imageUrl'] ?? '',
-                date: meetupDate,
-                userId: data['userId'], // 모임 주최자 ID 추가
-                hostNickname: data['hostNickname'], // 주최자 닉네임 추가
-                isConfirmed: data['isConfirmed'] == true,
-                publicDurationHours:
-                    (data['publicDurationHours'] as num?)?.toInt(),
-                publicExpiresAt: data['publicExpiresAt'] is Timestamp
-                    ? (data['publicExpiresAt'] as Timestamp).toDate()
-                    : null,
-                publicWindowStatus:
-                    (data['publicWindowStatus'] ?? '').toString(),
-              );
-            })
-            .where((meetup) => meetup.isPublishedAt())
-            .toList();
-      } catch (e) {
-        Logger.error('참여 모임 처리 오류: $e');
-        return <Meetup>[];
-      }
+      }));
+      return meetups.whereType<Meetup>().toList(growable: false);
     });
   }
 

@@ -64,14 +64,14 @@ class RelationshipService {
       final result = await callable.call({'toUid': toUid}).timeout(
         const Duration(seconds: 10),
         onTimeout: () {
-          Logger.log('⏱️ 친구요청 전송 타임아웃 (10초)');
+          if (Logger.isVerboseEnabled) Logger.log('⏱️ 친구요청 전송 타임아웃 (10초)');
           throw TimeoutException('친구요청 전송 시간 초과');
         },
       );
 
       final success = result.data['success'] as bool? ?? false;
       if (success) {
-        Logger.log('친구요청 전송 성공: $toUid');
+        if (Logger.isVerboseEnabled) Logger.log('친구요청 전송 성공: $toUid');
         _clearProfileNetworkCache();
         return true;
       } else {
@@ -119,14 +119,14 @@ class RelationshipService {
       final result = await callable.call({'toUid': toUid}).timeout(
         const Duration(seconds: 10),
         onTimeout: () {
-          Logger.log('⏱️ 친구요청 취소 타임아웃 (10초)');
+          if (Logger.isVerboseEnabled) Logger.log('⏱️ 친구요청 취소 타임아웃 (10초)');
           throw TimeoutException('친구요청 취소 시간 초과');
         },
       );
 
       final success = result.data['success'] as bool? ?? false;
       if (success) {
-        Logger.log('친구요청 취소 성공: $toUid');
+        if (Logger.isVerboseEnabled) Logger.log('친구요청 취소 성공: $toUid');
         _clearProfileNetworkCache();
         return true;
       } else {
@@ -151,14 +151,14 @@ class RelationshipService {
       final result = await callable.call({'fromUid': fromUid}).timeout(
         const Duration(seconds: 10),
         onTimeout: () {
-          Logger.log('⏱️ 친구요청 수락 타임아웃 (10초)');
+          if (Logger.isVerboseEnabled) Logger.log('⏱️ 친구요청 수락 타임아웃 (10초)');
           throw TimeoutException('친구요청 수락 시간 초과');
         },
       );
 
       final success = result.data['success'] as bool? ?? false;
       if (success) {
-        Logger.log('친구요청 수락 성공: $fromUid');
+        if (Logger.isVerboseEnabled) Logger.log('친구요청 수락 성공: $fromUid');
         _cacheCurrentFriendCount(result.data);
 
         // 캐시 무효화 (새로운 친구 추가됨)
@@ -188,14 +188,14 @@ class RelationshipService {
       final result = await callable.call({'fromUid': fromUid}).timeout(
         const Duration(seconds: 10),
         onTimeout: () {
-          Logger.log('⏱️ 친구요청 거절 타임아웃 (10초)');
+          if (Logger.isVerboseEnabled) Logger.log('⏱️ 친구요청 거절 타임아웃 (10초)');
           throw TimeoutException('친구요청 거절 시간 초과');
         },
       );
 
       final success = result.data['success'] as bool? ?? false;
       if (success) {
-        Logger.log('친구요청 거절 성공: $fromUid');
+        if (Logger.isVerboseEnabled) Logger.log('친구요청 거절 성공: $fromUid');
         _clearProfileNetworkCache();
         return true;
       } else {
@@ -220,14 +220,14 @@ class RelationshipService {
       final result = await callable.call({'otherUid': otherUid}).timeout(
         const Duration(seconds: 10),
         onTimeout: () {
-          Logger.log('⏱️ 친구 삭제 타임아웃 (10초)');
+          if (Logger.isVerboseEnabled) Logger.log('⏱️ 친구 삭제 타임아웃 (10초)');
           throw TimeoutException('친구 삭제 시간 초과');
         },
       );
 
       final success = result.data['success'] as bool? ?? false;
       if (success) {
-        Logger.log('친구 삭제 성공: $otherUid');
+        if (Logger.isVerboseEnabled) Logger.log('친구 삭제 성공: $otherUid');
         _cacheCurrentFriendCount(result.data);
 
         // 캐시 무효화 (친구 삭제됨)
@@ -261,14 +261,14 @@ class RelationshipService {
       final result = await callable.call({'targetUid': targetUid}).timeout(
         const Duration(seconds: 10),
         onTimeout: () {
-          Logger.log('⏱️ 사용자 차단 타임아웃 (10초)');
+          if (Logger.isVerboseEnabled) Logger.log('⏱️ 사용자 차단 타임아웃 (10초)');
           throw TimeoutException('사용자 차단 시간 초과');
         },
       );
 
       final success = result.data['success'] as bool? ?? false;
       if (success) {
-        Logger.log('사용자 차단 성공: $targetUid');
+        if (Logger.isVerboseEnabled) Logger.log('사용자 차단 성공: $targetUid');
         _cacheCurrentFriendCount(result.data);
         // ✅ 즉시 피드에서 제거되도록 in-memory 캐시 업데이트 + 재필터 emit
         ContentFilterService.addBlockedUserId(targetUid);
@@ -297,14 +297,14 @@ class RelationshipService {
       final result = await callable.call({'targetUid': targetUid}).timeout(
         const Duration(seconds: 10),
         onTimeout: () {
-          Logger.log('⏱️ 사용자 차단 해제 타임아웃 (10초)');
+          if (Logger.isVerboseEnabled) Logger.log('⏱️ 사용자 차단 해제 타임아웃 (10초)');
           throw TimeoutException('사용자 차단 해제 시간 초과');
         },
       );
 
       final success = result.data['success'] as bool? ?? false;
       if (success) {
-        Logger.log('사용자 차단 해제 성공: $targetUid');
+        if (Logger.isVerboseEnabled) Logger.log('사용자 차단 해제 성공: $targetUid');
         // ✅ 즉시 피드에서 복구되도록 in-memory 캐시 업데이트 + 재필터 emit
         ContentFilterService.removeBlockedUserId(targetUid);
         PostService.instance.requestReemitWithCurrentFilters();
@@ -459,14 +459,14 @@ class RelationshipService {
   void clearProfileCache() {
     _usersRepository.clearCache();
     _clearProfileNetworkCache();
-    Logger.log('🗑️ RelationshipService: 프로필 캐시 초기화');
+    if (Logger.isVerboseEnabled) Logger.log('🗑️ RelationshipService: 프로필 캐시 초기화');
   }
 
   /// 특정 사용자 프로필 캐시 무효화
   void invalidateUserCache(String userId) {
     _usersRepository.invalidateCache(userId);
     _clearProfileNetworkCache();
-    Logger.log('🗑️ RelationshipService: 프로필 캐시 무효화 - $userId');
+    if (Logger.isVerboseEnabled) Logger.log('🗑️ RelationshipService: 프로필 캐시 무효화 - $userId');
   }
 
   /// 특정 사용자의 친구 목록 조회 (일회성)
@@ -510,7 +510,7 @@ class RelationshipService {
       if (kReleaseMode || (!functionIsMissing && !debugAppCheckUnavailable)) {
         rethrow;
       }
-      Logger.log(
+      if (Logger.isVerboseEnabled) Logger.log(
         'ℹ️ 개발 환경 서버 조회 불가: 기존 친구 조회로 폴백',
       );
       return _getProfileFriendNetworkFallback(

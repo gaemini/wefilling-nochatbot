@@ -281,7 +281,7 @@ class _CreatePostScreenState extends State<CreatePostScreen> {
       final length = await cached.length();
       return length > 0 && length <= 20 * 1024 * 1024 ? cached : null;
     } catch (error) {
-      Logger.warning(
+      if (Logger.isVerboseEnabled) Logger.warning(
         '[InstagramPreview][local-preview] unavailable=${error.runtimeType}',
       );
       return null;

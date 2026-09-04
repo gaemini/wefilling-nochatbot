@@ -1,6 +1,7 @@
 import * as functions from 'firebase-functions';
 import * as admin from 'firebase-admin';
 import {COL} from './firestore_paths';
+import {runtimeInfo, runtimeLogsEnabled} from './runtime_logging';
 
 /**
  * users/{uid}.hanyangEmailVerified is the single authorization projection.
@@ -220,6 +221,6 @@ export const backfillHanyangVerificationStates = functions
         });
       }
     }
-    console.log('[HanyangVerification] backfill page', report);
+    runtimeLogsEnabled && runtimeInfo('[HanyangVerification] backfill page', report);
     return report;
   });

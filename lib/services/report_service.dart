@@ -56,7 +56,7 @@ class ReportService {
     final data = result.data;
     final success = data is Map && data['success'] == true;
     if (success) {
-      Logger.log('✅ Snack Chat 메시지 신고가 접수되었습니다: $targetId');
+      if (Logger.isVerboseEnabled) Logger.log('✅ Snack Chat 메시지 신고가 접수되었습니다: $targetId');
     }
     return success;
   }
@@ -116,7 +116,7 @@ class ReportService {
       );
       PostService.instance.requestReemitWithCurrentFilters();
 
-      Logger.log('✅ 신고가 접수되었습니다: $targetType $targetId');
+      if (Logger.isVerboseEnabled) Logger.log('✅ 신고가 접수되었습니다: $targetType $targetId');
       return true;
     } catch (e) {
       Logger.error('❌ 신고 접수 실패: $e');
@@ -137,13 +137,13 @@ class ReportService {
       }).timeout(
         const Duration(seconds: 10),
         onTimeout: () {
-          Logger.log('⏱️ 사용자 차단 타임아웃 (10초)');
+          if (Logger.isVerboseEnabled) Logger.log('⏱️ 사용자 차단 타임아웃 (10초)');
           throw TimeoutException('사용자 차단 시간 초과');
         },
       );
 
       if (result.data['success'] == true) {
-        Logger.log('✅ 사용자를 차단했습니다: $blockedUserId');
+        if (Logger.isVerboseEnabled) Logger.log('✅ 사용자를 차단했습니다: $blockedUserId');
         // ✅ 즉시 피드에서 제거되도록 in-memory 캐시 업데이트 + 재필터 emit
         ContentFilterService.addBlockedUserId(blockedUserId);
         ContentHideService.hideReportedTarget(
@@ -176,13 +176,13 @@ class ReportService {
       }).timeout(
         const Duration(seconds: 10),
         onTimeout: () {
-          Logger.log('⏱️ 사용자 차단 해제 타임아웃 (10초)');
+          if (Logger.isVerboseEnabled) Logger.log('⏱️ 사용자 차단 해제 타임아웃 (10초)');
           throw TimeoutException('사용자 차단 해제 시간 초과');
         },
       );
 
       if (result.data['success'] == true) {
-        Logger.log('✅ 사용자 차단을 해제했습니다: $blockedUserId');
+        if (Logger.isVerboseEnabled) Logger.log('✅ 사용자 차단을 해제했습니다: $blockedUserId');
         // ✅ 즉시 피드에서 복구되도록 in-memory 캐시 업데이트 + 재필터 emit
         ContentFilterService.removeBlockedUserId(blockedUserId);
         PostService.instance.requestReemitWithCurrentFilters();
@@ -216,7 +216,7 @@ class ReportService {
       }).timeout(
         const Duration(seconds: 10),
         onTimeout: () {
-          Logger.log('⏱️ 익명 게시글 차단 타임아웃 (10초)');
+          if (Logger.isVerboseEnabled) Logger.log('⏱️ 익명 게시글 차단 타임아웃 (10초)');
           throw TimeoutException('익명 게시글 차단 시간 초과');
         },
       );
@@ -245,7 +245,7 @@ class ReportService {
       final result = await callable.call({'postId': postId}).timeout(
         const Duration(seconds: 10),
         onTimeout: () {
-          Logger.log('⏱️ 익명 게시글 차단 해제 타임아웃 (10초)');
+          if (Logger.isVerboseEnabled) Logger.log('⏱️ 익명 게시글 차단 해제 타임아웃 (10초)');
           throw TimeoutException('익명 게시글 차단 해제 시간 초과');
         },
       );
@@ -307,7 +307,7 @@ class ReportService {
       }).timeout(
         const Duration(seconds: 10),
         onTimeout: () {
-          Logger.log('⏱️ 익명 댓글 숨김 타임아웃 (10초)');
+          if (Logger.isVerboseEnabled) Logger.log('⏱️ 익명 댓글 숨김 타임아웃 (10초)');
           throw TimeoutException('익명 댓글 숨김 시간 초과');
         },
       );
@@ -334,7 +334,7 @@ class ReportService {
       final result = await callable.call({'commentId': commentId}).timeout(
         const Duration(seconds: 10),
         onTimeout: () {
-          Logger.log('⏱️ 익명 댓글 숨김 해제 타임아웃 (10초)');
+          if (Logger.isVerboseEnabled) Logger.log('⏱️ 익명 댓글 숨김 해제 타임아웃 (10초)');
           throw TimeoutException('익명 댓글 숨김 해제 시간 초과');
         },
       );

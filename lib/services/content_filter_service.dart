@@ -223,7 +223,7 @@ class ContentFilterService {
         _getBlockedByUserIds(),
         _getBlockedAnonymousPostIds(),
       ]);
-      Logger.log('✅ 차단 목록 사전 로드 완료');
+      if (Logger.isVerboseEnabled) Logger.log('✅ 차단 목록 사전 로드 완료');
     } catch (e) {
       Logger.error('⚠️ 차단 목록 사전 로드 실패 (계속 진행): $e');
       // 에러가 발생해도 앱 실행은 계속되어야 함

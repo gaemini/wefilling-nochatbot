@@ -9,6 +9,7 @@
  */
 const admin = require('firebase-admin');
 const {normalizeNickname} = require('../lib/nickname_claims');
+const {buildUserSearchTokens} = require('../lib/user_search_index');
 
 admin.initializeApp();
 const db = admin.firestore();
@@ -18,11 +19,29 @@ async function main() {
   const users = await db.collection('users').get();
   const grouped = new Map();
   const invalid = [];
+  const searchable = [];
+
+  const isUnavailable = (data) => {
+    const status = String(data.status || data.accountStatus || '')
+      .trim().toLowerCase();
+    const registrationStatus = String(data.registrationStatus || '')
+      .trim().toLowerCase();
+    return data.isDeleted === true || data.deleted === true ||
+      data.disabled === true || data.isSuspended === true ||
+      data.deletedAt != null || status === 'deleted' ||
+      status === 'suspended' || registrationStatus === 'deleted';
+  };
 
   for (const doc of users.docs) {
     const data = doc.data();
-    if (data.isDeleted === true || data.deleted === true ||
-        data.registrationStatus === 'deleted') continue;
+    if (isUnavailable(data)) continue;
+    const displayName = String(data.nickname || data.displayName || '').trim();
+    if (displayName) {
+      searchable.push({
+        uid: doc.id,
+        tokens: buildUserSearchTokens(displayName),
+      });
+    }
     try {
       const identity = normalizeNickname(data.nickname);
       const entries = grouped.get(identity.nicknameKey) || [];
@@ -51,17 +70,34 @@ async function main() {
       .doc(entry.nicknameKey)
       .get();
     if (claim.exists && claim.get('ownerUid') !== entry.uid) {
-      conflicts.push({
-        nicknameKey: entry.nicknameKey,
-        users: [entry],
-        existingClaimOwnerUid: claim.get('ownerUid'),
-      });
-      continue;
+      const ownerUid = String(claim.get('ownerUid') || '');
+      const owner = ownerUid
+        ? await db.collection('users').doc(ownerUid).get()
+        : null;
+      if (owner?.exists && !isUnavailable(owner.data() || {})) {
+        conflicts.push({
+          nicknameKey: entry.nicknameKey,
+          users: [entry],
+          existingClaimOwnerUid: ownerUid,
+        });
+        continue;
+      }
     }
     writable.push(entry);
   }
 
   if (apply) {
+    // Search token arrays are larger than claim documents. Keep each commit
+    // comfortably below the Firestore request-size limit.
+    for (let offset = 0; offset < searchable.length; offset += 25) {
+      const batch = db.batch();
+      for (const entry of searchable.slice(offset, offset + 25)) {
+        batch.set(db.collection('users').doc(entry.uid), {
+          nicknameSearchTokens: entry.tokens,
+        }, {merge: true});
+      }
+      await batch.commit();
+    }
     for (let offset = 0; offset < writable.length; offset += 400) {
       const batch = db.batch();
       for (const entry of writable.slice(offset, offset + 400)) {
@@ -86,6 +122,7 @@ async function main() {
   process.stdout.write(`${JSON.stringify({
     mode: apply ? 'apply' : 'dry-run',
     scannedUsers: users.size,
+    searchableProfiles: searchable.length,
     writableClaims: writable.length,
     conflicts,
     invalid,

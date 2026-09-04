@@ -7,6 +7,7 @@
 // - 용량/만료 정책을 앱에 맞게 통일
 
 import 'dart:async';
+import 'dart:collection';
 
 import 'package:flutter_cache_manager/flutter_cache_manager.dart' as fcm;
 
@@ -18,13 +19,74 @@ class AppImageCacheManager {
   static const Duration firebaseObjectFreshness = Duration(days: 90);
 
   static _WefillingImageCacheManager? _instance;
+  static final Map<String, Future<void>> _prefetchInFlight =
+      <String, Future<void>>{};
+  static final LinkedHashSet<String> _recentlyPrefetched =
+      LinkedHashSet<String>();
+  static const int _maximumTrackedPrefetches = 240;
+  static const Duration _prefetchTimeout = Duration(seconds: 12);
 
   static fcm.CacheManager get instance {
     return _instance ??= _WefillingImageCacheManager();
   }
 
+  /// 화면에 보이기 직전의 소수 이미지를 디스크 캐시에 병렬로 준비한다.
+  ///
+  /// 이 단계에서는 디코딩하지 않아 스크롤 프레임과 경쟁하지 않고,
+  /// `CachedNetworkImage`가 나중에 같은 URL을 그릴 때 네트워크 대기만 줄인다.
+  static Future<void> prefetchUrls(
+    Iterable<String> urls, {
+    int maxItems = 6,
+    int concurrency = 3,
+  }) async {
+    if (maxItems <= 0 || concurrency <= 0) return;
+    final selected = urls
+        .map((url) => url.trim())
+        .where((url) => url.isNotEmpty)
+        .toSet()
+        .where((url) => !_recentlyPrefetched.contains(url))
+        .take(maxItems)
+        .toList(growable: false);
+
+    for (var start = 0; start < selected.length; start += concurrency) {
+      final batch = selected.sublist(
+        start,
+        (start + concurrency).clamp(0, selected.length),
+      );
+      await Future.wait(batch.map(_prefetchUrl), eagerError: false);
+    }
+  }
+
+  static Future<void> _prefetchUrl(String url) {
+    final active = _prefetchInFlight[url];
+    if (active != null) return active;
+
+    late final Future<void> operation;
+    operation = () async {
+      try {
+        await instance.getSingleFile(url).timeout(_prefetchTimeout);
+        _recentlyPrefetched
+          ..remove(url)
+          ..add(url);
+        while (_recentlyPrefetched.length > _maximumTrackedPrefetches) {
+          _recentlyPrefetched.remove(_recentlyPrefetched.first);
+        }
+      } catch (_) {
+        // 선조회 실패는 화면의 실제 이미지 요청이 재시도한다.
+      }
+    }()
+        .whenComplete(() {
+      if (identical(_prefetchInFlight[url], operation)) {
+        _prefetchInFlight.remove(url);
+      }
+    });
+    _prefetchInFlight[url] = operation;
+    return operation;
+  }
+
   /// 로그아웃/설정 등에서 이미지 캐시를 명시적으로 비우고 싶을 때 사용.
   static Future<void> clear() async {
+    _recentlyPrefetched.clear();
     try {
       await instance.emptyCache();
     } catch (_) {

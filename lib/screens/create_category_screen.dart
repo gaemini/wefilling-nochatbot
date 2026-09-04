@@ -7,6 +7,7 @@ import '../constants/app_constants.dart';
 import '../design/tokens.dart';
 import '../l10n/app_localizations.dart';
 import '../ui/widgets/shape_icon.dart';
+import '../utils/responsive_helper.dart';
 
 class CreateCategoryScreen extends StatefulWidget {
   final FriendCategory? category; // null이면 생성, 있으면 수정
@@ -29,8 +30,8 @@ class _CreateCategoryScreenState extends State<CreateCategoryScreen> {
   void initState() {
     super.initState();
     _nameController = TextEditingController(text: widget.category?.name ?? '');
-    _selectedColor = widget.category?.color ?? 
-        '#${AppColors.pointColor.value.toRadixString(16).substring(2)}';
+    _selectedColor = widget.category?.color ??
+        '#${AppColors.pointColor.toARGB32().toRadixString(16).substring(2)}';
     _selectedIcon = _normalizeIconName(widget.category?.iconName);
   }
 
@@ -80,7 +81,7 @@ class _CreateCategoryScreenState extends State<CreateCategoryScreen> {
 
     if (name.isEmpty) {
       ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text(l10n.enterCategoryName ?? "")),
+        SnackBar(content: Text(l10n.enterCategoryName)),
       );
       return;
     }
@@ -96,7 +97,7 @@ class _CreateCategoryScreenState extends State<CreateCategoryScreen> {
   }
 
   Widget _buildColorPicker() {
-    final colors = [
+    const colors = [
       '#FF3B30', // 빨강
       '#FF9500', // 주황
       '#FFCC00', // 노랑
@@ -111,45 +112,52 @@ class _CreateCategoryScreenState extends State<CreateCategoryScreen> {
       children: [
         Text(
           AppLocalizations.of(context)!.colorSelection,
-          style: const TextStyle(
+          style: TextStyle(
             fontFamily: 'Inter',
             fontFamilyFallback: const ['NotoSansKR'],
-            fontWeight: FontWeight.w600,
-            fontSize: 14,
-            color: Color(0xFF111827),
+            fontWeight: FontWeight.w800,
+            fontSize: context.rf(15).clamp(14, 16).toDouble(),
+            color: const Color(0xFF111827),
           ),
         ),
-        const SizedBox(height: 12),
-        Wrap(
-          spacing: 8,
-          runSpacing: 8,
-          children: colors.map((color) {
-            final isSelected = color == _selectedColor;
-            return GestureDetector(
-              onTap: () {
-                setState(() {
-                  _selectedColor = color;
-                });
-              },
-              child: Container(
-                width: 40,
-                height: 40,
-                decoration: BoxDecoration(
-                  color: _parseColor(color),
-                  shape: BoxShape.circle,
-                  border: isSelected
-                      ? Border.all(color: AppColors.pointColor, width: 3)
-                      : Border.all(color: const Color(0xFFE5E7EB), width: 1),
-                ),
-                child: isSelected
-                    ? const Icon(Icons.check, color: Colors.white, size: 20)
-                    : null,
-              ),
+        SizedBox(height: context.rs(14).clamp(12, 16).toDouble()),
+        LayoutBuilder(
+          builder: (context, constraints) {
+            final compact = constraints.maxWidth < 330;
+            return Wrap(
+              alignment: compact ? WrapAlignment.center : WrapAlignment.start,
+              spacing: compact ? 0 : 7,
+              runSpacing: context.rs(8).clamp(6, 10).toDouble(),
+              children: [
+                for (var index = 0; index < colors.length; index++)
+                  SizedBox(
+                    width: compact ? constraints.maxWidth / 4 : 44,
+                    child: Center(
+                      child: _ColorChoice(
+                        color: _parseColor(colors[index]),
+                        selected: colors[index] == _selectedColor,
+                        semanticLabel: _colorSemanticLabel(index),
+                        onTap: () {
+                          setState(() {
+                            _selectedColor = colors[index];
+                          });
+                        },
+                      ),
+                    ),
+                  ),
+              ],
             );
-          }).toList(),
+          },
         ),
       ],
     );
+  }
+
+  String _colorSemanticLabel(int index) {
+    final isKo = Localizations.localeOf(context).languageCode == 'ko';
+    const ko = ['빨강', '주황', '노랑', '초록', '파랑', '남색', '보라'];
+    const en = ['Red', 'Orange', 'Yellow', 'Green', 'Blue', 'Indigo', 'Purple'];
+    return (isKo ? ko : en)[index];
   }
 
   Widget _buildIconPicker() {
@@ -165,51 +173,64 @@ class _CreateCategoryScreenState extends State<CreateCategoryScreen> {
       children: [
         Text(
           AppLocalizations.of(context)!.iconSelection,
-          style: const TextStyle(
+          style: TextStyle(
             fontFamily: 'Inter',
             fontFamilyFallback: const ['NotoSansKR'],
-            fontWeight: FontWeight.w600,
-            fontSize: 14,
-            color: Color(0xFF111827),
+            fontWeight: FontWeight.w800,
+            fontSize: context.rf(15).clamp(14, 16).toDouble(),
+            color: const Color(0xFF111827),
           ),
         ),
-        const SizedBox(height: 12),
+        SizedBox(height: context.rs(12).clamp(10, 14).toDouble()),
         Wrap(
-          spacing: 8,
-          runSpacing: 8,
+          spacing: context.rs(8).clamp(6, 10).toDouble(),
+          runSpacing: context.rs(8).clamp(6, 10).toDouble(),
           children: icons.map((iconData) {
             final iconName = iconData['name'] as String;
             final isSelected = iconName == _selectedIcon;
-            const iconSize = 26.0;
 
-            return GestureDetector(
-              onTap: () {
-                setState(() {
-                  _selectedIcon = iconName;
-                });
-              },
-              child: Container(
-                width: 48,
-                height: 48,
-                decoration: BoxDecoration(
-                  color: isSelected
-                      ? _safeColorWithOpacity(AppColors.pointColor, 0.1)
-                      : const Color(0xFFF3F4F6),
-                  borderRadius: BorderRadius.circular(12),
-                  border: Border.all(
-                    color: isSelected
-                        ? AppColors.pointColor
-                        : const Color(0xFFE5E7EB),
-                    width: isSelected ? 2 : 1,
-                  ),
-                ),
-                child: Center(
-                  child: ShapeIcon(
-                    iconName: iconName,
-                    color: isSelected
-                        ? AppColors.pointColor
-                        : const Color(0xFF6B7280),
-                    size: iconSize,
+            return Semantics(
+              button: true,
+              selected: isSelected,
+              label: _iconSemanticLabel(iconName),
+              child: Material(
+                color: Colors.transparent,
+                child: InkResponse(
+                  onTap: () {
+                    setState(() {
+                      _selectedIcon = iconName;
+                    });
+                  },
+                  radius: 24,
+                  child: SizedBox.square(
+                    dimension: 48,
+                    child: Stack(
+                      alignment: Alignment.center,
+                      clipBehavior: Clip.none,
+                      children: [
+                        AnimatedScale(
+                          scale: isSelected ? 1.08 : 1,
+                          duration: DesignTokens.normal,
+                          child: ShapeIcon(
+                            iconName: iconName,
+                            color: isSelected
+                                ? _parseColor(_selectedColor)
+                                : const Color(0xFF667085),
+                            size: context.ri(26).clamp(24, 29).toDouble(),
+                          ),
+                        ),
+                        if (isSelected)
+                          const PositionedDirectional(
+                            end: -1,
+                            bottom: 1,
+                            child: Icon(
+                              Icons.check_circle_rounded,
+                              size: 15,
+                              color: Color(0xFF2563EB),
+                            ),
+                          ),
+                      ],
+                    ),
                   ),
                 ),
               ),
@@ -218,6 +239,23 @@ class _CreateCategoryScreenState extends State<CreateCategoryScreen> {
         ),
       ],
     );
+  }
+
+  String _iconSemanticLabel(String iconName) {
+    final isKo = Localizations.localeOf(context).languageCode == 'ko';
+    const ko = {
+      'shape_circle': '원',
+      'shape_triangle': '삼각형',
+      'shape_square': '사각형',
+      'shape_star': '별',
+    };
+    const en = {
+      'shape_circle': 'circle',
+      'shape_triangle': 'triangle',
+      'shape_square': 'square',
+      'shape_star': 'star',
+    };
+    return (isKo ? ko : en)[iconName] ?? iconName;
   }
 
   Color _parseColor(String hexColor) {
@@ -242,9 +280,120 @@ class _CreateCategoryScreenState extends State<CreateCategoryScreen> {
     }
   }
 
-  Color _safeColorWithOpacity(Color color, double opacity) {
-    final clampedOpacity = opacity.clamp(0.0, 1.0);
-    return color.withOpacity(clampedOpacity);
+  double get _toolbarHeight {
+    final base = context.rh(56, min: 54, max: 60);
+    final scaledTitle = MediaQuery.textScalerOf(context).scale(
+      context.rf(18).clamp(16, 19).toDouble(),
+    );
+    final accessible = scaledTitle * 1.2 + DesignTokens.s24;
+    return accessible > base ? accessible.clamp(base, 96).toDouble() : base;
+  }
+
+  Widget _buildCenteredTitle(String title) {
+    final horizontalClearance =
+        MediaQuery.sizeOf(context).width < 360 ? 88.0 : 110.0;
+    return SafeArea(
+      bottom: false,
+      child: IgnorePointer(
+        child: Center(
+          child: Padding(
+            padding: EdgeInsets.symmetric(horizontal: horizontalClearance),
+            child: Text(
+              title,
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
+              textAlign: TextAlign.center,
+              style: TextStyle(
+                fontFamily: 'Inter',
+                fontFamilyFallback: const ['NotoSansKR'],
+                fontSize: context.rf(18).clamp(16, 19).toDouble(),
+                fontWeight: FontWeight.w700,
+                color: const Color(0xFF111827),
+              ),
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+
+  PreferredSizeWidget _buildAppBar(AppLocalizations l10n) {
+    final title = _isEdit ? l10n.editCategory : l10n.newCategory;
+    final actionLabel = _isEdit ? l10n.editAction : l10n.create;
+    final useCompactAction = MediaQuery.sizeOf(context).width < 340 ||
+        MediaQuery.textScalerOf(context).scale(14) > 24;
+
+    return AppBar(
+      backgroundColor: Colors.white,
+      elevation: 0,
+      surfaceTintColor: Colors.white,
+      toolbarHeight: _toolbarHeight,
+      automaticallyImplyLeading: false,
+      leadingWidth: 48,
+      leading: IconButton(
+        icon: Icon(
+          Icons.close_rounded,
+          color: const Color(0xFF111827),
+          size: context.ri(22).clamp(21, 24).toDouble(),
+        ),
+        onPressed: () => Navigator.pop(context),
+        tooltip: MaterialLocalizations.of(context).closeButtonTooltip,
+      ),
+      flexibleSpace: _buildCenteredTitle(title),
+      actions: [
+        if (useCompactAction)
+          SizedBox.square(
+            dimension: 48,
+            child: IconButton(
+              onPressed: _handleSave,
+              tooltip: actionLabel,
+              icon: Icon(
+                Icons.check_rounded,
+                size: context.ri(21).clamp(20, 23).toDouble(),
+              ),
+              color: const Color(0xFF111827),
+            ),
+          )
+        else
+          TextButton.icon(
+            onPressed: _handleSave,
+            icon: Icon(
+              Icons.check_rounded,
+              size: context.ri(18).clamp(17, 20).toDouble(),
+            ),
+            label: Text(
+              actionLabel,
+              style: TextStyle(
+                fontFamily: 'Inter',
+                fontFamilyFallback: const ['NotoSansKR'],
+                fontSize: context.rf(14).clamp(13, 15).toDouble(),
+                fontWeight: FontWeight.w700,
+              ),
+            ),
+            style: TextButton.styleFrom(
+              foregroundColor: const Color(0xFF111827),
+              padding: const EdgeInsets.symmetric(horizontal: 8),
+              minimumSize: const Size(44, 44),
+            ),
+          ),
+        const SizedBox(width: 4),
+      ],
+    );
+  }
+
+  Widget _buildSectionLabel(String text) {
+    return Text(
+      text,
+      maxLines: 2,
+      overflow: TextOverflow.ellipsis,
+      style: TextStyle(
+        fontFamily: 'Inter',
+        fontFamilyFallback: const ['NotoSansKR'],
+        fontSize: context.rf(15).clamp(14, 16).toDouble(),
+        fontWeight: FontWeight.w800,
+        color: const Color(0xFF111827),
+      ),
+    );
   }
 
   @override
@@ -253,110 +402,136 @@ class _CreateCategoryScreenState extends State<CreateCategoryScreen> {
 
     return Scaffold(
       backgroundColor: Colors.white,
-      appBar: AppBar(
-        backgroundColor: Colors.white,
-        elevation: 0,
-        centerTitle: false,
-        leading: IconButton(
-          icon: const Icon(Icons.close, color: Color(0xFF1A1A1A)),
-          onPressed: () => Navigator.pop(context),
-        ),
-        title: Text(
-          _isEdit ? (l10n.editCategory ?? "") : l10n.newCategory,
-          style: const TextStyle(
-            fontFamily: 'Inter',
-            fontFamilyFallback: const ['NotoSansKR'],
-            fontSize: 20,
-            fontWeight: FontWeight.w700,
-            height: 1.2,
-            letterSpacing: -0.2,
-            color: Color(0xFF111827),
-          ),
-        ),
-        bottom: PreferredSize(
-          preferredSize: const Size.fromHeight(1),
-          child: Container(
-            height: 1,
-            color: const Color(0xFFE6EAF0),
-          ),
-        ),
-      ),
+      resizeToAvoidBottomInset: true,
+      appBar: _buildAppBar(l10n),
       body: SafeArea(
-        child: Column(
-          children: [
-            Expanded(
-              child: SingleChildScrollView(
-                padding: const EdgeInsets.all(20),
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    TextField(
-                      controller: _nameController,
-                      decoration: InputDecoration(
-                        labelText: l10n.categoryName,
-                        hintText: l10n.categoryNameHint,
-                        border: OutlineInputBorder(
-                          borderRadius: BorderRadius.circular(12),
-                          borderSide: const BorderSide(color: Color(0xFFE5E7EB)),
-                        ),
-                        enabledBorder: OutlineInputBorder(
-                          borderRadius: BorderRadius.circular(12),
-                          borderSide: const BorderSide(color: Color(0xFFE5E7EB)),
-                        ),
-                        focusedBorder: OutlineInputBorder(
-                          borderRadius: BorderRadius.circular(12),
-                          borderSide: const BorderSide(
-                            color: AppColors.pointColor,
-                            width: 2,
+        top: false,
+        bottom: false,
+        child: LayoutBuilder(
+          builder: (context, constraints) {
+            final screenWidth = MediaQuery.sizeOf(context).width;
+            final systemBottomInset = MediaQuery.viewPaddingOf(context).bottom;
+            final horizontalPadding = screenWidth < 360
+                ? 14.0
+                : screenWidth < 430
+                    ? 16.0
+                    : 20.0;
+
+            return SingleChildScrollView(
+              keyboardDismissBehavior: ScrollViewKeyboardDismissBehavior.onDrag,
+              padding: EdgeInsets.fromLTRB(
+                horizontalPadding,
+                context.rs(12).clamp(10, 16).toDouble(),
+                horizontalPadding,
+                DesignTokens.s24 + systemBottomInset,
+              ),
+              child: Center(
+                child: ConstrainedBox(
+                  constraints: const BoxConstraints(maxWidth: 640),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      _buildSectionLabel(l10n.categoryName),
+                      const Divider(height: 18, color: Color(0xFFE5E7EB)),
+                      TextField(
+                        controller: _nameController,
+                        autofocus: true,
+                        maxLines: 1,
+                        decoration: InputDecoration(
+                          hintText: l10n.categoryNameHint,
+                          hintStyle: TextStyle(
+                            fontFamily: 'Inter',
+                            fontFamilyFallback: const ['NotoSansKR'],
+                            fontSize: context.rf(15).clamp(14, 16).toDouble(),
+                            fontWeight: FontWeight.w400,
+                            color: const Color(0xFF9CA3AF),
                           ),
+                          border: InputBorder.none,
+                          contentPadding:
+                              const EdgeInsets.fromLTRB(0, 2, 0, 12),
+                        ),
+                        style: TextStyle(
+                          fontFamily: 'Inter',
+                          fontFamilyFallback: const ['NotoSansKR'],
+                          fontSize: context.rf(15).clamp(14, 16).toDouble(),
+                          fontWeight: FontWeight.w500,
+                          color: const Color(0xFF111827),
+                          height: 1.4,
                         ),
                       ),
-                      autofocus: true,
-                    ),
-                    const SizedBox(height: 24),
-                    _buildColorPicker(),
-                    const SizedBox(height: 24),
-                    _buildIconPicker(),
-                  ],
-                ),
-              ),
-            ),
-            Container(
-              padding: const EdgeInsets.fromLTRB(20, 12, 20, 16),
-              decoration: const BoxDecoration(
-                color: Colors.white,
-                border: Border(
-                  top: BorderSide(color: Color(0xFFE6EAF0), width: 1),
-                ),
-              ),
-              child: SizedBox(
-                height: 52,
-                width: double.infinity,
-                child: ElevatedButton(
-                  onPressed: _handleSave,
-                  style: ElevatedButton.styleFrom(
-                    backgroundColor: AppColors.pointColor,
-                    foregroundColor: Colors.white,
-                    elevation: 0,
-                    shape: RoundedRectangleBorder(
-                      borderRadius: BorderRadius.circular(12),
-                    ),
-                  ),
-                  child: Text(
-                    _isEdit ? (l10n.editAction ?? "") : l10n.create,
-                    style: const TextStyle(
-                      fontFamily: 'Inter',
-                      fontFamilyFallback: const ['NotoSansKR'],
-                      fontSize: 16,
-                      fontWeight: FontWeight.w700,
-                      height: 1.1,
-                      letterSpacing: -0.1,
-                    ),
+                      SizedBox(
+                        height: context.rs(22).clamp(18, 26).toDouble(),
+                      ),
+                      _buildColorPicker(),
+                      SizedBox(
+                        height: context.rs(26).clamp(22, 30).toDouble(),
+                      ),
+                      _buildIconPicker(),
+                      SizedBox(
+                        height: constraints.maxHeight < 500
+                            ? context.rs(12)
+                            : context.rs(24),
+                      ),
+                    ],
                   ),
                 ),
               ),
+            );
+          },
+        ),
+      ),
+    );
+  }
+}
+
+class _ColorChoice extends StatelessWidget {
+  const _ColorChoice({
+    required this.color,
+    required this.selected,
+    required this.semanticLabel,
+    required this.onTap,
+  });
+
+  final Color color;
+  final bool selected;
+  final String semanticLabel;
+  final VoidCallback onTap;
+
+  Color get _checkColor =>
+      color.computeLuminance() > 0.55 ? const Color(0xFF111827) : Colors.white;
+
+  @override
+  Widget build(BuildContext context) {
+    return Semantics(
+      button: true,
+      selected: selected,
+      label: semanticLabel,
+      child: Material(
+        color: Colors.transparent,
+        child: InkResponse(
+          onTap: onTap,
+          radius: 24,
+          child: SizedBox.square(
+            dimension: 44,
+            child: Center(
+              child: AnimatedContainer(
+                duration: DesignTokens.normal,
+                width: selected ? 36 : 32,
+                height: selected ? 36 : 32,
+                decoration: BoxDecoration(
+                  color: color,
+                  shape: BoxShape.circle,
+                ),
+                child: selected
+                    ? Icon(
+                        Icons.check_rounded,
+                        color: _checkColor,
+                        size: 19,
+                      )
+                    : null,
+              ),
             ),
-          ],
+          ),
         ),
       ),
     );

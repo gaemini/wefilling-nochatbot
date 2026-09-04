@@ -230,7 +230,7 @@ class SnackChatFileTransferService {
       ).timeout(const Duration(seconds: 20));
     } catch (error) {
       // A missing job/object is already the desired idempotent end state.
-      Logger.warning('Snack Chat 파일 취소 서버 정리 지연: $error');
+      if (Logger.isVerboseEnabled) Logger.warning('Snack Chat 파일 취소 서버 정리 지연: $error');
     }
     record.status = SnackChatFileTransferStatus.canceled;
     _emit(record, removed: true);
@@ -622,7 +622,7 @@ class SnackChatFileTransferService {
           }
         }
       } catch (error) {
-        Logger.warning('Snack Chat 파일 대기열 복원 실패: $error');
+        if (Logger.isVerboseEnabled) Logger.warning('Snack Chat 파일 대기열 복원 실패: $error');
       }
     }
     _loadedUid = uid;
@@ -740,7 +740,7 @@ class SnackChatFileTransferService {
       if (await destination.exists()) {
         await destination.delete().catchError((_) => destination);
       }
-      Logger.warning('Snack Chat 전송 파일 캐시 승격 실패: $error');
+      if (Logger.isVerboseEnabled) Logger.warning('Snack Chat 전송 파일 캐시 승격 실패: $error');
       return message.copyWith(localFilePath: source.path);
     }
   }

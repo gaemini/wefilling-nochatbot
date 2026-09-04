@@ -16,8 +16,10 @@ export const COL = {
 
   // Content
   posts: 'posts',
+  postSearchIndex: 'post_search_index',
   comments: 'comments',
   meetups: 'meetups',
+  meetupSearchIndex: 'meetup_search_index',
   snapshots: 'snapshots',
   snackChats: 'snack_chats',
   contentTranslations: 'content_translations',

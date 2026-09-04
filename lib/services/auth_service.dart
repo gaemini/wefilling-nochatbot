@@ -195,7 +195,7 @@ class AuthService {
         
         // 5분 초과 시 재인증 요구
         if (timeSinceLogin.inMinutes > 5) {
-          Logger.warning('재인증 필요: ${timeSinceLogin.inMinutes}분 경과');
+          if (Logger.isVerboseEnabled) Logger.warning('재인증 필요: ${timeSinceLogin.inMinutes}분 경과');
           throw FirebaseAuthException(
             code: 'requires-recent-login',
             message: '계정 삭제를 위해 다시 로그인해주세요',

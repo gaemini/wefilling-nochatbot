@@ -179,7 +179,7 @@ class NotificationSettingsService {
     }
 
     if (changed) {
-      Logger.log('✅ 알림 설정 마이그레이션 완료');
+      if (Logger.isVerboseEnabled) Logger.log('✅ 알림 설정 마이그레이션 완료');
     }
 
     return changed;
@@ -266,10 +266,10 @@ class _FCMServiceShim {
   Future<void> subscribeToTopic(String topic) async {
     // 지연 import로 실제 FCMService 사용
     // ignore: avoid_print
-    Logger.log('Shim subscribeToTopic($topic) 호출 - 실제 런타임에서는 FCMService로 대체');
+    if (Logger.isVerboseEnabled) Logger.log('Shim subscribeToTopic($topic) 호출 - 실제 런타임에서는 FCMService로 대체');
   }
   Future<void> unsubscribeFromTopic(String topic) async {
     // ignore: avoid_print
-    Logger.log('Shim unsubscribeFromTopic($topic) 호출 - 실제 런타임에서는 FCMService로 대체');
+    if (Logger.isVerboseEnabled) Logger.log('Shim unsubscribeFromTopic($topic) 호출 - 실제 런타임에서는 FCMService로 대체');
   }
 }

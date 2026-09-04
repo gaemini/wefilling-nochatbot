@@ -6,8 +6,8 @@ import 'package:flutter/material.dart';
 import '../services/meetup_service.dart';
 import '../l10n/app_localizations.dart';
 import '../utils/logger.dart';
-import '../constants/app_constants.dart';
 import '../ui/widgets/fullscreen_image_viewer.dart';
+import '../utils/responsive_helper.dart';
 
 class ReviewApprovalScreen extends StatefulWidget {
   final String requestId;
@@ -60,8 +60,9 @@ class _ReviewApprovalScreenState extends State<ReviewApprovalScreen> {
   /// 요청의 현재 상태 확인
   Future<void> _checkRequestStatus() async {
     try {
-      final requestDoc = await _meetupService.getReviewRequestStatus(widget.requestId);
-      
+      final requestDoc =
+          await _meetupService.getReviewRequestStatus(widget.requestId);
+
       if (mounted) {
         setState(() {
           _currentStatus = requestDoc?['status'] as String?;
@@ -94,13 +95,16 @@ class _ReviewApprovalScreenState extends State<ReviewApprovalScreen> {
           ScaffoldMessenger.of(context).showSnackBar(
             SnackBar(
               content: Text(accept
-                  ? (AppLocalizations.of(context)!.reviewAccepted ?? "") : AppLocalizations.of(context)!.reviewRejected),
+                  ? (AppLocalizations.of(context)!.reviewAccepted ?? "")
+                  : AppLocalizations.of(context)!.reviewRejected),
             ),
           );
           Navigator.of(context).pop(true);
         } else {
           ScaffoldMessenger.of(context).showSnackBar(
-            SnackBar(content: Text(AppLocalizations.of(context)!.reviewProcessError ?? "")),
+            SnackBar(
+                content: Text(
+                    AppLocalizations.of(context)!.reviewProcessError ?? "")),
           );
         }
       }
@@ -123,476 +127,384 @@ class _ReviewApprovalScreenState extends State<ReviewApprovalScreen> {
   @override
   Widget build(BuildContext context) {
     final l10n = AppLocalizations.of(context);
-    
-    // 로딩 중
+
     if (_isLoading) {
       return Scaffold(
         backgroundColor: Colors.white,
-        appBar: AppBar(
-          backgroundColor: Colors.white,
-          surfaceTintColor: Colors.white,
-          elevation: 0,
-          leading: IconButton(
-            icon: const Icon(Icons.arrow_back, color: Colors.black87),
-            onPressed: () => Navigator.of(context).pop(),
-          ),
-          title: Text(
-            l10n?.reviewApprovalRequest ?? "",
-            style: const TextStyle(
-              fontFamily: 'Inter',
-              fontFamilyFallback: const ['NotoSansKR'],
-              fontSize: 18,
-              fontWeight: FontWeight.w700,
-              color: Colors.black87,
-            ),
-          ),
-        ),
-        body: const Center(
-          child: CircularProgressIndicator(
-            valueColor: AlwaysStoppedAnimation<Color>(AppColors.pointColor),
+        appBar: _buildAppBar(l10n?.reviewApprovalRequest ?? ''),
+        body: const SafeArea(
+          top: false,
+          child: Center(
+            child: CircularProgressIndicator(color: Color(0xFF2E90FA)),
           ),
         ),
       );
     }
 
-    // 이미 응답한 요청
-    final alreadyResponded = _currentStatus != null && _currentStatus != 'pending';
-    
+    final alreadyResponded =
+        _currentStatus != null && _currentStatus != 'pending';
+
     return Scaffold(
       backgroundColor: Colors.white,
-      appBar: AppBar(
-        backgroundColor: Colors.white,
-        surfaceTintColor: Colors.white,
-        elevation: 0,
-        leading: IconButton(
-          icon: const Icon(Icons.arrow_back, color: Colors.black87),
-          onPressed: () => Navigator.of(context).pop(),
-        ),
-        title: Text(
-          l10n?.reviewApprovalRequest ?? "",
-          style: const TextStyle(
-            fontFamily: 'Inter',
-            fontFamilyFallback: const ['NotoSansKR'],
-            fontSize: 18,
-            fontWeight: FontWeight.w700,
-            color: Colors.black87,
-          ),
-        ),
-      ),
-      body: Column(
-        children: [
-          // 스크롤 가능한 콘텐츠 영역
-          Expanded(
-            child: SingleChildScrollView(
-              padding: EdgeInsets.only(
-                bottom: alreadyResponded ? 20 : 0, // 응답 완료 시 하단 여백
-              ),
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  // 모임 정보 헤더
-                  Container(
-                    width: double.infinity,
-                    padding: const EdgeInsets.all(20),
-                    decoration: BoxDecoration(
-                      color: AppColors.pointColor.withOpacity(0.05),
-                      border: Border(
-                        bottom: BorderSide(
-                          color: Colors.grey[200]!,
-                          width: 1,
-                        ),
-                      ),
-                    ),
+      appBar: _buildAppBar(l10n?.reviewApprovalRequest ?? ''),
+      body: SafeArea(
+        top: false,
+        child: Column(
+          children: [
+            Expanded(
+              child: SingleChildScrollView(
+                padding: EdgeInsets.only(bottom: alreadyResponded ? 28 : 16),
+                child: Center(
+                  child: ConstrainedBox(
+                    constraints: const BoxConstraints(maxWidth: 720),
                     child: Column(
                       crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
-                        Row(
-                          children: [
-                            Container(
-                              padding: const EdgeInsets.all(8),
-                              decoration: BoxDecoration(
-                                color: AppColors.pointColor,
-                                borderRadius: BorderRadius.circular(8),
-                              ),
-                              child: const Icon(
-                                Icons.event,
-                                color: Colors.white,
-                                size: 20,
-                              ),
-                            ),
-                            const SizedBox(width: 12),
-                            Expanded(
-                              child: Column(
-                                crossAxisAlignment: CrossAxisAlignment.start,
-                                children: [
-                                  Text(
-                                    widget.meetupTitle,
-                                    style: const TextStyle(
-                                      fontFamily: 'Inter',
-                                      fontFamilyFallback: const ['NotoSansKR'],
-                                      fontSize: 17,
-                                      fontWeight: FontWeight.w700,
-                                      color: Colors.black87,
-                                    ),
-                                  ),
-                                  const SizedBox(height: 4),
-                                  Text(
-                                    AppLocalizations.of(context)!.reviewByAuthor(widget.authorName),
-                                    style: TextStyle(
-                                      fontFamily: 'Inter',
-                                      fontFamilyFallback: const ['NotoSansKR'],
-                                      fontSize: 14,
-                                      fontWeight: FontWeight.w500,
-                                      color: Colors.grey[600],
-                                    ),
-                                  ),
-                                ],
-                              ),
-                            ),
-                          ],
-                        ),
-                      ],
-                    ),
-                  ),
-
-                  // 후기 이미지 (전체 너비, 슬라이드 지원)
-                  Stack(
-                    children: [
-                      Container(
-                        width: double.infinity,
-                        height: 400,
-                        color: Colors.black,
-                        child: PageView.builder(
-                          controller: _pageController,
-                          itemCount: _imageUrls.length,
-                          onPageChanged: (index) {
-                            setState(() {
-                              _currentImageIndex = index;
-                            });
-                          },
-                          itemBuilder: (context, index) {
-                            return GestureDetector(
-                              onTap: () {
-                                // 전체화면 이미지 뷰어 열기
-                                showFullscreenImageViewer(
-                                  context,
-                                  imageUrls: _imageUrls,
-                                  initialIndex: index,
-                                  heroTag: 'review_approval_image_$index',
-                                );
-                              },
-                              child: Hero(
-                                tag: 'review_approval_image_$index',
-                                child: Image.network(
-                                  _imageUrls[index],
-                                  fit: BoxFit.contain,
-                                  loadingBuilder: (context, child, loadingProgress) {
-                                    if (loadingProgress == null) return child;
-                                    return Center(
-                                      child: CircularProgressIndicator(
-                                        value: loadingProgress.expectedTotalBytes != null
-                                            ? loadingProgress.cumulativeBytesLoaded /
-                                                loadingProgress.expectedTotalBytes!
-                                            : null,
-                                        valueColor: const AlwaysStoppedAnimation<Color>(AppColors.pointColor),
-                                      ),
-                                    );
-                                  },
-                                  errorBuilder: (context, error, stackTrace) {
-                                    return Container(
-                                      color: Colors.grey[200],
-                                      child: Center(
-                                        child: Column(
-                                          mainAxisAlignment: MainAxisAlignment.center,
-                                          children: [
-                                            Icon(Icons.error_outline, size: 48, color: Colors.grey[400]),
-                                            const SizedBox(height: 8),
-                                            Text(
-                                              '이미지를 불러올 수 없습니다',
-                                              style: TextStyle(
-                                                fontFamily: 'Inter',
-                                                fontFamilyFallback: const ['NotoSansKR'],
-                                                fontSize: 14,
-                                                color: Colors.grey[600],
-                                              ),
-                                            ),
-                                          ],
-                                        ),
-                                      ),
-                                    );
-                                  },
-                                ),
-                              ),
-                            );
-                          },
-                        ),
-                      ),
-                      
-                      // 이미지 개수 인디케이터 (2장 이상일 때만 표시)
-                      if (_imageUrls.length > 1)
-                        Positioned(
-                          top: 16,
-                          right: 16,
-                          child: Container(
-                            padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
-                            decoration: BoxDecoration(
-                              color: Colors.black54,
-                              borderRadius: BorderRadius.circular(16),
-                            ),
-                            child: Text(
-                              '${_currentImageIndex + 1} / ${_imageUrls.length}',
-                              style: const TextStyle(
-                                fontFamily: 'Inter',
-                                fontFamilyFallback: const ['NotoSansKR'],
-                                color: Colors.white,
-                                fontSize: 13,
-                                fontWeight: FontWeight.w600,
-                              ),
-                            ),
+                        Padding(
+                          padding: EdgeInsets.fromLTRB(
+                            _horizontalPadding,
+                            14,
+                            _horizontalPadding,
+                            16,
                           ),
-                        ),
-                      
-                      // 페이지 인디케이터 점 (하단 중앙, 2장 이상일 때만)
-                      if (_imageUrls.length > 1)
-                        Positioned(
-                          bottom: 16,
-                          left: 0,
-                          right: 0,
-                          child: Row(
-                            mainAxisAlignment: MainAxisAlignment.center,
-                            children: List.generate(
-                              _imageUrls.length,
-                              (index) => Container(
-                                margin: const EdgeInsets.symmetric(horizontal: 4),
-                                width: 6,
-                                height: 6,
-                                decoration: BoxDecoration(
-                                  shape: BoxShape.circle,
-                                  color: _currentImageIndex == index
-                                      ? Colors.white
-                                      : Colors.white.withOpacity(0.4),
-                                ),
-                              ),
-                            ),
-                          ),
-                        ),
-                    ],
-                  ),
-
-                  // 후기 내용
-                  Padding(
-                    padding: const EdgeInsets.all(20),
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        Text(
-                          AppLocalizations.of(context)!.reviewContent,
-                          style: const TextStyle(
-                            fontFamily: 'Inter',
-                            fontFamilyFallback: const ['NotoSansKR'],
-                            fontSize: 16,
-                            fontWeight: FontWeight.w700,
-                            color: Colors.black87,
-                          ),
-                        ),
-                        const SizedBox(height: 12),
-                        Container(
-                          width: double.infinity,
-                          padding: const EdgeInsets.all(16),
-                          decoration: BoxDecoration(
-                            color: Colors.grey[50],
-                            borderRadius: BorderRadius.circular(12),
-                            border: Border.all(color: Colors.grey[200]!),
-                          ),
-                          child: Text(
-                            widget.content,
-                            style: const TextStyle(
-                              fontFamily: 'Inter',
-                              fontFamilyFallback: const ['NotoSansKR'],
-                              fontSize: 15,
-                              fontWeight: FontWeight.w400,
-                              height: 1.6,
-                              color: Colors.black87,
-                            ),
-                          ),
-                        ),
-                        const SizedBox(height: 20),
-
-                        // 안내 문구
-                        Container(
-                          padding: const EdgeInsets.all(16),
-                          decoration: BoxDecoration(
-                            color: Colors.amber[50],
-                            borderRadius: BorderRadius.circular(12),
-                            border: Border.all(color: Colors.amber[200]!),
-                          ),
-                          child: Row(
+                          child: Column(
                             crossAxisAlignment: CrossAxisAlignment.start,
                             children: [
-                              Icon(Icons.info_outline, color: Colors.amber[800], size: 20),
-                              const SizedBox(width: 12),
-                              Expanded(
-                                child: Text(
-                                  AppLocalizations.of(context)!.reviewApprovalInfo,
-                                  style: TextStyle(
-                                    fontFamily: 'Inter',
-                                    fontFamilyFallback: const ['NotoSansKR'],
-                                    color: Colors.amber[900],
-                                    fontSize: 13,
-                                    fontWeight: FontWeight.w500,
-                                    height: 1.5,
-                                  ),
+                              Text(
+                                widget.meetupTitle,
+                                style: TextStyle(
+                                  fontFamily: 'Inter',
+                                  fontFamilyFallback: const ['NotoSansKR'],
+                                  fontSize:
+                                      context.rf(18).clamp(16, 19).toDouble(),
+                                  fontWeight: FontWeight.w700,
+                                  color: const Color(0xFF111827),
+                                  height: 1.35,
+                                ),
+                              ),
+                              const SizedBox(height: 5),
+                              Text(
+                                l10n!.reviewByAuthor(widget.authorName),
+                                maxLines: 1,
+                                overflow: TextOverflow.ellipsis,
+                                style: const TextStyle(
+                                  fontFamily: 'Inter',
+                                  fontFamilyFallback: ['NotoSansKR'],
+                                  fontSize: 13,
+                                  fontWeight: FontWeight.w500,
+                                  color: Color(0xFF667085),
                                 ),
                               ),
                             ],
                           ),
                         ),
-
-                        // 이미 응답한 경우 상태 표시
-                        if (alreadyResponded) ...[
-                          const SizedBox(height: 20),
-                          Container(
-                            width: double.infinity,
-                            padding: const EdgeInsets.all(16),
-                            decoration: BoxDecoration(
-                              color: _currentStatus == 'accepted' ? Colors.green[50] : Colors.red[50],
-                              borderRadius: BorderRadius.circular(12),
-                              border: Border.all(
-                                color: _currentStatus == 'accepted' ? Colors.green[200]! : Colors.red[200]!,
-                                width: 1.5,
-                              ),
-                            ),
-                            child: Row(
-                              children: [
-                                Icon(
-                                  _currentStatus == 'accepted' ? Icons.check_circle : Icons.cancel,
-                                  color: _currentStatus == 'accepted' ? Colors.green[700] : Colors.red[700],
-                                  size: 24,
+                        _buildImageGallery(),
+                        Padding(
+                          padding: EdgeInsets.fromLTRB(
+                            _horizontalPadding,
+                            22,
+                            _horizontalPadding,
+                            0,
+                          ),
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              Text(
+                                l10n.reviewContent,
+                                style: const TextStyle(
+                                  fontFamily: 'Inter',
+                                  fontFamilyFallback: ['NotoSansKR'],
+                                  fontSize: 14,
+                                  fontWeight: FontWeight.w700,
+                                  color: Color(0xFF667085),
                                 ),
-                                const SizedBox(width: 12),
-                                Expanded(
-                                  child: Text(
-                                    _currentStatus == 'accepted'
-                                        ? l10n?.reviewAlreadyAccepted ?? ""
-                                        : l10n?.reviewAlreadyRejected ?? "",
-                                    style: TextStyle(
-                                      fontFamily: 'Inter',
-                                      fontFamilyFallback: const ['NotoSansKR'],
-                                      color: _currentStatus == 'accepted' ? Colors.green[900] : Colors.red[900],
-                                      fontSize: 15,
-                                      fontWeight: FontWeight.w600,
+                              ),
+                              const SizedBox(height: 9),
+                              Text(
+                                widget.content,
+                                style: TextStyle(
+                                  fontFamily: 'Inter',
+                                  fontFamilyFallback: const ['NotoSansKR'],
+                                  fontSize:
+                                      context.rf(15).clamp(14, 16).toDouble(),
+                                  fontWeight: FontWeight.w400,
+                                  height: 1.6,
+                                  color: const Color(0xFF111827),
+                                ),
+                              ),
+                              const SizedBox(height: 24),
+                              Row(
+                                crossAxisAlignment: CrossAxisAlignment.start,
+                                children: [
+                                  const Padding(
+                                    padding: EdgeInsets.only(top: 1),
+                                    child: Icon(
+                                      Icons.info_outline_rounded,
+                                      color: Color(0xFF667085),
+                                      size: 18,
                                     ),
                                   ),
-                                ),
+                                  const SizedBox(width: 8),
+                                  Expanded(
+                                    child: Text(
+                                      l10n.reviewApprovalInfo,
+                                      style: const TextStyle(
+                                        fontFamily: 'Inter',
+                                        fontFamilyFallback: ['NotoSansKR'],
+                                        color: Color(0xFF667085),
+                                        fontSize: 12.5,
+                                        fontWeight: FontWeight.w500,
+                                        height: 1.5,
+                                      ),
+                                    ),
+                                  ),
+                                ],
+                              ),
+                              if (alreadyResponded) ...[
+                                const SizedBox(height: 22),
+                                _buildResponseStatus(l10n),
                               ],
-                            ),
+                            ],
                           ),
-                        ],
+                        ),
                       ],
                     ),
                   ),
-                ],
-              ),
-            ),
-          ),
-
-          // 하단 고정 버튼 (응답하지 않은 경우에만)
-          if (!alreadyResponded)
-            Container(
-              padding: const EdgeInsets.fromLTRB(20, 20, 20, 20),
-              decoration: BoxDecoration(
-                color: Colors.white,
-                boxShadow: [
-                  BoxShadow(
-                    color: Colors.black.withOpacity(0.05),
-                    offset: const Offset(0, -2),
-                    blurRadius: 8,
-                  ),
-                ],
-              ),
-              child: SafeArea(
-                minimum: const EdgeInsets.only(bottom: 8), // 갤럭시 하단바 추가 여백
-                child: Row(
-                  children: [
-                    Expanded(
-                      child: SizedBox(
-                        height: 52,
-                        child: OutlinedButton(
-                          onPressed: _isProcessing ? null : () => _handleResponse(false),
-                          style: OutlinedButton.styleFrom(
-                            foregroundColor: const Color(0xFFEF4444),
-                            side: const BorderSide(color: Color(0xFFEF4444), width: 1.5),
-                            shape: RoundedRectangleBorder(
-                              borderRadius: BorderRadius.circular(12),
-                            ),
-                            disabledForegroundColor: Colors.grey[400],
-                            disabledBackgroundColor: Colors.grey[100],
-                          ),
-                          child: _isProcessing
-                              ? const SizedBox(
-                                  height: 20,
-                                  width: 20,
-                                  child: CircularProgressIndicator(
-                                    strokeWidth: 2,
-                                    valueColor: AlwaysStoppedAnimation<Color>(Color(0xFFEF4444)),
-                                  ),
-                                )
-                              : Text(
-                                  l10n?.reject ?? "",
-                                  style: const TextStyle(
-                                    fontFamily: 'Inter',
-                                    fontFamilyFallback: const ['NotoSansKR'],
-                                    fontSize: 16,
-                                    fontWeight: FontWeight.w700,
-                                  ),
-                                ),
-                        ),
-                      ),
-                    ),
-                    const SizedBox(width: 12),
-                    Expanded(
-                      child: SizedBox(
-                        height: 52,
-                        child: ElevatedButton(
-                          onPressed: _isProcessing ? null : () => _handleResponse(true),
-                          style: ElevatedButton.styleFrom(
-                            backgroundColor: AppColors.pointColor,
-                            foregroundColor: Colors.white,
-                            shape: RoundedRectangleBorder(
-                              borderRadius: BorderRadius.circular(12),
-                            ),
-                            elevation: 0,
-                            disabledBackgroundColor: Colors.grey[300],
-                            disabledForegroundColor: Colors.grey[500],
-                          ),
-                          child: _isProcessing
-                              ? const SizedBox(
-                                  height: 20,
-                                  width: 20,
-                                  child: CircularProgressIndicator(
-                                    strokeWidth: 2,
-                                    valueColor: AlwaysStoppedAnimation<Color>(Colors.white),
-                                  ),
-                                )
-                              : Text(
-                                  l10n?.accept ?? "",
-                                  style: const TextStyle(
-                                    fontFamily: 'Inter',
-                                    fontFamilyFallback: const ['NotoSansKR'],
-                                    fontSize: 16,
-                                    fontWeight: FontWeight.w700,
-                                  ),
-                                ),
-                        ),
-                      ),
-                    ),
-                  ],
                 ),
               ),
             ),
-        ],
+            if (!alreadyResponded) _buildBottomActions(l10n),
+          ],
+        ),
+      ),
+    );
+  }
+
+  PreferredSizeWidget _buildAppBar(String title) {
+    return AppBar(
+      backgroundColor: Colors.white,
+      surfaceTintColor: Colors.white,
+      elevation: 0,
+      scrolledUnderElevation: 0,
+      centerTitle: true,
+      toolbarHeight: context.rh(56, min: 54, max: 60),
+      leadingWidth: 48,
+      leading: IconButton(
+        onPressed: () => Navigator.of(context).maybePop(),
+        icon: Icon(
+          Icons.arrow_back_rounded,
+          color: const Color(0xFF111827),
+          size: context.ri(22).clamp(21, 24).toDouble(),
+        ),
+        tooltip: MaterialLocalizations.of(context).backButtonTooltip,
+      ),
+      title: MediaQuery.withClampedTextScaling(
+        maxScaleFactor: 1.2,
+        child: Text(
+          title,
+          maxLines: 1,
+          overflow: TextOverflow.ellipsis,
+          style: TextStyle(
+            fontFamily: 'Inter',
+            fontFamilyFallback: const ['NotoSansKR'],
+            fontSize: context.rf(18).clamp(16, 19).toDouble(),
+            fontWeight: FontWeight.w700,
+            color: const Color(0xFF111827),
+          ),
+        ),
+      ),
+    );
+  }
+
+  double get _horizontalPadding {
+    final width = MediaQuery.sizeOf(context).width;
+    return width < 360 ? 14 : (width < 430 ? 16 : 20);
+  }
+
+  Widget _buildImageGallery() {
+    final isWide = MediaQuery.sizeOf(context).width >= 600;
+    return Stack(
+      children: [
+        AspectRatio(
+          aspectRatio: isWide ? 4 / 3 : 1,
+          child: PageView.builder(
+            controller: _pageController,
+            itemCount: _imageUrls.length,
+            onPageChanged: (index) => setState(() {
+              _currentImageIndex = index;
+            }),
+            itemBuilder: (context, index) {
+              return GestureDetector(
+                onTap: () => showFullscreenImageViewer(
+                  context,
+                  imageUrls: _imageUrls,
+                  initialIndex: index,
+                  heroTag: 'review_approval_image_$index',
+                ),
+                child: Hero(
+                  tag: 'review_approval_image_$index',
+                  child: Image.network(
+                    _imageUrls[index],
+                    fit: BoxFit.cover,
+                    loadingBuilder: (context, child, progress) {
+                      if (progress == null) return child;
+                      return const ColoredBox(
+                        color: Color(0xFFF2F4F7),
+                        child: Center(
+                          child: CircularProgressIndicator(
+                            color: Color(0xFF2E90FA),
+                            strokeWidth: 2,
+                          ),
+                        ),
+                      );
+                    },
+                    errorBuilder: (context, error, stackTrace) {
+                      return const ColoredBox(
+                        color: Color(0xFFF2F4F7),
+                        child: Center(
+                          child: Icon(
+                            Icons.broken_image_outlined,
+                            size: 42,
+                            color: Color(0xFF98A2B3),
+                          ),
+                        ),
+                      );
+                    },
+                  ),
+                ),
+              );
+            },
+          ),
+        ),
+        if (_imageUrls.length > 1)
+          Positioned(
+            right: _horizontalPadding,
+            bottom: 12,
+            child: Container(
+              padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
+              decoration: BoxDecoration(
+                color: const Color(0xB3111827),
+                borderRadius: BorderRadius.circular(14),
+              ),
+              child: Text(
+                '${_currentImageIndex + 1}/${_imageUrls.length}',
+                style: const TextStyle(
+                  fontFamily: 'Inter',
+                  color: Colors.white,
+                  fontSize: 11.5,
+                  fontWeight: FontWeight.w700,
+                ),
+              ),
+            ),
+          ),
+      ],
+    );
+  }
+
+  Widget _buildResponseStatus(AppLocalizations l10n) {
+    final accepted = _currentStatus == 'accepted';
+    return Row(
+      children: [
+        Icon(
+          accepted ? Icons.check_circle_outline_rounded : Icons.cancel_outlined,
+          color: accepted ? const Color(0xFF12B76A) : const Color(0xFFF04438),
+          size: 20,
+        ),
+        const SizedBox(width: 8),
+        Expanded(
+          child: Text(
+            accepted
+                ? l10n.reviewAlreadyAccepted ?? ''
+                : l10n.reviewAlreadyRejected ?? '',
+            style: const TextStyle(
+              fontFamily: 'Inter',
+              fontFamilyFallback: ['NotoSansKR'],
+              color: Color(0xFF475467),
+              fontSize: 14,
+              fontWeight: FontWeight.w700,
+            ),
+          ),
+        ),
+      ],
+    );
+  }
+
+  Widget _buildBottomActions(AppLocalizations? l10n) {
+    return Padding(
+      padding: EdgeInsets.fromLTRB(
+        _horizontalPadding,
+        10,
+        _horizontalPadding,
+        12,
+      ),
+      child: Center(
+        child: ConstrainedBox(
+          constraints: const BoxConstraints(maxWidth: 720),
+          child: Row(
+            children: [
+              Expanded(
+                child: SizedBox(
+                  height: context.rh(50, min: 48, max: 54),
+                  child: TextButton(
+                    onPressed:
+                        _isProcessing ? null : () => _handleResponse(false),
+                    style: TextButton.styleFrom(
+                      foregroundColor: const Color(0xFF667085),
+                      shape: RoundedRectangleBorder(
+                        borderRadius: BorderRadius.circular(12),
+                      ),
+                    ),
+                    child: Text(
+                      l10n?.reject ?? '',
+                      style: const TextStyle(
+                        fontFamily: 'Inter',
+                        fontFamilyFallback: ['NotoSansKR'],
+                        fontSize: 15,
+                        fontWeight: FontWeight.w700,
+                      ),
+                    ),
+                  ),
+                ),
+              ),
+              const SizedBox(width: 10),
+              Expanded(
+                flex: 2,
+                child: SizedBox(
+                  height: context.rh(50, min: 48, max: 54),
+                  child: FilledButton(
+                    onPressed:
+                        _isProcessing ? null : () => _handleResponse(true),
+                    style: FilledButton.styleFrom(
+                      backgroundColor: const Color(0xFF2E90FA),
+                      disabledBackgroundColor: const Color(0xFFE4E7EC),
+                      shape: RoundedRectangleBorder(
+                        borderRadius: BorderRadius.circular(12),
+                      ),
+                    ),
+                    child: _isProcessing
+                        ? const SizedBox.square(
+                            dimension: 20,
+                            child: CircularProgressIndicator(
+                              strokeWidth: 2,
+                              color: Colors.white,
+                            ),
+                          )
+                        : Text(
+                            l10n?.accept ?? '',
+                            style: const TextStyle(
+                              fontFamily: 'Inter',
+                              fontFamilyFallback: ['NotoSansKR'],
+                              fontSize: 15,
+                              fontWeight: FontWeight.w700,
+                            ),
+                          ),
+                  ),
+                ),
+              ),
+            ],
+          ),
+        ),
       ),
     );
   }
 }
-

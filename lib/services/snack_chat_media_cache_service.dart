@@ -57,7 +57,7 @@ class SnackChatMediaCacheService {
       await files.media.setLastModified(DateTime.now());
       return bytes;
     } catch (error) {
-      Logger.warning('Snack Chat 이미지 기기 캐시 읽기 실패: $error');
+      if (Logger.isVerboseEnabled) Logger.warning('Snack Chat 이미지 기기 캐시 읽기 실패: $error');
       return null;
     }
   }
@@ -86,7 +86,7 @@ class SnackChatMediaCacheService {
       await _trim(userId);
     } catch (error) {
       // Cache failure must never make a valid chat image fail to display.
-      Logger.warning('Snack Chat 이미지 기기 캐시 저장 실패: $error');
+      if (Logger.isVerboseEnabled) Logger.warning('Snack Chat 이미지 기기 캐시 저장 실패: $error');
     }
   }
 
@@ -99,7 +99,7 @@ class SnackChatMediaCacheService {
       );
       if (await directory.exists()) await directory.delete(recursive: true);
     } catch (error) {
-      Logger.warning('Snack Chat 계정 이미지 캐시 삭제 실패: $error');
+      if (Logger.isVerboseEnabled) Logger.warning('Snack Chat 계정 이미지 캐시 삭제 실패: $error');
     }
   }
 

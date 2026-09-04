@@ -14,7 +14,7 @@ class FirebaseSetupHelper {
   /// Firebase Console에서 직접 수정하는 것을 권장합니다.
   static Future<void> setupRecommendedPlaces() async {
     try {
-      Logger.log('추천 장소 데이터 설정 시작...');
+      if (Logger.isVerboseEnabled) Logger.log('추천 장소 데이터 설정 시작...');
 
       // 스터디 카테고리
       await _firestore.collection('recommended_places').doc('study').set({
@@ -31,7 +31,7 @@ class FirebaseSetupHelper {
           },
         ],
       });
-      Logger.log('스터디 카테고리 설정 완료');
+      if (Logger.isVerboseEnabled) Logger.log('스터디 카테고리 설정 완료');
 
       // 밥 카테고리
       await _firestore.collection('recommended_places').doc('meal').set({
@@ -53,7 +53,7 @@ class FirebaseSetupHelper {
           },
         ],
       });
-      Logger.log('밥 카테고리 설정 완료');
+      if (Logger.isVerboseEnabled) Logger.log('밥 카테고리 설정 완료');
 
       // 카페 카테고리 (hobby)
       await _firestore.collection('recommended_places').doc('hobby').set({
@@ -75,7 +75,7 @@ class FirebaseSetupHelper {
           },
         ],
       });
-      Logger.log('카페 카테고리 설정 완료');
+      if (Logger.isVerboseEnabled) Logger.log('카페 카테고리 설정 완료');
 
       // 문화 카테고리
       await _firestore.collection('recommended_places').doc('culture').set({
@@ -92,17 +92,17 @@ class FirebaseSetupHelper {
           },
         ],
       });
-      Logger.log('문화 카테고리 설정 완료');
+      if (Logger.isVerboseEnabled) Logger.log('문화 카테고리 설정 완료');
 
       // 기타 카테고리 (빈 배열)
       await _firestore.collection('recommended_places').doc('other').set({
         'places': [],
       });
-      Logger.log('기타 카테고리 설정 완료');
+      if (Logger.isVerboseEnabled) Logger.log('기타 카테고리 설정 완료');
 
-      Logger.log('✅ 모든 추천 장소 데이터 설정 완료!');
+      if (Logger.isVerboseEnabled) Logger.log('✅ 모든 추천 장소 데이터 설정 완료!');
     } catch (e) {
-      Logger.log('❌ 추천 장소 데이터 설정 실패: $e');
+      if (Logger.isVerboseEnabled) Logger.log('❌ 추천 장소 데이터 설정 실패: $e');
       rethrow;
     }
   }
@@ -119,9 +119,9 @@ class FirebaseSetupHelper {
       await _firestore.collection('recommended_places').doc(category).set({
         'places': places,
       });
-      Logger.log('$category 카테고리 업데이트 완료');
+      if (Logger.isVerboseEnabled) Logger.log('$category 카테고리 업데이트 완료');
     } catch (e) {
-      Logger.log('$category 카테고리 업데이트 실패: $e');
+      if (Logger.isVerboseEnabled) Logger.log('$category 카테고리 업데이트 실패: $e');
       rethrow;
     }
   }

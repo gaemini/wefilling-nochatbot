@@ -105,7 +105,7 @@ class AccountDeletionService {
     }).timeout(
       const Duration(seconds: 30),
       onTimeout: () {
-        Logger.log('⏱️ 계정 삭제 타임아웃 (30초)');
+        if (Logger.isVerboseEnabled) Logger.log('⏱️ 계정 삭제 타임아웃 (30초)');
         throw TimeoutException('계정 삭제 시간 초과');
       },
     );

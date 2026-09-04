@@ -316,14 +316,14 @@ class _MeetupDetailScreenState extends State<MeetupDetailScreen>
 
   Future<void> _loadParticipants() async {
     try {
-      Logger.log('🔄 모임 참여자 로드 시작: ${widget.meetupId}');
+      if (Logger.isVerboseEnabled) Logger.log('🔄 모임 참여자 로드 시작: ${widget.meetupId}');
 
       // 먼저 모든 참여자 조회 (디버깅용)
       final allParticipants =
           await _meetupService.getMeetupParticipants(widget.meetupId);
-      Logger.log('📋 전체 참여자 수: ${allParticipants.length}');
+      if (Logger.isVerboseEnabled) Logger.log('📋 전체 참여자 수: ${allParticipants.length}');
       for (var p in allParticipants) {
-        Logger.log('  - ${p.userName} (status: ${p.status})');
+        if (Logger.isVerboseEnabled) Logger.log('  - ${p.userName} (status: ${p.status})');
       }
 
       // 승인된 참여자만 필터링
@@ -353,7 +353,7 @@ class _MeetupDetailScreenState extends State<MeetupDetailScreen>
       // 중복 방지 (이미 목록에 있으면 추가하지 않음)
       final hasHost = participants.any((p) => p.userId == hostId);
       final combined = [if (!hasHost) hostProfile, ...participants];
-      Logger.log(
+      if (Logger.isVerboseEnabled) Logger.log(
           '✅ 승인된 참여자 ${participants.length}명 로드 완료 (호스트 포함 총 ${combined.length}명)');
 
       // 새로고침 시 setState로 UI 업데이트
@@ -371,13 +371,13 @@ class _MeetupDetailScreenState extends State<MeetupDetailScreen>
             currentParticipants: combined.length, // 호스트 포함
           );
         });
-        Logger.log('🎨 UI 업데이트 완료: ${_participants.length}명 (표시)');
-        Logger.log(
+        if (Logger.isVerboseEnabled) Logger.log('🎨 UI 업데이트 완료: ${_participants.length}명 (표시)');
+        if (Logger.isVerboseEnabled) Logger.log(
             '📊 모임 참여자 수 업데이트: ${combined.length}/${_currentMeetup.maxParticipants} (호스트 포함)');
       }
     } catch (e, stackTrace) {
       Logger.error('❌ 참여자 목록 로드 오류: $e');
-      Logger.log('Stack trace: $stackTrace');
+      if (Logger.isVerboseEnabled) Logger.log('Stack trace: $stackTrace');
       if (mounted) {
         setState(() {
           _isLoadingParticipants = false;
@@ -2559,14 +2559,14 @@ class _MeetupDetailScreenState extends State<MeetupDetailScreen>
         status = requestData['status'] ?? 'pending';
 
         // 디버깅 로그
-        Logger.log('📋 후기 요청 상태 확인:');
-        Logger.log('  - requestId: $requestId');
-        Logger.log('  - status: $status');
-        Logger.log('  - recipientId: ${user.uid}');
-        Logger.log('  - meetupId: ${_currentMeetup.id}');
+        if (Logger.isVerboseEnabled) Logger.log('📋 후기 요청 상태 확인:');
+        if (Logger.isVerboseEnabled) Logger.log('  - requestId: $requestId');
+        if (Logger.isVerboseEnabled) Logger.log('  - status: $status');
+        if (Logger.isVerboseEnabled) Logger.log('  - recipientId: ${user.uid}');
+        if (Logger.isVerboseEnabled) Logger.log('  - meetupId: ${_currentMeetup.id}');
       } else {
         // 요청이 없으면 MeetupService를 통해 후기 요청 재전송
-        Logger.log('⚠️ review_request가 없음. 후기 요청 재전송 시도...');
+        if (Logger.isVerboseEnabled) Logger.log('⚠️ review_request가 없음. 후기 요청 재전송 시도...');
 
         if (_currentMeetup.reviewId != null) {
           // 실제 참여자이면서 수락 대기 대상인 본인의
@@ -2576,7 +2576,7 @@ class _MeetupDetailScreenState extends State<MeetupDetailScreen>
           );
 
           if (success) {
-            Logger.log('✅ 후기 요청 재전송 성공');
+            if (Logger.isVerboseEnabled) Logger.log('✅ 후기 요청 재전송 성공');
             // 다시 조회 (서버에서 최신 데이터)
             final retrySnapshot = await FirebaseFirestore.instance
                 .collection('review_requests')
@@ -2593,7 +2593,7 @@ class _MeetupDetailScreenState extends State<MeetupDetailScreen>
               authorName = requestData['requesterName'] ?? authorName;
               status = requestData['status'] ?? 'pending';
 
-              Logger.log('📋 재전송 후 상태: $status');
+              if (Logger.isVerboseEnabled) Logger.log('📋 재전송 후 상태: $status');
             }
           } else {
             Logger.error('❌ 후기 요청 재전송 실패');
@@ -2607,7 +2607,7 @@ class _MeetupDetailScreenState extends State<MeetupDetailScreen>
             return;
           }
         } else {
-          Logger.log('❌ reviewId가 없음');
+          if (Logger.isVerboseEnabled) Logger.log('❌ reviewId가 없음');
           if (mounted) {
             ScaffoldMessenger.of(context).showSnackBar(
               SnackBar(
@@ -3177,20 +3177,20 @@ class _MeetupDetailScreenState extends State<MeetupDetailScreen>
 
   /// 모임 완료 처리
   Future<void> _markMeetupAsCompleted() async {
-    Logger.log('🚀 [MEETUP_COMPLETE] 모임 완료 처리 시작: ${widget.meetupId}');
+    if (Logger.isVerboseEnabled) Logger.log('🚀 [MEETUP_COMPLETE] 모임 완료 처리 시작: ${widget.meetupId}');
 
     setState(() {
       _isLoading = true;
     });
 
     try {
-      Logger.log('📡 [MEETUP_COMPLETE] MeetupService.markMeetupAsCompleted 호출');
+      if (Logger.isVerboseEnabled) Logger.log('📡 [MEETUP_COMPLETE] MeetupService.markMeetupAsCompleted 호출');
       final success =
           await _meetupService.markMeetupAsCompleted(widget.meetupId);
-      Logger.log('📋 [MEETUP_COMPLETE] 완료 처리 결과: $success');
+      if (Logger.isVerboseEnabled) Logger.log('📋 [MEETUP_COMPLETE] 완료 처리 결과: $success');
 
       if (success && mounted) {
-        Logger.log('✅ [MEETUP_COMPLETE] 성공 - UI 상태 업데이트');
+        if (Logger.isVerboseEnabled) Logger.log('✅ [MEETUP_COMPLETE] 성공 - UI 상태 업데이트');
         setState(() {
           _currentMeetup = _currentMeetup.copyWith(isCompleted: true);
           _isLoading = false;
@@ -3325,7 +3325,7 @@ class _MeetupDetailScreenState extends State<MeetupDetailScreen>
   /// 후기 삭제
   Future<void> _deleteReview() async {
     if (_currentMeetup.reviewId == null) {
-      Logger.log('⚠️ reviewId가 null입니다');
+      if (Logger.isVerboseEnabled) Logger.log('⚠️ reviewId가 null입니다');
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
@@ -3343,12 +3343,12 @@ class _MeetupDetailScreenState extends State<MeetupDetailScreen>
     });
 
     try {
-      Logger.log('🗑️ UI: 후기 삭제 시작 - reviewId: ${_currentMeetup.reviewId}');
+      if (Logger.isVerboseEnabled) Logger.log('🗑️ UI: 후기 삭제 시작 - reviewId: ${_currentMeetup.reviewId}');
 
       final success =
           await _meetupService.deleteMeetupReview(_currentMeetup.reviewId!);
 
-      Logger.log('✅ UI: 후기 삭제 결과 - success: $success');
+      if (Logger.isVerboseEnabled) Logger.log('✅ UI: 후기 삭제 결과 - success: $success');
 
       if (success && mounted) {
         setState(() {
@@ -3567,12 +3567,6 @@ class _MeetupDetailScreenState extends State<MeetupDetailScreen>
     return StreamBuilder<List<MeetupParticipant>>(
       stream: _meetupService.getParticipantsStream(widget.meetupId),
       builder: (context, snapshot) {
-        // 🔍 진단: 참여자 StreamBuilder 상태 로그
-        Logger.log(
-            '👥 [PARTICIPANTS] StreamBuilder 상태: ${snapshot.connectionState}');
-        Logger.log(
-            '📊 [PARTICIPANTS] hasData: ${snapshot.hasData}, 데이터 수: ${snapshot.data?.length ?? 0}');
-
         List<MeetupParticipant> participants = [];
         bool isLoading = !snapshot.hasData && _isLoadingParticipants;
 
@@ -3582,8 +3576,6 @@ class _MeetupDetailScreenState extends State<MeetupDetailScreen>
 
         if (snapshot.hasData) {
           participants = snapshot.data!;
-          Logger.log('✅ [PARTICIPANTS] 참여자 데이터 로드 완료: ${participants.length}명');
-
           // 호스트를 참여자 목록 맨 앞에 포함
           final hostId = _currentMeetup.userId;
           final hostName = _currentMeetup.hostNickname ?? _currentMeetup.host;

@@ -1,14 +1,14 @@
 # 🍎 Xcode에서 iOS 빌드 및 제출 가이드
 
-**버전**: 1.0.2+9  
-**작성일**: 2026-02-01
+**버전**: 1.3.8+78
+**최종 점검일**: 2026-09-04
 
 ---
 
 ## ✅ 사전 준비 완료 사항
 
 ### 1. 버전 업데이트 완료
-- ✅ `pubspec.yaml`: **1.0.2+9**
+- ✅ `pubspec.yaml`: **1.3.8+78**
 - ✅ 앱스토어 제출 준비됨
 
 ### 2. iOS 환경 설정 완료
@@ -18,6 +18,23 @@
 - ✅ 푸시 알림: production 환경
 - ✅ Privacy Manifest 완료
 - ✅ 권한 설명: 한국어
+
+### 3. 빌드 전 자동 점검
+
+아래 명령이 통과해야 Xcode Archive 또는 IPA 생성을 진행합니다. Runner와
+Share Extension의 배포 서명, 번들 ID, Firebase 프로젝트, App Check 환경,
+버전 증가 여부를 함께 확인합니다.
+
+```bash
+bash scripts/ios_release.sh check
+```
+
+설치된 Apple Distribution 인증서로 검증된 IPA를 직접 만들려면 다음 명령을
+사용합니다.
+
+```bash
+bash scripts/ios_release.sh build --yes
+```
 
 ---
 
@@ -39,11 +56,18 @@ open ios/Runner.xcworkspace
 2. **Signing & Capabilities** 탭 선택
 3. **Team** 선택 (Apple Developer 계정)
 4. **Automatically manage signing** 체크
+5. `ShareExtension` 타깃도 같은 Team과 자동 서명을 사용하도록 확인
 
 확인 사항:
 - ✅ Bundle Identifier: `com.wefilling.app`
 - ✅ Signing Certificate: 자동 선택됨
 - ✅ Provisioning Profile: 자동 생성됨
+
+> 자동 서명을 사용할 때 Runner와 ShareExtension의 `Code Signing Identity`는
+> 기기 빌드 기준 `Apple Development`로 둡니다. Release/Profile에
+> `Apple Distribution`을 직접 지정하면 자동 프로비저닝과 충돌합니다.
+> App Store용 Archive는 내보내기 과정에서 Xcode가 설치된 배포 인증서로
+> 자동 재서명합니다.
 
 ---
 
@@ -90,12 +114,12 @@ Organizer에서:
 **App Store Connect** > **나의 앱** > **Wefilling**
 
 #### 버전 정보
-- 버전: **1.0.2**
-- 빌드: **9** (자동 선택)
+- 버전: **1.3.8**
+- 빌드: **78** (자동 선택)
 
 #### 새로운 기능 (변경 로그)
 ```
-버전 1.0.2 업데이트
+버전 1.3.8 업데이트
 
 • 앱 안정성 향상
 • 성능 최적화
@@ -208,9 +232,9 @@ pod install
 ## 📊 현재 설정 상태
 
 ### ✅ 완료된 항목
-- [x] 버전 1.0.2+9로 업데이트
+- [x] 버전 1.3.8+78로 업데이트
 - [x] CocoaPods 설치 완료
-- [x] Firebase SDK 12.4.0
+- [x] Firebase SDK 12.8.0
 - [x] Bundle ID 설정
 - [x] 푸시 알림 production 환경
 - [x] Privacy Manifest 추가

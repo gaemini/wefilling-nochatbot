@@ -529,15 +529,7 @@ class ContentTranslationService extends ChangeNotifier {
     ContentTranslationRequest request,
     String sourceHash,
     String targetLanguage,
-  ) {
-    if (!kDebugMode) return;
-    final shortHash =
-        sourceHash.length <= 10 ? sourceHash : sourceHash.substring(0, 10);
-    debugPrint(
-      'Content translation state: reason=$reason, '
-      'id=${request.serverId}, hash=$shortHash, target=$targetLanguage',
-    );
-  }
+  ) {}
 
   int _metadataInt(dynamic value) {
     if (value is int) return value;
@@ -746,13 +738,7 @@ class ContentTranslationService extends ChangeNotifier {
         'preferredTranslationLanguageSource': 'manual',
         'preferredTranslationLanguageUpdatedAt': FieldValue.serverTimestamp(),
       });
-    } catch (error) {
-      if (kDebugMode) {
-        debugPrint(
-          'Translation language preference sync failed: ${error.runtimeType}',
-        );
-      }
-    }
+    } catch (_) {}
   }
 
   Future<String?> preferredLanguageCode() async {
@@ -1362,12 +1348,6 @@ class ContentTranslationService extends ChangeNotifier {
       ),
     );
     _blockedFailures[key] = failure;
-    if (kDebugMode) {
-      debugPrint(
-        'Content translation exhausted: '
-        'type=${queued.request.contentType}, code=$errorCode',
-      );
-    }
     Timer(_manualRetryCooldown, () {
       if (identical(_blockedFailures[key], failure)) notifyListeners();
     });
@@ -1452,13 +1432,7 @@ class ContentTranslationService extends ChangeNotifier {
       final box = await _ensureBox();
       await box?.put(key, result.toMap());
       await _prunePersistentCacheIfNeeded(box);
-    } catch (error) {
-      if (kDebugMode) {
-        debugPrint(
-          'Translation cache write failed: ${error.runtimeType}',
-        );
-      }
-    }
+    } catch (_) {}
   }
 
   Future<void> _flushQueue() async {
@@ -1609,18 +1583,6 @@ class ContentTranslationService extends ChangeNotifier {
         _completeSuccess(key, queued, result);
       }
     } catch (error) {
-      if (kDebugMode) {
-        if (error is FirebaseFunctionsException) {
-          debugPrint(
-            'Content translation request failed: '
-            'code=${error.code}, message=${error.message}',
-          );
-        } else {
-          debugPrint(
-            'Content translation request failed: ${error.runtimeType}',
-          );
-        }
-      }
       for (final entry in batchEntries) {
         final errorCode =
             error is FirebaseFunctionsException ? error.code : 'network_error';

@@ -94,7 +94,7 @@ class ProfileImageAdapter {
       final uploadedUrl = await _storageService.uploadImage(imageFile);
 
       if (uploadedUrl != null) {
-        Logger.log('프로필 포스트 이미지 업로드 성공: $uploadedUrl');
+        if (Logger.isVerboseEnabled) Logger.log('프로필 포스트 이미지 업로드 성공: $uploadedUrl');
         return uploadedUrl;
       }
 
@@ -113,7 +113,7 @@ class ProfileImageAdapter {
     try {
       if (imageFiles.isEmpty) return [];
 
-      Logger.log('프로필 이미지 업로드 시작: ${imageFiles.length}개 파일');
+      if (Logger.isVerboseEnabled) Logger.log('프로필 이미지 업로드 시작: ${imageFiles.length}개 파일');
 
       // 병렬 업로드
       final futures = imageFiles.map(
@@ -129,7 +129,7 @@ class ProfileImageAdapter {
       final successUrls =
           results.where((url) => url != null).cast<String>().toList();
 
-      Logger.log(
+      if (Logger.isVerboseEnabled) Logger.log(
           '프로필 이미지 업로드 완료: ${successUrls.length}개 (요청: ${imageFiles.length}개)');
       return successUrls;
     } catch (e) {
@@ -262,7 +262,7 @@ class ProfileDataAdapter {
           .collection('posts')
           .add(profilePost.toFirestore());
 
-      Logger.log('미팅 리뷰 포스트 생성 완료: $userId');
+      if (Logger.isVerboseEnabled) Logger.log('미팅 리뷰 포스트 생성 완료: $userId');
       return true;
     } catch (e) {
       Logger.error('미팅 리뷰 포스트 생성 오류: $e');

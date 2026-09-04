@@ -80,7 +80,7 @@ class FriendCategoryService {
           .limit(maxCategoriesPerUser)
           .get();
       if (existing.docs.length >= maxCategoriesPerUser) {
-        Logger.log('카테고리 생성 차단: 최대 개수($maxCategoriesPerUser개) 도달');
+        if (Logger.isVerboseEnabled) Logger.log('카테고리 생성 차단: 최대 개수($maxCategoriesPerUser개) 도달');
         return null;
       }
 
@@ -277,7 +277,7 @@ class FriendCategoryService {
           .get();
 
       if (existingCategories.docs.isNotEmpty) {
-        Logger.log('기본 카테고리 생성 건너뜀: 이미 카테고리가 존재함');
+        if (Logger.isVerboseEnabled) Logger.log('기본 카테고리 생성 건너뜀: 이미 카테고리가 존재함');
         return true;
       }
 
@@ -296,7 +296,7 @@ class FriendCategoryService {
       }
 
       await batch.commit();
-      Logger.log('기본 카테고리 ${DefaultFriendCategories.defaults.length}개 생성 완료');
+      if (Logger.isVerboseEnabled) Logger.log('기본 카테고리 ${DefaultFriendCategories.defaults.length}개 생성 완료');
       return true;
     } catch (e) {
       Logger.error('기본 카테고리 생성 오류: $e');
@@ -330,17 +330,17 @@ class FriendCategoryService {
 
   // 친구를 모든 카테고리에서 제거
   Future<void> removeFriendFromAllCategories(String friendId) async {
-    Logger.log('   ┌─────────────────────────────────');
-    Logger.log('   │ removeFriendFromAllCategories 시작');
-    Logger.log('   │ friendId: $friendId');
+    if (Logger.isVerboseEnabled) Logger.log('   ┌─────────────────────────────────');
+    if (Logger.isVerboseEnabled) Logger.log('   │ removeFriendFromAllCategories 시작');
+    if (Logger.isVerboseEnabled) Logger.log('   │ friendId: $friendId');
 
     final user = _auth.currentUser;
     if (user == null) {
-      Logger.log('   │ ❌ 로그인된 사용자 없음');
-      Logger.log('   └─────────────────────────────────');
+      if (Logger.isVerboseEnabled) Logger.log('   │ ❌ 로그인된 사용자 없음');
+      if (Logger.isVerboseEnabled) Logger.log('   └─────────────────────────────────');
       return;
     }
-    Logger.log('   │ 현재 사용자: ${user.uid}');
+    if (Logger.isVerboseEnabled) Logger.log('   │ 현재 사용자: ${user.uid}');
 
     // 해당 친구를 포함하는 카테고리 찾기
     final snapshot = await _firestore
@@ -349,20 +349,20 @@ class FriendCategoryService {
         .where('friendIds', arrayContains: friendId)
         .get();
 
-    Logger.log('   │ 찾은 카테고리 수: ${snapshot.docs.length}');
+    if (Logger.isVerboseEnabled) Logger.log('   │ 찾은 카테고리 수: ${snapshot.docs.length}');
 
     if (snapshot.docs.isEmpty) {
-      Logger.log('   │ ℹ️ 해당 친구가 속한 카테고리 없음');
-      Logger.log('   └─────────────────────────────────');
+      if (Logger.isVerboseEnabled) Logger.log('   │ ℹ️ 해당 친구가 속한 카테고리 없음');
+      if (Logger.isVerboseEnabled) Logger.log('   └─────────────────────────────────');
       return;
     }
 
     // 각 카테고리 정보 출력
     for (var doc in snapshot.docs) {
       final data = doc.data();
-      Logger.log('   │ 카테고리: ${data['name']}');
-      Logger.log('   │   - ID: ${doc.id}');
-      Logger.log('   │   - 현재 친구 수: ${(data['friendIds'] as List).length}');
+      if (Logger.isVerboseEnabled) Logger.log('   │ 카테고리: ${data['name']}');
+      if (Logger.isVerboseEnabled) Logger.log('   │   - ID: ${doc.id}');
+      if (Logger.isVerboseEnabled) Logger.log('   │   - 현재 친구 수: ${(data['friendIds'] as List).length}');
     }
 
     // 배치로 한 번에 업데이트
@@ -374,10 +374,10 @@ class FriendCategoryService {
       });
     }
 
-    Logger.log('   │ Firestore 배치 업데이트 실행 중...');
+    if (Logger.isVerboseEnabled) Logger.log('   │ Firestore 배치 업데이트 실행 중...');
     await batch.commit();
-    Logger.log('   │ ✅ Firestore 배치 커밋 완료');
-    Logger.log('   │ ${snapshot.docs.length}개 카테고리에서 제거됨');
-    Logger.log('   └─────────────────────────────────');
+    if (Logger.isVerboseEnabled) Logger.log('   │ ✅ Firestore 배치 커밋 완료');
+    if (Logger.isVerboseEnabled) Logger.log('   │ ${snapshot.docs.length}개 카테고리에서 제거됨');
+    if (Logger.isVerboseEnabled) Logger.log('   └─────────────────────────────────');
   }
 }

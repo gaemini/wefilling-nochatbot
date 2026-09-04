@@ -50,7 +50,7 @@ class AdBannerService {
       // 1. 메모리 캐시 확인
       if (_memoryCache != null && _memoryCacheTime != null) {
         if (DateTime.now().difference(_memoryCacheTime!) < _cacheExpiration) {
-          Logger.log('✅ 광고 배너 메모리 캐시에서 로드');
+          if (Logger.isVerboseEnabled) Logger.log('✅ 광고 배너 메모리 캐시에서 로드');
           return _memoryCache!;
         }
       }
@@ -60,7 +60,7 @@ class AdBannerService {
       if (cachedBanners != null) {
         _memoryCache = cachedBanners;
         _memoryCacheTime = DateTime.now();
-        Logger.log('✅ 광고 배너 로컬 캐시에서 로드');
+        if (Logger.isVerboseEnabled) Logger.log('✅ 광고 배너 로컬 캐시에서 로드');
 
         // 백그라운드에서 데이터 업데이트
         _updateCacheInBackground();
@@ -110,7 +110,7 @@ class AdBannerService {
     _memoryCache = banners;
     _memoryCacheTime = DateTime.now();
 
-    Logger.log('✅ 광고 배너 Firebase에서 로드 및 캐시 저장');
+    if (Logger.isVerboseEnabled) Logger.log('✅ 광고 배너 Firebase에서 로드 및 캐시 저장');
 
     return banners;
   }
@@ -171,7 +171,7 @@ class AdBannerService {
       await prefs.remove(_cacheTimeKey);
       _memoryCache = null;
       _memoryCacheTime = null;
-      Logger.log('✅ 광고 배너 캐시 초기화');
+      if (Logger.isVerboseEnabled) Logger.log('✅ 광고 배너 캐시 초기화');
     } catch (e) {
       Logger.error('❌ 캐시 초기화 실패: $e');
     }
@@ -207,7 +207,7 @@ class AdBannerService {
         'createdAt': FieldValue.serverTimestamp(),
         'updatedAt': FieldValue.serverTimestamp(),
       });
-      Logger.log('✅ 광고 배너 추가 완료: ${docRef.id}');
+      if (Logger.isVerboseEnabled) Logger.log('✅ 광고 배너 추가 완료: ${docRef.id}');
 
       // 캐시 초기화
       await clearCache();
@@ -227,7 +227,7 @@ class AdBannerService {
         ...updates,
         'updatedAt': FieldValue.serverTimestamp(),
       });
-      Logger.log('✅ 광고 배너 수정 완료: $bannerId');
+      if (Logger.isVerboseEnabled) Logger.log('✅ 광고 배너 수정 완료: $bannerId');
 
       // 캐시 초기화
       await clearCache();
@@ -243,7 +243,7 @@ class AdBannerService {
   Future<bool> deleteBanner(String bannerId) async {
     try {
       await _firestore.collection(_collectionName).doc(bannerId).delete();
-      Logger.log('✅ 광고 배너 삭제 완료: $bannerId');
+      if (Logger.isVerboseEnabled) Logger.log('✅ 광고 배너 삭제 완료: $bannerId');
 
       // 캐시 초기화
       await clearCache();
@@ -331,7 +331,7 @@ class AdBannerService {
           'createdAt': FieldValue.serverTimestamp(),
           'updatedAt': FieldValue.serverTimestamp(),
         }, SetOptions(merge: false)); // 기존 데이터 덮어쓰기
-        Logger.log('✅ 광고 배너 업데이트: ${banner.id} - ${banner.title}');
+        if (Logger.isVerboseEnabled) Logger.log('✅ 광고 배너 업데이트: ${banner.id} - ${banner.title}');
       }
 
       // 캐시 초기화

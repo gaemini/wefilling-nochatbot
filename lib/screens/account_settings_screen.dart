@@ -3,6 +3,7 @@
 // 비밀번호 변경, 계정 삭제 등 계정 관련 설정 제공
 
 import 'package:flutter/material.dart';
+import 'package:flutter/foundation.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:provider/provider.dart';
@@ -214,19 +215,21 @@ class _AccountSettingsScreenState extends State<AccountSettingsScreen> {
                     subtitle:
                         '${AppLocalizations.of(context)!.appVersion} ${AppConfig.fullVersion}',
                   ),
-                  _buildDivider(),
-                  _buildListItem(
-                    Localizations.localeOf(context).languageCode == 'ko'
-                        ? '릴리스 진단'
-                        : 'Release diagnostics',
-                    Icons.fact_check_outlined,
-                    () => Navigator.push(
-                      context,
-                      MaterialPageRoute(
-                        builder: (_) => const ReleaseDiagnosticsScreen(),
+                  if (kDebugMode) ...[
+                    _buildDivider(),
+                    _buildListItem(
+                      Localizations.localeOf(context).languageCode == 'ko'
+                          ? '릴리스 진단'
+                          : 'Release diagnostics',
+                      Icons.fact_check_outlined,
+                      () => Navigator.push(
+                        context,
+                        MaterialPageRoute(
+                          builder: (_) => const ReleaseDiagnosticsScreen(),
+                        ),
                       ),
                     ),
-                  ),
+                  ],
 
                   const SizedBox(height: 32),
                 ],

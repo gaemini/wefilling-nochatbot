@@ -250,7 +250,7 @@ class SnapshotService {
         }
         feedItems = parsed;
         feedReady = true;
-        Logger.log(
+        if (Logger.isVerboseEnabled) Logger.log(
           '스낵 개인 피드 조회 성공 '
           '(currentUserId=$uid, documents=${snapshot.docs.length}, '
           'parsed=${parsed.length})',
@@ -417,7 +417,7 @@ class SnapshotService {
       if (!doc.exists) throw StateError('snapshot-not-found');
       final item = SnapshotItem.fromFirestore(doc);
       if (item.isExpiredAt(serverNow)) throw StateError('snapshot-expired');
-      Logger.log(
+      if (Logger.isVerboseEnabled) Logger.log(
         '스낵 단건 조회 성공 '
         '(contentId=$snapshotId, currentUserId=$currentUserId, '
         'ownerId=${item.authorId}, visibilityMode=${item.visibility.value}, '
@@ -858,7 +858,7 @@ class SnapshotService {
       // App Check/네트워크 등의 일시적인 Callable 실패가 반응 버튼을 다시
       // 노출시키지 않도록 canonical 반응 문서를 직접 확인한다. 반응 문서는
       // 사용자 UID를 문서 ID로 사용하므로 앱 재실행 후에도 상태가 유지된다.
-      Logger.warning(
+      if (Logger.isVerboseEnabled) Logger.warning(
         '스낵 반응 상태 Callable 조회 실패, Firestore로 재확인 '
         '(snapshotId=$snapshotId, error=$error)',
       );
@@ -910,7 +910,7 @@ class SnapshotService {
       final data = result.data;
       return data is Map && data['commented'] == true;
     } catch (error) {
-      Logger.warning(
+      if (Logger.isVerboseEnabled) Logger.warning(
         '스낵 코멘트 상태 Callable 조회 실패, Firestore로 재확인 '
         '(snapshotId=$snapshotId, error=$error)',
       );
@@ -1088,7 +1088,7 @@ class SnapshotService {
             await currentUser
                 .getIdToken(true)
                 .timeout(const Duration(seconds: 10));
-            Logger.log(
+            if (Logger.isVerboseEnabled) Logger.log(
               '스낵 이미지 인증 상태 갱신 완료 '
               '(contentId=${item.id}, currentUserId=$currentUserId)',
             );
@@ -1117,7 +1117,7 @@ class SnapshotService {
         lastStackTrace ?? StackTrace.current,
       );
     }
-    Logger.log(
+    if (Logger.isVerboseEnabled) Logger.log(
       '스낵 이미지 다운로드 성공 '
       '(contentId=${item.id}, currentUserId=$currentUserId, source=$source, '
       'hasImageStoragePath=${item.imageStoragePath.isNotEmpty})',

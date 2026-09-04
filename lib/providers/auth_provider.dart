@@ -29,6 +29,8 @@ import '../utils/logger.dart';
 import '../utils/hanyang_verification_helper.dart' as hanyang_verification;
 import '../utils/profile_photo_policy.dart';
 import '../services/firebase_app_check_service.dart';
+import '../services/content_filter_service.dart';
+import '../services/content_hide_service.dart';
 
 /// Firebase Authentication 계정과 Firestore 프로필의 가입 진행 상태입니다.
 ///
@@ -83,6 +85,18 @@ enum _GoogleAuthStage {
   lastLogin,
   userData,
   completed,
+}
+
+enum _ExistingUserDocumentUpdateResult {
+  updated,
+  missing,
+  deferred,
+}
+
+@visibleForTesting
+void clearAccountScopedContentCaches() {
+  ContentFilterService.refreshCache();
+  ContentHideService.clearAll();
 }
 
 class AuthProvider with ChangeNotifier implements WidgetsBindingObserver {
@@ -178,8 +192,9 @@ class AuthProvider with ChangeNotifier implements WidgetsBindingObserver {
   final List<VoidCallback> _streamCleanupCallbacks = [];
 
   AuthProvider() {
-    Logger.log('[HanyangVerification][AuthProvider] created '
-        'instance=${identityHashCode(this)}');
+    if (Logger.isVerboseEnabled)
+      Logger.log('[HanyangVerification][AuthProvider] created '
+          'instance=${identityHashCode(this)}');
 
     // 앱 포그라운드 복귀 시 FCM 재초기화를 감지하기 위해 lifecycle observer 등록
     WidgetsBinding.instance.addObserver(this);
@@ -187,9 +202,11 @@ class AuthProvider with ChangeNotifier implements WidgetsBindingObserver {
     // 초기화를 Future.microtask로 지연 - 크래시 방지
     Future.microtask(() async {
       try {
-        Logger.log('🔐 AuthProvider microtask 시작: ${DateTime.now()}');
+        if (Logger.isVerboseEnabled)
+          Logger.log('🔐 AuthProvider microtask 시작: ${DateTime.now()}');
         await _initializeAuth();
-        Logger.log('🔐 AuthProvider 초기화 완료: ${DateTime.now()}');
+        if (Logger.isVerboseEnabled)
+          Logger.log('🔐 AuthProvider 초기화 완료: ${DateTime.now()}');
       } catch (e) {
         Logger.error('AuthProvider 초기화 실패 - 앱은 계속 실행', e);
         _isLoading = false;
@@ -228,6 +245,10 @@ class AuthProvider with ChangeNotifier implements WidgetsBindingObserver {
     _activeAuthUid = nextUid;
     _user = user;
     if (previousUid != nextUid) {
+      // These process-wide caches describe the previous account's block and
+      // report decisions. Clear them before any feed/search load for the next
+      // uid so a rapid logout/login cannot hide valid post or meetup results.
+      clearAccountScopedContentCaches();
       _userLoadGeneration++;
       _hanyangRequestGeneration++;
       _hanyangRefreshInFlight = null;
@@ -275,7 +296,8 @@ class AuthProvider with ChangeNotifier implements WidgetsBindingObserver {
       _pendingRegistrationStateCheck = false;
       _pendingRegistrationStateCheckUid = null;
       if (state != AccountRegistrationState.complete) {
-        Logger.log('↩️ 앱 시작 시 미완료 회원가입을 같은 uid로 재개합니다.');
+        if (Logger.isVerboseEnabled)
+          Logger.log('↩️ 앱 시작 시 미완료 회원가입을 같은 uid로 재개합니다.');
         await ensureRegistrationProgress();
       }
     } catch (error) {
@@ -341,16 +363,12 @@ class AuthProvider with ChangeNotifier implements WidgetsBindingObserver {
   }
 
   void _logGoogleAuthStage(String event, {String details = ''}) {
+    if (!kDebugMode || !Logger.verboseLoggingEnabled) return;
     final suffix = details.isEmpty ? '' : ' $details';
     final message = '[GOOGLE_AUTH][$event] '
         'platform=${Platform.operatingSystem} '
         '${_googleAuthAppCheckContext()}$suffix';
-    // 인증 진단은 verbose 로그 옵션과 무관하게 로컬에서 확인할 수 있어야 한다.
-    // 개인정보나 토큰 값은 포함하지 않는다.
-    debugPrint(message);
-    if (!kDebugMode) {
-      unawaited(FirebaseCrashlytics.instance.log(message));
-    }
+    if (Logger.isVerboseEnabled) Logger.log(message);
   }
 
   void _logGoogleAuthFailure({
@@ -441,11 +459,12 @@ class AuthProvider with ChangeNotifier implements WidgetsBindingObserver {
       }
 
       final incoming = snapshot.data();
-      Logger.log('[HanyangVerification][AuthProvider] snapshot '
-          'instance=${identityHashCode(this)} '
-          'uid=${user.uid.substring(0, user.uid.length < 8 ? user.uid.length : 8)} '
-          'source=${snapshot.metadata.isFromCache ? 'cache' : 'server'} '
-          'projection=${incoming?['hanyangEmailVerified']}');
+      if (Logger.isVerboseEnabled)
+        Logger.log('[HanyangVerification][AuthProvider] snapshot '
+            'instance=${identityHashCode(this)} '
+            'uid=${user.uid.substring(0, user.uid.length < 8 ? user.uid.length : 8)} '
+            'source=${snapshot.metadata.isFromCache ? 'cache' : 'server'} '
+            'projection=${incoming?['hanyangEmailVerified']}');
       // 캐시의 오래된 미인증 값이 방금 서버에서 확인한 인증 상태를 잠시
       // 되돌리지 않게 한다. 실제 서버 스냅샷은 항상 반영한다.
       if (snapshot.metadata.isFromCache &&
@@ -533,10 +552,11 @@ class AuthProvider with ChangeNotifier implements WidgetsBindingObserver {
           _userData = snapshot.data();
           _observeCurrentUserDocument(currentUser);
         }
-        Logger.log('[HanyangVerification][AuthProvider] '
-            'instance=${identityHashCode(this)} uid=${uid.substring(0, uid.length < 8 ? uid.length : 8)} '
-            'generation=$generation status=$statusName '
-            'source=$_hanyangVerificationSource repaired=${data['repaired'] == true}');
+        if (Logger.isVerboseEnabled)
+          Logger.log('[HanyangVerification][AuthProvider] '
+              'instance=${identityHashCode(this)} uid=${uid.substring(0, uid.length < 8 ? uid.length : 8)} '
+              'generation=$generation status=$statusName '
+              'source=$_hanyangVerificationSource repaired=${data['repaired'] == true}');
         notifyListeners();
         return isHanyangEmailVerified;
       } catch (error) {
@@ -642,7 +662,7 @@ class AuthProvider with ChangeNotifier implements WidgetsBindingObserver {
 
   /// Creates or resumes the authenticated user's server-owned signup state.
   Future<AccountRegistrationState> ensureRegistrationProgress({
-    String signupLanguage = 'en',
+    String? signupLanguage,
     String verifiedEmail = '',
     String verificationToken = '',
   }) async {
@@ -652,7 +672,10 @@ class AuthProvider with ChangeNotifier implements WidgetsBindingObserver {
       await _runSignupRequest(() => _functions
               .httpsCallable('ensureRegistrationProgress')
               .call(<String, dynamic>{
-            'signupLanguage': signupLanguage,
+            if (signupLanguage?.trim().isNotEmpty == true)
+              'signupLanguage': signupLanguage,
+            if (signupLanguage?.trim().isNotEmpty == true)
+              'signupLanguageExplicit': true,
             if (verifiedEmail.isNotEmpty) 'verifiedEmail': verifiedEmail,
             if (verificationToken.isNotEmpty)
               'verificationToken': verificationToken,
@@ -673,14 +696,12 @@ class AuthProvider with ChangeNotifier implements WidgetsBindingObserver {
     try {
       _isLoading = true;
       notifyListeners();
-      await _setSignupDiagnosticStage('profile_finalize');
       await _runSignupRequest(() => _functions
           .httpsCallable('finalizePendingRegistration')
           .call(<String, dynamic>{'profile': profile}).timeout(
               const Duration(seconds: 20)));
       await _loadUserData();
       final completed = isRegistrationComplete;
-      if (completed) await _setSignupDiagnosticStage('complete');
       return completed;
     } catch (error) {
       await _recordSignupFailure('profile_finalize', error);
@@ -744,7 +765,7 @@ class AuthProvider with ChangeNotifier implements WidgetsBindingObserver {
             .timeout(
           const Duration(seconds: 15), // 30초 → 15초로 감소
           onTimeout: () {
-            Logger.log('⏱️ 사용자 데이터 로드 타임아웃');
+            if (Logger.isVerboseEnabled) Logger.log('⏱️ 사용자 데이터 로드 타임아웃');
             throw TimeoutException('사용자 데이터 로드 타임아웃');
           },
         );
@@ -764,7 +785,7 @@ class AuthProvider with ChangeNotifier implements WidgetsBindingObserver {
                 existingData: _userData,
               );
 
-              Logger.log('🔄 스키마 보정 완료 - 문서 재로드');
+              if (Logger.isVerboseEnabled) Logger.log('🔄 스키마 보정 완료 - 문서 재로드');
               final updatedDoc = await docRef
                   .get(
                 const GetOptions(source: Source.serverAndCache),
@@ -772,13 +793,14 @@ class AuthProvider with ChangeNotifier implements WidgetsBindingObserver {
                   .timeout(
                 const Duration(seconds: 5),
                 onTimeout: () {
-                  Logger.log('⏱️ 스키마 보정 후 재로드 타임아웃');
+                  if (Logger.isVerboseEnabled)
+                    Logger.log('⏱️ 스키마 보정 후 재로드 타임아웃');
                   throw TimeoutException('재로드 타임아웃');
                 },
               );
               if (updatedDoc.exists) {
                 _userData = updatedDoc.data();
-                Logger.log('✅ 스키마 보정 후 문서 재로드 완료');
+                if (Logger.isVerboseEnabled) Logger.log('✅ 스키마 보정 후 문서 재로드 완료');
               }
             } catch (e) {
               Logger.error('⚠️ users 문서 스키마 보정 실패(무시): $e');
@@ -795,7 +817,8 @@ class AuthProvider with ChangeNotifier implements WidgetsBindingObserver {
         Logger.error('사용자 데이터 로드 오류 (시도 $retryCount/$maxRetries): $e');
 
         if (retryCount >= maxRetries) {
-          Logger.log('최대 재시도 횟수 도달. 캐시에서 데이터 로드 시도');
+          if (Logger.isVerboseEnabled)
+            Logger.log('최대 재시도 횟수 도달. 캐시에서 데이터 로드 시도');
           try {
             // 마지막으로 캐시에서만 시도
             final cachedDoc = await _firestore
@@ -821,7 +844,8 @@ class AuthProvider with ChangeNotifier implements WidgetsBindingObserver {
 
     if (isRegistrationComplete) {
       // 최종 가입 완료 사용자만 알림 토큰과 사용자 부가 데이터를 등록한다.
-      Logger.log('🔍 [FCM 진단] 가입 완료 사용자 FCM 초기화 시작');
+      if (Logger.isVerboseEnabled)
+        Logger.log('🔍 [FCM 진단] 가입 완료 사용자 FCM 초기화 시작');
       unawaited(_initializeFCMIfNeeded());
       unawaited(refreshHanyangVerificationStatus());
     }
@@ -909,10 +933,10 @@ class AuthProvider with ChangeNotifier implements WidgetsBindingObserver {
 
         // 기존 사용자 정보 업데이트 (lastLogin)
         stage = _GoogleAuthStage.lastLogin;
-        final docExists = await _updateExistingUserDocument();
+        final documentUpdate = await _updateExistingUserDocument();
 
         // 🔥 문서가 없으면 탈퇴한 계정으로 간주
-        if (!docExists) {
+        if (documentUpdate == _ExistingUserDocumentUpdateResult.missing) {
           Logger.error('❌ 탈퇴한 계정: 사용자 문서가 존재하지 않습니다.');
 
           // 회원가입 필요 플래그 설정
@@ -1049,14 +1073,18 @@ class AuthProvider with ChangeNotifier implements WidgetsBindingObserver {
     try {
       // 취소/재시도 뒤에도 이전 가입 필요 플래그가 남지 않게 합니다.
       _signupRequired = false;
-      Logger.log('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━');
-      Logger.log('🍎 Apple Sign In 시작');
-      Logger.log('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━');
+      if (Logger.isVerboseEnabled)
+        Logger.log('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━');
+      if (Logger.isVerboseEnabled) Logger.log('🍎 Apple Sign In 시작');
+      if (Logger.isVerboseEnabled)
+        Logger.log('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━');
 
       // 플랫폼 체크
       if (!Platform.isIOS && !Platform.isMacOS) {
-        Logger.log('❌ Apple Sign In은 iOS/macOS에서만 사용 가능합니다');
-        Logger.log('   현재 플랫폼: ${Platform.operatingSystem}');
+        if (Logger.isVerboseEnabled)
+          Logger.log('❌ Apple Sign In은 iOS/macOS에서만 사용 가능합니다');
+        if (Logger.isVerboseEnabled)
+          Logger.log('   현재 플랫폼: ${Platform.operatingSystem}');
         _isLoading = false;
         notifyListeners();
         return false;
@@ -1066,18 +1094,22 @@ class AuthProvider with ChangeNotifier implements WidgetsBindingObserver {
       notifyListeners();
 
       // Apple Sign-In 직접 호출 (Google과 일관성 유지)
-      Logger.log('🍎 AppleAuthProvider 생성 중...');
+      if (Logger.isVerboseEnabled) Logger.log('🍎 AppleAuthProvider 생성 중...');
       final appleProvider = AppleAuthProvider();
       appleProvider.addScope('email');
       appleProvider.addScope('name');
-      Logger.log('🍎 AppleAuthProvider 생성 완료 (scopes: email, name)');
+      if (Logger.isVerboseEnabled)
+        Logger.log('🍎 AppleAuthProvider 생성 완료 (scopes: email, name)');
 
-      Logger.log('🍎 Firebase Auth signInWithProvider 호출 중...');
+      if (Logger.isVerboseEnabled)
+        Logger.log('🍎 Firebase Auth signInWithProvider 호출 중...');
       final userCredential = await _auth.signInWithProvider(appleProvider);
 
-      Logger.log('🍎 Apple Sign In 성공!');
-      Logger.log('   User ID: ${userCredential.user?.uid}');
-      Logger.log('   Nickname(users 문서 기준): 로그인 후 Firestore users 문서에서 확인');
+      if (Logger.isVerboseEnabled) Logger.log('🍎 Apple Sign In 성공!');
+      if (Logger.isVerboseEnabled)
+        Logger.log('   User ID: ${userCredential.user?.uid}');
+      if (Logger.isVerboseEnabled)
+        Logger.log('   Nickname(users 문서 기준): 로그인 후 Firestore users 문서에서 확인');
 
       // 사용자 정보 업데이트
       _user = userCredential.user;
@@ -1101,29 +1133,43 @@ class AuthProvider with ChangeNotifier implements WidgetsBindingObserver {
         }
 
         // 기존 사용자 정보 업데이트 (lastLogin)
-        await _updateExistingUserDocument();
+        final documentUpdate = await _updateExistingUserDocument();
+        if (documentUpdate == _ExistingUserDocumentUpdateResult.missing) {
+          Logger.error('❌ 탈퇴한 계정: 사용자 문서가 존재하지 않습니다.');
+          await _auth.signOut();
+          _user = null;
+          _userData = null;
+          _isLoading = false;
+          notifyListeners();
+          return false;
+        }
         await _loadUserData();
 
         // FCM 초기화 (백그라운드로 이동 - 로그인 플로우를 막지 않음)
         if (isRegistrationComplete) unawaited(_initializeFCMIfNeeded());
       }
 
-      Logger.log('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━');
+      if (Logger.isVerboseEnabled)
+        Logger.log('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━');
       return _user != null;
     } on FirebaseAuthException catch (e) {
       // Firebase Auth 관련 예외 처리 (구체적)
-      Logger.log('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━');
+      if (Logger.isVerboseEnabled)
+        Logger.log('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━');
       Logger.error('🍎 Apple Sign In 실패 (FirebaseAuthException)');
       Logger.error('   에러 코드: ${e.code}');
       Logger.error('   에러 메시지: ${e.message}');
-      Logger.log('   상세 정보: ${e.toString()}');
-      Logger.log('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━');
+      if (Logger.isVerboseEnabled) Logger.log('   상세 정보: ${e.toString()}');
+      if (Logger.isVerboseEnabled)
+        Logger.log('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━');
 
       if (e.code == 'unknown') {
-        Logger.log('💡 해결 방법:');
-        Logger.log('   1. Xcode에서 "Sign in with Apple" Capability 추가 확인');
-        Logger.log('   2. 시뮬레이터의 경우 설정에서 Apple ID 로그인 확인');
-        Logger.log('   3. 실제 iOS 기기에서 테스트 권장');
+        if (Logger.isVerboseEnabled) Logger.log('💡 해결 방법:');
+        if (Logger.isVerboseEnabled)
+          Logger.log('   1. Xcode에서 "Sign in with Apple" Capability 추가 확인');
+        if (Logger.isVerboseEnabled)
+          Logger.log('   2. 시뮬레이터의 경우 설정에서 Apple ID 로그인 확인');
+        if (Logger.isVerboseEnabled) Logger.log('   3. 실제 iOS 기기에서 테스트 권장');
       }
 
       _isLoading = false;
@@ -1131,12 +1177,13 @@ class AuthProvider with ChangeNotifier implements WidgetsBindingObserver {
       return false;
     } on Exception catch (e) {
       // 기타 예외 처리
-      Logger.log('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━');
+      if (Logger.isVerboseEnabled)
+        Logger.log('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━');
       Logger.error('🍎 Apple Sign In 실패 (Exception)');
       final errorMessage = e.toString();
       if (errorMessage.contains('canceled') ||
           errorMessage.contains('cancelled')) {
-        Logger.log('   사용자가 Apple 로그인을 취소했습니다');
+        if (Logger.isVerboseEnabled) Logger.log('   사용자가 Apple 로그인을 취소했습니다');
       } else if (errorMessage.contains('network') ||
           errorMessage.contains('Network') ||
           errorMessage.contains('connection') ||
@@ -1145,16 +1192,19 @@ class AuthProvider with ChangeNotifier implements WidgetsBindingObserver {
       } else {
         Logger.error('   에러: $e');
       }
-      Logger.log('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━');
+      if (Logger.isVerboseEnabled)
+        Logger.log('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━');
       _isLoading = false;
       notifyListeners();
       return false;
     } catch (e) {
-      Logger.log('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━');
+      if (Logger.isVerboseEnabled)
+        Logger.log('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━');
       Logger.error('🍎 Apple Sign In 실패 (알 수 없는 에러)');
       Logger.error('   에러 타입: ${e.runtimeType}');
       Logger.error('   에러 내용: $e');
-      Logger.log('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━');
+      if (Logger.isVerboseEnabled)
+        Logger.log('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━');
       _isLoading = false;
       notifyListeners();
       return false;
@@ -1173,7 +1223,7 @@ class AuthProvider with ChangeNotifier implements WidgetsBindingObserver {
       _isLoading = true;
       notifyListeners();
 
-      Logger.log('📧 이메일 회원가입 시작');
+      if (Logger.isVerboseEnabled) Logger.log('📧 이메일 회원가입 시작');
 
       // A retry after response loss must reuse the already-created Auth uid.
       final current = _auth.currentUser;
@@ -1199,7 +1249,8 @@ class AuthProvider with ChangeNotifier implements WidgetsBindingObserver {
         Logger.error('이메일 회원가입 실패: Auth 사용자를 확인할 수 없습니다.');
         return false;
       }
-      Logger.log('✅ Firebase Auth 계정 생성 완료: ${_user!.uid}');
+      if (Logger.isVerboseEnabled)
+        Logger.log('✅ Firebase Auth 계정 생성 완료: ${_user!.uid}');
 
       await ensureRegistrationProgress(
         signupLanguage: signupLanguage,
@@ -1237,7 +1288,7 @@ class AuthProvider with ChangeNotifier implements WidgetsBindingObserver {
       _isLoading = true;
       notifyListeners();
 
-      Logger.log('📧 이메일 로그인 시작');
+      if (Logger.isVerboseEnabled) Logger.log('📧 이메일 로그인 시작');
 
       // AuthService를 통해 Firebase Auth 로그인
       final userCredential =
@@ -1251,7 +1302,8 @@ class AuthProvider with ChangeNotifier implements WidgetsBindingObserver {
       }
 
       _user = userCredential.user;
-      Logger.log('✅ Firebase Auth 로그인 완료: ${_user!.uid}');
+      if (Logger.isVerboseEnabled)
+        Logger.log('✅ Firebase Auth 로그인 완료: ${_user!.uid}');
 
       // Firestore에서 사용자 문서 확인
       final docSnapshot =
@@ -1269,9 +1321,9 @@ class AuthProvider with ChangeNotifier implements WidgetsBindingObserver {
       }
 
       // 기존 사용자 정보 업데이트
-      final docExists = await _updateExistingUserDocument();
+      final documentUpdate = await _updateExistingUserDocument();
 
-      if (!docExists) {
+      if (documentUpdate == _ExistingUserDocumentUpdateResult.missing) {
         Logger.error('❌ 탈퇴한 계정: 사용자 문서가 존재하지 않습니다.');
         await _auth.signOut();
         _user = null;
@@ -1301,8 +1353,9 @@ class AuthProvider with ChangeNotifier implements WidgetsBindingObserver {
   }
 
   // 기존 사용자 문서 업데이트 (lastLogin 동기화)
-  Future<bool> _updateExistingUserDocument() async {
-    if (_user == null) return false;
+  Future<_ExistingUserDocumentUpdateResult>
+      _updateExistingUserDocument() async {
+    if (_user == null) return _ExistingUserDocumentUpdateResult.missing;
 
     try {
       final docRef = _firestore.collection('users').doc(_user!.uid);
@@ -1339,15 +1392,20 @@ class AuthProvider with ChangeNotifier implements WidgetsBindingObserver {
           Logger.error('⚠️ Firebase Auth 프로필 동기화 실패(무시): $e');
         }
 
-        return true; // 문서 존재함
+        return _ExistingUserDocumentUpdateResult.updated;
       } else {
         // 🔥 문서가 없음 - 탈퇴한 계정
         Logger.error('⚠️ 사용자 문서가 존재하지 않습니다. 탈퇴한 계정일 수 있습니다.');
-        return false; // 문서 없음
+        return _ExistingUserDocumentUpdateResult.missing;
       }
     } catch (e) {
       Logger.error('사용자 문서 업데이트 오류: $e');
-      return false;
+      // The caller has just confirmed a completed user document. A transient
+      // write/read error is not proof of account deletion and must not sign
+      // Google/password users out while Apple users remain signed in.
+      // Firestore rules still reject protected access if the account was
+      // actually removed, suspended, or disabled.
+      return _ExistingUserDocumentUpdateResult.deferred;
     }
   }
 
@@ -1440,7 +1498,8 @@ class AuthProvider with ChangeNotifier implements WidgetsBindingObserver {
         result: result,
         checkedAt: DateTime.now(),
       );
-      if (!result.available) Logger.warning('nickname taken');
+      if (!result.available) if (Logger.isVerboseEnabled)
+        Logger.warning('nickname taken');
       return result;
     } catch (error) {
       final appCheckFailed = error is FirebaseFunctionsException &&
@@ -1452,7 +1511,7 @@ class AuthProvider with ChangeNotifier implements WidgetsBindingObserver {
         error,
         appCheckFailed: appCheckFailed,
       );
-      Logger.warning(failure.logMessage);
+      if (Logger.isVerboseEnabled) Logger.warning(failure.logMessage);
       throw failure;
     }
   }
@@ -1469,12 +1528,13 @@ class AuthProvider with ChangeNotifier implements WidgetsBindingObserver {
         idTokenAvailable = false;
       }
     }
-    Logger.log(
-      'nickname check auth state: '
-      'authenticated=${currentUser != null}, '
-      'idTokenAvailable=$idTokenAvailable, '
-      'providerCount=${currentUser?.providerData.length ?? 0}',
-    );
+    if (Logger.isVerboseEnabled)
+      Logger.log(
+        'nickname check auth state: '
+        'authenticated=${currentUser != null}, '
+        'idTokenAvailable=$idTokenAvailable, '
+        'providerCount=${currentUser?.providerData.length ?? 0}',
+      );
   }
 
   /// Final server-authoritative nickname save used by profile flows.
@@ -1522,7 +1582,8 @@ class AuthProvider with ChangeNotifier implements WidgetsBindingObserver {
         // The server transaction has already committed. A local cache write
         // failure must not retry the nickname transaction or report a false
         // save failure; the user document listener will reconcile it later.
-        Logger.warning('nickname profile cache update failed');
+        if (Logger.isVerboseEnabled)
+          Logger.warning('nickname profile cache update failed');
       }
     }
     return result;
@@ -1558,18 +1619,20 @@ class AuthProvider with ChangeNotifier implements WidgetsBindingObserver {
       _isLoading = true;
       notifyListeners();
 
-      Logger.log(
-        'Auth Provider - 프로필 업데이트: '
-        'nicknameRequested=${nickname.trim().isNotEmpty}, '
-        'nationalityRequested=${nationality.trim().isNotEmpty}, '
-        "photoURL=${photoURL != null ? '변경됨' : '없음'}",
-      );
+      if (Logger.isVerboseEnabled)
+        Logger.log(
+          'Auth Provider - 프로필 업데이트: '
+          'nicknameRequested=${nickname.trim().isNotEmpty}, '
+          'nationalityRequested=${nationality.trim().isNotEmpty}, '
+          "photoURL=${photoURL != null ? '변경됨' : '없음'}",
+        );
 
       // 기존 사진 확인 (로깅용)
       final oldPhotoURL = _userData?['photoURL'];
 
-      Logger.log('기존 프로필 정보 확인 완료');
-      Logger.log("  - 기존 photoURL: '${oldPhotoURL ?? '없음'}'");
+      if (Logger.isVerboseEnabled) Logger.log('기존 프로필 정보 확인 완료');
+      if (Logger.isVerboseEnabled)
+        Logger.log("  - 기존 photoURL: '${oldPhotoURL ?? '없음'}'");
 
       while (retryCount < maxRetries) {
         try {
@@ -1651,7 +1714,8 @@ class AuthProvider with ChangeNotifier implements WidgetsBindingObserver {
           // ✅ 정책: 우리 Storage 버킷(profile_images/)에 없는 URL은 사용하지 않는다.
           if (newPhotoUrlStr.isNotEmpty &&
               !ProfilePhotoPolicy.isAllowedProfilePhotoUrl(newPhotoUrlStr)) {
-            Logger.log('🚫 허용되지 않은 photoURL 차단 → 기본 이미지로 처리');
+            if (Logger.isVerboseEnabled)
+              Logger.log('🚫 허용되지 않은 photoURL 차단 → 기본 이미지로 처리');
             newPhotoUrlStr = '';
           }
 
@@ -1730,7 +1794,7 @@ class AuthProvider with ChangeNotifier implements WidgetsBindingObserver {
             updateData['photoUpdatedAt'] = FieldValue.serverTimestamp();
           }
 
-          Logger.log("📝 Firestore 업데이트 시작...");
+          if (Logger.isVerboseEnabled) Logger.log("📝 Firestore 업데이트 시작...");
 
           // users/{uid} 생성은 마지막 회원가입 서버 함수의 전용 책임이다.
           // 프로필 편집이 누락 문서를 대신 생성하면 가입을 중단한 Auth가
@@ -1746,7 +1810,7 @@ class AuthProvider with ChangeNotifier implements WidgetsBindingObserver {
             }
             // 기존 문서 업데이트
             await docRef.update(updateData);
-            Logger.log("✅ Firestore 프로필 업데이트 완료");
+            if (Logger.isVerboseEnabled) Logger.log("✅ Firestore 프로필 업데이트 완료");
           }
 
           // photoURL이 제공된 경우 Firebase Auth도 업데이트
@@ -1758,8 +1822,9 @@ class AuthProvider with ChangeNotifier implements WidgetsBindingObserver {
               await _user!.updatePhotoURL(authPhotoURL);
               await _user!.reload();
               _user = _auth.currentUser;
-              Logger.log(
-                  "✅ Firebase Auth photoURL 업데이트 완료 (${authPhotoURL == null ? '기본 이미지' : '새 이미지'})");
+              if (Logger.isVerboseEnabled)
+                Logger.log(
+                    "✅ Firebase Auth photoURL 업데이트 완료 (${authPhotoURL == null ? '기본 이미지' : '새 이미지'})");
             } catch (authError) {
               Logger.error('⚠️ Firebase Auth photoURL 업데이트 오류: $authError');
               // Auth 업데이트 실패해도 계속 진행
@@ -1801,7 +1866,7 @@ class AuthProvider with ChangeNotifier implements WidgetsBindingObserver {
             final newUrl = finalPhotoURL;
             if (oldUrl.isNotEmpty && oldUrl != newUrl) {
               await CachedNetworkImage.evictFromCache(oldUrl);
-              Logger.log('🧹 프로필 이미지 캐시 제거 완료');
+              if (Logger.isVerboseEnabled) Logger.log('🧹 프로필 이미지 캐시 제거 완료');
             }
           } catch (e) {
             Logger.error('⚠️ 프로필 이미지 캐시 제거 실패(무시): $e');
@@ -1866,7 +1931,8 @@ class AuthProvider with ChangeNotifier implements WidgetsBindingObserver {
   // 공개 메서드: 수동으로 모든 콘텐츠 업데이트
   Future<bool> manuallyUpdateAllContent() async {
     if (_user == null) {
-      Logger.log('❌ manuallyUpdateAllContent: 사용자가 null입니다');
+      if (Logger.isVerboseEnabled)
+        Logger.log('❌ manuallyUpdateAllContent: 사용자가 null입니다');
       return false;
     }
 
@@ -1875,10 +1941,12 @@ class AuthProvider with ChangeNotifier implements WidgetsBindingObserver {
       final photoURL = _userData?['photoURL'];
       final nationality = _userData?['nationality'] ?? '';
 
-      Logger.log('🔧 수동 콘텐츠 업데이트 시작');
-      Logger.log('   - 현재 닉네임: $nickname');
-      Logger.log('   - 현재 photoURL: ${photoURL ?? '없음'}');
-      Logger.log('   - 현재 nationality: $nationality');
+      if (Logger.isVerboseEnabled) Logger.log('🔧 수동 콘텐츠 업데이트 시작');
+      if (Logger.isVerboseEnabled) Logger.log('   - 현재 닉네임: $nickname');
+      if (Logger.isVerboseEnabled)
+        Logger.log('   - 현재 photoURL: ${photoURL ?? '없음'}');
+      if (Logger.isVerboseEnabled)
+        Logger.log('   - 현재 nationality: $nationality');
 
       await _updateAllUserContent(nickname, photoURL, nationality);
       return true;
@@ -1891,7 +1959,8 @@ class AuthProvider with ChangeNotifier implements WidgetsBindingObserver {
   // 프로필 이미지를 기본 이미지로 초기화
   Future<bool> resetProfilePhotoToDefault() async {
     if (_user == null) {
-      Logger.log('❌ resetProfilePhotoToDefault: 사용자가 null입니다');
+      if (Logger.isVerboseEnabled)
+        Logger.log('❌ resetProfilePhotoToDefault: 사용자가 null입니다');
       return false;
     }
 
@@ -1899,12 +1968,15 @@ class AuthProvider with ChangeNotifier implements WidgetsBindingObserver {
       _isLoading = true;
       notifyListeners();
 
-      Logger.log("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━");
-      Logger.log("🗑️ 프로필 이미지를 기본 이미지로 초기화");
-      Logger.log("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━");
+      if (Logger.isVerboseEnabled)
+        Logger.log("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━");
+      if (Logger.isVerboseEnabled) Logger.log("🗑️ 프로필 이미지를 기본 이미지로 초기화");
+      if (Logger.isVerboseEnabled)
+        Logger.log("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━");
 
       final oldPhotoURL = _userData?['photoURL'];
-      Logger.log("기존 photoURL: ${oldPhotoURL ?? '없음'}");
+      if (Logger.isVerboseEnabled)
+        Logger.log("기존 photoURL: ${oldPhotoURL ?? '없음'}");
 
       // 1. Firebase Storage에서 기존 프로필 이미지 삭제 (버킷/폴더 강제)
       // - 레거시(uuid 파일)도 정리하기 위해 profile_images/{uid}/ 아래를 전부 삭제(best-effort)
@@ -1920,7 +1992,8 @@ class AuthProvider with ChangeNotifier implements WidgetsBindingObserver {
             await item.delete();
           } catch (_) {}
         }
-        Logger.log("✅ Storage 프로필 이미지 정리 완료 (profile_images/$uid/*)");
+        if (Logger.isVerboseEnabled)
+          Logger.log("✅ Storage 프로필 이미지 정리 완료 (profile_images/$uid/*)");
       } catch (e) {
         Logger.error("⚠️ Storage 프로필 이미지 정리 실패(무시): $e");
       }
@@ -1932,14 +2005,16 @@ class AuthProvider with ChangeNotifier implements WidgetsBindingObserver {
         'photoAccessToken': '',
         'updatedAt': FieldValue.serverTimestamp(),
       });
-      Logger.log("✅ Firestore photoURL을 빈 문자열로 업데이트 완료");
+      if (Logger.isVerboseEnabled)
+        Logger.log("✅ Firestore photoURL을 빈 문자열로 업데이트 완료");
 
       // 3. Firebase Auth photoURL을 null로 업데이트
       try {
         await _user!.updatePhotoURL(null);
         await _user!.reload();
         _user = _auth.currentUser;
-        Logger.log("✅ Firebase Auth photoURL을 null로 업데이트 완료");
+        if (Logger.isVerboseEnabled)
+          Logger.log("✅ Firebase Auth photoURL을 null로 업데이트 완료");
       } catch (authError) {
         Logger.error('⚠️ Firebase Auth photoURL 업데이트 오류: $authError');
         // Auth 업데이트 실패해도 계속 진행
@@ -1954,9 +2029,11 @@ class AuthProvider with ChangeNotifier implements WidgetsBindingObserver {
       _isLoading = false;
       notifyListeners();
 
-      Logger.log("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━");
-      Logger.log("✅ 프로필 이미지 초기화 완료!");
-      Logger.log("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━");
+      if (Logger.isVerboseEnabled)
+        Logger.log("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━");
+      if (Logger.isVerboseEnabled) Logger.log("✅ 프로필 이미지 초기화 완료!");
+      if (Logger.isVerboseEnabled)
+        Logger.log("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━");
 
       return true;
     } catch (e) {
@@ -1971,14 +2048,16 @@ class AuthProvider with ChangeNotifier implements WidgetsBindingObserver {
   Future<void> _updateAllUserContent(
       String newNickname, String? newPhotoURL, String newNationality) async {
     if (_user == null) {
-      Logger.log('❌ _updateAllUserContent: 사용자가 null입니다');
+      if (Logger.isVerboseEnabled)
+        Logger.log('❌ _updateAllUserContent: 사용자가 null입니다');
       return;
     }
 
     try {
       final userId = _user!.uid;
-      Logger.log(
-          '🔄 콘텐츠 업데이트 시작: userId=$userId, nickname=$newNickname, photoURL=${newPhotoURL != null ? '있음' : '없음'}, nationality=$newNationality');
+      if (Logger.isVerboseEnabled)
+        Logger.log(
+            '🔄 콘텐츠 업데이트 시작: userId=$userId, nickname=$newNickname, photoURL=${newPhotoURL != null ? '있음' : '없음'}, nationality=$newNationality');
 
       // Firestore의 배치는 최대 500개 작업만 가능
       // 따라서 큰 데이터셋의 경우 여러 배치로 나눠서 처리
@@ -1988,14 +2067,15 @@ class AuthProvider with ChangeNotifier implements WidgetsBindingObserver {
       const maxOperationsPerBatch = 500;
 
       // 1. 게시글 업데이트
-      Logger.log("📝 게시글 작성자 정보 업데이트 시작...");
+      if (Logger.isVerboseEnabled) Logger.log("📝 게시글 작성자 정보 업데이트 시작...");
       QuerySnapshot postsQuery;
       try {
         postsQuery = await _firestore
             .collection('posts')
             .where('userId', isEqualTo: userId)
             .get();
-        Logger.log("   → 찾은 게시글: ${postsQuery.docs.length}개");
+        if (Logger.isVerboseEnabled)
+          Logger.log("   → 찾은 게시글: ${postsQuery.docs.length}개");
       } catch (e) {
         Logger.error("❌ 게시글 조회 실패: $e");
         throw e;
@@ -2006,7 +2086,8 @@ class AuthProvider with ChangeNotifier implements WidgetsBindingObserver {
           batches.add(_firestore.batch());
           currentBatchIndex++;
           operationCount = 0;
-          Logger.log("   → 새 배치 생성 (배치 ${currentBatchIndex + 1})");
+          if (Logger.isVerboseEnabled)
+            Logger.log("   → 새 배치 생성 (배치 ${currentBatchIndex + 1})");
         }
 
         final updateData = <String, dynamic>{
@@ -2019,17 +2100,19 @@ class AuthProvider with ChangeNotifier implements WidgetsBindingObserver {
         batches[currentBatchIndex].update(doc.reference, updateData);
         operationCount++;
       }
-      Logger.log("✅ 게시글 ${postsQuery.docs.length}개 배치에 추가 완료");
+      if (Logger.isVerboseEnabled)
+        Logger.log("✅ 게시글 ${postsQuery.docs.length}개 배치에 추가 완료");
 
       // 2. 모임글 업데이트
-      Logger.log("🎉 모임 주최자 정보 업데이트 시작...");
+      if (Logger.isVerboseEnabled) Logger.log("🎉 모임 주최자 정보 업데이트 시작...");
       QuerySnapshot meetupsQuery;
       try {
         meetupsQuery = await _firestore
             .collection('meetups')
             .where('userId', isEqualTo: userId)
             .get();
-        Logger.log("   → 찾은 모임: ${meetupsQuery.docs.length}개");
+        if (Logger.isVerboseEnabled)
+          Logger.log("   → 찾은 모임: ${meetupsQuery.docs.length}개");
       } catch (e) {
         Logger.error("❌ 모임 조회 실패: $e");
         throw e;
@@ -2040,7 +2123,8 @@ class AuthProvider with ChangeNotifier implements WidgetsBindingObserver {
           batches.add(_firestore.batch());
           currentBatchIndex++;
           operationCount = 0;
-          Logger.log("   → 새 배치 생성 (배치 ${currentBatchIndex + 1})");
+          if (Logger.isVerboseEnabled)
+            Logger.log("   → 새 배치 생성 (배치 ${currentBatchIndex + 1})");
         }
 
         final updateData = <String, dynamic>{
@@ -2053,10 +2137,11 @@ class AuthProvider with ChangeNotifier implements WidgetsBindingObserver {
         batches[currentBatchIndex].update(doc.reference, updateData);
         operationCount++;
       }
-      Logger.log("✅ 모임 ${meetupsQuery.docs.length}개 배치에 추가 완료");
+      if (Logger.isVerboseEnabled)
+        Logger.log("✅ 모임 ${meetupsQuery.docs.length}개 배치에 추가 완료");
 
       // 3. 댓글 업데이트 (게시글의 댓글)
-      Logger.log("💬 게시글 댓글 작성자 정보 업데이트 시작...");
+      if (Logger.isVerboseEnabled) Logger.log("💬 게시글 댓글 작성자 정보 업데이트 시작...");
       int postCommentsCount = 0;
       try {
         // 각 게시글의 댓글을 개별적으로 조회
@@ -2073,7 +2158,8 @@ class AuthProvider with ChangeNotifier implements WidgetsBindingObserver {
               batches.add(_firestore.batch());
               currentBatchIndex++;
               operationCount = 0;
-              Logger.log("   → 새 배치 생성 (배치 ${currentBatchIndex + 1})");
+              if (Logger.isVerboseEnabled)
+                Logger.log("   → 새 배치 생성 (배치 ${currentBatchIndex + 1})");
             }
 
             final updateData = <String, dynamic>{
@@ -2086,14 +2172,16 @@ class AuthProvider with ChangeNotifier implements WidgetsBindingObserver {
             postCommentsCount++;
           }
         }
-        Logger.log("   → 찾은 게시글 댓글: $postCommentsCount개");
+        if (Logger.isVerboseEnabled)
+          Logger.log("   → 찾은 게시글 댓글: $postCommentsCount개");
       } catch (e) {
         Logger.error("❌ 게시글 댓글 조회 실패: $e");
-        Logger.log("   스택 트레이스: ${StackTrace.current}");
+        if (Logger.isVerboseEnabled)
+          Logger.log("   스택 트레이스: ${StackTrace.current}");
       }
 
       // 4. 댓글 업데이트 (모임의 댓글)
-      Logger.log("💬 모임 댓글 작성자 정보 업데이트 시작...");
+      if (Logger.isVerboseEnabled) Logger.log("💬 모임 댓글 작성자 정보 업데이트 시작...");
       int meetupCommentsCount = 0;
       try {
         // 각 모임의 댓글을 개별적으로 조회
@@ -2110,7 +2198,8 @@ class AuthProvider with ChangeNotifier implements WidgetsBindingObserver {
               batches.add(_firestore.batch());
               currentBatchIndex++;
               operationCount = 0;
-              Logger.log("   → 새 배치 생성 (배치 ${currentBatchIndex + 1})");
+              if (Logger.isVerboseEnabled)
+                Logger.log("   → 새 배치 생성 (배치 ${currentBatchIndex + 1})");
             }
 
             final updateData = <String, dynamic>{
@@ -2123,28 +2212,32 @@ class AuthProvider with ChangeNotifier implements WidgetsBindingObserver {
             meetupCommentsCount++;
           }
         }
-        Logger.log("   → 찾은 모임 댓글: $meetupCommentsCount개");
+        if (Logger.isVerboseEnabled)
+          Logger.log("   → 찾은 모임 댓글: $meetupCommentsCount개");
       } catch (e) {
         Logger.error("❌ 모임 댓글 조회 실패: $e");
-        Logger.log("   스택 트레이스: ${StackTrace.current}");
+        if (Logger.isVerboseEnabled)
+          Logger.log("   스택 트레이스: ${StackTrace.current}");
       }
 
       // 5. 최상위 comments 컬렉션 업데이트
-      Logger.log("💬 최상위 댓글 작성자 정보 업데이트 시작...");
+      if (Logger.isVerboseEnabled) Logger.log("💬 최상위 댓글 작성자 정보 업데이트 시작...");
       int topLevelCommentsCount = 0;
       try {
         final topLevelCommentsQuery = await _firestore
             .collection('comments')
             .where('userId', isEqualTo: userId)
             .get();
-        Logger.log("   → 찾은 최상위 댓글: ${topLevelCommentsQuery.docs.length}개");
+        if (Logger.isVerboseEnabled)
+          Logger.log("   → 찾은 최상위 댓글: ${topLevelCommentsQuery.docs.length}개");
 
         for (var commentDoc in topLevelCommentsQuery.docs) {
           if (operationCount >= maxOperationsPerBatch) {
             batches.add(_firestore.batch());
             currentBatchIndex++;
             operationCount = 0;
-            Logger.log("   → 새 배치 생성 (배치 ${currentBatchIndex + 1})");
+            if (Logger.isVerboseEnabled)
+              Logger.log("   → 새 배치 생성 (배치 ${currentBatchIndex + 1})");
           }
 
           final updateData = <String, dynamic>{
@@ -2156,20 +2249,25 @@ class AuthProvider with ChangeNotifier implements WidgetsBindingObserver {
           operationCount++;
           topLevelCommentsCount++;
         }
-        Logger.log("✅ 최상위 댓글 ${topLevelCommentsCount}개 배치에 추가 완료");
+        if (Logger.isVerboseEnabled)
+          Logger.log("✅ 최상위 댓글 ${topLevelCommentsCount}개 배치에 추가 완료");
       } catch (e) {
         Logger.error("❌ 최상위 댓글 조회 실패: $e");
-        Logger.log("   스택 트레이스: ${StackTrace.current}");
+        if (Logger.isVerboseEnabled)
+          Logger.log("   스택 트레이스: ${StackTrace.current}");
       }
 
       final totalCommentsCount =
           postCommentsCount + meetupCommentsCount + topLevelCommentsCount;
-      Logger.log("✅ 총 댓글 ${totalCommentsCount}개 배치에 추가 완료");
+      if (Logger.isVerboseEnabled)
+        Logger.log("✅ 총 댓글 ${totalCommentsCount}개 배치에 추가 완료");
 
       // 모든 배치 커밋
-      Logger.log("💾 총 ${batches.length}개의 배치 커밋 시작...");
-      Logger.log(
-          "   총 작업 수: ${postsQuery.docs.length + meetupsQuery.docs.length + totalCommentsCount}");
+      if (Logger.isVerboseEnabled)
+        Logger.log("💾 총 ${batches.length}개의 배치 커밋 시작...");
+      if (Logger.isVerboseEnabled)
+        Logger.log(
+            "   총 작업 수: ${postsQuery.docs.length + meetupsQuery.docs.length + totalCommentsCount}");
       int successCount = 0;
       int failCount = 0;
       List<String> failedBatches = [];
@@ -2178,7 +2276,8 @@ class AuthProvider with ChangeNotifier implements WidgetsBindingObserver {
         try {
           await batches[i].commit();
           successCount++;
-          Logger.log("   ✅ 배치 ${i + 1}/${batches.length} 커밋 완료");
+          if (Logger.isVerboseEnabled)
+            Logger.log("   ✅ 배치 ${i + 1}/${batches.length} 커밋 완료");
         } catch (e, stackTrace) {
           failCount++;
           failedBatches.add('배치 ${i + 1}');
@@ -2196,20 +2295,29 @@ class AuthProvider with ChangeNotifier implements WidgetsBindingObserver {
         }
       }
 
-      Logger.log("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━");
-      Logger.log("🎉 콘텐츠 업데이트 완료!");
-      Logger.log("   - 닉네임: '$newNickname'");
-      Logger.log(
-          "   - 프로필 사진: ${newPhotoURL != null ? '업데이트됨' : '기본 이미지로 설정됨'}");
-      Logger.log("   - 국가: '$newNationality'");
-      Logger.log("   - 업데이트 대상:");
-      Logger.log("      게시글: ${postsQuery.docs.length}개");
-      Logger.log("      모임: ${meetupsQuery.docs.length}개");
-      Logger.log("      게시글 댓글: $postCommentsCount개");
-      Logger.log("      모임 댓글: $meetupCommentsCount개");
-      Logger.log("      최상위 댓글: $topLevelCommentsCount개");
-      Logger.log("      총 댓글: $totalCommentsCount개");
-      Logger.log("   - 성공한 배치: $successCount/${batches.length}");
+      if (Logger.isVerboseEnabled)
+        Logger.log("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━");
+      if (Logger.isVerboseEnabled) Logger.log("🎉 콘텐츠 업데이트 완료!");
+      if (Logger.isVerboseEnabled) Logger.log("   - 닉네임: '$newNickname'");
+      if (Logger.isVerboseEnabled)
+        Logger.log(
+            "   - 프로필 사진: ${newPhotoURL != null ? '업데이트됨' : '기본 이미지로 설정됨'}");
+      if (Logger.isVerboseEnabled) Logger.log("   - 국가: '$newNationality'");
+      if (Logger.isVerboseEnabled) Logger.log("   - 업데이트 대상:");
+      if (Logger.isVerboseEnabled)
+        Logger.log("      게시글: ${postsQuery.docs.length}개");
+      if (Logger.isVerboseEnabled)
+        Logger.log("      모임: ${meetupsQuery.docs.length}개");
+      if (Logger.isVerboseEnabled)
+        Logger.log("      게시글 댓글: $postCommentsCount개");
+      if (Logger.isVerboseEnabled)
+        Logger.log("      모임 댓글: $meetupCommentsCount개");
+      if (Logger.isVerboseEnabled)
+        Logger.log("      최상위 댓글: $topLevelCommentsCount개");
+      if (Logger.isVerboseEnabled)
+        Logger.log("      총 댓글: $totalCommentsCount개");
+      if (Logger.isVerboseEnabled)
+        Logger.log("   - 성공한 배치: $successCount/${batches.length}");
       if (failCount > 0) {
         Logger.error("   ⚠️  실패한 배치: $failCount/${batches.length}");
         Logger.error("   실패한 배치 목록: ${failedBatches.join(", ")}");
@@ -2217,13 +2325,16 @@ class AuthProvider with ChangeNotifier implements WidgetsBindingObserver {
         // 실패가 있으면 예외 발생
         throw Exception('일부 데이터 업데이트 실패: ${failedBatches.join(", ")}');
       }
-      Logger.log("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━");
+      if (Logger.isVerboseEnabled)
+        Logger.log("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━");
     } catch (e, stackTrace) {
-      Logger.log("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━");
+      if (Logger.isVerboseEnabled)
+        Logger.log("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━");
       Logger.error("❌ 콘텐츠 작성자 정보 업데이트 오류!");
       Logger.error("   에러: $e");
-      Logger.log("   스택 트레이스: $stackTrace");
-      Logger.log("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━");
+      if (Logger.isVerboseEnabled) Logger.log("   스택 트레이스: $stackTrace");
+      if (Logger.isVerboseEnabled)
+        Logger.log("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━");
       // 오류가 발생해도 프로필 업데이트는 성공으로 처리
       // (사용자 경험을 위해)
     }
@@ -2235,11 +2346,14 @@ class AuthProvider with ChangeNotifier implements WidgetsBindingObserver {
     if (_user == null) return;
 
     try {
-      Logger.log('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━');
-      Logger.log('🔄 대화방 participantNames 업데이트 시작');
-      Logger.log('  - 사용자: ${_user!.uid}');
-      Logger.log('  - 새 닉네임: $nickname');
-      Logger.log('  - 새 photoURL: ${photoURL ?? "없음"}');
+      if (Logger.isVerboseEnabled)
+        Logger.log('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━');
+      if (Logger.isVerboseEnabled)
+        Logger.log('🔄 대화방 participantNames 업데이트 시작');
+      if (Logger.isVerboseEnabled) Logger.log('  - 사용자: ${_user!.uid}');
+      if (Logger.isVerboseEnabled) Logger.log('  - 새 닉네임: $nickname');
+      if (Logger.isVerboseEnabled)
+        Logger.log('  - 새 photoURL: ${photoURL ?? "없음"}');
 
       // 내가 참여한 모든 대화방 조회
       final conversations = await _firestore
@@ -2247,11 +2361,13 @@ class AuthProvider with ChangeNotifier implements WidgetsBindingObserver {
           .where('participants', arrayContains: _user!.uid)
           .get();
 
-      Logger.log('  - 대상 대화방: ${conversations.docs.length}개');
+      if (Logger.isVerboseEnabled)
+        Logger.log('  - 대상 대화방: ${conversations.docs.length}개');
 
       if (conversations.docs.isEmpty) {
-        Logger.log('  - 업데이트할 대화방 없음');
-        Logger.log('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━');
+        if (Logger.isVerboseEnabled) Logger.log('  - 업데이트할 대화방 없음');
+        if (Logger.isVerboseEnabled)
+          Logger.log('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━');
         return;
       }
 
@@ -2308,13 +2424,15 @@ class AuthProvider with ChangeNotifier implements WidgetsBindingObserver {
 
         if (ops > 0) {
           await batch.commit();
-          Logger.log(
-              '  - 청크 커밋: ${end.clamp(0, docs.length)}/${docs.length} (누적 업데이트 $updated개)');
+          if (Logger.isVerboseEnabled)
+            Logger.log(
+                '  - 청크 커밋: ${end.clamp(0, docs.length)}/${docs.length} (누적 업데이트 $updated개)');
         }
       }
 
-      Logger.log('✅ 대화방 업데이트 완료: $updated개');
-      Logger.log('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━');
+      if (Logger.isVerboseEnabled) Logger.log('✅ 대화방 업데이트 완료: $updated개');
+      if (Logger.isVerboseEnabled)
+        Logger.log('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━');
     } catch (e) {
       Logger.error('❌ 대화방 업데이트 실패: $e');
       // 실패해도 프로필 업데이트는 완료된 상태이므로 계속 진행
@@ -2333,7 +2451,7 @@ class AuthProvider with ChangeNotifier implements WidgetsBindingObserver {
       // Firestore 사용자 데이터 다시 로드
       await _loadUserData();
 
-      Logger.log('사용자 정보 새로고침 완료');
+      if (Logger.isVerboseEnabled) Logger.log('사용자 정보 새로고침 완료');
     } catch (e) {
       Logger.error('사용자 정보 새로고침 오류: $e');
     }
@@ -2351,7 +2469,8 @@ class AuthProvider with ChangeNotifier implements WidgetsBindingObserver {
 
   // 모든 스트림 정리
   void _cleanupAllStreams() {
-    Logger.log('모든 스트림 정리 시작 (${_streamCleanupCallbacks.length}개)...');
+    if (Logger.isVerboseEnabled)
+      Logger.log('모든 스트림 정리 시작 (${_streamCleanupCallbacks.length}개)...');
     for (final cleanup in _streamCleanupCallbacks) {
       try {
         cleanup();
@@ -2360,7 +2479,7 @@ class AuthProvider with ChangeNotifier implements WidgetsBindingObserver {
       }
     }
     _streamCleanupCallbacks.clear();
-    Logger.log('모든 스트림 정리 완료');
+    if (Logger.isVerboseEnabled) Logger.log('모든 스트림 정리 완료');
   }
 
   // 이메일 인증번호 전송
@@ -2392,7 +2511,7 @@ class AuthProvider with ChangeNotifier implements WidgetsBindingObserver {
       }).timeout(
         const Duration(seconds: 15),
         onTimeout: () {
-          Logger.log('⏱️ 이메일 인증번호 전송 타임아웃 (15초)');
+          if (Logger.isVerboseEnabled) Logger.log('⏱️ 이메일 인증번호 전송 타임아웃 (15초)');
           throw TimeoutException('이메일 인증번호 전송 시간 초과');
         },
       );
@@ -2446,7 +2565,7 @@ class AuthProvider with ChangeNotifier implements WidgetsBindingObserver {
       }).timeout(
         const Duration(seconds: 15),
         onTimeout: () {
-          Logger.log('⏱️ 이메일 인증번호 검증 타임아웃 (15초)');
+          if (Logger.isVerboseEnabled) Logger.log('⏱️ 이메일 인증번호 검증 타임아웃 (15초)');
           throw TimeoutException('이메일 인증번호 검증 시간 초과');
         },
       );
@@ -2510,21 +2629,6 @@ class AuthProvider with ChangeNotifier implements WidgetsBindingObserver {
     }
   }
 
-  Future<void> _setSignupDiagnosticStage(
-    String stage, {
-    bool timedOut = false,
-  }) async {
-    // 이메일, 닉네임, 인증 토큰 같은 개인정보는 기록하지 않는다.
-    try {
-      await FirebaseCrashlytics.instance.setCustomKey('signup_stage', stage);
-      await FirebaseCrashlytics.instance
-          .setCustomKey('signup_timed_out', timedOut);
-      await FirebaseCrashlytics.instance.log('signup:$stage');
-    } catch (_) {
-      // 진단 기록은 회원가입 성공/실패에 영향을 주지 않는다.
-    }
-  }
-
   Future<void> _recordSignupFailure(String failedStep, Object error) async {
     final providerData = _auth.currentUser?.providerData ?? const <UserInfo>[];
     final provider =
@@ -2577,7 +2681,6 @@ class AuthProvider with ChangeNotifier implements WidgetsBindingObserver {
         _user = _auth.currentUser;
         await _loadUserData();
         if (isRegistrationComplete) {
-          await _setSignupDiagnosticStage('complete_after_recovery');
           return true;
         }
       } catch (error) {
@@ -2631,7 +2734,6 @@ class AuthProvider with ChangeNotifier implements WidgetsBindingObserver {
     required Map<String, dynamic> profile,
   }) async {
     try {
-      await _setSignupDiagnosticStage('general_email_finalize');
       _signupRequired = false;
       _isLoading = true;
       notifyListeners();
@@ -2661,7 +2763,6 @@ class AuthProvider with ChangeNotifier implements WidgetsBindingObserver {
       if (_user == null) return false;
       await _loadUserData();
       final completed = isRegistrationComplete;
-      if (completed) await _setSignupDiagnosticStage('complete');
       return completed;
     } on FirebaseFunctionsException catch (error) {
       await _recordSignupFailure('general_email_finalize', error);
@@ -2679,10 +2780,6 @@ class AuthProvider with ChangeNotifier implements WidgetsBindingObserver {
       await _recordSignupFailure(
         'general_email_finalize',
         TimeoutException('timeout'),
-      );
-      await _setSignupDiagnosticStage(
-        'general_email_timeout',
-        timedOut: true,
       );
       if (await _recoverCompletedGeneralEmailSignup(email, password)) {
         return true;
@@ -2708,7 +2805,6 @@ class AuthProvider with ChangeNotifier implements WidgetsBindingObserver {
     if (_user == null) return false;
 
     try {
-      await _setSignupDiagnosticStage('hanyang_finalize');
       _isLoading = true;
       notifyListeners();
 
@@ -2723,7 +2819,8 @@ class AuthProvider with ChangeNotifier implements WidgetsBindingObserver {
       }).timeout(
         const Duration(seconds: 15),
         onTimeout: () {
-          Logger.log('⏱️ 한양메일 인증 완료 처리 타임아웃 (15초)');
+          if (Logger.isVerboseEnabled)
+            Logger.log('⏱️ 한양메일 인증 완료 처리 타임아웃 (15초)');
           throw TimeoutException('한양메일 인증 완료 처리 시간 초과');
         },
       );
@@ -2731,7 +2828,6 @@ class AuthProvider with ChangeNotifier implements WidgetsBindingObserver {
       await _loadUserData();
       final completed =
           isRegistrationComplete && await refreshHanyangVerificationStatus();
-      if (completed) await _setSignupDiagnosticStage('complete');
       return completed;
     } on FirebaseFunctionsException catch (e) {
       Logger.error('completeEmailVerification 함수 오류: ${e.code} ${e.message}');
@@ -2739,7 +2835,6 @@ class AuthProvider with ChangeNotifier implements WidgetsBindingObserver {
       notifyListeners();
       rethrow;
     } on TimeoutException {
-      await _setSignupDiagnosticStage('hanyang_timeout', timedOut: true);
       if (await _recoverCurrentCompletedRegistration()) return true;
       rethrow;
     } catch (e) {
@@ -2808,7 +2903,6 @@ class AuthProvider with ChangeNotifier implements WidgetsBindingObserver {
     if (_user == null) return false;
 
     try {
-      await _setSignupDiagnosticStage('social_finalize');
       _isLoading = true;
       notifyListeners();
 
@@ -2821,14 +2915,14 @@ class AuthProvider with ChangeNotifier implements WidgetsBindingObserver {
       }).timeout(
         const Duration(seconds: 15),
         onTimeout: () {
-          Logger.log('⏱️ 영어 소셜 회원가입 승인 타임아웃 (15초)');
+          if (Logger.isVerboseEnabled)
+            Logger.log('⏱️ 영어 소셜 회원가입 승인 타임아웃 (15초)');
           throw TimeoutException('영어 소셜 회원가입 승인 시간 초과');
         },
       );
 
       await _loadUserData();
       final completed = isRegistrationComplete;
-      if (completed) await _setSignupDiagnosticStage('complete');
       return completed;
     } on FirebaseFunctionsException catch (e) {
       Logger.error('finalizeEnglishSocialSignup 함수 오류: ${e.code} ${e.message}');
@@ -2836,7 +2930,6 @@ class AuthProvider with ChangeNotifier implements WidgetsBindingObserver {
       notifyListeners();
       rethrow;
     } on TimeoutException {
-      await _setSignupDiagnosticStage('social_timeout', timedOut: true);
       if (await _recoverCurrentCompletedRegistration()) return true;
       rethrow;
     } catch (e) {
@@ -2942,24 +3035,27 @@ class AuthProvider with ChangeNotifier implements WidgetsBindingObserver {
 
   // FCM 초기화 (자동 로그인/앱 재시작 시 토큰 등록 보장)
   Future<void> _initializeFCMIfNeeded() async {
-    Logger.log('🔍 [FCM 진단] _initializeFCMIfNeeded 진입');
+    if (Logger.isVerboseEnabled)
+      Logger.log('🔍 [FCM 진단] _initializeFCMIfNeeded 진입');
 
     if (_user == null || _userData == null) {
-      Logger.log('🔍 [FCM 진단] 초기화 스킵: user 또는 userData null');
+      if (Logger.isVerboseEnabled)
+        Logger.log('🔍 [FCM 진단] 초기화 스킵: user 또는 userData null');
       return;
     }
 
     final uid = _user!.uid;
-    Logger.log('🔍 [FCM 진단] uid: $uid');
+    if (Logger.isVerboseEnabled) Logger.log('🔍 [FCM 진단] uid: $uid');
 
     if (_fcmInitializing) {
-      Logger.log('ℹ️ FCM 초기화 진행 중 - 중복 진입 스킵');
+      if (Logger.isVerboseEnabled) Logger.log('ℹ️ FCM 초기화 진행 중 - 중복 진입 스킵');
       return;
     }
 
     // 세션 내 동일 사용자 재초기화 차단
     if (_fcmInitialized && _fcmInitializedUserId == uid) {
-      Logger.log('🔍 [FCM 진단] 초기화 스킵: 이미 초기화됨 (uid: $uid)');
+      if (Logger.isVerboseEnabled)
+        Logger.log('🔍 [FCM 진단] 초기화 스킵: 이미 초기화됨 (uid: $uid)');
       return;
     }
 
@@ -2968,10 +3064,12 @@ class AuthProvider with ChangeNotifier implements WidgetsBindingObserver {
     // - FCM 토큰 등록은 로그인 상태(_user != null)만으로 충분하며 emailVerified에 의존하지 않음
     // - emailVerified 미완료 사용자에게 push를 보내도 앱 내에서 기능 제한은 별도로 처리함
     final emailVerified = _userData!['emailVerified'] == true;
-    Logger.log('🔍 [FCM 진단] emailVerified: $emailVerified (FCM 초기화에는 영향 없음)');
+    if (Logger.isVerboseEnabled)
+      Logger.log('🔍 [FCM 진단] emailVerified: $emailVerified (FCM 초기화에는 영향 없음)');
 
     _fcmInitializing = true;
-    Logger.log('🔍 [FCM 진단] FCM 초기화 시작 (uid: $uid)...');
+    if (Logger.isVerboseEnabled)
+      Logger.log('🔍 [FCM 진단] FCM 초기화 시작 (uid: $uid)...');
 
     try {
       // locale 상태를 먼저 확정
@@ -2979,21 +3077,24 @@ class AuthProvider with ChangeNotifier implements WidgetsBindingObserver {
 
       // iOS는 지연 시간 감소 (2초 → 1초)
       if (!kIsWeb && Platform.isIOS) {
-        Logger.log('🔍 [FCM 진단] iOS 1초 대기 시작');
+        if (Logger.isVerboseEnabled) Logger.log('🔍 [FCM 진단] iOS 1초 대기 시작');
         await Future.delayed(const Duration(seconds: 1)); // 2초 → 1초로 감소
-        Logger.log('🔍 [FCM 진단] iOS 1초 대기 완료');
+        if (Logger.isVerboseEnabled) Logger.log('🔍 [FCM 진단] iOS 1초 대기 완료');
       }
 
-      Logger.log('📱 FCM 초기화 시작: uid=$uid');
+      if (Logger.isVerboseEnabled) Logger.log('📱 FCM 초기화 시작: uid=$uid');
 
-      Logger.log('🔍 [FCM 진단] _fcmService.initialize() 호출 직전');
+      if (Logger.isVerboseEnabled)
+        Logger.log('🔍 [FCM 진단] _fcmService.initialize() 호출 직전');
       await _fcmService.initialize(uid);
-      Logger.log('🔍 [FCM 진단] _fcmService.initialize() 완료');
+      if (Logger.isVerboseEnabled)
+        Logger.log('🔍 [FCM 진단] _fcmService.initialize() 완료');
 
       _fcmInitialized = true;
       _fcmInitializedUserId = uid;
-      Logger.log(
-          '✅ [FCM 진단] FCM 초기화 완료 - uid=$uid, emailVerified=$emailVerified');
+      if (Logger.isVerboseEnabled)
+        Logger.log(
+            '✅ [FCM 진단] FCM 초기화 완료 - uid=$uid, emailVerified=$emailVerified');
     } catch (e) {
       // 실패 시 _fcmInitialized를 false로 유지 → 다음 _initializeFCMIfNeeded() 호출 시 재시도 가능
       _fcmInitialized = false;
@@ -3001,14 +3102,15 @@ class AuthProvider with ChangeNotifier implements WidgetsBindingObserver {
       Logger.error('⚠️ [FCM 진단] FCM 초기화 실패 - 다음 호출 시 재시도 가능: $e');
     } finally {
       _fcmInitializing = false;
-      Logger.log('🔍 [FCM 진단] _fcmInitializing = false');
+      if (Logger.isVerboseEnabled)
+        Logger.log('🔍 [FCM 진단] _fcmInitializing = false');
     }
   }
 
   // 로그아웃
   Future<void> signOut() async {
     try {
-      Logger.log('로그아웃 시작...');
+      if (Logger.isVerboseEnabled) Logger.log('로그아웃 시작...');
 
       // 로딩 상태 설정
       _isLoading = true;
@@ -3019,14 +3121,16 @@ class AuthProvider with ChangeNotifier implements WidgetsBindingObserver {
         await Future.any([
           _performSignOut(),
           Future.delayed(const Duration(seconds: 10)).then((_) {
-            Logger.log('! 로그아웃 타임아웃 (10초) - 강제 로그아웃 진행');
+            if (Logger.isVerboseEnabled)
+              Logger.log('! 로그아웃 타임아웃 (10초) - 강제 로그아웃 진행');
             throw TimeoutException('로그아웃 타임아웃', const Duration(seconds: 10));
           }),
         ]);
-        Logger.log('✅ 로그아웃 완료');
+        if (Logger.isVerboseEnabled) Logger.log('✅ 로그아웃 완료');
       } catch (e) {
         if (e is TimeoutException) {
-          Logger.log('⚠️ 로그아웃 타임아웃 발생 - 로컬 로그아웃 진행');
+          if (Logger.isVerboseEnabled)
+            Logger.log('⚠️ 로그아웃 타임아웃 발생 - 로컬 로그아웃 진행');
         } else {
           Logger.error('⚠️ 로그아웃 중 오류 발생: $e - 로컬 로그아웃 진행');
         }
@@ -3042,14 +3146,14 @@ class AuthProvider with ChangeNotifier implements WidgetsBindingObserver {
       _fcmInitialized = false; // FCM 플래그 리셋
       _fcmInitializing = false;
       _fcmInitializedUserId = null;
-      Logger.log('✅ 로그아웃 상태 초기화 완료');
+      if (Logger.isVerboseEnabled) Logger.log('✅ 로그아웃 상태 초기화 완료');
       notifyListeners();
     }
   }
 
   // 실제 로그아웃 작업 수행
   Future<void> _performSignOut() async {
-    Logger.log('🔄 로그아웃 작업 시작');
+    if (Logger.isVerboseEnabled) Logger.log('🔄 로그아웃 작업 시작');
 
     // 앱 아이콘 배지는 로그아웃 즉시 0으로 내려 이전 계정 흔적이 남지 않게 한다.
     await BadgeService.clearBadgeOnSignOut();
@@ -3060,10 +3164,11 @@ class AuthProvider with ChangeNotifier implements WidgetsBindingObserver {
         await _fcmService.deleteFCMToken(_user!.uid).timeout(
           const Duration(seconds: 3),
           onTimeout: () {
-            Logger.log('⚠️ FCM 토큰 삭제 타임아웃 (3초) - 계속 진행');
+            if (Logger.isVerboseEnabled)
+              Logger.log('⚠️ FCM 토큰 삭제 타임아웃 (3초) - 계속 진행');
           },
         );
-        Logger.log('✅ FCM 토큰 삭제 완료');
+        if (Logger.isVerboseEnabled) Logger.log('✅ FCM 토큰 삭제 완료');
       } catch (e) {
         Logger.error('⚠️ FCM 토큰 삭제 실패 (계속 진행): $e');
       }
@@ -3078,7 +3183,7 @@ class AuthProvider with ChangeNotifier implements WidgetsBindingObserver {
     // 먼저 모든 스트림 정리 - UI 메시지 표시 안 함
     try {
       _cleanupAllStreams();
-      Logger.log('✅ 스트림 정리 완료');
+      if (Logger.isVerboseEnabled) Logger.log('✅ 스트림 정리 완료');
     } catch (e) {
       Logger.error('⚠️ 스트림 정리 실패 (계속 진행): $e');
     }
@@ -3089,10 +3194,11 @@ class AuthProvider with ChangeNotifier implements WidgetsBindingObserver {
       await _googleSignIn.signOut().timeout(
         const Duration(seconds: 3),
         onTimeout: () {
-          Logger.log('⚠️ Google Sign-In 로그아웃 타임아웃 (3초) - 계속 진행');
+          if (Logger.isVerboseEnabled)
+            Logger.log('⚠️ Google Sign-In 로그아웃 타임아웃 (3초) - 계속 진행');
         },
       );
-      Logger.log('✅ Google Sign-In 로그아웃 완료');
+      if (Logger.isVerboseEnabled) Logger.log('✅ Google Sign-In 로그아웃 완료');
     } catch (e) {
       Logger.error('⚠️ Google Sign-In 로그아웃 오류 (계속 진행): $e');
     }
@@ -3102,15 +3208,16 @@ class AuthProvider with ChangeNotifier implements WidgetsBindingObserver {
       await _auth.signOut().timeout(
         const Duration(seconds: 3),
         onTimeout: () {
-          Logger.log('⚠️ Firebase Auth 로그아웃 타임아웃 (3초) - 계속 진행');
+          if (Logger.isVerboseEnabled)
+            Logger.log('⚠️ Firebase Auth 로그아웃 타임아웃 (3초) - 계속 진행');
         },
       );
-      Logger.log('✅ Firebase Auth 로그아웃 완료');
+      if (Logger.isVerboseEnabled) Logger.log('✅ Firebase Auth 로그아웃 완료');
     } catch (e) {
       Logger.error('⚠️ Firebase Auth 로그아웃 오류 (계속 진행): $e');
     }
 
-    Logger.log('🔄 로그아웃 작업 완료');
+    if (Logger.isVerboseEnabled) Logger.log('🔄 로그아웃 작업 완료');
   }
 
   // ---------------------------------------------------------------------------
@@ -3134,7 +3241,7 @@ class AuthProvider with ChangeNotifier implements WidgetsBindingObserver {
       await docRef.set(updates, SetOptions(merge: true)).timeout(
         const Duration(seconds: 5), // 10초 → 5초로 감소
         onTimeout: () {
-          Logger.log('⏱️ 스키마 보정 타임아웃');
+          if (Logger.isVerboseEnabled) Logger.log('⏱️ 스키마 보정 타임아웃');
           throw TimeoutException('스키마 보정 타임아웃');
         },
       );
@@ -3239,7 +3346,8 @@ class AuthProvider with ChangeNotifier implements WidgetsBindingObserver {
       if (_pendingRegistrationStateCheck &&
           resumedUid != null &&
           resumedUid == _pendingRegistrationStateCheckUid) {
-        Logger.log('↩️ 앱 resume 감지 - 회원가입 진행 상태를 다시 확인합니다.');
+        if (Logger.isVerboseEnabled)
+          Logger.log('↩️ 앱 resume 감지 - 회원가입 진행 상태를 다시 확인합니다.');
         unawaited(_recoverRegistrationOnLaunch());
       }
       if (_user != null && isRegistrationComplete) {
@@ -3252,7 +3360,8 @@ class AuthProvider with ChangeNotifier implements WidgetsBindingObserver {
           _user != null &&
           _userData != null &&
           isRegistrationComplete) {
-        Logger.log('📲 [FCM] 앱 resume 감지 - FCM 미초기화 상태, 재시도');
+        if (Logger.isVerboseEnabled)
+          Logger.log('📲 [FCM] 앱 resume 감지 - FCM 미초기화 상태, 재시도');
         unawaited(_initializeFCMIfNeeded());
       }
     }

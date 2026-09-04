@@ -37,7 +37,7 @@ class ReviewImageAdapter {
         // 성공 시 리뷰 전용 경로로 변환
         // 기존 posts/ 경로를 reviews/{meetupId}/ 경로로 변경
         final reviewImageUrl = _convertToReviewPath(uploadedUrl, meetupId, reviewId);
-        Logger.log('리뷰 이미지 업로드 성공: $reviewImageUrl');
+        if (Logger.isVerboseEnabled) Logger.log('리뷰 이미지 업로드 성공: $reviewImageUrl');
         return reviewImageUrl;
       }
       
@@ -57,7 +57,7 @@ class ReviewImageAdapter {
     try {
       if (imageFiles.isEmpty) return [];
 
-      Logger.log('리뷰 이미지 업로드 시작: ${imageFiles.length}개 파일');
+      if (Logger.isVerboseEnabled) Logger.log('리뷰 이미지 업로드 시작: ${imageFiles.length}개 파일');
 
       // 병렬 업로드 (기존 PostService 패턴 재사용)
       final futures = imageFiles.map(
@@ -72,7 +72,7 @@ class ReviewImageAdapter {
       // null이 아닌 URL만 반환
       final successUrls = results.where((url) => url != null).cast<String>().toList();
       
-      Logger.log('리뷰 이미지 업로드 완료: ${successUrls.length}개 (요청: ${imageFiles.length}개)');
+      if (Logger.isVerboseEnabled) Logger.log('리뷰 이미지 업로드 완료: ${successUrls.length}개 (요청: ${imageFiles.length}개)');
       return successUrls;
 
     } catch (e) {
@@ -85,7 +85,7 @@ class ReviewImageAdapter {
   String _convertToReviewPath(String originalUrl, String meetupId, String reviewId) {
     // 실제로는 같은 Storage 위치를 사용하되, 메타데이터나 로깅에서 구분
     // 향후 필요시 실제 경로 변경 로직 추가 가능
-    Logger.log('리뷰 이미지 경로 변환: meetup=$meetupId, review=$reviewId');
+    if (Logger.isVerboseEnabled) Logger.log('리뷰 이미지 경로 변환: meetup=$meetupId, review=$reviewId');
     return originalUrl;
   }
 
@@ -94,7 +94,7 @@ class ReviewImageAdapter {
     try {
       // Note: 이미지 롤백 기능은 현재 미구현 (v1.1에서 추가 예정)
       // 현재는 로깅만 수행하며, 실제 Storage 삭제는 수동으로 처리
-      Logger.log('이미지 롤백 요청: $imageUrl');
+      if (Logger.isVerboseEnabled) Logger.log('이미지 롤백 요청: $imageUrl');
       return true;
     } catch (e) {
       Logger.error('이미지 롤백 오류: $e');
@@ -346,7 +346,7 @@ class ReviewMeetupAdapter {
         });
       });
 
-      Logger.log('모임 참여자 수 증가 완료: $meetupId');
+      if (Logger.isVerboseEnabled) Logger.log('모임 참여자 수 증가 완료: $meetupId');
       return true;
     } catch (e) {
       Logger.error('모임 참여자 수 증가 오류 ($meetupId): $e');

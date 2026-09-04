@@ -4,6 +4,7 @@ import * as functions from 'firebase-functions';
 import * as https from 'https';
 import {COL} from './firestore_paths';
 import {hasActiveHanyangClaim} from './hanyang_verification';
+import {runtimeInfo, runtimeLogsEnabled} from './runtime_logging';
 
 const GEMINI_API_VERSION = 'v1beta';
 const GEMINI_MODEL = 'gemini-3.5-flash-lite';
@@ -1921,7 +1922,7 @@ export const translateContentBatch = functions
     }
 
     const durationMs = Date.now() - startedAt;
-    console.info('content_translation_batch', {
+    runtimeLogsEnabled && runtimeInfo('content_translation_batch', {
       requested: requests.length,
       resolved: resolved.length,
       generated: acquired.length,

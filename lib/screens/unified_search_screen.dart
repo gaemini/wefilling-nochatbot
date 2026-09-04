@@ -22,6 +22,7 @@ import '../ui/widgets/hanyang_verification_gate.dart';
 import '../widgets/post_search_card.dart';
 import '../widgets/user_tile.dart';
 import '../utils/responsive_helper.dart';
+import '../utils/latest_request_guard.dart';
 
 class UnifiedSearchScreen extends StatefulWidget {
   /// 0: 이름(유저), 1: 게시글, 2: 모임
@@ -60,6 +61,8 @@ class _UnifiedSearchScreenState extends State<UnifiedSearchScreen>
 
   List<Post> _postResults = const [];
   List<Meetup> _meetupResults = const [];
+  final LatestRequestGuard _postSearchGuard = LatestRequestGuard();
+  final LatestRequestGuard _meetupSearchGuard = LatestRequestGuard();
 
   @override
   void initState() {
@@ -94,6 +97,8 @@ class _UnifiedSearchScreenState extends State<UnifiedSearchScreen>
   @override
   void dispose() {
     _debounceTimer?.cancel();
+    _postSearchGuard.invalidate();
+    _meetupSearchGuard.invalidate();
     _tabController.removeListener(_onTabChanged);
     _tabController.dispose();
     _searchController.dispose();
@@ -108,7 +113,18 @@ class _UnifiedSearchScreenState extends State<UnifiedSearchScreen>
     } catch (_) {
       // 유저 검색 탭에서 에러 상태로 표기됨 (provider.errorMessage)
     } finally {
-      if (mounted) setState(() => _relationshipInitialized = true);
+      if (mounted) {
+        setState(() => _relationshipInitialized = true);
+
+        // The user can start typing while the relationship subscriptions are
+        // initializing. Run the latest text once initialization finishes so
+        // the first search is not silently dropped.
+        final query = _searchController.text.trim();
+        if (_tabController.index == 0 && query.isNotEmpty) {
+          _debounceTimer?.cancel();
+          _searchUsers(query);
+        }
+      }
     }
   }
 
@@ -122,10 +138,29 @@ class _UnifiedSearchScreenState extends State<UnifiedSearchScreen>
   void _onQueryChanged(String query) {
     final q = query.trim();
     _debounceTimer?.cancel();
+    // 입력 순간 진행 중인 이전 검색을 무효화한다. 새 요청이 300ms 뒤에
+    // 시작되기 전 오래된 응답이 도착해도 현재 검색어 결과를 덮지 않는다.
+    _postSearchGuard.invalidate();
+    _meetupSearchGuard.invalidate();
+    // User search has its own async request guard in RelationshipProvider.
+    // Clearing here invalidates it during the debounce window, preventing an
+    // old response from being rendered under newly typed text.
     if (q.isEmpty) {
       _clearAllResults();
       return;
     }
+    context.read<RelationshipProvider>().clearSearchResults();
+    // 새 검색어를 입력한 직후에는 이전 검색어의 포스트/모임을 화면에서
+    // 제거한다. 네트워크 요청이 시작되는 300ms 동안 오래된 결과가 새
+    // 검색어의 결과처럼 보이는 것을 방지한다.
+    setState(() {
+      _postResults = const [];
+      _meetupResults = const [];
+      _postsError = null;
+      _meetupsError = null;
+      _isLoadingPosts = false;
+      _isLoadingMeetups = false;
+    });
 
     _debounceTimer = Timer(const Duration(milliseconds: 300), () {
       if (!mounted) return;
@@ -134,6 +169,8 @@ class _UnifiedSearchScreenState extends State<UnifiedSearchScreen>
   }
 
   void _clearAllResults() {
+    _postSearchGuard.invalidate();
+    _meetupSearchGuard.invalidate();
     // 유저 검색 결과는 provider에 있음
     context.read<RelationshipProvider>().clearSearchResults();
     setState(() {
@@ -170,19 +207,20 @@ class _UnifiedSearchScreenState extends State<UnifiedSearchScreen>
   }
 
   Future<void> _searchPosts(String query) async {
+    final requestToken = _postSearchGuard.begin();
     setState(() {
       _isLoadingPosts = true;
       _postsError = null;
     });
     try {
       final posts = await _postService.searchPosts(query);
-      if (!mounted) return;
+      if (!mounted || !_postSearchGuard.isCurrent(requestToken)) return;
       setState(() {
         _postResults = posts;
         _isLoadingPosts = false;
       });
     } catch (e) {
-      if (!mounted) return;
+      if (!mounted || !_postSearchGuard.isCurrent(requestToken)) return;
       setState(() {
         _postResults = const [];
         _isLoadingPosts = false;
@@ -192,19 +230,20 @@ class _UnifiedSearchScreenState extends State<UnifiedSearchScreen>
   }
 
   Future<void> _searchMeetups(String query) async {
+    final requestToken = _meetupSearchGuard.begin();
     setState(() {
       _isLoadingMeetups = true;
       _meetupsError = null;
     });
     try {
       final meetups = await _meetupService.searchMeetupsAsync(query);
-      if (!mounted) return;
+      if (!mounted || !_meetupSearchGuard.isCurrent(requestToken)) return;
       setState(() {
         _meetupResults = meetups;
         _isLoadingMeetups = false;
       });
     } catch (e) {
-      if (!mounted) return;
+      if (!mounted || !_meetupSearchGuard.isCurrent(requestToken)) return;
       setState(() {
         _meetupResults = const [];
         _isLoadingMeetups = false;
@@ -486,6 +525,8 @@ class _UnifiedSearchScreenState extends State<UnifiedSearchScreen>
     required IconData icon,
     required String title,
     required String subtitle,
+    String? actionLabel,
+    VoidCallback? onAction,
   }) {
     return LayoutBuilder(
       builder: (context, constraints) => SingleChildScrollView(
@@ -529,6 +570,14 @@ class _UnifiedSearchScreenState extends State<UnifiedSearchScreen>
                         height: 1.5,
                       ),
                     ),
+                    if (actionLabel != null && onAction != null) ...[
+                      const SizedBox(height: 18),
+                      FilledButton.icon(
+                        onPressed: onAction,
+                        icon: const Icon(Icons.refresh_rounded, size: 18),
+                        label: Text(actionLabel),
+                      ),
+                    ],
                   ],
                 ),
               ),
@@ -586,14 +635,14 @@ class _UnifiedSearchScreenState extends State<UnifiedSearchScreen>
                     unselectedLabelColor: const Color(0xFF6B7280),
                     labelStyle: const TextStyle(
                       fontFamily: 'Inter',
-                      fontFamilyFallback: const ['NotoSansKR'],
+                      fontFamilyFallback: ['NotoSansKR'],
                       fontSize: 14,
                       fontWeight: FontWeight.w700,
                       letterSpacing: -0.1,
                     ),
                     unselectedLabelStyle: const TextStyle(
                       fontFamily: 'Inter',
-                      fontFamilyFallback: const ['NotoSansKR'],
+                      fontFamilyFallback: ['NotoSansKR'],
                       fontSize: 14,
                       fontWeight: FontWeight.w500,
                       letterSpacing: -0.1,
@@ -655,7 +704,12 @@ class _UnifiedSearchScreenState extends State<UnifiedSearchScreen>
           return _buildEmptyPrompt(
             icon: Icons.error_outline,
             title: AppLocalizations.of(context)!.error,
-            subtitle: provider.errorMessage!,
+            // Repository/provider errors may contain implementation details
+            // such as an App Check exception name. Keep those in diagnostics,
+            // but present a localized recovery path to the user.
+            subtitle: AppLocalizations.of(context)!.errorOccurred,
+            actionLabel: AppLocalizations.of(context)!.retryAction,
+            onAction: () => _searchUsers(q),
           );
         }
 
@@ -712,7 +766,9 @@ class _UnifiedSearchScreenState extends State<UnifiedSearchScreen>
       return _buildEmptyPrompt(
         icon: Icons.error_outline,
         title: AppLocalizations.of(context)!.error,
-        subtitle: _postsError!,
+        subtitle: AppLocalizations.of(context)!.errorOccurred,
+        actionLabel: AppLocalizations.of(context)!.retryAction,
+        onAction: () => _searchPosts(q),
       );
     }
 
@@ -757,7 +813,9 @@ class _UnifiedSearchScreenState extends State<UnifiedSearchScreen>
       return _buildEmptyPrompt(
         icon: Icons.error_outline,
         title: AppLocalizations.of(context)!.error,
-        subtitle: _meetupsError!,
+        subtitle: AppLocalizations.of(context)!.errorOccurred,
+        actionLabel: AppLocalizations.of(context)!.retryAction,
+        onAction: () => _searchMeetups(q),
       );
     }
 
@@ -785,6 +843,9 @@ class _UnifiedSearchScreenState extends State<UnifiedSearchScreen>
       ),
       itemBuilder: (context, index) {
         final meetup = _meetupResults[index];
+        final hostName = (meetup.hostNickname ?? '').trim().isNotEmpty
+            ? meetup.hostNickname!.trim()
+            : meetup.host;
         final isHanyangLocked = HanyangVerificationGate.isLockedForCurrentUser(
           context,
           meetup.requiresHanyangVerification,
@@ -855,7 +916,7 @@ class _UnifiedSearchScreenState extends State<UnifiedSearchScreen>
                     ),
                     const SizedBox(height: 5),
                     Text(
-                      '${AppLocalizations.of(context)!.host}: ${meetup.host}',
+                      '${AppLocalizations.of(context)!.host}: $hostName',
                       maxLines: 1,
                       overflow: TextOverflow.ellipsis,
                       style: const TextStyle(

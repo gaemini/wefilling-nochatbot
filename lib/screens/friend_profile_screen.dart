@@ -60,10 +60,12 @@ class _FriendProfileScreenState extends State<FriendProfileScreen>
 
   Map<String, dynamic>? _userData;
   bool _isDeletedAccount = false;
+  bool _profileLoadFailed = false;
   bool _isLoading = true;
   bool _isRelationshipLoading = true;
   RelationshipStatus? _relationshipStatus;
   bool _isRequestingFriend = false;
+  int _profileLoadToken = 0;
   // 통계 숫자 깜빡임/0 표시 방지용 캐시
   final Map<String, int> _statCountCache = {};
   UserProfileStats? _profileStats;
@@ -197,6 +199,7 @@ class _FriendProfileScreenState extends State<FriendProfileScreen>
   }
 
   Future<void> _loadUserData() async {
+    final token = ++_profileLoadToken;
     try {
       final targetFuture = FirebaseFirestore.instance
           .collection('users')
@@ -208,15 +211,17 @@ class _FriendProfileScreenState extends State<FriendProfileScreen>
           targetData == null ||
           isUnavailableUserAccountData(targetData);
 
-      if (!targetIsDeleted && mounted) {
+      if (!mounted || token != _profileLoadToken) return;
+      if (!targetIsDeleted) {
         setState(() {
           _userData = targetData;
           _isDeletedAccount = false;
+          _profileLoadFailed = false;
           _isLoading = false;
         });
-      } else if (targetIsDeleted && mounted) {
+      } else {
         // 탈퇴한 사용자 처리
-        Logger.log('⚠️ 탈퇴한 사용자: ${widget.userId}');
+        if (Logger.isVerboseEnabled) Logger.log('⚠️ 탈퇴한 사용자: ${widget.userId}');
         setState(() {
           final deletedLabel =
               AppLocalizations.of(context)?.deletedAccount ?? '탈퇴한 계정';
@@ -227,28 +232,62 @@ class _FriendProfileScreenState extends State<FriendProfileScreen>
             'bio': '',
           };
           _isDeletedAccount = true;
+          _profileLoadFailed = false;
           _isRelationshipLoading = false;
           _isLoading = false;
         });
       }
     } catch (e) {
       Logger.error('사용자 데이터 로드 오류: $e');
-      if (mounted) {
-        setState(() {
-          final deletedLabel =
-              AppLocalizations.of(context)?.deletedAccount ?? '탈퇴한 계정';
-          _userData = {
-            'nickname': deletedLabel,
-            'displayName': deletedLabel,
-            'photoURL': '',
-            'bio': '',
-          };
-          _isDeletedAccount = true;
-          _isRelationshipLoading = false;
-          _isLoading = false;
-        });
-      }
+      final fallbackData =
+          await _loadCachedProfileData() ?? _profileDataFromNavigationHint();
+      if (!mounted || token != _profileLoadToken) return;
+      setState(() {
+        // 네트워크/App Check의 일시 오류를 탈퇴 계정으로 오인하지 않는다.
+        // 학교 인증 여부는 프로필 조회 권한과 무관하며, 포스트·밋업의
+        // 한양인 공개 콘텐츠는 각 콘텐츠 전용 게이트에서 계속 제한한다.
+        _userData = fallbackData;
+        _isDeletedAccount = false;
+        _profileLoadFailed = true;
+        _isLoading = false;
+      });
     }
+  }
+
+  Future<void> _retryProfileLoad() async {
+    if (!mounted) return;
+    setState(() => _isLoading = true);
+    await _loadUserData();
+  }
+
+  Future<Map<String, dynamic>?> _loadCachedProfileData() async {
+    try {
+      final cached = await FirebaseFirestore.instance
+          .collection('users')
+          .doc(widget.userId)
+          .get(const GetOptions(source: Source.cache));
+      final data = cached.data();
+      if (!cached.exists || isUnavailableUserAccountData(data)) return null;
+      return data;
+    } catch (_) {
+      return null;
+    }
+  }
+
+  Map<String, dynamic>? _profileDataFromNavigationHint() {
+    final nickname = (widget.nickname ?? '').trim();
+    final photoURL = (widget.photoURL ?? '').trim();
+    final university = (widget.university ?? '').trim();
+    if (nickname.isEmpty && photoURL.isEmpty && university.isEmpty) return null;
+    return <String, dynamic>{
+      if (nickname.isNotEmpty) ...{
+        'nickname': nickname,
+        'displayName': nickname,
+      },
+      'photoURL': photoURL,
+      'university': university,
+      'bio': '',
+    };
   }
 
   @override
@@ -280,38 +319,89 @@ class _FriendProfileScreenState extends State<FriendProfileScreen>
       backgroundColor: Colors.white,
       body: (_isLoading || _isRelationshipLoading)
           ? _buildProfileLoadingView()
-          : _isDeletedAccount
-              ? _buildDeletedAccountProfile(l10n)
-              : isBlocked
-                  ? _buildLockedProfile(l10n)
-                  : RefreshIndicator(
-                      onRefresh: _refreshProfile,
-                      child: CustomScrollView(
-                        key: PageStorageKey<String>(
-                          'friend_profile_${widget.userId}',
-                        ),
-                        physics: const AlwaysScrollableScrollPhysics(),
-                        slivers: [
-                          SliverToBoxAdapter(
-                            child: _buildProfileHeader(
-                                isNonFriendPreview: isNonFriendPreview),
-                          ),
-                          SliverToBoxAdapter(
-                            child: _buildFriendPreviewSection(),
-                          ),
-                          SliverToBoxAdapter(
-                            child: _buildReviewPreviewSection(),
-                          ),
-                          // 안드로이드 하단 네비게이션 바를 위한 여백 추가
-                          SliverToBoxAdapter(
-                            child: SizedBox(
-                              height:
-                                  bottomPadding > 0 ? bottomPadding + 16 : 16,
+          : _profileLoadFailed && _userData == null
+              ? _buildProfileLoadError()
+              : _isDeletedAccount
+                  ? _buildDeletedAccountProfile(l10n)
+                  : isBlocked
+                      ? _buildLockedProfile(l10n)
+                      : RefreshIndicator(
+                          onRefresh: _refreshProfile,
+                          child: CustomScrollView(
+                            key: PageStorageKey<String>(
+                              'friend_profile_${widget.userId}',
                             ),
+                            physics: const AlwaysScrollableScrollPhysics(),
+                            slivers: [
+                              SliverToBoxAdapter(
+                                child: _buildProfileHeader(
+                                    isNonFriendPreview: isNonFriendPreview),
+                              ),
+                              SliverToBoxAdapter(
+                                child: _buildFriendPreviewSection(),
+                              ),
+                              SliverToBoxAdapter(
+                                child: _buildReviewPreviewSection(),
+                              ),
+                              // 안드로이드 하단 네비게이션 바를 위한 여백 추가
+                              SliverToBoxAdapter(
+                                child: SizedBox(
+                                  height: bottomPadding > 0
+                                      ? bottomPadding + 16
+                                      : 16,
+                                ),
+                              ),
+                            ],
                           ),
-                        ],
-                      ),
-                    ),
+                        ),
+    );
+  }
+
+  Widget _buildProfileLoadError() {
+    final isKo = Localizations.localeOf(context).languageCode == 'ko';
+    return Center(
+      child: SingleChildScrollView(
+        padding: const EdgeInsets.fromLTRB(24, 32, 24, 48),
+        child: Column(
+          mainAxisAlignment: MainAxisAlignment.center,
+          children: [
+            const Icon(
+              Icons.person_outline_rounded,
+              size: 48,
+              color: Color(0xFF94A3B8),
+            ),
+            const SizedBox(height: 16),
+            Text(
+              isKo ? '프로필을 불러오지 못했어요' : 'Unable to load profile',
+              textAlign: TextAlign.center,
+              style: const TextStyle(
+                fontFamily: 'Inter',
+                fontFamilyFallback: ['NotoSansKR'],
+                fontSize: 18,
+                fontWeight: FontWeight.w700,
+                color: Color(0xFF111827),
+              ),
+            ),
+            const SizedBox(height: 8),
+            Text(
+              isKo ? '잠시 후 다시 시도해 주세요.' : 'Please try again in a moment.',
+              textAlign: TextAlign.center,
+              style: const TextStyle(
+                fontFamily: 'Inter',
+                fontFamilyFallback: ['NotoSansKR'],
+                fontSize: 14,
+                color: Color(0xFF6B7280),
+              ),
+            ),
+            const SizedBox(height: 20),
+            TextButton.icon(
+              onPressed: _retryProfileLoad,
+              icon: const Icon(Icons.refresh_rounded, size: 19),
+              label: Text(isKo ? '다시 시도' : 'Retry'),
+            ),
+          ],
+        ),
+      ),
     );
   }
 
@@ -1636,8 +1726,10 @@ class _FriendProfileScreenState extends State<FriendProfileScreen>
       // Firebase Auth UID 형식 검증 (20~30자 영숫자, 언더스코어 포함 가능)
       final uidPattern = RegExp(r'^[a-zA-Z0-9_-]{20,30}$');
       if (!uidPattern.hasMatch(widget.userId)) {
-        Logger.log(
-            '❌ 잘못된 userId 형식: ${widget.userId} (길이: ${widget.userId.length}자)');
+        if (Logger.isVerboseEnabled) {
+          Logger.log(
+              '❌ 잘못된 userId 형식: ${widget.userId} (길이: ${widget.userId.length}자)');
+        }
         if (mounted) {
           ScaffoldMessenger.of(context).showSnackBar(
             SnackBar(

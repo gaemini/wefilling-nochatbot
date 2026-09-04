@@ -7,8 +7,6 @@ RELEASE_STATE="$REPO_ROOT/ios/release-version.properties"
 
 version_name="$(python3 -c 'import json,sys; print(json.load(open(sys.argv[1]))["versionName"])' "$METADATA")"
 build_number="$(python3 -c 'import json,sys; print(json.load(open(sys.argv[1]))["buildNumber"])' "$METADATA")"
-release_id="$(python3 -c 'import json,sys; print(json.load(open(sys.argv[1]))["releaseId"])' "$METADATA")"
-cache_schema="$(python3 -c 'import json,sys; print(json.load(open(sys.argv[1]))["cacheSchemaVersion"])' "$METADATA")"
 
 action="${1:-check}"
 if [[ "$action" == "build" ]]; then
@@ -41,11 +39,7 @@ cd "$REPO_ROOT"
 "${flutter_command[@]}" build ipa \
   --release \
   --build-name="$version_name" \
-  --build-number="$build_number" \
-  --dart-define="FLUTTER_APP_FLAVOR=production" \
-  --dart-define="RELEASE_CHANNEL=production" \
-  --dart-define="RELEASE_ID=$release_id" \
-  --dart-define="CACHE_SCHEMA_VERSION=$cache_schema"
+  --build-number="$build_number"
 
 built_ipa="$(find "$REPO_ROOT/build/ios/ipa" -maxdepth 1 -name '*.ipa' -print -quit)"
 if [[ -z "$built_ipa" ]]; then

@@ -182,7 +182,7 @@ class CommentService {
       // 캐시 무효화 (새 댓글이 추가되었으므로 해당 게시글의 댓글 캐시 삭제)
       if (CacheFeatureFlags.isCommentCacheEnabled) {
         _cache.invalidatePostComments(postId);
-        Logger.log('💾 댓글 캐시 무효화 (새 댓글 추가)');
+        if (Logger.isVerboseEnabled) Logger.log('💾 댓글 캐시 무효화 (새 댓글 추가)');
       }
 
       // 게시글 정보 가져오기 (게시글 또는 리뷰 모두 지원)
@@ -286,7 +286,7 @@ class CommentService {
       }
     } catch (e) {
       // 모임 댓글수 업데이트 실패는 무시 (일반 게시글일 수 있음)
-      Logger.log('모임 댓글수 업데이트 시도 (실패 무시): $e');
+      if (Logger.isVerboseEnabled) Logger.log('모임 댓글수 업데이트 시도 (실패 무시): $e');
     }
   }
 
@@ -336,7 +336,7 @@ class CommentService {
     } catch (error) {
       // 차단 목록 네트워크 조회가 멈춰도 댓글 수 새로고침 전체가 대기하지
       // 않도록 마지막으로 확인된 메모리 캐시를 사용한다.
-      Logger.warning('댓글 수 집계용 차단 목록 조회 실패(캐시 사용): $error');
+      if (Logger.isVerboseEnabled) Logger.warning('댓글 수 집계용 차단 목록 조회 실패(캐시 사용): $error');
       blockedRelationships = <Set<String>>[
         ContentFilterService.getBlockedUserIdsCached(),
         ContentFilterService.getBlockedByUserIdsCached(),
@@ -514,7 +514,7 @@ class CommentService {
       // 캐시 무효화 (댓글이 삭제되었으므로 해당 게시글의 댓글 캐시 삭제)
       if (CacheFeatureFlags.isCommentCacheEnabled) {
         _cache.invalidatePostComments(postId);
-        Logger.log('💾 댓글 캐시 무효화 (댓글 삭제)');
+        if (Logger.isVerboseEnabled) Logger.log('💾 댓글 캐시 무효화 (댓글 삭제)');
       }
 
       return true;
@@ -527,10 +527,10 @@ class CommentService {
   // 댓글 좋아요 토글
   Future<bool> toggleCommentLike(String commentId, String userId) async {
     try {
-      Logger.log('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━');
-      Logger.log('댓글 좋아요 토글 시작');
-      Logger.log('  - commentId: $commentId');
-      Logger.log('  - userId: $userId');
+      if (Logger.isVerboseEnabled) Logger.log('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━');
+      if (Logger.isVerboseEnabled) Logger.log('댓글 좋아요 토글 시작');
+      if (Logger.isVerboseEnabled) Logger.log('  - commentId: $commentId');
+      if (Logger.isVerboseEnabled) Logger.log('  - userId: $userId');
 
       final commentRef = _firestore.collection('comments').doc(commentId);
 
@@ -538,22 +538,22 @@ class CommentService {
         final commentDoc = await transaction.get(commentRef);
 
         if (!commentDoc.exists) {
-          Logger.log('  ❌ 댓글을 찾을 수 없습니다.');
+          if (Logger.isVerboseEnabled) Logger.log('  ❌ 댓글을 찾을 수 없습니다.');
           throw Exception('댓글을 찾을 수 없습니다.');
         }
 
         final commentData = commentDoc.data()!;
         if (commentData['isDeleted'] == true) {
-          Logger.log('  ❌ 삭제된 댓글에는 좋아요를 변경할 수 없습니다.');
+          if (Logger.isVerboseEnabled) Logger.log('  ❌ 삭제된 댓글에는 좋아요를 변경할 수 없습니다.');
           return false;
         }
         final List<String> likedBy =
             List<String>.from(commentData['likedBy'] ?? []);
         final int currentLikeCount = commentData['likeCount'] ?? 0;
 
-        Logger.log('  - 현재 좋아요 수: $currentLikeCount');
-        Logger.log('  - 좋아요 누른 사용자: ${likedBy.length}명');
-        Logger.log('  - 사용자가 이미 좋아요 눌렀는지: ${likedBy.contains(userId)}');
+        if (Logger.isVerboseEnabled) Logger.log('  - 현재 좋아요 수: $currentLikeCount');
+        if (Logger.isVerboseEnabled) Logger.log('  - 좋아요 누른 사용자: ${likedBy.length}명');
+        if (Logger.isVerboseEnabled) Logger.log('  - 사용자가 이미 좋아요 눌렀는지: ${likedBy.contains(userId)}');
 
         if (likedBy.contains(userId)) {
           // 좋아요 취소
@@ -562,7 +562,7 @@ class CommentService {
             'likedBy': likedBy,
             'likeCount': currentLikeCount - 1,
           });
-          Logger.log('  ✅ 좋아요 취소 완료');
+          if (Logger.isVerboseEnabled) Logger.log('  ✅ 좋아요 취소 완료');
           return false; // 좋아요 취소됨
         } else {
           // 좋아요 추가
@@ -571,20 +571,20 @@ class CommentService {
             'likedBy': likedBy,
             'likeCount': currentLikeCount + 1,
           });
-          Logger.log('  ✅ 좋아요 추가 완료');
+          if (Logger.isVerboseEnabled) Logger.log('  ✅ 좋아요 추가 완료');
           return true; // 좋아요 추가됨
         }
       });
     } catch (e, stackTrace) {
-      Logger.log('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━');
+      if (Logger.isVerboseEnabled) Logger.log('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━');
       Logger.error('❌ 댓글 좋아요 토글 오류');
       Logger.error('  에러: $e');
-      Logger.log('  스택 트레이스: $stackTrace');
-      Logger.log('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━');
+      if (Logger.isVerboseEnabled) Logger.log('  스택 트레이스: $stackTrace');
+      if (Logger.isVerboseEnabled) Logger.log('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━');
       return false;
     } finally {
-      Logger.log('댓글 좋아요 토글 종료');
-      Logger.log('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━');
+      if (Logger.isVerboseEnabled) Logger.log('댓글 좋아요 토글 종료');
+      if (Logger.isVerboseEnabled) Logger.log('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━');
     }
   }
 
@@ -710,7 +710,7 @@ class CommentService {
       // 캐시 무효화 (댓글이 삭제되었으므로 해당 게시글의 댓글 캐시 삭제)
       if (CacheFeatureFlags.isCommentCacheEnabled) {
         _cache.invalidatePostComments(postId);
-        Logger.log('💾 댓글 캐시 무효화 (댓글 삭제 요청)');
+        if (Logger.isVerboseEnabled) Logger.log('💾 댓글 캐시 무효화 (댓글 삭제 요청)');
       }
 
       return true;

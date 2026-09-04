@@ -16,23 +16,27 @@ class Logger {
     defaultValue: false,
   );
 
+  /// 호출 지점에서도 이 상수로 감싸 릴리스 AOT 빌드가 로그 메시지의 문자열
+  /// 보간과 payload 생성을 통째로 제거할 수 있게 한다.
+  static const bool isVerboseEnabled = kDebugMode && verboseLoggingEnabled;
+
   /// 일반 로그 메시지 출력 (명시적으로 활성화한 디버그 모드에서만)
   static void log(String message) {
-    if (kDebugMode && verboseLoggingEnabled) {
+    if (isVerboseEnabled) {
       debugPrint('📝 $message');
     }
   }
 
   /// 정보성 로그 메시지 출력 (명시적으로 활성화한 디버그 모드에서만)
   static void info(String message) {
-    if (kDebugMode && verboseLoggingEnabled) {
+    if (isVerboseEnabled) {
       debugPrint('ℹ️ $message');
     }
   }
 
-  /// 경고 로그 메시지 출력 (디버그 모드에서만)
+  /// 경고 로그 메시지 출력 (상세 로그를 켠 디버그 모드에서만)
   static void warning(String message) {
-    if (kDebugMode) {
+    if (isVerboseEnabled) {
       debugPrint('⚠️ $message');
     }
   }

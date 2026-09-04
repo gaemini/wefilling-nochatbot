@@ -6,6 +6,28 @@ import 'package:flutter/foundation.dart';
 
 enum FirebaseAppCheckReadiness { notStarted, initializing, ready, unavailable }
 
+@visibleForTesting
+bool shouldRetryUnavailableAppCheck({
+  required FirebaseAppCheckReadiness readiness,
+  required int manualRetryCount,
+  required DateTime? lastFailureAt,
+  required DateTime now,
+}) {
+  if (readiness != FirebaseAppCheckReadiness.unavailable) {
+    return false;
+  }
+
+  // Startup initialization is deliberately non-fatal. The first protected
+  // user action must therefore get one immediate token refresh instead of
+  // being forced to fail for the cooldown window after a transient startup
+  // attestation/network error. Further forced refreshes keep the cooldown so
+  // a broken provider cannot create a retry storm, but they remain available
+  // after connectivity recovers without requiring an app restart.
+  if (manualRetryCount == 0) return true;
+  return lastFailureAt == null ||
+      now.difference(lastFailureAt) >= const Duration(seconds: 30);
+}
+
 /// App Check is initialized once, before any protected Firebase request.
 ///
 /// Screens and auth-state listeners must not activate App Check or repeatedly
@@ -41,11 +63,12 @@ class FirebaseAppCheckService {
     final activeRetry = _tokenRetry;
     if (activeRetry != null) await activeRetry;
     if (!isReady &&
-        _readiness == FirebaseAppCheckReadiness.unavailable &&
-        _manualRetryCount < 2 &&
-        (_lastFailureAt == null ||
-            DateTime.now().difference(_lastFailureAt!) >=
-                const Duration(seconds: 30))) {
+        shouldRetryUnavailableAppCheck(
+          readiness: _readiness,
+          manualRetryCount: _manualRetryCount,
+          lastFailureAt: _lastFailureAt,
+          now: DateTime.now(),
+        )) {
       final retry = _retryTokenOnce();
       _tokenRetry = retry;
       await retry.whenComplete(() {
@@ -67,18 +90,10 @@ class FirebaseAppCheckService {
     final isIosSimulator = Platform.isIOS &&
         (Platform.environment['SIMULATOR_DEVICE_NAME']?.isNotEmpty == true ||
             Platform.environment['SIMULATOR_UDID']?.isNotEmpty == true);
-    const releaseChannel = String.fromEnvironment(
-      'RELEASE_CHANNEL',
-      defaultValue: 'development',
-    );
-    const appFlavor = String.fromEnvironment(
-      'FLUTTER_APP_FLAVOR',
-      defaultValue: '',
-    );
-    final productionAttestation = kReleaseMode &&
-        (Platform.isIOS ||
-            releaseChannel == 'production' ||
-            appFlavor == 'production');
+    // Provider selection is tied only to the immutable Flutter build mode.
+    // Debug/profile builds use debug attestation; release builds use the
+    // platform production provider. No flavor or dart-define can override it.
+    const productionAttestation = kReleaseMode;
 
     final AndroidAppCheckProvider androidProvider;
     final AppleAppCheckProvider appleProvider;

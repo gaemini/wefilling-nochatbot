@@ -3,8 +3,11 @@
 // 프로필 친구 네트워크 탐색 목록
 
 import 'dart:async';
+import 'package:cached_network_image/cached_network_image.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter/rendering.dart' show ScrollCacheExtent;
 import '../services/relationship_service.dart';
+import '../services/cache/app_image_cache_manager.dart';
 import '../models/user_profile.dart';
 import '../constants/app_constants.dart';
 import '../widgets/country_flag_circle.dart';
@@ -76,7 +79,7 @@ class _UserFriendsListScreenState extends State<UserFriendsListScreen> {
     });
   }
 
-  Future<void> _loadFriends() async {
+  Future<void> _loadFriends({bool forceRefresh = false}) async {
     try {
       setState(() {
         _isLoading = true;
@@ -86,7 +89,7 @@ class _UserFriendsListScreenState extends State<UserFriendsListScreen> {
         targetUid: widget.userId,
         pageSize: 20,
         query: _query,
-        forceRefresh: true,
+        forceRefresh: forceRefresh,
       );
 
       if (mounted) {
@@ -97,7 +100,8 @@ class _UserFriendsListScreenState extends State<UserFriendsListScreen> {
           _mutualCount = page.mutualCount;
           _isLoading = false;
         });
-        Logger.log('✅ ${widget.userName}의 친구 목록 로드: ${page.friends.length}명');
+        if (Logger.isVerboseEnabled)
+          Logger.log('✅ ${widget.userName}의 친구 목록 로드: ${page.friends.length}명');
       }
     } catch (e) {
       Logger.error('친구 목록 로드 오류: $e');
@@ -270,6 +274,7 @@ class _UserFriendsListScreenState extends State<UserFriendsListScreen> {
       onRefresh: _loadFriends,
       child: CustomScrollView(
         controller: _scrollController,
+        scrollCacheExtent: const ScrollCacheExtent.viewport(1),
         physics: const AlwaysScrollableScrollPhysics(
           parent: BouncingScrollPhysics(),
         ),
@@ -606,6 +611,8 @@ class _UserFriendsListScreenState extends State<UserFriendsListScreen> {
   }
 
   Widget _friendAvatar(UserProfile friend, double size) {
+    final cacheWidth =
+        (size * MediaQuery.devicePixelRatioOf(context)).ceil().clamp(96, 256);
     return Container(
       width: size,
       height: size,
@@ -615,12 +622,21 @@ class _UserFriendsListScreenState extends State<UserFriendsListScreen> {
       ),
       child: friend.hasProfileImage
           ? ClipOval(
-              child: Image.network(
-                friend.photoURL!,
+              child: CachedNetworkImage(
+                imageUrl: friend.photoURL!,
+                cacheManager: AppImageCacheManager.instance,
                 width: size,
                 height: size,
+                memCacheWidth: cacheWidth,
                 fit: BoxFit.cover,
-                errorBuilder: (_, __, ___) => Icon(
+                fadeInDuration: Duration.zero,
+                fadeOutDuration: Duration.zero,
+                placeholder: (_, __) => Icon(
+                  Icons.person_outline_rounded,
+                  size: size * 0.5,
+                  color: const Color(0xFF667085),
+                ),
+                errorWidget: (_, __, ___) => Icon(
                   Icons.person_outline_rounded,
                   size: size * 0.5,
                   color: const Color(0xFF667085),

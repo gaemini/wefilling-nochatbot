@@ -5,6 +5,7 @@ import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 
 import '../../services/avatar_cache_service.dart';
+import '../../services/cache/app_image_cache_manager.dart';
 import '../../utils/profile_photo_policy.dart';
 import '../../utils/logger.dart';
 
@@ -39,7 +40,9 @@ class UserAvatar extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     // ✅ 보안/정책: 우리 Storage 버킷에 없는 URL은 절대 표시하지 않는다.
-    if (isAnonymous || photoUrl.isEmpty || !ProfilePhotoPolicy.isAllowedProfilePhotoUrl(photoUrl)) {
+    if (isAnonymous ||
+        photoUrl.isEmpty ||
+        !ProfilePhotoPolicy.isAllowedProfilePhotoUrl(photoUrl)) {
       return _placeholder();
     }
 
@@ -88,6 +91,8 @@ class UserAvatar extends StatelessWidget {
           key: ValueKey(cacheKey),
           imageUrl: photoUrl,
           cacheKey: cacheKey,
+          cacheManager: AppImageCacheManager.instance,
+          memCacheWidth: (size * 3).ceil().clamp(64, 384),
           fit: BoxFit.cover,
           fadeInDuration: const Duration(milliseconds: 150),
           fadeOutDuration: const Duration(milliseconds: 150),
@@ -121,4 +126,3 @@ class UserAvatar extends StatelessWidget {
     );
   }
 }
-

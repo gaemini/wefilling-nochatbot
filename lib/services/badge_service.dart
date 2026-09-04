@@ -41,7 +41,6 @@ class BadgeService {
   static bool _badgeUpdateRequested = false;
   static String? _pendingBadgeUserId;
   static int? _pendingBadgeGeneration;
-  static int _debugBadgeUpdateLogs = 0;
 
   static const int _dmUnreadCounterVersion = 2;
 
@@ -159,14 +158,13 @@ class BadgeService {
         final actualDmUnreadCount =
             hasTrustedDmTotal ? storedDmTotal : await _reconcileDmUnreadTotal();
 
-        Logger.log(
+        if (Logger.isVerboseEnabled) Logger.log(
             '✅ 서버 카운터 동기화 완료: 알림=$actualNotificationCount, DM=$actualDmUnreadCount');
         return; // 성공하면 즉시 리턴
       } catch (e) {
-        Logger.error('서버 카운터 동기화 실패 (시도 ${attempt + 1}/3)', e);
-
         // 마지막 시도가 아니면 재시도
         if (attempt < 2) {
+          if (Logger.isVerboseEnabled) Logger.warning('서버 카운터 동기화 재시도 예정');
           await Future.delayed(Duration(milliseconds: 500 * (attempt + 1)));
           continue;
         }
@@ -220,7 +218,7 @@ class BadgeService {
       await stopRealtimeBadgeSync();
       await _setBadge(0);
       _currentBadgeCount = 0;
-      Logger.log('✅ 로그아웃 배지 초기화 완료');
+      if (Logger.isVerboseEnabled) Logger.log('✅ 로그아웃 배지 초기화 완료');
     } catch (e) {
       Logger.error('⚠️ 로그아웃 배지 초기화 실패(계속 진행): $e');
     }
@@ -383,21 +381,15 @@ class BadgeService {
         if (_currentBadgeCount != totalBadge) {
           await _setBadge(totalBadge);
           _currentBadgeCount = totalBadge;
-          if (_debugBadgeUpdateLogs < 10) {
-            _debugBadgeUpdateLogs++;
-            Logger.log(
-                '✅ 배지 업데이트: $totalBadge (알림: $notificationCount, DM: $dmUnreadCount, SC: $scUnreadCount)');
-          }
         }
 
         // 성공하면 즉시 리턴
         return;
       } catch (e) {
         if (!isCurrentRequest()) return;
-        Logger.error('배지 업데이트 실패 (시도 ${attempt + 1}/3)', e);
-
         // 마지막 시도가 아니면 재시도
         if (attempt < 2) {
+          if (Logger.isVerboseEnabled) Logger.warning('배지 업데이트 재시도 예정');
           await Future.delayed(Duration(milliseconds: 500 * (attempt + 1)));
           continue;
         }
@@ -437,13 +429,13 @@ class BadgeService {
         // 값이 없으면 fallback으로 진행
         break;
       } catch (e) {
-        Logger.error('dmUnreadTotal 조회 실패 (시도 ${attempt + 1}/3)', e);
-
         // 마지막 시도가 아니면 재시도
         if (attempt < 2) {
+          if (Logger.isVerboseEnabled) Logger.warning('dmUnreadTotal 조회 재시도 예정');
           await Future.delayed(Duration(milliseconds: 300 * (attempt + 1)));
           continue;
         }
+        if (Logger.isVerboseEnabled) Logger.warning('dmUnreadTotal 조회 실패 - 대화방 합산으로 전환');
       }
     }
 
@@ -473,13 +465,13 @@ class BadgeService {
         }
         return convSum;
       } catch (e) {
-        Logger.error('conversations 조회 실패 (시도 ${attempt + 1}/2)', e);
-
         // 마지막 시도가 아니면 재시도
         if (attempt < 1) {
+          if (Logger.isVerboseEnabled) Logger.warning('대화방 미읽음 합산 재시도 예정');
           await Future.delayed(const Duration(milliseconds: 500));
           continue;
         }
+        Logger.error('대화방 미읽음 합산 최종 실패', e);
       }
     }
 
@@ -661,7 +653,7 @@ class BadgeService {
     required String recipientUserId,
   }) async {
     if (recipientUserId.isEmpty || _auth.currentUser?.uid != recipientUserId) {
-      Logger.log('⏭️ 다른 계정 또는 계정 미지정 푸시 배지 무시');
+      if (Logger.isVerboseEnabled) Logger.log('⏭️ 다른 계정 또는 계정 미지정 푸시 배지 무시');
       return;
     }
     final safeCount = count < 0 ? 0 : count;

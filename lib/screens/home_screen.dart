@@ -21,10 +21,11 @@ import '../services/meetup_calendar_cache_service.dart';
 import '../services/preload_service.dart';
 import '../ui/snackbar/app_snackbar.dart';
 import '../ui/widgets/app_fab.dart';
-import '../ui/widgets/audience_ring.dart';
 import '../ui/widgets/empty_state.dart';
+import '../ui/widgets/meetup_calendar_day_ring.dart';
 import '../ui/widgets/meetup_home_card.dart';
 import '../ui/widgets/skeletons.dart';
+import '../utils/meetup_calendar_marker_policy.dart';
 import '../utils/logger.dart';
 import 'create_meetup_screen.dart';
 import 'meetup_detail_screen.dart';
@@ -57,13 +58,13 @@ class MeetupHomePageState extends State<MeetupHomePage> with PreloadMixin {
   late DateTime _baseDate; // PageView 계산을 위한 기준 날짜 (고정)
 
   // ✅ 월 스트림 캐시(리빌드마다 재구독 방지 → 깜빡임 감소)
-  late Stream<List<Meetup>> _visibleMonthStream;
+  late Stream<List<Meetup>> _calendarArchiveStream;
   late Stream<List<Meetup>> _myRelevantMonthStream;
   late Stream<List<Meetup>> _allUpcomingMeetupsStream;
   DateTime _visibleRangeStart = DateTime(1970, 1, 1);
   DateTime _visibleRangeEnd = DateTime(1970, 1, 1);
   DateTime _myStreamMonthKey = DateTime(1970, 1, 1);
-  final Map<DateTime, List<Meetup>> _visibleMeetupMonthCache =
+  final Map<DateTime, List<Meetup>> _archiveMeetupMonthCache =
       <DateTime, List<Meetup>>{};
   final Map<DateTime, List<Meetup>> _myMeetupMonthCache =
       <DateTime, List<Meetup>>{};
@@ -149,7 +150,10 @@ class MeetupHomePageState extends State<MeetupHomePage> with PreloadMixin {
       // 네트워크 재구독과 스켈레톤 전환을 기다리지 않게 한다.
       _visibleRangeStart = DateTime(key.year, key.month - 1, 1);
       _visibleRangeEnd = DateTime(key.year, key.month + 1, 1);
-      _visibleMonthStream = _meetupService.watchVisibleMeetupsForMonthRange(
+      // 같은 월 쿼리에서 활성 모임과 과거 아카이브를 함께 받아 화면에서
+      // 분리한다. 과거 날짜를 눌렀을 때 추가 쿼리가 생기지 않는다.
+      _calendarArchiveStream =
+          _meetupService.watchReadableMeetupArchiveForMonthRange(
         firstMonth: _visibleRangeStart,
         lastMonth: _visibleRangeEnd,
       );
@@ -180,11 +184,11 @@ class MeetupHomePageState extends State<MeetupHomePage> with PreloadMixin {
     }
   }
 
-  List<Meetup> _cachedVisibleRangeMeetups() => <Meetup>[
+  List<Meetup> _cachedArchiveRangeMeetups() => <Meetup>[
         for (var month = _visibleRangeStart;
             !month.isAfter(_visibleRangeEnd);
             month = DateTime(month.year, month.month + 1, 1))
-          ...?_visibleMeetupMonthCache[month],
+          ...?_archiveMeetupMonthCache[month],
       ];
 
   /// 포스트의 `오늘의 밋업`에서 진입할 때 기존 탭 상태와 무관하게 오늘을 연다.
@@ -344,7 +348,7 @@ class MeetupHomePageState extends State<MeetupHomePage> with PreloadMixin {
   // ===== 알림에서 모임 상세 열기 =====
   Future<void> _showMeetupFromNotification(String meetupId) async {
     try {
-      Logger.log('🔔 알림에서 모임 로드: $meetupId');
+      if (Logger.isVerboseEnabled) Logger.log('🔔 알림에서 모임 로드: $meetupId');
       final meetup = await _meetupService.getMeetupById(meetupId);
 
       if (meetup != null && mounted) {
@@ -384,7 +388,7 @@ class MeetupHomePageState extends State<MeetupHomePage> with PreloadMixin {
           ),
         );
       } else {
-        Logger.log('❌ 모임을 찾을 수 없음: $meetupId');
+        if (Logger.isVerboseEnabled) Logger.log('❌ 모임을 찾을 수 없음: $meetupId');
       }
     } catch (e) {
       Logger.error('❌ 알림 모임 로드 오류: $e');
@@ -839,11 +843,11 @@ class MeetupHomePageState extends State<MeetupHomePage> with PreloadMixin {
     final labelSize = isCompact ? 12.5 : (isExpanded ? 13.5 : 13.0);
     final categories = [
       {'key': 'all', 'label': AppLocalizations.of(context)!.all},
-      {'key': 'study', 'label': AppLocalizations.of(context)!.study},
       {'key': 'meal', 'label': AppLocalizations.of(context)!.meal},
       {'key': 'cafe', 'label': AppLocalizations.of(context)!.cafe},
-      {'key': 'trip', 'label': AppLocalizations.of(context)!.trip},
       {'key': 'hangout', 'label': AppLocalizations.of(context)!.hangout},
+      {'key': 'trip', 'label': AppLocalizations.of(context)!.trip},
+      {'key': 'study', 'label': AppLocalizations.of(context)!.study},
       {'key': 'culture', 'label': AppLocalizations.of(context)!.culture},
       {'key': 'etc', 'label': AppLocalizations.of(context)!.other},
     ];
@@ -1016,28 +1020,38 @@ class MeetupHomePageState extends State<MeetupHomePage> with PreloadMixin {
   }
 
   Widget _buildCalendar({
-    required Map<DateTime, List<Meetup>> myByDay,
-    required Map<DateTime, List<Meetup>> visibleByDay,
+    required Map<DateTime, List<Meetup>> displayByDay,
+    required Map<DateTime, List<Meetup>> myRelevantByDay,
     required double maxHeight,
   }) {
     final lang = Localizations.localeOf(context).languageCode;
     final today = _dayKey(DateTime.now());
 
     bool hasPastParticipatedMeetupOnDay(DateTime day) {
-      final key = _dayKey(day);
-      if (!key.isBefore(today)) return false; // 과거만
-      // ✅ 요구사항: "과거에 내가 참여했던 모임"(승인 참여 + 내가 호스트)만 체크 표시
-      return (myByDay[key]?.isNotEmpty ?? false);
+      return shouldShowPastParticipationCheck(
+        day: day,
+        myRelevantByDay: myRelevantByDay,
+        today: today,
+      );
     }
 
     bool hasVisibleFriendMeetupOnDay(DateTime day) {
       final key = _dayKey(day);
+      if (key.isBefore(today)) return false;
       // 친구가 만든 모임 중 현재 사용자가 카드를 볼 수 있고, 공개 시간과
       // 실제 일정이 모두 만료되지 않은 모임이 하나라도 있을 때 표시한다.
       // 목록은 실시간 쿼리 결과이므로 마지막 모임 문서가 삭제된 순간 false가
       // 되어 10분 TTL 월 캐시의 오래된 테두리가 남지 않는다.
-      return visibleByDay[key]?.any(_calendarCache.isVisibleFriendMeetup) ??
+      return displayByDay[key]?.any(_calendarCache.isVisibleFriendMeetup) ??
           false;
+    }
+
+    bool hasVisibleMeetupOnDay(DateTime day) {
+      return shouldShowActiveMeetupRing(
+        day: day,
+        displayByDay: displayByDay,
+        today: today,
+      );
     }
 
     return AnimatedSize(
@@ -1134,6 +1148,7 @@ class MeetupHomePageState extends State<MeetupHomePage> with PreloadMixin {
                                 isToday: isSameDay(day, DateTime.now()),
                                 // ✅ 요구사항: 과거에 참여했던 모임이 있는 날만 빨간 체크
                                 showCheck: hasPastParticipatedMeetupOnDay(day),
+                                showMeetupBorder: hasVisibleMeetupOnDay(day),
                                 showFriendMeetupBorder:
                                     hasVisibleFriendMeetupOnDay(day),
                               );
@@ -1145,6 +1160,7 @@ class MeetupHomePageState extends State<MeetupHomePage> with PreloadMixin {
                                 isToday: true,
                                 // ✅ 요구사항: 오늘은 체크 표시하지 않음
                                 showCheck: false,
+                                showMeetupBorder: hasVisibleMeetupOnDay(day),
                                 showFriendMeetupBorder:
                                     hasVisibleFriendMeetupOnDay(day),
                               );
@@ -1155,6 +1171,7 @@ class MeetupHomePageState extends State<MeetupHomePage> with PreloadMixin {
                                 isSelected: true,
                                 isToday: isSameDay(day, DateTime.now()),
                                 showCheck: hasPastParticipatedMeetupOnDay(day),
+                                showMeetupBorder: hasVisibleMeetupOnDay(day),
                                 showFriendMeetupBorder:
                                     hasVisibleFriendMeetupOnDay(day),
                               );
@@ -1225,12 +1242,12 @@ class MeetupHomePageState extends State<MeetupHomePage> with PreloadMixin {
         top: false,
         child: StreamBuilder<List<Meetup>>(
           key: ValueKey<String>(
-            'meetup-visible-${_visibleRangeStart.year}-'
+            'meetup-archive-${_visibleRangeStart.year}-'
             '${_visibleRangeStart.month}-${_visibleRangeEnd.year}-'
             '${_visibleRangeEnd.month}',
           ),
-          stream: _visibleMonthStream,
-          builder: (context, visibleSnap) {
+          stream: _calendarArchiveStream,
+          builder: (context, archiveSnap) {
             return StreamBuilder<List<Meetup>>(
               key: ValueKey<String>(
                 'meetup-my-${_myStreamMonthKey.year}-'
@@ -1238,10 +1255,10 @@ class MeetupHomePageState extends State<MeetupHomePage> with PreloadMixin {
               ),
               stream: _myRelevantMonthStream,
               builder: (context, mySnap) {
-                if (visibleSnap.hasData) {
+                if (archiveSnap.hasData) {
                   _cacheMeetupsByMonth(
-                    _visibleMeetupMonthCache,
-                    visibleSnap.data ?? const <Meetup>[],
+                    _archiveMeetupMonthCache,
+                    archiveSnap.data ?? const <Meetup>[],
                     <DateTime>[
                       _visibleRangeStart,
                       DateTime(
@@ -1260,18 +1277,26 @@ class MeetupHomePageState extends State<MeetupHomePage> with PreloadMixin {
                     <DateTime>[_myStreamMonthKey],
                   );
                 }
-                final visibleMeetupsRaw =
-                    visibleSnap.data ?? _cachedVisibleRangeMeetups();
+                final archiveMeetupsRaw =
+                    archiveSnap.data ?? _cachedArchiveRangeMeetups();
                 final myMeetupsRaw = mySnap.data ??
                     _myMeetupMonthCache[_myStreamMonthKey] ??
                     const <Meetup>[];
 
-                final visibleMeetups = _applyCategoryFilter(visibleMeetupsRaw);
+                final archiveMeetups = _applyCategoryFilter(archiveMeetupsRaw);
+                final now = DateTime.now();
+                final visibleMeetups = archiveMeetups
+                    .where((meetup) => meetup.isPublishedAt(now))
+                    .toList(growable: false);
                 final myMeetups = _applyCategoryFilter(myMeetupsRaw);
 
                 final visibleByDay = _groupByDay(visibleMeetups);
-                final calendarVisibleByDay = _groupByDay(visibleMeetupsRaw);
+                final archiveByDay = _groupByDay(archiveMeetups);
                 final myByDay = _groupByDay(myMeetups);
+                final displayByDay = buildMeetupCalendarDisplayByDay(
+                  visibleByDay: visibleByDay,
+                  pastArchiveByDay: archiveByDay,
+                );
 
                 return LayoutBuilder(
                   builder: (context, constraints) {
@@ -1288,8 +1313,8 @@ class MeetupHomePageState extends State<MeetupHomePage> with PreloadMixin {
                         // 상단 고정: 달력 헤더 + (펼침 시) 달력
                         _buildCalendarHeader(),
                         _buildCalendar(
-                          myByDay: myByDay,
-                          visibleByDay: calendarVisibleByDay,
+                          displayByDay: displayByDay,
+                          myRelevantByDay: myByDay,
                           maxHeight: calendarMaxHeight,
                         ),
                         const SizedBox(height: 4),
@@ -1304,20 +1329,20 @@ class MeetupHomePageState extends State<MeetupHomePage> with PreloadMixin {
                               final pageDateKey = _dayKey(pageDate);
                               final isPagePast = _isPastDay(pageDateKey);
 
-                              // 전체 공개 모임은 가입 시점과 관계없이 과거/만료 후에도
-                              // 기록으로 확인할 수 있어야 한다. 접근 가능한 그룹 모임도
-                              // 동일한 visible 스트림에서 기존 공개 범위대로 유지한다.
-                              final pageMeetups = (visibleByDay[pageDateKey] ??
+                              // 과거는 해당 날짜의 읽을 수 있는 전체 아카이브
+                              // (공개 시간 만료 포함), 오늘·미래는 활성 모임을
+                              // 사용한다. 선택 카테고리는 양쪽에 동일하게 적용된다.
+                              final pageMeetups = (displayByDay[pageDateKey] ??
                                       const <Meetup>[])
                                   .toList();
 
                               // 스켈레톤 표시 여부
                               final pageMonthKey = _monthKey(pageDateKey);
                               final pageShowSkeleton =
-                                  visibleSnap.connectionState ==
+                                  archiveSnap.connectionState ==
                                           ConnectionState.waiting &&
-                                      !visibleSnap.hasData &&
-                                      !_visibleMeetupMonthCache
+                                      !archiveSnap.hasData &&
+                                      !_archiveMeetupMonthCache
                                           .containsKey(pageMonthKey);
 
                               return pageShowSkeleton
@@ -1508,11 +1533,11 @@ class _AllMeetupsScreenState extends State<_AllMeetupsScreen> {
 
   List<Map<String, String>> _categories(BuildContext context) => [
         {'key': 'all', 'label': AppLocalizations.of(context)!.all},
-        {'key': 'study', 'label': AppLocalizations.of(context)!.study},
         {'key': 'meal', 'label': AppLocalizations.of(context)!.meal},
         {'key': 'cafe', 'label': AppLocalizations.of(context)!.cafe},
-        {'key': 'trip', 'label': AppLocalizations.of(context)!.trip},
         {'key': 'hangout', 'label': AppLocalizations.of(context)!.hangout},
+        {'key': 'trip', 'label': AppLocalizations.of(context)!.trip},
+        {'key': 'study', 'label': AppLocalizations.of(context)!.study},
         {'key': 'culture', 'label': AppLocalizations.of(context)!.culture},
         {'key': 'etc', 'label': AppLocalizations.of(context)!.other},
       ];
@@ -1854,6 +1879,7 @@ class _CalendarDayCell extends StatelessWidget {
   final bool isSelected;
   final bool isToday;
   final bool showCheck;
+  final bool showMeetupBorder;
   final bool showFriendMeetupBorder;
 
   const _CalendarDayCell({
@@ -1861,6 +1887,7 @@ class _CalendarDayCell extends StatelessWidget {
     required this.isSelected,
     required this.isToday,
     required this.showCheck,
+    required this.showMeetupBorder,
     required this.showFriendMeetupBorder,
   });
 
@@ -1901,18 +1928,25 @@ class _CalendarDayCell extends StatelessWidget {
         ),
       ),
     );
-    final dayContent = showFriendMeetupBorder
-        ? AudienceRing(
-            restricted: true,
-            emphasized: true,
-            size: 38,
-            ringWidth: 2.5,
-            semanticLabel: Localizations.localeOf(context).languageCode == 'ko'
-                ? '볼 수 있는 친구 모임이 있는 날짜'
-                : 'Date with a visible friend meetup',
-            child: dateContent,
-          )
-        : dateContent;
+    final markerStyle = showFriendMeetupBorder
+        ? MeetupCalendarMarkerStyle.friendGradient
+        : showMeetupBorder
+            ? MeetupCalendarMarkerStyle.solidBlue
+            : MeetupCalendarMarkerStyle.none;
+    final isKo = Localizations.localeOf(context).languageCode == 'ko';
+    final dayContent = MeetupCalendarDayRing(
+      style: markerStyle,
+      size: 38,
+      strokeWidth: 2.5,
+      semanticLabel: markerStyle == MeetupCalendarMarkerStyle.friendGradient
+          ? (isKo
+              ? '친구가 만든 모임이 있는 날짜'
+              : 'Date with a meetup created by a friend')
+          : markerStyle == MeetupCalendarMarkerStyle.solidBlue
+              ? (isKo ? '볼 수 있는 모임이 있는 날짜' : 'Date with a visible meetup')
+              : null,
+      child: dateContent,
+    );
 
     return Center(
       child: SizedBox(

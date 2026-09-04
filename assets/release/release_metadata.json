@@ -1,14 +1,13 @@
 {
   "schemaVersion": 1,
-  "versionName": "1.3.5",
-  "buildNumber": 75,
+  "versionName": "1.3.8",
+  "buildNumber": 78,
   "cacheSchemaVersion": 1,
   "releaseChannel": "production",
-  "releaseId": "wefilling-1.3.5-75",
+  "releaseId": "wefilling-1.3.8-78",
   "firebaseProjectId": "flutterproject3-af322",
   "android": {
     "applicationId": "com.wefilling.app",
-    "flavor": "production",
     "entryPoint": "lib/main.dart",
     "firebaseAppId": "1:700373659727:android:6ed1d025e166b6b16b3a3a",
     "storeUrl": "https://play.google.com/store/apps/details?id=com.wefilling.app",

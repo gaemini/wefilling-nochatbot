@@ -25,16 +25,6 @@ const String _pushSessionUserIdPreferenceKey = 'active_push_session_user_id';
 const String _snackNotificationGroupPreferencePrefix =
     'snack_notification_group_key:';
 
-enum PushInitState {
-  idle,
-  localeReady,
-  sessionReady,
-  appActive,
-  permissionResolved,
-  apnsRegistered,
-  tokenSynced,
-}
-
 @pragma('vm:entry-point')
 Future<void> firebaseMessagingBackgroundHandler(RemoteMessage message) async {
   try {
@@ -82,7 +72,6 @@ class FCMService {
 
   static Future<void>? _initializingFuture;
   static String? _initializedUserId;
-  static PushInitState _state = PushInitState.idle;
   static int _sessionEpoch = 0;
   static int _activeEpoch = 0;
   static Completer<void>? _appActiveCompleter;
@@ -97,28 +86,24 @@ class FCMService {
   static const String _channelMeetupId = 'meetup_notifications';
   static const String _channelMeetupName = 'Meetup Notifications';
 
-  void _setState(PushInitState state, {String? reason}) {
-    _state = state;
-    final suffix = reason == null ? '' : ' ($reason)';
-    Logger.log('🧭 PushInitState: ${state.name}$suffix');
-  }
-
   Future<void> _waitUntilAppActive(int epoch) async {
-    Logger.log('🔍 [FCM 진단] _waitUntilAppActive 시작');
-    Logger.log(
-        '  - 현재 lifecycleState: ${WidgetsBinding.instance.lifecycleState}');
+    if (Logger.isVerboseEnabled)
+      Logger.log('🔍 [FCM 진단] _waitUntilAppActive 시작');
+    if (Logger.isVerboseEnabled)
+      Logger.log(
+          '  - 현재 lifecycleState: ${WidgetsBinding.instance.lifecycleState}');
 
     if (WidgetsBinding.instance.lifecycleState == AppLifecycleState.resumed) {
-      _setState(PushInitState.appActive, reason: 'already_resumed');
-      Logger.log('🔍 [FCM 진단] 앱이 이미 resumed 상태');
+      if (Logger.isVerboseEnabled) Logger.log('🔍 [FCM 진단] 앱이 이미 resumed 상태');
       return;
     }
 
-    Logger.log('🔍 [FCM 진단] 앱이 resumed 될 때까지 대기 중...');
+    if (Logger.isVerboseEnabled)
+      Logger.log('🔍 [FCM 진단] 앱이 resumed 될 때까지 대기 중...');
     _appActiveCompleter ??= Completer<void>();
     _appLifecycleListener ??= AppLifecycleListener(
       onResume: () {
-        Logger.log('🔍 [FCM 진단] onResume 콜백 호출됨');
+        if (Logger.isVerboseEnabled) Logger.log('🔍 [FCM 진단] onResume 콜백 호출됨');
         if (!(_appActiveCompleter?.isCompleted ?? true)) {
           _appActiveCompleter?.complete();
         }
@@ -126,13 +111,13 @@ class FCMService {
     );
 
     await _appActiveCompleter!.future;
-    Logger.log('🔍 [FCM 진단] 앱 resumed 대기 완료');
+    if (Logger.isVerboseEnabled) Logger.log('🔍 [FCM 진단] 앱 resumed 대기 완료');
 
     if (epoch != _activeEpoch) {
-      Logger.log('🔍 [FCM 진단] stale epoch 감지 - 중단');
+      if (Logger.isVerboseEnabled)
+        Logger.log('🔍 [FCM 진단] stale epoch 감지 - 중단');
       throw StateError('stale epoch while waiting app active');
     }
-    _setState(PushInitState.appActive, reason: 'resumed');
   }
 
   bool _isStaleEpoch(int epoch) => epoch != _activeEpoch;
@@ -186,7 +171,8 @@ class FCMService {
     await _localNotifications.initialize(
       initializationSettings,
       onDidReceiveNotificationResponse: (NotificationResponse response) async {
-        Logger.log('📱 알림 클릭: ${response.payload}');
+        if (Logger.isVerboseEnabled)
+          Logger.log('📱 알림 클릭: ${response.payload}');
         // 포그라운드 로컬 알림 탭 시 딥링크 라우팅
         final payload = response.payload;
         if (payload != null && payload.isNotEmpty) {
@@ -215,7 +201,8 @@ class FCMService {
 
       // 거부/영구 거부 상태: OS 팝업이 더 이상 안 뜰 수 있다.
       // 배포 품질: 최소한 로그로 원인 노출 (UI 안내는 상위 레이어에서 처리 권장)
-      Logger.log('❌ Android 알림 권한 미허용: $requested');
+      if (Logger.isVerboseEnabled)
+        Logger.log('❌ Android 알림 권한 미허용: $requested');
       return false;
     } catch (e) {
       Logger.error('❌ Android 알림 권한 요청 실패', e);
@@ -249,7 +236,6 @@ class FCMService {
     } catch (e) {
       Logger.error('푸시 세션 사용자 초기화 실패', e);
     }
-    _setState(PushInitState.idle, reason: 'reset');
   }
 
   // locale 안전성 검증
@@ -261,9 +247,9 @@ class FCMService {
       if (savedLocale == null || savedLocale.isEmpty) {
         // 기본 언어 강제 설정
         await prefs.setString('app_language', 'ko');
-        Logger.log('✅ locale 기본값 설정: ko');
+        if (Logger.isVerboseEnabled) Logger.log('✅ locale 기본값 설정: ko');
       } else {
-        Logger.log('✅ locale 확인됨: $savedLocale');
+        if (Logger.isVerboseEnabled) Logger.log('✅ locale 확인됨: $savedLocale');
       }
     } catch (e) {
       Logger.error('locale 초기화 실패 (무시)', e);
@@ -273,14 +259,16 @@ class FCMService {
   // FCM 초기화
   Future<void> initialize(String userId) async {
     if (_initializedUserId == userId) {
-      Logger.log('ℹ️ FCM 초기화 스킵: 동일 세션 사용자($userId)');
+      if (Logger.isVerboseEnabled)
+        Logger.log('ℹ️ FCM 초기화 스킵: 동일 세션 사용자($userId)');
       return;
     }
 
     if (_initializingFuture != null) {
       await _initializingFuture;
       if (_initializedUserId == userId) {
-        Logger.log('ℹ️ FCM 초기화 스킵: 초기화 완료됨($userId)');
+        if (Logger.isVerboseEnabled)
+          Logger.log('ℹ️ FCM 초기화 스킵: 초기화 완료됨($userId)');
         return;
       }
     }
@@ -299,25 +287,21 @@ class FCMService {
     _sessionEpoch += 1;
     _activeEpoch = _sessionEpoch;
     final int epoch = _activeEpoch;
-    _setState(PushInitState.idle, reason: 'initialize_start');
-
     final completer = Completer<void>();
     _initializingFuture = completer.future;
 
     try {
-      _setState(PushInitState.sessionReady, reason: 'user:$userId');
-
       // locale 안전성 검증 (Firebase Messaging 초기화 전 필수)
       try {
         await _languageService.initializeLanguage();
         await _ensureLocaleInitialized();
-        _setState(PushInitState.localeReady);
       } catch (e) {
         Logger.error('locale 초기화 실패 - 계속 진행', e);
       }
 
       if (_isStaleEpoch(epoch)) {
-        Logger.log('⏭️ FCM 초기화 중단: stale epoch(locale)');
+        if (Logger.isVerboseEnabled)
+          Logger.log('⏭️ FCM 초기화 중단: stale epoch(locale)');
         completer.complete();
         return;
       }
@@ -354,16 +338,14 @@ class FCMService {
 
         if (!kIsWeb && Platform.isIOS) {
           if (settings.authorizationStatus == AuthorizationStatus.authorized) {
-            Logger.log('✅ iOS 알림 권한 승인됨');
-            _setState(PushInitState.permissionResolved);
+            if (Logger.isVerboseEnabled) Logger.log('✅ iOS 알림 권한 승인됨');
           } else if (settings.authorizationStatus ==
               AuthorizationStatus.provisional) {
-            Logger.log('✅ iOS 알림 권한 Provisional');
-            _setState(PushInitState.permissionResolved);
+            if (Logger.isVerboseEnabled) Logger.log('✅ iOS 알림 권한 Provisional');
           } else {
-            Logger.log('❌ iOS 알림 권한 거부됨 - FCM 기능 제한 (앱은 계속 실행)');
+            if (Logger.isVerboseEnabled)
+              Logger.log('❌ iOS 알림 권한 거부됨 - FCM 기능 제한 (앱은 계속 실행)');
             _initializedUserId = userId;
-            _setState(PushInitState.permissionResolved);
             completer.complete();
             return; // 권한 없어도 앱은 계속 실행
           }
@@ -387,7 +369,7 @@ class FCMService {
               .timeout(
             const Duration(seconds: 3),
             onTimeout: () {
-              Logger.log('⏱️ 포그라운드 설정 타임아웃');
+              if (Logger.isVerboseEnabled) Logger.log('⏱️ 포그라운드 설정 타임아웃');
             },
           );
         } catch (e) {
@@ -396,7 +378,8 @@ class FCMService {
       }
 
       if (_isStaleEpoch(epoch)) {
-        Logger.log('⏭️ FCM 초기화 중단: stale epoch(listener_setup)');
+        if (Logger.isVerboseEnabled)
+          Logger.log('⏭️ FCM 초기화 중단: stale epoch(listener_setup)');
         completer.complete();
         return;
       }
@@ -411,10 +394,11 @@ class FCMService {
         await _tokenRefreshSub?.cancel();
         _tokenRefreshSub = _messaging.onTokenRefresh.listen((newToken) {
           if (_isStaleEpoch(epoch) || _initializedUserId != userId) {
-            Logger.log('⏭️ 토큰 갱신 이벤트 무시: stale epoch/user');
+            if (Logger.isVerboseEnabled)
+              Logger.log('⏭️ 토큰 갱신 이벤트 무시: stale epoch/user');
             return;
           }
-          Logger.log('📱 FCM 토큰 갱신: $newToken');
+          if (Logger.isVerboseEnabled) Logger.log('📱 FCM 토큰 갱신: $newToken');
           _saveFCMToken(userId, newToken);
         });
       } catch (e) {
@@ -427,10 +411,13 @@ class FCMService {
         _onMessageSub =
             FirebaseMessaging.onMessage.listen((RemoteMessage message) {
           try {
-            Logger.log('📱 포어그라운드 메시지 수신: ${message.messageId}');
-            Logger.log('📱 제목: ${message.notification?.title}');
-            Logger.log('📱 내용: ${message.notification?.body}');
-            Logger.log('📱 데이터: ${message.data}');
+            if (Logger.isVerboseEnabled)
+              Logger.log('📱 포어그라운드 메시지 수신: ${message.messageId}');
+            if (Logger.isVerboseEnabled)
+              Logger.log('📱 제목: ${message.notification?.title}');
+            if (Logger.isVerboseEnabled)
+              Logger.log('📱 내용: ${message.notification?.body}');
+            if (Logger.isVerboseEnabled) Logger.log('📱 데이터: ${message.data}');
 
             // ✅ 포그라운드 알림 정책:
             // - iOS는 위에서 alert=false로 해뒀기 때문에, 여기서 로컬 알림을 "선택적으로" 띄운다.
@@ -439,7 +426,8 @@ class FCMService {
             final recipientUserId =
                 (message.data['recipientUserId'] ?? '').toString().trim();
             if (recipientUserId.isNotEmpty && recipientUserId != userId) {
-              Logger.log('⏭️ 이전 계정 대상 포어그라운드 푸시 무시');
+              if (Logger.isVerboseEnabled)
+                Logger.log('⏭️ 이전 계정 대상 포어그라운드 푸시 무시');
               return;
             }
             final conversationId =
@@ -487,12 +475,13 @@ class FCMService {
         _onMessageOpenedAppSub = FirebaseMessaging.onMessageOpenedApp
             .listen((RemoteMessage message) async {
           try {
-            Logger.log('📱 백그라운드에서 앱 열림: ${message.messageId}');
-            Logger.log('📱 데이터: ${message.data}');
+            if (Logger.isVerboseEnabled)
+              Logger.log('📱 백그라운드에서 앱 열림: ${message.messageId}');
+            if (Logger.isVerboseEnabled) Logger.log('📱 데이터: ${message.data}');
             final recipientUserId =
                 (message.data['recipientUserId'] ?? '').toString().trim();
             if (recipientUserId.isNotEmpty && recipientUserId != userId) {
-              Logger.log('⏭️ 이전 계정 대상 푸시 딥링크 무시');
+              if (Logger.isVerboseEnabled) Logger.log('⏭️ 이전 계정 대상 푸시 딥링크 무시');
               return;
             }
             await NavigationService.handlePushNavigation(message.data);
@@ -510,19 +499,22 @@ class FCMService {
             await _messaging.getInitialMessage().timeout(
           const Duration(seconds: 3),
           onTimeout: () {
-            Logger.log('⏱️ getInitialMessage 타임아웃');
+            if (Logger.isVerboseEnabled)
+              Logger.log('⏱️ getInitialMessage 타임아웃');
             return null;
           },
         );
         if (initialMessage != null) {
-          Logger.log('📱 앱 종료 상태에서 알림으로 열림: ${initialMessage.messageId}');
-          Logger.log('📱 데이터: ${initialMessage.data}');
+          if (Logger.isVerboseEnabled)
+            Logger.log('📱 앱 종료 상태에서 알림으로 열림: ${initialMessage.messageId}');
+          if (Logger.isVerboseEnabled)
+            Logger.log('📱 데이터: ${initialMessage.data}');
           final recipientUserId =
               (initialMessage.data['recipientUserId'] ?? '').toString().trim();
           if (recipientUserId.isEmpty || recipientUserId == userId) {
             await NavigationService.handlePushNavigation(initialMessage.data);
           } else {
-            Logger.log('⏭️ 이전 계정 대상 초기 푸시 딥링크 무시');
+            if (Logger.isVerboseEnabled) Logger.log('⏭️ 이전 계정 대상 초기 푸시 딥링크 무시');
           }
         }
       } catch (e) {
@@ -560,12 +552,14 @@ class FCMService {
 
     for (int i = 0; i < retrySeconds.length; i++) {
       if (_isStaleEpoch(epoch)) {
-        Logger.log('⏭️ 토큰 동기화 중단: stale epoch (현재=$_activeEpoch, 요청=$epoch)');
+        if (Logger.isVerboseEnabled)
+          Logger.log('⏭️ 토큰 동기화 중단: stale epoch (현재=$_activeEpoch, 요청=$epoch)');
         return;
       }
       if (_initializedUserId != userId) {
-        Logger.log(
-            '⏭️ 토큰 동기화 중단: stale user (현재=$_initializedUserId, 요청=$userId)');
+        if (Logger.isVerboseEnabled)
+          Logger.log(
+              '⏭️ 토큰 동기화 중단: stale user (현재=$_initializedUserId, 요청=$userId)');
         return;
       }
 
@@ -582,15 +576,14 @@ class FCMService {
             final String? apnsToken = await _messaging.getAPNSToken();
             if (apnsToken == null || apnsToken.isEmpty) {
               if (shouldLogRetry) {
-                Logger.log(
-                    '⚠️ APNs 토큰 대기 중... (retry ${i + 1}/${retrySeconds.length})');
+                if (Logger.isVerboseEnabled)
+                  Logger.log(
+                      '⚠️ APNs 토큰 대기 중... (retry ${i + 1}/${retrySeconds.length})');
               }
               continue;
             } else {
-              Logger.log('📱 APNs 토큰 준비됨: ${apnsToken.substring(0, 20)}...');
-              if (!_isStaleEpoch(epoch) && _initializedUserId == userId) {
-                _setState(PushInitState.apnsRegistered);
-              }
+              if (Logger.isVerboseEnabled)
+                Logger.log('📱 APNs 토큰 준비됨: ${apnsToken.substring(0, 20)}...');
             }
           } catch (e) {
             Logger.error('❌ APNs 토큰 가져오기 실패: $e');
@@ -606,31 +599,30 @@ class FCMService {
               );
 
           if (token != null && token.isNotEmpty) {
-            Logger.log('📱 FCM 토큰 준비됨: ${token.substring(0, 20)}...');
+            if (Logger.isVerboseEnabled)
+              Logger.log('📱 FCM 토큰 준비됨: ${token.substring(0, 20)}...');
             await _saveFCMToken(userId, token);
-            if (!_isStaleEpoch(epoch) && _initializedUserId == userId) {
-              Logger.log(
-                  '✅ [FCM] 토큰 동기화 성공 - userId=$userId, token=${token.substring(0, 20)}... (시도 ${i + 1}/${retrySeconds.length})');
-              _setState(PushInitState.tokenSynced, reason: 'token_uploaded');
-            } else {
-              Logger.log('⏭️ [FCM] 토큰 저장 완료 후 stale 감지 - 상태 업데이트 생략');
-            }
             return;
           }
           if (shouldLogRetry) {
-            Logger.log(
-                '⚠️ FCM 토큰 대기 중... (retry ${i + 1}/${retrySeconds.length})');
+            if (Logger.isVerboseEnabled)
+              Logger.log(
+                  '⚠️ FCM 토큰 대기 중... (retry ${i + 1}/${retrySeconds.length})');
           }
         } catch (e) {
           Logger.error('❌ FCM 토큰 가져오기 실패: $e');
         }
       } catch (e) {
-        Logger.error('FCM 토큰 동기화 실패 (재시도 ${i + 1}/${retrySeconds.length})', e);
+        if (i == retrySeconds.length - 1) {
+          Logger.error('FCM 토큰 동기화 최종 실패', e);
+        } else {
+          if (Logger.isVerboseEnabled) Logger.warning('FCM 토큰 동기화 재시도 예정');
+        }
         // 크래시 방지: 예외를 로그만 남기고 계속 진행
       }
     }
 
-    Logger.log('❌ FCM 토큰 동기화 최종 실패 - 다음 실행에서 재시도');
+    if (Logger.isVerboseEnabled) Logger.log('❌ FCM 토큰 동기화 최종 실패 - 다음 실행에서 재시도');
   }
 
   // 포그라운드 로컬 알림 표시
@@ -714,7 +706,7 @@ class FCMService {
         payload: jsonEncode(message.data),
       );
 
-      Logger.log('✅ 로컬 알림 표시 완료');
+      if (Logger.isVerboseEnabled) Logger.log('✅ 로컬 알림 표시 완료');
     } catch (e) {
       Logger.error('❌ 로컬 알림 표시 실패: $e');
     }
@@ -785,27 +777,30 @@ class FCMService {
   // FCM 토큰 저장
   Future<void> _saveFCMToken(String userId, String token) async {
     try {
-      Logger.log('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━');
-      Logger.log('🔍 [FCM 진단 1단계] FCM 토큰 저장 시작');
-      Logger.log('  - userId: $userId');
-      Logger.log('  - token (첫 20자): ${token.substring(0, 20)}...');
+      if (Logger.isVerboseEnabled)
+        Logger.log('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━');
+      if (Logger.isVerboseEnabled) Logger.log('🔍 [FCM 진단 1단계] FCM 토큰 저장 시작');
+      if (Logger.isVerboseEnabled) Logger.log('  - userId: $userId');
+      if (Logger.isVerboseEnabled)
+        Logger.log('  - token (첫 20자): ${token.substring(0, 20)}...');
 
       // ✅ 서버에서 "토큰 중복(다른 계정에 남아있는 토큰)"을 정리하고,
       //    토큰 단위 locale(lang)까지 함께 저장하도록 Cloud Functions를 우선 사용.
       //    (한국어/영어 알림이 연속으로 2번 오는 문제의 핵심 원인 방지)
       // 푸시 언어도 OS locale이 아니라 앱에서 선택한 언어와 일치시킨다.
       final localeTag = await _languageService.getLanguage();
-      Logger.log('  - locale: $localeTag');
+      if (Logger.isVerboseEnabled) Logger.log('  - locale: $localeTag');
 
       final String? platform = (() {
         if (defaultTargetPlatform == TargetPlatform.iOS) return 'ios';
         if (defaultTargetPlatform == TargetPlatform.android) return 'android';
         return null;
       })();
-      Logger.log('  - platform: $platform');
+      if (Logger.isVerboseEnabled) Logger.log('  - platform: $platform');
 
       try {
-        Logger.log('  - registerFcmToken 함수 호출 시작...');
+        if (Logger.isVerboseEnabled)
+          Logger.log('  - registerFcmToken 함수 호출 시작...');
         // 🔥 iOS 크래시 방지: 네이티브 gRPC 통신에 명시적 타임아웃 추가
         final callable = _functions.httpsCallable('registerFcmToken');
         await callable.call(<String, dynamic>{
@@ -815,31 +810,15 @@ class FCMService {
         }).timeout(
           const Duration(seconds: 10),
           onTimeout: () {
-            Logger.log('⏱️ FCM 토큰 등록 타임아웃 (10초)');
+            if (Logger.isVerboseEnabled) Logger.log('⏱️ FCM 토큰 등록 타임아웃 (10초)');
             throw TimeoutException('FCM 토큰 등록 시간 초과');
           },
         );
-        Logger.log('✅ FCM 토큰 등록 완료 (서버 정리 + locale 저장)');
+        if (Logger.isVerboseEnabled)
+          Logger.log('✅ FCM 토큰 등록 완료 (서버 정리 + locale 저장)');
 
-        // 🔍 진단: 실제로 Firestore에 저장되었는지 확인
-        try {
-          final userDoc =
-              await _firestore.collection('users').doc(userId).get();
-          if (userDoc.exists) {
-            final data = userDoc.data();
-            Logger.log('🔍 [FCM 진단 1단계] Firestore 확인:');
-            Logger.log('  - fcmToken 존재: ${data?['fcmToken'] != null}');
-            Logger.log(
-                '  - fcmTokens 길이: ${(data?['fcmTokens'] as List?)?.length ?? 0}');
-            Logger.log('  - fcmTokenUpdatedAt: ${data?['fcmTokenUpdatedAt']}');
-          } else {
-            Logger.log('⚠️ [FCM 진단 1단계] users/{$userId} 문서가 없음!');
-          }
-        } catch (e) {
-          Logger.error('⚠️ [FCM 진단 1단계] Firestore 확인 실패: $e');
-        }
-
-        Logger.log('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━');
+        if (Logger.isVerboseEnabled)
+          Logger.log('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━');
         return;
       } catch (e) {
         // 네트워크/함수 오류 시 레거시 방식으로 fallback (토큰은 최소한 저장되도록)
@@ -848,17 +827,20 @@ class FCMService {
 
       // fallback: 단일 토큰(fcmToken) + 멀티 토큰(fcmTokens)
       // ⚠️ merge set은 users 문서를 "부분 필드만 가진 상태로 생성"할 수 있으므로 update만 허용한다.
-      Logger.log('  - 레거시 방식 (Firestore 직접 update) 시작...');
+      if (Logger.isVerboseEnabled)
+        Logger.log('  - 레거시 방식 (Firestore 직접 update) 시작...');
       await _firestore.collection('users').doc(userId).update({
         'fcmToken': token,
         'fcmTokens': FieldValue.arrayUnion([token]),
         'fcmTokenUpdatedAt': FieldValue.serverTimestamp(),
       });
-      Logger.log('✅ FCM 토큰 저장 완료 (레거시 fallback)');
-      Logger.log('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━');
+      if (Logger.isVerboseEnabled) Logger.log('✅ FCM 토큰 저장 완료 (레거시 fallback)');
+      if (Logger.isVerboseEnabled)
+        Logger.log('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━');
     } catch (e) {
       Logger.error('❌ [FCM 진단 1단계] FCM 토큰 저장 실패: $e');
-      Logger.log('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━');
+      if (Logger.isVerboseEnabled)
+        Logger.log('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━');
     }
   }
 
@@ -885,7 +867,7 @@ class FCMService {
       await Future.wait([
         // FCM 토큰 삭제
         _messaging.deleteToken().then((_) {
-          Logger.log('✅ FCM 토큰 삭제 완료');
+          if (Logger.isVerboseEnabled) Logger.log('✅ FCM 토큰 삭제 완료');
         }),
         // 서버 레지스트리에서도 제거 (가능한 경우에만)
         if (token != null && token.isNotEmpty)
@@ -894,13 +876,15 @@ class FCMService {
           }).timeout(
             const Duration(seconds: 10),
             onTimeout: () {
-              Logger.log('⏱️ FCM 토큰 해제 타임아웃 (10초)');
+              if (Logger.isVerboseEnabled)
+                Logger.log('⏱️ FCM 토큰 해제 타임아웃 (10초)');
               throw TimeoutException('FCM 토큰 해제 시간 초과');
             },
           ).then((_) {
-            Logger.log('✅ unregisterFcmToken 완료');
+            if (Logger.isVerboseEnabled) Logger.log('✅ unregisterFcmToken 완료');
           }, onError: (e) {
-            Logger.log('⚠️ unregisterFcmToken 실패(무시): $e');
+            if (Logger.isVerboseEnabled)
+              Logger.log('⚠️ unregisterFcmToken 실패(무시): $e');
           }),
         // Firestore에서도 "해당 토큰"만 제거 (다른 기기 토큰은 보존)
         if (token != null && token.isNotEmpty)
@@ -933,12 +917,14 @@ class FCMService {
 
             tx.set(ref, updates, SetOptions(merge: true));
           }).then((_) {
-            Logger.log('✅ Firestore에서 현재 기기 FCM 토큰 제거 완료');
+            if (Logger.isVerboseEnabled)
+              Logger.log('✅ Firestore에서 현재 기기 FCM 토큰 제거 완료');
           }),
       ]).timeout(
         const Duration(seconds: 5),
         onTimeout: () {
-          Logger.log('⚠️ FCM 토큰 삭제 타임아웃 (5초) - 로그아웃 계속 진행');
+          if (Logger.isVerboseEnabled)
+            Logger.log('⚠️ FCM 토큰 삭제 타임아웃 (5초) - 로그아웃 계속 진행');
           return [];
         },
       );
@@ -952,7 +938,7 @@ class FCMService {
   Future<void> subscribeToTopic(String topic) async {
     try {
       await _messaging.subscribeToTopic(topic);
-      Logger.log('✅ 토픽 구독 완료: $topic');
+      if (Logger.isVerboseEnabled) Logger.log('✅ 토픽 구독 완료: $topic');
     } catch (e) {
       Logger.error('❌ 토픽 구독 실패: $e');
       rethrow;
@@ -963,7 +949,7 @@ class FCMService {
   Future<void> unsubscribeFromTopic(String topic) async {
     try {
       await _messaging.unsubscribeFromTopic(topic);
-      Logger.log('✅ 토픽 구독 취소 완료: $topic');
+      if (Logger.isVerboseEnabled) Logger.log('✅ 토픽 구독 취소 완료: $topic');
     } catch (e) {
       Logger.error('❌ 토픽 구독 취소 실패: $e');
       rethrow;

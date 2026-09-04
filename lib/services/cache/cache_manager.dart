@@ -19,7 +19,7 @@ class CacheManager {
   /// 앱 시작 시 main()에서 호출해야 합니다.
   static Future<void> initialize({ReleaseMetadata? releaseMetadata}) async {
     if (_initialized) {
-      Logger.log('⚠️ 캐시 시스템은 이미 초기화되어 있습니다.');
+      if (Logger.isVerboseEnabled) Logger.log('⚠️ 캐시 시스템은 이미 초기화되어 있습니다.');
       return;
     }
 
@@ -87,7 +87,7 @@ class CacheManager {
   /// 로그아웃 시 또는 캐시 초기화가 필요할 때 호출합니다.
   static Future<void> clearAll() async {
     try {
-      Logger.log('🗑️ 모든 캐시 삭제 시작...');
+      if (Logger.isVerboseEnabled) Logger.log('🗑️ 모든 캐시 삭제 시작...');
       MyPageCacheService.clearMemory();
 
       await Hive.deleteBoxFromDisk('metadata');
@@ -102,7 +102,7 @@ class CacheManager {
       // await Hive.deleteBoxFromDisk('meetups');
       // await Hive.deleteBoxFromDisk('messages');
 
-      Logger.log('✅ 모든 캐시 삭제 완료');
+      if (Logger.isVerboseEnabled) Logger.log('✅ 모든 캐시 삭제 완료');
     } catch (e) {
       Logger.error('캐시 삭제 실패 (무시): $e');
     }

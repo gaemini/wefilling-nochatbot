@@ -1,6 +1,7 @@
 import * as admin from 'firebase-admin';
 import * as crypto from 'crypto';
 import * as functions from 'firebase-functions';
+import {runtimeInfo, runtimeLogsEnabled} from './runtime_logging';
 
 type SupportedLanguage = 'ko' | 'en';
 
@@ -339,7 +340,7 @@ export const sendDailyPersonalTodoReminders = functions
       }
     }
 
-    console.log('개인 To-do 알림 완료', {
+    runtimeLogsEnabled && runtimeInfo('개인 To-do 알림 완료', {
       dateKey,
       reminderHour: clock.hour,
       reminderMinute: clock.minute,

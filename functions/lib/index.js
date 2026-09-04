@@ -3,18 +3,21 @@
 // Cloud Functions 메인 진입점
 // 친구요청 관련 함수들을 export
 Object.defineProperty(exports, "__esModule", { value: true });
-exports.reportSnackChatMessage = exports.fetchSnackChatLinkPreview = exports.createSnackChatAnnouncementSecure = exports.updateSnackChatTitleSecure = exports.onDeletedUserDocumentSnackChatCleanup = exports.onDeletedAuthUserSnackChatCleanup = exports.reconcileSnackChatParticipantsSecure = exports.leaveSnackChatSecure = exports.markSnackChatReadSecure = exports.getSnackChatEntryContext = exports.ensureSnackChatMembershipSecure = exports.joinMeetupSnackChatSecure = exports.inviteSnackChatParticipants = exports.createMeetupSnackChatSecure = exports.createSnackChatSecure = exports.searchSnackChatInviteUsers = exports.searchSnackChatInviteUserById = exports.onSnapshotBlockChanged = exports.cleanupOrphanSnapshotUploads = exports.cleanupExpiredSnapshots = exports.deleteSnapshot = exports.replySnapshotComment = exports.sendSnapshotComment = exports.toggleSnapshotReaction = exports.getSnapshotCommentLetter = exports.getSnapshotCommentStatus = exports.getSnapshotReactionStatus = exports.getSnapshotViewers = exports.recordSnapshotView = exports.updateSnapshotVisibility = exports.syncMySnapshotFeed = exports.createSnapshot = exports.getSnapshotServerTime = exports.translateContentBatch = exports.backfillHanyangVerificationStates = exports.reconcileMyHanyangVerificationStatus = exports.backfillInstagramPreviewThumbnails = exports.persistInstagramPreviewThumbnail = exports.resolveSharedLink = exports.reconcileDMUnreadTotalSecure = exports.markDMConversationReadSecure = exports.expireTimedMeetups = exports.confirmMeetupSecure = exports.createMeetupSecure = exports.getExternalShareComposerContext = exports.createExternalSharePost = exports.createPostSecure = exports.updateMyNicknameSecure = exports.onDeletedAuthUserNicknameCleanup = exports.checkNicknameAvailability = void 0;
-exports.blockUser = exports.unfriend = exports.rejectFriendRequest = exports.acceptFriendRequest = exports.cancelFriendRequest = exports.sendFriendRequest = exports.getPublicProfileReviewPreview = exports.getProfileFriendNetwork = exports.cleanupExpiredEmailVerifications = exports.createGeneralEmailSignup = exports.verifyEmailCode = exports.sendEmailVerificationCode = exports.resetPasswordWithCode = exports.requestPasswordResetCode = exports.onPostLiked = exports.onCommentLiked = exports.onCommentSoftDeleted = exports.onCommentDeleted = exports.onCommentCreated = exports.onMeetupDeleted = exports.onMeetupUpdated = exports.onAdBannerChanged = exports.onFriendRequestCreated = exports.joinMeetupSecure = exports.onPrivatePostCreated = exports.onUserRegistrationCompleted = exports.onUserCreated = exports.backfillEmailClaims = exports.cancelPendingEmailSignup = exports.discardIncompleteRegistration = exports.finalizeEnglishSocialSignup = exports.completeHanyangProfileVerification = exports.finalizeHanyangEmailVerification = exports.finalizePendingRegistration = exports.ensureRegistrationProgress = exports.migrateEmailVerified = exports.initializeAds = exports.onUserProfileUpdatedPropagateAuthorInfo = exports.getUserProfileStats = exports.onSnackChatVoteWritten = exports.onSnackChatReactionWritten = exports.notifyClosedSnackChatPolls = exports.onSnackChatMessageCreated = exports.onSnackChatRoomWritten = exports.cleanupExpiredSnackChatFiles = exports.onSnackChatFileUploadJobDeleted = exports.onSnackChatFileMessageDeleted = exports.cancelSnackChatFileUpload = exports.commitSnackChatFileUpload = exports.prepareSnackChatFileUpload = void 0;
-exports.fixNegativeUnreadCounts = exports.onDMMessageRead = exports.onDMMessageCreated = exports.onMeetupReviewCreatedDeleteMeetupChat = exports.onMeetupReviewDeleted = exports.onMeetupReviewUpdated = exports.onReviewRequestUpdated = exports.onReviewRequestCreated = exports.onMeetupCreated = exports.onMeetupParticipantJoined = exports.onNotificationDeletedSyncUnreadCounter = exports.onNotificationUpdatedSyncUnreadCounter = exports.onNotificationCreated = exports.unregisterFcmToken = exports.registerFcmToken = exports.fixDeletedAccountsInConversations = exports.deleteAccountImmediately = exports.onReportCreated = exports.reportUser = exports.unhideAnonymousComment = exports.hideAnonymousComment = exports.unblockAnonymousPost = exports.blockAnonymousPost = exports.unblockUser = void 0;
+exports.onDeletedUserDocumentSnackChatCleanup = exports.onDeletedAuthUserSnackChatCleanup = exports.reconcileSnackChatParticipantsSecure = exports.leaveSnackChatSecure = exports.markSnackChatReadSecure = exports.getSnackChatEntryContext = exports.ensureSnackChatMembershipSecure = exports.joinMeetupSnackChatSecure = exports.inviteSnackChatParticipants = exports.createMeetupSnackChatSecure = exports.createSnackChatSecure = exports.searchSnackChatInviteUsers = exports.searchSnackChatInviteUserById = exports.onSnapshotBlockChanged = exports.cleanupOrphanSnapshotUploads = exports.cleanupExpiredSnapshots = exports.deleteSnapshot = exports.replySnapshotComment = exports.sendSnapshotComment = exports.toggleSnapshotReaction = exports.getSnapshotCommentLetter = exports.getSnapshotCommentStatus = exports.getSnapshotReactionStatus = exports.getSnapshotViewers = exports.recordSnapshotView = exports.updateSnapshotVisibility = exports.syncMySnapshotFeed = exports.createSnapshot = exports.getSnapshotServerTime = exports.translateContentBatch = exports.backfillHanyangVerificationStates = exports.reconcileMyHanyangVerificationStatus = exports.backfillInstagramPreviewThumbnails = exports.persistInstagramPreviewThumbnail = exports.resolveSharedLink = exports.reconcileDMUnreadTotalSecure = exports.markDMConversationReadSecure = exports.searchMeetupsSecure = exports.searchPostsSecure = exports.onMeetupSearchSourceWritten = exports.onPostSearchSourceWritten = exports.expireTimedMeetups = exports.confirmMeetupSecure = exports.createMeetupSecure = exports.getExternalShareComposerContext = exports.createExternalSharePost = exports.createPostSecure = exports.updateMyNicknameSecure = exports.onDeletedAuthUserNicknameCleanup = exports.checkNicknameAvailability = void 0;
+exports.cancelFriendRequest = exports.sendFriendRequest = exports.getPublicProfileReviewPreview = exports.getProfileFriendNetwork = exports.searchSocialUsers = exports.cleanupExpiredEmailVerifications = exports.createGeneralEmailSignup = exports.verifyEmailCode = exports.sendEmailVerificationCode = exports.resetPasswordWithCode = exports.requestPasswordResetCode = exports.onPostLiked = exports.onCommentLiked = exports.onCommentSoftDeleted = exports.onCommentDeleted = exports.onCommentCreated = exports.onMeetupDeleted = exports.onMeetupUpdated = exports.onAdBannerChanged = exports.onFriendRequestCreated = exports.joinMeetupSecure = exports.resolveMyReadableJoinedMeetupIds = exports.onPrivatePostCreated = exports.onUserRegistrationCompleted = exports.onUserCreated = exports.backfillEmailClaims = exports.cancelPendingEmailSignup = exports.discardIncompleteRegistration = exports.finalizeEnglishSocialSignup = exports.completeHanyangProfileVerification = exports.finalizeHanyangEmailVerification = exports.finalizePendingRegistration = exports.ensureRegistrationProgress = exports.onUserProfileUpdatedPropagateAuthorInfo = exports.getUserProfileStats = exports.onSnackChatVoteWritten = exports.onSnackChatReactionWritten = exports.notifyClosedSnackChatPolls = exports.onSnackChatMessageCreated = exports.onSnackChatRoomWritten = exports.cleanupExpiredSnackChatFiles = exports.onSnackChatFileUploadJobDeleted = exports.onSnackChatFileMessageDeleted = exports.cancelSnackChatFileUpload = exports.commitSnackChatFileUpload = exports.prepareSnackChatFileUpload = exports.reportSnackChatMessage = exports.fetchSnackChatLinkPreview = exports.createSnackChatAnnouncementSecure = exports.updateSnackChatTitleSecure = void 0;
+exports.onDMMessageRead = exports.onDMMessageCreated = exports.onMeetupReviewCreatedDeleteMeetupChat = exports.onMeetupReviewDeleted = exports.onMeetupReviewUpdated = exports.onReviewRequestUpdated = exports.onReviewRequestCreated = exports.onMeetupCreated = exports.onMeetupParticipantJoined = exports.onNotificationDeletedSyncUnreadCounter = exports.onNotificationUpdatedSyncUnreadCounter = exports.onNotificationCreated = exports.unregisterFcmToken = exports.registerFcmToken = exports.deleteAccountImmediately = exports.onReportCreated = exports.reportUser = exports.unhideAnonymousComment = exports.hideAnonymousComment = exports.unblockAnonymousPost = exports.blockAnonymousPost = exports.unblockUser = exports.blockUser = exports.unfriend = exports.rejectFriendRequest = exports.acceptFriendRequest = void 0;
 const functions = require("firebase-functions");
 const admin = require("firebase-admin");
 const nodemailer = require("nodemailer");
 const crypto = require("crypto");
 const firestore_paths_1 = require("./firestore_paths");
+const runtime_logging_1 = require("./runtime_logging");
 const frozen_audience_1 = require("./frozen_audience");
 const snack_chat_1 = require("./snack_chat");
 const hanyang_verification_1 = require("./hanyang_verification");
 const nickname_claims_1 = require("./nickname_claims");
+const user_search_index_1 = require("./user_search_index");
+const registration_progress_1 = require("./registration_progress");
 var nickname_claims_2 = require("./nickname_claims");
 Object.defineProperty(exports, "checkNicknameAvailability", { enumerable: true, get: function () { return nickname_claims_2.checkNicknameAvailability; } });
 Object.defineProperty(exports, "onDeletedAuthUserNicknameCleanup", { enumerable: true, get: function () { return nickname_claims_2.onDeletedAuthUserNicknameCleanup; } });
@@ -26,6 +29,11 @@ Object.defineProperty(exports, "getExternalShareComposerContext", { enumerable: 
 Object.defineProperty(exports, "createMeetupSecure", { enumerable: true, get: function () { return content_creation_1.createMeetupSecure; } });
 Object.defineProperty(exports, "confirmMeetupSecure", { enumerable: true, get: function () { return content_creation_1.confirmMeetupSecure; } });
 Object.defineProperty(exports, "expireTimedMeetups", { enumerable: true, get: function () { return content_creation_1.expireTimedMeetups; } });
+var content_search_1 = require("./content_search");
+Object.defineProperty(exports, "onPostSearchSourceWritten", { enumerable: true, get: function () { return content_search_1.onPostSearchSourceWritten; } });
+Object.defineProperty(exports, "onMeetupSearchSourceWritten", { enumerable: true, get: function () { return content_search_1.onMeetupSearchSourceWritten; } });
+Object.defineProperty(exports, "searchPostsSecure", { enumerable: true, get: function () { return content_search_1.searchPostsSecure; } });
+Object.defineProperty(exports, "searchMeetupsSecure", { enumerable: true, get: function () { return content_search_1.searchMeetupsSecure; } });
 var dm_chat_1 = require("./dm_chat");
 Object.defineProperty(exports, "markDMConversationReadSecure", { enumerable: true, get: function () { return dm_chat_1.markDMConversationReadSecure; } });
 Object.defineProperty(exports, "reconcileDMUnreadTotalSecure", { enumerable: true, get: function () { return dm_chat_1.reconcileDMUnreadTotalSecure; } });
@@ -322,7 +330,7 @@ exports.onUserProfileUpdatedPropagateAuthorInfo = functions
     const newNickname = (afterNickname || beforeNickname || 'User').trim();
     const newPhotoURL = afterPhotoURL; // 빈 문자열 허용(기본 이미지)
     const newNationality = afterNationality;
-    console.log(`onUserProfileUpdatedPropagateAuthorInfo: 시작 userId=${userId} nicknameChanged=${nicknameChanged} photoChanged=${photoChanged} nationalityChanged=${nationalityChanged}`);
+    runtime_logging_1.runtimeLogsEnabled && (0, runtime_logging_1.runtimeInfo)(`onUserProfileUpdatedPropagateAuthorInfo: 시작 userId=${userId} nicknameChanged=${nicknameChanged} photoChanged=${photoChanged} nationalityChanged=${nationalityChanged}`);
     const ts = admin.firestore.FieldValue.serverTimestamp();
     async function updatePosts() {
         let lastDoc = null;
@@ -367,7 +375,7 @@ exports.onUserProfileUpdatedPropagateAuthorInfo = functions
                 await batch.commit();
             lastDoc = snap.docs[snap.docs.length - 1];
         }
-        console.log(`onUserProfileUpdatedPropagateAuthorInfo: posts updated=${updated}`);
+        runtime_logging_1.runtimeLogsEnabled && (0, runtime_logging_1.runtimeInfo)(`onUserProfileUpdatedPropagateAuthorInfo: posts updated=${updated}`);
     }
     async function updateMeetups() {
         let lastDoc = null;
@@ -410,7 +418,7 @@ exports.onUserProfileUpdatedPropagateAuthorInfo = functions
                 await batch.commit();
             lastDoc = snap.docs[snap.docs.length - 1];
         }
-        console.log(`onUserProfileUpdatedPropagateAuthorInfo: meetups updated=${updated}`);
+        runtime_logging_1.runtimeLogsEnabled && (0, runtime_logging_1.runtimeInfo)(`onUserProfileUpdatedPropagateAuthorInfo: meetups updated=${updated}`);
     }
     async function updateCommentsCollectionGroup() {
         // posts/{postId}/comments + meetups/{meetupId}/comments 같이 "서브컬렉션 comments"는 collectionGroup으로 일괄 처리
@@ -444,7 +452,7 @@ exports.onUserProfileUpdatedPropagateAuthorInfo = functions
         }
         if (ops > 0)
             await batch.commit();
-        console.log(`onUserProfileUpdatedPropagateAuthorInfo: comments(subcollections) updated=${updated}`);
+        runtime_logging_1.runtimeLogsEnabled && (0, runtime_logging_1.runtimeInfo)(`onUserProfileUpdatedPropagateAuthorInfo: comments(subcollections) updated=${updated}`);
     }
     async function updateCommentsRoot() {
         // 최상위 comments 컬렉션은 collectionGroup에 포함되지 않으므로 별도 처리
@@ -477,7 +485,7 @@ exports.onUserProfileUpdatedPropagateAuthorInfo = functions
         }
         if (ops > 0)
             await batch.commit();
-        console.log(`onUserProfileUpdatedPropagateAuthorInfo: comments(root) updated=${updated}`);
+        runtime_logging_1.runtimeLogsEnabled && (0, runtime_logging_1.runtimeInfo)(`onUserProfileUpdatedPropagateAuthorInfo: comments(root) updated=${updated}`);
     }
     async function updateConversations() {
         var _a, _b, _c;
@@ -531,7 +539,7 @@ exports.onUserProfileUpdatedPropagateAuthorInfo = functions
         }
         if (ops > 0)
             await batch.commit();
-        console.log(`onUserProfileUpdatedPropagateAuthorInfo: conversations updated=${updated}`);
+        runtime_logging_1.runtimeLogsEnabled && (0, runtime_logging_1.runtimeInfo)(`onUserProfileUpdatedPropagateAuthorInfo: conversations updated=${updated}`);
     }
     try {
         // 순차 실행: 한 번의 프로필 변경으로 과도한 병렬 쿼리/커밋을 피한다.
@@ -562,7 +570,7 @@ exports.onUserProfileUpdatedPropagateAuthorInfo = functions
         catch (e) {
             console.error(`onUserProfileUpdatedPropagateAuthorInfo: updateCommentsRoot 실패(계속 진행) userId=${userId}:`, e);
         }
-        console.log(`onUserProfileUpdatedPropagateAuthorInfo: 완료 userId=${userId}`);
+        runtime_logging_1.runtimeLogsEnabled && (0, runtime_logging_1.runtimeInfo)(`onUserProfileUpdatedPropagateAuthorInfo: 완료 userId=${userId}`);
         return null;
     }
     catch (error) {
@@ -604,11 +612,6 @@ function createGmailTransporter() {
         auth: { user, pass },
     });
 }
-var initAds_1 = require("./initAds");
-Object.defineProperty(exports, "initializeAds", { enumerable: true, get: function () { return initAds_1.initializeAds; } });
-// 마이그레이션 함수 export (일회성)
-var migration_add_emailverified_1 = require("./migration_add_emailverified");
-Object.defineProperty(exports, "migrateEmailVerified", { enumerable: true, get: function () { return migration_add_emailverified_1.migrateEmailVerified; } });
 // 관리자 이메일 주소
 const ADMIN_EMAIL = 'wefilling@gmail.com';
 // 관리자에게 이메일 전송 헬퍼 함수
@@ -631,7 +634,7 @@ async function sendAdminEmail(subject, htmlContent) {
             html: htmlContent,
         };
         await transporter.sendMail(mailOptions);
-        console.log(`✅ 관리자 이메일 전송 완료: ${subject}`);
+        runtime_logging_1.runtimeLogsEnabled && (0, runtime_logging_1.runtimeInfo)(`✅ 관리자 이메일 전송 완료: ${subject}`);
         return true;
     }
     catch (error) {
@@ -939,6 +942,7 @@ function completedProfileFields(profile) {
     return {
         nickname: normalizedNickname.nickname,
         nicknameKey: normalizedNickname.nicknameKey,
+        nicknameSearchTokens: (0, user_search_index_1.buildUserSearchTokens)(normalizedNickname.nickname),
         nationality: profile.nationality,
         bio: profile.bio,
         interests: profile.interests,
@@ -966,12 +970,37 @@ function isCompletedRegistrationData(data) {
         data.registrationStatus == null ||
         String(data.registrationStatus).trim() === '';
 }
+/**
+ * Older completed profiles can predate the server-owned nickname search
+ * index. Signup retries are a safe opportunity to heal only that derived
+ * field without changing the nickname claim or any registration state.
+ */
+function completedRegistrationSearchRepair(data) {
+    if (!isCompletedRegistrationData(data))
+        return null;
+    const nickname = String((data === null || data === void 0 ? void 0 : data.nickname) || '').trim();
+    if (!nickname)
+        return null;
+    let expected;
+    try {
+        expected = (0, user_search_index_1.buildUserSearchTokens)((0, nickname_claims_1.normalizeNickname)(nickname).nickname);
+    }
+    catch (_) {
+        return null;
+    }
+    const current = Array.isArray(data === null || data === void 0 ? void 0 : data.nicknameSearchTokens) ?
+        data.nicknameSearchTokens.filter((token) => typeof token === 'string') :
+        [];
+    if (current.length === expected.length &&
+        current.every((token, index) => token === expected[index])) {
+        return null;
+    }
+    return { nicknameSearchTokens: expected };
+}
 function isHanyangEmailVerifiedData(data) {
     const evidence = (0, hanyang_verification_1.hanyangProjectionEvidence)(data);
     return evidence === 'explicit_true' || evidence === 'strong_legacy';
 }
-// email_verifications 컬렉션을 콘솔에서 안정적으로 확인하기 위한 고정 메타 문서 ID
-const EMAIL_VERIFICATIONS_META_DOC_ID = '_meta';
 /**
  * Persists the durable boundary between Firebase Auth creation and profile
  * completion. Repeating the request for the same uid only resumes the same
@@ -992,10 +1021,7 @@ exports.ensureRegistrationProgress = functions
     const verificationToken = typeof (data === null || data === void 0 ? void 0 : data.verificationToken) === 'string'
         ? data.verificationToken.trim()
         : '';
-    const signupLanguageRaw = typeof (data === null || data === void 0 ? void 0 : data.signupLanguage) === 'string'
-        ? data.signupLanguage
-        : 'en';
-    const signupLanguage = signupLanguageRaw.toLowerCase().startsWith('ko') ? 'ko' : 'en';
+    const signupLanguageExplicit = (data === null || data === void 0 ? void 0 : data.signupLanguageExplicit) === true;
     const providerIds = (authUser.providerData || []).map((p) => String(p.providerId || ''));
     const signupProvider = providerIds.includes('google.com')
         ? 'google.com'
@@ -1019,6 +1045,9 @@ exports.ensureRegistrationProgress = functions
         const userSnap = await tx.get(userRef);
         const existing = (userSnap.data() || {});
         if (userSnap.exists && isCompletedRegistrationData(existing)) {
+            const repair = completedRegistrationSearchRepair(existing);
+            if (repair)
+                tx.set(userRef, repair, { merge: true });
             return { success: true, signupState: 'completed', resumed: true };
         }
         if (verificationRef) {
@@ -1054,7 +1083,18 @@ exports.ensureRegistrationProgress = functions
             signupState: hasVerifiedSignupEvidence ? 'profilePending' : 'authCreated',
             registrationStatus: hasVerifiedSignupEvidence ? 'profile_pending' : 'auth_created',
             signupProvider: String(existing.signupProvider || signupProvider),
-            signupLanguage: String(existing.signupLanguage || signupLanguage),
+            // An explicit signup screen selection is authoritative while the
+            // profile is pending. Startup/login recovery omits the language and
+            // preserves what that screen selected earlier.
+            signupLanguage: (0, registration_progress_1.resolvePendingSignupLanguageRequest)({
+                // Older released clients always sent their default language during
+                // startup recovery. Only a new document or an explicitly marked
+                // signup-screen choice may replace a stored pending locale.
+                rawRequested: data === null || data === void 0 ? void 0 : data.signupLanguage,
+                existing: existing.signupLanguage,
+                userDocumentExists: userSnap.exists,
+                explicitlySelected: signupLanguageExplicit,
+            }),
             emailVerified: hasVerifiedSignupEvidence,
             updatedAt: now,
         };
@@ -1103,6 +1143,9 @@ exports.finalizePendingRegistration = functions
         const userSnap = await tx.get(userRef);
         const existing = (userSnap.data() || {});
         if (userSnap.exists && isCompletedRegistrationData(existing)) {
+            const repair = completedRegistrationSearchRepair(existing);
+            if (repair)
+                tx.set(userRef, repair, { merge: true });
             return { success: true, signupState: 'completed', resumed: true };
         }
         const pendingHanyangEmail = String(existing.pendingHanyangEmail || '').trim();
@@ -1181,7 +1224,17 @@ exports.finalizeHanyangEmailVerification = functions
         const uid = context.auth.uid;
         const canonicalBeforeVerification = await (0, hanyang_verification_1.reconcileHanyangVerificationForUid)(uid);
         if (canonicalBeforeVerification.verified) {
-            return Object.assign({ success: true, alreadyVerified: true }, canonicalBeforeVerification);
+            const completedUser = await db.collection(firestore_paths_1.COL.users).doc(uid).get();
+            const completedData = completedUser.data();
+            // School verification and signup completion are different states. An
+            // old/partial profile must not receive a false successful completion
+            // response merely because its school claim already exists.
+            if (completedUser.exists && isCompletedRegistrationData(completedData)) {
+                const repair = completedRegistrationSearchRepair(completedData);
+                if (repair)
+                    await completedUser.ref.set(repair, { merge: true });
+                return Object.assign({ success: true, alreadyVerified: true }, canonicalBeforeVerification);
+            }
         }
         if (canonicalBeforeVerification.status === 'conflict') {
             throw new functions.https.HttpsError('failed-precondition', '학교 인증 정보에 충돌이 있어 확인이 필요합니다.');
@@ -1798,7 +1851,7 @@ async function sendCompletedRegistrationAdminNotification(beforeData, afterData,
         return true;
     });
     if (!reserved) {
-        console.log('가입 완료 관리자 알림 중복 스킵', { userId });
+        runtime_logging_1.runtimeLogsEnabled && (0, runtime_logging_1.runtimeInfo)('가입 완료 관리자 알림 중복 스킵', { userId });
         return null;
     }
     try {
@@ -1883,7 +1936,7 @@ async function sendCompletedRegistrationAdminNotification(beforeData, afterData,
             sentAt: admin.firestore.FieldValue.serverTimestamp(),
             updatedAt: admin.firestore.FieldValue.serverTimestamp(),
         }, { merge: true });
-        console.log('가입 완료 관리자 알림 발송', {
+        runtime_logging_1.runtimeLogsEnabled && (0, runtime_logging_1.runtimeInfo)('가입 완료 관리자 알림 발송', {
             userId,
             provider: identity.provider,
         });
@@ -1960,7 +2013,7 @@ exports.onPrivatePostCreated = functions.firestore
         const content = post.content || '';
         const preview = (typeof content === 'string' ? content : '').slice(0, 80);
         if (visibility !== 'public' && visibility !== 'category') {
-            console.log(`onPrivatePostCreated: 지원하지 않는 공개범위 스킵 (postId=${postId})`);
+            runtime_logging_1.runtimeLogsEnabled && (0, runtime_logging_1.runtimeInfo)(`onPrivatePostCreated: 지원하지 않는 공개범위 스킵 (postId=${postId})`);
             return null;
         }
         let targetUserIds = toUniqueStringArray(post.notificationAudienceUserIdsFrozen).filter((uid) => uid !== authorId);
@@ -1974,7 +2027,7 @@ exports.onPrivatePostCreated = functions.firestore
         targetUserIds = await filterTargetUserIdsByBlockRelationship(authorId, targetUserIds);
         targetUserIds = await filterAudienceByNotificationSettings(targetUserIds, 'post_interactions', ['post_private']);
         if (targetUserIds.length === 0) {
-            console.log(`onPrivatePostCreated: 알림 대상 없음 (postId=${postId})`);
+            runtime_logging_1.runtimeLogsEnabled && (0, runtime_logging_1.runtimeInfo)(`onPrivatePostCreated: 알림 대상 없음 (postId=${postId})`);
             return null;
         }
         // 작성자 정보 (표시용)
@@ -2003,10 +2056,10 @@ exports.onPrivatePostCreated = functions.firestore
         }));
         const created = await commitNotificationCreates(notifications);
         if (created > 0) {
-            console.log(`onPrivatePostCreated: notifications 생성 ${created}건`);
+            runtime_logging_1.runtimeLogsEnabled && (0, runtime_logging_1.runtimeInfo)(`onPrivatePostCreated: notifications 생성 ${created}건`);
         }
         else {
-            console.log('onPrivatePostCreated: 생성할 알림 없음');
+            runtime_logging_1.runtimeLogsEnabled && (0, runtime_logging_1.runtimeInfo)('onPrivatePostCreated: 생성할 알림 없음');
         }
         return null;
     }
@@ -2060,6 +2113,89 @@ function resolveStoredMeetupAudience(viewerId, meetup) {
         canAccess: allowed.has(viewerId),
     };
 }
+/** Mirrors the Firestore meetup read rule without granting broader access. */
+function canReadStoredMeetup(viewerId, meetup) {
+    const frozenOwnerId = normalizeUidLoose(meetup.ownerId);
+    const frozenVisibility = toStr(meetup.visibilityMode).trim();
+    const frozenAudience = toUniqueStringArray(meetup.audienceUserIdsFrozen);
+    const hasValidFrozenAudience = toInt(meetup.visibilitySchemaVersion) >= 2 &&
+        frozenOwnerId.length > 0 &&
+        ['public', 'friends', 'category'].includes(frozenVisibility) &&
+        Array.isArray(meetup.audienceUserIdsFrozen) &&
+        Array.isArray(meetup.sourceGroupIds) &&
+        meetup.visibilityLockedAt instanceof admin.firestore.Timestamp &&
+        frozenAudience.includes(frozenOwnerId);
+    if (hasValidFrozenAudience &&
+        (viewerId === frozenOwnerId ||
+            frozenVisibility === 'public' ||
+            frozenAudience.includes(viewerId))) {
+        return true;
+    }
+    const legacyOwnerId = normalizeUidLoose(meetup.userId);
+    const legacyVisibility = toStr(meetup.visibility).trim();
+    const legacyAudience = toUniqueStringArray(meetup.allowedUserIds);
+    return viewerId === legacyOwnerId ||
+        legacyVisibility === 'public' ||
+        legacyAudience.includes(viewerId);
+}
+/**
+ * Resolves the caller's approved participation records to meetup IDs that the
+ * caller can still read. Only orphan records whose meetup was removed are
+ * deleted server-side. Records for an existing but currently unreadable
+ * meetup are left untouched so validation cannot mutate participation state.
+ */
+exports.resolveMyReadableJoinedMeetupIds = functions
+    .runWith({ timeoutSeconds: 30, memory: '256MB' })
+    .https.onCall(async (_raw, context) => {
+    var _a;
+    const userId = (_a = context.auth) === null || _a === void 0 ? void 0 : _a.uid;
+    if (!userId) {
+        throw new functions.https.HttpsError('unauthenticated', 'Sign-in is required.');
+    }
+    const user = await db.collection(firestore_paths_1.COL.users).doc(userId).get();
+    if (!user.exists || !isActiveSocialProfile(user.data())) {
+        throw new functions.https.HttpsError('failed-precondition', 'An active account is required.');
+    }
+    const participants = await db.collection(firestore_paths_1.COL.meetupParticipants)
+        .where('userId', '==', userId)
+        .where('status', '==', 'approved')
+        .get();
+    if (participants.empty) {
+        return { meetupIds: [], cleanedCount: 0 };
+    }
+    const meetupIds = Array.from(new Set(participants.docs
+        .map((doc) => normalizeUidLoose(doc.data().meetupId))
+        .filter((id) => id.length > 0)));
+    const meetupsById = new Map();
+    for (let offset = 0; offset < meetupIds.length; offset += 200) {
+        const chunk = meetupIds.slice(offset, offset + 200);
+        const docs = await db.getAll(...chunk.map((id) => db.collection(firestore_paths_1.COL.meetups).doc(id)));
+        docs.forEach((doc) => meetupsById.set(doc.id, doc));
+    }
+    const readableIds = new Set();
+    const orphanParticipantRefs = [];
+    participants.docs.forEach((participant) => {
+        const meetupId = normalizeUidLoose(participant.data().meetupId);
+        const meetup = meetupsById.get(meetupId);
+        if ((meetup === null || meetup === void 0 ? void 0 : meetup.exists) && canReadStoredMeetup(userId, (meetup.data() || {}))) {
+            readableIds.add(meetupId);
+        }
+        else if (!(meetup === null || meetup === void 0 ? void 0 : meetup.exists)) {
+            orphanParticipantRefs.push(participant.ref);
+        }
+    });
+    for (let offset = 0; offset < orphanParticipantRefs.length; offset += 450) {
+        const batch = db.batch();
+        orphanParticipantRefs
+            .slice(offset, offset + 450)
+            .forEach((reference) => batch.delete(reference));
+        await batch.commit();
+    }
+    return {
+        meetupIds: Array.from(readableIds).sort(),
+        cleanedCount: orphanParticipantRefs.length,
+    };
+});
 function meetupHasEnded(meetup) {
     const nowMs = Date.now();
     const endsAt = meetup.endsAt;
@@ -2291,7 +2427,7 @@ exports.onFriendRequestCreated = functions.firestore
                 return null;
         }
         if (await hasBlockRelationship(fromUid, toUid)) {
-            console.log('⏭️ 차단 관계(friend_request) - 알림 스킵');
+            runtime_logging_1.runtimeLogsEnabled && (0, runtime_logging_1.runtimeInfo)('⏭️ 차단 관계(friend_request) - 알림 스킵');
             await deleteCurrentFriendAlert();
             return null;
         }
@@ -2351,7 +2487,7 @@ exports.onFriendRequestCreated = functions.firestore
             tx.create(notificationRef, notificationPayload);
             return true;
         });
-        console.log(created
+        runtime_logging_1.runtimeLogsEnabled && (0, runtime_logging_1.runtimeInfo)(created
             ? 'onFriendRequestCreated: 알림 생성 완료'
             : 'onFriendRequestCreated: 최신 요청이 아니거나 이미 생성됨');
         return null;
@@ -2393,7 +2529,7 @@ exports.onAdBannerChanged = functions.firestore
             },
         };
         await admin.messaging().send(message);
-        console.log('onAdBannerChanged: ads 토픽 푸시 전송 완료');
+        runtime_logging_1.runtimeLogsEnabled && (0, runtime_logging_1.runtimeInfo)('onAdBannerChanged: ads 토픽 푸시 전송 완료');
         return null;
     }
     catch (error) {
@@ -2473,7 +2609,7 @@ exports.onMeetupUpdated = functions.firestore
             createdAt: admin.firestore.FieldValue.serverTimestamp(),
             isRead: false,
         }, { merge: false });
-        console.log('onMeetupUpdated: 정원 마감 알림 생성');
+        runtime_logging_1.runtimeLogsEnabled && (0, runtime_logging_1.runtimeInfo)('onMeetupUpdated: 정원 마감 알림 생성');
         return null;
     }
     catch (error) {
@@ -2524,7 +2660,7 @@ exports.onMeetupDeleted = functions.firestore
         }
         if (created > 0)
             await batch.commit();
-        console.log(`onMeetupDeleted: 취소 알림 ${created}건 생성`);
+        runtime_logging_1.runtimeLogsEnabled && (0, runtime_logging_1.runtimeInfo)(`onMeetupDeleted: 취소 알림 ${created}건 생성`);
         return null;
     }
     catch (error) {
@@ -2714,7 +2850,7 @@ exports.onCommentCreated = functions.firestore
         const skipPostAuthorNewComment = replyRecipients.some((recipient) => recipient.userId === postAuthorId);
         if (postAuthorId && postAuthorId !== commenterId && !skipPostAuthorNewComment) {
             if (await hasBlockRelationship(postAuthorId, commenterId)) {
-                console.log('⏭️ 차단 관계(new_comment) - 알림 스킵');
+                runtime_logging_1.runtimeLogsEnabled && (0, runtime_logging_1.runtimeInfo)('⏭️ 차단 관계(new_comment) - 알림 스킵');
             }
             else {
                 const settingsDoc = await db.collection('user_settings').doc(postAuthorId).get();
@@ -2750,7 +2886,7 @@ exports.onCommentCreated = functions.firestore
                         createdAt: admin.firestore.FieldValue.serverTimestamp(),
                         isRead: false,
                     });
-                    console.log(notificationCreated
+                    runtime_logging_1.runtimeLogsEnabled && (0, runtime_logging_1.runtimeInfo)(notificationCreated
                         ? 'onCommentCreated: 댓글 알림 생성 완료'
                         : 'onCommentCreated: 이미 처리된 댓글 알림 - 스킵');
                 }
@@ -2766,7 +2902,7 @@ exports.onCommentCreated = functions.firestore
                     if (replyRecipientId === commenterId)
                         continue;
                     if (await hasBlockRelationship(replyRecipientId, commenterId)) {
-                        console.log('⏭️ 차단 관계(comment_reply) - 알림 스킵');
+                        runtime_logging_1.runtimeLogsEnabled && (0, runtime_logging_1.runtimeInfo)('⏭️ 차단 관계(comment_reply) - 알림 스킵');
                     }
                     else {
                         const settingsDoc = await db.collection('user_settings').doc(replyRecipientId).get();
@@ -2806,7 +2942,7 @@ exports.onCommentCreated = functions.firestore
                                 createdAt: admin.firestore.FieldValue.serverTimestamp(),
                                 isRead: false,
                             });
-                            console.log(notificationCreated
+                            runtime_logging_1.runtimeLogsEnabled && (0, runtime_logging_1.runtimeInfo)(notificationCreated
                                 ? 'onCommentCreated: 대댓글 알림 생성 완료'
                                 : 'onCommentCreated: 이미 처리된 대댓글 알림 - 스킵');
                         }
@@ -2925,7 +3061,7 @@ exports.onCommentLiked = functions.firestore
         if (!commentAuthorId || commentAuthorId === newLiker)
             return null;
         if (await hasBlockRelationship(commentAuthorId, newLiker)) {
-            console.log('⏭️ 차단 관계(comment_like) - 알림 스킵');
+            runtime_logging_1.runtimeLogsEnabled && (0, runtime_logging_1.runtimeInfo)('⏭️ 차단 관계(comment_like) - 알림 스킵');
             return null;
         }
         // 설정 확인
@@ -2946,7 +3082,7 @@ exports.onCommentLiked = functions.firestore
             .limit(1)
             .get();
         if (!recentNotifications.empty) {
-            console.log('onCommentLiked: 중복 알림 방지 - 최근 알림 존재');
+            runtime_logging_1.runtimeLogsEnabled && (0, runtime_logging_1.runtimeInfo)('onCommentLiked: 중복 알림 방지 - 최근 알림 존재');
             return null;
         }
         // 사용자 표시 이름
@@ -2998,7 +3134,7 @@ exports.onCommentLiked = functions.firestore
             createdAt: admin.firestore.FieldValue.serverTimestamp(),
             isRead: false,
         });
-        console.log('onCommentLiked: 댓글 좋아요 알림 생성 완료');
+        runtime_logging_1.runtimeLogsEnabled && (0, runtime_logging_1.runtimeInfo)('onCommentLiked: 댓글 좋아요 알림 생성 완료');
         return null;
     }
     catch (error) {
@@ -3028,7 +3164,7 @@ exports.onPostLiked = functions.firestore
         if (!postAuthorId || postAuthorId === newLiker)
             return null;
         if (await hasBlockRelationship(postAuthorId, newLiker)) {
-            console.log('⏭️ 차단 관계(new_like) - 알림 스킵');
+            runtime_logging_1.runtimeLogsEnabled && (0, runtime_logging_1.runtimeInfo)('⏭️ 차단 관계(new_like) - 알림 스킵');
             return null;
         }
         // 설정 확인
@@ -3049,7 +3185,7 @@ exports.onPostLiked = functions.firestore
             .limit(1)
             .get();
         if (!recentNotifications.empty) {
-            console.log('onPostLiked: 중복 알림 방지 - 최근 알림 존재');
+            runtime_logging_1.runtimeLogsEnabled && (0, runtime_logging_1.runtimeInfo)('onPostLiked: 중복 알림 방지 - 최근 알림 존재');
             return null;
         }
         // 사용자 표시 이름
@@ -3088,7 +3224,7 @@ exports.onPostLiked = functions.firestore
             createdAt: admin.firestore.FieldValue.serverTimestamp(),
             isRead: false,
         });
-        console.log('onPostLiked: 좋아요 알림 생성 완료');
+        runtime_logging_1.runtimeLogsEnabled && (0, runtime_logging_1.runtimeInfo)('onPostLiked: 좋아요 알림 생성 완료');
         return null;
     }
     catch (error) {
@@ -3169,7 +3305,6 @@ exports.requestPasswordResetCode = passwordResetCallable.https.onCall(async (dat
         if (!transporter) {
             throw new Error('mail-not-configured');
         }
-        await transporter.verify();
         const message = buildPasswordResetMessage(verificationCode, locale.toLowerCase().startsWith('ko'));
         await transporter.sendMail({
             from: `Wefilling <${getGmailUser()}>`,
@@ -3178,7 +3313,7 @@ exports.requestPasswordResetCode = passwordResetCallable.https.onCall(async (dat
             text: message.text,
             html: message.html,
         });
-        console.log('requestPasswordResetCode mail sent');
+        runtime_logging_1.runtimeLogsEnabled && (0, runtime_logging_1.runtimeInfo)('requestPasswordResetCode mail sent');
     }
     catch (error) {
         await db.runTransaction(async (transaction) => {
@@ -3310,7 +3445,7 @@ exports.resetPasswordWithCode = passwordResetCallable.https.onCall(async (data) 
             code: (error === null || error === void 0 ? void 0 : error.code) || 'unknown',
         });
     });
-    console.log('resetPasswordWithCode completed');
+    runtime_logging_1.runtimeLogsEnabled && (0, runtime_logging_1.runtimeInfo)('resetPasswordWithCode completed');
     return { success: true };
 });
 // 이메일 인증번호 전송 함수
@@ -3445,22 +3580,12 @@ exports.sendEmailVerificationCode = functions.https.onCall(async (data, context)
                 attempts: 0, // 시도 횟수
             });
         });
-        // 컬렉션이 비어도 콘솔에서 경로를 쉽게 찾을 수 있도록 메타 문서를 유지
-        await db.collection(firestore_paths_1.COL.emailVerifications).doc(EMAIL_VERIFICATIONS_META_DOC_ID).set({
-            collection: firestore_paths_1.COL.emailVerifications,
-            note: 'metadata doc for console visibility',
-            lastIssuedEmail: emailDocId,
-            lastIssuedAt: admin.firestore.FieldValue.serverTimestamp(),
-            updatedAt: admin.firestore.FieldValue.serverTimestamp(),
-        }, { merge: true });
         // 이메일 전송
         // 안전하게 현재 설정으로 트랜스포터 생성
         const mailTransporter = nodemailer.createTransport({
             service: 'gmail',
             auth: { user: gmailUser, pass: gmailPassword },
         });
-        // 자격 증명 사전 검증: 설정 오류(EAUTH 등) 즉시 감지
-        await mailTransporter.verify();
         const lang = typeof locale === 'string' ? String(locale) : '';
         const isKo = lang.toLowerCase().startsWith('ko');
         const emailMessage = buildEmailVerificationMessage(verificationCode, isKo);
@@ -3472,7 +3597,7 @@ exports.sendEmailVerificationCode = functions.https.onCall(async (data, context)
             html: emailMessage.html,
         };
         await mailTransporter.sendMail(mailOptions);
-        console.log(`✅ 인증번호 이메일 전송 완료: purpose=${purpose}, email=${emailNormalized}`);
+        runtime_logging_1.runtimeLogsEnabled && (0, runtime_logging_1.runtimeInfo)(`email verification sent purpose=${purpose}`);
         return {
             success: true,
             message: '인증번호가 전송되었습니다. 이메일을 확인해주세요.',
@@ -3750,6 +3875,10 @@ exports.createGeneralEmailSignup = functions
                 normalizeEmail(completedAuthUser.email || '') !== normalizedEmail) {
                 throw new functions.https.HttpsError('failed-precondition', '이전 가입 완료 상태를 확인할 수 없습니다. 다시 인증해주세요.');
             }
+            const searchRepair = completedRegistrationSearchRepair(completedData);
+            if (searchRepair) {
+                await completedUserSnap.ref.set(searchRepair, { merge: true });
+            }
             let customToken = '';
             try {
                 customToken = await admin.auth().createCustomToken(completedUid);
@@ -3960,7 +4089,7 @@ exports.cleanupExpiredEmailVerifications = functions.pubsub
         if (snap.size < 500)
             break;
     }
-    console.log(`cleanupExpiredEmailVerifications: email=${deleted}, reset=${resetDeleted}`);
+    runtime_logging_1.runtimeLogsEnabled && (0, runtime_logging_1.runtimeInfo)(`cleanupExpiredEmailVerifications: email=${deleted}, reset=${resetDeleted}`);
     return null;
 });
 function isActiveSocialProfile(data) {
@@ -3986,6 +4115,83 @@ function isActiveSocialProfile(data) {
         registrationStatus !== 'deleted' &&
         hasIdentity;
 }
+/**
+ * 가입 제공자와 무관하게 활성 사용자를 닉네임으로 검색한다.
+ *
+ * 검색용 토큰은 가입/닉네임 변경 시 서버에서만 갱신한다. 따라서 전체
+ * users 컬렉션을 내려받지 않고도 기존 부분 문자열·한글 초성 검색 UX를
+ * 유지하며, Google/Apple/password 같은 제공자 필드는 조건에 사용하지
+ * 않는다.
+ */
+exports.searchSocialUsers = functions
+    .runWith({ timeoutSeconds: 20, memory: '256MB', enforceAppCheck: true })
+    .https.onCall(async (raw, context) => {
+    var _a;
+    const requesterId = normalizeUidLoose((_a = context.auth) === null || _a === void 0 ? void 0 : _a.uid);
+    if (!requesterId) {
+        throw new functions.https.HttpsError('unauthenticated', '로그인이 필요합니다.');
+    }
+    const query = (0, user_search_index_1.normalizeUserSearchText)(raw === null || raw === void 0 ? void 0 : raw.query);
+    if (!query || Array.from(query).length > 20) {
+        throw new functions.https.HttpsError('invalid-argument', '검색어는 1자 이상 20자 이하로 입력해주세요.');
+    }
+    const requestedLimit = Number(raw === null || raw === void 0 ? void 0 : raw.limit);
+    const limit = Math.max(1, Math.min(100, Number.isFinite(requestedLimit) ? Math.trunc(requestedLimit) : 20));
+    const requester = await db.collection(firestore_paths_1.COL.users).doc(requesterId).get();
+    if (!requester.exists || !isActiveSocialProfile(requester.data())) {
+        throw new functions.https.HttpsError('failed-precondition', '이용 가능한 계정이 필요합니다.');
+    }
+    // Filtering self/blocked/unavailable profiles and relevance sorting happen
+    // after this query. A wider candidate window prevents a cluster of blocked
+    // users from hiding otherwise valid results for common short searches.
+    const candidateLimit = Math.min(1000, Math.max(300, limit * 10));
+    const snapshot = await db.collection(firestore_paths_1.COL.users)
+        .where('nicknameSearchTokens', 'array-contains', query)
+        // One extra row makes the completeness flag unambiguous when the
+        // result count lands exactly on the safety ceiling.
+        .limit(candidateLimit + 1)
+        .get();
+    const candidates = snapshot.docs.slice(0, candidateLimit).filter((document) => {
+        const profile = document.data();
+        const nickname = String(profile.nickname || profile.displayName || '').trim();
+        return document.id !== requesterId &&
+            isActiveSocialProfile(profile) &&
+            (0, user_search_index_1.matchesUserSearch)(nickname, query);
+    });
+    const blockDocs = candidates.length === 0 ? [] : await db.getAll(...candidates.flatMap((document) => [
+        db.collection(firestore_paths_1.COL.blocks).doc(`${requesterId}_${document.id}`),
+        db.collection(firestore_paths_1.COL.blocks).doc(`${document.id}_${requesterId}`),
+    ]));
+    const blockedIds = new Set();
+    candidates.forEach((document, index) => {
+        var _a, _b;
+        if (((_a = blockDocs[index * 2]) === null || _a === void 0 ? void 0 : _a.exists) || ((_b = blockDocs[index * 2 + 1]) === null || _b === void 0 ? void 0 : _b.exists)) {
+            blockedIds.add(document.id);
+        }
+    });
+    const users = candidates
+        .filter((document) => !blockedIds.has(document.id))
+        .sort((left, right) => {
+        const leftName = String(left.data().nickname || left.data().displayName || '').trim();
+        const rightName = String(right.data().nickname || right.data().displayName || '').trim();
+        const scoreDifference = (0, user_search_index_1.userSearchRelevance)(rightName, query) -
+            (0, user_search_index_1.userSearchRelevance)(leftName, query);
+        return scoreDifference || leftName.localeCompare(rightName) ||
+            left.id.localeCompare(right.id);
+    })
+        .slice(0, limit)
+        .map((document) => {
+        const profile = document.data();
+        return {
+            uid: document.id,
+            nickname: String(profile.nickname || profile.displayName || '').trim(),
+            photoURL: String(profile.photoURL || '').trim(),
+            nationality: String(profile.nationality || '').trim(),
+            university: String(profile.university || '').trim(),
+        };
+    });
+    return { users, exhaustive: snapshot.size <= candidateLimit };
+});
 /**
  * 프로필의 친구 미리보기/목록을 같은 규칙으로 반환한다.
  *
@@ -5096,7 +5302,7 @@ exports.reportUser = functions.https.onCall(async (data, context) => {
         `,
             };
             await transporter.sendMail(mailOptions);
-            console.log('신고 이메일 발송 완료');
+            runtime_logging_1.runtimeLogsEnabled && (0, runtime_logging_1.runtimeInfo)('신고 이메일 발송 완료');
         }
         catch (emailError) {
             console.error('이메일 발송 오류:', emailError);
@@ -5121,7 +5327,7 @@ exports.onReportCreated = functions.region('asia-northeast3').firestore
         const reportData = snapshot.data();
         const reportId = context.params.reportId;
         const projectId = process.env.GCLOUD_PROJECT || 'unknown-project';
-        console.log(`📢 새 신고 접수: ${reportId}`);
+        runtime_logging_1.runtimeLogsEnabled && (0, runtime_logging_1.runtimeInfo)(`📢 새 신고 접수: ${reportId}`);
         const reporterId = reportData.reporterId;
         const reportedUserId = reportData.reportedUserId;
         const targetType = reportData.targetType;
@@ -5168,21 +5374,14 @@ exports.onReportCreated = functions.region('asia-northeast3').firestore
             console.warn('⚠️ Gmail 비밀번호 미설정 - 관리자 신고 알림 메일 스킵');
             return null;
         }
-        // 메일 서버 연결 테스트
-        try {
-            await transporter.verify();
-            console.log('✅ SMTP 서버 연결 성공');
-        }
-        catch (verifyError) {
-            console.error('❌ SMTP 서버 연결 실패:', verifyError);
-            throw verifyError; // 연결 실패 시 중단
-        }
         await transporter.sendMail(mailOptions);
-        console.log(`✅ 관리자 알림 메일 전송 완료: ${reportId}`);
+        runtime_logging_1.runtimeLogsEnabled && (0, runtime_logging_1.runtimeInfo)(`✅ 관리자 알림 메일 전송 완료: ${reportId}`);
         return null;
     }
     catch (error) {
-        console.error('onReportCreated 오류 (상세):', JSON.stringify(error, Object.getOwnPropertyNames(error)));
+        console.error('onReportCreated failed', {
+            errorType: error instanceof Error ? error.name : 'unknown',
+        });
         return null;
     }
 });
@@ -5201,7 +5400,7 @@ exports.deleteAccountImmediately = functions.https.onCall(async (data, context) 
         }
         const reason = (data === null || data === void 0 ? void 0 : data.reason) || 'unspecified';
         const userRef = db.collection('users').doc(uid);
-        console.log(`🗑️ 계정 삭제 시작: ${uid}, reason=${reason}`);
+        runtime_logging_1.runtimeLogsEnabled && (0, runtime_logging_1.runtimeInfo)('account deletion started');
         // 탈퇴 전 사용자 정보 수집 (관리자 이메일용)
         let userInfo = {
             nickname: '(정보 없음)',
@@ -5322,7 +5521,7 @@ exports.deleteAccountImmediately = functions.https.onCall(async (data, context) 
         const conversationsSnap = await db.collection('conversations')
             .where('participants', 'array-contains', uid)
             .get();
-        console.log(`💬 대화방 업데이트: ${conversationsSnap.size}개 발견`);
+        runtime_logging_1.runtimeLogsEnabled && (0, runtime_logging_1.runtimeInfo)(`💬 대화방 업데이트: ${conversationsSnap.size}개 발견`);
         conversationsSnap.forEach((doc) => {
             const data = doc.data();
             const participantNames = Object.assign({}, (data.participantNames || {}));
@@ -5343,7 +5542,7 @@ exports.deleteAccountImmediately = functions.https.onCall(async (data, context) 
         // transaction 정책을 사용해 participantIds/unread/방장 위임을 정리한다.
         // 이 변경은 membership trigger가 열린 period를 닫도록 한다.
         const removedSnackChatCount = await (0, snack_chat_1.removeUserFromAllSnackChats)(uid);
-        console.log(`💬 Snack Chat 탈퇴 처리: ${removedSnackChatCount}개 방`);
+        runtime_logging_1.runtimeLogsEnabled && (0, runtime_logging_1.runtimeInfo)(`💬 Snack Chat 탈퇴 처리: ${removedSnackChatCount}개 방`);
         await accountWriter.close();
         // 부모 문서 delete만으로는 savedPosts/devices 등 서브컬렉션이
         // 남으므로 계정 트리 전체를 재귀적으로 제거한다.
@@ -5384,14 +5583,14 @@ exports.deleteAccountImmediately = functions.https.onCall(async (data, context) 
                 const claimSnap = await claimRef.get().catch(() => null);
                 const claimUid = (claimSnap && claimSnap.exists) ? (_a = claimSnap.data()) === null || _a === void 0 ? void 0 : _a.uid : null;
                 if (!claimSnap || !claimSnap.exists) {
-                    console.log(`📧 이메일 claim 문서 없음(스킵): ${email}`);
+                    runtime_logging_1.runtimeLogsEnabled && (0, runtime_logging_1.runtimeInfo)('email claim missing during account deletion');
                 }
                 else if (claimUid && claimUid !== uid) {
-                    console.warn(`⚠️ 이메일 claim UID 불일치(삭제 스킵): ${email}, claimUid=${claimUid}, uid=${uid}`);
+                    console.warn('email claim owner mismatch during account deletion');
                 }
                 else {
                     await claimRef.delete();
-                    console.log(`📧 이메일 claim 문서 삭제 완료: ${email}`);
+                    runtime_logging_1.runtimeLogsEnabled && (0, runtime_logging_1.runtimeInfo)('email claim released during account deletion');
                 }
             }
         }
@@ -5434,14 +5633,14 @@ exports.deleteAccountImmediately = functions.https.onCall(async (data, context) 
         // 해제한다. 재인증/Auth 삭제 실패 시에는 이 코드에 도달하지 않는다.
         try {
             const released = await (0, nickname_claims_1.releaseNicknameClaimIfOwned)(uid, userInfo.nicknameKey);
-            console.log(`👤 닉네임 claim 해제: ${released ? '완료' : '스킵'}`);
+            runtime_logging_1.runtimeLogsEnabled && (0, runtime_logging_1.runtimeInfo)(`👤 닉네임 claim 해제: ${released ? '완료' : '스킵'}`);
         }
         catch (error) {
             // Auth 삭제 후의 단일 claim 정리는 재시도 가능한 복구 경계다.
             // 다른 사용자 claim은 ownerUid 검증으로 절대 삭제하지 않는다.
             console.error('닉네임 claim 해제 실패:', error);
         }
-        console.log(`✅ 계정 삭제 완료: ${uid}`);
+        runtime_logging_1.runtimeLogsEnabled && (0, runtime_logging_1.runtimeInfo)(`✅ 계정 삭제 완료: ${uid}`);
         // 관리자에게 탈퇴 알림 이메일 전송
         try {
             const deleteTime = new Date().toLocaleString('ko-KR', { timeZone: 'Asia/Seoul' });
@@ -5528,123 +5727,6 @@ exports.deleteAccountImmediately = functions.https.onCall(async (data, context) 
         if (error instanceof functions.https.HttpsError)
             throw error;
         throw new functions.https.HttpsError('internal', '계정 삭제 중 오류가 발생했습니다.');
-    }
-});
-// 일회성: 탈퇴 계정이 포함된 기존 대화방 데이터 정정 (관리자 전용)
-// HTTP 함수: /fixDeletedAccountsInConversations?secret=YOUR_SECRET_KEY
-exports.fixDeletedAccountsInConversations = functions.https.onRequest(async (req, res) => {
-    // 보안: 비밀 키 확인
-    const SECRET_KEY = 'wefilling_fix_deleted_2025'; // 변경 가능
-    const providedSecret = req.query.secret || req.body.secret;
-    if (providedSecret !== SECRET_KEY) {
-        res.status(403).send('❌ Unauthorized: Invalid secret key');
-        return;
-    }
-    console.log('🔧 대화방 탈퇴 계정 데이터 정정 시작');
-    try {
-        // 모든 conversations 문서 가져오기
-        const conversationsSnapshot = await db.collection('conversations').get();
-        const totalConversations = conversationsSnapshot.docs.length;
-        console.log(`📊 총 ${totalConversations}개 대화방 찾음`);
-        if (totalConversations === 0) {
-            res.status(200).send('ℹ️ 업데이트할 대화방이 없습니다.');
-            return;
-        }
-        // 모든 활성 사용자 UID 수집 (한 번만 조회)
-        const usersSnapshot = await db.collection('users').get();
-        const activeUserIds = new Set();
-        usersSnapshot.docs.forEach(doc => {
-            activeUserIds.add(doc.id);
-        });
-        console.log(`👥 활성 사용자: ${activeUserIds.size}명`);
-        // 배치 처리 (Firestore 배치는 최대 500개)
-        const batches = [];
-        let currentBatch = db.batch();
-        let operationCount = 0;
-        let batchCount = 0;
-        let updatedCount = 0;
-        let skippedCount = 0;
-        const deletedUserIds = new Set();
-        for (const convDoc of conversationsSnapshot.docs) {
-            const convData = convDoc.data();
-            const participants = convData.participants || [];
-            const participantNames = Object.assign({}, (convData.participantNames || {}));
-            const participantPhotos = Object.assign({}, (convData.participantPhotos || {}));
-            const participantStatus = Object.assign({}, (convData.participantStatus || {}));
-            let needsUpdate = false;
-            // 각 participant 확인
-            for (const uid of participants) {
-                // 활성 사용자가 아니면 탈퇴한 것으로 간주
-                if (!activeUserIds.has(uid)) {
-                    deletedUserIds.add(uid);
-                    // 이미 올바르게 설정되어 있으면 스킵
-                    if (participantNames[uid] === 'DELETED_ACCOUNT' &&
-                        participantStatus[uid] === 'deleted') {
-                        continue;
-                    }
-                    // 탈퇴한 사용자 정보 업데이트
-                    participantNames[uid] = 'DELETED_ACCOUNT';
-                    participantPhotos[uid] = '';
-                    participantStatus[uid] = 'deleted';
-                    needsUpdate = true;
-                }
-            }
-            // 업데이트가 필요한 경우에만 배치에 추가
-            if (needsUpdate) {
-                currentBatch.update(convDoc.ref, {
-                    participantNames,
-                    participantPhotos,
-                    participantStatus,
-                    updatedAt: admin.firestore.FieldValue.serverTimestamp(),
-                });
-                operationCount++;
-                updatedCount++;
-                // 배치가 500개에 도달하면 커밋하고 새 배치 시작
-                if (operationCount >= 500) {
-                    batches.push(currentBatch);
-                    currentBatch = db.batch();
-                    operationCount = 0;
-                    batchCount++;
-                    console.log(`📦 배치 ${batchCount} 준비 완료 (500개)`);
-                }
-            }
-            else {
-                skippedCount++;
-            }
-        }
-        // 마지막 배치 추가
-        if (operationCount > 0) {
-            batches.push(currentBatch);
-            batchCount++;
-            console.log(`📦 마지막 배치 준비 완료 (${operationCount}개)`);
-        }
-        // 모든 배치 실행
-        console.log(`🚀 총 ${batches.length}개 배치 실행 시작...`);
-        for (let i = 0; i < batches.length; i++) {
-            await batches[i].commit();
-            console.log(`✅ 배치 ${i + 1}/${batches.length} 완료`);
-        }
-        const result = {
-            success: true,
-            totalConversations,
-            updatedConversations: updatedCount,
-            skippedConversations: skippedCount,
-            deletedUserIds: Array.from(deletedUserIds),
-            deletedUserCount: deletedUserIds.size,
-            batches: batchCount,
-        };
-        console.log('✅ 대화방 탈퇴 계정 데이터 정정 완료');
-        console.log(`   - 업데이트된 대화방: ${updatedCount}개`);
-        console.log(`   - 스킵된 대화방: ${skippedCount}개`);
-        console.log(`   - 발견된 탈퇴 계정: ${deletedUserIds.size}개`);
-        res.status(200).json(result);
-    }
-    catch (error) {
-        console.error('❌ 대화방 탈퇴 계정 데이터 정정 오류:', error);
-        res.status(500).json({
-            success: false,
-            error: error instanceof Error ? error.message : String(error)
-        });
     }
 });
 function normalizeSupportedLang(raw) {
@@ -6048,7 +6130,7 @@ exports.registerFcmToken = functions.https.onCall(async (data, context) => {
         cleanMap.set(d.id, { deleteSingle: Boolean((prev === null || prev === void 0 ? void 0 : prev.deleteSingle) || true) });
     });
     if (cleanMap.size > 0) {
-        console.log(`🧹 registerFcmToken: 다른 계정에서 토큰 제거 (${cleanMap.size}명)`);
+        runtime_logging_1.runtimeLogsEnabled && (0, runtime_logging_1.runtimeInfo)(`🧹 registerFcmToken: 다른 계정에서 토큰 제거 (${cleanMap.size}명)`);
         const batch = db.batch();
         for (const [otherUid, opt] of cleanMap.entries()) {
             const ref = db.collection('users').doc(otherUid);
@@ -6246,7 +6328,7 @@ exports.onNotificationCreated = functions
             normalizeUidLoose((_c = notificationData === null || notificationData === void 0 ? void 0 : notificationData.data) === null || _c === void 0 ? void 0 : _c.senderId) ||
             normalizeUidLoose((_d = notificationData === null || notificationData === void 0 ? void 0 : notificationData.data) === null || _d === void 0 ? void 0 : _d.requesterId) ||
             normalizeUidLoose((_e = notificationData === null || notificationData === void 0 ? void 0 : notificationData.data) === null || _e === void 0 ? void 0 : _e.participantId);
-        console.log(`📢 새 알림 생성 감지: ${notificationId}, 유형: ${type}`);
+        runtime_logging_1.runtimeLogsEnabled && (0, runtime_logging_1.runtimeInfo)(`📢 새 알림 생성 감지: ${notificationId}, 유형: ${type}`);
         // Comment notifications are revalidated at the final push boundary.
         // Even if a stale client or an older trigger writes the wrong userId,
         // no unrelated account receives the document or its FCM push.
@@ -6266,7 +6348,7 @@ exports.onNotificationCreated = functions
             return null;
         }
         if (actorId && await hasBlockRelationship(userId, actorId)) {
-            console.log(`⏭️ 차단 관계(notification=${notificationId}) - 알림/푸시 삭제`);
+            runtime_logging_1.runtimeLogsEnabled && (0, runtime_logging_1.runtimeInfo)(`⏭️ 차단 관계(notification=${notificationId}) - 알림/푸시 삭제`);
             await snapshot.ref.set({ skipUnreadCounterSync: true }, { merge: true });
             await snapshot.ref.delete();
             return null;
@@ -6274,7 +6356,7 @@ exports.onNotificationCreated = functions
         // 대상 사용자의 FCM 토큰 가져오기
         const userDoc = await db.collection('users').doc(userId).get();
         if (!userDoc.exists) {
-            console.log('사용자를 찾을 수 없습니다.');
+            runtime_logging_1.runtimeLogsEnabled && (0, runtime_logging_1.runtimeInfo)('사용자를 찾을 수 없습니다.');
             return null;
         }
         const userData = userDoc.data();
@@ -6348,7 +6430,7 @@ exports.onNotificationCreated = functions
             tokenGroups.ko = tokenGroups.ko.filter((token) => ownedTokens.has(token));
             tokenGroups.en = tokenGroups.en.filter((token) => ownedTokens.has(token));
             if (excludedCount > 0) {
-                console.log(`🧹 다른 계정/중복 소유 토큰 제외: ${excludedCount}개 (userId=${userId})`);
+                runtime_logging_1.runtimeLogsEnabled && (0, runtime_logging_1.runtimeInfo)(`🧹 다른 계정/중복 소유 토큰 제외: ${excludedCount}개 (userId=${userId})`);
             }
         }
         const totalTokens = tokenGroups.ko.length + tokenGroups.en.length;
@@ -6410,7 +6492,7 @@ exports.onNotificationCreated = functions
                     };
                 });
                 if (!shouldSend) {
-                    console.log('⏭️ 이미 읽음/삭제/처리된 알림 - 카운터 부활 및 중복 푸시 스킵');
+                    runtime_logging_1.runtimeLogsEnabled && (0, runtime_logging_1.runtimeInfo)('⏭️ 이미 읽음/삭제/처리된 알림 - 카운터 부활 및 중복 푸시 스킵');
                     return null;
                 }
                 if (totalTokens === 0) {
@@ -6419,7 +6501,7 @@ exports.onNotificationCreated = functions
                 }
                 const snackChatUnreadTotal = await getVisibleSnackChatUnreadTotal(String(userId));
                 badgeCount = notiUnreadTotal + dmUnreadTotal + snackChatUnreadTotal;
-                console.log(`📊 배지 계산(카운터): 알림(${notiUnreadTotal}) + DM(${dmUnreadTotal}) + SC(${snackChatUnreadTotal}) = ${badgeCount}`);
+                runtime_logging_1.runtimeLogsEnabled && (0, runtime_logging_1.runtimeInfo)(`📊 배지 계산(카운터): 알림(${notiUnreadTotal}) + DM(${dmUnreadTotal}) + SC(${snackChatUnreadTotal}) = ${badgeCount}`);
                 break; // 성공하면 즉시 종료
             }
             catch (e) {
@@ -6450,7 +6532,7 @@ exports.onNotificationCreated = functions
                     const dmUnreadCount = toNonNegativeInt(userData === null || userData === void 0 ? void 0 : userData.dmUnreadTotal);
                     const snackChatUnreadTotal = await getVisibleSnackChatUnreadTotal(String(userId));
                     badgeCount = notificationCount + dmUnreadCount + snackChatUnreadTotal;
-                    console.log(`📊 배지 계산(count fallback): 알림(${notificationCount}) + DM(${dmUnreadCount}) + SC(${snackChatUnreadTotal}) = ${badgeCount}`);
+                    runtime_logging_1.runtimeLogsEnabled && (0, runtime_logging_1.runtimeInfo)(`📊 배지 계산(count fallback): 알림(${notificationCount}) + DM(${dmUnreadCount}) + SC(${snackChatUnreadTotal}) = ${badgeCount}`);
                 }
                 catch (e2) {
                     console.warn('⚠️ badgeCount(count fallback)도 실패: badge 생략', e2);
@@ -6459,14 +6541,14 @@ exports.onNotificationCreated = functions
             }
         }
         if (totalTokens === 0) {
-            console.log('FCM 토큰이 없어 카운터만 반영하고 푸시는 전송하지 않습니다.');
+            runtime_logging_1.runtimeLogsEnabled && (0, runtime_logging_1.runtimeInfo)('FCM 토큰이 없어 카운터만 반영하고 푸시는 전송하지 않습니다.');
             return null;
         }
         // badge 값: 계산된 실제 값 사용 (0이면 0으로, null이면 badge 필드 생략)
         // 중요: iOS는 badge를 절대값으로 처리하므로 정확한 값을 보내야 함
         const hasBadge = badgeCount !== null;
         const finalBadge = hasBadge ? Math.max(0, badgeCount) : 0;
-        console.log(`📊 최종 badge = ${finalBadge} (raw badgeCount = ${badgeCount})`);
+        runtime_logging_1.runtimeLogsEnabled && (0, runtime_logging_1.runtimeInfo)(`📊 최종 badge = ${finalBadge} (raw badgeCount = ${badgeCount})`);
         const commonData = Object.assign({ type: String(type || ''), recipientUserId: String(userId || ''), notificationId: String(notificationId || ''), postId: String(notificationData.postId || (dataSafe === null || dataSafe === void 0 ? void 0 : dataSafe.postId) || ''), meetupId: String(notificationData.meetupId || (dataSafe === null || dataSafe === void 0 ? void 0 : dataSafe.meetupId) || ''), snapshotId: String(notificationData.snapshotId || (dataSafe === null || dataSafe === void 0 ? void 0 : dataSafe.snapshotId) || ''), conversationId: String(notificationData.conversationId || (dataSafe === null || dataSafe === void 0 ? void 0 : dataSafe.conversationId) || ''), senderId: String(notificationData.senderId || (dataSafe === null || dataSafe === void 0 ? void 0 : dataSafe.senderId) || notificationData.actorId || ''), snackChatId: String(notificationData.snackChatId || (dataSafe === null || dataSafe === void 0 ? void 0 : dataSafe.snackChatId) || ''), reviewId: String(notificationData.reviewId || (dataSafe === null || dataSafe === void 0 ? void 0 : dataSafe.reviewId) || ''), requestId: String(notificationData.requestId || (dataSafe === null || dataSafe === void 0 ? void 0 : dataSafe.requestId) || ''), userId: String((dataSafe === null || dataSafe === void 0 ? void 0 : dataSafe.userId) || ''), meetupTitle: safeStringLoose(dataSafe === null || dataSafe === void 0 ? void 0 : dataSafe.meetupTitle).slice(0, 200), imageUrl: safeStringLoose(dataSafe === null || dataSafe === void 0 ? void 0 : dataSafe.imageUrl).slice(0, 1000), content: safeStringLoose(dataSafe === null || dataSafe === void 0 ? void 0 : dataSafe.content).slice(0, 500), reaction: String(notificationData.reaction || (dataSafe === null || dataSafe === void 0 ? void 0 : dataSafe.reaction) || ''), comment: String(notificationData.comment || (dataSafe === null || dataSafe === void 0 ? void 0 : dataSafe.comment) || ''), reply: String(notificationData.reply || (dataSafe === null || dataSafe === void 0 ? void 0 : dataSafe.reply) || ''), originalNotificationId: String((dataSafe === null || dataSafe === void 0 ? void 0 : dataSafe.originalNotificationId) || ''), actorId: String(notificationData.actorId || actorId || ''), actorName: String(notificationData.actorName || (dataSafe === null || dataSafe === void 0 ? void 0 : dataSafe.actorName) || '') }, (hasBadge ? { badge: String(finalBadge) } : {}));
         const sendForLang = async (lang, tokens) => {
             const localized = buildLocalizedNotificationText({
@@ -6502,7 +6584,7 @@ exports.onNotificationCreated = functions
                 },
             };
             const res = await admin.messaging().sendEachForMulticast(pushMessage);
-            console.log(`✅ 알림 전송(${lang}) 결과: ${res.successCount}/${tokens.length} (userId=${userId})`);
+            runtime_logging_1.runtimeLogsEnabled && (0, runtime_logging_1.runtimeInfo)(`✅ 알림 전송(${lang}) 결과: ${res.successCount}/${tokens.length} (userId=${userId})`);
             return res;
         };
         const responses = [];
@@ -6554,7 +6636,7 @@ exports.onNotificationCreated = functions
                         : admin.firestore.FieldValue.delete(),
                 }, { merge: true });
             }
-            console.log(`🧹 무효 FCM 토큰 정리: ${invalidTokens.length}개 (userId=${userId})`);
+            runtime_logging_1.runtimeLogsEnabled && (0, runtime_logging_1.runtimeInfo)(`🧹 무효 FCM 토큰 정리: ${invalidTokens.length}개 (userId=${userId})`);
         }
         return null;
     }
@@ -6706,13 +6788,13 @@ exports.onMeetupParticipantJoined = functions.firestore
         const participantStatus = participantData.status;
         // 승인된 참여자만 알림 (pending 상태는 알림 안보냄)
         if (participantStatus !== 'approved') {
-            console.log('⏭️ 승인되지 않은 참여 - 알림 스킵');
+            runtime_logging_1.runtimeLogsEnabled && (0, runtime_logging_1.runtimeInfo)('⏭️ 승인되지 않은 참여 - 알림 스킵');
             return null;
         }
         // 모임 정보 가져오기
         const meetupDoc = await db.collection('meetups').doc(meetupId).get();
         if (!meetupDoc.exists) {
-            console.log('❌ 모임 문서 없음');
+            runtime_logging_1.runtimeLogsEnabled && (0, runtime_logging_1.runtimeInfo)('❌ 모임 문서 없음');
             return null;
         }
         const meetupData = meetupDoc.data();
@@ -6720,11 +6802,11 @@ exports.onMeetupParticipantJoined = functions.firestore
         const meetupTitle = meetupData.title || '모임';
         // 본인이 자신의 모임에 참여하는 경우 알림 안보냄
         if (hostId === participantUserId) {
-            console.log('⏭️ 주최자 본인 참여 - 알림 스킵');
+            runtime_logging_1.runtimeLogsEnabled && (0, runtime_logging_1.runtimeInfo)('⏭️ 주최자 본인 참여 - 알림 스킵');
             return null;
         }
         if (await hasBlockRelationship(hostId, participantUserId)) {
-            console.log('⏭️ 차단 관계(meetup_participant_joined) - 알림 스킵');
+            runtime_logging_1.runtimeLogsEnabled && (0, runtime_logging_1.runtimeInfo)('⏭️ 차단 관계(meetup_participant_joined) - 알림 스킵');
             return null;
         }
         // 주최자의 알림 설정 확인
@@ -6735,7 +6817,7 @@ exports.onMeetupParticipantJoined = functions.firestore
         const meetupOn = noti.meetup_alerts !== false &&
             noti.meetup_alert !== false;
         if (!allOn || !meetupOn) {
-            console.log('⏭️ 주최자가 모임 알림 꺼놓음');
+            runtime_logging_1.runtimeLogsEnabled && (0, runtime_logging_1.runtimeInfo)('⏭️ 주최자가 모임 알림 꺼놓음');
             return null;
         }
         // 알림 생성 (idempotent)
@@ -6760,7 +6842,7 @@ exports.onMeetupParticipantJoined = functions.firestore
             createdAt: admin.firestore.FieldValue.serverTimestamp(),
             isRead: false,
         }, { merge: false });
-        console.log(`✅ 모임 참여 알림 생성: ${hostId} <- ${participantName}`);
+        runtime_logging_1.runtimeLogsEnabled && (0, runtime_logging_1.runtimeInfo)(`✅ 모임 참여 알림 생성: ${hostId} <- ${participantName}`);
         return null;
     }
     catch (error) {
@@ -6778,7 +6860,7 @@ exports.onMeetupCreated = functions.firestore
         const hostId = meetupData.userId;
         const visibility = meetupData.visibility || 'public';
         const category = meetupData.category || '기타';
-        console.log(`📢 새 모임 생성 감지: ${meetupId}, 공개범위: ${visibility}, 카테고리: ${category}`);
+        runtime_logging_1.runtimeLogsEnabled && (0, runtime_logging_1.runtimeInfo)(`📢 새 모임 생성 감지: ${meetupId}, 공개범위: ${visibility}, 카테고리: ${category}`);
         // 호스트 정보 가져오기
         const hostDoc = await db.collection('users').doc(hostId).get();
         const hostData = hostDoc.data();
@@ -6792,7 +6874,7 @@ exports.onMeetupCreated = functions.firestore
             if (targetUserIds.length === 0) {
                 targetUserIds = await (0, frozen_audience_1.resolveFriendNotificationAudience)(hostId);
             }
-            console.log(`전체 공개 모임 - 친구 알림 대상 ${targetUserIds.length}명`);
+            runtime_logging_1.runtimeLogsEnabled && (0, runtime_logging_1.runtimeInfo)(`전체 공개 모임 - 친구 알림 대상 ${targetUserIds.length}명`);
         }
         else {
             // 친구/그룹 공개 알림도 생성 당시 문서에 고정된 대상만 사용한다.
@@ -6803,15 +6885,15 @@ exports.onMeetupCreated = functions.firestore
                 : meetupData.allowedUserIds;
             targetUserIds = toUniqueStringArray(frozen)
                 .filter((uid) => uid !== hostId);
-            console.log(`비공개 모임 알림 대상 확정: mode=${visibility}, count=${targetUserIds.length}`);
+            runtime_logging_1.runtimeLogsEnabled && (0, runtime_logging_1.runtimeInfo)(`비공개 모임 알림 대상 확정: mode=${visibility}, count=${targetUserIds.length}`);
         }
         targetUserIds = await filterTargetUserIdsByBlockRelationship(hostId, targetUserIds);
         targetUserIds = await filterAudienceByNotificationSettings(targetUserIds, 'meetup_alerts', ['meetup_alert']);
         if (targetUserIds.length === 0) {
-            console.log('알림 대상이 없습니다.');
+            runtime_logging_1.runtimeLogsEnabled && (0, runtime_logging_1.runtimeInfo)('알림 대상이 없습니다.');
             return null;
         }
-        console.log(`알림 대상: ${targetUserIds.length}명`);
+        runtime_logging_1.runtimeLogsEnabled && (0, runtime_logging_1.runtimeInfo)(`알림 대상: ${targetUserIds.length}명`);
         const meetupTitle = meetupData.title || '';
         const notifications = targetUserIds.map((uid) => ({
             reference: db.collection('notifications').doc(audienceNotificationId('meetup_created', meetupId, uid)),
@@ -6837,7 +6919,7 @@ exports.onMeetupCreated = functions.firestore
             },
         }));
         const created = await commitNotificationCreates(notifications);
-        console.log(`모임 생성 알림 문서 생성: ${created}/${targetUserIds.length}`);
+        runtime_logging_1.runtimeLogsEnabled && (0, runtime_logging_1.runtimeInfo)(`모임 생성 알림 문서 생성: ${created}/${targetUserIds.length}`);
         return null;
     }
     catch (error) {
@@ -6860,11 +6942,11 @@ exports.onReviewRequestCreated = functions.firestore
         const requesterName = requestData.requesterName;
         const meetupTitle = requestData.meetupTitle;
         if (!recipientId) {
-            console.log('⏭️ recipientId 없음');
+            runtime_logging_1.runtimeLogsEnabled && (0, runtime_logging_1.runtimeInfo)('⏭️ recipientId 없음');
             return null;
         }
         if (await hasBlockRelationship(recipientId, requestData.requesterId)) {
-            console.log('⏭️ 차단 관계(review_approval_request) - 알림 스킵');
+            runtime_logging_1.runtimeLogsEnabled && (0, runtime_logging_1.runtimeInfo)('⏭️ 차단 관계(review_approval_request) - 알림 스킵');
             return null;
         }
         // 수신자 알림 설정 확인
@@ -6875,7 +6957,7 @@ exports.onReviewRequestCreated = functions.firestore
         const meetupOn = noti.meetup_alerts !== false &&
             noti.meetup_alert !== false;
         if (!allOn || !meetupOn) {
-            console.log('⏭️ 수신자가 알림 꺼놓음');
+            runtime_logging_1.runtimeLogsEnabled && (0, runtime_logging_1.runtimeInfo)('⏭️ 수신자가 알림 꺼놓음');
             return null;
         }
         // 알림 생성
@@ -6897,7 +6979,7 @@ exports.onReviewRequestCreated = functions.firestore
             createdAt: admin.firestore.FieldValue.serverTimestamp(),
             isRead: false,
         });
-        console.log(`✅ 후기 수락 요청 알림 생성: ${recipientId} <- ${requesterName}`);
+        runtime_logging_1.runtimeLogsEnabled && (0, runtime_logging_1.runtimeInfo)(`✅ 후기 수락 요청 알림 생성: ${recipientId} <- ${requesterName}`);
         return null;
     }
     catch (error) {
@@ -6927,29 +7009,29 @@ exports.onReviewRequestUpdated = functions.firestore
         }
         const reviewId = (_a = after.metadata) === null || _a === void 0 ? void 0 : _a.reviewId;
         if (!reviewId) {
-            console.log('⏭️ reviewId 없음');
+            runtime_logging_1.runtimeLogsEnabled && (0, runtime_logging_1.runtimeInfo)('⏭️ reviewId 없음');
             return null;
         }
-        console.log(`📝 후기 요청 응답 감지: ${context.params.requestId} -> ${after.status}`);
+        runtime_logging_1.runtimeLogsEnabled && (0, runtime_logging_1.runtimeInfo)(`📝 후기 요청 응답 감지: ${context.params.requestId} -> ${after.status}`);
         // meetup_reviews 문서 확인
         const reviewDoc = await db.collection('meetup_reviews').doc(reviewId).get();
         if (!reviewDoc.exists) {
-            console.log('❌ 후기 문서 없음');
+            runtime_logging_1.runtimeLogsEnabled && (0, runtime_logging_1.runtimeInfo)('❌ 후기 문서 없음');
             return null;
         }
         const reviewData = reviewDoc.data();
         const pendingParticipants = reviewData.pendingParticipants || [];
         // 아직 대기 중인 참가자가 있으면 스킵
         if (pendingParticipants.length > 0) {
-            console.log(`⏳ 대기 중인 참가자 ${pendingParticipants.length}명 - 발행 대기`);
+            runtime_logging_1.runtimeLogsEnabled && (0, runtime_logging_1.runtimeInfo)(`⏳ 대기 중인 참가자 ${pendingParticipants.length}명 - 발행 대기`);
             return null;
         }
-        console.log('✅ 모든 참가자 응답 완료 - reviews 컬렉션에 발행 시작');
+        runtime_logging_1.runtimeLogsEnabled && (0, runtime_logging_1.runtimeInfo)('✅ 모든 참가자 응답 완료 - reviews 컬렉션에 발행 시작');
         // 호스트 + 수락한 참가자 목록
         const authorId = reviewData.authorId;
         const approvedParticipants = reviewData.approvedParticipants || [];
         const allRecipients = [authorId, ...approvedParticipants];
-        console.log(`📤 발행 대상: ${allRecipients.length}명 (호스트 포함)`);
+        runtime_logging_1.runtimeLogsEnabled && (0, runtime_logging_1.runtimeInfo)(`📤 발행 대상: ${allRecipients.length}명 (호스트 포함)`);
         // 각 사용자의 프로필에 후기 게시
         const batch = db.batch();
         const timestamp = admin.firestore.FieldValue.serverTimestamp();
@@ -6981,7 +7063,7 @@ exports.onReviewRequestUpdated = functions.firestore
             });
         }
         await batch.commit();
-        console.log(`✅ ${allRecipients.length}개의 후기 게시 완료`);
+        runtime_logging_1.runtimeLogsEnabled && (0, runtime_logging_1.runtimeInfo)(`✅ ${allRecipients.length}개의 후기 게시 완료`);
         return null;
     }
     catch (error) {
@@ -6999,7 +7081,7 @@ exports.onMeetupReviewUpdated = functions.firestore
         const reviewId = context.params.reviewId;
         const before = change.before.data();
         const after = change.after.data();
-        console.log(`📝 모임 후기 업데이트 감지: ${reviewId}`);
+        runtime_logging_1.runtimeLogsEnabled && (0, runtime_logging_1.runtimeInfo)(`📝 모임 후기 업데이트 감지: ${reviewId}`);
         // 업데이트된 필드 확인
         const updatedFields = [];
         if (before.content !== after.content)
@@ -7009,15 +7091,15 @@ exports.onMeetupReviewUpdated = functions.firestore
         if (before.imageUrl !== after.imageUrl)
             updatedFields.push('imageUrl');
         if (updatedFields.length === 0) {
-            console.log('⏭️ 프로필 업데이트가 필요한 필드 변경 없음');
+            runtime_logging_1.runtimeLogsEnabled && (0, runtime_logging_1.runtimeInfo)('⏭️ 프로필 업데이트가 필요한 필드 변경 없음');
             return null;
         }
-        console.log(`📋 업데이트된 필드: ${updatedFields.join(', ')}`);
+        runtime_logging_1.runtimeLogsEnabled && (0, runtime_logging_1.runtimeInfo)(`📋 업데이트된 필드: ${updatedFields.join(', ')}`);
         // 업데이트할 사용자 목록 (작성자 + 승인된 참여자)
         const authorId = after.authorId;
         const approvedParticipants = after.approvedParticipants || [];
         const allUserIds = [authorId, ...approvedParticipants];
-        console.log(`📤 프로필 업데이트 대상: ${allUserIds.length}명`);
+        runtime_logging_1.runtimeLogsEnabled && (0, runtime_logging_1.runtimeInfo)(`📤 프로필 업데이트 대상: ${allUserIds.length}명`);
         // 각 사용자의 프로필 posts 업데이트
         const batch = db.batch();
         let updateCount = 0;
@@ -7040,10 +7122,10 @@ exports.onMeetupReviewUpdated = functions.firestore
                     }
                     batch.update(postRef, updateData);
                     updateCount++;
-                    console.log(`✅ 프로필 업데이트 예약: userId=${userId}`);
+                    runtime_logging_1.runtimeLogsEnabled && (0, runtime_logging_1.runtimeInfo)(`✅ 프로필 업데이트 예약: userId=${userId}`);
                 }
                 else {
-                    console.log(`⚠️ 프로필 후기 없음: userId=${userId}`);
+                    runtime_logging_1.runtimeLogsEnabled && (0, runtime_logging_1.runtimeInfo)(`⚠️ 프로필 후기 없음: userId=${userId}`);
                 }
             }
             catch (error) {
@@ -7052,10 +7134,10 @@ exports.onMeetupReviewUpdated = functions.firestore
         }
         if (updateCount > 0) {
             await batch.commit();
-            console.log(`✅ ${updateCount}개 프로필 후기 업데이트 완료`);
+            runtime_logging_1.runtimeLogsEnabled && (0, runtime_logging_1.runtimeInfo)(`✅ ${updateCount}개 프로필 후기 업데이트 완료`);
         }
         else {
-            console.log('⏭️ 업데이트할 프로필 후기 없음');
+            runtime_logging_1.runtimeLogsEnabled && (0, runtime_logging_1.runtimeInfo)('⏭️ 업데이트할 프로필 후기 없음');
         }
         return null;
     }
@@ -7072,24 +7154,24 @@ exports.onMeetupReviewDeleted = functions.firestore
     .onDelete(async (snapshot, context) => {
     try {
         const reviewId = context.params.reviewId;
-        console.log(`🗑️ 모임 후기 삭제 감지: ${reviewId}`);
+        runtime_logging_1.runtimeLogsEnabled && (0, runtime_logging_1.runtimeInfo)(`🗑️ 모임 후기 삭제 감지: ${reviewId}`);
         // sourceReviewId가 일치하는 모든 reviews 문서 찾기
         const reviewsSnapshot = await db
             .collection('reviews')
             .where('sourceReviewId', '==', reviewId)
             .get();
         if (reviewsSnapshot.empty) {
-            console.log('⏭️ 연관된 후기 게시물 없음');
+            runtime_logging_1.runtimeLogsEnabled && (0, runtime_logging_1.runtimeInfo)('⏭️ 연관된 후기 게시물 없음');
             return null;
         }
-        console.log(`📋 삭제할 후기 게시물: ${reviewsSnapshot.size}개`);
+        runtime_logging_1.runtimeLogsEnabled && (0, runtime_logging_1.runtimeInfo)(`📋 삭제할 후기 게시물: ${reviewsSnapshot.size}개`);
         // 배치 삭제
         const batch = db.batch();
         reviewsSnapshot.docs.forEach((doc) => {
             batch.delete(doc.ref);
         });
         await batch.commit();
-        console.log(`✅ ${reviewsSnapshot.size}개의 후기 게시물 삭제 완료`);
+        runtime_logging_1.runtimeLogsEnabled && (0, runtime_logging_1.runtimeInfo)(`✅ ${reviewsSnapshot.size}개의 후기 게시물 삭제 완료`);
         return null;
     }
     catch (error) {
@@ -7110,25 +7192,25 @@ exports.onMeetupReviewCreatedDeleteMeetupChat = functions.firestore
         const meetupId = ((review === null || review === void 0 ? void 0 : review.meetupId) || '').toString().trim();
         const authorId = ((review === null || review === void 0 ? void 0 : review.authorId) || '').toString().trim();
         if (!meetupId || !authorId) {
-            console.log('⏭️ onMeetupReviewCreatedDeleteMeetupChat: meetupId/authorId 없음');
+            runtime_logging_1.runtimeLogsEnabled && (0, runtime_logging_1.runtimeInfo)('⏭️ onMeetupReviewCreatedDeleteMeetupChat: meetupId/authorId 없음');
             return null;
         }
         // 모임 문서로 "호스트 & 완료 여부"를 확인 (방어적)
         const meetupRef = db.collection('meetups').doc(meetupId);
         const meetupDoc = await meetupRef.get();
         if (!meetupDoc.exists) {
-            console.log(`⏭️ onMeetupReviewCreatedDeleteMeetupChat: meetups/${meetupId} 없음`);
+            runtime_logging_1.runtimeLogsEnabled && (0, runtime_logging_1.runtimeInfo)(`⏭️ onMeetupReviewCreatedDeleteMeetupChat: meetups/${meetupId} 없음`);
             return null;
         }
         const meetupData = meetupDoc.data();
         const hostId = ((meetupData === null || meetupData === void 0 ? void 0 : meetupData.userId) || '').toString().trim();
         const isCompleted = (meetupData === null || meetupData === void 0 ? void 0 : meetupData.isCompleted) === true;
         if (hostId !== authorId) {
-            console.log(`⏭️ onMeetupReviewCreatedDeleteMeetupChat: 작성자!=호스트 (authorId=${authorId}, hostId=${hostId})`);
+            runtime_logging_1.runtimeLogsEnabled && (0, runtime_logging_1.runtimeInfo)(`⏭️ onMeetupReviewCreatedDeleteMeetupChat: 작성자!=호스트 (authorId=${authorId}, hostId=${hostId})`);
             return null;
         }
         if (!isCompleted) {
-            console.log(`⏭️ onMeetupReviewCreatedDeleteMeetupChat: 모임 미완료 (meetupId=${meetupId})`);
+            runtime_logging_1.runtimeLogsEnabled && (0, runtime_logging_1.runtimeInfo)(`⏭️ onMeetupReviewCreatedDeleteMeetupChat: 모임 미완료 (meetupId=${meetupId})`);
             return null;
         }
         // ✅ 새 구조: meetups/{meetupId}/group_chat_messages 삭제 + groupChatEnabled=false
@@ -7158,7 +7240,7 @@ exports.onMeetupReviewCreatedDeleteMeetupChat = functions.firestore
         const chatRef = db.collection('meetup_chats').doc(meetupId);
         const chatDoc = await chatRef.get();
         if (!chatDoc.exists) {
-            console.log(`✅ onMeetupReviewCreatedDeleteMeetupChat: group_chat_messages 삭제 완료 (meetupId=${meetupId})`);
+            runtime_logging_1.runtimeLogsEnabled && (0, runtime_logging_1.runtimeInfo)(`✅ onMeetupReviewCreatedDeleteMeetupChat: group_chat_messages 삭제 완료 (meetupId=${meetupId})`);
             return null;
         }
         // messages 서브컬렉션 전체 삭제 (페이지네이션)
@@ -7173,7 +7255,7 @@ exports.onMeetupReviewCreatedDeleteMeetupChat = functions.firestore
             await batch.commit();
         }
         await chatRef.delete();
-        console.log(`✅ onMeetupReviewCreatedDeleteMeetupChat: 단체 톡방 정리 완료 (meetupId=${meetupId})`);
+        runtime_logging_1.runtimeLogsEnabled && (0, runtime_logging_1.runtimeInfo)(`✅ onMeetupReviewCreatedDeleteMeetupChat: 단체 톡방 정리 완료 (meetupId=${meetupId})`);
         return null;
     }
     catch (error) {
@@ -7195,18 +7277,17 @@ exports.onDMMessageCreated = functions
         const senderId = messageData.senderId;
         const text = messageData.text || '';
         const imageUrl = messageData.imageUrl;
-        console.log('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━');
-        console.log('🔍 [FCM 진단 - Functions] 새 DM 메시지 감지');
-        console.log(`  - conversationId: ${conversationId}`);
-        console.log(`  - messageId: ${messageId}`);
-        console.log(`  - senderId: ${senderId}`);
-        console.log(`  - text: ${text.substring(0, 50)}...`);
+        runtime_logging_1.runtimeLogsEnabled && (0, runtime_logging_1.runtimeInfo)('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━');
+        runtime_logging_1.runtimeLogsEnabled && (0, runtime_logging_1.runtimeInfo)('🔍 [FCM 진단 - Functions] 새 DM 메시지 감지');
+        runtime_logging_1.runtimeLogsEnabled && (0, runtime_logging_1.runtimeInfo)(`  - conversationId: ${conversationId}`);
+        runtime_logging_1.runtimeLogsEnabled && (0, runtime_logging_1.runtimeInfo)(`  - messageId: ${messageId}`);
+        runtime_logging_1.runtimeLogsEnabled && (0, runtime_logging_1.runtimeInfo)(`  - senderId: ${senderId}`);
         // 대화방 정보 조회
         const convRef = db.collection('conversations').doc(conversationId);
         const convDoc = await convRef.get();
         if (!convDoc.exists) {
-            console.log('❌ 대화방을 찾을 수 없음');
-            console.log('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━');
+            runtime_logging_1.runtimeLogsEnabled && (0, runtime_logging_1.runtimeInfo)('❌ 대화방을 찾을 수 없음');
+            runtime_logging_1.runtimeLogsEnabled && (0, runtime_logging_1.runtimeInfo)('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━');
             return null;
         }
         const convData = convDoc.data();
@@ -7214,20 +7295,20 @@ exports.onDMMessageCreated = functions
         // 방어적 처리: participants 중복/빈 값이 있으면 unreadCount가 2배로 증가할 수 있으므로 정규화한다.
         const participants = Array.from(new Set(participantsRaw.filter((id) => typeof id === 'string' && id.length > 0)));
         const recipients = Array.from(new Set(participants.filter((id) => id !== senderId)));
-        console.log(`  - participants: ${participants.join(', ')}`);
-        console.log(`  - recipients: ${recipients.join(', ')}`);
+        runtime_logging_1.runtimeLogsEnabled && (0, runtime_logging_1.runtimeInfo)(`  - participants: ${participants.join(', ')}`);
+        runtime_logging_1.runtimeLogsEnabled && (0, runtime_logging_1.runtimeInfo)(`  - recipients: ${recipients.join(', ')}`);
         if (recipients.length === 0) {
-            console.log('⚠️ 수신자를 찾을 수 없음');
-            console.log('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━');
+            runtime_logging_1.runtimeLogsEnabled && (0, runtime_logging_1.runtimeInfo)('⚠️ 수신자를 찾을 수 없음');
+            runtime_logging_1.runtimeLogsEnabled && (0, runtime_logging_1.runtimeInfo)('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━');
             return null;
         }
         // DM은 1:1이 기본이므로 첫 번째 수신자를 기준으로 "푸시/배지"를 구성한다.
         // (그룹 DM이 생기더라도 unreadCount/dmUnreadTotal 증분은 recipients 전체에 반영됨)
         const recipientId = recipients[0];
-        console.log(`  - 수신자: ${recipientId} (recipients=${recipients.length})`);
+        runtime_logging_1.runtimeLogsEnabled && (0, runtime_logging_1.runtimeInfo)(`  - 수신자: ${recipientId} (recipients=${recipients.length})`);
         if (await hasBlockRelationship(senderId, recipientId)) {
-            console.log('⏭️ 차단 관계(dm_received) - 푸시/안읽음 증분 스킵');
-            console.log('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━');
+            runtime_logging_1.runtimeLogsEnabled && (0, runtime_logging_1.runtimeInfo)('⏭️ 차단 관계(dm_received) - 푸시/안읽음 증분 스킵');
+            runtime_logging_1.runtimeLogsEnabled && (0, runtime_logging_1.runtimeInfo)('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━');
             return null;
         }
         // 발신자 정보 조회
@@ -7235,7 +7316,7 @@ exports.onDMMessageCreated = functions
         const senderData = senderDoc.data();
         const isAnonymous = ((_a = convData.isAnonymous) === null || _a === void 0 ? void 0 : _a[senderId]) || false;
         const senderName = isAnonymous ? '익명' : ((senderData === null || senderData === void 0 ? void 0 : senderData.nickname) || (senderData === null || senderData === void 0 ? void 0 : senderData.name) || '익명');
-        console.log(`  - 발신자 이름: ${senderName}`);
+        runtime_logging_1.runtimeLogsEnabled && (0, runtime_logging_1.runtimeInfo)(`  - 발신자 이름: ${senderName}`);
         // 수신자 정보(토큰/총 DM 안읽음) 조회
         const recipientRef = db.collection('users').doc(recipientId);
         const [recipientDoc, recipientSettingsDoc] = await Promise.all([
@@ -7243,8 +7324,8 @@ exports.onDMMessageCreated = functions
             db.collection('user_settings').doc(recipientId).get(),
         ]);
         if (!recipientDoc.exists) {
-            console.log('⚠️ 수신자 문서를 찾을 수 없음');
-            console.log('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━');
+            runtime_logging_1.runtimeLogsEnabled && (0, runtime_logging_1.runtimeInfo)('⚠️ 수신자 문서를 찾을 수 없음');
+            runtime_logging_1.runtimeLogsEnabled && (0, runtime_logging_1.runtimeInfo)('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━');
             return null;
         }
         const recipientData = recipientDoc.data();
@@ -7272,19 +7353,19 @@ exports.onDMMessageCreated = functions
         const tokens = await filterPushTokensOwnedByUser(recipientId, Array.from(tokenSet));
         const hasTokens = tokens.length > 0;
         if (!dmPushEnabled) {
-            console.log('⏭️ 수신자가 DM 푸시 알림을 꺼놓음 (미읽음 카운터는 유지)');
+            runtime_logging_1.runtimeLogsEnabled && (0, runtime_logging_1.runtimeInfo)('⏭️ 수신자가 DM 푸시 알림을 꺼놓음 (미읽음 카운터는 유지)');
         }
-        console.log('🔍 [FCM 진단 - Functions] 수신자 토큰 확인:');
-        console.log(`  - fcmToken: ${(recipientData === null || recipientData === void 0 ? void 0 : recipientData.fcmToken) ? '있음' : '없음'}`);
-        console.log(`  - fcmTokens 길이: ${Array.isArray(recipientData === null || recipientData === void 0 ? void 0 : recipientData.fcmTokens) ? recipientData.fcmTokens.length : 0}`);
-        console.log(`  - 유효한 토큰 수: ${tokens.length}`);
+        runtime_logging_1.runtimeLogsEnabled && (0, runtime_logging_1.runtimeInfo)('🔍 [FCM 진단 - Functions] 수신자 토큰 확인:');
+        runtime_logging_1.runtimeLogsEnabled && (0, runtime_logging_1.runtimeInfo)(`  - fcmToken: ${(recipientData === null || recipientData === void 0 ? void 0 : recipientData.fcmToken) ? '있음' : '없음'}`);
+        runtime_logging_1.runtimeLogsEnabled && (0, runtime_logging_1.runtimeInfo)(`  - fcmTokens 길이: ${Array.isArray(recipientData === null || recipientData === void 0 ? void 0 : recipientData.fcmTokens) ? recipientData.fcmTokens.length : 0}`);
+        runtime_logging_1.runtimeLogsEnabled && (0, runtime_logging_1.runtimeInfo)(`  - 유효한 토큰 수: ${tokens.length}`);
         if (!hasTokens) {
             // 토큰이 없어도 unreadCount는 반드시 증가해야 한다.
             // push는 optional 기능이므로 토큰 없이도 unreadCount 트랜잭션은 계속 진행한다.
-            console.log('⚠️ 수신자의 FCM 토큰이 없음 - unreadCount 증분은 정상 진행, push만 스킵');
+            runtime_logging_1.runtimeLogsEnabled && (0, runtime_logging_1.runtimeInfo)('⚠️ 수신자의 FCM 토큰이 없음 - unreadCount 증분은 정상 진행, push만 스킵');
         }
         else {
-            console.log(`  - FCM 토큰: ${tokens.length}개`);
+            runtime_logging_1.runtimeLogsEnabled && (0, runtime_logging_1.runtimeInfo)(`  - FCM 토큰: ${tokens.length}개`);
         }
         // -----------------------------------------------------------------------
         // ✅ DM unreadCount + users.dmUnreadTotal 증분 업데이트 (이벤트 기반)
@@ -7376,7 +7457,7 @@ exports.onDMMessageCreated = functions
                     const cur = typeof unreadCount[rid] === 'number' ? unreadCount[rid] : 0;
                     const safeCount = Math.max(0, cur);
                     unreadCount[rid] = safeCount + 1;
-                    console.log(`  📈 [unreadCount] ${rid}: ${cur} → ${unreadCount[rid]} (safe: ${safeCount})`);
+                    runtime_logging_1.runtimeLogsEnabled && (0, runtime_logging_1.runtimeInfo)(`  📈 [unreadCount] ${rid}: ${cur} → ${unreadCount[rid]} (safe: ${safeCount})`);
                     // dmUnreadTotal: 음수면 0으로 보정 후 +1 (FieldValue.increment는 음수를 복구 못함)
                     const userSnap = userSnaps[i];
                     const userData = (userSnap === null || userSnap === void 0 ? void 0 : userSnap.exists) ? userSnap.data() : null;
@@ -7386,7 +7467,7 @@ exports.onDMMessageCreated = functions
                         dmUnreadTotal: safeDmTotal,
                         dmUnreadCounterVersion: 2,
                     }, { merge: true });
-                    console.log(`  📈 [dmUnreadTotal] ${rid}: ${curDmTotal} → ${safeDmTotal}`);
+                    runtime_logging_1.runtimeLogsEnabled && (0, runtime_logging_1.runtimeInfo)(`  📈 [dmUnreadTotal] ${rid}: ${curDmTotal} → ${safeDmTotal}`);
                 }
                 const update = {
                     unreadCount,
@@ -7427,18 +7508,18 @@ exports.onDMMessageCreated = functions
             throw e;
         }
         if (!shouldSendNotification) {
-            console.log('⏭️ 이미 읽음 처리되었거나 처리 완료된 DM 이벤트 - 증분/푸시 스킵');
+            runtime_logging_1.runtimeLogsEnabled && (0, runtime_logging_1.runtimeInfo)('⏭️ 이미 읽음 처리되었거나 처리 완료된 DM 이벤트 - 증분/푸시 스킵');
             return null;
         }
         // unreadCount 증분 완료 로그
-        console.log('🔍 [FCM 진단 - Functions] unreadCount 증분 완료:');
-        console.log(`  - conversationId: ${conversationId}`);
-        console.log(`  - recipientId: ${recipientId}`);
-        console.log(`  - newDmUnreadTotal: ${newDmUnreadTotal}`);
-        console.log('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━');
+        runtime_logging_1.runtimeLogsEnabled && (0, runtime_logging_1.runtimeInfo)('🔍 [FCM 진단 - Functions] unreadCount 증분 완료:');
+        runtime_logging_1.runtimeLogsEnabled && (0, runtime_logging_1.runtimeInfo)(`  - conversationId: ${conversationId}`);
+        runtime_logging_1.runtimeLogsEnabled && (0, runtime_logging_1.runtimeInfo)(`  - recipientId: ${recipientId}`);
+        runtime_logging_1.runtimeLogsEnabled && (0, runtime_logging_1.runtimeInfo)(`  - newDmUnreadTotal: ${newDmUnreadTotal}`);
+        runtime_logging_1.runtimeLogsEnabled && (0, runtime_logging_1.runtimeInfo)('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━');
         // FCM 토큰이 없으면 push는 스킵하고 종료 (unreadCount는 이미 증가됨)
         if (!hasTokens) {
-            console.log('  ⏭️ FCM 토큰 없음 - push 스킵 (unreadCount는 정상 처리됨)');
+            runtime_logging_1.runtimeLogsEnabled && (0, runtime_logging_1.runtimeInfo)('  ⏭️ FCM 토큰 없음 - push 스킵 (unreadCount는 정상 처리됨)');
             return null;
         }
         // 배지 계산: 일반 알림 + DM + 현재 화면에 표시되는 Snack Chat
@@ -7456,7 +7537,7 @@ exports.onDMMessageCreated = functions
                 const snackChatUnreadTotal = await getVisibleSnackChatUnreadTotal(recipientId);
                 badgeCount = (notificationCount !== null && notificationCount !== void 0 ? notificationCount : 0) +
                     Math.max(0, newDmUnreadTotal) + snackChatUnreadTotal;
-                console.log(`  📊 배지 계산 (시도 ${attempt + 1}): 일반 알림(${notificationCount !== null && notificationCount !== void 0 ? notificationCount : 0}) + DM총안읽음(${newDmUnreadTotal}) + SC(${snackChatUnreadTotal}) = ${badgeCount}`);
+                runtime_logging_1.runtimeLogsEnabled && (0, runtime_logging_1.runtimeInfo)(`  📊 배지 계산 (시도 ${attempt + 1}): 일반 알림(${notificationCount !== null && notificationCount !== void 0 ? notificationCount : 0}) + DM총안읽음(${newDmUnreadTotal}) + SC(${snackChatUnreadTotal}) = ${badgeCount}`);
                 break; // 성공하면 즉시 종료
             }
             catch (e) {
@@ -7486,7 +7567,7 @@ exports.onDMMessageCreated = functions
         // 중요: iOS는 badge를 절대값으로 처리하므로 정확한 값을 보내야 함
         const hasBadge = badgeCount !== null;
         const finalBadge = hasBadge ? Math.max(0, badgeCount) : 0;
-        console.log(`  📊 최종 badge = ${finalBadge} (raw badgeCount = ${badgeCount})`);
+        runtime_logging_1.runtimeLogsEnabled && (0, runtime_logging_1.runtimeInfo)(`  📊 최종 badge = ${finalBadge} (raw badgeCount = ${badgeCount})`);
         // FCM 메시지 구성
         const pushMessage = {
             tokens,
@@ -7514,7 +7595,7 @@ exports.onDMMessageCreated = functions
         };
         // 푸시 전송
         const response = await admin.messaging().sendEachForMulticast(pushMessage);
-        console.log(`✅ DM 푸시 전송 완료: ${response.successCount}/${tokens.length}`);
+        runtime_logging_1.runtimeLogsEnabled && (0, runtime_logging_1.runtimeInfo)(`✅ DM 푸시 전송 완료: ${response.successCount}/${tokens.length}`);
         // 실패 토큰 정리
         if (response.failureCount > 0) {
             const invalidTokens = [];
@@ -7537,7 +7618,7 @@ exports.onDMMessageCreated = functions
                         fcmTokens: admin.firestore.FieldValue.arrayRemove(...chunk),
                     }, { merge: true });
                 }
-                console.log(`  🧹 무효 FCM 토큰 정리: ${invalidTokens.length}개`);
+                runtime_logging_1.runtimeLogsEnabled && (0, runtime_logging_1.runtimeInfo)(`  🧹 무효 FCM 토큰 정리: ${invalidTokens.length}개`);
             }
         }
         return null;
@@ -7657,13 +7738,13 @@ void functions.firestore
         const senderId = messageData.senderId;
         const text = messageData.text || '';
         const imageUrl = messageData.imageUrl;
-        console.log(`📨 새 SnackChat 메시지 감지: ${snackChatId}/${messageId}`);
-        console.log(`  - 발신자: ${senderId}`);
+        runtime_logging_1.runtimeLogsEnabled && (0, runtime_logging_1.runtimeInfo)(`📨 새 SnackChat 메시지 감지: ${snackChatId}/${messageId}`);
+        runtime_logging_1.runtimeLogsEnabled && (0, runtime_logging_1.runtimeInfo)(`  - 발신자: ${senderId}`);
         // 스냅챗 방 정보 조회
         const roomRef = db.collection('snack_chats').doc(snackChatId);
         const roomDoc = await roomRef.get();
         if (!roomDoc.exists) {
-            console.log('❌ 스냅챗 방을 찾을 수 없음');
+            runtime_logging_1.runtimeLogsEnabled && (0, runtime_logging_1.runtimeInfo)('❌ 스냅챗 방을 찾을 수 없음');
             return null;
         }
         const roomData = roomDoc.data();
@@ -7672,30 +7753,30 @@ void functions.firestore
         const allRecipients = Array.from(new Set(participants.filter((id) => id !== senderId)));
         const recipients = allRecipients.filter((recipientId) => isSnackChatVisibleForUser(roomData, recipientId));
         if (recipients.length === 0) {
-            console.log('⚠️ 현재 목록에 표시되는 수신자 방이 없어 unread/푸시를 건너뜀');
+            runtime_logging_1.runtimeLogsEnabled && (0, runtime_logging_1.runtimeInfo)('⚠️ 현재 목록에 표시되는 수신자 방이 없어 unread/푸시를 건너뜀');
             return null;
         }
-        console.log(`  - 수신자: ${recipients.length}명 (숨김 방 제외=${allRecipients.length - recipients.length}명)`);
+        runtime_logging_1.runtimeLogsEnabled && (0, runtime_logging_1.runtimeInfo)(`  - 수신자: ${recipients.length}명 (숨김 방 제외=${allRecipients.length - recipients.length}명)`);
         // 발신자 정보 조회
         const senderDoc = await db.collection('users').doc(senderId).get();
         const senderData = senderDoc.data();
         const senderName = (senderData === null || senderData === void 0 ? void 0 : senderData.nickname) || (senderData === null || senderData === void 0 ? void 0 : senderData.name) || '익명';
         const roomTitle = roomData.title || 'Snack Chat';
         // FieldValue.increment로 unreadCount 원자적 증분
-        console.log(`  🔔 unreadCount 증분 시작`);
+        runtime_logging_1.runtimeLogsEnabled && (0, runtime_logging_1.runtimeInfo)(`  🔔 unreadCount 증분 시작`);
         const updateFields = {
             'updatedAt': admin.firestore.FieldValue.serverTimestamp(),
         };
         for (const rid of recipients) {
-            console.log(`    - ${rid}: increment(1)`);
+            runtime_logging_1.runtimeLogsEnabled && (0, runtime_logging_1.runtimeInfo)(`    - ${rid}: increment(1)`);
             updateFields[`unreadCount.${rid}`] = admin.firestore.FieldValue.increment(1);
         }
         await roomRef.update(updateFields);
-        console.log(`  ✅ unreadCount 증분 완료 (수신자 ${recipients.length}명)`);
+        runtime_logging_1.runtimeLogsEnabled && (0, runtime_logging_1.runtimeInfo)(`  ✅ unreadCount 증분 완료 (수신자 ${recipients.length}명)`);
         // 증분 후 실제 값 확인
         const updatedRoom = await roomRef.get();
         const updatedData = updatedRoom.data();
-        console.log(`  📊 증분 후 unreadCount:`, updatedData === null || updatedData === void 0 ? void 0 : updatedData.unreadCount);
+        runtime_logging_1.runtimeLogsEnabled && (0, runtime_logging_1.runtimeInfo)(`  📊 증분 후 unreadCount:`, updatedData === null || updatedData === void 0 ? void 0 : updatedData.unreadCount);
         // 각 수신자별로 개별 배지 계산 + FCM 푸시 전송
         for (const recipientId of recipients) {
             try {
@@ -7703,7 +7784,7 @@ void functions.firestore
                 const recipientRef = db.collection('users').doc(recipientId);
                 const recipientDoc = await recipientRef.get();
                 if (!recipientDoc.exists) {
-                    console.log(`  ⚠️ 수신자 ${recipientId} 문서 없음`);
+                    runtime_logging_1.runtimeLogsEnabled && (0, runtime_logging_1.runtimeInfo)(`  ⚠️ 수신자 ${recipientId} 문서 없음`);
                     continue;
                 }
                 const recipientData = recipientDoc.data();
@@ -7712,7 +7793,7 @@ void functions.firestore
                     ? recipientData.mutedSnackChatIds
                     : [];
                 if (mutedSnackChatIds.includes(snackChatId)) {
-                    console.log(`  ⏭️ 수신자 ${recipientId}는 이 SnackChat을 뮤트함 - 푸시 건너뜀`);
+                    runtime_logging_1.runtimeLogsEnabled && (0, runtime_logging_1.runtimeInfo)(`  ⏭️ 수신자 ${recipientId}는 이 SnackChat을 뮤트함 - 푸시 건너뜀`);
                     continue;
                 }
                 const tokenSet = new Set();
@@ -7727,7 +7808,7 @@ void functions.firestore
                 }
                 const tokens = await filterPushTokensOwnedByUser(recipientId, Array.from(tokenSet));
                 if (tokens.length === 0) {
-                    console.log(`  ⚠️ 수신자 ${recipientId} FCM 토큰 없음`);
+                    runtime_logging_1.runtimeLogsEnabled && (0, runtime_logging_1.runtimeInfo)(`  ⚠️ 수신자 ${recipientId} FCM 토큰 없음`);
                     continue;
                 }
                 // 배지 계산: 알림 + DM + SnackChat
@@ -7742,7 +7823,7 @@ void functions.firestore
                     // SnackChat 목록과 동일한 가시성 정책으로만 합산한다.
                     const scUnreadTotal = await getVisibleSnackChatUnreadTotal(recipientId);
                     badgeCount = notificationCount + dmUnreadTotal + scUnreadTotal;
-                    console.log(`  📊 배지 계산 (${recipientId}): 알림=${notificationCount}, DM=${dmUnreadTotal}, SC=${scUnreadTotal} → ${badgeCount}`);
+                    runtime_logging_1.runtimeLogsEnabled && (0, runtime_logging_1.runtimeInfo)(`  📊 배지 계산 (${recipientId}): 알림=${notificationCount}, DM=${dmUnreadTotal}, SC=${scUnreadTotal} → ${badgeCount}`);
                 }
                 catch (e) {
                     console.warn(`  ⚠️ 배지 계산 실패 (${recipientId}):`, e);
@@ -7793,7 +7874,7 @@ void functions.firestore
                 };
                 // 푸시 전송
                 const response = await admin.messaging().sendEachForMulticast(pushMessage);
-                console.log(`  ✅ SnackChat 푸시 전송 (${recipientId}): ${response.successCount}/${tokens.length}`);
+                runtime_logging_1.runtimeLogsEnabled && (0, runtime_logging_1.runtimeInfo)(`  ✅ SnackChat 푸시 전송 (${recipientId}): ${response.successCount}/${tokens.length}`);
                 // 실패 토큰 정리
                 if (response.failureCount > 0) {
                     const invalidTokens = [];
@@ -7815,7 +7896,7 @@ void functions.firestore
                                 fcmTokens: admin.firestore.FieldValue.arrayRemove(...chunk),
                             }, { merge: true });
                         }
-                        console.log(`    🧹 무효 FCM 토큰 정리: ${invalidTokens.length}개`);
+                        runtime_logging_1.runtimeLogsEnabled && (0, runtime_logging_1.runtimeInfo)(`    🧹 무효 FCM 토큰 정리: ${invalidTokens.length}개`);
                     }
                 }
             }
@@ -7828,59 +7909,6 @@ void functions.firestore
     catch (error) {
         console.error('❌ onSnackChatMessageCreated 오류:', error);
         return null;
-    }
-});
-// ===== 음수 unreadCount 복구 함수 (일회성 실행용) =====
-exports.fixNegativeUnreadCounts = functions
-    .runWith({ timeoutSeconds: 540, memory: '512MB' })
-    .https.onRequest(async (req, res) => {
-    try {
-        console.log('🔧 음수 unreadCount 복구 시작');
-        const conversationsSnapshot = await db.collection('conversations').get();
-        const batch = db.batch();
-        let fixedCount = 0;
-        let totalConversations = 0;
-        for (const doc of conversationsSnapshot.docs) {
-            totalConversations++;
-            const data = doc.data();
-            const unreadCount = data.unreadCount || {};
-            let needsUpdate = false;
-            const fixedUnreadCount = {};
-            for (const [uid, count] of Object.entries(unreadCount)) {
-                if (typeof count === 'number' && count < 0) {
-                    fixedUnreadCount[uid] = 0;
-                    needsUpdate = true;
-                    console.log(`  🔧 ${doc.id}: ${uid} ${count} → 0`);
-                }
-                else {
-                    fixedUnreadCount[uid] = count;
-                }
-            }
-            if (needsUpdate) {
-                batch.update(doc.ref, { unreadCount: fixedUnreadCount });
-                fixedCount++;
-            }
-        }
-        if (fixedCount > 0) {
-            await batch.commit();
-            console.log(`✅ 복구 완료: ${fixedCount}/${totalConversations} 대화방`);
-        }
-        else {
-            console.log(`✅ 복구할 음수값 없음 (총 ${totalConversations} 대화방)`);
-        }
-        res.status(200).json({
-            success: true,
-            totalConversations,
-            fixedCount,
-            message: `복구 완료: ${fixedCount}/${totalConversations} 대화방`,
-        });
-    }
-    catch (error) {
-        console.error('❌ 음수 unreadCount 복구 실패:', error);
-        res.status(500).json({
-            success: false,
-            error: String(error),
-        });
     }
 });
 //# sourceMappingURL=index.js.map

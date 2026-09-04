@@ -48,8 +48,8 @@ class StorageService {
       const String folderPath = 'posts';
       final String fullPath = '$folderPath/$fileName';
 
-      Logger.log('이미지 업로드 시작: $fullPath');
-      Logger.log('Firebase Storage 버킷: ${_storage.bucket}');
+      if (Logger.isVerboseEnabled) Logger.log('이미지 업로드 시작: $fullPath');
+      if (Logger.isVerboseEnabled) Logger.log('Firebase Storage 버킷: ${_storage.bucket}');
 
       // 이미지 파일 경로 설정 (posts 폴더 아래에 저장)
       final Reference ref = _storage.ref().child(folderPath).child(fileName);
@@ -72,18 +72,6 @@ class StorageService {
         ),
       );
 
-      // 업로드 진행 상태 모니터링 (선택사항)
-      uploadTask.snapshotEvents.listen(
-        (TaskSnapshot snapshot) {
-          final total = snapshot.totalBytes;
-          final progress = total > 0 ? snapshot.bytesTransferred / total : 0.0;
-          Logger.log('업로드 진행률: ${(progress * 100).toStringAsFixed(2)}%');
-        },
-        onError: (Object error, StackTrace stackTrace) {
-          Logger.error('이미지 업로드 상태 스트림 오류', error, stackTrace);
-        },
-      );
-
       // 타임아웃 처리 개선 - 타임아웃 시 업로드 작업 취소
       TaskSnapshot taskSnapshot;
       try {
@@ -96,7 +84,7 @@ class StorageService {
                 '이미지 업로드 타임아웃', const Duration(seconds: 180));
           },
         );
-        Logger.log('업로드 완료: $fullPath');
+        if (Logger.isVerboseEnabled) Logger.log('업로드 완료: $fullPath');
       } on TimeoutException catch (e) {
         Logger.error('업로드 타임아웃', e);
         return null;
@@ -104,7 +92,7 @@ class StorageService {
 
       // 이미지 URL 반환 - Firebase가 자동으로 생성하는 다운로드 URL 사용
       final String downloadUrl = await taskSnapshot.ref.getDownloadURL();
-      Logger.log('다운로드 URL 획득: $downloadUrl');
+      if (Logger.isVerboseEnabled) Logger.log('다운로드 URL 획득: $downloadUrl');
 
       // 임시 파일 삭제
       if (compressedFile.path != imageFile.path) {
@@ -153,8 +141,8 @@ class StorageService {
       final String folderPath = 'profile_images/$userId';
       fullPath = '$folderPath/$fileName';
 
-      Logger.log('프로필 이미지 업로드 시작: $fullPath');
-      Logger.log('Firebase Storage 버킷(프로필): ${_profileStorage.bucket}');
+      if (Logger.isVerboseEnabled) Logger.log('프로필 이미지 업로드 시작: $fullPath');
+      if (Logger.isVerboseEnabled) Logger.log('Firebase Storage 버킷(프로필): ${_profileStorage.bucket}');
 
       ref = _profileStorage.ref().child(folderPath).child(fileName);
 
@@ -178,10 +166,10 @@ class StorageService {
         },
       );
 
-      Logger.log('프로필 이미지 업로드 완료: $fullPath');
+      if (Logger.isVerboseEnabled) Logger.log('프로필 이미지 업로드 완료: $fullPath');
 
       final String downloadUrl = await taskSnapshot.ref.getDownloadURL();
-      Logger.log('프로필 이미지 다운로드 URL 획득: $downloadUrl');
+      if (Logger.isVerboseEnabled) Logger.log('프로필 이미지 다운로드 URL 획득: $downloadUrl');
       return (downloadUrl: downloadUrl, path: fullPath);
     } on TimeoutException catch (e) {
       Logger.error('프로필 이미지 업로드 타임아웃', e);
@@ -208,7 +196,7 @@ class StorageService {
             // 짧은 지연 후 재시도 (resumable finalize/메타데이터 반영 경합 완화)
             await Future.delayed(Duration(milliseconds: 220 * (attempt + 1)));
             final recovered = await ref.getDownloadURL();
-            Logger.log(
+            if (Logger.isVerboseEnabled) Logger.log(
                 '✅ HTTP 400 복구 성공: downloadURL 획득 ($fullPath, attempt=${attempt + 1})');
             return (downloadUrl: recovered, path: fullPath);
           } catch (recoveryError) {
@@ -338,7 +326,7 @@ class StorageService {
       final path = _storage.refFromURL(normalized).fullPath.trim();
       return path.isEmpty ? null : path;
     } catch (error) {
-      Logger.warning('Storage URL 경로 변환 실패: $error');
+      if (Logger.isVerboseEnabled) Logger.warning('Storage URL 경로 변환 실패: $error');
       return null;
     }
   }
@@ -365,8 +353,8 @@ class StorageService {
       final String folderPath = '$folderName/$userId/$entityId';
       final String fullPath = '$folderPath/$fileName';
 
-      Logger.log('$logLabel 이미지 업로드 시작: $fullPath');
-      Logger.log('Firebase Storage 버킷: ${_storage.bucket}');
+      if (Logger.isVerboseEnabled) Logger.log('$logLabel 이미지 업로드 시작: $fullPath');
+      if (Logger.isVerboseEnabled) Logger.log('Firebase Storage 버킷: ${_storage.bucket}');
 
       final Reference ref = _storage.ref().child(folderPath).child(fileName);
 
@@ -388,10 +376,6 @@ class StorageService {
           final total = snapshot.totalBytes;
           final progress =
               total > 0 ? (snapshot.bytesTransferred / total) : 0.0;
-          Logger.log(
-            '$logLabel 이미지 업로드 진행률: '
-            '${(progress * 100).toStringAsFixed(2)}%',
-          );
           if (onProgress != null) onProgress(progress.clamp(0.0, 1.0));
         },
         onError: (Object error, StackTrace stackTrace) {
@@ -413,11 +397,11 @@ class StorageService {
           );
         },
       );
-      Logger.log('$logLabel 이미지 업로드 완료: $fullPath');
+      if (Logger.isVerboseEnabled) Logger.log('$logLabel 이미지 업로드 완료: $fullPath');
 
       final String? downloadUrl =
           createDownloadUrl ? await taskSnapshot.ref.getDownloadURL() : null;
-      if (downloadUrl != null) Logger.log('$logLabel 이미지 다운로드 URL 획득');
+      if (downloadUrl != null) if (Logger.isVerboseEnabled) Logger.log('$logLabel 이미지 다운로드 URL 획득');
 
       return (storagePath: fullPath, downloadUrl: downloadUrl);
     } on TimeoutException catch (e) {
@@ -449,7 +433,7 @@ class StorageService {
     try {
       // 이미지 정보 확인
       final fileSize = await file.length();
-      Logger.log('원본 이미지 크기: ${(fileSize / 1024).round()}KB');
+      if (Logger.isVerboseEnabled) Logger.log('원본 이미지 크기: ${(fileSize / 1024).round()}KB');
 
       // 파일 확장자 확인
       final sourceExt = path.extension(file.path).toLowerCase();
@@ -491,7 +475,7 @@ class StorageService {
       }
 
       final compressedSize = await File(result.path).length();
-      Logger.log('압축 후 이미지 크기: ${(compressedSize / 1024).round()}KB');
+      if (Logger.isVerboseEnabled) Logger.log('압축 후 이미지 크기: ${(compressedSize / 1024).round()}KB');
 
       // XFile을 File로 변환하여 반환
       return File(result.path);
@@ -503,13 +487,13 @@ class StorageService {
 
   // Firebase Storage URL 형식을 올바르게 수정하는 정적 메서드
   static String correctFirebaseStorageUrl(String imageUrl) {
-    Logger.log('🔧 URL 수정 시작: $imageUrl');
+    if (Logger.isVerboseEnabled) Logger.log('🔧 URL 수정 시작: $imageUrl');
 
     // 이미 올바른 Firebase Storage URL이면 그대로 반환
     if (imageUrl.contains('firebasestorage.googleapis.com') &&
         imageUrl.contains('alt=media') &&
         imageUrl.contains('token=')) {
-      Logger.log('✅ 이미 올바른 URL 형식, 변경 없음');
+      if (Logger.isVerboseEnabled) Logger.log('✅ 이미 올바른 URL 형식, 변경 없음');
       return imageUrl;
     }
 
@@ -521,7 +505,7 @@ class StorageService {
         'storage.googleapis.com/firebasestorage/',
         'firebasestorage.googleapis.com/',
       );
-      Logger.log('🔧 URL 형식 수정됨 (storage->firebasestorage): $correctedUrl');
+      if (Logger.isVerboseEnabled) Logger.log('🔧 URL 형식 수정됨 (storage->firebasestorage): $correctedUrl');
     }
 
     // 잘못된 .firebase.app을 올바른 .firebasestorage.app으로 변경
@@ -531,7 +515,7 @@ class StorageService {
         '.firebase.app',
         '.firebasestorage.app',
       );
-      Logger.log(
+      if (Logger.isVerboseEnabled) Logger.log(
         '🔧 URL 도메인 수정됨 (.firebase.app -> .firebasestorage.app): $correctedUrl',
       );
     }
@@ -543,10 +527,10 @@ class StorageService {
       } else {
         correctedUrl = '$correctedUrl?alt=media';
       }
-      Logger.log('🔧 alt=media 파라미터 추가: $correctedUrl');
+      if (Logger.isVerboseEnabled) Logger.log('🔧 alt=media 파라미터 추가: $correctedUrl');
     }
 
-    Logger.log('✅ URL 수정 완료: $correctedUrl');
+    if (Logger.isVerboseEnabled) Logger.log('✅ URL 수정 완료: $correctedUrl');
     return correctedUrl;
   }
 
@@ -564,7 +548,7 @@ class StorageService {
             uri.replace(queryParameters: qp.isEmpty ? null : qp).toString();
       }
 
-      Logger.log('이미지 삭제 - 정제된 URL: $cleanUrl');
+      if (Logger.isVerboseEnabled) Logger.log('이미지 삭제 - 정제된 URL: $cleanUrl');
       final Reference ref = _storage.refFromURL(cleanUrl);
 
       // 이미지 삭제
@@ -573,7 +557,7 @@ class StorageService {
     } on FirebaseException catch (e) {
       // 업로드 도중 취소/실패 등으로 객체가 존재하지 않을 수 있음 → 정상 케이스로 취급
       if (e.code == 'object-not-found' || e.code == 'not-found') {
-        Logger.log('이미지 삭제 스킵(이미 없음): ${e.code}');
+        if (Logger.isVerboseEnabled) Logger.log('이미지 삭제 스킵(이미 없음): ${e.code}');
         return true;
       }
       Logger.error('이미지 삭제 Firebase 오류: code=${e.code}, message=${e.message}');

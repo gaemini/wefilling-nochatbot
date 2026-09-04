@@ -85,7 +85,7 @@ class _EditMeetupScreenState extends State<EditMeetupScreen> {
     } catch (error) {
       // 진입 시 네트워크 확인 실패만으로 화면을 닫지는 않는다.
       // 저장 시점의 트랜잭션 검증이 최종적으로 수정 가능 여부를 보장한다.
-      Logger.warning('모임 수정 가능 여부 사전 확인 실패: $error');
+      if (Logger.isVerboseEnabled) Logger.warning('모임 수정 가능 여부 사전 확인 실패: $error');
     }
   }
 

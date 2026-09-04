@@ -6,6 +6,7 @@ import '../../design/tokens.dart';
 import '../../models/snack_chat.dart';
 import '../../models/user_profile.dart';
 import '../../repositories/users_repository.dart';
+import '../../services/cache/app_image_cache_manager.dart';
 import 'audience_ring.dart';
 
 class SnackChatCard extends StatelessWidget {
@@ -243,32 +244,8 @@ class SnackChatCard extends StatelessWidget {
                       ),
                       if (remainingTimeLabel != null) ...[
                         const SizedBox(height: 2),
-                        Row(
-                          children: [
-                            const ExcludeSemantics(
-                              child: Icon(
-                                Icons.schedule_rounded,
-                                size: 12,
-                                color: BrandColors.neutral500,
-                              ),
-                            ),
-                            const SizedBox(width: 3),
-                            Flexible(
-                              child: Text(
-                                remainingTimeLabel,
-                                maxLines: 1,
-                                overflow: TextOverflow.ellipsis,
-                                style: const TextStyle(
-                                  fontFamily: 'Inter',
-                                  fontFamilyFallback: ['NotoSansKR'],
-                                  fontSize: 10.5,
-                                  height: 1.2,
-                                  fontWeight: FontWeight.w600,
-                                  color: BrandColors.neutral500,
-                                ),
-                              ),
-                            ),
-                          ],
+                        SnackChatDurationStatus(
+                          label: remainingTimeLabel,
                         ),
                       ],
                     ],
@@ -363,6 +340,49 @@ class SnackChatCard extends StatelessWidget {
   }
 }
 
+/// 24시간 Snack Chat의 남은 시간과 만료 상태에 공통으로 쓰는 표시입니다.
+class SnackChatDurationStatus extends StatelessWidget {
+  const SnackChatDurationStatus({
+    super.key,
+    required this.label,
+  });
+
+  static const Color statusColor = BrandColors.info;
+
+  final String label;
+
+  @override
+  Widget build(BuildContext context) {
+    return Row(
+      children: [
+        const ExcludeSemantics(
+          child: Icon(
+            Icons.schedule_rounded,
+            size: 12,
+            color: statusColor,
+          ),
+        ),
+        const SizedBox(width: 3),
+        Flexible(
+          child: Text(
+            label,
+            maxLines: 1,
+            overflow: TextOverflow.ellipsis,
+            style: const TextStyle(
+              fontFamily: 'Inter',
+              fontFamilyFallback: ['NotoSansKR'],
+              fontSize: 11,
+              height: 1.2,
+              fontWeight: FontWeight.w700,
+              color: statusColor,
+            ),
+          ),
+        ),
+      ],
+    );
+  }
+}
+
 class _ParticipantAvatarMosaic extends StatefulWidget {
   final List<String> participantIds;
   final String? currentUserId;
@@ -395,6 +415,7 @@ class _ParticipantAvatarMosaicState extends State<_ParticipantAvatarMosaic> {
   @override
   void initState() {
     super.initState();
+    _profiles = _usersRepository.getCachedUserProfiles(_displayIds);
     _loadProfiles();
   }
 
@@ -403,6 +424,7 @@ class _ParticipantAvatarMosaicState extends State<_ParticipantAvatarMosaic> {
     super.didUpdateWidget(oldWidget);
     if (!listEquals(oldWidget.participantIds, widget.participantIds) ||
         oldWidget.currentUserId != widget.currentUserId) {
+      _profiles = _usersRepository.getCachedUserProfiles(_displayIds);
       _loadProfiles();
     }
   }
@@ -486,8 +508,12 @@ class _AvatarTile extends StatelessWidget {
               )
             : CachedNetworkImage(
                 imageUrl: imageUrl,
+                cacheManager: AppImageCacheManager.instance,
+                memCacheWidth: 96,
                 fit: BoxFit.cover,
-                fadeInDuration: const Duration(milliseconds: 150),
+                useOldImageOnUrlChange: true,
+                fadeInDuration: Duration.zero,
+                fadeOutDuration: Duration.zero,
                 placeholder: (_, __) => const Icon(
                   Icons.person_rounded,
                   size: 15,

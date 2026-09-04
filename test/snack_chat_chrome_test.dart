@@ -3,6 +3,51 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:wefilling/ui/widgets/snack_chat_chrome.dart';
 
 void main() {
+  test('Snack Chat date labels are localized with the full calendar date', () {
+    final date = DateTime(2026, 9, 3);
+
+    expect(
+      SnackChatDateSeparator.formatDate(date, languageCode: 'ko'),
+      '2026년 9월 3일 목요일',
+    );
+    expect(
+      SnackChatDateSeparator.formatDate(date, languageCode: 'en'),
+      'Thursday, September 3, 2026',
+    );
+  });
+
+  testWidgets(
+    'Snack Chat date marker is borderless and overflow-free on a narrow screen',
+    (tester) async {
+      const surfaceSize = Size(280, 480);
+      await tester.binding.setSurfaceSize(surfaceSize);
+      addTearDown(() => tester.binding.setSurfaceSize(null));
+
+      await tester.pumpWidget(
+        MaterialApp(
+          home: MediaQuery(
+            data: const MediaQueryData(
+              size: surfaceSize,
+              textScaler: TextScaler.linear(2),
+              viewPadding: EdgeInsets.only(bottom: 24),
+            ),
+            child: Scaffold(
+              body: SnackChatDateSeparator(
+                date: DateTime(2026, 9, 3),
+                languageCode: 'ko',
+              ),
+            ),
+          ),
+        ),
+      );
+
+      expect(tester.takeException(), isNull);
+      expect(find.text('2026년 9월 3일 목요일'), findsOneWidget);
+      expect(find.byIcon(Icons.calendar_today_outlined), findsOneWidget);
+      expect(find.byType(DecoratedBox), findsNothing);
+    },
+  );
+
   testWidgets(
     'Snack Chat chrome stays distinct and overflow-free on a narrow Android screen',
     (tester) async {

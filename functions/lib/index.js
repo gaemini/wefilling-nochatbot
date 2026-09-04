@@ -3,9 +3,9 @@
 // Cloud Functions 메인 진입점
 // 친구요청 관련 함수들을 export
 Object.defineProperty(exports, "__esModule", { value: true });
-exports.onDeletedUserDocumentSnackChatCleanup = exports.onDeletedAuthUserSnackChatCleanup = exports.reconcileSnackChatParticipantsSecure = exports.leaveSnackChatSecure = exports.markSnackChatReadSecure = exports.getSnackChatEntryContext = exports.ensureSnackChatMembershipSecure = exports.joinMeetupSnackChatSecure = exports.inviteSnackChatParticipants = exports.createMeetupSnackChatSecure = exports.createSnackChatSecure = exports.searchSnackChatInviteUsers = exports.searchSnackChatInviteUserById = exports.onSnapshotBlockChanged = exports.cleanupOrphanSnapshotUploads = exports.cleanupExpiredSnapshots = exports.deleteSnapshot = exports.replySnapshotComment = exports.sendSnapshotComment = exports.toggleSnapshotReaction = exports.getSnapshotCommentLetter = exports.getSnapshotCommentStatus = exports.getSnapshotReactionStatus = exports.getSnapshotViewers = exports.recordSnapshotView = exports.updateSnapshotVisibility = exports.syncMySnapshotFeed = exports.createSnapshot = exports.getSnapshotServerTime = exports.translateContentBatch = exports.backfillHanyangVerificationStates = exports.reconcileMyHanyangVerificationStatus = exports.backfillInstagramPreviewThumbnails = exports.persistInstagramPreviewThumbnail = exports.resolveSharedLink = exports.reconcileDMUnreadTotalSecure = exports.markDMConversationReadSecure = exports.searchMeetupsSecure = exports.searchPostsSecure = exports.onMeetupSearchSourceWritten = exports.onPostSearchSourceWritten = exports.expireTimedMeetups = exports.confirmMeetupSecure = exports.createMeetupSecure = exports.getExternalShareComposerContext = exports.createExternalSharePost = exports.createPostSecure = exports.updateMyNicknameSecure = exports.onDeletedAuthUserNicknameCleanup = exports.checkNicknameAvailability = void 0;
-exports.cancelFriendRequest = exports.sendFriendRequest = exports.getPublicProfileReviewPreview = exports.getProfileFriendNetwork = exports.searchSocialUsers = exports.cleanupExpiredEmailVerifications = exports.createGeneralEmailSignup = exports.verifyEmailCode = exports.sendEmailVerificationCode = exports.resetPasswordWithCode = exports.requestPasswordResetCode = exports.onPostLiked = exports.onCommentLiked = exports.onCommentSoftDeleted = exports.onCommentDeleted = exports.onCommentCreated = exports.onMeetupDeleted = exports.onMeetupUpdated = exports.onAdBannerChanged = exports.onFriendRequestCreated = exports.joinMeetupSecure = exports.resolveMyReadableJoinedMeetupIds = exports.onPrivatePostCreated = exports.onUserRegistrationCompleted = exports.onUserCreated = exports.backfillEmailClaims = exports.cancelPendingEmailSignup = exports.discardIncompleteRegistration = exports.finalizeEnglishSocialSignup = exports.completeHanyangProfileVerification = exports.finalizeHanyangEmailVerification = exports.finalizePendingRegistration = exports.ensureRegistrationProgress = exports.onUserProfileUpdatedPropagateAuthorInfo = exports.getUserProfileStats = exports.onSnackChatVoteWritten = exports.onSnackChatReactionWritten = exports.notifyClosedSnackChatPolls = exports.onSnackChatMessageCreated = exports.onSnackChatRoomWritten = exports.cleanupExpiredSnackChatFiles = exports.onSnackChatFileUploadJobDeleted = exports.onSnackChatFileMessageDeleted = exports.cancelSnackChatFileUpload = exports.commitSnackChatFileUpload = exports.prepareSnackChatFileUpload = exports.reportSnackChatMessage = exports.fetchSnackChatLinkPreview = exports.createSnackChatAnnouncementSecure = exports.updateSnackChatTitleSecure = void 0;
-exports.onDMMessageRead = exports.onDMMessageCreated = exports.onMeetupReviewCreatedDeleteMeetupChat = exports.onMeetupReviewDeleted = exports.onMeetupReviewUpdated = exports.onReviewRequestUpdated = exports.onReviewRequestCreated = exports.onMeetupCreated = exports.onMeetupParticipantJoined = exports.onNotificationDeletedSyncUnreadCounter = exports.onNotificationUpdatedSyncUnreadCounter = exports.onNotificationCreated = exports.unregisterFcmToken = exports.registerFcmToken = exports.deleteAccountImmediately = exports.onReportCreated = exports.reportUser = exports.unhideAnonymousComment = exports.hideAnonymousComment = exports.unblockAnonymousPost = exports.blockAnonymousPost = exports.unblockUser = exports.blockUser = exports.unfriend = exports.rejectFriendRequest = exports.acceptFriendRequest = void 0;
+exports.onDeletedAuthUserSnackChatCleanup = exports.reconcileSnackChatParticipantsSecure = exports.leaveSnackChatSecure = exports.markSnackChatReadSecure = exports.summarizeSnackChatUnread = exports.getSnackChatEntryContext = exports.ensureSnackChatMembershipSecure = exports.joinMeetupSnackChatSecure = exports.inviteSnackChatParticipants = exports.createMeetupSnackChatSecure = exports.createSnackChatSecure = exports.searchSnackChatInviteUsers = exports.searchSnackChatInviteUserById = exports.onSnapshotBlockChanged = exports.cleanupOrphanSnapshotUploads = exports.cleanupExpiredSnapshots = exports.deleteSnapshot = exports.replySnapshotComment = exports.sendSnapshotComment = exports.toggleSnapshotReaction = exports.getSnapshotCommentLetter = exports.getSnapshotCommentStatus = exports.getSnapshotReactionStatus = exports.getSnapshotViewers = exports.recordSnapshotView = exports.updateSnapshotVisibility = exports.syncMySnapshotFeed = exports.createSnapshot = exports.getSnapshotServerTime = exports.translateContentBatch = exports.backfillHanyangVerificationStates = exports.reconcileMyHanyangVerificationStatus = exports.backfillInstagramPreviewThumbnails = exports.persistInstagramPreviewThumbnail = exports.resolveSharedLink = exports.reconcileDMUnreadTotalSecure = exports.markDMConversationReadSecure = exports.searchMeetupsSecure = exports.searchPostsSecure = exports.onMeetupSearchSourceWritten = exports.onPostSearchSourceWritten = exports.expireTimedMeetups = exports.confirmMeetupSecure = exports.createMeetupSecure = exports.getExternalShareComposerContext = exports.createExternalSharePost = exports.createPostSecure = exports.updateMyNicknameSecure = exports.onDeletedAuthUserNicknameCleanup = exports.checkNicknameAvailability = void 0;
+exports.getPublicProfileReviewPreview = exports.getProfileFriendNetwork = exports.searchSocialUsers = exports.cleanupExpiredEmailVerifications = exports.createGeneralEmailSignup = exports.verifyEmailCode = exports.sendEmailVerificationCode = exports.resetPasswordWithCode = exports.requestPasswordResetCode = exports.onPostLiked = exports.onCommentLiked = exports.onCommentSoftDeleted = exports.onCommentDeleted = exports.onCommentCreated = exports.onMeetupDeleted = exports.onMeetupUpdated = exports.onAdBannerChanged = exports.onFriendRequestCreated = exports.joinMeetupSecure = exports.resolveMyReadableJoinedMeetupIds = exports.onPrivatePostCreated = exports.onUserRegistrationCompleted = exports.onUserCreated = exports.backfillEmailClaims = exports.cancelPendingEmailSignup = exports.discardIncompleteRegistration = exports.finalizeEnglishSocialSignup = exports.completeHanyangProfileVerification = exports.finalizeHanyangEmailVerification = exports.finalizePendingRegistration = exports.ensureRegistrationProgress = exports.onUserProfileUpdatedPropagateAuthorInfo = exports.reconcileNotificationUnreadTotalSecure = exports.getUserProfileStats = exports.onSnackChatVoteWritten = exports.onSnackChatReactionWritten = exports.notifyClosedSnackChatPolls = exports.onSnackChatMessageCreated = exports.onSnackChatRoomWritten = exports.cleanupExpiredSnackChatFiles = exports.onSnackChatFileUploadJobDeleted = exports.onSnackChatFileMessageDeleted = exports.cancelSnackChatFileUpload = exports.commitSnackChatFileUpload = exports.prepareSnackChatFileUpload = exports.reportSnackChatMessage = exports.fetchSnackChatLinkPreview = exports.createSnackChatAnnouncementSecure = exports.updateSnackChatTitleSecure = exports.onDeletedUserDocumentSnackChatCleanup = void 0;
+exports.onDMMessageRead = exports.onDMMessageCreated = exports.onMeetupReviewCreatedDeleteMeetupChat = exports.onMeetupReviewDeleted = exports.onMeetupReviewUpdated = exports.onReviewRequestUpdated = exports.onReviewRequestCreated = exports.onMeetupCreated = exports.onMeetupParticipantJoined = exports.onNotificationDeletedSyncUnreadCounter = exports.onNotificationUpdatedSyncUnreadCounter = exports.onNotificationCreated = exports.unregisterFcmToken = exports.registerFcmToken = exports.deleteAccountImmediately = exports.onReportCreated = exports.reportUser = exports.unhideAnonymousComment = exports.hideAnonymousComment = exports.unblockAnonymousPost = exports.blockAnonymousPost = exports.unblockUser = exports.blockUser = exports.unfriend = exports.rejectFriendRequest = exports.acceptFriendRequest = exports.cancelFriendRequest = exports.sendFriendRequest = void 0;
 const functions = require("firebase-functions");
 const admin = require("firebase-admin");
 const nodemailer = require("nodemailer");
@@ -72,6 +72,7 @@ Object.defineProperty(exports, "inviteSnackChatParticipants", { enumerable: true
 Object.defineProperty(exports, "joinMeetupSnackChatSecure", { enumerable: true, get: function () { return snack_chat_2.joinMeetupSnackChatSecure; } });
 Object.defineProperty(exports, "ensureSnackChatMembershipSecure", { enumerable: true, get: function () { return snack_chat_2.ensureSnackChatMembershipSecure; } });
 Object.defineProperty(exports, "getSnackChatEntryContext", { enumerable: true, get: function () { return snack_chat_2.getSnackChatEntryContext; } });
+Object.defineProperty(exports, "summarizeSnackChatUnread", { enumerable: true, get: function () { return snack_chat_2.summarizeSnackChatUnread; } });
 Object.defineProperty(exports, "markSnackChatReadSecure", { enumerable: true, get: function () { return snack_chat_2.markSnackChatReadSecure; } });
 Object.defineProperty(exports, "leaveSnackChatSecure", { enumerable: true, get: function () { return snack_chat_2.leaveSnackChatSecure; } });
 Object.defineProperty(exports, "reconcileSnackChatParticipantsSecure", { enumerable: true, get: function () { return snack_chat_2.reconcileSnackChatParticipantsSecure; } });
@@ -264,9 +265,129 @@ async function filterPushTokensOwnedByUser(userId, candidateTokens) {
         return [];
     }
 }
+async function cleanInvalidPushTokensForUser(userId, userData, rawTokens) {
+    const tokens = Array.from(new Set(rawTokens
+        .map((token) => normalizeUidLoose(token))
+        .filter((token) => token.length > 0)));
+    if (tokens.length === 0)
+        return;
+    const userRef = db.collection('users').doc(userId);
+    const remaining = Array.isArray(userData.fcmTokens) ?
+        userData.fcmTokens
+            .map((token) => normalizeUidLoose(token))
+            .filter((token) => token.length > 0 && !tokens.includes(token)) :
+        [];
+    const updates = {
+        fcmTokens: admin.firestore.FieldValue.arrayRemove(...tokens),
+        fcmTokenUpdatedAt: admin.firestore.FieldValue.serverTimestamp(),
+    };
+    if (tokens.includes(normalizeUidLoose(userData.fcmToken))) {
+        updates.fcmToken = remaining.length > 0 ?
+            remaining[0] : admin.firestore.FieldValue.delete();
+    }
+    await userRef.set(updates, { merge: true });
+    const cleanup = db.batch();
+    tokens.forEach((token) => {
+        // FCM has confirmed this installation token itself is invalid, so remove
+        // both canonical and compatibility references immediately.
+        cleanup.delete(db.collection('fcm_tokens').doc(token));
+        const deviceId = crypto.createHash('sha256').update(token).digest('hex');
+        cleanup.delete(userRef.collection('devices').doc(deviceId));
+    });
+    await cleanup.commit();
+}
 function normalizeUidLoose(v) {
     return (v !== null && v !== void 0 ? v : '').toString().trim();
 }
+const NOTIFICATION_UNREAD_COUNTER_VERSION = 1;
+const NOTIFICATION_UNREAD_DOCUMENT_FALLBACK_VERSION = -1;
+function notificationActorId(notification) {
+    const nested = notification.data && typeof notification.data === 'object' &&
+        !Array.isArray(notification.data) ?
+        notification.data : {};
+    const candidates = [
+        notification.actorId,
+        nested.actorId,
+        nested.fromUid,
+        nested.senderId,
+        nested.requesterId,
+        nested.participantId,
+        nested.userId,
+    ];
+    for (const candidate of candidates) {
+        const value = normalizeUidLoose(candidate);
+        if (value)
+            return value;
+    }
+    return '';
+}
+async function reconcileNotificationUnreadCounterForUser(userId) {
+    const userRef = db.collection('users').doc(userId);
+    const notificationsQuery = db.collection('notifications')
+        .where('userId', '==', userId)
+        .where('isRead', '==', false);
+    const blockedByUserQuery = db.collection('blocks')
+        .where('blocker', '==', userId);
+    const blockingUserQuery = db.collection('blocks')
+        .where('blocked', '==', userId);
+    return db.runTransaction(async (transaction) => {
+        const [user, notifications, blockedByUser, blockingUser] = await Promise.all([
+            transaction.get(userRef),
+            transaction.get(notificationsQuery),
+            transaction.get(blockedByUserQuery),
+            transaction.get(blockingUserQuery),
+        ]);
+        if (!user.exists) {
+            throw new functions.https.HttpsError('failed-precondition', 'The authenticated user profile does not exist.');
+        }
+        const excludedUserIds = new Set();
+        blockedByUser.docs.forEach((document) => {
+            const blocked = normalizeUidLoose(document.data().blocked);
+            if (blocked)
+                excludedUserIds.add(blocked);
+        });
+        blockingUser.docs.forEach((document) => {
+            const blocker = normalizeUidLoose(document.data().blocker);
+            if (blocker)
+                excludedUserIds.add(blocker);
+        });
+        const trusted = excludedUserIds.size === 0;
+        let total = 0;
+        notifications.docs.forEach((document) => {
+            const data = document.data();
+            if (safeStringLoose(data.type) === 'dm_received')
+                return;
+            const actorId = notificationActorId(data);
+            if (actorId && excludedUserIds.has(actorId))
+                return;
+            total += 1;
+        });
+        transaction.update(userRef, {
+            notificationUnreadTotal: total,
+            notificationUnreadCounterVersion: trusted ?
+                NOTIFICATION_UNREAD_COUNTER_VERSION :
+                NOTIFICATION_UNREAD_DOCUMENT_FALLBACK_VERSION,
+            notificationUnreadReconciledAt: admin.firestore.FieldValue.serverTimestamp(),
+        });
+        return { notificationUnreadTotal: total, trusted };
+    });
+}
+/**
+ * One-time/self-healing migration for notification badge counters. Accounts
+ * with block relationships deliberately keep the exact document fallback,
+ * because old notifications can become visible again after an unblock.
+ */
+exports.reconcileNotificationUnreadTotalSecure = functions
+    .runWith({ timeoutSeconds: 60, memory: '512MB' })
+    .https.onCall(async (_data, context) => {
+    var _a;
+    const userId = normalizeUidLoose((_a = context.auth) === null || _a === void 0 ? void 0 : _a.uid);
+    if (!userId) {
+        throw new functions.https.HttpsError('unauthenticated', 'Authentication required.');
+    }
+    const result = await reconcileNotificationUnreadCounterForUser(userId);
+    return Object.assign({ success: true }, result);
+});
 async function hasBlockRelationship(userA, userB) {
     const uidA = normalizeUidLoose(userA);
     const uidB = normalizeUidLoose(userB);
@@ -4963,6 +5084,15 @@ exports.blockUser = functions.https.onCall(async (data, context) => {
                     updatedAt: admin.firestore.FieldValue.serverTimestamp(),
                 });
             }
+            // Existing notification documents are hidden immediately by the block
+            // policy. Invalidate the O(1) counter for both sides so new clients use
+            // the exact document fallback; old clients ignore this optional field.
+            transaction.set(blockerUserRef, {
+                notificationUnreadCounterVersion: 0,
+            }, { merge: true });
+            transaction.set(blockedUserRef, {
+                notificationUnreadCounterVersion: 0,
+            }, { merge: true });
             // 6. 기존 친구요청이 있다면 삭제
             if (requestDoc.exists) {
                 const requestData = requestDoc.data();
@@ -5080,6 +5210,14 @@ exports.unblockUser = functions.https.onCall(async (data, context) => {
                 && (reverseData === null || reverseData === void 0 ? void 0 : reverseData.isImplicit) === true) {
                 transaction.delete(reverseBlockRef);
             }
+            // The visibility of historical notifications may change after an
+            // unblock. Force a lazy reconciliation instead of trusting a stale sum.
+            transaction.set(db.collection('users').doc(blockerUid), {
+                notificationUnreadCounterVersion: 0,
+            }, { merge: true });
+            transaction.set(db.collection('users').doc(targetUid), {
+                notificationUnreadCounterVersion: 0,
+            }, { merge: true });
         });
         return { success: true };
     }
@@ -6474,15 +6612,24 @@ exports.onNotificationCreated = functions
                     // 카운터를 다시 살리지 않는다.
                     const isCurrentUnread = currentNotification.exists &&
                         ((_a = currentNotification.data()) === null || _a === void 0 ? void 0 : _a.isRead) !== true;
-                    const delta = type === 'dm_received' || !isCurrentUnread ? 0 : 1;
+                    const reconciledAtMs = firestoreTimeToMillis(d.notificationUnreadReconciledAt);
+                    const counterVersion = toInt(d.notificationUnreadCounterVersion);
+                    // A lazy reconciliation may commit before this delayed onCreate
+                    // event runs. Its query already included this document, so adding
+                    // it again would double count it.
+                    const coveredByReconciliation = counterVersion === NOTIFICATION_UNREAD_COUNTER_VERSION &&
+                        reconciledAtMs != null &&
+                        snapshot.createTime.toMillis() <= reconciledAtMs;
+                    const delta = type === 'dm_received' || !isCurrentUnread ||
+                        coveredByReconciliation ? 0 : 1;
                     const nextNoti = Math.max(0, curNoti + delta);
                     tx.set(userRef, { notificationUnreadTotal: nextNoti }, { merge: true });
                     tx.create(counterMarkerRef, {
                         type: 'notification_created',
                         notificationId,
                         userId,
-                        applied: delta > 0,
-                        counterSettled: false,
+                        applied: type !== 'dm_received' && isCurrentUnread,
+                        counterSettled: type === 'dm_received' || !isCurrentUnread,
                         createdAt: admin.firestore.FieldValue.serverTimestamp(),
                     });
                     return {
@@ -6679,11 +6826,39 @@ exports.onNotificationUpdatedSyncUnreadCounter = functions
                 tx.get(markerRef),
                 tx.get(userRef),
             ]);
-            // onCreate와 false→true가 동시에 실행될 수 있다. 생성 마커가
-            // 아직 없다면 onCreate가 최종 문서 상태를 보고 0/1을 확정하므로
-            // 여기서 먼저 차감하지 않는다(다른 알림 카운터 차감 방지).
-            if (!marker.exists)
+            // Legacy documents can predate the create marker. Once a trusted
+            // reconciliation has covered them, later read transitions still need
+            // to update the aggregate exactly once.
+            if (!marker.exists) {
+                const userData = snap.data() || {};
+                const version = toInt(userData.notificationUnreadCounterVersion);
+                if (version !== NOTIFICATION_UNREAD_COUNTER_VERSION)
+                    return;
+                const reconciledAtMs = firestoreTimeToMillis(userData.notificationUnreadReconciledAt);
+                const coveredLegacyDocument = reconciledAtMs != null &&
+                    change.before.createTime.toMillis() <= reconciledAtMs;
+                if (!coveredLegacyDocument)
+                    return;
+                const changedAtMs = change.after.updateTime.toMillis();
+                const transitionAlreadyCovered = changedAtMs <= reconciledAtMs;
+                let next = toNonNegativeInt(userData.notificationUnreadTotal);
+                if (!transitionAlreadyCovered) {
+                    if (!beforeRead && afterRead)
+                        next = Math.max(0, next - 1);
+                    if (beforeRead && !afterRead)
+                        next += 1;
+                    tx.set(userRef, { notificationUnreadTotal: next }, { merge: true });
+                }
+                tx.create(markerRef, {
+                    type: 'notification_state_legacy',
+                    notificationId,
+                    userId: String(userId),
+                    applied: !afterRead,
+                    counterSettled: afterRead,
+                    createdAt: admin.firestore.FieldValue.serverTimestamp(),
+                });
                 return;
+            }
             const markerData = marker.data() || {};
             const applied = markerData.applied === true;
             const settled = markerData.counterSettled === true;
@@ -6751,10 +6926,36 @@ exports.onNotificationDeletedSyncUnreadCounter = functions
                 tx.get(markerRef),
                 tx.get(userRef),
             ]);
-            // 생성 트리거보다 삭제가 빨랐다면 생성 트리거가 삭제 상태를 보고
-            // 증가하지 않는다. 마커 없이 먼저 차감하면 다른 알림이 줄어든다.
-            if (!marker.exists)
+            // Reconciled legacy notifications have no create marker. If deletion
+            // happened after the reconciliation, that unread document was part of
+            // the trusted sum and must be removed once.
+            if (!marker.exists) {
+                const userData = snap.data() || {};
+                const version = toInt(userData.notificationUnreadCounterVersion);
+                if (version !== NOTIFICATION_UNREAD_COUNTER_VERSION)
+                    return;
+                const reconciledAtMs = firestoreTimeToMillis(userData.notificationUnreadReconciledAt);
+                const eventAtMs = Date.parse(String(context.timestamp || ''));
+                const coveredLegacyDocument = reconciledAtMs != null &&
+                    snapshot.createTime.toMillis() <= reconciledAtMs;
+                if (!coveredLegacyDocument)
+                    return;
+                if (Number.isFinite(eventAtMs) && eventAtMs > reconciledAtMs) {
+                    const current = toNonNegativeInt(userData.notificationUnreadTotal);
+                    tx.set(userRef, {
+                        notificationUnreadTotal: Math.max(0, current - 1),
+                    }, { merge: true });
+                }
+                tx.create(markerRef, {
+                    type: 'notification_deleted_legacy',
+                    notificationId,
+                    userId: String(userId),
+                    applied: false,
+                    counterSettled: true,
+                    createdAt: admin.firestore.FieldValue.serverTimestamp(),
+                });
                 return;
+            }
             const markerData = marker.data() || {};
             if (markerData.applied !== true ||
                 markerData.counterSettled === true)
@@ -7610,14 +7811,7 @@ exports.onDMMessageCreated = functions
                 }
             });
             if (invalidTokens.length > 0) {
-                const recipientRef = db.collection('users').doc(recipientId);
-                const chunkSize = 10;
-                for (let i = 0; i < invalidTokens.length; i += chunkSize) {
-                    const chunk = invalidTokens.slice(i, i + chunkSize);
-                    await recipientRef.set({
-                        fcmTokens: admin.firestore.FieldValue.arrayRemove(...chunk),
-                    }, { merge: true });
-                }
+                await cleanInvalidPushTokensForUser(recipientId, recipientData, invalidTokens);
                 runtime_logging_1.runtimeLogsEnabled && (0, runtime_logging_1.runtimeInfo)(`  🧹 무효 FCM 토큰 정리: ${invalidTokens.length}개`);
             }
         }

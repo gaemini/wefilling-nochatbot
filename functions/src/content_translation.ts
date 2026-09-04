@@ -75,6 +75,15 @@ const PROVIDER_FAILED_RETRY_TTL_MS = 12_000;
 const MAX_SOURCE_CHARS = 12_000;
 const MAX_CONTEXT_FIELD_CHARS = 1_500;
 const MAX_CONTEXT_CHARS = 6_000;
+// Reuse TLS connections while a warm Functions instance is alive. This avoids
+// paying a new DNS/TCP/TLS setup cost for each summary or translation request,
+// without keeping an instance warm or adding a fixed hosting cost.
+const GEMINI_HTTPS_AGENT = new https.Agent({
+  keepAlive: true,
+  keepAliveMsecs: 15_000,
+  maxSockets: 8,
+  maxFreeSockets: 2,
+});
 const SUPPORTED_TYPES = new Set([
   'post',
   'comment',
@@ -119,6 +128,63 @@ type ProtectedText = {
   text: string;
   tokens: Record<string, string>;
 };
+
+type GeminiRequestDiagnostics = {
+  requestStage: string;
+  model: string;
+};
+
+/** Safe provider metadata without request bodies, prompts, or credentials. */
+export class GeminiHttpError extends Error {
+  constructor(args: {
+    httpStatus: number;
+    providerCode?: number;
+    providerStatus?: string;
+    providerMessage?: string;
+    requestStage?: string;
+    model?: string;
+  }) {
+    const status = args.providerStatus || 'HTTP_ERROR';
+    const detail = args.providerMessage ? `: ${args.providerMessage}` : '';
+    super(`Gemini HTTP ${args.httpStatus} ${status}${detail}`);
+    this.name = 'GeminiHttpError';
+    this.httpStatus = args.httpStatus;
+    this.providerCode = args.providerCode;
+    this.providerStatus = args.providerStatus || '';
+    this.providerMessage = args.providerMessage || '';
+    this.requestStage = args.requestStage || 'provider_request';
+    this.model = args.model || '';
+  }
+
+  readonly httpStatus: number;
+  readonly providerCode?: number;
+  readonly providerStatus: string;
+  readonly providerMessage: string;
+  readonly requestStage: string;
+  readonly model: string;
+}
+
+export class GeminiStructuredResponseError extends Error {
+  constructor(message: string, requestStage: string, model: string) {
+    super(message);
+    this.name = 'GeminiStructuredResponseError';
+    this.requestStage = requestStage;
+    this.model = model;
+  }
+
+  readonly requestStage: string;
+  readonly model: string;
+}
+
+export function structuredGeminiRuntimeInfo(preferQualityModel = false): {
+  apiVersion: string;
+  model: string;
+} {
+  return {
+    apiVersion: GEMINI_API_VERSION,
+    model: preferQualityModel ? GEMINI_FALLBACK_MODEL : GEMINI_MODEL,
+  };
+}
 
 function stringValue(value: unknown): string {
   return value == null ? '' : String(value);
@@ -869,7 +935,13 @@ async function buildTranslationContext(
   return item;
 }
 
-function postJson(url: string, apiKey: string, body: unknown): Promise<unknown> {
+function postJson(
+  url: string,
+  apiKey: string,
+  body: unknown,
+  timeoutMs = 45_000,
+  diagnostics?: GeminiRequestDiagnostics,
+): Promise<unknown> {
   return new Promise((resolve, reject) => {
     const payload = JSON.stringify(body);
     const parsed = new URL(url);
@@ -877,39 +949,56 @@ function postJson(url: string, apiKey: string, body: unknown): Promise<unknown> 
       hostname: parsed.hostname,
       path: parsed.pathname + parsed.search,
       method: 'POST',
+      agent: GEMINI_HTTPS_AGENT,
       headers: {
         'Content-Type': 'application/json',
         'Content-Length': Buffer.byteLength(payload),
         'x-goog-api-key': apiKey,
       },
-      timeout: 45_000,
+      timeout: timeoutMs,
     }, (response) => {
       let raw = '';
       response.setEncoding('utf8');
       response.on('data', (chunk: string) => { raw += chunk; });
       response.on('end', () => {
         if ((response.statusCode ?? 500) >= 400) {
-          let detail = '';
+          let providerCode: number | undefined;
+          let providerStatus = '';
+          let providerMessage = '';
           try {
             const parsedError = JSON.parse(raw) as {
-              error?: {message?: unknown};
+              error?: {code?: unknown; status?: unknown; message?: unknown};
             };
-            detail = stringValue(parsedError.error?.message)
+            const rawCode = Number(parsedError.error?.code);
+            if (Number.isFinite(rawCode)) providerCode = rawCode;
+            providerStatus = stringValue(parsedError.error?.status)
+              .replace(/[^A-Z0-9_]/gi, '')
+              .slice(0, 80);
+            providerMessage = stringValue(parsedError.error?.message)
+              .replace(/AIza[0-9A-Za-z_-]{20,}/g, '[REDACTED]')
               .replace(/[\r\n]+/g, ' ')
               .slice(0, 240);
           } catch (_) {
             // 응답 본문 전체나 API key는 로그에 남기지 않는다.
           }
-          reject(new Error(
-            `Gemini HTTP ${response.statusCode ?? 500}` +
-            (detail ? `: ${detail}` : ''),
-          ));
+          reject(new GeminiHttpError({
+            httpStatus: response.statusCode ?? 500,
+            providerCode,
+            providerStatus,
+            providerMessage,
+            requestStage: diagnostics?.requestStage,
+            model: diagnostics?.model,
+          }));
           return;
         }
         try {
           resolve(JSON.parse(raw));
         } catch (_) {
-          reject(new Error('Gemini returned invalid JSON.'));
+          reject(new GeminiStructuredResponseError(
+            'Gemini HTTP response was not valid JSON.',
+            `${diagnostics?.requestStage || 'provider_request'}_parse`,
+            diagnostics?.model || '',
+          ));
         }
       });
     });
@@ -930,6 +1019,81 @@ function parseGeminiJson(value: unknown): {items?: GeminiTranslation[]} {
   }
   if (!text) throw new Error('Gemini returned an empty response.');
   return JSON.parse(text) as {items?: GeminiTranslation[]};
+}
+
+/**
+ * Shared low-temperature structured generation path for authenticated product
+ * features that already bind GEMINI_API_KEY on their own Cloud Function.
+ * Keeping transport/model parsing here avoids a second Gemini HTTP stack while
+ * leaving the stricter translation prompt and cache pipeline untouched.
+ */
+export async function generateStructuredGeminiJson(args: {
+  prompt: string;
+  responseJsonSchema?: Record<string, unknown>;
+  maxOutputTokens?: number;
+  timeoutMs?: number;
+  preferQualityModel?: boolean;
+}): Promise<Record<string, unknown>> {
+  const apiKey = stringValue(process.env.GEMINI_API_KEY).trim();
+  if (!apiKey) throw new Error('GEMINI_API_KEY is not configured.');
+  const model = args.preferQualityModel ?
+    GEMINI_FALLBACK_MODEL : GEMINI_MODEL;
+  const response = await postJson(
+    `https://generativelanguage.googleapis.com/${GEMINI_API_VERSION}/models/${model}:generateContent`,
+    apiKey,
+    {
+      contents: [{role: 'user', parts: [{text: args.prompt}]}],
+      generationConfig: {
+        maxOutputTokens: args.maxOutputTokens ?? 1800,
+        thinkingConfig: {
+          thinkingLevel: args.preferQualityModel ? 'low' : 'minimal',
+        },
+        responseMimeType: 'application/json',
+        ...(args.responseJsonSchema ? {
+          responseJsonSchema: args.responseJsonSchema,
+        } : {}),
+      },
+    },
+    args.timeoutMs ?? 20_000,
+    {requestStage: 'structured_output_request', model},
+  ) as Record<string, unknown>;
+  const candidates = response.candidates as
+    Array<Record<string, unknown>> | undefined;
+  const content = candidates?.[0]?.content as
+    Record<string, unknown> | undefined;
+  const parts = content?.parts as Array<Record<string, unknown>> | undefined;
+  let text = stringValue(parts?.[0]?.text).trim();
+  if (text.startsWith('```')) {
+    text = text
+      .replace(/^```(?:json)?\s*/i, '')
+      .replace(/\s*```$/, '')
+      .trim();
+  }
+  if (!text) {
+    throw new GeminiStructuredResponseError(
+      'Gemini returned an empty response.',
+      'structured_output_parse',
+      model,
+    );
+  }
+  let parsed: unknown;
+  try {
+    parsed = JSON.parse(text) as unknown;
+  } catch (_) {
+    throw new GeminiStructuredResponseError(
+      'Gemini returned invalid JSON.',
+      'structured_output_parse',
+      model,
+    );
+  }
+  if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) {
+    throw new GeminiStructuredResponseError(
+      'Gemini returned invalid structured JSON.',
+      'structured_output_parse',
+      model,
+    );
+  }
+  return parsed as Record<string, unknown>;
 }
 
 function geminiErrorLogFields(error: unknown): {
@@ -1087,6 +1251,8 @@ async function callGeminiModel(
         },
       },
     },
+    45_000,
+    {requestStage: 'translation_request', model},
   ) as Record<string, unknown>;
   const candidates = response.candidates as Array<Record<string, unknown>> | undefined;
   const content = candidates?.[0]?.content as Record<string, unknown> | undefined;
@@ -1121,6 +1287,46 @@ async function callGeminiModel(
     }
   }
   return results;
+}
+
+/**
+ * Reuses the existing protected-token and translation quality pipeline for a
+ * very small set of already-authorized strings. This is intentionally not a
+ * second translation implementation: unread-summary fallback uses it only
+ * when deterministic output would otherwise be empty because source and
+ * target languages differ.
+ */
+export async function translatePlainTextsWithExistingPipeline(
+  texts: string[],
+  targetLanguage: string,
+): Promise<string[]> {
+  const target = normalizeLanguageCode(targetLanguage);
+  const bounded = texts
+    .map((value) => stringValue(value).trim().slice(0, 4000))
+    .filter(Boolean)
+    .slice(0, MAX_BATCH_SIZE);
+  if (bounded.length === 0) return [];
+  const items: ResolvedContent[] = bounded.map((value, index) => ({
+    contentType: 'snack_chat_message',
+    contentId: `summary-fallback-${index}`,
+    fields: {text: value},
+    context: {},
+    contextHash: sha256(''),
+    typoHints: Object.entries(TYPO_HINTS)
+      .filter(([source]) => value.includes(source))
+      .map(([source, hint]) => `${source}: ${hint}`),
+    matchedGlossary: Object.entries(WEFILLING_GLOSSARY)
+      .filter(([source]) => value.includes(source))
+      .map(([source, preferred]) => ({source, preferred})),
+    preserveIfUncertain: PRESERVE_IF_UNCERTAIN
+      .filter((term) => value.includes(term)),
+    contextSeed: {},
+    sourceHash: sha256(value),
+  }));
+  const result = await callGemini(items, target);
+  return items.map((item) =>
+    result.translations.get(requestKey(item))?.translations.text?.trim() || '',
+  );
 }
 
 function immutableTokens(value: string): string[] {

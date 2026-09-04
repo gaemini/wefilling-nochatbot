@@ -11,6 +11,7 @@ import 'content_filter_service.dart';
 import 'snack_chat_local_cache_service.dart';
 import '../utils/local_calendar_day.dart';
 import '../utils/logger.dart';
+import 'snack_chat_active_conversation.dart';
 import '../utils/snack_chat_list_policy.dart';
 
 const Duration _snackChatFirstEventDeadline = Duration(seconds: 12);
@@ -41,6 +42,310 @@ class SnackChatEntryContext {
       firstUnreadMessageId!.isNotEmpty &&
       firstUnreadSequence != null &&
       firstUnreadSequence! > lastReadSequence;
+}
+
+enum SnackChatSummarySectionType {
+  mustKnow,
+  responseRequired,
+  scheduleAndPlace,
+  decisionsAndChanges,
+  unresolved,
+  sharedInformation,
+  otherConversation,
+}
+
+enum SnackChatSummaryStatus {
+  confirmed,
+  proposed,
+  changed,
+  cancelled,
+  unresolved,
+  responseRequired,
+  information,
+}
+
+SnackChatSummarySectionType _summarySectionType(Object? raw) {
+  final value = raw?.toString();
+  if (value == 'sharedContent') {
+    return SnackChatSummarySectionType.sharedInformation;
+  }
+  return SnackChatSummarySectionType.values.firstWhere(
+    (item) => item.name == value,
+    orElse: () => SnackChatSummarySectionType.sharedInformation,
+  );
+}
+
+SnackChatSummaryStatus _summaryStatus(Object? raw) {
+  final value = raw?.toString();
+  return SnackChatSummaryStatus.values.firstWhere(
+    (item) => item.name == value,
+    orElse: () => SnackChatSummaryStatus.information,
+  );
+}
+
+List<int> _summarySequences(Object? raw) => raw is List
+    ? raw
+        .whereType<num>()
+        .map((value) => value.toInt())
+        .where((value) => value > 0)
+        .toSet()
+        .toList(growable: false)
+    : const <int>[];
+
+List<String> _summaryMessageIds(Object? raw) => raw is List
+    ? raw
+        .map((value) => value.toString().trim())
+        .where((value) => value.isNotEmpty)
+        .toSet()
+        .toList(growable: false)
+    : const <String>[];
+
+DateTime? _summaryDate(Object? raw) {
+  if (raw is Timestamp) return raw.toDate();
+  return DateTime.tryParse(raw?.toString() ?? '');
+}
+
+enum SnackChatSummaryRangeType { unread, today }
+
+SnackChatSummaryRangeType _summaryRangeType(Object? raw) =>
+    raw?.toString() == 'today'
+        ? SnackChatSummaryRangeType.today
+        : SnackChatSummaryRangeType.unread;
+
+class SnackChatTodaySummaryWindow {
+  const SnackChatTodaySummaryWindow({
+    required this.localDate,
+    required this.timezoneOffsetMinutes,
+    required this.timezoneName,
+    required this.start,
+    required this.nextStart,
+  });
+
+  final String localDate;
+  final int timezoneOffsetMinutes;
+  final String timezoneName;
+  final DateTime start;
+  final DateTime nextStart;
+}
+
+SnackChatTodaySummaryWindow buildSnackChatTodaySummaryWindow(DateTime value) {
+  final local = value.toLocal();
+  final start = startOfLocalCalendarDay(local);
+  final nextStart = startOfNextLocalCalendarDay(local);
+  String twoDigits(int number) => number.toString().padLeft(2, '0');
+  return SnackChatTodaySummaryWindow(
+    localDate:
+        '${local.year}-${twoDigits(local.month)}-${twoDigits(local.day)}',
+    timezoneOffsetMinutes: local.timeZoneOffset.inMinutes,
+    timezoneName: local.timeZoneName,
+    start: start,
+    nextStart: nextStart,
+  );
+}
+
+class SnackChatUnreadSummaryItem {
+  const SnackChatUnreadSummaryItem({
+    String? text,
+    String? content,
+    this.label = '',
+    this.status = SnackChatSummaryStatus.information,
+    this.importance = 'important',
+    this.sourceMessageIds = const <String>[],
+    this.representativeMessageId = '',
+    required this.sourceSequences,
+  }) : text = content ?? text ?? '';
+
+  final String text;
+  String get content => text;
+  final String label;
+  final SnackChatSummaryStatus status;
+  final String importance;
+  final List<String> sourceMessageIds;
+  final String representativeMessageId;
+  final List<int> sourceSequences;
+
+  factory SnackChatUnreadSummaryItem.fromMap(Map<String, dynamic> map) {
+    final rawImportance = (map['importance'] ?? 'important').toString();
+    return SnackChatUnreadSummaryItem(
+      content: (map['description'] ?? map['content'] ?? map['text'] ?? '')
+          .toString()
+          .trim(),
+      label: (map['title'] ?? map['label'] ?? '').toString().trim(),
+      status: _summaryStatus(map['status']),
+      importance: const <String>{'critical', 'important', 'general'}
+              .contains(rawImportance)
+          ? rawImportance
+          : 'important',
+      sourceMessageIds: _summaryMessageIds(map['sourceMessageIds']),
+      representativeMessageId:
+          (map['representativeMessageId'] ?? '').toString().trim(),
+      sourceSequences: _summarySequences(map['sourceSequences']),
+    );
+  }
+}
+
+class SnackChatUnreadSummarySection {
+  const SnackChatUnreadSummarySection({
+    required this.type,
+    required this.title,
+    required this.items,
+  });
+
+  final SnackChatSummarySectionType type;
+  final String title;
+  final List<SnackChatUnreadSummaryItem> items;
+
+  factory SnackChatUnreadSummarySection.fromMap(Map<String, dynamic> map) {
+    final rawItems = map['items'];
+    final items = rawItems is List
+        ? rawItems
+            .whereType<Map>()
+            .map((raw) => SnackChatUnreadSummaryItem.fromMap(
+                  Map<String, dynamic>.from(raw),
+                ))
+            .where((item) =>
+                item.content.isNotEmpty && item.sourceSequences.isNotEmpty)
+            .take(3)
+            .toList(growable: false)
+        : const <SnackChatUnreadSummaryItem>[];
+    return SnackChatUnreadSummarySection(
+      type: _summarySectionType(map['type']),
+      title: (map['title'] ?? '').toString().trim(),
+      items: items,
+    );
+  }
+}
+
+class SnackChatUnreadSummaryResult {
+  const SnackChatUnreadSummaryResult({
+    required this.items,
+    required this.messageCount,
+    required this.rangeHash,
+    required this.cacheSource,
+    this.summarySource = 'gemini',
+    this.sections = const <SnackChatUnreadSummarySection>[],
+    this.summarySchemaVersion = 1,
+    this.summaryVersion = 1,
+    this.promptVersion = 1,
+    this.firstUnreadSequence = 0,
+    this.latestSequence = 0,
+    this.targetLanguage = '',
+    this.sourceStartedAt,
+    this.sourceEndedAt,
+    this.generatedAt,
+    this.overview = '',
+    this.otherConversationSummary = '',
+    this.rangeType = SnackChatSummaryRangeType.unread,
+    this.localDate = '',
+    this.firstSequence = 0,
+    this.isLegacy = false,
+  });
+
+  final List<SnackChatUnreadSummaryItem> items;
+  final int messageCount;
+  final String rangeHash;
+  final String cacheSource;
+  final String summarySource;
+  final List<SnackChatUnreadSummarySection> sections;
+  final int summarySchemaVersion;
+  final int summaryVersion;
+  final int promptVersion;
+  final int firstUnreadSequence;
+  final int latestSequence;
+  final String targetLanguage;
+  final DateTime? sourceStartedAt;
+  final DateTime? sourceEndedAt;
+  final DateTime? generatedAt;
+  final String overview;
+  final String otherConversationSummary;
+  final SnackChatSummaryRangeType rangeType;
+  final String localDate;
+  final int firstSequence;
+  final bool isLegacy;
+  bool get isFallback => summarySource == 'fallback';
+
+  factory SnackChatUnreadSummaryResult.fromMap(Map<String, dynamic> data) {
+    int integer(Object? raw, [int fallback = 0]) =>
+        raw is num ? raw.toInt().clamp(0, 1 << 30).toInt() : fallback;
+    final summarySchemaVersion = integer(data['summarySchemaVersion'], 1);
+    final rawSections = data['sections'];
+    var sections = rawSections is List
+        ? rawSections
+            .whereType<Map>()
+            .map((raw) => SnackChatUnreadSummarySection.fromMap(
+                  Map<String, dynamic>.from(raw),
+                ))
+            .where((section) => section.items.isNotEmpty)
+            .take(5)
+            .toList(growable: false)
+        : const <SnackChatUnreadSummarySection>[];
+    final rawItems = data['items'];
+    var items = rawItems is List
+        ? rawItems
+            .whereType<Map>()
+            .map((raw) => SnackChatUnreadSummaryItem.fromMap(
+                  Map<String, dynamic>.from(raw),
+                ))
+            .where((item) =>
+                item.content.isNotEmpty && item.sourceSequences.isNotEmpty)
+            .take(12)
+            .toList(growable: false)
+        : const <SnackChatUnreadSummaryItem>[];
+    if (sections.isNotEmpty) {
+      items = sections
+          .expand((section) => section.items)
+          .take(12)
+          .toList(growable: false);
+    } else if (items.isNotEmpty && summarySchemaVersion < 3) {
+      sections = <SnackChatUnreadSummarySection>[
+        SnackChatUnreadSummarySection(
+          type: SnackChatSummarySectionType.mustKnow,
+          title: '',
+          items: items,
+        ),
+      ];
+    }
+    final overview = (data['overview'] ?? '').toString().trim();
+    return SnackChatUnreadSummaryResult(
+      items: items,
+      sections: sections,
+      messageCount: integer(
+        data['totalUnreadMessageCount'] ??
+            data['totalTodayMessageCount'] ??
+            data['messageCount'],
+      ).clamp(0, 10000).toInt(),
+      rangeHash: (data['sourceHash'] ?? data['rangeHash'] ?? '').toString(),
+      cacheSource: (data['cacheSource'] ?? 'server').toString(),
+      summarySource: (data['summarySource'] ?? 'gemini').toString(),
+      summarySchemaVersion: summarySchemaVersion,
+      summaryVersion: integer(data['summaryVersion'], 1),
+      promptVersion: integer(data['promptVersion'], 1),
+      firstUnreadSequence: integer(data['firstUnreadSequence']),
+      latestSequence: integer(data['latestSequence']),
+      targetLanguage: (data['targetLanguage'] ?? '').toString(),
+      sourceStartedAt: _summaryDate(data['sourceStartedAt']),
+      sourceEndedAt: _summaryDate(data['sourceEndedAt']),
+      generatedAt: _summaryDate(data['generatedAt']),
+      overview: overview,
+      otherConversationSummary:
+          (data['otherConversationSummary'] ?? '').toString().trim(),
+      rangeType: _summaryRangeType(data['rangeType']),
+      localDate: (data['localDate'] ?? '').toString().trim(),
+      firstSequence: integer(
+        data['firstSequence'] ?? data['firstUnreadSequence'],
+      ),
+      isLegacy:
+          summarySchemaVersion < 3 || (overview.isEmpty && sections.isEmpty),
+    );
+  }
+}
+
+class SnackChatSummaryNotEnoughContentException implements Exception {
+  const SnackChatSummaryNotEnoughContentException();
+}
+
+class SnackChatNoMessagesTodayException implements Exception {
+  const SnackChatNoMessagesTodayException();
 }
 
 class _SnackChatEntryCacheRecord {
@@ -145,6 +450,16 @@ Stream<T> _withFirstEventDeadline<T>(
   return controller.stream;
 }
 
+class _SnackChatSummaryMemoryCacheRecord {
+  const _SnackChatSummaryMemoryCacheRecord({
+    required this.result,
+    required this.expiresAt,
+  });
+
+  final SnackChatUnreadSummaryResult result;
+  final DateTime expiresAt;
+}
+
 class SnackChatService {
   static final SnackChatService _instance = SnackChatService._internal();
 
@@ -172,11 +487,140 @@ class SnackChatService {
   final Map<String, String> _roomEntryPrefetchTokens = {};
   final Map<String, Future<void>> _participantIntegrityInFlight = {};
   final Map<String, DateTime> _participantIntegrityRetryAfter = {};
+  final Map<String, Future<SnackChatUnreadSummaryResult>>
+      _unreadSummaryInFlight = {};
+  final Map<String, _SnackChatSummaryMemoryCacheRecord>
+      _unreadSummaryMemoryCache = {};
   String? _entryCacheOwnerUid;
 
   static const Duration _entryContextCacheLifetime = Duration(seconds: 30);
-
+  static const Duration _unreadSummaryMemoryCacheLifetime =
+      Duration(minutes: 1);
+  static const int _unreadSummaryMemoryCacheLimit = 24;
   String? get _uid => _auth.currentUser?.uid;
+
+  Future<SnackChatUnreadSummaryResult> summarizeUnreadRange({
+    required String snackChatId,
+    required int firstUnreadSequence,
+    required int latestSequence,
+    required String targetLanguage,
+  }) =>
+      _summarizeRange(
+        inFlightKeyParts: <Object>[
+          'unread',
+          snackChatId,
+          firstUnreadSequence,
+          latestSequence,
+          targetLanguage,
+        ],
+        payload: <String, dynamic>{
+          'snackChatId': snackChatId,
+          'summaryRangeType': 'unread',
+          'firstUnreadSequence': firstUnreadSequence,
+          'latestSequence': latestSequence,
+          'targetLanguage': targetLanguage,
+        },
+      );
+
+  Future<SnackChatUnreadSummaryResult> summarizeTodayRange({
+    required String snackChatId,
+    required int latestSequence,
+    required String targetLanguage,
+    DateTime? requestedAt,
+  }) {
+    final window = buildSnackChatTodaySummaryWindow(
+      requestedAt ?? DateTime.now(),
+    );
+    return _summarizeRange(
+      inFlightKeyParts: <Object>[
+        'today',
+        snackChatId,
+        window.localDate,
+        window.timezoneOffsetMinutes,
+        window.start.toUtc().toIso8601String(),
+        latestSequence,
+        targetLanguage,
+      ],
+      payload: <String, dynamic>{
+        'snackChatId': snackChatId,
+        'summaryRangeType': 'today',
+        'targetLanguage': targetLanguage,
+        'latestSequence': latestSequence,
+        'localDate': window.localDate,
+        'timezoneOffsetMinutes': window.timezoneOffsetMinutes,
+        'timezoneName': window.timezoneName,
+        'todayStartUtc': window.start.toUtc().toIso8601String(),
+        'tomorrowStartUtc': window.nextStart.toUtc().toIso8601String(),
+      },
+    );
+  }
+
+  Future<SnackChatUnreadSummaryResult> _summarizeRange({
+    required List<Object> inFlightKeyParts,
+    required Map<String, dynamic> payload,
+  }) {
+    final uid = _uid;
+    if (uid == null || uid.isEmpty) {
+      return Future<SnackChatUnreadSummaryResult>.error(
+        StateError('Sign-in is required.'),
+      );
+    }
+    _ensureEntryCacheOwner(uid);
+    final key = <Object>[uid, ...inFlightKeyParts].join(':');
+    final now = DateTime.now();
+    _unreadSummaryMemoryCache.removeWhere(
+      (_, record) => !record.expiresAt.isAfter(now),
+    );
+    final cached = _unreadSummaryMemoryCache[key];
+    if (cached != null) {
+      return Future<SnackChatUnreadSummaryResult>.value(cached.result);
+    }
+    final active = _unreadSummaryInFlight[key];
+    if (active != null) return active;
+
+    final request = (() async {
+      final response = await _functions
+          .httpsCallable('summarizeSnackChatUnread')
+          .call(payload)
+          .timeout(const Duration(seconds: 65));
+      final data = response.data is Map
+          ? Map<String, dynamic>.from(response.data as Map)
+          : const <String, dynamic>{};
+      if (data['status'] == 'not_enough_content') {
+        throw const SnackChatSummaryNotEnoughContentException();
+      }
+      if (data['status'] == 'no_messages_today') {
+        throw const SnackChatNoMessagesTodayException();
+      }
+      final result = SnackChatUnreadSummaryResult.fromMap(data);
+      if (data['success'] != true || result.items.isEmpty || result.isLegacy) {
+        throw StateError('The Snack Chat summary response was empty.');
+      }
+      if (_entryCacheOwnerUid == uid) {
+        _unreadSummaryMemoryCache[key] = _SnackChatSummaryMemoryCacheRecord(
+          result: result,
+          expiresAt: DateTime.now().add(_unreadSummaryMemoryCacheLifetime),
+        );
+        while (
+            _unreadSummaryMemoryCache.length > _unreadSummaryMemoryCacheLimit) {
+          _unreadSummaryMemoryCache.remove(
+            _unreadSummaryMemoryCache.keys.first,
+          );
+        }
+      }
+      return result;
+    })();
+    _unreadSummaryInFlight[key] = request;
+    unawaited(
+      request.then<void>(
+        (_) => _unreadSummaryInFlight.remove(key),
+        onError: (Object _, StackTrace __) {
+          _unreadSummaryInFlight.remove(key);
+        },
+      ),
+    );
+    return request;
+  }
 
   void _ensureEntryCacheOwner(String uid) {
     if (_entryCacheOwnerUid == uid) return;
@@ -189,6 +633,8 @@ class SnackChatService {
     _roomEntryPrefetchTokens.clear();
     _participantIntegrityInFlight.clear();
     _participantIntegrityRetryAfter.clear();
+    _unreadSummaryInFlight.clear();
+    _unreadSummaryMemoryCache.clear();
   }
 
   SnackChat? _latestRoom(String snackChatId) {
@@ -341,10 +787,11 @@ class SnackChatService {
           if (!chat.isHardExpired(now)) items.add(chat);
         } catch (error, stackTrace) {
           // One malformed room must never terminate both Today and All lists.
-          if (Logger.isVerboseEnabled) Logger.warning(
-            '지원되지 않는 Snack Chat 문서를 건너뜁니다: ${doc.id} '
-            '($error)\n$stackTrace',
-          );
+          if (Logger.isVerboseEnabled)
+            Logger.warning(
+              '지원되지 않는 Snack Chat 문서를 건너뜁니다: ${doc.id} '
+              '($error)\n$stackTrace',
+            );
         }
       }
       items.sort((a, b) => b.lastMessageTime.compareTo(a.lastMessageTime));
@@ -657,7 +1104,8 @@ class SnackChatService {
             .getUserProfilesBatch(profileIds.take(20).toList(growable: false))
             .then<void>((_) {})
             .catchError((Object error) {
-          if (Logger.isVerboseEnabled) Logger.warning('Snack Chat 참여자 프로필 선조회 실패: $error');
+          if (Logger.isVerboseEnabled)
+            Logger.warning('Snack Chat 참여자 프로필 선조회 실패: $error');
         }),
       );
     }
@@ -719,7 +1167,8 @@ class SnackChatService {
       if (_uid == uid) _roomEntryPrefetchTokens[key] = token;
     }()
         .catchError((Object error) {
-      if (Logger.isVerboseEnabled) Logger.warning('Snack Chat 진입 데이터 선조회 실패(${room.id}): $error');
+      if (Logger.isVerboseEnabled)
+        Logger.warning('Snack Chat 진입 데이터 선조회 실패(${room.id}): $error');
     }).whenComplete(() {
       if (identical(_roomEntryPrefetchInFlight[key], operation)) {
         _roomEntryPrefetchInFlight.remove(key);
@@ -746,7 +1195,8 @@ class SnackChatService {
       await _localCache.upsertMessages(room.id, messages);
       _messagePrefetchSequences[key] = room.lastMessageSequence;
     }).catchError((Object error) {
-      if (Logger.isVerboseEnabled) Logger.warning('Snack Chat 최근 메시지 선조회 실패(${room.id}): $error');
+      if (Logger.isVerboseEnabled)
+        Logger.warning('Snack Chat 최근 메시지 선조회 실패(${room.id}): $error');
     }).whenComplete(() {
       if (identical(_messagePrefetchInFlight[key], operation)) {
         _messagePrefetchInFlight.remove(key);
@@ -862,9 +1312,10 @@ class SnackChatService {
       if (error.code != 'not-found' && error.code != 'unimplemented') {
         rethrow;
       }
-      if (Logger.isVerboseEnabled) Logger.log(
-        'Snack Chat entry callable is not available yet; using server cursor fallback.',
-      );
+      if (Logger.isVerboseEnabled)
+        Logger.log(
+          'Snack Chat entry callable is not available yet; using server cursor fallback.',
+        );
       return _getEntryContextFromFirestore(snackChatId);
     }
   }
@@ -1475,7 +1926,8 @@ class SnackChatService {
         'url': url,
       }).timeout(const Duration(seconds: 12));
     } catch (error) {
-      if (Logger.isVerboseEnabled) Logger.warning('Snack Chat 링크 미리보기 생성 실패(메시지 유지): $error');
+      if (Logger.isVerboseEnabled)
+        Logger.warning('Snack Chat 링크 미리보기 생성 실패(메시지 유지): $error');
     }
   }
 
@@ -1540,7 +1992,8 @@ class SnackChatService {
         .catchError((Object error) {
       _participantIntegrityRetryAfter[key] =
           DateTime.now().add(const Duration(minutes: 1));
-      if (Logger.isVerboseEnabled) Logger.warning('Snack Chat 참여자 정보 정리 실패: $error');
+      if (Logger.isVerboseEnabled)
+        Logger.warning('Snack Chat 참여자 정보 정리 실패: $error');
     }).whenComplete(() {
       if (identical(_participantIntegrityInFlight[key], operation)) {
         _participantIntegrityInFlight.remove(key);
@@ -1562,10 +2015,11 @@ class SnackChatService {
     if (uid == null || throughSequence <= 0) return 0;
 
     try {
-      if (Logger.isVerboseEnabled) Logger.log(
-        '📖 [SnackChat] markAsRead: room=$snackChatId, '
-        'uid=$uid, through=$throughSequence',
-      );
+      if (Logger.isVerboseEnabled)
+        Logger.log(
+          '📖 [SnackChat] markAsRead: room=$snackChatId, '
+          'uid=$uid, through=$throughSequence',
+        );
       final result = await _functions
           .httpsCallable('markSnackChatReadSecure')
           .call(<String, dynamic>{
@@ -1853,19 +2307,52 @@ class SnackChatService {
     }
   }
 
-  /// 즐겨찾기 스냅챗의 총 안 읽은 수 (Groups탭 배지용)
-  Stream<int> getTotalUnreadCount() {
+  int _totalUnreadCount(
+    List<SnackChat> chats,
+    String uid, {
+    required bool excludeActiveRoom,
+  }) {
+    final activeRoomId = excludeActiveRoom
+        ? SnackChatActiveConversation.activeSnackChatId
+        : null;
+    var total = 0;
+    for (final chat in chats) {
+      if (chat.id == activeRoomId) continue;
+      if (chat.isExpired() && !chat.isFavoritedBy(uid)) continue;
+      final value = chat.unreadCount[uid];
+      if (value != null && value > 0) total += value;
+    }
+    return total < 0 ? 0 : total;
+  }
+
+  /// 이미 공유 중인 방 snapshot으로 계산할 수 있으면 추가 Firestore read 없이
+  /// 현재 총합을 반환합니다. BadgeService의 중복 participant query 방지용입니다.
+  int? getCachedTotalUnreadCount({bool excludeActiveRoom = false}) {
+    final uid = _uid;
+    final chats = _latestMySnackChats;
+    if (uid == null || chats == null) return null;
+    return _totalUnreadCount(
+      chats,
+      uid,
+      excludeActiveRoom: excludeActiveRoom,
+    );
+  }
+
+  /// 즐겨찾기 스낵챗의 총 안 읽은 수 (Groups탭/앱 배지용)
+  ///
+  /// 모든 소비자는 `_watchMySnackChats`의 단일 Firestore listener를 공유합니다.
+  Stream<int> getTotalUnreadCount({bool excludeActiveRoom = false}) {
     final uid = _uid;
     if (uid == null) return Stream.value(0);
-    return _watchMySnackChats().map((chats) {
-      int total = 0;
-      for (final chat in chats) {
-        if (chat.isExpired() && !chat.isFavoritedBy(uid)) continue;
-        final v = chat.unreadCount[uid];
-        if (v != null && v > 0) total += v;
-      }
-      return total < 0 ? 0 : total;
-    }).distinct();
+    return _watchMySnackChats()
+        .map(
+          (chats) => _totalUnreadCount(
+            chats,
+            uid,
+            excludeActiveRoom: excludeActiveRoom,
+          ),
+        )
+        .distinct();
   }
 
   /// 즐겨찾기된 스냅챗의 안 읽은 메시지 총 개수 스트림

@@ -13,6 +13,9 @@
     "migrate:nicknames": "node scripts/migrate_nickname_claims.js",
     "migrate:content-search": "node scripts/migrate_content_search_indexes.js",
     "test:content-search": "node scripts/test_content_search_helpers.js",
+    "test:snack-summary": "npm run build && node scripts/test_snack_chat_unread_summary_helpers.js && node scripts/test_snack_chat_structured_summary_schema_contract.js",
+    "test:snack-summary-schema": "npm run build && node scripts/test_snack_chat_structured_summary_schema_contract.js",
+    "canary:snack-summary-schema": "npm run build && node scripts/canary_snack_chat_structured_summary_schema.js",
     "test:auth-registration": "node scripts/test_auth_registration_helpers.js",
     "migrate:friend-counts": "node scripts/migrate_friend_counts.js"
   },

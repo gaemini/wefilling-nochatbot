@@ -39,14 +39,32 @@ import '../ui/sheets/snack_chat_attachment_sheet.dart';
 import '../ui/sheets/snack_chat_file_confirmation_sheet.dart';
 import '../ui/sheets/snack_chat_image_confirmation_sheet.dart';
 import '../ui/sheets/snack_chat_people_sheet.dart';
+import '../ui/sheets/snack_chat_unread_summary_sheet.dart';
 import '../ui/sheets/translation_language_sheet.dart';
 import '../utils/responsive_helper.dart';
 import '../utils/logger.dart';
 import '../utils/snack_chat_message_grouping.dart';
 import '../utils/snack_chat_translation_policy.dart';
+import '../utils/snack_chat_unread_summary_policy.dart';
 import 'friend_categories_screen.dart';
 import 'main_screen.dart';
 import 'snack_chat_info_screen.dart';
+
+@visibleForTesting
+bool isSnackChatMessageMeaningfullyVisible({
+  required double itemTop,
+  required double itemHeight,
+  required double viewportTop,
+  required double viewportBottom,
+}) {
+  if (itemHeight <= 0 || viewportBottom <= viewportTop) return false;
+  final itemBottom = itemTop + itemHeight;
+  final visibleHeight = (itemBottom.clamp(viewportTop, viewportBottom) -
+          itemTop.clamp(viewportTop, viewportBottom))
+      .abs();
+  final requiredVisibleHeight = (itemHeight * .2).clamp(8.0, 24.0).toDouble();
+  return visibleHeight >= requiredVisibleHeight;
+}
 
 class SnackChatScreen extends StatefulWidget {
   final String snackChatId;
@@ -143,6 +161,8 @@ class _SnackChatScreenState extends State<SnackChatScreen>
   static const int _translationAdjacentPrefetchLimit = 2;
   static const Duration _translationMicroBatchWindow =
       Duration(milliseconds: 70);
+  static const double _senderAvatarSize = 34;
+  static const double _senderAvatarGap = 8;
 
   final SnackChatService _snackChatService = SnackChatService();
   final UsersRepository _usersRepository = UsersRepository();
@@ -173,12 +193,17 @@ class _SnackChatScreenState extends State<SnackChatScreen>
   bool _pushBackNavigationInFlight = false;
   bool _exitReadFlushStarted = false;
   bool _activeReadSyncInFlight = false;
+  bool _readSyncScanScheduled = false;
   int _pendingReadSequence = 0;
   int _confirmedReadSequence = 0;
+  int _highestVisibleReadSequence = 0;
   int _readSyncGeneration = 0;
   final Map<String, String> _senderNameCache = {};
   final Map<String, Future<String>> _senderNameFutures = {};
   final Set<String> _senderProfileRefreshStarted = <String>{};
+  final Map<String, ValueNotifier<DMUserInfo?>> _senderProfileNotifiers = {};
+  final Set<String> _senderProfileLookupsStarted = <String>{};
+  int _senderProfileGeneration = 0;
   final Map<String, GlobalKey> _messageKeys = {};
   final GlobalKey _messageViewportKey =
       GlobalKey(debugLabel: 'snack-chat-message-viewport');
@@ -246,6 +271,12 @@ class _SnackChatScreenState extends State<SnackChatScreen>
   int _entryBootstrapGeneration = 0;
   String? _firstUnreadMessageId;
   int? _firstUnreadSequence;
+  int _entryUnreadCount = 0;
+  int _entryLatestSequence = 0;
+  bool _unreadSummaryLoading = false;
+  int _unreadSummaryRequestGeneration = 0;
+  bool _todaySummaryLoading = false;
+  int _todaySummaryRequestGeneration = 0;
   bool _entryContextResolved = false;
   bool _entryPositionSettled = false;
   bool _entryReadSyncAllowed = false;
@@ -1315,8 +1346,10 @@ class _SnackChatScreenState extends State<SnackChatScreen>
     if (SnackChatActiveConversation.isActive(oldWidget.snackChatId)) {
       SnackChatActiveConversation.setActive(null);
     }
-    final oldReadBoundary = _latestLoadedSequence();
-    if (oldReadBoundary > 0 && _entryReadSyncAllowed && _entryPositionSettled) {
+    final oldReadBoundary = _latestVisibleSequence();
+    if (oldReadBoundary > _confirmedReadSequence &&
+        _entryReadSyncAllowed &&
+        _entryPositionSettled) {
       unawaited(
         _flushReadBoundary(
           roomId: oldWidget.snackChatId,
@@ -1355,6 +1388,15 @@ class _SnackChatScreenState extends State<SnackChatScreen>
     _senderNameCache.clear();
     _senderNameFutures.clear();
     _senderProfileRefreshStarted.clear();
+    _senderProfileGeneration++;
+    _senderProfileLookupsStarted.clear();
+    final staleProfileNotifiers = _senderProfileNotifiers.values.toList();
+    _senderProfileNotifiers.clear();
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      for (final notifier in staleProfileNotifiers) {
+        notifier.dispose();
+      }
+    });
     _myReactions.clear();
     _myVotes.clear();
     _confirmedReactions.clear();
@@ -1385,8 +1427,10 @@ class _SnackChatScreenState extends State<SnackChatScreen>
     _pushBackNavigationInFlight = false;
     _exitReadFlushStarted = false;
     _activeReadSyncInFlight = false;
+    _readSyncScanScheduled = false;
     _pendingReadSequence = 0;
     _confirmedReadSequence = 0;
+    _highestVisibleReadSequence = 0;
     _readSyncGeneration++;
     _isNearLatest = true;
     _outboxRetryAttempt = 0;
@@ -1397,6 +1441,10 @@ class _SnackChatScreenState extends State<SnackChatScreen>
     _entryBootstrapGeneration++;
     _firstUnreadMessageId = null;
     _firstUnreadSequence = null;
+    _unreadSummaryLoading = false;
+    _unreadSummaryRequestGeneration++;
+    _todaySummaryLoading = false;
+    _todaySummaryRequestGeneration++;
     _entryContextResolved = false;
     _entryPositionSettled = false;
     _entryReadSyncAllowed = false;
@@ -1519,24 +1567,63 @@ class _SnackChatScreenState extends State<SnackChatScreen>
     final draftFuture = _localCache.getDraft(roomId);
     final entryFuture = _localCache.getEntryState(roomId);
     final cachedMessages = await messagesFuture;
-    // Hive 번역 복원을 다른 로컬 상태 읽기와 겹쳐 수행한다. 메시지를 먼저
-    // 그린 뒤 번역문으로 높이가 바뀌지 않도록 첫 프레임 전에 결과를 붙인다.
-    final translationsFuture = _cachedTranslationsForMessages(
-      roomId: roomId,
-      messages: cachedMessages,
-      uiLanguageCode: uiLanguageCode,
-    );
-    final cachedRoom = await roomFuture;
-    final draft = await draftFuture;
-    final cachedEntry = await entryFuture;
-    final cachedTranslations = await translationsFuture;
     if (!mounted ||
         generation != _cacheHydrationGeneration ||
         roomId != widget.snackChatId ||
         ownerUid != _uid) {
       return;
     }
-    ContentTranslationResult? firstTranslatedResult;
+
+    // 메모리/Hive에 있던 메시지는 다른 로컬 상태와 번역 캐시를 기다리지
+    // 않고 먼저 그린다. 번역과 프로필 복원은 아래에서 독립적으로 진행해
+    // 캐시가 있는 방의 첫 화면을 막지 않는다.
+    setState(() {
+      for (final cached in cachedMessages) {
+        if (_messageIds.add(cached.id)) {
+          _messages.add(
+            cached.isPending
+                ? cached.copyWith(
+                    sendStatus: MessageSendStatus.failed,
+                    errorMessage: '전송 상태를 확인해 주세요. 눌러서 다시 시도할 수 있습니다.',
+                  )
+                : cached,
+          );
+        }
+      }
+      if (_messages.isNotEmpty) {
+        _sortMessages();
+        _updateOldestMessageCursor(cachedMessages);
+        _isInitialLoading = false;
+      }
+    });
+    if (_entryContextResolved &&
+        !_entryPositionSettled &&
+        _firstUnreadMessageId != null) {
+      _scheduleEntryAnchorPosition(generation: _entryBootstrapGeneration);
+    } else {
+      _scheduleActiveReadSync();
+    }
+    unawaited(
+      _hydrateCachedTranslations(
+        roomId: roomId,
+        ownerUid: ownerUid,
+        generation: generation,
+        messages: cachedMessages,
+        uiLanguageCode: uiLanguageCode,
+      ),
+    );
+    _scheduleSenderProfileHydration(cachedMessages);
+    _scheduleOutboxRecovery();
+
+    final cachedRoom = await roomFuture;
+    final draft = await draftFuture;
+    final cachedEntry = await entryFuture;
+    if (!mounted ||
+        generation != _cacheHydrationGeneration ||
+        roomId != widget.snackChatId ||
+        ownerUid != _uid) {
+      return;
+    }
     setState(() {
       _lastRoom ??= cachedRoom;
       final boundaryRoom = _lastRoom ?? cachedRoom;
@@ -1559,23 +1646,8 @@ class _SnackChatScreenState extends State<SnackChatScreen>
           ),
         );
       }
-      for (final cached in cachedMessages) {
-        if (_messageIds.add(cached.id)) {
-          _messages.add(
-            cached.isPending
-                ? cached.copyWith(
-                    sendStatus: MessageSendStatus.failed,
-                    errorMessage: '전송 상태를 확인해 주세요. 눌러서 다시 시도할 수 있습니다.',
-                  )
-                : cached,
-          );
-        }
-      }
-      if (_messages.isNotEmpty) {
-        _sortMessages();
-        _updateOldestMessageCursor(cachedMessages);
-        _isInitialLoading = false;
-      } else if (cachedRoom != null &&
+      if (_messages.isEmpty &&
+          cachedRoom != null &&
           cachedRoom.lastMessageId.isEmpty &&
           cachedRoom.lastMessage.isEmpty) {
         _isInitialLoading = false;
@@ -1590,27 +1662,64 @@ class _SnackChatScreenState extends State<SnackChatScreen>
         );
         _restoringDraft = false;
       }
-      firstTranslatedResult = _applyCachedMessageTranslations(
-        roomId: roomId,
-        messages: cachedMessages,
-        cached: cachedTranslations,
-      );
     });
-    _registerCachedTranslationScope(firstTranslatedResult);
     if (_entryContextResolved &&
         !_entryPositionSettled &&
         _firstUnreadMessageId != null) {
       _scheduleEntryAnchorPosition(generation: _entryBootstrapGeneration);
+    } else {
+      _scheduleActiveReadSync();
     }
-    unawaited(
-      _hydrateCachedSenderNames(
+  }
+
+  Future<void> _hydrateCachedTranslations({
+    required String roomId,
+    required String ownerUid,
+    required int generation,
+    required List<SnackChatMessage> messages,
+    required String uiLanguageCode,
+  }) async {
+    Map<String, ContentTranslationResult> cachedTranslations;
+    try {
+      cachedTranslations = await _cachedTranslationsForMessages(
         roomId: roomId,
-        ownerUid: ownerUid,
-        generation: generation,
-        senderIds: cachedMessages.map((message) => message.senderId),
-      ),
-    );
-    _scheduleOutboxRecovery();
+        messages: messages,
+        uiLanguageCode: uiLanguageCode,
+      );
+    } catch (error) {
+      if (Logger.isVerboseEnabled) {
+        Logger.warning('Snack Chat 저장 번역 복원 실패(원문 유지): $error');
+      }
+      return;
+    }
+    if (!mounted ||
+        generation != _cacheHydrationGeneration ||
+        roomId != widget.snackChatId ||
+        ownerUid != _uid ||
+        cachedTranslations.isEmpty) {
+      return;
+    }
+
+    final keepAtLatest = _isNearLatest;
+    final anchor = keepAtLatest ? null : _captureScrollAnchor();
+    ContentTranslationResult? firstTranslatedResult;
+    setState(() {
+      firstTranslatedResult = _applyCachedMessageTranslations(
+        roomId: roomId,
+        messages: messages,
+        cached: cachedTranslations,
+      );
+    });
+    _registerCachedTranslationScope(firstTranslatedResult);
+    if (keepAtLatest) {
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (mounted && roomId == widget.snackChatId && _isNearLatest) {
+          _scrollToLatest(animated: false);
+        }
+      });
+    } else {
+      _restoreScrollAnchor(anchor);
+    }
   }
 
   Future<Map<String, ContentTranslationResult>> _cachedTranslationsForMessages({
@@ -1662,26 +1771,133 @@ class _SnackChatScreenState extends State<SnackChatScreen>
     );
   }
 
-  Future<void> _hydrateCachedSenderNames({
+  void _scheduleSenderProfileHydration(
+    Iterable<SnackChatMessage> messages,
+  ) {
+    final ownerUid = _uid;
+    if (ownerUid == null) return;
+    final missingIds = messages
+        .where((message) =>
+            message.type != SnackChatMessageType.system &&
+            !_isAnonymousSnackChatMessage(message))
+        .map((message) => message.senderId.trim())
+        .where((id) =>
+            id.isNotEmpty &&
+            id != ownerUid &&
+            !_blockedUserIds.contains(id) &&
+            _senderProfileLookupsStarted.add(id))
+        .toList(growable: false);
+    if (missingIds.isEmpty) return;
+    // This batch owns the one refresh for these senders. The existing name
+    // resolver must not start a second server request for the same profile.
+    _senderProfileRefreshStarted.addAll(missingIds);
+
+    final hydration = _hydrateSenderProfiles(
+      roomId: widget.snackChatId,
+      ownerUid: ownerUid,
+      generation: _senderProfileGeneration,
+      senderIds: missingIds,
+    );
+    unawaited(hydration.catchError((Object error, StackTrace stackTrace) {
+      Logger.error('Snack Chat 발신자 프로필 복원 실패', error, stackTrace);
+    }));
+  }
+
+  Future<void> _hydrateSenderProfiles({
     required String roomId,
     required String ownerUid,
     required int generation,
-    required Iterable<String> senderIds,
+    required List<String> senderIds,
   }) async {
-    final profiles = await _userInfoCache.hydrateUsers(senderIds);
-    if (!mounted ||
-        generation != _cacheHydrationGeneration ||
-        roomId != widget.snackChatId ||
-        ownerUid != _uid) {
+    final cachedProfiles = await _userInfoCache.hydrateUsers(senderIds);
+    if (!_isCurrentSenderProfileRequest(
+      roomId: roomId,
+      ownerUid: ownerUid,
+      generation: generation,
+    )) {
       return;
     }
+    _publishSenderProfiles(cachedProfiles);
+
+    // A fresh shared-memory entry is reused without another Firestore read.
+    // Persisted entries are painted immediately, then refreshed once because
+    // their saved timestamp may belong to an earlier app session.
+    final persistedIds = <String>[];
+    final reusableOrMissingIds = <String>[];
+    for (final senderId in senderIds) {
+      if (cachedProfiles[senderId]?.isFromCache == true) {
+        persistedIds.add(senderId);
+      } else {
+        reusableOrMissingIds.add(senderId);
+      }
+    }
+    final profileBatches = await Future.wait(<Future<Map<String, DMUserInfo?>>>[
+      if (reusableOrMissingIds.isNotEmpty)
+        _userInfoCache.getUserInfoBatch(reusableOrMissingIds),
+      if (persistedIds.isNotEmpty)
+        _userInfoCache.getUserInfoBatch(persistedIds, forceRefresh: true),
+    ]);
+    final freshProfiles = <String, DMUserInfo?>{};
+    for (final batch in profileBatches) {
+      freshProfiles.addAll(batch);
+    }
+    if (!_isCurrentSenderProfileRequest(
+      roomId: roomId,
+      ownerUid: ownerUid,
+      generation: generation,
+    )) {
+      return;
+    }
+    _publishSenderProfiles(freshProfiles);
+  }
+
+  bool _isCurrentSenderProfileRequest({
+    required String roomId,
+    required String ownerUid,
+    required int generation,
+  }) =>
+      mounted &&
+      !_isLeavingRoom &&
+      generation == _senderProfileGeneration &&
+      roomId == widget.snackChatId &&
+      ownerUid == _uid;
+
+  void _publishSenderProfiles(Map<String, DMUserInfo?> profiles) {
     for (final entry in profiles.entries) {
-      final nickname = entry.value?.nickname.trim() ?? '';
+      if (_blockedUserIds.contains(entry.key)) continue;
+      final profile = entry.value;
+      final nickname = profile?.nickname.trim() ?? '';
       if (nickname.isNotEmpty && !_looksLikeInternalIdentifier(nickname)) {
         _senderNameCache[entry.key] = nickname;
       }
+      final notifier = _senderProfileNotifiers.putIfAbsent(
+        entry.key,
+        () => ValueNotifier<DMUserInfo?>(
+          _userInfoCache.getCachedUserInfo(entry.key),
+        ),
+      );
+      if (!_sameSenderProfile(notifier.value, profile)) {
+        notifier.value = profile;
+      }
     }
   }
+
+  bool _sameSenderProfile(DMUserInfo? first, DMUserInfo? second) {
+    if (identical(first, second)) return true;
+    if (first == null || second == null) return false;
+    return first.uid == second.uid &&
+        first.photoURL == second.photoURL &&
+        first.photoVersion == second.photoVersion &&
+        first.isDeletedAccount == second.isDeletedAccount;
+  }
+
+  ValueNotifier<DMUserInfo?> _senderProfileNotifier(String senderId) =>
+      _senderProfileNotifiers.putIfAbsent(
+        senderId,
+        () => ValueNotifier<DMUserInfo?>(
+          _userInfoCache.getCachedUserInfo(senderId),
+        ),
+      );
 
   void _seedEntryContext(SnackChatEntryContext? entry) {
     if (entry == null) return;
@@ -1689,8 +1905,11 @@ class _SnackChatScreenState extends State<SnackChatScreen>
     _entryReadSyncAllowed = entry.canAdvanceReadCursor;
     _confirmedReadSequence = entry.lastReadSequence;
     _pendingReadSequence = entry.lastReadSequence;
+    _highestVisibleReadSequence = entry.lastReadSequence;
     _firstUnreadMessageId = entry.firstUnreadMessageId;
     _firstUnreadSequence = entry.firstUnreadSequence;
+    _entryUnreadCount = entry.roomUnreadCount;
+    _entryLatestSequence = entry.roomLastSequence;
     _isNearLatest = !entry.hasUnreadAnchor;
     _entryPositionSettled = !entry.hasUnreadAnchor;
   }
@@ -1862,8 +2081,13 @@ class _SnackChatScreenState extends State<SnackChatScreen>
         _entryReadSyncAllowed = entry.canAdvanceReadCursor;
         _confirmedReadSequence = entry.lastReadSequence;
         _pendingReadSequence = entry.lastReadSequence;
+        if (entry.lastReadSequence > _highestVisibleReadSequence) {
+          _highestVisibleReadSequence = entry.lastReadSequence;
+        }
         _firstUnreadMessageId = entry.firstUnreadMessageId;
         _firstUnreadSequence = entry.firstUnreadSequence;
+        _entryUnreadCount = entry.roomUnreadCount;
+        _entryLatestSequence = entry.roomLastSequence;
         for (final message in anchorWindow) {
           if (_messageIds.add(message.id)) _messages.add(message);
         }
@@ -1875,6 +2099,7 @@ class _SnackChatScreenState extends State<SnackChatScreen>
         _isNearLatest = !entry.hasUnreadAnchor;
         _entryPositionSettled = !entry.hasUnreadAnchor;
       });
+      _scheduleSenderProfileHydration(anchorWindow);
       if (entry.hasUnreadAnchor) {
         _scheduleEntryAnchorPosition(generation: generation);
       } else if (_entryReadSyncAllowed) {
@@ -1903,6 +2128,12 @@ class _SnackChatScreenState extends State<SnackChatScreen>
         _entryReadSyncAllowed = false;
         _firstUnreadMessageId = null;
         _firstUnreadSequence = null;
+        _entryUnreadCount = 0;
+        _entryLatestSequence = 0;
+        _unreadSummaryLoading = false;
+        _unreadSummaryRequestGeneration++;
+        _todaySummaryLoading = false;
+        _todaySummaryRequestGeneration++;
         _isNearLatest = true;
       });
       if (_entryRetryAttempt < 3 && _entryRetryTimer == null) {
@@ -2057,15 +2288,43 @@ class _SnackChatScreenState extends State<SnackChatScreen>
   void didChangeMetrics() {
     if (!_isNearLatest) return;
     WidgetsBinding.instance.addPostFrameCallback((_) {
-      if (mounted && _isNearLatest) _scrollToLatest(animated: false);
+      if (mounted && _isNearLatest) {
+        _scrollToLatest(animated: false);
+        _scheduleActiveReadSync();
+      }
     });
   }
 
-  int _latestLoadedSequence() {
-    var latest = 0;
+  int _latestVisibleSequence() {
+    final viewportRenderObject =
+        _messageViewportKey.currentContext?.findRenderObject();
+    if (viewportRenderObject is! RenderBox ||
+        !viewportRenderObject.attached ||
+        !viewportRenderObject.hasSize) {
+      return _highestVisibleReadSequence;
+    }
+    final viewportTop = viewportRenderObject.localToGlobal(Offset.zero).dy;
+    final viewportBottom = viewportTop + viewportRenderObject.size.height;
+    var latest = _highestVisibleReadSequence;
     for (final message in _messages) {
       final sequence = message.sequence;
-      if (sequence != null && sequence > latest) latest = sequence;
+      if (sequence == null || sequence <= latest) continue;
+      final renderObject =
+          _messageKeys[message.id]?.currentContext?.findRenderObject();
+      if (renderObject is! RenderBox ||
+          !renderObject.attached ||
+          !renderObject.hasSize) {
+        continue;
+      }
+      final top = renderObject.localToGlobal(Offset.zero).dy;
+      if (isSnackChatMessageMeaningfullyVisible(
+        itemTop: top,
+        itemHeight: renderObject.size.height,
+        viewportTop: viewportTop,
+        viewportBottom: viewportBottom,
+      )) {
+        latest = sequence;
+      }
     }
     return latest;
   }
@@ -2074,7 +2333,7 @@ class _SnackChatScreenState extends State<SnackChatScreen>
     required String roomId,
     required int throughSequence,
   }) async {
-    if (throughSequence <= 0) return;
+    if (throughSequence <= _confirmedReadSequence) return;
     Object? lastError;
     for (var attempt = 0; attempt < 2; attempt++) {
       try {
@@ -2099,10 +2358,9 @@ class _SnackChatScreenState extends State<SnackChatScreen>
     throw lastError ?? StateError('Snack Chat 읽음 동기화 실패');
   }
 
-  /// 현재 방이 화면에 실제로 열려 있을 때 수신된 최신 sequence를 즉시
-  /// 서버 읽음 커서에 반영한다. 타이머 기반 debounce를 쓰지 않아 읽음
-  /// 숫자가 늦게 사라지지 않으며, 직렬화로 동시에 여러 callable이
-  /// 실행되는 것도 막는다.
+  /// 실제 viewport에 충분히 노출된 가장 높은 sequence만 읽음 경계로 쓴다.
+  /// 프레임 단위로 스캔을 합치고 서버 호출은 직렬화하여 빠른 스크롤이나
+  /// 연속 수신에서도 읽음 callable이 중복 실행되지 않게 한다.
   void _scheduleActiveReadSync() {
     if (!mounted ||
         !_entryContextResolved ||
@@ -2115,8 +2373,38 @@ class _SnackChatScreenState extends State<SnackChatScreen>
         !SnackChatActiveConversation.isActive(widget.snackChatId)) {
       return;
     }
-    final latest = _latestLoadedSequence();
+    if (_readSyncScanScheduled) return;
+    _readSyncScanScheduled = true;
+    final generation = _readSyncGeneration;
+    final roomId = widget.snackChatId;
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!mounted ||
+          generation != _readSyncGeneration ||
+          roomId != widget.snackChatId) {
+        return;
+      }
+      _readSyncScanScheduled = false;
+      _scanVisibleReadBoundary();
+    });
+  }
+
+  void _scanVisibleReadBoundary() {
+    if (!mounted ||
+        !_entryContextResolved ||
+        !_entryPositionSettled ||
+        !_entryReadSyncAllowed ||
+        _isLeavingRoom ||
+        _roomWasLeft ||
+        _roomAccessTerminated ||
+        _appLifecycleState != AppLifecycleState.resumed ||
+        !SnackChatActiveConversation.isActive(widget.snackChatId)) {
+      return;
+    }
+    final latest = _latestVisibleSequence();
     if (latest <= _confirmedReadSequence) return;
+    if (latest > _highestVisibleReadSequence) {
+      _highestVisibleReadSequence = latest;
+    }
     if (latest > _pendingReadSequence) _pendingReadSequence = latest;
     if (_activeReadSyncInFlight) return;
 
@@ -2171,7 +2459,10 @@ class _SnackChatScreenState extends State<SnackChatScreen>
     }
     _exitReadFlushStarted = true;
     final roomId = widget.snackChatId;
-    final throughSequence = _latestLoadedSequence();
+    final throughSequence = _latestVisibleSequence();
+    if (throughSequence > _highestVisibleReadSequence) {
+      _highestVisibleReadSequence = throughSequence;
+    }
     if (throughSequence <= 0) return;
 
     unawaited(
@@ -2278,6 +2569,7 @@ class _SnackChatScreenState extends State<SnackChatScreen>
             _newMessageCount += addedRemoteMessages;
           }
         });
+        _scheduleSenderProfileHydration(incoming);
         _translateNewLiveMessages(liveTranslationCandidates);
         _scheduleMessageCacheWrite();
         _scheduleFileExpiryRefresh();
@@ -2484,6 +2776,7 @@ class _SnackChatScreenState extends State<SnackChatScreen>
             ..clear()
             ..addAll(ids);
         });
+        _scheduleSenderProfileHydration(_messages);
         _restoreScrollAnchor(anchor);
       },
       onError: handleError,
@@ -2647,6 +2940,7 @@ class _SnackChatScreenState extends State<SnackChatScreen>
         _commitDeferredTranslationOutcomes();
       }
       _scheduleTranslationScanAfterLayout();
+      _scheduleActiveReadSync();
     }
     return false;
   }
@@ -2702,6 +2996,7 @@ class _SnackChatScreenState extends State<SnackChatScreen>
           _sortMessages();
         }
       });
+      _scheduleSenderProfileHydration(older);
       _registerCachedTranslationScope(firstTranslatedResult);
       if (older.isNotEmpty) _scheduleMessageWindowExpansion();
       _scheduleMessageCacheWrite();
@@ -2781,6 +3076,13 @@ class _SnackChatScreenState extends State<SnackChatScreen>
   bool _looksLikeInternalIdentifier(String value) =>
       RegExp(r'^[A-Za-z0-9_-]{20,}$').hasMatch(value.trim());
 
+  bool _isAnonymousSnackChatMessage(SnackChatMessage message) {
+    final metadata = message.metadata;
+    return metadata?['isAnonymous'] == true ||
+        metadata?['anonymous'] == true ||
+        metadata?['senderVisibility'] == 'anonymous';
+  }
+
   String _safeUserLabel(String? value) {
     final candidate = value?.trim() ?? '';
     if (candidate == 'DELETED_ACCOUNT' || candidate == 'Deleted') {
@@ -2816,22 +3118,22 @@ class _SnackChatScreenState extends State<SnackChatScreen>
   }
 
   Future<void> _refreshSenderName(String senderId) async {
-    try {
-      final info = await _userInfoCache.getUserInfo(
-        senderId,
-        forceRefresh: true,
-      );
-      final name = info?.nickname.trim() ?? '';
-      if (!mounted ||
-          name.isEmpty ||
-          _looksLikeInternalIdentifier(name) ||
-          _senderNameCache[senderId] == name) {
-        return;
-      }
-      setState(() => _senderNameCache[senderId] = name);
-    } finally {
-      _senderProfileRefreshStarted.remove(senderId);
+    final info = await _userInfoCache.getUserInfo(
+      senderId,
+      forceRefresh: true,
+    );
+    if (!mounted) return;
+    final previousName = _senderNameCache[senderId];
+    if (info != null) {
+      _publishSenderProfiles(<String, DMUserInfo?>{senderId: info});
     }
+    final name = info?.nickname.trim() ?? '';
+    if (name.isEmpty ||
+        _looksLikeInternalIdentifier(name) ||
+        previousName == name) {
+      return;
+    }
+    setState(() => _senderNameCache[senderId] = name);
   }
 
   @override
@@ -2839,8 +3141,16 @@ class _SnackChatScreenState extends State<SnackChatScreen>
     // 화면 이동은 막지 않고, 읽음 동기화 Future만 백그라운드에서 완료한다.
     _startBackgroundReadFlush();
     _readSyncGeneration++;
+    _unreadSummaryRequestGeneration++;
+    _todaySummaryRequestGeneration++;
     _isLeavingRoom = true;
     _cacheHydrationGeneration++;
+    _senderProfileGeneration++;
+    for (final notifier in _senderProfileNotifiers.values) {
+      notifier.dispose();
+    }
+    _senderProfileNotifiers.clear();
+    _senderProfileLookupsStarted.clear();
     _auxiliarySubscriptionGeneration++;
     _auxiliaryRetryTimer?.cancel();
     _draftSaveDebounce?.cancel();
@@ -3696,6 +4006,7 @@ class _SnackChatScreenState extends State<SnackChatScreen>
                 if (older.isEmpty || older.length < 30) _hasMore = false;
                 _sortMessages();
               });
+              _scheduleSenderProfileHydration(older);
               if (older.isEmpty) break;
             } catch (error) {
               if (mounted) setState(() => _loadMoreError = error);
@@ -3711,6 +4022,7 @@ class _SnackChatScreenState extends State<SnackChatScreen>
             // temporarily unavailable intermediate page. It still provides
             // the immutable reply snapshot target without an endless wait.
             setState(() => _insertLocalMessage(target!));
+            _scheduleSenderProfileHydration(<SnackChatMessage>[target]);
             index = _messages.indexWhere((message) => message.id == messageId);
           }
         }
@@ -4753,6 +5065,27 @@ class _SnackChatScreenState extends State<SnackChatScreen>
         : (isKo ? '원문 보기' : 'View original');
     final settingsTooltip = isKo ? '번역 언어 설정' : 'Translation language';
     final toggleLoading = !_translationModeReady;
+    final controlTextStyle = TextStyle(
+      fontFamily: 'Inter',
+      fontFamilyFallback: const ['NotoSansKR'],
+      fontSize: context.rf(11).clamp(10.5, 12).toDouble(),
+      fontWeight: FontWeight.w700,
+      height: 1,
+      letterSpacing: -0.1,
+    );
+    final translationLabelPainter = TextPainter(
+      text: TextSpan(text: toggleLabel, style: controlTextStyle),
+      maxLines: 1,
+      textDirection: Directionality.of(context),
+      textScaler: MediaQuery.textScalerOf(context).clamp(
+        maxScaleFactor: 1.15,
+      ),
+    )..layout();
+    // Match only the translation toggle portion. The separate 28 px language
+    // settings action is intentionally excluded so the recap stays compact.
+    final translationControlWidth =
+        (8 + 15 + 3 + translationLabelPainter.width + 3).ceilToDouble();
+    translationLabelPainter.dispose();
 
     return Material(
       color: Colors.transparent,
@@ -4768,88 +5101,140 @@ class _SnackChatScreenState extends State<SnackChatScreen>
                 12,
                 4,
               ),
-              child: DecoratedBox(
-                decoration: BoxDecoration(
-                  color: const Color(0xFFEEF8FE),
-                  borderRadius: BorderRadius.circular(14),
-                ),
-                child: Row(
-                  mainAxisSize: MainAxisSize.min,
+              child: MediaQuery.withClampedTextScaling(
+                maxScaleFactor: 1.15,
+                child: Wrap(
+                  alignment: WrapAlignment.end,
+                  crossAxisAlignment: WrapCrossAlignment.center,
+                  spacing: 5,
+                  runSpacing: 4,
                   children: [
-                    Semantics(
-                      button: true,
-                      label: toggleTooltip,
-                      child: Tooltip(
-                        message: toggleTooltip,
+                    Tooltip(
+                      message: isKo ? '오늘 대화 정리' : "Today's recap",
+                      child: SizedBox(
+                        width: translationControlWidth,
+                        height: 28,
                         child: TextButton(
-                          key: const ValueKey('snack_translation_toggle'),
-                          onPressed: _translationModeReady
-                              ? _toggleSnackTranslation
-                              : null,
+                          key: const ValueKey('snack_today_recap_button'),
+                          onPressed:
+                              _todaySummaryLoading ? null : _openTodaySummary,
                           style: TextButton.styleFrom(
-                            foregroundColor: const Color(0xFF087BB5),
-                            disabledForegroundColor: const Color(0xFF76AFCB),
+                            foregroundColor: Colors.white,
+                            disabledForegroundColor: const Color(0xFFD6EBF5),
+                            backgroundColor: const Color(0xFF087BB5),
+                            disabledBackgroundColor: const Color(0xFF76AFCB),
                             minimumSize: const Size(0, 28),
                             maximumSize: const Size(double.infinity, 28),
-                            padding: const EdgeInsets.fromLTRB(8, 0, 3, 0),
+                            padding: const EdgeInsets.symmetric(horizontal: 10),
                             tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                            visualDensity: VisualDensity.compact,
                             shape: const StadiumBorder(),
                           ),
-                          child: Row(
-                            mainAxisSize: MainAxisSize.min,
-                            children: [
-                              if (toggleLoading)
-                                const SizedBox.square(
+                          child: _todaySummaryLoading
+                              ? const SizedBox.square(
                                   dimension: 14,
                                   child: CircularProgressIndicator(
                                     strokeWidth: 1.8,
-                                    color: Color(0xFF76AFCB),
+                                    color: Color(0xFFD6EBF5),
                                   ),
                                 )
-                              else
-                                const Icon(Icons.translate_rounded, size: 15),
-                              const SizedBox(width: 3),
-                              Text(
-                                toggleLabel,
-                                maxLines: 1,
-                                overflow: TextOverflow.ellipsis,
-                                softWrap: false,
-                                style: TextStyle(
-                                  fontFamily: 'Inter',
-                                  fontFamilyFallback: const ['NotoSansKR'],
-                                  fontSize:
-                                      context.rf(11).clamp(10.5, 12).toDouble(),
-                                  fontWeight: FontWeight.w600,
-                                  height: 1,
+                              : Text(
+                                  isKo ? '오늘 정리' : 'Today recap',
+                                  maxLines: 1,
+                                  overflow: TextOverflow.ellipsis,
+                                  softWrap: false,
+                                  textAlign: TextAlign.center,
+                                  style: controlTextStyle,
                                 ),
-                              ),
-                            ],
-                          ),
                         ),
                       ),
                     ),
-                    Semantics(
-                      button: true,
-                      label: settingsTooltip,
-                      child: Tooltip(
-                        message: settingsTooltip,
-                        child: IconButton(
-                          key: const ValueKey(
-                            'snack_translation_language_settings',
+                    DecoratedBox(
+                      decoration: BoxDecoration(
+                        // Keep the existing translation control visually and
+                        // behaviorally unchanged beside the matching recap.
+                        color: const Color(0xFF087BB5),
+                        borderRadius: BorderRadius.circular(14),
+                      ),
+                      child: Row(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          Semantics(
+                            button: true,
+                            label: toggleTooltip,
+                            child: Tooltip(
+                              message: toggleTooltip,
+                              child: TextButton(
+                                key: const ValueKey('snack_translation_toggle'),
+                                onPressed: _translationModeReady
+                                    ? _toggleSnackTranslation
+                                    : null,
+                                style: TextButton.styleFrom(
+                                  foregroundColor: Colors.white,
+                                  disabledForegroundColor:
+                                      const Color(0xFFD6EBF5),
+                                  minimumSize: const Size(0, 28),
+                                  maximumSize: const Size(double.infinity, 28),
+                                  padding:
+                                      const EdgeInsets.fromLTRB(8, 0, 3, 0),
+                                  tapTargetSize:
+                                      MaterialTapTargetSize.shrinkWrap,
+                                  shape: const StadiumBorder(),
+                                ),
+                                child: Row(
+                                  mainAxisSize: MainAxisSize.min,
+                                  children: [
+                                    if (toggleLoading)
+                                      const SizedBox.square(
+                                        dimension: 14,
+                                        child: CircularProgressIndicator(
+                                          strokeWidth: 1.8,
+                                          color: Color(0xFFD6EBF5),
+                                        ),
+                                      )
+                                    else
+                                      const Icon(Icons.translate_rounded,
+                                          size: 15),
+                                    const SizedBox(width: 3),
+                                    Text(
+                                      toggleLabel,
+                                      maxLines: 1,
+                                      overflow: TextOverflow.ellipsis,
+                                      softWrap: false,
+                                      style: controlTextStyle,
+                                    ),
+                                  ],
+                                ),
+                              ),
+                            ),
                           ),
-                          onPressed: _openSnackTranslationLanguageSettings,
-                          icon: const Icon(Icons.settings_outlined),
-                          color: const Color(0xFF526779),
-                          iconSize: 15,
-                          padding: EdgeInsets.zero,
-                          style: IconButton.styleFrom(
-                            minimumSize: const Size(28, 28),
-                            maximumSize: const Size(28, 28),
-                            padding: EdgeInsets.zero,
-                            tapTargetSize: MaterialTapTargetSize.shrinkWrap,
-                            visualDensity: VisualDensity.compact,
+                          Semantics(
+                            button: true,
+                            label: settingsTooltip,
+                            child: Tooltip(
+                              message: settingsTooltip,
+                              child: IconButton(
+                                key: const ValueKey(
+                                  'snack_translation_language_settings',
+                                ),
+                                onPressed:
+                                    _openSnackTranslationLanguageSettings,
+                                icon: const Icon(Icons.settings_outlined),
+                                color: Colors.white,
+                                iconSize: 15,
+                                padding: EdgeInsets.zero,
+                                style: IconButton.styleFrom(
+                                  minimumSize: const Size(28, 28),
+                                  maximumSize: const Size(28, 28),
+                                  padding: EdgeInsets.zero,
+                                  tapTargetSize:
+                                      MaterialTapTargetSize.shrinkWrap,
+                                  visualDensity: VisualDensity.compact,
+                                ),
+                              ),
+                            ),
                           ),
-                        ),
+                        ],
                       ),
                     ),
                   ],
@@ -4984,6 +5369,12 @@ class _SnackChatScreenState extends State<SnackChatScreen>
           final groupedWithOlder = index < _messages.length - 1 &&
               !_hasUnreadBoundaryBetween(message, _messages[index + 1]) &&
               shouldGroupSnackChatMessages(message, _messages[index + 1]);
+          final olderMessage =
+              index < _messages.length - 1 ? _messages[index + 1] : null;
+          final startsSenderIdentityGroup = !isMe &&
+              (!groupedWithOlder ||
+                  olderMessage?.isDeleted == true ||
+                  olderMessage?.type == SnackChatMessageType.system);
           // The list is newest-first and rendered with reverse=true. A date
           // marker therefore belongs to the oldest message of each local day;
           // it will appear directly above that day's message group onscreen.
@@ -5006,7 +5397,7 @@ class _SnackChatScreenState extends State<SnackChatScreen>
                 isMe: isMe,
                 timeText: _formatTime(message.createdAt),
                 showTimeText: !groupedWithNewer,
-                showSenderName: !isMe && !groupedWithOlder,
+                showSenderName: startsSenderIdentityGroup,
                 groupedWithNewer: groupedWithNewer,
                 groupedWithOlder: groupedWithOlder,
               ),
@@ -5518,6 +5909,7 @@ class _SnackChatScreenState extends State<SnackChatScreen>
     final hasText = message.text.trim().isNotEmpty &&
         message.type != SnackChatMessageType.poll &&
         !hasFile;
+    final isAnonymousSender = _isAnonymousSnackChatMessage(message);
     final screenWidth = MediaQuery.sizeOf(context).width;
     final maxBubbleWidth = (screenWidth * (hasImage || hasFile ? 0.76 : 0.70))
         .clamp(160.0, 420.0)
@@ -5696,40 +6088,89 @@ class _SnackChatScreenState extends State<SnackChatScreen>
           ),
       ],
     );
+    Widget messageContent = Column(
+      crossAxisAlignment:
+          isMe ? CrossAxisAlignment.end : CrossAxisAlignment.start,
+      children: [
+        if (!isMe && showSenderName)
+          Padding(
+            padding: const EdgeInsets.only(left: 2, bottom: 4),
+            child: FutureBuilder<String>(
+              future: isAnonymousSender
+                  ? null
+                  : _senderNameFuture(message.senderId, message.senderName),
+              initialData: isAnonymousSender
+                  ? AppLocalizations.of(context)?.anonymous ?? 'Anonymous'
+                  : message.senderName?.trim().isNotEmpty == true
+                      ? _safeUserLabel(message.senderName)
+                      : _senderNameCache[message.senderId] ?? _genericUserLabel,
+              builder: (context, snapshot) => Text(
+                snapshot.data ?? '사용자',
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+                style: TextStyle(
+                  fontFamily: 'Inter',
+                  fontFamilyFallback: const ['NotoSansKR'],
+                  fontSize: context.rf(13).clamp(12, 14).toDouble(),
+                  fontWeight: FontWeight.w700,
+                  color: const Color(0xFF111827),
+                ),
+              ),
+            ),
+          ),
+        row,
+      ],
+    );
+    if (!isMe) {
+      messageContent = Row(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          _buildSenderAvatarSlot(
+            message: message,
+            showAvatar: showSenderName,
+          ),
+          const SizedBox(width: _senderAvatarGap),
+          Expanded(child: messageContent),
+        ],
+      );
+    }
     return Padding(
       padding: EdgeInsets.only(
         bottom: bottomSpacing,
         left: horizontalPadding,
         right: horizontalPadding,
       ),
-      child: Column(
-        crossAxisAlignment:
-            isMe ? CrossAxisAlignment.end : CrossAxisAlignment.start,
-        children: [
-          if (!isMe && showSenderName)
-            Padding(
-              padding: const EdgeInsets.only(left: 2, bottom: 4),
-              child: FutureBuilder<String>(
-                future: _senderNameFuture(message.senderId, message.senderName),
-                initialData: message.senderName?.trim().isNotEmpty == true
-                    ? _safeUserLabel(message.senderName)
-                    : _senderNameCache[message.senderId] ?? _genericUserLabel,
-                builder: (context, snapshot) => Text(
-                  snapshot.data ?? '사용자',
-                  maxLines: 1,
-                  overflow: TextOverflow.ellipsis,
-                  style: TextStyle(
-                    fontFamily: 'Inter',
-                    fontFamilyFallback: const ['NotoSansKR'],
-                    fontSize: context.rf(13).clamp(12, 14).toDouble(),
-                    fontWeight: FontWeight.w700,
-                    color: const Color(0xFF111827),
-                  ),
-                ),
-              ),
+      child: messageContent,
+    );
+  }
+
+  Widget _buildSenderAvatarSlot({
+    required SnackChatMessage message,
+    required bool showAvatar,
+  }) {
+    if (!showAvatar) return const SizedBox(width: _senderAvatarSize);
+    final isAnonymous = _isAnonymousSnackChatMessage(message);
+
+    return SizedBox.square(
+      dimension: _senderAvatarSize,
+      child: ValueListenableBuilder<DMUserInfo?>(
+        valueListenable: _senderProfileNotifier(message.senderId),
+        builder: (context, profile, _) => RepaintBoundary(
+          child: UserAvatar(
+            key: ValueKey(
+              'snack-sender-${message.senderId}-${profile?.photoVersion ?? 0}',
             ),
-          row,
-        ],
+            uid: message.senderId,
+            photoUrl: profile?.photoURL ?? '',
+            photoVersion: profile?.photoVersion ?? 0,
+            isAnonymous: isAnonymous ||
+                profile?.isDeletedAccount == true ||
+                _blockedUserIds.contains(message.senderId),
+            size: _senderAvatarSize,
+            placeholderIcon: Icons.person_outline_rounded,
+            placeholderIconSize: 18,
+          ),
+        ),
       ),
     );
   }
@@ -6323,30 +6764,335 @@ class _SnackChatScreenState extends State<SnackChatScreen>
         (secondSequence >= boundary && firstSequence < boundary);
   }
 
+  SnackChatUnreadSummaryPlan _currentUnreadSummaryPlan() {
+    final firstUnreadSequence = _firstUnreadSequence;
+    final uid = _uid;
+    if (firstUnreadSequence == null || uid == null) {
+      return const SnackChatUnreadSummaryPlan(
+        messages: <SnackChatMessage>[],
+        declaredUnreadCount: 0,
+        shouldShowButton: false,
+        useLocalSummary: false,
+      );
+    }
+    return buildSnackChatUnreadSummaryPlan(
+      messages: _messages,
+      currentUserId: uid,
+      firstUnreadSequence: firstUnreadSequence,
+      latestSequence: _currentUnreadSummaryLatestSequence(),
+      declaredUnreadCount: _entryUnreadCount,
+    );
+  }
+
+  int _currentUnreadSummaryLatestSequence() {
+    var latest = _entryLatestSequence;
+    final uid = _uid;
+    for (final message in _messages) {
+      final sequence = message.sequence;
+      final delivered = message.deliveryRecipientIds;
+      if (sequence == null ||
+          message.senderId == uid ||
+          message.isDeleted ||
+          message.type == SnackChatMessageType.system ||
+          (delivered != null &&
+              delivered.isNotEmpty &&
+              uid != null &&
+              !delivered.contains(uid))) {
+        continue;
+      }
+      if (sequence > latest) latest = sequence;
+    }
+    return latest;
+  }
+
+  int _currentRoomLatestSequence() {
+    var latest = _lastRoom?.lastMessageSequence ?? _entryLatestSequence;
+    for (final message in _messages) {
+      final sequence = message.sequence;
+      if (sequence != null && sequence > latest) latest = sequence;
+    }
+    return latest;
+  }
+
+  String _localUnreadSummaryText(
+    SnackChatMessage message, {
+    required bool isKo,
+    required String targetLanguage,
+  }) {
+    final translation = _currentTranslationForMessage(message);
+    if (translation?.isReady == true &&
+        translation!.targetLanguage == targetLanguage &&
+        !translation.isSameLanguage) {
+      if (message.type == SnackChatMessageType.poll) {
+        final question = translation.translatedFields['text']?.trim() ?? '';
+        if (question.isNotEmpty) return snackChatLocalSummaryPreview(question);
+      }
+      final translatedText = translation.translatedFields['text']?.trim() ?? '';
+      if (translatedText.isNotEmpty) {
+        return snackChatLocalSummaryPreview(translatedText);
+      }
+    }
+    return snackChatLocalSummaryText(message, isKorean: isKo);
+  }
+
+  List<SnackChatUnreadSummaryItem> _localUnreadSummaryItems(
+    SnackChatUnreadSummaryPlan plan, {
+    required bool isKo,
+    required String targetLanguage,
+    int maximumItems = maximumUnreadSummaryItems,
+  }) {
+    return selectSnackChatLocalFallbackMessages(
+      plan.messages,
+      maximumItems: maximumItems,
+    )
+        .map(
+          (message) => SnackChatUnreadSummaryItem(
+            text: _localUnreadSummaryText(
+              message,
+              isKo: isKo,
+              targetLanguage: targetLanguage,
+            ),
+            sourceSequences: <int>[
+              if (message.sequence != null) message.sequence!,
+            ],
+          ),
+        )
+        .where((item) => item.text.trim().isNotEmpty)
+        .toList(growable: false);
+  }
+
+  Future<void> _openUnreadSummary(SnackChatUnreadSummaryPlan plan) async {
+    if (_unreadSummaryLoading || !plan.shouldShowButton) return;
+    final firstUnreadSequence = _firstUnreadSequence;
+    final latestSequence = _currentUnreadSummaryLatestSequence();
+    if (firstUnreadSequence == null || latestSequence < firstUnreadSequence) {
+      return;
+    }
+
+    final roomId = widget.snackChatId;
+    final isKo = Localizations.localeOf(context).languageCode == 'ko';
+    final uiLanguageCode = Localizations.localeOf(context).languageCode;
+    final targetLanguage = uiLanguageCode == 'en' ? 'en' : 'ko';
+    final requestGeneration = ++_unreadSummaryRequestGeneration;
+    setState(() => _unreadSummaryLoading = true);
+    try {
+      late final List<SnackChatUnreadSummaryItem> items;
+      late final int messageCount;
+      var sections = const <SnackChatUnreadSummarySection>[];
+      DateTime? sourceStartedAt;
+      DateTime? sourceEndedAt;
+      var overview = '';
+      var otherConversationSummary = '';
+      if (plan.useLocalSummary) {
+        items = _localUnreadSummaryItems(
+          plan,
+          isKo: isKo,
+          targetLanguage: targetLanguage,
+          maximumItems: maximumLocalSummaryMessages,
+        );
+        messageCount = plan.declaredUnreadCount;
+      } else {
+        final result = await _snackChatService.summarizeUnreadRange(
+          snackChatId: roomId,
+          firstUnreadSequence: firstUnreadSequence,
+          latestSequence: latestSequence,
+          targetLanguage: targetLanguage,
+        );
+        items = result.items;
+        sections = result.sections;
+        messageCount = result.messageCount;
+        sourceStartedAt = result.sourceStartedAt;
+        sourceEndedAt = result.sourceEndedAt;
+        overview = result.isFallback ? '' : result.overview;
+        otherConversationSummary = result.otherConversationSummary;
+      }
+      if (!mounted ||
+          requestGeneration != _unreadSummaryRequestGeneration ||
+          roomId != widget.snackChatId ||
+          items.isEmpty) {
+        return;
+      }
+      setState(() => _unreadSummaryLoading = false);
+      await showSnackChatUnreadSummarySheet(
+        context,
+        items: items,
+        messageCount: messageCount,
+        sections: sections,
+        sourceStartedAt: sourceStartedAt,
+        sourceEndedAt: sourceEndedAt,
+        overview: overview,
+        otherConversationSummary: otherConversationSummary,
+      );
+    } on SnackChatSummaryNotEnoughContentException {
+      if (mounted && requestGeneration == _unreadSummaryRequestGeneration) {
+        _showNotice(
+          isKo
+              ? '요약할 핵심 내용이 충분하지 않아요. 새 메시지를 확인해 주세요.'
+              : 'There is not enough key information to summarize.',
+        );
+      }
+    } catch (error, stackTrace) {
+      Logger.error('스낵챗 안 읽은 대화 요약 실패', error, stackTrace);
+      if (mounted && requestGeneration == _unreadSummaryRequestGeneration) {
+        _showNotice(
+          isKo
+              ? '요약을 불러오지 못했어요. 다시 시도해 주세요.'
+              : 'Could not load the summary. Please try again.',
+        );
+      }
+    } finally {
+      if (mounted &&
+          requestGeneration == _unreadSummaryRequestGeneration &&
+          _unreadSummaryLoading) {
+        setState(() => _unreadSummaryLoading = false);
+      }
+    }
+  }
+
+  Future<void> _openTodaySummary() async {
+    if (_todaySummaryLoading) return;
+    final roomId = widget.snackChatId;
+    final isKo = Localizations.localeOf(context).languageCode == 'ko';
+    final uiLanguageCode = Localizations.localeOf(context).languageCode;
+    final targetLanguage = uiLanguageCode == 'en' ? 'en' : 'ko';
+    final requestedAt = DateTime.now();
+    final latestSequence = _currentRoomLatestSequence();
+    final requestGeneration = ++_todaySummaryRequestGeneration;
+    setState(() => _todaySummaryLoading = true);
+    try {
+      final result = await _snackChatService.summarizeTodayRange(
+        snackChatId: roomId,
+        latestSequence: latestSequence,
+        targetLanguage: targetLanguage,
+        requestedAt: requestedAt,
+      );
+      if (!mounted ||
+          requestGeneration != _todaySummaryRequestGeneration ||
+          roomId != widget.snackChatId ||
+          result.items.isEmpty) {
+        return;
+      }
+      setState(() => _todaySummaryLoading = false);
+      await showSnackChatUnreadSummarySheet(
+        context,
+        items: result.items,
+        messageCount: result.messageCount,
+        sections: result.sections,
+        sourceStartedAt: result.sourceStartedAt,
+        sourceEndedAt: result.sourceEndedAt,
+        overview: result.isFallback ? '' : result.overview,
+        otherConversationSummary: result.otherConversationSummary,
+        rangeType: SnackChatSummaryRangeType.today,
+      );
+    } on SnackChatNoMessagesTodayException {
+      if (mounted && requestGeneration == _todaySummaryRequestGeneration) {
+        _showNotice(
+          isKo ? '오늘 대화가 아직 없어요.' : 'No messages today yet.',
+        );
+      }
+    } on SnackChatSummaryNotEnoughContentException {
+      if (mounted && requestGeneration == _todaySummaryRequestGeneration) {
+        _showNotice(
+          isKo
+              ? '오늘 대화에서 정리할 핵심 내용이 충분하지 않아요.'
+              : 'There is not enough meaningful content to recap today.',
+        );
+      }
+    } catch (error, stackTrace) {
+      Logger.error('스낵챗 오늘 대화 정리 실패', error, stackTrace);
+      if (mounted && requestGeneration == _todaySummaryRequestGeneration) {
+        _showNotice(
+          isKo
+              ? '오늘 대화 정리를 불러오지 못했어요. 다시 시도해 주세요.'
+              : "Could not load today's recap. Please try again.",
+        );
+      }
+    } finally {
+      if (mounted &&
+          requestGeneration == _todaySummaryRequestGeneration &&
+          _todaySummaryLoading) {
+        setState(() => _todaySummaryLoading = false);
+      }
+    }
+  }
+
   Widget _buildUnreadDivider({required bool isKo}) {
+    final summaryPlan = _currentUnreadSummaryPlan();
     return Padding(
       padding: EdgeInsets.symmetric(
         vertical: context.rs(10).clamp(8, 13).toDouble(),
         horizontal: context.rs(6).clamp(4, 8).toDouble(),
       ),
-      child: Row(
-        children: [
-          const Expanded(child: Divider(height: 1, color: Color(0xFFD0D5DD))),
-          Padding(
-            padding: const EdgeInsets.symmetric(horizontal: 10),
-            child: Text(
-              isKo ? '여기부터 읽지 않은 메시지' : 'Unread messages',
-              style: TextStyle(
-                fontFamily: 'Inter',
-                fontFamilyFallback: const ['NotoSansKR'],
-                fontSize: context.rf(11.5).clamp(10.5, 12).toDouble(),
-                fontWeight: FontWeight.w600,
-                color: const Color(0xFF667085),
+      child: MediaQuery.withClampedTextScaling(
+        maxScaleFactor: 1.2,
+        child: Row(
+          children: [
+            const Expanded(
+              child: Divider(height: 1, color: Color(0xFFD0D5DD)),
+            ),
+            Padding(
+              padding: EdgeInsets.only(
+                left: context.rs(9).clamp(7, 10).toDouble(),
+                right: summaryPlan.shouldShowButton ? 2 : 9,
+              ),
+              child: Text(
+                isKo ? '여기부터 읽지 않은 메시지' : 'Unread messages',
+                maxLines: 1,
+                softWrap: false,
+                style: TextStyle(
+                  fontFamily: 'Inter',
+                  fontFamilyFallback: const ['NotoSansKR'],
+                  fontSize: context.rf(11.5).clamp(10.5, 12).toDouble(),
+                  fontWeight: FontWeight.w600,
+                  color: const Color(0xFF667085),
+                ),
               ),
             ),
-          ),
-          const Expanded(child: Divider(height: 1, color: Color(0xFFD0D5DD))),
-        ],
+            if (summaryPlan.shouldShowButton)
+              Tooltip(
+                message: isKo ? '놓친 대화 정리 보기' : 'View what you missed',
+                child: TextButton.icon(
+                  key: const ValueKey('snack_unread_summary_button'),
+                  onPressed: _unreadSummaryLoading
+                      ? null
+                      : () => _openUnreadSummary(summaryPlan),
+                  style: TextButton.styleFrom(
+                    foregroundColor: const Color(0xFF087BB5),
+                    disabledForegroundColor: const Color(0xFF76AFCB),
+                    minimumSize: const Size(0, 28),
+                    maximumSize: const Size(double.infinity, 28),
+                    padding: const EdgeInsets.symmetric(horizontal: 5),
+                    tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                    visualDensity: VisualDensity.compact,
+                  ),
+                  icon: _unreadSummaryLoading
+                      ? const SizedBox.square(
+                          dimension: 13,
+                          child: CircularProgressIndicator(
+                            strokeWidth: 1.7,
+                            color: Color(0xFF76AFCB),
+                          ),
+                        )
+                      : const Icon(Icons.notes_rounded, size: 14),
+                  label: Text(
+                    isKo ? '정리보기' : 'Recap',
+                    maxLines: 1,
+                    softWrap: false,
+                    style: TextStyle(
+                      fontFamily: 'Inter',
+                      fontFamilyFallback: const ['NotoSansKR'],
+                      fontSize: context.rf(11).clamp(10.5, 12).toDouble(),
+                      fontWeight: FontWeight.w700,
+                      height: 1,
+                    ),
+                  ),
+                ),
+              ),
+            const Expanded(
+              child: Divider(height: 1, color: Color(0xFFD0D5DD)),
+            ),
+          ],
+        ),
       ),
     );
   }

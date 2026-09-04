@@ -17,7 +17,7 @@ void main() {
   });
 
   testWidgets(
-    'Snack Chat date marker is borderless and overflow-free on a narrow screen',
+    'Snack Chat date marker is high-contrast and overflow-free on a narrow screen',
     (tester) async {
       const surfaceSize = Size(280, 480);
       await tester.binding.setSurfaceSize(surfaceSize);
@@ -44,7 +44,19 @@ void main() {
       expect(tester.takeException(), isNull);
       expect(find.text('2026년 9월 3일 목요일'), findsOneWidget);
       expect(find.byIcon(Icons.calendar_today_outlined), findsOneWidget);
-      expect(find.byType(DecoratedBox), findsNothing);
+      final badge = tester.widget<Container>(
+        find.byKey(const ValueKey('snack_chat_date_badge')),
+      );
+      final decoration = badge.decoration! as BoxDecoration;
+      expect(decoration.color, const Color(0xFF667085));
+      expect(
+        tester.widget<Text>(find.text('2026년 9월 3일 목요일')).style?.color,
+        Colors.white,
+      );
+      expect(
+        tester.widget<Icon>(find.byIcon(Icons.calendar_today_outlined)).color,
+        Colors.white,
+      );
     },
   );
 

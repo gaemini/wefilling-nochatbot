@@ -37,6 +37,7 @@ import '../ui/widgets/user_avatar.dart';
 import '../utils/logger.dart';
 import '../ui/snackbar/app_snackbar.dart';
 import '../ui/sheets/translation_language_sheet.dart';
+import '../utils/responsive_helper.dart';
 
 // DM 전용 색상
 class DMColors {
@@ -1700,7 +1701,6 @@ class _DMChatScreenState extends State<DMChatScreen>
         ? (isKo ? '번역 보기' : 'View translation')
         : (isKo ? '원문 보기' : 'View original');
     final settingsLabel = isKo ? '번역 언어 설정' : 'Translation language';
-    final compact = MediaQuery.sizeOf(context).width < 360;
 
     return Material(
       color: Colors.transparent,
@@ -1710,7 +1710,7 @@ class _DMChatScreenState extends State<DMChatScreen>
           padding: const EdgeInsets.fromLTRB(12, 6, 12, 4),
           child: DecoratedBox(
             decoration: BoxDecoration(
-              color: const Color(0xFFEEF8FE),
+              color: const Color(0xFF087BB5),
               borderRadius: BorderRadius.circular(14),
             ),
             child: Row(
@@ -1723,8 +1723,8 @@ class _DMChatScreenState extends State<DMChatScreen>
                     onPressed:
                         _translationModeReady ? _toggleDmTranslation : null,
                     style: TextButton.styleFrom(
-                      foregroundColor: const Color(0xFF087BB5),
-                      disabledForegroundColor: const Color(0xFF76AFCB),
+                      foregroundColor: Colors.white,
+                      disabledForegroundColor: const Color(0xFFD6EBF5),
                       minimumSize: const Size(0, 28),
                       maximumSize: const Size(double.infinity, 28),
                       padding: const EdgeInsets.fromLTRB(8, 0, 3, 0),
@@ -1739,23 +1739,30 @@ class _DMChatScreenState extends State<DMChatScreen>
                             dimension: 14,
                             child: CircularProgressIndicator(
                               strokeWidth: 1.8,
-                              color: Color(0xFF76AFCB),
+                              color: Color(0xFFD6EBF5),
                             ),
                           )
                         else
                           const Icon(Icons.translate_rounded, size: 15),
                         const SizedBox(width: 3),
-                        Text(
-                          label,
-                          maxLines: 1,
-                          overflow: TextOverflow.ellipsis,
-                          softWrap: false,
-                          style: TextStyle(
-                            fontFamily: 'Inter',
-                            fontFamilyFallback: const ['NotoSansKR'],
-                            fontSize: compact ? 10.5 : 11.5,
-                            fontWeight: FontWeight.w600,
-                            height: 1,
+                        MediaQuery.withClampedTextScaling(
+                          maxScaleFactor: 1.15,
+                          child: Text(
+                            label,
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis,
+                            softWrap: false,
+                            style: TextStyle(
+                              fontFamily: 'Inter',
+                              fontFamilyFallback: const ['NotoSansKR'],
+                              fontSize: context
+                                  .rf(11)
+                                  .clamp(10.5, 12)
+                                  .toDouble(),
+                              fontWeight: FontWeight.w700,
+                              height: 1,
+                              letterSpacing: -0.1,
+                            ),
                           ),
                         ),
                       ],
@@ -1770,7 +1777,7 @@ class _DMChatScreenState extends State<DMChatScreen>
                     ),
                     onPressed: _openDmTranslationLanguageSettings,
                     icon: const Icon(Icons.settings_outlined),
-                    color: const Color(0xFF526779),
+                    color: Colors.white,
                     iconSize: 15,
                     padding: EdgeInsets.zero,
                     style: IconButton.styleFrom(

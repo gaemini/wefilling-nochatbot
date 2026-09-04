@@ -286,7 +286,8 @@ service cloud.firestore {
         // 클라이언트가 배지/메시지 카운터를 임의 변경할 수 없다.
         && !request.resource.data.diff(resource.data).affectedKeys().hasAny([
           'dmUnreadTotal', 'dmUnreadCounterVersion',
-          'notificationUnreadTotal',
+          'notificationUnreadTotal', 'notificationUnreadCounterVersion',
+          'notificationUnreadReconciledAt',
           'friendsCount',
           'nickname', 'nicknameKey', 'nicknameSearchTokens',
           'nicknameUpdatedAt'
@@ -1898,6 +1899,14 @@ service cloud.firestore {
     }
 
     match /_snack_chat_link_preview_cache/{cacheId} {
+      allow read, write: if false;
+    }
+
+    match /_snack_chat_unread_summary_cache/{cacheId} {
+      allow read, write: if false;
+    }
+
+    match /_snack_chat_unread_summary_usage/{userId} {
       allow read, write: if false;
     }
     

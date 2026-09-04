@@ -123,11 +123,7 @@ class SnackChatHeaderTitle extends StatelessWidget {
   }
 }
 
-/// A quiet, borderless date marker for the beginning of a message day.
-///
-/// It deliberately uses the same neutral typography as the post composer and
-/// avoids a chip/card surface so the marker separates content without adding
-/// another strong visual layer to the conversation.
+/// A compact, high-contrast date marker for the beginning of a message day.
 class SnackChatDateSeparator extends StatelessWidget {
   const SnackChatDateSeparator({
     super.key,
@@ -206,31 +202,46 @@ class SnackChatDateSeparator extends StatelessWidget {
         ),
         child: MediaQuery.withClampedTextScaling(
           maxScaleFactor: 1.3,
-          child: Row(
-            mainAxisAlignment: MainAxisAlignment.center,
-            children: [
-              Icon(
-                Icons.calendar_today_outlined,
-                size: context.ri(13).clamp(12, 14).toDouble(),
-                color: const Color(0xFF98A2B3),
+          child: Align(
+            alignment: Alignment.center,
+            child: Container(
+              key: const ValueKey('snack_chat_date_badge'),
+              padding: EdgeInsets.symmetric(
+                horizontal: context.rs(12).clamp(10, 14).toDouble(),
+                vertical: context.rs(6).clamp(5, 7).toDouble(),
               ),
-              SizedBox(width: context.rs(6).clamp(5, 7).toDouble()),
-              Flexible(
-                child: Text(
-                  label,
-                  maxLines: 1,
-                  overflow: TextOverflow.ellipsis,
-                  style: TextStyle(
-                    fontFamily: 'Inter',
-                    fontFamilyFallback: const ['NotoSansKR'],
-                    fontSize: context.rf(11.5).clamp(10.5, 12).toDouble(),
-                    fontWeight: FontWeight.w600,
-                    color: const Color(0xFF667085),
-                    height: 1.25,
+              decoration: BoxDecoration(
+                color: const Color(0xFF667085),
+                borderRadius: BorderRadius.circular(999),
+              ),
+              child: Row(
+                mainAxisSize: MainAxisSize.min,
+                mainAxisAlignment: MainAxisAlignment.center,
+                children: [
+                  Icon(
+                    Icons.calendar_today_outlined,
+                    size: context.ri(13).clamp(12, 14).toDouble(),
+                    color: Colors.white,
                   ),
-                ),
+                  SizedBox(width: context.rs(6).clamp(5, 7).toDouble()),
+                  Flexible(
+                    child: Text(
+                      label,
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      style: TextStyle(
+                        fontFamily: 'Inter',
+                        fontFamilyFallback: const ['NotoSansKR'],
+                        fontSize: context.rf(11.5).clamp(10.5, 12).toDouble(),
+                        fontWeight: FontWeight.w600,
+                        color: Colors.white,
+                        height: 1.25,
+                      ),
+                    ),
+                  ),
+                ],
               ),
-            ],
+            ),
           ),
         ),
       ),

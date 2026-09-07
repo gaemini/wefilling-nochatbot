@@ -1,6 +1,8 @@
 // lib/screens/review_detail_screen.dart
 // 후기 상세 화면 - 좋아요, 댓글 기능 포함
 
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'package:cached_network_image/cached_network_image.dart';
 import 'package:intl/intl.dart';
@@ -18,6 +20,7 @@ import '../utils/logger.dart';
 import '../utils/account_status_helper.dart';
 import '../services/user_info_cache_service.dart';
 import '../utils/responsive_helper.dart';
+import '../services/notification_service.dart';
 
 class ReviewDetailScreen extends StatefulWidget {
   final ReviewPost review;
@@ -44,6 +47,16 @@ class _ReviewDetailScreenState extends State<ReviewDetailScreen> {
   @override
   void initState() {
     super.initState();
+    final reviewId = widget.review.id;
+    unawaited(NotificationService().markRelatedNotificationsAsRead(
+      types: const <String>{
+        'review_comment',
+        'review_like',
+        'review_published',
+        'review_rejected',
+      },
+      targets: <String, String>{'reviewId': reviewId},
+    ));
     _loadParticipants();
   }
 

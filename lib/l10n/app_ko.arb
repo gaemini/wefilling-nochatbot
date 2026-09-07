@@ -578,6 +578,25 @@
   "makeFriendsWithSameInterests": "새로운 친구들과 즐거운 추억을 만들어보세요.\n같은 관심사를 가진 사람들이 기다리고 있어요.",
   "findFriendsAction": "친구 찾기",
   "viewRecommendedFriends": "추천 친구 보기",
+  "userSearchIdleTitle": "사용자를 검색해보세요",
+  "userSearchIdleDescription": "닉네임이나 이름으로 새로운 친구를 찾아보세요.",
+  "interestFriendDiscoveryTitle": "관심사로 친구 찾기",
+  "interestFriendDiscoveryDescription": "관심사를 선택하면 같은 관심사를 등록한 사람들을 볼 수 있어요.",
+  "interestPeopleTitle": "#{interest}에 관심 있는 사람",
+  "@interestPeopleTitle": {
+    "placeholders": {
+      "interest": { "type": "String" }
+    }
+  },
+  "interestNoUsersTitle": "아직 #{interest}에 관심사를 등록한 사용자가 없어요",
+  "@interestNoUsersTitle": {
+    "placeholders": {
+      "interest": { "type": "String" }
+    }
+  },
+  "interestNoUsersDescription": "다른 관심사를 선택해 새로운 친구를 찾아보세요.",
+  "interestSearchErrorTitle": "관심사 검색을 불러오지 못했어요",
+  "interestSearchErrorDescription": "잠시 후 다시 시도해 주세요.",
   "noSearchResults": "검색 결과가 없어요",
   "tryDifferentKeyword": "다른 검색어를 시도해보세요",
   "clearSearchQuery": "검색어 지우기",
@@ -1057,6 +1076,20 @@
   "imageUploadFailed": "이미지 업로드에 실패했습니다",
   "loginRequired": "로그인이 필요합니다",
   "nicknameQuestion": "닉네임이 무엇인가요?",
+  "nicknamePolicyHelp": "한글, 영문, 숫자, _만 사용할 수 있어요. 공백은 _로 바뀝니다.",
+  "nicknameChecking": "사용 가능 여부를 확인하고 있어요.",
+  "nicknameAvailable": "사용 가능한 닉네임이에요.",
+  "nicknameTaken": "이미 사용 중인 닉네임이에요.",
+  "nicknameInvalidCharacters": "한글, 영문, 숫자, _만 입력해 주세요.",
+  "nicknameLetterRequired": "한글 또는 영문자를 하나 이상 포함해 주세요.",
+  "nicknameReserved": "사용할 수 없는 닉네임이에요.",
+  "nicknameCheckNetworkError": "닉네임을 확인하지 못했어요. 다시 시도해 주세요.",
+  "nicknameNormalizedPreview": "저장될 닉네임: {nickname}",
+  "@nicknameNormalizedPreview": {
+    "placeholders": {
+      "nickname": {"type": "String"}
+    }
+  },
   "anonymous": "익명",
   "friendsOnly": "친구 공개",
   "publicPost": "전체 공개",

@@ -31,12 +31,32 @@ class _SnackChatTabViewState extends State<SnackChatTabView> {
   late SnackChatService _service;
   late Stream<List<SnackChat>> _snackChatsStream;
   late Stream<Set<String>> _mutedIdsStream;
+  StreamSubscription<User?>? _authSubscription;
   Timer? _remainingTimeTicker;
+  String? _favoriteOwnerUid;
+  final Map<String, bool> _favoriteOverrides = <String, bool>{};
+  final Map<String, bool> _favoriteDesiredValues = <String, bool>{};
+  final Map<String, bool> _favoritePersistedValues = <String, bool>{};
+  final Set<String> _favoriteWritesInFlight = <String>{};
+  final Set<String> _favoriteConfirmingRooms = <String>{};
 
   @override
   void initState() {
     super.initState();
+    _favoriteOwnerUid = FirebaseAuth.instance.currentUser?.uid;
     _resetStreams();
+    _authSubscription = FirebaseAuth.instance.userChanges().listen((user) {
+      final uid = user?.uid;
+      if (uid == _favoriteOwnerUid) return;
+      if (!mounted) {
+        _clearFavoriteState(uid);
+        return;
+      }
+      setState(() {
+        _clearFavoriteState(uid);
+        _resetStreams();
+      });
+    });
     _remainingTimeTicker = Timer.periodic(const Duration(minutes: 1), (_) {
       if (mounted) setState(() {});
     });
@@ -51,7 +71,21 @@ class _SnackChatTabViewState extends State<SnackChatTabView> {
   @override
   void dispose() {
     _remainingTimeTicker?.cancel();
+    unawaited(_authSubscription?.cancel());
     super.dispose();
+  }
+
+  void _clearFavoriteState(String? ownerUid) {
+    _favoriteOwnerUid = ownerUid;
+    _favoriteOverrides.clear();
+    _favoriteDesiredValues.clear();
+    _favoritePersistedValues.clear();
+    _favoriteWritesInFlight.clear();
+    _favoriteConfirmingRooms.clear();
+  }
+
+  void _ensureFavoriteOwner(String? uid) {
+    if (_favoriteOwnerUid != uid) _clearFavoriteState(uid);
   }
 
   void _retryStreams() {
@@ -62,14 +96,154 @@ class _SnackChatTabViewState extends State<SnackChatTabView> {
     return showSnackChatUnfavoriteSheet(context);
   }
 
+  bool _effectiveFavorite(SnackChat chat, String currentUserId) {
+    return _favoriteOverrides[chat.id] ?? chat.isFavoritedBy(currentUserId);
+  }
+
+  SnackChat _withFavorite(
+    SnackChat chat,
+    String currentUserId,
+    bool value,
+  ) {
+    final favorites = chat.favoriteUserIds.toSet();
+    value ? favorites.add(currentUserId) : favorites.remove(currentUserId);
+    return chat.copyWith(favoriteUserIds: favorites.toList(growable: false));
+  }
+
+  List<SnackChat> _displayItems(
+    List<SnackChat> serverItems,
+    String? currentUserId,
+  ) {
+    _ensureFavoriteOwner(currentUserId);
+    if (currentUserId == null || currentUserId.isEmpty) return serverItems;
+
+    final presentRoomIds = serverItems.map((chat) => chat.id).toSet();
+    for (final chat in serverItems) {
+      final serverValue = chat.isFavoritedBy(currentUserId);
+      if (!_favoriteWritesInFlight.contains(chat.id)) {
+        final override = _favoriteOverrides[chat.id];
+        if (override != null && override == serverValue) {
+          _favoriteOverrides.remove(chat.id);
+        }
+        if (!_favoriteOverrides.containsKey(chat.id)) {
+          _favoritePersistedValues[chat.id] = serverValue;
+        }
+      }
+    }
+    _favoriteOverrides.removeWhere(
+      (roomId, _) =>
+          !presentRoomIds.contains(roomId) &&
+          !_favoriteWritesInFlight.contains(roomId),
+    );
+    _favoritePersistedValues.removeWhere(
+      (roomId, _) =>
+          !presentRoomIds.contains(roomId) &&
+          !_favoriteWritesInFlight.contains(roomId),
+    );
+
+    final overlaid = serverItems.map((chat) {
+      final override = _favoriteOverrides[chat.id];
+      return override == null
+          ? chat
+          : _withFavorite(chat, currentUserId, override);
+    });
+    // Reapply only the existing unified visibility policy. This makes an
+    // expired favorite disappear immediately when unfavorited without moving
+    // any room across Today/All or active/expired policies.
+    return filterSnackChatsBySection(
+      overlaid.toList(growable: false),
+      section: SnackChatListSection.unified,
+      currentUserId: currentUserId,
+    );
+  }
+
   Future<void> _handleToggleFavorite(
-      SnackChat chat, String? currentUserId) async {
-    final nextValue = !chat.isFavoritedBy(currentUserId);
+    SnackChat chat,
+    String? currentUserId,
+  ) async {
+    if (currentUserId == null || currentUserId.isEmpty) return;
+    _ensureFavoriteOwner(currentUserId);
+    final nextValue = !_effectiveFavorite(chat, currentUserId);
     if (!nextValue) {
+      if (!_favoriteConfirmingRooms.add(chat.id)) return;
       final confirmed = await _confirmUnfavorite();
+      _favoriteConfirmingRooms.remove(chat.id);
       if (!confirmed) return;
     }
-    await _service.toggleFavorite(chat.id, nextValue);
+    if (!mounted ||
+        FirebaseAuth.instance.currentUser?.uid != currentUserId ||
+        _favoriteOwnerUid != currentUserId) {
+      return;
+    }
+
+    setState(() {
+      _favoritePersistedValues.putIfAbsent(
+        chat.id,
+        () => chat.isFavoritedBy(currentUserId),
+      );
+      _favoriteOverrides[chat.id] = nextValue;
+      _favoriteDesiredValues[chat.id] = nextValue;
+    });
+    unawaited(_drainFavoriteWrites(chat.id, currentUserId));
+  }
+
+  Future<void> _drainFavoriteWrites(String roomId, String ownerUid) async {
+    if (!_favoriteWritesInFlight.add(roomId)) return;
+    var showFailure = false;
+    try {
+      while (_favoriteOwnerUid == ownerUid &&
+          FirebaseAuth.instance.currentUser?.uid == ownerUid) {
+        final desired = _favoriteDesiredValues[roomId];
+        if (desired == null) break;
+        final persisted = _favoritePersistedValues[roomId] ?? !desired;
+        if (desired == persisted) {
+          _favoriteDesiredValues.remove(roomId);
+          break;
+        }
+
+        try {
+          await _service.toggleFavorite(roomId, desired);
+        } catch (_) {
+          if (_favoriteOwnerUid != ownerUid ||
+              FirebaseAuth.instance.currentUser?.uid != ownerUid) {
+            return;
+          }
+          // A superseded request failure must not overwrite the latest tap.
+          if (_favoriteDesiredValues[roomId] == desired) {
+            _favoriteOverrides[roomId] = persisted;
+            _favoriteDesiredValues.remove(roomId);
+            showFailure = true;
+            break;
+          }
+          continue;
+        }
+
+        if (_favoriteOwnerUid != ownerUid ||
+            FirebaseAuth.instance.currentUser?.uid != ownerUid) {
+          return;
+        }
+        _favoritePersistedValues[roomId] = desired;
+        if (_favoriteDesiredValues[roomId] == desired) {
+          _favoriteDesiredValues.remove(roomId);
+          break;
+        }
+      }
+    } finally {
+      _favoriteWritesInFlight.remove(roomId);
+      if (mounted && _favoriteOwnerUid == ownerUid) {
+        setState(() {});
+        if (showFailure) {
+          final isKo = Localizations.localeOf(context).languageCode == 'ko';
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(
+              content: Text(
+                isKo ? '즐겨찾기를 변경하지 못했어요.' : 'Couldn’t update favorites.',
+              ),
+            ),
+          );
+        }
+      }
+    }
   }
 
   @override
@@ -84,7 +258,8 @@ class _SnackChatTabViewState extends State<SnackChatTabView> {
         return StreamBuilder<List<SnackChat>>(
           stream: _snackChatsStream,
           builder: (context, snapshot) {
-            final items = snapshot.data ?? const <SnackChat>[];
+            final serverItems = snapshot.data ?? const <SnackChat>[];
+            final items = _displayItems(serverItems, currentUserId);
             if (snapshot.connectionState == ConnectionState.waiting &&
                 !snapshot.hasData) {
               return const _SectionLoading();
@@ -101,6 +276,10 @@ class _SnackChatTabViewState extends State<SnackChatTabView> {
 
             _service.prefetchRoomEntryData(items);
             final errorOffset = snapshot.hasError ? 1 : 0;
+            final itemIndexByRoomId = <String, int>{
+              for (var index = 0; index < items.length; index++)
+                items[index].id: index + errorOffset,
+            };
             final bottomInset = MediaQuery.paddingOf(context).bottom;
             return Stack(
               children: [
@@ -111,6 +290,10 @@ class _SnackChatTabViewState extends State<SnackChatTabView> {
                     scrollCacheExtent: const ScrollCacheExtent.viewport(0.75),
                     padding: EdgeInsets.fromLTRB(0, 4, 0, 88 + bottomInset),
                     itemCount: items.length + errorOffset,
+                    findChildIndexCallback: (key) {
+                      if (key is! ValueKey<String>) return null;
+                      return itemIndexByRoomId[key.value];
+                    },
                     itemBuilder: (context, index) {
                       if (snapshot.hasError && index == 0) {
                         return _SectionError(
@@ -120,6 +303,7 @@ class _SnackChatTabViewState extends State<SnackChatTabView> {
                       }
                       final chat = items[index - errorOffset];
                       return SnackChatCard(
+                        key: ValueKey<String>(chat.id),
                         snackChat: chat,
                         currentUserId: currentUserId,
                         isMuted: mutedIds.contains(chat.id),
@@ -195,7 +379,7 @@ class SnackChatEmptyState extends StatelessWidget {
         : media.size.width < 430
             ? 16.0
             : 20.0;
-    final topPadding = isCompact ? 16.0 : context.rs(26).clamp(20, 30);
+    final topPadding = isCompact ? 14.0 : context.rs(22).clamp(18, 26);
     final bottomPadding = isCompact ? 18.0 : 24.0;
 
     return SafeArea(
@@ -218,41 +402,34 @@ class SnackChatEmptyState extends StatelessWidget {
                 child: ConstrainedBox(
                   constraints: const BoxConstraints(maxWidth: 560),
                   child: Column(
-                    mainAxisAlignment: MainAxisAlignment.center,
+                    mainAxisAlignment: MainAxisAlignment.start,
                     crossAxisAlignment: CrossAxisAlignment.stretch,
                     children: [
-                      _SnackChatWelcomeIllustration(compact: isCompact),
-                      SizedBox(
-                        height: context
-                            .rs(isCompact ? 14 : 20)
-                            .clamp(12, 22)
-                            .toDouble(),
-                      ),
                       Text(
                         isKo
-                            ? '짧게 시작해도, 대화는 깊어질 수 있어요'
-                            : 'Start small. Talk freely.',
+                            ? '필요한 시간만 열어 두는 번역 채팅'
+                            : 'A translated chat for exactly as long as you need',
                         textAlign: TextAlign.center,
                         style: TextStyle(
                           fontFamily: 'Inter',
                           fontFamilyFallback: const ['NotoSansKR'],
-                          fontSize: context.rf(19).clamp(17, 20).toDouble(),
+                          fontSize: context.rf(21).clamp(18, 22).toDouble(),
                           fontWeight: FontWeight.w800,
-                          height: 1.35,
-                          letterSpacing: -0.3,
+                          height: 1.3,
+                          letterSpacing: -0.4,
                           color: const Color(0xFF111827),
                         ),
                       ),
                       SizedBox(height: context.rs(7).clamp(6, 9).toDouble()),
                       Text(
                         isKo
-                            ? '필요한 시간만 채팅방을 열고,\n서로 다른 언어로도 편하게 이야기해 보세요.'
-                            : 'Open a room for as long as you need,\nand chat comfortably across languages.',
+                            ? '친구들과 24시간 또는 종료 없이 대화하고,\n서로 다른 언어의 메시지도 바로 이해할 수 있어요.'
+                            : 'Chat with friends for 24 hours or without an end time,\nand understand messages across languages.',
                         textAlign: TextAlign.center,
                         style: TextStyle(
                           fontFamily: 'Inter',
                           fontFamilyFallback: const ['NotoSansKR'],
-                          fontSize: context.rf(13).clamp(12, 14).toDouble(),
+                          fontSize: context.rf(13.5).clamp(12.5, 14).toDouble(),
                           fontWeight: FontWeight.w500,
                           height: 1.5,
                           color: const Color(0xFF6B7280),
@@ -260,16 +437,36 @@ class SnackChatEmptyState extends StatelessWidget {
                       ),
                       SizedBox(
                         height: context
-                            .rs(isCompact ? 18 : 24)
-                            .clamp(16, 26)
+                            .rs(isCompact ? 12 : 16)
+                            .clamp(10, 18)
                             .toDouble(),
                       ),
+                      _SnackChatWelcomeIllustration(compact: isCompact),
+                      SizedBox(
+                        height: context
+                            .rs(isCompact ? 12 : 18)
+                            .clamp(10, 20)
+                            .toDouble(),
+                      ),
+                      Text(
+                        isKo ? '스낵챗에서 할 수 있어요' : 'What Snack Chat offers',
+                        style: TextStyle(
+                          fontFamily: 'Inter',
+                          fontFamilyFallback: const ['NotoSansKR'],
+                          fontSize: context.rf(13).clamp(12, 14).toDouble(),
+                          fontWeight: FontWeight.w800,
+                          height: 1.3,
+                          color: const Color(0xFF475467),
+                        ),
+                      ),
+                      SizedBox(height: context.rs(10).clamp(8, 12).toDouble()),
                       _FeatureRow(
                         icon: Icons.schedule_rounded,
-                        title: isKo ? '시간을 정하는 채팅방' : 'Time-limited rooms',
+                        title:
+                            isKo ? '대화 시간을 직접 선택' : 'Choose the room duration',
                         description: isKo
-                            ? '24시간 또는 종료 없이, 대화에 맞는 시간을 선택해요.'
-                            : 'Choose 24 hours or keep the room open.',
+                            ? '가벼운 대화는 24시간, 계속할 대화는 종료 없이 열어요.'
+                            : 'Use 24 hours for quick chats or keep important rooms open.',
                       ),
                       SizedBox(height: context.rs(12).clamp(10, 14).toDouble()),
                       _FeatureRow(
@@ -281,11 +478,19 @@ class SnackChatEmptyState extends StatelessWidget {
                             ? '상대방 메시지를 내가 설정한 언어로 바로 번역해요.'
                             : 'Translate messages instantly into your chosen language.',
                       ),
+                      SizedBox(height: context.rs(12).clamp(10, 14).toDouble()),
+                      _FeatureRow(
+                        icon: Icons.notes_rounded,
+                        title: isKo ? '놓친 대화도 빠르게 정리' : 'Catch up quickly',
+                        description: isKo
+                            ? '안 읽은 메시지와 오늘 대화의 중요한 내용을 정리해요.'
+                            : 'Review the key points from unread messages and today’s chat.',
+                      ),
                       if (onCreate != null) ...[
                         SizedBox(
                           height: context
-                              .rs(isCompact ? 20 : 26)
-                              .clamp(18, 28)
+                              .rs(isCompact ? 16 : 22)
+                              .clamp(14, 24)
                               .toDouble(),
                         ),
                         SizedBox(
@@ -343,7 +548,7 @@ class _SnackChatWelcomeIllustration extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final scale = compact ? 0.84 : 1.0;
+    final scale = compact ? 0.68 : 0.78;
     return Center(
       child: SizedBox(
         width: 126 * scale,
@@ -395,7 +600,7 @@ class _SnackChatWelcomeIllustration extends StatelessWidget {
                 ),
                 child: Icon(
                   Icons.translate_rounded,
-                  color: const Color(0xFF6D4FC2),
+                  color: const Color(0xFF087BB5),
                   size: 22 * scale,
                 ),
               ),

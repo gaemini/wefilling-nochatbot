@@ -15,6 +15,29 @@ class ReviewService {
   final FirebaseFirestore _firestore = FirebaseFirestore.instance;
   final FirebaseAuth _auth = FirebaseAuth.instance;
   final FirebaseFunctions _functions = FirebaseFunctions.instance;
+  String? _reconciledProfileUserId;
+
+  /// 수락 완료된 원본 후기와 마이페이지 프로필 문서를 서버에서 대조한다.
+  /// 한 화면 생명주기에서는 성공 후 한 번만 실행해 읽기 비용을 제한한다.
+  Future<void> reconcileAcceptedReviewsForCurrentProfile() async {
+    final userId = _auth.currentUser?.uid;
+    if (userId == null ||
+        userId.isEmpty ||
+        _reconciledProfileUserId == userId) {
+      return;
+    }
+
+    try {
+      await _functions
+          .httpsCallable('reconcileMyAcceptedReviewProfiles')
+          .call()
+          .timeout(const Duration(seconds: 12));
+      _reconciledProfileUserId = userId;
+    } catch (error) {
+      // 복구 함수의 일시적 실패가 기존 로컬 캐시/Firestore 조회를 막지 않게 한다.
+      Logger.error('수락 후기 프로필 동기화 실패: $error');
+    }
+  }
 
   List<String> _imageUrlsFromProfilePost(Map<String, dynamic> data) {
     final urls = List<String>.from(data['imageUrls'] ?? const <String>[])
@@ -401,7 +424,8 @@ class ReviewService {
 
         // 메모리에서 정렬
         reviews.sort((a, b) => b.createdAt.compareTo(a.createdAt));
-        if (Logger.isVerboseEnabled) Logger.log('📋 최종 친구 후기 목록: ${reviews.length}개');
+        if (Logger.isVerboseEnabled)
+          Logger.log('📋 최종 친구 후기 목록: ${reviews.length}개');
         return await _filterBlockedReviews(reviews);
       });
     } catch (e) {
@@ -600,7 +624,8 @@ class ReviewService {
         throw Exception('로그인이 필요합니다');
       }
 
-      if (Logger.isVerboseEnabled) Logger.log('❤️ 좋아요 토글: reviewId=$reviewId, userId=$userId');
+      if (Logger.isVerboseEnabled)
+        Logger.log('❤️ 좋아요 토글: reviewId=$reviewId, userId=$userId');
 
       // users/{userId}/posts/{reviewId} 문서 가져오기
       final reviewRef = _firestore

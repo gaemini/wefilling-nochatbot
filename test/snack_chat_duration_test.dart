@@ -4,9 +4,12 @@ import 'package:wefilling/models/snack_chat.dart';
 import 'package:wefilling/services/snack_chat_service.dart';
 
 SnackChat _chat({
+  String id = 'chat',
   required int durationHours,
   required DateTime expiresAt,
   DateTime? createdAt,
+  DateTime? lastMessageTime,
+  int lastMessageSequence = 0,
   List<String> participants = const ['owner', 'friend'],
   List<String> favorites = const [],
   int participantIntegrityVersion =
@@ -14,7 +17,7 @@ SnackChat _chat({
 }) {
   final now = createdAt ?? DateTime(2026, 1, 1);
   return SnackChat(
-    id: 'chat',
+    id: id,
     title: 'Topic',
     creatorId: 'owner',
     participantIds: participants,
@@ -25,8 +28,9 @@ SnackChat _chat({
     expiresAt: expiresAt,
     favoriteUserIds: favorites,
     lastMessage: '',
-    lastMessageTime: now,
+    lastMessageTime: lastMessageTime ?? now,
     lastMessageSenderId: 'owner',
+    lastMessageSequence: lastMessageSequence,
     unreadCount: const {},
     updatedAt: now,
   );
@@ -143,11 +147,13 @@ void main() {
   test('chats created today stay in Today until local midnight', () {
     final chats = [
       _chat(
+        id: 'today-24-hour',
         durationHours: 24,
         expiresAt: DateTime(2026, 7, 25, 9),
         createdAt: DateTime(2026, 7, 24, 9),
       ),
       _chat(
+        id: 'today-no-end',
         durationHours: 0,
         expiresAt: SnackChat.noExpirationDate,
         createdAt: DateTime(2026, 7, 24),
@@ -165,17 +171,20 @@ void main() {
 
   test('every previous-date chat moves to All at midnight', () {
     final noEnd = _chat(
+      id: 'previous-no-end',
       durationHours: 0,
       expiresAt: SnackChat.noExpirationDate,
       createdAt: DateTime(2026, 7, 24, 23, 59),
     );
     final favorited = _chat(
+      id: 'previous-favorite',
       durationHours: 24,
       expiresAt: DateTime(2026, 7, 25, 23, 59),
       createdAt: DateTime(2026, 7, 24, 23, 59),
       favorites: const ['owner'],
     );
     final regular = _chat(
+      id: 'previous-regular',
       durationHours: 24,
       expiresAt: DateTime(2026, 7, 25, 23, 59),
       createdAt: DateTime(2026, 7, 24, 23, 59),
@@ -198,11 +207,13 @@ void main() {
 
   test('unified list contains visible rooms without date sections', () {
     final today = _chat(
+      id: 'unified-today',
       durationHours: 24,
       expiresAt: DateTime(2026, 7, 26),
       createdAt: DateTime(2026, 7, 25, 10),
     );
     final previous = _chat(
+      id: 'unified-previous',
       durationHours: 0,
       expiresAt: SnackChat.noExpirationDate,
       createdAt: DateTime(2026, 7, 24, 10),
@@ -283,5 +294,115 @@ void main() {
 
     expect(all, contains(favorited));
     expect(all, isNot(contains(notFavorited)));
+  });
+
+  test('favorites lead while both groups retain message recency', () {
+    final rooms = <SnackChat>[
+      _chat(
+        id: 'regular-new',
+        durationHours: 0,
+        expiresAt: SnackChat.noExpirationDate,
+        createdAt: DateTime(2026, 7, 24),
+        lastMessageTime: DateTime(2026, 7, 24, 16, 30),
+      ),
+      _chat(
+        id: 'favorite-old',
+        durationHours: 0,
+        expiresAt: SnackChat.noExpirationDate,
+        createdAt: DateTime(2026, 7, 24),
+        lastMessageTime: DateTime(2026, 7, 24, 15),
+        favorites: const ['owner'],
+      ),
+      _chat(
+        id: 'regular-old',
+        durationHours: 0,
+        expiresAt: SnackChat.noExpirationDate,
+        createdAt: DateTime(2026, 7, 24),
+        lastMessageTime: DateTime(2026, 7, 24, 16),
+      ),
+      _chat(
+        id: 'favorite-new',
+        durationHours: 0,
+        expiresAt: SnackChat.noExpirationDate,
+        createdAt: DateTime(2026, 7, 24),
+        lastMessageTime: DateTime(2026, 7, 24, 15, 30),
+        favorites: const ['owner'],
+      ),
+    ];
+
+    final ordered = orderSnackChatsForCurrentUser(
+      rooms,
+      currentUserId: 'owner',
+    );
+
+    expect(
+      ordered.map((room) => room.id),
+      <String>[
+        'favorite-new',
+        'favorite-old',
+        'regular-new',
+        'regular-old',
+      ],
+    );
+  });
+
+  test('favorite ordering is user-specific and stable on equal timestamps', () {
+    final sameTime = DateTime(2026, 7, 24, 16);
+    final rooms = <SnackChat>[
+      _chat(
+        id: 'room-b',
+        durationHours: 0,
+        expiresAt: SnackChat.noExpirationDate,
+        createdAt: DateTime(2026, 7, 24),
+        lastMessageTime: sameTime,
+        lastMessageSequence: 8,
+        favorites: const ['user-b'],
+      ),
+      _chat(
+        id: 'room-c',
+        durationHours: 0,
+        expiresAt: SnackChat.noExpirationDate,
+        createdAt: DateTime(2026, 7, 24),
+        lastMessageTime: sameTime,
+        lastMessageSequence: 9,
+      ),
+      _chat(
+        id: 'room-a',
+        durationHours: 0,
+        expiresAt: SnackChat.noExpirationDate,
+        createdAt: DateTime(2026, 7, 24),
+        lastMessageTime: sameTime,
+        lastMessageSequence: 8,
+        favorites: const ['owner'],
+      ),
+    ];
+
+    expect(
+      orderSnackChatsForCurrentUser(rooms, currentUserId: 'owner')
+          .map((room) => room.id),
+      <String>['room-a', 'room-c', 'room-b'],
+    );
+    expect(
+      orderSnackChatsForCurrentUser(rooms, currentUserId: 'user-b')
+          .map((room) => room.id),
+      <String>['room-b', 'room-c', 'room-a'],
+    );
+  });
+
+  test('one room id is emitted at most once', () {
+    final room = _chat(
+      id: 'same-room',
+      durationHours: 0,
+      expiresAt: SnackChat.noExpirationDate,
+      createdAt: DateTime(2026, 7, 24),
+    );
+
+    expect(
+      orderSnackChatsForCurrentUser(
+        <SnackChat>[room, room],
+        currentUserId: 'owner',
+      ),
+      hasLength(1),
+    );
   });
 }

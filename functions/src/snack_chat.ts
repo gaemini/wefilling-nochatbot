@@ -17,6 +17,7 @@ import {
   translatePlainTextsWithExistingPipeline,
 } from './content_translation';
 import {runtimeInfo, runtimeLogsEnabled} from './runtime_logging';
+import {isSearchableUser} from './searchable_user_policy';
 
 const SNACK_CHATS = 'snack_chats';
 const USERS = 'users';
@@ -60,6 +61,8 @@ const CURRENT_LIST_POLICY_VERSION = 2;
 const CURRENT_PARTICIPANT_INTEGRITY_VERSION = 3;
 const MAX_ROOM_PARTICIPANTS = 50;
 const MAX_PUSH_TOKENS_PER_USER = 20;
+const SNACK_CHAT_PUSH_BURST_WINDOW_MS = 4_000;
+const snackChatLastAudiblePushAt = new Map<string, number>();
 const MAX_MEMBERSHIP_EVENT_WINDOW = 64;
 const MAX_MEMBERSHIP_EVENT_READ = 129;
 const UNREAD_SUMMARY_SCHEMA_VERSION = 3;
@@ -230,30 +233,26 @@ function nextRoomMessageTimestamp(
     : now;
 }
 
-function activeUserData(data: Data): boolean {
+function activeUserData(data: Data, uid?: string): boolean {
   const status = stringValue(data.status ?? data.accountStatus).toLowerCase();
   const registrationStatus = stringValue(data.registrationStatus)
     .toLowerCase();
   const nickname = stringValue(data.nickname ?? data.displayName);
-  if (data.isDeleted === true ||
-      data.deleted === true ||
-      data.disabled === true ||
-      data.isSuspended === true ||
-      data.deletedAt != null ||
-      status === 'deleted' ||
-      status === 'suspended' ||
-      registrationStatus === 'deleted' ||
-      nickname === 'DELETED_ACCOUNT' ||
-      nickname === 'Deleted') {
+  if (!uid && !stringValue(data.uid)) return false;
+  if (data.isDeleted === true || data.deleted === true ||
+      data.disabled === true || data.isSuspended === true ||
+      data.deleting === true || data.deletedAt != null ||
+      ['deleted', 'deleting', 'disabled', 'suspended'].includes(status) ||
+      ['deleted', 'deleting'].includes(registrationStatus)) {
     return false;
   }
+  if (registrationStatus && registrationStatus !== 'complete') return false;
+  return nickname.length > 0 &&
+    (registrationStatus === 'complete' || data.emailVerified === true);
+}
 
-  // A delayed token/profile merge can recreate an empty users/{uid} shell
-  // after account deletion. Match the client rule so this shell is never
-  // counted as a current Snack Chat participant.
-  const email = stringValue(data.email);
-  const hanyangEmail = stringValue(data.hanyangEmail);
-  return nickname.length > 0 || email.length > 0 || hanyangEmail.length > 0;
+function searchableUserData(data: Data, uid: string): boolean {
+  return isSearchableUser(uid, data);
 }
 
 function deletedUserData(data: Data): boolean {
@@ -278,7 +277,7 @@ function requireUid(context: functions.https.CallableContext): string {
 async function requireActiveUser(uid: string): Promise<Data> {
   const user = await db().collection(USERS).doc(uid).get();
   const data = user.data() ?? {};
-  if (!user.exists || !activeUserData(data)) {
+  if (!user.exists || !activeUserData(data, uid)) {
     throw new functions.https.HttpsError(
       'failed-precondition',
       'An active account is required.',
@@ -289,7 +288,7 @@ async function requireActiveUser(uid: string): Promise<Data> {
 
 /** Resolves one active, non-blocked Snack Chat invite target by unique ID. */
 export const searchSnackChatInviteUserById = functions
-  .runWith({timeoutSeconds: 20, memory: '256MB'})
+  .runWith({timeoutSeconds: 20, memory: '256MB', enforceAppCheck: true})
   .https.onCall(async (raw, context) => {
     const requesterId = requireUid(context);
     await requireActiveUser(requesterId);
@@ -325,7 +324,7 @@ export const searchSnackChatInviteUserById = functions
       for (const snapshot of snapshots) {
         for (const document of snapshot.docs) {
           const data = document.data();
-          if (!activeUserData(data)) continue;
+          if (!searchableUserData(data, document.id)) continue;
           try {
             if (normalizeNickname(data.nickname).nicknameKey ===
                 identity.nicknameKey) {
@@ -348,7 +347,7 @@ export const searchSnackChatInviteUserById = functions
       db().collection(BLOCKS).doc(targetId + '_' + requesterId).get(),
     ]);
     if (!target.exists ||
-        !activeUserData(target.data() ?? {}) ||
+        !searchableUserData(target.data() ?? {}, targetId) ||
         blockedByRequester.exists ||
         blockedByTarget.exists) {
       return {userId: null};
@@ -369,7 +368,7 @@ const SNACK_CHAT_USER_SEARCH_MAX_SCANS = 3;
  * participant picker leave the server.
  */
 export const searchSnackChatInviteUsers = functions
-  .runWith({timeoutSeconds: 20, memory: '256MB'})
+  .runWith({timeoutSeconds: 20, memory: '256MB', enforceAppCheck: true})
   .https.onCall(async (raw, context) => {
     const requesterId = requireUid(context);
     await requireActiveUser(requesterId);
@@ -418,7 +417,7 @@ export const searchSnackChatInviteUsers = functions
       const candidates = snapshot.docs.filter((document) => {
         const data = document.data();
         return document.id !== requesterId &&
-          activeUserData(data) &&
+          searchableUserData(data, document.id) &&
           stringValue(data.nicknameKey).toLowerCase().startsWith(prefix);
       });
       const blockSnapshots = candidates.length === 0 ? [] :
@@ -439,7 +438,7 @@ export const searchSnackChatInviteUsers = functions
         const nicknameKey = stringValue(data.nicknameKey).toLowerCase();
         scanCursor = nicknameKey;
         if (document.id === requesterId ||
-            !activeUserData(data) ||
+            !searchableUserData(data, document.id) ||
             !nicknameKey.startsWith(prefix) ||
             blockedIds.has(document.id)) {
           continue;
@@ -537,7 +536,8 @@ function boundedStringList(
 function assertActiveUserSnapshot(
   snapshot: FirebaseFirestore.DocumentSnapshot,
 ): void {
-  if (!snapshot.exists || !activeUserData(snapshot.data() ?? {})) {
+  if (!snapshot.exists ||
+      !searchableUserData(snapshot.data() ?? {}, snapshot.id)) {
     throw new functions.https.HttpsError(
       'failed-precondition',
       'Every participant must have an active account.',
@@ -5428,7 +5428,7 @@ export const reconcileSnackChatParticipantsSecure = functions
         const user = userDocuments[index];
         const member = memberDocuments[index];
         const unavailableAccount =
-          !user.exists || !activeUserData(user.data() ?? {});
+          !user.exists || !activeUserData(user.data() ?? {}, userId);
         // A missing legacy member projection is not evidence of departure.
         // An explicit `left` projection is safe to reconcile, except for the
         // authenticated caller whose current room access was just verified.
@@ -6669,7 +6669,8 @@ async function applySnackChatUnreadOnce(args: {
     candidates.forEach((userId, index) => {
       const member = memberDocs[index];
       const user = userDocs[index];
-      if (!user?.exists || !activeUserData(user.data() ?? {})) return;
+      if (!user?.exists ||
+          !activeUserData(user.data() ?? {}, userId)) return;
       if (blockDocs[index * 2]?.exists || blockDocs[index * 2 + 1]?.exists) {
         return;
       }
@@ -6855,11 +6856,34 @@ async function cleanInvalidPushTokens(
   if (tokens.includes(stringValue(user.fcmToken))) {
     userUpdate.fcmToken = FieldValue.delete();
   }
-  await db().collection(USERS).doc(userId).set(userUpdate, {merge: true});
+  await db().collection(USERS).doc(userId).update(userUpdate).catch((error) => {
+    if ((error as any)?.code !== 5 &&
+        (error as any)?.code !== 'not-found') throw error;
+  });
   const batch = db().batch();
   tokens.forEach((token) =>
     batch.delete(db().collection('fcm_tokens').doc(token)));
   await batch.commit();
+}
+
+function shouldAlertSnackChatPush(notificationGroupKey: string): boolean {
+  const now = Date.now();
+  if (snackChatLastAudiblePushAt.size >= 2_048) {
+    const cutoff = now - 60_000;
+    for (const [key, lastAlertAt] of snackChatLastAudiblePushAt.entries()) {
+      if (lastAlertAt < cutoff) snackChatLastAudiblePushAt.delete(key);
+    }
+    while (snackChatLastAudiblePushAt.size >= 2_048) {
+      const oldestKey = snackChatLastAudiblePushAt.keys().next().value;
+      if (typeof oldestKey !== 'string') break;
+      snackChatLastAudiblePushAt.delete(oldestKey);
+    }
+  }
+  const lastAlertAt = snackChatLastAudiblePushAt.get(notificationGroupKey);
+  const shouldAlert = lastAlertAt == null ||
+    now - lastAlertAt >= SNACK_CHAT_PUSH_BURST_WINDOW_MS;
+  if (shouldAlert) snackChatLastAudiblePushAt.set(notificationGroupKey, now);
+  return shouldAlert;
 }
 
 async function sendSnackChatPush(args: {
@@ -6885,7 +6909,8 @@ async function sendSnackChatPush(args: {
     const messageSequence = nonNegativeInteger(args.message.sequence);
     const roomUnreadMap = normalizedCountMap(roomData.unreadCount);
     const currentRoomUnread = roomUnreadMap[args.recipientId] ?? 0;
-    if (!room.exists || !recipient.exists || !activeUserData(userData) ||
+    if (!room.exists || !recipient.exists ||
+        !activeUserData(userData, args.recipientId) ||
         blocked ||
         currentRoomUnread <= 0 ||
         nonNegativeInteger(memberData.lastReadSequence) >= messageSequence ||
@@ -6933,6 +6958,7 @@ async function sendSnackChatPush(args: {
       .update(args.recipientId + ':' + args.roomRef.id)
       .digest('hex')
       .slice(0, 40);
+    const shouldAlert = shouldAlertSnackChatPush(notificationGroupKey);
     let badge: number | null = null;
     try {
       badge = nonNegativeInteger(userData.notificationUnreadTotal) +
@@ -6981,6 +7007,7 @@ async function sendSnackChatPush(args: {
             ),
             notificationGroupKey,
             notificationThreadKey: notificationGroupKey,
+            notificationEventId: args.messageId,
             ...(badge == null ? {} : {badge: String(badge)}),
             language,
           },
@@ -6992,7 +7019,7 @@ async function sendSnackChatPush(args: {
             },
             payload: {
               aps: {
-                sound: 'default',
+                ...(shouldAlert ? {sound: 'default'} : {}),
                 threadId: notificationGroupKey,
                 ...(badge == null ? {} : {badge}),
               },
@@ -7002,7 +7029,7 @@ async function sendSnackChatPush(args: {
             priority: 'high',
             collapseKey: notificationGroupKey,
             notification: {
-              sound: 'default',
+              ...(shouldAlert ? {sound: 'default'} : {}),
               channelId: 'high_importance_channel',
               tag: notificationGroupKey,
               notificationCount: roomUnreadCount,
@@ -7058,12 +7085,26 @@ export const onSnackChatMessageCreatedSecure = functions
   .firestore
   .document('snack_chats/{snackChatId}/messages/{messageId}')
   .onCreate(async (snapshot, context) => {
+    const functionStartedAt = Date.now();
     const message = snapshot.data() ?? {};
+    const roomId = stringValue(context.params.snackChatId);
+    const messageId = stringValue(context.params.messageId);
+    const messageCreatedAt = timestampMillis(message.createdAt);
+    const commitAgeMs = Math.max(
+      0,
+      messageCreatedAt > 0 ? functionStartedAt - messageCreatedAt : 0,
+    );
+    runtimeLogsEnabled && runtimeInfo(
+      `[SnackChatTiming] stage=cloudFunctionStartedAt ` +
+      `at=${functionStartedAt} roomId=${roomId} messageId=${messageId} ` +
+      `sequence=${nonNegativeInteger(message.sequence)} ` +
+      `commitAgeMs=${commitAgeMs}`,
+    );
     if (stringValue(message.type) === 'system') return null;
     const senderId = stringValue(message.senderId);
     if (!senderId) return null;
     const roomRef = db().collection(SNACK_CHATS)
-      .doc(stringValue(context.params.snackChatId));
+      .doc(roomId);
     if (stringValue(message.type) === 'poll' &&
         timestampMillis(objectValue(message.poll).closesAt) > 0) {
       // Read current state inside a transaction. The onCreate snapshot never
@@ -7090,8 +7131,15 @@ export const onSnackChatMessageCreatedSecure = functions
       roomRef,
       message,
       eventId: context.eventId,
-      messageId: stringValue(context.params.messageId),
+      messageId,
     });
+    runtimeLogsEnabled && runtimeInfo(
+      `[SnackChatTiming] stage=unreadUpdatedAt at=${Date.now()} ` +
+      `roomId=${roomId} messageId=${messageId} ` +
+      `sequence=${nonNegativeInteger(message.sequence)} ` +
+      `recipientCount=${applied.recipientIds.length} ` +
+      `durationMs=${Date.now() - functionStartedAt}`,
+    );
     let senderName = boundedString(message.senderName, 80);
     if (!senderName) senderName = await userDisplayName(senderId);
     if (stringValue(message.type) === 'poll') {
@@ -7103,27 +7151,42 @@ export const onSnackChatMessageCreatedSecure = functions
       await createSystemMessage({
         roomRef,
         sourceEventId: context.eventId,
-        discriminator: 'poll-created:' + stringValue(context.params.messageId),
+        discriminator: 'poll-created:' + messageId,
         text: senderName + ' created a poll: ' + question,
         metadata: {
           systemType: 'poll_created',
           userId: senderId,
           userName: senderName,
-          pollMessageId: stringValue(context.params.messageId),
+          pollMessageId: messageId,
           question,
         },
       });
     }
+    const pushStartedAt = Date.now();
+    runtimeLogsEnabled && runtimeInfo(
+      `[SnackChatTiming] stage=pushSendStartedAt at=${pushStartedAt} ` +
+      `roomId=${roomId} messageId=${messageId} ` +
+      `sequence=${nonNegativeInteger(message.sequence)} ` +
+      `recipientCount=${applied.recipientIds.length}`,
+    );
     await runWithConcurrency(applied.recipientIds, 5, (recipientId) =>
       sendSnackChatPush({
         roomRef,
         eventRef: applied.eventRef,
-        messageId: stringValue(context.params.messageId),
+        messageId,
         recipientId,
         senderId,
         senderName,
         message,
       }));
+    runtimeLogsEnabled && runtimeInfo(
+      `[SnackChatTiming] stage=pushSendCompletedAt at=${Date.now()} ` +
+      `roomId=${roomId} messageId=${messageId} ` +
+      `sequence=${nonNegativeInteger(message.sequence)} ` +
+      `recipientCount=${applied.recipientIds.length} ` +
+      `durationMs=${Date.now() - pushStartedAt} ` +
+      `totalDurationMs=${Date.now() - functionStartedAt}`,
+    );
     return null;
   });
 

@@ -44,6 +44,19 @@ class SnackChatEntryContext {
       firstUnreadSequence! > lastReadSequence;
 }
 
+/// Exact server result for advancing one room's read cursor.
+class SnackChatReadResult {
+  const SnackChatReadResult({
+    required this.clearedCount,
+    required this.unreadCount,
+    required this.readThroughSequence,
+  });
+
+  final int clearedCount;
+  final int unreadCount;
+  final int readThroughSequence;
+}
+
 enum SnackChatSummarySectionType {
   mustKnow,
   responseRequired,
@@ -794,8 +807,7 @@ class SnackChatService {
             );
         }
       }
-      items.sort((a, b) => b.lastMessageTime.compareTo(a.lastMessageTime));
-      return items;
+      return orderSnackChatsForCurrentUser(items, currentUserId: uid);
     }).transform(
       StreamTransformer<List<SnackChat>, List<SnackChat>>.fromHandlers(
         handleError: (error, stackTrace, sink) {
@@ -1821,6 +1833,17 @@ class SnackChatService {
       final roomRef = _collection.doc(snackChatId);
       final resolvedMessageId = messageId ?? createMessageId(snackChatId);
       final messageRef = roomRef.collection('messages').doc(resolvedMessageId);
+      final firestoreWriteStopwatch = Stopwatch()..start();
+      var transactionAttempt = 0;
+      var committedSequence = 0;
+      if (Logger.isVerboseEnabled) {
+        Logger.info(
+          '[SnackChatTiming] stage=firestoreWriteStartedAt '
+          'at=${DateTime.now().millisecondsSinceEpoch} roomId=$snackChatId '
+          'messageId=$resolvedMessageId sequence=0 '
+          'type=${snackChatMessageTypeWireName(type)}',
+        );
+      }
 
       final previewText = hasImage
           ? (text.isNotEmpty ? text : '[이미지]')
@@ -1830,6 +1853,16 @@ class SnackChatService {
 
       final committed = await _firestore.runTransaction<bool>(
         (transaction) async {
+          transactionAttempt++;
+          if (Logger.isVerboseEnabled) {
+            Logger.info(
+              '[SnackChatTiming] stage=transactionStartedAt '
+              'at=${DateTime.now().millisecondsSinceEpoch} '
+              'roomId=$snackChatId messageId=$resolvedMessageId '
+              'sequence=0 attempt=$transactionAttempt '
+              'durationMs=${firestoreWriteStopwatch.elapsedMilliseconds}',
+            );
+          }
           final roomDoc = await transaction.get(roomRef);
           if (!roomDoc.exists) return false;
           final room = SnackChat.fromFirestore(roomDoc);
@@ -1839,10 +1872,13 @@ class SnackChatService {
           if (existingMessage.exists) {
             final existingSender =
                 (existingMessage.data()?['senderId'] ?? '').toString();
+            committedSequence =
+                (existingMessage.data()?['sequence'] as num?)?.toInt() ?? 0;
             return existingSender == uid;
           }
 
           final sequence = room.lastMessageSequence + 1;
+          committedSequence = sequence;
           final recipients = room.participantIds
               .where((participantId) => participantId != uid)
               .toSet()
@@ -1886,6 +1922,17 @@ class SnackChatService {
         },
         maxAttempts: 8,
       ).timeout(const Duration(seconds: 25));
+
+      if (Logger.isVerboseEnabled) {
+        Logger.info(
+          '[SnackChatTiming] stage=transactionCommittedAt '
+          'at=${DateTime.now().millisecondsSinceEpoch} roomId=$snackChatId '
+          'messageId=$resolvedMessageId sequence=$committedSequence '
+          'committed=$committed '
+          'attempts=$transactionAttempt '
+          'durationMs=${firestoreWriteStopwatch.elapsedMilliseconds}',
+        );
+      }
 
       if (!committed) return false;
       if (type == SnackChatMessageType.text && !suppressLinkPreview) {
@@ -2007,12 +2054,18 @@ class SnackChatService {
   ///
   /// 최신 방 sequence를 클라이언트에서 다시 조회하지 않고 서버에 경계를
   /// 전달하므로 화면 종료와 동시에 도착한 새 메시지는 읽음 처리되지 않는다.
-  Future<int> markAsRead(
+  Future<SnackChatReadResult> markAsRead(
     String snackChatId, {
     required int throughSequence,
   }) async {
     final uid = _uid;
-    if (uid == null || throughSequence <= 0) return 0;
+    if (uid == null || throughSequence <= 0) {
+      return const SnackChatReadResult(
+        clearedCount: 0,
+        unreadCount: 0,
+        readThroughSequence: 0,
+      );
+    }
 
     try {
       if (Logger.isVerboseEnabled)
@@ -2033,18 +2086,63 @@ class SnackChatService {
       final clearedRaw = data['clearedCount'];
       final clearedCount =
           clearedRaw is num ? clearedRaw.toInt().clamp(0, 1 << 31) : 0;
+      final unreadRaw = data['unreadCount'];
+      final unreadCount =
+          unreadRaw is num ? unreadRaw.toInt().clamp(0, 1 << 31) : 0;
+      final readThroughRaw = data['readThroughSequence'];
+      final readThroughSequence = readThroughRaw is num
+          ? readThroughRaw.toInt().clamp(0, 1 << 31)
+          : throughSequence;
 
       // The room list will publish the new unread aggregate shortly. Until
       // then, never reuse the entry boundary captured before this read.
       _entryContextCache.remove('$uid::$snackChatId');
       unawaited(_localCache.clearEntryState(snackChatId));
+      _applyReadProjectionToCachedRooms(
+        snackChatId: snackChatId,
+        userId: uid,
+        unreadCount: unreadCount,
+        readThroughSequence: readThroughSequence,
+      );
 
       if (Logger.isVerboseEnabled) Logger.log('✅ [SnackChat] markAsRead 완료');
-      return clearedCount;
+      return SnackChatReadResult(
+        clearedCount: clearedCount,
+        unreadCount: unreadCount,
+        readThroughSequence: readThroughSequence,
+      );
     } catch (e) {
       Logger.error('Snack Chat 읽음 처리 실패: $e');
       rethrow;
     }
+  }
+
+  void _applyReadProjectionToCachedRooms({
+    required String snackChatId,
+    required String userId,
+    required int unreadCount,
+    required int readThroughSequence,
+  }) {
+    final current = _latestMySnackChats;
+    final controller = _sharedMySnackChatsController;
+    if (current == null || controller == null || controller.isClosed) return;
+
+    var changed = false;
+    final projected = current.map((room) {
+      if (room.id != snackChatId ||
+          room.lastMessageSequence > readThroughSequence) {
+        return room;
+      }
+      final previous = room.unreadCount[userId] ?? 0;
+      if (previous == unreadCount) return room;
+      final nextUnread = Map<String, int>.from(room.unreadCount)
+        ..[userId] = unreadCount;
+      changed = true;
+      return room.copyWith(unreadCount: nextUnread);
+    }).toList(growable: false);
+    if (!changed) return;
+    _latestMySnackChats = projected;
+    controller.add(projected);
   }
 
   Future<void> toggleReaction({
@@ -2248,20 +2346,9 @@ class SnackChatService {
       }
     } catch (e) {
       Logger.error('SnackChat 뮤트 토글 실패', e);
-      // 필드가 없는 경우 생성 후 재시도
-      if (e.toString().contains('NOT_FOUND') ||
-          e.toString().contains('does not exist')) {
-        try {
-          await userRef.set({
-            'mutedSnackChatIds': mute ? [snackChatId] : <String>[],
-          }, SetOptions(merge: true));
-        } catch (retryError) {
-          Logger.error('SnackChat 뮤트 필드 생성 실패', retryError);
-          rethrow;
-        }
-      } else {
-        rethrow;
-      }
+      // 계정 삭제와 경합해 users 문서가 사라진 경우 주변 설정 변경이 빈
+      // 프로필을 다시 만들면 안 된다. 필드가 없어도 update는 정상 동작한다.
+      rethrow;
     }
   }
 
@@ -2375,6 +2462,39 @@ class SnackChatService {
 
 enum SnackChatListSection { today, all, unified }
 
+/// Orders a single room collection without extra reads or listeners.
+///
+/// Favorite membership is scoped to [currentUserId]. Within both the favorite
+/// and regular groups, only real message metadata controls recency. The room
+/// id is the final stable tie-breaker so unrelated snapshot updates cannot
+/// make equal rooms swap positions.
+List<SnackChat> orderSnackChatsForCurrentUser(
+  Iterable<SnackChat> chats, {
+  required String currentUserId,
+}) {
+  final uniqueByRoomId = <String, SnackChat>{};
+  for (final chat in chats) {
+    uniqueByRoomId[chat.id] = chat;
+  }
+
+  final ordered = uniqueByRoomId.values.toList(growable: false);
+  ordered.sort((left, right) {
+    final leftFavorite = left.isFavoritedBy(currentUserId);
+    final rightFavorite = right.isFavoritedBy(currentUserId);
+    if (leftFavorite != rightFavorite) return leftFavorite ? -1 : 1;
+
+    final timeOrder = right.lastMessageTime.compareTo(left.lastMessageTime);
+    if (timeOrder != 0) return timeOrder;
+
+    final sequenceOrder =
+        right.lastMessageSequence.compareTo(left.lastMessageSequence);
+    if (sequenceOrder != 0) return sequenceOrder;
+
+    return left.id.compareTo(right.id);
+  });
+  return ordered;
+}
+
 List<SnackChat> filterSnackChatsBySection(
   List<SnackChat> chats, {
   required SnackChatListSection section,
@@ -2385,7 +2505,7 @@ List<SnackChat> filterSnackChatsBySection(
   final startOfToday = startOfLocalCalendarDay(currentTime);
   final startOfTomorrow = startOfNextLocalCalendarDay(currentTime);
 
-  return chats.where((chat) {
+  final visible = chats.where((chat) {
     if (!isSnackChatVisibleForCurrentUser(
       createdAt: chat.createdAt,
       activeDurationHours: chat.activeDurationHours,
@@ -2408,5 +2528,9 @@ List<SnackChat> filterSnackChatsBySection(
 
     final wasCreatedBeforeToday = createdAt.isBefore(startOfToday);
     return wasCreatedBeforeToday;
-  }).toList(growable: false);
+  });
+  return orderSnackChatsForCurrentUser(
+    visible,
+    currentUserId: currentUserId ?? '',
+  );
 }

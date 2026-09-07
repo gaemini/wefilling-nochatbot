@@ -36,6 +36,7 @@ import 'shared_link_preview_card.dart';
 import 'user_avatar.dart';
 import 'hanyang_verification_gate.dart';
 import 'translatable_content.dart';
+import 'post_translation_feed.dart';
 import '../sheets/translation_language_sheet.dart';
 
 /// Board/Home 피드에서 사용하는 content-first 일반 게시글 카드.
@@ -212,7 +213,8 @@ class _OptimizedPostCardState extends State<OptimizedPostCard> {
         });
       },
       onError: (Object error) {
-        if (Logger.isVerboseEnabled) Logger.warning('포스트 캐시 지표 구독 오류($postId): $error');
+        if (Logger.isVerboseEnabled)
+          Logger.warning('포스트 캐시 지표 구독 오류($postId): $error');
       },
     );
   }
@@ -688,135 +690,141 @@ class _OptimizedPostCardState extends State<OptimizedPostCard> {
       post.requiresHanyangVerification,
     );
 
-    return Container(
-      margin: widget.margin,
-      color: BrandColors.surface,
-      child: Material(
-        color: Colors.transparent,
-        child: InkWell(
-          // 한양 전용 콘텐츠는 카드 전체 탭으로 상세 화면을 우회하지 못하게
-          // 하고, 잠금 오버레이의 인증 버튼만 동작하도록 한다.
-          onTap: isHanyangLocked ? null : widget.onTap,
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Padding(
-                padding: EdgeInsets.fromLTRB(
-                  contentInsets.left,
-                  contentInsets.top,
-                  contentInsets.right,
-                  contentInsets.bottom,
-                ),
-                child: _buildAuthorInfoWithTitle(
-                  post,
-                  theme,
-                  colorScheme,
-                  showTranslationToggle: hasTranslationSource,
-                  threadContent: HanyangVerificationGate(
-                    locked: isHanyangLocked,
-                    compact: true,
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        if (hasPrimaryContent) ...[
-                          SizedBox(height: contentTopGap),
-                          if (hasContent)
-                            TranslatableContent(
-                              key: ValueKey<String>(
-                                'post-translation:${post.id}:'
-                                '${unifiedText.hashCode}',
-                              ),
-                              request: ContentTranslationRequest(
-                                contentType: 'post',
-                                contentId: post.id,
-                                sourceFields: postTranslationSourceFields(post),
-                              ),
-                              scope: 'post:${post.id}',
-                              showToggle: false,
-                              loadOnDemand: widget.deferTranslationUntilVisible,
-                              onLoaderAttached:
-                                  widget.onTranslationLoaderAttached,
-                              builder: (context, fields) =>
-                                  _buildSmartEllipsizedText(
-                                text: fields['content'] ?? unifiedText,
-                                maxLines: 4,
-                                style: TextStyle(
-                                  color: BrandColors.textPrimary,
-                                  fontFamily: 'Inter',
-                                  fontFamilyFallback: const ['NotoSansKR'],
-                                  fontWeight: FontWeight.w500,
-                                  fontSize: contentSize,
-                                  height: 1.24,
-                                  letterSpacing: -0.3,
-                                ),
-                              ),
-                            ),
-                          if (post.type == 'poll') ...[
+    return PostTranslationAnchor(
+      postId: post.id,
+      child: Container(
+        margin: widget.margin,
+        color: BrandColors.surface,
+        child: Material(
+          color: Colors.transparent,
+          child: InkWell(
+            // 한양 전용 콘텐츠는 카드 전체 탭으로 상세 화면을 우회하지 못하게
+            // 하고, 잠금 오버레이의 인증 버튼만 동작하도록 한다.
+            onTap: isHanyangLocked ? null : widget.onTap,
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Padding(
+                  padding: EdgeInsets.fromLTRB(
+                    contentInsets.left,
+                    contentInsets.top,
+                    contentInsets.right,
+                    contentInsets.bottom,
+                  ),
+                  child: _buildAuthorInfoWithTitle(
+                    post,
+                    theme,
+                    colorScheme,
+                    showTranslationToggle: hasTranslationSource,
+                    threadContent: HanyangVerificationGate(
+                      locked: isHanyangLocked,
+                      compact: true,
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          if (hasPrimaryContent) ...[
+                            SizedBox(height: contentTopGap),
                             if (hasContent)
-                              const SizedBox(height: DesignTokens.s8),
-                            PollPostWidget(
-                              postId: post.id,
-                              post: post,
-                              deferTranslationUntilVisible:
-                                  widget.deferTranslationUntilVisible,
-                              onTranslationLoaderAttached:
-                                  widget.onTranslationLoaderAttached,
-                            ),
-                          ],
-                        ],
-                        if (post.linkPreview case final preview?) ...[
-                          SizedBox(
-                            height: hasPrimaryContent
-                                ? DesignTokens.s8
-                                : contentTopGap,
-                          ),
-                          SharedLinkPreviewCard(
-                            preview: preview,
-                            fallbackImageUrl:
-                                post.sharedLinkCardFallbackImageUrl,
-                            compact: true,
-                          ),
-                        ],
-                        if (standaloneImageUrls.isNotEmpty) ...[
-                          SizedBox(height: imageGap),
-                          _buildPostImages(standaloneImageUrls),
-                        ],
-                        Padding(
-                          padding: const EdgeInsets.only(top: DesignTokens.s2),
-                          child: Row(
-                            crossAxisAlignment: CrossAxisAlignment.center,
-                            children: [
-                              _buildPostMeta(
-                                post.copyWith(
-                                  commentCount: _effectiveCommentCount(post),
+                              TranslatableContent(
+                                key: ValueKey<String>(
+                                  'post-translation:${post.id}',
                                 ),
-                              ),
-                              if (hasCategoryMetadata) ...[
-                                const SizedBox(width: DesignTokens.s4),
-                                Expanded(
-                                  child: Align(
-                                    alignment: Alignment.centerRight,
-                                    child: _buildPostCategoryTags(post),
+                                request: ContentTranslationRequest(
+                                  contentType: 'post',
+                                  contentId: post.id,
+                                  sourceFields:
+                                      postTranslationSourceFields(post),
+                                ),
+                                scope: PostTranslationFeed.scopeOf(
+                                    context, post.id),
+                                showToggle: false,
+                                // Each card owns its request. Feed prefetch is
+                                // only a cache optimization, never a gate.
+                                loadOnDemand: false,
+                                onLoaderAttached:
+                                    widget.onTranslationLoaderAttached,
+                                builder: (context, fields) =>
+                                    _buildSmartEllipsizedText(
+                                  text: fields['content'] ?? unifiedText,
+                                  maxLines: 4,
+                                  style: TextStyle(
+                                    color: BrandColors.textPrimary,
+                                    fontFamily: 'Inter',
+                                    fontFamilyFallback: const ['NotoSansKR'],
+                                    fontWeight: FontWeight.w500,
+                                    fontSize: contentSize,
+                                    height: 1.24,
+                                    letterSpacing: -0.3,
                                   ),
                                 ),
-                              ],
+                              ),
+                            if (post.type == 'poll') ...[
+                              if (hasContent)
+                                const SizedBox(height: DesignTokens.s8),
+                              PollPostWidget(
+                                postId: post.id,
+                                post: post,
+                                deferTranslationUntilVisible: false,
+                                onTranslationLoaderAttached:
+                                    widget.onTranslationLoaderAttached,
+                              ),
                             ],
+                          ],
+                          if (post.linkPreview case final preview?) ...[
+                            SizedBox(
+                              height: hasPrimaryContent
+                                  ? DesignTokens.s8
+                                  : contentTopGap,
+                            ),
+                            SharedLinkPreviewCard(
+                              preview: preview,
+                              fallbackImageUrl:
+                                  post.sharedLinkCardFallbackImageUrl,
+                              compact: true,
+                            ),
+                          ],
+                          if (standaloneImageUrls.isNotEmpty) ...[
+                            SizedBox(height: imageGap),
+                            _buildPostImages(standaloneImageUrls),
+                          ],
+                          Padding(
+                            padding:
+                                const EdgeInsets.only(top: DesignTokens.s2),
+                            child: Row(
+                              crossAxisAlignment: CrossAxisAlignment.center,
+                              children: [
+                                _buildPostMeta(
+                                  post.copyWith(
+                                    commentCount: _effectiveCommentCount(post),
+                                  ),
+                                ),
+                                if (hasCategoryMetadata) ...[
+                                  const SizedBox(width: DesignTokens.s4),
+                                  Expanded(
+                                    child: Align(
+                                      alignment: Alignment.centerRight,
+                                      child: _buildPostCategoryTags(post),
+                                    ),
+                                  ),
+                                ],
+                              ],
+                            ),
                           ),
-                        ),
-                      ],
+                        ],
+                      ),
                     ),
                   ),
                 ),
-              ),
-              if (widget.showBottomDivider)
-                const Divider(
-                  height: 1,
-                  thickness: 1,
-                  color: BrandColors.divider,
-                ),
-              // 카드의 콘텐츠 밀도는 유지하면서 게시글 경계만 살짝 구분한다.
-              SizedBox(height: context.rs(3).clamp(2, 4).toDouble()),
-            ],
+                if (widget.showBottomDivider)
+                  const Divider(
+                    height: 1,
+                    thickness: 1,
+                    color: BrandColors.divider,
+                  ),
+                // 카드의 콘텐츠 밀도는 유지하면서 게시글 경계만 살짝 구분한다.
+                SizedBox(height: context.rs(3).clamp(2, 4).toDouble()),
+              ],
+            ),
           ),
         ),
       ),
@@ -1129,7 +1137,7 @@ class _OptimizedPostCardState extends State<OptimizedPostCard> {
                     if (showTranslationToggle) ...[
                       const SizedBox(height: 1),
                       TranslationScopeToggle(
-                        scope: 'post:${post.id}',
+                        scope: PostTranslationFeed.scopeOf(context, post.id),
                         postCardHeader: true,
                         onSettingsPressed: _openTranslationLanguageSettings,
                       ),
@@ -1374,10 +1382,14 @@ class _OptimizedPostCardState extends State<OptimizedPostCard> {
       // post.userId가 올바른 Firebase UID인지 확인
       if (Logger.isVerboseEnabled) Logger.log('🔍 DM 대상 확인:');
       if (Logger.isVerboseEnabled) Logger.log('  - post.id: ${post.id}');
-      if (Logger.isVerboseEnabled) Logger.log('  - post.userId: ${post.userId}');
-      if (Logger.isVerboseEnabled) Logger.log('  - post.isAnonymous: ${post.isAnonymous}');
-      if (Logger.isVerboseEnabled) Logger.log('  - post.author: ${post.author}');
-      if (Logger.isVerboseEnabled) Logger.log('  - currentUser.uid: ${currentUser.uid}');
+      if (Logger.isVerboseEnabled)
+        Logger.log('  - post.userId: ${post.userId}');
+      if (Logger.isVerboseEnabled)
+        Logger.log('  - post.isAnonymous: ${post.isAnonymous}');
+      if (Logger.isVerboseEnabled)
+        Logger.log('  - post.author: ${post.author}');
+      if (Logger.isVerboseEnabled)
+        Logger.log('  - currentUser.uid: ${currentUser.uid}');
 
       // 본인에게 DM 전송 체크 (익명 포함)
       if (post.userId == currentUser.uid) {
@@ -1399,8 +1411,9 @@ class _OptimizedPostCardState extends State<OptimizedPostCard> {
       // Firebase Auth UID 형식 검증 (20~30자 영숫자, 언더스코어 포함 가능)
       final uidPattern = RegExp(r'^[a-zA-Z0-9_-]{20,30}$');
       if (!uidPattern.hasMatch(post.userId)) {
-        if (Logger.isVerboseEnabled) Logger.log(
-            '❌ 잘못된 userId 형식: ${post.userId} (길이: ${post.userId.length}자)');
+        if (Logger.isVerboseEnabled)
+          Logger.log(
+              '❌ 잘못된 userId 형식: ${post.userId} (길이: ${post.userId.length}자)');
         // 로딩 다이얼로그 닫기
         if (mounted) Navigator.pop(context);
         if (mounted) {
@@ -1446,7 +1459,8 @@ class _OptimizedPostCardState extends State<OptimizedPostCard> {
       // 로딩 다이얼로그 닫기
       if (mounted) Navigator.pop(context);
 
-      if (Logger.isVerboseEnabled) Logger.log('✅ DM conversation ID: $conversationId');
+      if (Logger.isVerboseEnabled)
+        Logger.log('✅ DM conversation ID: $conversationId');
 
       if (mounted) {
         final originPostImageUrl =

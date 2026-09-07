@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 
@@ -5,6 +7,7 @@ import '../constants/app_constants.dart';
 import '../models/snapshot.dart';
 import '../models/snapshot_comment_letter.dart';
 import '../services/snapshot_service.dart';
+import '../services/notification_service.dart';
 import '../snapshot/snapshot_storage_image.dart';
 import '../utils/responsive_helper.dart';
 import 'friend_profile_screen.dart';
@@ -49,6 +52,9 @@ class _SnapshotCommentLetterScreenState
   @override
   void initState() {
     super.initState();
+    unawaited(NotificationService().markNotificationAsRead(
+      widget.notificationId,
+    ));
     _loadLetter();
   }
 

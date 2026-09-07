@@ -1,5 +1,22 @@
 const MAX_INDEXED_NAME_LENGTH = 40;
 
+/**
+ * Canonical interest IDs stored on user profiles by SocialProfileCatalog.
+ * Keep this allow-list in sync with the Flutter catalog so arbitrary client
+ * values can never turn into unbounded discovery queries.
+ */
+export const SOCIAL_PROFILE_INTEREST_IDS = new Set<string>([
+  'restaurants', 'cafe', 'running', 'fitness', 'soccer', 'basketball',
+  'travel', 'photo', 'movie', 'music', 'game', 'reading', 'language',
+  'study', 'exhibition', 'performance', 'volunteer', 'startup',
+  'development', 'ai',
+]);
+
+export function normalizeSocialInterestId(raw: unknown): string | null {
+  const value = String(raw ?? '').trim().toLowerCase();
+  return SOCIAL_PROFILE_INTEREST_IDS.has(value) ? value : null;
+}
+
 const LEADING_JAMO_TO_COMPATIBILITY = new Map<string, string>([
   ['ᄀ', 'ㄱ'], ['ᄁ', 'ㄲ'], ['ᄂ', 'ㄴ'], ['ᄃ', 'ㄷ'], ['ᄄ', 'ㄸ'],
   ['ᄅ', 'ㄹ'], ['ᄆ', 'ㅁ'], ['ᄇ', 'ㅂ'], ['ᄈ', 'ㅃ'], ['ᄉ', 'ㅅ'],

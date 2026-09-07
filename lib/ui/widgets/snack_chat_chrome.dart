@@ -2,6 +2,64 @@ import 'package:flutter/material.dart';
 
 import '../../utils/responsive_helper.dart';
 
+/// Accumulates only direct-drag deltas supplied by SnackChatScreen and maps
+/// reversed scroll axes to the direction a person sees on screen.
+class SnackChatToolbarScrollTracker {
+  SnackChatToolbarScrollTracker({this.threshold = 16});
+
+  final double threshold;
+  bool visible = true;
+  double _directionalDistance = 0;
+  bool? _movingTowardVisualBottom;
+
+  void resetGesture() {
+    _directionalDistance = 0;
+    _movingTowardVisualBottom = null;
+  }
+
+  void resetRoom() {
+    visible = true;
+    resetGesture();
+  }
+
+  /// Returns a visibility value only when the toolbar should actually change.
+  bool? addUserDelta({
+    required AxisDirection axisDirection,
+    required double scrollDelta,
+    required bool outOfRange,
+    required double scrollableExtent,
+  }) {
+    if (outOfRange) return null;
+    if (scrollableExtent <= 1) {
+      resetGesture();
+      if (!visible) {
+        visible = true;
+        return true;
+      }
+      return null;
+    }
+    if (scrollDelta.abs() < .5) return null;
+
+    final movingTowardVisualBottom = switch (axisDirection) {
+      AxisDirection.down => scrollDelta > 0,
+      AxisDirection.up => scrollDelta < 0,
+      _ => false,
+    };
+    if (_movingTowardVisualBottom != movingTowardVisualBottom) {
+      _movingTowardVisualBottom = movingTowardVisualBottom;
+      _directionalDistance = 0;
+    }
+    _directionalDistance += scrollDelta.abs();
+    if (_directionalDistance < threshold) return null;
+
+    _directionalDistance = 0;
+    final nextVisible = !movingTowardVisualBottom;
+    if (visible == nextVisible) return null;
+    visible = nextVisible;
+    return nextVisible;
+  }
+}
+
 /// DM과 구분되는 스낵챗 전용 배경이다.
 ///
 /// 채도가 있는 면이나 카드 대신, 아주 옅은 말줄임 패턴으로 여러 사람이

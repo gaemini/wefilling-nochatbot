@@ -28,6 +28,7 @@ import '../config/app_config.dart';
 import '../utils/logger.dart';
 import '../utils/hanyang_verification_helper.dart' as hanyang_verification;
 import '../utils/profile_photo_policy.dart';
+import '../utils/nickname_policy.dart';
 import '../services/firebase_app_check_service.dart';
 import '../services/content_filter_service.dart';
 import '../services/content_hide_service.dart';
@@ -1435,13 +1436,28 @@ class AuthProvider with ChangeNotifier implements WidgetsBindingObserver {
   Future<NicknameAvailabilityResult> checkNicknameAvailability(
     String nickname,
   ) async {
-    final input = nickname.trim();
+    final localValidationWatch = Stopwatch()..start();
+    final input = nickname;
+    final identity = NicknamePolicy.identityOrNull(input);
+    localValidationWatch.stop();
+    if (Logger.isVerboseEnabled) {
+      Logger.log(
+        'nickname availability: '
+        'localValidationMs=${localValidationWatch.elapsedMilliseconds}',
+      );
+    }
+    if (identity == null) {
+      throw ArgumentError.value(null, 'nickname', 'invalid nickname');
+    }
     final localKey = '${_auth.currentUser?.uid ?? 'anonymous'}|'
-        '${_nicknameAvailabilityRequestKey(input)}';
+        '${NicknamePolicy.version}|${identity.nicknameKey}';
     final cached = _nicknameAvailabilityCache[localKey];
     if (cached != null &&
         DateTime.now().difference(cached.checkedAt) <
             const Duration(seconds: 20)) {
+      if (Logger.isVerboseEnabled) {
+        Logger.log('nickname availability: cacheHit=true');
+      }
       return cached.result;
     }
 
@@ -1464,28 +1480,25 @@ class AuthProvider with ChangeNotifier implements WidgetsBindingObserver {
     return request;
   }
 
-  String _nicknameAvailabilityRequestKey(String input) => input
-      .replaceAll(
-        RegExp(
-          r'[\u0000-\u001F\u007F-\u009F\u200B-\u200D\u2060\uFEFF]',
-        ),
-        '',
-      )
-      .replaceAll(RegExp(r'\s+'), ' ')
-      .trim()
-      .toLowerCase();
+  String _nicknameAvailabilityRequestKey(String input) =>
+      NicknamePolicy.canonicalKey(input);
 
   Future<NicknameAvailabilityResult> _requestNicknameAvailability({
     required String input,
     required String cacheKey,
   }) async {
+    final totalWatch = Stopwatch()..start();
     try {
+      final appCheckWatch = Stopwatch()..start();
       await FirebaseAppCheckService.instance.ensureReady();
+      appCheckWatch.stop();
       await _logNicknameCheckAuthState();
+      final callableWatch = Stopwatch()..start();
       final response = await _functions
           .httpsCallable('checkNicknameAvailability')
           .call(<String, dynamic>{'nickname': input}).timeout(
               const Duration(seconds: 10));
+      callableWatch.stop();
       final raw = response.data;
       final data =
           raw is Map ? Map<String, dynamic>.from(raw) : <String, dynamic>{};
@@ -1500,6 +1513,14 @@ class AuthProvider with ChangeNotifier implements WidgetsBindingObserver {
       );
       if (!result.available) if (Logger.isVerboseEnabled)
         Logger.warning('nickname taken');
+      if (Logger.isVerboseEnabled) {
+        Logger.log(
+          'nickname availability: cacheHit=false, '
+          'appCheckReadyMs=${appCheckWatch.elapsedMilliseconds}, '
+          'callableStartMs=${callableWatch.elapsedMilliseconds}, '
+          'totalAvailabilityMs=${totalWatch.elapsedMilliseconds}',
+        );
+      }
       return result;
     } catch (error) {
       final appCheckFailed = error is FirebaseFunctionsException &&
@@ -1546,7 +1567,7 @@ class AuthProvider with ChangeNotifier implements WidgetsBindingObserver {
     await FirebaseAppCheckService.instance.ensureReady();
     final response = await _functions
         .httpsCallable('updateMyNicknameSecure')
-        .call(<String, dynamic>{'nickname': nickname.trim()}).timeout(
+        .call(<String, dynamic>{'nickname': nickname}).timeout(
             const Duration(seconds: 15));
     final raw = response.data;
     final data =

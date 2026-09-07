@@ -151,7 +151,13 @@ class SnackChat {
               : const <String>[]),
       lastMessage: (data['lastMessage'] ?? '').toString(),
       lastMessageId: (data['lastMessageId'] ?? '').toString().trim(),
-      lastMessageTime: parseDate(data['lastMessageTime'], DateTime.now()),
+      // Legacy/just-created rooms may not have message metadata yet. Falling
+      // back to createdAt keeps their position stable; updatedAt can change
+      // for non-message actions such as toggling a favorite.
+      lastMessageTime: parseDate(
+        data['lastMessageTime'],
+        parseDate(data['createdAt'], DateTime.fromMillisecondsSinceEpoch(0)),
+      ),
       lastMessageSenderId: (data['lastMessageSenderId'] ?? '').toString(),
       lastMessageType: (data['lastMessageType'] ?? '').toString().trim().isEmpty
           ? null

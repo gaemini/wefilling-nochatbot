@@ -9,6 +9,7 @@ import '../../models/content_translation.dart';
 import '../../models/post.dart';
 import '../../utils/post_translation_policy.dart';
 import 'translatable_content.dart';
+import 'post_translation_feed.dart';
 
 class PollPostWidget extends StatefulWidget {
   final String postId;
@@ -354,9 +355,9 @@ class _PollPostWidgetState extends State<PollPostWidget> {
               contentId: widget.postId,
               sourceFields: postTranslationSourceFields(post),
             ),
-            scope: 'post:${widget.postId}',
+            scope: PostTranslationFeed.scopeOf(context, widget.postId),
             showToggle: false,
-            loadOnDemand: widget.deferTranslationUntilVisible,
+            loadOnDemand: false,
             onLoaderAttached: widget.onTranslationLoaderAttached,
             builder: (context, fields) => buildCard(
               hasVoted: hasVoted,

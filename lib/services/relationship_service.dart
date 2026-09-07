@@ -16,7 +16,9 @@ import '../repositories/users_repository.dart';
 import '../utils/logger.dart';
 
 class RelationshipService {
-  final FirebaseFunctions _functions = FirebaseFunctions.instance;
+  final FirebaseFunctions _functions = FirebaseFunctions.instanceFor(
+    region: 'us-central1',
+  );
   final FirebaseAuth _auth = FirebaseAuth.instance;
   final UsersRepository _usersRepository = UsersRepository();
   final MyPageCacheService _myPageCacheService = MyPageCacheService();
@@ -54,17 +56,14 @@ class RelationshipService {
         throw Exception('자기 자신에게 친구요청을 보낼 수 없습니다.');
       }
 
-      final targetIsActive = await _usersRepository.isActiveUserAccount(toUid);
-      if (!targetIsActive) {
-        throw Exception('탈퇴했거나 이용할 수 없는 계정입니다.');
-      }
-
-      // 🔥 iOS 크래시 방지: 네이티브 gRPC 통신에 명시적 타임아웃 추가
+      // 대상 계정/차단/기존 관계 검증은 같은 트랜잭션 안에서 서버가
+      // 권위 있게 처리한다. 여기서 별도 사전 읽기를 하지 않아 지연과
+      // App Check 요청 횟수, 클라이언트-서버 상태 불일치를 줄인다.
       final callable = _functions.httpsCallable('sendFriendRequest');
       final result = await callable.call({'toUid': toUid}).timeout(
-        const Duration(seconds: 10),
+        const Duration(seconds: 20),
         onTimeout: () {
-          if (Logger.isVerboseEnabled) Logger.log('⏱️ 친구요청 전송 타임아웃 (10초)');
+          if (Logger.isVerboseEnabled) Logger.log('⏱️ 친구요청 전송 타임아웃 (20초)');
           throw TimeoutException('친구요청 전송 시간 초과');
         },
       );
@@ -79,6 +78,22 @@ class RelationshipService {
         throw Exception(error);
       }
     } on FirebaseFunctionsException catch (e) {
+      // 상대가 먼저 보낸 요청이 검색 화면에 아직 반영되지 않은 경우에는
+      // 교차 요청을 만들지 않고 그 요청을 수락해 한 번의 탭으로 완료한다.
+      final details = e.details;
+      if (e.code == 'failed-precondition' &&
+          details is Map &&
+          details['reason'] == 'incoming-request-exists') {
+        return acceptFriendRequest(toUid);
+      }
+
+      // 응답 유실, 느린 네트워크, 빠른 중복 탭 뒤에도 서버에 요청이나 친구
+      // 관계가 이미 반영됐다면 사용자에게 실패로 보이지 않게 한다.
+      if (await _isOutgoingRequestEstablished(toUid)) {
+        _clearProfileNetworkCache();
+        return true;
+      }
+
       // Firebase Functions 오류 메시지를 정확히 파싱
       Logger.error('친구요청 전송 오류 (Functions): ${e.code} - ${e.message}');
 
@@ -96,12 +111,19 @@ class RelationshipService {
         case 'invalid-argument':
           userMessage = e.message ?? '유효하지 않은 요청입니다.';
           break;
+        case 'failed-precondition':
+          userMessage = e.message ?? '현재 친구요청을 처리할 수 없습니다.';
+          break;
         default:
           userMessage = e.message ?? '친구요청 전송 중 오류가 발생했습니다.';
       }
 
       throw Exception(userMessage);
     } catch (e) {
+      if (await _isOutgoingRequestEstablished(toUid)) {
+        _clearProfileNetworkCache();
+        return true;
+      }
       Logger.error('친구요청 전송 오류: $e');
       rethrow;
     }
@@ -149,17 +171,18 @@ class RelationshipService {
       // 🔥 iOS 크래시 방지: 네이티브 gRPC 통신에 명시적 타임아웃 추가
       final callable = _functions.httpsCallable('acceptFriendRequest');
       final result = await callable.call({'fromUid': fromUid}).timeout(
-        const Duration(seconds: 10),
+        const Duration(seconds: 20),
         onTimeout: () {
-          if (Logger.isVerboseEnabled) Logger.log('⏱️ 친구요청 수락 타임아웃 (10초)');
+          if (Logger.isVerboseEnabled) Logger.log('⏱️ 친구요청 수락 타임아웃 (20초)');
           throw TimeoutException('친구요청 수락 시간 초과');
         },
       );
 
-      final success = result.data['success'] as bool? ?? false;
+      final resultData = result.data;
+      final success = resultData is Map && resultData['success'] == true;
       if (success) {
         if (Logger.isVerboseEnabled) Logger.log('친구요청 수락 성공: $fromUid');
-        _cacheCurrentFriendCount(result.data);
+        _cacheCurrentFriendCount(resultData);
 
         // 캐시 무효화 (새로운 친구 추가됨)
         invalidateUserCache(fromUid);
@@ -167,12 +190,56 @@ class RelationshipService {
 
         return true;
       } else {
-        final error = result.data['error'] as String? ?? '알 수 없는 오류';
+        final error = resultData is Map
+            ? resultData['error']?.toString() ?? '알 수 없는 오류'
+            : '잘못된 서버 응답입니다.';
         throw Exception(error);
       }
+    } on FirebaseFunctionsException catch (e) {
+      // 응답이 유실됐거나 동일 요청이 빠르게 재호출된 경우 서버에서는 이미
+      // 친구 관계가 커밋됐을 수 있다. 최종 관계를 확인해 성공을 오류로
+      // 표시하지 않되, 실제 실패는 숨기지 않는다.
+      if (await _isFriendshipEstablished(fromUid)) {
+        invalidateUserCache(fromUid);
+        _clearProfileNetworkCache();
+        return true;
+      }
+      Logger.error('친구요청 수락 오류 (Functions): ${e.code} - ${e.message}');
+      final message = switch (e.code) {
+        'not-found' => '이미 처리되었거나 만료된 친구요청입니다.',
+        'failed-precondition' => e.message ?? '대기 중인 친구요청이 아닙니다.',
+        'permission-denied' => '이 친구요청을 수락할 권한이 없습니다.',
+        'unauthenticated' => '로그인이 필요합니다.',
+        _ => e.message ?? '친구요청 수락 중 오류가 발생했습니다.',
+      };
+      throw Exception(message);
     } catch (e) {
+      if (await _isFriendshipEstablished(fromUid)) {
+        invalidateUserCache(fromUid);
+        _clearProfileNetworkCache();
+        return true;
+      }
       Logger.error('친구요청 수락 오류: $e');
       rethrow;
+    }
+  }
+
+  Future<bool> _isFriendshipEstablished(String otherUid) async {
+    try {
+      return await _usersRepository.getRelationshipStatus(otherUid) ==
+          RelationshipStatus.friends;
+    } catch (_) {
+      return false;
+    }
+  }
+
+  Future<bool> _isOutgoingRequestEstablished(String otherUid) async {
+    try {
+      final status = await _usersRepository.getRelationshipStatus(otherUid);
+      return status == RelationshipStatus.pendingOut ||
+          status == RelationshipStatus.friends;
+    } catch (_) {
+      return false;
     }
   }
 
@@ -273,6 +340,7 @@ class RelationshipService {
         // ✅ 즉시 피드에서 제거되도록 in-memory 캐시 업데이트 + 재필터 emit
         ContentFilterService.addBlockedUserId(targetUid);
         PostService.instance.requestReemitWithCurrentFilters();
+        _usersRepository.clearInterestSearchCache();
         _clearProfileNetworkCache();
         return true;
       } else {
@@ -308,6 +376,7 @@ class RelationshipService {
         // ✅ 즉시 피드에서 복구되도록 in-memory 캐시 업데이트 + 재필터 emit
         ContentFilterService.removeBlockedUserId(targetUid);
         PostService.instance.requestReemitWithCurrentFilters();
+        _usersRepository.clearInterestSearchCache();
         _clearProfileNetworkCache();
         return true;
       } else {
@@ -356,6 +425,18 @@ class RelationshipService {
   /// 사용자 검색
   Future<List<UserProfile>> searchUsers(String query, {int limit = 20}) async {
     return await _usersRepository.searchUsers(query, limit: limit);
+  }
+
+  Future<InterestUserSearchPage> searchUsersByInterest(
+    String interestId, {
+    String? cursor,
+    int limit = 20,
+  }) {
+    return _usersRepository.searchUsersByInterest(
+      interestId,
+      cursor: cursor,
+      limit: limit,
+    );
   }
 
   /// 사용자 프로필 조회
@@ -459,14 +540,16 @@ class RelationshipService {
   void clearProfileCache() {
     _usersRepository.clearCache();
     _clearProfileNetworkCache();
-    if (Logger.isVerboseEnabled) Logger.log('🗑️ RelationshipService: 프로필 캐시 초기화');
+    if (Logger.isVerboseEnabled)
+      Logger.log('🗑️ RelationshipService: 프로필 캐시 초기화');
   }
 
   /// 특정 사용자 프로필 캐시 무효화
   void invalidateUserCache(String userId) {
     _usersRepository.invalidateCache(userId);
     _clearProfileNetworkCache();
-    if (Logger.isVerboseEnabled) Logger.log('🗑️ RelationshipService: 프로필 캐시 무효화 - $userId');
+    if (Logger.isVerboseEnabled)
+      Logger.log('🗑️ RelationshipService: 프로필 캐시 무효화 - $userId');
   }
 
   /// 특정 사용자의 친구 목록 조회 (일회성)
@@ -510,9 +593,10 @@ class RelationshipService {
       if (kReleaseMode || (!functionIsMissing && !debugAppCheckUnavailable)) {
         rethrow;
       }
-      if (Logger.isVerboseEnabled) Logger.log(
-        'ℹ️ 개발 환경 서버 조회 불가: 기존 친구 조회로 폴백',
-      );
+      if (Logger.isVerboseEnabled)
+        Logger.log(
+          'ℹ️ 개발 환경 서버 조회 불가: 기존 친구 조회로 폴백',
+        );
       return _getProfileFriendNetworkFallback(
         targetUid: targetUid,
         pageSize: pageSize,

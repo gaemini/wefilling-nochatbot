@@ -71,6 +71,7 @@ class _MyPageScreenState extends State<MyPageScreen>
   bool _isLoadingReviews = true;
   Object? _userPostsError;
   Object? _reviewsError;
+  StreamSubscription<List<ReviewPost>>? _reviewsSubscription;
 
   @override
   void initState() {
@@ -117,6 +118,8 @@ class _MyPageScreenState extends State<MyPageScreen>
 
     _myPageCacheUserId = userId;
     final loadToken = ++_myPageLoadToken;
+    unawaited(_reviewsSubscription?.cancel() ?? Future<void>.value());
+    _reviewsSubscription = null;
     _friendCount = profileFriendCount;
     _userPosts = null;
     _userReviews = null;
@@ -129,6 +132,7 @@ class _MyPageScreenState extends State<MyPageScreen>
       unawaited(
         _hydrateFriendCount(userId, loadToken, profileFriendCount),
       );
+      unawaited(_refreshExactFriendCount(userId, loadToken));
       _loadMyPageTabs(userId, loadToken);
     }
   }
@@ -155,6 +159,21 @@ class _MyPageScreenState extends State<MyPageScreen>
     final cachedCount = await _myPageCacheService.readFriendCount(userId);
     if (cachedCount == null || !_isCurrentLoad(userId, loadToken)) return;
     setState(() => _friendCount = cachedCount);
+  }
+
+  Future<void> _refreshExactFriendCount(String userId, int loadToken) async {
+    try {
+      final exactCount =
+          await _userStatsService.getLatestFriendCountForUser(userId);
+      if (!_isCurrentLoad(userId, loadToken)) return;
+      if (_friendCount != exactCount) {
+        setState(() => _friendCount = exactCount);
+      }
+      await _myPageCacheService.saveFriendCount(userId, exactCount);
+    } catch (_) {
+      // 오프라인/일시적 네트워크 오류에서는 프로필 문서 또는 로컬 캐시의
+      // 마지막 값을 유지한다. 친구 목록 화면과 다른 기능은 막지 않는다.
+    }
   }
 
   bool _isCurrentLoad(String userId, int loadToken) {
@@ -213,18 +232,27 @@ class _MyPageScreenState extends State<MyPageScreen>
       _isLoadingReviews = cached == null;
     });
     try {
-      final reviews = await _reviewService
-          .getUserReviews()
-          .first
-          .timeout(const Duration(seconds: 20));
+      await _reviewService.reconcileAcceptedReviewsForCurrentProfile();
       if (!_isCurrentLoad(userId, loadToken)) return;
-      await _myPageCacheService.saveReviews(userId, reviews);
-      if (!_isCurrentLoad(userId, loadToken)) return;
-      setState(() {
-        _userReviews = reviews;
-        _isLoadingReviews = false;
-        _reviewsError = null;
-      });
+      await _reviewsSubscription?.cancel();
+      _reviewsSubscription = _reviewService.getUserReviews().listen(
+        (reviews) {
+          if (!_isCurrentLoad(userId, loadToken)) return;
+          setState(() {
+            _userReviews = reviews;
+            _isLoadingReviews = false;
+            _reviewsError = null;
+          });
+          unawaited(_myPageCacheService.saveReviews(userId, reviews));
+        },
+        onError: (Object error) {
+          if (!_isCurrentLoad(userId, loadToken)) return;
+          setState(() {
+            _isLoadingReviews = false;
+            if (_userReviews == null) _reviewsError = error;
+          });
+        },
+      );
     } catch (error) {
       if (!_isCurrentLoad(userId, loadToken)) return;
       setState(() {
@@ -236,6 +264,7 @@ class _MyPageScreenState extends State<MyPageScreen>
 
   @override
   void dispose() {
+    unawaited(_reviewsSubscription?.cancel() ?? Future<void>.value());
     _tabController.dispose();
     super.dispose();
   }
@@ -1958,8 +1987,8 @@ class _MyPageScreenState extends State<MyPageScreen>
   }
 
   // 각 통계 항목 클릭 시 해당 페이지로 이동하는 메서드들
-  void _navigateToFriendsPage() {
-    Navigator.push(
+  Future<void> _navigateToFriendsPage() async {
+    await Navigator.push(
       context,
       MaterialPageRoute(
         builder: (context) => Scaffold(
@@ -2000,6 +2029,9 @@ class _MyPageScreenState extends State<MyPageScreen>
         ),
       ),
     );
+    final userId = _myPageCacheUserId;
+    if (!mounted || userId == null || userId.isEmpty) return;
+    unawaited(_refreshExactFriendCount(userId, _myPageLoadToken));
   }
 
   void _navigateToSavedPosts() {

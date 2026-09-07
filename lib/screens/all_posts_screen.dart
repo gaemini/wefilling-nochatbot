@@ -10,6 +10,7 @@ import '../models/post_category.dart';
 import '../services/post_media_prefetch_service.dart';
 import '../services/post_service.dart';
 import '../ui/widgets/optimized_post_card.dart';
+import '../ui/widgets/post_translation_feed.dart';
 import '../ui/widgets/skeletons.dart';
 import 'post_category_feed_screen.dart';
 import 'post_detail_screen.dart';
@@ -291,7 +292,7 @@ class _AllPostsScreenState extends State<AllPostsScreen> {
   @override
   Widget build(BuildContext context) {
     final isKo = Localizations.localeOf(context).languageCode == 'ko';
-    return Scaffold(
+    final page = Scaffold(
       backgroundColor: BrandColors.surface,
       appBar: AppBar(
         backgroundColor: BrandColors.surface,
@@ -386,6 +387,11 @@ class _AllPostsScreenState extends State<AllPostsScreen> {
           ),
         ),
       ),
+    );
+    return PostTranslationFeed(
+      posts: List<Post>.of(_posts),
+      enabled: widget.postBuilder == null,
+      child: page,
     );
   }
 }

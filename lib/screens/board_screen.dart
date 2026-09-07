@@ -5,10 +5,9 @@
 import 'dart:async';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/material.dart';
-import 'package:flutter/rendering.dart';
 import 'package:flutter/scheduler.dart';
+import 'package:flutter/rendering.dart';
 import '../models/post.dart';
-import '../models/content_translation.dart';
 import '../models/post_category.dart';
 import '../models/meetup.dart';
 import '../constants/app_constants.dart';
@@ -17,7 +16,6 @@ import '../services/post_media_prefetch_service.dart';
 import '../services/comment_service.dart';
 import '../services/meetup_service.dart';
 import '../services/content_filter_service.dart';
-import '../services/content_translation_service.dart';
 import '../ui/widgets/app_fab.dart';
 import '../ui/widgets/empty_state.dart';
 import '../ui/widgets/skeletons.dart';
@@ -34,23 +32,8 @@ import '../widgets/ad_banner_widget.dart';
 import '../l10n/app_localizations.dart';
 import '../utils/logger.dart';
 import '../utils/responsive_helper.dart';
-import '../utils/post_translation_policy.dart';
+import '../ui/widgets/post_translation_feed.dart';
 
-enum _BoardPostTranslationPriority { visible, adjacent }
-
-class _BoardPostTranslationCandidate {
-  const _BoardPostTranslationCandidate({
-    required this.post,
-    required this.request,
-    required this.priority,
-    required this.distance,
-  });
-
-  final Post post;
-  final ContentTranslationRequest request;
-  final _BoardPostTranslationPriority priority;
-  final double distance;
-}
 
 class BoardScreen extends StatefulWidget {
   final VoidCallback onOpenMeetups;
@@ -72,8 +55,6 @@ class BoardScreenState extends State<BoardScreen> {
       PostMediaPrefetchService.instance;
   final CommentService _commentService = CommentService();
   final MeetupService _meetupService = MeetupService();
-  final ContentTranslationService _translationService =
-      ContentTranslationService.instance;
   Timer? _midnightTimer;
   late final Stream<List<Post>> _postsStream;
   late final Stream<List<Meetup>> _todayMeetupsStream;
@@ -139,21 +120,6 @@ class BoardScreenState extends State<BoardScreen> {
   bool _historyHasMore = true;
   int _historyLoadGeneration = 0;
   final Map<String, GlobalKey> _postAnchorKeys = {};
-  final Map<String, Post> _translationPostsById = <String, Post>{};
-  final Set<String> _translationCacheChecksInFlight = <String>{};
-  final Set<String> _translationLocalCacheChecked = <String>{};
-  final Map<String, _BoardPostTranslationCandidate>
-      _translationMicroBatchCandidates =
-      <String, _BoardPostTranslationCandidate>{};
-  final Set<String> _translationRecoveryAttempted = <String>{};
-  final Set<String> _translationScopeStartsInFlight = <String>{};
-  Timer? _translationMicroBatchTimer;
-  bool _translationScanScheduled = false;
-  late int _translationLanguageRevision;
-  static const Duration _translationMicroBatchWindow =
-      Duration(milliseconds: 70);
-  static const int _translationMaxBatchCandidates = 10;
-  static const int _translationAdjacentLimit = 2;
   String? _pendingVisiblePostAnchorId;
   double? _pendingVisiblePostAnchorDy;
   bool _postAnchorRestoreScheduled = false;
@@ -211,7 +177,6 @@ class BoardScreenState extends State<BoardScreen> {
   }
 
   Widget _withPostAnchor(Post post, Widget child) {
-    _translationPostsById[post.id] = post;
     return KeyedSubtree(
       key: _postAnchorKeys.putIfAbsent(
         post.id,
@@ -221,240 +186,6 @@ class BoardScreenState extends State<BoardScreen> {
     );
   }
 
-  String _postTranslationSignature(
-    ContentTranslationRequest request, {
-    int? revision,
-  }) {
-    final entries = request.sourceFields.entries.toList(growable: false)
-      ..sort((left, right) => left.key.compareTo(right.key));
-    final fieldsHash = Object.hashAll(
-      entries.map((entry) => Object.hash(entry.key, entry.value)),
-    );
-    return '${request.serverId}|$fieldsHash|'
-        '${revision ?? _translationLanguageRevision}';
-  }
-
-  bool _canPreparePostTranslation(Post post) {
-    if (postTranslationSourceFields(post).isEmpty) return false;
-    return !_translationService.showsOriginal('post:${post.id}');
-  }
-
-  List<_BoardPostTranslationCandidate> _translationCandidatesNearViewport() {
-    if (!mounted || !TickerMode.valuesOf(context).enabled) {
-      return const <_BoardPostTranslationCandidate>[];
-    }
-    final boardRenderObject = context.findRenderObject();
-    if (boardRenderObject is! RenderBox || !boardRenderObject.attached) {
-      return const <_BoardPostTranslationCandidate>[];
-    }
-
-    final viewportTop = boardRenderObject.localToGlobal(Offset.zero).dy;
-    final viewportBottom = viewportTop + boardRenderObject.size.height;
-    final adjacentBand = boardRenderObject.size.height * 0.28;
-    final visible = <_BoardPostTranslationCandidate>[];
-    final adjacent = <_BoardPostTranslationCandidate>[];
-
-    for (final entry in _postAnchorKeys.entries) {
-      final post = _translationPostsById[entry.key];
-      if (post == null || !_canPreparePostTranslation(post)) continue;
-      final renderObject = entry.value.currentContext?.findRenderObject();
-      if (renderObject is! RenderBox || !renderObject.attached) continue;
-
-      final top = renderObject.localToGlobal(Offset.zero).dy;
-      final bottom = top + renderObject.size.height;
-      final isVisible = bottom > viewportTop && top < viewportBottom;
-      final distance = isVisible
-          ? 0.0
-          : bottom <= viewportTop
-              ? viewportTop - bottom
-              : top - viewportBottom;
-      if (!isVisible && distance > adjacentBand) continue;
-
-      final request = ContentTranslationRequest(
-        contentType: 'post',
-        contentId: post.id,
-        sourceFields: postTranslationSourceFields(post),
-      );
-      if (_translationService.latestResultFor(request) != null ||
-          _translationService.isScopeLoading('post:${post.id}')) {
-        continue;
-      }
-      final candidate = _BoardPostTranslationCandidate(
-        post: post,
-        request: request,
-        priority: isVisible
-            ? _BoardPostTranslationPriority.visible
-            : _BoardPostTranslationPriority.adjacent,
-        distance: distance,
-      );
-      (isVisible ? visible : adjacent).add(candidate);
-    }
-
-    visible.sort((left, right) => left.distance.compareTo(right.distance));
-    adjacent.sort((left, right) => left.distance.compareTo(right.distance));
-    return <_BoardPostTranslationCandidate>[
-      ...visible,
-      ...adjacent.take(_translationAdjacentLimit),
-    ].take(_translationMaxBatchCandidates).toList(growable: false);
-  }
-
-  void _scheduleVisiblePostTranslationScan() {
-    if (_translationScanScheduled || !mounted) return;
-    _translationScanScheduled = true;
-    WidgetsBinding.instance.addPostFrameCallback((_) {
-      _translationScanScheduled = false;
-      if (!mounted) return;
-      unawaited(_primeVisiblePostTranslations());
-    });
-  }
-
-  Future<void> _primeVisiblePostTranslations() async {
-    final candidates = _translationCandidatesNearViewport();
-    if (candidates.isEmpty) return;
-    final revision = _translationLanguageRevision;
-    final uiLanguageCode = Localizations.localeOf(context).languageCode;
-    final uncached = <_BoardPostTranslationCandidate>[];
-
-    for (final candidate in candidates) {
-      final signature = _postTranslationSignature(candidate.request);
-      if (_translationLocalCacheChecked.contains(signature)) {
-        uncached.add(candidate);
-        continue;
-      }
-      if (_translationCacheChecksInFlight.add(signature)) {
-        uncached.add(candidate);
-      }
-    }
-    final probes = uncached
-        .where(
-          (candidate) => _translationCacheChecksInFlight
-              .contains(_postTranslationSignature(candidate.request)),
-        )
-        .toList(growable: false);
-
-    Map<String, ContentTranslationResult> cached =
-        const <String, ContentTranslationResult>{};
-    if (probes.isNotEmpty) {
-      try {
-        cached = await _translationService.cachedResultsFor(
-          probes.map((candidate) => candidate.request),
-          uiLanguageCode: uiLanguageCode,
-        );
-      } catch (error) {
-        if (Logger.isVerboseEnabled)
-          Logger.warning(
-            '포스트 로컬 번역 캐시 확인 실패: ${error.runtimeType}',
-          );
-      } finally {
-        for (final candidate in probes) {
-          final signature = _postTranslationSignature(
-            candidate.request,
-            revision: revision,
-          );
-          _translationCacheChecksInFlight.remove(signature);
-          if (revision == _translationLanguageRevision) {
-            _translationLocalCacheChecked.add(signature);
-          }
-        }
-      }
-    }
-    if (!mounted || revision != _translationLanguageRevision) return;
-
-    for (final candidate in uncached) {
-      if (cached.containsKey(candidate.request.serverId) ||
-          _translationService.latestResultFor(candidate.request) != null) {
-        continue;
-      }
-      _translationMicroBatchCandidates[candidate.post.id] = candidate;
-    }
-    _schedulePostTranslationMicroBatch();
-  }
-
-  void _schedulePostTranslationMicroBatch() {
-    if (_translationMicroBatchCandidates.isEmpty ||
-        _translationMicroBatchTimer != null) {
-      return;
-    }
-    _translationMicroBatchTimer = Timer(
-      _translationMicroBatchWindow,
-      _flushPostTranslationMicroBatch,
-    );
-  }
-
-  void _flushPostTranslationMicroBatch() {
-    _translationMicroBatchTimer = null;
-    if (!mounted || !TickerMode.valuesOf(context).enabled) {
-      _translationMicroBatchCandidates.clear();
-      return;
-    }
-
-    final queuedIds = _translationMicroBatchCandidates.keys.toSet();
-    _translationMicroBatchCandidates.clear();
-    final current = _translationCandidatesNearViewport()
-        .where((candidate) => queuedIds.contains(candidate.post.id))
-        .toList(growable: false)
-      ..sort((left, right) {
-        final priority = left.priority.index.compareTo(right.priority.index);
-        return priority != 0
-            ? priority
-            : left.distance.compareTo(right.distance);
-      });
-
-    for (final candidate in current.take(_translationMaxBatchCandidates)) {
-      final scope = 'post:${candidate.post.id}';
-      final signature = _postTranslationSignature(candidate.request);
-      if (_translationService.latestResultFor(candidate.request) != null ||
-          _translationService.isScopeLoading(scope)) {
-        continue;
-      }
-      final failed = _translationService.hasExhaustedRetryForScope(scope);
-      if (failed &&
-          (!_translationService.canAutomaticallyRetryScope(scope) ||
-              _translationRecoveryAttempted.contains(signature))) {
-        continue;
-      }
-      if (!_translationScopeStartsInFlight.add(signature)) continue;
-      unawaited(_startPostTranslationScope(
-        scope: scope,
-        signature: signature,
-        recoveringFailure: failed,
-      ));
-    }
-  }
-
-  Future<void> _startPostTranslationScope({
-    required String scope,
-    required String signature,
-    required bool recoveringFailure,
-  }) async {
-    try {
-      final loaded = await _translationService.loadAttachedScope(
-        scope,
-        retryBlockedFailure: recoveringFailure,
-      );
-      if (loaded && recoveringFailure) {
-        _translationRecoveryAttempted.add(signature);
-      }
-    } finally {
-      _translationScopeStartsInFlight.remove(signature);
-    }
-  }
-
-  void _handleTranslationServiceChanged() {
-    if (!mounted) return;
-    final revision = _translationService.languageRevision;
-    if (revision != _translationLanguageRevision) {
-      _translationLanguageRevision = revision;
-      _translationMicroBatchTimer?.cancel();
-      _translationMicroBatchTimer = null;
-      _translationMicroBatchCandidates.clear();
-      _translationCacheChecksInFlight.clear();
-      _translationLocalCacheChecked.clear();
-      _translationRecoveryAttempted.clear();
-      _translationScopeStartsInFlight.clear();
-    }
-    _scheduleVisiblePostTranslationScan();
-  }
 
   void _captureVisiblePostAnchor() {
     if (!_controllersInitialized || !_todayScrollController.hasClients) return;
@@ -514,8 +245,6 @@ class BoardScreenState extends State<BoardScreen> {
   @override
   void initState() {
     super.initState();
-    _translationLanguageRevision = _translationService.languageRevision;
-    _translationService.addListener(_handleTranslationServiceChanged);
     // 탭 전환이나 하단 내비게이션 애니메이션으로 build가 다시 호출돼도
     // 동일 스트림 구독을 유지한다. 목록과 스크롤 위치가 그대로 보존되고,
     // 다른 탭에 있는 동안 들어온 최신 포스트도 기존 구독으로 반영된다.
@@ -939,8 +668,6 @@ class BoardScreenState extends State<BoardScreen> {
   void dispose() {
     if (Logger.isVerboseEnabled) Logger.log('🔄 BoardScreen dispose 시작');
     _midnightTimer?.cancel();
-    _translationService.removeListener(_handleTranslationServiceChanged);
-    _translationMicroBatchTimer?.cancel();
     if (_controllersInitialized) {
       // 마지막 상태 저장
       try {
@@ -1010,7 +737,6 @@ class BoardScreenState extends State<BoardScreen> {
 
   void _handleScrollChanged() {
     if (!mounted) return;
-    _scheduleVisiblePostTranslationScan();
     final controller = _activeScrollController;
     if (!controller.hasClients) return;
     final position = controller.position;
@@ -1087,7 +813,6 @@ class BoardScreenState extends State<BoardScreen> {
 
   @override
   Widget build(BuildContext context) {
-    _scheduleVisiblePostTranslationScan();
     return Scaffold(
       backgroundColor: Colors.white,
       body: Center(
@@ -1159,10 +884,13 @@ class BoardScreenState extends State<BoardScreen> {
       _scheduleVisiblePostAnchorRestore();
     }
 
-    return _buildTodayUnifiedList(
-      todayPosts: todayPosts,
-      isPostsLoading: isPostsLoading,
-      isPostsError: isPostsError,
+    return PostTranslationFeed(
+      posts: <Post>[..._mergeVisibleTodayPosts(todayPosts), ..._historicalPosts],
+      child: _buildTodayUnifiedList(
+        todayPosts: todayPosts,
+        isPostsLoading: isPostsLoading,
+        isPostsError: isPostsError,
+      ),
     );
   }
 
@@ -1534,9 +1262,6 @@ class BoardScreenState extends State<BoardScreen> {
                   onCategoryTap: _openPostCategory,
                   externalCommentCountOverride: _commentCountOverrides[post.id],
                   preloadImage: postIndex < 3,
-                  deferTranslationUntilVisible: true,
-                  onTranslationLoaderAttached:
-                      _scheduleVisiblePostTranslationScan,
                   margin: _boardPostCardMargin,
                   contentPadding: _boardPostCardContentPadding,
                 ),
@@ -1877,9 +1602,6 @@ class BoardScreenState extends State<BoardScreen> {
                       externalCommentCountOverride:
                           _commentCountOverrides[item.id],
                       preloadImage: itemIndex < 3,
-                      deferTranslationUntilVisible: true,
-                      onTranslationLoaderAttached:
-                          _scheduleVisiblePostTranslationScan,
                       showBottomDivider: historicalPosts.isEmpty ||
                           itemIndex != todayCombined.length - 1,
                       margin: _boardPostCardMargin,
@@ -1910,9 +1632,6 @@ class BoardScreenState extends State<BoardScreen> {
                       externalCommentCountOverride:
                           _commentCountOverrides[post.id],
                       preloadImage: i < 2,
-                      deferTranslationUntilVisible: true,
-                      onTranslationLoaderAttached:
-                          _scheduleVisiblePostTranslationScan,
                       margin: _boardPostCardMargin,
                       contentPadding: _boardPostCardContentPadding,
                     ),
@@ -2122,9 +1841,6 @@ class BoardScreenState extends State<BoardScreen> {
                 onCategoryTap: _openPostCategory,
                 externalCommentCountOverride: _commentCountOverrides[item.id],
                 preloadImage: i < 3,
-                deferTranslationUntilVisible: true,
-                onTranslationLoaderAttached:
-                    _scheduleVisiblePostTranslationScan,
                 margin: _boardPostCardMargin,
                 contentPadding: _boardPostCardContentPadding,
               ),

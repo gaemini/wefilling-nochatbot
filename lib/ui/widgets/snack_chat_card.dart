@@ -253,7 +253,7 @@ class SnackChatCard extends StatelessWidget {
                 ),
                 const SizedBox(width: 6),
                 SizedBox(
-                  width: 54,
+                  width: 72,
                   child: Column(
                     crossAxisAlignment: CrossAxisAlignment.end,
                     children: [
@@ -307,21 +307,44 @@ class SnackChatCard extends StatelessWidget {
                             button: true,
                             selected: isFavorited,
                             label: isFavorited
-                                ? (isKo ? '즐겨찾기 해제' : 'Remove favorite')
-                                : (isKo ? '즐겨찾기' : 'Favorite'),
-                            child: InkResponse(
-                              onTap: onToggleFavorite,
-                              radius: 18,
-                              child: Padding(
-                                padding: const EdgeInsets.all(4),
-                                child: Icon(
-                                  isFavorited
-                                      ? Icons.star_rounded
-                                      : Icons.star_border_rounded,
-                                  size: 18,
-                                  color: isFavorited
-                                      ? BrandColors.warning
-                                      : BrandColors.neutral400,
+                                ? (isKo ? '즐겨찾기 해제' : 'Remove from favorites')
+                                : (isKo ? '즐겨찾기 추가' : 'Add to favorites'),
+                            child: Tooltip(
+                              message: isFavorited
+                                  ? (isKo ? '즐겨찾기 해제' : 'Remove from favorites')
+                                  : (isKo ? '즐겨찾기 추가' : 'Add to favorites'),
+                              child: SizedBox.square(
+                                dimension: 44,
+                                child: InkResponse(
+                                  onTap: onToggleFavorite,
+                                  radius: 22,
+                                  child: Center(
+                                    child: AnimatedSwitcher(
+                                      duration:
+                                          const Duration(milliseconds: 160),
+                                      transitionBuilder: (child, animation) =>
+                                          ScaleTransition(
+                                        scale: Tween<double>(
+                                          begin: 0.88,
+                                          end: 1,
+                                        ).animate(animation),
+                                        child: FadeTransition(
+                                          opacity: animation,
+                                          child: child,
+                                        ),
+                                      ),
+                                      child: Icon(
+                                        isFavorited
+                                            ? Icons.star_rounded
+                                            : Icons.star_border_rounded,
+                                        key: ValueKey<bool>(isFavorited),
+                                        size: 18,
+                                        color: isFavorited
+                                            ? BrandColors.warning
+                                            : BrandColors.neutral400,
+                                      ),
+                                    ),
+                                  ),
                                 ),
                               ),
                             ),

@@ -84,9 +84,8 @@ class TranslatableContent extends StatefulWidget {
   final bool showToggle;
   final bool compactToggle;
 
-  /// 피드처럼 선행 빌드되는 목록은 실제 가시 영역 coordinator가 scope
-  /// 로더를 호출할 때까지 번역을 미룹니다. 상세 화면 등은 기본값대로 즉시
-  /// 기존 캐시 → 서버 번역 경로를 시작합니다.
+  /// 명시적으로 지연을 요청하는 다른 화면용 옵션입니다. 포스트 카드는
+  /// 기본값으로 직접 요청하며, 목록 캐시 예열 여부를 기다리지 않습니다.
   final bool loadOnDemand;
   final VoidCallback? onLoaderAttached;
 
@@ -101,6 +100,7 @@ class _TranslatableContentState extends State<TranslatableContent> {
   bool _requested = false;
   String? _attachedScope;
   late int _languageRevision;
+  late int _resultsRevision;
   Future<bool>? _activeLoad;
   late bool _scopeWasShowingOriginal;
   late bool _scopeWasLoading;
@@ -110,6 +110,7 @@ class _TranslatableContentState extends State<TranslatableContent> {
   void initState() {
     super.initState();
     _languageRevision = _service.languageRevision;
+    _resultsRevision = _service.resultsRevision;
     _captureScopePresentationState();
     _service.addListener(_handleServiceChange);
   }
@@ -211,11 +212,14 @@ class _TranslatableContentState extends State<TranslatableContent> {
 
     // 같은 post/message를 표시하는 상세 화면이 먼저 번역을 끝냈다면 카드도
     // 별도 API 호출이나 화면 재진입 없이 같은 결과를 즉시 사용한다.
-    final latest = _service.latestResultFor(widget.request);
-    if (latest != null && !identical(latest, _result)) {
-      _result = latest;
-      _registerResultAfterNotification(latest);
-      needsBuild = true;
+    if (_resultsRevision != _service.resultsRevision) {
+      _resultsRevision = _service.resultsRevision;
+      final latest = _service.latestOutcomeFor(widget.request);
+      if (latest != null && !identical(latest, _result)) {
+        _result = latest;
+        _registerResultAfterNotification(latest);
+        needsBuild = true;
+      }
     }
 
     // 번역 서비스는 페이지의 다른 카드/댓글 결과도 함께 알린다. 이 항목과
@@ -232,10 +236,11 @@ class _TranslatableContentState extends State<TranslatableContent> {
   }
 
   void _restoreLatestResult() {
-    final latest = _service.latestResultFor(widget.request);
+    _resultsRevision = _service.resultsRevision;
+    final latest = _service.latestOutcomeFor(widget.request);
     if (latest == null) return;
     _result = latest;
-    _requested = true;
+    _requested = latest.isReady;
     _registerResultAfterNotification(latest);
   }
 
@@ -286,6 +291,10 @@ class _TranslatableContentState extends State<TranslatableContent> {
         uiLanguageCode: uiLanguageCode,
         scope: scope,
         manualRetry: manualRetry,
+        userInitiatedRetry: manualRetry,
+        priority: request.contentType == 'post'
+            ? TranslationRequestPriority.visible
+            : TranslationRequestPriority.interactive,
       );
       if (!mounted || !_isCurrentRequest(request, scope, revision)) {
         return false;
@@ -311,8 +320,10 @@ class _TranslatableContentState extends State<TranslatableContent> {
   void _registerResultAfterNotification(ContentTranslationResult result) {
     final request = widget.request;
     final scope = widget.scope;
+    final revision = _service.languageRevision;
     scheduleMicrotask(() {
       if (!mounted ||
+          revision != _service.languageRevision ||
           scope != widget.scope ||
           request.serverId != widget.request.serverId ||
           !_sameFields(request.sourceFields, widget.request.sourceFields)) {

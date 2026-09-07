@@ -111,10 +111,10 @@ class _MainScreenState extends State<MainScreen>
     WidgetsBinding.instance.addPostFrameCallback((_) {
       if (!mounted) return;
 
-      // 로그인 실패(회원가입 필요) 후 메인으로 돌아온 경우 안내 표시
-      if (_authProvider?.consumeSignupRequiredFlag() == true) {
-        _showSignupRequiredBanner();
-      }
+      // 가입 복구 여부는 로그인/라우팅 단계에서 처리한다. MainScreen에
+      // 진입한 사용자를 한양메일 인증으로 다시 막던 과거 안내는 표시하지
+      // 않으며, 남아 있던 일회성 플래그만 소비해 다음 세션으로 넘기지 않는다.
+      _authProvider?.consumeSignupRequiredFlag();
 
       // Meetups 탭이 표시되고 알림 모임 ID가 남아있다면, 이번 렌더 이후에 소모 처리
       if (_selectedIndex == 1 && _pendingMeetupId != null) {
@@ -292,62 +292,6 @@ class _MainScreenState extends State<MainScreen>
           },
         ),
       ),
-    );
-  }
-
-  void _showSignupRequiredBanner() {
-    showModalBottomSheet(
-      context: context,
-      isScrollControlled: false,
-      backgroundColor: Colors.transparent,
-      builder: (ctx) {
-        return SafeArea(
-          child: Padding(
-            padding: const EdgeInsets.all(12.0),
-            child: Material(
-              borderRadius: BorderRadius.circular(12),
-              color: Colors.orange.shade50,
-              child: Container(
-                padding:
-                    const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
-                decoration: BoxDecoration(
-                  borderRadius: BorderRadius.circular(12),
-                  border: Border.all(color: Colors.orange.shade200),
-                ),
-                child: Row(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Icon(Icons.info_outline, color: Colors.orange.shade700),
-                    const SizedBox(width: 12),
-                    Expanded(
-                      child: Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: [
-                          Text(
-                            AppLocalizations.of(context)!.signupRequired,
-                            style: const TextStyle(fontSize: 15, height: 1.4),
-                          ),
-                          const SizedBox(height: 8),
-                          Text(
-                            '한양메일 인증을 완료한 후 회원가입을 진행해주세요.',
-                            style: TextStyle(
-                                fontSize: 13, color: Colors.orange.shade900),
-                          ),
-                        ],
-                      ),
-                    ),
-                    const SizedBox(width: 12),
-                    TextButton(
-                      onPressed: () => Navigator.pop(ctx),
-                      child: Text(AppLocalizations.of(context)!.confirm),
-                    ),
-                  ],
-                ),
-              ),
-            ),
-          ),
-        );
-      },
     );
   }
 

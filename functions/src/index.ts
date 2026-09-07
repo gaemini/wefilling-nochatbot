@@ -17,6 +17,7 @@ import {
   reconcileHanyangVerificationForUid,
 } from './hanyang_verification';
 import {
+  normalizeLegacyStoredNickname,
   normalizeNickname,
   prepareNicknameReservation,
   releaseNicknameClaimIfOwned,
@@ -24,12 +25,17 @@ import {
 import {
   buildUserSearchTokens,
   matchesUserSearch,
+  normalizeSocialInterestId,
   normalizeUserSearchText,
   userSearchRelevance,
 } from './user_search_index';
 import {
   resolvePendingSignupLanguageRequest,
 } from './registration_progress';
+import {
+  evaluateSearchableUser,
+  isSearchableUser,
+} from './searchable_user_policy';
 
 export {
   checkNicknameAvailability,
@@ -166,12 +172,9 @@ export const getUserProfileStats = functions
       throw new functions.https.HttpsError('not-found', 'User not found.');
     }
 
-    const [friendAggregate, postAggregate, joinedMeetupAggregate] =
+    const [friendEntries, postAggregate, joinedMeetupAggregate] =
       await Promise.all([
-        db.collection(COL.friendships)
-          .where('uids', 'array-contains', targetUserId)
-          .count()
-          .get(),
+        getCanonicalFriendEntries(targetUserId),
         db.collection(COL.posts)
           .where('userId', '==', targetUserId)
           .count()
@@ -183,8 +186,22 @@ export const getUserProfileStats = functions
           .get(),
       ]);
 
+    const friendCount = friendEntries.length;
+    if (toNonNegativeInt(user.data()?.friendsCount) !== friendCount) {
+      // 과거 앱/탈퇴 정리에서 남은 캐시 카운터도 프로필 조회 시 한 번만
+      // 실제 친구 목록에 노출되는 활성 프로필 수로 보정한다.
+      await user.ref.update({
+        friendsCount: friendCount,
+        friendsCountReconciledAt:
+          admin.firestore.FieldValue.serverTimestamp(),
+      }).catch((error) => {
+        if ((error as any)?.code !== 5 &&
+            (error as any)?.code !== 'not-found') throw error;
+      });
+    }
+
     return {
-      friendCount: friendAggregate.data().count,
+      friendCount,
       writtenPostCount: postAggregate.data().count,
       joinedMeetupCount: joinedMeetupAggregate.data().count,
       fetchedAtMillis: Date.now(),
@@ -346,7 +363,10 @@ async function cleanInvalidPushTokensForUser(
     updates.fcmToken = remaining.length > 0 ?
       remaining[0] : admin.firestore.FieldValue.delete();
   }
-  await userRef.set(updates, {merge: true});
+  await userRef.update(updates).catch((error) => {
+    if ((error as any)?.code !== 5 &&
+        (error as any)?.code !== 'not-found') throw error;
+  });
 
   const cleanup = db.batch();
   tokens.forEach((token) => {
@@ -1237,6 +1257,8 @@ function completedProfileFields(profile: CompletedRegistrationProfile) {
     todoOnboardingCompleted: profile.studentType != null,
     languageCode: profile.languageCode,
     emailVerified: true,
+    searchable: true,
+    deleting: false,
     signupState: 'completed',
     registrationStatus: 'complete',
     registrationCompletedAt: admin.firestore.FieldValue.serverTimestamp(),
@@ -1268,7 +1290,9 @@ function completedRegistrationSearchRepair(
   if (!nickname) return null;
   let expected: string[];
   try {
-    expected = buildUserSearchTokens(normalizeNickname(nickname).nickname);
+    expected = buildUserSearchTokens(
+      normalizeLegacyStoredNickname(nickname).nickname,
+    );
   } catch (_) {
     return null;
   }
@@ -1998,13 +2022,26 @@ export const discardIncompleteRegistration = functions.https.onCall(async (data,
       nicknameKey = '';
     }
   }
-  // 완료되지 않은 프로필이 선점한 닉네임은 가입 이탈 즉시 재사용 가능하게
-  // 한다. ownerUid 조건 검증으로 다른 사용자의 예약은 건드리지 않는다.
+  const claims = await db.collection(COL.emailClaims).where('uid', '==', uid).get();
+  if (userSnap.exists) {
+    await userRef.update({
+      searchable: false,
+      deleting: true,
+      registrationStatus: 'deleting',
+      nicknameSearchTokens: [],
+      interests: [],
+      preferredActivities: [],
+      updatedAt: admin.firestore.FieldValue.serverTimestamp(),
+    });
+  }
+  // Auth ownership is removed before either email/nickname identity can be
+  // reused. A failure here preserves all claims and the resumable profile.
+  await admin.auth().deleteUser(uid).catch((error) => {
+    if ((error as any)?.code !== 'auth/user-not-found') throw error;
+  });
   if (nicknameKey) {
     await releaseNicknameClaimIfOwned(uid, nicknameKey);
   }
-
-  const claims = await db.collection(COL.emailClaims).where('uid', '==', uid).get();
   const batch = db.batch();
   if (userSnap.exists) batch.delete(userRef);
   for (const claim of claims.docs) batch.delete(claim.ref);
@@ -2015,9 +2052,6 @@ export const discardIncompleteRegistration = functions.https.onCall(async (data,
     batch.delete(db.collection(COL.emailVerifications).doc(authEmail));
   }
   await batch.commit();
-  await admin.auth().deleteUser(uid).catch((error) => {
-    if ((error as any)?.code !== 'auth/user-not-found') throw error;
-  });
   return {success: true, discardedUid: uid};
 });
 
@@ -2596,7 +2630,7 @@ export const resolveMyReadableJoinedMeetupIds = functions
     }
 
     const user = await db.collection(COL.users).doc(userId).get();
-    if (!user.exists || !isActiveSocialProfile(user.data())) {
+    if (!user.exists || !isActiveCompletedUserProfile(user.data(), userId)) {
       throw new functions.https.HttpsError(
         'failed-precondition',
         'An active account is required.',
@@ -2811,7 +2845,9 @@ export const joinMeetupSecure = functions.https.onCall(async (data, context) => 
 // 친구요청이 PENDING으로 전이될 때 수신자에게 알림 생성.
 // 거절/취소된 결정적 friend_requests 문서를 다시 사용해도 onCreate는
 // 발생하지 않으므로 onWrite에서 상태 전이를 감지한다.
-export const onFriendRequestCreated = functions.firestore
+export const onFriendRequestCreated = functions
+  .runWith({timeoutSeconds: 60, memory: '256MB'})
+  .firestore
   .document('friend_requests/{requestId}')
   .onWrite(async (change, context) => {
     try {
@@ -4848,27 +4884,172 @@ export const cleanupExpiredEmailVerifications = functions.pubsub
     return null;
   });
 
-function isActiveSocialProfile(data: any): boolean {
-  if (!data) return false;
+function isActiveSocialProfile(data: any, uid?: string): boolean {
+  return isSearchableUser(uid || data?.uid, data);
+}
+
+type CanonicalFriendEntry = {
+  uid: string;
+  createdAtMillis: number;
+  documentId: string;
+};
+
+/**
+ * 관계 문서가 중복되거나 레거시 형식이어도 상대 UID당 가장 최근 관계 하나만
+ * 남긴다. 클라이언트 buildNewestFriendIdOrder와 같은 정렬 규칙이다.
+ */
+function canonicalFriendEntriesFrom(
+  snapshot: admin.firestore.QuerySnapshot,
+  ownerUid: string,
+): CanonicalFriendEntry[] {
+  const newestByUid = new Map<string, CanonicalFriendEntry>();
+  snapshot.docs.forEach((document) => {
+    const uids = Array.isArray(document.data().uids)
+      ? document.data().uids as unknown[]
+      : [];
+    uids.forEach((value) => {
+      const uid = normalizeUidLoose(value);
+      if (!uid || uid === ownerUid) return;
+      const candidate = {
+        uid,
+        createdAtMillis:
+          firestoreTimeToMillis(document.data().createdAt) ?? 0,
+        documentId: document.id,
+      };
+      const existing = newestByUid.get(uid);
+      if (!existing ||
+          candidate.createdAtMillis > existing.createdAtMillis ||
+          (candidate.createdAtMillis === existing.createdAtMillis &&
+           candidate.documentId > existing.documentId)) {
+        newestByUid.set(uid, candidate);
+      }
+    });
+  });
+  return Array.from(newestByUid.values()).sort((left, right) =>
+    right.createdAtMillis - left.createdAtMillis ||
+    right.documentId.localeCompare(left.documentId) ||
+    left.uid.localeCompare(right.uid)
+  );
+}
+
+/** 활성 친구 프로필을 한 번에 읽고 UID별로 반환한다. */
+async function getActiveSocialProfilesById(
+  userIds: string[],
+): Promise<Map<string, Record<string, any>>> {
+  const uniqueIds = Array.from(new Set(
+    userIds.map(normalizeUidLoose).filter((uid) => uid.length > 0),
+  ));
+  const profiles = new Map<string, Record<string, any>>();
+  const chunks: string[][] = [];
+  for (let offset = 0; offset < uniqueIds.length; offset += 100) {
+    chunks.push(uniqueIds.slice(offset, offset + 100));
+  }
+  const snapshots = await Promise.all(chunks.map((chunk) =>
+    db.getAll(...chunk.map((uid) => db.collection(COL.users).doc(uid)))
+  ));
+  snapshots.flat().forEach((document) => {
+    if (!document.exists ||
+        !isActiveSocialProfile(document.data(), document.id)) return;
+    profiles.set(document.id, document.data() || {});
+  });
+  return profiles;
+}
+
+/** 친구 목록 화면에 실제로 노출될 수 있는 관계만 정렬된 상태로 반환한다. */
+async function getCanonicalFriendEntries(
+  ownerUid: string,
+): Promise<CanonicalFriendEntry[]> {
+  const relationships = await db.collection(COL.friendships)
+    .where('uids', 'array-contains', ownerUid)
+    .get();
+  const entries = canonicalFriendEntriesFrom(relationships, ownerUid);
+  if (entries.length === 0) return [];
+  const profiles = await getActiveSocialProfilesById(
+    entries.map((entry) => entry.uid),
+  );
+  return entries.filter((entry) => profiles.has(entry.uid));
+}
+
+function isActiveCompletedUserProfile(data: any, uid: string): boolean {
+  if (!data || !uid) return false;
   const status = String(data.status || data.accountStatus || '')
     .trim().toLowerCase();
   const registrationStatus = String(data.registrationStatus || '')
     .trim().toLowerCase();
-  const hasIdentity = [
-    data.nickname,
-    data.displayName,
-    data.email,
-    data.hanyangEmail,
-  ].some((value) => String(value || '').trim().length > 0);
-  return data.isDeleted !== true &&
-    data.deleted !== true &&
-    data.disabled !== true &&
-    data.isSuspended !== true &&
-    data.deletedAt == null &&
-    status !== 'deleted' &&
-    status !== 'suspended' &&
-    registrationStatus !== 'deleted' &&
-    hasIdentity;
+  const nickname = String(data.nickname || data.displayName || '').trim();
+  if (data.isDeleted === true || data.deleted === true ||
+      data.disabled === true || data.isSuspended === true ||
+      data.deleting === true || data.deletedAt != null ||
+      ['deleted', 'deleting', 'disabled', 'suspended'].includes(status) ||
+      ['deleted', 'deleting'].includes(registrationStatus)) {
+    return false;
+  }
+  if (registrationStatus && registrationStatus !== 'complete') return false;
+  return nickname.length > 0 &&
+    (registrationStatus === 'complete' || data.emailVerified === true);
+}
+
+async function repairSearchableProfileMetadata(
+  documents: admin.firestore.QueryDocumentSnapshot[],
+): Promise<void> {
+  const repairs: Array<{
+    ref: admin.firestore.DocumentReference;
+    data: Record<string, unknown>;
+  }> = [];
+  for (const document of documents) {
+    const data = document.data() as Record<string, unknown>;
+    const decision = evaluateSearchableUser(document.id, data);
+    if (decision.searchable && decision.needsNicknameKeyRepair) {
+      repairs.push({
+        ref: document.ref,
+        data: {
+          nicknameKey: decision.nicknameKey,
+          searchIndexRepairedAt: admin.firestore.FieldValue.serverTimestamp(),
+        },
+      });
+      continue;
+    }
+    const shouldQuarantine = [
+      'deleted_or_disabled',
+      'missing_nickname',
+      'sentinel_nickname',
+      'invalid_nickname',
+      'nickname_key_mismatch',
+    ].includes(decision.reason);
+    if (!decision.searchable && shouldQuarantine &&
+        (Array.isArray(data.nicknameSearchTokens) ||
+          Array.isArray(data.interests))) {
+      repairs.push({
+        ref: document.ref,
+        data: {
+          searchable: false,
+          nicknameSearchTokens: [],
+          interests: [],
+          searchIndexQuarantinedAt:
+            admin.firestore.FieldValue.serverTimestamp(),
+        },
+      });
+    }
+  }
+  if (repairs.length === 0) return;
+  try {
+    for (let offset = 0; offset < repairs.length; offset += 400) {
+      const batch = db.batch();
+      repairs.slice(offset, offset + 400)
+        .forEach((repair) => batch.update(repair.ref, repair.data));
+      await batch.commit();
+    }
+    runtimeLogsEnabled && runtimeInfo('user search metadata repaired', {
+      writes: repairs.length,
+    });
+  } catch (error) {
+    // Search results remain fail-closed even when the optional repair write
+    // loses a race with profile completion or temporarily fails.
+    console.warn('user search metadata repair failed', {
+      writes: repairs.length,
+      code: (error as any)?.code || 'unknown',
+    });
+  }
 }
 
 /**
@@ -4902,7 +5083,8 @@ export const searchSocialUsers = functions
       Math.min(100, Number.isFinite(requestedLimit) ? Math.trunc(requestedLimit) : 20),
     );
     const requester = await db.collection(COL.users).doc(requesterId).get();
-    if (!requester.exists || !isActiveSocialProfile(requester.data())) {
+    if (!requester.exists ||
+        !isActiveSocialProfile(requester.data(), requesterId)) {
       throw new functions.https.HttpsError(
         'failed-precondition',
         '이용 가능한 계정이 필요합니다.',
@@ -4919,11 +5101,13 @@ export const searchSocialUsers = functions
       // result count lands exactly on the safety ceiling.
       .limit(candidateLimit + 1)
       .get();
-    const candidates = snapshot.docs.slice(0, candidateLimit).filter((document) => {
+    const scannedDocuments = snapshot.docs.slice(0, candidateLimit);
+    await repairSearchableProfileMetadata(scannedDocuments);
+    const candidates = scannedDocuments.filter((document) => {
       const profile = document.data();
-      const nickname = String(profile.nickname || profile.displayName || '').trim();
+      const nickname = String(profile.nickname || '').trim();
       return document.id !== requesterId &&
-        isActiveSocialProfile(profile) &&
+        isActiveSocialProfile(profile, document.id) &&
         matchesUserSearch(nickname, query);
     });
     const blockDocs = candidates.length === 0 ? [] : await db.getAll(
@@ -4943,10 +5127,10 @@ export const searchSocialUsers = functions
       .filter((document) => !blockedIds.has(document.id))
       .sort((left, right) => {
         const leftName = String(
-          left.data().nickname || left.data().displayName || '',
+          left.data().nickname || '',
         ).trim();
         const rightName = String(
-          right.data().nickname || right.data().displayName || '',
+          right.data().nickname || '',
         ).trim();
         const scoreDifference = userSearchRelevance(rightName, query) -
           userSearchRelevance(leftName, query);
@@ -4958,7 +5142,7 @@ export const searchSocialUsers = functions
         const profile = document.data();
         return {
           uid: document.id,
-          nickname: String(profile.nickname || profile.displayName || '').trim(),
+          nickname: String(profile.nickname || '').trim(),
           photoURL: String(profile.photoURL || '').trim(),
           nationality: String(profile.nationality || '').trim(),
           university: String(profile.university || '').trim(),
@@ -4968,13 +5152,136 @@ export const searchSocialUsers = functions
   });
 
 /**
+ * 기존 프로필의 canonical interests 배열로 친구 후보를 찾는다.
+ * 문서 ID 순서의 커서 페이지를 사용해 전체 users 스캔과 offset 비용을
+ * 피하고, 이름 검색과 동일하게 계정 상태와 양방향 차단을 서버에서
+ * fail-closed 방식으로 검증한다.
+ */
+export const searchSocialUsersByInterest = functions
+  .runWith({timeoutSeconds: 20, memory: '256MB', enforceAppCheck: true})
+  .https.onCall(async (raw, context) => {
+    const requesterId = normalizeUidLoose(context.auth?.uid);
+    if (!requesterId) {
+      throw new functions.https.HttpsError(
+        'unauthenticated',
+        '로그인이 필요합니다.',
+      );
+    }
+    const interestId = normalizeSocialInterestId(raw?.interestId);
+    if (!interestId) {
+      throw new functions.https.HttpsError(
+        'invalid-argument',
+        '지원하지 않는 관심사입니다.',
+      );
+    }
+    const requestedLimit = Number(raw?.limit);
+    const limit = Math.max(
+      1,
+      Math.min(20, Number.isFinite(requestedLimit) ? Math.trunc(requestedLimit) : 20),
+    );
+    const rawCursor = String(raw?.cursor ?? '').trim();
+    if (rawCursor.length > 128 || rawCursor.includes('/')) {
+      throw new functions.https.HttpsError(
+        'invalid-argument',
+        '유효하지 않은 검색 커서입니다.',
+      );
+    }
+
+    const requester = await db.collection(COL.users).doc(requesterId).get();
+    if (!requester.exists ||
+        !isActiveSocialProfile(requester.data(), requesterId)) {
+      throw new functions.https.HttpsError(
+        'failed-precondition',
+        '이용 가능한 계정이 필요합니다.',
+      );
+    }
+
+    const users: Array<Record<string, unknown>> = [];
+    const seenIds = new Set<string>();
+    const chunkSize = Math.max(30, limit * 2);
+    let scanCursor = rawCursor;
+    let nextCursor: string | null = null;
+    let hasMore = true;
+
+    // 보이지 않는 계정이나 차단 사용자가 한 구간에 몰려도 빈 첫 페이지가
+    // 되지 않도록 제한된 수의 인덱스 구간만 이어서 읽는다.
+    for (let pass = 0; pass < 4 && users.length < limit && hasMore; pass++) {
+      let query: admin.firestore.Query = db.collection(COL.users)
+        .where('interests', 'array-contains', interestId)
+        .orderBy(admin.firestore.FieldPath.documentId())
+        .limit(chunkSize);
+      if (scanCursor) query = query.startAfter(scanCursor);
+      const snapshot = await query.get();
+      if (snapshot.empty) {
+        hasMore = false;
+        break;
+      }
+
+      await repairSearchableProfileMetadata(snapshot.docs);
+      const candidates = snapshot.docs.filter((document) => {
+        const profile = document.data();
+        return document.id !== requesterId &&
+          isActiveSocialProfile(profile, document.id);
+      });
+      const blockDocs = candidates.length === 0 ? [] : await db.getAll(
+        ...candidates.flatMap((document) => [
+          db.collection(COL.blocks).doc(`${requesterId}_${document.id}`),
+          db.collection(COL.blocks).doc(`${document.id}_${requesterId}`),
+        ]),
+      );
+      const blockedIds = new Set<string>();
+      candidates.forEach((document, index) => {
+        if (blockDocs[index * 2]?.exists || blockDocs[index * 2 + 1]?.exists) {
+          blockedIds.add(document.id);
+        }
+      });
+      const eligibleIds = new Set(
+        candidates
+          .filter((document) => !blockedIds.has(document.id))
+          .map((document) => document.id),
+      );
+
+      let reachedLimitBeforeEnd = false;
+      for (let index = 0; index < snapshot.docs.length; index++) {
+        const document = snapshot.docs[index];
+        scanCursor = document.id;
+        nextCursor = document.id;
+        if (!eligibleIds.has(document.id) || seenIds.has(document.id)) {
+          continue;
+        }
+        const profile = document.data();
+        seenIds.add(document.id);
+        users.push({
+          uid: document.id,
+          nickname: String(profile.nickname || '').trim(),
+          photoURL: String(profile.photoURL || '').trim(),
+          nationality: String(profile.nationality || '').trim(),
+          university: String(profile.university || '').trim(),
+          interests: [interestId],
+        });
+        if (users.length >= limit) {
+          reachedLimitBeforeEnd = index < snapshot.docs.length - 1;
+          break;
+        }
+      }
+      hasMore = reachedLimitBeforeEnd || snapshot.size === chunkSize;
+    }
+
+    return {
+      users,
+      nextCursor: hasMore ? nextCursor : null,
+      hasMore: hasMore && nextCursor != null,
+    };
+  });
+
+/**
  * 프로필의 친구 미리보기/목록을 같은 규칙으로 반환한다.
  *
  * - 한양메일 인증은 조회 권한으로 사용하지 않는다.
  * - 기존 friendListVisibility(없으면 public), 차단, 계정 상태를
  *   Admin SDK에서 검증한 후 최소 프로필 요약만 내려준다.
- * - 전체 친구 프로필을 먼저 읽지 않고 친구 ID를 정렬한 뒤
- *   현재 페이지의 프로필만 배치 조회한다.
+ * - 친구 목록과 숫자가 달라지지 않도록 활성 프로필을 먼저 확정한 뒤
+ *   동일한 목록을 기준으로 카운트와 페이지네이션을 수행한다.
  */
 export const getProfileFriendNetwork = functions
   .runWith({enforceAppCheck: true})
@@ -5014,8 +5321,8 @@ export const getProfileFriendNetwork = functions
       db.collection('users').doc(targetUid).get(),
       hasBlockRelationship(viewerUid, targetUid),
     ]);
-    if (!isActiveSocialProfile(viewerDoc.data()) ||
-        !isActiveSocialProfile(targetDoc.data())) {
+    if (!isActiveSocialProfile(viewerDoc.data(), viewerUid) ||
+        !isActiveSocialProfile(targetDoc.data(), targetUid)) {
       throw new functions.https.HttpsError(
         'not-found',
         '이용할 수 없는 계정입니다.'
@@ -5059,23 +5366,12 @@ export const getProfileFriendNetwork = functions
         .get(),
     ]);
 
-    const friendIdsFrom = (
-      snapshot: admin.firestore.QuerySnapshot,
-      ownerUid: string
-    ): string[] => {
-      const ids = new Set<string>();
-      snapshot.docs.forEach((doc) => {
-        const uids = Array.isArray(doc.data().uids) ? doc.data().uids : [];
-        uids.forEach((value: unknown) => {
-          const uid = normalizeUidLoose(value);
-          if (uid && uid !== ownerUid) ids.add(uid);
-        });
-      });
-      return Array.from(ids);
-    };
-
-    const targetFriendIds = friendIdsFrom(targetLinks, targetUid);
-    const viewerFriendIds = new Set(friendIdsFrom(viewerLinks, viewerUid));
+    const targetFriendIds = canonicalFriendEntriesFrom(targetLinks, targetUid)
+      .map((entry) => entry.uid);
+    const viewerFriendIds = new Set(
+      canonicalFriendEntriesFrom(viewerLinks, viewerUid)
+        .map((entry) => entry.uid)
+    );
     const excludedIds = new Set<string>();
     viewerBlocks.docs.forEach((doc) => {
       const uid = normalizeUidLoose(doc.data().blocked);
@@ -5091,41 +5387,29 @@ export const getProfileFriendNetwork = functions
         .filter((uid) => uid.length > 0)
     );
 
-    const visibleIds = targetFriendIds.filter((uid) => !excludedIds.has(uid));
-    const mutualIds = viewerUid === targetUid
+    const candidateIds = targetFriendIds.filter((uid) => !excludedIds.has(uid));
+    const profilesById = await getActiveSocialProfilesById(candidateIds);
+    const visibleIds = candidateIds.filter((uid) => profilesById.has(uid));
+    const mutualIds = new Set(viewerUid === targetUid
       ? []
-      : visibleIds
-        .filter((uid) => uid !== viewerUid && viewerFriendIds.has(uid))
-        .sort();
-    const currentViewerIds = visibleIds.filter((uid) => uid === viewerUid);
-    const otherIds = visibleIds
-      .filter((uid) => uid !== viewerUid && !viewerFriendIds.has(uid))
-      .sort();
-    let orderedIds = [...mutualIds, ...currentViewerIds, ...otherIds];
+      : visibleIds.filter((uid) =>
+        uid !== viewerUid && viewerFriendIds.has(uid)));
+    // targetFriendIds 자체가 관계 생성 최신순이다. 상호 친구 여부에 따라
+    // 재정렬하지 않아 어느 프로필에서 보더라도 같은 순서를 유지한다.
+    let orderedIds = visibleIds;
 
     if (search) {
-      const matched = await db.collection('users')
-        .where('nicknameKey', '>=', search)
-        .where('nicknameKey', '<=', `${search}\uf8ff`)
-        .limit(80)
-        .get();
-      const matchedIds = new Set(matched.docs.map((doc) => doc.id));
-      orderedIds = orderedIds.filter((uid) => matchedIds.has(uid));
+      orderedIds = orderedIds.filter((uid) => {
+        const profile = profilesById.get(uid) || {};
+        const nickname = String(
+          profile.nicknameKey || profile.nickname || profile.displayName || '',
+        ).normalize('NFKC').trim().toLowerCase();
+        return nickname.includes(search);
+      });
     }
 
     const pageIds = orderedIds.slice(offset, offset + pageSize);
-    const pageDocs = pageIds.length === 0
-      ? []
-      : await db.getAll(...pageIds.map((uid) => db.collection('users').doc(uid)));
-    const profilesById = new Map<string, any>();
-    pageDocs.forEach((doc) => {
-      if (doc.exists && isActiveSocialProfile(doc.data())) {
-        profilesById.set(doc.id, doc.data() || {});
-      }
-    });
-
     const friends = pageIds
-      .filter((uid) => profilesById.has(uid))
       .map((uid) => {
         const profile = profilesById.get(uid) || {};
         const hanyangEmail = String(profile.hanyangEmail || '')
@@ -5139,7 +5423,7 @@ export const getProfileFriendNetwork = functions
           nationality: String(profile.nationality || '').trim(),
           university: String(profile.university || '').trim(),
           isSchoolVerified: verified,
-          isMutual: mutualIds.includes(uid),
+          isMutual: mutualIds.has(uid),
           isMyFriend: viewerFriendIds.has(uid),
           isCurrentUser: uid === viewerUid,
           isPendingOut: pendingOutIds.has(uid),
@@ -5149,10 +5433,8 @@ export const getProfileFriendNetwork = functions
     const nextOffset = offset + pageSize;
     return {
       friends,
-      totalCount: typeof targetData.friendsCount === 'number'
-        ? Math.max(0, targetData.friendsCount)
-        : visibleIds.length,
-      mutualCount: mutualIds.length,
+      totalCount: visibleIds.length,
+      mutualCount: mutualIds.size,
       nextCursor: nextOffset < orderedIds.length ? nextOffset : null,
     };
   });
@@ -5195,8 +5477,8 @@ export const getPublicProfileReviewPreview = functions
       db.collection('users').doc(targetUid).get(),
       hasBlockRelationship(viewerUid, targetUid),
     ]);
-    if (!isActiveSocialProfile(viewerDoc.data()) ||
-        !isActiveSocialProfile(targetDoc.data())) {
+    if (!isActiveSocialProfile(viewerDoc.data(), viewerUid) ||
+        !isActiveSocialProfile(targetDoc.data(), targetUid)) {
       throw new functions.https.HttpsError(
         'not-found',
         '이용할 수 없는 계정입니다.'
@@ -5303,6 +5585,71 @@ export const getPublicProfileReviewPreview = functions
   });
 
 // 친구요청 보내기
+function friendshipParticipantUids(
+  snapshot: admin.firestore.DocumentSnapshot,
+): string[] {
+  if (!snapshot.exists) return [];
+  const values = Array.isArray(snapshot.data()?.uids)
+    ? snapshot.data()?.uids as unknown[]
+    : [];
+  return Array.from(new Set(
+    values.map(normalizeUidLoose).filter((uid) => uid.length > 0),
+  ));
+}
+
+/**
+ * friendships가 어떤 경로에서 생성·삭제되어도 users.friendsCount 캐시를
+ * 친구 목록에 실제 노출되는 활성 프로필 수로 수렴시킨다. 절대값 집계이므로
+ * 트리거 재시도에도 중복 증감되지 않고, 탈퇴 중인 문서를 재생성하지 않는다.
+ */
+export const onFriendshipWrittenReconcileCounts = functions
+  .runWith({timeoutSeconds: 60, memory: '256MB'})
+  .firestore.document('friendships/{friendshipId}')
+  .onWrite(async (change) => {
+    const affectedUids = new Set([
+      ...friendshipParticipantUids(change.before),
+      ...friendshipParticipantUids(change.after),
+    ]);
+    await Promise.all(Array.from(affectedUids).map(async (uid) => {
+      const userRef = db.collection(COL.users).doc(uid);
+      const [user, activeFriendEntries] = await Promise.all([
+        userRef.get(),
+        getCanonicalFriendEntries(uid),
+      ]);
+      if (!user.exists) return;
+      const exactCount = activeFriendEntries.length;
+      if (toNonNegativeInt(user.data()?.friendsCount) === exactCount) return;
+      await userRef.update({
+        friendsCount: exactCount,
+        friendsCountReconciledAt:
+          admin.firestore.FieldValue.serverTimestamp(),
+      }).catch((error) => {
+        if ((error as any)?.code !== 5 &&
+            (error as any)?.code !== 'not-found') throw error;
+      });
+    }));
+    return null;
+  });
+
+/** Auth 계정이 관리 콘솔 등 앱 밖에서 삭제된 경우에도 고아 친구 관계를
+ * 남기지 않는다. 일반 앱 탈퇴 경로에서 이미 지워졌다면 읽기 결과가 0건인
+ * 멱등성 보조 장치다. */
+export const onDeletedAuthUserFriendshipCleanup = functions
+  .runWith({timeoutSeconds: 120, memory: '256MB'})
+  .auth.user()
+  .onDelete(async (user) => {
+    const uid = normalizeUidLoose(user.uid);
+    if (!uid) return null;
+    const relationships = await db.collection(COL.friendships)
+      .where('uids', 'array-contains', uid)
+      .get();
+    if (relationships.empty) return null;
+    const writer = db.bulkWriter();
+    relationships.docs.forEach((document) => writer.delete(document.ref));
+    await writer.close();
+    return null;
+  });
+
 export const sendFriendRequest = functions.https.onCall(async (data, context) => {
   try {
     // 인증 확인
@@ -5337,19 +5684,15 @@ export const sendFriendRequest = functions.https.onCall(async (data, context) =>
     const result = await db.runTransaction(async (transaction) => {
       // 기존 요청 확인
       const requestId = `${fromUid}_${toUid}`;
-      const existingRequest = await transaction.get(
-        db.collection('friend_requests').doc(requestId)
+      const reverseRequestId = `${toUid}_${fromUid}`;
+      const [existingRequest, reverseRequest] = await transaction.getAll(
+        db.collection('friend_requests').doc(requestId),
+        db.collection('friend_requests').doc(reverseRequestId),
       );
 
-      if (existingRequest.exists) {
-        const requestData = existingRequest.data();
-        if (requestData?.status === 'PENDING') {
-          throw new functions.https.HttpsError(
-            'already-exists',
-            '이미 친구요청을 보냈습니다.'
-          );
-        }
-      }
+      const existingPending =
+        existingRequest.data()?.status === 'PENDING';
+      const reversePending = reverseRequest.data()?.status === 'PENDING';
 
       // 차단 관계 확인
       // - 명시적으로 내가 차단한 사용자(isImplicit != true)에게는 요청 불가
@@ -5385,34 +5728,8 @@ export const sendFriendRequest = functions.https.onCall(async (data, context) =>
         transaction.get(toUserRef),
       ]);
 
-      const isActiveAccount = (
-        snapshot: admin.firestore.DocumentSnapshot
-      ): boolean => {
-        if (!snapshot.exists) return false;
-        const profile = snapshot.data() || {};
-        const status = String(
-          profile.status || profile.accountStatus || ''
-        ).trim().toLowerCase();
-        const registrationStatus = String(
-          profile.registrationStatus || ''
-        ).trim().toLowerCase();
-        const hasAccountIdentity = [
-          profile.nickname,
-          profile.displayName,
-          profile.email,
-          profile.hanyangEmail,
-        ].some((value) => String(value || '').trim().length > 0);
-        return profile.isDeleted !== true &&
-          profile.deleted !== true &&
-          profile.disabled !== true &&
-          profile.isSuspended !== true &&
-          profile.deletedAt == null &&
-          status !== 'deleted' &&
-          status !== 'suspended' &&
-          registrationStatus !== 'deleted' &&
-          hasAccountIdentity;
-      };
-      if (!isActiveAccount(fromUserDoc) || !isActiveAccount(toUserDoc)) {
+      if (!isSearchableUser(fromUid, fromUserDoc.data()) ||
+          !isSearchableUser(toUid, toUserDoc.data())) {
         throw new functions.https.HttpsError(
           'failed-precondition',
           '탈퇴했거나 이용할 수 없는 계정입니다.'
@@ -5420,9 +5737,20 @@ export const sendFriendRequest = functions.https.onCall(async (data, context) =>
       }
 
       if (friendshipDoc.exists) {
+        return {success: true, alreadyFriends: true};
+      }
+
+      // 중복 탭/응답 유실은 멱등 성공으로 처리하되, 위의 계정·차단 검증은
+      // 매번 통과해야 오래된 요청이 탈퇴 계정에 남는 일을 막는다.
+      if (existingPending) {
+        return {success: true, alreadyPending: true};
+      }
+
+      if (reversePending) {
         throw new functions.https.HttpsError(
-          'already-exists',
-          '이미 친구입니다.'
+          'failed-precondition',
+          '상대방이 먼저 보낸 친구요청이 있습니다.',
+          {reason: 'incoming-request-exists'},
         );
       }
 
@@ -5609,14 +5937,13 @@ export const acceptFriendRequest = functions.https.onCall(async (data, context) 
       }
 
       const requestData = requestDoc.data();
-      if (requestData?.status !== 'PENDING') {
+      if (requestData?.fromUid !== fromUid) {
         throw new functions.https.HttpsError(
           'failed-precondition',
-          '대기 중인 친구요청만 수락할 수 있습니다.'
+          '친구요청 정보가 일치하지 않습니다.'
         );
       }
-
-      if (requestData.toUid !== toUid) {
+      if (requestData?.toUid !== toUid) {
         throw new functions.https.HttpsError(
           'permission-denied',
           '본인이 받은 친구요청만 수락할 수 있습니다.'
@@ -5627,6 +5954,23 @@ export const acceptFriendRequest = functions.https.onCall(async (data, context) 
         throw new functions.https.HttpsError(
           'not-found',
           '사용자 정보를 찾을 수 없습니다.'
+        );
+      }
+
+      // 네트워크 응답 유실이나 빠른 중복 탭으로 수락 요청이 다시 들어와도
+      // 이미 생성된 친구 관계를 오류로 돌려보내지 않는다. 알림 역시 아래
+      // 최초 PENDING 전이에서만 생성되므로 중복 푸시가 발생하지 않는다.
+      if (requestData?.status === 'ACCEPTED' && friendshipDoc.exists) {
+        return {
+          success: true,
+          alreadyAccepted: true,
+          friendsCount: toNonNegativeInt(toUserDoc.data()?.friendsCount),
+        };
+      }
+      if (requestData?.status !== 'PENDING') {
+        throw new functions.https.HttpsError(
+          'failed-precondition',
+          '대기 중인 친구요청만 수락할 수 있습니다.'
         );
       }
 
@@ -5651,6 +5995,16 @@ export const acceptFriendRequest = functions.https.onCall(async (data, context) 
       const acceptedNotificationId = 'friend_request_accepted_' + crypto
         .createHash('sha256')
         .update(`${requestId}:${acceptanceGeneration}`)
+        .digest('hex');
+      const acceptedNotificationRef = db
+        .collection('notifications')
+        .doc(acceptedNotificationId);
+      const acceptedNotificationDoc = await transaction.get(
+        acceptedNotificationRef,
+      );
+      const requestNotificationId = 'friend_request_' + crypto
+        .createHash('sha256')
+        .update(`${requestId}:${notificationGeneration || 'legacy'}`)
         .digest('hex');
       const acceptedByName = String(
         toUserDoc.data()?.nickname ||
@@ -5703,11 +6057,16 @@ export const acceptFriendRequest = functions.https.onCall(async (data, context) 
         updatedAt: admin.firestore.FieldValue.serverTimestamp(),
       });
 
+      // 받은 요청 알림과 수락 알림을 같은 원자적 커밋에서 교체한다.
+      // 수락 푸시의 badge 계산이 아직 남은 요청 알림까지 세는 경쟁을 막는다.
+      transaction.delete(
+        db.collection('notifications').doc(requestNotificationId),
+      );
+
       // 요청 버전별 결정적 ID를 사용해 수락 처리와 알림 생성을 원자적으로
       // 커밋한다. 트랜잭션 재시도나 클라이언트 응답 유실로 중복되지 않는다.
-      transaction.create(
-        db.collection('notifications').doc(acceptedNotificationId),
-        {
+      if (!acceptedNotificationDoc.exists) {
+        transaction.create(acceptedNotificationRef, {
           userId: fromUid,
           title: acceptedNotificationTitle,
           message: acceptedNotificationMessage,
@@ -5724,8 +6083,8 @@ export const acceptFriendRequest = functions.https.onCall(async (data, context) 
           },
           createdAt: admin.firestore.FieldValue.serverTimestamp(),
           isRead: false,
-        },
-      );
+        });
+      }
 
       return { success: true, friendsCount: nextToFriendsCount };
     });
@@ -6677,6 +7036,25 @@ export const deleteAccountImmediately = functions.https.onCall(async (data, cont
       console.warn('⚠️ 사용자 정보 수집 실패 (계속 진행):', e);
     }
 
+    // Search and relationship actions must stop before any lengthy cleanup.
+    // Keeping this as an update prevents a missing account document from being
+    // created by a malformed deletion request.
+    try {
+      await userRef.update({
+        searchable: false,
+        deleting: true,
+        status: 'deleting',
+        registrationStatus: 'deleting',
+        nicknameSearchTokens: [],
+        interests: [],
+        preferredActivities: [],
+        updatedAt: admin.firestore.FieldValue.serverTimestamp(),
+      });
+    } catch (error) {
+      if ((error as any)?.code !== 5 &&
+          (error as any)?.code !== 'not-found') throw error;
+    }
+
     // 1) Firestore 업데이트/삭제
     // A long-lived account can easily exceed Firestore's 500-operation batch
     // limit. BulkWriter keeps this cleanup scalable while all operations remain
@@ -6836,27 +7214,6 @@ export const deleteAccountImmediately = functions.https.onCall(async (data, cont
       console.warn('⚠️ Snack Chat 반응/투표 정리 실패(계속 진행):', e);
     }
 
-    // 1-9. 한양메일 claim 해제 (탈퇴 시 재사용 가능하도록 email_claims 문서 삭제)
-    try {
-      if (userInfo.hanyangEmail && userInfo.hanyangEmail.includes('@')) {
-        const email = userInfo.hanyangEmail.toLowerCase().trim();
-        const claimRef = db.collection('email_claims').doc(email);
-        // 안전장치: 다른 UID의 claim을 실수로 삭제하지 않도록 uid 일치 시에만 삭제
-        const claimSnap = await claimRef.get().catch(() => null);
-        const claimUid = (claimSnap && claimSnap.exists) ? (claimSnap.data() as any)?.uid : null;
-        if (!claimSnap || !claimSnap.exists) {
-          runtimeLogsEnabled && runtimeInfo('email claim missing during account deletion');
-        } else if (claimUid && claimUid !== uid) {
-          console.warn('email claim owner mismatch during account deletion');
-        } else {
-          await claimRef.delete();
-          runtimeLogsEnabled && runtimeInfo('email claim released during account deletion');
-        }
-      }
-    } catch (e) {
-      console.warn('⚠️ 이메일 claim 해제 중 오류(계속 진행):', e);
-    }
-
     // 2) Storage 정리 (best-effort)
     try {
       const bucket = admin.storage().bucket();
@@ -6877,11 +7234,18 @@ export const deleteAccountImmediately = functions.https.onCall(async (data, cont
     await userRef.set({
       uid,
       nickname: 'DELETED_ACCOUNT',
+      // Retain the key only across the Auth deletion boundary so either this
+      // callable or the Auth onDelete fallback can release the owned claim.
       nicknameKey: userInfo.nicknameKey,
+      nicknameSearchTokens: [],
+      interests: [],
+      preferredActivities: [],
       displayName: 'DELETED_ACCOUNT',
       photoURL: '',
       isDeleted: true,
       deleted: true,
+      deleting: false,
+      searchable: false,
       status: 'deleted',
       registrationStatus: 'deleted',
       deletedAt: admin.firestore.FieldValue.serverTimestamp(),
@@ -6891,6 +7255,26 @@ export const deleteAccountImmediately = functions.https.onCall(async (data, cont
     // 4) Auth 계정 삭제
     await admin.auth().deleteUser(uid);
 
+    // Claims are released only after Auth deletion succeeds. If Auth deletion
+    // fails, login ownership remains and neither identity may be reused.
+    try {
+      if (userInfo.hanyangEmail && userInfo.hanyangEmail.includes('@')) {
+        const email = userInfo.hanyangEmail.toLowerCase().trim();
+        const claimRef = db.collection('email_claims').doc(email);
+        const claimSnap = await claimRef.get().catch(() => null);
+        const claimUid = claimSnap?.exists ? claimSnap.get('uid') : null;
+        if (claimSnap?.exists && (!claimUid || claimUid === uid)) {
+          await claimRef.delete();
+        } else if (claimUid && claimUid !== uid) {
+          console.warn('email claim owner mismatch during account deletion');
+        }
+      }
+    } catch (error) {
+      console.error('email claim release failed after Auth deletion', {
+        code: (error as any)?.code || 'unknown',
+      });
+    }
+
     // Auth 삭제가 성공한 후에만 해당 UID가 소유한 닉네임을
     // 해제한다. 재인증/Auth 삭제 실패 시에는 이 코드에 도달하지 않는다.
     try {
@@ -6898,6 +7282,7 @@ export const deleteAccountImmediately = functions.https.onCall(async (data, cont
         uid,
         userInfo.nicknameKey,
       );
+      await userRef.update({nicknameKey: ''}).catch(() => {});
       runtimeLogsEnabled && runtimeInfo(`👤 닉네임 claim 해제: ${released ? '완료' : '스킵'}`);
     } catch (error) {
       // Auth 삭제 후의 단일 claim 정리는 재시도 가능한 복구 경계다.
@@ -7368,7 +7753,22 @@ export const registerFcmToken = functions.https.onCall(async (data, context) => 
 
   // 1) 토큰 레지스트리를 우선 갱신하고 이전 소유자를 확인 (idempotent)
   await db.runTransaction(async (tx) => {
-    const tokenSnap = await tx.get(tokenRef);
+    const [tokenSnap, userSnap] = await Promise.all([
+      tx.get(tokenRef),
+      tx.get(userRef),
+    ]);
+    const currentUserData = userSnap.data() as Record<string, unknown> | undefined;
+    const currentStatus = String(
+      currentUserData?.status ?? currentUserData?.accountStatus ?? '',
+    ).trim().toLowerCase();
+    if (!userSnap.exists || currentUserData?.isDeleted === true ||
+        currentUserData?.deleted === true || currentUserData?.deleting === true ||
+        ['deleted', 'deleting'].includes(currentStatus)) {
+      throw new functions.https.HttpsError(
+        'failed-precondition',
+        'An available account is required.',
+      );
+    }
     const tokenData = tokenSnap.exists ? (tokenSnap.data() as Record<string, any>) : {};
     previousOwnerUid = typeof tokenData?.userId === 'string' ? tokenData.userId : '';
 
@@ -7395,11 +7795,11 @@ export const registerFcmToken = functions.https.onCall(async (data, context) => 
     }, { merge: true });
 
     // 현재 사용자 문서 업데이트 (레거시 호환 유지)
-    tx.set(userRef, {
+    tx.update(userRef, {
       fcmToken: token,
       fcmTokens: admin.firestore.FieldValue.arrayUnion(token),
       fcmTokenUpdatedAt: admin.firestore.FieldValue.serverTimestamp(),
-    }, { merge: true });
+    });
   });
 
   // 2) 이전 소유자 단일 정리 + 레거시 잔존 정리(보수적)
@@ -7426,10 +7826,16 @@ export const registerFcmToken = functions.https.onCall(async (data, context) => 
 
   if (cleanMap.size > 0) {
     runtimeLogsEnabled && runtimeInfo(`🧹 registerFcmToken: 다른 계정에서 토큰 제거 (${cleanMap.size}명)`);
+    const cleanupEntries = Array.from(cleanMap.entries());
+    const cleanupRefs = cleanupEntries.map(([otherUid]) =>
+      db.collection('users').doc(otherUid));
+    const existingCleanupUsers = await db.getAll(...cleanupRefs);
     const batch = db.batch();
-    for (const [otherUid, opt] of cleanMap.entries()) {
+    for (let index = 0; index < cleanupEntries.length; index++) {
+      const [otherUid, opt] = cleanupEntries[index];
       const ref = db.collection('users').doc(otherUid);
       batch.delete(ref.collection('devices').doc(deviceId));
+      if (!existingCleanupUsers[index]?.exists) continue;
       const updates: Record<string, any> = {
         fcmTokens: admin.firestore.FieldValue.arrayRemove(token),
         fcmTokenUpdatedAt: admin.firestore.FieldValue.serverTimestamp(),
@@ -7437,7 +7843,7 @@ export const registerFcmToken = functions.https.onCall(async (data, context) => 
       if (opt.deleteSingle) {
         updates.fcmToken = admin.firestore.FieldValue.delete();
       }
-      batch.set(ref, updates, { merge: true });
+      batch.update(ref, updates);
     }
     await batch.commit();
   }
@@ -7467,7 +7873,10 @@ export const unregisterFcmToken = functions.https.onCall(async (data, context) =
   let deleted = false;
 
   await db.runTransaction(async (tx) => {
-    const snap = await tx.get(tokenRef);
+    const [snap, userSnap] = await Promise.all([
+      tx.get(tokenRef),
+      tx.get(userRef),
+    ]);
     const d = snap.exists ? snap.data() as Record<string, any> : {};
     const ownsRegistryToken = snap.exists && (d?.userId ?? '') === uid;
     if (ownsRegistryToken) tx.delete(tokenRef);
@@ -7477,10 +7886,12 @@ export const unregisterFcmToken = functions.https.onCall(async (data, context) =
     tx.delete(deviceRef);
     deleted = true;
 
-    tx.set(userRef, {
-      fcmTokens: admin.firestore.FieldValue.arrayRemove(token),
-      fcmTokenUpdatedAt: admin.firestore.FieldValue.serverTimestamp(),
-    }, { merge: true });
+    if (userSnap.exists) {
+      tx.update(userRef, {
+        fcmTokens: admin.firestore.FieldValue.arrayRemove(token),
+        fcmTokenUpdatedAt: admin.firestore.FieldValue.serverTimestamp(),
+      });
+    }
   });
 
   if (deleted) {
@@ -7493,10 +7904,10 @@ export const unregisterFcmToken = functions.https.onCall(async (data, context) =
           const list = (userData?.fcmTokens as any[] | undefined)
             ?.map((v) => (v ?? '').toString())
             .filter((v) => v.length > 0 && v !== token) ?? [];
-          await userRef.set({
+          await userRef.update({
             fcmToken: list.length > 0 ? list[0] : admin.firestore.FieldValue.delete(),
             fcmTokenUpdatedAt: admin.firestore.FieldValue.serverTimestamp(),
-          }, { merge: true });
+          });
         }
       }
     } catch (e) {
@@ -7837,7 +8248,9 @@ export const onNotificationCreated = functions
               coveredByReconciliation ? 0 : 1;
             const nextNoti = Math.max(0, curNoti + delta);
 
-            tx.set(userRef, { notificationUnreadTotal: nextNoti }, { merge: true });
+            if (snap.exists) {
+              tx.update(userRef, {notificationUnreadTotal: nextNoti});
+            }
             tx.create(counterMarkerRef, {
               type: 'notification_created',
               notificationId,
@@ -7908,6 +8321,49 @@ export const onNotificationCreated = functions
         }
       }
 
+      // 수락 트랜잭션은 기존 요청 알림 삭제와 수락 알림 생성을 동시에
+      // 커밋한다. 두 카운터 트리거의 실행 순서와 무관하게 요청자에게 보내는
+      // badge는 현재 unread 문서 수를 한 번 정확히 세어 과대 표기를 막는다.
+      if (type === 'friend_request_accepted' && totalTokens > 0) {
+        try {
+          const [unreadAllSnap, unreadDmSnap, latestUserDoc] = await Promise.all([
+            db.collection('notifications')
+              .where('userId', '==', userId)
+              .where('isRead', '==', false)
+              .count()
+              .get(),
+            db.collection('notifications')
+              .where('userId', '==', userId)
+              .where('isRead', '==', false)
+              .where('type', '==', 'dm_received')
+              .count()
+              .get(),
+            db.collection('users').doc(userId).get(),
+          ]);
+          const unreadAll = toNonNegativeInt(unreadAllSnap.data().count);
+          const unreadDmNotifications = toNonNegativeInt(
+            unreadDmSnap.data().count,
+          );
+          const notificationCount = Math.max(
+            0,
+            unreadAll - unreadDmNotifications,
+          );
+          const latestUserData = latestUserDoc.data() || {};
+          const dmUnreadTotal = toNonNegativeInt(
+            (latestUserData as any).dmUnreadTotal,
+          );
+          const snackChatUnreadTotal = await getVisibleSnackChatUnreadTotal(
+            String(userId),
+          );
+          badgeCount = notificationCount + dmUnreadTotal +
+            snackChatUnreadTotal;
+        } catch (error) {
+          // 일반 aggregate 계산값은 이미 준비되어 있으므로 정확 조회가
+          // 일시 실패해도 푸시 자체를 막지 않는다.
+          console.warn('친구 수락 badge 정확 조회 실패 - aggregate 사용:', error);
+        }
+      }
+
       if (totalTokens === 0) {
         runtimeLogsEnabled && runtimeInfo('FCM 토큰이 없어 카운터만 반영하고 푸시는 전송하지 않습니다.');
         return null;
@@ -7930,7 +8386,12 @@ export const onNotificationCreated = functions
         senderId: String(notificationData.senderId || dataSafe?.senderId || notificationData.actorId || ''),
         snackChatId: String(notificationData.snackChatId || dataSafe?.snackChatId || ''),
         reviewId: String(notificationData.reviewId || dataSafe?.reviewId || ''),
-        requestId: String(notificationData.requestId || dataSafe?.requestId || ''),
+        requestId: String(
+          notificationData.requestId ||
+          dataSafe?.requestId ||
+          dataSafe?.friendRequestId ||
+          '',
+        ),
         userId: String(dataSafe?.userId || ''),
         meetupTitle: safeStringLoose(dataSafe?.meetupTitle).slice(0, 200),
         imageUrl: safeStringLoose(dataSafe?.imageUrl).slice(0, 1000),
@@ -7943,6 +8404,11 @@ export const onNotificationCreated = functions
         actorName: String(notificationData.actorName || dataSafe?.actorName || ''),
         ...(hasBadge ? { badge: String(finalBadge) } : {}),
       };
+      const androidNotificationTag = 'notification_' + crypto
+        .createHash('sha256')
+        .update(String(notificationId))
+        .digest('hex')
+        .slice(0, 40);
 
       const sendForLang = async (lang: SupportedLang, tokens: string[]) => {
         const localized = buildLocalizedNotificationText({
@@ -7978,6 +8444,7 @@ export const onNotificationCreated = functions
             notification: {
               sound: 'default',
               channelId: 'high_importance_channel',
+              tag: androidNotificationTag,
             },
           },
         };
@@ -8023,20 +8490,20 @@ export const onNotificationCreated = functions
         const chunkSize = 10;
         for (let i = 0; i < invalidTokens.length; i += chunkSize) {
           const chunk = invalidTokens.slice(i, i + chunkSize);
-          await userRef.set({
+          await userRef.update({
             fcmTokens: admin.firestore.FieldValue.arrayRemove(...chunk),
-          }, { merge: true });
+          }).catch(() => {});
         }
 
         // 레거시 단일 토큰이 무효면 대체/삭제
         const legacyToken = userData?.fcmToken;
         if (typeof legacyToken === 'string' && legacyToken.length > 0 &&
             invalidTokens.includes(legacyToken)) {
-          await userRef.set({
+          await userRef.update({
             fcmToken: remaining.length > 0
               ? remaining[0]
               : admin.firestore.FieldValue.delete(),
-          }, { merge: true });
+          }).catch(() => {});
         }
 
         runtimeLogsEnabled && runtimeInfo(`🧹 무효 FCM 토큰 정리: ${invalidTokens.length}개 (userId=${userId})`);
@@ -8106,7 +8573,7 @@ export const onNotificationUpdatedSyncUnreadCounter = functions
           if (!transitionAlreadyCovered) {
             if (!beforeRead && afterRead) next = Math.max(0, next - 1);
             if (beforeRead && !afterRead) next += 1;
-            tx.set(userRef, {notificationUnreadTotal: next}, {merge: true});
+            if (snap.exists) tx.update(userRef, {notificationUnreadTotal: next});
           }
           tx.create(markerRef, {
             type: 'notification_state_legacy',
@@ -8127,9 +8594,9 @@ export const onNotificationUpdatedSyncUnreadCounter = functions
 
         if (!beforeRead && afterRead) {
           if (!applied || settled) return;
-          tx.set(userRef, {
+          if (snap.exists) tx.update(userRef, {
             notificationUnreadTotal: Math.max(0, cur - 1),
-          }, {merge: true});
+          });
           tx.update(markerRef, {
             counterSettled: true,
             settledAt: admin.firestore.FieldValue.serverTimestamp(),
@@ -8141,9 +8608,9 @@ export const onNotificationUpdatedSyncUnreadCounter = functions
         // 카운터를 깨뜨리지 않도록 역전이를 대칭적으로 처리한다.
         if (beforeRead && !afterRead) {
           if (applied && !settled) return;
-          tx.set(userRef, {
+          if (snap.exists) tx.update(userRef, {
             notificationUnreadTotal: cur + 1,
-          }, {merge: true});
+          });
           tx.update(markerRef, {
             applied: true,
             counterSettled: false,
@@ -8208,9 +8675,9 @@ export const onNotificationDeletedSyncUnreadCounter = functions
             const current = toNonNegativeInt(
               (userData as any).notificationUnreadTotal,
             );
-            tx.set(userRef, {
+            if (snap.exists) tx.update(userRef, {
               notificationUnreadTotal: Math.max(0, current - 1),
-            }, {merge: true});
+            });
           }
           tx.create(markerRef, {
             type: 'notification_deleted_legacy',
@@ -8228,9 +8695,9 @@ export const onNotificationDeletedSyncUnreadCounter = functions
         const cur = toNonNegativeInt(
           (snap.data() as any)?.notificationUnreadTotal
         );
-        tx.set(userRef, {
+        if (snap.exists) tx.update(userRef, {
           notificationUnreadTotal: Math.max(0, cur - 1),
-        }, {merge: true});
+        });
         tx.update(markerRef, {
           counterSettled: true,
           deletedAt: admin.firestore.FieldValue.serverTimestamp(),
@@ -8428,6 +8895,277 @@ export const onMeetupCreated = functions.firestore
 
 // ===== 모임 후기 관련 Cloud Functions =====
 
+const MEETUP_REVIEW_PROFILE_PROJECTION_VERSION = 1;
+
+function reviewProfileOwnerIds(reviewData: any): string[] {
+  const authorId = normalizeUidLoose(reviewData?.authorId);
+  const approvedParticipants = Array.isArray(reviewData?.approvedParticipants)
+    ? reviewData.approvedParticipants
+      .map(normalizeUidLoose)
+      .filter((uid: string) => uid.length > 0)
+    : [];
+  return Array.from(new Set([authorId, ...approvedParticipants]))
+    .filter((uid) => uid.length > 0);
+}
+
+function canRetainReviewProfile(data: any): boolean {
+  if (!data) return false;
+  const status = String(data.status || data.accountStatus || '')
+    .trim()
+    .toLowerCase();
+  const registrationStatus = String(data.registrationStatus || '')
+    .trim()
+    .toLowerCase();
+  return data.isDeleted !== true &&
+    data.deleted !== true &&
+    data.deleting !== true &&
+    data.deletedAt == null &&
+    status !== 'deleted' &&
+    registrationStatus !== 'deleted' &&
+    registrationStatus !== 'deleting';
+}
+
+function reviewProfileProjectionData(
+  reviewId: string,
+  reviewData: any,
+  userId: string,
+  profileData: any,
+  existingData?: any,
+): Record<string, unknown> {
+  const listedImages = Array.isArray(reviewData?.imageUrls)
+    ? reviewData.imageUrls
+      .map((value: unknown) => String(value || '').trim())
+      .filter((value: string) => value.length > 0)
+    : [];
+  const legacyImage = String(reviewData?.imageUrl || '').trim();
+  const imageUrls = listedImages.length > 0
+    ? listedImages
+    : (legacyImage ? [legacyImage] : []);
+  const profileName = String(
+    profileData?.nickname || profileData?.displayName || '',
+  ).trim();
+  const authorId = normalizeUidLoose(reviewData?.authorId);
+  const projection: Record<string, unknown> = {
+    type: 'meetup_review',
+    authorId: userId,
+    authorName: profileName || '익명',
+    authorProfileImage: String(profileData?.photoURL || '').trim(),
+    profileOwnerId: userId,
+    meetupId: normalizeUidLoose(reviewData?.meetupId),
+    meetupTitle: String(reviewData?.meetupTitle || '').trim(),
+    imageUrls,
+    imageUrl: legacyImage || imageUrls[0] || '',
+    content: String(reviewData?.content || ''),
+    category: String(reviewData?.category || '모임'),
+    participationRole: userId === authorId ? 'host' : 'participant',
+    reviewId,
+    sourceReviewId: reviewId,
+    createdAt: reviewData?.createdAt ||
+      admin.firestore.FieldValue.serverTimestamp(),
+    visibility: 'public',
+    reviewProjectionVersion: MEETUP_REVIEW_PROFILE_PROJECTION_VERSION,
+    projectionUpdatedAt: admin.firestore.FieldValue.serverTimestamp(),
+  };
+  if (reviewData?.updatedAt) projection.updatedAt = reviewData.updatedAt;
+  if (typeof existingData?.isHidden !== 'boolean') projection.isHidden = false;
+  if (!Array.isArray(existingData?.likedBy)) projection.likedBy = [];
+  if (typeof existingData?.likeCount !== 'number') projection.likeCount = 0;
+  if (typeof existingData?.commentCount !== 'number') {
+    projection.commentCount = 0;
+  }
+  return projection;
+}
+
+async function ensureMeetupReviewProfilePosts(
+  reviewId: string,
+  reviewData: any,
+  requestedUserIds?: string[],
+  forceRefresh = false,
+): Promise<number> {
+  const allowedOwners = new Set(reviewProfileOwnerIds(reviewData));
+  const userIds = Array.from(new Set(
+    (requestedUserIds || Array.from(allowedOwners))
+      .map(normalizeUidLoose)
+      .filter((uid) => allowedOwners.has(uid)),
+  ));
+  if (userIds.length === 0) return 0;
+
+  const profileRefs = userIds.map((uid) => db.collection(COL.users).doc(uid));
+  const postRefs = userIds.map((uid) => db.collection(COL.users)
+    .doc(uid)
+    .collection('posts')
+    .doc(reviewId));
+  const [profileDocs, postDocs] = await Promise.all([
+    db.getAll(...profileRefs),
+    db.getAll(...postRefs),
+  ]);
+
+  const batch = db.batch();
+  let writeCount = 0;
+  userIds.forEach((uid, index) => {
+    const profileDoc = profileDocs[index];
+    if (!profileDoc.exists || !canRetainReviewProfile(profileDoc.data())) {
+      return;
+    }
+    const postDoc = postDocs[index];
+    const existingData = postDoc.exists ? postDoc.data() : undefined;
+    const isCurrentProjection = postDoc.exists &&
+      existingData?.type === 'meetup_review' &&
+      existingData?.reviewId === reviewId &&
+      existingData?.sourceReviewId === reviewId &&
+      existingData?.authorId === uid &&
+      existingData?.profileOwnerId === uid &&
+      existingData?.reviewProjectionVersion ===
+        MEETUP_REVIEW_PROFILE_PROJECTION_VERSION;
+    if (!forceRefresh && isCurrentProjection) return;
+
+    batch.set(
+      postRefs[index],
+      reviewProfileProjectionData(
+        reviewId,
+        reviewData,
+        uid,
+        profileDoc.data(),
+        existingData,
+      ),
+      {merge: true},
+    );
+    writeCount++;
+  });
+
+  if (writeCount > 0) await batch.commit();
+  return writeCount;
+}
+
+/**
+ * 현재 사용자의 수락 완료 후기가 프로필 투영 문서에서 누락되었을 때 복구한다.
+ * 결정적 문서 ID(reviewId)와 버전 검사를 사용해 중복 후기나 반복 쓰기를 막는다.
+ */
+export const reconcileMyAcceptedReviewProfiles = functions
+  .runWith({enforceAppCheck: true, timeoutSeconds: 30, memory: '256MB'})
+  .https.onCall(async (_raw, context) => {
+    const userId = normalizeUidLoose(context.auth?.uid);
+    if (!userId) {
+      throw new functions.https.HttpsError(
+        'unauthenticated',
+        '로그인이 필요합니다.',
+      );
+    }
+
+    const [profileDoc, authoredReviews, acceptedReviews] = await Promise.all([
+      db.collection(COL.users).doc(userId).get(),
+      db.collection('meetup_reviews')
+        .where('authorId', '==', userId)
+        .limit(250)
+        .get(),
+      db.collection('meetup_reviews')
+        .where('approvedParticipants', 'array-contains', userId)
+        .limit(250)
+        .get(),
+    ]);
+    if (!profileDoc.exists || !canRetainReviewProfile(profileDoc.data())) {
+      throw new functions.https.HttpsError(
+        'failed-precondition',
+        '이용할 수 없는 계정입니다.',
+      );
+    }
+
+    const reviewDocs = new Map<string, admin.firestore.QueryDocumentSnapshot>();
+    [...authoredReviews.docs, ...acceptedReviews.docs].forEach((doc) => {
+      reviewDocs.set(doc.id, doc);
+    });
+    if (reviewDocs.size === 0) return {checked: 0, repaired: 0};
+
+    const docs = Array.from(reviewDocs.values());
+    const postRefs = docs.map((doc) => db.collection(COL.users)
+      .doc(userId)
+      .collection('posts')
+      .doc(doc.id));
+    const postDocs = await db.getAll(...postRefs);
+    const batch = db.batch();
+    let repaired = 0;
+    docs.forEach((reviewDoc, index) => {
+      const postDoc = postDocs[index];
+      const existingData = postDoc.exists ? postDoc.data() : undefined;
+      const isCurrentProjection = postDoc.exists &&
+        existingData?.type === 'meetup_review' &&
+        existingData?.reviewId === reviewDoc.id &&
+        existingData?.sourceReviewId === reviewDoc.id &&
+        existingData?.authorId === userId &&
+        existingData?.profileOwnerId === userId &&
+        existingData?.reviewProjectionVersion ===
+          MEETUP_REVIEW_PROFILE_PROJECTION_VERSION;
+      if (isCurrentProjection) return;
+
+      batch.set(
+        postRefs[index],
+        reviewProfileProjectionData(
+          reviewDoc.id,
+          reviewDoc.data(),
+          userId,
+          profileDoc.data(),
+          existingData,
+        ),
+        {merge: true},
+      );
+      repaired++;
+    });
+    if (repaired > 0) await batch.commit();
+    return {checked: docs.length, repaired};
+  });
+
+/** 후기 작성 직후 주최자 프로필 투영을 서버에서 보장한다. */
+export const onMeetupReviewCreatedEnsureProfile = functions.firestore
+  .document('meetup_reviews/{reviewId}')
+  .onCreate(async (snapshot, context) => {
+    const reviewId = context.params.reviewId;
+    const reviewData = snapshot.data();
+    const authorId = normalizeUidLoose(reviewData.authorId);
+    const writes = await ensureMeetupReviewProfilePosts(
+      reviewId,
+      reviewData,
+      authorId ? [authorId] : [],
+    );
+    runtimeLogsEnabled && runtimeInfo(
+      `meetup review host projection ensured: ${writes}`,
+    );
+    return null;
+  });
+
+/**
+ * 원본 후기와 수락 상태는 남아 있는데 프로필 투영만 삭제된 경우 복구한다.
+ * 작성자가 원본을 먼저 삭제했거나 계정이 삭제 중이면 복원하지 않는다.
+ */
+export const onMeetupReviewProfilePostDeletedRestore = functions.firestore
+  .document('users/{userId}/posts/{postId}')
+  .onDelete(async (snapshot, context) => {
+    if (snapshot.data()?.type !== 'meetup_review') return null;
+
+    const userId = normalizeUidLoose(context.params.userId);
+    const reviewId = normalizeUidLoose(
+      snapshot.data()?.reviewId ||
+      snapshot.data()?.sourceReviewId ||
+      context.params.postId,
+    );
+    if (!userId || !reviewId) return null;
+
+    const reviewDoc = await db.collection('meetup_reviews').doc(reviewId).get();
+    if (!reviewDoc.exists ||
+        !reviewProfileOwnerIds(reviewDoc.data()).includes(userId)) {
+      return null;
+    }
+
+    const writes = await ensureMeetupReviewProfilePosts(
+      reviewId,
+      reviewDoc.data(),
+      [userId],
+    );
+    runtimeLogsEnabled && runtimeInfo(
+      `deleted meetup review projection restored: ${writes}`,
+    );
+    return null;
+  });
+
 /**
  * 후기 수락 요청 생성 시 알림 전송
  * review_requests 컬렉션에 새 문서 생성 시 트리거
@@ -8596,80 +9334,33 @@ export const onReviewRequestUpdated = functions.firestore
 export const onMeetupReviewUpdated = functions.firestore
   .document('meetup_reviews/{reviewId}')
   .onUpdate(async (change, context) => {
-    try {
-      const reviewId = context.params.reviewId;
-      const before = change.before.data();
-      const after = change.after.data();
-      
-      runtimeLogsEnabled && runtimeInfo(`📝 모임 후기 업데이트 감지: ${reviewId}`);
-      
-      // 업데이트된 필드 확인
-      const updatedFields: string[] = [];
-      if (before.content !== after.content) updatedFields.push('content');
-      if (JSON.stringify(before.imageUrls) !== JSON.stringify(after.imageUrls)) updatedFields.push('imageUrls');
-      if (before.imageUrl !== after.imageUrl) updatedFields.push('imageUrl');
-      
-      if (updatedFields.length === 0) {
-        runtimeLogsEnabled && runtimeInfo('⏭️ 프로필 업데이트가 필요한 필드 변경 없음');
-        return null;
-      }
-      
-      runtimeLogsEnabled && runtimeInfo(`📋 업데이트된 필드: ${updatedFields.join(', ')}`);
-      
-      // 업데이트할 사용자 목록 (작성자 + 승인된 참여자)
-      const authorId = after.authorId;
-      const approvedParticipants = after.approvedParticipants || [];
-      const allUserIds = [authorId, ...approvedParticipants];
-      
-      runtimeLogsEnabled && runtimeInfo(`📤 프로필 업데이트 대상: ${allUserIds.length}명`);
-      
-      // 각 사용자의 프로필 posts 업데이트
-      const batch = db.batch();
-      let updateCount = 0;
-      
-      for (const userId of allUserIds) {
-        try {
-          const postRef = db.collection('users').doc(userId).collection('posts').doc(reviewId);
-          const postDoc = await postRef.get();
-          
-          if (postDoc.exists) {
-            const updateData: any = {
-              updatedAt: admin.firestore.FieldValue.serverTimestamp()
-            };
-            
-            if (updatedFields.includes('content')) {
-              updateData.content = after.content;
-            }
-            if (updatedFields.includes('imageUrls')) {
-              updateData.imageUrls = after.imageUrls;
-            }
-            if (updatedFields.includes('imageUrl')) {
-              updateData.imageUrl = after.imageUrl;
-            }
-            
-            batch.update(postRef, updateData);
-            updateCount++;
-            runtimeLogsEnabled && runtimeInfo(`✅ 프로필 업데이트 예약: userId=${userId}`);
-          } else {
-            runtimeLogsEnabled && runtimeInfo(`⚠️ 프로필 후기 없음: userId=${userId}`);
-          }
-        } catch (error) {
-          console.error(`❌ 프로필 업데이트 실패: userId=${userId}, error:`, error);
-        }
-      }
-      
-      if (updateCount > 0) {
-        await batch.commit();
-        runtimeLogsEnabled && runtimeInfo(`✅ ${updateCount}개 프로필 후기 업데이트 완료`);
-      } else {
-        runtimeLogsEnabled && runtimeInfo('⏭️ 업데이트할 프로필 후기 없음');
-      }
-      
-      return null;
-    } catch (error) {
-      console.error('onMeetupReviewUpdated 오류:', error);
-      return null;
-    }
+    const reviewId = context.params.reviewId;
+    const before = change.before.data();
+    const after = change.after.data();
+    const contentChanged = before.content !== after.content;
+    const imagesChanged =
+      JSON.stringify(before.imageUrls || []) !==
+        JSON.stringify(after.imageUrls || []) ||
+      before.imageUrl !== after.imageUrl;
+    const audienceChanged =
+      JSON.stringify(reviewProfileOwnerIds(before)) !==
+      JSON.stringify(reviewProfileOwnerIds(after));
+
+    if (!contentChanged && !imagesChanged && !audienceChanged) return null;
+
+    // 수락 참여자가 추가됐을 때 누락 문서를 생성하고, 후기 수정 시에는
+    // 기존 문서까지 갱신한다. 승인 목록에서 빠져도 기존 사용자 데이터는
+    // 이 트리거에서 자동 삭제하지 않는다.
+    const writes = await ensureMeetupReviewProfilePosts(
+      reviewId,
+      after,
+      undefined,
+      contentChanged || imagesChanged,
+    );
+    runtimeLogsEnabled && runtimeInfo(
+      `meetup review projections ensured: ${writes}`,
+    );
+    return null;
   });
 
 /**
@@ -9028,10 +9719,12 @@ export const onDMMessageCreated = functions
             const userData = userSnap?.exists ? userSnap.data() : null;
             const curDmTotal = typeof userData?.dmUnreadTotal === 'number' ? userData.dmUnreadTotal : 0;
             const safeDmTotal = Math.max(0, curDmTotal) + 1;
-            tx.set(userRefs[i], {
-              dmUnreadTotal: safeDmTotal,
-              dmUnreadCounterVersion: 2,
-            }, { merge: true });
+            if (userSnap?.exists) {
+              tx.update(userRefs[i], {
+                dmUnreadTotal: safeDmTotal,
+                dmUnreadCounterVersion: 2,
+              });
+            }
             runtimeLogsEnabled && runtimeInfo(`  📈 [dmUnreadTotal] ${rid}: ${curDmTotal} → ${safeDmTotal}`);
           }
 
@@ -9144,6 +9837,11 @@ export const onDMMessageCreated = functions
       runtimeLogsEnabled && runtimeInfo(`  📊 최종 badge = ${finalBadge} (raw badgeCount = ${badgeCount})`);
 
       // FCM 메시지 구성
+      const dmNotificationTag = 'dm_' + crypto
+        .createHash('sha256')
+        .update(`${recipientId}:${conversationId}`)
+        .digest('hex')
+        .slice(0, 40);
       const pushMessage: admin.messaging.MulticastMessage = {
         tokens,
         notification: {
@@ -9156,6 +9854,7 @@ export const onDMMessageCreated = functions
           conversationId: conversationId,
           senderId: senderId,
           senderName: senderName,
+          notificationThreadKey: dmNotificationTag,
           ...(hasBadge && { badge: String(finalBadge) }),
         },
         apns: {
@@ -9172,10 +9871,11 @@ export const onDMMessageCreated = functions
         },
         android: {
           priority: 'high',
-          notification: {
-            sound: 'default',
-            channelId: 'high_importance_channel',
-          },
+            notification: {
+              sound: 'default',
+              channelId: 'high_importance_channel',
+              tag: dmNotificationTag,
+            },
         },
       };
 
@@ -9290,7 +9990,7 @@ export const onDMMessageRead = functions
             roomUnreadBefore - 1
           );
           const userData = userSnaps[index]?.data() || {};
-          tx.set(userRefs[index], {
+          if (userSnaps[index]?.exists) tx.update(userRefs[index], {
             // 클라이언트의 방 단위 정합화가 먼저 0으로 만든 경우에는
             // 같은 메시지의 지연된 read trigger가 다른 방의 총 미읽음까지
             // 한 번 더 차감하지 않도록 한다.
@@ -9301,7 +10001,7 @@ export const onDMMessageRead = functions
               )
               : toNonNegativeInt((userData as any).dmUnreadTotal),
             dmUnreadCounterVersion: 2,
-          }, {merge: true});
+          });
         });
         tx.set(convRef, {
           unreadCount,

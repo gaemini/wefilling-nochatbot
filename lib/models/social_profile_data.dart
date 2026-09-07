@@ -1,3 +1,5 @@
+import '../utils/nickname_policy.dart';
+
 class SocialProfileData {
   const SocialProfileData({
     this.bio = '',
@@ -106,23 +108,23 @@ class SocialProfileOption {
 class SocialProfileValidation {
   const SocialProfileValidation._();
 
-  static final RegExp _nicknamePattern = RegExp(r'^[a-zA-Z0-9가-힣_\.]+$');
-
   static String? nicknameError(String? rawValue, String languageCode) {
-    final value = rawValue?.trim() ?? '';
     final isKorean = languageCode == 'ko';
-    if (value.isEmpty) {
-      return isKorean ? '닉네임을 입력해 주세요.' : 'Please enter a nickname.';
-    }
-    if (value.length < 2 || value.length > 20) {
-      return isKorean ? '닉네임은 2~20자로 입력해 주세요.' : 'Use 2–20 characters.';
-    }
-    if (!_nicknamePattern.hasMatch(value)) {
-      return isKorean
-          ? '한글, 영문, 숫자, 밑줄, 마침표만 사용할 수 있어요.'
-          : 'Use letters, numbers, underscores, or periods.';
-    }
-    return null;
+    return switch (NicknamePolicy.validate(rawValue)) {
+      null => null,
+      NicknameValidationIssue.empty =>
+        isKorean ? '닉네임을 입력해 주세요.' : 'Please enter a nickname.',
+      NicknameValidationIssue.length =>
+        isKorean ? '닉네임은 2~20자로 입력해 주세요.' : 'Use 2–20 characters.',
+      NicknameValidationIssue.invalidCharacters => isKorean
+          ? '한글, 영문, 숫자, _만 입력해 주세요.'
+          : 'Use only Korean or English letters, numbers, and _.',
+      NicknameValidationIssue.letterRequired => isKorean
+          ? '한글 또는 영문자를 하나 이상 포함해 주세요.'
+          : 'Include at least one Korean or English letter.',
+      NicknameValidationIssue.reserved =>
+        isKorean ? '사용할 수 없는 닉네임이에요.' : 'This nickname is reserved.',
+    };
   }
 }
 

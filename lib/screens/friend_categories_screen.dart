@@ -283,6 +283,7 @@ class _FriendCategoriesScreenState extends State<FriendCategoriesScreen>
 
   Widget _buildGroupsEmptyState() {
     final l10n = AppLocalizations.of(context)!;
+    final isKo = Localizations.localeOf(context).languageCode == 'ko';
     final media = MediaQuery.of(context);
     final compact = media.size.height < 700 || context.isCompactLayout;
     final horizontal = media.size.width < 360
@@ -290,12 +291,12 @@ class _FriendCategoriesScreenState extends State<FriendCategoriesScreen>
         : media.size.width < 430
             ? 16.0
             : 20.0;
-    final topPadding = compact ? 16.0 : context.rs(26).clamp(20, 30);
+    final topPadding = compact ? 14.0 : context.rs(22).clamp(18, 26);
 
     return SafeArea(
       top: false,
       child: CustomScrollView(
-        physics: const AlwaysScrollableScrollPhysics(),
+        physics: const ClampingScrollPhysics(),
         slivers: [
           SliverPadding(
             padding: EdgeInsets.fromLTRB(
@@ -312,27 +313,16 @@ class _FriendCategoriesScreenState extends State<FriendCategoriesScreen>
                   child: MediaQuery.withClampedTextScaling(
                     maxScaleFactor: 1.25,
                     child: Column(
-                      mainAxisAlignment: MainAxisAlignment.center,
+                      mainAxisAlignment: MainAxisAlignment.start,
                       crossAxisAlignment: CrossAxisAlignment.stretch,
                       children: [
-                        Center(
-                          child: CategoryShapesIllustration(
-                            size: compact ? 72 : 82,
-                          ),
-                        ),
-                        SizedBox(
-                          height: context
-                              .rs(compact ? 16 : 20)
-                              .clamp(14, 22)
-                              .toDouble(),
-                        ),
                         Text(
                           l10n.createFirstCategory,
                           textAlign: TextAlign.center,
                           style: TextStyle(
                             fontFamily: 'Inter',
                             fontFamilyFallback: const ['NotoSansKR'],
-                            fontSize: context.rf(19).clamp(17, 20).toDouble(),
+                            fontSize: context.rf(21).clamp(18, 22).toDouble(),
                             fontWeight: FontWeight.w800,
                             color: const Color(0xFF111827),
                             height: 1.35,
@@ -346,7 +336,8 @@ class _FriendCategoriesScreenState extends State<FriendCategoriesScreen>
                           style: TextStyle(
                             fontFamily: 'Inter',
                             fontFamilyFallback: const ['NotoSansKR'],
-                            fontSize: context.rf(13).clamp(12, 14).toDouble(),
+                            fontSize:
+                                context.rf(13.5).clamp(12.5, 14).toDouble(),
                             fontWeight: FontWeight.w500,
                             color: const Color(0xFF6B7280),
                             height: 1.5,
@@ -354,8 +345,58 @@ class _FriendCategoriesScreenState extends State<FriendCategoriesScreen>
                         ),
                         SizedBox(
                           height: context
-                              .rs(compact ? 22 : 28)
-                              .clamp(20, 30)
+                              .rs(compact ? 12 : 16)
+                              .clamp(10, 18)
+                              .toDouble(),
+                        ),
+                        Center(
+                          child: CategoryShapesIllustration(
+                            size: compact ? 58 : 66,
+                          ),
+                        ),
+                        SizedBox(
+                          height: context
+                              .rs(compact ? 12 : 18)
+                              .clamp(10, 20)
+                              .toDouble(),
+                        ),
+                        Text(
+                          isKo ? '친구 그룹으로 할 수 있어요' : 'What friend groups offer',
+                          style: TextStyle(
+                            fontFamily: 'Inter',
+                            fontFamilyFallback: const ['NotoSansKR'],
+                            fontSize: context.rf(13).clamp(12, 14).toDouble(),
+                            fontWeight: FontWeight.w800,
+                            height: 1.3,
+                            color: const Color(0xFF475467),
+                          ),
+                        ),
+                        SizedBox(
+                            height: context.rs(10).clamp(8, 12).toDouble()),
+                        _GroupFeatureRow(
+                          icon: Icons.people_outline_rounded,
+                          title: isKo
+                              ? '친구를 목적에 맞게 정리'
+                              : 'Organize friends your way',
+                          description: isKo
+                              ? '학교, 모임, 친한 친구처럼 필요한 기준으로 묶어요.'
+                              : 'Group friends by school, meetup, or any circle you need.',
+                        ),
+                        SizedBox(
+                            height: context.rs(12).clamp(10, 14).toDouble()),
+                        _GroupFeatureRow(
+                          icon: Icons.visibility_outlined,
+                          title: isKo
+                              ? '공개할 사람을 간편하게 선택'
+                              : 'Choose who can see your content',
+                          description: isKo
+                              ? '포스트와 밋업을 만들 때 같은 그룹을 바로 사용해요.'
+                              : 'Reuse the same groups when creating posts and meetups.',
+                        ),
+                        SizedBox(
+                          height: context
+                              .rs(compact ? 16 : 22)
+                              .clamp(14, 24)
                               .toDouble(),
                         ),
                         SizedBox(
@@ -964,6 +1005,66 @@ class _FriendCategoriesScreenState extends State<FriendCategoriesScreen>
         Logger.error('⚠️ 알 수 없는 아이콘 이름: $iconName, 기본 아이콘 사용');
         return Icons.group;
     }
+  }
+}
+
+class _GroupFeatureRow extends StatelessWidget {
+  const _GroupFeatureRow({
+    required this.icon,
+    required this.title,
+    required this.description,
+  });
+
+  final IconData icon;
+  final String title;
+  final String description;
+
+  @override
+  Widget build(BuildContext context) {
+    return Row(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        SizedBox.square(
+          dimension: context.rh(32, min: 30, max: 34),
+          child: Icon(
+            icon,
+            color: const Color(0xFF475467),
+            size: context.ri(20).clamp(19, 22).toDouble(),
+          ),
+        ),
+        SizedBox(width: context.rs(10).clamp(8, 12).toDouble()),
+        Expanded(
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text(
+                title,
+                style: TextStyle(
+                  fontFamily: 'Inter',
+                  fontFamilyFallback: const ['NotoSansKR'],
+                  fontSize: context.rf(14).clamp(13, 15).toDouble(),
+                  fontWeight: FontWeight.w800,
+                  height: 1.3,
+                  color: const Color(0xFF111827),
+                ),
+              ),
+              SizedBox(height: context.rs(2).clamp(1, 3).toDouble()),
+              Text(
+                description,
+                style: TextStyle(
+                  fontFamily: 'Inter',
+                  fontFamilyFallback: const ['NotoSansKR'],
+                  fontSize: context.rf(12).clamp(11, 13).toDouble(),
+                  fontWeight: FontWeight.w500,
+                  height: 1.4,
+                  color: const Color(0xFF6B7280),
+                ),
+              ),
+            ],
+          ),
+        ),
+      ],
+    );
   }
 }
 

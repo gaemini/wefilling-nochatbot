@@ -3,6 +3,75 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:wefilling/ui/widgets/snack_chat_chrome.dart';
 
 void main() {
+  test('toolbar tracker respects reverse list visual direction and threshold',
+      () {
+    final tracker = SnackChatToolbarScrollTracker();
+
+    expect(
+      tracker.addUserDelta(
+        axisDirection: AxisDirection.up,
+        scrollDelta: -8,
+        outOfRange: false,
+        scrollableExtent: 400,
+      ),
+      isNull,
+    );
+    expect(
+      tracker.addUserDelta(
+        axisDirection: AxisDirection.up,
+        scrollDelta: -8,
+        outOfRange: false,
+        scrollableExtent: 400,
+      ),
+      isFalse,
+    );
+    expect(tracker.visible, isFalse);
+
+    expect(
+      tracker.addUserDelta(
+        axisDirection: AxisDirection.up,
+        scrollDelta: 16,
+        outOfRange: false,
+        scrollableExtent: 400,
+      ),
+      isTrue,
+    );
+    expect(tracker.visible, isTrue);
+  });
+
+  test('toolbar tracker ignores bounce and stays visible without scrolling',
+      () {
+    final tracker = SnackChatToolbarScrollTracker();
+    tracker.addUserDelta(
+      axisDirection: AxisDirection.down,
+      scrollDelta: 16,
+      outOfRange: false,
+      scrollableExtent: 400,
+    );
+    expect(tracker.visible, isFalse);
+
+    expect(
+      tracker.addUserDelta(
+        axisDirection: AxisDirection.down,
+        scrollDelta: -30,
+        outOfRange: true,
+        scrollableExtent: 400,
+      ),
+      isNull,
+    );
+    expect(tracker.visible, isFalse);
+    expect(
+      tracker.addUserDelta(
+        axisDirection: AxisDirection.down,
+        scrollDelta: 0,
+        outOfRange: false,
+        scrollableExtent: 0,
+      ),
+      isTrue,
+    );
+    expect(tracker.visible, isTrue);
+  });
+
   test('Snack Chat date labels are localized with the full calendar date', () {
     final date = DateTime(2026, 9, 3);
 

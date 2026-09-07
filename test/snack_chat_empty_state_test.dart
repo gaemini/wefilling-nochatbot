@@ -43,6 +43,7 @@ void main() {
     );
 
     expect(tester.takeException(), isNull);
+    expect(find.text('필요한 시간만 열어 두는 번역 채팅'), findsOneWidget);
     expect(find.text('첫 스낵챗 만들기'), findsOneWidget);
     expect(find.byKey(const Key('snack_chat_empty_create_button')),
         findsOneWidget);
@@ -62,8 +63,9 @@ void main() {
     );
 
     expect(tester.takeException(), isNull);
-    expect(find.text('시간을 정하는 채팅방'), findsOneWidget);
+    expect(find.text('대화 시간을 직접 선택'), findsOneWidget);
     expect(find.text('실시간 다국어 번역'), findsOneWidget);
+    expect(find.text('놓친 대화도 빠르게 정리'), findsOneWidget);
     expect(find.byType(Card), findsNothing);
   });
 }

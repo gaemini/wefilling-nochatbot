@@ -63,4 +63,34 @@ void main() {
     );
     expect(tester.takeException(), isNull);
   });
+
+  testWidgets('루마니아어를 선택할 수 있다', (tester) async {
+    String? selected;
+    await tester.pumpWidget(
+      MaterialApp(
+        locale: const Locale('ko'),
+        supportedLocales: const [Locale('ko'), Locale('en')],
+        localizationsDelegates: GlobalMaterialLocalizations.delegates,
+        home: Scaffold(
+          body: TranslationLanguageSheet(
+            selectedCode: 'ko',
+            onSelected: (code) async => selected = code,
+          ),
+        ),
+      ),
+    );
+
+    await tester.scrollUntilVisible(
+      find.byKey(const ValueKey('translation_language_ro')),
+      260,
+    );
+    await tester.tap(
+      find.byKey(const ValueKey('translation_language_ro')),
+    );
+    await tester.pump();
+
+    expect(find.text('Română'), findsOneWidget);
+    expect(selected, 'ro');
+    expect(tester.takeException(), isNull);
+  });
 }

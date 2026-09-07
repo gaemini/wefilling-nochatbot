@@ -10,6 +10,7 @@ import '../models/snapshot.dart';
 import '../services/dm_service.dart';
 import '../services/report_service.dart';
 import '../services/snapshot_service.dart';
+import '../services/notification_service.dart';
 import '../snapshot/snapshot_storage_image.dart';
 import '../snapshot/snapshot_strings.dart';
 import '../ui/snackbar/app_snackbar.dart';
@@ -189,6 +190,10 @@ class _SnapshotDetailScreenState extends State<SnapshotDetailScreen>
   void _recordCurrentView() {
     if (!mounted || _items.isEmpty) return;
     final item = _current;
+    unawaited(NotificationService().markRelatedNotificationsAsRead(
+      types: const <String>{'snapshot_reaction', 'snapshot_comment'},
+      targets: <String, String>{'snapshotId': item.id},
+    ));
     if (FirebaseAuth.instance.currentUser?.uid == item.authorId) return;
     unawaited(_service.recordView(item.id));
   }

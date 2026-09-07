@@ -10,6 +10,8 @@ import '../models/app_notification.dart';
 import '../models/meetup.dart';
 import 'notification_settings_service.dart';
 import 'content_filter_service.dart';
+import 'badge_service.dart';
+import 'fcm_service.dart';
 import '../utils/logger.dart';
 
 class NotificationService {
@@ -23,13 +25,15 @@ class NotificationService {
 
   // 모든 스트림 구독 정리
   void dispose() {
-    if (Logger.isVerboseEnabled) Logger.log(
-        'NotificationService: ${_activeSubscriptions.length}개 스트림 정리 중...');
+    if (Logger.isVerboseEnabled)
+      Logger.log(
+          'NotificationService: ${_activeSubscriptions.length}개 스트림 정리 중...');
     for (final subscription in _activeSubscriptions) {
       subscription.cancel();
     }
     _activeSubscriptions.clear();
-    if (Logger.isVerboseEnabled) Logger.log('NotificationService: 모든 스트림 정리 완료');
+    if (Logger.isVerboseEnabled)
+      Logger.log('NotificationService: 모든 스트림 정리 완료');
   }
 
   // 알림 생성
@@ -48,7 +52,8 @@ class NotificationService {
       // 알림 설정 확인 - 해당 유형의 알림이 비활성화되어 있으면 알림 생성 안 함
       final isEnabled = await _settingsService.isNotificationEnabled(type);
       if (!isEnabled) {
-        if (Logger.isVerboseEnabled) Logger.log('⚠️ 알림 유형 $type 비활성화됨: 알림 생성 건너뜀');
+        if (Logger.isVerboseEnabled)
+          Logger.log('⚠️ 알림 유형 $type 비활성화됨: 알림 생성 건너뜀');
         return false;
       }
 
@@ -68,7 +73,8 @@ class NotificationService {
 
       final docRef =
           await _firestore.collection('notifications').add(notificationData);
-      if (Logger.isVerboseEnabled) Logger.log('✅ 알림 생성 성공: $title (ID: ${docRef.id})');
+      if (Logger.isVerboseEnabled)
+        Logger.log('✅ 알림 생성 성공: $title (ID: ${docRef.id})');
       return true;
     } catch (e) {
       Logger.error('❌ 알림 생성 오류: $e');
@@ -378,12 +384,72 @@ class NotificationService {
       await _firestore.collection('notifications').doc(notificationId).update({
         'isRead': true,
       });
-      // 실시간 리스너가 자동으로 배지를 업데이트하므로 수동 호출 불필요
+      unawaited(FCMService().cancelAppNotification(notificationId));
+      unawaited(_refreshBadgeAfterRead());
       return true;
     } catch (e) {
       Logger.error('알림 읽음 처리 오류: $e');
       return false;
     }
+  }
+
+  /// Marks notifications as read when their destination is opened directly
+  /// from inside the app instead of through the push card.
+  Future<int> markRelatedNotificationsAsRead({
+    Set<String> types = const <String>{},
+    Map<String, String> targets = const <String, String>{},
+  }) async {
+    final user = _auth.currentUser;
+    final normalizedTargets = <String, String>{
+      for (final entry in targets.entries)
+        if (entry.value.trim().isNotEmpty) entry.key: entry.value.trim(),
+    };
+    if (user == null || (types.isEmpty && normalizedTargets.isEmpty)) return 0;
+
+    try {
+      final snapshot = await _firestore
+          .collection('notifications')
+          .where('userId', isEqualTo: user.uid)
+          .where('isRead', isEqualTo: false)
+          .limit(450)
+          .get();
+      final matches = snapshot.docs.where((document) {
+        final data = document.data();
+        final type = (data['type'] ?? '').toString();
+        if (types.isNotEmpty && !types.contains(type)) return false;
+        final nested = data['data'] is Map
+            ? Map<String, dynamic>.from(data['data'] as Map)
+            : const <String, dynamic>{};
+        return normalizedTargets.entries.every((target) {
+          final topLevel = (data[target.key] ?? '').toString().trim();
+          final nestedValue = (nested[target.key] ?? '').toString().trim();
+          return topLevel == target.value || nestedValue == target.value;
+        });
+      }).toList(growable: false);
+      if (matches.isEmpty) return 0;
+
+      final batch = _firestore.batch();
+      for (final document in matches) {
+        batch.update(document.reference, {'isRead': true});
+      }
+      await batch.commit();
+      for (final document in matches) {
+        unawaited(FCMService().cancelAppNotification(document.id));
+      }
+      unawaited(_refreshBadgeAfterRead());
+      return matches.length;
+    } catch (error, stackTrace) {
+      Logger.error('관련 알림 읽음 처리 실패', error, stackTrace);
+      return 0;
+    }
+  }
+
+  Future<void> _refreshBadgeAfterRead() async {
+    await BadgeService.refreshNow();
+    // The notification aggregate is maintained by a Firestore trigger. A
+    // second bounded refresh closes the short trigger/listener ordering gap.
+    await Future<void>.delayed(const Duration(milliseconds: 900));
+    await BadgeService.refreshNow();
   }
 
   // 모든 알림 읽음 상태로 변경
@@ -392,6 +458,7 @@ class NotificationService {
     if (user == null) return false;
 
     try {
+      final notificationIds = <String>[];
       // Firestore write batch 한도를 넘는 계정도 페이지 단위로 끝까지 처리한다.
       while (true) {
         final querySnapshot = await _firestore
@@ -405,12 +472,18 @@ class NotificationService {
         final batch = _firestore.batch();
         for (final doc in querySnapshot.docs) {
           batch.update(doc.reference, {'isRead': true});
+          notificationIds.add(doc.id);
         }
         await batch.commit();
         if (querySnapshot.docs.length < 450) break;
       }
 
-      // 실시간 리스너가 자동으로 배지를 업데이트하므로 수동 호출 불필요
+      // 알림 센터를 앱 안에서 열어 모두 읽은 경우에도 Android 알림 카드와
+      // 런처 배지를 즉시 정리한다. 푸시 카드를 눌렀는지 여부에 의존하지 않는다.
+      for (final notificationId in notificationIds) {
+        unawaited(FCMService().cancelAppNotification(notificationId));
+      }
+      unawaited(_refreshBadgeAfterRead());
       return true;
     } catch (e) {
       Logger.error('모든 알림 읽음 처리 오류: $e');
@@ -422,6 +495,8 @@ class NotificationService {
   Future<bool> deleteNotification(String notificationId) async {
     try {
       await _firestore.collection('notifications').doc(notificationId).delete();
+      unawaited(FCMService().cancelAppNotification(notificationId));
+      unawaited(_refreshBadgeAfterRead());
       return true;
     } catch (e) {
       Logger.error('알림 삭제 오류: $e');

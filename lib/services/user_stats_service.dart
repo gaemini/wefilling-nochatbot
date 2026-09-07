@@ -62,6 +62,14 @@ class UserStatsService {
     return UserProfileStats.fromMap(Map<String, dynamic>.from(raw));
   }
 
+  /// 마이페이지의 친구 수를 친구 목록과 동일한 서버 판정으로 확인한다.
+  /// 단순 friendship 문서 수는 탈퇴/비활성 프로필과 레거시 중복 관계를
+  /// 포함할 수 있으므로 프로필 통계 callable의 정제된 값을 사용한다.
+  Future<int> getLatestFriendCountForUser(String userId) async {
+    final stats = await getLatestProfileStatsForUser(userId);
+    return stats.friendCount;
+  }
+
   // 사용자가 주최한 모임 수 (후기 작성 완료된 모임만)
   Stream<int> getHostedMeetupCount() {
     final user = _auth.currentUser;

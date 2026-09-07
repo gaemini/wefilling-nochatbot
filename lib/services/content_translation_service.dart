@@ -10,6 +10,8 @@ import 'package:hive/hive.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
 import '../models/content_translation.dart';
+import '../utils/logger.dart';
+import '../utils/translation_source_hash_cache.dart';
 
 typedef ScopeTranslationLoader = Future<bool> Function();
 
@@ -19,6 +21,21 @@ String resolveAutomaticTranslationTarget({
 }) {
   if (uiLanguage.isNotEmpty) return uiLanguage;
   return 'en';
+}
+
+/// Callable 응답 순서가 요청 순서와 달라도 문서 ID로 결과를 연결한다.
+/// 잘못된 항목과 ID 없는 항목은 해당 요청의 missing-result 재시도 경로로
+/// 넘기기 위해 인덱스에서 제외한다.
+@visibleForTesting
+Map<String, Map<String, dynamic>> indexTranslationBatchResponseItems(
+  Object? rawItems,
+) {
+  if (rawItems is! List) return const <String, Map<String, dynamic>>{};
+  return <String, Map<String, dynamic>>{
+    for (final raw in rawItems.whereType<Map>())
+      if (raw['id'] != null && raw['id'].toString().trim().isNotEmpty)
+        raw['id'].toString(): Map<String, dynamic>.from(raw),
+  };
 }
 
 /// Gemini 번역의 단일 진입점입니다.
@@ -40,23 +57,27 @@ class ContentTranslationService extends ChangeNotifier {
   static const String _preferredNameKey = 'preferred_translation_language';
   static const String _preferredSourceKey =
       'preferred_translation_language_source';
-  static const int _translationVersion = 6;
-  static const int _promptVersion = 6;
+  static const int _translationVersion = 7;
+  static const int _promptVersion = 7;
   static const int _glossaryVersion = 1;
-  static const int _qualityPolicyVersion = 1;
+  static const int _qualityPolicyVersion = 2;
+  static const int _serverWireTranslationVersion = 6;
+  static const int _serverWirePromptVersion = 6;
+  static const int _serverWireQualityPolicyVersion = 1;
+  static const String _serverWireTranslationPolicyVersion =
+      '2026-08-context-quality-v6';
   static const String _baseModel = 'gemini-3.5-flash-lite';
   static const Set<String> _currentModels = <String>{
     'gemini-3.5-flash-lite',
     'gemini-3.5-flash',
     'same-language',
   };
-  static const String _translationPolicyVersion = '2026-08-context-quality-v6';
+  static const String _translationPolicyVersion = '2026-09-temporal-quality-v7';
   static const String _legacyV5TranslationPolicyVersion = '2026-08-faithful-v5';
   static const String _legacyV4TranslationPolicyVersion = '2026-08-faithful-v4';
   static const int _maxMemoryEntries = 500;
   static const int _maxPersistentEntries = 1500;
   static const int _persistentPruneTarget = 1350;
-  static const int _maxSourceChars = 12000;
   static const int _maxBatchSize = 5;
   static const int _maxConcurrentBatches = 2;
   static const int _maxAutomaticFailureRetries = 1;
@@ -73,11 +94,17 @@ class ContentTranslationService extends ChangeNotifier {
     r'|\bChIJ[A-Za-z0-9_\-]+\b'
     r'|(?:place[_ ]?id\s*[:=]\s*)[A-Za-z0-9_\-]+'
     r'|-?\d{1,3}\.\d+\s*[,/]\s*-?\d{1,3}\.\d+'
-    r'|\b\d{1,4}[./:\-]\d{1,2}(?:[./:\-]\d{1,4})?'
-    r'(?:\s*(?:AM|PM|오전|오후))?\b'
+    r'|(?<![\p{L}\p{N}])(?:\+\d{1,3}[ .\-]?)?'
+    r'\d{2,4}[\- ]\d{3,4}[\- ]\d{4}(?![\p{L}\p{N}])'
     r'|[$€£¥₩]\s?\d+(?:[.,]\d+)*'
-    r'|\+?\d[\d\s().\-]{5,}\d'
-    r'|\d+(?:[.,]\d+)*(?:\s?(?:%|원|달러|시|분|초))?'
+    r'|\d+(?:[.,]\d+)*\s?%'
+    r'|\d+(?:,\d{3})*(?:\.\d+)?'
+    r'(?=\s*(?:원|달러|유로|엔|위안|won|dollars?|euros?|yen|yuan))'
+    r'|\bv\d+(?:\.\d+){1,3}(?:[\-+][A-Za-z0-9.\-]+)?\b'
+    r'|\b[\p{L}\p{N}][\p{L}\p{N}_.\-]*\.'
+    r'(?:pdf|docx?|xlsx?|pptx?|zip|png|jpe?g|gif|webp|heic|mp4|mov|txt|csv)\b'
+    r'|\b(?=[A-Za-z0-9_\-]{4,}\b)(?=[A-Za-z0-9_\-]*[A-Za-z])'
+    r'(?=[A-Za-z0-9_\-]*\d)[A-Za-z0-9]+(?:[_\-][A-Za-z0-9]+)*\b'
     r'|(?:[\u{1F1E6}-\u{1F1FF}]{2}|'
     r'[\u{1F300}-\u{1FAFF}\u{2600}-\u{27BF}]'
     r'(?:[\u{FE0E}\u{FE0F}])?(?:[\u{1F3FB}-\u{1F3FF}])?'
@@ -125,6 +152,7 @@ class ContentTranslationService extends ChangeNotifier {
     'ru': 'Русский',
     'pt': 'Português',
     'it': 'Italiano',
+    'ro': 'Română',
     'ar': 'العربية',
     'hi': 'हिन्दी',
     'th': 'ไทย',
@@ -173,8 +201,42 @@ class ContentTranslationService extends ChangeNotifier {
   int _requestGeneration = 0;
   int _activeBatchCount = 0;
   int _persistentWritesSincePrune = 0;
+  final TranslationSourceHashCache _sourceHashes = TranslationSourceHashCache();
+  bool _resultNotificationScheduled = false;
+  int _resultsRevision = 0;
+  int _queueSequence = 0;
+  int _batchSequence = 0;
 
   int get languageRevision => _languageRevision;
+  int get resultsRevision => _resultsRevision;
+
+  @visibleForTesting
+  Map<String, int> get debugQueueSnapshot => {
+        'queued': _queue.length,
+        'pending': _pending.length,
+        'activeBatches': _activeBatchCount,
+        'scheduled': _flushTimer == null ? 0 : 1,
+      };
+
+  @visibleForTesting
+  List<String> get debugQueueInvariantViolations {
+    final issues = <String>[];
+    if (_activeBatchCount < 0 || _activeBatchCount > _maxConcurrentBatches) {
+      issues.add('batch_capacity_invalid');
+    }
+    for (final entry in _queue.entries) {
+      if (entry.value.state != TranslationItemState.queued) {
+        issues.add('queue_state_invalid');
+      }
+      if (!identical(_pending[entry.key], entry.value)) {
+        issues.add('queue_without_pending');
+      }
+    }
+    if (_queue.isNotEmpty && _activeBatchCount == 0 && _flushTimer == null) {
+      issues.add('queue_without_scheduler');
+    }
+    return issues;
+  }
 
   String _accountPreferenceKey(String base) {
     final uid = _auth.currentUser?.uid ?? 'signed_out';
@@ -228,6 +290,7 @@ class ContentTranslationService extends ChangeNotifier {
           'russian': 'ru',
           'portuguese': 'pt',
           'italian': 'it',
+          'romanian': 'ro',
           'arabic': 'ar',
           'hindi': 'hi',
           'thai': 'th',
@@ -243,18 +306,8 @@ class ContentTranslationService extends ChangeNotifier {
         '';
   }
 
-  String _sourceHash(Map<String, String> fields) {
-    final keys = fields.keys.toList(growable: false)..sort();
-    final canonical = keys.map((key) {
-      final normalized =
-          fields[key]!.replaceAll('\r\n', '\n').replaceAll('\r', '\n');
-      final bounded = normalized.length <= _maxSourceChars
-          ? normalized
-          : normalized.substring(0, _maxSourceChars);
-      return '$key\u0000$bounded';
-    }).join('\u0001');
-    return sha256.convert(utf8.encode(canonical)).toString();
-  }
+  String _sourceHash(Map<String, String> fields) =>
+      _sourceHashes.hashFor(fields);
 
   /// 서버의 same-language 판정과 같은 방향이지만 더 높은 script 비율을
   /// 요구한다. 혼합 언어는 서버가 문맥을 보고 판단하도록 false로 남긴다.
@@ -367,6 +420,18 @@ class ContentTranslationService extends ChangeNotifier {
         'per',
         'che',
         'un',
+      },
+      'ro': <String>{
+        'și',
+        'este',
+        'sunt',
+        'acest',
+        'această',
+        'cu',
+        'pentru',
+        'bună',
+        'mulțumesc',
+        'că',
       },
       'tr': <String>{
         'bir',
@@ -498,13 +563,21 @@ class ContentTranslationService extends ChangeNotifier {
     required String sourceHash,
     required String targetLanguage,
   }) {
+    final hasCurrentLocalMetadata =
+        result.translationVersion == _translationVersion &&
+            result.promptVersion == _promptVersion &&
+            result.translationPolicyVersion == _translationPolicyVersion &&
+            result.qualityPolicyVersion == _qualityPolicyVersion;
+    final hasCompatibleServerMetadata =
+        result.translationVersion == _serverWireTranslationVersion &&
+            result.promptVersion == _serverWirePromptVersion &&
+            result.translationPolicyVersion ==
+                _serverWireTranslationPolicyVersion &&
+            result.qualityPolicyVersion == _serverWireQualityPolicyVersion;
     return result.sourceHash == sourceHash &&
         result.targetLanguage == targetLanguage &&
-        result.translationVersion == _translationVersion &&
-        result.promptVersion == _promptVersion &&
-        result.translationPolicyVersion == _translationPolicyVersion &&
+        (hasCurrentLocalMetadata || hasCompatibleServerMetadata) &&
         result.glossaryVersion == _glossaryVersion &&
-        result.qualityPolicyVersion == _qualityPolicyVersion &&
         result.sourceIntent.isNotEmpty &&
         result.contextHash.isNotEmpty &&
         _currentModels.contains(result.modelUsed);
@@ -529,7 +602,42 @@ class ContentTranslationService extends ChangeNotifier {
     ContentTranslationRequest request,
     String sourceHash,
     String targetLanguage,
-  ) {}
+  ) {
+    // 원문·사용자 ID·문서 ID는 기록하지 않는다. 문제 재현 빌드에서만
+    // 항목이 cache/queue/batch 중 어디까지 갔는지 안전한 hash로 추적한다.
+    if (!Logger.isVerboseEnabled) return;
+    final contentIdHash = sha256
+        .convert(utf8.encode(request.serverId))
+        .toString()
+        .substring(0, 12);
+    final parentId = (request.parentId ?? '').trim();
+    final parentIdHash = parentId.isEmpty
+        ? ''
+        : sha256.convert(utf8.encode(parentId)).toString().substring(0, 12);
+    _QueuedTranslation? item;
+    for (final pending in _pending.values) {
+      if (pending.request.serverId == request.serverId &&
+          pending.sourceHash == sourceHash) {
+        item = pending;
+        break;
+      }
+    }
+    debugPrint(jsonEncode(<String, Object>{
+      'event': 'content_translation_item',
+      'stage': reason,
+      'contentType': request.contentType,
+      'contentIdHash': contentIdHash,
+      if (parentIdHash.isNotEmpty) 'parentIdHash': parentIdHash,
+      'targetLanguage': targetLanguage,
+      'sourceHash': sourceHash.substring(0, 12),
+      if (item != null) ...{
+        'state': item.state.name,
+        'batchId': item.batchId,
+        'retryAttempt': item.failureRetryCount,
+        'pendingProbe': item.pendingRetryCount,
+      },
+    }));
+  }
 
   int _metadataInt(dynamic value) {
     if (value is int) return value;
@@ -772,11 +880,8 @@ class ContentTranslationService extends ChangeNotifier {
       _blockedFailures.values.any((failure) => failure.scopes.contains(scope));
 
   bool canRetryScope(String scope) {
-    final now = DateTime.now();
     return _blockedFailures.values.any(
-      (failure) =>
-          failure.scopes.contains(scope) &&
-          !now.isBefore(failure.manualRetryAt),
+      (failure) => failure.scopes.contains(scope),
     );
   }
 
@@ -815,6 +920,48 @@ class ContentTranslationService extends ChangeNotifier {
       return null;
     }
     return result;
+  }
+
+  /// Failed outcomes are observable by lazy widgets too, but never become
+  /// successful cache entries. Source/account/language checks stay isolated.
+  ContentTranslationResult? latestOutcomeFor(
+      ContentTranslationRequest request) {
+    final ready = latestResultFor(request);
+    if (ready != null) return ready;
+    final hash = _sourceHash(request.sourceFields);
+    for (final failure in _blockedFailures.values) {
+      if (failure.result.sourceHash == hash &&
+          failure.requestIdentity ==
+              _failureIdentity(request, failure.result.targetLanguage)) {
+        return failure.result;
+      }
+    }
+    return null;
+  }
+
+  TranslationItemState? activeStateFor(ContentTranslationRequest request) {
+    final hash = _sourceHash(request.sourceFields);
+    for (final pending in _pending.values) {
+      if (pending.request.serverId == request.serverId &&
+          pending.sourceHash == hash) {
+        return pending.state;
+      }
+    }
+    return null;
+  }
+
+  /// Promote existing work when it becomes visible; never remove/re-enqueue it.
+  void prioritizeRequest(
+      ContentTranslationRequest request, TranslationRequestPriority priority) {
+    final hash = _sourceHash(request.sourceFields);
+    for (final queued in _queue.values) {
+      if (queued.request.serverId == request.serverId &&
+          queued.sourceHash == hash &&
+          priority.index < queued.priority.index) {
+        queued.priority = priority;
+      }
+    }
+    _scheduleFlush();
   }
 
   /// 화면 재진입 시 저장된 번역만 한 번에 복원합니다.
@@ -885,7 +1032,10 @@ class ContentTranslationService extends ChangeNotifier {
         latestChanged = true;
       }
     }
-    if (latestChanged) notifyListeners();
+    if (latestChanged) {
+      _resultsRevision++;
+      _notifyResultsChanged();
+    }
     return results;
   }
 
@@ -920,8 +1070,8 @@ class ContentTranslationService extends ChangeNotifier {
     if (loaders?.isEmpty ?? false) _scopeLoaders.remove(scope);
   }
 
-  /// 이미 화면에 장착된 콘텐츠 로더만 실행한다. 피드 coordinator가 실제
-  /// 가시 카드를 확인한 뒤 호출하므로 화면 밖 카드나 다른 탭을 번역하지 않는다.
+  /// 이미 화면에 장착된 콘텐츠 로더를 실행한다(상세/수동 재시도용).
+  /// 피드의 자동 번역은 카드 build와 무관하게 loaded-data registry가 등록한다.
   Future<bool> loadAttachedScope(
     String scope, {
     bool retryBlockedFailure = false,
@@ -989,7 +1139,7 @@ class ContentTranslationService extends ChangeNotifier {
         _scopeSourceLanguages.remove(scope) != null) {
       changed = true;
     }
-    if (changed) notifyListeners();
+    if (changed) _notifyResultsChanged();
   }
 
   /// 페이지 coordinator가 전체 항목이 same-language임을 확인했을 때 사용한다.
@@ -1140,9 +1290,13 @@ class ContentTranslationService extends ChangeNotifier {
     String? uiLanguageCode,
     String? scope,
     bool manualRetry = false,
+    bool userInitiatedRetry = false,
+    TranslationRequestPriority priority =
+        TranslationRequestPriority.interactive,
   }) async {
-    final isManualRetry =
-        manualRetry || Zone.current[_manualRetryZoneKey] == true;
+    final retryFromUserAction =
+        userInitiatedRetry || Zone.current[_manualRetryZoneKey] == true;
+    final isManualRetry = manualRetry || retryFromUserAction;
     final generation = _requestGeneration;
     final target = await targetLanguage(uiLanguageCode: uiLanguageCode);
     if (generation != _requestGeneration) return null;
@@ -1212,6 +1366,9 @@ class ContentTranslationService extends ChangeNotifier {
     // 카드/상세/실시간 메시지가 같은 번역을 동시에 중복 요청하지 않게 한다.
     final existing = _pending[key];
     if (existing != null) {
+      if (priority.index < existing.priority.index) {
+        existing.priority = priority;
+      }
       if (scope != null && scope.isNotEmpty) existing.scopes.add(scope);
       _debugTranslationState('inFlight', request, hash, target);
       return existing.completer.future;
@@ -1222,8 +1379,12 @@ class ContentTranslationService extends ChangeNotifier {
       if (scope != null && scope.isNotEmpty) {
         blockedFailure.scopes.add(scope);
       }
+      // 화면의 명시적인 '다시 번역' 탭은 이 요청 하나에만 적용된다. 방 안의
+      // 다른 실패나 이전 cooldown 결과를 그대로 반환하지 않고 실제 큐에 다시
+      // 넣는다. 자동/범위 재시도는 기존 cooldown을 유지해 비용을 제한한다.
       if (!isManualRetry ||
-          DateTime.now().isBefore(blockedFailure.manualRetryAt)) {
+          (!retryFromUserAction &&
+              DateTime.now().isBefore(blockedFailure.manualRetryAt))) {
         _debugTranslationState(
           blockedFailure.result.isRetryableFailure
               ? 'transientFailure'
@@ -1243,9 +1404,13 @@ class ContentTranslationService extends ChangeNotifier {
       sourceHash: hash,
       generation: generation,
       scopes: <String>{if (scope != null && scope.isNotEmpty) scope},
+      priority: priority,
+      sequence: _queueSequence++,
+      forceRetry: retryFromUserAction,
     );
     _pending[key] = queued;
     _queue[key] = queued;
+    _debugTranslationState('queued', request, hash, target);
     _scheduleFlush();
     return queued.completer.future;
   }
@@ -1265,7 +1430,20 @@ class ContentTranslationService extends ChangeNotifier {
     final key = _latestResultKey(request, sourceHash);
     if (identical(_latestResults[key], result)) return;
     _latestResults[key] = result;
-    notifyListeners();
+    _resultsRevision++;
+    _notifyResultsChanged();
+  }
+
+  // Five results arriving together should wake mounted widgets once. State is
+  // committed synchronously; only the notification is combined, within the
+  // same event-loop turn. Language/account changes still notify immediately.
+  void _notifyResultsChanged() {
+    if (_resultNotificationScheduled) return;
+    _resultNotificationScheduled = true;
+    scheduleMicrotask(() {
+      _resultNotificationScheduled = false;
+      notifyListeners();
+    });
   }
 
   bool _hasCompleteFields(
@@ -1348,6 +1526,8 @@ class ContentTranslationService extends ChangeNotifier {
       ),
     );
     _blockedFailures[key] = failure;
+    _resultsRevision++;
+    _notifyResultsChanged();
     Timer(_manualRetryCooldown, () {
       if (identical(_blockedFailures[key], failure)) notifyListeners();
     });
@@ -1365,21 +1545,35 @@ class ContentTranslationService extends ChangeNotifier {
       return false;
     }
     queued.failureRetryCount++;
+    queued.state = TranslationItemState.failedRetryable;
     queued.pendingRetryCount = 0;
     if (errorCode == 'missing_server_response') {
       // A missing sibling must be retried alone so another malformed batch
       // item cannot keep suppressing the same response.
       queued.forceSingleItemRetry = true;
     }
-    final baseMilliseconds = errorCode == 'provider_unavailable' ? 15000 : 1800;
+    final baseMilliseconds = const {
+      'provider_unavailable',
+      'resource-exhausted',
+      'too-many-requests',
+    }.contains(errorCode)
+        ? 15000
+        : 1800;
     final jitter = queued.sourceHash.codeUnits.fold<int>(
           0,
           (value, unit) => (value + unit) % 401,
         ) -
         200;
     final delay = Duration(milliseconds: baseMilliseconds + jitter);
+    _debugTranslationState(
+      'retryScheduled:$errorCode:${queued.failureRetryCount}',
+      queued.request,
+      queued.sourceHash,
+      queued.targetLanguage,
+    );
     Timer(delay, () {
       if (!_isActive(key, queued)) return;
+      queued.state = TranslationItemState.queued;
       _queue[key] = queued;
       _scheduleFlush();
     });
@@ -1389,6 +1583,17 @@ class ContentTranslationService extends ChangeNotifier {
   bool _isRetryableFailureCode(String errorCode) {
     const retryableCodes = <String>{
       'quality_validation_failed',
+      'missing_result',
+      'id_mismatch',
+      'invalid_source_language',
+      'coverage_incomplete',
+      'missing_translations',
+      'field_mismatch',
+      'semantic_or_structure_guard',
+      'strict_metadata_guard',
+      'UNTRANSLATED_TEMPORAL_UNIT',
+      'TEMPORAL_VALUE_MISMATCH',
+      'TEMPORAL_DAY_PERIOD_MISMATCH',
       'translation_failed',
       'provider_unavailable',
       'missing_server_response',
@@ -1416,8 +1621,10 @@ class ContentTranslationService extends ChangeNotifier {
       return false;
     }
     final delay = _pendingRetryDelays[queued.pendingRetryCount++];
+    queued.state = TranslationItemState.failedRetryable;
     Timer(delay, () {
       if (!_isActive(key, queued)) return;
+      queued.state = TranslationItemState.queued;
       _queue[key] = queued;
       _scheduleFlush();
     });
@@ -1438,11 +1645,27 @@ class ContentTranslationService extends ChangeNotifier {
   Future<void> _flushQueue() async {
     _flushTimer = null;
     if (_queue.isEmpty || _activeBatchCount >= _maxConcurrentBatches) return;
-    final firstEntry = _queue.entries.first;
+    final ordered = _queue.entries.toList()
+      ..sort((a, b) {
+        final priority =
+            a.value.priority.index.compareTo(b.value.priority.index);
+        return priority != 0
+            ? priority
+            : a.value.sequence.compareTo(b.value.sequence);
+      });
+    // Every third dispatch reserves its first slot for the oldest request.
+    // Visible work stays first normally, without starving loaded background
+    // posts or another content type under a continuous stream of new requests.
+    final firstEntry = ++_batchSequence % 3 == 0
+        ? ordered.reduce((a, b) => a.value.sequence < b.value.sequence ? a : b)
+        : ordered.first;
     final firstTarget = firstEntry.value.targetLanguage;
     final batchEntries = firstEntry.value.forceSingleItemRetry
         ? <MapEntry<String, _QueuedTranslation>>[firstEntry]
-        : _queue.entries
+        : <MapEntry<String, _QueuedTranslation>>[
+            firstEntry,
+            ...ordered.where((entry) => entry.key != firstEntry.key),
+          ]
             .where(
               (entry) =>
                   entry.value.targetLanguage == firstTarget &&
@@ -1452,33 +1675,59 @@ class ContentTranslationService extends ChangeNotifier {
             .toList(growable: false);
     for (final entry in batchEntries) {
       _queue.remove(entry.key);
+      entry.value.state = TranslationItemState.loading;
+      entry.value.batchId = _batchSequence;
     }
     _activeBatchCount++;
     // 큰 댓글 목록도 첫 다섯 개가 끝날 때까지 기다리지 않고, 최대 두 배치만
     // 병렬로 처리해 지연과 순간 호출량을 함께 제한한다.
     _scheduleFlush();
 
+    for (final entry in batchEntries) {
+      final queued = entry.value;
+      _debugTranslationState(
+        'batchSent',
+        queued.request,
+        queued.sourceHash,
+        queued.targetLanguage,
+      );
+    }
+
     try {
       final callable = _functions.httpsCallable('translateContentBatch');
       final response = await callable.call(<String, dynamic>{
         'targetLanguage': firstTarget,
-        'items': batchEntries
-            .map((entry) => entry.value.request.toCallableMap())
-            .toList(growable: false),
-      });
+        'items': batchEntries.map((entry) {
+          final item = entry.value.request.toCallableMap();
+          if (entry.value.forceRetry) item['forceRetry'] = true;
+          return item;
+        }).toList(growable: false),
+      }).timeout(const Duration(seconds: 70));
       final data = response.data is Map
           ? Map<String, dynamic>.from(response.data as Map)
           : const <String, dynamic>{};
-      final rawItems = data['items'] is List ? data['items'] as List : const [];
-      final byId = <String, Map<String, dynamic>>{
-        for (final raw in rawItems.whereType<Map>())
-          if (raw['id'] != null)
-            raw['id'].toString(): Map<String, dynamic>.from(raw),
-      };
+      final byId = indexTranslationBatchResponseItems(data['items']);
+      if (Logger.isVerboseEnabled) {
+        final expected =
+            batchEntries.map((entry) => entry.value.request.serverId).toSet();
+        final unknownCount =
+            byId.keys.where((id) => !expected.contains(id)).length;
+        if (unknownCount > 0) {
+          debugPrint(jsonEncode({
+            'event': 'translation_unexpected_response_ids',
+            'batchId': batchEntries.first.value.batchId,
+            'count': unknownCount
+          }));
+        }
+      }
       for (final entry in batchEntries) {
         final key = entry.key;
         final queued = entry.value;
-        if (!_isActive(key, queued)) continue;
+        if (!_isActive(key, queued)) {
+          _debugTranslationState('staleResponseIgnored', queued.request,
+              queued.sourceHash, queued.targetLanguage);
+          continue;
+        }
         final raw = byId[queued.request.serverId];
         if (raw == null) {
           _debugTranslationState(
@@ -1497,6 +1746,12 @@ class ContentTranslationService extends ChangeNotifier {
           continue;
         }
         final status = raw['status']?.toString() ?? 'failed';
+        _debugTranslationState(
+          'serverReturned:$status',
+          queued.request,
+          queued.sourceHash,
+          queued.targetLanguage,
+        );
         if (status == 'pending') {
           _schedulePendingRetry(key, queued);
           continue;
@@ -1584,8 +1839,11 @@ class ContentTranslationService extends ChangeNotifier {
       }
     } catch (error) {
       for (final entry in batchEntries) {
-        final errorCode =
-            error is FirebaseFunctionsException ? error.code : 'network_error';
+        final errorCode = error is FirebaseFunctionsException
+            ? error.code
+            : error is TimeoutException
+                ? 'timeout'
+                : 'network_error';
         if (!_scheduleFailureRetry(entry.key, entry.value, errorCode)) {
           _completeFailure(entry.key, entry.value, errorCode);
         }
@@ -1593,6 +1851,17 @@ class ContentTranslationService extends ChangeNotifier {
     } finally {
       _activeBatchCount--;
       _scheduleFlush();
+      assert(() {
+        final violations = debugQueueInvariantViolations;
+        if (violations.isNotEmpty) {
+          debugPrint(jsonEncode({
+            'event': 'translation_queue_invariant',
+            'violations': violations,
+            ...debugQueueSnapshot
+          }));
+        }
+        return true;
+      }());
     }
   }
 
@@ -1631,6 +1900,9 @@ class _QueuedTranslation {
     required this.sourceHash,
     required this.generation,
     required this.scopes,
+    required this.priority,
+    required this.sequence,
+    required this.forceRetry,
   });
 
   final ContentTranslationRequest request;
@@ -1638,9 +1910,14 @@ class _QueuedTranslation {
   final String sourceHash;
   final int generation;
   final Set<String> scopes;
+  final int sequence;
+  TranslationRequestPriority priority;
+  TranslationItemState state = TranslationItemState.queued;
   int pendingRetryCount = 0;
   int failureRetryCount = 0;
+  int batchId = 0;
   bool forceSingleItemRetry = false;
+  final bool forceRetry;
   final Completer<ContentTranslationResult?> completer =
       Completer<ContentTranslationResult?>();
 }

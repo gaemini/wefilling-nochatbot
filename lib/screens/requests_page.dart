@@ -2,6 +2,8 @@
 // 친구요청 관리 화면
 // 받은 요청과 보낸 요청을 탭으로 구분하여 표시
 
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import '../providers/relationship_provider.dart';
@@ -11,6 +13,8 @@ import '../models/user_profile.dart';
 import '../design/tokens.dart';
 import '../l10n/app_localizations.dart';
 import '../utils/responsive_helper.dart';
+import '../services/notification_service.dart';
+import '../widgets/relationship_action_button.dart';
 
 class RequestsPage extends StatefulWidget {
   const RequestsPage({super.key});
@@ -27,6 +31,9 @@ class _RequestsPageState extends State<RequestsPage>
   @override
   void initState() {
     super.initState();
+    unawaited(NotificationService().markRelatedNotificationsAsRead(
+      types: const <String>{'friend_request', 'friend_request_accepted'},
+    ));
     _tabController = TabController(length: 2, vsync: this);
     WidgetsBinding.instance.addPostFrameCallback((_) {
       // AuthProvider 연결
@@ -56,6 +63,12 @@ class _RequestsPageState extends State<RequestsPage>
     });
   }
 
+  Future<void> _retryData() async {
+    final provider = context.read<RelationshipProvider>();
+    provider.clearError();
+    await provider.initialize();
+  }
+
   /// 친구요청 수락
   Future<void> _acceptRequest(String fromUid) async {
     if (!mounted) return;
@@ -68,7 +81,8 @@ class _RequestsPageState extends State<RequestsPage>
         _showSnackBar(AppLocalizations.of(context)!.friendRequestAccepted);
       } else {
         _showSnackBar(
-          AppLocalizations.of(context)!.friendRequestAcceptFailed,
+          provider.actionErrorMessage ??
+              AppLocalizations.of(context)!.friendRequestAcceptFailed,
         );
       }
     }
@@ -92,7 +106,8 @@ class _RequestsPageState extends State<RequestsPage>
           _showSnackBar(AppLocalizations.of(context)!.friendRequestRejected);
         } else {
           _showSnackBar(
-            AppLocalizations.of(context)!.friendRequestRejectFailed,
+            provider.actionErrorMessage ??
+                AppLocalizations.of(context)!.friendRequestRejectFailed,
           );
         }
       }
@@ -461,7 +476,17 @@ class _RequestsPageState extends State<RequestsPage>
                       ),
                     ),
                     const SizedBox(width: 4),
-                    Row(mainAxisSize: MainAxisSize.min, children: actions),
+                    Row(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        for (var index = 0;
+                            index < actions.length;
+                            index++) ...[
+                          if (index > 0) const SizedBox(width: 6),
+                          actions[index],
+                        ],
+                      ],
+                    ),
                   ],
                 ),
               ),
@@ -514,27 +539,12 @@ class _RequestsPageState extends State<RequestsPage>
     required VoidCallback onPressed,
     bool secondary = false,
   }) {
-    return TextButton(
+    return RelationshipActionButton(
+      label: label,
       onPressed: onPressed,
-      style: TextButton.styleFrom(
-        foregroundColor:
-            secondary ? const Color(0xFF667085) : const Color(0xFF111827),
-        minimumSize: const Size(44, 40),
-        padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 6),
-        tapTargetSize: MaterialTapTargetSize.shrinkWrap,
-        visualDensity: VisualDensity.compact,
-      ),
-      child: Text(
-        label,
-        maxLines: 1,
-        overflow: TextOverflow.ellipsis,
-        style: TextStyle(
-          fontFamily: 'Inter',
-          fontFamilyFallback: const ['NotoSansKR'],
-          fontSize: 12,
-          fontWeight: secondary ? FontWeight.w600 : FontWeight.w700,
-        ),
-      ),
+      tone: secondary
+          ? RelationshipActionButtonTone.neutral
+          : RelationshipActionButtonTone.primary,
     );
   }
 
@@ -658,7 +668,7 @@ class _RequestsPageState extends State<RequestsPage>
             const SizedBox(height: 8),
             TextButton(
               onPressed: () {
-                context.read<RelationshipProvider>().clearError();
+                unawaited(_retryData());
               },
               style: TextButton.styleFrom(
                 foregroundColor: const Color(0xFF344054),

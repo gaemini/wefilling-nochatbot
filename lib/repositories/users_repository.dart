@@ -11,6 +11,7 @@ import 'package:flutter/foundation.dart';
 import '../models/user_profile.dart';
 import '../models/relationship_status.dart';
 import '../models/friend_request.dart';
+import '../services/content_filter_service.dart';
 import '../services/firebase_app_check_service.dart';
 import '../utils/logger.dart';
 import '../utils/account_status_helper.dart';
@@ -24,6 +25,18 @@ class SnackChatUserSearchPage {
 
   final List<UserProfile> users;
   final String? nextCursor;
+}
+
+class InterestUserSearchPage {
+  const InterestUserSearchPage({
+    required this.users,
+    required this.hasMore,
+    this.nextCursor,
+  });
+
+  final List<UserProfile> users;
+  final String? nextCursor;
+  final bool hasMore;
 }
 
 /// Applies Snack Chat room exclusions before computing a result page.
@@ -99,6 +112,68 @@ List<List<String>> buildUserProfileQueryBatches(
   ];
 }
 
+/// 친구 관계 문서에 저장된 생성 시각을 기준으로 최신 친구 UID를 먼저
+/// 반환한다. Firestore 쿼리에 orderBy를 추가하지 않아 복합 인덱스와 추가
+/// 읽기 비용 없이 기존 스냅샷만 사용한다.
+///
+/// 레거시 문서처럼 createdAt이 없으면 목록의 뒤로 보내고, 잘못된 UID와
+/// 중복 관계는 제거한다. 같은 상대의 중복 문서가 있으면 가장 최근 관계만
+/// 정렬 기준으로 사용한다.
+@visibleForTesting
+List<String> buildNewestFriendIdOrder(
+  Iterable<Map<String, dynamic>> relationships, {
+  required String ownerUid,
+}) {
+  final normalizedOwnerUid = ownerUid.trim();
+  if (normalizedOwnerUid.isEmpty) return const <String>[];
+
+  final newestByUid = <String, ({int createdAtMillis, String tieBreaker})>{};
+  for (final relationship in relationships) {
+    final rawUids = relationship['uids'];
+    if (rawUids is! Iterable) continue;
+    final uids = rawUids
+        .map((value) => value?.toString().trim() ?? '')
+        .where((uid) => uid.isNotEmpty)
+        .toSet();
+    if (!uids.contains(normalizedOwnerUid)) continue;
+
+    final createdAt = relationship['createdAt'];
+    final createdAtMillis = switch (createdAt) {
+      Timestamp value => value.millisecondsSinceEpoch,
+      DateTime value => value.millisecondsSinceEpoch,
+      num value => value.toInt(),
+      _ => 0,
+    };
+    final documentId = relationship['_documentId']?.toString() ?? '';
+    for (final uid in uids) {
+      if (uid == normalizedOwnerUid) continue;
+      final candidate = (
+        createdAtMillis: createdAtMillis,
+        tieBreaker: documentId,
+      );
+      final existing = newestByUid[uid];
+      if (existing == null ||
+          candidate.createdAtMillis > existing.createdAtMillis ||
+          (candidate.createdAtMillis == existing.createdAtMillis &&
+              candidate.tieBreaker.compareTo(existing.tieBreaker) > 0)) {
+        newestByUid[uid] = candidate;
+      }
+    }
+  }
+
+  final ordered = newestByUid.entries.toList(growable: false)
+    ..sort((left, right) {
+      final byTime =
+          right.value.createdAtMillis.compareTo(left.value.createdAtMillis);
+      if (byTime != 0) return byTime;
+      final byDocument =
+          right.value.tieBreaker.compareTo(left.value.tieBreaker);
+      if (byDocument != 0) return byDocument;
+      return left.key.compareTo(right.key);
+    });
+  return ordered.map((entry) => entry.key).toList(growable: false);
+}
+
 class _SnackChatUserSearchCacheEntry {
   const _SnackChatUserSearchCacheEntry({
     required this.users,
@@ -106,6 +181,16 @@ class _SnackChatUserSearchCacheEntry {
   });
 
   final List<UserProfile> users;
+  final DateTime cachedAt;
+}
+
+class _InterestUserSearchCacheEntry {
+  const _InterestUserSearchCacheEntry({
+    required this.page,
+    required this.cachedAt,
+  });
+
+  final InterestUserSearchPage page;
   final DateTime cachedAt;
 }
 
@@ -130,7 +215,10 @@ class UsersRepository {
   static int _profileCacheGeneration = 0;
   static final Map<String, _SnackChatUserSearchCacheEntry>
       _snackChatSearchCache = {};
+  static final Map<String, _InterestUserSearchCacheEntry> _interestSearchCache =
+      {};
   static const Duration _snackChatSearchCacheExpiry = Duration(minutes: 1);
+  static const Duration _interestSearchCacheExpiry = Duration(minutes: 1);
 
   /// 현재 로그인한 사용자 ID 가져오기
   String? get currentUserId => _auth.currentUser?.uid;
@@ -347,7 +435,10 @@ class UsersRepository {
           _profileCacheGeneration == generation;
       final cachedAt = DateTime.now();
       for (final doc in snapshot.docs) {
-        if (!doc.exists || isUnavailableUserAccountData(doc.data())) continue;
+        if (!doc.exists ||
+            !isSearchableUserAccountData(doc.data(), uid: doc.id)) {
+          continue;
+        }
         final profile = UserProfile.fromFirestore(doc);
         profilesById[doc.id] = profile;
         if (canWriteCache) {
@@ -418,7 +509,12 @@ class UsersRepository {
     _profileCacheOwnerUid = currentUserId;
     _profileCacheGeneration += 1;
     _snackChatSearchCache.clear();
+    _interestSearchCache.clear();
     if (Logger.isVerboseEnabled) Logger.log('🗑️ 프로필 캐시 초기화');
+  }
+
+  void clearInterestSearchCache() {
+    _interestSearchCache.clear();
   }
 
   /// 특정 사용자 캐시 무효화
@@ -494,6 +590,196 @@ class UsersRepository {
     }
   }
 
+  /// 공식 프로필 관심사 ID로 사용자 후보를 커서 기반 조회한다.
+  Future<InterestUserSearchPage> searchUsersByInterest(
+    String interestId, {
+    String? cursor,
+    int limit = 20,
+  }) async {
+    final currentUid = currentUserId;
+    final normalizedInterest = interestId.trim().toLowerCase();
+    final normalizedCursor = cursor?.trim() ?? '';
+    if (currentUid == null || normalizedInterest.isEmpty) {
+      return const InterestUserSearchPage(
+        users: <UserProfile>[],
+        hasMore: false,
+      );
+    }
+
+    _interestSearchCache.removeWhere(
+      (_, entry) =>
+          DateTime.now().difference(entry.cachedAt) >=
+          _interestSearchCacheExpiry,
+    );
+    const searchPolicyVersion = 'v2';
+    final cacheKey =
+        '$searchPolicyVersion::$currentUid::$normalizedInterest::$normalizedCursor';
+    final cached = _interestSearchCache[cacheKey];
+    if (cached != null &&
+        DateTime.now().difference(cached.cachedAt) <
+            _interestSearchCacheExpiry) {
+      return cached.page;
+    }
+
+    late final InterestUserSearchPage page;
+    try {
+      await FirebaseAppCheckService.instance.ensureReady();
+      final response = await _functions
+          .httpsCallable('searchSocialUsersByInterest')
+          .call(<String, dynamic>{
+        'interestId': normalizedInterest,
+        'limit': limit.clamp(1, 20),
+        if (normalizedCursor.isNotEmpty) 'cursor': normalizedCursor,
+      }).timeout(const Duration(seconds: 15));
+      page = _parseInterestSearchResponse(
+        response.data,
+        currentUid: currentUid,
+        interestId: normalizedInterest,
+      );
+    } on AppCheckUnavailableException {
+      page = await _searchUsersByInterestFromExistingTagSystem(
+        normalizedInterest,
+        currentUid: currentUid,
+        cursor: normalizedCursor,
+        limit: limit,
+      );
+    } on FirebaseFunctionsException catch (error) {
+      if (error.code != 'not-found' && error.code != 'unimplemented') rethrow;
+      page = await _searchUsersByInterestFromExistingTagSystem(
+        normalizedInterest,
+        currentUid: currentUid,
+        cursor: normalizedCursor,
+        limit: limit,
+      );
+    }
+    _interestSearchCache[cacheKey] = _InterestUserSearchCacheEntry(
+      page: page,
+      cachedAt: DateTime.now(),
+    );
+    return page;
+  }
+
+  InterestUserSearchPage _parseInterestSearchResponse(
+    dynamic data, {
+    required String currentUid,
+    required String interestId,
+  }) {
+    if (data is! Map || data['users'] is! List) {
+      throw const FormatException('Invalid interest user search response');
+    }
+    final now = DateTime.now();
+    final users = (data['users'] as List)
+        .whereType<Map>()
+        .map((raw) {
+          String? optional(String key) {
+            final value = (raw[key] ?? '').toString().trim();
+            return value.isEmpty ? null : value;
+          }
+
+          final rawInterests = raw['interests'];
+          return UserProfile(
+            uid: (raw['uid'] ?? '').toString().trim(),
+            nickname: optional('nickname'),
+            photoURL: optional('photoURL'),
+            nationality: optional('nationality'),
+            university: optional('university'),
+            interests: rawInterests is List
+                ? rawInterests
+                    .whereType<String>()
+                    .map((value) => value.trim())
+                    .where((value) => value.isNotEmpty)
+                    .toList(growable: false)
+                : <String>[interestId],
+            createdAt: now,
+            updatedAt: now,
+          );
+        })
+        .where((profile) => profile.uid.isNotEmpty && profile.uid != currentUid)
+        .toList(growable: false);
+    final cursorValue = (data['nextCursor'] ?? '').toString().trim();
+    return InterestUserSearchPage(
+      users: users,
+      nextCursor: cursorValue.isEmpty ? null : cursorValue,
+      hasMore: data['hasMore'] == true && cursorValue.isNotEmpty,
+    );
+  }
+
+  /// 새 Callable을 배포하기 전에도 마이프로필 태그 목록과 같은
+  /// `users.interests arrayContains` 인덱스 경로로 결과를 제공한다.
+  Future<InterestUserSearchPage> _searchUsersByInterestFromExistingTagSystem(
+    String interestId, {
+    required String currentUid,
+    required String cursor,
+    required int limit,
+  }) async {
+    final blockedSets = await Future.wait<Set<String>>(<Future<Set<String>>>[
+      ContentFilterService.getBlockedUserIds(),
+      ContentFilterService.getBlockedByUserIds(),
+    ]);
+    final excludedIds = <String>{
+      currentUid,
+      ...blockedSets[0],
+      ...blockedSets[1],
+    };
+    final pageLimit = limit.clamp(1, 20);
+    final candidateLimit = pageLimit * 2 < 24 ? 24 : pageLimit * 2;
+    final users = <UserProfile>[];
+    var scanCursor = cursor;
+    String? nextCursor;
+    var hasMore = true;
+
+    for (var pass = 0;
+        pass < 4 && users.length < pageLimit && hasMore;
+        pass++) {
+      Query<Map<String, dynamic>> query = _firestore
+          .collection(_usersCollection)
+          .where('interests', arrayContains: interestId)
+          .orderBy(FieldPath.documentId)
+          .limit(candidateLimit);
+      if (scanCursor.isNotEmpty) {
+        query = query.startAfter(<Object>[scanCursor]);
+      }
+      final snapshot = await query
+          .get(const GetOptions(source: Source.server))
+          .timeout(const Duration(seconds: 12));
+      if (snapshot.docs.isEmpty) {
+        hasMore = false;
+        break;
+      }
+
+      var reachedLimitBeforeEnd = false;
+      for (var index = 0; index < snapshot.docs.length; index++) {
+        final document = snapshot.docs[index];
+        scanCursor = document.id;
+        nextCursor = document.id;
+        if (excludedIds.contains(document.id)) continue;
+        final data = document.data();
+        final nickname =
+            (data['nickname'] ?? data['displayName'] ?? '').toString().trim();
+        if (nickname.isEmpty ||
+            !isSearchableUserAccountData(data, uid: document.id)) {
+          continue;
+        }
+        try {
+          users.add(UserProfile.fromFirestore(document));
+        } catch (error) {
+          Logger.error('관심사 사용자 프로필 파싱 실패: $error');
+        }
+        if (users.length >= pageLimit) {
+          reachedLimitBeforeEnd = index < snapshot.docs.length - 1;
+          break;
+        }
+      }
+      hasMore = reachedLimitBeforeEnd || snapshot.docs.length == candidateLimit;
+    }
+
+    return InterestUserSearchPage(
+      users: users,
+      nextCursor: hasMore ? nextCursor : null,
+      hasMore: hasMore && nextCursor != null,
+    );
+  }
+
   Future<List<UserProfile>> _searchUsersLegacy(
     String query, {
     required int limit,
@@ -516,7 +802,7 @@ class UsersRepository {
       for (final doc in allUsersQuery.docs) {
         // 현재 사용자 제외
         if (doc.id == currentUid) continue;
-        if (isUnavailableUserAccountData(doc.data())) continue;
+        if (!isSearchableUserAccountData(doc.data(), uid: doc.id)) continue;
 
         try {
           final profile = UserProfile.fromFirestore(doc);
@@ -623,7 +909,10 @@ class UsersRepository {
               (document.data()['nickname'] ?? '').toString().trim();
           if (document.id == currentUid ||
               storedNickname.toLowerCase() != nicknameKey ||
-              isUnavailableUserAccountData(document.data())) {
+              !isSearchableUserAccountData(
+                document.data(),
+                uid: document.id,
+              )) {
             continue;
           }
           candidates[document.id] = document;
@@ -777,7 +1066,10 @@ class UsersRepository {
           await search.limit(10).get(const GetOptions(source: Source.server));
       final active = snapshot.docs.where((document) {
         return document.id != currentUid &&
-            !isUnavailableUserAccountData(document.data());
+            isSearchableUserAccountData(
+              document.data(),
+              uid: document.id,
+            );
       }).toList(growable: false);
       final blocked = await Future.wait(
         active.map(
@@ -832,7 +1124,7 @@ class UsersRepository {
           .collection(_usersCollection)
           .doc(userId)
           .get(const GetOptions(source: Source.server));
-      return doc.exists && !isUnavailableUserAccountData(doc.data());
+      return doc.exists && isSearchableUserAccountData(doc.data(), uid: doc.id);
     } catch (error) {
       Logger.error('사용자 활성 상태 확인 오류: $error');
       // 상태를 확인하지 못한 경우에는 관계 액션을 허용하지 않는다.
@@ -1132,28 +1424,22 @@ class UsersRepository {
           .where('uids', arrayContains: currentUid)
           .snapshots()
           .asyncMap((snapshot) async {
-        final startTime = DateTime.now();
-        final friendIds = <String>[];
-
-        // 1단계: 친구 ID 추출
-        for (final doc in snapshot.docs) {
-          final data = doc.data() as Map<String, dynamic>;
-          final uids = List<String>.from(data['uids'] ?? []);
-          // 현재 사용자 제외한 상대방 ID 추가
-          for (final uid in uids) {
-            if (uid != currentUid) {
-              friendIds.add(uid);
-            }
-          }
-        }
+        final friendIds = buildNewestFriendIdOrder(
+          snapshot.docs.map((doc) => <String, dynamic>{
+                ...doc.data(),
+                '_documentId': doc.id,
+              }),
+          ownerUid: currentUid,
+        );
 
         if (friendIds.isEmpty) {
           if (Logger.isVerboseEnabled) Logger.log('👥 친구 목록: 0명');
           return <UserProfile>[];
         }
 
-        // 2단계: 배치로 프로필 조회 (캐싱 + 병렬 처리)
-        final profiles = await getUserProfilesBatch(friendIds);
+        // 친구 화면을 열 때는 서버 프로필 상태를 한 번 확정한다. 이전 캐시에
+        // 남은 탈퇴/비활성 사용자가 실제 목록과 숫자를 부풀리지 않게 한다.
+        final profiles = await getFreshUserProfilesBatch(friendIds);
         return profiles;
       });
     } catch (e) {
@@ -1165,10 +1451,15 @@ class UsersRepository {
   /// 사용자 프로필 업데이트
   Future<void> updateUserProfile(UserProfile profile) async {
     try {
+      final update = profile.toFirestore()
+        // Nickname ownership is server-only. Generic profile writes must not
+        // attempt to bypass updateMyNicknameSecure or fail the entire update
+        // because Firestore rules protect this field.
+        ..remove('nickname');
       await _firestore
           .collection(_usersCollection)
           .doc(profile.uid)
-          .update(profile.toFirestore());
+          .update(update);
     } catch (e) {
       Logger.error('사용자 프로필 업데이트 오류: $e');
       rethrow;
@@ -1205,26 +1496,21 @@ class UsersRepository {
           .where('uids', arrayContains: userId)
           .get();
 
-      final friendIds = <String>[];
-
-      // 2. 친구 ID 추출
-      for (final doc in snapshot.docs) {
-        final data = doc.data() as Map<String, dynamic>;
-        final uids = List<String>.from(data['uids'] ?? []);
-        for (final uid in uids) {
-          if (uid != userId) {
-            friendIds.add(uid);
-          }
-        }
-      }
+      final friendIds = buildNewestFriendIdOrder(
+        snapshot.docs.map((doc) => <String, dynamic>{
+              ...doc.data(),
+              '_documentId': doc.id,
+            }),
+        ownerUid: userId,
+      );
 
       if (friendIds.isEmpty) {
         if (Logger.isVerboseEnabled) Logger.log('👥 ${userId}의 친구: 0명');
         return [];
       }
 
-      // 3. 배치로 프로필 조회
-      final profiles = await getUserProfilesBatch(friendIds);
+      // 일회성 공개 친구 목록도 현재 친구 화면과 동일한 활성 계정 기준을 쓴다.
+      final profiles = await getFreshUserProfilesBatch(friendIds);
 
       if (Logger.isVerboseEnabled)
         Logger.log('✅ ${userId}의 친구 목록: ${profiles.length}명');

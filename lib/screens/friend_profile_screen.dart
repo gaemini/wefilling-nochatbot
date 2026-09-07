@@ -25,6 +25,7 @@ import 'user_friends_list_screen.dart';
 import '../models/social_profile_data.dart';
 import 'social_tag_people_screen.dart';
 import '../utils/account_status_helper.dart';
+import '../services/notification_service.dart';
 
 class FriendProfileScreen extends StatefulWidget {
   final String userId;
@@ -78,6 +79,10 @@ class _FriendProfileScreenState extends State<FriendProfileScreen>
   @override
   void initState() {
     super.initState();
+    unawaited(NotificationService().markRelatedNotificationsAsRead(
+      types: const <String>{'friend_request_accepted'},
+      targets: <String, String>{'actorId': widget.userId},
+    ));
     WidgetsBinding.instance.addObserver(this);
     _loadUserData();
     _loadRelationshipStatus();

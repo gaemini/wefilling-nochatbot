@@ -10,11 +10,13 @@ import '../utils/country_flag_helper.dart';
 import '../utils/responsive_helper.dart';
 import '../l10n/app_localizations.dart';
 import '../services/cache/app_image_cache_manager.dart';
+import 'relationship_action_button.dart';
 
 class UserTile extends StatelessWidget {
   final UserProfile user;
   final RelationshipStatus relationshipStatus;
   final VoidCallback? onActionPressed;
+  final VoidCallback? onRejectPressed;
   final VoidCallback? onTilePressed;
   final bool isLoading;
   final bool minimal;
@@ -24,6 +26,7 @@ class UserTile extends StatelessWidget {
     required this.user,
     required this.relationshipStatus,
     this.onActionPressed,
+    this.onRejectPressed,
     this.onTilePressed,
     this.isLoading = false,
     this.minimal = false,
@@ -36,7 +39,9 @@ class UserTile extends StatelessWidget {
       final isCompact = width < 360;
       final horizontalPadding = isCompact ? 12.0 : (width < 600 ? 16.0 : 24.0);
       final avatarSize = isCompact ? 42.0 : 46.0;
-      final actionMaxWidth = (width * 0.36).clamp(104.0, 144.0).toDouble();
+      // 영문처럼 긴 액션 문구도 생략되지 않도록 사용자 정보와 버튼이
+      // 균형 있게 공간을 나눈다. 좁은 화면에서는 버튼 내부 두 줄을 허용한다.
+      final actionMaxWidth = (width * 0.4).clamp(112.0, 164.0).toDouble();
 
       return Center(
         child: ConstrainedBox(
@@ -238,7 +243,7 @@ class UserTile extends StatelessWidget {
       );
     }
 
-    String _labelForStatus(BuildContext context, RelationshipStatus status) {
+    String labelForStatus(BuildContext context, RelationshipStatus status) {
       final l10n = AppLocalizations.of(context);
       if (l10n == null) return '';
       switch (status) {
@@ -262,7 +267,7 @@ class UserTile extends StatelessWidget {
 
     // 차단당한 상태는 버튼 비활성화
     if (relationshipStatus == RelationshipStatus.blockedBy) {
-      final label = _labelForStatus(context, relationshipStatus);
+      final label = labelForStatus(context, relationshipStatus);
       if (compact) {
         return Text(
           label.isNotEmpty ? label : 'Blocked',
@@ -270,7 +275,7 @@ class UserTile extends StatelessWidget {
           overflow: TextOverflow.ellipsis,
           style: const TextStyle(
             fontFamily: 'Inter',
-            fontFamilyFallback: const ['NotoSansKR'],
+            fontFamilyFallback: ['NotoSansKR'],
             fontSize: 12,
             fontWeight: FontWeight.w600,
             color: Color(0xFF98A2B3),
@@ -290,31 +295,52 @@ class UserTile extends StatelessWidget {
       );
     }
 
+    if (relationshipStatus == RelationshipStatus.pendingIn) {
+      final l10n = AppLocalizations.of(context);
+      final rejectButton = RelationshipActionButton(
+        label: l10n?.reject ?? 'Reject',
+        onPressed: onRejectPressed,
+        tone: RelationshipActionButtonTone.neutral,
+      );
+      final acceptButton = RelationshipActionButton(
+        label: l10n?.accept ?? 'Accept',
+        onPressed: onActionPressed,
+      );
+
+      if (!compact) {
+        return Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            rejectButton,
+            const SizedBox(width: 6),
+            acceptButton,
+          ],
+        );
+      }
+
+      return Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Flexible(child: rejectButton),
+          const SizedBox(width: 6),
+          Flexible(child: acceptButton),
+        ],
+      );
+    }
+
     // 관계 상태에 따른 버튼 스타일
     final buttonStyle = _getButtonStyle(relationshipStatus);
 
     if (compact) {
-      return TextButton(
+      final isPrimaryAction = relationshipStatus == RelationshipStatus.none ||
+          relationshipStatus == RelationshipStatus.pendingIn;
+      final label = labelForStatus(context, relationshipStatus);
+      return RelationshipActionButton(
+        label: label,
         onPressed: relationshipStatus.isActionable ? onActionPressed : null,
-        style: TextButton.styleFrom(
-          foregroundColor: const Color(0xFF344054),
-          disabledForegroundColor: const Color(0xFF98A2B3),
-          minimumSize: const Size(0, 36),
-          tapTargetSize: MaterialTapTargetSize.shrinkWrap,
-          padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 5),
-          visualDensity: VisualDensity.compact,
-        ),
-        child: Text(
-          _labelForStatus(context, relationshipStatus),
-          maxLines: 1,
-          overflow: TextOverflow.ellipsis,
-          style: TextStyle(
-            fontFamily: 'Inter',
-            fontFamilyFallback: const ['NotoSansKR'],
-            fontSize: context.rf(12.5).clamp(11.5, 13).toDouble(),
-            fontWeight: FontWeight.w700,
-          ),
-        ),
+        tone: isPrimaryAction
+            ? RelationshipActionButtonTone.primary
+            : RelationshipActionButtonTone.neutral,
       );
     }
 
@@ -329,10 +355,10 @@ class UserTile extends StatelessWidget {
         minimumSize: const Size(90, 40),
       ),
       child: Text(
-        _labelForStatus(context, relationshipStatus),
+        labelForStatus(context, relationshipStatus),
         style: const TextStyle(
           fontFamily: 'Inter',
-          fontFamilyFallback: const ['NotoSansKR'],
+          fontFamilyFallback: ['NotoSansKR'],
           fontSize: 13,
           fontWeight: FontWeight.w600,
         ),

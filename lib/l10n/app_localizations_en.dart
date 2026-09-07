@@ -1529,6 +1529,40 @@ class AppLocalizationsEn extends AppLocalizations {
   String get viewRecommendedFriends => 'View Recommended Friends';
 
   @override
+  String get userSearchIdleTitle => 'Search for users';
+
+  @override
+  String get userSearchIdleDescription =>
+      'Find new friends by nickname or name.';
+
+  @override
+  String get interestFriendDiscoveryTitle => 'Find friends by interest';
+
+  @override
+  String get interestFriendDiscoveryDescription =>
+      'Choose an interest to meet people who share it.';
+
+  @override
+  String interestPeopleTitle(String interest) {
+    return 'People interested in #$interest';
+  }
+
+  @override
+  String interestNoUsersTitle(String interest) {
+    return 'No one has added #$interest yet';
+  }
+
+  @override
+  String get interestNoUsersDescription =>
+      'Choose another interest to discover new friends.';
+
+  @override
+  String get interestSearchErrorTitle => 'Couldn’t load interest results';
+
+  @override
+  String get interestSearchErrorDescription => 'Please try again in a moment.';
+
+  @override
   String get tryDifferentKeyword => 'Try a different search term';
 
   @override
@@ -2557,6 +2591,39 @@ class AppLocalizationsEn extends AppLocalizations {
 
   @override
   String get nicknameQuestion => 'What is your nickname?';
+
+  @override
+  String get nicknamePolicyHelp =>
+      'Use Korean or English letters, numbers, and _. Spaces become _.';
+
+  @override
+  String get nicknameChecking => 'Checking availability…';
+
+  @override
+  String get nicknameAvailable => 'This nickname is available.';
+
+  @override
+  String get nicknameTaken => 'This nickname is already in use.';
+
+  @override
+  String get nicknameInvalidCharacters =>
+      'Use only Korean or English letters, numbers, and _.';
+
+  @override
+  String get nicknameLetterRequired =>
+      'Include at least one Korean or English letter.';
+
+  @override
+  String get nicknameReserved => 'This nickname is reserved.';
+
+  @override
+  String get nicknameCheckNetworkError =>
+      'Couldn’t check the nickname. Please try again.';
+
+  @override
+  String nicknameNormalizedPreview(String nickname) {
+    return 'Saved as: $nickname';
+  }
 
   @override
   String get notification => 'Notification';

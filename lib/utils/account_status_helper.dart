@@ -36,3 +36,63 @@ bool isUnavailableUserAccountData(Map<String, dynamic>? data) {
   // 레거시 정상 계정의 닉네임/이메일 중 하나가 있어야 활성 계정으로 본다.
   return nickname.isEmpty && email.isEmpty && hanyangEmail.isEmpty;
 }
+
+/// 이름/관심사/초대처럼 실제 사람을 찾는 화면의 엄격한 공개 조건입니다.
+///
+/// 콘텐츠의 익명 표시 정책과 분리되어 있으므로 이 함수는 `UserProfile`의
+/// 표시용 fallback을 바꾸지 않습니다. 서버 callable이 최종 권한자이고 이
+/// 판정은 순차 배포 중 사용하는 직접 Firestore 호환 경로의 fail-closed
+/// 보호막입니다.
+bool isSearchableUserAccountData(
+  Map<String, dynamic>? data, {
+  required String uid,
+}) {
+  if (data == null || uid.trim().isEmpty || uid.contains('/')) return false;
+  if (isUnavailableUserAccountData(data)) return false;
+
+  final normalizedUid = uid.trim().toLowerCase();
+  if (const <String>{
+    'anonymous',
+    'deleted',
+    'deleted_account',
+    'unknown',
+    'system',
+  }.contains(normalizedUid)) {
+    return false;
+  }
+  if (data['searchable'] == false ||
+      data['isSearchable'] == false ||
+      data['allowUserSearch'] == false ||
+      data['isProfilePrivate'] == true ||
+      data['deleting'] == true) {
+    return false;
+  }
+
+  final registrationStatus =
+      (data['registrationStatus'] ?? '').toString().trim().toLowerCase();
+  final signupState =
+      (data['signupState'] ?? '').toString().trim().toLowerCase();
+  final completed = registrationStatus == 'complete' ||
+      (registrationStatus.isEmpty &&
+          data['emailVerified'] == true &&
+          signupState != 'authcreated' &&
+          signupState != 'profilepending');
+  if (!completed) return false;
+
+  final nickname = (data['nickname'] ?? '').toString().trim();
+  if (nickname.length < 2 || nickname.length > 20) return false;
+  if (const <String>{
+    'anonymous',
+    'deleted',
+    'deleted_account',
+    '익명',
+    '탈퇴한 사용자',
+  }.contains(nickname.toLowerCase())) {
+    return false;
+  }
+  if (!RegExp(r'^[a-zA-Z0-9가-힣_.]+$').hasMatch(nickname)) return false;
+
+  final normalizedNickname = nickname.toLowerCase();
+  final nicknameKey = (data['nicknameKey'] ?? '').toString().trim();
+  return nicknameKey.isEmpty || nicknameKey == normalizedNickname;
+}

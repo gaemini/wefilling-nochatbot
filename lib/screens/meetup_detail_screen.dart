@@ -38,6 +38,7 @@ import '../ui/widgets/translatable_content.dart';
 import '../ui/snackbar/app_snackbar.dart';
 import 'snack_chat_screen.dart';
 import '../ui/widgets/hanyang_verification_gate.dart';
+import '../services/notification_service.dart';
 // NOTE: 단체 톡방(확성기) 기능 제거됨
 
 class MeetupDetailScreen extends StatefulWidget {
@@ -92,6 +93,17 @@ class _MeetupDetailScreenState extends State<MeetupDetailScreen>
   void initState() {
     super.initState();
     _currentMeetup = widget.meetup;
+    unawaited(NotificationService().markRelatedNotificationsAsRead(
+      types: const <String>{
+        'meetup_full',
+        'meetup_cancelled',
+        'meetup_created',
+        'NEW_MEETUP',
+        'meetup_participant_joined',
+        'meetup_participant_left',
+      },
+      targets: <String, String>{'meetupId': widget.meetupId},
+    ));
     // 목록에서 이미 확정 상태를 받은 경우에는 즉시 안전하게 확정 상태로 취급한다.
     // 미확정 값은 오래된 캐시일 수 있으므로 서버 문서를 확인하기 전까지
     // 참여/나가기 액션을 노출하지 않는다.
@@ -316,14 +328,17 @@ class _MeetupDetailScreenState extends State<MeetupDetailScreen>
 
   Future<void> _loadParticipants() async {
     try {
-      if (Logger.isVerboseEnabled) Logger.log('🔄 모임 참여자 로드 시작: ${widget.meetupId}');
+      if (Logger.isVerboseEnabled)
+        Logger.log('🔄 모임 참여자 로드 시작: ${widget.meetupId}');
 
       // 먼저 모든 참여자 조회 (디버깅용)
       final allParticipants =
           await _meetupService.getMeetupParticipants(widget.meetupId);
-      if (Logger.isVerboseEnabled) Logger.log('📋 전체 참여자 수: ${allParticipants.length}');
+      if (Logger.isVerboseEnabled)
+        Logger.log('📋 전체 참여자 수: ${allParticipants.length}');
       for (var p in allParticipants) {
-        if (Logger.isVerboseEnabled) Logger.log('  - ${p.userName} (status: ${p.status})');
+        if (Logger.isVerboseEnabled)
+          Logger.log('  - ${p.userName} (status: ${p.status})');
       }
 
       // 승인된 참여자만 필터링
@@ -353,8 +368,9 @@ class _MeetupDetailScreenState extends State<MeetupDetailScreen>
       // 중복 방지 (이미 목록에 있으면 추가하지 않음)
       final hasHost = participants.any((p) => p.userId == hostId);
       final combined = [if (!hasHost) hostProfile, ...participants];
-      if (Logger.isVerboseEnabled) Logger.log(
-          '✅ 승인된 참여자 ${participants.length}명 로드 완료 (호스트 포함 총 ${combined.length}명)');
+      if (Logger.isVerboseEnabled)
+        Logger.log(
+            '✅ 승인된 참여자 ${participants.length}명 로드 완료 (호스트 포함 총 ${combined.length}명)');
 
       // 새로고침 시 setState로 UI 업데이트
       if (mounted) {
@@ -371,9 +387,11 @@ class _MeetupDetailScreenState extends State<MeetupDetailScreen>
             currentParticipants: combined.length, // 호스트 포함
           );
         });
-        if (Logger.isVerboseEnabled) Logger.log('🎨 UI 업데이트 완료: ${_participants.length}명 (표시)');
-        if (Logger.isVerboseEnabled) Logger.log(
-            '📊 모임 참여자 수 업데이트: ${combined.length}/${_currentMeetup.maxParticipants} (호스트 포함)');
+        if (Logger.isVerboseEnabled)
+          Logger.log('🎨 UI 업데이트 완료: ${_participants.length}명 (표시)');
+        if (Logger.isVerboseEnabled)
+          Logger.log(
+              '📊 모임 참여자 수 업데이트: ${combined.length}/${_currentMeetup.maxParticipants} (호스트 포함)');
       }
     } catch (e, stackTrace) {
       Logger.error('❌ 참여자 목록 로드 오류: $e');
@@ -2563,10 +2581,12 @@ class _MeetupDetailScreenState extends State<MeetupDetailScreen>
         if (Logger.isVerboseEnabled) Logger.log('  - requestId: $requestId');
         if (Logger.isVerboseEnabled) Logger.log('  - status: $status');
         if (Logger.isVerboseEnabled) Logger.log('  - recipientId: ${user.uid}');
-        if (Logger.isVerboseEnabled) Logger.log('  - meetupId: ${_currentMeetup.id}');
+        if (Logger.isVerboseEnabled)
+          Logger.log('  - meetupId: ${_currentMeetup.id}');
       } else {
         // 요청이 없으면 MeetupService를 통해 후기 요청 재전송
-        if (Logger.isVerboseEnabled) Logger.log('⚠️ review_request가 없음. 후기 요청 재전송 시도...');
+        if (Logger.isVerboseEnabled)
+          Logger.log('⚠️ review_request가 없음. 후기 요청 재전송 시도...');
 
         if (_currentMeetup.reviewId != null) {
           // 실제 참여자이면서 수락 대기 대상인 본인의
@@ -3177,20 +3197,25 @@ class _MeetupDetailScreenState extends State<MeetupDetailScreen>
 
   /// 모임 완료 처리
   Future<void> _markMeetupAsCompleted() async {
-    if (Logger.isVerboseEnabled) Logger.log('🚀 [MEETUP_COMPLETE] 모임 완료 처리 시작: ${widget.meetupId}');
+    if (Logger.isVerboseEnabled)
+      Logger.log('🚀 [MEETUP_COMPLETE] 모임 완료 처리 시작: ${widget.meetupId}');
 
     setState(() {
       _isLoading = true;
     });
 
     try {
-      if (Logger.isVerboseEnabled) Logger.log('📡 [MEETUP_COMPLETE] MeetupService.markMeetupAsCompleted 호출');
+      if (Logger.isVerboseEnabled)
+        Logger.log(
+            '📡 [MEETUP_COMPLETE] MeetupService.markMeetupAsCompleted 호출');
       final success =
           await _meetupService.markMeetupAsCompleted(widget.meetupId);
-      if (Logger.isVerboseEnabled) Logger.log('📋 [MEETUP_COMPLETE] 완료 처리 결과: $success');
+      if (Logger.isVerboseEnabled)
+        Logger.log('📋 [MEETUP_COMPLETE] 완료 처리 결과: $success');
 
       if (success && mounted) {
-        if (Logger.isVerboseEnabled) Logger.log('✅ [MEETUP_COMPLETE] 성공 - UI 상태 업데이트');
+        if (Logger.isVerboseEnabled)
+          Logger.log('✅ [MEETUP_COMPLETE] 성공 - UI 상태 업데이트');
         setState(() {
           _currentMeetup = _currentMeetup.copyWith(isCompleted: true);
           _isLoading = false;
@@ -3343,12 +3368,14 @@ class _MeetupDetailScreenState extends State<MeetupDetailScreen>
     });
 
     try {
-      if (Logger.isVerboseEnabled) Logger.log('🗑️ UI: 후기 삭제 시작 - reviewId: ${_currentMeetup.reviewId}');
+      if (Logger.isVerboseEnabled)
+        Logger.log('🗑️ UI: 후기 삭제 시작 - reviewId: ${_currentMeetup.reviewId}');
 
       final success =
           await _meetupService.deleteMeetupReview(_currentMeetup.reviewId!);
 
-      if (Logger.isVerboseEnabled) Logger.log('✅ UI: 후기 삭제 결과 - success: $success');
+      if (Logger.isVerboseEnabled)
+        Logger.log('✅ UI: 후기 삭제 결과 - success: $success');
 
       if (success && mounted) {
         setState(() {
@@ -3750,6 +3777,7 @@ class _MeetupDetailScreenState extends State<MeetupDetailScreen>
 
   Widget _buildSimpleParticipantItemContent(MeetupParticipant participant) {
     final hostId = _currentMeetup.userId;
+    final canOpenProfile = participant.hasViewableProfile;
     final canKick = _isHost &&
         hostId != null &&
         participant.userId.isNotEmpty &&
@@ -3757,93 +3785,116 @@ class _MeetupDetailScreenState extends State<MeetupDetailScreen>
 
     return Material(
       color: Colors.transparent,
-      child: InkWell(
-        onLongPress: canKick ? () => _showKickActionSheet(participant) : null,
-        borderRadius: BorderRadius.circular(12),
-        child: Row(
-          children: [
-            // 프로필 이미지
-            CircleAvatar(
-              radius: 20,
-              backgroundColor: Colors.grey[200],
-              backgroundImage: participant.userProfileImage != null &&
-                      participant.userProfileImage!.isNotEmpty
-                  ? NetworkImage(participant.userProfileImage!)
-                  : null,
-              child: participant.userProfileImage == null ||
-                      participant.userProfileImage!.isEmpty
-                  ? Icon(Icons.person,
-                      color: AppColors.pointColor, size: DesignTokens.icon)
-                  : null,
-            ),
-            const SizedBox(width: 12),
-
-            // 이름과 상태
-            Expanded(
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Row(
-                    children: [
-                      Expanded(
-                        child: Text(
-                          participant.isDeletedAccount ||
-                                  participant.userName == 'DELETED_ACCOUNT'
-                              ? AppLocalizations.of(context)!.deletedAccount
-                              : participant.userName,
-                          style: const TextStyle(
-                            fontFamily: 'Inter',
-                            fontFamilyFallback: const ['NotoSansKR'],
-                            fontSize: 15,
-                            fontWeight: FontWeight.w600,
-                            color: Color(0xFF1E293B),
-                          ),
-                          maxLines: 1,
-                          overflow: TextOverflow.ellipsis,
-                        ),
-                      ),
-                      const SizedBox(width: 10),
-                      // 참여자 국가 정보 (오른쪽 정렬, 국가명 + 국기 순서)
-                      if (!participant.isDeletedAccount &&
-                          participant.userCountry != null &&
-                          participant.userCountry!.isNotEmpty) ...[
-                        Text(
-                          _getLocalizedCountryName(participant.userCountry!),
-                          style: const TextStyle(
-                            fontFamily: 'Inter',
-                            fontFamilyFallback: const ['NotoSansKR'],
-                            fontSize: 14,
-                            fontWeight: FontWeight.w600,
-                            color: Color(0xFF475569),
-                          ),
-                        ),
-                        const SizedBox(width: 6),
-                        Text(
-                          CountryFlagHelper.getFlagEmoji(
-                              participant.userCountry!),
-                          style: const TextStyle(fontSize: 20),
-                        ),
-                      ],
-                    ],
-                  ),
-                  if (participant.message != null &&
-                      participant.message!.isNotEmpty)
-                    Text(
-                      participant.message!,
-                      style: const TextStyle(
-                        fontFamily: 'Inter',
-                        fontFamilyFallback: const ['NotoSansKR'],
-                        fontSize: 13,
-                        color: Color(0xFF64748B),
-                        fontWeight: FontWeight.w400,
-                      ),
-                      maxLines: 1,
-                      overflow: TextOverflow.ellipsis,
-                    ),
-                ],
+      child: Semantics(
+        button: canOpenProfile,
+        label: canOpenProfile ? participant.userName : null,
+        child: InkWell(
+          key: ValueKey('meetup-participant-${participant.userId}'),
+          onTap: canOpenProfile
+              ? () => _openParticipantProfile(participant)
+              : null,
+          onLongPress: canKick ? () => _showKickActionSheet(participant) : null,
+          borderRadius: BorderRadius.circular(12),
+          child: Row(
+            children: [
+              // 프로필 이미지
+              CircleAvatar(
+                radius: 20,
+                backgroundColor: Colors.grey[200],
+                backgroundImage: participant.userProfileImage != null &&
+                        participant.userProfileImage!.isNotEmpty
+                    ? NetworkImage(participant.userProfileImage!)
+                    : null,
+                child: participant.userProfileImage == null ||
+                        participant.userProfileImage!.isEmpty
+                    ? Icon(Icons.person,
+                        color: AppColors.pointColor, size: DesignTokens.icon)
+                    : null,
               ),
-            ),
-          ],
+              const SizedBox(width: 12),
+
+              // 이름과 상태
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Row(
+                      children: [
+                        Expanded(
+                          child: Text(
+                            participant.isDeletedAccount ||
+                                    participant.userName == 'DELETED_ACCOUNT'
+                                ? AppLocalizations.of(context)!.deletedAccount
+                                : participant.userName,
+                            style: const TextStyle(
+                              fontFamily: 'Inter',
+                              fontFamilyFallback: const ['NotoSansKR'],
+                              fontSize: 15,
+                              fontWeight: FontWeight.w600,
+                              color: Color(0xFF1E293B),
+                            ),
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis,
+                          ),
+                        ),
+                        const SizedBox(width: 10),
+                        // 참여자 국가 정보 (오른쪽 정렬, 국가명 + 국기 순서)
+                        if (!participant.isDeletedAccount &&
+                            participant.userCountry != null &&
+                            participant.userCountry!.isNotEmpty) ...[
+                          Text(
+                            _getLocalizedCountryName(participant.userCountry!),
+                            style: const TextStyle(
+                              fontFamily: 'Inter',
+                              fontFamilyFallback: const ['NotoSansKR'],
+                              fontSize: 14,
+                              fontWeight: FontWeight.w600,
+                              color: Color(0xFF475569),
+                            ),
+                          ),
+                          const SizedBox(width: 6),
+                          Text(
+                            CountryFlagHelper.getFlagEmoji(
+                                participant.userCountry!),
+                            style: const TextStyle(fontSize: 20),
+                          ),
+                        ],
+                      ],
+                    ),
+                    if (participant.message != null &&
+                        participant.message!.isNotEmpty)
+                      Text(
+                        participant.message!,
+                        style: const TextStyle(
+                          fontFamily: 'Inter',
+                          fontFamilyFallback: const ['NotoSansKR'],
+                          fontSize: 13,
+                          color: Color(0xFF64748B),
+                          fontWeight: FontWeight.w400,
+                        ),
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                      ),
+                  ],
+                ),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+
+  void _openParticipantProfile(MeetupParticipant participant) {
+    if (!participant.hasViewableProfile) return;
+    Navigator.of(context).push<void>(
+      MaterialPageRoute<void>(
+        builder: (_) => FriendProfileScreen(
+          userId: participant.userId.trim(),
+          nickname: participant.userName,
+          photoURL: participant.userProfileImage,
+          email: participant.userEmail,
+          allowNonFriendsPreview: true,
         ),
       ),
     );

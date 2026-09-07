@@ -71,6 +71,7 @@ class SettingsProvider extends ChangeNotifier {
     'ru': 'Русский',
     'pt': 'Português',
     'it': 'Italiano',
+    'ro': 'Română',
     'ar': 'العربية',
     'hi': 'हिन्दी',
     'th': 'ไทย',

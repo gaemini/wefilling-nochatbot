@@ -14,6 +14,7 @@ import '../models/pending_signup_session.dart';
 import '../providers/auth_provider.dart';
 import '../services/storage_service.dart';
 import '../utils/country_flag_helper.dart';
+import '../utils/nickname_policy.dart';
 import '../utils/responsive_helper.dart';
 import '../widgets/social_profile_fields.dart';
 import '../widgets/signup_flow_widgets.dart';
@@ -43,6 +44,7 @@ class _NicknameSetupScreenState extends State<NicknameSetupScreen>
   int _nicknameCheckGeneration = 0;
   bool _isCheckingNickname = false;
   bool? _isNicknameAvailable;
+  String? _nicknameCheckedKey;
   String? _nicknameAvailabilityError;
   File? _selectedImage;
   Timer? _draftDebounce;
@@ -206,28 +208,59 @@ class _NicknameSetupScreenState extends State<NicknameSetupScreen>
     _scheduleDraftSave();
     _nicknameDebounce?.cancel();
     final generation = ++_nicknameCheckGeneration;
-    final validation = SocialProfileValidation.nicknameError(
-      raw,
-      Localizations.localeOf(context).languageCode,
-    );
+    final identity = NicknamePolicy.identityOrNull(raw);
+    final localError = raw.isEmpty ? null : _nicknameValidationMessage(raw);
     setState(() {
       _isNicknameAvailable = null;
-      _nicknameAvailabilityError = null;
+      _nicknameCheckedKey = null;
+      _nicknameAvailabilityError = localError;
       _isCheckingNickname = false;
     });
-    if (validation != null) return;
-    _nicknameDebounce = Timer(const Duration(milliseconds: 480), () {
+    if (identity == null) return;
+    _nicknameDebounce = Timer(const Duration(milliseconds: 300), () {
       _checkNickname(raw, generation: generation);
     });
+  }
+
+  String? _nicknameValidationMessage(String? raw) {
+    final l10n = AppLocalizations.of(context)!;
+    return switch (NicknamePolicy.validate(raw)) {
+      null => null,
+      NicknameValidationIssue.empty => l10n.nicknameRequired,
+      NicknameValidationIssue.length => l10n.nicknameLengthHint,
+      NicknameValidationIssue.invalidCharacters =>
+        l10n.nicknameInvalidCharacters,
+      NicknameValidationIssue.letterRequired => l10n.nicknameLetterRequired,
+      NicknameValidationIssue.reserved => l10n.nicknameReserved,
+    };
+  }
+
+  String _nicknameHelperText() {
+    final l10n = AppLocalizations.of(context)!;
+    if (_nicknameAvailabilityError != null) {
+      return _nicknameAvailabilityError!;
+    }
+    if (_isCheckingNickname) return l10n.nicknameChecking;
+    if (_isNicknameAvailable == true) return l10n.nicknameAvailable;
+    if (_isNicknameAvailable == false) return l10n.nicknameTaken;
+    final raw = _nicknameController.text;
+    final normalized = NicknamePolicy.normalizePreview(raw);
+    if (raw.trim().isNotEmpty && normalized != raw.trim()) {
+      return l10n.nicknameNormalizedPreview(normalized);
+    }
+    return l10n.nicknamePolicyHelp;
   }
 
   Future<bool> _checkNickname(
     String raw, {
     required int generation,
   }) async {
-    final input = raw.trim();
+    final input = raw;
+    final inputIdentity = NicknamePolicy.identityOrNull(input);
     if (generation != _nicknameCheckGeneration ||
-        input != _nicknameController.text.trim()) {
+        inputIdentity == null ||
+        inputIdentity.nicknameKey !=
+            NicknamePolicy.canonicalKey(_nicknameController.text)) {
       return false;
     }
     setState(() {
@@ -235,45 +268,47 @@ class _NicknameSetupScreenState extends State<NicknameSetupScreen>
       _nicknameAvailabilityError = null;
     });
     try {
-      final result =
-          await context.read<AuthProvider>().checkNicknameAvailability(input);
+      final authProvider = context.read<AuthProvider>();
+      final requestUid = authProvider.user?.uid;
+      final result = await authProvider.checkNicknameAvailability(input);
       if (!mounted ||
+          context.read<AuthProvider>().user?.uid != requestUid ||
           generation != _nicknameCheckGeneration ||
-          input != _nicknameController.text.trim()) {
+          result.nicknameKey !=
+              NicknamePolicy.canonicalKey(_nicknameController.text)) {
         return false;
       }
       setState(() {
         _isCheckingNickname = false;
         _isNicknameAvailable = result.available;
+        _nicknameCheckedKey = result.nicknameKey;
       });
       return result.available;
-    } on NicknameAvailabilityException catch (error) {
+    } on NicknameAvailabilityException catch (_) {
       if (mounted &&
           generation == _nicknameCheckGeneration &&
-          input == _nicknameController.text.trim()) {
+          inputIdentity.nicknameKey ==
+              NicknamePolicy.canonicalKey(_nicknameController.text)) {
         setState(() {
           _isCheckingNickname = false;
           _isNicknameAvailable = null;
-          _nicknameAvailabilityError = error.isNetwork
-              ? (_isKorean
-                  ? '인터넷 연결을 확인해 주세요.'
-                  : 'Check your internet connection.')
-              : (_isKorean
-                  ? '닉네임을 확인하지 못했어요. 잠시 후 다시 시도해 주세요.'
-                  : 'Could not check the nickname. Please try again shortly.');
+          _nicknameCheckedKey = null;
+          _nicknameAvailabilityError =
+              AppLocalizations.of(context)!.nicknameCheckNetworkError;
         });
       }
       return false;
     } catch (_) {
       if (mounted &&
           generation == _nicknameCheckGeneration &&
-          input == _nicknameController.text.trim()) {
+          inputIdentity.nicknameKey ==
+              NicknamePolicy.canonicalKey(_nicknameController.text)) {
         setState(() {
           _isCheckingNickname = false;
           _isNicknameAvailable = null;
-          _nicknameAvailabilityError = _isKorean
-              ? '닉네임을 확인하지 못했어요. 잠시 후 다시 시도해 주세요.'
-              : 'Could not check the nickname. Please try again shortly.';
+          _nicknameCheckedKey = null;
+          _nicknameAvailabilityError =
+              AppLocalizations.of(context)!.nicknameCheckNetworkError;
         });
       }
       return false;
@@ -282,12 +317,9 @@ class _NicknameSetupScreenState extends State<NicknameSetupScreen>
 
   Future<void> _submit() async {
     if (_isLoading) return;
-    final nicknameValue = _nicknameController.text.trim();
-    if (SocialProfileValidation.nicknameError(
-          nicknameValue,
-          Localizations.localeOf(context).languageCode,
-        ) !=
-        null) {
+    final nicknameValue = _nicknameController.text;
+    final nicknameIdentity = NicknamePolicy.identityOrNull(nicknameValue);
+    if (_nicknameValidationMessage(nicknameValue) != null) {
       _moveTo(0);
       WidgetsBinding.instance.addPostFrameCallback((_) {
         _basicFormKey.currentState?.validate();
@@ -299,24 +331,27 @@ class _NicknameSetupScreenState extends State<NicknameSetupScreen>
     final navigator = Navigator.of(context);
     final l10n = AppLocalizations.of(context)!;
     final authProvider = context.read<AuthProvider>();
-    final nickname = nicknameValue;
-    final languageCode =
-        Localizations.localeOf(context).languageCode == 'ko' ? 'ko' : 'en';
-
-    // A known duplicate can be rejected locally without another callable.
-    // A null/pending result still proceeds because the final transaction is
-    // the authoritative race-safe check.
-    if (_isNicknameAvailable == false && _nicknameAvailabilityError == null) {
+    if (nicknameIdentity == null) return;
+    if (_isNicknameAvailable == false &&
+        _nicknameAvailabilityError == null &&
+        _nicknameCheckedKey == nicknameIdentity.nicknameKey) {
       _moveTo(0);
-      messenger.showSnackBar(
-        SnackBar(
-          content: Text(_isKorean
-              ? '이미 사용 중인 닉네임이에요.'
-              : 'This nickname is already in use.'),
-        ),
-      );
+      messenger.showSnackBar(SnackBar(content: Text(l10n.nicknameTaken)));
       return;
     }
+    if (_isNicknameAvailable != true ||
+        _nicknameCheckedKey != nicknameIdentity.nicknameKey) {
+      _nicknameDebounce?.cancel();
+      final generation = ++_nicknameCheckGeneration;
+      final available = await _checkNickname(
+        nicknameValue,
+        generation: generation,
+      );
+      if (!available || !mounted) return;
+    }
+    final nickname = nicknameIdentity.nickname;
+    final languageCode =
+        Localizations.localeOf(context).languageCode == 'ko' ? 'ko' : 'en';
 
     setState(() => _isLoading = true);
     try {
@@ -448,9 +483,7 @@ class _NicknameSetupScreenState extends State<NicknameSetupScreen>
       messenger.showSnackBar(
         SnackBar(
           content: Text(nicknameTaken
-              ? (_isKorean
-                  ? '이미 사용 중인 닉네임이에요.'
-                  : 'This nickname is already in use.')
+              ? l10n.nicknameTaken
               : networkError
                   ? (_isKorean
                       ? '인터넷 연결을 확인해 주세요. 입력한 내용은 유지됩니다.'
@@ -742,27 +775,9 @@ class _NicknameSetupScreenState extends State<NicknameSetupScreen>
                   size: context.ri(20).clamp(19, 22).toDouble(),
                   color: const Color(0xFF667085),
                 ),
-                helperText: _nicknameAvailabilityError ??
-                    (_isCheckingNickname
-                        ? (_isKorean
-                            ? '사용 가능 여부 확인 중…'
-                            : 'Checking availability…')
-                        : _isNicknameAvailable == true
-                            ? (_isKorean
-                                ? '사용할 수 있는 닉네임이에요.'
-                                : 'This nickname is available.')
-                            : _isNicknameAvailable == false
-                                ? (_isKorean
-                                    ? '이미 사용 중인 닉네임이에요.'
-                                    : 'This nickname is already in use.')
-                                : (_isKorean
-                                    ? '친구들이 기억하기 쉬운 이름을 사용해 주세요.'
-                                    : 'Use a name your friends can easily remember.')),
+                helperText: _nicknameHelperText(),
               ),
-              validator: (value) => SocialProfileValidation.nicknameError(
-                value,
-                Localizations.localeOf(context).languageCode,
-              ),
+              validator: _nicknameValidationMessage,
             ),
             SizedBox(height: context.rs(20).clamp(16, 24).toDouble()),
             _fieldLabel(_isKorean ? '국적' : 'Nationality'),

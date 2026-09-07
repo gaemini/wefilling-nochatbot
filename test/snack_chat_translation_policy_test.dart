@@ -34,5 +34,28 @@ void main() {
         isTrue,
       );
     });
+
+    test('explicit retry is not disabled by unrelated background capacity', () {
+      expect(
+        canStartUserSnackTranslationRetry(
+          retryInFlight: false,
+          messageWorkPending: false,
+          lifecycleResumed: true,
+          isLeavingRoom: false,
+          roomAccessTerminated: false,
+        ),
+        isTrue,
+      );
+      expect(
+        canStartUserSnackTranslationRetry(
+          retryInFlight: false,
+          messageWorkPending: true,
+          lifecycleResumed: true,
+          isLeavingRoom: false,
+          roomAccessTerminated: false,
+        ),
+        isFalse,
+      );
+    });
   });
 }

@@ -2761,11 +2761,17 @@ class MeetupService {
       // 동일 요청을 다시 열면 프로필 문서를 복구한다.
       final currentStatus = requestData['status'];
       if (currentStatus == 'accepted') {
-        await _publishReviewToUserProfile(
-          userId: user.uid,
-          reviewId: reviewId,
-          reviewData: requestData,
-        );
+        try {
+          await _publishReviewToUserProfile(
+            userId: user.uid,
+            reviewId: reviewId,
+            reviewData: requestData,
+          );
+        } catch (error) {
+          // 수락 상태는 이미 확정되어 있다. 서버 자가 복구가 누락 문서를
+          // 다시 생성하므로 화면에 잘못된 실패 상태를 표시하지 않는다.
+          Logger.error('기존 수락 후기 로컬 복구 지연: $error');
+        }
         if (Logger.isVerboseEnabled) Logger.log('✅ 기존 수락 후기 프로필 게시 상태 확인 완료');
         return true;
       }
@@ -2780,45 +2786,48 @@ class MeetupService {
         if (Logger.isVerboseEnabled) Logger.log('❌ 후기를 찾을 수 없음: $reviewId');
         return false;
       }
-      final reviewData = reviewDoc.data()!;
-      final approvedParticipants =
-          List<String>.from(reviewData['approvedParticipants'] ?? const []);
-      final rejectedParticipants =
-          List<String>.from(reviewData['rejectedParticipants'] ?? const []);
 
-      // 후기에 사용자 추가/제거
+      final requestRef =
+          _firestore.collection('review_requests').doc(requestId);
+
+      // 원본 후기의 참여 상태와 요청 상태를 하나의 원자적 배치로 확정한다.
+      // 앱이 중간에 종료되거나 네트워크가 끊겨도 두 상태가 갈라지지 않는다.
       if (accept) {
-        if (!approvedParticipants.contains(user.uid)) {
-          await reviewRef.update({
-            'approvedParticipants': FieldValue.arrayUnion([user.uid]),
-            'pendingParticipants': FieldValue.arrayRemove([user.uid]),
-          });
-        }
-
-        // 후기를 사용자 프로필에 게시
-        await _publishReviewToUserProfile(
-          userId: user.uid,
-          reviewId: reviewId,
-          reviewData: requestData,
-        );
-
-        await _firestore.collection('review_requests').doc(requestId).update({
+        final batch = _firestore.batch();
+        batch.update(reviewRef, {
+          'approvedParticipants': FieldValue.arrayUnion([user.uid]),
+          'pendingParticipants': FieldValue.arrayRemove([user.uid]),
+        });
+        batch.update(requestRef, {
           'status': 'accepted',
           'respondedAt': FieldValue.serverTimestamp(),
         });
+        await batch.commit();
+
+        // 즉시 화면 반영을 위한 최선 노력 경로다. 서버 트리거와 마이페이지
+        // 자가 복구가 같은 reviewId 문서를 보장하므로 실패해도 수락은 유지된다.
+        try {
+          await _publishReviewToUserProfile(
+            userId: user.uid,
+            reviewId: reviewId,
+            reviewData: requestData,
+          );
+        } catch (error) {
+          Logger.error('후기 프로필 즉시 게시 지연: $error');
+        }
 
         if (Logger.isVerboseEnabled) Logger.log('✅ 후기 수락 완료 및 프로필에 게시됨');
       } else {
-        if (!rejectedParticipants.contains(user.uid)) {
-          await reviewRef.update({
-            'rejectedParticipants': FieldValue.arrayUnion([user.uid]),
-            'pendingParticipants': FieldValue.arrayRemove([user.uid]),
-          });
-        }
-        await _firestore.collection('review_requests').doc(requestId).update({
+        final batch = _firestore.batch();
+        batch.update(reviewRef, {
+          'rejectedParticipants': FieldValue.arrayUnion([user.uid]),
+          'pendingParticipants': FieldValue.arrayRemove([user.uid]),
+        });
+        batch.update(requestRef, {
           'status': 'rejected',
           'respondedAt': FieldValue.serverTimestamp(),
         });
+        await batch.commit();
         if (Logger.isVerboseEnabled) Logger.log('✅ 후기 거절 완료');
       }
 

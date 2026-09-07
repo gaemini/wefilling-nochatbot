@@ -12,6 +12,7 @@ import '../models/post_category.dart';
 import '../services/post_media_prefetch_service.dart';
 import '../services/post_service.dart';
 import '../ui/widgets/optimized_post_card.dart';
+import '../ui/widgets/post_translation_feed.dart';
 import '../ui/widgets/skeletons.dart';
 import '../utils/responsive_helper.dart';
 import 'create_post_screen.dart';
@@ -250,7 +251,7 @@ class _PostCategoryFeedScreenState extends State<PostCategoryFeedScreen> {
   Widget build(BuildContext context) {
     final l10n = AppLocalizations.of(context)!;
     final label = widget.category.label(l10n);
-    return Scaffold(
+    final page = Scaffold(
       backgroundColor: BrandColors.surface,
       appBar: AppBar(
         backgroundColor: BrandColors.surface,
@@ -400,6 +401,7 @@ class _PostCategoryFeedScreenState extends State<PostCategoryFeedScreen> {
         ),
       ),
     );
+    return PostTranslationFeed(posts: List<Post>.of(_posts), child: page);
   }
 }
 

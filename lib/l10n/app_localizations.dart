@@ -2942,6 +2942,60 @@ abstract class AppLocalizations {
   /// **'추천 친구 보기'**
   String get viewRecommendedFriends;
 
+  /// No description provided for @userSearchIdleTitle.
+  ///
+  /// In ko, this message translates to:
+  /// **'사용자를 검색해보세요'**
+  String get userSearchIdleTitle;
+
+  /// No description provided for @userSearchIdleDescription.
+  ///
+  /// In ko, this message translates to:
+  /// **'닉네임이나 이름으로 새로운 친구를 찾아보세요.'**
+  String get userSearchIdleDescription;
+
+  /// No description provided for @interestFriendDiscoveryTitle.
+  ///
+  /// In ko, this message translates to:
+  /// **'관심사로 친구 찾기'**
+  String get interestFriendDiscoveryTitle;
+
+  /// No description provided for @interestFriendDiscoveryDescription.
+  ///
+  /// In ko, this message translates to:
+  /// **'관심사를 선택하면 같은 관심사를 등록한 사람들을 볼 수 있어요.'**
+  String get interestFriendDiscoveryDescription;
+
+  /// No description provided for @interestPeopleTitle.
+  ///
+  /// In ko, this message translates to:
+  /// **'#{interest}에 관심 있는 사람'**
+  String interestPeopleTitle(String interest);
+
+  /// No description provided for @interestNoUsersTitle.
+  ///
+  /// In ko, this message translates to:
+  /// **'아직 #{interest}에 관심사를 등록한 사용자가 없어요'**
+  String interestNoUsersTitle(String interest);
+
+  /// No description provided for @interestNoUsersDescription.
+  ///
+  /// In ko, this message translates to:
+  /// **'다른 관심사를 선택해 새로운 친구를 찾아보세요.'**
+  String get interestNoUsersDescription;
+
+  /// No description provided for @interestSearchErrorTitle.
+  ///
+  /// In ko, this message translates to:
+  /// **'관심사 검색을 불러오지 못했어요'**
+  String get interestSearchErrorTitle;
+
+  /// No description provided for @interestSearchErrorDescription.
+  ///
+  /// In ko, this message translates to:
+  /// **'잠시 후 다시 시도해 주세요.'**
+  String get interestSearchErrorDescription;
+
   /// No description provided for @tryDifferentKeyword.
   ///
   /// In ko, this message translates to:
@@ -4777,6 +4831,60 @@ abstract class AppLocalizations {
   /// In ko, this message translates to:
   /// **'닉네임이 무엇인가요?'**
   String get nicknameQuestion;
+
+  /// No description provided for @nicknamePolicyHelp.
+  ///
+  /// In ko, this message translates to:
+  /// **'한글, 영문, 숫자, _만 사용할 수 있어요. 공백은 _로 바뀝니다.'**
+  String get nicknamePolicyHelp;
+
+  /// No description provided for @nicknameChecking.
+  ///
+  /// In ko, this message translates to:
+  /// **'사용 가능 여부를 확인하고 있어요.'**
+  String get nicknameChecking;
+
+  /// No description provided for @nicknameAvailable.
+  ///
+  /// In ko, this message translates to:
+  /// **'사용 가능한 닉네임이에요.'**
+  String get nicknameAvailable;
+
+  /// No description provided for @nicknameTaken.
+  ///
+  /// In ko, this message translates to:
+  /// **'이미 사용 중인 닉네임이에요.'**
+  String get nicknameTaken;
+
+  /// No description provided for @nicknameInvalidCharacters.
+  ///
+  /// In ko, this message translates to:
+  /// **'한글, 영문, 숫자, _만 입력해 주세요.'**
+  String get nicknameInvalidCharacters;
+
+  /// No description provided for @nicknameLetterRequired.
+  ///
+  /// In ko, this message translates to:
+  /// **'한글 또는 영문자를 하나 이상 포함해 주세요.'**
+  String get nicknameLetterRequired;
+
+  /// No description provided for @nicknameReserved.
+  ///
+  /// In ko, this message translates to:
+  /// **'사용할 수 없는 닉네임이에요.'**
+  String get nicknameReserved;
+
+  /// No description provided for @nicknameCheckNetworkError.
+  ///
+  /// In ko, this message translates to:
+  /// **'닉네임을 확인하지 못했어요. 다시 시도해 주세요.'**
+  String get nicknameCheckNetworkError;
+
+  /// No description provided for @nicknameNormalizedPreview.
+  ///
+  /// In ko, this message translates to:
+  /// **'저장될 닉네임: {nickname}'**
+  String nicknameNormalizedPreview(String nickname);
 
   /// No description provided for @notification.
   ///

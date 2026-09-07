@@ -19,6 +19,7 @@ import '../models/content_translation.dart';
 import '../services/dm_service.dart';
 import '../services/dm_active_conversation.dart';
 import '../services/badge_service.dart';
+import '../services/fcm_service.dart';
 import '../services/post_service.dart';
 import '../services/content_filter_service.dart';
 import '../services/report_service.dart';
@@ -122,6 +123,8 @@ class _DMChatScreenState extends State<DMChatScreen>
   final Map<String, DateTime> _translationRetryAfter = <String, DateTime>{};
   static const Duration _translationMicroBatchWindow =
       Duration(milliseconds: 70);
+  static const Duration _translationStyleAnimationDuration =
+      Duration(milliseconds: 150);
   static const int _translationBatchSize = 5;
   static const int _translationAdjacentPrefetchLimit = 2;
   Timer? _translationMicroBatchTimer;
@@ -202,6 +205,7 @@ class _DMChatScreenState extends State<DMChatScreen>
     // 포그라운드 DM 배너 억제를 위해 현재 화면의 실제 대화방 ID를 항상 동기화한다.
     if (_appLifecycleState == AppLifecycleState.resumed) {
       DMActiveConversation.setActive(conversationId);
+      unawaited(FCMService().cancelDmNotification(conversationId));
     }
     _watchConversationUnreadCounter(conversationId);
   }
@@ -241,10 +245,14 @@ class _DMChatScreenState extends State<DMChatScreen>
         WidgetsBinding.instance.lifecycleState ?? AppLifecycleState.detached;
 
     if (Logger.isVerboseEnabled) Logger.log('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━');
-    if (Logger.isVerboseEnabled) Logger.log('🔍 [FCM 진단 2단계] DMChatScreen.initState 호출');
-    if (Logger.isVerboseEnabled) Logger.log('  - widget.conversationId: ${widget.conversationId}');
-    if (Logger.isVerboseEnabled) Logger.log('  - widget.otherUserId: ${widget.otherUserId}');
-    if (Logger.isVerboseEnabled) Logger.log('  - widget.originPostId: ${widget.originPostId}');
+    if (Logger.isVerboseEnabled)
+      Logger.log('🔍 [FCM 진단 2단계] DMChatScreen.initState 호출');
+    if (Logger.isVerboseEnabled)
+      Logger.log('  - widget.conversationId: ${widget.conversationId}');
+    if (Logger.isVerboseEnabled)
+      Logger.log('  - widget.otherUserId: ${widget.otherUserId}');
+    if (Logger.isVerboseEnabled)
+      Logger.log('  - widget.originPostId: ${widget.originPostId}');
     if (Logger.isVerboseEnabled) Logger.log('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━');
 
     // ✅ 현재 보고 있는 DM 대화방 추적 (포그라운드 DM 알림 억제에 사용)
@@ -276,6 +284,7 @@ class _DMChatScreenState extends State<DMChatScreen>
     _appLifecycleState = state;
     if (state == AppLifecycleState.resumed) {
       DMActiveConversation.setActive(_activeConversationId);
+      unawaited(FCMService().cancelDmNotification(_activeConversationId));
       _scheduleAutoMarkAsRead(_messages, forceCounterReconcile: true);
       _scheduleVisibleTranslations();
     } else if (DMActiveConversation.isActive(_activeConversationId)) {
@@ -1037,8 +1046,9 @@ class _DMChatScreenState extends State<DMChatScreen>
       // Firebase Auth UID 형식 검증 (20~30자 영숫자, 언더스코어 포함 가능)
       final uidPattern = RegExp(r'^[a-zA-Z0-9_-]{20,30}$');
       if (!uidPattern.hasMatch(widget.otherUserId)) {
-        if (Logger.isVerboseEnabled) Logger.log(
-            '❌ 잘못된 userId 형식: ${widget.otherUserId} (길이: ${widget.otherUserId.length}자)');
+        if (Logger.isVerboseEnabled)
+          Logger.log(
+              '❌ 잘못된 userId 형식: ${widget.otherUserId} (길이: ${widget.otherUserId.length}자)');
         if (mounted) {
           Navigator.of(context).pop();
           ScaffoldMessenger.of(context).showSnackBar(
@@ -1058,7 +1068,8 @@ class _DMChatScreenState extends State<DMChatScreen>
       final validIdPattern = RegExp(
           r'^(anon_)?[a-zA-Z0-9_-]+_[a-zA-Z0-9_-]+(_[a-zA-Z0-9_-]+)?(_\d{13})?(__\d+)?$');
       if (!validIdPattern.hasMatch(_activeConversationId)) {
-        if (Logger.isVerboseEnabled) Logger.log('❌ 잘못된 conversation ID 형식: $_activeConversationId');
+        if (Logger.isVerboseEnabled)
+          Logger.log('❌ 잘못된 conversation ID 형식: $_activeConversationId');
         if (mounted) {
           Navigator.of(context).pop();
           ScaffoldMessenger.of(context).showSnackBar(
@@ -1270,18 +1281,21 @@ class _DMChatScreenState extends State<DMChatScreen>
   Future<void> _performAutoMarkAsRead() async {
     if (!mounted || _autoMarkReadInFlight || _isLeaving) return;
     _autoMarkReadInFlight = true;
-    if (Logger.isVerboseEnabled) Logger.log(
-        '📖 [markAsRead] 실행 - conversationId: $_activeConversationId (즉시 트리거)');
+    if (Logger.isVerboseEnabled)
+      Logger.log(
+          '📖 [markAsRead] 실행 - conversationId: $_activeConversationId (즉시 트리거)');
     final conversationId = _activeConversationId;
     final operation = () async {
       final result = await _dmService.markAsRead(conversationId);
       await BadgeService.syncAfterDmRead(result.newDmUnreadTotal);
+      await FCMService().cancelDmNotification(conversationId);
     }();
     _autoMarkReadOperation = operation;
     try {
       await operation;
       _autoMarkReadRetryAttempt = 0;
-      if (Logger.isVerboseEnabled) Logger.log('✅ [markAsRead] 완료 - conversationId: $conversationId');
+      if (Logger.isVerboseEnabled)
+        Logger.log('✅ [markAsRead] 완료 - conversationId: $conversationId');
     } catch (e) {
       Logger.error('❌ [markAsRead] 실패: $e');
       _autoMarkReadRetryAttempt =
@@ -1308,7 +1322,8 @@ class _DMChatScreenState extends State<DMChatScreen>
           forceCounterReconcile: true,
         );
       }
-      if (Logger.isVerboseEnabled) Logger.log('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━');
+      if (Logger.isVerboseEnabled)
+        Logger.log('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━');
     }
   }
 
@@ -1455,8 +1470,9 @@ class _DMChatScreenState extends State<DMChatScreen>
           Future.delayed(const Duration(seconds: 3), () {
             if (!mounted) return;
             if (_messagesError == null) return; // 이미 복구됨
-            if (Logger.isVerboseEnabled) Logger.log(
-                '🔄 [메시지 스트림] 재연결 시도 - conversationId: $targetConversationId');
+            if (Logger.isVerboseEnabled)
+              Logger.log(
+                  '🔄 [메시지 스트림] 재연결 시도 - conversationId: $targetConversationId');
             setState(() {
               _messagesError = null;
             });
@@ -1468,7 +1484,8 @@ class _DMChatScreenState extends State<DMChatScreen>
         // Firestore 스트림은 정상적으로 onDone을 호출하지 않는다.
         // onDone이 호출된다면 예상치 못한 스트림 종료이므로 재연결한다.
         if (!mounted) return;
-        if (Logger.isVerboseEnabled) Logger.log('⚠️ [메시지 스트림] 예상치 못한 종료(onDone) - 재연결 시도');
+        if (Logger.isVerboseEnabled)
+          Logger.log('⚠️ [메시지 스트림] 예상치 못한 종료(onDone) - 재연결 시도');
         Future.delayed(const Duration(seconds: 2), () {
           if (!mounted) return;
           if (_recentMessagesSub != null) return; // 이미 새 구독이 있음
@@ -1627,6 +1644,7 @@ class _DMChatScreenState extends State<DMChatScreen>
             .markAsRead(conversationId)
             .timeout(const Duration(seconds: 12));
         await BadgeService.syncAfterDmRead(result.newDmUnreadTotal);
+        await FCMService().cancelDmNotification(conversationId);
       })()
           .catchError((Object error) {
         Logger.error('❌ [DM 읽음] 화면 종료 동기화 실패: $error');
@@ -1697,99 +1715,159 @@ class _DMChatScreenState extends State<DMChatScreen>
 
   Widget _buildDmTranslationControl() {
     final isKo = Localizations.localeOf(context).languageCode == 'ko';
+    final translationActionLabel = isKo ? '번역 보기' : 'View translation';
+    final originalActionLabel = isKo ? '원문 보기' : 'View original';
     final label = _translationShowsOriginal
-        ? (isKo ? '번역 보기' : 'View translation')
-        : (isKo ? '원문 보기' : 'View original');
+        ? translationActionLabel
+        : originalActionLabel;
     final settingsLabel = isKo ? '번역 언어 설정' : 'Translation language';
+    final controlTextStyle = TextStyle(
+      fontFamily: 'Inter',
+      fontFamilyFallback: const ['NotoSansKR'],
+      fontSize: context.rf(11).clamp(10.5, 12).toDouble(),
+      fontWeight: FontWeight.w700,
+      height: 1,
+      letterSpacing: -0.1,
+    );
+    var widestLabel = 0.0;
+    for (final candidate in <String>[
+      translationActionLabel,
+      originalActionLabel,
+    ]) {
+      final painter = TextPainter(
+        text: TextSpan(text: candidate, style: controlTextStyle),
+        maxLines: 1,
+        textDirection: Directionality.of(context),
+        textScaler: MediaQuery.textScalerOf(context).clamp(
+          maxScaleFactor: 1.15,
+        ),
+      )..layout();
+      if (painter.width > widestLabel) widestLabel = painter.width;
+      painter.dispose();
+    }
+    final toggleWidth = (6 + 15 + 4 + widestLabel + 2).ceilToDouble();
 
     return Material(
       color: Colors.transparent,
       child: Align(
         alignment: Alignment.centerRight,
         child: Padding(
-          padding: const EdgeInsets.fromLTRB(12, 6, 12, 4),
-          child: DecoratedBox(
-            decoration: BoxDecoration(
-              color: const Color(0xFF087BB5),
-              borderRadius: BorderRadius.circular(14),
-            ),
-            child: Row(
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                Tooltip(
-                  message: label,
-                  child: TextButton(
-                    key: const ValueKey('dm_translation_toggle'),
-                    onPressed:
-                        _translationModeReady ? _toggleDmTranslation : null,
-                    style: TextButton.styleFrom(
-                      foregroundColor: Colors.white,
-                      disabledForegroundColor: const Color(0xFFD6EBF5),
-                      minimumSize: const Size(0, 28),
-                      maximumSize: const Size(double.infinity, 28),
-                      padding: const EdgeInsets.fromLTRB(8, 0, 3, 0),
-                      tapTargetSize: MaterialTapTargetSize.shrinkWrap,
-                      shape: const StadiumBorder(),
+          padding: EdgeInsets.fromLTRB(
+            12,
+            context.rs(6).clamp(5, 8).toDouble(),
+            12,
+            4,
+          ),
+          child: MediaQuery.withClampedTextScaling(
+            maxScaleFactor: 1.15,
+            child: TweenAnimationBuilder<double>(
+              tween: Tween<double>(end: _translationShowsOriginal ? 0 : 1),
+              duration: _translationStyleAnimationDuration,
+              curve: Curves.easeOut,
+              builder: (context, value, _) {
+                const pointColor = Color(0xFF087BB5);
+                final background = Color.lerp(pointColor, Colors.white, value)!;
+                final foreground = Color.lerp(Colors.white, pointColor, value)!;
+                final disabledForeground = Color.lerp(
+                  const Color(0xFFD6EBF5),
+                  const Color(0xFF76AFCB),
+                  value,
+                )!;
+                return DecoratedBox(
+                  decoration: BoxDecoration(
+                    color: background,
+                    borderRadius: BorderRadius.circular(14),
+                    border: Border.all(
+                      color: Color.lerp(Colors.transparent, pointColor, value)!,
+                      width: .8,
                     ),
-                    child: Row(
-                      mainAxisSize: MainAxisSize.min,
-                      children: [
-                        if (!_translationModeReady)
-                          const SizedBox.square(
-                            dimension: 14,
-                            child: CircularProgressIndicator(
-                              strokeWidth: 1.8,
-                              color: Color(0xFFD6EBF5),
-                            ),
-                          )
-                        else
-                          const Icon(Icons.translate_rounded, size: 15),
-                        const SizedBox(width: 3),
-                        MediaQuery.withClampedTextScaling(
-                          maxScaleFactor: 1.15,
-                          child: Text(
-                            label,
-                            maxLines: 1,
-                            overflow: TextOverflow.ellipsis,
-                            softWrap: false,
-                            style: TextStyle(
-                              fontFamily: 'Inter',
-                              fontFamilyFallback: const ['NotoSansKR'],
-                              fontSize: context
-                                  .rf(11)
-                                  .clamp(10.5, 12)
-                                  .toDouble(),
-                              fontWeight: FontWeight.w700,
-                              height: 1,
-                              letterSpacing: -0.1,
+                  ),
+                  child: Row(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      Semantics(
+                        button: true,
+                        label: label,
+                        child: Tooltip(
+                          message: label,
+                          child: SizedBox(
+                            width: toggleWidth,
+                            height: 28,
+                            child: TextButton(
+                              key: const ValueKey('dm_translation_toggle'),
+                              onPressed: _translationModeReady
+                                  ? _toggleDmTranslation
+                                  : null,
+                              style: TextButton.styleFrom(
+                                foregroundColor: foreground,
+                                disabledForegroundColor: disabledForeground,
+                                minimumSize: const Size(0, 28),
+                                maximumSize: const Size(double.infinity, 28),
+                                padding: const EdgeInsets.fromLTRB(6, 0, 2, 0),
+                                tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                                shape: const StadiumBorder(),
+                              ),
+                              child: Row(
+                                mainAxisAlignment: MainAxisAlignment.center,
+                                children: [
+                                  if (!_translationModeReady)
+                                    SizedBox.square(
+                                      dimension: 14,
+                                      child: CircularProgressIndicator(
+                                        strokeWidth: 1.8,
+                                        color: disabledForeground,
+                                      ),
+                                    )
+                                  else
+                                    Icon(
+                                      Icons.translate_rounded,
+                                      size: 15,
+                                      color: foreground,
+                                    ),
+                                  const SizedBox(width: 4),
+                                  Flexible(
+                                    child: Text(
+                                      label,
+                                      maxLines: 1,
+                                      overflow: TextOverflow.ellipsis,
+                                      softWrap: false,
+                                      style: controlTextStyle,
+                                    ),
+                                  ),
+                                ],
+                              ),
                             ),
                           ),
                         ),
-                      ],
-                    ),
+                      ),
+                      Semantics(
+                        button: true,
+                        label: settingsLabel,
+                        child: Tooltip(
+                          message: settingsLabel,
+                          child: IconButton(
+                            key: const ValueKey(
+                              'dm_translation_language_settings',
+                            ),
+                            onPressed: _openDmTranslationLanguageSettings,
+                            icon: const Icon(Icons.settings_outlined),
+                            color: foreground,
+                            iconSize: 15,
+                            padding: const EdgeInsets.only(right: 7),
+                            style: IconButton.styleFrom(
+                              minimumSize: const Size(31, 28),
+                              maximumSize: const Size(31, 28),
+                              padding: const EdgeInsets.only(right: 7),
+                              tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                              visualDensity: VisualDensity.compact,
+                            ),
+                          ),
+                        ),
+                      ),
+                    ],
                   ),
-                ),
-                Tooltip(
-                  message: settingsLabel,
-                  child: IconButton(
-                    key: const ValueKey(
-                      'dm_translation_language_settings',
-                    ),
-                    onPressed: _openDmTranslationLanguageSettings,
-                    icon: const Icon(Icons.settings_outlined),
-                    color: Colors.white,
-                    iconSize: 15,
-                    padding: EdgeInsets.zero,
-                    style: IconButton.styleFrom(
-                      minimumSize: const Size(28, 28),
-                      maximumSize: const Size(28, 28),
-                      padding: EdgeInsets.zero,
-                      tapTargetSize: MaterialTapTargetSize.shrinkWrap,
-                      visualDensity: VisualDensity.compact,
-                    ),
-                  ),
-                ),
-              ],
+                );
+              },
             ),
           ),
         ),
@@ -3380,18 +3458,27 @@ class _DMChatScreenState extends State<DMChatScreen>
                           ? _sendMessage
                           : () {
                               // canSend가 false일 때 디버그 로그
-                              if (Logger.isVerboseEnabled) Logger.log('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━');
-                              if (Logger.isVerboseEnabled) Logger.log(
-                                  '❌ [FCM 진단 2단계] 전송 버튼 클릭했지만 canSend=false');
-                              if (Logger.isVerboseEnabled) Logger.log('  - _isBlocked: $_isBlocked');
-                              if (Logger.isVerboseEnabled) Logger.log('  - _isBlockedBy: $_isBlockedBy');
-                              if (Logger.isVerboseEnabled) Logger.log('  - _isLoading: $_isLoading');
-                              if (Logger.isVerboseEnabled) Logger.log(
-                                  '  - text.isNotEmpty: ${_messageController.text.trim().isNotEmpty}');
-                              if (Logger.isVerboseEnabled) Logger.log(
-                                  '  - _pendingImage: ${_pendingImage != null}');
-                              if (Logger.isVerboseEnabled) Logger.log('  - canSend 결과: $canSend');
-                              if (Logger.isVerboseEnabled) Logger.log('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━');
+                              if (Logger.isVerboseEnabled)
+                                Logger.log('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━');
+                              if (Logger.isVerboseEnabled)
+                                Logger.log(
+                                    '❌ [FCM 진단 2단계] 전송 버튼 클릭했지만 canSend=false');
+                              if (Logger.isVerboseEnabled)
+                                Logger.log('  - _isBlocked: $_isBlocked');
+                              if (Logger.isVerboseEnabled)
+                                Logger.log('  - _isBlockedBy: $_isBlockedBy');
+                              if (Logger.isVerboseEnabled)
+                                Logger.log('  - _isLoading: $_isLoading');
+                              if (Logger.isVerboseEnabled)
+                                Logger.log(
+                                    '  - text.isNotEmpty: ${_messageController.text.trim().isNotEmpty}');
+                              if (Logger.isVerboseEnabled)
+                                Logger.log(
+                                    '  - _pendingImage: ${_pendingImage != null}');
+                              if (Logger.isVerboseEnabled)
+                                Logger.log('  - canSend 결과: $canSend');
+                              if (Logger.isVerboseEnabled)
+                                Logger.log('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━');
                             },
                       customBorder: const CircleBorder(),
                       child: Container(
@@ -3791,8 +3878,10 @@ class _DMChatScreenState extends State<DMChatScreen>
     try {
       // 실제로 메시지를 보낼 conversationId를 결정
       String actualConversationId = _activeConversationId;
-      if (Logger.isVerboseEnabled) Logger.log('  - _activeConversationId: $_activeConversationId');
-      if (Logger.isVerboseEnabled) Logger.log('  - _conversationExists: $_conversationExists');
+      if (Logger.isVerboseEnabled)
+        Logger.log('  - _activeConversationId: $_activeConversationId');
+      if (Logger.isVerboseEnabled)
+        Logger.log('  - _conversationExists: $_conversationExists');
 
       // 대화방이 존재하지 않으면 첫 메시지 전송 시 생성
       if (_conversationExists != true) {
@@ -3842,14 +3931,17 @@ class _DMChatScreenState extends State<DMChatScreen>
           return;
         }
 
-        if (Logger.isVerboseEnabled) Logger.log('   - 일치 여부: ${newConversationId == _activeConversationId}');
+        if (Logger.isVerboseEnabled)
+          Logger.log(
+              '   - 일치 여부: ${newConversationId == _activeConversationId}');
 
         // ✅ 수정: 새로 생성된 conversationId를 사용
         actualConversationId = newConversationId;
         _conversationExists = true;
       }
 
-      if (Logger.isVerboseEnabled) Logger.log('📤 메시지 전송 시도: conversationId=$actualConversationId');
+      if (Logger.isVerboseEnabled)
+        Logger.log('📤 메시지 전송 시도: conversationId=$actualConversationId');
       // 이미지가 있으면 먼저 업로드
       if (imageFile != null) {
         if (mounted) {
@@ -3902,8 +3994,9 @@ class _DMChatScreenState extends State<DMChatScreen>
         // 첫 메시지 전송으로 conversationId가 실제로 확정/변경될 수 있으므로,
         // 로컬 캐시 기반 메시지 로딩 + 서버 동기화를 해당 ID로 재시작한다.
         if (_activeConversationId != actualConversationId) {
-          if (Logger.isVerboseEnabled) Logger.log(
-              '🔄 activeConversationId 업데이트: $_activeConversationId → $actualConversationId');
+          if (Logger.isVerboseEnabled)
+            Logger.log(
+                '🔄 activeConversationId 업데이트: $_activeConversationId → $actualConversationId');
           _setActiveConversationId(actualConversationId);
         }
         if (mounted) {

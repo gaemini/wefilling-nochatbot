@@ -1492,6 +1492,38 @@ class AppLocalizationsKo extends AppLocalizations {
   String get viewRecommendedFriends => '추천 친구 보기';
 
   @override
+  String get userSearchIdleTitle => '사용자를 검색해보세요';
+
+  @override
+  String get userSearchIdleDescription => '닉네임이나 이름으로 새로운 친구를 찾아보세요.';
+
+  @override
+  String get interestFriendDiscoveryTitle => '관심사로 친구 찾기';
+
+  @override
+  String get interestFriendDiscoveryDescription =>
+      '관심사를 선택하면 같은 관심사를 등록한 사람들을 볼 수 있어요.';
+
+  @override
+  String interestPeopleTitle(String interest) {
+    return '#$interest에 관심 있는 사람';
+  }
+
+  @override
+  String interestNoUsersTitle(String interest) {
+    return '아직 #$interest에 관심사를 등록한 사용자가 없어요';
+  }
+
+  @override
+  String get interestNoUsersDescription => '다른 관심사를 선택해 새로운 친구를 찾아보세요.';
+
+  @override
+  String get interestSearchErrorTitle => '관심사 검색을 불러오지 못했어요';
+
+  @override
+  String get interestSearchErrorDescription => '잠시 후 다시 시도해 주세요.';
+
+  @override
   String get tryDifferentKeyword => '다른 검색어를 시도해보세요';
 
   @override
@@ -2481,6 +2513,35 @@ class AppLocalizationsKo extends AppLocalizations {
 
   @override
   String get nicknameQuestion => '닉네임이 무엇인가요?';
+
+  @override
+  String get nicknamePolicyHelp => '한글, 영문, 숫자, _만 사용할 수 있어요. 공백은 _로 바뀝니다.';
+
+  @override
+  String get nicknameChecking => '사용 가능 여부를 확인하고 있어요.';
+
+  @override
+  String get nicknameAvailable => '사용 가능한 닉네임이에요.';
+
+  @override
+  String get nicknameTaken => '이미 사용 중인 닉네임이에요.';
+
+  @override
+  String get nicknameInvalidCharacters => '한글, 영문, 숫자, _만 입력해 주세요.';
+
+  @override
+  String get nicknameLetterRequired => '한글 또는 영문자를 하나 이상 포함해 주세요.';
+
+  @override
+  String get nicknameReserved => '사용할 수 없는 닉네임이에요.';
+
+  @override
+  String get nicknameCheckNetworkError => '닉네임을 확인하지 못했어요. 다시 시도해 주세요.';
+
+  @override
+  String nicknameNormalizedPreview(String nickname) {
+    return '저장될 닉네임: $nickname';
+  }
 
   @override
   String get notification => '알림';

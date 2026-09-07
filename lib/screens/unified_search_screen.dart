@@ -3,6 +3,7 @@
 
 import 'dart:async';
 
+import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 
@@ -12,6 +13,7 @@ import '../models/meetup.dart';
 import '../models/post.dart';
 import '../models/user_profile.dart';
 import '../models/relationship_status.dart';
+import '../models/social_profile_data.dart';
 import '../providers/relationship_provider.dart';
 import '../screens/meetup_detail_screen.dart';
 import '../screens/friend_profile_screen.dart';
@@ -47,6 +49,10 @@ class _UnifiedSearchScreenState extends State<UnifiedSearchScreen>
   final TextEditingController _searchController = TextEditingController();
   final FocusNode _searchFocusNode = FocusNode();
   Timer? _debounceTimer;
+  StreamSubscription<User?>? _authSubscription;
+  String? _observedAuthUid;
+  final ScrollController _userResultsController = ScrollController();
+  String? _selectedInterestId;
 
   final PostService _postService = PostService();
   final MeetupService _meetupService = MeetupService();
@@ -83,6 +89,19 @@ class _UnifiedSearchScreenState extends State<UnifiedSearchScreen>
       if (mounted) setState(() {});
     });
 
+    _userResultsController.addListener(_onUserResultsScrolled);
+    _observedAuthUid = FirebaseAuth.instance.currentUser?.uid;
+    _authSubscription = FirebaseAuth.instance.authStateChanges().listen((user) {
+      if (!mounted) return;
+      final nextUid = user?.uid;
+      if (nextUid == _observedAuthUid) return;
+      _observedAuthUid = nextUid;
+      context.read<RelationshipProvider>().clearSearchResults();
+      if (_selectedInterestId != null) {
+        setState(() => _selectedInterestId = null);
+      }
+    });
+
     WidgetsBinding.instance.addPostFrameCallback((_) async {
       await _initializeRelationshipProvider();
 
@@ -103,7 +122,21 @@ class _UnifiedSearchScreenState extends State<UnifiedSearchScreen>
     _tabController.dispose();
     _searchController.dispose();
     _searchFocusNode.dispose();
+    _userResultsController
+      ..removeListener(_onUserResultsScrolled)
+      ..dispose();
+    _authSubscription?.cancel();
     super.dispose();
+  }
+
+  void _onUserResultsScrolled() {
+    if (!_userResultsController.hasClients ||
+        _selectedInterestId == null ||
+        _searchController.text.trim().isNotEmpty ||
+        _userResultsController.position.extentAfter > 240) {
+      return;
+    }
+    context.read<RelationshipProvider>().loadMoreInterestUsers();
   }
 
   Future<void> _initializeRelationshipProvider() async {
@@ -154,6 +187,7 @@ class _UnifiedSearchScreenState extends State<UnifiedSearchScreen>
     // 제거한다. 네트워크 요청이 시작되는 300ms 동안 오래된 결과가 새
     // 검색어의 결과처럼 보이는 것을 방지한다.
     setState(() {
+      _selectedInterestId = null;
       _postResults = const [];
       _meetupResults = const [];
       _postsError = null;
@@ -174,6 +208,7 @@ class _UnifiedSearchScreenState extends State<UnifiedSearchScreen>
     // 유저 검색 결과는 provider에 있음
     context.read<RelationshipProvider>().clearSearchResults();
     setState(() {
+      _selectedInterestId = null;
       _postsError = null;
       _meetupsError = null;
       _postResults = const [];
@@ -204,6 +239,19 @@ class _UnifiedSearchScreenState extends State<UnifiedSearchScreen>
     if (!_relationshipInitialized) return;
     final provider = context.read<RelationshipProvider>();
     provider.searchUsers(query);
+  }
+
+  Future<void> _selectInterest(String interestId) async {
+    _debounceTimer?.cancel();
+    _searchFocusNode.unfocus();
+    final provider = context.read<RelationshipProvider>();
+    if (_selectedInterestId == interestId) {
+      provider.clearSearchResults();
+      setState(() => _selectedInterestId = null);
+      return;
+    }
+    setState(() => _selectedInterestId = interestId);
+    await provider.searchUsersByInterest(interestId);
   }
 
   Future<void> _searchPosts(String query) async {
@@ -263,7 +311,9 @@ class _UnifiedSearchScreenState extends State<UnifiedSearchScreen>
         content: Text(
           success
               ? (l10n?.friendRequestSent ?? '')
-              : (provider.errorMessage ?? l10n?.friendRequestFailed ?? ''),
+              : (provider.actionErrorMessage ??
+                  l10n?.friendRequestFailed ??
+                  ''),
         ),
         backgroundColor: success ? Colors.green : Colors.red,
         duration: const Duration(seconds: 2),
@@ -284,6 +334,63 @@ class _UnifiedSearchScreenState extends State<UnifiedSearchScreen>
               : (l10n?.friendRequestCancelFailed ?? ''),
         ),
         backgroundColor: success ? Colors.orange : Colors.red,
+        duration: const Duration(seconds: 2),
+      ),
+    );
+  }
+
+  Future<void> _acceptFriendRequest(String fromUid) async {
+    final provider = context.read<RelationshipProvider>();
+    final success = await provider.acceptFriendRequest(fromUid);
+    if (!mounted) return;
+    final l10n = AppLocalizations.of(context)!;
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(
+        content: Text(
+          success
+              ? l10n.friendRequestAccepted
+              : (provider.actionErrorMessage ?? l10n.friendRequestAcceptFailed),
+        ),
+        backgroundColor: success ? Colors.green : Colors.red,
+        duration: const Duration(seconds: 2),
+      ),
+    );
+  }
+
+  Future<void> _rejectFriendRequest(String fromUid) async {
+    final l10n = AppLocalizations.of(context)!;
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (dialogContext) => AlertDialog(
+        backgroundColor: Colors.white,
+        surfaceTintColor: Colors.white,
+        title: Text(l10n.rejectFriendRequest),
+        content: Text(l10n.confirmRejectFriendRequest),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(dialogContext).pop(false),
+            child: Text(l10n.cancel),
+          ),
+          TextButton(
+            onPressed: () => Navigator.of(dialogContext).pop(true),
+            child: Text(l10n.confirm),
+          ),
+        ],
+      ),
+    );
+    if (confirmed != true || !mounted) return;
+
+    final provider = context.read<RelationshipProvider>();
+    final success = await provider.rejectFriendRequest(fromUid);
+    if (!mounted) return;
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(
+        content: Text(
+          success
+              ? l10n.friendRequestRejected
+              : (provider.actionErrorMessage ?? l10n.friendRequestRejectFailed),
+        ),
+        backgroundColor: success ? Colors.black87 : Colors.red,
         duration: const Duration(seconds: 2),
       ),
     );
@@ -382,6 +489,8 @@ class _UnifiedSearchScreenState extends State<UnifiedSearchScreen>
         _unblockUser(user.uid);
         break;
       case RelationshipStatus.pendingIn:
+        _acceptFriendRequest(user.uid);
+        break;
       case RelationshipStatus.blockedBy:
         break;
     }
@@ -576,6 +685,20 @@ class _UnifiedSearchScreenState extends State<UnifiedSearchScreen>
                         onPressed: onAction,
                         icon: const Icon(Icons.refresh_rounded, size: 18),
                         label: Text(actionLabel),
+                        style: FilledButton.styleFrom(
+                          backgroundColor: AppColors.pointColor,
+                          foregroundColor: Colors.white,
+                          padding: const EdgeInsets.symmetric(
+                            horizontal: 18,
+                            vertical: 11,
+                          ),
+                          textStyle: const TextStyle(
+                            fontFamily: 'Inter',
+                            fontFamilyFallback: ['NotoSansKR'],
+                            fontSize: 14,
+                            fontWeight: FontWeight.w700,
+                          ),
+                        ),
                       ),
                     ],
                   ],
@@ -677,26 +800,19 @@ class _UnifiedSearchScreenState extends State<UnifiedSearchScreen>
 
   Widget _buildUsersTab() {
     final q = _searchController.text.trim();
-    final locale = Localizations.localeOf(context).languageCode;
-    final isKo = locale == 'ko';
+    final l10n = AppLocalizations.of(context)!;
 
     if (!_relationshipInitialized) {
       return const Center(child: CircularProgressIndicator());
     }
 
     if (q.isEmpty) {
-      return _buildEmptyPrompt(
-        icon: Icons.search,
-        title: isKo ? '사용자를 검색해보세요' : 'Search for users',
-        subtitle: isKo
-            ? '닉네임이나 이름으로 검색하여\n새로운 친구를 찾아보세요'
-            : 'Search by nickname or name\nto find new friends',
-      );
+      return _buildInterestDiscovery(l10n);
     }
 
     return Consumer<RelationshipProvider>(
       builder: (context, provider, _) {
-        if (provider.isLoading) {
+        if (provider.isSearchLoading) {
           return const Center(child: CircularProgressIndicator());
         }
 
@@ -723,6 +839,7 @@ class _UnifiedSearchScreenState extends State<UnifiedSearchScreen>
 
         final bottomPadding = MediaQuery.of(context).padding.bottom;
         return ListView.builder(
+          controller: _userResultsController,
           padding: EdgeInsets.only(
             top: 8,
             bottom: bottomPadding > 0 ? bottomPadding + 8 : 8,
@@ -735,12 +852,319 @@ class _UnifiedSearchScreenState extends State<UnifiedSearchScreen>
               user: user,
               relationshipStatus: status,
               onActionPressed: () => _handleUserAction(user, status),
+              onRejectPressed: status == RelationshipStatus.pendingIn
+                  ? () => _rejectFriendRequest(user.uid)
+                  : null,
               onTilePressed: () => _openUserProfile(user),
+              isLoading: provider.isLoading,
               minimal: true,
             );
           },
         );
       },
+    );
+  }
+
+  List<SocialProfileOption> get _featuredInterests {
+    // Keep search discovery in sync with the profile interest catalogue.
+    // A separate hand-picked list caused valid profile tags to be omitted.
+    return SocialProfileCatalog.interests;
+  }
+
+  SocialProfileOption? _interestById(String? id) {
+    if (id == null) return null;
+    for (final option in SocialProfileCatalog.interests) {
+      if (option.id == id) return option;
+    }
+    return null;
+  }
+
+  Widget _buildInterestDiscovery(AppLocalizations l10n) {
+    final languageCode = Localizations.localeOf(context).languageCode;
+    final selected = _interestById(_selectedInterestId);
+
+    return Consumer<RelationshipProvider>(
+      builder: (context, provider, _) {
+        return CustomScrollView(
+          controller: _userResultsController,
+          keyboardDismissBehavior: ScrollViewKeyboardDismissBehavior.onDrag,
+          slivers: [
+            SliverToBoxAdapter(
+              child: _buildInterestHeader(
+                l10n: l10n,
+                languageCode: languageCode,
+                selected: selected,
+              ),
+            ),
+            if (selected != null) ...[
+              const SliverToBoxAdapter(
+                child: Divider(height: 1, color: Color(0xFFEAECF0)),
+              ),
+              SliverToBoxAdapter(
+                child: Padding(
+                  padding: const EdgeInsets.fromLTRB(20, 16, 20, 8),
+                  child: Text(
+                    l10n.interestPeopleTitle(selected.label(languageCode)),
+                    style: const TextStyle(
+                      fontFamily: 'Inter',
+                      fontFamilyFallback: ['NotoSansKR'],
+                      fontSize: 15,
+                      fontWeight: FontWeight.w700,
+                      color: Color(0xFF111827),
+                    ),
+                  ),
+                ),
+              ),
+              ..._buildInterestResultSlivers(
+                provider: provider,
+                selected: selected,
+                languageCode: languageCode,
+                l10n: l10n,
+              ),
+            ],
+            SliverToBoxAdapter(
+              child: SizedBox(
+                height: MediaQuery.viewPaddingOf(context).bottom + 24,
+              ),
+            ),
+          ],
+        );
+      },
+    );
+  }
+
+  Widget _buildInterestHeader({
+    required AppLocalizations l10n,
+    required String languageCode,
+    required SocialProfileOption? selected,
+  }) {
+    final compact = MediaQuery.sizeOf(context).width < 360;
+    return Padding(
+      padding: EdgeInsets.fromLTRB(
+        compact ? 16 : 20,
+        compact ? 16 : 20,
+        compact ? 16 : 20,
+        14,
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          if (selected == null) ...[
+            Text(
+              l10n.userSearchIdleTitle,
+              style: const TextStyle(
+                fontFamily: 'Inter',
+                fontFamilyFallback: ['NotoSansKR'],
+                fontSize: 16,
+                fontWeight: FontWeight.w700,
+                color: Color(0xFF111827),
+                height: 1.3,
+              ),
+            ),
+            const SizedBox(height: 4),
+            Text(
+              l10n.userSearchIdleDescription,
+              style: const TextStyle(
+                fontFamily: 'Inter',
+                fontFamilyFallback: ['NotoSansKR'],
+                fontSize: 13,
+                color: Color(0xFF667085),
+                height: 1.45,
+              ),
+            ),
+            SizedBox(height: compact ? 22 : 26),
+          ],
+          Text(
+            l10n.interestFriendDiscoveryTitle,
+            style: const TextStyle(
+              fontFamily: 'Inter',
+              fontFamilyFallback: ['NotoSansKR'],
+              fontSize: 16,
+              fontWeight: FontWeight.w700,
+              color: Color(0xFF111827),
+              height: 1.3,
+            ),
+          ),
+          const SizedBox(height: 5),
+          Text(
+            l10n.interestFriendDiscoveryDescription,
+            style: const TextStyle(
+              fontFamily: 'Inter',
+              fontFamilyFallback: ['NotoSansKR'],
+              fontSize: 13,
+              color: Color(0xFF667085),
+              height: 1.45,
+            ),
+          ),
+          const SizedBox(height: 14),
+          Wrap(
+            spacing: compact ? 6 : 8,
+            runSpacing: compact ? 6 : 8,
+            children: _featuredInterests.map((option) {
+              final isSelected = option.id == selected?.id;
+              return ChoiceChip(
+                selected: isSelected,
+                showCheckmark: false,
+                label: Text('#${option.label(languageCode)}'),
+                onSelected: (_) => _selectInterest(option.id),
+                backgroundColor: const Color(0xFFF4F5F7),
+                selectedColor: AppColors.pointColor,
+                side: BorderSide.none,
+                padding: EdgeInsets.symmetric(
+                  horizontal: compact ? 6 : 8,
+                  vertical: compact ? 5 : 6,
+                ),
+                labelStyle: TextStyle(
+                  fontFamily: 'Inter',
+                  fontFamilyFallback: const ['NotoSansKR'],
+                  fontSize: compact ? 12 : 13,
+                  fontWeight: FontWeight.w600,
+                  color: isSelected ? Colors.white : const Color(0xFF344054),
+                ),
+                materialTapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                visualDensity: VisualDensity.compact,
+              );
+            }).toList(growable: false),
+          ),
+        ],
+      ),
+    );
+  }
+
+  List<Widget> _buildInterestResultSlivers({
+    required RelationshipProvider provider,
+    required SocialProfileOption selected,
+    required String languageCode,
+    required AppLocalizations l10n,
+  }) {
+    if (provider.isSearchLoading) {
+      return const [
+        SliverToBoxAdapter(
+          child: Padding(
+            padding: EdgeInsets.symmetric(vertical: 40),
+            child: Center(child: CircularProgressIndicator()),
+          ),
+        ),
+      ];
+    }
+    if (provider.errorMessage != null && provider.searchResults.isEmpty) {
+      return [
+        SliverToBoxAdapter(
+          child: _buildInterestStatus(
+            icon: Icons.error_outline_rounded,
+            title: l10n.interestSearchErrorTitle,
+            subtitle: l10n.interestSearchErrorDescription,
+            actionLabel: l10n.retryAction,
+            onAction: () => context
+                .read<RelationshipProvider>()
+                .searchUsersByInterest(selected.id),
+          ),
+        ),
+      ];
+    }
+    if (provider.searchResults.isEmpty) {
+      return [
+        SliverToBoxAdapter(
+          child: _buildInterestStatus(
+            icon: Icons.people_outline_rounded,
+            title: l10n.interestNoUsersTitle(selected.label(languageCode)),
+            subtitle: l10n.interestNoUsersDescription,
+          ),
+        ),
+      ];
+    }
+
+    final showFooter = provider.isInterestLoadingMore ||
+        provider.interestPaginationError != null;
+    return [
+      SliverList(
+        delegate: SliverChildBuilderDelegate(
+          (context, index) {
+            final user = provider.searchResults[index];
+            final status = provider.getRelationshipStatus(user.uid);
+            return UserTile(
+              user: user,
+              relationshipStatus: status,
+              onActionPressed: () => _handleUserAction(user, status),
+              onRejectPressed: status == RelationshipStatus.pendingIn
+                  ? () => _rejectFriendRequest(user.uid)
+                  : null,
+              onTilePressed: () => _openUserProfile(user),
+              isLoading: provider.isLoading,
+              minimal: true,
+            );
+          },
+          childCount: provider.searchResults.length,
+        ),
+      ),
+      if (showFooter)
+        SliverToBoxAdapter(
+          child: provider.isInterestLoadingMore
+              ? const Padding(
+                  padding: EdgeInsets.symmetric(vertical: 18),
+                  child: Center(
+                    child: SizedBox.square(
+                      dimension: 22,
+                      child: CircularProgressIndicator(strokeWidth: 2.2),
+                    ),
+                  ),
+                )
+              : Center(
+                  child: TextButton(
+                    onPressed: provider.loadMoreInterestUsers,
+                    child: Text(l10n.retryAction),
+                  ),
+                ),
+        ),
+    ];
+  }
+
+  Widget _buildInterestStatus({
+    required IconData icon,
+    required String title,
+    required String subtitle,
+    String? actionLabel,
+    VoidCallback? onAction,
+  }) {
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(24, 28, 24, 20),
+      child: Column(
+        children: [
+          Icon(icon, size: 32, color: const Color(0xFF98A2B3)),
+          const SizedBox(height: 12),
+          Text(
+            title,
+            textAlign: TextAlign.center,
+            style: const TextStyle(
+              fontFamily: 'Inter',
+              fontFamilyFallback: ['NotoSansKR'],
+              fontSize: 16,
+              fontWeight: FontWeight.w700,
+              color: Color(0xFF111827),
+              height: 1.3,
+            ),
+          ),
+          const SizedBox(height: 5),
+          Text(
+            subtitle,
+            textAlign: TextAlign.center,
+            style: const TextStyle(
+              fontFamily: 'Inter',
+              fontFamilyFallback: ['NotoSansKR'],
+              fontSize: 13,
+              color: Color(0xFF667085),
+              height: 1.45,
+            ),
+          ),
+          if (actionLabel != null && onAction != null) ...[
+            const SizedBox(height: 14),
+            TextButton(
+              onPressed: onAction,
+              child: Text(actionLabel),
+            ),
+          ],
+        ],
+      ),
     );
   }
 

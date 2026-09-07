@@ -1,3 +1,22 @@
+/// Priority affects dispatch order only, never eligibility or cache identity.
+enum TranslationRequestPriority {
+  visible,
+  interactive,
+  nearby,
+  background,
+  pagination
+}
+
+enum TranslationItemState {
+  queued,
+  loading,
+  completed,
+  sameLanguage,
+  failedRetryable,
+  failedFinal,
+  removed,
+}
+
 class ContentTranslationRequest {
   const ContentTranslationRequest({
     required this.contentType,
@@ -60,9 +79,10 @@ class ContentTranslationResult {
   final bool automaticRetryExhausted;
 
   bool get isReady => status == 'completed' || status == 'same_language';
-  bool get isSameLanguage =>
-      status == 'same_language' ||
-      (sourceLanguage.isNotEmpty && sourceLanguage == targetLanguage);
+  // A mixed-language post can have the target as its dominant source language
+  // and still contain translated text. Only the explicit server/client outcome
+  // can mark it as not needing translation; language metadata cannot hide it.
+  bool get isSameLanguage => status == 'same_language';
   bool get isRetryableFailure =>
       !isReady &&
       !automaticRetryExhausted &&

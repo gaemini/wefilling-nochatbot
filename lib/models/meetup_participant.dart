@@ -63,6 +63,17 @@ class MeetupParticipant {
     };
   }
 
+  /// 실제 사용자 프로필로 이동할 수 있는 참여자인지 확인합니다.
+  /// 탈퇴 사용자와 호스트 정보가 없는 레거시 자리표시자는 제외합니다.
+  bool get hasViewableProfile {
+    final normalizedUserId = userId.trim();
+    return normalizedUserId.isNotEmpty &&
+        normalizedUserId != 'host' &&
+        normalizedUserId != 'deleted' &&
+        !isDeletedAccount &&
+        userName != 'DELETED_ACCOUNT';
+  }
+
   // 포맷된 참여 일시 반환
   String getFormattedJoinedAt() {
     return DateFormat('yyyy-MM-dd HH:mm').format(joinedAt);

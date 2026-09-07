@@ -304,6 +304,9 @@ class BadgeService {
       _invalidatedUserId = _auth.currentUser?.uid;
       await stopRealtimeBadgeSync();
       await _setBadge(0);
+      // Account isolation is the only place where a global tray clear is
+      // intentional. Normal room reads cancel only that room in FCMService.
+      await _clearAndroidNotificationTray();
       _currentBadgeCount = 0;
       if (Logger.isVerboseEnabled) Logger.log('✅ 로그아웃 배지 초기화 완료');
     } catch (e) {
@@ -627,9 +630,6 @@ class BadgeService {
     try {
       final safeCount = count < 0 ? 0 : count;
       await AppBadgePlus.updateBadge(safeCount);
-      if (Platform.isAndroid && safeCount == 0) {
-        await _clearAndroidNotificationTray();
-      }
     } catch (e) {
       Logger.error('배지 적용 실패', e);
     }

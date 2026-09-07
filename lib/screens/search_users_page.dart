@@ -93,7 +93,7 @@ class _SearchUsersPageState extends State<SearchUsersPage> {
     } else {
       // Provider의 구체적인 오류 메시지 표시
       final errorMessage =
-          provider.errorMessage ?? l10n?.friendRequestFailed ?? "";
+          provider.actionErrorMessage ?? l10n?.friendRequestFailed ?? "";
       _showSnackBar(errorMessage, Colors.red);
     }
   }
@@ -114,6 +114,45 @@ class _SearchUsersPageState extends State<SearchUsersPage> {
     } else {
       _showSnackBar(l10n?.friendRequestCancelFailed ?? "", Colors.red);
     }
+  }
+
+  /// 받은 친구요청 수락
+  Future<void> _acceptFriendRequest(String fromUid) async {
+    if (!mounted) return;
+
+    final provider = context.read<RelationshipProvider>();
+    final success = await provider.acceptFriendRequest(fromUid);
+    if (!mounted) return;
+
+    final l10n = AppLocalizations.of(context)!;
+    _showSnackBar(
+      success
+          ? l10n.friendRequestAccepted
+          : (provider.actionErrorMessage ?? l10n.friendRequestAcceptFailed),
+      success ? Colors.green : Colors.red,
+    );
+  }
+
+  /// 받은 친구요청 거절
+  Future<void> _rejectFriendRequest(String fromUid) async {
+    if (!mounted) return;
+
+    final l10n = AppLocalizations.of(context)!;
+    final confirmed = await _showConfirmDialog(
+      l10n.rejectFriendRequest,
+      l10n.confirmRejectFriendRequest,
+    );
+    if (!confirmed || !mounted) return;
+
+    final provider = context.read<RelationshipProvider>();
+    final success = await provider.rejectFriendRequest(fromUid);
+    if (!mounted) return;
+    _showSnackBar(
+      success
+          ? l10n.friendRequestRejected
+          : (provider.actionErrorMessage ?? l10n.friendRequestRejectFailed),
+      success ? Colors.black87 : Colors.red,
+    );
   }
 
   /// 친구 삭제
@@ -204,8 +243,9 @@ class _SearchUsersPageState extends State<SearchUsersPage> {
         _unblockUser(user.uid);
         break;
       case RelationshipStatus.pendingIn:
+        _acceptFriendRequest(user.uid);
+        break;
       case RelationshipStatus.blockedBy:
-        // 이 상태에서는 액션 불가
         break;
     }
   }
@@ -389,7 +429,11 @@ class _SearchUsersPageState extends State<SearchUsersPage> {
           user: user,
           relationshipStatus: status,
           onActionPressed: () => _handleAction(user, status),
+          onRejectPressed: status == RelationshipStatus.pendingIn
+              ? () => _rejectFriendRequest(user.uid)
+              : null,
           onTilePressed: () => _openUserProfile(user),
+          isLoading: provider.isLoading,
         );
       },
     );

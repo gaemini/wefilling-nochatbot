@@ -5,6 +5,7 @@
 import 'package:firebase_messaging/firebase_messaging.dart';
 import 'dart:async';
 import 'dart:convert';
+import 'package:firebase_auth/firebase_auth.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:cloud_functions/cloud_functions.dart';
 import 'package:flutter/foundation.dart';
@@ -19,6 +20,8 @@ import 'dm_active_conversation.dart';
 import 'snack_chat_active_conversation.dart';
 import 'language_service.dart';
 import '../utils/logger.dart';
+import '../utils/notification_delivery_policy.dart';
+import '../utils/snack_chat_notification_policy.dart';
 import 'dart:io';
 
 const String _pushSessionUserIdPreferenceKey = 'active_push_session_user_id';
@@ -79,6 +82,8 @@ class FCMService {
   static StreamSubscription<String>? _tokenRefreshSub;
   static StreamSubscription<RemoteMessage>? _onMessageSub;
   static StreamSubscription<RemoteMessage>? _onMessageOpenedAppSub;
+  static final SnackChatNotificationBurstGate _snackChatNotificationGate =
+      SnackChatNotificationBurstGate();
 
   static const String _channelHighImportanceId = 'high_importance_channel';
   static const String _channelHighImportanceName =
@@ -228,6 +233,7 @@ class FCMService {
     _tokenRefreshSub = null;
     _onMessageSub = null;
     _onMessageOpenedAppSub = null;
+    _snackChatNotificationGate.clear();
     _initializingFuture = null;
     _initializedUserId = null;
     try {
@@ -364,7 +370,10 @@ class FCMService {
               .setForegroundNotificationPresentationOptions(
             alert: false,
             badge: false,
-            sound: true,
+            // Foreground display and sound are both owned by the local
+            // notification path below. Leaving system sound enabled here can
+            // play once from APNs and once again from the local notification.
+            sound: false,
           )
               .timeout(
             const Duration(seconds: 3),
@@ -398,7 +407,9 @@ class FCMService {
               Logger.log('⏭️ 토큰 갱신 이벤트 무시: stale epoch/user');
             return;
           }
-          if (Logger.isVerboseEnabled) Logger.log('📱 FCM 토큰 갱신: $newToken');
+          if (Logger.isVerboseEnabled) {
+            Logger.log('📱 FCM 토큰 갱신됨 (length=${newToken.length})');
+          }
           _saveFCMToken(userId, newToken);
         });
       } catch (e) {
@@ -417,14 +428,6 @@ class FCMService {
               }
               return;
             }
-            if (Logger.isVerboseEnabled)
-              Logger.log('📱 포어그라운드 메시지 수신: ${message.messageId}');
-            if (Logger.isVerboseEnabled)
-              Logger.log('📱 제목: ${message.notification?.title}');
-            if (Logger.isVerboseEnabled)
-              Logger.log('📱 내용: ${message.notification?.body}');
-            if (Logger.isVerboseEnabled) Logger.log('📱 데이터: ${message.data}');
-
             // ✅ 포그라운드 알림 정책:
             // - iOS는 위에서 alert=false로 해뒀기 때문에, 여기서 로컬 알림을 "선택적으로" 띄운다.
             // - DM 채팅방을 보고 있는 경우(해당 conversationId 활성) DM 알림은 띄우지 않는다.
@@ -439,6 +442,12 @@ class FCMService {
             final conversationId =
                 (message.data['conversationId'] ?? '').toString();
             final snackChatId = (message.data['snackChatId'] ?? '').toString();
+            if (Logger.isVerboseEnabled) {
+              Logger.log(
+                '📱 포어그라운드 푸시 수신: type=$type '
+                'roomId=$snackChatId messageId=${message.data['messageId'] ?? message.messageId ?? ''}',
+              );
+            }
             final isDm = type == 'dm_received' && conversationId.isNotEmpty;
             final isSnackChat =
                 type == 'snack_chat_message' && snackChatId.isNotEmpty;
@@ -451,7 +460,23 @@ class FCMService {
 
               if (isActiveConversation) {
                 if (isSnackChat) {
-                  unawaited(cancelSnackChatNotification(snackChatId));
+                  unawaited(cancelSnackChatNotification(
+                    snackChatId,
+                    notificationGroupKey:
+                        (message.data['notificationThreadKey'] ??
+                                message.data['notificationGroupKey'] ??
+                                '')
+                            .toString(),
+                  ));
+                } else if (isDm) {
+                  unawaited(cancelDmNotification(
+                    conversationId,
+                    notificationGroupKey:
+                        (message.data['notificationThreadKey'] ??
+                                message.data['notificationGroupKey'] ??
+                                '')
+                            .toString(),
+                  ));
                 }
                 return;
               }
@@ -487,9 +512,14 @@ class FCMService {
               }
               return;
             }
-            if (Logger.isVerboseEnabled)
-              Logger.log('📱 백그라운드에서 앱 열림: ${message.messageId}');
-            if (Logger.isVerboseEnabled) Logger.log('📱 데이터: ${message.data}');
+            if (Logger.isVerboseEnabled) {
+              Logger.log(
+                '📱 백그라운드 푸시로 앱 열림: '
+                'type=${message.data['type'] ?? ''} '
+                'roomId=${message.data['snackChatId'] ?? ''} '
+                'messageId=${message.data['messageId'] ?? message.messageId ?? ''}',
+              );
+            }
             final recipientUserId =
                 (message.data['recipientUserId'] ?? '').toString().trim();
             if (recipientUserId.isNotEmpty && recipientUserId != userId) {
@@ -524,10 +554,14 @@ class FCMService {
             completer.complete();
             return;
           }
-          if (Logger.isVerboseEnabled)
-            Logger.log('📱 앱 종료 상태에서 알림으로 열림: ${initialMessage.messageId}');
-          if (Logger.isVerboseEnabled)
-            Logger.log('📱 데이터: ${initialMessage.data}');
+          if (Logger.isVerboseEnabled) {
+            Logger.log(
+              '📱 종료 상태 푸시로 앱 열림: '
+              'type=${initialMessage.data['type'] ?? ''} '
+              'roomId=${initialMessage.data['snackChatId'] ?? ''} '
+              'messageId=${initialMessage.data['messageId'] ?? initialMessage.messageId ?? ''}',
+            );
+          }
           final recipientUserId =
               (initialMessage.data['recipientUserId'] ?? '').toString().trim();
           if (recipientUserId.isEmpty || recipientUserId == userId) {
@@ -601,8 +635,9 @@ class FCMService {
               }
               continue;
             } else {
-              if (Logger.isVerboseEnabled)
-                Logger.log('📱 APNs 토큰 준비됨: ${apnsToken.substring(0, 20)}...');
+              if (Logger.isVerboseEnabled) {
+                Logger.log('📱 APNs 토큰 준비됨 (length=${apnsToken.length})');
+              }
             }
           } catch (e) {
             Logger.error('❌ APNs 토큰 가져오기 실패: $e');
@@ -618,8 +653,9 @@ class FCMService {
               );
 
           if (token != null && token.isNotEmpty) {
-            if (Logger.isVerboseEnabled)
-              Logger.log('📱 FCM 토큰 준비됨: ${token.substring(0, 20)}...');
+            if (Logger.isVerboseEnabled) {
+              Logger.log('📱 FCM 토큰 준비됨 (length=${token.length})');
+            }
             await _saveFCMToken(userId, token);
             return;
           }
@@ -660,6 +696,8 @@ class FCMService {
       final snackChatId = (message.data['snackChatId'] ?? '').toString().trim();
       final isGroupedSnackChat =
           type == 'snack_chat_message' && snackChatId.isNotEmpty;
+      final notificationId =
+          (message.data['notificationId'] ?? '').toString().trim();
       final notificationGroupKey = (message.data['notificationThreadKey'] ??
               message.data['notificationGroupKey'] ??
               '')
@@ -668,6 +706,25 @@ class FCMService {
       final effectiveGroupKey = notificationGroupKey.isNotEmpty
           ? notificationGroupKey
           : 'snack_$snackChatId';
+      var shouldAlert = true;
+      if (isGroupedSnackChat) {
+        final eventId = (message.data['notificationEventId'] ??
+                message.data['messageId'] ??
+                message.messageId ??
+                '')
+            .toString();
+        final sentAtMillis = int.tryParse(
+              (message.data['sentAtMillis'] ?? '').toString(),
+            ) ??
+            0;
+        final decision = _snackChatNotificationGate.evaluate(
+          roomKey: effectiveGroupKey,
+          eventId: eventId,
+          sentAtMillis: sentAtMillis,
+        );
+        if (!decision.shouldDisplay) return;
+        shouldAlert = decision.shouldAlert;
+      }
       final unreadCount = int.tryParse(
         (message.data['roomUnreadCount'] ?? message.data['unreadCount'] ?? '')
             .toString(),
@@ -688,17 +745,23 @@ class FCMService {
         importance: Importance.high,
         priority: Priority.high,
         showWhen: true,
-        enableVibration: true,
-        playSound: true,
-        tag: isGroupedSnackChat ? effectiveGroupKey : null,
-        groupKey: isGroupedSnackChat ? effectiveGroupKey : null,
+        enableVibration: shouldAlert,
+        playSound: shouldAlert,
+        silent: isGroupedSnackChat && !shouldAlert,
+        onlyAlertOnce: isGroupedSnackChat,
+        tag: isGroupedSnackChat
+            ? effectiveGroupKey
+            : notificationId.isNotEmpty
+                ? appNotificationAndroidTag(notificationId)
+                : null,
+        groupKey: isGroupedSnackChat ? snackChatAndroidGroupKey : null,
         number: isGroupedSnackChat ? unreadCount : null,
       );
 
       final DarwinNotificationDetails iosDetails = DarwinNotificationDetails(
         presentAlert: true,
         presentBadge: true,
-        presentSound: true,
+        presentSound: shouldAlert,
         threadIdentifier: isGroupedSnackChat ? effectiveGroupKey : null,
       );
 
@@ -717,8 +780,18 @@ class FCMService {
 
       await _localNotifications.show(
         isGroupedSnackChat
-            ? _stableNotificationId('snack_chat:$effectiveGroupKey')
-            : message.hashCode,
+            ? (!kIsWeb && Platform.isAndroid
+                // FirebaseMessaging's Android automatic renderer always posts
+                // a tagged remote notification with id 0. Matching that exact
+                // (tag, id) pair prevents a foreground-created card and a later
+                // background-created card from coexisting for the same room.
+                ? snackChatAndroidFcmNotificationId
+                : stableSnackChatNotificationId(
+                    'snack_chat:$effectiveGroupKey',
+                  ))
+            : (!kIsWeb && Platform.isAndroid && notificationId.isNotEmpty)
+                ? androidRemoteNotificationId
+                : message.hashCode,
         title,
         body,
         details,
@@ -731,48 +804,116 @@ class FCMService {
     }
   }
 
-  int _stableNotificationId(String value) {
-    var hash = 0x811C9DC5;
-    for (final codeUnit in value.codeUnits) {
-      hash ^= codeUnit;
-      hash = (hash * 0x01000193) & 0x7FFFFFFF;
-    }
-    return hash;
-  }
-
   /// Removes only the local notification slot associated with [snackChatId].
-  /// Android requires both the stable id and the server-issued tag. iOS uses
-  /// the same stable id for foreground local notifications; APNs itself keeps
-  /// remote deliveries collapsed through the room thread/collapse id.
-  Future<void> cancelSnackChatNotification(String snackChatId) async {
+  /// Android uses FCM's id 0 plus the server-issued stable room tag. iOS uses a
+  /// deterministic local id; APNs keeps remote deliveries grouped/collapsed by
+  /// the same room key.
+  Future<void> cancelSnackChatNotification(
+    String snackChatId, {
+    String? notificationGroupKey,
+  }) async {
     final normalized = snackChatId.trim();
     if (normalized.isEmpty || kIsWeb) return;
     try {
       final preferences = await SharedPreferences.getInstance();
       final preferenceKey =
           '$_snackNotificationGroupPreferencePrefix$normalized';
-      final tag = preferences.getString(preferenceKey);
+      final explicitTag = notificationGroupKey?.trim() ?? '';
+      final storedTag = preferences.getString(preferenceKey)?.trim() ?? '';
+      final currentUserId = FirebaseAuth.instance.currentUser?.uid.trim() ?? '';
+      final derivedTag = currentUserId.isEmpty
+          ? ''
+          : snackChatNotificationGroupKey(
+              recipientUserId: currentUserId,
+              snackChatId: normalized,
+            );
+      final tags = <String>{
+        if (explicitTag.isNotEmpty) explicitTag,
+        if (storedTag.isNotEmpty) storedTag,
+        if (derivedTag.isNotEmpty) derivedTag,
+      };
       final effectiveGroupKey =
-          tag?.trim().isNotEmpty == true ? tag!.trim() : 'snack_$normalized';
-      await _localNotifications.cancel(
-        _stableNotificationId('snack_chat:$effectiveGroupKey'),
-        tag: tag,
-      );
-      // Background FCM notifications that Android itself displayed use the
-      // room tag with the platform default id. Clear that exact room slot as
-      // well, without touching DM or any other Snack Chat room.
-      if (tag?.trim().isNotEmpty == true) {
-        await _localNotifications.cancel(0, tag: tag);
+          tags.isNotEmpty ? tags.first : 'snack_$normalized';
+      for (final tag in tags) {
+        _snackChatNotificationGate.clearRoom(tag);
+        // FirebaseMessaging's automatic Android renderer posts tagged remote
+        // notifications using id 0. Cancel every safe candidate because an
+        // app killed by the OS may not have persisted the server tag locally.
+        await _localNotifications.cancel(
+          snackChatAndroidFcmNotificationId,
+          tag: tag,
+        );
+      }
+      if (tags.isEmpty) {
+        _snackChatNotificationGate.clearRoom(effectiveGroupKey);
+      }
+      // One-version compatibility for foreground notifications created with a
+      // stable non-zero id before Android and FCM automatic delivery shared id 0.
+      final cancellationTags =
+          tags.isEmpty ? <String?>[null] : tags.map<String?>((tag) => tag);
+      for (final tag in cancellationTags) {
+        await _localNotifications.cancel(
+          stableSnackChatNotificationId(
+              'snack_chat:${tag ?? effectiveGroupKey}'),
+          tag: tag,
+        );
       }
       // One-version compatibility for foreground notifications created by
       // the previous room-id-only stable-id implementation.
-      await _localNotifications.cancel(
-        _stableNotificationId('snack_chat:$normalized'),
-        tag: tag,
-      );
+      for (final tag in cancellationTags) {
+        await _localNotifications.cancel(
+          stableSnackChatNotificationId('snack_chat:$normalized'),
+          tag: tag,
+        );
+      }
       await preferences.remove(preferenceKey);
     } catch (error) {
       Logger.error('Snack Chat 방별 알림 정리 실패', error);
+    }
+  }
+
+  /// Removes one ordinary notification after the same content was opened from
+  /// inside the app. Future Android pushes use the deterministic server tag;
+  /// unrelated notification cards remain untouched.
+  Future<void> cancelAppNotification(String notificationId) async {
+    final normalized = notificationId.trim();
+    if (normalized.isEmpty || kIsWeb || !Platform.isAndroid) return;
+    try {
+      await _localNotifications.cancel(
+        androidRemoteNotificationId,
+        tag: appNotificationAndroidTag(normalized),
+      );
+    } catch (error) {
+      Logger.error('개별 앱 알림 정리 실패', error);
+    }
+  }
+
+  /// Removes only the Android DM notification belonging to this conversation.
+  Future<void> cancelDmNotification(
+    String conversationId, {
+    String? notificationGroupKey,
+  }) async {
+    final normalized = conversationId.trim();
+    if (normalized.isEmpty || kIsWeb || !Platform.isAndroid) return;
+    final userId = FirebaseAuth.instance.currentUser?.uid.trim() ?? '';
+    final explicitTag = notificationGroupKey?.trim() ?? '';
+    final tags = <String>{
+      if (explicitTag.isNotEmpty) explicitTag,
+      if (userId.isNotEmpty)
+        dmNotificationAndroidTag(
+          recipientUserId: userId,
+          conversationId: normalized,
+        ),
+    };
+    try {
+      for (final tag in tags) {
+        await _localNotifications.cancel(
+          androidRemoteNotificationId,
+          tag: tag,
+        );
+      }
+    } catch (error) {
+      Logger.error('DM 방별 알림 정리 실패', error);
     }
   }
 
@@ -799,9 +940,9 @@ class FCMService {
       if (Logger.isVerboseEnabled)
         Logger.log('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━');
       if (Logger.isVerboseEnabled) Logger.log('🔍 [FCM 진단 1단계] FCM 토큰 저장 시작');
-      if (Logger.isVerboseEnabled) Logger.log('  - userId: $userId');
-      if (Logger.isVerboseEnabled)
-        Logger.log('  - token (첫 20자): ${token.substring(0, 20)}...');
+      if (Logger.isVerboseEnabled) {
+        Logger.log('  - token length: ${token.length}');
+      }
 
       // ✅ 서버에서 "토큰 중복(다른 계정에 남아있는 토큰)"을 정리하고,
       //    토큰 단위 locale(lang)까지 함께 저장하도록 Cloud Functions를 우선 사용.

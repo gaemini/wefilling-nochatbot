@@ -208,6 +208,24 @@ export function contentSearchSourceChanged(
   return fields.some((field) => !sameSearchValue(before[field], after[field]));
 }
 
+function activeRequester(data: SourceData | undefined): boolean {
+  if (!data) return false;
+  const statuses = [data.status, data.accountStatus, data.registrationStatus]
+    .map((value) => normalizeContentSearchText(value));
+  if (data.isDeleted === true || data.deleted === true ||
+      data.disabled === true || data.isSuspended === true ||
+      data.deletedAt != null || statuses.includes('deleted') ||
+      statuses.includes('suspended')) {
+    return false;
+  }
+  const registration = normalizeContentSearchText(data.registrationStatus);
+  if (registration && registration !== 'complete') return false;
+  if (registration === 'complete') return true;
+  // Legacy completed profiles predate registrationStatus.
+  return data.emailVerified === true &&
+    normalizeContentSearchText(data.nickname ?? data.displayName).length > 0;
+}
+
 function indexMatches(
   current: FirebaseFirestore.DocumentSnapshot,
   next: ContentSearchIndexCore,
@@ -276,24 +294,6 @@ export const onMeetupSearchSourceWritten = functions.firestore
     await synchronizeIndex('meetup', context.params.meetupId);
     return null;
   });
-
-function activeRequester(data: SourceData | undefined): boolean {
-  if (!data) return false;
-  const statuses = [data.status, data.accountStatus, data.registrationStatus]
-    .map((value) => normalizeContentSearchText(value));
-  if (data.isDeleted === true || data.deleted === true ||
-      data.disabled === true || data.isSuspended === true ||
-      data.deletedAt != null || statuses.includes('deleted') ||
-      statuses.includes('suspended')) {
-    return false;
-  }
-  const registration = normalizeContentSearchText(data.registrationStatus);
-  if (registration && registration !== 'complete') return false;
-  if (registration === 'complete') return true;
-  // Legacy completed profiles predate registrationStatus.
-  return data.emailVerified === true &&
-    normalizeContentSearchText(data.nickname ?? data.displayName).length > 0;
-}
 
 type FrozenAudienceState = {
   valid: boolean;

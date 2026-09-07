@@ -25,3 +25,20 @@ bool hasTranslatableSnackChatText(String value) {
   return withoutUrls.isNotEmpty &&
       _translationLetterPattern.hasMatch(withoutUrls);
 }
+
+/// 사용자가 실패한 메시지의 재시도를 직접 누르는 경우에는 다른 메시지의
+/// 백그라운드 번역 용량과 분리해 판단합니다. 같은 메시지의 작업 또는 사용자
+/// 재시도가 이미 진행 중일 때만 중복 탭을 막습니다.
+bool canStartUserSnackTranslationRetry({
+  required bool retryInFlight,
+  required bool messageWorkPending,
+  required bool lifecycleResumed,
+  required bool isLeavingRoom,
+  required bool roomAccessTerminated,
+}) {
+  return !retryInFlight &&
+      !messageWorkPending &&
+      lifecycleResumed &&
+      !isLeavingRoom &&
+      !roomAccessTerminated;
+}

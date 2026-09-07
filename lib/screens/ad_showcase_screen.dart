@@ -2,12 +2,15 @@
 // 광고 배너 상세 페이지 - Firebase Firestore 연동
 // 모든 광고 배너를 순서대로 나열하여 보여줌
 
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'package:url_launcher/url_launcher.dart';
 import 'package:cached_network_image/cached_network_image.dart';
 import '../models/ad_banner.dart';
 import '../services/ad_banner_service.dart';
 import '../utils/logger.dart';
+import '../services/notification_service.dart';
 
 class AdShowcaseScreen extends StatefulWidget {
   const AdShowcaseScreen({
@@ -30,6 +33,14 @@ class _AdShowcaseScreenState extends State<AdShowcaseScreen> {
   AdBannerService? _adBannerService;
   final Map<String, GlobalKey> _bannerKeys = <String, GlobalKey>{};
   bool _didRevealInitialBanner = false;
+
+  @override
+  void initState() {
+    super.initState();
+    unawaited(NotificationService().markRelatedNotificationsAsRead(
+      types: const <String>{'ad_updates'},
+    ));
+  }
 
   GlobalKey _keyForBanner(String bannerId, int index) {
     final anchorId = '$index::$bannerId';

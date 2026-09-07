@@ -31,6 +31,28 @@ Post _post({
   );
 }
 
+Comment _comment({
+  required String id,
+  String postId = 'post-1',
+  String userId = 'other-user',
+  String content = 'Original',
+  String? parentCommentId,
+  bool isDeleted = false,
+}) {
+  return Comment(
+    id: id,
+    postId: postId,
+    userId: userId,
+    authorNickname: 'Writer',
+    authorPhotoUrl: '',
+    content: content,
+    createdAt: DateTime(2026, 9, 5),
+    parentCommentId: parentCommentId,
+    depth: parentCommentId == null ? 0 : 1,
+    isDeleted: isDeleted,
+  );
+}
+
 void main() {
   group('post translation policy', () {
     test('own posts keep the same translation source fields', () {
@@ -82,6 +104,116 @@ void main() {
         sourceFields: <String, String>{'content': 'text'},
       );
       expect(postRequest.serverId, isNot(commentRequest.serverId));
+    });
+
+    test('comment scope remains stable when list membership or order changes',
+        () {
+      final before = <Comment>[
+        _comment(id: 'first'),
+        _comment(id: 'middle'),
+        _comment(id: 'last'),
+      ];
+      final after = <Comment>[
+        _comment(id: 'new'),
+        before.last,
+        before.first,
+        before[1],
+      ];
+
+      expect(commentTranslationScope('post-1'), 'post-comments:post-1');
+      expect(
+        after.map(
+          (comment) => commentTranslationItemKey(
+            comment,
+            postId: 'post-1',
+          ),
+        ),
+        containsAll(<String>[
+          'comment:post-1:first',
+          'comment:post-1:middle',
+          'comment:post-1:last',
+        ]),
+      );
+    });
+
+    test('middle and last comments are independently eligible', () {
+      final comments = <Comment>[
+        _comment(id: 'first'),
+        _comment(id: 'middle'),
+        _comment(id: 'last'),
+      ];
+
+      expect(
+        comments.map((comment) =>
+            isCommentTranslationCandidate(comment, 'current-user')),
+        everyElement(isTrue),
+      );
+    });
+
+    test('own, deleted, and empty comments do not enter translation queue', () {
+      expect(
+        isCommentTranslationCandidate(
+          _comment(id: 'own', userId: 'me'),
+          'me',
+        ),
+        isFalse,
+      );
+      expect(
+        isCommentTranslationCandidate(
+          _comment(id: 'deleted', isDeleted: true),
+          'me',
+        ),
+        isFalse,
+      );
+      expect(
+        isCommentTranslationCandidate(
+          _comment(id: 'empty', content: '  '),
+          'me',
+        ),
+        isFalse,
+      );
+    });
+
+    test('reply UI identity includes parent while callable keeps document id',
+        () {
+      final top = _comment(id: 'same-id');
+      final firstReply = _comment(
+        id: 'same-id',
+        parentCommentId: 'parent-a',
+      );
+      final secondReply = _comment(
+        id: 'same-id',
+        parentCommentId: 'parent-b',
+      );
+
+      final topKey = commentTranslationItemKey(top, postId: 'post-1');
+      final firstReplyKey =
+          commentTranslationItemKey(firstReply, postId: 'post-1');
+      final secondReplyKey =
+          commentTranslationItemKey(secondReply, postId: 'post-1');
+      expect(<String>{topKey, firstReplyKey, secondReplyKey}, hasLength(3));
+
+      final request = commentTranslationRequest(
+        firstReply,
+        postId: 'post-1',
+      );
+      expect(request.serverId, 'comment:post-1:same-id');
+      expect(request.sourceFields, <String, String>{'content': 'Original'});
+    });
+
+    test('comment edit changes translation source without changing identity',
+        () {
+      final before = commentTranslationRequest(
+        _comment(id: 'comment-1', content: 'Before'),
+        postId: 'post-1',
+      );
+      final after = commentTranslationRequest(
+        _comment(id: 'comment-1', content: 'After'),
+        postId: 'post-1',
+      );
+
+      expect(before.serverId, after.serverId);
+      expect(before.sourceFields, isNot(after.sourceFields));
     });
   });
 }

@@ -579,6 +579,25 @@
   "makeFriendsWithSameInterests": "Make new friends and\ncreate joyful memories",
   "findFriendsAction": "Find Friends",
   "viewRecommendedFriends": "View Recommended Friends",
+  "userSearchIdleTitle": "Search for users",
+  "userSearchIdleDescription": "Find new friends by nickname or name.",
+  "interestFriendDiscoveryTitle": "Find friends by interest",
+  "interestFriendDiscoveryDescription": "Choose an interest to meet people who share it.",
+  "interestPeopleTitle": "People interested in #{interest}",
+  "@interestPeopleTitle": {
+    "placeholders": {
+      "interest": { "type": "String" }
+    }
+  },
+  "interestNoUsersTitle": "No one has added #{interest} yet",
+  "@interestNoUsersTitle": {
+    "placeholders": {
+      "interest": { "type": "String" }
+    }
+  },
+  "interestNoUsersDescription": "Choose another interest to discover new friends.",
+  "interestSearchErrorTitle": "Couldn’t load interest results",
+  "interestSearchErrorDescription": "Please try again in a moment.",
   "noSearchResults": "No search results",
   "tryDifferentKeyword": "Try a different search term",
   "clearSearchQuery": "Clear search",
@@ -1061,6 +1080,20 @@
   "imageUploadFailed": "Image upload failed",
   "loginRequired": "Login is required",
   "nicknameQuestion": "What is your nickname?",
+  "nicknamePolicyHelp": "Use Korean or English letters, numbers, and _. Spaces become _.",
+  "nicknameChecking": "Checking availability…",
+  "nicknameAvailable": "This nickname is available.",
+  "nicknameTaken": "This nickname is already in use.",
+  "nicknameInvalidCharacters": "Use only Korean or English letters, numbers, and _.",
+  "nicknameLetterRequired": "Include at least one Korean or English letter.",
+  "nicknameReserved": "This nickname is reserved.",
+  "nicknameCheckNetworkError": "Couldn’t check the nickname. Please try again.",
+  "nicknameNormalizedPreview": "Saved as: {nickname}",
+  "@nicknameNormalizedPreview": {
+    "placeholders": {
+      "nickname": {"type": "String"}
+    }
+  },
   "anonymous": "Anonymous",
   "friendsOnly": "Friends Only",
   "publicPost": "Public",

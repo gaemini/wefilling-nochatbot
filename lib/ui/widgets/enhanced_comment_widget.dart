@@ -9,7 +9,6 @@ import 'package:firebase_auth/firebase_auth.dart';
 import 'package:url_launcher/url_launcher.dart';
 import 'package:linkify/linkify.dart' as linkify;
 import '../../models/comment.dart';
-import '../../models/content_translation.dart';
 import '../../services/comment_service.dart';
 import '../../services/content_hide_service.dart';
 import '../../services/user_info_cache_service.dart';
@@ -17,6 +16,7 @@ import '../../services/report_service.dart';
 import '../../l10n/app_localizations.dart';
 import '../../screens/friend_profile_screen.dart';
 import '../../utils/logger.dart';
+import '../../utils/post_translation_policy.dart';
 import '../../utils/responsive_helper.dart';
 import '../dialogs/block_dialog.dart';
 import '../snackbar/app_snackbar.dart';
@@ -35,8 +35,6 @@ class EnhancedCommentWidget extends StatefulWidget {
   final bool isReplyTarget; // 현재 하이라이트 대상인지
   final String? parentTopLevelCommentId; // 최상위 댓글 ID (대댓글 작성용)
   final Widget Function(Comment)? replyWidgetBuilder; // 대댓글 위젯 빌더
-  final bool externallyManagedTranslation;
-  final String? translatedContent;
 
   const EnhancedCommentWidget({
     super.key,
@@ -52,8 +50,6 @@ class EnhancedCommentWidget extends StatefulWidget {
     this.isReplyTarget = false,
     this.parentTopLevelCommentId,
     this.replyWidgetBuilder,
-    this.externallyManagedTranslation = false,
-    this.translatedContent,
   });
 
   @override
@@ -922,7 +918,10 @@ class _EnhancedCommentWidgetState extends State<EnhancedCommentWidget> {
         ...widget.replies.map((reply) {
           final child = widget.replyWidgetBuilder?.call(reply) ??
               EnhancedCommentWidget(
-                key: ValueKey<String>('comment-${reply.id}'),
+                key: ValueKey<String>(commentTranslationItemKey(
+                  reply,
+                  postId: widget.postId,
+                )),
                 comment: reply,
                 replies: const [],
                 postId: widget.postId,
@@ -1189,45 +1188,33 @@ class _EnhancedCommentWidgetState extends State<EnhancedCommentWidget> {
                         const SizedBox(height: 2),
 
                         // @아이디를 본문과 "같은 텍스트 흐름"으로 합쳐 줄바꿈까지 자연스럽게 처리
-                        if (widget.externallyManagedTranslation || isMyComment)
-                          AnimatedSwitcher(
-                            duration: const Duration(milliseconds: 190),
-                            child: RichText(
-                              key: ValueKey<String>(
-                                '${widget.comment.id}:'
-                                '${isMyComment || widget.translatedContent == null ? 'original' : 'translated'}',
-                              ),
-                              text: TextSpan(
-                                children: [
-                                  if (isReply)
-                                    TextSpan(
-                                      text:
-                                          '@${_localizedReplyTarget(context)} ',
-                                      style: mentionStyle,
-                                    ),
-                                  ..._buildLinkifiedSpans(
-                                    text: isMyComment
-                                        ? widget.comment.content
-                                        : widget.translatedContent ??
-                                            widget.comment.content,
-                                    style: bodyStyle,
-                                    linkStyle: linkStyle,
+                        if (isMyComment)
+                          RichText(
+                            key: ValueKey<String>(
+                              '${widget.comment.id}:original',
+                            ),
+                            text: TextSpan(
+                              children: [
+                                if (isReply)
+                                  TextSpan(
+                                    text: '@${_localizedReplyTarget(context)} ',
+                                    style: mentionStyle,
                                   ),
-                                ],
-                              ),
+                                ..._buildLinkifiedSpans(
+                                  text: widget.comment.content,
+                                  style: bodyStyle,
+                                  linkStyle: linkStyle,
+                                ),
+                              ],
                             ),
                           )
                         else
                           TranslatableContent(
-                            request: ContentTranslationRequest(
-                              contentType: 'comment',
-                              contentId: widget.comment.id,
-                              parentId: widget.postId,
-                              sourceFields: <String, String>{
-                                'content': widget.comment.content,
-                              },
+                            request: commentTranslationRequest(
+                              widget.comment,
+                              postId: widget.postId,
                             ),
-                            scope: 'post-comments:${widget.postId}',
+                            scope: commentTranslationScope(widget.postId),
                             showToggle: false,
                             builder: (context, fields) => RichText(
                               text: TextSpan(

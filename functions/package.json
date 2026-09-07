@@ -13,11 +13,20 @@
     "migrate:nicknames": "node scripts/migrate_nickname_claims.js",
     "migrate:content-search": "node scripts/migrate_content_search_indexes.js",
     "test:content-search": "node scripts/test_content_search_helpers.js",
+    "test:content-translation": "npm run build && node scripts/test_content_translation_temporal_policy.js",
+    "test:content-translation-latency": "npm run build && node scripts/test_content_translation_latency.js",
+    "canary:content-translation": "npm run build && node scripts/canary_content_translation_temporal.js",
     "test:snack-summary": "npm run build && node scripts/test_snack_chat_unread_summary_helpers.js && node scripts/test_snack_chat_structured_summary_schema_contract.js",
     "test:snack-summary-schema": "npm run build && node scripts/test_snack_chat_structured_summary_schema_contract.js",
     "canary:snack-summary-schema": "npm run build && node scripts/canary_snack_chat_structured_summary_schema.js",
     "test:auth-registration": "node scripts/test_auth_registration_helpers.js",
-    "migrate:friend-counts": "node scripts/migrate_friend_counts.js"
+    "test:user-interest-search": "npm run build && node scripts/test_user_interest_search_helpers.js",
+    "test:user-search-policy": "npm run build && node scripts/test_searchable_user_policy.js",
+    "test:nickname-policy": "npm run build && node scripts/test_nickname_policy.js",
+    "audit:user-search-lifecycle": "npm run build && node scripts/audit_user_search_lifecycle.js",
+    "audit:nickname-normalization": "npm run build && node scripts/audit_nickname_normalization.js",
+    "migrate:friend-counts": "npm run build && node scripts/migrate_friend_counts.js",
+    "migrate:review-projections": "node scripts/migrate_review_profile_projections.js"
   },
   "engines": {
     "node": "22"

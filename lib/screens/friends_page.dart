@@ -295,6 +295,9 @@ class _FriendsPageState extends State<FriendsPage> {
           user: user,
           relationshipStatus: status,
           onActionPressed: () => _handleUserAction(user, status),
+          onRejectPressed: status == RelationshipStatus.pendingIn
+              ? () => _rejectFriendRequest(user.uid)
+              : null,
           onTilePressed: () => _openUserProfileFromSearch(user),
           isLoading: provider.isLoading,
           minimal: true,
@@ -332,7 +335,8 @@ class _FriendsPageState extends State<FriendsPage> {
             _showSnackBar(l10n.friendRequestSent, Colors.green);
           } else {
             _showSnackBar(
-                provider.errorMessage ?? l10n.friendRequestFailed, Colors.red);
+                provider.actionErrorMessage ?? l10n.friendRequestFailed,
+                Colors.red);
           }
         });
         return;
@@ -355,9 +359,44 @@ class _FriendsPageState extends State<FriendsPage> {
         });
         return;
       case RelationshipStatus.pendingIn:
+        _acceptFriendRequest(user.uid);
+        return;
       case RelationshipStatus.blockedBy:
         return;
     }
+  }
+
+  Future<void> _acceptFriendRequest(String fromUid) async {
+    final provider = context.read<RelationshipProvider>();
+    final success = await provider.acceptFriendRequest(fromUid);
+    if (!mounted) return;
+
+    final l10n = AppLocalizations.of(context)!;
+    _showSnackBar(
+      success
+          ? l10n.friendRequestAccepted
+          : (provider.actionErrorMessage ?? l10n.friendRequestAcceptFailed),
+      success ? Colors.green : Colors.red,
+    );
+  }
+
+  Future<void> _rejectFriendRequest(String fromUid) async {
+    final l10n = AppLocalizations.of(context)!;
+    final confirmed = await _showConfirmDialog(
+      l10n.rejectFriendRequest,
+      l10n.confirmRejectFriendRequest,
+    );
+    if (!confirmed || !mounted) return;
+
+    final provider = context.read<RelationshipProvider>();
+    final success = await provider.rejectFriendRequest(fromUid);
+    if (!mounted) return;
+    _showSnackBar(
+      success
+          ? l10n.friendRequestRejected
+          : (provider.actionErrorMessage ?? l10n.friendRequestRejectFailed),
+      success ? Colors.black87 : Colors.red,
+    );
   }
 
   /// 친구 삭제
@@ -426,21 +465,94 @@ class _FriendsPageState extends State<FriendsPage> {
   Future<bool> _showConfirmDialog(String title, String message) async {
     final result = await showDialog<bool>(
       context: context,
-      builder: (context) => AlertDialog(
-        title: Text(title),
-        content: Text(message),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.of(context).pop(false),
-            child: Text(AppLocalizations.of(context)!.cancel ?? ""),
+      builder: (dialogContext) => AlertDialog(
+        backgroundColor: Colors.white,
+        surfaceTintColor: Colors.white,
+        elevation: 8,
+        shape: RoundedRectangleBorder(
+          borderRadius: BorderRadius.circular(20),
+        ),
+        insetPadding: const EdgeInsets.symmetric(horizontal: 28, vertical: 24),
+        titlePadding: const EdgeInsets.fromLTRB(24, 24, 24, 0),
+        contentPadding: const EdgeInsets.fromLTRB(24, 12, 24, 4),
+        actionsPadding: const EdgeInsets.fromLTRB(24, 20, 24, 20),
+        title: Text(
+          title,
+          style: const TextStyle(
+            fontFamily: 'Inter',
+            fontFamilyFallback: ['NotoSansKR'],
+            fontSize: 20,
+            fontWeight: FontWeight.w700,
+            color: Color(0xFF111827),
+            height: 1.25,
           ),
-          ElevatedButton(
-            onPressed: () => Navigator.of(context).pop(true),
-            style: ElevatedButton.styleFrom(
-              backgroundColor: Colors.red,
-              foregroundColor: Colors.white,
-            ),
-            child: Text(AppLocalizations.of(context)!.confirm ?? ""),
+        ),
+        content: Text(
+          message,
+          style: const TextStyle(
+            fontFamily: 'Inter',
+            fontFamilyFallback: ['NotoSansKR'],
+            fontSize: 15,
+            fontWeight: FontWeight.w400,
+            color: Color(0xFF667085),
+            height: 1.45,
+          ),
+        ),
+        actions: [
+          Row(
+            children: [
+              Expanded(
+                child: TextButton(
+                  onPressed: () => Navigator.of(dialogContext).pop(false),
+                  style: TextButton.styleFrom(
+                    minimumSize: const Size(0, 48),
+                    foregroundColor: const Color(0xFF667085),
+                    shape: RoundedRectangleBorder(
+                      borderRadius: BorderRadius.circular(12),
+                      side: const BorderSide(color: Color(0xFFE4E7EC)),
+                    ),
+                  ),
+                  child: Text(
+                    AppLocalizations.of(dialogContext)!.cancel,
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    style: const TextStyle(
+                      fontFamily: 'Inter',
+                      fontFamilyFallback: ['NotoSansKR'],
+                      fontSize: 14,
+                      fontWeight: FontWeight.w700,
+                    ),
+                  ),
+                ),
+              ),
+              const SizedBox(width: 12),
+              Expanded(
+                child: ElevatedButton(
+                  onPressed: () => Navigator.of(dialogContext).pop(true),
+                  style: ElevatedButton.styleFrom(
+                    minimumSize: const Size(0, 48),
+                    backgroundColor: const Color(0xFFD92D20),
+                    foregroundColor: Colors.white,
+                    elevation: 0,
+                    shadowColor: Colors.transparent,
+                    shape: RoundedRectangleBorder(
+                      borderRadius: BorderRadius.circular(12),
+                    ),
+                  ),
+                  child: Text(
+                    AppLocalizations.of(dialogContext)!.confirm,
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    style: const TextStyle(
+                      fontFamily: 'Inter',
+                      fontFamilyFallback: ['NotoSansKR'],
+                      fontSize: 14,
+                      fontWeight: FontWeight.w700,
+                    ),
+                  ),
+                ),
+              ),
+            ],
           ),
         ],
       ),

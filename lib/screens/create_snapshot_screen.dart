@@ -63,6 +63,7 @@ class _CreateSnapshotScreenState extends State<CreateSnapshotScreen>
   double _overlayFontScale = 1;
   double _gestureStartFontScale = 1;
   bool _editingOverlay = false;
+  int _overlayLayoutRevision = 0;
   Completer<void>? _overlayCommitCompleter;
   bool _lightText = true;
   SnapshotVisibility _visibility = SnapshotVisibility.public;
@@ -514,6 +515,38 @@ class _CreateSnapshotScreenState extends State<CreateSnapshotScreen>
     if (!_overlayFocusNode.hasFocus) _overlayFocusNode.requestFocus();
   }
 
+  void _handleOverlayTextChanged(String text) {
+    final revision = ++_overlayLayoutRevision;
+    if (_overlayText != text) setState(() => _overlayText = text);
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!mounted || revision != _overlayLayoutRevision) return;
+      final renderObject = _compositionKey.currentContext?.findRenderObject();
+      if (renderObject is! RenderBox ||
+          !renderObject.attached ||
+          !renderObject.hasSize) {
+        return;
+      }
+      final nextScale = _fitOverlayFontScale(
+        _overlayFontScale,
+        renderObject.size.width,
+        renderObject.size.height,
+      );
+      final nextPosition = _boundedOverlayPosition(
+        _overlayPosition,
+        renderObject.size.width,
+        renderObject.size.height,
+        fontScale: nextScale,
+      );
+      if (nextScale == _overlayFontScale && nextPosition == _overlayPosition) {
+        return;
+      }
+      setState(() {
+        _overlayFontScale = nextScale;
+        _overlayPosition = nextPosition;
+      });
+    });
+  }
+
   Future<void> _finishOverlayEditing() {
     if (_overlayFocusNode.hasFocus) _overlayFocusNode.unfocus();
     return _scheduleOverlayCommit();
@@ -579,9 +612,8 @@ class _CreateSnapshotScreenState extends State<CreateSnapshotScreen>
       ),
       textAlign: TextAlign.center,
       textDirection: Directionality.of(context),
-      textScaler: MediaQuery.textScalerOf(context),
+      textScaler: MediaQuery.textScalerOf(context).clamp(maxScaleFactor: 1.3),
       textWidthBasis: TextWidthBasis.longestLine,
-      maxLines: 3,
     )..layout(maxWidth: maxTextWidth);
     // TextPainter does not include the blur extent of TextStyle.shadows.
     const shadowSafety = 10.0;
@@ -893,6 +925,8 @@ class _CreateSnapshotScreenState extends State<CreateSnapshotScreen>
   @override
   Widget build(BuildContext context) {
     final strings = SnapshotStrings.of(context);
+    final compactUploadAction = MediaQuery.sizeOf(context).width < 340 ||
+        MediaQuery.textScalerOf(context).scale(14) > 24;
     return PopScope(
       canPop: _sourceFile == null && !_uploading,
       onPopInvokedWithResult: (didPop, _) async {
@@ -906,13 +940,13 @@ class _CreateSnapshotScreenState extends State<CreateSnapshotScreen>
       },
       child: Scaffold(
         backgroundColor: Colors.white,
-        resizeToAvoidBottomInset: false,
+        resizeToAvoidBottomInset: true,
         appBar: AppBar(
           backgroundColor: Colors.white,
           surfaceTintColor: Colors.white,
           elevation: 0,
           centerTitle: true,
-          toolbarHeight: context.rh(56, min: 54, max: 60),
+          toolbarHeight: _snapshotToolbarHeight,
           automaticallyImplyLeading: false,
           leadingWidth: 48,
           leading: IconButton(
@@ -934,21 +968,7 @@ class _CreateSnapshotScreenState extends State<CreateSnapshotScreen>
                 ? MaterialLocalizations.of(context).closeButtonTooltip
                 : MaterialLocalizations.of(context).backButtonTooltip,
           ),
-          title: MediaQuery.withClampedTextScaling(
-            maxScaleFactor: 1.2,
-            child: Text(
-              strings.createSnapshot,
-              maxLines: 1,
-              overflow: TextOverflow.ellipsis,
-              style: TextStyle(
-                fontFamily: 'Inter',
-                fontFamilyFallback: const ['NotoSansKR'],
-                fontSize: context.rf(18).clamp(16, 19).toDouble(),
-                fontWeight: FontWeight.w700,
-                color: const Color(0xFF111827),
-              ),
-            ),
-          ),
+          flexibleSpace: _buildCenteredSnapshotTitle(strings.createSnapshot),
           actions: [
             if (_step == 0)
               SizedBox.square(
@@ -969,6 +989,23 @@ class _CreateSnapshotScreenState extends State<CreateSnapshotScreen>
                   color: const Color(0xFF111827),
                   disabledColor: const Color(0xFFD1D5DB),
                   tooltip: MaterialLocalizations.of(context).nextPageTooltip,
+                ),
+              )
+            else if (compactUploadAction)
+              SizedBox.square(
+                dimension: 48,
+                child: IconButton(
+                  onPressed: _uploading ? null : _upload,
+                  tooltip: strings.upload,
+                  icon: _uploading
+                      ? const SizedBox.square(
+                          dimension: 15,
+                          child: CircularProgressIndicator(strokeWidth: 2),
+                        )
+                      : Icon(
+                          Icons.check_rounded,
+                          size: context.ri(21).clamp(20, 23).toDouble(),
+                        ),
                 ),
               )
             else
@@ -1017,13 +1054,53 @@ class _CreateSnapshotScreenState extends State<CreateSnapshotScreen>
     );
   }
 
+  double get _snapshotToolbarHeight {
+    final base = context.rh(56, min: 54, max: 60);
+    final scaledTitle = MediaQuery.textScalerOf(context).scale(
+      context.rf(18).clamp(16, 19).toDouble(),
+    );
+    final accessible = scaledTitle * 1.2 + 24;
+    return accessible > base ? accessible.clamp(base, 96).toDouble() : base;
+  }
+
+  Widget _buildCenteredSnapshotTitle(String title) {
+    final clearance = MediaQuery.sizeOf(context).width < 360 ? 88.0 : 104.0;
+    return SafeArea(
+      bottom: false,
+      child: IgnorePointer(
+        child: Center(
+          child: Padding(
+            padding: EdgeInsets.symmetric(horizontal: clearance),
+            child: MediaQuery.withClampedTextScaling(
+              maxScaleFactor: 1.2,
+              child: Text(
+                title,
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+                textAlign: TextAlign.center,
+                style: TextStyle(
+                  fontFamily: 'Inter',
+                  fontFamilyFallback: const ['NotoSansKR'],
+                  fontSize: context.rf(18).clamp(16, 19).toDouble(),
+                  fontWeight: FontWeight.w700,
+                  color: const Color(0xFF111827),
+                ),
+              ),
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+
   Widget _buildEditor(SnapshotStrings strings) {
     return LayoutBuilder(
       key: const ValueKey('snapshot_editor'),
       builder: (context, constraints) {
-        final horizontal = constraints.maxWidth < 360 ? 6.0 : 10.0;
+        final horizontal = constraints.maxWidth < 360 ? 12.0 : 16.0;
+        final keyboardOpen = MediaQuery.viewInsetsOf(context).bottom > 0;
         return Padding(
-          padding: EdgeInsets.fromLTRB(horizontal, 4, horizontal, 6),
+          padding: EdgeInsets.fromLTRB(horizontal, 8, horizontal, 8),
           child: Column(
             children: [
               Expanded(
@@ -1092,7 +1169,9 @@ class _CreateSnapshotScreenState extends State<CreateSnapshotScreen>
                                                     textAlign: TextAlign.center,
                                                     style: TextStyle(
                                                       fontFamily: 'Inter',
-                                                      fontFamilyFallback: const ['NotoSansKR'],
+                                                      fontFamilyFallback: const [
+                                                        'NotoSansKR'
+                                                      ],
                                                       fontSize: (width * .043)
                                                           .clamp(13, 17)
                                                           .toDouble(),
@@ -1138,58 +1217,71 @@ class _CreateSnapshotScreenState extends State<CreateSnapshotScreen>
                                                 ignoring: !_editingOverlay,
                                                 child: SizedBox(
                                                   width: width * .82,
-                                                  child: TextField(
-                                                    key: const ValueKey(
-                                                      'snapshot_overlay_text_field',
-                                                    ),
-                                                    controller:
-                                                        _overlayController,
-                                                    focusNode:
-                                                        _overlayFocusNode,
-                                                    readOnly: false,
-                                                    showCursor: true,
-                                                    minLines: 1,
-                                                    maxLines: 3,
-                                                    maxLength: 60,
-                                                    maxLengthEnforcement:
-                                                        MaxLengthEnforcement
-                                                            .truncateAfterCompositionEnds,
-                                                    keyboardType:
-                                                        TextInputType.multiline,
-                                                    textInputAction:
-                                                        TextInputAction.newline,
-                                                    enableInteractiveSelection:
-                                                        true,
-                                                    scrollPhysics:
-                                                        const NeverScrollableScrollPhysics(),
-                                                    onTapOutside: (_) =>
-                                                        unawaited(
-                                                      _finishOverlayEditing(),
-                                                    ),
-                                                    textAlign: TextAlign.center,
-                                                    cursorColor: _lightText
-                                                        ? Colors.white
-                                                        : const Color(
-                                                            0xFF111111),
-                                                    decoration: InputDecoration(
-                                                      hintText: _editingOverlay
-                                                          ? strings.textHint
-                                                          : null,
-                                                      hintStyle:
-                                                          textStyle.copyWith(
-                                                        color: Colors.white70,
+                                                  child: MediaQuery
+                                                      .withClampedTextScaling(
+                                                    maxScaleFactor: 1.3,
+                                                    child: TextField(
+                                                      key: const ValueKey(
+                                                        'snapshot_overlay_text_field',
                                                       ),
-                                                      border: InputBorder.none,
-                                                      enabledBorder:
-                                                          InputBorder.none,
-                                                      focusedBorder:
-                                                          InputBorder.none,
-                                                      isDense: true,
-                                                      counterText: '',
-                                                      contentPadding:
-                                                          EdgeInsets.zero,
+                                                      controller:
+                                                          _overlayController,
+                                                      focusNode:
+                                                          _overlayFocusNode,
+                                                      readOnly: false,
+                                                      showCursor: true,
+                                                      minLines: 1,
+                                                      maxLines: null,
+                                                      maxLength: 60,
+                                                      maxLengthEnforcement:
+                                                          MaxLengthEnforcement
+                                                              .truncateAfterCompositionEnds,
+                                                      keyboardType:
+                                                          TextInputType
+                                                              .multiline,
+                                                      textInputAction:
+                                                          TextInputAction
+                                                              .newline,
+                                                      enableInteractiveSelection:
+                                                          true,
+                                                      onChanged:
+                                                          _handleOverlayTextChanged,
+                                                      scrollPhysics:
+                                                          const NeverScrollableScrollPhysics(),
+                                                      onTapOutside: (_) =>
+                                                          unawaited(
+                                                        _finishOverlayEditing(),
+                                                      ),
+                                                      textAlign:
+                                                          TextAlign.center,
+                                                      cursorColor: _lightText
+                                                          ? Colors.white
+                                                          : const Color(
+                                                              0xFF111111),
+                                                      decoration:
+                                                          InputDecoration(
+                                                        hintText:
+                                                            _editingOverlay
+                                                                ? strings
+                                                                    .textHint
+                                                                : null,
+                                                        hintStyle:
+                                                            textStyle.copyWith(
+                                                          color: Colors.white70,
+                                                        ),
+                                                        border:
+                                                            InputBorder.none,
+                                                        enabledBorder:
+                                                            InputBorder.none,
+                                                        focusedBorder:
+                                                            InputBorder.none,
+                                                        isDense: true,
+                                                        counterText: '',
+                                                        contentPadding:
+                                                            EdgeInsets.zero,
+                                                      ),
+                                                      style: textStyle,
                                                     ),
-                                                    style: textStyle,
                                                   ),
                                                 ),
                                               ),
@@ -1206,52 +1298,61 @@ class _CreateSnapshotScreenState extends State<CreateSnapshotScreen>
                         ),
                       ),
               ),
-              if (_sourceFile != null) ...[
-                const SizedBox(height: 4),
+              if (_sourceFile != null && !keyboardOpen) ...[
+                const SizedBox(height: 6),
                 SizedBox(
-                  height: 44,
-                  child: Row(
-                    children: [
-                      TextButton.icon(
-                        onPressed: () async {
-                          await _finishOverlayEditing();
-                          await _deleteTemporaryComposition();
-                          if (!mounted) return;
-                          setState(() {
-                            _sourceFile = null;
-                            _sourceWidth = 0;
-                            _sourceHeight = 0;
-                          });
-                          unawaited(
-                            _loadRecentPhotos(requestPermission: false),
-                          );
-                        },
-                        icon: const Icon(Icons.image_outlined, size: 19),
-                        label: Text(strings.choosePhoto),
-                      ),
-                      if (_overlayText.isNotEmpty)
-                        IconButton(
-                          tooltip: _lightText ? 'Dark text' : 'Light text',
-                          onPressed: () =>
-                              setState(() => _lightText = !_lightText),
-                          icon: Icon(
-                            _lightText
-                                ? Icons.light_mode_outlined
-                                : Icons.dark_mode_outlined,
-                            size: 20,
+                  height: 46,
+                  child: SingleChildScrollView(
+                    scrollDirection: Axis.horizontal,
+                    physics: const BouncingScrollPhysics(),
+                    child: Row(
+                      children: [
+                        TextButton.icon(
+                          onPressed: () async {
+                            await _finishOverlayEditing();
+                            await _deleteTemporaryComposition();
+                            if (!mounted) return;
+                            setState(() {
+                              _sourceFile = null;
+                              _sourceWidth = 0;
+                              _sourceHeight = 0;
+                            });
+                            unawaited(
+                              _loadRecentPhotos(requestPermission: false),
+                            );
+                          },
+                          icon: const Icon(Icons.image_outlined, size: 19),
+                          label: Text(strings.choosePhoto),
+                          style: TextButton.styleFrom(
+                            foregroundColor: const Color(0xFF344054),
+                            minimumSize: const Size(44, 44),
+                            padding: const EdgeInsets.symmetric(horizontal: 8),
                           ),
                         ),
-                      if (_overlayText.isNotEmpty)
-                        IconButton(
-                          tooltip: strings.deleteText,
-                          onPressed: () {
-                            _overlayController.clear();
-                            unawaited(_finishOverlayEditing());
-                          },
-                          icon: const Icon(Icons.delete_outline_rounded,
-                              size: 20),
-                        ),
-                    ],
+                        if (_overlayText.isNotEmpty)
+                          IconButton(
+                            tooltip: _lightText ? 'Dark text' : 'Light text',
+                            onPressed: () =>
+                                setState(() => _lightText = !_lightText),
+                            icon: Icon(
+                              _lightText
+                                  ? Icons.light_mode_outlined
+                                  : Icons.dark_mode_outlined,
+                              size: 20,
+                            ),
+                          ),
+                        if (_overlayText.isNotEmpty)
+                          IconButton(
+                            tooltip: strings.deleteText,
+                            onPressed: () {
+                              _overlayController.clear();
+                              unawaited(_finishOverlayEditing());
+                            },
+                            icon: const Icon(Icons.delete_outline_rounded,
+                                size: 20),
+                          ),
+                      ],
+                    ),
                   ),
                 ),
                 if (_overlayText.isNotEmpty)
@@ -1529,7 +1630,7 @@ class _RecentPhotoGallery extends StatelessWidget {
                 textAlign: TextAlign.center,
                 style: const TextStyle(
                   fontFamily: 'Inter',
-                  fontFamilyFallback: const ['NotoSansKR'],
+                  fontFamilyFallback: ['NotoSansKR'],
                   fontSize: 14,
                   height: 1.45,
                   fontWeight: FontWeight.w500,
@@ -1578,7 +1679,7 @@ class _RecentPhotoGallery extends StatelessWidget {
                 textAlign: TextAlign.center,
                 style: const TextStyle(
                   fontFamily: 'Inter',
-                  fontFamilyFallback: const ['NotoSansKR'],
+                  fontFamilyFallback: ['NotoSansKR'],
                   fontSize: 14,
                   height: 1.45,
                   fontWeight: FontWeight.w500,
@@ -1718,7 +1819,7 @@ class _PhotoActionCell extends StatelessWidget {
                     overflow: TextOverflow.ellipsis,
                     style: const TextStyle(
                       fontFamily: 'Inter',
-                      fontFamilyFallback: const ['NotoSansKR'],
+                      fontFamilyFallback: ['NotoSansKR'],
                       fontSize: 12,
                       fontWeight: FontWeight.w700,
                       color: Color(0xFF344054),
@@ -1831,7 +1932,7 @@ class _VisibilityRow extends StatelessWidget {
                         overflow: TextOverflow.ellipsis,
                         style: const TextStyle(
                           fontFamily: 'Inter',
-                          fontFamilyFallback: const ['NotoSansKR'],
+                          fontFamilyFallback: ['NotoSansKR'],
                           fontSize: 12.5,
                           height: 1.3,
                           color: Color(0xFF667085),

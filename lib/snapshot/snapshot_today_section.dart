@@ -19,7 +19,7 @@ import 'snapshot_strings.dart';
 
 const double _snackPreviewSize = 72;
 const double _snackTileWidth = 74;
-const double _snackBannerHeight = 104;
+const double _snackBannerHeight = 108;
 const BorderRadius _snackPreviewRadius = BorderRadius.all(
   Radius.circular(18),
 );
@@ -35,7 +35,11 @@ class _SnapshotTodaySectionState extends State<SnapshotTodaySection>
     with WidgetsBindingObserver {
   final SnapshotService _service = SnapshotService.instance;
   final UserInfoCacheService _userInfoService = UserInfoCacheService();
+  final ScrollController _trayController = ScrollController(
+    keepScrollOffset: false,
+  );
   late Stream<List<SnapshotItem>> _stream;
+  String? _positionedUid;
 
   @override
   void initState() {
@@ -47,6 +51,7 @@ class _SnapshotTodaySectionState extends State<SnapshotTodaySection>
   @override
   void dispose() {
     WidgetsBinding.instance.removeObserver(this);
+    _trayController.dispose();
     super.dispose();
   }
 
@@ -58,9 +63,32 @@ class _SnapshotTodaySectionState extends State<SnapshotTodaySection>
   }
 
   Future<void> _create() async {
-    await Navigator.of(context).push<bool>(
+    final created = await Navigator.of(context).push<bool>(
       MaterialPageRoute(builder: (_) => const CreateSnapshotScreen()),
     );
+    if (created == true) _showMySnack();
+  }
+
+  void _showMySnack() {
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!mounted || !_trayController.hasClients) return;
+      final start = _trayController.position.minScrollExtent;
+      if ((_trayController.offset - start).abs() < .5) return;
+      _trayController.animateTo(
+        start,
+        duration: const Duration(milliseconds: 220),
+        curve: Curves.easeOutCubic,
+      );
+    });
+  }
+
+  void _ensureInitialMySnackPosition(String uid) {
+    if (_positionedUid == uid) return;
+    _positionedUid = uid;
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!mounted || !_trayController.hasClients) return;
+      _trayController.jumpTo(_trayController.position.minScrollExtent);
+    });
   }
 
   void _retry() {
@@ -83,8 +111,10 @@ class _SnapshotTodaySectionState extends State<SnapshotTodaySection>
   Widget build(BuildContext context) {
     final strings = SnapshotStrings.of(context);
     final uid = FirebaseAuth.instance.currentUser?.uid ?? '';
-    final horizontal = context.rs(6).clamp(4, 8).toDouble();
-    final itemGap = context.rs(2).clamp(1, 3).toDouble();
+    final pageTextDirection = Directionality.of(context);
+    final horizontal = MediaQuery.sizeOf(context).width < 360 ? 12.0 : 16.0;
+    final itemGap = context.rs(4).clamp(3, 6).toDouble();
+    _ensureInitialMySnackPosition(uid);
 
     return ColoredBox(
       color: Colors.white,
@@ -134,59 +164,77 @@ class _SnapshotTodaySectionState extends State<SnapshotTodaySection>
             children: [
               SizedBox(
                 height: _snackBannerHeight,
-                child: ListView.separated(
-                  scrollDirection: Axis.horizontal,
-                  physics: const BouncingScrollPhysics(),
-                  padding: EdgeInsets.symmetric(
-                    horizontal: horizontal,
-                    vertical: 4,
-                  ),
-                  itemCount: 1 +
-                      (loading ? 3 : visibleItems.length) +
-                      (failed ? 1 : 0),
-                  separatorBuilder: (_, __) => SizedBox(width: itemGap),
-                  itemBuilder: (context, index) {
-                    if (index == 0) {
-                      return StreamBuilder<DMUserInfo?>(
-                        stream: uid.isEmpty
-                            ? null
-                            : _userInfoService.watchUserInfo(uid),
-                        initialData: uid.isEmpty
-                            ? null
-                            : _userInfoService.getCachedUserInfo(uid),
-                        builder: (context, profileSnapshot) => _MySnackTile(
-                          snapshot: own,
-                          label: strings.mySnapshot,
-                          uid: uid,
-                          profilePhotoUrl: profileSnapshot.data?.photoURL ??
-                              FirebaseAuth.instance.currentUser?.photoURL ??
-                              '',
-                          profilePhotoVersion:
-                              profileSnapshot.data?.photoVersion ?? 0,
-                          onTap: own == null
-                              ? _create
-                              : () => _open(viewerItems, ownIndex),
-                          onAdd: _create,
+                child: Directionality(
+                  textDirection: TextDirection.ltr,
+                  child: ListView.separated(
+                    controller: _trayController,
+                    scrollDirection: Axis.horizontal,
+                    physics: const BouncingScrollPhysics(),
+                    padding: EdgeInsets.symmetric(
+                      horizontal: horizontal,
+                      vertical: 4,
+                    ),
+                    itemCount: 1 +
+                        (loading ? 3 : visibleItems.length) +
+                        (failed ? 1 : 0),
+                    separatorBuilder: (_, __) => SizedBox(width: itemGap),
+                    itemBuilder: (context, index) {
+                      if (index == 0) {
+                        return Directionality(
+                          textDirection: pageTextDirection,
+                          child: StreamBuilder<DMUserInfo?>(
+                            stream: uid.isEmpty
+                                ? null
+                                : _userInfoService.watchUserInfo(uid),
+                            initialData: uid.isEmpty
+                                ? null
+                                : _userInfoService.getCachedUserInfo(uid),
+                            builder: (context, profileSnapshot) => _MySnackTile(
+                              snapshot: own,
+                              label: strings.mySnapshot,
+                              uid: uid,
+                              profilePhotoUrl: profileSnapshot.data?.photoURL ??
+                                  FirebaseAuth.instance.currentUser?.photoURL ??
+                                  '',
+                              profilePhotoVersion:
+                                  profileSnapshot.data?.photoVersion ?? 0,
+                              onTap: own == null
+                                  ? _create
+                                  : () => _open(viewerItems, ownIndex),
+                              onAdd: _create,
+                            ),
+                          ),
+                        );
+                      }
+                      if (loading) {
+                        return Directionality(
+                          textDirection: pageTextDirection,
+                          child: const _SnackSkeleton(),
+                        );
+                      }
+                      if (failed) {
+                        return Directionality(
+                          textDirection: pageTextDirection,
+                          child: _SnackActionTile(
+                            icon: Icons.refresh_rounded,
+                            label: strings.retry,
+                            onTap: _retry,
+                          ),
+                        );
+                      }
+                      final item = visibleItems[index - 1];
+                      final sourceIndex = viewerItems
+                          .indexWhere((candidate) => candidate.id == item.id);
+                      return Directionality(
+                        textDirection: pageTextDirection,
+                        child: _SnapshotTile(
+                          snapshot: item,
+                          label: item.authorName,
+                          onTap: () => _open(viewerItems, sourceIndex),
                         ),
                       );
-                    }
-                    if (loading) return const _SnackSkeleton();
-                    if (failed) {
-                      return _SnackActionTile(
-                        icon: Icons.refresh_rounded,
-                        label: strings.retry,
-                        onTap: _retry,
-                      );
-                    }
-                    final item = visibleItems[index - 1];
-                    final sourceIndex = viewerItems
-                        .indexWhere((candidate) => candidate.id == item.id);
-                    return _SnapshotTile(
-                      snapshot: item,
-                      label: item.authorName,
-                      onTap: () => _open(viewerItems, sourceIndex),
-                    );
-                  },
+                    },
+                  ),
                 ),
               ),
               const Divider(height: 1, color: Color(0xFFEAECF0)),
@@ -313,18 +361,24 @@ class _MySnackTile extends StatelessWidget {
               child: GestureDetector(
                 behavior: HitTestBehavior.opaque,
                 onTap: onAdd,
-                child: Container(
-                  width: 24,
-                  height: 24,
-                  decoration: BoxDecoration(
-                    color: const Color(0xFF2D9CDB),
-                    shape: BoxShape.circle,
-                    border: Border.all(color: Colors.white, width: 2),
-                  ),
-                  child: const Icon(
-                    Icons.add_rounded,
-                    size: 17,
-                    color: Colors.white,
+                child: SizedBox.square(
+                  dimension: 36,
+                  child: Align(
+                    alignment: Alignment.bottomRight,
+                    child: Container(
+                      width: 24,
+                      height: 24,
+                      decoration: BoxDecoration(
+                        color: const Color(0xFF2D9CDB),
+                        shape: BoxShape.circle,
+                        border: Border.all(color: Colors.white, width: 2),
+                      ),
+                      child: const Icon(
+                        Icons.add_rounded,
+                        size: 17,
+                        color: Colors.white,
+                      ),
+                    ),
                   ),
                 ),
               ),
@@ -432,37 +486,40 @@ class _SnackTileShell extends StatelessWidget {
     return Semantics(
       button: true,
       label: label,
-      child: GestureDetector(
-        behavior: HitTestBehavior.opaque,
-        onTap: onTap,
-        child: SizedBox(
-          width: _snackTileWidth,
-          child: Column(
-            mainAxisAlignment: MainAxisAlignment.center,
-            children: [
-              preview,
-              const SizedBox(height: 3),
-              SizedBox(
-                width: _snackTileWidth,
-                child: Text(
-                  label,
-                  maxLines: 1,
-                  overflow: TextOverflow.ellipsis,
-                  textAlign: TextAlign.center,
-                  textScaler: MediaQuery.textScalerOf(context).clamp(
-                    maxScaleFactor: 1.15,
-                  ),
-                  style: const TextStyle(
-                    fontFamily: 'Inter',
-                    fontFamilyFallback: const ['NotoSansKR'],
-                    fontSize: 13,
-                    height: 1.25,
-                    fontWeight: FontWeight.w600,
-                    color: Color(0xFF111827),
+      child: Material(
+        color: Colors.transparent,
+        child: InkWell(
+          borderRadius: BorderRadius.circular(18),
+          onTap: onTap,
+          child: SizedBox(
+            width: _snackTileWidth,
+            child: Column(
+              mainAxisAlignment: MainAxisAlignment.center,
+              children: [
+                preview,
+                const SizedBox(height: 3),
+                SizedBox(
+                  width: _snackTileWidth,
+                  child: Text(
+                    label,
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    textAlign: TextAlign.center,
+                    textScaler: MediaQuery.textScalerOf(context).clamp(
+                      maxScaleFactor: 1.15,
+                    ),
+                    style: const TextStyle(
+                      fontFamily: 'Inter',
+                      fontFamilyFallback: ['NotoSansKR'],
+                      fontSize: 13,
+                      height: 1.25,
+                      fontWeight: FontWeight.w600,
+                      color: Color(0xFF111827),
+                    ),
                   ),
                 ),
-              ),
-            ],
+              ],
+            ),
           ),
         ),
       ),

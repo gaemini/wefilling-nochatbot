@@ -2,12 +2,15 @@
 // 후기 수락/거절 화면
 // 모임장이 작성한 후기를 확인하고 수락 또는 거절
 
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import '../services/meetup_service.dart';
 import '../l10n/app_localizations.dart';
 import '../utils/logger.dart';
 import '../ui/widgets/fullscreen_image_viewer.dart';
 import '../utils/responsive_helper.dart';
+import '../services/notification_service.dart';
 
 class ReviewApprovalScreen extends StatefulWidget {
   final String requestId;
@@ -45,6 +48,10 @@ class _ReviewApprovalScreenState extends State<ReviewApprovalScreen> {
   @override
   void initState() {
     super.initState();
+    unawaited(NotificationService().markRelatedNotificationsAsRead(
+      types: const <String>{'review_approval_request'},
+      targets: <String, String>{'requestId': widget.requestId},
+    ));
     // 이미지 URL 목록 초기화 (여러 이미지 또는 단일 이미지)
     _imageUrls = widget.imageUrls ?? [widget.imageUrl];
     _pageController = PageController();

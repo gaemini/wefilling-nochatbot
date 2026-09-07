@@ -7,6 +7,7 @@ import '../models/social_profile_data.dart';
 import '../models/user_profile.dart';
 import '../services/content_filter_service.dart';
 import '../ui/widgets/user_avatar.dart';
+import '../utils/account_status_helper.dart';
 import '../utils/country_flag_helper.dart';
 import '../utils/logger.dart';
 import '../utils/responsive_helper.dart';
@@ -155,9 +156,10 @@ class _SocialTagPeopleScreenState extends State<SocialTagPeopleScreen> {
         shouldContinue = _hasMore;
 
         for (final document in documents) {
+          if (document.id == FirebaseAuth.instance.currentUser?.uid) continue;
           if (_excludedUserIds.contains(document.id)) continue;
           final data = document.data();
-          if (!_isVisibleProfile(data)) continue;
+          if (!isSearchableUserAccountData(data, uid: document.id)) continue;
           try {
             collected.add(UserProfile.fromFirestore(document));
           } catch (error, stackTrace) {
@@ -197,17 +199,6 @@ class _SocialTagPeopleScreenState extends State<SocialTagPeopleScreen> {
         _isLoadingMore = false;
       });
     }
-  }
-
-  bool _isVisibleProfile(Map<String, dynamic> data) {
-    final status = (data['status'] ?? '').toString().toLowerCase();
-    return data['isDeleted'] != true &&
-        data['deleted'] != true &&
-        data['disabled'] != true &&
-        data['isSuspended'] != true &&
-        status != 'deleted' &&
-        status != 'suspended' &&
-        status != 'disabled';
   }
 
   void _openProfile(UserProfile profile) {

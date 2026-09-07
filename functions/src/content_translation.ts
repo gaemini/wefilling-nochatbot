@@ -5,15 +5,39 @@ import * as https from 'https';
 import {COL} from './firestore_paths';
 import {hasActiveHanyangClaim} from './hanyang_verification';
 import {runtimeInfo, runtimeLogsEnabled} from './runtime_logging';
+import {
+  detectSourceLanguageHint,
+  detectTemporalProfile,
+  immutableTokens,
+  IMMUTABLE_TEXT_PATTERN,
+  protectImmutableText,
+  preservesImmutableTokens,
+  ProtectedText,
+  restoreImmutableText,
+  validateTemporalTranslation,
+} from './content_translation_policy';
 
 const GEMINI_API_VERSION = 'v1beta';
 const GEMINI_MODEL = 'gemini-3.5-flash-lite';
 const GEMINI_FALLBACK_MODEL = 'gemini-3.5-flash';
-const TRANSLATION_VERSION = 6;
-const PROMPT_VERSION = 6;
-const TRANSLATION_POLICY_VERSION = '2026-08-context-quality-v6';
+const TRANSLATION_VERSION = 7;
+const PROMPT_VERSION = 7;
+const TRANSLATION_POLICY_VERSION = '2026-09-temporal-quality-v7';
 const GLOSSARY_VERSION = 1;
-const QUALITY_POLICY_VERSION = 1;
+const QUALITY_POLICY_VERSION = 2;
+// Failed results are short-lived, but a corrected validator must be able to
+// retry old false negatives immediately without invalidating good translations.
+const FAILURE_CACHE_POLICY_VERSION = 3;
+// Keep callable response metadata compatible with the currently released
+// client. Server-side cache identity advances independently, so bad v6 cache
+// entries are regenerated without making older app builds reject every result.
+const CLIENT_RESPONSE_METADATA = Object.freeze({
+  translationVersion: 6,
+  promptVersion: 6,
+  translationPolicyVersion: '2026-08-context-quality-v6',
+  glossaryVersion: 1,
+  qualityPolicyVersion: 1,
+});
 const CURRENT_MODELS = new Set([GEMINI_MODEL, GEMINI_FALLBACK_MODEL]);
 const SOURCE_INTENTS = new Set([
   'question',
@@ -52,6 +76,7 @@ const TARGET_LANGUAGE_NAMES: Record<string, string> = {
   ru: 'Russian',
   pt: 'Portuguese',
   it: 'Italian',
+  ro: 'Romanian',
   ar: 'Arabic',
   hi: 'Hindi',
   th: 'Thai',
@@ -72,6 +97,10 @@ const PENDING_TTL_MS = 60_000;
 // the fast retry read the same failed document and exhaust without regenerating.
 const QUALITY_FAILED_RETRY_TTL_MS = 1_250;
 const PROVIDER_FAILED_RETRY_TTL_MS = 12_000;
+// A manual retry may replace an abandoned pending lock after the client has
+// already waited for a visible failure. Very recent locks remain protected so
+// a double tap cannot start duplicate Gemini work.
+const MANUAL_PENDING_RETRY_AGE_MS = 5_000;
 const MAX_SOURCE_CHARS = 12_000;
 const MAX_CONTEXT_FIELD_CHARS = 1_500;
 const MAX_CONTEXT_CHARS = 6_000;
@@ -96,6 +125,7 @@ type TranslationRequest = {
   contentType: string;
   contentId: string;
   parentId?: string;
+  forceRetry?: boolean;
 };
 
 type ResolvedContent = TranslationRequest & {
@@ -112,6 +142,7 @@ type ResolvedContent = TranslationRequest & {
 type ResolutionCache = {
   snackRooms: Map<string, Promise<admin.firestore.DocumentSnapshot>>;
   dmConversations: Map<string, Promise<admin.firestore.DocumentSnapshot>>;
+  documents: Map<string, Promise<admin.firestore.DocumentSnapshot>>;
 };
 
 type GeminiTranslation = {
@@ -124,14 +155,15 @@ type GeminiTranslation = {
   modelUsed: string;
 };
 
-type ProtectedText = {
-  text: string;
-  tokens: Record<string, string>;
-};
-
 type GeminiRequestDiagnostics = {
   requestStage: string;
   model: string;
+};
+
+type TranslationRunDiagnostics = {
+  failureCodes: Map<string, string>;
+  repairAttempted: Set<string>;
+  repairSucceeded: Set<string>;
 };
 
 /** Safe provider metadata without request bodies, prompts, or credentials. */
@@ -199,7 +231,7 @@ function normalizeLanguageCode(value: unknown): string {
   const code = raw.split('-')[0] || raw;
   const allowed = new Set([
     'ko', 'en', 'ja', 'zh', 'es', 'fr', 'de', 'ru', 'pt', 'it', 'ar',
-    'hi', 'th', 'vi', 'id', 'ms', 'tr', 'nl', 'pl', 'uk', 'mn',
+    'hi', 'th', 'vi', 'id', 'ms', 'tr', 'nl', 'pl', 'uk', 'mn', 'ro',
   ]);
   if (!allowed.has(code)) {
     throw new functions.https.HttpsError(
@@ -306,7 +338,14 @@ function isCurrentCompletedCache(
         (translatedFields as Record<string, string>)[field],
         stringValue(cached.sourceLanguage),
         targetLanguage,
-      ),
+      ) &&
+      validateTemporalTranslation(
+        item.fields[field],
+        (translatedFields as Record<string, string>)[field],
+        detectSourceLanguageHint(item.fields[field]) ||
+          stringValue(cached.sourceLanguage),
+        targetLanguage,
+      ) == null,
     );
 }
 
@@ -343,6 +382,7 @@ function isCurrentFailedCache(
     cached.translationPolicyVersion === TRANSLATION_POLICY_VERSION &&
     cached.glossaryVersion === GLOSSARY_VERSION &&
     cached.qualityPolicyVersion === QUALITY_POLICY_VERSION &&
+    cached.failureCachePolicyVersion === FAILURE_CACHE_POLICY_VERSION &&
     Date.now() - failedAt < retryTtlMs;
 }
 
@@ -357,19 +397,13 @@ function cachedFailureResponse(
     sourceHash: item.sourceHash,
     targetLanguage,
     modelUsed: stringValue(cached.modelUsed) || GEMINI_MODEL,
-    translationVersion: TRANSLATION_VERSION,
-    promptVersion: PROMPT_VERSION,
-    translationPolicyVersion: TRANSLATION_POLICY_VERSION,
-    glossaryVersion: GLOSSARY_VERSION,
-    qualityPolicyVersion: QUALITY_POLICY_VERSION,
+    ...CLIENT_RESPONSE_METADATA,
     contextHash: stringValue(cached.contextHash),
     translatedAt: timestampMillis(cached.failedAt) ?? Date.now(),
     cacheSource: 'firestore',
     errorCode: stringValue(cached.errorCode) || 'quality_validation_failed',
   };
 }
-
-const PROTECTED_TEXT_PATTERN = /https?:\/\/[^\s]+|www\.[^\s]+|[\p{L}\p{N}._%+-]+@[\p{L}\p{N}.-]+\.[\p{L}]{2,}|@[\p{L}\p{N}_.-]+|#[\p{L}\p{N}_.-]+|\bChIJ[A-Za-z0-9_-]+\b|(?:place[_ ]?id\s*[:=]\s*)[A-Za-z0-9_-]+|-?\d{1,3}\.\d+\s*[,/]\s*-?\d{1,3}\.\d+|\b\d{1,4}[./:-]\d{1,2}(?:[./:-]\d{1,4})?(?:\s*(?:AM|PM|오전|오후))?\b|[$€£¥₩]\s?\d+(?:[.,]\d+)*|\+?\d[\d\s().-]{5,}\d|\d+(?:[.,]\d+)*(?:\s?(?:%|원|달러|시|분|초))?|\p{Extended_Pictographic}(?:\uFE0F|\p{Emoji_Modifier}|\u200D\p{Extended_Pictographic})*/giu;
 
 function isUnexpectedlyUnchangedTranslation(
   source: string,
@@ -386,14 +420,16 @@ function isUnexpectedlyUnchangedTranslation(
   if (!normalizedSource || normalizedSource !== normalizedTranslation) {
     return false;
   }
+  const temporal = detectTemporalProfile(normalizedSource);
+  if (temporal.detected && sourceCode !== targetCode) return true;
   const meaningful = normalizedSource
-    .replace(PROTECTED_TEXT_PATTERN, '')
+    .replace(IMMUTABLE_TEXT_PATTERN, '')
     .trim();
   const letters = meaningful.match(/\p{L}/gu) ?? [];
   if (letters.length < 4) return false;
 
   const latinTargets = new Set([
-    'en', 'es', 'fr', 'de', 'pt', 'it', 'nl', 'pl', 'tr', 'vi', 'id', 'ms',
+    'en', 'es', 'fr', 'de', 'pt', 'it', 'ro', 'nl', 'pl', 'tr', 'vi', 'id', 'ms',
   ]);
   const clearlyNonLatin = /[가-힣ぁ-ゟ゠-ヿ一-龯\u0400-\u04FF\u0600-\u06FF\u0E00-\u0E7F]/u
     .test(meaningful);
@@ -408,7 +444,7 @@ function isUnexpectedlyUnchangedTranslation(
 
 function looksLikeSameLanguage(text: string, target: string): boolean {
   const meaningful = text
-    .replace(PROTECTED_TEXT_PATTERN, '')
+    .replace(IMMUTABLE_TEXT_PATTERN, '')
     .trim();
   if (!meaningful) return true;
   const letters = meaningful.match(/\p{L}/gu) ?? [];
@@ -444,6 +480,7 @@ function looksLikeSameLanguage(text: string, target: string): boolean {
     de: new Set(['der', 'die', 'das', 'ist', 'hallo', 'danke', 'mit', 'für', 'und', 'ein']),
     pt: new Set(['o', 'a', 'os', 'as', 'é', 'olá', 'obrigado', 'com', 'para', 'que']),
     it: new Set(['il', 'la', 'gli', 'è', 'ciao', 'grazie', 'con', 'per', 'che', 'un']),
+    ro: new Set(['și', 'este', 'sunt', 'acest', 'această', 'cu', 'pentru', 'bună', 'mulțumesc', 'că']),
     tr: new Set(['bir', 've', 'bu', 'ile', 'için', 'merhaba', 'teşekkürler', 'çok']),
     id: new Set(['dan', 'ini', 'itu', 'dengan', 'untuk', 'halo', 'terima', 'kasih']),
     ms: new Set(['dan', 'ini', 'itu', 'dengan', 'untuk', 'hai', 'terima', 'kasih']),
@@ -462,41 +499,6 @@ function looksLikeSameLanguage(text: string, target: string): boolean {
       hits / words.length >= 0.3;
   }
   return false;
-}
-
-function protectText(value: string): ProtectedText {
-  let index = 0;
-  const tokens: Record<string, string> = {};
-  let text = value
-    .replace(/\r\n?/g, '\n')
-    .replace(PROTECTED_TEXT_PATTERN, (match) => {
-      const token = `__WF_KEEP_${index++}__`;
-      tokens[token] = match;
-      return token;
-    });
-  // 사용자가 입력한 문단/줄바꿈도 URL 및 이모지와 같은 보호 토큰으로
-  // 취급하여 Gemini가 합치거나 새로 나누지 못하게 한다.
-  text = text.replace(/\n/g, () => {
-    const token = `__WF_KEEP_${index++}__`;
-    tokens[token] = '\n';
-    return token;
-  });
-  return {text, tokens};
-}
-
-function restoreProtectedText(
-  value: string,
-  protectedText: ProtectedText,
-): string | null {
-  let restored = value;
-  for (const [token, original] of Object.entries(protectedText.tokens)) {
-    // A duplicated or missing placeholder means a URL, mention, emoji, or
-    // line break was changed. Reject only this item so it can be retried.
-    if (restored.split(token).length - 1 !== 1) return null;
-    restored = restored.split(token).join(original);
-  }
-  if (/__WF_KEEP_\d+__/.test(restored)) return null;
-  return restored;
 }
 
 async function canReadAudienceDocument(
@@ -538,6 +540,20 @@ async function canReadAudienceDocument(
   return stringList(data.allowedUserIds).includes(uid);
 }
 
+// This cache belongs to one authenticated callable invocation only. Sharing
+// in-flight reads saves repeated post/thread reads without carrying access
+// decisions or stale documents across users or requests.
+function readTranslationDocument(
+  path: string,
+  cache?: ResolutionCache,
+): Promise<admin.firestore.DocumentSnapshot> {
+  const existing = cache?.documents.get(path);
+  if (existing) return existing;
+  const read = admin.firestore().doc(path).get();
+  cache?.documents.set(path, read);
+  return read;
+}
+
 async function resolveContent(
   uid: string,
   request: TranslationRequest,
@@ -550,7 +566,9 @@ async function resolveContent(
   let contextSeed: Record<string, unknown> = {};
 
   if (contentType === 'post') {
-    const snap = await db.collection(COL.posts).doc(contentId).get();
+    const snap = await readTranslationDocument(
+      `${COL.posts}/${contentId}`, resolutionCache,
+    );
     if (!snap.exists) throw new functions.https.HttpsError('not-found', 'Post not found.');
     const data = snap.data() as Record<string, unknown>;
     if (!(await canReadAudienceDocument(uid, data))) {
@@ -581,7 +599,9 @@ async function resolveContent(
       type: data.type,
     };
   } else if (contentType === 'meetup') {
-    const snap = await db.collection(COL.meetups).doc(contentId).get();
+    const snap = await readTranslationDocument(
+      `${COL.meetups}/${contentId}`, resolutionCache,
+    );
     if (!snap.exists) throw new functions.https.HttpsError('not-found', 'Meetup not found.');
     const data = snap.data() as Record<string, unknown>;
     if (!(await canReadAudienceDocument(uid, data))) {
@@ -596,7 +616,9 @@ async function resolveContent(
       type: data.type,
     };
   } else if (contentType === 'comment') {
-    const snap = await db.collection(COL.comments).doc(contentId).get();
+    const snap = await readTranslationDocument(
+      `${COL.comments}/${contentId}`, resolutionCache,
+    );
     if (!snap.exists) throw new functions.https.HttpsError('not-found', 'Comment not found.');
     const data = snap.data() as Record<string, unknown>;
     if (data.isDeleted === true) {
@@ -605,8 +627,8 @@ async function resolveContent(
     const parentId = stringValue(data.postId || request.parentId).trim();
     if (!parentId) throw new functions.https.HttpsError('failed-precondition', 'Comment parent is missing.');
     const [post, meetup] = await Promise.all([
-      db.collection(COL.posts).doc(parentId).get(),
-      db.collection(COL.meetups).doc(parentId).get(),
+      readTranslationDocument(`${COL.posts}/${parentId}`, resolutionCache),
+      readTranslationDocument(`${COL.meetups}/${parentId}`, resolutionCache),
     ]);
     const parent = post.exists ? post : meetup;
     if (!parent.exists ||
@@ -784,6 +806,7 @@ function snackContextKey(
 
 async function buildTranslationContext(
   item: ResolvedContent,
+  resolutionCache?: ResolutionCache,
 ): Promise<ResolvedContent> {
   const db = admin.firestore();
   const context: Record<string, string> = {};
@@ -810,7 +833,7 @@ async function buildTranslationContext(
     if (directIds.length > 0) {
       try {
         const direct = await Promise.all(directIds.map((id) =>
-          db.collection(COL.comments).doc(id).get(),
+          readTranslationDocument(`${COL.comments}/${id}`, resolutionCache),
         ));
         for (const snap of direct) {
           if (!snap.exists) continue;
@@ -1134,6 +1157,7 @@ async function callGeminiModel(
   targetLanguage: string,
   model: string,
   strict: boolean,
+  temporalRepair = false,
 ): Promise<Map<string, GeminiTranslation>> {
   const apiKey = stringValue(process.env.GEMINI_API_KEY).trim();
   if (!apiKey) throw new Error('GEMINI_API_KEY is not configured.');
@@ -1143,16 +1167,20 @@ async function callGeminiModel(
   const compactItems = items.map((item) => {
     const fields: Record<string, string> = {};
     for (const [field, value] of Object.entries(item.fields)) {
-      const protectedText = protectText(value);
+      const protectedText = protectImmutableText(value);
       const key = requestKey(item);
       const itemProtection = protectedItems.get(key) ?? {};
       itemProtection[field] = protectedText;
       protectedItems.set(key, itemProtection);
       fields[field] = protectedText.text;
     }
+    const originalText = Object.values(item.fields).join('\n');
+    const temporalProfile = detectTemporalProfile(originalText);
     return {
       id: requestKey(item),
       contentType: item.contentType,
+      sourceLanguageHint: detectSourceLanguageHint(originalText),
+      temporalExpressionTypes: temporalProfile.types,
       CONTEXT: item.context,
       TARGET: fields,
       typoHints: item.typoHints,
@@ -1182,7 +1210,11 @@ async function callGeminiModel(
         'If a TARGET term is in preserveIfUncertain or its meaning is genuinely uncertain, keep the original term verbatim and include it in uncertainTerms.',
         'Set coverageComplete to true only after confirming that every TARGET meaning unit is represented.',
         'Set sourceIntent to exactly one of question, statement, answer, suggestion, request, command, exclamation, or unknown.',
-        'Preserve every __WF_KEEP_N__ placeholder exactly, including its spelling and position.',
+        '__WF_KEEP_N__ placeholders contain only immutable identifiers, emoji, monetary/percentage values, or line breaks. Preserve each placeholder exactly once, including its spelling and position.',
+        'Dates, clock times, durations, relative-time expressions, and their language-specific units are intentionally not placeholders. Translate their words, units, order, and formatting naturally while preserving every semantic value.',
+        'Distinguish clock time from duration. Preserve AM versus PM. Korean 년/월/일/시/분/초/시간/달 must not remain untranslated in a non-Korean result when they express time.',
+        'Examples for Korean to English: "9월 3일" means "September 3"; "오후 3시 20분" means "3:20 PM"; "3시간 20분" means "3 hours and 20 minutes"; "5분 후" means "in 5 minutes".',
+        'Do not treat ordinary words as temporal units: 서울시 means Seoul City, 한 분 means one person, 오늘 일이 많아요 means there is much work today, 달이 밝아요 means the moon is bright, and 시를 읽었어요 means reading a poem.',
         'Produce idiomatic, publication-ready text for a native reader; do not use awkward word-for-word phrasing.',
         'Preserve meaning, nuance, tone, emotion, repetition, laughter, slang, and intentional informality.',
         'Never summarize, shorten a long sentence, remove repetition, or omit any meaning unit.',
@@ -1198,6 +1230,9 @@ async function callGeminiModel(
         strict ?
           'Before returning, verify sentence by sentence that no meaning unit was omitted, every protected token remains exactly once, paragraph structure is unchanged, and the result is fluent.' :
           'Before returning, verify completeness and fluency without adding any explanation.',
+        temporalRepair ?
+          'TEMPORAL REPAIR: the previous candidate failed date/time validation. Re-translate this one item from the original TARGET, preserve numeric meaning and AM/PM, and ensure temporal units are expressed naturally in the target language.' :
+          '',
         'Return only JSON shaped exactly as {"items":[{"id":"input id","sourceLanguage":"ISO 639-1 code","sourceIntent":"question","coverageComplete":true,"uncertainTerms":[],"translations":{"TARGET field name":"translated text"}}]}.',
         JSON.stringify(compactItems),
       ].join('\n')}]}],
@@ -1278,7 +1313,7 @@ async function callGeminiModel(
           invalidTranslationField = true;
           break;
         }
-        const restored = restoreProtectedText(stringValue(value), protection);
+        const restored = restoreImmutableText(stringValue(value), protection);
         if (restored != null) translations[field] = restored;
       }
       if (!invalidTranslationField) {
@@ -1299,6 +1334,7 @@ async function callGeminiModel(
 export async function translatePlainTextsWithExistingPipeline(
   texts: string[],
   targetLanguage: string,
+  options?: {canaryModel?: 'primary' | 'fallback'},
 ): Promise<string[]> {
   const target = normalizeLanguageCode(targetLanguage);
   const bounded = texts
@@ -1323,14 +1359,29 @@ export async function translatePlainTextsWithExistingPipeline(
     contextSeed: {},
     sourceHash: sha256(value),
   }));
+  if (options?.canaryModel) {
+    const model = options.canaryModel === 'fallback' ?
+      GEMINI_FALLBACK_MODEL : GEMINI_MODEL;
+    const direct = await callGeminiModel(items, target, model, true);
+    return items.map((item) => {
+      const candidate = direct.get(requestKey(item));
+      if (!isValidItemTranslation(item, candidate, target) &&
+          !isSafeFallbackItemTranslation(item, candidate, target)) {
+        throw new Error(
+          `Temporal canary validation failed: ${safeFallbackFailureCode(
+            item,
+            candidate,
+            target,
+          )}`,
+        );
+      }
+      return candidate.translations.text.trim();
+    });
+  }
   const result = await callGemini(items, target);
   return items.map((item) =>
     result.translations.get(requestKey(item))?.translations.text?.trim() || '',
   );
-}
-
-function immutableTokens(value: string): string[] {
-  return value.match(PROTECTED_TEXT_PATTERN) ?? [];
 }
 
 function inferredSourceIntent(value: string): string {
@@ -1412,10 +1463,7 @@ function isPlausibleTranslation(
       (normalizedTranslation.match(/\n/g) ?? []).length) {
     return false;
   }
-  const sourceTokens = immutableTokens(normalizedSource);
-  const translatedTokens = immutableTokens(normalizedTranslation);
-  if (sourceTokens.length !== translatedTokens.length ||
-      sourceTokens.some((token, index) => token !== translatedTokens[index])) {
+  if (!preservesImmutableTokens(normalizedSource, normalizedTranslation)) {
     return false;
   }
   if (sourceLength >= 12 && !isShortReaction(normalizedSource)) {
@@ -1517,7 +1565,13 @@ function isValidItemTranslation(
       result.translations[field],
       result.sourceLanguage,
       targetLanguage,
-    ),
+    ) &&
+    validateTemporalTranslation(
+      item.fields[field],
+      result.translations[field],
+      detectSourceLanguageHint(item.fields[field]) || result.sourceLanguage,
+      targetLanguage,
+    ) == null,
   )) return false;
 
   const sourceText = Object.values(item.fields).join('\n');
@@ -1593,7 +1647,13 @@ function isSafeFallbackItemTranslation(
       result.translations[field],
       result.sourceLanguage,
       targetLanguage,
-    ),
+    ) &&
+    validateTemporalTranslation(
+      item.fields[field],
+      result.translations[field],
+      detectSourceLanguageHint(item.fields[field]) || result.sourceLanguage,
+      targetLanguage,
+    ) == null,
   );
 }
 
@@ -1625,7 +1685,94 @@ function safeFallbackFailureCode(
       false,
     ),
   )) return 'semantic_or_structure_guard';
+  for (const field of expectedFields) {
+    const temporalFailure = validateTemporalTranslation(
+      item.fields[field],
+      result.translations[field],
+      detectSourceLanguageHint(item.fields[field]) || result.sourceLanguage,
+      targetLanguage,
+    );
+    if (temporalFailure) return temporalFailure;
+  }
   return 'strict_metadata_guard';
+}
+
+function temporalFailureForItem(
+  item: ResolvedContent,
+  result: GeminiTranslation | undefined,
+  targetLanguage: string,
+): string | null {
+  if (!result?.translations) return null;
+  for (const field of Object.keys(item.fields)) {
+    const translated = result.translations[field];
+    if (typeof translated !== 'string') continue;
+    const failure = validateTemporalTranslation(
+      item.fields[field],
+      translated,
+      detectSourceLanguageHint(item.fields[field]) || result.sourceLanguage,
+      targetLanguage,
+    );
+    if (failure) return failure;
+  }
+  return null;
+}
+
+function logTranslationItemDiagnostic(
+  item: ResolvedContent,
+  targetLanguage: string,
+  details: {
+    sourceLanguage: string;
+    modelUsed: string;
+    validationFailureCode?: string;
+    repairAttempted?: boolean;
+    repairSucceeded?: boolean;
+    cacheSource: string;
+    durationMs: number;
+  },
+): void {
+  if (!runtimeLogsEnabled) return;
+  const sourceText = Object.values(item.fields).join('\n');
+  const temporal = detectTemporalProfile(sourceText);
+  const protectedTokenCount = Object.values(item.fields).reduce(
+    (count, value) =>
+      count + Object.keys(protectImmutableText(value).tokens).length,
+    0,
+  );
+  const immutableIdentifierCount = Object.values(item.fields).reduce(
+    (count, value) => count + immutableTokens(value).length,
+    0,
+  );
+  runtimeInfo('content_translation_item', {
+    contentType: item.contentType,
+    messageIdHash: sha256(item.contentId).slice(0, 16),
+    sourceLanguage: details.sourceLanguage ||
+      detectSourceLanguageHint(sourceText) || 'unknown',
+    targetLanguage,
+    temporalExpressionDetected: temporal.detected,
+    temporalExpressionType: temporal.types.join(','),
+    protectedTokenCount,
+    immutableIdentifierCount,
+    modelUsed: details.modelUsed,
+    validationFailureCode: details.validationFailureCode ?? '',
+    repairAttempted: details.repairAttempted ?? false,
+    repairSucceeded: details.repairSucceeded ?? false,
+    cacheSource: details.cacheSource,
+    durationMs: details.durationMs,
+  });
+}
+
+async function runTranslationRepairTasks(
+  tasks: Array<() => Promise<void>>,
+): Promise<void> {
+  let next = 0;
+  await Promise.all(Array.from({
+    length: Math.min(MAX_BATCH_SIZE, tasks.length),
+  }, async () => {
+    while (next < tasks.length) {
+      const task = tasks[next++];
+      await task();
+    }
+  }));
 }
 
 async function callGemini(
@@ -1634,6 +1781,7 @@ async function callGemini(
 ): Promise<{
   translations: Map<string, GeminiTranslation>;
   providerUnavailable: boolean;
+  diagnostics: TranslationRunDiagnostics;
 }> {
   // Keep the normal batch fast and inexpensive. Only malformed or incomplete
   // items are retried, so a single bad result never discards valid siblings.
@@ -1659,6 +1807,8 @@ async function callGemini(
   const results = new Map<string, GeminiTranslation>();
   const safeFallbacks = new Map<string, GeminiTranslation>();
   const latestCandidates = new Map<string, GeminiTranslation>(batch);
+  const repairAttempted = new Set<string>();
+  const repairSucceeded = new Set<string>();
   let providerUnavailable = false;
   for (const item of items) {
     const key = requestKey(item);
@@ -1670,11 +1820,60 @@ async function callGemini(
     }
   }
 
+  // A temporal semantic failure gets one isolated repair request. Keeping it
+  // single-item prevents one malformed date/time from invalidating siblings,
+  // while parallel execution avoids serial latency for a busy viewport.
+  const temporalRepairItems = items.filter((item) => {
+    const key = requestKey(item);
+    return !results.has(key) && temporalFailureForItem(
+      item,
+      batch.get(key),
+      targetLanguage,
+    ) != null;
+  });
+  const temporalRepairs = temporalRepairItems.map((item) => async () => {
+    const key = requestKey(item);
+    repairAttempted.add(key);
+    try {
+      const repaired = await callGeminiModel(
+        [item],
+        targetLanguage,
+        GEMINI_MODEL,
+        true,
+        true,
+      );
+      const result = repaired.get(key);
+      if (result) latestCandidates.set(key, result);
+      if (isValidItemTranslation(item, result, targetLanguage) ||
+          isSafeFallbackItemTranslation(item, result, targetLanguage)) {
+        results.set(key, result);
+        repairSucceeded.add(key);
+      }
+    } catch (error) {
+      console.warn('content_translation_temporal_repair_failed', {
+        contentType: item.contentType,
+        contentIdHash: sha256(item.contentId).slice(0, 16),
+        targetLanguage,
+        modelUsed: GEMINI_MODEL,
+        validationFailureCode: temporalFailureForItem(
+          item,
+          batch.get(key),
+          targetLanguage,
+        ),
+        ...geminiErrorLogFields(error),
+      });
+    }
+  });
+
   // Retry every rejected sibling in one strict request. The previous
   // per-item loop serialized up to ten provider calls for a five-item batch,
   // which made one difficult chat message block the rest of the viewport.
-  const strictItems = items.filter((item) => !results.has(requestKey(item)));
-  if (strictItems.length > 0) {
+  const strictItems = items.filter((item) => {
+    const key = requestKey(item);
+    return !results.has(key) && !temporalRepairItems.includes(item);
+  });
+  const retryStrictItems = async () => {
+    if (strictItems.length === 0) return;
     try {
       const retried = await callGeminiModel(
         strictItems,
@@ -1708,7 +1907,17 @@ async function callGemini(
       });
       providerUnavailable = isProviderUnavailableError(error);
     }
-  }
+  };
+
+  // Different rejected items do not depend on each other's repair result.
+  // Start the strict batch alongside temporal repairs, within the existing
+  // five-item repair ceiling. Do not serialize a temporal-only batch that was
+  // already parallel. Quality gates and attempt counts remain unchanged;
+  // successful items still never enter a repair request.
+  await runTranslationRepairTasks([
+    ...(strictItems.length > 0 ? [retryStrictItems] : []),
+    ...temporalRepairs,
+  ]);
 
   // A structurally complete strict result has already preserved fields,
   // protected tokens, line breaks, length and negation. Auxiliary intent or
@@ -1751,23 +1960,33 @@ async function callGemini(
     }
   }
 
+  const failureCodes = new Map<string, string>();
   for (const item of items) {
     const key = requestKey(item);
     if (results.has(key)) continue;
+    const failureCode = safeFallbackFailureCode(
+      item,
+      latestCandidates.get(key),
+      targetLanguage,
+    );
+    failureCodes.set(key, failureCode);
     console.warn('content_translation_quality_rejected', {
       contentType: item.contentType,
+      contentIdHash: sha256(item.contentId).slice(0, 16),
       targetLanguage,
       modelUsed: GEMINI_FALLBACK_MODEL,
       translationVersion: TRANSLATION_VERSION,
       promptVersion: PROMPT_VERSION,
-      reason: safeFallbackFailureCode(
-        item,
-        latestCandidates.get(key),
-        targetLanguage,
-      ),
+      reason: failureCode,
+      repairAttempted: repairAttempted.has(key),
+      repairSucceeded: repairSucceeded.has(key),
     });
   }
-  return {translations: results, providerUnavailable};
+  return {
+    translations: results,
+    providerUnavailable,
+    diagnostics: {failureCodes, repairAttempted, repairSucceeded},
+  };
 }
 
 export const translateContentBatch = functions
@@ -1790,6 +2009,7 @@ export const translateContentBatch = functions
         contentType,
         contentId: safeId(item.contentId, 'contentId'),
         parentId: stringValue(item.parentId).trim() || undefined,
+        forceRetry: item.forceRetry === true,
       };
     });
     if (new Set(requests.map(requestKey)).size !== requests.length) {
@@ -1804,6 +2024,7 @@ export const translateContentBatch = functions
       // 참여 권한 원본인 방 문서를 메시지마다 다시 과금/조회하지 않는다.
       snackRooms: new Map(),
       dmConversations: new Map(),
+      documents: new Map(),
     };
     const resolvedAttempts = await Promise.all(requests.map(async (item) => {
       try {
@@ -1819,7 +2040,7 @@ export const translateContentBatch = functions
         });
         console.warn('content_translation_source_resolution_failed', {
           contentType: item.contentType,
-          contentId: item.contentId,
+          contentIdHash: sha256(item.contentId).slice(0, 16),
           errorCode,
         });
         return null;
@@ -1849,17 +2070,19 @@ export const translateContentBatch = functions
           targetLanguage,
           translatedFields: item.fields,
           modelUsed: 'same-language',
-          translationVersion: TRANSLATION_VERSION,
-          promptVersion: PROMPT_VERSION,
-          translationPolicyVersion: TRANSLATION_POLICY_VERSION,
-          glossaryVersion: GLOSSARY_VERSION,
-          qualityPolicyVersion: QUALITY_POLICY_VERSION,
+          ...CLIENT_RESPONSE_METADATA,
           sourceIntent,
           contextHash: sha256(canonicalFields({})),
           coverageComplete: true,
           uncertainTerms: [],
           translatedAt: Date.now(),
           cacheSource: 'same_language',
+        });
+        logTranslationItemDiagnostic(item, targetLanguage, {
+          sourceLanguage: targetLanguage,
+          modelUsed: 'same-language',
+          cacheSource: 'same_language',
+          durationMs: Date.now() - startedAt,
         });
         return;
       }
@@ -1877,11 +2100,7 @@ export const translateContentBatch = functions
             targetLanguage,
             translatedFields: cached.translatedFields ?? {},
             modelUsed: stringValue(cached.modelUsed),
-            translationVersion: TRANSLATION_VERSION,
-            promptVersion: PROMPT_VERSION,
-            translationPolicyVersion: TRANSLATION_POLICY_VERSION,
-            glossaryVersion: GLOSSARY_VERSION,
-            qualityPolicyVersion: QUALITY_POLICY_VERSION,
+            ...CLIENT_RESPONSE_METADATA,
             sourceIntent: stringValue(cached.sourceIntent),
             contextHash: stringValue(cached.contextHash),
             coverageComplete: true,
@@ -1890,17 +2109,35 @@ export const translateContentBatch = functions
             translatedAt: timestampMillis(cached.translatedAt) ?? Date.now(),
             cacheSource: 'firestore',
           });
+          logTranslationItemDiagnostic(item, targetLanguage, {
+            sourceLanguage: stringValue(cached.sourceLanguage),
+            modelUsed: stringValue(cached.modelUsed),
+            cacheSource: 'firestore',
+            durationMs: Date.now() - startedAt,
+          });
           return false;
         }
-        if (isCurrentFailedCache(cached, item, targetLanguage)) {
+        if (!item.forceRetry &&
+            isCurrentFailedCache(cached, item, targetLanguage)) {
           cacheHits++;
           responses.set(
             key,
             cachedFailureResponse(item, targetLanguage, cached),
           );
+          logTranslationItemDiagnostic(item, targetLanguage, {
+            sourceLanguage: stringValue(cached.sourceLanguage),
+            modelUsed: stringValue(cached.modelUsed) || GEMINI_MODEL,
+            validationFailureCode: stringValue(cached.errorCode),
+            cacheSource: 'firestore',
+            durationMs: Date.now() - startedAt,
+          });
           return false;
         }
-        if (isCurrentPendingCache(cached, item, targetLanguage)) {
+        const pendingAge = cached?.status === 'pending' ?
+          Date.now() - (timestampMillis(cached.pendingAt) ?? 0) : 0;
+        if (isCurrentPendingCache(cached, item, targetLanguage) &&
+            !(item.forceRetry &&
+              pendingAge >= MANUAL_PENDING_RETRY_AGE_MS)) {
           pendingBlocked++;
           return false;
         }
@@ -1927,7 +2164,9 @@ export const translateContentBatch = functions
 
     if (acquired.length > 0) {
       try {
-        await Promise.all(acquired.map(buildTranslationContext));
+        await Promise.all(acquired.map((item) =>
+          buildTranslationContext(item, resolutionCache),
+        ));
         const gemini = await callGemini(acquired, targetLanguage);
         const translated = gemini.translations;
         await Promise.all(acquired.map(async (item) => {
@@ -1942,6 +2181,17 @@ export const translateContentBatch = functions
             }
           }
           const complete = Object.keys(translatedFields).length === Object.keys(item.fields).length;
+          const validationFailureCode = gemini.diagnostics.failureCodes
+            .get(key);
+          logTranslationItemDiagnostic(item, targetLanguage, {
+            sourceLanguage: stringValue(result?.sourceLanguage),
+            modelUsed: result?.modelUsed ?? GEMINI_MODEL,
+            validationFailureCode,
+            repairAttempted: gemini.diagnostics.repairAttempted.has(key),
+            repairSucceeded: gemini.diagnostics.repairSucceeded.has(key),
+            cacheSource: 'gemini',
+            durationMs: Date.now() - startedAt,
+          });
           const ref = db.collection(COL.contentTranslations).doc(cacheId(item, targetLanguage));
           await ref.set(complete ? {
             contentType: item.contentType,
@@ -1979,9 +2229,11 @@ export const translateContentBatch = functions
             translationPolicyVersion: TRANSLATION_POLICY_VERSION,
             glossaryVersion: GLOSSARY_VERSION,
             qualityPolicyVersion: QUALITY_POLICY_VERSION,
+            failureCachePolicyVersion: FAILURE_CACHE_POLICY_VERSION,
             contextHash: item.contextHash,
             errorCode: gemini.providerUnavailable ?
-              'provider_unavailable' : 'quality_validation_failed',
+              'provider_unavailable' :
+              (validationFailureCode || 'quality_validation_failed'),
             failedAt: admin.firestore.FieldValue.serverTimestamp(),
             updatedAt: admin.firestore.FieldValue.serverTimestamp(),
           }, {merge: true});
@@ -1993,11 +2245,7 @@ export const translateContentBatch = functions
             targetLanguage,
             translatedFields,
             modelUsed: result?.modelUsed ?? GEMINI_MODEL,
-            translationVersion: TRANSLATION_VERSION,
-            promptVersion: PROMPT_VERSION,
-            translationPolicyVersion: TRANSLATION_POLICY_VERSION,
-            glossaryVersion: GLOSSARY_VERSION,
-            qualityPolicyVersion: QUALITY_POLICY_VERSION,
+            ...CLIENT_RESPONSE_METADATA,
             sourceIntent: result?.sourceIntent ?? 'unknown',
             contextHash: item.contextHash,
             coverageComplete: result?.coverageComplete === true,
@@ -2010,14 +2258,11 @@ export const translateContentBatch = functions
             sourceHash: item.sourceHash,
             targetLanguage,
             modelUsed: result?.modelUsed ?? GEMINI_MODEL,
-            translationVersion: TRANSLATION_VERSION,
-            promptVersion: PROMPT_VERSION,
-            translationPolicyVersion: TRANSLATION_POLICY_VERSION,
-            glossaryVersion: GLOSSARY_VERSION,
-            qualityPolicyVersion: QUALITY_POLICY_VERSION,
+            ...CLIENT_RESPONSE_METADATA,
             contextHash: item.contextHash,
             errorCode: gemini.providerUnavailable ?
-              'provider_unavailable' : 'quality_validation_failed',
+              'provider_unavailable' :
+              (validationFailureCode || 'quality_validation_failed'),
             translatedAt: Date.now(),
             cacheSource: 'gemini',
           });
@@ -2037,6 +2282,15 @@ export const translateContentBatch = functions
         });
         await Promise.all(acquired.map(async (item) => {
           const key = requestKey(item);
+          logTranslationItemDiagnostic(item, targetLanguage, {
+            sourceLanguage: detectSourceLanguageHint(
+              Object.values(item.fields).join('\n'),
+            ),
+            modelUsed: GEMINI_MODEL,
+            validationFailureCode: failureCode,
+            cacheSource: 'gemini',
+            durationMs: Date.now() - startedAt,
+          });
           await db.collection(COL.contentTranslations)
             .doc(cacheId(item, targetLanguage)).set({
               contentType: item.contentType,
@@ -2051,6 +2305,7 @@ export const translateContentBatch = functions
               translationPolicyVersion: TRANSLATION_POLICY_VERSION,
               glossaryVersion: GLOSSARY_VERSION,
               qualityPolicyVersion: QUALITY_POLICY_VERSION,
+              failureCachePolicyVersion: FAILURE_CACHE_POLICY_VERSION,
               contextHash: item.contextHash || sha256(canonicalFields({})),
               errorCode: failureCode,
               failedAt: admin.firestore.FieldValue.serverTimestamp(),
@@ -2062,11 +2317,7 @@ export const translateContentBatch = functions
             sourceHash: item.sourceHash,
             targetLanguage,
             modelUsed: GEMINI_MODEL,
-            translationVersion: TRANSLATION_VERSION,
-            promptVersion: PROMPT_VERSION,
-            translationPolicyVersion: TRANSLATION_POLICY_VERSION,
-            glossaryVersion: GLOSSARY_VERSION,
-            qualityPolicyVersion: QUALITY_POLICY_VERSION,
+            ...CLIENT_RESPONSE_METADATA,
             contextHash: item.contextHash || sha256(canonicalFields({})),
             translatedAt: Date.now(),
             cacheSource: 'gemini',
@@ -2091,11 +2342,7 @@ export const translateContentBatch = functions
           targetLanguage,
           translatedFields: cached.translatedFields ?? {},
           modelUsed: stringValue(cached.modelUsed),
-          translationVersion: TRANSLATION_VERSION,
-          promptVersion: PROMPT_VERSION,
-          translationPolicyVersion: TRANSLATION_POLICY_VERSION,
-          glossaryVersion: GLOSSARY_VERSION,
-          qualityPolicyVersion: QUALITY_POLICY_VERSION,
+          ...CLIENT_RESPONSE_METADATA,
           sourceIntent: stringValue(cached.sourceIntent),
           contextHash: stringValue(cached.contextHash),
           coverageComplete: true,
@@ -2116,11 +2363,7 @@ export const translateContentBatch = functions
         sourceHash: item.sourceHash,
         targetLanguage,
         modelUsed: GEMINI_MODEL,
-        translationVersion: TRANSLATION_VERSION,
-        promptVersion: PROMPT_VERSION,
-        translationPolicyVersion: TRANSLATION_POLICY_VERSION,
-        glossaryVersion: GLOSSARY_VERSION,
-        qualityPolicyVersion: QUALITY_POLICY_VERSION,
+        ...CLIENT_RESPONSE_METADATA,
         translatedAt: Date.now(),
         cacheSource: 'firestore',
         });

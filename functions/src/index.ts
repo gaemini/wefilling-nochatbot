@@ -9,7 +9,10 @@ import * as crypto from 'crypto';
 import { COL } from './firestore_paths';
 import {runtimeInfo, runtimeLogsEnabled} from './runtime_logging';
 import {resolveFriendNotificationAudience} from './frozen_audience';
-import {removeUserFromAllSnackChats} from './snack_chat';
+import {
+  deleteMeetupSnackChats,
+  removeUserFromAllSnackChats,
+} from './snack_chat';
 import {
   HANYANG_VERIFICATION_SCHEMA_VERSION,
   hasActiveHanyangClaim,
@@ -101,6 +104,8 @@ export {
   createMeetupSnackChatSecure,
   inviteSnackChatParticipants,
   joinMeetupSnackChatSecure,
+  kickMeetupParticipantSecure,
+  leaveMeetupParticipationSecure,
   ensureSnackChatMembershipSecure,
   getSnackChatEntryContext,
   summarizeSnackChatUnread,
@@ -109,6 +114,8 @@ export {
   reconcileSnackChatParticipantsSecure,
   onDeletedAuthUserSnackChatCleanup,
   onDeletedUserDocumentSnackChatCleanup,
+  onMeetupParticipantDeletedSnackChatCleanup,
+  onSnackChatRoomDeletedCascade,
   updateSnackChatTitleSecure,
   createSnackChatAnnouncementSecure,
   fetchSnackChatLinkPreview,
@@ -3140,20 +3147,30 @@ export const onMeetupUpdated = functions.firestore
   });
 
 // 모임 삭제 시 참가자들에게 취소 알림 (meetup_cancelled)
-export const onMeetupDeleted = functions.firestore
+export const onMeetupDeleted = functions
+  .runWith({timeoutSeconds: 300, memory: '512MB', failurePolicy: true})
+  .firestore
   .document('meetups/{meetupId}')
   .onDelete(async (snapshot, context) => {
     try {
       const data = snapshot.data();
       const meetupId = context.params.meetupId;
+      const deletedRooms = await deleteMeetupSnackChats(
+        String(meetupId),
+        toStr(data.snackChatId),
+      );
       const title = data.title || '';
       const hostId = data.userId;
       const participants: string[] = Array.isArray(data.participants) ? data.participants : [];
       let targetIds = participants.filter((uid) => uid && uid !== hostId);
       targetIds = await filterTargetUserIdsByBlockRelationship(hostId, targetIds);
-      if (targetIds.length === 0) return null;
+      if (targetIds.length === 0) {
+        runtimeLogsEnabled && runtimeInfo(
+          `onMeetupDeleted: Snack Chat ${deletedRooms}개 삭제, 취소 알림 0건 생성`,
+        );
+        return null;
+      }
 
-      const batch = db.batch();
       let created = 0;
       for (const uid of targetIds) {
         const settingsDoc = await db.collection('user_settings').doc(uid).get();
@@ -3162,8 +3179,12 @@ export const onMeetupDeleted = functions.firestore
         const cancelledOn = noti.meetup_cancelled !== false;
         if (!allOn || !cancelledOn) continue;
 
-        const ref = db.collection('notifications').doc();
-        batch.set(ref, {
+        const notificationId = 'meetup_cancelled_' + crypto
+          .createHash('sha256')
+          .update(`${String(meetupId)}:${uid}`)
+          .digest('hex');
+        const ref = db.collection('notifications').doc(notificationId);
+        const notificationCreated = await createNotificationOnce(ref, {
           userId: uid,
           // 푸시/앱내 표시 시 수신자 언어로 i18n 하기 위해 key + data만 저장
           title: 'meetup_cancelled',
@@ -3177,14 +3198,16 @@ export const onMeetupDeleted = functions.firestore
           createdAt: admin.firestore.FieldValue.serverTimestamp(),
           isRead: false,
         });
-        created++;
+        if (notificationCreated) created++;
       }
-      if (created > 0) await batch.commit();
-      runtimeLogsEnabled && runtimeInfo(`onMeetupDeleted: 취소 알림 ${created}건 생성`);
+      runtimeLogsEnabled && runtimeInfo(
+        `onMeetupDeleted: Snack Chat ${deletedRooms}개 삭제, ` +
+        `취소 알림 ${created}건 생성`,
+      );
       return null;
     } catch (error) {
       console.error('onMeetupDeleted 오류:', error);
-      return null;
+      throw error;
     }
   });
 

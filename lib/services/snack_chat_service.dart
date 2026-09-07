@@ -1735,7 +1735,7 @@ class SnackChatService {
     return roomId;
   }
 
-  /// 모임 상세에서 공개된 참여 버튼으로 연결 Snack Chat에 참가한다.
+  /// 모임 상세에서 승인된 참여자가 연결 Snack Chat에 참가한다.
   Future<bool> joinMeetupSnackChat({
     required String snackChatId,
     required String meetupId,

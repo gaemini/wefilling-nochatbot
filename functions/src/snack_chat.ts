@@ -23,6 +23,7 @@ const SNACK_CHATS = 'snack_chats';
 const USERS = 'users';
 const BLOCKS = 'blocks';
 const MEETUPS = 'meetups';
+const MEETUP_PARTICIPANTS = 'meetup_participants';
 const REPORTS = 'reports';
 const FUNCTION_EVENTS = '_snack_chat_function_events';
 const LINK_PREVIEW_CACHE = '_snack_chat_link_preview_cache';
@@ -607,6 +608,21 @@ function meetupHasEnded(data: Data, nowMillis = Date.now()): boolean {
     return data.date.toMillis() + 24 * 60 * 60 * 1000 < nowMillis;
   }
   return true;
+}
+
+function meetupOwnerId(data: Data): string {
+  return stringValue(data.ownerId) || stringValue(data.userId);
+}
+
+function isApprovedMeetupParticipant(
+  participant: FirebaseFirestore.DocumentSnapshot,
+  meetupId: string,
+  userId: string,
+): boolean {
+  if (!participant.exists) return false;
+  return stringValue(participant.get('meetupId')) === meetupId &&
+    stringValue(participant.get('userId')) === userId &&
+    stringValue(participant.get('status')) === 'approved';
 }
 
 function eventDocumentId(namespace: string, eventId: string): string {
@@ -2280,12 +2296,15 @@ export const joinMeetupSnackChatSecure = functions
     const roomRef = db().collection(SNACK_CHATS).doc(snackChatId);
     const meetupRef = db().collection(MEETUPS).doc(meetupId);
     const userRef = db().collection(USERS).doc(userId);
+    const participantRef = db().collection(MEETUP_PARTICIPANTS)
+      .doc(`${meetupId}_${userId}`);
 
     const joined = await db().runTransaction(async (transaction) => {
-      const [room, meetup, user] = await transaction.getAll(
+      const [room, meetup, user, participant] = await transaction.getAll(
         roomRef,
         meetupRef,
         userRef,
+        participantRef,
       );
       assertActiveUserSnapshot(user);
       if (!room.exists || !meetup.exists) {
@@ -2319,6 +2338,17 @@ export const joinMeetupSnackChatSecure = functions
         throw new functions.https.HttpsError(
           'permission-denied',
           'You cannot join this Meetup Snack Chat.',
+        );
+      }
+      const isHost = meetupOwnerId(meetupData) === userId;
+      if (!isHost && !isApprovedMeetupParticipant(
+        participant,
+        meetupId,
+        userId,
+      )) {
+        throw new functions.https.HttpsError(
+          'permission-denied',
+          'Only approved Meetup participants can join this Snack Chat.',
         );
       }
       if (!meetupAudienceAllows(meetupData, userId)) {
@@ -5257,10 +5287,196 @@ export const markSnackChatReadSecure = functions
     });
   });
 
+function removeMeetupParticipantFromRoom(
+  transaction: FirebaseFirestore.Transaction,
+  room: FirebaseFirestore.QueryDocumentSnapshot,
+  userId: string,
+): boolean {
+  const participants = uniqueStrings(room.get('participantIds'));
+  if (!participants.includes(userId)) return false;
+  transaction.update(
+    room.ref,
+    snackChatParticipantRemovalUpdate(room, new Set([userId])),
+  );
+  transaction.set(room.ref.collection('members').doc(userId), {
+    userId,
+    status: 'left',
+    leftAfterSequence: nonNegativeInteger(room.get('lastMessageSequence')),
+    leftAt: FieldValue.serverTimestamp(),
+    membershipUpdatedAt: FieldValue.serverTimestamp(),
+  }, {merge: true});
+  return true;
+}
+
+/**
+ * The host removes a participant before confirmation. The Meetup ban, its
+ * canonical participant row, and every Snack Chat created from that Meetup
+ * change in the same transaction so a removed participant cannot retain an
+ * older linked room or race a rejoin.
+ */
+export const kickMeetupParticipantSecure = functions
+  .runWith({timeoutSeconds: 30, memory: '256MB'})
+  .https.onCall(async (raw, context) => {
+    const hostId = requireUid(context);
+    await requireActiveUser(hostId);
+    const request = objectValue(raw);
+    const meetupId = firestoreId(request.meetupId, 'Meetup id');
+    const targetUserId = firestoreId(request.targetUserId, 'Target user id');
+    if (targetUserId === hostId) {
+      throw new functions.https.HttpsError(
+        'invalid-argument',
+        'The Meetup host cannot remove themselves.',
+      );
+    }
+
+    const meetupRef = db().collection(MEETUPS).doc(meetupId);
+    const participantRef = db().collection(MEETUP_PARTICIPANTS)
+      .doc(`${meetupId}_${targetUserId}`);
+    const roomsQuery = db().collection(SNACK_CHATS)
+      .where('meetupId', '==', meetupId);
+
+    const result = await db().runTransaction(async (transaction) => {
+      const [meetup, participant] = await transaction.getAll(
+        meetupRef,
+        participantRef,
+      );
+      if (!meetup.exists) {
+        throw new functions.https.HttpsError(
+          'not-found',
+          'Meetup not found.',
+        );
+      }
+      const meetupData = meetup.data() ?? {};
+      if (meetupOwnerId(meetupData) !== hostId) {
+        throw new functions.https.HttpsError(
+          'permission-denied',
+          'Only the Meetup host can remove a participant.',
+        );
+      }
+      if (meetupData.isConfirmed === true || meetupHasEnded(meetupData)) {
+        throw new functions.https.HttpsError(
+          'failed-precondition',
+          'Participants can only be removed before confirmation and expiry.',
+        );
+      }
+
+      const rooms = await transaction.get(roomsQuery);
+      const wasApproved = isApprovedMeetupParticipant(
+        participant,
+        meetupId,
+        targetUserId,
+      );
+      const alreadyKicked = uniqueStrings(meetupData.kickedUserIds)
+        .includes(targetUserId);
+      if (!participant.exists && !alreadyKicked) {
+        throw new functions.https.HttpsError(
+          'not-found',
+          'Meetup participant not found.',
+        );
+      }
+
+      if (participant.exists) transaction.delete(participantRef);
+      const currentParticipants = Math.max(
+        1,
+        nonNegativeInteger(meetupData.currentParticipants),
+      );
+      transaction.update(meetupRef, {
+        ...(wasApproved ? {
+          currentParticipants: Math.max(1, currentParticipants - 1),
+        } : {}),
+        kickedUserIds: FieldValue.arrayUnion(targetUserId),
+        updatedAt: FieldValue.serverTimestamp(),
+      });
+
+      let removedRoomCount = 0;
+      rooms.docs.forEach((room) => {
+        if (removeMeetupParticipantFromRoom(
+          transaction,
+          room,
+          targetUserId,
+        )) {
+          removedRoomCount += 1;
+        }
+      });
+      return {wasApproved, removedRoomCount};
+    });
+
+    return {
+      success: true,
+      kicked: result.wasApproved,
+      removedRoomCount: result.removedRoomCount,
+    };
+  });
+
+/**
+ * Voluntary Meetup departure uses the same canonical transaction as kicking.
+ * This prevents somebody who is no longer an approved participant from
+ * keeping access through a previously joined Meetup Snack Chat.
+ */
+export const leaveMeetupParticipationSecure = functions
+  .runWith({timeoutSeconds: 30, memory: '256MB'})
+  .https.onCall(async (raw, context) => {
+    const userId = requireUid(context);
+    await requireActiveUser(userId);
+    const request = objectValue(raw);
+    const meetupId = firestoreId(request.meetupId, 'Meetup id');
+    const meetupRef = db().collection(MEETUPS).doc(meetupId);
+    const participantRef = db().collection(MEETUP_PARTICIPANTS)
+      .doc(`${meetupId}_${userId}`);
+    const roomsQuery = db().collection(SNACK_CHATS)
+      .where('meetupId', '==', meetupId);
+
+    const result = await db().runTransaction(async (transaction) => {
+      const [meetup, participant] = await transaction.getAll(
+        meetupRef,
+        participantRef,
+      );
+      if (!meetup.exists) {
+        throw new functions.https.HttpsError('not-found', 'Meetup not found.');
+      }
+      const meetupData = meetup.data() ?? {};
+      if (meetupOwnerId(meetupData) === userId) {
+        throw new functions.https.HttpsError(
+          'failed-precondition',
+          'The Meetup host cannot leave as a participant.',
+        );
+      }
+      if (meetupData.isConfirmed === true || meetupHasEnded(meetupData)) {
+        throw new functions.https.HttpsError(
+          'failed-precondition',
+          'This Meetup participation can no longer be changed.',
+        );
+      }
+      if (!isApprovedMeetupParticipant(participant, meetupId, userId)) {
+        return {left: false, removedRoomCount: 0};
+      }
+
+      const rooms = await transaction.get(roomsQuery);
+      transaction.delete(participantRef);
+      const currentParticipants = Math.max(
+        1,
+        nonNegativeInteger(meetupData.currentParticipants),
+      );
+      transaction.update(meetupRef, {
+        currentParticipants: Math.max(1, currentParticipants - 1),
+        updatedAt: FieldValue.serverTimestamp(),
+      });
+      let removedRoomCount = 0;
+      rooms.docs.forEach((room) => {
+        if (removeMeetupParticipantFromRoom(transaction, room, userId)) {
+          removedRoomCount += 1;
+        }
+      });
+      return {left: true, removedRoomCount};
+    });
+
+    return {success: true, ...result};
+  });
+
 /**
  * Removes the caller from a room in one idempotent server transaction. A
- * retry after an uncertain client timeout succeeds even if the first attempt
- * already committed.
+ * Meetup host leaving a Meetup-created room deletes that complete room and
+ * clears only the matching Meetup link, allowing a fresh room to be created.
  */
 export const leaveSnackChatSecure = functions
   .runWith({timeoutSeconds: 30, memory: '256MB'})
@@ -5271,16 +5487,36 @@ export const leaveSnackChatSecure = functions
     const roomRef = db().collection(SNACK_CHATS).doc(snackChatId);
     const memberRef = roomRef.collection('members').doc(userId);
 
-    const left = await db().runTransaction(async (transaction) => {
+    const outcome = await db().runTransaction(async (transaction) => {
       const room = await transaction.get(roomRef);
       if (!room.exists) {
-        throw new functions.https.HttpsError(
-          'not-found',
-          'Snack Chat not found.',
-        );
+        return {left: false, deleted: false};
       }
       const participants = uniqueStrings(room.get('participantIds'));
-      if (!participants.includes(userId)) return false;
+      const meetupId = stringValue(room.get('meetupId'));
+      if (meetupId) {
+        const meetupRef = db().collection(MEETUPS).doc(meetupId);
+        const meetup = await transaction.get(meetupRef);
+        const meetupData = meetup.data() ?? {};
+        const isMeetupHost = meetup.exists
+          ? meetupOwnerId(meetupData) === userId
+          : stringValue(room.get('creatorId')) === userId;
+        if (isMeetupHost) {
+          if (meetup.exists &&
+              stringValue(meetup.get('snackChatId')) === snackChatId) {
+            transaction.update(meetupRef, {
+              snackChatId: FieldValue.delete(),
+              groupChatEnabled: false,
+              updatedAt: FieldValue.serverTimestamp(),
+            });
+          }
+          transaction.delete(roomRef);
+          return {left: true, deleted: true};
+        }
+      }
+      if (!participants.includes(userId)) {
+        return {left: false, deleted: false};
+      }
       transaction.update(roomRef, snackChatDepartureUpdate(room, userId));
       // participantIds is the canonical membership source. Materialize the
       // immediately visible member state in the same transaction as well;
@@ -5295,9 +5531,23 @@ export const leaveSnackChatSecure = functions
         leftAt: FieldValue.serverTimestamp(),
         membershipUpdatedAt: FieldValue.serverTimestamp(),
       }, {merge: true});
-      return true;
+      return {left: true, deleted: false};
     });
-    return {success: true, left};
+    return {success: true, ...outcome};
+  });
+
+/**
+ * A deleted room is immediately inaccessible because its parent document is
+ * gone. This retryable trigger then removes every nested message, member,
+ * reaction, vote, and upload job without keeping the client request open.
+ */
+export const onSnackChatRoomDeletedCascade = functions
+  .runWith({timeoutSeconds: 300, memory: '512MB', failurePolicy: true})
+  .firestore
+  .document('snack_chats/{snackChatId}')
+  .onDelete(async (snapshot) => {
+    await db().recursiveDelete(snapshot.ref);
+    return null;
   });
 
 /**
@@ -5342,6 +5592,86 @@ function snackChatParticipantRemovalUpdate(
   }
   return update;
 }
+
+/** Deletes every current or historical room created from one Meetup. */
+export async function deleteMeetupSnackChats(
+  rawMeetupId: string,
+  rawLinkedRoomId = '',
+): Promise<number> {
+  const meetupId = stringValue(rawMeetupId);
+  if (!/^[A-Za-z0-9_-]{1,256}$/.test(meetupId)) return 0;
+
+  const rooms = await db().collection(SNACK_CHATS)
+    .where('meetupId', '==', meetupId)
+    .get();
+  const roomById = new Map(
+    rooms.docs.map((room) => [room.id, room.ref]),
+  );
+
+  const linkedRoomId = stringValue(rawLinkedRoomId);
+  if (/^[A-Za-z0-9_-]{1,256}$/.test(linkedRoomId) &&
+      !roomById.has(linkedRoomId)) {
+    const linked = await db().collection(SNACK_CHATS).doc(linkedRoomId).get();
+    // Never trust only the Meetup pointer when deleting data. The reciprocal
+    // room link must also identify the deleted Meetup.
+    if (linked.exists && stringValue(linked.get('meetupId')) === meetupId) {
+      roomById.set(linked.id, linked.ref);
+    }
+  }
+
+  await runWithConcurrency(
+    Array.from(roomById.values()),
+    4,
+    (roomRef) => db().recursiveDelete(roomRef),
+  );
+  return roomById.size;
+}
+
+/**
+ * Compatibility safety net for older clients that delete a Meetup
+ * participant document directly. New clients use the atomic callable, while
+ * this trigger still revokes access to every Meetup-linked room.
+ */
+export const onMeetupParticipantDeletedSnackChatCleanup = functions
+  .runWith({timeoutSeconds: 120, memory: '256MB', failurePolicy: true})
+  .firestore
+  .document('meetup_participants/{participantId}')
+  .onDelete(async (snapshot) => {
+    const meetupId = stringValue(snapshot.get('meetupId'));
+    const userId = stringValue(snapshot.get('userId'));
+    if (!/^[A-Za-z0-9_-]{1,256}$/.test(meetupId) ||
+        !/^[A-Za-z0-9_-]{1,256}$/.test(userId)) {
+      return null;
+    }
+
+    const rooms = await db().collection(SNACK_CHATS)
+      .where('meetupId', '==', meetupId)
+      .get();
+    await runWithConcurrency(rooms.docs, 8, async (candidate) => {
+      await db().runTransaction(async (transaction) => {
+        const room = await transaction.get(candidate.ref);
+        if (!room.exists ||
+            stringValue(room.get('meetupId')) !== meetupId ||
+            !uniqueStrings(room.get('participantIds')).includes(userId)) {
+          return;
+        }
+        transaction.update(
+          room.ref,
+          snackChatParticipantRemovalUpdate(room, new Set([userId])),
+        );
+        transaction.set(room.ref.collection('members').doc(userId), {
+          userId,
+          status: 'left',
+          leftAfterSequence: nonNegativeInteger(
+            room.get('lastMessageSequence'),
+          ),
+          leftAt: FieldValue.serverTimestamp(),
+          membershipUpdatedAt: FieldValue.serverTimestamp(),
+        }, {merge: true});
+      });
+    });
+    return null;
+  });
 
 /**
  * Removes a user from every current Snack Chat membership. Each room uses a

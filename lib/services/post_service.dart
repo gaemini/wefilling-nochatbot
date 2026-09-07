@@ -157,6 +157,8 @@ class PostService {
   StreamSubscription<QuerySnapshot<Map<String, dynamic>>>? _blocksByMeSub;
   StreamSubscription<QuerySnapshot<Map<String, dynamic>>>? _blockedBySub;
   StreamSubscription<User?>? _authSub;
+  String? _postsListenUid;
+  int _postsSubscriptionGeneration = 0;
   String? _blockListenUid;
   List<Post>? _lastParsedPosts;
 
@@ -2039,24 +2041,65 @@ class PostService {
               });
             }
 
-            // posts snapshots
-            _postsSub = _watchAccessiblePosts(limit: _feedRealtimeLimit).listen(
-                (posts) async {
-              _lastParsedPosts = posts;
-              unawaited(emitFiltered());
-            }, onError: (e) {
-              // 중요: 에러를 스트림으로 전달하지 않으면 UI(StreamBuilder)가
-              // waiting 상태에 고정되어 "진행이 안 되는 것처럼" 보일 수 있다.
-              Logger.error('포스트 스트림 오류: $e');
-              _postsStreamController?.addError(e);
-            });
+            Future<void> restartPostsSubscription() async {
+              final expectedUid = _auth.currentUser?.uid;
+              final generation = ++_postsSubscriptionGeneration;
+
+              await _postsSub?.cancel();
+              if (generation != _postsSubscriptionGeneration) return;
+
+              _postsSub = null;
+              _postsListenUid = expectedUid;
+              // 계정이 바뀌는 순간 이전 계정의 포스트가 노출되지 않도록
+              // 로컬 기준 목록을 즉시 비운다. 로딩 상태는 빈 결과 emit으로
+              // 항상 종료되고, 최신 스냅샷이 도착하면 바로 대체된다.
+              _lastParsedPosts = const <Post>[];
+              await emitFiltered();
+
+              if (expectedUid == null ||
+                  _auth.currentUser?.uid != expectedUid) {
+                return;
+              }
+
+              _postsSub =
+                  _watchAccessiblePosts(limit: _feedRealtimeLimit).listen(
+                (posts) {
+                  if (generation != _postsSubscriptionGeneration ||
+                      _postsListenUid != expectedUid) {
+                    return;
+                  }
+                  _lastParsedPosts = posts;
+                  unawaited(emitFiltered());
+                },
+                onError: (e) {
+                  if (generation != _postsSubscriptionGeneration ||
+                      _postsListenUid != expectedUid) {
+                    return;
+                  }
+                  // 오류를 전달해 StreamBuilder가 waiting에 고정되지
+                  // 않게 하되, 인증 변경으로 폐기된 구독의 오류는 무시한다.
+                  Logger.error('포스트 스트림 오류: $e');
+                  _postsStreamController?.addError(e);
+                },
+              );
+            }
+
+            // 현재 인증 상태로 최신 포스트 구독을 시작한다.
+            await restartPostsSubscription();
 
             // Auth가 늦게 확정되면(앱 초기 부팅 타이밍) cached stream이 "로그아웃 필터"에 고정될 수 있음.
-            // Auth 변화를 따라 blocks 구독/필터를 즉시 갱신해, 포스트가 안 뜨는 현상을 방지.
-            _authSub ??= _auth.authStateChanges().listen((_) async {
+            // Auth 변화를 따라 posts와 blocks 구독을 같이 갱신해,
+            // 수동 새로고침 전까지 빈 피드에 머무는 현상을 방지한다.
+            _authSub ??= _auth.authStateChanges().listen((user) async {
               ContentFilterService.refreshCache();
+              final shouldRestartPosts = user?.uid != _postsListenUid ||
+                  (user != null && _postsSub == null);
+              if (shouldRestartPosts) {
+                await restartPostsSubscription();
+              } else {
+                unawaited(emitFiltered());
+              }
               await ensureBlockSubscriptions();
-              unawaited(emitFiltered());
             }, onError: (e) {
               Logger.error('Auth 스트림 오류: $e');
               _postsStreamController?.addError(e);
@@ -2085,6 +2128,8 @@ class PostService {
         _blocksByMeSub = null;
         _blockedBySub = null;
         _authSub = null;
+        _postsListenUid = null;
+        _postsSubscriptionGeneration++;
         _blockListenUid = null;
         _lastParsedPosts = null;
       },

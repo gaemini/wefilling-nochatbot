@@ -27,7 +27,7 @@ const GLOSSARY_VERSION = 1;
 const QUALITY_POLICY_VERSION = 2;
 // Failed results are short-lived, but a corrected validator must be able to
 // retry old false negatives immediately without invalidating good translations.
-const FAILURE_CACHE_POLICY_VERSION = 3;
+const FAILURE_CACHE_POLICY_VERSION = 4;
 // Keep callable response metadata compatible with the currently released
 // client. Server-side cache identity advances independently, so bad v6 cache
 // entries are regenerated without making older app builds reject every result.
@@ -1210,10 +1210,10 @@ async function callGeminiModel(
         'If a TARGET term is in preserveIfUncertain or its meaning is genuinely uncertain, keep the original term verbatim and include it in uncertainTerms.',
         'Set coverageComplete to true only after confirming that every TARGET meaning unit is represented.',
         'Set sourceIntent to exactly one of question, statement, answer, suggestion, request, command, exclamation, or unknown.',
-        '__WF_KEEP_N__ placeholders contain only immutable identifiers, emoji, monetary/percentage values, or line breaks. Preserve each placeholder exactly once, including its spelling and position.',
-        'Dates, clock times, durations, relative-time expressions, and their language-specific units are intentionally not placeholders. Translate their words, units, order, and formatting naturally while preserving every semantic value.',
-        'Distinguish clock time from duration. Preserve AM versus PM. Korean 년/월/일/시/분/초/시간/달 must not remain untranslated in a non-Korean result when they express time.',
-        'Examples for Korean to English: "9월 3일" means "September 3"; "오후 3시 20분" means "3:20 PM"; "3시간 20분" means "3 hours and 20 minutes"; "5분 후" means "in 5 minutes".',
+        '__WF...KEEP_N__ placeholders contain only URLs, contact data, explicit identifiers/placeholders, code, paths, markup, emoji, or line breaks. Preserve each placeholder exactly once, including its spelling and position.',
+        'Numbers with natural-language meaning—including dates, times, durations, quantities, money, places, units, counts, ranges, and order—are ordinary TARGET text, not protected IDs. Never omit them.',
+        'Preserve numeric meaning without unnecessary value changes, while translating the surrounding unit and expression naturally for the target reader. For example, 3명 means 3 people and 1박 2일 means the natural target-language equivalent of 1 night and 2 days; use context rather than fixed wording.',
+        'Distinguish clock time from duration and preserve AM versus PM, ranges, and every value in compound expressions.',
         'Do not treat ordinary words as temporal units: 서울시 means Seoul City, 한 분 means one person, 오늘 일이 많아요 means there is much work today, 달이 밝아요 means the moon is bright, and 시를 읽었어요 means reading a poem.',
         'Produce idiomatic, publication-ready text for a native reader; do not use awkward word-for-word phrasing.',
         'Preserve meaning, nuance, tone, emotion, repetition, laughter, slang, and intentional informality.',

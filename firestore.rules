@@ -1303,6 +1303,10 @@ service cloud.firestore {
 
       function isSelfLeaveUpdate() {
         return isParticipant()
+          // Meetup-linked rooms must leave through leaveSnackChatSecure.
+          // In particular, a host may not bypass the server-side room delete
+          // and link cleanup by directly transferring creatorId.
+          && resource.data.get('meetupId', '') == ''
           && !(request.auth.uid in request.resource.data.participantIds)
           && request.resource.data.participantIds.size() == resource.data.participantIds.size() - 1
           && resource.data.participantIds.hasAll(request.resource.data.participantIds)

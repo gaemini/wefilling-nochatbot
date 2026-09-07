@@ -74,6 +74,8 @@ for (const text of [
   '오후 3시 20분',
   '3시간 20분',
   '5분 후',
+  '2주 동안',
+  '3년 후',
   '2026-09-03 15:20',
   '9.3',
   '1박2일',
@@ -92,11 +94,8 @@ const immutableFixtures = [
   '@user_3',
   '#9월3일모임',
   '010-1234-5678',
-  '37.5665, 126.9780',
   'ChIJN1t_tDeuEmsRUsoyG83frY4',
   'report_v3.pdf',
-  '₩15,000',
-  '20%',
   'v1.3.9',
   'room_A12',
   '🙂',
@@ -152,6 +151,94 @@ assert.deepEqual(
   immutableTokens('2박 3일 여행'),
   immutableTokens('a 2-night, 3-day trip'),
 );
+
+// Natural text remains visible as one coherent sentence. This deliberately
+// covers categories rather than adding one protected-span exception per word.
+for (const text of [
+  '년 월 주 일 시 분 초',
+  '오늘 내일 어제 이번 주 다음 주 이번 달 다음 달 작년 내년',
+  '3명 2개 한 명 두 명',
+  '3시간 10분 30초 세 시간 몇 분',
+  '6시 반 10시쯤 6시까지 10분 전',
+  '2번 세 번 주 2회 하루 한 번 하루 3번',
+  '9월 10일 목요일',
+  '1박 2일 2박 3일 당일치기 3일간 2주 동안',
+  '1~3명 10시~12시 월~금',
+  '1학년 2학년 1차 2차 첫 번째 3번째',
+  '202호 3층 제1학술관 정문 앞',
+  '10,000원 3만원 무료 ₩15,000',
+  '5km 10kg 500m',
+  '50% 4.5점 3대2',
+  '9/10(목) 18:00 오후 6시 30분 D-3 3일째',
+  '이번 주 토요일 오후 6시에 3명이서 1박 2일로 부산에 가자',
+  '내일 6시에 확인해줘',
+  '37.5665, 126.9780에서 만나자',
+  '12pm',
+  '20mins',
+  '2-weeks',
+  '21st',
+  'Sep3',
+  '10kg',
+  '180cm',
+]) {
+  assert.deepEqual(immutableTokens(text), [], `must remain translatable: ${text}`);
+  assert.equal(protectImmutableText(text).text, text, text);
+}
+
+// Only explicit machine data and code-like identifiers are preserved.
+for (const text of [
+  'room_A12',
+  'userId=abc_123',
+  'ChIJN1t_tDeuEmsRUsoyG83frY4',
+  '550e8400-e29b-41d4-a716-446655440000',
+  'v1.3.9',
+  '/Users/shared/report.pdf',
+]) {
+  assert.ok(immutableTokens(text).length > 0, `must remain immutable: ${text}`);
+}
+
+// Internal marker-looking user text used to collide with placeholders and
+// fail forever. Marker selection is now collision-safe for arbitrary input.
+for (const text of [
+  'literal __WF_KEEP_0__ text 🙂',
+  '__WF_KEEP_0__ and __WF1_KEEP_0__ with https://example.com',
+  'symbols \u0000 \u2028 \u2029 <> [] {} | \\ ^ 🇰🇷 1️⃣',
+  'code `const room_A12 = 1;` must stay exact',
+  '```js\nconst room_A12 = 1;\n```',
+]) {
+  const protectedValue = protectImmutableText(text);
+  assert.equal(
+    restoreImmutableText(protectedValue.text, protectedValue),
+    text,
+    `round trip must be exact: ${JSON.stringify(text)}`,
+  );
+}
+
+assert.ok(immutableTokens('🇰🇷').length > 0, 'flag emoji is protected');
+assert.ok(immutableTokens('1️⃣').length > 0, 'keycap emoji is protected');
+assert.ok(immutableTokens('`const x = 1;`').length > 0, 'inline code is protected');
+
+const contextualProtection = protectImmutableText(
+  '내일 6시에 https://example.com에서 test@example.com으로 확인해줘',
+);
+assert.equal(Object.keys(contextualProtection.tokens).length, 2);
+assert.ok(contextualProtection.text.startsWith('내일 6시에 '));
+assert.ok(contextualProtection.text.includes('에서 '));
+assert.ok(contextualProtection.text.endsWith('으로 확인해줘'));
+assert.equal(
+  restoreImmutableText(contextualProtection.text, contextualProtection),
+  '내일 6시에 https://example.com에서 test@example.com으로 확인해줘',
+);
+
+for (const text of [
+  '010-1234-5678로 전화해줘',
+  'report_v3.pdf를 확인해줘',
+  'v1.3.9를 설치해줘',
+]) {
+  const protectedValue = protectImmutableText(text);
+  assert.equal(Object.keys(protectedValue.tokens).length, 1, text);
+  assert.equal(restoreImmutableText(protectedValue.text, protectedValue), text);
+}
 
 // Natural target-language address and ordinal words may look like generated
 // identifiers. They must not invalidate an otherwise complete translation.

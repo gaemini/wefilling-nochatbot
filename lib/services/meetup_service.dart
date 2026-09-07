@@ -1427,8 +1427,8 @@ class MeetupService {
   }
 
   /// 호스트가 참여자를 모임에서 퇴장(강퇴)시키기
-  /// - meetup_participants/{meetupId}_{targetUserId} 삭제
-  /// - meetups/{meetupId}.currentParticipants 감소 (최소 1 보장: 호스트)
+  /// 밋업 참여 상태, 재참여 차단, 연결 Snack Chat 퇴장을 서버의 한
+  /// 트랜잭션에서 처리한다.
   Future<bool> kickParticipant({
     required String meetupId,
     required String targetUserId,
@@ -1438,41 +1438,22 @@ class MeetupService {
       if (me == null) return false;
       if (targetUserId == me.uid) return false; // 자기 자신 퇴장 방지
 
-      final meetupRef = _firestore.collection('meetups').doc(meetupId);
-      final participantId = '${meetupId}_$targetUserId';
-      final participantRef =
-          _firestore.collection('meetup_participants').doc(participantId);
-
-      // 호스트 권한 확인 (클라이언트 방어; 서버 규칙이 있다면 그쪽이 최종 권한)
-      final meetupDoc = await meetupRef.get();
+      // 표시용 정보만 먼저 확보하고, 최종 권한과 상태는 Callable이 다시
+      // 검증한다.
+      final meetupDoc =
+          await _firestore.collection('meetups').doc(meetupId).get();
       if (!meetupDoc.exists) return false;
       final hostId = meetupDoc.data()?['userId']?.toString();
       final meetupTitle = meetupDoc.data()?['title']?.toString() ?? '';
       if (hostId == null || hostId != me.uid) return false;
 
-      await _firestore.runTransaction((tx) async {
-        final pDoc = await tx.get(participantRef);
-        if (!pDoc.exists) return;
-
-        tx.delete(participantRef);
-
-        final mDoc = await tx.get(meetupRef);
-        if (mDoc.exists) {
-          final data = mDoc.data() as Map<String, dynamic>? ?? const {};
-          final cur = (data['currentParticipants'] is int)
-              ? (data['currentParticipants'] as int)
-              : 1;
-          final next = cur > 1 ? cur - 1 : 1;
-          tx.update(meetupRef, {
-            'currentParticipants': next,
-            'updatedAt': FieldValue.serverTimestamp(),
-            _kickedUserIdsField: FieldValue.arrayUnion([targetUserId]),
-          });
-        }
-      });
-
-      // 동기화 검증 (선택적)
-      await _validateParticipantCount(meetupId);
+      final response = await _functions
+          .httpsCallable('kickMeetupParticipantSecure')
+          .call<Map<String, dynamic>>(<String, dynamic>{
+        'meetupId': meetupId,
+        'targetUserId': targetUserId,
+      }).timeout(const Duration(seconds: 20));
+      if (response.data['success'] != true) return false;
 
       // 캐시 무효화 (강퇴된 유저의 참여 상태)
       _cacheService.invalidateCache(meetupId, targetUserId);
@@ -1930,36 +1911,6 @@ class MeetupService {
     }).map((v) => v <= 0 ? fallback : v);
   }
 
-  /// 참여자 수 동기화 검증 및 수정
-  Future<void> _validateParticipantCount(String meetupId) async {
-    try {
-      // 실제 참여자 수 조회
-      final realCount = await getRealTimeParticipantCount(meetupId);
-
-      // Firestore 필드값 조회
-      final meetupDoc =
-          await _firestore.collection('meetups').doc(meetupId).get();
-      if (!meetupDoc.exists) return;
-
-      final storedCount = meetupDoc.data()?['currentParticipants'] ?? 1;
-
-      // 불일치 시 수정
-      if (realCount != storedCount) {
-        if (Logger.isVerboseEnabled)
-          Logger.log(
-              '⚠️ 참여자 수 불일치 감지: $meetupId (실제: $realCount, 저장된 값: $storedCount)');
-        await _firestore.collection('meetups').doc(meetupId).update({
-          'currentParticipants': realCount,
-          'updatedAt': FieldValue.serverTimestamp(),
-        });
-        if (Logger.isVerboseEnabled)
-          Logger.log('✅ 참여자 수 동기화 완료: $meetupId -> $realCount명');
-      }
-    } catch (e) {
-      Logger.error('❌ 참여자 수 검증 오류: $e');
-    }
-  }
-
   /// 모임 참여 취소
   Future<bool> cancelMeetupParticipation(String meetupId) async {
     try {
@@ -2002,23 +1953,16 @@ class MeetupService {
               '익명')
           .toString();
 
-      // 문서 삭제
-      await _firestore
-          .collection('meetup_participants')
-          .doc(participantId)
-          .delete();
-
-      // 모임의 currentParticipants 감소
-      final meetupRef = _firestore.collection('meetups').doc(meetupId);
-      await _firestore.runTransaction((transaction) async {
-        final meetupDoc = await transaction.get(meetupRef);
-        if (meetupDoc.exists) {
-          final currentCount = meetupDoc.data()?['currentParticipants'] ?? 1;
-          transaction.update(meetupRef, {
-            'currentParticipants': currentCount > 0 ? currentCount - 1 : 0,
-          });
-        }
-      });
+      // 참여 문서와 연결된 Meetup Snack Chat 멤버십을 서버에서 함께
+      // 제거한다. 네트워크 경합 중 한쪽만 삭제되는 상태를 만들지 않는다.
+      final response = await _functions
+          .httpsCallable('leaveMeetupParticipationSecure')
+          .call<Map<String, dynamic>>(<String, dynamic>{
+        'meetupId': meetupId,
+      }).timeout(const Duration(seconds: 20));
+      if (response.data['success'] != true || response.data['left'] != true) {
+        return false;
+      }
 
       // 🔧 캐시 무효화 (참여 상태 변경됨)
       _cacheService.invalidateCache(meetupId, user.uid);

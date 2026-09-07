@@ -67,6 +67,8 @@ class _MeetupDetailScreenState extends State<MeetupDetailScreen>
   bool _isHost = false;
   bool _isParticipant = false; // 현재 사용자가 승인된 참여자인지
   bool _hasResolvedCanonicalMeetup = false;
+  bool _hasResolvedHost = false;
+  bool _hasResolvedParticipation = false;
   bool _publicationExitScheduled = false;
   // 참여자 목록은 항상 전체 노출 (접기/펼치기 제거)
   late Meetup _currentMeetup;
@@ -381,6 +383,7 @@ class _MeetupDetailScreenState extends State<MeetupDetailScreen>
           final currentUid = FirebaseAuth.instance.currentUser?.uid;
           if (currentUid != null) {
             _isParticipant = combined.any((p) => p.userId == currentUid);
+            _hasResolvedParticipation = true;
           }
           // 모임 데이터의 참여자 수 업데이트 (호스트 포함)
           _currentMeetup = _currentMeetup.copyWith(
@@ -409,6 +412,7 @@ class _MeetupDetailScreenState extends State<MeetupDetailScreen>
     if (mounted) {
       setState(() {
         _isHost = isHost;
+        _hasResolvedHost = true;
       });
     }
   }
@@ -420,6 +424,7 @@ class _MeetupDetailScreenState extends State<MeetupDetailScreen>
       if (user == null) {
         setState(() {
           _isParticipant = false;
+          _hasResolvedParticipation = true;
         });
         return;
       }
@@ -430,6 +435,7 @@ class _MeetupDetailScreenState extends State<MeetupDetailScreen>
         setState(() {
           _isParticipant =
               participantStatus?.status == ParticipantStatus.approved;
+          _hasResolvedParticipation = true;
         });
       }
     } catch (e) {
@@ -628,6 +634,22 @@ class _MeetupDetailScreenState extends State<MeetupDetailScreen>
                                   const SizedBox(width: 7),
                                   const HanyangContentBadge(),
                                 ],
+                                if (_currentMeetup.isExpired()) ...[
+                                  const SizedBox(width: 7),
+                                  Text(
+                                    currentLang == 'ko' ? '· 만료' : '· Expired',
+                                    style: TextStyle(
+                                      fontFamily: 'Inter',
+                                      fontFamilyFallback: const ['NotoSansKR'],
+                                      fontSize: context
+                                          .rf(13)
+                                          .clamp(12, 14)
+                                          .toDouble(),
+                                      fontWeight: FontWeight.w700,
+                                      color: const Color(0xFF667085),
+                                    ),
+                                  ),
+                                ],
                               ],
                             ),
                             if (_currentMeetup.imageUrls.isNotEmpty ||
@@ -736,6 +758,14 @@ class _MeetupDetailScreenState extends State<MeetupDetailScreen>
   }
 
   Widget? _buildBottomAction() {
+    // 호스트/참여자 판정이 끝나기 전에는 상태 변경 버튼을 그리지 않는다.
+    // 이 대기 구간이 있어야 실제 참여자에게 '참여하기'가 잠깐 노출되는
+    // 잘못된 초기 프레임을 막을 수 있다.
+    if (!_hasResolvedCanonicalMeetup ||
+        !_hasResolvedHost ||
+        !_hasResolvedParticipation) {
+      return null;
+    }
     final meetupAction = _buildMeetupAction();
     final snackChatAction = _buildMeetupSnackChatAction();
     if (snackChatAction == null) return meetupAction;
@@ -783,7 +813,11 @@ class _MeetupDetailScreenState extends State<MeetupDetailScreen>
 
     final roomId = _currentMeetup.snackChatId?.trim() ?? '';
     final canCreate = _isHost && !_currentMeetup.isExpired() && roomId.isEmpty;
-    if (!canCreate && roomId.isEmpty) return null;
+    // 연결된 방은 실제 승인된 밋업 참여자에게만 노출한다. 공개 대상은
+    // 밋업 상세를 볼 수 있는 범위일 뿐, 채팅방 입장 권한이 아니다.
+    if (!canCreate && (roomId.isEmpty || (!_isHost && !_isParticipant))) {
+      return null;
+    }
     final isKo = Localizations.localeOf(context).languageCode == 'ko';
     final label = roomId.isEmpty
         ? (isKo ? '스낵챗 만들기' : 'Create Snack Chat')
@@ -1998,6 +2032,16 @@ class _MeetupDetailScreenState extends State<MeetupDetailScreen>
         message: isKo
             ? '만료된 밋업에서는 스낵챗에 참여할 수 없습니다.'
             : 'You cannot join the Snack Chat for an expired meetup.',
+        type: AppSnackBarType.warning,
+      );
+      return;
+    }
+    if (!_isHost && !_isParticipant) {
+      AppSnackBar.show(
+        context,
+        message: isKo
+            ? '밋업에 참여한 뒤 스낵챗에 들어갈 수 있습니다.'
+            : 'Join the Meetup before entering its Snack Chat.',
         type: AppSnackBarType.warning,
       );
       return;
@@ -3779,6 +3823,8 @@ class _MeetupDetailScreenState extends State<MeetupDetailScreen>
     final hostId = _currentMeetup.userId;
     final canOpenProfile = participant.hasViewableProfile;
     final canKick = _isHost &&
+        !_currentMeetup.isConfirmed &&
+        !_currentMeetup.isExpired() &&
         hostId != null &&
         participant.userId.isNotEmpty &&
         participant.userId != hostId;

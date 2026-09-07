@@ -521,6 +521,10 @@ class _SnackChatInfoScreenState extends State<SnackChatInfoScreen> {
   }
 
   Future<void> _leaveRoom() async {
+    final room = _lastRoom;
+    final deletesMeetupRoom = room != null &&
+        (room.meetupId?.trim().isNotEmpty ?? false) &&
+        room.creatorId == _uid;
     final dialogRoute = DialogRoute<bool>(
       context: context,
       barrierColor: const Color(0x99000000),
@@ -554,7 +558,9 @@ class _SnackChatInfoScreenState extends State<SnackChatInfoScreen> {
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
                     Text(
-                      dialogIsKo ? '채팅방 나가기' : 'Leave Chat Room',
+                      deletesMeetupRoom
+                          ? (dialogIsKo ? '스낵챗 삭제' : 'Delete Snack Chat')
+                          : (dialogIsKo ? '채팅방 나가기' : 'Leave Chat Room'),
                       style: TextStyle(
                         fontFamily: 'Inter',
                         fontFamilyFallback: const ['NotoSansKR'],
@@ -566,9 +572,13 @@ class _SnackChatInfoScreenState extends State<SnackChatInfoScreen> {
                     ),
                     SizedBox(height: context.rs(8).clamp(6, 10).toDouble()),
                     Text(
-                      dialogIsKo
-                          ? '채팅방에서 나가면 목록과 대화를 볼 수 없으며, 다시 참여하려면 초대를 받아야 합니다.'
-                          : 'After leaving, this room and its messages will no longer be available. You will need another invitation to rejoin.',
+                      deletesMeetupRoom
+                          ? (dialogIsKo
+                              ? '밋업 호스트가 나가면 이 스낵챗과 모든 대화가 삭제됩니다. 이후 밋업에서 새 스낵챗을 만들 수 있습니다.'
+                              : 'When the Meetup host leaves, this Snack Chat and all messages are deleted. A new Snack Chat can then be created from the Meetup.')
+                          : (dialogIsKo
+                              ? '채팅방에서 나가면 목록과 대화를 볼 수 없으며, 다시 참여하려면 초대를 받아야 합니다.'
+                              : 'After leaving, this room and its messages will no longer be available. You will need another invitation to rejoin.'),
                       style: TextStyle(
                         fontFamily: 'Inter',
                         fontFamilyFallback: const ['NotoSansKR'],
@@ -623,7 +633,9 @@ class _SnackChatInfoScreenState extends State<SnackChatInfoScreen> {
                               ),
                             ),
                             child: Text(
-                              dialogIsKo ? '나가기' : 'Leave',
+                              deletesMeetupRoom
+                                  ? (dialogIsKo ? '삭제' : 'Delete')
+                                  : (dialogIsKo ? '나가기' : 'Leave'),
                               style: const TextStyle(
                                 fontFamily: 'Inter',
                                 fontFamilyFallback: ['NotoSansKR'],

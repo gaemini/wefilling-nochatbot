@@ -1,6 +1,7 @@
 export type ProtectedText = {
   text: string;
   tokens: Record<string, string>;
+  marker: string;
 };
 
 export type TemporalExpressionType =
@@ -29,23 +30,27 @@ export type TemporalValidationFailureCode =
 // Only values whose spelling must remain byte-for-byte stable belong here.
 // Natural-language dates, times and durations intentionally do not.
 export const IMMUTABLE_TEXT_PATTERN = new RegExp([
-  '(?:https?://|www\\.)[^\\s]+',
-  '[\\p{L}\\p{N}._%+\\-]+@[\\p{L}\\p{N}.\\-]+\\.[\\p{L}]{2,}',
-  '@[\\p{L}\\p{N}_.\\-]+',
+  '```[\\s\\S]*?```',
+  '`[^`\\n]+`',
+  '<\\/?[A-Za-z][^>\\n]*>',
+  '(?:https?://|www\\.)[A-Za-z0-9][A-Za-z0-9._~:/?#[\\]@!$&\'()*+,;=%\\-]*',
+  '[A-Za-z0-9._%+\\-]+@[A-Za-z0-9.\\-]+\\.[A-Za-z]{2,63}',
+  '@[A-Za-z0-9_.\\-]+',
   '#[\\p{L}\\p{N}_.\\-]+',
-  '\\bChIJ[A-Za-z0-9_\\-]+\\b',
+  '\\bChIJ[A-Za-z0-9_\\-]+(?![A-Za-z0-9_\\-])',
   '(?:place[_ ]?id\\s*[:=]\\s*)[A-Za-z0-9_\\-]+',
-  '-?\\d{1,3}\\.\\d+\\s*[,/]\\s*-?\\d{1,3}\\.\\d+',
-  '(?<![\\p{L}\\p{N}])(?:\\+\\d{1,3}[ .-]?)?\\d{2,4}[- ]\\d{3,4}[- ]\\d{4}(?![\\p{L}\\p{N}])',
-  '[$€£¥₩]\\s?\\d+(?:[.,]\\d+)*',
-  '\\d+(?:[.,]\\d+)*\\s?%',
-  '\\d+(?:,\\d{3})*(?:\\.\\d+)?(?=\\s*(?:원|달러|유로|엔|위안|won|dollars?|euros?|yen|yuan))',
-  '\\bv\\d+(?:\\.\\d+){1,3}(?:[-+][A-Za-z0-9.\\-]+)?\\b',
-  '\\b[\\p{L}\\p{N}][\\p{L}\\p{N}_.\\-]*\\.(?:pdf|docx?|xlsx?|pptx?|zip|png|jpe?g|gif|webp|heic|mp4|mov|txt|csv)\\b',
-  // Natural translated durations such as "2-day" and "1-night" are not
-  // identifiers. Without this exclusion, a valid Korean "1박2일" translation
-  // creates new immutable tokens and is rejected on every retry.
-  '(?!(?:\\d+)-(?:second|minute|hour|day|night|week|month|year)s?\\b)\\b(?=[A-Za-z0-9_\\-]{4,}\\b)(?=[A-Za-z0-9_\\-]*[A-Za-z])(?=[A-Za-z0-9_\\-]*\\d)[A-Za-z0-9]+(?:[_\\-][A-Za-z0-9]+)*\\b',
+  '(?:\\b(?:uid|userId|postId|commentId|messageId|meetupId|conversationId)\\s*[:=]\\s*)[A-Za-z0-9_\\-]+',
+  '(?<![0-9a-f])[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}(?![0-9a-f])',
+  '(?<!\\d)(?:\\+\\d{1,3}[ .-]?)?\\d{2,4}[- ]\\d{3,4}[- ]\\d{4}(?!\\d)',
+  '\\bv\\d+(?:\\.\\d+){1,3}(?:[-+][A-Za-z0-9.\\-]+)?(?![A-Za-z0-9.\\-])',
+  '(?:[A-Za-z]:\\\\|/)(?:[A-Za-z0-9._-]+[\\\\/])+[A-Za-z0-9._-]+',
+  '\\b[\\p{L}\\p{N}][\\p{L}\\p{N}_.\\-]*\\.(?:pdf|docx?|xlsx?|pptx?|zip|png|jpe?g|gif|webp|heic|mp4|mov|txt|csv)(?![A-Za-z0-9])',
+  '\\{\\{[^{}\\n]{1,200}\\}\\}',
+  '\\$\\{[^{}\\n]{1,200}\\}',
+  '__[A-Z][A-Z0-9_]{2,}__',
+  '\\b[A-Za-z][A-Za-z0-9]*_[A-Za-z0-9_]+\\b',
+  '(?:\\p{Regional_Indicator}{2})',
+  '[0-9#*]\\uFE0F?\\u20E3',
   '\\p{Extended_Pictographic}(?:\\uFE0F|\\p{Emoji_Modifier}|\\u200D\\p{Extended_Pictographic})*',
 ].join('|'), 'giu');
 
@@ -136,6 +141,7 @@ export function detectTemporalProfile(value: string): TemporalProfile {
     if (match[4]) values.push({value: Number(match[4]), role: 'month'});
     if (match[5]) values.push({value: Number(match[5]), role: 'day'});
   }
+
   const koreanStandaloneDay = /(?<![월박\d])(\d{1,2})\s*일(?=\s*(?:은|는|에|까지|부터|동안|후|뒤|전|입니다|이에요|예요|$))/gu;
   for (const match of value.matchAll(koreanStandaloneDay)) {
     const before = value.slice(0, match.index);
@@ -198,7 +204,7 @@ export function detectTemporalProfile(value: string): TemporalProfile {
   }
 
   const englishMonthPattern = new RegExp(
-    `\\b(${ENGLISH_MONTHS.slice(1).join('|')})\\s+(\\d{1,2})(?:,?\\s+(\\d{4}))?`,
+    `\\b(${ENGLISH_MONTHS.slice(1).join('|')})\\s+(\\d{1,2})(?!\\d)(?:,?\\s+(\\d{4})(?!\\d))?`,
     'giu',
   );
   for (const match of value.matchAll(englishMonthPattern)) {
@@ -357,39 +363,15 @@ export function preservesImmutableTokens(
 ): boolean {
   const sourceTokens = immutableTokens(source);
   const translatedTokens = immutableTokens(translated);
-  // This pattern's bare numeric tokens are amounts before currency words.
-  // Translating "오천원 / 5천원" to "5,000 won" legitimately creates such a
-  // token. Re-detecting it as a new immutable identifier rejects valid posts.
-  // Keep every original numeric token; don't forbid amounts spelled out in
-  // the source from becoming digits. Other protected values remain exact.
-  const isAmount = (token: string): boolean => /^\d[\d,.]*$/.test(token);
-  // Currency words may be localized (won, KRW, etc.). Validate the protected
-  // digits themselves instead of requiring the translated currency to match
-  // the source-side token detector's vocabulary.
-  const translatedNumbers = translated.match(/\d+(?:,\d{3})*(?:\.\d+)?/g) ?? [];
-  for (const token of new Set(sourceTokens.filter(isAmount))) {
-    if (translatedNumbers.filter((value) => value === token).length <
-        sourceTokens.filter((value) => value === token).length) return false;
-  }
-  const sourceIdentifiers = sourceTokens.filter((token) => !isAmount(token));
-  const translatedIdentifiers = translatedTokens
-    .filter((token) => !isAmount(token));
-  // Only source-side identifiers are immutable. A natural translation can
-  // legitimately create an alphanumeric word that resembles an identifier
-  // to this broad detector (for example Korean addresses become
-  // "900beon-gil" and floors become "1st"). Requiring both token lists to be
-  // identical rejected those otherwise complete translations forever.
-  //
-  // The prompt placeholders already guarantee that every original protected
-  // value is restored byte-for-byte. Here we additionally retain their order,
-  // while allowing target-language words that merely look identifier-like.
+  // Only explicit, source-side protected spans must survive. Target-language
+  // words are never rejected merely because they contain digits or symbols.
   let translatedIndex = 0;
-  for (const sourceIdentifier of sourceIdentifiers) {
-    while (translatedIndex < translatedIdentifiers.length &&
-        translatedIdentifiers[translatedIndex] !== sourceIdentifier) {
+  for (const sourceToken of sourceTokens) {
+    while (translatedIndex < translatedTokens.length &&
+        translatedTokens[translatedIndex] !== sourceToken) {
       translatedIndex++;
     }
-    if (translatedIndex >= translatedIdentifiers.length) return false;
+    if (translatedIndex >= translatedTokens.length) return false;
     translatedIndex++;
   }
   return true;
@@ -398,19 +380,25 @@ export function preservesImmutableTokens(
 export function protectImmutableText(value: string): ProtectedText {
   let index = 0;
   const tokens: Record<string, string> = {};
+  let marker = '__WF_KEEP_';
+  let markerAttempt = 0;
+  while (value.includes(marker)) {
+    markerAttempt++;
+    marker = `__WF${markerAttempt}_KEEP_`;
+  }
   let text = value
     .replace(/\r\n?/g, '\n')
     .replace(IMMUTABLE_TEXT_PATTERN, (match) => {
-      const token = `__WF_KEEP_${index++}__`;
+      const token = `${marker}${index++}__`;
       tokens[token] = match;
       return token;
     });
   text = text.replace(/\n/g, () => {
-    const token = `__WF_KEEP_${index++}__`;
+    const token = `${marker}${index++}__`;
     tokens[token] = '\n';
     return token;
   });
-  return {text, tokens};
+  return {text, tokens, marker};
 }
 
 export function restoreImmutableText(
@@ -422,6 +410,6 @@ export function restoreImmutableText(
     if (restored.split(token).length - 1 !== 1) return null;
     restored = restored.split(token).join(original);
   }
-  if (/__WF_KEEP_\d+__/.test(restored)) return null;
+  if (restored.includes(protectedText.marker)) return null;
   return restored;
 }

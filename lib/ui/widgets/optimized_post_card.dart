@@ -104,7 +104,7 @@ class _OptimizedPostCardState extends State<OptimizedPostCard> {
   int? _liveCommentCount;
   int? _liveViewCount;
   StreamSubscription<PostEngagement>? _engagementSubscription;
-  Stream<DMUserInfo?>? _cachedAuthorInfoStream;
+  Stream<DMUserInfo?>? _authorInfoStream;
   bool _didPrecache = false;
   Timer? _likeHoldTimer;
   bool _likeSheetOpenedByHold = false;
@@ -145,7 +145,7 @@ class _OptimizedPostCardState extends State<OptimizedPostCard> {
       _isLikeInFlight = false;
       _liveCommentCount = null;
       _liveViewCount = null;
-      _cachedAuthorInfoStream = null;
+      _authorInfoStream = null;
       _didPrecache = false;
       _syncLocalLikeStateFromWidget();
       _subscribeToCachedEngagement();
@@ -1164,11 +1164,14 @@ class _OptimizedPostCardState extends State<OptimizedPostCard> {
     }
 
     return StreamBuilder<DMUserInfo?>(
-      stream: _cachedAuthorInfoStream ??=
-          cache.watchCachedUserInfo(post.userId),
-      initialData: cache.getCachedUserInfo(post.userId),
+      stream: _authorInfoStream ??= cache.watchUserInfo(post.userId),
       builder: (context, snapshot) {
-        final live = snapshot.data;
+        // A device-persisted Firestore snapshot can contain the previous
+        // nickname. Keep the post's server-maintained author snapshot until a
+        // server-confirmed profile value arrives, then follow future changes
+        // live so cards cannot disagree based on local cache history.
+        final candidate = snapshot.data;
+        final live = candidate?.isFromCache == false ? candidate : null;
         final liveName = (live?.nickname ?? '').trim();
         final livePhoto = (live?.photoURL ?? '').trim();
 

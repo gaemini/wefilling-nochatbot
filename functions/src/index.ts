@@ -567,6 +567,31 @@ export const onUserProfileUpdatedPropagateAuthorInfo = functions
     const photoChanged = beforePhotoURL !== afterPhotoURL || beforePhotoVersion !== afterPhotoVersion;
     const nationalityChanged = beforeNationality !== afterNationality;
 
+    // nicknameSearchTokens is derived data, so it must always be an exact
+    // replacement built from the current nickname. Re-read inside a
+    // transaction before repairing to avoid an older, delayed event writing
+    // tokens for a nickname that has already changed again.
+    const searchRepair = completedRegistrationSearchRepair(after);
+    if (searchRepair != null) {
+      try {
+        await db.runTransaction(async (transaction) => {
+          const latestSnapshot = await transaction.get(change.after.ref);
+          const latestRepair = completedRegistrationSearchRepair(
+            latestSnapshot.data(),
+          );
+          if (latestRepair != null) {
+            transaction.update(change.after.ref, latestRepair);
+          }
+        });
+      } catch (error) {
+        // Search-index repair must not prevent author/profile propagation.
+        console.error(
+          `onUserProfileUpdatedPropagateAuthorInfo: nicknameSearchTokens repair failed userId=${userId}:`,
+          error,
+        );
+      }
+    }
+
     // 관심 필드 변화가 없으면 스킵
     if (!nicknameChanged && !photoChanged && !nationalityChanged) {
       return null;

@@ -24,6 +24,7 @@
     "test:user-search-policy": "npm run build && node scripts/test_searchable_user_policy.js",
     "test:nickname-policy": "npm run build && node scripts/test_nickname_policy.js",
     "audit:user-search-lifecycle": "npm run build && node scripts/audit_user_search_lifecycle.js",
+    "repair:nickname-search-tokens": "npm run build && node scripts/repair_nickname_search_tokens.js",
     "audit:nickname-normalization": "npm run build && node scripts/audit_nickname_normalization.js",
     "migrate:friend-counts": "npm run build && node scripts/migrate_friend_counts.js",
     "migrate:review-projections": "node scripts/migrate_review_profile_projections.js"

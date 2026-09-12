@@ -11,6 +11,7 @@ import '../screens/ad_showcase_screen.dart';
 import '../constants/app_constants.dart';
 import '../design/tokens.dart';
 import '../utils/logger.dart';
+import '../l10n/ui_locale.dart';
 
 class AdBannerWidget extends StatefulWidget {
   final String? widgetId;
@@ -225,7 +226,7 @@ class _AdBannerWidgetState extends State<AdBannerWidget> {
                     child: Text(
                       '${_currentIndex + 1}/${_banners.length}',
                       style: TextStyle(
-                        fontFamily: 'Inter',
+                        fontFamily: uiFontFamily(context, 'Inter'),
                         fontFamilyFallback: const ['NotoSansKR'],
                         color: const Color(0xFF6B7280),
                         fontSize: isCompact ? 10 : 11,
@@ -317,12 +318,12 @@ class _AdBannerWidgetState extends State<AdBannerWidget> {
                       child: Text(
                         banner.title,
                         style: TextStyle(
-                          fontFamily: 'Inter',
+                          fontFamily: uiFontFamily(context, 'Inter'),
                           fontFamilyFallback: const ['NotoSansKR'],
                           fontSize: titleSize,
                           fontWeight: FontWeight.w800,
                           color: Colors.black,
-                          height: 1.2,
+                          height: isChineseUi(context) ? 1.3 : 1.2,
                         ),
                         maxLines: compact ? 1 : 2,
                         overflow: TextOverflow.ellipsis,
@@ -342,7 +343,7 @@ class _AdBannerWidgetState extends State<AdBannerWidget> {
                       child: Text(
                         'AD',
                         style: TextStyle(
-                          fontFamily: 'Inter',
+                          fontFamily: uiFontFamily(context, 'Inter'),
                           fontFamilyFallback: const ['NotoSansKR'],
                           fontSize: compact ? 8 : 9,
                           fontWeight: FontWeight.w800,
@@ -359,7 +360,7 @@ class _AdBannerWidgetState extends State<AdBannerWidget> {
                 Text(
                   banner.description,
                   style: TextStyle(
-                    fontFamily: 'Inter',
+                    fontFamily: uiFontFamily(context, 'Inter'),
                     fontFamilyFallback: const ['NotoSansKR'],
                     fontSize: descriptionSize,
                     fontWeight: FontWeight.w600,

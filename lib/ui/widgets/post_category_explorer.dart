@@ -5,6 +5,7 @@ import '../../design/tokens.dart';
 import '../../l10n/app_localizations.dart';
 import '../../models/post_category.dart';
 import '../../widgets/ad_banner_widget.dart';
+import '../../l10n/ui_locale.dart';
 
 class PostCategoryExplorer extends StatelessWidget {
   const PostCategoryExplorer({
@@ -171,12 +172,12 @@ class PostCategoryTile extends StatelessWidget {
               maxLines: 2,
               overflow: TextOverflow.ellipsis,
               style: TextStyle(
-                fontFamily: 'Inter',
+                fontFamily: uiFontFamily(context, 'Inter'),
                 fontFamilyFallback: const ['NotoSansKR'],
                 fontSize: titleSize,
                 fontWeight: FontWeight.w800,
                 color: foregroundColor,
-                height: 1.2,
+                height: isChineseUi(context) ? 1.3 : 1.2,
               ),
             ),
             const SizedBox(height: DesignTokens.s4),
@@ -185,7 +186,7 @@ class PostCategoryTile extends StatelessWidget {
               maxLines: 2,
               overflow: TextOverflow.ellipsis,
               style: TextStyle(
-                fontFamily: 'Inter',
+                fontFamily: uiFontFamily(context, 'Inter'),
                 fontFamilyFallback: const ['NotoSansKR'],
                 fontSize: descriptionSize,
                 fontWeight: FontWeight.w500,

@@ -3,6 +3,7 @@ import 'package:flutter/material.dart';
 import '../constants/app_constants.dart';
 import '../models/student_type.dart';
 import '../services/semester_todo_service.dart';
+import '../l10n/ui_locale.dart';
 
 class StudentTypeSelectionScreen extends StatefulWidget {
   const StudentTypeSelectionScreen({
@@ -37,9 +38,9 @@ class _StudentTypeSelectionScreenState
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
-          content: Text(_isKorean
+          content: Text((isChineseUi(context) ? '学生类型保存失败，请重试。' : _isKorean
               ? '학생 유형을 저장하지 못했어요. 다시 시도해 주세요.'
-              : 'Could not save your student type. Please try again.'),
+              : 'Could not save your student type. Please try again.')),
         ),
       );
     } finally {
@@ -62,10 +63,10 @@ class _StudentTypeSelectionScreenState
         ),
         title: Text(
           widget.forProfile
-              ? (_isKorean ? '학생 유형' : 'Student type')
-              : (_isKorean ? 'To-do 시작하기' : 'Set up To-do'),
-          style: const TextStyle(
-            fontFamily: 'Inter',
+              ? ((isChineseUi(context) ? '学生类型' : _isKorean ? '학생 유형' : 'Student type'))
+              : ((isChineseUi(context) ? '设置待办' : _isKorean ? 'To-do 시작하기' : 'Set up To-do')),
+          style: TextStyle(
+            fontFamily: uiFontFamily(context, 'Inter'),
             fontFamilyFallback: const ['NotoSansKR'],
             fontSize: 18,
             fontWeight: FontWeight.w700,
@@ -91,25 +92,25 @@ class _StudentTypeSelectionScreenState
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
                     Text(
-                      _isKorean
+                      (isChineseUi(context) ? '选择适合你的学期指南' : _isKorean
                           ? '나에게 맞는 한 학기 안내를 선택하세요'
-                          : 'Choose the semester guide that fits you',
-                      style: const TextStyle(
-                        fontFamily: 'Inter',
+                          : 'Choose the semester guide that fits you'),
+                      style: TextStyle(
+                        fontFamily: uiFontFamily(context, 'Inter'),
                         fontFamilyFallback: const ['NotoSansKR'],
                         fontSize: 23,
-                        height: 1.25,
+                        height: isChineseUi(context) ? 1.3 : 1.25,
                         fontWeight: FontWeight.w800,
                         color: Color(0xFF0F172A),
                       ),
                     ),
                     const SizedBox(height: 10),
                     Text(
-                      _isKorean
+                      (isChineseUi(context) ? '与国籍或应用语言无关，之后也可以修改。' : _isKorean
                           ? '국적이나 앱 언어와 관계없이 직접 선택하며, 프로필에서 언제든 변경할 수 있어요.'
-                          : 'This is independent of nationality or app language. You can change it later.',
-                      style: const TextStyle(
-                        fontFamily: 'Inter',
+                          : 'This is independent of nationality or app language. You can change it later.'),
+                      style: TextStyle(
+                        fontFamily: uiFontFamily(context, 'Inter'),
                         fontFamilyFallback: const ['NotoSansKR'],
                         fontSize: 14,
                         height: 1.5,
@@ -143,9 +144,9 @@ class _StudentTypeSelectionScreenState
                                 ),
                               )
                             : Text(
-                                _isKorean ? '계속' : 'Continue',
-                                style: const TextStyle(
-                                  fontFamily: 'Inter',
+                                (isChineseUi(context) ? '继续' : _isKorean ? '계속' : 'Continue'),
+                                style: TextStyle(
+                                  fontFamily: uiFontFamily(context, 'Inter'),
                                   fontFamilyFallback: const ['NotoSansKR'],
                                   fontSize: 16,
                                   fontWeight: FontWeight.w700,
@@ -192,7 +193,7 @@ class _StudentTypeSelectionScreenState
                     Text(
                       type.title(context),
                       style: TextStyle(
-                        fontFamily: 'Inter',
+                        fontFamily: uiFontFamily(context, 'Inter'),
                         fontFamilyFallback: const ['NotoSansKR'],
                         fontSize: 17,
                         fontWeight: FontWeight.w700,
@@ -204,8 +205,8 @@ class _StudentTypeSelectionScreenState
                     const SizedBox(height: 5),
                     Text(
                       type.description(context),
-                      style: const TextStyle(
-                        fontFamily: 'Inter',
+                      style: TextStyle(
+                        fontFamily: uiFontFamily(context, 'Inter'),
                         fontFamilyFallback: const ['NotoSansKR'],
                         fontSize: 14,
                         height: 1.45,

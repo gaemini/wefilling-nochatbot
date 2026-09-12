@@ -32,6 +32,7 @@ import 'requests_page.dart';
 import 'friends_main_page.dart';
 import '../utils/logger.dart';
 import '../ui/snackbar/app_snackbar.dart';
+import '../l10n/ui_locale.dart';
 
 class ProfileGridScreen extends StatefulWidget {
   final String? userId; // null이면 현재 사용자 프로필
@@ -240,7 +241,7 @@ class _ProfileGridScreenState extends State<ProfileGridScreen>
         );
       case RelationshipStatus.pendingIn:
         return (
-          label: isKo ? '요청 확인' : 'Review Requests',
+          label: (isChineseUi(context) ? '查看申请' : isKo ? '요청 확인' : 'Review Requests'),
           icon: Icons.inbox_outlined,
           isPrimary: true,
           enabled: true,
@@ -261,7 +262,7 @@ class _ProfileGridScreenState extends State<ProfileGridScreen>
         );
       case RelationshipStatus.blockedBy:
         return (
-          label: isKo ? '차단됨' : 'Blocked',
+          label: (isChineseUi(context) ? '已屏蔽' : isKo ? '차단됨' : 'Blocked'),
           icon: Icons.block,
           isPrimary: false,
           enabled: false,
@@ -664,7 +665,7 @@ class _ProfileGridScreenState extends State<ProfileGridScreen>
       if (!mounted) return;
       final isKo = Localizations.localeOf(context).languageCode == 'ko';
       _showSnackBar(
-        isKo ? '포스트를 열 수 없습니다.' : 'Failed to open the post.',
+        (isChineseUi(context) ? '打开动态失败。' : isKo ? '포스트를 열 수 없습니다.' : 'Failed to open the post.'),
         backgroundColor: Theme.of(context).colorScheme.error,
       );
     } finally {
@@ -678,6 +679,7 @@ class _ProfileGridScreenState extends State<ProfileGridScreen>
 
   /// 공유 처리
   Future<void> _handleShare() async {
+    final chineseUiAtStart = isChineseUi(context);
     if (_userProfile == null || _isShareProcessing) return;
 
     setState(() {
@@ -689,13 +691,13 @@ class _ProfileGridScreenState extends State<ProfileGridScreen>
       await Clipboard.setData(ClipboardData(text: profileUrl));
       final isKo = Localizations.localeOf(context).languageCode == 'ko';
       _showSnackBar(
-        isKo ? '프로필 링크를 복사했습니다.' : 'Profile link copied to clipboard.',
+        (chineseUiAtStart ? '资料链接已复制。' : isKo ? '프로필 링크를 복사했습니다.' : 'Profile link copied to clipboard.'),
         backgroundColor: Theme.of(context).colorScheme.primary,
       );
     } catch (e) {
       final isKo = Localizations.localeOf(context).languageCode == 'ko';
       _showSnackBar(
-        isKo ? '링크를 복사할 수 없습니다.' : 'Unable to copy link.',
+        (chineseUiAtStart ? '复制链接失败。' : isKo ? '링크를 복사할 수 없습니다.' : 'Unable to copy link.'),
         backgroundColor: Theme.of(context).colorScheme.error,
       );
     } finally {
@@ -755,6 +757,7 @@ class _ProfileGridScreenState extends State<ProfileGridScreen>
   }
 
   Future<void> _handleBlockAction(String targetUserId) async {
+    final chineseUiAtStart = isChineseUi(context);
     final loc = AppLocalizations.of(context)!;
     final isBlocked = _relationshipStatus == RelationshipStatus.blocked;
 
@@ -773,7 +776,7 @@ class _ProfileGridScreenState extends State<ProfileGridScreen>
     });
 
     final isKo = Localizations.localeOf(context).languageCode == 'ko';
-    final blockFailed = isKo ? '사용자를 차단하지 못했습니다.' : 'Failed to block user.';
+    final blockFailed = (chineseUiAtStart ? '拉黑用户失败。' : isKo ? '사용자를 차단하지 못했습니다.' : 'Failed to block user.');
 
     try {
       bool success;
@@ -823,9 +826,9 @@ class _ProfileGridScreenState extends State<ProfileGridScreen>
     final loc = AppLocalizations.of(context)!;
     final confirmed = await _confirmAction(
       title: loc.report,
-      message: Localizations.localeOf(context).languageCode == 'ko'
+      message: (isChineseUi(context) ? '要向客服举报此用户吗？' : Localizations.localeOf(context).languageCode == 'ko'
           ? '해당 사용자에 대한 신고 내용을 운영팀에 전달하시겠습니까?'
-          : 'Do you want to submit a report about this user to the support team?',
+          : 'Do you want to submit a report about this user to the support team?'),
       confirmLabel: loc.reportAction,
     );
 
@@ -868,9 +871,9 @@ class _ProfileGridScreenState extends State<ProfileGridScreen>
             ),
             const SizedBox(height: 12),
             Text(
-              Localizations.localeOf(context).languageCode == 'ko'
+              (isChineseUi(context) ? '精彩回顾页面即将上线，目前仅展示基本信息。' : Localizations.localeOf(context).languageCode == 'ko'
                   ? '곧 하이라이트 전용 뷰가 추가될 예정입니다. 현재는 임시로 기본 정보를 보여드리고 있습니다.'
-                  : 'A dedicated highlight view is coming soon. For now, basic information is shown as a preview.',
+                  : 'A dedicated highlight view is coming soon. For now, basic information is shown as a preview.'),
               style: Theme.of(context).textTheme.bodyMedium,
             ),
             const SizedBox(height: 16),
@@ -906,9 +909,9 @@ class _ProfileGridScreenState extends State<ProfileGridScreen>
 
           final isKo = Localizations.localeOf(context).languageCode == 'ko';
           _showSnackBar(
-            isKo
+            (isChineseUi(context) ? '已创建精彩回顾：${title}' : isKo
                 ? '$title 하이라이트를 만들었습니다.'
-                : 'Created highlight: $title',
+                : 'Created highlight: $title'),
             backgroundColor: Colors.green,
           );
         },
@@ -941,7 +944,7 @@ class _ProfileGridScreenState extends State<ProfileGridScreen>
 
       if (fullPost == null) {
         _showSnackBar(
-          isKo ? '포스트를 불러올 수 없습니다.' : 'Unable to load the post.',
+          (isChineseUi(context) ? '动态加载失败。' : isKo ? '포스트를 불러올 수 없습니다.' : 'Unable to load the post.'),
           backgroundColor: Theme.of(context).colorScheme.error,
         );
         return;

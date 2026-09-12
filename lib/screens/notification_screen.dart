@@ -24,6 +24,7 @@ import '../services/snapshot_service.dart';
 import 'snapshot_detail_screen.dart';
 import 'snapshot_comment_letter_screen.dart';
 import 'friend_profile_screen.dart';
+import '../l10n/ui_locale.dart';
 
 class NotificationScreen extends StatefulWidget {
   /// true면 화면이 열릴 때 "모두 읽음"을 즉시 실행한다.
@@ -88,8 +89,8 @@ class _NotificationScreenState extends State<NotificationScreen> {
       SnackBar(
         content: Text(
           message,
-          style: const TextStyle(
-            fontFamily: 'Inter',
+          style: TextStyle(
+            fontFamily: uiFontFamily(context, 'Inter'),
             fontFamilyFallback: const ['NotoSansKR'],
             fontSize: 15,
             fontWeight: FontWeight.w600,
@@ -194,9 +195,9 @@ class _NotificationScreenState extends State<NotificationScreen> {
       if (!mounted) return;
       final isKorean = Localizations.localeOf(context).languageCode == 'ko';
       _showStyledSnackBar(
-        isKorean
+        (isChineseUi(context) ? '此限时动态已过期或不可用。' : isKorean
             ? '이 스낵은 만료되었거나 볼 수 없어요.'
-            : 'This Snack has expired or is no longer available.',
+            : 'This Snack has expired or is no longer available.'),
         isError: true,
       );
     }
@@ -639,6 +640,7 @@ class _NotificationScreenState extends State<NotificationScreen> {
                 (data['participantName'] ?? _getActorName(notification))
                     .toString();
             final meetupTitle = (data['meetupTitle'] ?? '').toString();
+            if (lang == 'zh') return '$participantName退出了你的聚会“$meetupTitle”。';
             if (lang == 'ko') {
               return '$participantName님이 회원님의 모임 "$meetupTitle"에서 나갔습니다.';
             }
@@ -650,16 +652,16 @@ class _NotificationScreenState extends State<NotificationScreen> {
 
           // 익명 게시글이면 댓글 작성자 정보 노출 안 함
           if (postIsAnonymous) {
-            return lang == 'ko'
+            return (isChineseUi(context) ? '你的动态收到新评论。' : lang == 'ko'
                 ? '포스트에 새 댓글이 달렸습니다.'
-                : 'A new comment was added to your post.';
+                : 'A new comment was added to your post.');
           }
 
           // 일반 게시글 - 실시간 닉네임 가져오기
           final commenterName = _getActorName(notification);
-          return lang == 'ko'
+          return (isChineseUi(context) ? '${commenterName}评论了你的动态。' : lang == 'ko'
               ? '$commenterName님이 회원님의 포스트에 댓글을 남겼습니다.'
-              : '$commenterName commented on your post.';
+              : '$commenterName commented on your post.');
         case 'comment_reply':
           {
             final bool postIsAnonymous = data['postIsAnonymous'] == true;
@@ -675,25 +677,25 @@ class _NotificationScreenState extends State<NotificationScreen> {
 
           // 익명 게시글이면 좋아요 누른 사람 정보 노출 안 함
           if (postIsAnonymous) {
-            return lang == 'ko'
+            return (isChineseUi(context) ? '你的动态收到新赞。' : lang == 'ko'
                 ? '포스트에 새 좋아요가 추가되었습니다.'
-                : 'A new like was added to your post.';
+                : 'A new like was added to your post.');
           }
 
           // 일반 게시글 - 실시간 닉네임 가져오기
           final likerName = _getActorName(notification);
-          return lang == 'ko'
+          return (isChineseUi(context) ? '${likerName}赞了你的动态。' : lang == 'ko'
               ? '$likerName님이 회원님의 포스트를 좋아합니다.'
-              : '$likerName liked your post.';
+              : '$likerName liked your post.');
         case 'comment_like':
           final bool postIsAnonymous = data['postIsAnonymous'] == true;
 
           // 익명 게시글의 댓글이면 좋아요 누른 사람 정보 노출 안 함
           if (postIsAnonymous) {
             final lang = Localizations.localeOf(context).languageCode;
-            return lang == 'ko'
+            return (isChineseUi(context) ? '你的评论收到新赞。' : lang == 'ko'
                 ? '댓글에 새 좋아요가 추가되었습니다.'
-                : 'A new like was added to your comment.';
+                : 'A new like was added to your comment.');
           }
 
           // 일반 댓글 - 실시간 닉네임 가져오기
@@ -705,14 +707,14 @@ class _NotificationScreenState extends State<NotificationScreen> {
             final comment = (data['comment'] ?? '').toString().trim();
             final lang = Localizations.localeOf(context).languageCode;
             final name = commenterName.isEmpty
-                ? (lang == 'ko' ? '사용자' : 'User')
+                ? ((isChineseUi(context) ? '用户' : lang == 'ko' ? '사용자' : 'User'))
                 : commenterName;
             if (comment.isEmpty) {
-              return lang == 'ko'
+              return (isChineseUi(context) ? '${name}给你的限时动态留言了。' : lang == 'ko'
                   ? '$name님이 스낵에 코멘트를 보냈어요.'
-                  : '$name sent a comment on your Snack.';
+                  : '$name sent a comment on your Snack.');
             }
-            return lang == 'ko' ? '$name님: $comment' : '$name: $comment';
+            return (isChineseUi(context) ? '${name}：${comment}' : lang == 'ko' ? '$name님: $comment' : '$name: $comment');
           }
         case 'snapshot_comment_reply':
           {
@@ -720,14 +722,14 @@ class _NotificationScreenState extends State<NotificationScreen> {
             final reply = (data['reply'] ?? '').toString().trim();
             final lang = Localizations.localeOf(context).languageCode;
             final name = replierName.isEmpty
-                ? (lang == 'ko' ? '사용자' : 'User')
+                ? ((isChineseUi(context) ? '用户' : lang == 'ko' ? '사용자' : 'User'))
                 : replierName;
             if (reply.isEmpty) {
-              return lang == 'ko'
+              return (isChineseUi(context) ? '${name}回复了你的限时动态留言。' : lang == 'ko'
                   ? '$name님이 스낵 코멘트에 답장했어요.'
-                  : '$name replied to your Snack comment.';
+                  : '$name replied to your Snack comment.');
             }
-            return lang == 'ko' ? '$name님: $reply' : '$name: $reply';
+            return (isChineseUi(context) ? '${name}：${reply}' : lang == 'ko' ? '$name님: $reply' : '$name: $reply');
           }
         case 'friend_request':
           final fromName = _getActorName(notification);
@@ -753,9 +755,9 @@ class _NotificationScreenState extends State<NotificationScreen> {
             final meetupTitle = (data['meetupTitle'] ?? '').toString().trim();
             final name = hostName.isEmpty ? 'User' : hostName;
             final lang = Localizations.localeOf(context).languageCode;
-            return lang == 'ko'
+            return (isChineseUi(context) ? '${name}创建了“${meetupTitle}”。' : lang == 'ko'
                 ? '$name님이 "$meetupTitle" 모임을 만들었습니다.'
-                : '$name created "$meetupTitle".';
+                : '$name created "$meetupTitle".');
           }
         case 'post_private':
           {
@@ -767,15 +769,15 @@ class _NotificationScreenState extends State<NotificationScreen> {
             final name = authorName.isEmpty ? 'User' : authorName;
             if (postTitle.isEmpty) {
               final lang = Localizations.localeOf(context).languageCode;
-              return lang == 'ko'
+              return (isChineseUi(context) ? '${name}发布了${badge}动态。' : lang == 'ko'
                   ? '$name님이 $badge 포스트를 올렸습니다.'
-                  : '$name posted a $badge post.';
+                  : '$name posted a $badge post.');
             }
 
             final lang = Localizations.localeOf(context).languageCode;
-            return lang == 'ko'
+            return (isChineseUi(context) ? '${name}发布了${badge}动态：${postTitle}' : lang == 'ko'
                 ? '$name님이 $badge 포스트를 올렸습니다: $postTitle'
-                : '$name posted a $badge post: $postTitle';
+                : '$name posted a $badge post: $postTitle');
           }
         case 'post_created':
           {
@@ -784,13 +786,13 @@ class _NotificationScreenState extends State<NotificationScreen> {
             final name = authorName.isEmpty ? 'User' : authorName;
             final lang = Localizations.localeOf(context).languageCode;
             if (postTitle.isEmpty) {
-              return lang == 'ko'
+              return (isChineseUi(context) ? '${name}发布了新动态。' : lang == 'ko'
                   ? '$name님이 새 포스트를 올렸습니다.'
-                  : '$name posted a new post.';
+                  : '$name posted a new post.');
             }
-            return lang == 'ko'
+            return (isChineseUi(context) ? '${name}发布了新动态：${postTitle}' : lang == 'ko'
                 ? '$name님이 새 포스트를 올렸습니다: $postTitle'
-                : '$name posted a new post: $postTitle';
+                : '$name posted a new post: $postTitle');
           }
         case 'snack_chat_invite':
           {
@@ -800,16 +802,16 @@ class _NotificationScreenState extends State<NotificationScreen> {
             final chatName = (data['snackChatName'] ?? '').toString().trim();
             final lang = Localizations.localeOf(context).languageCode;
             final creator = creatorName.isEmpty
-                ? (lang == 'ko' ? '친구' : 'User')
+                ? ((isChineseUi(context) ? '用户' : lang == 'ko' ? '친구' : 'User'))
                 : creatorName;
             if (chatName.isEmpty) {
-              return lang == 'ko'
+              return (isChineseUi(context) ? '${creator}邀请你加入新群聊。' : lang == 'ko'
                   ? '$creator님이 새 Snack Chat에 초대했어요.'
-                  : '$creator invited you to a new Snack Chat.';
+                  : '$creator invited you to a new Snack Chat.');
             }
-            return lang == 'ko'
+            return (isChineseUi(context) ? '${creator}邀请你加入“${chatName}”。' : lang == 'ko'
                 ? '$creator님이 "$chatName"에 초대했어요.'
-                : '$creator invited you to "$chatName".';
+                : '$creator invited you to "$chatName".');
           }
         default:
           return notification.message;
@@ -953,8 +955,8 @@ class _NotificationScreenState extends State<NotificationScreen> {
         ],
         title: Text(
           AppLocalizations.of(context)!.notification,
-          style: const TextStyle(
-            fontFamily: 'Inter',
+          style: TextStyle(
+            fontFamily: uiFontFamily(context, 'Inter'),
             fontFamilyFallback: const ['NotoSansKR'],
             fontSize: 18,
             fontWeight: FontWeight.w600,
@@ -992,8 +994,8 @@ class _NotificationScreenState extends State<NotificationScreen> {
                   const SizedBox(height: 16),
                   Text(
                     AppLocalizations.of(context)!.noNotifications,
-                    style: const TextStyle(
-                      fontFamily: 'Inter',
+                    style: TextStyle(
+                      fontFamily: uiFontFamily(context, 'Inter'),
                       fontFamilyFallback: const ['NotoSansKR'],
                       fontSize: 16,
                       fontWeight: FontWeight.w500,

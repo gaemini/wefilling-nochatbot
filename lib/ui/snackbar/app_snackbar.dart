@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import '../../services/app_messenger.dart';
+import '../../l10n/ui_locale.dart';
 
 enum AppSnackBarType { success, info, warning, error }
 
@@ -31,12 +32,12 @@ class AppSnackBar {
           AppSnackBarType.error => Icons.error_rounded,
         };
 
-    const textStyle = TextStyle(
-      fontFamily: 'Inter',
+    final textStyle = TextStyle(
+      fontFamily: uiFontFamily(messenger.context, 'Inter'),
       fontFamilyFallback: const ['NotoSansKR'],
       fontSize: 15,
       fontWeight: FontWeight.w700,
-      height: 1.25,
+      height: isChineseUi(messenger.context) ? 1.3 : 1.25,
       color: Colors.white,
     );
 

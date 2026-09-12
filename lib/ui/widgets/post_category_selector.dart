@@ -3,6 +3,7 @@ import 'package:flutter/material.dart';
 import '../../l10n/app_localizations.dart';
 import '../../models/post_category.dart';
 import '../../utils/responsive_helper.dart';
+import '../../l10n/ui_locale.dart';
 
 bool _isKorean(BuildContext context) =>
     Localizations.localeOf(context).languageCode.toLowerCase() == 'ko';
@@ -46,9 +47,9 @@ class PostCategorySelector extends StatelessWidget {
         children: [
           if (showHeader) ...[
             Text(
-              isKorean ? '태그' : 'Tags',
+              (isChineseUi(context) ? '标签' : isKorean ? '태그' : 'Tags'),
               style: TextStyle(
-                fontFamily: 'Inter',
+                fontFamily: uiFontFamily(context, 'Inter'),
                 fontFamilyFallback: const ['NotoSansKR'],
                 fontSize: context.rf(15).clamp(14, 16).toDouble(),
                 fontWeight: FontWeight.w800,
@@ -57,11 +58,11 @@ class PostCategorySelector extends StatelessWidget {
             ),
             SizedBox(height: context.rs(5).clamp(4, 7).toDouble()),
             Text(
-              isKorean
+              (isChineseUi(context) ? '选择所有适合此动态的标签。' : isKorean
                   ? '글과 관련된 태그를 모두 선택해 주세요.'
-                  : 'Select all tags that match your post.',
+                  : 'Select all tags that match your post.'),
               style: TextStyle(
-                fontFamily: 'Inter',
+                fontFamily: uiFontFamily(context, 'Inter'),
                 fontFamilyFallback: const ['NotoSansKR'],
                 fontSize: context.rf(12).clamp(11, 13).toDouble(),
                 fontWeight: FontWeight.w500,
@@ -91,9 +92,9 @@ class PostCategorySelector extends StatelessWidget {
           if (showError) ...[
             const SizedBox(height: 7),
             Text(
-              isKorean ? '태그를 한 개 이상 선택해 주세요.' : 'Choose at least one tag.',
+              (isChineseUi(context) ? '请至少选择一个标签。' : isKorean ? '태그를 한 개 이상 선택해 주세요.' : 'Choose at least one tag.'),
               style: TextStyle(
-                fontFamily: 'Inter',
+                fontFamily: uiFontFamily(context, 'Inter'),
                 fontFamilyFallback: const ['NotoSansKR'],
                 fontSize: context.rf(12).clamp(11, 13).toDouble(),
                 fontWeight: FontWeight.w700,
@@ -160,7 +161,7 @@ class _PostTagChoice extends StatelessWidget {
                       maxLines: 1,
                       overflow: TextOverflow.ellipsis,
                       style: TextStyle(
-                        fontFamily: 'Inter',
+                        fontFamily: uiFontFamily(context, 'Inter'),
                         fontFamilyFallback: const ['NotoSansKR'],
                         fontSize: context.rf(13).clamp(12, 14).toDouble(),
                         fontWeight:

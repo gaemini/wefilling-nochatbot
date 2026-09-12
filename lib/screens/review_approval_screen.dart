@@ -11,6 +11,7 @@ import '../utils/logger.dart';
 import '../ui/widgets/fullscreen_image_viewer.dart';
 import '../utils/responsive_helper.dart';
 import '../services/notification_service.dart';
+import '../l10n/ui_locale.dart';
 
 class ReviewApprovalScreen extends StatefulWidget {
   final String requestId;
@@ -180,7 +181,7 @@ class _ReviewApprovalScreenState extends State<ReviewApprovalScreen> {
                               Text(
                                 widget.meetupTitle,
                                 style: TextStyle(
-                                  fontFamily: 'Inter',
+                                  fontFamily: uiFontFamily(context, 'Inter'),
                                   fontFamilyFallback: const ['NotoSansKR'],
                                   fontSize:
                                       context.rf(18).clamp(16, 19).toDouble(),
@@ -194,8 +195,8 @@ class _ReviewApprovalScreenState extends State<ReviewApprovalScreen> {
                                 l10n!.reviewByAuthor(widget.authorName),
                                 maxLines: 1,
                                 overflow: TextOverflow.ellipsis,
-                                style: const TextStyle(
-                                  fontFamily: 'Inter',
+                                style: TextStyle(
+                                  fontFamily: uiFontFamily(context, 'Inter'),
                                   fontFamilyFallback: ['NotoSansKR'],
                                   fontSize: 13,
                                   fontWeight: FontWeight.w500,
@@ -218,8 +219,8 @@ class _ReviewApprovalScreenState extends State<ReviewApprovalScreen> {
                             children: [
                               Text(
                                 l10n.reviewContent,
-                                style: const TextStyle(
-                                  fontFamily: 'Inter',
+                                style: TextStyle(
+                                  fontFamily: uiFontFamily(context, 'Inter'),
                                   fontFamilyFallback: ['NotoSansKR'],
                                   fontSize: 14,
                                   fontWeight: FontWeight.w700,
@@ -230,7 +231,7 @@ class _ReviewApprovalScreenState extends State<ReviewApprovalScreen> {
                               Text(
                                 widget.content,
                                 style: TextStyle(
-                                  fontFamily: 'Inter',
+                                  fontFamily: uiFontFamily(context, 'Inter'),
                                   fontFamilyFallback: const ['NotoSansKR'],
                                   fontSize:
                                       context.rf(15).clamp(14, 16).toDouble(),
@@ -255,8 +256,8 @@ class _ReviewApprovalScreenState extends State<ReviewApprovalScreen> {
                                   Expanded(
                                     child: Text(
                                       l10n.reviewApprovalInfo,
-                                      style: const TextStyle(
-                                        fontFamily: 'Inter',
+                                      style: TextStyle(
+                                        fontFamily: uiFontFamily(context, 'Inter'),
                                         fontFamilyFallback: ['NotoSansKR'],
                                         color: Color(0xFF667085),
                                         fontSize: 12.5,
@@ -312,7 +313,7 @@ class _ReviewApprovalScreenState extends State<ReviewApprovalScreen> {
           maxLines: 1,
           overflow: TextOverflow.ellipsis,
           style: TextStyle(
-            fontFamily: 'Inter',
+            fontFamily: uiFontFamily(context, 'Inter'),
             fontFamilyFallback: const ['NotoSansKR'],
             fontSize: context.rf(18).clamp(16, 19).toDouble(),
             fontWeight: FontWeight.w700,
@@ -395,8 +396,8 @@ class _ReviewApprovalScreenState extends State<ReviewApprovalScreen> {
               ),
               child: Text(
                 '${_currentImageIndex + 1}/${_imageUrls.length}',
-                style: const TextStyle(
-                  fontFamily: 'Inter',
+                style: TextStyle(
+                  fontFamily: uiFontFamily(context, 'Inter'),
                   color: Colors.white,
                   fontSize: 11.5,
                   fontWeight: FontWeight.w700,
@@ -423,8 +424,8 @@ class _ReviewApprovalScreenState extends State<ReviewApprovalScreen> {
             accepted
                 ? l10n.reviewAlreadyAccepted ?? ''
                 : l10n.reviewAlreadyRejected ?? '',
-            style: const TextStyle(
-              fontFamily: 'Inter',
+            style: TextStyle(
+              fontFamily: uiFontFamily(context, 'Inter'),
               fontFamilyFallback: ['NotoSansKR'],
               color: Color(0xFF475467),
               fontSize: 14,
@@ -463,8 +464,8 @@ class _ReviewApprovalScreenState extends State<ReviewApprovalScreen> {
                     ),
                     child: Text(
                       l10n?.reject ?? '',
-                      style: const TextStyle(
-                        fontFamily: 'Inter',
+                      style: TextStyle(
+                        fontFamily: uiFontFamily(context, 'Inter'),
                         fontFamilyFallback: ['NotoSansKR'],
                         fontSize: 15,
                         fontWeight: FontWeight.w700,
@@ -498,8 +499,8 @@ class _ReviewApprovalScreenState extends State<ReviewApprovalScreen> {
                           )
                         : Text(
                             l10n?.accept ?? '',
-                            style: const TextStyle(
-                              fontFamily: 'Inter',
+                            style: TextStyle(
+                              fontFamily: uiFontFamily(context, 'Inter'),
                               fontFamilyFallback: ['NotoSansKR'],
                               fontSize: 15,
                               fontWeight: FontWeight.w700,

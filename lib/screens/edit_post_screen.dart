@@ -11,6 +11,7 @@ import '../models/post.dart';
 import '../models/post_category.dart';
 import '../services/post_service.dart';
 import '../ui/widgets/post_category_selector.dart';
+import '../l10n/ui_locale.dart';
 
 class EditPostScreen extends StatefulWidget {
   final Post post;
@@ -389,8 +390,8 @@ class _EditPostScreenState extends State<EditPostScreen> {
         ),
         title: Text(
           l10n.editPost,
-          style: const TextStyle(
-            fontFamily: 'Inter',
+          style: TextStyle(
+            fontFamily: uiFontFamily(context, 'Inter'),
             fontFamilyFallback: const ['NotoSansKR'],
             fontSize: 18,
             fontWeight: FontWeight.w600,
@@ -409,8 +410,8 @@ class _EditPostScreenState extends State<EditPostScreen> {
                 : const Icon(Icons.check_rounded),
             label: Text(
               l10n.update,
-              style: const TextStyle(
-                fontFamily: 'Inter',
+              style: TextStyle(
+                fontFamily: uiFontFamily(context, 'Inter'),
                 fontFamilyFallback: const ['NotoSansKR'],
                 fontWeight: FontWeight.w700,
               ),
@@ -436,16 +437,16 @@ class _EditPostScreenState extends State<EditPostScreen> {
                     border: Border.all(color: const Color(0xFFFDE68A)),
                   ),
                   child: Text(
-                    Localizations.localeOf(context).languageCode == 'ko'
+                    (isChineseUi(context) ? '投票开始后，无法编辑投票动态。' : Localizations.localeOf(context).languageCode == 'ko'
                         ? '투표가 진행된 게시글은 수정할 수 없어요.'
-                        : 'Poll posts cannot be edited after votes.',
-                    style: const TextStyle(
-                      fontFamily: 'Inter',
+                        : 'Poll posts cannot be edited after votes.'),
+                    style: TextStyle(
+                      fontFamily: uiFontFamily(context, 'Inter'),
                       fontFamilyFallback: const ['NotoSansKR'],
                       fontSize: 13,
                       fontWeight: FontWeight.w600,
                       color: Color(0xFF92400E),
-                      height: 1.25,
+                      height: isChineseUi(context) ? 1.3 : 1.25,
                     ),
                   ),
                 ),
@@ -486,8 +487,8 @@ class _EditPostScreenState extends State<EditPostScreen> {
                   ),
                   maxLines: null,
                   textAlignVertical: TextAlignVertical.top,
-                  style: const TextStyle(
-                    fontFamily: 'Inter',
+                  style: TextStyle(
+                    fontFamily: uiFontFamily(context, 'Inter'),
                     fontFamilyFallback: const ['NotoSansKR'],
                     fontSize: 16,
                     fontWeight: FontWeight.w500,
@@ -507,8 +508,8 @@ class _EditPostScreenState extends State<EditPostScreen> {
                       icon: const Icon(Icons.image_outlined),
                       label: Text(
                         l10n.imageAttachment,
-                        style: const TextStyle(
-                          fontFamily: 'Inter',
+                        style: TextStyle(
+                          fontFamily: uiFontFamily(context, 'Inter'),
                           fontFamilyFallback: const ['NotoSansKR'],
                           fontWeight: FontWeight.w700,
                         ),
@@ -534,8 +535,8 @@ class _EditPostScreenState extends State<EditPostScreen> {
                     ),
                     child: Text(
                       '${(_keptImageUrls.length + _selectedImages.length).clamp(0, 10)}/10',
-                      style: const TextStyle(
-                        fontFamily: 'Inter',
+                      style: TextStyle(
+                        fontFamily: uiFontFamily(context, 'Inter'),
                         fontFamilyFallback: const ['NotoSansKR'],
                         fontSize: 12,
                         fontWeight: FontWeight.w800,

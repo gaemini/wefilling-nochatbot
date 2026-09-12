@@ -3,6 +3,7 @@ import 'package:flutter/material.dart';
 import '../../models/user_profile.dart';
 import '../../utils/responsive_helper.dart';
 import 'user_avatar.dart';
+import '../../l10n/ui_locale.dart';
 
 class GroupAudiencePreview extends StatelessWidget {
   const GroupAudiencePreview({
@@ -31,19 +32,19 @@ class GroupAudiencePreview extends StatelessWidget {
           children: [
             Text(
               loading
-                  ? (isKorean ? '포함된 사람' : 'People included')
-                  : isKorean
+                  ? ((isChineseUi(context) ? '可见用户' : isKorean ? '포함된 사람' : 'People included'))
+                  : (isChineseUi(context) ? '包含${members.length}${members.length == 1 ? 'person' : 'people'}' : isKorean
                       ? '포함된 사람 ${members.length}명'
-                      : '${members.length} ${members.length == 1 ? 'person' : 'people'} included',
+                      : '${members.length} ${members.length == 1 ? 'person' : 'people'} included'),
               maxLines: 1,
               overflow: TextOverflow.ellipsis,
               style: TextStyle(
-                fontFamily: 'Inter',
+                fontFamily: uiFontFamily(context, 'Inter'),
                 fontFamilyFallback: const ['NotoSansKR'],
                 fontSize: context.rf(11.5).clamp(11, 12.5).toDouble(),
                 fontWeight: FontWeight.w700,
                 color: const Color(0xFF667085),
-                height: 1.25,
+                height: isChineseUi(context) ? 1.3 : 1.25,
               ),
             ),
             const SizedBox(height: 7),
@@ -54,13 +55,13 @@ class GroupAudiencePreview extends StatelessWidget {
               )
             else if (members.isEmpty)
               Text(
-                isKorean
+                (isChineseUi(context) ? '此分组中还没有好友。' : isKorean
                     ? '이 그룹에 포함된 친구가 없어요.'
-                    : 'There are no friends in this group.',
+                    : 'There are no friends in this group.'),
                 maxLines: 2,
                 overflow: TextOverflow.ellipsis,
                 style: TextStyle(
-                  fontFamily: 'Inter',
+                  fontFamily: uiFontFamily(context, 'Inter'),
                   fontFamilyFallback: const ['NotoSansKR'],
                   fontSize: context.rf(12).clamp(11.5, 13).toDouble(),
                   fontWeight: FontWeight.w500,
@@ -99,7 +100,7 @@ class GroupAudiencePreview extends StatelessWidget {
                                     maxLines: 1,
                                     overflow: TextOverflow.ellipsis,
                                     style: TextStyle(
-                                      fontFamily: 'Inter',
+                                      fontFamily: uiFontFamily(context, 'Inter'),
                                       fontFamilyFallback: const ['NotoSansKR'],
                                       fontSize: context
                                           .rf(12.5)
@@ -107,7 +108,7 @@ class GroupAudiencePreview extends StatelessWidget {
                                           .toDouble(),
                                       fontWeight: FontWeight.w600,
                                       color: const Color(0xFF344054),
-                                      height: 1.2,
+                                      height: isChineseUi(context) ? 1.3 : 1.2,
                                     ),
                                   ),
                                 ),

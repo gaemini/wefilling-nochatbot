@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 
 import '../../utils/responsive_helper.dart';
+import '../../l10n/ui_locale.dart';
 
 /// Accumulates only direct-drag deltas supplied by SnackChatScreen and maps
 /// reversed scroll axes to the direction a person sees on screen.
@@ -139,12 +140,12 @@ class SnackChatHeaderTitle extends StatelessWidget {
                 overflow: TextOverflow.ellipsis,
                 textAlign: TextAlign.center,
                 style: TextStyle(
-                  fontFamily: 'Inter',
+                  fontFamily: uiFontFamily(context, 'Inter'),
                   fontFamilyFallback: const ['NotoSansKR'],
                   fontSize: context.rf(16).clamp(15, 17).toDouble(),
                   fontWeight: FontWeight.w700,
                   color: const Color(0xFF111827),
-                  height: 1.12,
+                  height: isChineseUi(context) ? 1.3 : 1.12,
                 ),
               ),
             ),
@@ -165,12 +166,12 @@ class SnackChatHeaderTitle extends StatelessWidget {
                 overflow: TextOverflow.fade,
                 softWrap: false,
                 style: TextStyle(
-                  fontFamily: 'Inter',
+                  fontFamily: uiFontFamily(context, 'Inter'),
                   fontFamilyFallback: const ['NotoSansKR'],
                   fontSize: context.rf(10.5).clamp(10, 11.5).toDouble(),
                   fontWeight: FontWeight.w600,
                   color: const Color(0xFF475467),
-                  height: 1.1,
+                  height: isChineseUi(context) ? 1.3 : 1.1,
                 ),
               ),
             ),
@@ -194,6 +195,10 @@ class SnackChatDateSeparator extends StatelessWidget {
 
   static String formatDate(DateTime date, {required String languageCode}) {
     final local = date.toLocal();
+    if (languageCode == 'zh') {
+      const weekdays = ['星期一', '星期二', '星期三', '星期四', '星期五', '星期六', '星期日'];
+      return '${local.year}年${local.month}月${local.day}日 ${weekdays[local.weekday - 1]}';
+    }
     if (languageCode == 'ko') {
       const weekdays = <String>[
         '월요일',
@@ -288,12 +293,12 @@ class SnackChatDateSeparator extends StatelessWidget {
                       maxLines: 1,
                       overflow: TextOverflow.ellipsis,
                       style: TextStyle(
-                        fontFamily: 'Inter',
+                        fontFamily: uiFontFamily(context, 'Inter'),
                         fontFamilyFallback: const ['NotoSansKR'],
                         fontSize: context.rf(11.5).clamp(10.5, 12).toDouble(),
                         fontWeight: FontWeight.w600,
                         color: Colors.white,
-                        height: 1.25,
+                        height: isChineseUi(context) ? 1.3 : 1.25,
                       ),
                     ),
                   ),

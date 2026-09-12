@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 
 import '../../services/content_translation_service.dart';
+import '../../l10n/ui_locale.dart';
 
 Future<String?> showTranslationLanguageSheet(
   BuildContext context, {
@@ -89,10 +90,10 @@ class _TranslationLanguageSheetState extends State<TranslationLanguageSheet> {
             Padding(
               padding: const EdgeInsets.fromLTRB(20, 22, 20, 0),
               child: Text(
-                isKo ? '번역해서 볼 언어' : 'Language to translate into',
+                (isChineseUi(context) ? '翻译目标语言' : isKo ? '번역해서 볼 언어' : 'Language to translate into'),
                 key: const ValueKey('translation_language_sheet_title'),
-                style: const TextStyle(
-                  fontFamily: 'Inter',
+                style: TextStyle(
+                  fontFamily: uiFontFamily(context, 'Inter'),
                   fontFamilyFallback: ['NotoSansKR'],
                   fontSize: 20,
                   fontWeight: FontWeight.w700,
@@ -124,17 +125,17 @@ class _TranslationLanguageSheetState extends State<TranslationLanguageSheet> {
                       Expanded(
                         child: Text(
                           widget.forSnackChat
-                              ? (isKo
+                              ? ((isChineseUi(context) ? '选择查看他人消息时使用的翻译语言。你发送的消息仍显示原文。' : isKo
                                   ? '상대방 메시지를 번역해서 보고 싶은 언어를 선택해 주세요. 내 메시지는 입력한 원문으로 표시됩니다.'
-                                  : 'Choose the language for translating messages from other people. Your messages stay in the original text.')
-                              : (isKo
+                                  : 'Choose the language for translating messages from other people. Your messages stay in the original text.'))
+                              : ((isChineseUi(context) ? '选择动态和评论的翻译目标语言，而不是原文语言。' : isKo
                                   ? '원문의 언어가 아니라, 포스트와 댓글을 번역해서 보고 싶은 언어를 선택해 주세요.'
-                                  : 'Choose the language you want posts and comments translated into, not the language of the original text.'),
+                                  : 'Choose the language you want posts and comments translated into, not the language of the original text.')),
                           key: const ValueKey(
                             'translation_language_sheet_guidance',
                           ),
-                          style: const TextStyle(
-                            fontFamily: 'Inter',
+                          style: TextStyle(
+                            fontFamily: uiFontFamily(context, 'Inter'),
                             fontFamilyFallback: ['NotoSansKR'],
                             fontSize: 13,
                             fontWeight: FontWeight.w500,
@@ -160,8 +161,8 @@ class _TranslationLanguageSheetState extends State<TranslationLanguageSheet> {
                         dense: true,
                         title: Text(
                           entry.value,
-                          style: const TextStyle(
-                            fontFamily: 'Inter',
+                          style: TextStyle(
+                            fontFamily: uiFontFamily(context, 'Inter'),
                             fontFamilyFallback: ['NotoSansKR'],
                             fontSize: 15,
                             fontWeight: FontWeight.w500,

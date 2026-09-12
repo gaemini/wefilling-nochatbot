@@ -7,6 +7,7 @@ import '../../constants/app_constants.dart';
 import '../../providers/auth_provider.dart';
 import '../../screens/hanyang_email_verification_screen.dart';
 import '../../utils/responsive_helper.dart';
+import '../../l10n/ui_locale.dart';
 
 /// 한양메일 인증 사용자에게만 공개되는 콘텐츠를 나타내는 작은 공통 표식입니다.
 /// 정해진 콘텐츠 크기만 사용해 Row/Wrap 안에서 가로로 늘어나지 않습니다.
@@ -19,7 +20,7 @@ class HanyangContentBadge extends StatelessWidget {
   Widget build(BuildContext context) {
     final isKo = Localizations.localeOf(context).languageCode == 'ko';
     return Semantics(
-      label: isKo ? '한양메일 인증 전용' : 'Hanyang verified only',
+      label: (isChineseUi(context) ? '仅限汉阳认证用户' : isKo ? '한양메일 인증 전용' : 'Hanyang verified only'),
       child: DecoratedBox(
         decoration: BoxDecoration(
           gradient: const LinearGradient(
@@ -42,7 +43,7 @@ class HanyangContentBadge extends StatelessWidget {
             'HY',
             maxLines: 1,
             style: TextStyle(
-              fontFamily: 'Inter',
+              fontFamily: uiFontFamily(context, 'Inter'),
               fontFamilyFallback: const ['NotoSansKR'],
               fontSize: compact ? 8.5 : 9,
               fontWeight: FontWeight.w600,
@@ -241,23 +242,23 @@ class _CompactVerificationPrompt extends StatelessWidget {
         ),
         const SizedBox(height: 5),
         Text(
-          isKorean ? '한양메일 인증을 해주세요.' : 'Hanyang email verification required',
+          (isChineseUi(context) ? '需要验证汉阳邮箱' : isKorean ? '한양메일 인증을 해주세요.' : 'Hanyang email verification required'),
           textAlign: TextAlign.center,
           maxLines: 2,
           overflow: TextOverflow.ellipsis,
-          style: const TextStyle(
-            fontFamily: 'Inter',
+          style: TextStyle(
+            fontFamily: uiFontFamily(context, 'Inter'),
             fontFamilyFallback: ['NotoSansKR'],
             fontSize: 12.25,
             fontWeight: FontWeight.w700,
             color: Colors.white,
-            height: 1.2,
+            height: isChineseUi(context) ? 1.3 : 1.2,
             letterSpacing: -0.2,
           ),
         ),
         const SizedBox(height: 8),
         _VerificationButton(
-          label: isKorean ? '인증하러 가기' : 'Verify email',
+          label: (isChineseUi(context) ? '验证邮箱' : isKorean ? '인증하러 가기' : 'Verify email'),
           horizontalPadding: buttonHorizontal,
           compact: true,
           onPressed: onPressed,
@@ -292,30 +293,30 @@ class _ExpandedVerificationPrompt extends StatelessWidget {
           ),
           const SizedBox(height: 9),
           Text(
-            isKorean ? '한양메일 인증을 해주세요.' : 'Hanyang email verification required',
+            (isChineseUi(context) ? '需要验证汉阳邮箱' : isKorean ? '한양메일 인증을 해주세요.' : 'Hanyang email verification required'),
             textAlign: TextAlign.center,
             maxLines: 2,
             overflow: TextOverflow.ellipsis,
-            style: const TextStyle(
-              fontFamily: 'Inter',
+            style: TextStyle(
+              fontFamily: uiFontFamily(context, 'Inter'),
               fontFamilyFallback: ['NotoSansKR'],
               fontSize: 15.5,
               fontWeight: FontWeight.w700,
               color: Colors.white,
-              height: 1.24,
+              height: isChineseUi(context) ? 1.3 : 1.24,
               letterSpacing: -0.2,
             ),
           ),
           const SizedBox(height: 6),
           Text(
-            isKorean
+            (isChineseUi(context) ? '验证学校邮箱后即可查看此内容。' : isKorean
                 ? '인증하면 이 내용을 전체 확인할 수 있어요.'
-                : 'Verify your school email to view this content.',
+                : 'Verify your school email to view this content.'),
             textAlign: TextAlign.center,
             maxLines: 2,
             overflow: TextOverflow.ellipsis,
             style: TextStyle(
-              fontFamily: 'Inter',
+              fontFamily: uiFontFamily(context, 'Inter'),
               fontFamilyFallback: const ['NotoSansKR'],
               fontSize: 12.5,
               fontWeight: FontWeight.w500,
@@ -325,7 +326,7 @@ class _ExpandedVerificationPrompt extends StatelessWidget {
           ),
           const SizedBox(height: 14),
           _VerificationButton(
-            label: isKorean ? '인증하러 가기' : 'Verify Hanyang email',
+            label: (isChineseUi(context) ? '验证汉阳邮箱' : isKorean ? '인증하러 가기' : 'Verify Hanyang email'),
             horizontalPadding: buttonHorizontal,
             compact: false,
             onPressed: onPressed,
@@ -370,7 +371,7 @@ class _VerificationButton extends StatelessWidget {
         maxLines: 1,
         overflow: TextOverflow.ellipsis,
         style: TextStyle(
-          fontFamily: 'Inter',
+          fontFamily: uiFontFamily(context, 'Inter'),
           fontFamilyFallback: const ['NotoSansKR'],
           fontSize: compact ? 11.5 : 13,
           fontWeight: FontWeight.w700,

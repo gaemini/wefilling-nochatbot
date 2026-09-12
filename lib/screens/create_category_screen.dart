@@ -8,6 +8,7 @@ import '../design/tokens.dart';
 import '../l10n/app_localizations.dart';
 import '../ui/widgets/shape_icon.dart';
 import '../utils/responsive_helper.dart';
+import '../l10n/ui_locale.dart';
 
 class CreateCategoryScreen extends StatefulWidget {
   final FriendCategory? category; // null이면 생성, 있으면 수정
@@ -113,7 +114,7 @@ class _CreateCategoryScreenState extends State<CreateCategoryScreen> {
         Text(
           AppLocalizations.of(context)!.colorSelection,
           style: TextStyle(
-            fontFamily: 'Inter',
+            fontFamily: uiFontFamily(context, 'Inter'),
             fontFamilyFallback: const ['NotoSansKR'],
             fontWeight: FontWeight.w800,
             fontSize: context.rf(15).clamp(14, 16).toDouble(),
@@ -157,7 +158,8 @@ class _CreateCategoryScreenState extends State<CreateCategoryScreen> {
     final isKo = Localizations.localeOf(context).languageCode == 'ko';
     const ko = ['빨강', '주황', '노랑', '초록', '파랑', '남색', '보라'];
     const en = ['Red', 'Orange', 'Yellow', 'Green', 'Blue', 'Indigo', 'Purple'];
-    return (isKo ? ko : en)[index];
+    const zh = ['红色', '橙色', '黄色', '绿色', '蓝色', '靛蓝', '紫色'];
+    return (isChineseUi(context) ? zh : isKo ? ko : en)[index];
   }
 
   Widget _buildIconPicker() {
@@ -174,7 +176,7 @@ class _CreateCategoryScreenState extends State<CreateCategoryScreen> {
         Text(
           AppLocalizations.of(context)!.iconSelection,
           style: TextStyle(
-            fontFamily: 'Inter',
+            fontFamily: uiFontFamily(context, 'Inter'),
             fontFamilyFallback: const ['NotoSansKR'],
             fontWeight: FontWeight.w800,
             fontSize: context.rf(15).clamp(14, 16).toDouble(),
@@ -255,7 +257,13 @@ class _CreateCategoryScreenState extends State<CreateCategoryScreen> {
       'shape_square': 'square',
       'shape_star': 'star',
     };
-    return (isKo ? ko : en)[iconName] ?? iconName;
+    const zh = {
+      'shape_circle': '圆形',
+      'shape_triangle': '三角形',
+      'shape_square': '正方形',
+      'shape_star': '星形',
+    };
+    return (isChineseUi(context) ? zh : isKo ? ko : en)[iconName] ?? iconName;
   }
 
   Color _parseColor(String hexColor) {
@@ -304,7 +312,7 @@ class _CreateCategoryScreenState extends State<CreateCategoryScreen> {
               overflow: TextOverflow.ellipsis,
               textAlign: TextAlign.center,
               style: TextStyle(
-                fontFamily: 'Inter',
+                fontFamily: uiFontFamily(context, 'Inter'),
                 fontFamilyFallback: const ['NotoSansKR'],
                 fontSize: context.rf(18).clamp(16, 19).toDouble(),
                 fontWeight: FontWeight.w700,
@@ -364,7 +372,7 @@ class _CreateCategoryScreenState extends State<CreateCategoryScreen> {
             label: Text(
               actionLabel,
               style: TextStyle(
-                fontFamily: 'Inter',
+                fontFamily: uiFontFamily(context, 'Inter'),
                 fontFamilyFallback: const ['NotoSansKR'],
                 fontSize: context.rf(14).clamp(13, 15).toDouble(),
                 fontWeight: FontWeight.w700,
@@ -387,7 +395,7 @@ class _CreateCategoryScreenState extends State<CreateCategoryScreen> {
       maxLines: 2,
       overflow: TextOverflow.ellipsis,
       style: TextStyle(
-        fontFamily: 'Inter',
+        fontFamily: uiFontFamily(context, 'Inter'),
         fontFamilyFallback: const ['NotoSansKR'],
         fontSize: context.rf(15).clamp(14, 16).toDouble(),
         fontWeight: FontWeight.w800,
@@ -440,7 +448,7 @@ class _CreateCategoryScreenState extends State<CreateCategoryScreen> {
                         decoration: InputDecoration(
                           hintText: l10n.categoryNameHint,
                           hintStyle: TextStyle(
-                            fontFamily: 'Inter',
+                            fontFamily: uiFontFamily(context, 'Inter'),
                             fontFamilyFallback: const ['NotoSansKR'],
                             fontSize: context.rf(15).clamp(14, 16).toDouble(),
                             fontWeight: FontWeight.w400,
@@ -451,7 +459,7 @@ class _CreateCategoryScreenState extends State<CreateCategoryScreen> {
                               const EdgeInsets.fromLTRB(0, 2, 0, 12),
                         ),
                         style: TextStyle(
-                          fontFamily: 'Inter',
+                          fontFamily: uiFontFamily(context, 'Inter'),
                           fontFamilyFallback: const ['NotoSansKR'],
                           fontSize: context.rf(15).clamp(14, 16).toDouble(),
                           fontWeight: FontWeight.w500,

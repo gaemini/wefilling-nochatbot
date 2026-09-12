@@ -3,6 +3,7 @@ import 'package:flutter/material.dart';
 import '../l10n/app_localizations.dart';
 import '../widgets/signup_flow_widgets.dart';
 import 'password_setup_screen.dart';
+import '../l10n/ui_locale.dart';
 
 /// Legacy two-step email sign-up entry kept visually aligned with the active
 /// sign-up flow for callers that still navigate here.
@@ -66,8 +67,8 @@ class _EmailIdSetupScreenState extends State<EmailIdSetupScreen> {
           l10n.emailIdSetupTitle,
           maxLines: 1,
           overflow: TextOverflow.ellipsis,
-          style: const TextStyle(
-            fontFamily: 'Inter',
+          style: TextStyle(
+            fontFamily: uiFontFamily(context, 'Inter'),
             fontFamilyFallback: const ['NotoSansKR'],
             fontSize: 18,
             fontWeight: FontWeight.w700,
@@ -116,13 +117,13 @@ class _EmailIdSetupScreenState extends State<EmailIdSetupScreen> {
                           autocorrect: false,
                           autofillHints: const [AutofillHints.newUsername],
                           onFieldSubmitted: (_) => _goToNextStep(),
-                          decoration: signupInputDecoration(
+                          decoration: signupInputDecoration(context: context,
                             hintText: 'example@gmail.com',
                             icon: Icons.mail_outline_rounded,
                             helperText: l10n.loginEmailHelper,
                           ),
-                          style: const TextStyle(
-                            fontFamily: 'Inter',
+                          style: TextStyle(
+                            fontFamily: uiFontFamily(context, 'Inter'),
                             fontFamilyFallback: const ['NotoSansKR'],
                             fontSize: 16,
                             fontWeight: FontWeight.w500,

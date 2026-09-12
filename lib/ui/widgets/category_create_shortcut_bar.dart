@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 
 import '../../utils/responsive_helper.dart';
+import '../../l10n/ui_locale.dart';
 
 class CategoryCreateShortcutBar extends StatelessWidget {
   const CategoryCreateShortcutBar({
@@ -122,7 +123,7 @@ class _CategoryCreateShortcut extends StatelessWidget {
                         overflow: TextOverflow.ellipsis,
                         textAlign: TextAlign.center,
                         style: TextStyle(
-                          fontFamily: 'Inter',
+                          fontFamily: uiFontFamily(context, 'Inter'),
                           fontFamilyFallback: const ['NotoSansKR'],
                           fontSize: context.rf(12.5).clamp(11.5, 13).toDouble(),
                           fontWeight: FontWeight.w700,

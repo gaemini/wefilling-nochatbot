@@ -5,6 +5,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import '../../constants/app_constants.dart';
+import '../../l10n/ui_locale.dart';
 
 /// Instagram/TikTok 스타일 스토리 카테고리
 /// 
@@ -319,7 +320,7 @@ class _StoryCategoryItemState extends State<_StoryCategoryItem>
                   AnimatedDefaultTextStyle(
                     duration: widget.animationDuration,
                     curve: AppTheme.primaryCurve,
-                    style: AppTheme.labelSmall.copyWith(
+                    style: uiTextStyle(context, AppTheme.labelSmall.copyWith(
                       color: widget.isSelected 
                           ? AppTheme.textPrimary
                           : AppTheme.textSecondary,
@@ -327,7 +328,7 @@ class _StoryCategoryItemState extends State<_StoryCategoryItem>
                           ? FontWeight.w700 
                           : FontWeight.w500,
                       fontSize: widget.isSelected ? 13 : 12,
-                    ),
+                    )),
                     child: Text(
                       widget.category.title,
                       textAlign: TextAlign.center,

@@ -8,6 +8,7 @@ import '../ui/widgets/user_avatar.dart';
 import '../utils/country_flag_helper.dart';
 import '../utils/responsive_helper.dart';
 import 'friend_profile_screen.dart';
+import '../l10n/ui_locale.dart';
 
 class SnapshotViewersScreen extends StatefulWidget {
   const SnapshotViewersScreen({
@@ -86,7 +87,7 @@ class _SnapshotViewersScreenState extends State<SnapshotViewersScreen> {
             maxLines: 1,
             overflow: TextOverflow.ellipsis,
             style: TextStyle(
-              fontFamily: 'Inter',
+              fontFamily: uiFontFamily(context, 'Inter'),
               fontFamilyFallback: const ['NotoSansKR'],
               fontSize: context.rf(18).clamp(16, 19).toDouble(),
               fontWeight: FontWeight.w700,
@@ -172,7 +173,7 @@ class _ViewerList extends StatelessWidget {
             child: Text(
               strings.viewersCount(viewers.length),
               style: TextStyle(
-                fontFamily: 'Inter',
+                fontFamily: uiFontFamily(context, 'Inter'),
                 fontFamilyFallback: const ['NotoSansKR'],
                 fontSize: context.rf(13).clamp(12, 14).toDouble(),
                 fontWeight: FontWeight.w600,
@@ -267,12 +268,12 @@ class _ViewerRow extends StatelessWidget {
                         maxLines: 1,
                         overflow: TextOverflow.ellipsis,
                         style: TextStyle(
-                          fontFamily: 'Inter',
+                          fontFamily: uiFontFamily(context, 'Inter'),
                           fontFamilyFallback: const ['NotoSansKR'],
                           fontSize: context.rf(15).clamp(14, 16).toDouble(),
                           fontWeight: FontWeight.w700,
                           color: const Color(0xFF111827),
-                          height: 1.2,
+                          height: isChineseUi(context) ? 1.3 : 1.2,
                         ),
                       ),
                       if (metadata.isNotEmpty) ...[
@@ -282,12 +283,12 @@ class _ViewerRow extends StatelessWidget {
                           maxLines: 1,
                           overflow: TextOverflow.ellipsis,
                           style: TextStyle(
-                            fontFamily: 'Inter',
+                            fontFamily: uiFontFamily(context, 'Inter'),
                             fontFamilyFallback: const ['NotoSansKR'],
                             fontSize: context.rf(12).clamp(11, 13).toDouble(),
                             fontWeight: FontWeight.w500,
                             color: const Color(0xFF667085),
-                            height: 1.2,
+                            height: isChineseUi(context) ? 1.3 : 1.2,
                           ),
                         ),
                       ],
@@ -317,7 +318,7 @@ class _ViewerRow extends StatelessWidget {
                       maxLines: 1,
                       textAlign: TextAlign.end,
                       style: TextStyle(
-                        fontFamily: 'Inter',
+                        fontFamily: uiFontFamily(context, 'Inter'),
                         fontFamilyFallback: const ['NotoSansKR'],
                         fontSize: context.rf(12).clamp(11, 13).toDouble(),
                         fontWeight: FontWeight.w500,
@@ -375,7 +376,7 @@ class _ViewerStatus extends StatelessWidget {
                 title,
                 textAlign: TextAlign.center,
                 style: TextStyle(
-                  fontFamily: 'Inter',
+                  fontFamily: uiFontFamily(context, 'Inter'),
                   fontFamilyFallback: const ['NotoSansKR'],
                   fontSize: context.rf(16).clamp(15, 17).toDouble(),
                   fontWeight: FontWeight.w700,
@@ -388,7 +389,7 @@ class _ViewerStatus extends StatelessWidget {
                   description!,
                   textAlign: TextAlign.center,
                   style: TextStyle(
-                    fontFamily: 'Inter',
+                    fontFamily: uiFontFamily(context, 'Inter'),
                     fontFamilyFallback: const ['NotoSansKR'],
                     fontSize: context.rf(13).clamp(12, 14).toDouble(),
                     fontWeight: FontWeight.w500,
@@ -408,7 +409,7 @@ class _ViewerStatus extends StatelessWidget {
                   child: Text(
                     actionLabel!,
                     style: TextStyle(
-                      fontFamily: 'Inter',
+                      fontFamily: uiFontFamily(context, 'Inter'),
                       fontFamilyFallback: const ['NotoSansKR'],
                       fontSize: context.rf(13).clamp(12, 14).toDouble(),
                       fontWeight: FontWeight.w700,

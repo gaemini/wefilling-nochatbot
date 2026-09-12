@@ -43,7 +43,7 @@ const metadata = helpers.schemaMetadata();
 // Gemini canary together rather than reaching users first.
 assert.equal(metadata.schemaVersion, 3);
 assert.equal(metadata.summaryVersion, 9);
-assert.equal(metadata.promptVersion, 7);
+assert.equal(metadata.promptVersion, 8);
 assert.equal(metadata.fingerprint, '157c917ad2ef84e4');
 assert.equal(schema.type, 'object');
 assert.deepEqual(schema.required, [

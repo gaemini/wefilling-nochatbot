@@ -14,6 +14,7 @@ import '../ui/snackbar/app_snackbar.dart';
 import '../utils/responsive_helper.dart';
 import 'meetup_category_select_screen.dart';
 import 'meetup_visibility_group_select_screen.dart';
+import '../l10n/ui_locale.dart';
 
 class MeetupFavoriteEditorScreen extends StatefulWidget {
   final MeetupFavoriteTemplate? template;
@@ -140,7 +141,7 @@ class _MeetupFavoriteEditorScreenState
       final isKo = Localizations.localeOf(context).languageCode == 'ko';
       AppSnackBar.show(
         context,
-        message: isKo ? '그룹 목록을 불러오는 중입니다.' : 'Groups are still loading.',
+        message: (isChineseUi(context) ? '正在加载分组。' : isKo ? '그룹 목록을 불러오는 중입니다.' : 'Groups are still loading.'),
         type: AppSnackBarType.info,
       );
       return;
@@ -200,8 +201,8 @@ class _MeetupFavoriteEditorScreenState
                 leading: const Icon(Icons.schedule_outlined, size: 21),
                 title: Text(
                   l10n.undecided,
-                  style: const TextStyle(
-                    fontFamily: 'Inter',
+                  style: TextStyle(
+                    fontFamily: uiFontFamily(context, 'Inter'),
                     fontFamilyFallback: const ['NotoSansKR'],
                     fontSize: 15,
                     fontWeight: FontWeight.w600,
@@ -212,9 +213,9 @@ class _MeetupFavoriteEditorScreenState
               ListTile(
                 leading: const Icon(Icons.access_time_rounded, size: 21),
                 title: Text(
-                  isKo ? '시간 선택' : 'Choose a time',
-                  style: const TextStyle(
-                    fontFamily: 'Inter',
+                  (isChineseUi(context) ? '选择时间' : isKo ? '시간 선택' : 'Choose a time'),
+                  style: TextStyle(
+                    fontFamily: uiFontFamily(context, 'Inter'),
                     fontFamilyFallback: const ['NotoSansKR'],
                     fontSize: 15,
                     fontWeight: FontWeight.w600,
@@ -259,8 +260,8 @@ class _MeetupFavoriteEditorScreenState
       context: context,
       selectedValue: _maxParticipants,
       options: meetupParticipantOptions,
-      title: isKo ? '최대 인원' : 'Max participants',
-      itemLabel: (count) => isKo ? '$count명' : '$count people',
+      title: (isChineseUi(context) ? '人数上限' : isKo ? '최대 인원' : 'Max participants'),
+      itemLabel: (count) => (isChineseUi(context) ? '${count}人' : isKo ? '$count명' : '$count people'),
     );
     if (!mounted || selected == null || selected == _maxParticipants) return;
     setState(() => _maxParticipants = selected);
@@ -314,9 +315,9 @@ class _MeetupFavoriteEditorScreenState
     if (title.isEmpty || location.isEmpty || _categoryKey == null) {
       AppSnackBar.show(
         context,
-        message: isKo
+        message: (isChineseUi(context) ? '请填写标题、分类和地点。' : isKo
             ? '제목, 카테고리, 장소를 모두 입력해주세요.'
-            : 'Enter a title, category, and location.',
+            : 'Enter a title, category, and location.'),
         type: AppSnackBarType.warning,
       );
       return;
@@ -324,7 +325,7 @@ class _MeetupFavoriteEditorScreenState
     if (_visibility == 'category' && _selectedCategoryIds.isEmpty) {
       AppSnackBar.show(
         context,
-        message: isKo ? '공개할 그룹을 선택해주세요.' : 'Select at least one group.',
+        message: (isChineseUi(context) ? '请至少选择一个分组。' : isKo ? '공개할 그룹을 선택해주세요.' : 'Select at least one group.'),
         type: AppSnackBarType.warning,
       );
       return;
@@ -360,7 +361,7 @@ class _MeetupFavoriteEditorScreenState
     return Text(
       text,
       style: TextStyle(
-        fontFamily: 'Inter',
+        fontFamily: uiFontFamily(context, 'Inter'),
         fontFamilyFallback: const ['NotoSansKR'],
         fontSize: context.rf(15).clamp(14, 16).toDouble(),
         fontWeight: FontWeight.w700,
@@ -372,8 +373,8 @@ class _MeetupFavoriteEditorScreenState
   InputDecoration _underlineDecoration(String hint) {
     return InputDecoration(
       hintText: hint,
-      hintStyle: const TextStyle(
-        fontFamily: 'Inter',
+      hintStyle: TextStyle(
+        fontFamily: uiFontFamily(context, 'Inter'),
         fontFamilyFallback: const ['NotoSansKR'],
         fontSize: 14,
         color: Color(0xFF98A2B3),
@@ -415,7 +416,7 @@ class _MeetupFavoriteEditorScreenState
             maxLines: 1,
             overflow: TextOverflow.ellipsis,
             style: TextStyle(
-              fontFamily: 'Inter',
+              fontFamily: uiFontFamily(context, 'Inter'),
               fontFamilyFallback: const ['NotoSansKR'],
               fontSize: context.rf(13).clamp(12, 14).toDouble(),
               fontWeight: selected ? FontWeight.w700 : FontWeight.w600,
@@ -449,8 +450,8 @@ class _MeetupFavoriteEditorScreenState
                 children: [
                   Text(
                     label,
-                    style: const TextStyle(
-                      fontFamily: 'Inter',
+                    style: TextStyle(
+                      fontFamily: uiFontFamily(context, 'Inter'),
                       fontFamilyFallback: const ['NotoSansKR'],
                       fontSize: 12,
                       fontWeight: FontWeight.w500,
@@ -462,8 +463,8 @@ class _MeetupFavoriteEditorScreenState
                     value,
                     maxLines: 1,
                     overflow: TextOverflow.ellipsis,
-                    style: const TextStyle(
-                      fontFamily: 'Inter',
+                    style: TextStyle(
+                      fontFamily: uiFontFamily(context, 'Inter'),
                       fontFamilyFallback: const ['NotoSansKR'],
                       fontSize: 14,
                       fontWeight: FontWeight.w600,
@@ -537,10 +538,10 @@ class _MeetupFavoriteEditorScreenState
         ),
         title: Text(
           _isEditing
-              ? (isKo ? '즐겨찾기 수정' : 'Edit Favorite')
-              : (isKo ? '새 즐겨찾기' : 'New Favorite'),
+              ? ((isChineseUi(context) ? '编辑收藏模板' : isKo ? '즐겨찾기 수정' : 'Edit Favorite'))
+              : ((isChineseUi(context) ? '新建收藏模板' : isKo ? '새 즐겨찾기' : 'New Favorite')),
           style: TextStyle(
-            fontFamily: 'Inter',
+            fontFamily: uiFontFamily(context, 'Inter'),
             fontFamilyFallback: const ['NotoSansKR'],
             fontSize: context.rf(18).clamp(16, 19).toDouble(),
             fontWeight: FontWeight.w700,
@@ -557,13 +558,13 @@ class _MeetupFavoriteEditorScreenState
           32,
         ),
         children: [
-          _sectionTitle(isKo ? '공개 범위' : 'Visibility'),
+          _sectionTitle((isChineseUi(context) ? '谁可以看' : isKo ? '공개 범위' : 'Visibility')),
           const SizedBox(height: 4),
           Row(
             children: [
               _visibilityOption(
                 value: 'public',
-                label: isKo ? '전체' : 'All',
+                label: (isChineseUi(context) ? '全部' : isKo ? '전체' : 'All'),
                 onTap: () => setState(() {
                   _visibility = 'public';
                   _selectedCategoryIds.clear();
@@ -571,7 +572,7 @@ class _MeetupFavoriteEditorScreenState
               ),
               _visibilityOption(
                 value: 'friends',
-                label: isKo ? '모든 친구' : 'Friends',
+                label: (isChineseUi(context) ? '好友' : isKo ? '모든 친구' : 'Friends'),
                 onTap: () => setState(() {
                   _visibility = 'friends';
                   _selectedCategoryIds.clear();
@@ -580,77 +581,77 @@ class _MeetupFavoriteEditorScreenState
               _visibilityOption(
                 value: 'category',
                 label: _selectedCategoryIds.isEmpty
-                    ? (isKo ? '그룹' : 'Groups')
-                    : (isKo
+                    ? ((isChineseUi(context) ? '分组' : isKo ? '그룹' : 'Groups'))
+                    : ((isChineseUi(context) ? '分组 ${_selectedCategoryIds.length}' : isKo
                         ? '그룹 ${_selectedCategoryIds.length}'
-                        : 'Groups ${_selectedCategoryIds.length}'),
+                        : 'Groups ${_selectedCategoryIds.length}')),
                 onTap: _selectGroups,
               ),
             ],
           ),
           SizedBox(height: context.rs(22).clamp(18, 26).toDouble()),
-          _sectionTitle(isKo ? '제목' : 'Title'),
+          _sectionTitle((isChineseUi(context) ? '标题' : isKo ? '제목' : 'Title')),
           TextField(
             controller: _titleController,
             maxLength: 60,
             textInputAction: TextInputAction.next,
-            style: const TextStyle(
-              fontFamily: 'Inter',
+            style: TextStyle(
+              fontFamily: uiFontFamily(context, 'Inter'),
               fontFamilyFallback: const ['NotoSansKR'],
               fontSize: 15,
               fontWeight: FontWeight.w500,
             ),
             decoration: _underlineDecoration(
-              isKo ? '반복해서 사용할 밋업 제목' : 'Meetup title',
+              (isChineseUi(context) ? '聚会标题' : isKo ? '반복해서 사용할 밋업 제목' : 'Meetup title'),
             ).copyWith(counterText: ''),
           ),
           SizedBox(height: context.rs(20).clamp(18, 24).toDouble()),
           _selectionRow(
-            label: isKo ? '카테고리' : 'Category',
+            label: (isChineseUi(context) ? '分类' : isKo ? '카테고리' : 'Category'),
             value: _categoryLabel(l10n, _categoryKey),
             onTap: _selectCategory,
           ),
           SizedBox(height: context.rs(20).clamp(18, 24).toDouble()),
-          _sectionTitle(isKo ? '장소' : 'Location'),
+          _sectionTitle((isChineseUi(context) ? '地点' : isKo ? '장소' : 'Location')),
           TextField(
             controller: _locationController,
             textInputAction: TextInputAction.next,
-            style: const TextStyle(
-              fontFamily: 'Inter',
+            style: TextStyle(
+              fontFamily: uiFontFamily(context, 'Inter'),
               fontFamilyFallback: const ['NotoSansKR'],
               fontSize: 15,
               fontWeight: FontWeight.w500,
             ),
             decoration: _underlineDecoration(
-              isKo ? '밋업 장소' : 'Meetup location',
+              (isChineseUi(context) ? '聚会地点' : isKo ? '밋업 장소' : 'Meetup location'),
             ),
           ),
           SizedBox(height: context.rs(20).clamp(18, 24).toDouble()),
           _selectionRow(
-            label: isKo ? '시간' : 'Time',
+            label: (isChineseUi(context) ? '时间' : isKo ? '시간' : 'Time'),
             value: _timeLabel(l10n),
             onTap: _selectTime,
           ),
           SizedBox(height: context.rs(20).clamp(18, 24).toDouble()),
           _selectionRow(
-            label: isKo ? '최대 인원' : 'Max participants',
-            value: isKo ? '$_maxParticipants명' : '$_maxParticipants people',
+            label: (isChineseUi(context) ? '人数上限' : isKo ? '최대 인원' : 'Max participants'),
+            value: (isChineseUi(context) ? '${_maxParticipants}人' : isKo ? '$_maxParticipants명' : '$_maxParticipants people'),
             onTap: _selectMaxParticipants,
           ),
           SizedBox(height: context.rs(20).clamp(18, 24).toDouble()),
-          _sectionTitle(isKo ? '설명 (선택)' : 'Description (optional)'),
+          _sectionTitle((isChineseUi(context) ? '介绍（选填）' : isKo ? '설명 (선택)' : 'Description (optional)')),
           TextField(
             controller: _descriptionController,
             minLines: 3,
             maxLines: 5,
-            style: const TextStyle(
-              fontFamily: 'Inter',
+            style: TextStyle(
+              fontFamily: uiFontFamily(context, 'Inter'),
               fontFamilyFallback: const ['NotoSansKR'],
               fontSize: 14,
               height: 1.45,
             ),
             decoration: _underlineDecoration(
-              isKo ? '밋업 설명' : 'Meetup description',
+              (isChineseUi(context) ? '聚会介绍' : isKo ? '밋업 설명' : 'Meetup description'),
             ),
           ),
           SizedBox(height: context.rs(20).clamp(18, 24).toDouble()),
@@ -670,9 +671,9 @@ class _MeetupFavoriteEditorScreenState
                       crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
                         Text(
-                          isKo ? '썸네일 이미지' : 'Thumbnail image',
-                          style: const TextStyle(
-                            fontFamily: 'Inter',
+                          (isChineseUi(context) ? '封面图片' : isKo ? '썸네일 이미지' : 'Thumbnail image'),
+                          style: TextStyle(
+                            fontFamily: uiFontFamily(context, 'Inter'),
                             fontFamilyFallback: const ['NotoSansKR'],
                             fontSize: 14,
                             fontWeight: FontWeight.w700,
@@ -681,9 +682,9 @@ class _MeetupFavoriteEditorScreenState
                         ),
                         const SizedBox(height: 2),
                         Text(
-                          isKo ? '눌러서 이미지 선택' : 'Tap to choose an image',
-                          style: const TextStyle(
-                            fontFamily: 'Inter',
+                          (isChineseUi(context) ? '点击选择图片' : isKo ? '눌러서 이미지 선택' : 'Tap to choose an image'),
+                          style: TextStyle(
+                            fontFamily: uiFontFamily(context, 'Inter'),
                             fontFamilyFallback: const ['NotoSansKR'],
                             fontSize: 12,
                             color: Color(0xFF667085),
@@ -735,8 +736,8 @@ class _MeetupFavoriteEditorScreenState
                     )
                   : Text(
                       l10n.save,
-                      style: const TextStyle(
-                        fontFamily: 'Inter',
+                      style: TextStyle(
+                        fontFamily: uiFontFamily(context, 'Inter'),
                         fontFamilyFallback: const ['NotoSansKR'],
                         fontSize: 15,
                         fontWeight: FontWeight.w700,

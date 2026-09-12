@@ -15,6 +15,7 @@ import '../constants/meetup_limits.dart';
 import '../l10n/app_localizations.dart';
 import '../utils/logger.dart';
 import '../utils/responsive_helper.dart';
+import '../l10n/ui_locale.dart';
 
 class EditMeetupScreen extends StatefulWidget {
   final Meetup meetup;
@@ -95,9 +96,9 @@ class _EditMeetupScreenState extends State<EditMeetupScreen> {
     ScaffoldMessenger.of(context).showSnackBar(
       SnackBar(
         content: Text(
-          isKorean
+          (isChineseUi(context) ? '已确认或已过期的聚会无法编辑。' : isKorean
               ? '확정되었거나 만료된 모임은 수정할 수 없습니다.'
-              : 'Confirmed or expired meetups cannot be edited.',
+              : 'Confirmed or expired meetups cannot be edited.'),
         ),
       ),
     );
@@ -430,17 +431,17 @@ class _EditMeetupScreenState extends State<EditMeetupScreen> {
       context.rs(20).clamp(16, 24).toDouble();
 
   TextStyle _sectionTitleStyle(BuildContext context) => TextStyle(
-        fontFamily: 'Inter',
+        fontFamily: uiFontFamily(context, 'Inter'),
         fontFamilyFallback: const ['NotoSansKR'],
         fontSize: context.rf(15).clamp(14, 16).toDouble(),
         fontWeight: FontWeight.w700,
-        height: 1.25,
+        height: isChineseUi(context) ? 1.3 : 1.25,
         letterSpacing: -0.1,
         color: const Color(0xFF111827),
       );
 
   TextStyle _inputStyle(BuildContext context) => TextStyle(
-        fontFamily: 'Inter',
+        fontFamily: uiFontFamily(context, 'Inter'),
         fontFamilyFallback: const ['NotoSansKR'],
         fontSize: context.rf(15).clamp(14, 16).toDouble(),
         fontWeight: FontWeight.w500,
@@ -496,7 +497,7 @@ class _EditMeetupScreenState extends State<EditMeetupScreen> {
                   Text(
                     l10n.exitMeetupEditing,
                     style: TextStyle(
-                      fontFamily: 'Inter',
+                      fontFamily: uiFontFamily(context, 'Inter'),
                       fontFamilyFallback: const ['NotoSansKR'],
                       fontSize: context.rf(17).clamp(16, 18).toDouble(),
                       fontWeight: FontWeight.w700,
@@ -508,7 +509,7 @@ class _EditMeetupScreenState extends State<EditMeetupScreen> {
                   Text(
                     l10n.exitMeetupEditingMessage,
                     style: TextStyle(
-                      fontFamily: 'Inter',
+                      fontFamily: uiFontFamily(context, 'Inter'),
                       fontFamilyFallback: const ['NotoSansKR'],
                       fontSize: context.rf(13.5).clamp(13, 14.5).toDouble(),
                       fontWeight: FontWeight.w400,
@@ -532,8 +533,8 @@ class _EditMeetupScreenState extends State<EditMeetupScreen> {
                           ),
                           child: Text(
                             l10n.stay,
-                            style: const TextStyle(
-                              fontFamily: 'Inter',
+                            style: TextStyle(
+                              fontFamily: uiFontFamily(context, 'Inter'),
                               fontFamilyFallback: const ['NotoSansKR'],
                               fontSize: 14,
                               fontWeight: FontWeight.w600,
@@ -548,8 +549,8 @@ class _EditMeetupScreenState extends State<EditMeetupScreen> {
                           ),
                           child: Text(
                             l10n.exit,
-                            style: const TextStyle(
-                              fontFamily: 'Inter',
+                            style: TextStyle(
+                              fontFamily: uiFontFamily(context, 'Inter'),
                               fontFamilyFallback: const ['NotoSansKR'],
                               fontSize: 14,
                               fontWeight: FontWeight.w700,
@@ -626,11 +627,11 @@ class _EditMeetupScreenState extends State<EditMeetupScreen> {
               maxLines: 1,
               overflow: TextOverflow.ellipsis,
               style: TextStyle(
-                fontFamily: 'Inter',
+                fontFamily: uiFontFamily(context, 'Inter'),
                 fontFamilyFallback: const ['NotoSansKR'],
                 fontSize: context.rf(18).clamp(16, 19).toDouble(),
                 fontWeight: FontWeight.w700,
-                height: 1.2,
+                height: isChineseUi(context) ? 1.3 : 1.2,
                 letterSpacing: -0.2,
                 color: const Color(0xFF111827),
               ),
@@ -876,7 +877,7 @@ class _EditMeetupScreenState extends State<EditMeetupScreen> {
           Text(
             l10n.optionalField,
             style: TextStyle(
-              fontFamily: 'Inter',
+              fontFamily: uiFontFamily(context, 'Inter'),
               fontFamilyFallback: const ['NotoSansKR'],
               fontSize: context.rf(12).clamp(11, 13).toDouble(),
               fontWeight: FontWeight.w500,
@@ -1034,7 +1035,7 @@ class _EditMeetupScreenState extends State<EditMeetupScreen> {
             maxLines: 1,
             overflow: TextOverflow.ellipsis,
             style: TextStyle(
-              fontFamily: 'Inter',
+              fontFamily: uiFontFamily(context, 'Inter'),
               fontFamilyFallback: const ['NotoSansKR'],
               fontSize: context.rf(13).clamp(12, 14).toDouble(),
               fontWeight: FontWeight.w700,
@@ -1138,7 +1139,7 @@ class _EditMeetupScreenState extends State<EditMeetupScreen> {
                 : Text(
                     label,
                     style: TextStyle(
-                      fontFamily: 'Inter',
+                      fontFamily: uiFontFamily(context, 'Inter'),
                       fontFamilyFallback: const ['NotoSansKR'],
                       fontSize: context.rf(15).clamp(14, 16).toDouble(),
                       fontWeight: FontWeight.w700,

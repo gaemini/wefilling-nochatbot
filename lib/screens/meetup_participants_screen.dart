@@ -8,6 +8,7 @@ import '../services/meetup_service.dart';
 import '../l10n/app_localizations.dart';
 import '../ui/snackbar/app_snackbar.dart';
 import 'friend_profile_screen.dart';
+import '../l10n/ui_locale.dart';
 
 class MeetupParticipantsScreen extends StatefulWidget {
   final Meetup meetup;
@@ -80,9 +81,9 @@ class _MeetupParticipantsScreenState extends State<MeetupParticipantsScreen>
         final l10n = AppLocalizations.of(context)!;
         AppSnackBar.show(
           context,
-          message: isKo
+          message: (isChineseUi(context) ? '${l10n.error}：参与者加载失败：${e}' : isKo
               ? '참여자 목록을 불러오는데 실패했습니다: $e'
-              : '${l10n.error}: Failed to load participants: $e',
+              : '${l10n.error}: Failed to load participants: $e'),
           type: AppSnackBarType.error,
         );
       }
@@ -97,9 +98,9 @@ class _MeetupParticipantsScreenState extends State<MeetupParticipantsScreen>
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
             Text(
-              Localizations.localeOf(context).languageCode == 'ko'
+              (isChineseUi(context) ? '参与者' : Localizations.localeOf(context).languageCode == 'ko'
                   ? '참여자 관리'
-                  : 'Participants',
+                  : 'Participants'),
               style: TextStyle(fontSize: 18, fontWeight: FontWeight.w600),
             ),
             Text(
@@ -120,9 +121,9 @@ class _MeetupParticipantsScreenState extends State<MeetupParticipantsScreen>
               child: Row(
                 mainAxisSize: MainAxisSize.min,
                 children: [
-                  Text(Localizations.localeOf(context).languageCode == 'ko'
+                  Text((isChineseUi(context) ? '待审核' : Localizations.localeOf(context).languageCode == 'ko'
                       ? '대기중'
-                      : 'Pending'),
+                      : 'Pending')),
                   const SizedBox(width: 4),
                   Container(
                     padding:
@@ -147,9 +148,9 @@ class _MeetupParticipantsScreenState extends State<MeetupParticipantsScreen>
               child: Row(
                 mainAxisSize: MainAxisSize.min,
                 children: [
-                  Text(Localizations.localeOf(context).languageCode == 'ko'
+                  Text((isChineseUi(context) ? '已通过' : Localizations.localeOf(context).languageCode == 'ko'
                       ? '승인됨'
-                      : 'Approved'),
+                      : 'Approved')),
                   const SizedBox(width: 4),
                   Container(
                     padding:
@@ -174,9 +175,9 @@ class _MeetupParticipantsScreenState extends State<MeetupParticipantsScreen>
               child: Row(
                 mainAxisSize: MainAxisSize.min,
                 children: [
-                  Text(Localizations.localeOf(context).languageCode == 'ko'
+                  Text((isChineseUi(context) ? '已拒绝' : Localizations.localeOf(context).languageCode == 'ko'
                       ? '거절됨'
-                      : 'Rejected'),
+                      : 'Rejected')),
                   const SizedBox(width: 4),
                   Container(
                     padding:

@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import '../l10n/app_localizations.dart';
 import '../services/recommended_places_service.dart';
 import '../utils/responsive_helper.dart';
+import '../l10n/ui_locale.dart';
 
 class MeetupCategorySelectionResult {
   final String categoryKey;
@@ -126,11 +127,11 @@ class _MeetupCategorySelectScreenState
         child: Text(
           _labelForKey(l10n, key),
           style: TextStyle(
-            fontFamily: 'Inter',
+            fontFamily: uiFontFamily(context, 'Inter'),
             fontFamilyFallback: const ['NotoSansKR'],
             fontSize: context.rf(13).clamp(12, 14).toDouble(),
             fontWeight: isSelected ? FontWeight.w800 : FontWeight.w600,
-            height: 1.2,
+            height: isChineseUi(context) ? 1.3 : 1.2,
             color:
                 isSelected ? const Color(0xFF111827) : const Color(0xFF667085),
           ),
@@ -147,11 +148,11 @@ class _MeetupCategorySelectScreenState
         child: Text(
           l10n.pleaseSelectCategory,
           style: TextStyle(
-            fontFamily: 'Inter',
+            fontFamily: uiFontFamily(context, 'Inter'),
             fontFamilyFallback: const ['NotoSansKR'],
             fontSize: context.rf(14).clamp(13, 15).toDouble(),
             fontWeight: FontWeight.w500,
-            height: 1.25,
+            height: isChineseUi(context) ? 1.3 : 1.25,
             color: const Color(0xFF6B7280),
           ),
         ),
@@ -164,11 +165,11 @@ class _MeetupCategorySelectScreenState
         Text(
           l10n.recommendedPlaces,
           style: TextStyle(
-            fontFamily: 'Inter',
+            fontFamily: uiFontFamily(context, 'Inter'),
             fontFamilyFallback: const ['NotoSansKR'],
             fontSize: context.rf(14).clamp(13, 15).toDouble(),
             fontWeight: FontWeight.w700,
-            height: 1.2,
+            height: isChineseUi(context) ? 1.3 : 1.2,
             letterSpacing: -0.1,
             color: const Color(0xFF344054),
           ),
@@ -188,12 +189,12 @@ class _MeetupCategorySelectScreenState
         else if (_recommendedPlaces.isEmpty)
           Text(
             l10n.noRecommendedPlaces,
-            style: const TextStyle(
-              fontFamily: 'Inter',
+            style: TextStyle(
+              fontFamily: uiFontFamily(context, 'Inter'),
               fontFamilyFallback: const ['NotoSansKR'],
               fontSize: 14,
               fontWeight: FontWeight.w500,
-              height: 1.25,
+              height: isChineseUi(context) ? 1.3 : 1.25,
               color: Color(0xFF6B7280),
             ),
           )
@@ -256,11 +257,11 @@ class _MeetupCategorySelectScreenState
                 child: Text(
                   '$displayIndex',
                   style: TextStyle(
-                    fontFamily: 'Inter',
+                    fontFamily: uiFontFamily(context, 'Inter'),
                     fontFamilyFallback: const ['NotoSansKR'],
                     fontSize: context.rf(12).clamp(11, 13).toDouble(),
                     fontWeight: FontWeight.w800,
-                    height: 1.0,
+                    height: isChineseUi(context) ? 1.3 : 1.0,
                     color: const Color(0xFF6B7280),
                   ),
                 ),
@@ -270,11 +271,11 @@ class _MeetupCategorySelectScreenState
                 child: Text(
                   place.name,
                   style: TextStyle(
-                    fontFamily: 'Inter',
+                    fontFamily: uiFontFamily(context, 'Inter'),
                     fontFamilyFallback: const ['NotoSansKR'],
                     fontSize: context.rf(15).clamp(14, 16).toDouble(),
                     fontWeight: FontWeight.w800,
-                    height: 1.25,
+                    height: isChineseUi(context) ? 1.3 : 1.25,
                     color: const Color(0xFF111827),
                   ),
                 ),
@@ -349,11 +350,11 @@ class _MeetupCategorySelectScreenState
             maxLines: 1,
             overflow: TextOverflow.ellipsis,
             style: TextStyle(
-              fontFamily: 'Inter',
+              fontFamily: uiFontFamily(context, 'Inter'),
               fontFamilyFallback: const ['NotoSansKR'],
               fontSize: context.rf(18).clamp(16, 19).toDouble(),
               fontWeight: FontWeight.w700,
-              height: 1.2,
+              height: isChineseUi(context) ? 1.3 : 1.2,
               letterSpacing: -0.2,
               color: const Color(0xFF111827),
             ),
@@ -440,11 +441,11 @@ class _MeetupCategorySelectScreenState
                     child: Text(
                       l10n.done,
                       style: TextStyle(
-                        fontFamily: 'Inter',
+                        fontFamily: uiFontFamily(context, 'Inter'),
                         fontFamilyFallback: const ['NotoSansKR'],
                         fontSize: context.rf(15).clamp(14, 16).toDouble(),
                         fontWeight: FontWeight.w700,
-                        height: 1.1,
+                        height: isChineseUi(context) ? 1.3 : 1.1,
                         letterSpacing: -0.1,
                       ),
                     ),

@@ -8,6 +8,7 @@ import 'package:webview_flutter/webview_flutter.dart';
 
 import '../../models/shared_link_preview.dart';
 import 'shared_link_preview_card.dart';
+import '../../l10n/ui_locale.dart';
 
 class InstagramEmbedPreview extends StatefulWidget {
   const InstagramEmbedPreview({
@@ -424,8 +425,8 @@ class _InstagramEmbedPreviewState extends State<InstagramEmbedPreview> {
                   _contentLabel,
                   maxLines: 1,
                   overflow: TextOverflow.ellipsis,
-                  style: const TextStyle(
-                    fontFamily: 'Inter',
+                  style: TextStyle(
+                    fontFamily: uiFontFamily(context, 'Inter'),
                     fontFamilyFallback: const ['NotoSansKR'],
                     fontSize: 13,
                     fontWeight: FontWeight.w600,
@@ -433,10 +434,10 @@ class _InstagramEmbedPreviewState extends State<InstagramEmbedPreview> {
                   ),
                 ),
                 const SizedBox(height: 1),
-                const Text(
+                 Text(
                   '원본에서 보기',
                   style: TextStyle(
-                    fontFamily: 'Inter',
+                    fontFamily: uiFontFamily(context, 'Inter'),
                     fontFamilyFallback: const ['NotoSansKR'],
                     fontSize: 11,
                     fontWeight: FontWeight.w400,

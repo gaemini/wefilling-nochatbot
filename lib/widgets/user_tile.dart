@@ -11,6 +11,7 @@ import '../utils/responsive_helper.dart';
 import '../l10n/app_localizations.dart';
 import '../services/cache/app_image_cache_manager.dart';
 import 'relationship_action_button.dart';
+import '../l10n/ui_locale.dart';
 
 class UserTile extends StatelessWidget {
   final UserProfile user;
@@ -181,12 +182,12 @@ class UserTile extends StatelessWidget {
         Text(
           displayName,
           style: TextStyle(
-            fontFamily: 'Inter',
+            fontFamily: uiFontFamily(context, 'Inter'),
             fontFamilyFallback: const ['NotoSansKR'],
             fontSize: compact ? context.rf(14).clamp(13, 15).toDouble() : 16,
             fontWeight: FontWeight.w700,
             color: const Color(0xFF111827),
-            height: 1.2,
+            height: isChineseUi(context) ? 1.3 : 1.2,
           ),
           maxLines: 1,
           overflow: TextOverflow.ellipsis,
@@ -217,12 +218,12 @@ class UserTile extends StatelessWidget {
                   maxLines: 1,
                   overflow: TextOverflow.ellipsis,
                   style: TextStyle(
-                    fontFamily: 'Inter',
+                    fontFamily: uiFontFamily(context, 'Inter'),
                     fontFamilyFallback: const ['NotoSansKR'],
                     fontSize: compact ? 12 : 12.5,
                     color: const Color(0xFF8B93A1),
                     fontWeight: FontWeight.w500,
-                    height: 1.2,
+                    height: isChineseUi(context) ? 1.3 : 1.2,
                   ),
                 ),
               ),
@@ -273,8 +274,8 @@ class UserTile extends StatelessWidget {
           label.isNotEmpty ? label : 'Blocked',
           maxLines: 1,
           overflow: TextOverflow.ellipsis,
-          style: const TextStyle(
-            fontFamily: 'Inter',
+          style: TextStyle(
+            fontFamily: uiFontFamily(context, 'Inter'),
             fontFamilyFallback: ['NotoSansKR'],
             fontSize: 12,
             fontWeight: FontWeight.w600,
@@ -356,8 +357,8 @@ class UserTile extends StatelessWidget {
       ),
       child: Text(
         labelForStatus(context, relationshipStatus),
-        style: const TextStyle(
-          fontFamily: 'Inter',
+        style: TextStyle(
+          fontFamily: uiFontFamily(context, 'Inter'),
           fontFamilyFallback: ['NotoSansKR'],
           fontSize: 13,
           fontWeight: FontWeight.w600,

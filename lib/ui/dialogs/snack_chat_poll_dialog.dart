@@ -4,6 +4,7 @@ import 'package:flutter/services.dart';
 import '../../models/snack_chat_message.dart';
 import '../../screens/snack_chat_poll_schedule_screen.dart';
 import '../../utils/responsive_helper.dart';
+import '../../l10n/ui_locale.dart';
 
 Future<SnackChatPoll?> showSnackChatPollDialog(BuildContext context) {
   return Navigator.of(context).push<SnackChatPoll>(
@@ -52,9 +53,9 @@ class _SnackChatPollDialogState extends State<SnackChatPollDialog> {
     if (_initializedOptions) return;
     _initializedOptions = true;
     _options.addAll(<_PollOptionDraft>[
-      _newOption(_isKo ? '참석' : 'Attending'),
-      _newOption(_isKo ? '불참' : 'Not attending'),
-      _newOption(_isKo ? '미정' : 'Maybe'),
+      _newOption((isChineseUi(context) ? '参加' : _isKo ? '참석' : 'Attending')),
+      _newOption((isChineseUi(context) ? '不参加' : _isKo ? '불참' : 'Not attending')),
+      _newOption((isChineseUi(context) ? '待定' : _isKo ? '미정' : 'Maybe')),
     ]);
   }
 
@@ -117,9 +118,9 @@ class _SnackChatPollDialogState extends State<SnackChatPollDialog> {
     if (selected == null || !mounted) return;
     if (!selected.isAfter(DateTime.now())) {
       setState(() {
-        _formError = _isKo
+        _formError = (isChineseUi(context) ? '请选择晚于当前的结束时间。' : _isKo
             ? '종료 시간은 현재 시간 이후로 선택해주세요.'
-            : 'Choose an end time later than now.';
+            : 'Choose an end time later than now.');
       });
       return;
     }
@@ -143,15 +144,15 @@ class _SnackChatPollDialogState extends State<SnackChatPollDialog> {
     if (uniqueOptions.length != normalizedOptions.length) {
       setState(() {
         _formError =
-            _isKo ? '같은 선택지를 두 번 사용할 수 없어요.' : 'Each option must be unique.';
+            (isChineseUi(context) ? '选项不能重复。' : _isKo ? '같은 선택지를 두 번 사용할 수 없어요.' : 'Each option must be unique.');
       });
       return;
     }
     if (_closesAt != null && !_closesAt!.isAfter(DateTime.now())) {
       setState(() {
-        _formError = _isKo
+        _formError = (isChineseUi(context) ? '结束时间必须晚于当前时间。' : _isKo
             ? '종료 시간은 현재 시간 이후여야 해요.'
-            : 'The end time must be later than now.';
+            : 'The end time must be later than now.');
       });
       return;
     }
@@ -208,7 +209,7 @@ class _SnackChatPollDialogState extends State<SnackChatPollDialog> {
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
                       _buildSectionLabel(
-                        _isKo ? '투표 제목' : 'Poll question',
+                        (isChineseUi(context) ? '投票问题' : _isKo ? '투표 제목' : 'Poll question'),
                       ),
                       TextFormField(
                         controller: _questionController,
@@ -223,17 +224,17 @@ class _SnackChatPollDialogState extends State<SnackChatPollDialog> {
                         },
                         validator: (value) {
                           if ((value ?? '').trim().isEmpty) {
-                            return _isKo
+                            return (isChineseUi(context) ? '请输入投票问题。' : _isKo
                                 ? '투표 제목을 입력해주세요.'
-                                : 'Enter a poll question.';
+                                : 'Enter a poll question.');
                           }
                           return null;
                         },
                         style: _inputTextStyle(context),
                         decoration: _inputDecoration(
-                          hintText: _isKo
+                          hintText: (isChineseUi(context) ? '想一起决定什么？' : _isKo
                               ? '무엇을 정할까요?'
-                              : 'What would you like to decide?',
+                              : 'What would you like to decide?'),
                         ),
                       ),
                       SizedBox(
@@ -243,13 +244,13 @@ class _SnackChatPollDialogState extends State<SnackChatPollDialog> {
                         children: [
                           Expanded(
                             child: _buildSectionLabel(
-                              _isKo ? '선택지' : 'Options',
+                              (isChineseUi(context) ? '选项' : _isKo ? '선택지' : 'Options'),
                             ),
                           ),
                           Text(
                             '${_options.length}/$_maxOptions',
-                            style: const TextStyle(
-                              fontFamily: 'Inter',
+                            style: TextStyle(
+                              fontFamily: uiFontFamily(context, 'Inter'),
                               fontFamilyFallback: const ['NotoSansKR'],
                               fontSize: 12,
                               fontWeight: FontWeight.w600,
@@ -274,9 +275,9 @@ class _SnackChatPollDialogState extends State<SnackChatPollDialog> {
                           ),
                           icon: const Icon(Icons.add_rounded, size: 19),
                           label: Text(
-                            _isKo ? '선택지 추가' : 'Add option',
-                            style: const TextStyle(
-                              fontFamily: 'Inter',
+                            (isChineseUi(context) ? '添加选项' : _isKo ? '선택지 추가' : 'Add option'),
+                            style: TextStyle(
+                              fontFamily: uiFontFamily(context, 'Inter'),
                               fontFamilyFallback: const ['NotoSansKR'],
                               fontSize: 14,
                               fontWeight: FontWeight.w700,
@@ -292,20 +293,20 @@ class _SnackChatPollDialogState extends State<SnackChatPollDialog> {
                         height: context.rs(10).clamp(8, 12).toDouble(),
                       ),
                       _buildSettingRow(
-                        title: _isKo ? '복수 선택' : 'Multiple choices',
-                        description: _isKo
+                        title: (isChineseUi(context) ? '多选' : _isKo ? '복수 선택' : 'Multiple choices'),
+                        description: (isChineseUi(context) ? '关闭后，每人只能选择一项。' : _isKo
                             ? '끄면 한 가지 선택지만 고를 수 있어요.'
-                            : 'When off, participants can choose one option.',
+                            : 'When off, participants can choose one option.'),
                         value: _allowMultiple,
                         onChanged: (value) {
                           setState(() => _allowMultiple = value);
                         },
                       ),
                       _buildSettingRow(
-                        title: _isKo ? '익명 투표' : 'Anonymous voting',
-                        description: _isKo
+                        title: (isChineseUi(context) ? '匿名投票' : _isKo ? '익명 투표' : 'Anonymous voting'),
+                        description: (isChineseUi(context) ? '不显示投票者姓名。' : _isKo
                             ? '참여자에게 누가 선택했는지 표시하지 않아요.'
-                            : 'Participant choices will not show names.',
+                            : 'Participant choices will not show names.'),
                         value: _isAnonymous,
                         onChanged: (value) {
                           setState(() => _isAnonymous = value);
@@ -320,8 +321,8 @@ class _SnackChatPollDialogState extends State<SnackChatPollDialog> {
                         Text(
                           _formError!,
                           key: const ValueKey('snack_chat_poll_form_error'),
-                          style: const TextStyle(
-                            fontFamily: 'Inter',
+                          style: TextStyle(
+                            fontFamily: uiFontFamily(context, 'Inter'),
                             fontFamilyFallback: const ['NotoSansKR'],
                             fontSize: 12.5,
                             height: 1.35,
@@ -367,12 +368,12 @@ class _SnackChatPollDialogState extends State<SnackChatPollDialog> {
             child: Padding(
               padding: const EdgeInsets.symmetric(horizontal: 104),
               child: Text(
-                _isKo ? '참석 투표 만들기' : 'Create attendance poll',
+                (isChineseUi(context) ? '创建出席投票' : _isKo ? '참석 투표 만들기' : 'Create attendance poll'),
                 maxLines: 1,
                 overflow: TextOverflow.ellipsis,
                 textAlign: TextAlign.center,
                 style: TextStyle(
-                  fontFamily: 'Inter',
+                  fontFamily: uiFontFamily(context, 'Inter'),
                   fontFamilyFallback: const ['NotoSansKR'],
                   fontSize: context.rf(18).clamp(16, 19).toDouble(),
                   fontWeight: FontWeight.w700,
@@ -389,7 +390,7 @@ class _SnackChatPollDialogState extends State<SnackChatPollDialog> {
             dimension: 48,
             child: IconButton(
               onPressed: _submit,
-              tooltip: _isKo ? '만들기' : 'Create',
+              tooltip: (isChineseUi(context) ? '创建' : _isKo ? '만들기' : 'Create'),
               icon: const Icon(Icons.check_rounded, size: 22),
               color: const Color(0xFF111827),
             ),
@@ -399,9 +400,9 @@ class _SnackChatPollDialogState extends State<SnackChatPollDialog> {
             onPressed: _submit,
             icon: const Icon(Icons.check_rounded, size: 19),
             label: Text(
-              _isKo ? '만들기' : 'Create',
-              style: const TextStyle(
-                fontFamily: 'Inter',
+              (isChineseUi(context) ? '创建' : _isKo ? '만들기' : 'Create'),
+              style: TextStyle(
+                fontFamily: uiFontFamily(context, 'Inter'),
                 fontFamilyFallback: const ['NotoSansKR'],
                 fontSize: 14,
                 fontWeight: FontWeight.w700,
@@ -422,7 +423,7 @@ class _SnackChatPollDialogState extends State<SnackChatPollDialog> {
     return Text(
       text,
       style: TextStyle(
-        fontFamily: 'Inter',
+        fontFamily: uiFontFamily(context, 'Inter'),
         fontFamilyFallback: const ['NotoSansKR'],
         fontSize: context.rf(14).clamp(13, 15).toDouble(),
         fontWeight: FontWeight.w800,
@@ -443,8 +444,8 @@ class _SnackChatPollDialogState extends State<SnackChatPollDialog> {
             child: Text(
               '${index + 1}',
               textAlign: TextAlign.center,
-              style: const TextStyle(
-                fontFamily: 'Inter',
+              style: TextStyle(
+                fontFamily: uiFontFamily(context, 'Inter'),
                 fontFamilyFallback: const ['NotoSansKR'],
                 fontSize: 13,
                 fontWeight: FontWeight.w700,
@@ -476,19 +477,19 @@ class _SnackChatPollDialogState extends State<SnackChatPollDialog> {
             },
             validator: (value) {
               if ((value ?? '').trim().isEmpty) {
-                return _isKo ? '선택지를 입력해주세요.' : 'Enter an option.';
+                return (isChineseUi(context) ? '请输入选项。' : _isKo ? '선택지를 입력해주세요.' : 'Enter an option.');
               }
               return null;
             },
             style: _inputTextStyle(context),
             decoration: _inputDecoration(
-              hintText: _isKo ? '선택지 ${index + 1}' : 'Option ${index + 1}',
+              hintText: (isChineseUi(context) ? '选项${index + 1}' : _isKo ? '선택지 ${index + 1}' : 'Option ${index + 1}'),
             ),
           ),
         ),
         IconButton(
           onPressed: _options.length > 2 ? () => _removeOption(option) : null,
-          tooltip: _isKo ? '선택지 삭제' : 'Remove option',
+          tooltip: (isChineseUi(context) ? '移除选项' : _isKo ? '선택지 삭제' : 'Remove option'),
           icon: const Icon(Icons.remove_circle_outline_rounded),
           iconSize: 20,
           color: const Color(0xFF667085),
@@ -521,8 +522,8 @@ class _SnackChatPollDialogState extends State<SnackChatPollDialog> {
                   children: [
                     Text(
                       title,
-                      style: const TextStyle(
-                        fontFamily: 'Inter',
+                      style: TextStyle(
+                        fontFamily: uiFontFamily(context, 'Inter'),
                         fontFamilyFallback: const ['NotoSansKR'],
                         fontSize: 14,
                         fontWeight: FontWeight.w700,
@@ -532,8 +533,8 @@ class _SnackChatPollDialogState extends State<SnackChatPollDialog> {
                     const SizedBox(height: 2),
                     Text(
                       description,
-                      style: const TextStyle(
-                        fontFamily: 'Inter',
+                      style: TextStyle(
+                        fontFamily: uiFontFamily(context, 'Inter'),
                         fontFamilyFallback: const ['NotoSansKR'],
                         fontSize: 12,
                         height: 1.35,
@@ -561,7 +562,7 @@ class _SnackChatPollDialogState extends State<SnackChatPollDialog> {
     final value = _closesAt;
     return Semantics(
       button: true,
-      label: _isKo ? '투표 종료 시간 선택' : 'Choose poll end time',
+      label: (isChineseUi(context) ? '选择投票结束时间' : _isKo ? '투표 종료 시간 선택' : 'Choose poll end time'),
       child: InkWell(
         onTap: _selectClosingTime,
         child: Padding(
@@ -579,9 +580,9 @@ class _SnackChatPollDialogState extends State<SnackChatPollDialog> {
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
                     Text(
-                      _isKo ? '종료 시간' : 'End time',
-                      style: const TextStyle(
-                        fontFamily: 'Inter',
+                      (isChineseUi(context) ? '结束时间' : _isKo ? '종료 시간' : 'End time'),
+                      style: TextStyle(
+                        fontFamily: uiFontFamily(context, 'Inter'),
                         fontFamilyFallback: const ['NotoSansKR'],
                         fontSize: 14,
                         fontWeight: FontWeight.w700,
@@ -591,12 +592,12 @@ class _SnackChatPollDialogState extends State<SnackChatPollDialog> {
                     const SizedBox(height: 2),
                     Text(
                       value == null
-                          ? (_isKo ? '종료 시간 없음' : 'No end time')
+                          ? ((isChineseUi(context) ? '不设结束时间' : _isKo ? '종료 시간 없음' : 'No end time'))
                           : _formatClosingTime(value),
                       maxLines: 2,
                       overflow: TextOverflow.ellipsis,
-                      style: const TextStyle(
-                        fontFamily: 'Inter',
+                      style: TextStyle(
+                        fontFamily: uiFontFamily(context, 'Inter'),
                         fontFamilyFallback: const ['NotoSansKR'],
                         fontSize: 12.5,
                         height: 1.35,
@@ -615,7 +616,7 @@ class _SnackChatPollDialogState extends State<SnackChatPollDialog> {
                       _formError = null;
                     });
                   },
-                  tooltip: _isKo ? '종료 시간 삭제' : 'Remove end time',
+                  tooltip: (isChineseUi(context) ? '移除结束时间' : _isKo ? '종료 시간 삭제' : 'Remove end time'),
                   icon: const Icon(Icons.close_rounded),
                   iconSize: 19,
                   color: const Color(0xFF667085),
@@ -638,7 +639,7 @@ class _SnackChatPollDialogState extends State<SnackChatPollDialog> {
 
   TextStyle _inputTextStyle(BuildContext context) {
     return TextStyle(
-      fontFamily: 'Inter',
+      fontFamily: uiFontFamily(context, 'Inter'),
       fontFamilyFallback: const ['NotoSansKR'],
       fontSize: context.rf(15).clamp(14, 16).toDouble(),
       height: 1.35,
@@ -650,8 +651,8 @@ class _SnackChatPollDialogState extends State<SnackChatPollDialog> {
   InputDecoration _inputDecoration({required String hintText}) {
     return InputDecoration(
       hintText: hintText,
-      hintStyle: const TextStyle(
-        fontFamily: 'Inter',
+      hintStyle: TextStyle(
+        fontFamily: uiFontFamily(context, 'Inter'),
         fontFamilyFallback: const ['NotoSansKR'],
         fontSize: 14,
         fontWeight: FontWeight.w400,
@@ -675,11 +676,11 @@ class _SnackChatPollDialogState extends State<SnackChatPollDialog> {
       focusedErrorBorder: const UnderlineInputBorder(
         borderSide: BorderSide(color: Color(0xFFD92D20), width: 1.4),
       ),
-      errorStyle: const TextStyle(
-        fontFamily: 'Inter',
+      errorStyle: TextStyle(
+        fontFamily: uiFontFamily(context, 'Inter'),
         fontFamilyFallback: const ['NotoSansKR'],
         fontSize: 11.5,
-        height: 1.2,
+        height: isChineseUi(context) ? 1.3 : 1.2,
         fontWeight: FontWeight.w500,
       ),
     );

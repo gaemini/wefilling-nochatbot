@@ -6,6 +6,7 @@ import '../screens/semester_todo_screen.dart';
 import '../screens/student_type_selection_screen.dart';
 import '../services/semester_todo_service.dart';
 import '../ui/widgets/app_icon_button.dart';
+import '../l10n/ui_locale.dart';
 
 class SemesterTodoAppBarButton extends StatefulWidget {
   const SemesterTodoAppBarButton({super.key});
@@ -48,9 +49,9 @@ class _SemesterTodoAppBarButtonState extends State<SemesterTodoAppBarButton> {
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
           content: Text(
-            Localizations.localeOf(context).languageCode == 'ko'
+            (isChineseUi(context) ? '待办列表加载失败，请重试。' : Localizations.localeOf(context).languageCode == 'ko'
                 ? 'To-do를 불러오지 못했어요. 다시 시도해 주세요.'
-                : 'Could not load your to-do list. Please try again.',
+                : 'Could not load your to-do list. Please try again.'),
           ),
         ),
       );
@@ -79,7 +80,7 @@ class _SemesterTodoAppBarButtonState extends State<SemesterTodoAppBarButton> {
           icon: Icons.checklist_rounded,
           iconSize: 23,
           onPressed: _open,
-          semanticLabel: korean ? '학기 To-do List' : 'Semester To-do List',
+          semanticLabel: (isChineseUi(context) ? '学期待办' : korean ? '학기 To-do List' : 'Semester To-do List'),
           visualDensity: VisualDensity.compact,
         ),
         if (_pending > 0)
@@ -97,8 +98,8 @@ class _SemesterTodoAppBarButtonState extends State<SemesterTodoAppBarButton> {
                 ),
                 child: Text(
                   _pending > 9 ? '9+' : '$_pending',
-                  style: const TextStyle(
-                    fontFamily: 'Inter',
+                  style: TextStyle(
+                    fontFamily: uiFontFamily(context, 'Inter'),
                     fontFamilyFallback: const ['NotoSansKR'],
                     fontSize: 9,
                     height: 1,

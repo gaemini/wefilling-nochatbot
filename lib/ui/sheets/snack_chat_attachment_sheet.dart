@@ -3,6 +3,7 @@ import 'dart:math' as math;
 import 'package:flutter/material.dart';
 
 import '../../utils/responsive_helper.dart';
+import '../../l10n/ui_locale.dart';
 
 enum SnackChatAttachmentAction { image, file, poll }
 
@@ -95,11 +96,11 @@ class SnackChatAttachmentSheet extends StatelessWidget {
                     isCompact ? 4 : 6,
                   ),
                   child: Text(
-                    isKorean ? '보낼 항목' : 'Send',
+                    (isChineseUi(context) ? '发送' : isKorean ? '보낼 항목' : 'Send'),
                     maxLines: 1,
                     overflow: TextOverflow.ellipsis,
                     style: TextStyle(
-                      fontFamily: 'Inter',
+                      fontFamily: uiFontFamily(context, 'Inter'),
                       fontFamilyFallback: const ['NotoSansKR'],
                       fontSize: context.rf(17).clamp(16, 18).toDouble(),
                       fontWeight: FontWeight.w800,
@@ -109,10 +110,10 @@ class SnackChatAttachmentSheet extends StatelessWidget {
                 ),
                 _AttachmentActionRow(
                   icon: Icons.image_outlined,
-                  title: isKorean ? '이미지' : 'Image',
-                  description: isKorean
+                  title: (isChineseUi(context) ? '图片' : isKorean ? '이미지' : 'Image'),
+                  description: (isChineseUi(context) ? '选择要发送到群聊的照片' : isKorean
                       ? '사진을 선택해 대화에 보내기'
-                      : 'Choose a photo to send in this chat',
+                      : 'Choose a photo to send in this chat'),
                   compact: isCompact,
                   onTap: () => Navigator.of(context).pop(
                     SnackChatAttachmentAction.image,
@@ -120,10 +121,10 @@ class SnackChatAttachmentSheet extends StatelessWidget {
                 ),
                 _AttachmentActionRow(
                   icon: Icons.attach_file_rounded,
-                  title: isKorean ? '파일' : 'File',
-                  description: isKorean
+                  title: (isChineseUi(context) ? '文件' : isKorean ? '파일' : 'File'),
+                  description: (isChineseUi(context) ? '选择要发送到群聊的文档' : isKorean
                       ? '문서 파일을 선택해 대화에 보내기'
-                      : 'Choose documents to send in this chat',
+                      : 'Choose documents to send in this chat'),
                   compact: isCompact,
                   onTap: () => Navigator.of(context).pop(
                     SnackChatAttachmentAction.file,
@@ -131,10 +132,10 @@ class SnackChatAttachmentSheet extends StatelessWidget {
                 ),
                 _AttachmentActionRow(
                   icon: Icons.poll_outlined,
-                  title: isKorean ? '투표' : 'Poll',
-                  description: isKorean
+                  title: (isChineseUi(context) ? '投票' : isKorean ? '투표' : 'Poll'),
+                  description: (isChineseUi(context) ? '向群友提问并收集意见' : isKorean
                       ? '대화 참여자에게 질문하고 의견 모으기'
-                      : 'Ask the chat and collect responses',
+                      : 'Ask the chat and collect responses'),
                   compact: isCompact,
                   onTap: () => Navigator.of(context).pop(
                     SnackChatAttachmentAction.poll,
@@ -202,7 +203,7 @@ class _AttachmentActionRow extends StatelessWidget {
                         maxLines: 1,
                         overflow: TextOverflow.ellipsis,
                         style: TextStyle(
-                          fontFamily: 'Inter',
+                          fontFamily: uiFontFamily(context, 'Inter'),
                           fontFamilyFallback: const ['NotoSansKR'],
                           fontSize: context.rf(15.5).clamp(14.5, 16).toDouble(),
                           fontWeight: FontWeight.w800,
@@ -215,7 +216,7 @@ class _AttachmentActionRow extends StatelessWidget {
                         maxLines: 2,
                         overflow: TextOverflow.ellipsis,
                         style: TextStyle(
-                          fontFamily: 'Inter',
+                          fontFamily: uiFontFamily(context, 'Inter'),
                           fontFamilyFallback: const ['NotoSansKR'],
                           fontSize: context.rf(12.5).clamp(12, 13.5).toDouble(),
                           fontWeight: FontWeight.w500,

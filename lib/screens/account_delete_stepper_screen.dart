@@ -8,6 +8,7 @@ import '../services/account_deletion_service.dart';
 import '../providers/auth_provider.dart' as app_auth;
 import 'login_screen.dart';
 import 'password_reset_screen.dart';
+import '../l10n/ui_locale.dart';
 
 class AccountDeleteStepperScreen extends StatefulWidget {
   const AccountDeleteStepperScreen({Key? key}) : super(key: key);
@@ -69,7 +70,7 @@ class _AccountDeleteStepperScreenState
                     : Text(
                         '${index + 1}',
                         style: TextStyle(
-                          fontFamily: 'Inter',
+                          fontFamily: uiFontFamily(context, 'Inter'),
                           fontFamilyFallback: const ['NotoSansKR'],
                           fontSize: 13,
                           fontWeight: FontWeight.w600,
@@ -99,8 +100,8 @@ class _AccountDeleteStepperScreenState
             Expanded(
               child: Text(
                 titles[_currentStep],
-                style: const TextStyle(
-                  fontFamily: 'Inter',
+                style: TextStyle(
+                  fontFamily: uiFontFamily(context, 'Inter'),
                   fontFamilyFallback: ['NotoSansKR'],
                   fontSize: 22,
                   fontWeight: FontWeight.w700,
@@ -111,8 +112,8 @@ class _AccountDeleteStepperScreenState
             const SizedBox(width: 12),
             Text(
               '${_currentStep + 1} / ${titles.length}',
-              style: const TextStyle(
-                fontFamily: 'Inter',
+              style: TextStyle(
+                fontFamily: uiFontFamily(context, 'Inter'),
                 fontFamilyFallback: ['NotoSansKR'],
                 fontSize: 13,
                 color: Color(0xFF94A3B8),
@@ -182,8 +183,8 @@ class _AccountDeleteStepperScreenState
                   Expanded(
                     child: Text(
                       reason,
-                      style: const TextStyle(
-                        fontFamily: 'Inter',
+                      style: TextStyle(
+                        fontFamily: uiFontFamily(context, 'Inter'),
                         fontFamilyFallback: ['NotoSansKR'],
                         fontSize: 15,
                         height: 1.35,
@@ -202,16 +203,16 @@ class _AccountDeleteStepperScreenState
             minLines: 1,
             maxLines: 3,
             textInputAction: TextInputAction.done,
-            style: const TextStyle(
-              fontFamily: 'Inter',
+            style: TextStyle(
+              fontFamily: uiFontFamily(context, 'Inter'),
               fontFamilyFallback: ['NotoSansKR'],
               fontSize: 15,
               color: Color(0xFF111827),
             ),
             decoration: InputDecoration(
               hintText: loc.otherReasonOptional,
-              hintStyle: const TextStyle(
-                fontFamily: 'Inter',
+              hintStyle: TextStyle(
+                fontFamily: uiFontFamily(context, 'Inter'),
                 fontFamilyFallback: ['NotoSansKR'],
                 color: Color(0xFF9CA3AF),
               ),
@@ -287,8 +288,8 @@ class _AccountDeleteStepperScreenState
         const SizedBox(height: 10),
         Text(
           loc.actionCannotBeUndone,
-          style: const TextStyle(
-            fontFamily: 'Inter',
+          style: TextStyle(
+            fontFamily: uiFontFamily(context, 'Inter'),
             fontFamilyFallback: ['NotoSansKR'],
             color: Color(0xFFDC2626),
             fontSize: 14,
@@ -306,8 +307,8 @@ class _AccountDeleteStepperScreenState
           children: [
             Text(
               '${loc.deleteReasonLabel}  ',
-              style: const TextStyle(
-                fontFamily: 'Inter',
+              style: TextStyle(
+                fontFamily: uiFontFamily(context, 'Inter'),
                 fontFamilyFallback: ['NotoSansKR'],
                 fontSize: 14,
                 fontWeight: FontWeight.w600,
@@ -317,8 +318,8 @@ class _AccountDeleteStepperScreenState
             Expanded(
               child: Text(
                 reason,
-                style: const TextStyle(
-                  fontFamily: 'Inter',
+                style: TextStyle(
+                  fontFamily: uiFontFamily(context, 'Inter'),
                   fontFamilyFallback: ['NotoSansKR'],
                   fontSize: 14,
                   color: Color(0xFF64748B),
@@ -331,8 +332,8 @@ class _AccountDeleteStepperScreenState
         const SizedBox(height: 10),
         Text(
           loc.postsAnonymizedAutomatic,
-          style: const TextStyle(
-            fontFamily: 'Inter',
+          style: TextStyle(
+            fontFamily: uiFontFamily(context, 'Inter'),
             fontFamilyFallback: ['NotoSansKR'],
             fontSize: 14,
             color: Color(0xFF64748B),
@@ -368,8 +369,8 @@ class _AccountDeleteStepperScreenState
           isPasswordLogin
               ? loc.emailReauthenticationDescription
               : loc.reLoginForVerification,
-          style: const TextStyle(
-            fontFamily: 'Inter',
+          style: TextStyle(
+            fontFamily: uiFontFamily(context, 'Inter'),
             fontFamilyFallback: ['NotoSansKR'],
             fontSize: 15,
             color: Color(0xFF334155),
@@ -402,8 +403,8 @@ class _AccountDeleteStepperScreenState
                   user?.email ?? '',
                   maxLines: 1,
                   overflow: TextOverflow.ellipsis,
-                  style: const TextStyle(
-                    fontFamily: 'Inter',
+                  style: TextStyle(
+                    fontFamily: uiFontFamily(context, 'Inter'),
                     fontFamilyFallback: ['NotoSansKR'],
                     fontSize: 14,
                     fontWeight: FontWeight.w600,
@@ -416,8 +417,8 @@ class _AccountDeleteStepperScreenState
           const SizedBox(height: 20),
           Text(
             loc.currentPassword,
-            style: const TextStyle(
-              fontFamily: 'Inter',
+            style: TextStyle(
+              fontFamily: uiFontFamily(context, 'Inter'),
               fontFamilyFallback: ['NotoSansKR'],
               fontSize: 14,
               fontWeight: FontWeight.w600,
@@ -440,8 +441,8 @@ class _AccountDeleteStepperScreenState
             },
             decoration: InputDecoration(
               hintText: loc.currentPasswordHint,
-              hintStyle: const TextStyle(
-                fontFamily: 'Inter',
+              hintStyle: TextStyle(
+                fontFamily: uiFontFamily(context, 'Inter'),
                 fontFamilyFallback: ['NotoSansKR'],
                 color: Color(0xFF94A3B8),
                 fontSize: 14,
@@ -505,8 +506,8 @@ class _AccountDeleteStepperScreenState
                 Expanded(
                   child: Text(
                     _reauthErrorMessage!,
-                    style: const TextStyle(
-                      fontFamily: 'Inter',
+                    style: TextStyle(
+                      fontFamily: uiFontFamily(context, 'Inter'),
                       fontFamilyFallback: ['NotoSansKR'],
                       fontSize: 13,
                       height: 1.4,
@@ -521,8 +522,8 @@ class _AccountDeleteStepperScreenState
         const SizedBox(height: 26),
         Text(
           loc.accountDeletedImmediatelyAfterAuth,
-          style: const TextStyle(
-            fontFamily: 'Inter',
+          style: TextStyle(
+            fontFamily: uiFontFamily(context, 'Inter'),
             fontFamilyFallback: ['NotoSansKR'],
             color: Color(0xFFDC2626),
             fontSize: 14,
@@ -551,7 +552,7 @@ class _AccountDeleteStepperScreenState
     );
   }
 
-  static Widget _compactNoticeList({
+  Widget _compactNoticeList({
     required String title,
     required IconData icon,
     required Color iconColor,
@@ -567,8 +568,8 @@ class _AccountDeleteStepperScreenState
             Expanded(
               child: Text(
                 title,
-                style: const TextStyle(
-                  fontFamily: 'Inter',
+                style: TextStyle(
+                  fontFamily: uiFontFamily(context, 'Inter'),
                   fontFamilyFallback: ['NotoSansKR'],
                   fontWeight: FontWeight.w600,
                   fontSize: 16,
@@ -593,8 +594,8 @@ class _AccountDeleteStepperScreenState
                 Expanded(
                   child: Text(
                     item,
-                    style: const TextStyle(
-                      fontFamily: 'Inter',
+                    style: TextStyle(
+                      fontFamily: uiFontFamily(context, 'Inter'),
                       fontFamilyFallback: ['NotoSansKR'],
                       fontSize: 14,
                       color: Color(0xFF475569),
@@ -609,7 +610,7 @@ class _AccountDeleteStepperScreenState
     );
   }
 
-  static Widget _compactLeadingMessage({
+  Widget _compactLeadingMessage({
     required IconData icon,
     required String text,
     required Color color,
@@ -624,7 +625,7 @@ class _AccountDeleteStepperScreenState
           child: Text(
             text,
             style: TextStyle(
-              fontFamily: 'Inter',
+              fontFamily: uiFontFamily(context, 'Inter'),
               fontFamilyFallback: const ['NotoSansKR'],
               fontSize: emphasized ? 16 : 14,
               fontWeight: emphasized ? FontWeight.w600 : FontWeight.w400,
@@ -637,7 +638,7 @@ class _AccountDeleteStepperScreenState
     );
   }
 
-  static Widget _compactStatusRow(String text, {bool positive = false}) {
+  Widget _compactStatusRow(String text, {bool positive = false}) {
     return Padding(
       padding: const EdgeInsets.only(bottom: 10),
       child: Row(
@@ -652,8 +653,8 @@ class _AccountDeleteStepperScreenState
           Expanded(
             child: Text(
               text,
-              style: const TextStyle(
-                fontFamily: 'Inter',
+              style: TextStyle(
+                fontFamily: uiFontFamily(context, 'Inter'),
                 fontFamilyFallback: ['NotoSansKR'],
                 fontSize: 14,
                 color: Color(0xFF334155),
@@ -714,8 +715,8 @@ class _AccountDeleteStepperScreenState
         shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(18)),
         title: Text(
           loc.reallyDelete,
-          style: const TextStyle(
-            fontFamily: 'Inter',
+          style: TextStyle(
+            fontFamily: uiFontFamily(context, 'Inter'),
             fontFamilyFallback: ['NotoSansKR'],
             fontSize: 19,
             fontWeight: FontWeight.w700,
@@ -724,8 +725,8 @@ class _AccountDeleteStepperScreenState
         ),
         content: Text(
           loc.deleteConfirmationMessage,
-          style: const TextStyle(
-            fontFamily: 'Inter',
+          style: TextStyle(
+            fontFamily: uiFontFamily(context, 'Inter'),
             fontFamilyFallback: ['NotoSansKR'],
             fontSize: 14,
             height: 1.45,
@@ -844,8 +845,8 @@ class _AccountDeleteStepperScreenState
         ),
         title: Text(
           loc.deleteAccount,
-          style: const TextStyle(
-            fontFamily: 'Inter',
+          style: TextStyle(
+            fontFamily: uiFontFamily(context, 'Inter'),
             fontFamilyFallback: ['NotoSansKR'],
             fontSize: 18,
             fontWeight: FontWeight.w600,
@@ -929,8 +930,8 @@ class _AccountDeleteStepperScreenState
                                     )
                                   : Text(
                                       isLastStep ? loc.deleteAccount : loc.next,
-                                      style: const TextStyle(
-                                        fontFamily: 'Inter',
+                                      style: TextStyle(
+                                        fontFamily: uiFontFamily(context, 'Inter'),
                                         fontFamilyFallback: ['NotoSansKR'],
                                         fontSize: 16,
                                         fontWeight: FontWeight.w600,
@@ -947,8 +948,8 @@ class _AccountDeleteStepperScreenState
                             ),
                             child: Text(
                               loc.back,
-                              style: const TextStyle(
-                                fontFamily: 'Inter',
+                              style: TextStyle(
+                                fontFamily: uiFontFamily(context, 'Inter'),
                                 fontFamilyFallback: ['NotoSansKR'],
                                 fontSize: 15,
                                 fontWeight: FontWeight.w500,

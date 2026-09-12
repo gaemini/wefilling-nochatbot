@@ -21,6 +21,7 @@ import '../../utils/responsive_helper.dart';
 import '../dialogs/block_dialog.dart';
 import '../snackbar/app_snackbar.dart';
 import 'translatable_content.dart';
+import '../../l10n/ui_locale.dart';
 
 class EnhancedCommentWidget extends StatefulWidget {
   final Comment comment;
@@ -284,8 +285,8 @@ class _EnhancedCommentWidgetState extends State<EnhancedCommentWidget> {
               const SizedBox(width: 12),
               Text(
                 AppLocalizations.of(context)!.report,
-                style: const TextStyle(
-                  fontFamily: 'Inter',
+                style: TextStyle(
+                  fontFamily: uiFontFamily(context, 'Inter'),
                   fontFamilyFallback: const ['NotoSansKR'],
                   fontSize: 18,
                   fontWeight: FontWeight.w700,
@@ -300,8 +301,8 @@ class _EnhancedCommentWidgetState extends State<EnhancedCommentWidget> {
             children: [
               Text(
                 AppLocalizations.of(context)!.reportConfirm,
-                style: const TextStyle(
-                  fontFamily: 'Inter',
+                style: TextStyle(
+                  fontFamily: uiFontFamily(context, 'Inter'),
                   fontFamilyFallback: const ['NotoSansKR'],
                   fontSize: 15,
                   fontWeight: FontWeight.w500,
@@ -312,28 +313,28 @@ class _EnhancedCommentWidgetState extends State<EnhancedCommentWidget> {
               const SizedBox(height: 16),
               TextField(
                 controller: reasonController,
-                style: const TextStyle(
-                  fontFamily: 'Inter',
+                style: TextStyle(
+                  fontFamily: uiFontFamily(context, 'Inter'),
                   fontFamilyFallback: const ['NotoSansKR'],
                   fontSize: 14,
                   color: Color(0xFF111827),
                 ),
                 decoration: InputDecoration(
                   labelText:
-                      Localizations.localeOf(context).languageCode == 'ko'
+                      (isChineseUi(context) ? '原因' : Localizations.localeOf(context).languageCode == 'ko'
                           ? '신고 사유'
-                          : 'Reason',
-                  hintText: Localizations.localeOf(context).languageCode == 'ko'
+                          : 'Reason'),
+                  hintText: (isChineseUi(context) ? '请填写原因，如辱骂、垃圾信息等' : Localizations.localeOf(context).languageCode == 'ko'
                       ? '신고 사유를 입력해주세요 (예: 욕설, 비방)'
-                      : 'Please enter the reason (e.g., abuse, spam)',
-                  labelStyle: const TextStyle(
-                    fontFamily: 'Inter',
+                      : 'Please enter the reason (e.g., abuse, spam)'),
+                  labelStyle: TextStyle(
+                    fontFamily: uiFontFamily(context, 'Inter'),
                     fontFamilyFallback: const ['NotoSansKR'],
                     fontSize: 14,
                     color: Color(0xFF6B7280),
                   ),
-                  hintStyle: const TextStyle(
-                    fontFamily: 'Inter',
+                  hintStyle: TextStyle(
+                    fontFamily: uiFontFamily(context, 'Inter'),
                     fontFamilyFallback: const ['NotoSansKR'],
                     fontSize: 14,
                     color: Color(0xFF9CA3AF),
@@ -376,8 +377,8 @@ class _EnhancedCommentWidgetState extends State<EnhancedCommentWidget> {
                     ),
                     child: Text(
                       AppLocalizations.of(context)!.cancel,
-                      style: const TextStyle(
-                        fontFamily: 'Inter',
+                      style: TextStyle(
+                        fontFamily: uiFontFamily(context, 'Inter'),
                         fontFamilyFallback: const ['NotoSansKR'],
                         fontSize: 14,
                         fontWeight: FontWeight.w700,
@@ -401,8 +402,8 @@ class _EnhancedCommentWidgetState extends State<EnhancedCommentWidget> {
                     ),
                     child: Text(
                       AppLocalizations.of(context)!.report,
-                      style: const TextStyle(
-                        fontFamily: 'Inter',
+                      style: TextStyle(
+                        fontFamily: uiFontFamily(context, 'Inter'),
                         fontFamilyFallback: const ['NotoSansKR'],
                         fontSize: 14,
                         fontWeight: FontWeight.w700,
@@ -423,7 +424,7 @@ class _EnhancedCommentWidgetState extends State<EnhancedCommentWidget> {
         final isKo = Localizations.localeOf(context).languageCode == 'ko';
         AppSnackBar.show(
           context,
-          message: isKo ? '신고 사유를 입력해주세요.' : 'Please enter a report reason.',
+          message: (isChineseUi(context) ? '请填写举报原因。' : isKo ? '신고 사유를 입력해주세요.' : 'Please enter a report reason.'),
           type: AppSnackBarType.warning,
         );
         return;
@@ -504,7 +505,7 @@ class _EnhancedCommentWidgetState extends State<EnhancedCommentWidget> {
                     Text(
                       AppLocalizations.of(dialogContext)!.delete,
                       style: TextStyle(
-                        fontFamily: 'Inter',
+                        fontFamily: uiFontFamily(context, 'Inter'),
                         fontFamilyFallback: const ['NotoSansKR'],
                         fontSize: dialogContext.rf(17).clamp(16, 18).toDouble(),
                         fontWeight: FontWeight.w700,
@@ -518,7 +519,7 @@ class _EnhancedCommentWidgetState extends State<EnhancedCommentWidget> {
                     Text(
                       _getDeleteQuestion(dialogContext),
                       style: TextStyle(
-                        fontFamily: 'Inter',
+                        fontFamily: uiFontFamily(context, 'Inter'),
                         fontFamilyFallback: const ['NotoSansKR'],
                         fontSize:
                             dialogContext.rf(14.5).clamp(13.5, 15.5).toDouble(),
@@ -533,7 +534,7 @@ class _EnhancedCommentWidgetState extends State<EnhancedCommentWidget> {
                     Text(
                       _getDeleteWarning(dialogContext),
                       style: TextStyle(
-                        fontFamily: 'Inter',
+                        fontFamily: uiFontFamily(context, 'Inter'),
                         fontFamilyFallback: const ['NotoSansKR'],
                         fontSize:
                             dialogContext.rf(13).clamp(12.5, 14).toDouble(),
@@ -560,8 +561,8 @@ class _EnhancedCommentWidgetState extends State<EnhancedCommentWidget> {
                             style: _commentDeleteActionStyle(secondaryText),
                             child: Text(
                               AppLocalizations.of(dialogContext)!.cancel,
-                              style: const TextStyle(
-                                fontFamily: 'Inter',
+                              style: TextStyle(
+                                fontFamily: uiFontFamily(context, 'Inter'),
                                 fontFamilyFallback: const ['NotoSansKR'],
                                 fontSize: 14,
                                 fontWeight: FontWeight.w600,
@@ -576,8 +577,8 @@ class _EnhancedCommentWidgetState extends State<EnhancedCommentWidget> {
                             style: _commentDeleteActionStyle(dangerColor),
                             child: Text(
                               AppLocalizations.of(dialogContext)!.delete,
-                              style: const TextStyle(
-                                fontFamily: 'Inter',
+                              style: TextStyle(
+                                fontFamily: uiFontFamily(context, 'Inter'),
                                 fontFamilyFallback: const ['NotoSansKR'],
                                 fontSize: 14,
                                 fontWeight: FontWeight.w700,
@@ -603,14 +604,14 @@ class _EnhancedCommentWidgetState extends State<EnhancedCommentWidget> {
 
   String _getDeleteQuestion(BuildContext context) {
     final locale = Localizations.localeOf(context).languageCode;
-    return locale == 'ko' ? '댓글을 삭제할까요?' : 'Delete this comment?';
+    return (isChineseUi(context) ? '删除这条评论？' : locale == 'ko' ? '댓글을 삭제할까요?' : 'Delete this comment?');
   }
 
   String _getDeleteWarning(BuildContext context) {
     final locale = Localizations.localeOf(context).languageCode;
-    return locale == 'ko'
+    return (isChineseUi(context) ? '删除后，此评论将无法恢复。' : locale == 'ko'
         ? '삭제한 댓글은 다시 복구할 수 없어요.'
-        : 'This comment cannot be restored after deletion.';
+        : 'This comment cannot be restored after deletion.');
   }
 
   String _localizedText({required String ko, required String en}) {
@@ -642,8 +643,8 @@ class _EnhancedCommentWidgetState extends State<EnhancedCommentWidget> {
                 ko: '차단한 댓글입니다.',
                 en: 'Blocked comment.',
               ),
-              style: const TextStyle(
-                fontFamily: 'Inter',
+              style: TextStyle(
+                fontFamily: uiFontFamily(context, 'Inter'),
                 fontFamilyFallback: const ['NotoSansKR'],
                 fontSize: 13,
                 fontWeight: FontWeight.w700,
@@ -656,8 +657,8 @@ class _EnhancedCommentWidgetState extends State<EnhancedCommentWidget> {
                 ko: '길게 눌러 차단을 해제할 수 있어요.',
                 en: 'Long press to unblock.',
               ),
-              style: const TextStyle(
-                fontFamily: 'Inter',
+              style: TextStyle(
+                fontFamily: uiFontFamily(context, 'Inter'),
                 fontFamilyFallback: const ['NotoSansKR'],
                 fontSize: 12,
                 fontWeight: FontWeight.w500,
@@ -699,8 +700,8 @@ class _EnhancedCommentWidgetState extends State<EnhancedCommentWidget> {
                 const SizedBox(width: 12),
                 Text(
                   _localizedText(ko: '댓글 차단 해제', en: 'Unblock comment'),
-                  style: const TextStyle(
-                    fontFamily: 'Inter',
+                  style: TextStyle(
+                    fontFamily: uiFontFamily(context, 'Inter'),
                     fontFamilyFallback: const ['NotoSansKR'],
                     fontSize: 18,
                     fontWeight: FontWeight.w700,
@@ -716,8 +717,8 @@ class _EnhancedCommentWidgetState extends State<EnhancedCommentWidget> {
                   ko: '이 댓글 차단을 해제하시겠습니까?',
                   en: 'Do you want to unblock this comment?',
                 ),
-                style: const TextStyle(
-                  fontFamily: 'Inter',
+                style: TextStyle(
+                  fontFamily: uiFontFamily(context, 'Inter'),
                   fontFamilyFallback: const ['NotoSansKR'],
                   fontSize: 15,
                   fontWeight: FontWeight.w400,
@@ -743,8 +744,8 @@ class _EnhancedCommentWidgetState extends State<EnhancedCommentWidget> {
                       ),
                       child: Text(
                         _localizedText(ko: '취소', en: 'Cancel'),
-                        style: const TextStyle(
-                          fontFamily: 'Inter',
+                        style: TextStyle(
+                          fontFamily: uiFontFamily(context, 'Inter'),
                           fontFamilyFallback: const ['NotoSansKR'],
                           fontSize: 14,
                           fontWeight: FontWeight.w700,
@@ -768,8 +769,8 @@ class _EnhancedCommentWidgetState extends State<EnhancedCommentWidget> {
                       ),
                       child: Text(
                         _localizedText(ko: '해제', en: 'Unblock'),
-                        style: const TextStyle(
-                          fontFamily: 'Inter',
+                        style: TextStyle(
+                          fontFamily: uiFontFamily(context, 'Inter'),
                           fontFamilyFallback: const ['NotoSansKR'],
                           fontSize: 14,
                           fontWeight: FontWeight.w700,
@@ -901,8 +902,8 @@ class _EnhancedCommentWidgetState extends State<EnhancedCommentWidget> {
                         ko: '답글 ${widget.replies.length}개 보기',
                         en: 'View ${widget.replies.length} replies',
                       ),
-                style: const TextStyle(
-                  fontFamily: 'Inter',
+                style: TextStyle(
+                  fontFamily: uiFontFamily(context, 'Inter'),
                   fontFamilyFallback: const ['NotoSansKR'],
                   fontSize: 12,
                   fontWeight: FontWeight.w600,
@@ -979,8 +980,8 @@ class _EnhancedCommentWidgetState extends State<EnhancedCommentWidget> {
                     ko: '삭제된 댓글입니다.',
                     en: 'This comment was deleted.',
                   ),
-                  style: const TextStyle(
-                    fontFamily: 'Inter',
+                  style: TextStyle(
+                    fontFamily: uiFontFamily(context, 'Inter'),
                     fontFamilyFallback: const ['NotoSansKR'],
                     fontSize: 14,
                     fontWeight: FontWeight.w500,
@@ -1021,24 +1022,24 @@ class _EnhancedCommentWidgetState extends State<EnhancedCommentWidget> {
         isLiked ? const Color(0xFFEF4444) : const Color(0xFF9CA3AF);
     final likeCountColor =
         isLiked ? const Color(0xFFEF4444) : const Color(0xFF6B7280);
-    const bodyStyle = TextStyle(
-      fontFamily: 'Inter',
+    final bodyStyle = TextStyle(
+      fontFamily: uiFontFamily(context, 'Inter'),
       fontFamilyFallback: const ['NotoSansKR'],
       fontSize: 15,
       fontWeight: FontWeight.w700, // 본문 bold
       color: Color(0xFF1F2937), // textSecondary
       height: 1.5,
     );
-    const linkStyle = TextStyle(
-      fontFamily: 'Inter',
+    final linkStyle = TextStyle(
+      fontFamily: uiFontFamily(context, 'Inter'),
       fontFamilyFallback: const ['NotoSansKR'],
       fontSize: 15,
       fontWeight: FontWeight.w700,
       color: Color(0xFF6366F1), // BrandColors.primary
       decoration: TextDecoration.underline,
     );
-    const mentionStyle = TextStyle(
-      fontFamily: 'Inter',
+    final mentionStyle = TextStyle(
+      fontFamily: uiFontFamily(context, 'Inter'),
       fontFamilyFallback: const ['NotoSansKR'],
       fontSize: 13,
       fontWeight: FontWeight.w700,
@@ -1146,8 +1147,8 @@ class _EnhancedCommentWidgetState extends State<EnhancedCommentWidget> {
                             widget.isAnonymousPost
                                 ? Text(
                                     effectiveDisplayName,
-                                    style: const TextStyle(
-                                      fontFamily: 'Inter',
+                                    style: TextStyle(
+                                      fontFamily: uiFontFamily(context, 'Inter'),
                                       fontFamilyFallback: const ['NotoSansKR'],
                                       fontSize: 14,
                                       fontWeight: FontWeight.w700,
@@ -1160,8 +1161,8 @@ class _EnhancedCommentWidgetState extends State<EnhancedCommentWidget> {
                                         : _openCommentAuthorProfile,
                                     child: Text(
                                       effectiveDisplayName,
-                                      style: const TextStyle(
-                                        fontFamily: 'Inter',
+                                      style: TextStyle(
+                                        fontFamily: uiFontFamily(context, 'Inter'),
                                         fontFamilyFallback: const [
                                           'NotoSansKR'
                                         ],
@@ -1174,8 +1175,8 @@ class _EnhancedCommentWidgetState extends State<EnhancedCommentWidget> {
                             const SizedBox(width: 6),
                             Text(
                               widget.comment.getFormattedTime(context),
-                              style: const TextStyle(
-                                fontFamily: 'Inter',
+                              style: TextStyle(
+                                fontFamily: uiFontFamily(context, 'Inter'),
                                 fontFamilyFallback: const ['NotoSansKR'],
                                 fontSize: 12,
                                 fontWeight: FontWeight.w400,
@@ -1269,12 +1270,12 @@ class _EnhancedCommentWidgetState extends State<EnhancedCommentWidget> {
                               child: Text(
                                 '${widget.comment.likeCount}',
                                 style: TextStyle(
-                                  fontFamily: 'Inter',
+                                  fontFamily: uiFontFamily(context, 'Inter'),
                                   fontFamilyFallback: const ['NotoSansKR'],
                                   fontSize: 12,
                                   fontWeight: FontWeight.w700,
                                   color: likeCountColor,
-                                  height: 1.0,
+                                  height: isChineseUi(context) ? 1.3 : 1.0,
                                 ),
                               ),
                             ),
@@ -1372,8 +1373,8 @@ class _ActionRow extends StatelessWidget {
             Expanded(
               child: Text(
                 label,
-                style: const TextStyle(
-                  fontFamily: 'Inter',
+                style: TextStyle(
+                  fontFamily: uiFontFamily(context, 'Inter'),
                   fontFamilyFallback: const ['NotoSansKR'],
                   fontSize: 16,
                   fontWeight: FontWeight.w700,

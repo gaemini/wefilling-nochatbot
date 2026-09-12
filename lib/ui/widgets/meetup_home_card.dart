@@ -8,6 +8,7 @@ import '../../ui/snackbar/app_snackbar.dart';
 import '../../utils/category_label_utils.dart';
 import '../../utils/responsive_helper.dart';
 import 'board_meetup_card.dart';
+import '../../l10n/ui_locale.dart';
 
 /// 밋업 탭의 카드 동작을 포스트 피드의 공통 밋업 카드 디자인에 연결한다.
 /// 참여/나가기/후기/장소 URL 기능은 이 래퍼에서 그대로 유지한다.
@@ -101,11 +102,11 @@ class _MeetupHomeCardState extends State<MeetupHomeCard> {
         maxLines: 1,
         overflow: TextOverflow.ellipsis,
         style: TextStyle(
-          fontFamily: 'Inter',
+          fontFamily: uiFontFamily(context, 'Inter'),
           fontFamilyFallback: const ['NotoSansKR'],
           fontSize: context.rf(11.5).clamp(11.0, 12.0).toDouble(),
           fontWeight: FontWeight.w700,
-          height: 1.15,
+          height: isChineseUi(context) ? 1.3 : 1.15,
           color: const Color(0xFF2563EB),
         ),
       ),

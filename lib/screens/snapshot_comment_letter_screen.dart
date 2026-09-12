@@ -11,6 +11,7 @@ import '../services/notification_service.dart';
 import '../snapshot/snapshot_storage_image.dart';
 import '../utils/responsive_helper.dart';
 import 'friend_profile_screen.dart';
+import '../l10n/ui_locale.dart';
 
 typedef SnapshotLetterLoader = Future<SnapshotCommentLetter> Function(
   String notificationId,
@@ -112,9 +113,9 @@ class _SnapshotCommentLetterScreenState
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
           content: Text(
-            _isKorean ? '답장을 보냈어요.' : 'Your reply was sent.',
-            style: const TextStyle(
-              fontFamily: 'Inter',
+            (isChineseUi(context) ? '回复已发送。' : _isKorean ? '답장을 보냈어요.' : 'Your reply was sent.'),
+            style: TextStyle(
+              fontFamily: uiFontFamily(context, 'Inter'),
               fontFamilyFallback: const ['NotoSansKR'],
               fontWeight: FontWeight.w600,
             ),
@@ -127,11 +128,11 @@ class _SnapshotCommentLetterScreenState
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
           content: Text(
-            _isKorean
+            (isChineseUi(context) ? '回复发送失败，请重试。' : _isKorean
                 ? '답장을 보내지 못했어요. 잠시 후 다시 시도해 주세요.'
-                : 'Could not send the reply. Please try again.',
-            style: const TextStyle(
-              fontFamily: 'Inter',
+                : 'Could not send the reply. Please try again.'),
+            style: TextStyle(
+              fontFamily: uiFontFamily(context, 'Inter'),
               fontFamilyFallback: const ['NotoSansKR'],
               fontWeight: FontWeight.w600,
             ),
@@ -148,21 +149,21 @@ class _SnapshotCommentLetterScreenState
     if (value == null) return '';
     final difference = DateTime.now().difference(value);
     if (difference.isNegative || difference.inMinutes < 1) {
-      return _isKorean ? '방금' : 'Just now';
+      return (isChineseUi(context) ? '刚刚' : _isKorean ? '방금' : 'Just now');
     }
     if (difference.inDays > 0) {
-      return _isKorean
+      return (isChineseUi(context) ? '${difference.inDays}天前' : _isKorean
           ? '${difference.inDays}일 전'
-          : '${difference.inDays}d ago';
+          : '${difference.inDays}d ago');
     }
     if (difference.inHours > 0) {
-      return _isKorean
+      return (isChineseUi(context) ? '${difference.inHours}小时前' : _isKorean
           ? '${difference.inHours}시간 전'
-          : '${difference.inHours}h ago';
+          : '${difference.inHours}h ago');
     }
-    return _isKorean
+    return (isChineseUi(context) ? '${difference.inMinutes}分钟前' : _isKorean
         ? '${difference.inMinutes}분 전'
-        : '${difference.inMinutes}m ago';
+        : '${difference.inMinutes}m ago');
   }
 
   VoidCallback? _profileAction({
@@ -224,11 +225,11 @@ class _SnapshotCommentLetterScreenState
             ),
           ),
           title: Text(
-            _isKorean ? '스낵 편지' : 'Snack letter',
+            (isChineseUi(context) ? '限时留言' : _isKorean ? '스낵 편지' : 'Snack letter'),
             maxLines: 1,
             overflow: TextOverflow.ellipsis,
             style: TextStyle(
-              fontFamily: 'Inter',
+              fontFamily: uiFontFamily(context, 'Inter'),
               fontFamilyFallback: const ['NotoSansKR'],
               fontSize: context.rf(18).clamp(17, 20).toDouble(),
               fontWeight: FontWeight.w700,
@@ -316,14 +317,14 @@ class _SnapshotCommentLetterScreenState
                   ),
                   Text(
                     letter.viewerIsOwner
-                        ? (_isKorean
+                        ? ((isChineseUi(context) ? '来自${letter.commenterName}的留言' : _isKorean
                             ? '${letter.commenterName}님의 코멘트'
-                            : 'A comment from ${letter.commenterName}')
-                        : (_isKorean ? '내가 보낸 코멘트' : 'Your comment'),
+                            : 'A comment from ${letter.commenterName}'))
+                        : ((isChineseUi(context) ? '你的留言' : _isKorean ? '내가 보낸 코멘트' : 'Your comment')),
                     maxLines: 2,
                     overflow: TextOverflow.ellipsis,
                     style: TextStyle(
-                      fontFamily: 'Inter',
+                      fontFamily: uiFontFamily(context, 'Inter'),
                       fontFamilyFallback: const ['NotoSansKR'],
                       fontSize: context.rf(18).clamp(17, 20).toDouble(),
                       height: 1.35,
@@ -346,7 +347,7 @@ class _SnapshotCommentLetterScreenState
                   Text(
                     letter.comment,
                     style: TextStyle(
-                      fontFamily: 'Inter',
+                      fontFamily: uiFontFamily(context, 'Inter'),
                       fontFamilyFallback: const ['NotoSansKR'],
                       fontSize: context.rf(16).clamp(15, 17).toDouble(),
                       height: 1.5,
@@ -366,14 +367,14 @@ class _SnapshotCommentLetterScreenState
                     ),
                     Text(
                       letter.viewerIsOwner
-                          ? (_isKorean ? '나의 답장' : 'Your reply')
-                          : (_isKorean
+                          ? ((isChineseUi(context) ? '你的回复' : _isKorean ? '나의 답장' : 'Your reply'))
+                          : ((isChineseUi(context) ? '${letter.ownerName}的回复' : _isKorean
                               ? '${letter.ownerName}님의 답장'
-                              : '${letter.ownerName}\'s reply'),
+                              : '${letter.ownerName}\'s reply')),
                       maxLines: 2,
                       overflow: TextOverflow.ellipsis,
                       style: TextStyle(
-                        fontFamily: 'Inter',
+                        fontFamily: uiFontFamily(context, 'Inter'),
                         fontFamilyFallback: const ['NotoSansKR'],
                         fontSize: context.rf(16).clamp(15, 18).toDouble(),
                         fontWeight: FontWeight.w700,
@@ -399,7 +400,7 @@ class _SnapshotCommentLetterScreenState
                     Text(
                       letter.reply,
                       style: TextStyle(
-                        fontFamily: 'Inter',
+                        fontFamily: uiFontFamily(context, 'Inter'),
                         fontFamilyFallback: const ['NotoSansKR'],
                         fontSize: context.rf(16).clamp(15, 17).toDouble(),
                         height: 1.5,
@@ -411,12 +412,12 @@ class _SnapshotCommentLetterScreenState
                   SizedBox(height: context.rs(34).clamp(28, 40).toDouble()),
                   Center(
                     child: Text(
-                      _isKorean
+                      (isChineseUi(context) ? '此留言只能从通知中再次打开。' : _isKorean
                           ? '이 편지는 알림에서만 다시 열 수 있어요.'
-                          : 'This letter can only be reopened from notifications.',
+                          : 'This letter can only be reopened from notifications.'),
                       textAlign: TextAlign.center,
                       style: TextStyle(
-                        fontFamily: 'Inter',
+                        fontFamily: uiFontFamily(context, 'Inter'),
                         fontFamilyFallback: const ['NotoSansKR'],
                         fontSize: context.rf(12).clamp(11.5, 13).toDouble(),
                         height: 1.45,
@@ -499,18 +500,18 @@ class _SnapshotCommentLetterScreenState
                           onSubmitted: (_) => _sendReply(),
                           onChanged: (_) => setState(() {}),
                           style: TextStyle(
-                            fontFamily: 'Inter',
+                            fontFamily: uiFontFamily(context, 'Inter'),
                             fontFamilyFallback: const ['NotoSansKR'],
                             fontSize: context.rf(15).clamp(14, 16).toDouble(),
                             fontWeight: FontWeight.w500,
                             color: const Color(0xFF111827),
                           ),
                           decoration: InputDecoration(
-                            hintText: _isKorean
+                            hintText: (isChineseUi(context) ? '写下回复，仅可回复一次' : _isKorean
                                 ? '한 번뿐인 답장을 작성해 주세요'
-                                : 'Write your one-time reply',
+                                : 'Write your one-time reply'),
                             hintStyle: TextStyle(
-                              fontFamily: 'Inter',
+                              fontFamily: uiFontFamily(context, 'Inter'),
                               fontFamilyFallback: const ['NotoSansKR'],
                               fontSize: context.rf(14).clamp(13, 15).toDouble(),
                               color: const Color(0xFF9CA3AF),
@@ -526,7 +527,7 @@ class _SnapshotCommentLetterScreenState
                       ),
                       const SizedBox(width: 4),
                       IconButton(
-                        tooltip: _isKorean ? '답장 보내기' : 'Send reply',
+                        tooltip: (isChineseUi(context) ? '发送回复' : _isKorean ? '답장 보내기' : 'Send reply'),
                         constraints:
                             const BoxConstraints(minWidth: 48, minHeight: 48),
                         onPressed: !_isSending &&
@@ -575,10 +576,10 @@ class _SnapshotCommentLetterScreenState
               ),
               const SizedBox(height: 16),
               Text(
-                _isKorean ? '이 편지를 열 수 없어요.' : 'This letter is unavailable.',
+                (isChineseUi(context) ? '此留言不可用。' : _isKorean ? '이 편지를 열 수 없어요.' : 'This letter is unavailable.'),
                 textAlign: TextAlign.center,
-                style: const TextStyle(
-                  fontFamily: 'Inter',
+                style: TextStyle(
+                  fontFamily: uiFontFamily(context, 'Inter'),
                   fontFamilyFallback: const ['NotoSansKR'],
                   fontSize: 18,
                   fontWeight: FontWeight.w800,
@@ -587,12 +588,12 @@ class _SnapshotCommentLetterScreenState
               ),
               const SizedBox(height: 8),
               Text(
-                _isKorean
+                (isChineseUi(context) ? '通知已删除或已失效。' : _isKorean
                     ? '알림이 삭제되었거나 더 이상 확인할 수 없는 편지예요.'
-                    : 'The notification was deleted or is no longer available.',
+                    : 'The notification was deleted or is no longer available.'),
                 textAlign: TextAlign.center,
-                style: const TextStyle(
-                  fontFamily: 'Inter',
+                style: TextStyle(
+                  fontFamily: uiFontFamily(context, 'Inter'),
                   fontFamilyFallback: const ['NotoSansKR'],
                   fontSize: 14,
                   height: 1.5,
@@ -603,7 +604,7 @@ class _SnapshotCommentLetterScreenState
               TextButton.icon(
                 onPressed: _loadLetter,
                 icon: const Icon(Icons.refresh_rounded, size: 20),
-                label: Text(_isKorean ? '다시 시도' : 'Try again'),
+                label: Text((isChineseUi(context) ? '重试' : _isKorean ? '다시 시도' : 'Try again')),
               ),
             ],
           ),
@@ -637,15 +638,15 @@ class _SourceContext extends StatelessWidget {
     final trimmedText = sourceText.trim();
     return Semantics(
       container: true,
-      label: isKorean
+      label: (isChineseUi(context) ? '来自${authorName}限时动态的留言' : isKorean
           ? '$authorName님이 올린 스낵에서 시작된 편지'
-          : 'Letter started from a Snack by $authorName',
+          : 'Letter started from a Snack by $authorName'),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           Semantics(
             button: onProfileTap != null,
-            label: isKorean ? '$authorName 프로필' : '$authorName profile',
+            label: (isChineseUi(context) ? '${authorName}的资料' : isKorean ? '$authorName 프로필' : '$authorName profile'),
             child: InkWell(
               onTap: onProfileTap,
               borderRadius: BorderRadius.circular(8),
@@ -665,13 +666,13 @@ class _SourceContext extends StatelessWidget {
                         crossAxisAlignment: CrossAxisAlignment.start,
                         children: [
                           Text(
-                            isKorean
+                            (isChineseUi(context) ? '${authorName}的限时动态' : isKorean
                                 ? '$authorName님이 올린 스낵'
-                                : 'A Snack by $authorName',
+                                : 'A Snack by $authorName'),
                             maxLines: 1,
                             overflow: TextOverflow.ellipsis,
                             style: TextStyle(
-                              fontFamily: 'Inter',
+                              fontFamily: uiFontFamily(context, 'Inter'),
                               fontFamilyFallback: const ['NotoSansKR'],
                               fontSize: context.rf(14).clamp(13, 15).toDouble(),
                               height: 1.35,
@@ -683,11 +684,11 @@ class _SourceContext extends StatelessWidget {
                           Text(
                             trimmedText.isNotEmpty
                                 ? '“$trimmedText”'
-                                : (isKorean ? '사진으로 공유한 스낵' : 'A photo Snack'),
+                                : ((isChineseUi(context) ? '照片限时动态' : isKorean ? '사진으로 공유한 스낵' : 'A photo Snack')),
                             maxLines: 2,
                             overflow: TextOverflow.ellipsis,
                             style: TextStyle(
-                              fontFamily: 'Inter',
+                              fontFamily: uiFontFamily(context, 'Inter'),
                               fontFamilyFallback: const ['NotoSansKR'],
                               fontSize:
                                   context.rf(12.5).clamp(12, 14).toDouble(),
@@ -702,7 +703,7 @@ class _SourceContext extends StatelessWidget {
                               time,
                               maxLines: 1,
                               style: TextStyle(
-                                fontFamily: 'Inter',
+                                fontFamily: uiFontFamily(context, 'Inter'),
                                 fontFamilyFallback: const ['NotoSansKR'],
                                 fontSize:
                                     context.rf(11.5).clamp(11, 12.5).toDouble(),
@@ -751,7 +752,7 @@ class _SourceSnapshotMedia extends StatelessWidget {
 
         return Semantics(
           image: true,
-          label: isKorean ? '편지가 시작된 스낵 사진' : 'Photo from this Snack',
+          label: (isChineseUi(context) ? '此限时动态的照片' : isKorean ? '편지가 시작된 스낵 사진' : 'Photo from this Snack'),
           child: ClipRRect(
             borderRadius: BorderRadius.circular(12),
             child: SizedBox(
@@ -868,7 +869,7 @@ class _PersonLine extends StatelessWidget {
                   maxLines: 1,
                   overflow: TextOverflow.ellipsis,
                   style: TextStyle(
-                    fontFamily: 'Inter',
+                    fontFamily: uiFontFamily(context, 'Inter'),
                     fontFamilyFallback: const ['NotoSansKR'],
                     fontSize: context.rf(15).clamp(14, 16).toDouble(),
                     fontWeight: FontWeight.w700,
@@ -885,7 +886,7 @@ class _PersonLine extends StatelessWidget {
                     maxLines: 1,
                     overflow: TextOverflow.ellipsis,
                     style: TextStyle(
-                      fontFamily: 'Inter',
+                      fontFamily: uiFontFamily(context, 'Inter'),
                       fontFamilyFallback: const ['NotoSansKR'],
                       fontSize: context.rf(12).clamp(11.5, 13).toDouble(),
                       fontWeight: FontWeight.w500,

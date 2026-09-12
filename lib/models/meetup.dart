@@ -6,6 +6,7 @@
 import 'package:intl/intl.dart';
 import 'package:flutter/material.dart';
 import '../l10n/app_localizations.dart';
+import '../l10n/ui_locale.dart';
 
 class Meetup {
   final String id;
@@ -255,22 +256,24 @@ class Meetup {
 
     if (difference == 0) {
       // 오늘 예정 / Today Scheduled
-      return locale.languageCode == 'ko'
+      return (isChineseUi(context) ? '今天 ${l10n.scheduled}' : locale.languageCode == 'ko'
           ? '오늘 ${l10n.scheduled}'
-          : 'Today ${l10n.scheduled}';
+          : 'Today ${l10n.scheduled}');
     } else if (difference == 1) {
       // 내일 예정 / Tomorrow Scheduled
-      return locale.languageCode == 'ko'
+      return (isChineseUi(context) ? '明天 ${l10n.scheduled}' : locale.languageCode == 'ko'
           ? '내일 ${l10n.scheduled}'
-          : 'Tomorrow ${l10n.scheduled}';
+          : 'Tomorrow ${l10n.scheduled}');
     } else if (difference > 1 && difference < 7) {
       // N일 후 예정 / In N days
-      return locale.languageCode == 'ko'
+      return (isChineseUi(context) ? '${difference}天后' : locale.languageCode == 'ko'
           ? '$difference일 후 ${l10n.scheduled}'
-          : 'In $difference days';
+          : 'In $difference days');
     } else {
       // 날짜 표시 / Date display
-      if (locale.languageCode == 'ko') {
+      if (locale.languageCode == 'zh') {
+        return '${date.month}月${date.day}日 ${l10n.scheduled}';
+      } else if (locale.languageCode == 'ko') {
         return '${date.month}월 ${date.day}일 ${l10n.scheduled}';
       } else {
         final formatter = DateFormat('MMM d', 'en');
@@ -283,7 +286,8 @@ class Meetup {
   String getFormattedDayOfWeek({String languageCode = 'ko'}) {
     final dayNamesKo = ['월', '화', '수', '목', '금', '토', '일'];
     final dayNamesEn = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'];
-    final dayNames = languageCode == 'en' ? dayNamesEn : dayNamesKo;
+    const dayNamesZh = ['周一', '周二', '周三', '周四', '周五', '周六', '周日'];
+    final dayNames = languageCode == 'zh' ? dayNamesZh : languageCode == 'en' ? dayNamesEn : dayNamesKo;
     // DateTime의 weekday는 1(월요일)부터 7(일요일)까지, 배열 인덱스는 0부터 시작하므로 -1
     final dayIndex = (date.weekday - 1) % 7;
 
@@ -308,8 +312,8 @@ class Meetup {
     if (time.isEmpty || time == '미정' || !time.contains(':')) {
       // 날짜만으로 판단 (시간 정보 없음)
       final meetupDate = DateTime(date.year, date.month, date.day, 23, 59);
-      final upcoming = languageCode == 'en' ? 'Scheduled' : '예정';
-      final closed = languageCode == 'en' ? 'Closed' : '종료';
+      final upcoming = languageCode == 'zh' ? '待举行' : languageCode == 'en' ? 'Scheduled' : '예정';
+      final closed = languageCode == 'zh' ? '已结束' : languageCode == 'en' ? 'Closed' : '종료';
       return now.isAfter(meetupDate) ? closed : upcoming;
     }
 
@@ -322,8 +326,8 @@ class Meetup {
     if (timeParts.length < 2) {
       // 시간 형식이 잘못된 경우 날짜만으로 판단
       final meetupDate = DateTime(date.year, date.month, date.day, 23, 59);
-      final upcoming = languageCode == 'en' ? 'Scheduled' : '예정';
-      final closed = languageCode == 'en' ? 'Closed' : '종료';
+      final upcoming = languageCode == 'zh' ? '待举行' : languageCode == 'en' ? 'Scheduled' : '예정';
+      final closed = languageCode == 'zh' ? '已结束' : languageCode == 'en' ? 'Closed' : '종료';
       return now.isAfter(meetupDate) ? closed : upcoming;
     }
 
@@ -360,9 +364,9 @@ class Meetup {
       endMinute,
     );
 
-    final upcoming = languageCode == 'en' ? 'Scheduled' : '예정';
-    final ongoing = languageCode == 'en' ? 'Ongoing' : '진행중';
-    final closed = languageCode == 'en' ? 'Closed' : '종료';
+    final upcoming = languageCode == 'zh' ? '待举行' : languageCode == 'en' ? 'Scheduled' : '예정';
+    final ongoing = languageCode == 'zh' ? '进行中' : languageCode == 'en' ? 'Ongoing' : '진행중';
+    final closed = languageCode == 'zh' ? '已结束' : languageCode == 'en' ? 'Closed' : '종료';
 
     if (now.isBefore(meetupDateTime)) {
       return upcoming;

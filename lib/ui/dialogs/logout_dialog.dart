@@ -9,6 +9,7 @@ import '../../l10n/app_localizations.dart';
 import '../../providers/auth_provider.dart';
 import '../../screens/login_screen.dart';
 import '../../utils/responsive_helper.dart';
+import '../../l10n/ui_locale.dart';
 
 Future<void> showLogoutConfirmDialog(
   BuildContext outerContext, {
@@ -16,6 +17,9 @@ Future<void> showLogoutConfirmDialog(
 }) {
   // 중요한 액션임을 알림
   HapticFeedback.mediumImpact();
+  // The opening page may disappear when authentication notifies its listeners.
+  // Keep navigation independent of that page's inherited-widget lookups.
+  final outerNavigator = Navigator.of(outerContext);
 
   return showDialog<void>(
     context: outerContext,
@@ -48,14 +52,15 @@ Future<void> showLogoutConfirmDialog(
                     innerContext.rs(16).clamp(12, 18).toDouble(),
                     innerContext.rs(12).clamp(10, 14).toDouble(),
                   ),
-                  child: Column(
+                  child: _LogoutDialogContent(
+                      child: Column(
                     mainAxisSize: MainAxisSize.min,
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
                       Text(
                         l10n.logout,
                         style: TextStyle(
-                          fontFamily: 'Inter',
+                          fontFamily: uiFontFamily(innerContext, 'Inter'),
                           fontFamilyFallback: const ['NotoSansKR'],
                           fontSize:
                               innerContext.rf(17).clamp(16, 18).toDouble(),
@@ -73,7 +78,7 @@ Future<void> showLogoutConfirmDialog(
                           isLoading ? l10n.loggingOut : l10n.logoutConfirm,
                           key: ValueKey(isLoading),
                           style: TextStyle(
-                            fontFamily: 'Inter',
+                            fontFamily: uiFontFamily(innerContext, 'Inter'),
                             fontFamilyFallback: const ['NotoSansKR'],
                             fontSize: innerContext
                                 .rf(13.5)
@@ -107,8 +112,9 @@ Future<void> showLogoutConfirmDialog(
                               ),
                               child: Text(
                                 l10n.cancel,
-                                style: const TextStyle(
-                                  fontFamily: 'Inter',
+                                style: TextStyle(
+                                  fontFamily:
+                                      uiFontFamily(innerContext, 'Inter'),
                                   fontFamilyFallback: const ['NotoSansKR'],
                                   fontSize: 14,
                                   fontWeight: FontWeight.w600,
@@ -122,6 +128,7 @@ Future<void> showLogoutConfirmDialog(
                                         dialogContext,
                                         outerContext,
                                         authProvider,
+                                        outerNavigator,
                                       ),
                               style: _dialogActionStyle(BrandColors.error),
                               child: isLoading
@@ -134,9 +141,12 @@ Future<void> showLogoutConfirmDialog(
                                     )
                                   : Text(
                                       l10n.logout,
-                                      style: const TextStyle(
-                                        fontFamily: 'Inter',
-                                        fontFamilyFallback: const ['NotoSansKR'],
+                                      style: TextStyle(
+                                        fontFamily:
+                                            uiFontFamily(innerContext, 'Inter'),
+                                        fontFamilyFallback: const [
+                                          'NotoSansKR'
+                                        ],
                                         fontSize: 14,
                                         fontWeight: FontWeight.w700,
                                       ),
@@ -146,7 +156,7 @@ Future<void> showLogoutConfirmDialog(
                         ),
                       ),
                     ],
-                  ),
+                  )),
                 ),
               ),
             ),
@@ -155,6 +165,15 @@ Future<void> showLogoutConfirmDialog(
       );
     },
   );
+}
+
+class _LogoutDialogContent extends StatelessWidget {
+  const _LogoutDialogContent({required this.child});
+  final Widget child;
+
+  @override
+  Widget build(BuildContext context) =>
+      isChineseUi(context) ? SingleChildScrollView(child: child) : child;
 }
 
 ButtonStyle _dialogActionStyle(Color foregroundColor) => TextButton.styleFrom(
@@ -172,8 +191,10 @@ Future<void> _performLogout(
   BuildContext dialogContext,
   BuildContext outerContext,
   AuthProvider authProvider,
+  NavigatorState outerNavigator,
 ) async {
   HapticFeedback.heavyImpact();
+  final dialogNavigator = Navigator.of(dialogContext);
 
   try {
     await authProvider.signOut();
@@ -181,11 +202,11 @@ Future<void> _performLogout(
     // signOut 내부에서 상태 정리됨 (best-effort)
   }
 
-  if (!dialogContext.mounted) return;
-  Navigator.of(dialogContext).pop();
+  if (!dialogContext.mounted || !dialogNavigator.mounted) return;
+  dialogNavigator.pop();
 
-  if (!outerContext.mounted) return;
-  Navigator.of(outerContext).pushAndRemoveUntil(
+  if (!outerContext.mounted || !outerNavigator.mounted) return;
+  outerNavigator.pushAndRemoveUntil(
     MaterialPageRoute(
       builder: (_) => const LoginScreen(
         showLogoutSuccess: true,

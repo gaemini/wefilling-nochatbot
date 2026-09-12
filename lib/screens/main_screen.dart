@@ -29,6 +29,7 @@ import 'home_screen.dart';
 import 'mypage_screen.dart';
 import 'notification_screen.dart';
 import 'unified_search_screen.dart';
+import '../l10n/ui_locale.dart';
 
 class MainScreen extends StatefulWidget {
   final int initialTabIndex;
@@ -341,10 +342,10 @@ class _MainScreenState extends State<MainScreen>
             children: [
               SizedBox(width: 24, height: 24, child: _buildLogo()),
               const SizedBox(width: 8),
-              const Text(
-                'Wefilling',
+              Text(
+                AppLocalizations.of(context)!.appName,
                 style: TextStyle(
-                  fontFamily: 'Inter',
+                  fontFamily: uiFontFamily(context, 'Inter'),
                   fontFamilyFallback: const ['NotoSansKR'],
                   fontSize: 17,
                   fontWeight: FontWeight.w700,

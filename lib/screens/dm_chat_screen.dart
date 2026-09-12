@@ -39,6 +39,7 @@ import '../utils/logger.dart';
 import '../ui/snackbar/app_snackbar.dart';
 import '../ui/sheets/translation_language_sheet.dart';
 import '../utils/responsive_helper.dart';
+import '../l10n/ui_locale.dart';
 
 // DM 전용 색상
 class DMColors {
@@ -1053,9 +1054,9 @@ class _DMChatScreenState extends State<DMChatScreen>
           Navigator.of(context).pop();
           ScaffoldMessenger.of(context).showSnackBar(
             SnackBar(
-              content: Text(Localizations.localeOf(context).languageCode == 'ko'
+              content: Text((isChineseUi(context) ? '无法向此用户发送消息' : Localizations.localeOf(context).languageCode == 'ko'
                   ? '이 사용자에게는 메시지를 보낼 수 없습니다'
-                  : 'Cannot send message to this user'),
+                  : 'Cannot send message to this user')),
               backgroundColor: Colors.orange,
               duration: const Duration(seconds: 3),
             ),
@@ -1129,9 +1130,9 @@ class _DMChatScreenState extends State<DMChatScreen>
             ScaffoldMessenger.of(context).showSnackBar(
               SnackBar(
                 content: Text(
-                    Localizations.localeOf(context).languageCode == 'ko'
+                    (isChineseUi(context) ? '不能给自己发消息' : Localizations.localeOf(context).languageCode == 'ko'
                         ? '본인에게는 메시지를 보낼 수 없습니다'
-                        : 'Cannot send message to yourself'),
+                        : 'Cannot send message to yourself')),
                 backgroundColor: Colors.orange,
                 duration: const Duration(seconds: 2),
               ),
@@ -1160,9 +1161,9 @@ class _DMChatScreenState extends State<DMChatScreen>
             ScaffoldMessenger.of(context).showSnackBar(
               SnackBar(
                 content: Text(
-                    Localizations.localeOf(context).languageCode == 'ko'
+                    (isChineseUi(context) ? '不能给自己发消息' : Localizations.localeOf(context).languageCode == 'ko'
                         ? '본인에게는 메시지를 보낼 수 없습니다'
-                        : 'Cannot send message to yourself'),
+                        : 'Cannot send message to yourself')),
                 backgroundColor: Colors.orange,
                 duration: const Duration(seconds: 2),
               ),
@@ -1715,14 +1716,14 @@ class _DMChatScreenState extends State<DMChatScreen>
 
   Widget _buildDmTranslationControl() {
     final isKo = Localizations.localeOf(context).languageCode == 'ko';
-    final translationActionLabel = isKo ? '번역 보기' : 'View translation';
-    final originalActionLabel = isKo ? '원문 보기' : 'View original';
+    final translationActionLabel = (isChineseUi(context) ? '查看译文' : isKo ? '번역 보기' : 'View translation');
+    final originalActionLabel = (isChineseUi(context) ? '查看原文' : isKo ? '원문 보기' : 'View original');
     final label = _translationShowsOriginal
         ? translationActionLabel
         : originalActionLabel;
-    final settingsLabel = isKo ? '번역 언어 설정' : 'Translation language';
+    final settingsLabel = (isChineseUi(context) ? '翻译语言' : isKo ? '번역 언어 설정' : 'Translation language');
     final controlTextStyle = TextStyle(
-      fontFamily: 'Inter',
+      fontFamily: uiFontFamily(context, 'Inter'),
       fontFamilyFallback: const ['NotoSansKR'],
       fontSize: context.rf(11).clamp(10.5, 12).toDouble(),
       fontWeight: FontWeight.w700,
@@ -1928,8 +1929,8 @@ class _DMChatScreenState extends State<DMChatScreen>
               child: resolvedName.trim().isNotEmpty
                   ? Text(
                       resolvedName.trim(),
-                      style: const TextStyle(
-                        fontFamily: 'Inter',
+                      style: TextStyle(
+                        fontFamily: uiFontFamily(context, 'Inter'),
                         fontFamilyFallback: const ['NotoSansKR'],
                         fontSize: 16,
                         fontWeight: FontWeight.w700,
@@ -1995,8 +1996,8 @@ class _DMChatScreenState extends State<DMChatScreen>
                 children: [
                   Text(
                     primaryTitle,
-                    style: const TextStyle(
-                      fontFamily: 'Inter',
+                    style: TextStyle(
+                      fontFamily: uiFontFamily(context, 'Inter'),
                       fontFamilyFallback: const ['NotoSansKR'],
                       fontSize: 16,
                       fontWeight: FontWeight.w700,
@@ -2008,8 +2009,8 @@ class _DMChatScreenState extends State<DMChatScreen>
                   const SizedBox(height: 2),
                   Text(
                     secondaryTitle,
-                    style: const TextStyle(
-                      fontFamily: 'Inter',
+                    style: TextStyle(
+                      fontFamily: uiFontFamily(context, 'Inter'),
                       fontFamilyFallback: const ['NotoSansKR'],
                       fontSize: 12,
                       color: DMColors.textSecondary,
@@ -2022,8 +2023,8 @@ class _DMChatScreenState extends State<DMChatScreen>
             ),
             Text(
               _formatHeaderDate(),
-              style: const TextStyle(
-                fontFamily: 'Inter',
+              style: TextStyle(
+                fontFamily: uiFontFamily(context, 'Inter'),
                 fontFamilyFallback: const ['NotoSansKR'],
                 fontSize: 12,
                 color: DMColors.textTertiary,
@@ -2070,8 +2071,8 @@ class _DMChatScreenState extends State<DMChatScreen>
                     const SizedBox(width: 12),
                     Text(
                       AppLocalizations.of(context)!.leaveChatRoom ?? "채팅방 나가기",
-                      style: const TextStyle(
-                        fontFamily: 'Inter',
+                      style: TextStyle(
+                        fontFamily: uiFontFamily(context, 'Inter'),
                         fontFamilyFallback: const ['NotoSansKR'],
                         fontSize: 14,
                         fontWeight: FontWeight.w600,
@@ -2187,8 +2188,8 @@ class _DMChatScreenState extends State<DMChatScreen>
                       else
                         Text(
                           primaryTitle,
-                          style: const TextStyle(
-                            fontFamily: 'Inter',
+                          style: TextStyle(
+                            fontFamily: uiFontFamily(context, 'Inter'),
                             fontFamilyFallback: const ['NotoSansKR'],
                             fontSize: 16,
                             fontWeight: FontWeight.w700,
@@ -2222,8 +2223,8 @@ class _DMChatScreenState extends State<DMChatScreen>
                     padding: const EdgeInsets.only(right: 8.0),
                     child: Text(
                       _formatHeaderDate(),
-                      style: const TextStyle(
-                        fontFamily: 'Inter',
+                      style: TextStyle(
+                        fontFamily: uiFontFamily(context, 'Inter'),
                         fontFamilyFallback: const ['NotoSansKR'],
                         color: DMColors.textTertiary,
                         fontSize: 12,
@@ -2265,8 +2266,8 @@ class _DMChatScreenState extends State<DMChatScreen>
                         const SizedBox(width: 12),
                         Text(
                           AppLocalizations.of(context)!.blockThisUser ?? "",
-                          style: const TextStyle(
-                            fontFamily: 'Inter',
+                          style: TextStyle(
+                            fontFamily: uiFontFamily(context, 'Inter'),
                             fontFamilyFallback: const ['NotoSansKR'],
                             fontSize: 14,
                             fontWeight: FontWeight.w600,
@@ -2300,8 +2301,8 @@ class _DMChatScreenState extends State<DMChatScreen>
                         const SizedBox(width: 12),
                         Text(
                           AppLocalizations.of(context)!.leaveChatRoom,
-                          style: const TextStyle(
-                            fontFamily: 'Inter',
+                          style: TextStyle(
+                            fontFamily: uiFontFamily(context, 'Inter'),
                             fontFamilyFallback: const ['NotoSansKR'],
                             fontSize: 14,
                             fontWeight: FontWeight.w600,
@@ -2336,9 +2337,9 @@ class _DMChatScreenState extends State<DMChatScreen>
       final isKo = Localizations.localeOf(context).languageCode == 'ko';
       AppSnackBar.show(
         context,
-        message: isKo
+        message: (isChineseUi(context) ? '此聊天已从列表中移除。' : isKo
             ? '채팅방이 목록에서 삭제되었습니다'
-            : 'This chat has been removed from your list.',
+            : 'This chat has been removed from your list.'),
         type: AppSnackBarType.info,
       );
     } catch (e) {
@@ -2388,8 +2389,8 @@ class _DMChatScreenState extends State<DMChatScreen>
               const SizedBox(width: 12),
               Text(
                 l10n.leaveChatRoom,
-                style: const TextStyle(
-                  fontFamily: 'Inter',
+                style: TextStyle(
+                  fontFamily: uiFontFamily(context, 'Inter'),
                   fontFamilyFallback: const ['NotoSansKR'],
                   fontSize: 18,
                   fontWeight: FontWeight.w700,
@@ -2399,11 +2400,11 @@ class _DMChatScreenState extends State<DMChatScreen>
             ],
           ),
           content: Text(
-            isKo
+            (isChineseUi(context) ? '确定退出此聊天？' : isKo
                 ? '이 채팅방에서 나가시겠습니까?'
-                : 'Are you sure you want to leave this chat?',
-            style: const TextStyle(
-              fontFamily: 'Inter',
+                : 'Are you sure you want to leave this chat?'),
+            style: TextStyle(
+              fontFamily: uiFontFamily(context, 'Inter'),
               fontFamilyFallback: const ['NotoSansKR'],
               fontSize: 15,
               fontWeight: FontWeight.w500,
@@ -2430,8 +2431,8 @@ class _DMChatScreenState extends State<DMChatScreen>
                     ),
                     child: Text(
                       l10n.cancel ?? '',
-                      style: const TextStyle(
-                        fontFamily: 'Inter',
+                      style: TextStyle(
+                        fontFamily: uiFontFamily(context, 'Inter'),
                         fontFamilyFallback: const ['NotoSansKR'],
                         fontSize: 14,
                         fontWeight: FontWeight.w700,
@@ -2458,9 +2459,9 @@ class _DMChatScreenState extends State<DMChatScreen>
                       disabledBackgroundColor: const Color(0xFFE5E7EB),
                     ),
                     child: Text(
-                      isKo ? '나가기' : 'Leave',
-                      style: const TextStyle(
-                        fontFamily: 'Inter',
+                      (isChineseUi(context) ? '退出' : isKo ? '나가기' : 'Leave'),
+                      style: TextStyle(
+                        fontFamily: uiFontFamily(context, 'Inter'),
                         fontFamilyFallback: const ['NotoSansKR'],
                         fontSize: 14,
                         fontWeight: FontWeight.w700,
@@ -2500,9 +2501,9 @@ class _DMChatScreenState extends State<DMChatScreen>
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
           content: Text(
-            Localizations.localeOf(context).languageCode == 'ko'
+            (isChineseUi(context) ? '你已退出聊天。再次发消息时，将无法查看之前的记录。' : Localizations.localeOf(context).languageCode == 'ko'
                 ? '채팅방에서 나갔습니다. 다시 메시지를 보내면 이전 대화 내역은 보이지 않습니다.'
-                : 'You left the chat. Previous messages will not be visible if you send a new message.',
+                : 'You left the chat. Previous messages will not be visible if you send a new message.'),
           ),
           duration: const Duration(seconds: 4),
         ),
@@ -2518,9 +2519,9 @@ class _DMChatScreenState extends State<DMChatScreen>
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
           content: Text(
-            Localizations.localeOf(context).languageCode == 'ko'
+            (isChineseUi(context) ? '已退出聊天' : Localizations.localeOf(context).languageCode == 'ko'
                 ? '채팅방에서 나갔습니다'
-                : 'You left the chat',
+                : 'You left the chat'),
           ),
         ),
       );
@@ -2559,9 +2560,9 @@ class _DMChatScreenState extends State<DMChatScreen>
                 Icon(Icons.lock_outline, size: 64, color: Colors.red[300]),
                 const SizedBox(height: 16),
                 Text(
-                  Localizations.localeOf(context).languageCode == 'ko'
+                  (isChineseUi(context) ? '权限错误' : Localizations.localeOf(context).languageCode == 'ko'
                       ? '권한 오류'
-                      : 'Permission Error',
+                      : 'Permission Error'),
                   style: const TextStyle(
                     fontSize: 18,
                     fontWeight: FontWeight.w600,
@@ -2570,9 +2571,9 @@ class _DMChatScreenState extends State<DMChatScreen>
                 ),
                 const SizedBox(height: 8),
                 Text(
-                  Localizations.localeOf(context).languageCode == 'ko'
+                  (isChineseUi(context) ? 'Firebase安全规则尚未部署，或你没有访问权限。\n\n请重新启动应用。' : Localizations.localeOf(context).languageCode == 'ko'
                       ? 'Firebase Security Rules가 배포되지 않았거나\n권한이 없습니다.\n\n앱을 다시 시작해주세요.'
-                      : 'Firebase Security Rules are not deployed\nor you don\'t have permission.\n\nPlease restart the app.',
+                      : 'Firebase Security Rules are not deployed\nor you don\'t have permission.\n\nPlease restart the app.'),
                   style: TextStyle(
                     color: Colors.grey[600],
                     fontWeight: FontWeight.bold,
@@ -2753,14 +2754,14 @@ class _DMChatScreenState extends State<DMChatScreen>
         _isAnonymous ? 0 : (_serverOtherUserInfo?.photoVersion ?? 0);
 
     final title = resolvedName.isNotEmpty
-        ? (isKo
+        ? ((isChineseUi(context) ? '与${resolvedName}聊天' : isKo
             ? '$resolvedName님과 대화를 시작해보세요'
-            : 'Start a chat with $resolvedName')
-        : (isKo ? '대화를 시작해보세요' : 'Start a chat');
+            : 'Start a chat with $resolvedName'))
+        : ((isChineseUi(context) ? '开始聊天' : isKo ? '대화를 시작해보세요' : 'Start a chat'));
 
-    final subtitle = isKo
+    final subtitle = (isChineseUi(context) ? '发送第一条消息创建聊天，\n然后在这里继续交流。' : isKo
         ? '첫 메시지를 보내면 대화방이 자동으로 생성되고\n여기서 계속 대화할 수 있어요.'
-        : 'Send your first message to create the chat,\nthen continue the conversation here.';
+        : 'Send your first message to create the chat,\nthen continue the conversation here.');
 
     final hint = isKo
         ? (isConversationCreated
@@ -2789,21 +2790,21 @@ class _DMChatScreenState extends State<DMChatScreen>
             Text(
               title,
               textAlign: TextAlign.center,
-              style: const TextStyle(
-                fontFamily: 'Inter',
+              style: TextStyle(
+                fontFamily: uiFontFamily(context, 'Inter'),
                 fontFamilyFallback: const ['NotoSansKR'],
                 fontSize: 16,
                 fontWeight: FontWeight.w800,
                 color: Color(0xFF111827),
-                height: 1.25,
+                height: isChineseUi(context) ? 1.3 : 1.25,
               ),
             ),
             const SizedBox(height: 8),
             Text(
               subtitle,
               textAlign: TextAlign.center,
-              style: const TextStyle(
-                fontFamily: 'Inter',
+              style: TextStyle(
+                fontFamily: uiFontFamily(context, 'Inter'),
                 fontFamilyFallback: const ['NotoSansKR'],
                 fontSize: 13,
                 fontWeight: FontWeight.w600,
@@ -2815,8 +2816,8 @@ class _DMChatScreenState extends State<DMChatScreen>
             Text(
               hint,
               textAlign: TextAlign.center,
-              style: const TextStyle(
-                fontFamily: 'Inter',
+              style: TextStyle(
+                fontFamily: uiFontFamily(context, 'Inter'),
                 fontFamilyFallback: const ['NotoSansKR'],
                 fontSize: 12,
                 fontWeight: FontWeight.w500,
@@ -2912,9 +2913,9 @@ class _DMChatScreenState extends State<DMChatScreen>
                   if (hasText)
                     Text(
                       message.text,
-                      style: const TextStyle(
+                      style: TextStyle(
                         color: DMColors.myMessageText,
-                        fontFamily: 'Inter',
+                        fontFamily: uiFontFamily(context, 'Inter'),
                         fontFamilyFallback: const ['NotoSansKR'],
                         fontSize: 15,
                         height: 1.35,
@@ -3027,9 +3028,9 @@ class _DMChatScreenState extends State<DMChatScreen>
                               'dm_message_text_${message.id}_'
                               '${_translationShowsOriginal ? 'original' : 'translated'}',
                             ),
-                            style: const TextStyle(
+                            style: TextStyle(
                               color: DMColors.otherMessageText,
-                              fontFamily: 'Inter',
+                              fontFamily: uiFontFamily(context, 'Inter'),
                               fontFamilyFallback: const ['NotoSansKR'],
                               fontSize: 15,
                               height: 1.35,
@@ -3159,7 +3160,7 @@ class _DMChatScreenState extends State<DMChatScreen>
                       const SizedBox(width: 6),
                       Expanded(
                         child: Text(
-                          isKo ? '포스트에서 보낸 메시지' : 'Sent from a post',
+                          (isChineseUi(context) ? '来自一条动态' : isKo ? '포스트에서 보낸 메시지' : 'Sent from a post'),
                           style: TextStyle(
                             fontSize: 12,
                             fontWeight: FontWeight.w700,
@@ -3172,7 +3173,7 @@ class _DMChatScreenState extends State<DMChatScreen>
                       ),
                       if (postId.isNotEmpty)
                         Text(
-                          isKo ? '보기' : 'View',
+                          (isChineseUi(context) ? '查看' : isKo ? '보기' : 'View'),
                           style: TextStyle(
                             fontSize: 12,
                             fontWeight: FontWeight.w700,
@@ -3252,9 +3253,9 @@ class _DMChatScreenState extends State<DMChatScreen>
                     ),
                     const SizedBox(width: 6),
                     Text(
-                      Localizations.localeOf(context).languageCode == 'ko'
+                      (isChineseUi(context) ? '图片加载失败' : Localizations.localeOf(context).languageCode == 'ko'
                           ? '이미지 로드 실패'
-                          : 'Failed to load image',
+                          : 'Failed to load image'),
                       style: TextStyle(
                         fontSize: 12,
                         color: isMine ? Colors.white70 : Colors.grey[700],
@@ -3343,11 +3344,11 @@ class _DMChatScreenState extends State<DMChatScreen>
                 Align(
                   alignment: Alignment.centerLeft,
                   child: Text(
-                    Localizations.localeOf(context).languageCode == 'ko'
+                    (isChineseUi(context) ? '发送第一条消息，开始聊天。' : Localizations.localeOf(context).languageCode == 'ko'
                         ? '첫 메시지를 보내면 대화방이 생성돼요.'
-                        : 'Send your first message to create this chat.',
-                    style: const TextStyle(
-                      fontFamily: 'Inter',
+                        : 'Send your first message to create this chat.'),
+                    style: TextStyle(
+                      fontFamily: uiFontFamily(context, 'Inter'),
                       fontFamilyFallback: const ['NotoSansKR'],
                       fontSize: 12,
                       fontWeight: FontWeight.w600,
@@ -3415,11 +3416,11 @@ class _DMChatScreenState extends State<DMChatScreen>
                           textInputAction: TextInputAction.newline,
                           decoration: InputDecoration(
                             hintText: peerDeleted
-                                ? (Localizations.localeOf(context)
+                                ? ((isChineseUi(context) ? '无法给已注销的账号发消息' : Localizations.localeOf(context)
                                             .languageCode ==
                                         'ko'
                                     ? '탈퇴한 계정에게는 메시지를 보낼 수 없어요'
-                                    : 'You cannot message a deleted account')
+                                    : 'You cannot message a deleted account'))
                                 : (_isBlocked || _isBlockedBy)
                                     ? '차단된 사용자에게 메시지를 보낼 수 없습니다'
                                     : AppLocalizations.of(context)!.typeMessage,
@@ -3439,7 +3440,7 @@ class _DMChatScreenState extends State<DMChatScreen>
                             counterText: '',
                           ),
                           style: TextStyle(
-                            fontFamily: 'Inter',
+                            fontFamily: uiFontFamily(context, 'Inter'),
                             fontFamilyFallback: const ['NotoSansKR'],
                             color: Colors.white,
                             fontSize: MediaQuery.sizeOf(context).width < 360
@@ -3596,9 +3597,9 @@ class _DMChatScreenState extends State<DMChatScreen>
                     children: [
                       Expanded(
                         child: Text(
-                          isKo ? '이 게시글에 대해 DM 보내기' : 'Message about this post',
-                          style: const TextStyle(
-                            fontFamily: 'Inter',
+                          (isChineseUi(context) ? '聊聊这条动态' : isKo ? '이 게시글에 대해 DM 보내기' : 'Message about this post'),
+                          style: TextStyle(
+                            fontFamily: uiFontFamily(context, 'Inter'),
                             fontFamilyFallback: const ['NotoSansKR'],
                             fontSize: 13,
                             fontWeight: FontWeight.w700,
@@ -3631,8 +3632,8 @@ class _DMChatScreenState extends State<DMChatScreen>
                     const SizedBox(height: 6),
                     Text(
                       preview,
-                      style: const TextStyle(
-                        fontFamily: 'Inter',
+                      style: TextStyle(
+                        fontFamily: uiFontFamily(context, 'Inter'),
                         fontFamilyFallback: const ['NotoSansKR'],
                         fontSize: 12,
                         fontWeight: FontWeight.w600,
@@ -3680,9 +3681,9 @@ class _DMChatScreenState extends State<DMChatScreen>
               mainAxisSize: MainAxisSize.min,
               children: [
                 Text(
-                  isKorean ? '이미지 1장 선택됨' : '1 image selected',
-                  style: const TextStyle(
-                    fontFamily: 'Inter',
+                  (isChineseUi(context) ? '已选1张图片' : isKorean ? '이미지 1장 선택됨' : '1 image selected'),
+                  style: TextStyle(
+                    fontFamily: uiFontFamily(context, 'Inter'),
                     fontFamilyFallback: const ['NotoSansKR'],
                     fontSize: 13,
                     fontWeight: FontWeight.w600,
@@ -3692,11 +3693,11 @@ class _DMChatScreenState extends State<DMChatScreen>
                 const SizedBox(height: 4),
                 if (showProgress) ...[
                   Text(
-                    isKorean
+                    (isChineseUi(context) ? '上传中… ${((_uploadProgress ?? 0) * 100).round()}%' : isKorean
                         ? '업로드 중... ${((_uploadProgress ?? 0) * 100).round()}%'
-                        : 'Uploading... ${((_uploadProgress ?? 0) * 100).round()}%',
-                    style: const TextStyle(
-                      fontFamily: 'Inter',
+                        : 'Uploading... ${((_uploadProgress ?? 0) * 100).round()}%'),
+                    style: TextStyle(
+                      fontFamily: uiFontFamily(context, 'Inter'),
                       fontFamilyFallback: const ['NotoSansKR'],
                       fontSize: 12,
                       fontWeight: FontWeight.w500,
@@ -3718,11 +3719,11 @@ class _DMChatScreenState extends State<DMChatScreen>
                   ),
                 ] else ...[
                   Text(
-                    isKorean
+                    (isChineseUi(context) ? '对方将可以看到' : isKorean
                         ? '전송하면 상대방에게 이미지가 표시됩니다'
-                        : 'It will be visible to the other user',
-                    style: const TextStyle(
-                      fontFamily: 'Inter',
+                        : 'It will be visible to the other user'),
+                    style: TextStyle(
+                      fontFamily: uiFontFamily(context, 'Inter'),
                       fontFamilyFallback: const ['NotoSansKR'],
                       fontSize: 12,
                       fontWeight: FontWeight.w400,
@@ -3761,9 +3762,9 @@ class _DMChatScreenState extends State<DMChatScreen>
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
           content: Text(
-            Localizations.localeOf(context).languageCode == 'ko'
+            (isChineseUi(context) ? '每次只能添加1张图片' : Localizations.localeOf(context).languageCode == 'ko'
                 ? '이미지는 한 번에 1장만 첨부할 수 있어요'
-                : 'You can attach only 1 image at a time',
+                : 'You can attach only 1 image at a time'),
           ),
           duration: const Duration(seconds: 2),
         ),
@@ -3797,7 +3798,7 @@ class _DMChatScreenState extends State<DMChatScreen>
                 ),
                 ListTile(
                   leading: const Icon(Icons.photo_library_outlined),
-                  title: Text(isKorean ? '사진 선택' : 'Choose from library'),
+                  title: Text((isChineseUi(context) ? '从相册选择' : isKorean ? '사진 선택' : 'Choose from library')),
                   onTap: () async {
                     Navigator.pop(context);
                     await _pickImageFrom(ImageSource.gallery);
@@ -3805,7 +3806,7 @@ class _DMChatScreenState extends State<DMChatScreen>
                 ),
                 ListTile(
                   leading: const Icon(Icons.photo_camera_outlined),
-                  title: Text(isKorean ? '카메라 촬영' : 'Take a photo'),
+                  title: Text((isChineseUi(context) ? '拍照' : isKorean ? '카메라 촬영' : 'Take a photo')),
                   onTap: () async {
                     Navigator.pop(context);
                     await _pickImageFrom(ImageSource.camera);
@@ -3850,9 +3851,9 @@ class _DMChatScreenState extends State<DMChatScreen>
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
           content: Text(
-            Localizations.localeOf(context).languageCode == 'ko'
+            (isChineseUi(context) ? '无法选择图片' : Localizations.localeOf(context).languageCode == 'ko'
                 ? '이미지를 불러올 수 없습니다'
-                : 'Unable to pick an image',
+                : 'Unable to pick an image'),
           ),
           duration: const Duration(seconds: 2),
         ),
@@ -4159,11 +4160,11 @@ class _DMChatScreenState extends State<DMChatScreen>
           const SizedBox(width: 8),
           Expanded(
             child: Text(
-              Localizations.localeOf(context).languageCode == 'ko'
+              (isChineseUi(context) ? '此对话来自一条动态' : Localizations.localeOf(context).languageCode == 'ko'
                   ? '이 대화는 포스트에서 시작되었습니다'
-                  : 'This conversation started from a post',
-              style: const TextStyle(
-                fontFamily: 'Inter',
+                  : 'This conversation started from a post'),
+              style: TextStyle(
+                fontFamily: uiFontFamily(context, 'Inter'),
                 fontFamilyFallback: const ['NotoSansKR'],
                 color: DMColors.textSecondary,
                 fontSize: 13,
@@ -4180,11 +4181,11 @@ class _DMChatScreenState extends State<DMChatScreen>
               tapTargetSize: MaterialTapTargetSize.shrinkWrap,
             ),
             child: Text(
-              Localizations.localeOf(context).languageCode == 'ko'
+              (isChineseUi(context) ? '查看动态' : Localizations.localeOf(context).languageCode == 'ko'
                   ? '포스트 보기'
-                  : 'View Post',
-              style: const TextStyle(
-                fontFamily: 'Inter',
+                  : 'View Post'),
+              style: TextStyle(
+                fontFamily: uiFontFamily(context, 'Inter'),
                 fontFamilyFallback: const ['NotoSansKR'],
                 fontSize: 13,
                 fontWeight: FontWeight.w700,
@@ -4213,9 +4214,9 @@ class _DMChatScreenState extends State<DMChatScreen>
           ScaffoldMessenger.of(context).showSnackBar(
             SnackBar(
                 content: Text(
-                    Localizations.localeOf(context).languageCode == 'ko'
+                    (isChineseUi(context) ? '动态不存在' : Localizations.localeOf(context).languageCode == 'ko'
                         ? '포스트를 찾을 수 없습니다'
-                        : 'Post not found')),
+                        : 'Post not found'))),
           );
         }
       }
@@ -4224,9 +4225,9 @@ class _DMChatScreenState extends State<DMChatScreen>
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
-              content: Text(Localizations.localeOf(context).languageCode == 'ko'
+              content: Text((isChineseUi(context) ? '加载动态时出错' : Localizations.localeOf(context).languageCode == 'ko'
                   ? '포스트를 불러오는 중 오류가 발생했습니다'
-                  : 'An error occurred while loading the post')),
+                  : 'An error occurred while loading the post'))),
         );
       }
     }

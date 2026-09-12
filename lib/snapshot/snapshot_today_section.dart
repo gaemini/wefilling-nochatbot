@@ -16,6 +16,7 @@ import '../utils/profile_photo_policy.dart';
 import '../utils/responsive_helper.dart';
 import 'snapshot_storage_image.dart';
 import 'snapshot_strings.dart';
+import '../l10n/ui_locale.dart';
 
 const double _snackPreviewSize = 72;
 const double _snackTileWidth = 74;
@@ -274,10 +275,11 @@ class _SnapshotTile extends StatelessWidget {
               // 스낵 썸네일의 가장 바깥 경계에 정확히 닿도록 한다.
               ringInset: 0,
               emphasized: true,
-              semanticLabel:
-                  Localizations.localeOf(context).languageCode == 'ko'
+              semanticLabel: (isChineseUi(context)
+                  ? '部分人可见的限时动态'
+                  : Localizations.localeOf(context).languageCode == 'ko'
                       ? '공개 범위가 제한된 스낵'
-                      : 'Limited audience snack',
+                      : 'Limited audience snack'),
               child: _SnackAuthorProfilePreview(
                 photoUrl: snapshot.authorPhotoUrl,
               ),
@@ -318,6 +320,7 @@ class _MySnackTile extends StatelessWidget {
     return _SnackTileShell(
       label: label,
       onTap: onTap,
+      expandToFitLabel: true,
       preview: SizedBox.square(
         dimension: _snackPreviewSize,
         child: Stack(
@@ -339,11 +342,12 @@ class _MySnackTile extends StatelessWidget {
                           innerGap: 1,
                           ringInset: 0,
                           emphasized: true,
-                          semanticLabel:
-                              Localizations.localeOf(context).languageCode ==
+                          semanticLabel: (isChineseUi(context)
+                              ? '部分人可见的限时动态'
+                              : Localizations.localeOf(context).languageCode ==
                                       'ko'
                                   ? '공개 범위가 제한된 스낵'
-                                  : 'Limited audience snack',
+                                  : 'Limited audience snack'),
                           child: _SnackAuthorProfilePreview(
                             photoUrl: profilePhotoUrl.trim().isNotEmpty
                                 ? profilePhotoUrl
@@ -475,14 +479,40 @@ class _SnackTileShell extends StatelessWidget {
     required this.label,
     required this.onTap,
     required this.preview,
+    this.expandToFitLabel = false,
   });
 
   final String label;
   final VoidCallback onTap;
   final Widget preview;
+  final bool expandToFitLabel;
 
   @override
   Widget build(BuildContext context) {
+    final textScaler = MediaQuery.textScalerOf(context).clamp(
+      maxScaleFactor: 1.15,
+    );
+    final labelStyle = TextStyle(
+      // Preserve every existing snack label exactly; only My Snack opts into
+      // the locale-aware family needed to measure/render its Chinese label.
+      fontFamily: expandToFitLabel ? uiFontFamily(context, 'Inter') : 'Inter',
+      fontFamilyFallback: const ['NotoSansKR'],
+      fontSize: 13,
+      height: 1.25,
+      fontWeight: FontWeight.w600,
+      color: const Color(0xFF111827),
+    );
+    var tileWidth = _snackTileWidth;
+    if (expandToFitLabel) {
+      final painter = TextPainter(
+        text: TextSpan(text: label, style: labelStyle),
+        maxLines: 1,
+        textDirection: Directionality.of(context),
+        textScaler: textScaler,
+      )..layout();
+      tileWidth = (painter.width + 4).clamp(_snackTileWidth, 140.0).toDouble();
+      painter.dispose();
+    }
     return Semantics(
       button: true,
       label: label,
@@ -492,30 +522,27 @@ class _SnackTileShell extends StatelessWidget {
           borderRadius: BorderRadius.circular(18),
           onTap: onTap,
           child: SizedBox(
-            width: _snackTileWidth,
+            width: tileWidth,
             child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
               mainAxisAlignment: MainAxisAlignment.center,
               children: [
-                preview,
-                const SizedBox(height: 3),
                 SizedBox(
                   width: _snackTileWidth,
+                  child: Center(child: preview),
+                ),
+                const SizedBox(height: 3),
+                SizedBox(
+                  width: tileWidth,
                   child: Text(
                     label,
                     maxLines: 1,
-                    overflow: TextOverflow.ellipsis,
+                    overflow: expandToFitLabel
+                        ? TextOverflow.clip
+                        : TextOverflow.ellipsis,
                     textAlign: TextAlign.center,
-                    textScaler: MediaQuery.textScalerOf(context).clamp(
-                      maxScaleFactor: 1.15,
-                    ),
-                    style: const TextStyle(
-                      fontFamily: 'Inter',
-                      fontFamilyFallback: ['NotoSansKR'],
-                      fontSize: 13,
-                      height: 1.25,
-                      fontWeight: FontWeight.w600,
-                      color: Color(0xFF111827),
-                    ),
+                    textScaler: textScaler,
+                    style: labelStyle,
                   ),
                 ),
               ],

@@ -39,6 +39,7 @@ import '../ui/snackbar/app_snackbar.dart';
 import 'snack_chat_screen.dart';
 import '../ui/widgets/hanyang_verification_gate.dart';
 import '../services/notification_service.dart';
+import '../l10n/ui_locale.dart';
 // NOTE: 단체 톡방(확성기) 기능 제거됨
 
 class MeetupDetailScreen extends StatefulWidget {
@@ -52,6 +53,27 @@ class MeetupDetailScreen extends StatefulWidget {
     required this.meetupId,
     required this.onMeetupDeleted,
   }) : super(key: key);
+
+  @visibleForTesting
+  static String formatScheduleForLocale(Meetup meetup, String languageCode) {
+    final hasNoTime = meetup.time.isEmpty || meetup.time == '미정';
+
+    if (languageCode == 'zh') {
+      final weekday = meetup.getFormattedDayOfWeek(languageCode: 'zh');
+      final time = hasNoTime ? '时间待定' : meetup.time;
+      return '${meetup.date.month}月${meetup.date.day}日（$weekday）$time';
+    }
+    if (languageCode == 'ko') {
+      final weekday = meetup.getFormattedDayOfWeek(languageCode: 'ko');
+      final time = hasNoTime ? '시간 미정' : meetup.time;
+      return '${meetup.date.month}월 ${meetup.date.day}일 ($weekday) $time';
+    }
+
+    final date = DateFormat('MMM d', 'en').format(meetup.date);
+    final weekday = meetup.getFormattedDayOfWeek(languageCode: 'en');
+    final time = hasNoTime ? 'Time TBD' : meetup.time;
+    return '$date ($weekday) $time';
+  }
 
   @override
   State<MeetupDetailScreen> createState() => _MeetupDetailScreenState();
@@ -471,9 +493,11 @@ class _MeetupDetailScreenState extends State<MeetupDetailScreen>
             context,
             message:
                 AppLocalizations.of(context)!.meetupCancelledSuccessfully ??
-                    (Localizations.localeOf(context).languageCode == 'ko'
-                        ? '모임이 성공적으로 취소되었습니다'
-                        : 'Meetup cancelled successfully'),
+                    ((isChineseUi(context)
+                        ? '聚会已取消'
+                        : Localizations.localeOf(context).languageCode == 'ko'
+                            ? '모임이 성공적으로 취소되었습니다'
+                            : 'Meetup cancelled successfully')),
             type: AppSnackBarType.success,
           );
         }
@@ -555,9 +579,13 @@ class _MeetupDetailScreenState extends State<MeetupDetailScreen>
                     color: Color(0xFF111827)),
               ),
               title: Text(
-                currentLang == 'ko' ? '밋업' : 'Meetup',
+                (isChineseUi(context)
+                    ? '聚会'
+                    : currentLang == 'ko'
+                        ? '밋업'
+                        : 'Meetup'),
                 style: TextStyle(
-                  fontFamily: 'Inter',
+                  fontFamily: uiFontFamily(context, 'Inter'),
                   fontFamilyFallback: const ['NotoSansKR'],
                   fontSize: context.rf(18).clamp(17, 20).toDouble(),
                   fontWeight: FontWeight.w800,
@@ -597,12 +625,12 @@ class _MeetupDetailScreenState extends State<MeetupDetailScreen>
                               maxLines: 3,
                               overflow: TextOverflow.ellipsis,
                               style: TextStyle(
-                                fontFamily: 'Inter',
+                                fontFamily: uiFontFamily(context, 'Inter'),
                                 fontFamilyFallback: const ['NotoSansKR'],
                                 fontSize: titleSize,
                                 fontWeight: FontWeight.w800,
                                 color: const Color(0xFF101828),
-                                height: 1.23,
+                                height: isChineseUi(context) ? 1.3 : 1.23,
                                 letterSpacing: -0.45,
                               ),
                             ),
@@ -618,7 +646,8 @@ class _MeetupDetailScreenState extends State<MeetupDetailScreen>
                                     maxLines: 1,
                                     overflow: TextOverflow.ellipsis,
                                     style: TextStyle(
-                                      fontFamily: 'Inter',
+                                      fontFamily:
+                                          uiFontFamily(context, 'Inter'),
                                       fontFamilyFallback: const ['NotoSansKR'],
                                       fontSize: context
                                           .rf(13)
@@ -637,9 +666,14 @@ class _MeetupDetailScreenState extends State<MeetupDetailScreen>
                                 if (_currentMeetup.isExpired()) ...[
                                   const SizedBox(width: 7),
                                   Text(
-                                    currentLang == 'ko' ? '· 만료' : '· Expired',
+                                    (isChineseUi(context)
+                                        ? '· 已过期'
+                                        : currentLang == 'ko'
+                                            ? '· 만료'
+                                            : '· Expired'),
                                     style: TextStyle(
-                                      fontFamily: 'Inter',
+                                      fontFamily:
+                                          uiFontFamily(context, 'Inter'),
                                       fontFamilyFallback: const ['NotoSansKR'],
                                       fontSize: context
                                           .rf(13)
@@ -662,9 +696,10 @@ class _MeetupDetailScreenState extends State<MeetupDetailScreen>
                             const SizedBox(height: 22),
                             _buildSimpleInfoRow(
                               Icons.schedule_rounded,
-                              currentLang == 'ko'
-                                  ? '${_currentMeetup.date.month}월 ${_currentMeetup.date.day}일 (${_currentMeetup.getFormattedDayOfWeek(languageCode: currentLang)}) ${_currentMeetup.time.isEmpty || _currentMeetup.time == '미정' ? '시간 미정' : _currentMeetup.time}'
-                                  : '${DateFormat('MMM d', 'en').format(_currentMeetup.date)} (${_currentMeetup.getFormattedDayOfWeek(languageCode: 'en')}) ${_currentMeetup.time.isEmpty || _currentMeetup.time == '미정' ? 'Time TBD' : _currentMeetup.time}',
+                              MeetupDetailScreen.formatScheduleForLocale(
+                                _currentMeetup,
+                                currentLang,
+                              ),
                             ),
                             if (_currentMeetup.hasPublicTimeLimit) ...[
                               const SizedBox(height: 10),
@@ -694,8 +729,11 @@ class _MeetupDetailScreenState extends State<MeetupDetailScreen>
                                 .trim()
                                 .isNotEmpty) ...[
                               const SizedBox(height: 28),
-                              _buildSectionTitle(
-                                  currentLang == 'ko' ? '소개' : 'About'),
+                              _buildSectionTitle((isChineseUi(context)
+                                  ? '简介'
+                                  : currentLang == 'ko'
+                                      ? '소개'
+                                      : 'About')),
                               const SizedBox(height: 10),
                               TranslatableContent(
                                 request: ContentTranslationRequest(
@@ -712,7 +750,7 @@ class _MeetupDetailScreenState extends State<MeetupDetailScreen>
                                   fields['description'] ??
                                       _currentMeetup.description,
                                   style: TextStyle(
-                                    fontFamily: 'Inter',
+                                    fontFamily: uiFontFamily(context, 'Inter'),
                                     fontFamilyFallback: const ['NotoSansKR'],
                                     fontSize:
                                         context.rf(15).clamp(14, 16).toDouble(),
@@ -721,7 +759,7 @@ class _MeetupDetailScreenState extends State<MeetupDetailScreen>
                                     fontWeight: FontWeight.w500,
                                   ),
                                   linkStyle: TextStyle(
-                                    fontFamily: 'Inter',
+                                    fontFamily: uiFontFamily(context, 'Inter'),
                                     fontFamilyFallback: const ['NotoSansKR'],
                                     fontSize:
                                         context.rf(15).clamp(14, 16).toDouble(),
@@ -820,10 +858,22 @@ class _MeetupDetailScreenState extends State<MeetupDetailScreen>
     }
     final isKo = Localizations.localeOf(context).languageCode == 'ko';
     final label = roomId.isEmpty
-        ? (isKo ? '스낵챗 만들기' : 'Create Snack Chat')
+        ? ((isChineseUi(context)
+            ? '创建群聊'
+            : isKo
+                ? '스낵챗 만들기'
+                : 'Create Snack Chat'))
         : (_isHost
-            ? (isKo ? '스낵챗 열기' : 'Open Snack Chat')
-            : (isKo ? '스낵챗 참여하기' : 'Join Snack Chat'));
+            ? ((isChineseUi(context)
+                ? '进入群聊'
+                : isKo
+                    ? '스낵챗 열기'
+                    : 'Open Snack Chat'))
+            : ((isChineseUi(context)
+                ? '加入群聊'
+                : isKo
+                    ? '스낵챗 참여하기'
+                    : 'Join Snack Chat')));
     return _buildBottomButton(
       label: label,
       icon: roomId.isEmpty ? Icons.add_comment_outlined : Icons.forum_outlined,
@@ -835,11 +885,11 @@ class _MeetupDetailScreenState extends State<MeetupDetailScreen>
   Widget _buildSectionTitle(String label) => Text(
         label,
         style: TextStyle(
-          fontFamily: 'Inter',
+          fontFamily: uiFontFamily(context, 'Inter'),
           fontFamilyFallback: const ['NotoSansKR'],
           fontSize: context.rf(18).clamp(17, 20).toDouble(),
           fontWeight: FontWeight.w800,
-          height: 1.25,
+          height: isChineseUi(context) ? 1.3 : 1.25,
           letterSpacing: -0.25,
           color: const Color(0xFF101828),
         ),
@@ -905,8 +955,8 @@ class _MeetupDetailScreenState extends State<MeetupDetailScreen>
             children: [
               Text(
                 AppLocalizations.of(context)!.host,
-                style: const TextStyle(
-                  fontFamily: 'Inter',
+                style: TextStyle(
+                  fontFamily: uiFontFamily(context, 'Inter'),
                   fontFamilyFallback: const ['NotoSansKR'],
                   fontSize: 12,
                   fontWeight: FontWeight.w600,
@@ -919,7 +969,7 @@ class _MeetupDetailScreenState extends State<MeetupDetailScreen>
                 maxLines: 1,
                 overflow: TextOverflow.ellipsis,
                 style: TextStyle(
-                  fontFamily: 'Inter',
+                  fontFamily: uiFontFamily(context, 'Inter'),
                   fontFamilyFallback: const ['NotoSansKR'],
                   fontSize: context.rf(15).clamp(14, 16).toDouble(),
                   fontWeight: FontWeight.w700,
@@ -949,14 +999,26 @@ class _MeetupDetailScreenState extends State<MeetupDetailScreen>
     }
 
     final label = switch (_currentMeetup.visibility) {
-      'friends' => isKo ? '친구만' : 'Friends only',
-      _ => isKo ? '전체 공개' : 'Everyone',
+      'friends' => (isChineseUi(context)
+          ? '仅好友'
+          : isKo
+              ? '친구만'
+              : 'Friends only'),
+      _ => (isChineseUi(context)
+          ? '所有人'
+          : isKo
+              ? '전체 공개'
+              : 'Everyone'),
     };
 
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        _buildSectionTitle(isKo ? '공개 대상' : 'Audience'),
+        _buildSectionTitle((isChineseUi(context)
+            ? '可见范围'
+            : isKo
+                ? '공개 대상'
+                : 'Audience')),
         const SizedBox(height: 11),
         Row(
           children: [
@@ -972,7 +1034,7 @@ class _MeetupDetailScreenState extends State<MeetupDetailScreen>
               child: Text(
                 label,
                 style: TextStyle(
-                  fontFamily: 'Inter',
+                  fontFamily: uiFontFamily(context, 'Inter'),
                   fontFamilyFallback: const ['NotoSansKR'],
                   fontSize: context.rf(15).clamp(14, 16).toDouble(),
                   fontWeight: FontWeight.w700,
@@ -996,7 +1058,7 @@ class _MeetupDetailScreenState extends State<MeetupDetailScreen>
         Text(
           l10n.postAudienceSubtitle,
           style: TextStyle(
-            fontFamily: 'Inter',
+            fontFamily: uiFontFamily(context, 'Inter'),
             fontFamilyFallback: const ['NotoSansKR'],
             fontSize: context.rf(13).clamp(12, 14).toDouble(),
             height: 1.4,
@@ -1029,11 +1091,13 @@ class _MeetupDetailScreenState extends State<MeetupDetailScreen>
             final members = snapshot.data?.members ?? const <UserProfile>[];
             if (members.isEmpty) {
               return Text(
-                isKo
-                    ? '공개 대상 정보를 확인할 수 없어요.'
-                    : 'Audience information is unavailable.',
+                (isChineseUi(context)
+                    ? '暂无可见范围信息。'
+                    : isKo
+                        ? '공개 대상 정보를 확인할 수 없어요.'
+                        : 'Audience information is unavailable.'),
                 style: TextStyle(
-                  fontFamily: 'Inter',
+                  fontFamily: uiFontFamily(context, 'Inter'),
                   fontFamilyFallback: const ['NotoSansKR'],
                   fontSize: context.rf(13).clamp(12, 14).toDouble(),
                   height: 1.4,
@@ -1099,7 +1163,7 @@ class _MeetupDetailScreenState extends State<MeetupDetailScreen>
                 overflow: TextOverflow.ellipsis,
                 textAlign: TextAlign.center,
                 style: TextStyle(
-                  fontFamily: 'Inter',
+                  fontFamily: uiFontFamily(context, 'Inter'),
                   fontFamilyFallback: const ['NotoSansKR'],
                   fontSize: context.rf(11.5).clamp(11, 12.5).toDouble(),
                   fontWeight: FontWeight.w600,
@@ -1249,7 +1313,7 @@ class _MeetupDetailScreenState extends State<MeetupDetailScreen>
           child: _buildPrettyLinkText(
             content,
             style: TextStyle(
-              fontFamily: 'Inter',
+              fontFamily: uiFontFamily(context, 'Inter'),
               fontFamilyFallback: const ['NotoSansKR'],
               fontSize: context.rf(15).clamp(14, 16).toDouble(),
               fontWeight: FontWeight.w600,
@@ -1299,8 +1363,8 @@ class _MeetupDetailScreenState extends State<MeetupDetailScreen>
               children: [
                 Text(
                   title,
-                  style: const TextStyle(
-                    fontFamily: 'Inter',
+                  style: TextStyle(
+                    fontFamily: uiFontFamily(context, 'Inter'),
                     fontFamilyFallback: const ['NotoSansKR'],
                     fontSize: 13,
                     fontWeight: FontWeight.w600,
@@ -1313,16 +1377,16 @@ class _MeetupDetailScreenState extends State<MeetupDetailScreen>
                   // URL이 있으면 Linkify 사용
                   _buildPrettyLinkText(
                     content,
-                    style: const TextStyle(
-                      fontFamily: 'Inter',
+                    style: TextStyle(
+                      fontFamily: uiFontFamily(context, 'Inter'),
                       fontFamilyFallback: const ['NotoSansKR'],
                       fontSize: 15,
                       height: 1.5,
                       color: Color(0xFF1E293B), // 진한 회색 (본문용)
                       fontWeight: FontWeight.w500,
                     ),
-                    linkStyle: const TextStyle(
-                      fontFamily: 'Inter',
+                    linkStyle: TextStyle(
+                      fontFamily: uiFontFamily(context, 'Inter'),
                       fontFamilyFallback: const ['NotoSansKR'],
                       fontSize: 15,
                       color: AppColors.pointColor, // 위필링 시그니처 블루
@@ -1339,8 +1403,8 @@ class _MeetupDetailScreenState extends State<MeetupDetailScreen>
                       Expanded(
                         child: Text(
                           content,
-                          style: const TextStyle(
-                            fontFamily: 'Inter',
+                          style: TextStyle(
+                            fontFamily: uiFontFamily(context, 'Inter'),
                             fontFamilyFallback: const ['NotoSansKR'],
                             fontSize: 15,
                             height: 1.5,
@@ -1480,8 +1544,8 @@ class _MeetupDetailScreenState extends State<MeetupDetailScreen>
                               hasMoreThanMax
                                   ? '1/${gallery.length}+'
                                   : '1/${gallery.length}',
-                              style: const TextStyle(
-                                fontFamily: 'Inter',
+                              style: TextStyle(
+                                fontFamily: uiFontFamily(context, 'Inter'),
                                 fontFamilyFallback: const ['NotoSansKR'],
                                 fontSize: 12,
                                 fontWeight: FontWeight.w800,
@@ -1719,8 +1783,8 @@ class _MeetupDetailScreenState extends State<MeetupDetailScreen>
                 const SizedBox(width: 12),
                 Text(
                   AppLocalizations.of(context)!.reportAction,
-                  style: const TextStyle(
-                    fontFamily: 'Inter',
+                  style: TextStyle(
+                    fontFamily: uiFontFamily(context, 'Inter'),
                     fontFamilyFallback: const ['NotoSansKR'],
                     fontSize: 14,
                     fontWeight: FontWeight.w600,
@@ -1753,8 +1817,8 @@ class _MeetupDetailScreenState extends State<MeetupDetailScreen>
                 const SizedBox(width: 12),
                 Text(
                   AppLocalizations.of(context)!.blockAction,
-                  style: const TextStyle(
-                    fontFamily: 'Inter',
+                  style: TextStyle(
+                    fontFamily: uiFontFamily(context, 'Inter'),
                     fontFamilyFallback: const ['NotoSansKR'],
                     fontSize: 14,
                     fontWeight: FontWeight.w600,
@@ -1826,9 +1890,11 @@ class _MeetupDetailScreenState extends State<MeetupDetailScreen>
       final isKorean = Localizations.localeOf(context).languageCode == 'ko';
       AppSnackBar.show(
         context,
-        message: isKorean
-            ? '확정되었거나 만료된 모임은 수정할 수 없습니다.'
-            : 'Confirmed or expired meetups cannot be edited.',
+        message: (isChineseUi(context)
+            ? '已确认或已过期的聚会无法编辑。'
+            : isKorean
+                ? '확정되었거나 만료된 모임은 수정할 수 없습니다.'
+                : 'Confirmed or expired meetups cannot be edited.'),
         type: AppSnackBarType.warning,
       );
       return;
@@ -1936,7 +2002,11 @@ class _MeetupDetailScreenState extends State<MeetupDetailScreen>
           const SizedBox(width: 8),
           Expanded(
             child: _buildBottomButton(
-              label: isKo ? '확정' : 'Confirm',
+              label: (isChineseUi(context)
+                  ? '确定'
+                  : isKo
+                      ? '확정'
+                      : 'Confirm'),
               icon: Icons.done_rounded,
               onPressed: _confirmMeetup,
             ),
@@ -1954,9 +2024,11 @@ class _MeetupDetailScreenState extends State<MeetupDetailScreen>
     if (_currentMeetup.isPublicWindowExpiredAt()) {
       AppSnackBar.show(
         context,
-        message: isKo
-            ? '공개 시간이 지나 밋업을 확정할 수 없습니다.'
-            : 'This meetup can no longer be confirmed because its public time expired.',
+        message: (isChineseUi(context)
+            ? '公开时间已结束，无法再确认此聚会。'
+            : isKo
+                ? '공개 시간이 지나 밋업을 확정할 수 없습니다.'
+                : 'This meetup can no longer be confirmed because its public time expired.'),
         type: AppSnackBarType.warning,
       );
       _schedulePublicationExpiryExit();
@@ -1970,20 +2042,26 @@ class _MeetupDetailScreenState extends State<MeetupDetailScreen>
         surfaceTintColor: Colors.white,
         shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(18)),
         title: Text(
-          isKo ? '밋업을 확정할까요?' : 'Confirm this meetup?',
-          style: const TextStyle(
-            fontFamily: 'Inter',
+          (isChineseUi(context)
+              ? '确认举办聚会？'
+              : isKo
+                  ? '밋업을 확정할까요?'
+                  : 'Confirm this meetup?'),
+          style: TextStyle(
+            fontFamily: uiFontFamily(context, 'Inter'),
             fontFamilyFallback: const ['NotoSansKR'],
             fontWeight: FontWeight.w800,
             fontSize: 18,
           ),
         ),
         content: Text(
-          isKo
-              ? '참여자에게 예정대로 진행되는 밋업임을 알려요.'
-              : 'Participants will know that this meetup is going ahead.',
-          style: const TextStyle(
-            fontFamily: 'Inter',
+          (isChineseUi(context)
+              ? '参与者将知道此聚会确定举行。'
+              : isKo
+                  ? '참여자에게 예정대로 진행되는 밋업임을 알려요.'
+                  : 'Participants will know that this meetup is going ahead.'),
+          style: TextStyle(
+            fontFamily: uiFontFamily(context, 'Inter'),
             fontFamilyFallback: const ['NotoSansKR'],
             color: Color(0xFF667085),
             height: 1.45,
@@ -1992,14 +2070,22 @@ class _MeetupDetailScreenState extends State<MeetupDetailScreen>
         actions: [
           TextButton(
             onPressed: () => Navigator.of(dialogContext).pop(false),
-            child: Text(isKo ? '아니요' : 'Not now'),
+            child: Text((isChineseUi(context)
+                ? '暂不开启'
+                : isKo
+                    ? '아니요'
+                    : 'Not now')),
           ),
           TextButton(
             onPressed: () => Navigator.of(dialogContext).pop(true),
             style: TextButton.styleFrom(
               foregroundColor: const Color(0xFF111827),
             ),
-            child: Text(isKo ? '확정하기' : 'Confirm'),
+            child: Text((isChineseUi(context)
+                ? '确定'
+                : isKo
+                    ? '확정하기'
+                    : 'Confirm')),
           ),
         ],
       ),
@@ -2017,8 +2103,16 @@ class _MeetupDetailScreenState extends State<MeetupDetailScreen>
     AppSnackBar.show(
       context,
       message: success
-          ? (isKo ? '밋업이 확정되었습니다.' : 'Meetup confirmed.')
-          : (isKo ? '밋업을 확정하지 못했습니다.' : 'Could not confirm meetup.'),
+          ? ((isChineseUi(context)
+              ? '聚会已确认。'
+              : isKo
+                  ? '밋업이 확정되었습니다.'
+                  : 'Meetup confirmed.'))
+          : ((isChineseUi(context)
+              ? '确认聚会失败。'
+              : isKo
+                  ? '밋업을 확정하지 못했습니다.'
+                  : 'Could not confirm meetup.')),
       type: success ? AppSnackBarType.success : AppSnackBarType.error,
     );
   }
@@ -2029,9 +2123,11 @@ class _MeetupDetailScreenState extends State<MeetupDetailScreen>
     if (_currentMeetup.isExpired()) {
       AppSnackBar.show(
         context,
-        message: isKo
-            ? '만료된 밋업에서는 스낵챗에 참여할 수 없습니다.'
-            : 'You cannot join the Snack Chat for an expired meetup.',
+        message: (isChineseUi(context)
+            ? '无法加入已过期聚会的群聊。'
+            : isKo
+                ? '만료된 밋업에서는 스낵챗에 참여할 수 없습니다.'
+                : 'You cannot join the Snack Chat for an expired meetup.'),
         type: AppSnackBarType.warning,
       );
       return;
@@ -2039,9 +2135,11 @@ class _MeetupDetailScreenState extends State<MeetupDetailScreen>
     if (!_isHost && !_isParticipant) {
       AppSnackBar.show(
         context,
-        message: isKo
-            ? '밋업에 참여한 뒤 스낵챗에 들어갈 수 있습니다.'
-            : 'Join the Meetup before entering its Snack Chat.',
+        message: (isChineseUi(context)
+            ? '请先加入聚会，再进入群聊。'
+            : isKo
+                ? '밋업에 참여한 뒤 스낵챗에 들어갈 수 있습니다.'
+                : 'Join the Meetup before entering its Snack Chat.'),
         type: AppSnackBarType.warning,
       );
       return;
@@ -2083,9 +2181,11 @@ class _MeetupDetailScreenState extends State<MeetupDetailScreen>
       if (mounted) {
         AppSnackBar.show(
           context,
-          message: isKo
-              ? '스낵챗을 열지 못했습니다. 잠시 후 다시 시도해 주세요.'
-              : 'Could not open Snack Chat. Please try again.',
+          message: (isChineseUi(context)
+              ? '打开群聊失败，请重试。'
+              : isKo
+                  ? '스낵챗을 열지 못했습니다. 잠시 후 다시 시도해 주세요.'
+                  : 'Could not open Snack Chat. Please try again.'),
           type: AppSnackBarType.error,
         );
       }
@@ -2138,7 +2238,11 @@ class _MeetupDetailScreenState extends State<MeetupDetailScreen>
   /// 모임 만료 상태 표시 버튼 (회색, 비활성화)
   Widget _buildExpiredStatusButton() {
     final isKo = Localizations.localeOf(context).languageCode == 'ko';
-    final label = isKo ? '만료' : 'Expired';
+    final label = (isChineseUi(context)
+        ? '已过期'
+        : isKo
+            ? '만료'
+            : 'Expired');
 
     return _buildBottomStatus(label, Icons.timer_off_outlined);
   }
@@ -2235,7 +2339,7 @@ class _MeetupDetailScreenState extends State<MeetupDetailScreen>
             maxLines: 1,
             overflow: TextOverflow.ellipsis,
             style: TextStyle(
-              fontFamily: 'Inter',
+              fontFamily: uiFontFamily(context, 'Inter'),
               fontFamilyFallback: const ['NotoSansKR'],
               fontSize: context.rf(15).clamp(14, 16).toDouble(),
               fontWeight: FontWeight.w700,
@@ -2258,8 +2362,8 @@ class _MeetupDetailScreenState extends State<MeetupDetailScreen>
                 label,
                 maxLines: 1,
                 overflow: TextOverflow.ellipsis,
-                style: const TextStyle(
-                  fontFamily: 'Inter',
+                style: TextStyle(
+                  fontFamily: uiFontFamily(context, 'Inter'),
                   fontFamilyFallback: const ['NotoSansKR'],
                   fontSize: 14,
                   fontWeight: FontWeight.w700,
@@ -2276,9 +2380,11 @@ class _MeetupDetailScreenState extends State<MeetupDetailScreen>
     if (_currentMeetup.isExpired()) {
       AppSnackBar.show(
         context,
-        message: Localizations.localeOf(context).languageCode == 'ko'
-            ? '만료된 모임입니다'
-            : 'This meetup has expired.',
+        message: (isChineseUi(context)
+            ? '此聚会已过期。'
+            : Localizations.localeOf(context).languageCode == 'ko'
+                ? '만료된 모임입니다'
+                : 'This meetup has expired.'),
         type: AppSnackBarType.error,
       );
       return;
@@ -2332,9 +2438,11 @@ class _MeetupDetailScreenState extends State<MeetupDetailScreen>
           AppSnackBar.show(
             context,
             message: AppLocalizations.of(context)!.meetupJoined ??
-                (Localizations.localeOf(context).languageCode == 'ko'
-                    ? '모임에 참여했습니다'
-                    : 'Joined the meetup'),
+                ((isChineseUi(context)
+                    ? '已加入聚会'
+                    : Localizations.localeOf(context).languageCode == 'ko'
+                        ? '모임에 참여했습니다'
+                        : 'Joined the meetup')),
             type: AppSnackBarType.success,
           );
         }
@@ -2347,9 +2455,11 @@ class _MeetupDetailScreenState extends State<MeetupDetailScreen>
           AppSnackBar.show(
             context,
             message: AppLocalizations.of(context)!.meetupJoinFailed ??
-                (Localizations.localeOf(context).languageCode == 'ko'
-                    ? '모임 참여에 실패했습니다'
-                    : 'Failed to join the meetup'),
+                ((isChineseUi(context)
+                    ? '加入聚会失败'
+                    : Localizations.localeOf(context).languageCode == 'ko'
+                        ? '모임 참여에 실패했습니다'
+                        : 'Failed to join the meetup')),
             type: AppSnackBarType.error,
           );
         }
@@ -2361,14 +2471,17 @@ class _MeetupDetailScreenState extends State<MeetupDetailScreen>
           _isLoading = false;
         });
 
-        String errorMessage =
-            Localizations.localeOf(context).languageCode == 'ko'
+        String errorMessage = (isChineseUi(context)
+            ? '加入聚会失败'
+            : Localizations.localeOf(context).languageCode == 'ko'
                 ? '모임 참여에 실패했습니다'
-                : 'Failed to join the meetup';
+                : 'Failed to join the meetup');
         if (e.toString().contains('permission-denied')) {
-          errorMessage = Localizations.localeOf(context).languageCode == 'ko'
-              ? '권한이 없습니다. 다시 시도해주세요'
-              : 'You don’t have permission. Please try again.';
+          errorMessage = (isChineseUi(context)
+              ? '暂无权限，请重试。'
+              : Localizations.localeOf(context).languageCode == 'ko'
+                  ? '권한이 없습니다. 다시 시도해주세요'
+                  : 'You don’t have permission. Please try again.');
         }
 
         AppSnackBar.show(
@@ -2385,9 +2498,11 @@ class _MeetupDetailScreenState extends State<MeetupDetailScreen>
     if (_currentMeetup.isExpired()) {
       AppSnackBar.show(
         context,
-        message: Localizations.localeOf(context).languageCode == 'ko'
-            ? '만료된 모임입니다'
-            : 'This meetup has expired.',
+        message: (isChineseUi(context)
+            ? '此聚会已过期。'
+            : Localizations.localeOf(context).languageCode == 'ko'
+                ? '만료된 모임입니다'
+                : 'This meetup has expired.'),
         type: AppSnackBarType.error,
       );
       return;
@@ -2426,9 +2541,11 @@ class _MeetupDetailScreenState extends State<MeetupDetailScreen>
           AppSnackBar.show(
             context,
             message: AppLocalizations.of(context)!.leaveMeetup ??
-                (Localizations.localeOf(context).languageCode == 'ko'
-                    ? '모임에서 나갔습니다'
-                    : 'Left the meetup'),
+                ((isChineseUi(context)
+                    ? '已退出聚会'
+                    : Localizations.localeOf(context).languageCode == 'ko'
+                        ? '모임에서 나갔습니다'
+                        : 'Left the meetup')),
             type: AppSnackBarType.info,
           );
         }
@@ -2441,9 +2558,11 @@ class _MeetupDetailScreenState extends State<MeetupDetailScreen>
           AppSnackBar.show(
             context,
             message: AppLocalizations.of(context)!.leaveMeetupFailed ??
-                (Localizations.localeOf(context).languageCode == 'ko'
-                    ? '모임 나가기에 실패했습니다'
-                    : 'Failed to leave the meetup'),
+                ((isChineseUi(context)
+                    ? '退出聚会失败'
+                    : Localizations.localeOf(context).languageCode == 'ko'
+                        ? '모임 나가기에 실패했습니다'
+                        : 'Failed to leave the meetup')),
             type: AppSnackBarType.error,
           );
         }
@@ -2455,14 +2574,17 @@ class _MeetupDetailScreenState extends State<MeetupDetailScreen>
           _isLoading = false;
         });
 
-        String errorMessage =
-            Localizations.localeOf(context).languageCode == 'ko'
+        String errorMessage = (isChineseUi(context)
+            ? '退出聚会失败'
+            : Localizations.localeOf(context).languageCode == 'ko'
                 ? '모임 나가기에 실패했습니다'
-                : 'Failed to leave the meetup';
+                : 'Failed to leave the meetup');
         if (e.toString().contains('permission-denied')) {
-          errorMessage = Localizations.localeOf(context).languageCode == 'ko'
-              ? '권한이 없습니다. 다시 시도해주세요'
-              : 'You don’t have permission. Please try again.';
+          errorMessage = (isChineseUi(context)
+              ? '暂无权限，请重试。'
+              : Localizations.localeOf(context).languageCode == 'ko'
+                  ? '권한이 없습니다. 다시 시도해주세요'
+                  : 'You don’t have permission. Please try again.');
         }
 
         AppSnackBar.show(
@@ -3520,7 +3642,7 @@ class _MeetupDetailScreenState extends State<MeetupDetailScreen>
                   Text(
                     l10n.cancelMeetupConfirm,
                     style: TextStyle(
-                      fontFamily: 'Inter',
+                      fontFamily: uiFontFamily(context, 'Inter'),
                       fontFamilyFallback: const ['NotoSansKR'],
                       fontSize: context.rf(17).clamp(16, 18).toDouble(),
                       fontWeight: FontWeight.w700,
@@ -3532,7 +3654,7 @@ class _MeetupDetailScreenState extends State<MeetupDetailScreen>
                   Text(
                     l10n.cancelMeetupMessage(_currentMeetup.title),
                     style: TextStyle(
-                      fontFamily: 'Inter',
+                      fontFamily: uiFontFamily(context, 'Inter'),
                       fontFamilyFallback: const ['NotoSansKR'],
                       fontSize: context.rf(13.5).clamp(13, 14.5).toDouble(),
                       fontWeight: FontWeight.w400,
@@ -3545,7 +3667,7 @@ class _MeetupDetailScreenState extends State<MeetupDetailScreen>
                     '• ${l10n.cancelMeetupWarning1}\n'
                     '• ${l10n.cancelMeetupWarning2}',
                     style: TextStyle(
-                      fontFamily: 'Inter',
+                      fontFamily: uiFontFamily(context, 'Inter'),
                       fontFamilyFallback: const ['NotoSansKR'],
                       fontSize: context.rf(12.5).clamp(12, 13.5).toDouble(),
                       fontWeight: FontWeight.w500,
@@ -3575,8 +3697,8 @@ class _MeetupDetailScreenState extends State<MeetupDetailScreen>
                           ),
                           child: Text(
                             l10n.no,
-                            style: const TextStyle(
-                              fontFamily: 'Inter',
+                            style: TextStyle(
+                              fontFamily: uiFontFamily(context, 'Inter'),
                               fontFamilyFallback: const ['NotoSansKR'],
                               fontSize: 14,
                               fontWeight: FontWeight.w600,
@@ -3597,8 +3719,8 @@ class _MeetupDetailScreenState extends State<MeetupDetailScreen>
                           ),
                           child: Text(
                             l10n.yesCancel,
-                            style: const TextStyle(
-                              fontFamily: 'Inter',
+                            style: TextStyle(
+                              fontFamily: uiFontFamily(context, 'Inter'),
                               fontFamilyFallback: const ['NotoSansKR'],
                               fontSize: 14,
                               fontWeight: FontWeight.w700,
@@ -3626,9 +3748,11 @@ class _MeetupDetailScreenState extends State<MeetupDetailScreen>
     final isKo = Localizations.localeOf(context).languageCode == 'ko';
     AppSnackBar.show(
       context,
-      message: isKo
-          ? '확정된 모임은 취소할 수 없습니다.'
-          : 'Confirmed meetups cannot be cancelled.',
+      message: (isChineseUi(context)
+          ? '已确认的聚会无法取消。'
+          : isKo
+              ? '확정된 모임은 취소할 수 없습니다.'
+              : 'Confirmed meetups cannot be cancelled.'),
       type: AppSnackBarType.error,
     );
   }
@@ -3712,7 +3836,7 @@ class _MeetupDetailScreenState extends State<MeetupDetailScreen>
                     maxLines: 1,
                     overflow: TextOverflow.ellipsis,
                     style: TextStyle(
-                      fontFamily: 'Inter',
+                      fontFamily: uiFontFamily(context, 'Inter'),
                       fontFamilyFallback: const ['NotoSansKR'],
                       fontSize: context.rf(18).clamp(17, 20).toDouble(),
                       fontWeight: FontWeight.w800,
@@ -3735,7 +3859,7 @@ class _MeetupDetailScreenState extends State<MeetupDetailScreen>
                           ? '${_currentMeetup.currentParticipants}/${_currentMeetup.maxParticipants} ${AppLocalizations.of(context)!.peopleUnit}'
                           : '$displayCount/${_currentMeetup.maxParticipants} ${AppLocalizations.of(context)!.peopleUnit}',
                       style: TextStyle(
-                        fontFamily: 'Inter',
+                        fontFamily: uiFontFamily(context, 'Inter'),
                         fontFamilyFallback: const ['NotoSansKR'],
                         fontSize: context.rf(14).clamp(13, 15).toDouble(),
                         fontWeight: FontWeight.w600,
@@ -3763,8 +3887,8 @@ class _MeetupDetailScreenState extends State<MeetupDetailScreen>
                           padding: const EdgeInsets.all(20.0),
                           child: Text(
                             AppLocalizations.of(context)!.noParticipantsYet,
-                            style: const TextStyle(
-                              fontFamily: 'Inter',
+                            style: TextStyle(
+                              fontFamily: uiFontFamily(context, 'Inter'),
                               fontFamilyFallback: const ['NotoSansKR'],
                               color: Color(0xFF64748B),
                               fontSize: 15,
@@ -3872,8 +3996,8 @@ class _MeetupDetailScreenState extends State<MeetupDetailScreen>
                                     participant.userName == 'DELETED_ACCOUNT'
                                 ? AppLocalizations.of(context)!.deletedAccount
                                 : participant.userName,
-                            style: const TextStyle(
-                              fontFamily: 'Inter',
+                            style: TextStyle(
+                              fontFamily: uiFontFamily(context, 'Inter'),
                               fontFamilyFallback: const ['NotoSansKR'],
                               fontSize: 15,
                               fontWeight: FontWeight.w600,
@@ -3890,8 +4014,8 @@ class _MeetupDetailScreenState extends State<MeetupDetailScreen>
                             participant.userCountry!.isNotEmpty) ...[
                           Text(
                             _getLocalizedCountryName(participant.userCountry!),
-                            style: const TextStyle(
-                              fontFamily: 'Inter',
+                            style: TextStyle(
+                              fontFamily: uiFontFamily(context, 'Inter'),
                               fontFamilyFallback: const ['NotoSansKR'],
                               fontSize: 14,
                               fontWeight: FontWeight.w600,
@@ -3911,8 +4035,8 @@ class _MeetupDetailScreenState extends State<MeetupDetailScreen>
                         participant.message!.isNotEmpty)
                       Text(
                         participant.message!,
-                        style: const TextStyle(
-                          fontFamily: 'Inter',
+                        style: TextStyle(
+                          fontFamily: uiFontFamily(context, 'Inter'),
                           fontFamilyFallback: const ['NotoSansKR'],
                           fontSize: 13,
                           color: Color(0xFF64748B),
@@ -3975,9 +4099,13 @@ class _MeetupDetailScreenState extends State<MeetupDetailScreen>
                 leading:
                     const Icon(Icons.logout_rounded, color: Color(0xFFEF4444)),
                 title: Text(
-                  isKo ? '퇴장시키기' : 'Remove from meetup',
-                  style: const TextStyle(
-                    fontFamily: 'Inter',
+                  (isChineseUi(context)
+                      ? '移出聚会'
+                      : isKo
+                          ? '퇴장시키기'
+                          : 'Remove from meetup'),
+                  style: TextStyle(
+                    fontFamily: uiFontFamily(context, 'Inter'),
                     fontFamilyFallback: const ['NotoSansKR'],
                     fontWeight: FontWeight.w700,
                     color: Color(0xFFEF4444),
@@ -3998,21 +4126,35 @@ class _MeetupDetailScreenState extends State<MeetupDetailScreen>
       context: context,
       builder: (context) {
         return AlertDialog(
-          title: Text(isKo ? '참여자 퇴장' : 'Remove participant'),
+          title: Text((isChineseUi(context)
+              ? '移除参与者'
+              : isKo
+                  ? '참여자 퇴장'
+                  : 'Remove participant')),
           content: Text(
-            isKo
-                ? '${participant.userName}님을 모임에서 퇴장시킬까요?'
-                : 'Remove ${participant.userName} from this meetup?',
+            (isChineseUi(context)
+                ? '将${participant.userName}移出此聚会？'
+                : isKo
+                    ? '${participant.userName}님을 모임에서 퇴장시킬까요?'
+                    : 'Remove ${participant.userName} from this meetup?'),
           ),
           actions: [
             TextButton(
               onPressed: () => Navigator.pop(context, false),
-              child: Text(isKo ? '취소' : 'Cancel'),
+              child: Text((isChineseUi(context)
+                  ? '取消'
+                  : isKo
+                      ? '취소'
+                      : 'Cancel')),
             ),
             TextButton(
               onPressed: () => Navigator.pop(context, true),
               child: Text(
-                isKo ? '퇴장' : 'Remove',
+                (isChineseUi(context)
+                    ? '移除'
+                    : isKo
+                        ? '퇴장'
+                        : 'Remove'),
                 style: const TextStyle(color: Color(0xFFEF4444)),
               ),
             ),
@@ -4032,14 +4174,22 @@ class _MeetupDetailScreenState extends State<MeetupDetailScreen>
     if (ok) {
       AppSnackBar.show(
         context,
-        message: isKo ? '퇴장 처리했습니다.' : 'Participant removed.',
+        message: (isChineseUi(context)
+            ? '已移除参与者。'
+            : isKo
+                ? '퇴장 처리했습니다.'
+                : 'Participant removed.'),
         type: AppSnackBarType.success,
       );
       await _loadParticipants();
     } else {
       AppSnackBar.show(
         context,
-        message: isKo ? '퇴장 처리에 실패했습니다.' : 'Failed to remove participant.',
+        message: (isChineseUi(context)
+            ? '移除参与者失败。'
+            : isKo
+                ? '퇴장 처리에 실패했습니다.'
+                : 'Failed to remove participant.'),
         type: AppSnackBarType.error,
       );
     }
@@ -4100,8 +4250,8 @@ class _MeetupDetailScreenState extends State<MeetupDetailScreen>
                     participant.message!.isNotEmpty)
                   Text(
                     participant.message!,
-                    style: const TextStyle(
-                      fontFamily: 'Inter',
+                    style: TextStyle(
+                      fontFamily: uiFontFamily(context, 'Inter'),
                       fontFamilyFallback: const ['NotoSansKR'],
                       fontSize: 13,
                       color: Color(0xFF64748B),
@@ -4126,7 +4276,7 @@ class _MeetupDetailScreenState extends State<MeetupDetailScreen>
                 participant.getStatusTextLocalized(
                     Localizations.localeOf(context).languageCode),
                 style: TextStyle(
-                  fontFamily: 'Inter',
+                  fontFamily: uiFontFamily(context, 'Inter'),
                   fontFamilyFallback: const ['NotoSansKR'],
                   fontSize: 12,
                   color: participant.getStatusColor(),
@@ -4150,8 +4300,8 @@ class _MeetupDetailScreenState extends State<MeetupDetailScreen>
                     participant.userName == 'DELETED_ACCOUNT'
                 ? AppLocalizations.of(context)!.deletedAccount
                 : participant.userName,
-            style: const TextStyle(
-              fontFamily: 'Inter',
+            style: TextStyle(
+              fontFamily: uiFontFamily(context, 'Inter'),
               fontFamilyFallback: const ['NotoSansKR'],
               fontSize: 15,
               fontWeight: FontWeight.w600,

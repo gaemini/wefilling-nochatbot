@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 
 import '../../utils/responsive_helper.dart';
+import '../../l10n/ui_locale.dart';
 
 enum AppButtonVariant { primary, outline, text }
 enum AppButtonSize { m, l }
@@ -32,11 +33,11 @@ class AppButton extends StatelessWidget {
         : context.rh(40, min: 38, max: 42);
     final verticalPadding = size == AppButtonSize.l ? context.rs(6) : context.rs(3);
     final textStyle = TextStyle(
-      fontFamily: 'Inter',
+      fontFamily: uiFontFamily(context, 'Inter'),
       fontFamilyFallback: const ['NotoSansKR'],
       fontSize: context.rf(size == AppButtonSize.l ? 15 : 14),
       fontWeight: FontWeight.w700,
-      height: 1.2,
+      height: isChineseUi(context) ? 1.3 : 1.2,
     );
 
     final content = ConstrainedBox(

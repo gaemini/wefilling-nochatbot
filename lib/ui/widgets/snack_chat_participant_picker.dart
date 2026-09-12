@@ -5,6 +5,7 @@ import 'package:flutter/material.dart';
 import '../../models/user_profile.dart';
 import '../../repositories/users_repository.dart';
 import '../../utils/responsive_helper.dart';
+import '../../l10n/ui_locale.dart';
 
 typedef SnackChatUserIdSearch = Future<SnackChatUserSearchPage> Function(
   String query, {
@@ -197,9 +198,9 @@ class _SnackChatParticipantPickerState extends State<SnackChatParticipantPicker>
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
           content: Text(
-            _isKo
+            (isChineseUi(context) ? '每个群聊最多50人，包含你自己。' : _isKo
                 ? '한 채팅방에는 나를 포함해 최대 50명까지 참여할 수 있어요.'
-                : 'A room can have up to 50 participants including you.',
+                : 'A room can have up to 50 participants including you.'),
           ),
         ),
       );
@@ -264,21 +265,21 @@ class _SnackChatParticipantPickerState extends State<SnackChatParticipantPicker>
                     labelColor: const Color(0xFF111827),
                     unselectedLabelColor: const Color(0xFF667085),
                     labelStyle: TextStyle(
-                      fontFamily: 'Inter',
+                      fontFamily: uiFontFamily(context, 'Inter'),
                       fontFamilyFallback: const ['NotoSansKR'],
                       fontSize: context.rf(13.5).clamp(12.5, 14.5).toDouble(),
                       fontWeight: FontWeight.w700,
                     ),
                     unselectedLabelStyle: TextStyle(
-                      fontFamily: 'Inter',
+                      fontFamily: uiFontFamily(context, 'Inter'),
                       fontFamilyFallback: const ['NotoSansKR'],
                       fontSize: context.rf(13.5).clamp(12.5, 14.5).toDouble(),
                       fontWeight: FontWeight.w600,
                     ),
                     tabs: [
-                      Tab(text: _isKo ? '친구' : 'Friends'),
+                      Tab(text: (isChineseUi(context) ? '好友' : _isKo ? '친구' : 'Friends')),
                       Tab(
-                        text: _isKo ? '전체 · 아이디 검색' : 'All · ID search',
+                        text: (isChineseUi(context) ? '全部 · ID搜索' : _isKo ? '전체 · 아이디 검색' : 'All · ID search'),
                       ),
                     ],
                   ),
@@ -298,7 +299,7 @@ class _SnackChatParticipantPickerState extends State<SnackChatParticipantPicker>
                   enableSuggestions: _tabController.index == 0,
                   onSubmitted: (_) => _submitSearch(),
                   style: TextStyle(
-                    fontFamily: 'Inter',
+                    fontFamily: uiFontFamily(context, 'Inter'),
                     fontFamilyFallback: const ['NotoSansKR'],
                     fontSize: searchFontSize,
                     fontWeight: FontWeight.w500,
@@ -306,10 +307,10 @@ class _SnackChatParticipantPickerState extends State<SnackChatParticipantPicker>
                   ),
                   decoration: InputDecoration(
                     hintText: _tabController.index == 0
-                        ? (_isKo ? '친구 이름 검색' : 'Search friends')
-                        : (_isKo ? '사용자 아이디 검색' : 'Search user IDs'),
+                        ? ((isChineseUi(context) ? '搜索好友' : _isKo ? '친구 이름 검색' : 'Search friends'))
+                        : ((isChineseUi(context) ? '搜索用户ID' : _isKo ? '사용자 아이디 검색' : 'Search user IDs')),
                     hintStyle: TextStyle(
-                      fontFamily: 'Inter',
+                      fontFamily: uiFontFamily(context, 'Inter'),
                       fontFamilyFallback: const ['NotoSansKR'],
                       fontSize: searchFontSize,
                       fontWeight: FontWeight.w400,
@@ -317,7 +318,7 @@ class _SnackChatParticipantPickerState extends State<SnackChatParticipantPicker>
                     ),
                     prefixIcon: IconButton(
                       key: const Key('snack_chat_participant_search_button'),
-                      tooltip: _isKo ? '아이디 검색' : 'Search by ID',
+                      tooltip: (isChineseUi(context) ? '按ID搜索' : _isKo ? '아이디 검색' : 'Search by ID'),
                       onPressed:
                           _tabController.index == 1 ? _submitSearch : null,
                       padding: EdgeInsets.zero,
@@ -392,10 +393,10 @@ class _SnackChatParticipantPickerState extends State<SnackChatParticipantPicker>
     if (visible.isEmpty) {
       return _PickerMessage(
         icon: Icons.people_outline_rounded,
-        title: _isKo ? '초대할 친구가 없어요' : 'No friends to invite',
-        description: _isKo
+        title: (isChineseUi(context) ? '暂无可邀请的好友' : _isKo ? '초대할 친구가 없어요' : 'No friends to invite'),
+        description: (isChineseUi(context) ? '试试在“全部”中通过用户ID查找。' : _isKo
             ? '전체 탭에서 사용자 아이디로 찾아보세요.'
-            : 'Try finding someone by user ID in the All tab.',
+            : 'Try finding someone by user ID in the All tab.'),
       );
     }
     return ListView.builder(
@@ -419,10 +420,10 @@ class _SnackChatParticipantPickerState extends State<SnackChatParticipantPicker>
     if (_query.isEmpty) {
       return _PickerMessage(
         icon: Icons.alternate_email_rounded,
-        title: _isKo ? '사용자 아이디로 초대해요' : 'Invite by user ID',
-        description: _isKo
+        title: (isChineseUi(context) ? '通过用户ID邀请' : _isKo ? '사용자 아이디로 초대해요' : 'Invite by user ID'),
+        description: (isChineseUi(context) ? '输入ID查找所有用户，\n无需先成为好友。' : _isKo
             ? '아이디 철자를 입력하면 친구 여부와 관계없이\n전체 사용자에서 찾아요.'
-            : 'Enter the spelling of an ID to search all users,\nwhether or not you are friends.',
+            : 'Enter the spelling of an ID to search all users,\nwhether or not you are friends.'),
       );
     }
     if (_isSearching) {
@@ -436,23 +437,23 @@ class _SnackChatParticipantPickerState extends State<SnackChatParticipantPicker>
     if (_searchFailed) {
       return _PickerMessage(
         icon: Icons.wifi_off_rounded,
-        title: _isKo ? '검색하지 못했어요' : 'Could not search',
-        description: _isKo
+        title: (isChineseUi(context) ? '搜索失败' : _isKo ? '검색하지 못했어요' : 'Could not search'),
+        description: (isChineseUi(context) ? '请检查网络后重试。' : _isKo
             ? '연결을 확인하고 다시 시도해 주세요.'
-            : 'Check your connection and try again.',
-        actionLabel: _isKo ? '다시 검색' : 'Try again',
+            : 'Check your connection and try again.'),
+        actionLabel: (isChineseUi(context) ? '重试' : _isKo ? '다시 검색' : 'Try again'),
         onAction: () => _searchDirectory(_query),
       );
     }
     if (_hasSearched && _directoryResults.isEmpty) {
       return _PickerMessage(
         icon: Icons.person_search_outlined,
-        title: _isKo ? '일치하는 사용자가 없어요' : 'No matching user',
+        title: (isChineseUi(context) ? '未找到匹配用户' : _isKo ? '일치하는 사용자가 없어요' : 'No matching user'),
         description:
-            _isKo ? '아이디 철자를 확인해 주세요.' : 'Check the ID spelling and try again.',
+            (isChineseUi(context) ? '请检查ID拼写后重试。' : _isKo ? '아이디 철자를 확인해 주세요.' : 'Check the ID spelling and try again.'),
         actionLabel: _directoryNextCursor == null
             ? null
-            : (_isKo ? '다음 10명 보기' : 'View next 10'),
+            : ((isChineseUi(context) ? '查看接下来的10人' : _isKo ? '다음 10명 보기' : 'View next 10')),
         onAction: _directoryNextCursor == null
             ? null
             : () => _searchDirectory(_query, loadMore: true),
@@ -489,7 +490,7 @@ class _SnackChatParticipantPickerState extends State<SnackChatParticipantPicker>
                         foregroundColor: const Color(0xFF344054),
                         minimumSize: const Size(44, 40),
                       ),
-                      child: Text(_isKo ? '10명 더 보기' : 'Load 10 more'),
+                      child: Text((isChineseUi(context) ? '再加载10人' : _isKo ? '10명 더 보기' : 'Load 10 more')),
                     ),
             ),
           );
@@ -532,11 +533,11 @@ class _SelectedParticipantStrip extends StatelessWidget {
           context.rs(10).clamp(8, 12).toDouble(),
         ),
         child: Text(
-          isKo ? '초대할 사람을 선택해 주세요.' : 'Select people to invite.',
+          (isChineseUi(context) ? '请选择要邀请的人。' : isKo ? '초대할 사람을 선택해 주세요.' : 'Select people to invite.'),
           maxLines: 2,
           overflow: TextOverflow.ellipsis,
           style: TextStyle(
-            fontFamily: 'Inter',
+            fontFamily: uiFontFamily(context, 'Inter'),
             fontFamilyFallback: const ['NotoSansKR'],
             fontSize: context.rf(13).clamp(12, 14).toDouble(),
             fontWeight: FontWeight.w600,
@@ -623,11 +624,11 @@ class _SelectedParticipantStrip extends StatelessWidget {
                       maxLines: 1,
                       overflow: TextOverflow.ellipsis,
                       style: TextStyle(
-                        fontFamily: 'Inter',
+                        fontFamily: uiFontFamily(context, 'Inter'),
                         fontFamilyFallback: const ['NotoSansKR'],
                         fontSize: nameFontSize,
                         fontWeight: FontWeight.w600,
-                        height: 1.15,
+                        height: isChineseUi(context) ? 1.3 : 1.15,
                         color: const Color(0xFF374151),
                       ),
                     ),
@@ -685,7 +686,7 @@ class _ParticipantTile extends StatelessWidget {
                     maxLines: 1,
                     overflow: TextOverflow.ellipsis,
                     style: TextStyle(
-                      fontFamily: 'Inter',
+                      fontFamily: uiFontFamily(context, 'Inter'),
                       fontFamilyFallback: const ['NotoSansKR'],
                       fontSize: context.rf(14).clamp(13, 15).toDouble(),
                       fontWeight: FontWeight.w600,
@@ -770,7 +771,7 @@ class _AvatarFallback extends StatelessWidget {
       child: Text(
         label.toUpperCase(),
         style: TextStyle(
-          fontFamily: 'Inter',
+          fontFamily: uiFontFamily(context, 'Inter'),
           fontFamilyFallback: const ['NotoSansKR'],
           fontSize: size * 0.34,
           fontWeight: FontWeight.w700,
@@ -838,7 +839,7 @@ class _PickerMessage extends StatelessWidget {
                     title,
                     textAlign: TextAlign.center,
                     style: TextStyle(
-                      fontFamily: 'Inter',
+                      fontFamily: uiFontFamily(context, 'Inter'),
                       fontFamilyFallback: const ['NotoSansKR'],
                       fontSize: context.rf(15).clamp(14, 16).toDouble(),
                       fontWeight: FontWeight.w700,
@@ -850,7 +851,7 @@ class _PickerMessage extends StatelessWidget {
                     description,
                     textAlign: TextAlign.center,
                     style: TextStyle(
-                      fontFamily: 'Inter',
+                      fontFamily: uiFontFamily(context, 'Inter'),
                       fontFamilyFallback: const ['NotoSansKR'],
                       fontSize: context.rf(12.5).clamp(12, 13.5).toDouble(),
                       fontWeight: FontWeight.w500,

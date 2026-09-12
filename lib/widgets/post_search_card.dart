@@ -10,6 +10,7 @@ import '../design/tokens.dart';
 import '../l10n/app_localizations.dart';
 import '../ui/widgets/hanyang_verification_gate.dart';
 import '../services/user_info_cache_service.dart';
+import '../l10n/ui_locale.dart';
 
 class PostSearchCard extends StatelessWidget {
   final Post post;
@@ -85,7 +86,7 @@ class PostSearchCard extends StatelessWidget {
                         Text(
                           post.displayText,
                           style: TextStyle(
-                            fontFamily: 'Inter',
+                            fontFamily: uiFontFamily(context, 'Inter'),
                             fontFamilyFallback: const ['NotoSansKR'],
                             fontSize: compact ? 14.5 : 15.5,
                             fontWeight: FontWeight.w600,
@@ -114,8 +115,8 @@ class PostSearchCard extends StatelessWidget {
                             const SizedBox(width: 4),
                             Text(
                               '${post.likes}',
-                              style: const TextStyle(
-                                fontFamily: 'Inter',
+                              style: TextStyle(
+                                fontFamily: uiFontFamily(context, 'Inter'),
                                 fontSize: 12,
                                 fontWeight: FontWeight.w500,
                                 color: Color(0xFF667085),
@@ -130,8 +131,8 @@ class PostSearchCard extends StatelessWidget {
                             const SizedBox(width: 4),
                             Text(
                               '${post.commentCount}',
-                              style: const TextStyle(
-                                fontFamily: 'Inter',
+                              style: TextStyle(
+                                fontFamily: uiFontFamily(context, 'Inter'),
                                 fontSize: 12,
                                 fontWeight: FontWeight.w500,
                                 color: Color(0xFF667085),
@@ -219,20 +220,20 @@ class PostSearchCard extends StatelessWidget {
                 name,
                 maxLines: 1,
                 overflow: TextOverflow.ellipsis,
-                style: const TextStyle(
-                  fontFamily: 'Inter',
+                style: TextStyle(
+                  fontFamily: uiFontFamily(context, 'Inter'),
                   fontFamilyFallback: ['NotoSansKR'],
                   fontSize: 13.5,
                   fontWeight: FontWeight.w700,
                   color: Color(0xFF111827),
-                  height: 1.2,
+                  height: isChineseUi(context) ? 1.3 : 1.2,
                 ),
               ),
               const SizedBox(height: 2),
               Text(
                 _getFormattedDate(context, post.createdAt),
-                style: const TextStyle(
-                  fontFamily: 'Inter',
+                style: TextStyle(
+                  fontFamily: uiFontFamily(context, 'Inter'),
                   fontFamilyFallback: ['NotoSansKR'],
                   fontSize: 11.5,
                   fontWeight: FontWeight.w500,

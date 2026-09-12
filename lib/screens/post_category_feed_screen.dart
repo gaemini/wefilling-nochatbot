@@ -17,6 +17,7 @@ import '../ui/widgets/skeletons.dart';
 import '../utils/responsive_helper.dart';
 import 'create_post_screen.dart';
 import 'post_detail_screen.dart';
+import '../l10n/ui_locale.dart';
 
 typedef PostCategoryPageLoader = Future<PostCategoryPage> Function({
   required PostCategory category,
@@ -263,7 +264,7 @@ class _PostCategoryFeedScreenState extends State<PostCategoryFeedScreen> {
           maxLines: 1,
           overflow: TextOverflow.ellipsis,
           style: TextStyle(
-            fontFamily: 'Inter',
+            fontFamily: uiFontFamily(context, 'Inter'),
             fontFamilyFallback: const ['NotoSansKR'],
             fontSize: context.rf(18).clamp(17, 20).toDouble(),
             fontWeight: FontWeight.w700,
@@ -300,8 +301,8 @@ class _PostCategoryFeedScreenState extends State<PostCategoryFeedScreen> {
               sliver: SliverToBoxAdapter(
                 child: Text(
                   widget.category.description(l10n),
-                  style: const TextStyle(
-                    fontFamily: 'Inter',
+                  style: TextStyle(
+                    fontFamily: uiFontFamily(context, 'Inter'),
                     fontFamilyFallback: const ['NotoSansKR'],
                     fontSize: 14,
                     fontWeight: FontWeight.w500,
@@ -350,8 +351,8 @@ class _PostCategoryFeedScreenState extends State<PostCategoryFeedScreen> {
                       Text(
                         l10n.postCategoryEmpty(label),
                         textAlign: TextAlign.center,
-                        style: const TextStyle(
-                          fontFamily: 'Inter',
+                        style: TextStyle(
+                          fontFamily: uiFontFamily(context, 'Inter'),
                           fontFamilyFallback: const ['NotoSansKR'],
                           fontSize: 17,
                           fontWeight: FontWeight.w700,

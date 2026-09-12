@@ -4,6 +4,7 @@ import '../constants/app_constants.dart';
 import '../models/social_profile_data.dart';
 import '../utils/responsive_helper.dart';
 import 'social_tag_people_screen.dart';
+import '../l10n/ui_locale.dart';
 
 class SocialTagExplorerScreen extends StatelessWidget {
   const SocialTagExplorerScreen({super.key});
@@ -53,11 +54,11 @@ class SocialTagExplorerScreen extends StatelessWidget {
         ),
         titleSpacing: 2,
         title: Text(
-          isKorean ? '태그로 친구 찾기' : 'Find friends by tag',
+          (isChineseUi(context) ? '按标签找好友' : isKorean ? '태그로 친구 찾기' : 'Find friends by tag'),
           maxLines: 1,
           overflow: TextOverflow.ellipsis,
           style: TextStyle(
-            fontFamily: 'Inter',
+            fontFamily: uiFontFamily(context, 'Inter'),
             fontFamilyFallback: const ['NotoSansKR'],
             fontSize: context.rf(17).clamp(16, 18).toDouble(),
             fontWeight: FontWeight.w700,
@@ -82,11 +83,11 @@ class SocialTagExplorerScreen extends StatelessWidget {
                 ),
                 children: [
                   Text(
-                    isKorean
+                    (isChineseUi(context) ? '选择标签，认识有相同选择的人。' : isKorean
                         ? '관심 있는 태그를 누르면 같은 태그를 선택한 사람을 볼 수 있어요.'
-                        : 'Choose a tag to meet people who selected it.',
+                        : 'Choose a tag to meet people who selected it.'),
                     style: TextStyle(
-                      fontFamily: 'Inter',
+                      fontFamily: uiFontFamily(context, 'Inter'),
                       fontFamilyFallback: const ['NotoSansKR'],
                       fontSize: context.rf(13).clamp(12, 14).toDouble(),
                       fontWeight: FontWeight.w500,
@@ -96,7 +97,7 @@ class SocialTagExplorerScreen extends StatelessWidget {
                   ),
                   SizedBox(height: context.rs(24).clamp(20, 28).toDouble()),
                   _TagSection(
-                    title: isKorean ? '관심사' : 'Interests',
+                    title: (isChineseUi(context) ? '兴趣' : isKorean ? '관심사' : 'Interests'),
                     options: SocialProfileCatalog.interests,
                     kind: SocialProfileTagKind.interest,
                     onPressed: (option) => _openPeople(
@@ -107,7 +108,7 @@ class SocialTagExplorerScreen extends StatelessWidget {
                   ),
                   SizedBox(height: context.rs(28).clamp(24, 34).toDouble()),
                   _TagSection(
-                    title: isKorean ? '함께 하고 싶은 활동' : 'Activities',
+                    title: (isChineseUi(context) ? '活动' : isKorean ? '함께 하고 싶은 활동' : 'Activities'),
                     options: SocialProfileCatalog.activities,
                     kind: SocialProfileTagKind.activity,
                     onPressed: (option) => _openPeople(
@@ -148,7 +149,7 @@ class _TagSection extends StatelessWidget {
         Text(
           title,
           style: TextStyle(
-            fontFamily: 'Inter',
+            fontFamily: uiFontFamily(context, 'Inter'),
             fontFamilyFallback: const ['NotoSansKR'],
             fontSize: context.rf(16).clamp(15, 17).toDouble(),
             fontWeight: FontWeight.w800,
@@ -183,7 +184,7 @@ class _TagSection extends StatelessWidget {
                       maxLines: 1,
                       overflow: TextOverflow.ellipsis,
                       style: TextStyle(
-                        fontFamily: 'Inter',
+                        fontFamily: uiFontFamily(context, 'Inter'),
                         fontFamilyFallback: const ['NotoSansKR'],
                         fontSize: context.rf(13).clamp(12, 14).toDouble(),
                         fontWeight: FontWeight.w700,

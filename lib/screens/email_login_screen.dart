@@ -15,6 +15,7 @@ import '../screens/hanyang_email_verification_screen.dart';
 import '../screens/password_reset_screen.dart';
 import '../utils/logger.dart';
 import '../utils/responsive_helper.dart';
+import '../l10n/ui_locale.dart';
 
 class EmailLoginScreen extends StatefulWidget {
   const EmailLoginScreen({super.key});
@@ -183,7 +184,7 @@ class _EmailLoginScreenState extends State<EmailLoginScreen> {
         context.rf(compact ? 24 : 27).clamp(23.0, 28.0).toDouble();
     final bodySize = context.rf(15).clamp(14.0, 16.0).toDouble();
     final labelStyle = TextStyle(
-      fontFamily: 'Inter',
+      fontFamily: uiFontFamily(context, 'Inter'),
       fontFamilyFallback: const ['NotoSansKR'],
       fontSize: context.rf(14).clamp(13.0, 15.0).toDouble(),
       fontWeight: FontWeight.w600,
@@ -199,7 +200,7 @@ class _EmailLoginScreenState extends State<EmailLoginScreen> {
       return InputDecoration(
         hintText: hintText,
         hintStyle: TextStyle(
-          fontFamily: 'Inter',
+          fontFamily: uiFontFamily(context, 'Inter'),
           fontFamilyFallback: const ['NotoSansKR'],
           fontSize: bodySize,
           color: const Color(0xFF94A3B8),
@@ -255,7 +256,7 @@ class _EmailLoginScreenState extends State<EmailLoginScreen> {
         title: Text(
           l10n.emailLoginTitle,
           style: TextStyle(
-            fontFamily: 'Inter',
+            fontFamily: uiFontFamily(context, 'Inter'),
             fontFamilyFallback: const ['NotoSansKR'],
             fontSize: context.rf(18).clamp(17.0, 19.0).toDouble(),
             fontWeight: FontWeight.w700,
@@ -304,12 +305,12 @@ class _EmailLoginScreenState extends State<EmailLoginScreen> {
                       Text(
                         l10n.emailLoginTitle,
                         style: TextStyle(
-                          fontFamily: 'Inter',
+                          fontFamily: uiFontFamily(context, 'Inter'),
                           fontFamilyFallback: const ['NotoSansKR'],
                           fontSize: titleSize,
                           fontWeight: FontWeight.w700,
                           color: ink,
-                          height: 1.25,
+                          height: isChineseUi(context) ? 1.3 : 1.25,
                           letterSpacing: -0.5,
                         ),
                       ),
@@ -319,7 +320,7 @@ class _EmailLoginScreenState extends State<EmailLoginScreen> {
                       Text(
                         l10n.emailLoginDescription,
                         style: TextStyle(
-                          fontFamily: 'Inter',
+                          fontFamily: uiFontFamily(context, 'Inter'),
                           fontFamilyFallback: const ['NotoSansKR'],
                           fontSize: bodySize,
                           fontWeight: FontWeight.w400,
@@ -352,7 +353,7 @@ class _EmailLoginScreenState extends State<EmailLoginScreen> {
                           prefixIcon: Icons.mail_outline_rounded,
                         ),
                         style: TextStyle(
-                          fontFamily: 'Inter',
+                          fontFamily: uiFontFamily(context, 'Inter'),
                           fontFamilyFallback: const ['NotoSansKR'],
                           fontSize: bodySize,
                           fontWeight: FontWeight.w500,
@@ -408,7 +409,7 @@ class _EmailLoginScreenState extends State<EmailLoginScreen> {
                           ),
                         ),
                         style: TextStyle(
-                          fontFamily: 'Inter',
+                          fontFamily: uiFontFamily(context, 'Inter'),
                           fontFamilyFallback: const ['NotoSansKR'],
                           fontSize: bodySize,
                           fontWeight: FontWeight.w500,
@@ -438,7 +439,7 @@ class _EmailLoginScreenState extends State<EmailLoginScreen> {
                           child: Text(
                             l10n.forgotPassword,
                             style: TextStyle(
-                              fontFamily: 'Inter',
+                              fontFamily: uiFontFamily(context, 'Inter'),
                               fontFamilyFallback: const ['NotoSansKR'],
                               fontSize:
                                   context.rf(13.5).clamp(13.0, 14.5).toDouble(),
@@ -464,7 +465,7 @@ class _EmailLoginScreenState extends State<EmailLoginScreen> {
                               child: Text(
                                 _errorMessage!,
                                 style: TextStyle(
-                                  fontFamily: 'Inter',
+                                  fontFamily: uiFontFamily(context, 'Inter'),
                                   fontFamilyFallback: const ['NotoSansKR'],
                                   fontSize: context
                                       .rf(13.5)
@@ -509,7 +510,7 @@ class _EmailLoginScreenState extends State<EmailLoginScreen> {
                               : Text(
                                   l10n.login,
                                   style: TextStyle(
-                                    fontFamily: 'Inter',
+                                    fontFamily: uiFontFamily(context, 'Inter'),
                                     fontFamilyFallback: const ['NotoSansKR'],
                                     fontSize: context
                                         .rf(16)

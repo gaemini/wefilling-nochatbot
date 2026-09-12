@@ -222,4 +222,20 @@ void main() {
     expect(result.items, hasLength(1));
     expect(result.sections, isEmpty);
   });
+
+  test('today direct search keeps only grounded source references', () {
+    final result = SnackChatTodaySearchResult.fromMap(<String, dynamic>{
+      'answer': '저녁 약속은 오후 7시로 정해졌어요.',
+      'found': true,
+      'messageCount': 31,
+      'sourceMessageIds': <String>['message-21', 'message-24'],
+      'representativeMessageId': 'message-24',
+      'sourceSequences': <int>[21, 24],
+    });
+
+    expect(result.found, isTrue);
+    expect(result.answer, contains('오후 7시'));
+    expect(result.representativeMessageId, 'message-24');
+    expect(result.sourceSequences, <int>[21, 24]);
+  });
 }

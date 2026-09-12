@@ -15,6 +15,7 @@ import 'dm_chat_screen.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import '../utils/logger.dart';
 import '../ui/widgets/user_avatar.dart';
+import '../l10n/ui_locale.dart';
 
 // DM 목록 필터: 친구 / 익명
 enum DMFilter { friends, anonymous }
@@ -298,9 +299,9 @@ class _DMListScreenState extends State<DMListScreen> {
                 final errorMessage = snapshot.error.toString();
                 if (errorMessage.contains('permission-denied')) {
                   return _buildErrorState(
-                    Localizations.localeOf(context).languageCode == 'ko'
+                    (isChineseUi(context) ? 'Firebase安全规则尚未部署，或你没有访问权限。\n\n请重新启动应用。' : Localizations.localeOf(context).languageCode == 'ko'
                         ? 'Firebase Security Rules가 배포되지 않았거나\n권한이 없습니다.\n\n앱을 다시 시작해주세요.'
-                        : 'Firebase Security Rules are not deployed\nor you don\'t have permission.\n\nPlease restart the app.',
+                        : 'Firebase Security Rules are not deployed\nor you don\'t have permission.\n\nPlease restart the app.'),
                   );
                 }
 
@@ -579,7 +580,7 @@ class _DMListScreenState extends State<DMListScreen> {
                         child: Text(
                           AppLocalizations.of(context)!.friends,
                           style: TextStyle(
-                            fontFamily: 'Inter',
+                            fontFamily: uiFontFamily(context, 'Inter'),
                             fontFamilyFallback: const ['NotoSansKR'],
                             fontSize: compact ? 14 : 15,
                             fontWeight: FontWeight.w600,
@@ -603,7 +604,7 @@ class _DMListScreenState extends State<DMListScreen> {
                         child: Text(
                           AppLocalizations.of(context)!.anonymous,
                           style: TextStyle(
-                            fontFamily: 'Inter',
+                            fontFamily: uiFontFamily(context, 'Inter'),
                             fontFamilyFallback: const ['NotoSansKR'],
                             fontSize: compact ? 14 : 15,
                             fontWeight: FontWeight.w600,
@@ -679,9 +680,9 @@ class _DMListScreenState extends State<DMListScreen> {
           ? _truncate(existing)
           : (cached.isNotEmpty
               ? _truncate(cached)
-              : (Localizations.localeOf(context).languageCode == 'ko'
+              : ((isChineseUi(context) ? '匿名动态' : Localizations.localeOf(context).languageCode == 'ko'
                   ? '익명 게시글'
-                  : 'Anonymous post'));
+                  : 'Anonymous post')));
 
       return _buildConversationCardContent(
         conversation: conversation,
@@ -872,8 +873,8 @@ class _DMListScreenState extends State<DMListScreen> {
                                   )
                                 : Text(
                                     displayName,
-                                    style: const TextStyle(
-                                      fontFamily: 'Inter',
+                                    style: TextStyle(
+                                      fontFamily: uiFontFamily(context, 'Inter'),
                                       fontFamilyFallback: const ['NotoSansKR'],
                                       fontSize: 15,
                                       fontWeight: FontWeight.w600,
@@ -915,7 +916,7 @@ class _DMListScreenState extends State<DMListScreen> {
                                 'dm_last_${conversation.id}_${conversation.lastMessage}',
                               ),
                               style: TextStyle(
-                                fontFamily: 'Inter',
+                                fontFamily: uiFontFamily(context, 'Inter'),
                                 fontFamilyFallback: const ['NotoSansKR'],
                                 fontSize: 13,
                                 color: const Color(0xFF6B7280),
@@ -958,8 +959,8 @@ class _DMListScreenState extends State<DMListScreen> {
                             key: ValueKey<String>(
                               'dm_time_${conversation.id}_$timeString',
                             ),
-                            style: const TextStyle(
-                              fontFamily: 'Inter',
+                            style: TextStyle(
+                              fontFamily: uiFontFamily(context, 'Inter'),
                               fontFamilyFallback: const ['NotoSansKR'],
                               fontSize: 12,
                               fontWeight: FontWeight.w400,
@@ -983,8 +984,8 @@ class _DMListScreenState extends State<DMListScreen> {
                       ),
                       child: Text(
                         unreadCount > 99 ? '99+' : unreadCount.toString(),
-                        style: const TextStyle(
-                          fontFamily: 'Inter',
+                        style: TextStyle(
+                          fontFamily: uiFontFamily(context, 'Inter'),
                           fontFamilyFallback: const ['NotoSansKR'],
                           color: Colors.white,
                           fontSize: 11,
@@ -1020,8 +1021,8 @@ class _DMListScreenState extends State<DMListScreen> {
           const SizedBox(height: 12),
           Text(
             title,
-            style: const TextStyle(
-              fontFamily: 'Inter',
+            style: TextStyle(
+              fontFamily: uiFontFamily(context, 'Inter'),
               fontFamilyFallback: const ['NotoSansKR'],
               fontSize: 16,
               fontWeight: FontWeight.w600,
@@ -1032,8 +1033,8 @@ class _DMListScreenState extends State<DMListScreen> {
             const SizedBox(height: 8),
             Text(
               subtitle,
-              style: const TextStyle(
-                fontFamily: 'Inter',
+              style: TextStyle(
+                fontFamily: uiFontFamily(context, 'Inter'),
                 fontFamilyFallback: const ['NotoSansKR'],
                 fontSize: 14,
                 fontWeight: FontWeight.w400,
@@ -1056,8 +1057,8 @@ class _DMListScreenState extends State<DMListScreen> {
           const SizedBox(height: 16),
           Text(
             AppLocalizations.of(context)!.loadingMessages,
-            style: const TextStyle(
-              fontFamily: 'Inter',
+            style: TextStyle(
+              fontFamily: uiFontFamily(context, 'Inter'),
               fontFamilyFallback: const ['NotoSansKR'],
               fontSize: 14,
               fontWeight: FontWeight.w500,
@@ -1083,8 +1084,8 @@ class _DMListScreenState extends State<DMListScreen> {
           const SizedBox(height: 16),
           Text(
             AppLocalizations.of(context)!.error,
-            style: const TextStyle(
-              fontFamily: 'Inter',
+            style: TextStyle(
+              fontFamily: uiFontFamily(context, 'Inter'),
               fontFamilyFallback: const ['NotoSansKR'],
               fontSize: 16,
               fontWeight: FontWeight.w600,
@@ -1096,8 +1097,8 @@ class _DMListScreenState extends State<DMListScreen> {
             padding: const EdgeInsets.symmetric(horizontal: 32),
             child: Text(
               error,
-              style: const TextStyle(
-                fontFamily: 'Inter',
+              style: TextStyle(
+                fontFamily: uiFontFamily(context, 'Inter'),
                 fontFamilyFallback: const ['NotoSansKR'],
                 fontSize: 14,
                 fontWeight: FontWeight.w400,
@@ -1171,8 +1172,8 @@ class _DMListScreenState extends State<DMListScreen> {
                   children: [
                     Text(
                       AppLocalizations.of(context)!.friendSelection,
-                      style: const TextStyle(
-                        fontFamily: 'Inter',
+                      style: TextStyle(
+                        fontFamily: uiFontFamily(context, 'Inter'),
                         fontFamilyFallback: const ['NotoSansKR'],
                         fontSize: 18,
                         fontWeight: FontWeight.w600,
@@ -1208,11 +1209,11 @@ class _DMListScreenState extends State<DMListScreen> {
                     if (snapshot.hasError) {
                       return Center(
                         child: Text(
-                          Localizations.localeOf(context).languageCode == 'ko'
+                          (isChineseUi(context) ? '好友列表加载失败' : Localizations.localeOf(context).languageCode == 'ko'
                               ? '친구 목록을 불러올 수 없습니다'
-                              : 'Unable to load friend list',
-                          style: const TextStyle(
-                            fontFamily: 'Inter',
+                              : 'Unable to load friend list'),
+                          style: TextStyle(
+                            fontFamily: uiFontFamily(context, 'Inter'),
                             fontFamilyFallback: const ['NotoSansKR'],
                             fontSize: 14,
                             color: Color(0xFF6B7280),
@@ -1235,12 +1236,12 @@ class _DMListScreenState extends State<DMListScreen> {
                             ),
                             const SizedBox(height: 16),
                             Text(
-                              Localizations.localeOf(context).languageCode ==
+                              (isChineseUi(context) ? '还没有好友' : Localizations.localeOf(context).languageCode ==
                                       'ko'
                                   ? '친구가 없습니다'
-                                  : 'No friends yet',
-                              style: const TextStyle(
-                                fontFamily: 'Inter',
+                                  : 'No friends yet'),
+                              style: TextStyle(
+                                fontFamily: uiFontFamily(context, 'Inter'),
                                 fontFamilyFallback: const ['NotoSansKR'],
                                 fontSize: 16,
                                 fontWeight: FontWeight.w600,
@@ -1333,8 +1334,8 @@ class _DMListScreenState extends State<DMListScreen> {
                 children: [
                   Text(
                     friend.displayNameOrNickname,
-                    style: const TextStyle(
-                      fontFamily: 'Inter',
+                    style: TextStyle(
+                      fontFamily: uiFontFamily(context, 'Inter'),
                       fontFamilyFallback: const ['NotoSansKR'],
                       fontSize: 15,
                       fontWeight: FontWeight.w600,
@@ -1388,9 +1389,9 @@ class _DMListScreenState extends State<DMListScreen> {
         if (mounted) {
           ScaffoldMessenger.of(context).showSnackBar(
             SnackBar(
-              content: Text(Localizations.localeOf(context).languageCode == 'ko'
+              content: Text((isChineseUi(context) ? '无法创建对话' : Localizations.localeOf(context).languageCode == 'ko'
                   ? '대화방을 만들 수 없습니다'
-                  : 'Cannot create conversation'),
+                  : 'Cannot create conversation')),
               backgroundColor: const Color(0xFFEF4444),
             ),
           );
@@ -1401,9 +1402,9 @@ class _DMListScreenState extends State<DMListScreen> {
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
-            content: Text(Localizations.localeOf(context).languageCode == 'ko'
+            content: Text((isChineseUi(context) ? '无法开始对话' : Localizations.localeOf(context).languageCode == 'ko'
                 ? '대화를 시작할 수 없습니다'
-                : 'Cannot start conversation'),
+                : 'Cannot start conversation')),
             backgroundColor: const Color(0xFFEF4444),
           ),
         );

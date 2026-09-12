@@ -7,6 +7,7 @@ import '../models/review_request.dart';
 import '../services/review_consensus_service.dart';
 import '../services/feature_flag_service.dart';
 import '../utils/responsive_helper.dart';
+import '../l10n/ui_locale.dart';
 
 class ReviewAcceptScreen extends StatefulWidget {
   final ReviewRequest reviewRequest;
@@ -291,7 +292,7 @@ class _ReviewAcceptScreenState extends State<ReviewAcceptScreen> {
           maxLines: 1,
           overflow: TextOverflow.ellipsis,
           style: TextStyle(
-            fontFamily: 'Inter',
+            fontFamily: uiFontFamily(context, 'Inter'),
             fontFamilyFallback: const ['NotoSansKR'],
             color: const Color(0xFF111827),
             fontSize: context.rf(18).clamp(16, 19).toDouble(),
@@ -312,10 +313,10 @@ class _ReviewAcceptScreenState extends State<ReviewAcceptScreen> {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        const Text(
+         Text(
           '리뷰 요청자',
           style: TextStyle(
-            fontFamily: 'Inter',
+            fontFamily: uiFontFamily(context, 'Inter'),
             fontFamilyFallback: ['NotoSansKR'],
             fontSize: 13,
             fontWeight: FontWeight.w700,
@@ -332,8 +333,8 @@ class _ReviewAcceptScreenState extends State<ReviewAcceptScreen> {
                 widget.reviewRequest.requesterName.isNotEmpty
                     ? widget.reviewRequest.requesterName[0].toUpperCase()
                     : '?',
-                style: const TextStyle(
-                  fontFamily: 'Inter',
+                style: TextStyle(
+                  fontFamily: uiFontFamily(context, 'Inter'),
                   color: Color(0xFF475467),
                   fontSize: 16,
                   fontWeight: FontWeight.w700,
@@ -347,7 +348,7 @@ class _ReviewAcceptScreenState extends State<ReviewAcceptScreen> {
                 maxLines: 1,
                 overflow: TextOverflow.ellipsis,
                 style: TextStyle(
-                  fontFamily: 'Inter',
+                  fontFamily: uiFontFamily(context, 'Inter'),
                   fontFamilyFallback: const ['NotoSansKR'],
                   fontSize: context.rf(16).clamp(15, 17).toDouble(),
                   fontWeight: FontWeight.w700,
@@ -356,10 +357,10 @@ class _ReviewAcceptScreenState extends State<ReviewAcceptScreen> {
               ),
             ),
             const SizedBox(width: 8),
-            const Text(
+             Text(
               '리뷰 요청',
               style: TextStyle(
-                fontFamily: 'Inter',
+                fontFamily: uiFontFamily(context, 'Inter'),
                 fontFamilyFallback: ['NotoSansKR'],
                 color: Color(0xFF2E90FA),
                 fontSize: 12,
@@ -377,10 +378,10 @@ class _ReviewAcceptScreenState extends State<ReviewAcceptScreen> {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        const Text(
+         Text(
           '대상 모임',
           style: TextStyle(
-            fontFamily: 'Inter',
+            fontFamily: uiFontFamily(context, 'Inter'),
             fontFamilyFallback: ['NotoSansKR'],
             fontSize: 13,
             fontWeight: FontWeight.w700,
@@ -391,7 +392,7 @@ class _ReviewAcceptScreenState extends State<ReviewAcceptScreen> {
         Text(
           widget.reviewRequest.meetupTitle,
           style: TextStyle(
-            fontFamily: 'Inter',
+            fontFamily: uiFontFamily(context, 'Inter'),
             fontFamilyFallback: const ['NotoSansKR'],
             fontSize: context.rf(18).clamp(16, 19).toDouble(),
             fontWeight: FontWeight.w700,
@@ -400,10 +401,10 @@ class _ReviewAcceptScreenState extends State<ReviewAcceptScreen> {
           ),
         ),
         const SizedBox(height: 5),
-        const Text(
+         Text(
           '함께 참여했던 모임에 대한 리뷰를 요청합니다.',
           style: TextStyle(
-            fontFamily: 'Inter',
+            fontFamily: uiFontFamily(context, 'Inter'),
             fontFamilyFallback: ['NotoSansKR'],
             fontSize: 13,
             color: Color(0xFF667085),
@@ -420,10 +421,10 @@ class _ReviewAcceptScreenState extends State<ReviewAcceptScreen> {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        const Text(
+         Text(
           '요청 메시지',
           style: TextStyle(
-            fontFamily: 'Inter',
+            fontFamily: uiFontFamily(context, 'Inter'),
             fontFamilyFallback: ['NotoSansKR'],
             fontSize: 13,
             fontWeight: FontWeight.w700,
@@ -434,7 +435,7 @@ class _ReviewAcceptScreenState extends State<ReviewAcceptScreen> {
         Text(
           hasMessage ? widget.reviewRequest.message : '리뷰 요청 메시지가 없습니다.',
           style: TextStyle(
-            fontFamily: 'Inter',
+            fontFamily: uiFontFamily(context, 'Inter'),
             fontFamilyFallback: const ['NotoSansKR'],
             fontSize: context.rf(15).clamp(14, 16).toDouble(),
             color:
@@ -451,10 +452,10 @@ class _ReviewAcceptScreenState extends State<ReviewAcceptScreen> {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        const Text(
+         Text(
           '첨부 이미지',
           style: TextStyle(
-            fontFamily: 'Inter',
+            fontFamily: uiFontFamily(context, 'Inter'),
             fontFamilyFallback: ['NotoSansKR'],
             fontSize: 15,
             fontWeight: FontWeight.w700,
@@ -524,7 +525,7 @@ class _ReviewAcceptScreenState extends State<ReviewAcceptScreen> {
         Text(
           '응답 메시지 (선택사항)',
           style: TextStyle(
-            fontFamily: 'Inter',
+            fontFamily: uiFontFamily(context, 'Inter'),
             fontFamilyFallback: const ['NotoSansKR'],
             fontSize: context.rf(15).clamp(14, 16).toDouble(),
             fontWeight: FontWeight.w700,
@@ -539,8 +540,8 @@ class _ReviewAcceptScreenState extends State<ReviewAcceptScreen> {
           maxLength: 200,
           decoration: InputDecoration(
             hintText: '수락 또는 거절 사유를 간단히 적어주세요. (선택사항)',
-            hintStyle: const TextStyle(
-              fontFamily: 'Inter',
+            hintStyle: TextStyle(
+              fontFamily: uiFontFamily(context, 'Inter'),
               fontFamilyFallback: ['NotoSansKR'],
               fontSize: 14,
               color: Color(0xFF98A2B3),
@@ -560,8 +561,8 @@ class _ReviewAcceptScreenState extends State<ReviewAcceptScreen> {
             ),
             contentPadding: const EdgeInsets.symmetric(vertical: 10),
           ),
-          style: const TextStyle(
-            fontFamily: 'Inter',
+          style: TextStyle(
+            fontFamily: uiFontFamily(context, 'Inter'),
             fontFamilyFallback: ['NotoSansKR'],
             fontSize: 14,
             color: Color(0xFF111827),
@@ -592,8 +593,8 @@ class _ReviewAcceptScreenState extends State<ReviewAcceptScreen> {
             children: [
               Text(
                 '만료 시간',
-                style: const TextStyle(
-                  fontFamily: 'Inter',
+                style: TextStyle(
+                  fontFamily: uiFontFamily(context, 'Inter'),
                   fontFamilyFallback: ['NotoSansKR'],
                   fontSize: 13,
                   fontWeight: FontWeight.w700,
@@ -603,8 +604,8 @@ class _ReviewAcceptScreenState extends State<ReviewAcceptScreen> {
               const SizedBox(height: 4),
               Text(
                 _getTimeRemaining(),
-                style: const TextStyle(
-                  fontFamily: 'Inter',
+                style: TextStyle(
+                  fontFamily: uiFontFamily(context, 'Inter'),
                   fontFamilyFallback: ['NotoSansKR'],
                   fontSize: 12,
                   color: Color(0xFF667085),
@@ -653,10 +654,10 @@ class _ReviewAcceptScreenState extends State<ReviewAcceptScreen> {
                               color: Color(0xFF667085),
                             ),
                           )
-                        : const Text(
+                        : Text(
                             '거절',
                             style: TextStyle(
-                              fontFamily: 'Inter',
+                              fontFamily: uiFontFamily(context, 'Inter'),
                               fontFamilyFallback: ['NotoSansKR'],
                               color: Color(0xFF667085),
                               fontSize: 15,
@@ -691,10 +692,10 @@ class _ReviewAcceptScreenState extends State<ReviewAcceptScreen> {
                               color: Colors.white,
                             ),
                           )
-                        : const Text(
+                        : Text(
                             '수락하고 리뷰 작성',
                             style: TextStyle(
-                              fontFamily: 'Inter',
+                              fontFamily: uiFontFamily(context, 'Inter'),
                               fontFamilyFallback: ['NotoSansKR'],
                               fontSize: 15,
                               fontWeight: FontWeight.w700,
@@ -734,7 +735,7 @@ class _ReviewAcceptScreenState extends State<ReviewAcceptScreen> {
                   Text(
                     '요청이 만료되었습니다',
                     style: TextStyle(
-                      fontFamily: 'Inter',
+                      fontFamily: uiFontFamily(context, 'Inter'),
                       fontFamilyFallback: const ['NotoSansKR'],
                       fontSize: context.rf(21).clamp(19, 23).toDouble(),
                       fontWeight: FontWeight.w700,
@@ -743,10 +744,10 @@ class _ReviewAcceptScreenState extends State<ReviewAcceptScreen> {
                     textAlign: TextAlign.center,
                   ),
                   const SizedBox(height: 9),
-                  const Text(
+                   Text(
                     '이 리뷰 요청은 만료되어 더 이상 응답할 수 없습니다.',
                     style: TextStyle(
-                      fontFamily: 'Inter',
+                      fontFamily: uiFontFamily(context, 'Inter'),
                       fontFamilyFallback: ['NotoSansKR'],
                       fontSize: 14,
                       color: Color(0xFF667085),
@@ -766,10 +767,10 @@ class _ReviewAcceptScreenState extends State<ReviewAcceptScreen> {
                           borderRadius: BorderRadius.circular(12),
                         ),
                       ),
-                      child: const Text(
+                      child: Text(
                         '확인',
                         style: TextStyle(
-                          fontFamily: 'Inter',
+                          fontFamily: uiFontFamily(context, 'Inter'),
                           fontFamilyFallback: ['NotoSansKR'],
                           fontSize: 15,
                           fontWeight: FontWeight.w700,
@@ -822,7 +823,7 @@ class _ReviewAcceptScreenState extends State<ReviewAcceptScreen> {
                   Text(
                     statusText,
                     style: TextStyle(
-                      fontFamily: 'Inter',
+                      fontFamily: uiFontFamily(context, 'Inter'),
                       fontFamilyFallback: const ['NotoSansKR'],
                       fontSize: context.rf(21).clamp(19, 23).toDouble(),
                       fontWeight: FontWeight.w700,
@@ -836,7 +837,7 @@ class _ReviewAcceptScreenState extends State<ReviewAcceptScreen> {
                         ? '응답 시간: ${_formatDateTime(widget.reviewRequest.respondedAt!)}'
                         : '이미 처리된 요청입니다.',
                     style: TextStyle(
-                      fontFamily: 'Inter',
+                      fontFamily: uiFontFamily(context, 'Inter'),
                       fontFamilyFallback: const ['NotoSansKR'],
                       fontSize: 14,
                       color: const Color(0xFF667085),
@@ -856,10 +857,10 @@ class _ReviewAcceptScreenState extends State<ReviewAcceptScreen> {
                           borderRadius: BorderRadius.circular(12),
                         ),
                       ),
-                      child: const Text(
+                      child: Text(
                         '확인',
                         style: TextStyle(
-                          fontFamily: 'Inter',
+                          fontFamily: uiFontFamily(context, 'Inter'),
                           fontFamilyFallback: ['NotoSansKR'],
                           fontSize: 15,
                           fontWeight: FontWeight.w700,

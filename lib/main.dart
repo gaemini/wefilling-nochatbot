@@ -21,6 +21,7 @@ import 'package:image_picker_android/image_picker_android.dart';
 import 'package:image_picker_platform_interface/image_picker_platform_interface.dart';
 import 'package:provider/provider.dart';
 import 'design/theme.dart';
+import 'l10n/ui_locale.dart';
 import 'screens/main_screen.dart';
 import 'screens/edit_meetup_screen.dart';
 import 'models/meetup.dart';
@@ -404,7 +405,7 @@ class _MeetupAppState extends State<MeetupApp> {
     final languageCode = await _languageService.getLanguage();
     if (mounted) {
       setState(() {
-        _locale = Locale(languageCode);
+        _locale = uiLocale(languageCode);
       });
     }
     if (kDebugMode) {
@@ -431,17 +432,17 @@ class _MeetupAppState extends State<MeetupApp> {
 
   /// 언어 변경
   void changeLanguage(String languageCode) {
-    if (_locale.languageCode != languageCode) {
+    if (_locale != uiLocale(languageCode)) {
       setState(() {
-        _locale = Locale(languageCode);
+        _locale = uiLocale(languageCode);
       });
       unawaited(_saveLanguageAndRefreshNotifications(languageCode));
       if (_completedServicesUid != null) {
         unawaited(
           ContentTranslationService.instance
-              .synchronizeAutomaticLanguageWithUi(languageCode),
+              .synchronizeAutomaticLanguageWithUi(_locale.languageCode),
         );
-        unawaited(_syncLanguageToFirestore(languageCode));
+        unawaited(_syncLanguageToFirestore(_locale.languageCode));
       }
       if (kDebugMode) {
         debugPrint('🌐 언어 변경: $languageCode');
@@ -472,7 +473,7 @@ class _MeetupAppState extends State<MeetupApp> {
   Widget build(BuildContext context) {
     return MaterialApp(
       title: 'Wefilling',
-      theme: AppTheme.light(),
+      theme: AppTheme.light(locale: _locale),
       themeMode: ThemeMode.light, // 강제 라이트모드
       locale: _locale, // 현재 선택된 언어
       scaffoldMessengerKey: AppMessenger.scaffoldMessengerKey,
@@ -485,6 +486,7 @@ class _MeetupAppState extends State<MeetupApp> {
       supportedLocales: const [
         Locale('ko'), // 한국어
         Locale('en'), // 영어
+        Locale.fromSubtags(languageCode: 'zh', scriptCode: 'Hans'),
       ],
       // 전역 탭-투-디스미스: 빈 공간 탭 시 키보드 닫힘 + SnackBar 닫힘
       builder: (context, child) {

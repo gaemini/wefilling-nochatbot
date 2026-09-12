@@ -18,6 +18,7 @@ import '../utils/responsive_helper.dart';
 import 'dm_chat_screen.dart';
 import 'friend_profile_screen.dart';
 import 'snapshot_viewers_screen.dart';
+import '../l10n/ui_locale.dart';
 
 /// 상세 화면에서도 작성 화면에서 합성한 전체 프레임을 보존한다.
 const BoxFit snapshotDetailImageFit = BoxFit.contain;
@@ -426,7 +427,7 @@ class _SnapshotDetailScreenState extends State<SnapshotDetailScreen>
       if (mounted) {
         AppSnackBar.show(
           context,
-          message: strings.isKorean ? '삭제하지 못했어요.' : 'Could not delete it.',
+          message: (isChineseUi(context) ? '删除失败。' : strings.isKorean ? '삭제하지 못했어요.' : 'Could not delete it.'),
           type: AppSnackBarType.error,
         );
       }
@@ -454,9 +455,9 @@ class _SnapshotDetailScreenState extends State<SnapshotDetailScreen>
       if (mounted) {
         AppSnackBar.show(
           context,
-          message: strings.isKorean
+          message: (isChineseUi(context) ? '无法发起私信。' : strings.isKorean
               ? '메시지를 시작하지 못했어요.'
-              : 'Could not start a message.',
+              : 'Could not start a message.'),
           type: AppSnackBarType.error,
         );
       }
@@ -1169,13 +1170,13 @@ class _SnapshotViewerEntryState extends State<_SnapshotViewerEntry> {
                                 maxLines: 1,
                                 overflow: TextOverflow.ellipsis,
                                 style: TextStyle(
-                                  fontFamily: 'Inter',
+                                  fontFamily: uiFontFamily(context, 'Inter'),
                                   fontFamilyFallback: const ['NotoSansKR'],
                                   fontSize:
                                       context.rf(14).clamp(13, 15).toDouble(),
                                   fontWeight: FontWeight.w700,
                                   color: Colors.white,
-                                  height: 1.15,
+                                  height: isChineseUi(context) ? 1.3 : 1.15,
                                   shadows: const [
                                     Shadow(
                                       color: Colors.black54,
@@ -1190,7 +1191,7 @@ class _SnapshotViewerEntryState extends State<_SnapshotViewerEntry> {
                                 maxLines: 1,
                                 overflow: TextOverflow.ellipsis,
                                 style: TextStyle(
-                                  fontFamily: 'Inter',
+                                  fontFamily: uiFontFamily(context, 'Inter'),
                                   fontFamilyFallback: const ['NotoSansKR'],
                                   fontSize: context
                                       .rf(11.5)
@@ -1198,7 +1199,7 @@ class _SnapshotViewerEntryState extends State<_SnapshotViewerEntry> {
                                       .toDouble(),
                                   fontWeight: FontWeight.w500,
                                   color: Colors.white.withValues(alpha: .78),
-                                  height: 1.15,
+                                  height: isChineseUi(context) ? 1.3 : 1.15,
                                   shadows: const [
                                     Shadow(
                                       color: Colors.black54,
@@ -1257,12 +1258,12 @@ class _SnapshotFeedPositionToast extends StatelessWidget {
                 label,
                 maxLines: 1,
                 style: TextStyle(
-                  fontFamily: 'Inter',
+                  fontFamily: uiFontFamily(context, 'Inter'),
                   fontFamilyFallback: const ['NotoSansKR'],
                   fontSize: context.rf(11).clamp(10.5, 12).toDouble(),
                   fontWeight: FontWeight.w500,
                   color: Colors.white.withValues(alpha: .72),
-                  height: 1.1,
+                  height: isChineseUi(context) ? 1.3 : 1.1,
                 ),
               ),
             ),
@@ -1346,12 +1347,12 @@ class _SnapshotAuthorHeader extends StatelessWidget {
                   maxLines: 1,
                   overflow: TextOverflow.ellipsis,
                   style: TextStyle(
-                    fontFamily: 'Inter',
+                    fontFamily: uiFontFamily(context, 'Inter'),
                     fontFamilyFallback: const ['NotoSansKR'],
                     fontSize: context.rf(15).clamp(14, 16).toDouble(),
                     fontWeight: FontWeight.w700,
                     color: Colors.white,
-                    height: 1.18,
+                    height: isChineseUi(context) ? 1.3 : 1.18,
                     shadows: const [
                       Shadow(color: Colors.black54, blurRadius: 6),
                     ],
@@ -1366,12 +1367,12 @@ class _SnapshotAuthorHeader extends StatelessWidget {
                         maxLines: 1,
                         overflow: TextOverflow.ellipsis,
                         style: TextStyle(
-                          fontFamily: 'Inter',
+                          fontFamily: uiFontFamily(context, 'Inter'),
                           fontFamilyFallback: const ['NotoSansKR'],
                           fontSize: context.rf(12).clamp(11.5, 13).toDouble(),
                           fontWeight: FontWeight.w500,
                           color: Colors.white.withValues(alpha: .9),
-                          height: 1.2,
+                          height: isChineseUi(context) ? 1.3 : 1.2,
                           shadows: const [
                             Shadow(color: Colors.black54, blurRadius: 6),
                           ],
@@ -1389,12 +1390,12 @@ class _SnapshotAuthorHeader extends StatelessWidget {
                       remaining,
                       maxLines: 1,
                       style: TextStyle(
-                        fontFamily: 'Inter',
+                        fontFamily: uiFontFamily(context, 'Inter'),
                         fontFamilyFallback: const ['NotoSansKR'],
                         fontSize: context.rf(12).clamp(11.5, 13).toDouble(),
                         fontWeight: FontWeight.w500,
                         color: Colors.white.withValues(alpha: .9),
-                        height: 1.2,
+                        height: isChineseUi(context) ? 1.3 : 1.2,
                         shadows: const [
                           Shadow(color: Colors.black54, blurRadius: 6),
                         ],
@@ -1628,7 +1629,7 @@ class _SnapshotCommentComposer extends StatelessWidget {
             textInputAction: TextInputAction.done,
             keyboardAppearance: Brightness.dark,
             style: TextStyle(
-              fontFamily: 'Inter',
+              fontFamily: uiFontFamily(context, 'Inter'),
               fontFamilyFallback: const ['NotoSansKR'],
               fontSize: context.rf(15).clamp(14, 16).toDouble(),
               fontWeight: FontWeight.w500,
@@ -1638,7 +1639,7 @@ class _SnapshotCommentComposer extends StatelessWidget {
               counterText: '',
               hintText: hintText,
               hintStyle: TextStyle(
-                fontFamily: 'Inter',
+                fontFamily: uiFontFamily(context, 'Inter'),
                 fontFamilyFallback: const ['NotoSansKR'],
                 fontSize: context.rf(15).clamp(14, 16).toDouble(),
                 color: Colors.white.withValues(alpha: .72),
@@ -1937,7 +1938,7 @@ class _SnapshotDeleteDialog extends StatelessWidget {
                 Text(
                   strings.delete,
                   style: TextStyle(
-                    fontFamily: 'Inter',
+                    fontFamily: uiFontFamily(context, 'Inter'),
                     fontFamilyFallback: const ['NotoSansKR'],
                     fontSize: context.rf(17).clamp(16, 18).toDouble(),
                     fontWeight: FontWeight.w700,
@@ -1949,7 +1950,7 @@ class _SnapshotDeleteDialog extends StatelessWidget {
                 Text(
                   strings.deleteConfirm,
                   style: TextStyle(
-                    fontFamily: 'Inter',
+                    fontFamily: uiFontFamily(context, 'Inter'),
                     fontFamilyFallback: const ['NotoSansKR'],
                     fontSize: context.rf(14.5).clamp(13.5, 15.5).toDouble(),
                     fontWeight: FontWeight.w600,
@@ -1959,11 +1960,11 @@ class _SnapshotDeleteDialog extends StatelessWidget {
                 ),
                 SizedBox(height: context.rs(4).clamp(3, 6).toDouble()),
                 Text(
-                  strings.isKorean
+                  (isChineseUi(context) ? '删除后，此限时动态将无法恢复。' : strings.isKorean
                       ? '삭제한 스낵은 다시 복구할 수 없어요.'
-                      : 'This snack cannot be restored after deletion.',
+                      : 'This snack cannot be restored after deletion.'),
                   style: TextStyle(
-                    fontFamily: 'Inter',
+                    fontFamily: uiFontFamily(context, 'Inter'),
                     fontFamilyFallback: const ['NotoSansKR'],
                     fontSize: context.rf(13).clamp(12.5, 14).toDouble(),
                     fontWeight: FontWeight.w400,
@@ -1984,8 +1985,8 @@ class _SnapshotDeleteDialog extends StatelessWidget {
                         style: _snapshotDeleteActionStyle(secondaryText),
                         child: Text(
                           strings.cancel,
-                          style: const TextStyle(
-                            fontFamily: 'Inter',
+                          style: TextStyle(
+                            fontFamily: uiFontFamily(context, 'Inter'),
                             fontFamilyFallback: const ['NotoSansKR'],
                             fontSize: 14,
                             fontWeight: FontWeight.w600,
@@ -2000,8 +2001,8 @@ class _SnapshotDeleteDialog extends StatelessWidget {
                         style: _snapshotDeleteActionStyle(dangerColor),
                         child: Text(
                           strings.delete,
-                          style: const TextStyle(
-                            fontFamily: 'Inter',
+                          style: TextStyle(
+                            fontFamily: uiFontFamily(context, 'Inter'),
                             fontFamilyFallback: const ['NotoSansKR'],
                             fontSize: 14,
                             fontWeight: FontWeight.w700,
@@ -2052,8 +2053,8 @@ class _ActionRow extends StatelessWidget {
             Expanded(
               child: Text(
                 label,
-                style: const TextStyle(
-                  fontFamily: 'Inter',
+                style: TextStyle(
+                  fontFamily: uiFontFamily(context, 'Inter'),
                   fontFamilyFallback: const ['NotoSansKR'],
                   fontSize: 15,
                   fontWeight: FontWeight.w700,
@@ -2085,12 +2086,12 @@ String _snapshotRemainingLabel(
 ) {
   final duration = snapshot.remainingAt(service.serverNow);
   if (duration.inHours >= 1) {
-    return strings.isKorean
+    return strings.isChinese ? '${duration.inHours}小时后到期' : strings.isKorean
         ? '${duration.inHours}시간 ${strings.remaining}'
         : '${duration.inHours}h ${strings.remaining}';
   }
   final minutes = duration.inMinutes.clamp(1, 59);
-  return strings.isKorean
+  return strings.isChinese ? '${minutes}分钟后到期' : strings.isKorean
       ? '$minutes분 ${strings.remaining}'
       : '${minutes}m ${strings.remaining}';
 }

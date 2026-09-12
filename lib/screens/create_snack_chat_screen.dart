@@ -11,6 +11,7 @@ import '../ui/widgets/snack_chat_participant_picker.dart';
 import '../utils/logger.dart';
 import '../utils/responsive_helper.dart';
 import 'snack_chat_screen.dart';
+import '../l10n/ui_locale.dart';
 
 class CreateSnackChatScreen extends StatefulWidget {
   final FriendCategory? initialAudienceCategory;
@@ -219,7 +220,7 @@ class _CreateSnackChatScreenState extends State<CreateSnackChatScreen> {
                     Text(
                       '${_selectedParticipants.length}',
                       style: TextStyle(
-                        fontFamily: 'Inter',
+                        fontFamily: uiFontFamily(context, 'Inter'),
                         fontFamilyFallback: const ['NotoSansKR'],
                         fontSize: context.rf(14).clamp(13, 15).toDouble(),
                         fontWeight: FontWeight.w700,
@@ -229,7 +230,7 @@ class _CreateSnackChatScreenState extends State<CreateSnackChatScreen> {
                     Text(
                       l10n.next,
                       style: TextStyle(
-                        fontFamily: 'Inter',
+                        fontFamily: uiFontFamily(context, 'Inter'),
                         fontFamilyFallback: const ['NotoSansKR'],
                         fontSize: context.rf(14).clamp(13, 15).toDouble(),
                         fontWeight: FontWeight.w700,
@@ -264,7 +265,7 @@ class _CreateSnackChatScreenState extends State<CreateSnackChatScreen> {
                     : Text(
                         l10n.confirm,
                         style: TextStyle(
-                          fontFamily: 'Inter',
+                          fontFamily: uiFontFamily(context, 'Inter'),
                           fontFamilyFallback: const ['NotoSansKR'],
                           fontSize: context.rf(14).clamp(13, 15).toDouble(),
                           fontWeight: FontWeight.w800,
@@ -325,7 +326,7 @@ class _CreateSnackChatScreenState extends State<CreateSnackChatScreen> {
                 overflow: TextOverflow.ellipsis,
                 textAlign: TextAlign.center,
                 style: TextStyle(
-                  fontFamily: 'Inter',
+                  fontFamily: uiFontFamily(context, 'Inter'),
                   fontFamilyFallback: const ['NotoSansKR'],
                   fontSize: context.rf(18).clamp(16, 19).toDouble(),
                   fontWeight: FontWeight.w700,
@@ -363,7 +364,7 @@ class _CreateSnackChatScreenState extends State<CreateSnackChatScreen> {
                   Text(
                     l10n.snackChatRoomTitle,
                     style: TextStyle(
-                      fontFamily: 'Inter',
+                      fontFamily: uiFontFamily(context, 'Inter'),
                       fontFamilyFallback: const ['NotoSansKR'],
                       fontSize: context.rf(15).clamp(14, 16).toDouble(),
                       fontWeight: FontWeight.w800,
@@ -382,7 +383,7 @@ class _CreateSnackChatScreenState extends State<CreateSnackChatScreen> {
                       }
                     },
                     style: TextStyle(
-                      fontFamily: 'Inter',
+                      fontFamily: uiFontFamily(context, 'Inter'),
                       fontFamilyFallback: const ['NotoSansKR'],
                       fontSize: context.rf(15).clamp(14, 16).toDouble(),
                       fontWeight: FontWeight.w500,
@@ -392,7 +393,7 @@ class _CreateSnackChatScreenState extends State<CreateSnackChatScreen> {
                     decoration: InputDecoration(
                       hintText: l10n.snackChatRoomTitleHint,
                       hintStyle: TextStyle(
-                        fontFamily: 'Inter',
+                        fontFamily: uiFontFamily(context, 'Inter'),
                         fontFamilyFallback: const ['NotoSansKR'],
                         fontSize: context.rf(15).clamp(14, 16).toDouble(),
                         fontWeight: FontWeight.w400,
@@ -421,7 +422,7 @@ class _CreateSnackChatScreenState extends State<CreateSnackChatScreen> {
                   Text(
                     l10n.snackChatVisibilityDuration,
                     style: TextStyle(
-                      fontFamily: 'Inter',
+                      fontFamily: uiFontFamily(context, 'Inter'),
                       fontFamilyFallback: const ['NotoSansKR'],
                       fontSize: context.rf(15).clamp(14, 16).toDouble(),
                       fontWeight: FontWeight.w800,
@@ -432,7 +433,7 @@ class _CreateSnackChatScreenState extends State<CreateSnackChatScreen> {
                   Text(
                     l10n.snackChatVisibilityDurationHint,
                     style: TextStyle(
-                      fontFamily: 'Inter',
+                      fontFamily: uiFontFamily(context, 'Inter'),
                       fontFamilyFallback: const ['NotoSansKR'],
                       fontSize: context.rf(12.5).clamp(12, 13.5).toDouble(),
                       fontWeight: FontWeight.w500,
@@ -520,7 +521,7 @@ class _CreateSnackChatScreenState extends State<CreateSnackChatScreen> {
                     maxLines: 1,
                     overflow: TextOverflow.ellipsis,
                     style: TextStyle(
-                      fontFamily: 'Inter',
+                      fontFamily: uiFontFamily(context, 'Inter'),
                       fontFamilyFallback: const ['NotoSansKR'],
                       fontSize: context.rf(14).clamp(13, 15).toDouble(),
                       fontWeight: selected ? FontWeight.w800 : FontWeight.w600,

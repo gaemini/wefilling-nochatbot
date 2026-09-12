@@ -1,0 +1,1467 @@
+{
+  "@@locale": "zh",
+  "login": "登录",
+  "signUp": "注册",
+  "logout": "退出登录",
+  "logoutConfirm": "确定要退出登录吗？",
+  "logoutSuccess": "已退出登录",
+  "logoutError": "退出登录时出错。\n请重试。",
+  "offlineLogout": "已离线退出登录",
+  "loggingOut": "正在退出…",
+  "email": "邮箱",
+  "password": "密码",
+  "confirmPassword": "确认密码",
+  "forgotPassword": "忘记密码？",
+  "resetPassword": "重置密码",
+  "passwordResetDescription": "输入邮箱，获取6位验证码。",
+  "emailAddress": "邮箱地址",
+  "sendCode": "发送验证码",
+  "passwordResetCodeSent": "如果该邮箱已注册，验证码已发送。",
+  "verificationCodeHint": "输入6位验证码",
+  "newPassword": "新密码",
+  "resendCode": "重新发送",
+  "resendCodeIn": "{seconds}秒后重新发送",
+  "@resendCodeIn": {
+    "placeholders": {
+      "seconds": {
+        "type": "int"
+      }
+    }
+  },
+  "passwordChangedSuccessfully": "密码已修改。",
+  "signInWithNewPassword": "请使用新密码登录。",
+  "backToEmailLogin": "返回邮箱登录",
+  "invalidVerificationCode": "验证码错误。",
+  "expiredVerificationCode": "验证码已过期，请重新获取。",
+  "tooManyVerificationAttempts": "尝试次数过多，请重新获取验证码。",
+  "passwordResetRateLimited": "请稍后再获取验证码。",
+  "passwordResetGenericError": "重置密码失败，请稍后重试。",
+  "passwordResetNetworkError": "请检查网络后重试。",
+  "passwordResetRequestVerificationFailed": "请求验证失败，请重试。",
+  "currentPassword": "当前密码",
+  "currentPasswordHint": "输入当前密码",
+  "emailReauthenticationDescription": "为保障安全，注销账号前请确认当前密码。",
+  "reauthenticationFailedTryAgain": "身份验证失败，请重试。",
+  "sendResetEmail": "发送重置邮件",
+  "loginFailed": "登录失败，请检查邮箱和密码。",
+  "loginError": "登录时出错",
+  "loginRequired": "请先登录",
+  "emailSent": "邮件已发送，请查收。",
+  "verificationEmailSent": "验证邮件已发送，请查收。",
+  "resetEmailSent": "密码重置邮件已发送。",
+  "sendResetEmailConfirm": "发送密码重置邮件？",
+  "board": "动态",
+  "meetup": "聚会",
+  "myPage": "我的",
+  "snackChat": "群聊",
+  "snackChatTabSemantic": "群聊标签页",
+  "groupsTabSemantic": "分组标签页",
+  "groupNoFriendsSelected": "已选好友将显示在这里。",
+  "groupNoSearchResults": "未找到好友。",
+  "groupRemoveFriendHint": "双击可从分组中移除。",
+  "home": "首页",
+  "friends": "好友",
+  "friendsOfUser": "的好友",
+  "alreadyFriends": "已是好友",
+  "notFriends": "还不是好友",
+  "friendsOnlyProfileTitle": "仅好友可查看此资料",
+  "friendsOnlyProfileSubtitle": "添加好友后可查看动态和详情",
+  "requestPending": "已申请",
+  "noFriendsYet": "暂无好友",
+  "notifications": "通知",
+  "settings": "设置",
+  "accountSettings": "账号设置",
+  "language": "语言",
+  "languageSettings": "语言设置",
+  "selectLanguage": "选择语言",
+  "notificationSettings": "通知设置",
+  "privacyPolicy": "隐私政策",
+  "private": "私密",
+  "termsOfService": "服务条款",
+  "deleteAccount": "注销账号",
+  "deleteAccountConfirm": "确定注销吗？所有数据都将被删除。",
+  "deleteAccountCompleted": "账号已注销",
+  "userNotFound": "未找到用户",
+  "confirm": "确定",
+  "cancel": "取消",
+  "save": "保存",
+  "delete": "删除",
+  "edit": "编辑",
+  "create": "创建",
+  "createAction": "创建",
+  "search": "搜索",
+  "searchMeetups": "搜索聚会",
+  "searching": "搜索",
+  "searchByName": "搜索好友昵称",
+  "todayMeetupsSectionTitle": "今日聚会",
+  "todayPostsSectionTitle": "今日动态",
+  "todayNoMeetups": "今天还没有新建或安排的聚会。",
+  "todayNoPosts": "今天还没有动态。",
+  "loading": "加载中…",
+  "error": "出错了",
+  "success": "成功",
+  "warning": "提醒",
+  "info": "提示",
+  "yes": "是",
+  "no": "否",
+  "ok": "好的",
+  "done": "完成",
+  "registration": "注册",
+  "back": "返回",
+  "next": "下一步",
+  "submit": "提交",
+  "retry": "重试",
+  "retryAction": "重试",
+  "close": "关闭",
+  "later": "稍后",
+  "all": "全部",
+  "allMeetups": "全部聚会",
+  "author": "作者",
+  "post": "动态",
+  "posts": "动态",
+  "createPost": "发动态",
+  "createPostSheetDesc": "分享照片和文字。",
+  "newPost": "新动态",
+  "newPostCreation": "新动态",
+  "createSnackChat": "创建群聊",
+  "createSnackChatSheetDesc": "开启今天的轻松聊天。",
+  "snackChatRoomTitle": "群聊名称",
+  "snackChatRoomTitleHint": "输入聊天主题",
+  "snackChatVisibilityDuration": "群聊时长",
+  "snackChatVisibilityDurationHint": "选择24小时后结束，或长期保留。",
+  "snackChatDuration24Hours": "24小时",
+  "snackChatDurationNoEnd": "长期",
+  "snackChatSelectParticipants": "选择成员",
+  "snackChatParticipantLimit": "邀请想加入的好友",
+  "snackChatParticipantCount": "{count}位成员",
+  "@snackChatParticipantCount": {
+    "placeholders": {
+      "count": {
+        "type": "int"
+      }
+    }
+  },
+  "snackChatMe": "我",
+  "snackChatInvite": "邀请",
+  "snackChatInviteFriends": "邀请好友",
+  "snackChatInviteStepTitle": "邀请好友",
+  "snackChatInviteStepHint": "至少选择一位好友加入聊天。",
+  "snackChatSelectedFriends": "已选好友",
+  "snackChatNoFriendsSelected": "已选好友将显示在这里。",
+  "snackChatFriendList": "好友",
+  "snackChatDragForFriends": "拖动查看更多",
+  "snackChatSelectionComplete": "已选{count}人",
+  "@snackChatSelectionComplete": {
+    "placeholders": {
+      "count": {
+        "type": "int"
+      }
+    }
+  },
+  "snackChatNoFriendsToInvite": "暂无可邀请的好友。",
+  "snackChatMaxParticipants": "选择要邀请的好友。",
+  "snackChatEnterTitle": "请输入群聊名称。",
+  "snackChatSelectGroup": "请选择分享分组。",
+  "snackChatSelectFriend": "请至少选择一位好友。",
+  "snackChatCreateFailed": "创建群聊失败。",
+  "snackChatCreating": "创建中…",
+  "snackChatCreate": "创建群聊",
+  "snackChatGuideTitle": "开启轻松\n群聊",
+  "snackChatGuideDesc": "和好友一起\n随时轻松交流。",
+  "editPost": "编辑动态",
+  "deletePost": "删除动态",
+  "postDetail": "动态详情",
+  "writePost": "发动态",
+  "postCreated": "动态已发布。",
+  "postCreateFailed": "发布失败，请重试。",
+  "postUpdated": "动态已更新。",
+  "postUpdateFailed": "更新失败，请重试。",
+  "postDeleted": "动态已删除。",
+  "postDeleteFailed": "删除动态失败。",
+  "title": "标题",
+  "enterTitle": "输入标题",
+  "content": "内容",
+  "enterContent": "输入内容",
+  "image": "图片",
+  "images": "图片",
+  "selectImage": "选择图片",
+  "imageAttachment": "添加图片",
+  "imageSelected": "已选择图片",
+  "imageSelectError": "选择图片时出错。",
+  "imageUploading": "正在上传图片，请稍候…",
+  "selectFromGallery": "从相册选择",
+  "takePhoto": "拍照",
+  "photoError": "拍照时出错。",
+  "useDefaultImage": "使用默认图片",
+  "imageDisplayIssue": "检测到图片显示问题",
+  "troubleshoot": "排查问题",
+  "noPostsYet": "暂无动态",
+  "like": "赞",
+  "comment": "评论",
+  "comments": "评论",
+  "writeComment": "写评论…",
+  "commentCreated": "评论已发布。",
+  "commentCreateFailed": "发布评论失败。",
+  "commentDeleted": "评论已删除。",
+  "commentDeleteFailed": "删除评论失败。",
+  "share": "分享",
+  "report": "举报",
+  "reportSubmitted": "举报已提交",
+  "reportAction": "举报",
+  "blockUser": "拉黑用户",
+  "userBlocked": "已拉黑",
+  "visibilityScope": "可见范围",
+  "publicPost": "公开",
+  "meetupVisibilityFriendsAll": "所有好友",
+  "meetupVisibilityGroupSelect": "选择分组",
+  "selectMeetupGroupsTitle": "选择分组",
+  "meetupThumbnailUsesFirstOnly": "仅支持一张封面，将使用第一张图片。",
+  "categorySpecific": "指定分类",
+  "authorAndCommenterInfo": "将显示作者和评论者信息",
+  "postAnonymously": "匿名发布",
+  "anonymous": "匿名",
+  "idWillBeShown": "不会显示你的ID",
+  "createMeetup": "创建聚会",
+  "createNewMeetup": "创建聚会",
+  "createFirstMeetup": "创建第一个聚会",
+  "editMeetup": "编辑聚会",
+  "deleteMeetup": "删除聚会",
+  "cancelMeetup": "取消聚会",
+  "cancelMeetupConfirm": "确认取消",
+  "meetupDetail": "聚会详情",
+  "joinMeetup": "加入",
+  "join": "加入",
+  "participating": "已加入",
+  "leaveMeetup": "退出",
+  "meetupTitle": "聚会标题",
+  "enterMeetupTitle": "输入聚会标题",
+  "meetupDescription": "聚会介绍",
+  "enterMeetupDescription": "输入聚会介绍",
+  "meetupInfo": "聚会信息",
+  "meetupCreated": "聚会已创建！",
+  "meetupUpdated": "聚会信息已更新。",
+  "meetupUpdateSuccess": "聚会已更新。",
+  "meetupCancelled": "聚会已取消",
+  "meetupCancelSuccess": "聚会已取消。",
+  "meetupCancelFailed": "取消失败，请重试。",
+  "location": "地点",
+  "date": "日期",
+  "dateSelection": "选择日期",
+  "time": "时间",
+  "maxParticipants": "人数上限",
+  "currentParticipants": "当前人数",
+  "participants": "参与者",
+  "host": "组织者",
+  "category": "分类",
+  "groups": "分组",
+  "categories": "分类",
+  "study": "学习",
+  "meal": "聚餐",
+  "hobby": "咖啡",
+  "culture": "文化",
+  "noMeetupsYet": "暂无聚会",
+  "meetupJoined": "已成功加入聚会！",
+  "meetupFull": "人数已满",
+  "meetupClosed": "聚会已结束",
+  "hostedMeetups": "我组织的聚会",
+  "joinedMeetups": "我参加的聚会",
+  "writtenPosts": "已发动态",
+  "profile": "个人资料",
+  "editProfile": "编辑资料",
+  "profileEdit": "编辑资料",
+  "nickname": "昵称",
+  "bio": "简介",
+  "profileImage": "头像",
+  "myPosts": "我的动态",
+  "myMeetups": "我的聚会",
+  "myComments": "我的评论",
+  "review": "回顾",
+  "reviews": "回顾",
+  "checkReview": "查看回顾",
+  "saved": "已收藏",
+  "yourStoryMatters": "通过分类",
+  "shareYourMoments": "自由分享你的生活。",
+  "writeStory": "分享你的故事",
+  "wefillingMeaning": "你知道\n微邻的含义吗？",
+  "wefillingExplanation": "由“We”和“filling”组成，\n寓意填满人与人之间的距离。",
+  "friendRequest": "好友申请",
+  "friendRequests": "好友申请",
+  "checkFriendRequests": "查看好友申请",
+  "friendsList": "好友",
+  "acceptFriend": "接受",
+  "accept": "接受",
+  "rejectFriend": "拒绝",
+  "reject": "拒绝",
+  "approved": "已通过",
+  "rejected": "已拒绝",
+  "pending": "待处理",
+  "inProgress": "进行中",
+  "expired": "申请已过期",
+  "addFriend": "加好友",
+  "removeFriend": "删除好友",
+  "friendList": "好友列表",
+  "block": "拉黑",
+  "unblock": "解除拉黑",
+  "blockedUsers": "黑名单",
+  "requests": "申请",
+  "myFriendsOnly": "仅我的好友可见",
+  "everyoneCanSee": "所有人可见",
+  "selectedGroupOnly": "仅所选分组中的好友可见此聚会",
+  "selectedGroupOnlyPost": "仅所选分组中的好友可见此动态",
+  "selectedFriendGroupOnly": "仅所选好友分组",
+  "noGroup": "未分组",
+  "groupSettings": "分组设置",
+  "selectCategoriesToShare": "选择分享分组",
+  "friendCategories": "好友分组",
+  "noFriendCategories": "暂无好友分组，请先创建。",
+  "defaultCategoryCreated": "默认分组已创建",
+  "defaultCategoryFailed": "创建默认分组失败",
+  "colorSelection": "选择颜色",
+  "iconSelection": "选择图标",
+  "newHighlight": "新精选",
+  "updateAllPosts": "更新全部动态",
+  "update": "更新",
+  "request": "申请",
+  "reviewRequest": "回顾确认申请",
+  "reviewRequestSent": "回顾确认申请已发送。",
+  "reviewRequestReject": "拒绝回顾申请",
+  "reviewConsensusDisabled": "回顾共识功能暂未开放。",
+  "featureUnavailable": "功能暂不可用",
+  "messageFeatureComingSoon": "消息功能即将上线。",
+  "copyRules": "复制规则",
+  "securityRulesCopied": "安全规则已复制。",
+  "required": "此项必填",
+  "invalidEmail": "邮箱格式不正确",
+  "invalidPassword": "密码至少需要6位",
+  "passwordMismatch": "两次输入的密码不一致",
+  "tooShort": "内容太短",
+  "tooLong": "内容太长",
+  "accountInfo": "账号信息",
+  "accountSecurity": "账号安全",
+  "legalInfo": "法律信息",
+  "privacyProtection": "隐私保护",
+  "openSourceLicenses": "开源许可",
+  "manageGoogleAccount": "管理Google账号",
+  "selectCategoryRequired": "选择分类（必选）",
+  "selectGroupRequired": "选择分组（必选）",
+  "selectedCount": "项已选",
+  "enterSearchQuery": "输入搜索内容",
+  "description": "说明",
+  "korean": "한국어",
+  "english": "English",
+  "reauthenticateRequired": "为保障安全，请重新登录",
+  "loginMethod": "登录方式",
+  "googleAccount": "Google账号",
+  "emailPassword": "邮箱/密码",
+  "other": "其他",
+  "enterMeetupLocation": "输入聚会地点",
+  "pleaseEnterLocation": "请输入地点",
+  "timeSelection": "选择时间",
+  "undecided": "待定",
+  "todayTimePassed": "今天的时间已过，请选择“待定”或其他日期。",
+  "people": "人",
+  "selectFriendGroupsForMeetup": "选择可查看此聚会的好友分组",
+  "noGroupSelectedWarning": "未选择分组时，其他人将无法查看此聚会",
+  "thumbnailSettingsOptional": "封面设置（选填）",
+  "thumbnailImage": "封面图片",
+  "attachImage": "添加图片",
+  "changeImage": "更换图片",
+  "searchByFriendName": "搜索好友昵称",
+  "searchUsers": "搜索用户",
+  "searchByNicknameOrName": "搜索昵称或姓名\n认识新朋友",
+  "searchAndAddFriends": "搜索用户，添加好友",
+  "receivedRequests": "收到的",
+  "sentRequests": "发出的",
+  "noReceivedRequests": "暂无好友申请",
+  "newRequestsWillAppearHere": "新的好友申请会显示在这里",
+  "noSentRequests": "暂无已发申请",
+  "searchToSendRequest": "搜索用户，发送好友申请",
+  "friendCategoriesManagement": "好友分组",
+  "noFriendGroupsYet": "还没有好友分组。\n请前往好友分组创建。",
+  "friendsCount": "{count}位好友",
+  "noSearchResults": "暂无搜索结果",
+  "blockList": "黑名单",
+  "accountManagement": "账号管理",
+  "deleteAccountWarning": "注销后，所有数据将永久删除。确定要注销吗？",
+  "notificationDeleted": "通知已删除",
+  "daysAgo": "{count}天前",
+  "@daysAgo": {
+    "placeholders": {
+      "count": {
+        "type": "int"
+      }
+    }
+  },
+  "hoursAgo": "{count}小时前",
+  "@hoursAgo": {
+    "placeholders": {
+      "count": {
+        "type": "int"
+      }
+    }
+  },
+  "minutesAgo": "{count}分钟前",
+  "@minutesAgo": {
+    "placeholders": {
+      "count": {
+        "type": "int"
+      }
+    }
+  },
+  "justNow": "刚刚",
+  "markAllAsRead": "全部已读",
+  "notificationLoadError": "加载通知时出错",
+  "noNotifications": "暂无通知",
+  "activityBoard": "活动板块",
+  "infoBoard": "资讯板块",
+  "pleaseEnterSearchQuery": "请输入搜索内容",
+  "tapToChangeImage": "点击更换图片",
+  "applyProfileToAllPosts": "将资料应用到全部动态",
+  "updating": "更新中…",
+  "postSaved": "已收藏动态",
+  "postUnsaved": "已取消收藏",
+  "deletePostConfirm": "确定要删除这条动态吗？",
+  "commentSubmitFailed": "提交评论失败。",
+  "enterComment": "输入评论…",
+  "unsave": "取消收藏",
+  "savePost": "收藏动态",
+  "deleteComment": "删除评论",
+  "loginToComment": "登录后可评论",
+  "today": "今天",
+  "yesterday": "昨天",
+  "thisWeek": "本周",
+  "previous": "上一页",
+  "selected": "已选",
+  "select": "选择",
+  "scheduled": "已安排",
+  "dateAndTime": "日期和时间",
+  "venue": "地点",
+  "numberOfParticipants": "参与人数",
+  "organizer": "组织者",
+  "nationality": "国籍",
+  "meetupDetails": "聚会详情",
+  "cancelMeetupButton": "取消聚会",
+  "cancelMeetupFailed": "取消失败，请重试。",
+  "peopleUnit": "人",
+  "openStatus": "开放中",
+  "closedStatus": "已结束",
+  "meetupJoinFailed": "加入失败，请重试。",
+  "leaveMeetupFailed": "退出失败，请重试。",
+  "reply": "回复",
+  "replies": "回复",
+  "replyToUser": "…",
+  "writeReply": "写回复",
+  "hideReplies": "收起",
+  "showReplies": "展开",
+  "replyCreated": "回复已发布。",
+  "replyCreateFailed": "发布回复失败。",
+  "repliesCount": "{count}条回复",
+  "@repliesCount": {
+    "placeholders": {
+      "count": {
+        "type": "int"
+      }
+    }
+  },
+  "firstCommentPrompt": "来发表第一条评论吧！",
+  "loadingComments": "加载评论时出错",
+  "editCategory": "编辑分组",
+  "newCategory": "新建分组",
+  "categoryName": "分组名称",
+  "categoryNameHint": "例如：大学同学",
+  "createFirstCategory": "用好友分组设置可见范围",
+  "createFirstCategoryDescription": "将好友分组，轻松选择\n谁可以查看你的动态和聚会。",
+  "editAction": "编辑",
+  "viewProfile": "查看资料",
+  "removeFriendAction": "删除好友",
+  "blockAction": "拉黑",
+  "groupSettingsFor": "{name}的分组设置",
+  "@groupSettingsFor": {
+    "placeholders": {
+      "name": {
+        "type": "String"
+      }
+    }
+  },
+  "notInAnyGroup": "尚未加入任何分组",
+  "friendsInGroup": "{count}位好友",
+  "@friendsInGroup": {
+    "placeholders": {
+      "count": {
+        "type": "int"
+      }
+    }
+  },
+  "categoryCreated": "分组已创建",
+  "categoryUpdated": "分组已更新",
+  "categoryDeleted": "分组已删除",
+  "categoryCreateFailed": "创建分组失败",
+  "categoryUpdateFailed": "更新分组失败",
+  "categoryDeleteFailed": "删除分组失败",
+  "enterCategoryName": "请输入分组名称",
+  "deleteCategory": "删除分组",
+  "deleteCategoryConfirm": "确定删除“{name}”分组吗？\n\n只会删除分组，好友不会移到其他分组。",
+  "@deleteCategoryConfirm": {
+    "placeholders": {
+      "name": {
+        "type": "String"
+      }
+    }
+  },
+  "unfriendConfirm": "确定将{name}从好友中删除吗？",
+  "@unfriendConfirm": {
+    "placeholders": {
+      "name": {
+        "type": "String"
+      }
+    }
+  },
+  "unfriendSuccess": "好友已删除",
+  "unfriendFailed": "删除好友失败",
+  "blockUserConfirm": "确定拉黑{name}吗？\n对方将无法向你发送好友申请。",
+  "@blockUserConfirm": {
+    "placeholders": {
+      "name": {
+        "type": "String"
+      }
+    }
+  },
+  "userBlockedSuccess": "已拉黑用户",
+  "userBlockFailed": "拉黑失败",
+  "cannotLoadProfile": "无法加载资料",
+  "groupAssignmentFailed": "加入分组失败，请重试。",
+  "removedFromAllGroups": "已将{name}移出所有分组",
+  "@removedFromAllGroups": {
+    "placeholders": {
+      "name": {
+        "type": "String"
+      }
+    }
+  },
+  "addedToGroup": "已将{name}加入“{group}”分组",
+  "@addedToGroup": {
+    "placeholders": {
+      "name": {
+        "type": "String"
+      },
+      "group": {
+        "type": "String"
+      }
+    }
+  },
+  "errorOccurred": "出错了，请重试。",
+  "friendStatus": "好友",
+  "addCategory": "添加分组",
+  "newCategoryCreate": "创建第一个分组",
+  "participatedReviews": "参与的回顾",
+  "user": "用户",
+  "cannotLoadReviews": "无法加载回顾",
+  "noReviewsYet": "暂无回顾",
+  "joinMeetupAndWriteReview": "参加聚会，记录美好回忆！",
+  "reviewDetail": "回顾",
+  "rating": "评分",
+  "loginToViewReviews": "请登录后查看回顾",
+  "noSavedPosts": "暂无收藏",
+  "saveInterestingPosts": "收藏感兴趣的动态",
+  "loginToViewSavedPosts": "请登录后查看收藏",
+  "dayAgo": "天前",
+  "daysAgoCount": "{count}天前",
+  "@daysAgoCount": {
+    "placeholders": {
+      "count": {
+        "type": "int"
+      }
+    }
+  },
+  "hourAgo": "小时前",
+  "hoursAgoCount": "{count}小时前",
+  "@hoursAgoCount": {
+    "placeholders": {
+      "count": {
+        "type": "int"
+      }
+    }
+  },
+  "minuteAgo": "分钟前",
+  "minutesAgoCount": "{count}分钟前",
+  "@minutesAgoCount": {
+    "placeholders": {
+      "count": {
+        "type": "int"
+      }
+    }
+  },
+  "justNowTime": "刚刚",
+  "findFriends": "认识新朋友",
+  "makeFriendsWithSameInterests": "结交新朋友\n留下美好回忆",
+  "findFriendsAction": "找好友",
+  "viewRecommendedFriends": "查看推荐好友",
+  "userSearchIdleTitle": "搜索用户",
+  "userSearchIdleDescription": "通过昵称或姓名认识新朋友。",
+  "interestFriendDiscoveryTitle": "按兴趣找好友",
+  "interestFriendDiscoveryDescription": "选择兴趣，认识志趣相投的人。",
+  "interestPeopleTitle": "对#{interest}感兴趣的人",
+  "@interestPeopleTitle": {
+    "placeholders": {
+      "interest": {
+        "type": "String"
+      }
+    }
+  },
+  "interestNoUsersTitle": "还没有人添加#{interest}",
+  "@interestNoUsersTitle": {
+    "placeholders": {
+      "interest": {
+        "type": "String"
+      }
+    }
+  },
+  "interestNoUsersDescription": "选择其他兴趣，发现新朋友。",
+  "interestSearchErrorTitle": "加载兴趣搜索结果失败",
+  "interestSearchErrorDescription": "请稍后重试。",
+  "tryDifferentKeyword": "换个关键词试试",
+  "clearSearchQuery": "清空搜索",
+  "friendRequestSent": "好友申请已发送",
+  "friendRequestFailed": "发送好友申请失败",
+  "friendRequestCancelled": "好友申请已取消",
+  "friendRequestCancelFailed": "取消好友申请失败",
+  "unfriendedUser": "已删除好友",
+  "userUnblocked": "已解除拉黑",
+  "unblockFailed": "解除拉黑失败",
+  "noResultsFound": "暂无结果",
+  "tryDifferentSearch": "换个关键词试试",
+  "confirmUnfriend": "确定删除这位好友吗？",
+  "blockUserDescription": "确定拉黑此用户吗？\n对方将无法向你发送好友申请。",
+  "unblockUser": "解除拉黑",
+  "confirmUnblock": "确定解除拉黑吗？",
+  "meetupFilter": "筛选聚会",
+  "publicMeetupsOnly": "仅公开聚会",
+  "showOnlyPublicMeetups": "仅显示所有人可见的聚会",
+  "friendsMeetupsOnly": "仅好友聚会",
+  "showAllFriendsMeetups": "显示好友创建的所有聚会",
+  "viewSpecificFriendGroup": "查看指定好友分组",
+  "showSelectedGroupMeetups": "仅显示分享给所选分组的聚会",
+  "friendsCountInGroup": "{count}位好友 · 仅显示分享给此分组的聚会",
+  "@friendsCountInGroup": {
+    "placeholders": {
+      "count": {
+        "type": "int"
+      }
+    }
+  },
+  "friendRequestAccepted": "已接受好友申请",
+  "friendRequestAcceptFailed": "接受好友申请失败",
+  "rejectFriendRequest": "拒绝好友申请",
+  "confirmRejectFriendRequest": "确定拒绝这条好友申请吗？",
+  "friendRequestRejected": "已拒绝好友申请",
+  "friendRequestRejectFailed": "拒绝好友申请失败",
+  "cancelFriendRequest": "取消好友申请",
+  "confirmCancelFriendRequest": "确定取消这条好友申请吗？",
+  "friendRequestCancelledSuccess": "好友申请已取消",
+  "cancelAction": "取消",
+  "pleaseEnterMeetupTitle": "请输入聚会标题",
+  "pleaseEnterMeetupDescription": "请输入聚会介绍",
+  "meetupIsFull": "人数已满",
+  "meetupIsFullMessage": "聚会“{meetupTitle}”已满{maxParticipants}人。",
+  "@meetupIsFullMessage": {
+    "placeholders": {
+      "meetupTitle": {
+        "type": "String"
+      },
+      "maxParticipants": {
+        "type": "int"
+      }
+    }
+  },
+  "meetupCancelledMessage": "你准备参加的聚会“{meetupTitle}”已取消。",
+  "@meetupCancelledMessage": {
+    "placeholders": {
+      "meetupTitle": {
+        "type": "String"
+      }
+    }
+  },
+  "newCommentAdded": "新评论",
+  "newCommentMessage": "{commenterName}评论了你的动态“{postTitle}”。",
+  "@newCommentMessage": {
+    "placeholders": {
+      "commenterName": {
+        "type": "String"
+      },
+      "postTitle": {
+        "type": "String"
+      }
+    }
+  },
+  "newReplyToCommentMessage": "{replierName}回复了你的评论。",
+  "@newReplyToCommentMessage": {
+    "placeholders": {
+      "replierName": {
+        "type": "String"
+      }
+    }
+  },
+  "newReplyToCommentAnonymousMessage": "你的评论收到了新回复。",
+  "newLikeAdded": "新赞",
+  "newLikeMessage": "{likerName}赞了你的动态“{postTitle}”。",
+  "@newLikeMessage": {
+    "placeholders": {
+      "likerName": {
+        "type": "String"
+      },
+      "postTitle": {
+        "type": "String"
+      }
+    }
+  },
+  "newParticipantJoined": "新参与者",
+  "newParticipantJoinedMessage": "{name}加入了你的聚会“{meetupTitle}”。",
+  "@newParticipantJoinedMessage": {
+    "placeholders": {
+      "name": {
+        "type": "String"
+      },
+      "meetupTitle": {
+        "type": "String"
+      }
+    }
+  },
+  "newCommentLikeMessage": "{likerName}赞了你的评论。",
+  "@newCommentLikeMessage": {
+    "placeholders": {
+      "likerName": {
+        "type": "String"
+      }
+    }
+  },
+  "friendRequestMessage": "{name}向你发送了好友申请",
+  "@friendRequestMessage": {
+    "placeholders": {
+      "name": {
+        "type": "String"
+      }
+    }
+  },
+  "friendRequestAcceptedMessage": "{name}接受了你的好友申请",
+  "@friendRequestAcceptedMessage": {
+    "placeholders": {
+      "name": {
+        "type": "String"
+      }
+    }
+  },
+  "emailSignup": "邮箱注册",
+  "emailLogin": "邮箱登录",
+  "hanyangEmailOnly": "汉阳大学邮箱验证",
+  "hanyangEmailHeadlineLine1": "汉阳大学",
+  "hanyangEmailHeadlineLine2": "邮箱验证",
+  "hanyangEmailLogin": "使用汉阳大学邮箱登录",
+  "hanyangEmailDescription": "注册需要验证汉阳大学邮箱。\n验证后可通过Google、Apple或邮箱注册和登录。",
+  "sendVerificationCode": "发送验证码",
+  "verificationCode": "验证码",
+  "verifyCode": "验证",
+  "emailVerified": "邮箱验证完成",
+  "verificationCodeSent": "验证码已发送至邮箱",
+  "verificationCodeExpired": "验证码已过期，请重新获取。",
+  "verificationCodeInvalid": "验证码不正确，请检查。",
+  "verificationCodeAttemptsExceeded": "验证次数已达上限，请重新获取。",
+  "emailVerificationRequired": "汉阳邮箱验证",
+  "signupWithEmail": "邮箱注册",
+  "loginWithEmail": "邮箱登录",
+  "hanyangEmailRequired": "仅支持汉阳大学邮箱",
+  "emailFormatInvalid": "邮箱格式不正确",
+  "verificationCodeRequired": "请输入验证码",
+  "verificationCodeLength": "请输入4位验证码",
+  "verificationCodePlaceholder": "4位验证码",
+  "passwordRequired": "请输入密码",
+  "passwordMinLength": "密码至少需要6位",
+  "signupSuccess": "注册成功",
+  "signupFailed": "注册失败，请重试。",
+  "noAccountYet": "还没有账号？",
+  "helpTitle": "帮助",
+  "helpContent": "• 仅支持汉阳大学邮箱\n• 如忘记邮箱密码，请使用大学邮箱系统找回\n• 账号咨询：hanyangwatson@gmail.com",
+  "or": "或",
+  "appName": "微邻",
+  "appTagline": "让彼此相连",
+  "welcomeTitle": "欢迎！",
+  "googleLoginDescription": "选择登录方式，继续使用。",
+  "googleLogin": "Google登录",
+  "loggingIn": "登录中…",
+  "loginTermsNotice": "登录即表示你同意服务条款和隐私政策。",
+  "verificationSuccess": "验证成功",
+  "proceedWithGoogleLogin": "邮箱验证完成。\n使用Google账号继续注册吗？",
+  "continueWithGoogle": "通过Google继续",
+  "appleLogin": "Apple登录",
+  "continueWithApple": "通过Apple继续",
+  "chooseLoginMethod": "请选择登录方式",
+  "hanyangEmailAlreadyUsed": "此汉阳邮箱已被使用，请更换邮箱。",
+  "signupRequired": "请先注册。\n\n新用户或已注销账号的用户，请点击“注册”并完成汉阳邮箱验证。",
+  "meetupNotifications": "聚会通知",
+  "postNotifications": "动态通知",
+  "generalSettings": "通用设置",
+  "friendNotifications": "好友通知",
+  "privatePostAlertTitle": "私密动态通知",
+  "privatePostAlertSubtitle": "收到仅指定用户可见的新动态时通知",
+  "meetupFullAlertTitle": "满员通知",
+  "meetupFullAlertSubtitle": "我组织的聚会满员时通知",
+  "meetupCancelledAlertTitle": "聚会取消通知",
+  "meetupCancelledAlertSubtitle": "我报名的聚会取消时通知",
+  "friendRequestAlertTitle": "好友申请通知",
+  "friendRequestAlertSubtitle": "收到新好友申请时通知",
+  "meetupAlertsTitle": "聚会提醒",
+  "meetupAlertsSubtitle": "满员、取消、参与者变更",
+  "friendAlertsTitle": "好友提醒",
+  "friendAlertsSubtitle": "好友申请及接受通知",
+  "postInteractionsTitle": "动态提醒",
+  "postInteractionsSubtitle": "评论、赞和新动态",
+  "dmMessagesTitle": "私信",
+  "dmMessagesSubtitle": "一对一聊天提醒",
+  "marketingTitle": "广告与推广",
+  "marketingSubtitle": "活动和广告提醒",
+  "commentAlertTitle": "评论通知",
+  "commentAlertSubtitle": "我的动态收到评论时通知",
+  "likeAlertTitle": "点赞通知",
+  "likeAlertSubtitle": "我的动态收到赞时通知",
+  "allNotifications": "全部通知",
+  "allNotificationsSubtitle": "开启或关闭全部通知",
+  "adUpdatesTitle": "广告更新",
+  "adUpdatesSubtitle": "有新的广告或横幅时通知",
+  "loadSettingsError": "加载设置失败：{error}",
+  "@loadSettingsError": {
+    "placeholders": {
+      "error": {
+        "type": "String"
+      }
+    }
+  },
+  "saveSettingsError": "保存设置失败：{error}",
+  "@saveSettingsError": {
+    "placeholders": {
+      "error": {
+        "type": "String"
+      }
+    }
+  },
+  "hostedMeetupsEmpty": "还没有组织过聚会\n创建一个吧！",
+  "joinedMeetupsEmpty": "还没有参加过聚会\n加入感兴趣的聚会吧！",
+  "meetupLoadError": "加载聚会时出错",
+  "fullShort": "已满",
+  "closed": "已结束",
+  "totalPostsCount": "共{count}条动态",
+  "@totalPostsCount": {
+    "placeholders": {
+      "count": {
+        "type": "int"
+      }
+    }
+  },
+  "noWrittenPosts": "还没有发布动态",
+  "notificationDataMissing": "缺少通知数据",
+  "meetupNotFound": "未找到聚会",
+  "postNotFound": "未找到动态",
+  "commentLikeFailed": "更新点赞失败",
+  "reviewWriteTitle": "写聚会回顾",
+  "reviewEditTitle": "编辑回顾",
+  "reviewPhoto": "回顾照片",
+  "pickPhoto": "选择照片",
+  "imagePickFailed": "无法选择图片",
+  "imageUploadFailed": "图片上传失败",
+  "pleaseSelectPhoto": "请选择照片",
+  "pleaseEnterReviewContent": "请输入回顾内容",
+  "reviewUpdated": "回顾已更新",
+  "reviewUpdateFailed": "更新回顾失败",
+  "reviewCreateFailed": "创建回顾失败",
+  "reviewCreatedAndRequestsSent": "回顾已创建，已向{count}位参与者发送申请",
+  "@reviewCreatedAndRequestsSent": {
+    "placeholders": {
+      "count": {
+        "type": "int"
+      }
+    }
+  },
+  "reviewCreatedButNotificationFailed": "回顾已创建，但通知发送失败",
+  "reviewRequestInfo": "将向参与者发送回顾确认申请。接受后，同一篇回顾会显示在他们的个人主页。",
+  "reviewApprovalRequest": "回顾确认申请",
+  "reviewApprovalInfo": "接受后，这篇回顾将显示在你的个人主页；拒绝则不会显示。",
+  "reviewAccepted": "已接受回顾",
+  "reviewRejected": "已拒绝回顾",
+  "reviewApprovalRequestTitle": "聚会回顾确认申请",
+  "reviewReject": "拒绝",
+  "reviewAccept": "接受",
+  "reviewApprovalProcessError": "处理时出错",
+  "reviewProcessError": "处理时出错",
+  "reviewInfoMissing": "缺少回顾信息",
+  "reviewInfoNotFound": "未找到回顾信息",
+  "reviewContent": "回顾内容",
+  "reviewWriteHint": "写下你的聚会回顾…",
+  "requestReviewAcceptance": "申请确认回顾",
+  "writeMeetupReview": "写聚会回顾",
+  "editReview": "编辑回顾",
+  "deleteReview": "删除回顾",
+  "completeOrCancelMeetup": "完成或取消聚会",
+  "meetupCompleteTitle": "完成聚会",
+  "meetupCompleteMessage": "确定将聚会标记为已完成吗？\n\n完成后可以写回顾。",
+  "markAsCompleted": "标记完成",
+  "meetupMarkedCompleted": "聚会已标记完成",
+  "meetupMarkCompleteFailed": "标记完成失败",
+  "reviewNotFound": "未找到回顾",
+  "reviewLoadFailed": "加载回顾失败",
+  "reviewDeleted": "回顾已删除",
+  "reviewDeleteFailed": "删除回顾失败",
+  "noPermission": "没有权限",
+  "meetupInfoRefreshed": "聚会信息已刷新",
+  "meetupCancelledSuccessfully": "聚会已取消",
+  "deleteReviewTitle": "删除回顾",
+  "deleteReviewConfirmMessage": "确定删除这篇回顾吗？\n\n它将从所有参与者的个人主页移除。",
+  "noParticipantsYet": "暂无参与者",
+  "participantsCountLabel": "参与者（{count}）",
+  "@participantsCountLabel": {
+    "placeholders": {
+      "count": {
+        "type": "int"
+      }
+    }
+  },
+  "viewAndRespondToReview": "查看并确认回顾",
+  "reviewByAuthor": "{name}的回顾",
+  "@reviewByAuthor": {
+    "placeholders": {
+      "name": {
+        "type": "String"
+      }
+    }
+  },
+  "replyingTo": "正在回复{name}",
+  "@replyingTo": {
+    "placeholders": {
+      "name": {
+        "type": "String"
+      }
+    }
+  },
+  "cancelReply": "取消回复",
+  "writeReplyHint": "写回复…",
+  "noContent": "暂无内容",
+  "reviewAlreadyAccepted": "你已接受这篇回顾",
+  "reviewAlreadyRejected": "你已拒绝这篇回顾",
+  "reviewAlreadyResponded": "你已处理这条申请",
+  "hideReview": "隐藏回顾",
+  "unhideReview": "显示回顾",
+  "hideReviewConfirm": "从个人主页隐藏这篇回顾吗？\n其他人将无法查看。",
+  "unhideReviewConfirm": "重新显示这篇回顾吗？",
+  "reviewHidden": "回顾已隐藏",
+  "reviewUnhidden": "回顾已显示",
+  "reviewHideFailed": "隐藏回顾失败",
+  "reviewUnhideFailed": "显示回顾失败",
+  "deleteReviewSuccess": "回顾已删除",
+  "deleteReviewFailed": "删除回顾失败",
+  "reviewApprovalRequestMessage": "{authorName}邀请你确认聚会“{meetupTitle}”的回顾。",
+  "@reviewApprovalRequestMessage": {
+    "placeholders": {
+      "authorName": {
+        "type": "String"
+      },
+      "meetupTitle": {
+        "type": "String"
+      }
+    }
+  },
+  "updateMeetup": "更新聚会",
+  "pleaseEnterTitle": "请输入标题",
+  "titleMinLength": "标题至少需要2个字符",
+  "pleaseEnterDescription": "请输入介绍",
+  "pleaseEnterTime": "请输入时间",
+  "timeHint": "例如：14:00或14:00~16:00",
+  "reviewDetails": "回顾详情",
+  "likes": "赞",
+  "likesCount": "{count}个赞",
+  "@likesCount": {
+    "placeholders": {
+      "count": {
+        "type": "int"
+      }
+    }
+  },
+  "viewAllComments": "查看全部{count}条评论",
+  "@viewAllComments": {
+    "placeholders": {
+      "count": {
+        "type": "int"
+      }
+    }
+  },
+  "noCommentsYet": "来发表第一条评论",
+  "beFirstToComment": "来发表第一条评论吧！",
+  "commentFeatureComingSoon": "评论功能即将上线",
+  "meetupParticipants": "参与者（{count}）",
+  "@meetupParticipants": {
+    "placeholders": {
+      "count": {
+        "type": "int"
+      }
+    }
+  },
+  "deletedAccount": "已注销账号",
+  "visibilityPublic": "公开",
+  "visibilityFriends": "仅好友",
+  "cannotOpenLink": "无法打开链接",
+  "cancelMeetupMessage": "确定取消聚会“{meetupTitle}”吗？",
+  "@cancelMeetupMessage": {
+    "placeholders": {
+      "meetupTitle": {
+        "type": "String"
+      }
+    }
+  },
+  "warningTitle": "提醒",
+  "cancelMeetupWarning1": "取消后无法恢复",
+  "cancelMeetupWarning2": "所有参与者都会收到通知",
+  "yesCancel": "确认取消",
+  "dm": "私信",
+  "directMessage": "私信",
+  "newMessage": "新消息",
+  "sendMessage": "发消息",
+  "typeMessage": "输入消息",
+  "noConversations": "暂无聊天",
+  "startFirstConversation": "开启第一段对话吧！",
+  "cannotSendDM": "无法向此用户发送消息",
+  "blockedUser": "此用户已被拉黑",
+  "anonymousUser": "匿名{number}",
+  "@anonymousUser": {
+    "placeholders": {
+      "number": {
+        "type": "String"
+      }
+    }
+  },
+  "anonymousMessage": "匿名消息",
+  "dmFrom": "来自{name}的消息",
+  "@dmFrom": {
+    "placeholders": {
+      "name": {
+        "type": "String"
+      }
+    }
+  },
+  "read": "已读",
+  "unread": "未读",
+  "maxMessageLength": "消息不能超过500字",
+  "messageEmpty": "请输入消息",
+  "messageSent": "消息已发送",
+  "messageSendFailed": "发送失败",
+  "conversationWith": "与{name}聊天",
+  "@conversationWith": {
+    "placeholders": {
+      "name": {
+        "type": "String"
+      }
+    }
+  },
+  "loadingMessages": "加载消息中…",
+  "noMessages": "暂无消息",
+  "blockThisUser": "拉黑此用户",
+  "blockConfirm": "确定拉黑此用户吗？",
+  "dmNotAvailable": "暂时无法发送消息",
+  "friendsOnly": "仅好友",
+  "dmFriendsOnlyHint": "添加好友后可发送私信",
+  "signUpFirstMessage": "请点击下方“注册”按钮\n先完成汉阳邮箱验证。",
+  "none": "无",
+  "deleteReasonNoLongerUse": "不再使用此服务",
+  "deleteReasonMissingFeatures": "缺少需要的功能",
+  "deleteReasonPrivacyConcerns": "担心隐私问题",
+  "deleteReasonSwitchingService": "改用其他服务",
+  "deleteReasonNewAccount": "想创建新账号",
+  "deleteReasonOther": "其他",
+  "selectDeleteReason": "选择原因",
+  "otherReasonOptional": "其他原因（选填）",
+  "deleteDataNotice": "数据删除说明",
+  "postDeleteTip": "💡 如需删除动态，请先在“我的动态”中删除，再注销账号。",
+  "finalWarning": "最后确认",
+  "reallyDeleteAccount": "确定注销账号吗？",
+  "actionCannotBeUndone": "此操作无法撤销",
+  "accountRecoveryImpossible": "❌ 账号无法恢复",
+  "dataPermanentlyDeleted": "❌ 数据将永久删除",
+  "reRegistrationRequired": "❌ 需要重新注册",
+  "postsAnonymized": "✅ 动态将匿名处理",
+  "deleteReasonLabel": "原因",
+  "postsAnonymizedAutomatic": "动态：自动匿名处理",
+  "deletionFailed": "删除失败",
+  "accountDeletionIrreversible": "⚠️ 注销账号后无法恢复",
+  "immediatelyDeleted": "立即删除",
+  "anonymized": "匿名处理",
+  "identityVerification": "身份验证",
+  "reLoginForVerification": "请重新登录Google账号以验证身份。",
+  "deleteButtonGoogleLogin": "点击“注销账号”后将显示Google登录窗口。",
+  "deleteButtonAppleLogin": "点击“注销账号”后将显示Apple登录窗口。",
+  "accountDeletedImmediatelyAfterAuth": "⚠️ 重新验证身份后，账号将立即注销",
+  "reallyDelete": "确定删除？",
+  "deleteConfirmationMessage": "此操作无法撤销，所有数据将永久删除。动态作者将显示为“已注销用户”。",
+  "accountDeleted": "账号已注销",
+  "personalInfo": "个人信息（邮箱、姓名、头像、电话、生日、学校、简介）",
+  "friendRelationships": "好友关系（所有好友和好友申请）",
+  "meetups": "聚会（删除组织的聚会，退出参加的聚会）",
+  "uploadedFiles": "上传文件（头像、动态图片及所有上传内容）",
+  "postsAndComments": "动态与评论（显示为“已注销用户”，保留对话上下文）",
+  "imageDisplayIssueDetected": "检测到图片显示问题",
+  "optional": "（选填）",
+  "optionalField": "（选填）",
+  "publicMeeting": "公开",
+  "participantCount": "{current}/{total}人",
+  "@participantCount": {
+    "placeholders": {
+      "current": {
+        "type": "String"
+      },
+      "total": {
+        "type": "String"
+      }
+    }
+  },
+  "leaveChatRoom": "退出群聊",
+  "bioPlaceholder": "简单介绍一下自己（选填）",
+  "userMessage": "来自{user}的消息",
+  "imageSelectionError": "选择图片时出错",
+  "meetupUpdatedSuccess": "聚会已更新。",
+  "meetupUpdateError": "更新聚会时出错",
+  "meetupImage": "聚会图片",
+  "nicknameQuestion": "怎么称呼你？",
+  "nicknamePolicyHelp": "支持韩文、英文字母、数字和下划线。空格将转换为下划线。",
+  "nicknameChecking": "正在检查…",
+  "nicknameAvailable": "此昵称可用。",
+  "nicknameTaken": "此昵称已被使用。",
+  "nicknameInvalidCharacters": "仅支持韩文、英文字母、数字和下划线。",
+  "nicknameLetterRequired": "至少包含一个韩文或英文字母。",
+  "nicknameReserved": "此昵称不可使用。",
+  "nicknameCheckNetworkError": "无法检查昵称，请重试。",
+  "nicknameNormalizedPreview": "将保存为：{nickname}",
+  "@nicknameNormalizedPreview": {
+    "placeholders": {
+      "nickname": {
+        "type": "String"
+      }
+    }
+  },
+  "notification": "通知",
+  "messageFrom": "来自{user}的消息",
+  "reportComment": "举报评论",
+  "reportConfirm": "确定举报这条评论吗？",
+  "reportError": "评论者信息无效",
+  "cafe": "咖啡",
+  "trip": "旅行",
+  "hangout": "休闲",
+  "friendsOnlyBadge": "仅好友",
+  "ukraine": "乌克兰",
+  "editMeetupButton": "编辑聚会",
+  "anonymousDescription": "与动态中的匿名作者交流。",
+  "friendSelection": "选择好友",
+  "noFriendsInCategory": "暂无好友",
+  "addFriendsToCategory": "向此分组添加好友",
+  "registrationRequired": "请先注册",
+  "accountSelection": "选择账号",
+  "continueWithWefillingAccount": "使用微邻账号继续",
+  "addAnotherAccount": "添加其他账号",
+  "appInfo": "关于应用",
+  "appInfoTitle": "微邻",
+  "appVersion": "版本",
+  "appTaglineShort": "让彼此相连",
+  "copyright": "© 2025 微邻。保留所有权利。",
+  "patentPending": "专利申请中",
+  "patentApplicationNumber": "申请号：KR 10-2025-0187957",
+  "patentInventionTitle": "发明：基于AI的社交网络自动分类与智能信息管理系统",
+  "deletedUser": "已注销用户",
+  "blockUserTitle": "拉黑用户",
+  "blockUserMessage": "确定拉黑{userName}吗？",
+  "@blockUserMessage": {
+    "placeholders": {
+      "userName": {
+        "type": "String"
+      }
+    }
+  },
+  "blockUserWarningTitle": "拉黑后：",
+  "blockUserWarning1": "你将看不到对方的动态和评论",
+  "blockUserWarning2": "你将看不到对方创建的聚会",
+  "blockUserWarning3": "双方将无法互发消息",
+  "blockUserWarning4": "你可以随时解除拉黑",
+  "blockUserButton": "拉黑",
+  "unblockUserTitle": "解除拉黑",
+  "unblockUserMessage": "确定解除对{userName}的拉黑吗？\n\n解除后可再次看到对方的内容。",
+  "@unblockUserMessage": {
+    "placeholders": {
+      "userName": {
+        "type": "String"
+      }
+    }
+  },
+  "unblockUserButton": "解除拉黑",
+  "reportTitle": "举报",
+  "reportPostTitle": "举报动态",
+  "reportCommentTitle": "举报评论",
+  "reportMeetupTitle": "举报聚会",
+  "reportUserTitle": "举报用户",
+  "reportReasonSelect": "请选择举报原因",
+  "reportDescriptionLabel": "补充说明（选填）",
+  "reportDescriptionHint": "请详细说明举报原因",
+  "reportWarning": "举报将经审核后处理，恶意举报可能受到处罚。",
+  "reportButton": "举报",
+  "reportSuccess": "举报已提交，我们会审核处理。",
+  "reportFailed": "举报失败，请重试。",
+  "recommendedPlaces": "推荐地点",
+  "customLocation": "自定义地点",
+  "noRecommendedPlaces": "暂无推荐地点",
+  "pleaseSelectCategory": "请选择分类",
+  "titleMinLengthError": "标题至少需要2个字符",
+  "addImage": "添加",
+  "tapToSelectFromGallery": "点击从相册选择",
+  "changeImageTooltip": "更换图片",
+  "removeImageTooltip": "移除图片",
+  "searchPostsHint": "搜索动态",
+  "searchMeetupsHint": "搜索聚会",
+  "emailLoginTitle": "邮箱登录",
+  "emailLoginDescription": "使用注册邮箱和密码登录。",
+  "emailSignUpTitle": "邮箱注册",
+  "emailSignUpDescription": "设置登录邮箱和密码。",
+  "emailId": "邮箱",
+  "passwordHint": "至少8位",
+  "passwordPlaceholder": "输入密码",
+  "passwordInputHint": "至少8位",
+  "confirmPasswordPlaceholder": "再次输入密码",
+  "confirmPasswordHint": "请再次输入密码",
+  "emailHelperText": "输入常用邮箱",
+  "verifiedHanyangEmailLabel": "已验证的汉阳邮箱",
+  "invalidEmailFormat": "邮箱格式不正确",
+  "emailAlreadyUsed": "此邮箱已被使用",
+  "passwordLengthRequirement": "密码至少需要8位",
+  "signUpComplete": "完成注册",
+  "profileSetupTitle": "设置资料",
+  "profileSetupWelcome": "欢迎！请设置个人资料。",
+  "profileSetupSuccess": "资料已设置。",
+  "profileSetupFailed": "设置资料失败。\n请返回登录页重试。",
+  "profileSetupError": "发生错误：{error}\n请返回登录页。",
+  "@profileSetupError": {
+    "placeholders": {
+      "error": {
+        "type": "String"
+      }
+    }
+  },
+  "nicknamePlaceholder": "设置昵称",
+  "nicknameRequired": "请输入昵称",
+  "nicknameLengthHint": "昵称需为2–20个字符",
+  "getStarted": "开始使用",
+  "signUpMethodSelectionTitle": "选择注册方式",
+  "signUpMethodSelectionHeading": "选择注册方式",
+  "signUpMethodSelectionDescription": "选择一个账号继续。",
+  "signUpWithApple": "Apple注册",
+  "signUpWithAppleIosOnly": "Apple注册（仅iOS）",
+  "signUpWithGoogle": "Google注册",
+  "signUpWithId": "邮箱注册",
+  "generalEmailVerificationTitle": "邮箱验证",
+  "generalEmailVerificationHeading": "验证邮箱",
+  "generalEmailVerificationDescription": "输入邮箱地址，我们将发送4位验证码。",
+  "verifiedEmailLabel": "已验证的邮箱",
+  "generalEmailPasswordDescription": "为此邮箱设置密码。\n密码至少需要8位。",
+  "appleSignupIosOnlyError": "Apple注册仅支持iOS。",
+  "googleSignupLoginFailed": "Google登录失败。",
+  "appleSignupLoginFailed": "Apple登录失败。",
+  "signupProcessError": "注册时出错。",
+  "googleSignupFailedWithError": "Google注册失败：{error}",
+  "@googleSignupFailedWithError": {
+    "placeholders": {
+      "error": {
+        "type": "String"
+      }
+    }
+  },
+  "appleSignupFailedWithError": "Apple注册失败：{error}",
+  "@appleSignupFailedWithError": {
+    "placeholders": {
+      "error": {
+        "type": "String"
+      }
+    }
+  },
+  "socialAccountAlreadyRegistered": "此{provider}账号已注册。\n请从登录页登录。",
+  "@socialAccountAlreadyRegistered": {
+    "placeholders": {
+      "provider": {
+        "type": "String"
+      }
+    }
+  },
+  "emailIdSetupTitle": "设置登录邮箱",
+  "emailIdSetupDescription": "汉阳邮箱验证完成。\n输入用于登录的邮箱。\n可使用已验证的汉阳邮箱或其他邮箱。",
+  "loginEmailLabel": "登录邮箱",
+  "loginEmailHelper": "输入用于登录的邮箱",
+  "useVerifiedHanyangEmail": "使用已验证的汉阳邮箱",
+  "emailIdSetupInfo": "• 输入用于登录的邮箱\n• 可以使用已验证的汉阳邮箱\n• 也可以使用其他邮箱\n• 下一步将设置密码",
+  "passwordSetupTitle": "设置密码",
+  "passwordSetupDescription": "设置安全密码。\n密码至少需要8位。",
+  "loginFailedGeneric": "登录失败，请检查邮箱和密码。",
+  "loginErrorGeneric": "登录时出错",
+  "errorUserNotFound": "此邮箱尚未注册。",
+  "errorWrongPassword": "密码错误。",
+  "errorInvalidEmail": "邮箱格式不正确。",
+  "errorUserDisabled": "账号已被停用，请联系客服。",
+  "errorTooManyRequests": "登录尝试过多，请稍后重试。",
+  "errorInvalidCredential": "邮箱或密码不正确。",
+  "errorOperationNotAllowed": "此Firebase项目未启用该登录方式，请在Firebase控制台的身份验证设置中启用。",
+  "pleaseEnterPassword": "请输入密码",
+  "passwordMustBe8Chars": "密码至少需要8位",
+  "passwordsDoNotMatch": "两次输入的密码不一致",
+  "pleaseEnterEmail": "请输入邮箱",
+  "validEmailFormat": "邮箱格式不正确",
+  "emailAlreadyInUse": "此邮箱已被使用，请更换邮箱。",
+  "weakPassword": "密码强度不足，请设置更安全的密码。",
+  "pleaseSelectTime": "请选择时间",
+  "meetupCreateFailed": "创建聚会失败，请重试。",
+  "postTypeSectionTitle": "动态类型",
+  "postTypeTextLabel": "文字",
+  "postTypePollLabel": "投票",
+  "postTypePollHelper": "每人限投一票。",
+  "pollQuestionHint": "输入投票问题",
+  "pollOptionsTitle": "投票选项",
+  "pollOptionHint": "选项{index}",
+  "@pollOptionHint": {
+    "placeholders": {
+      "index": {
+        "type": "int"
+      }
+    }
+  },
+  "pollAddOptionLabel": "添加选项（{current}/{max}）",
+  "@pollAddOptionLabel": {
+    "placeholders": {
+      "current": {
+        "type": "int"
+      },
+      "max": {
+        "type": "int"
+      }
+    }
+  },
+  "pollVoteLabel": "投票",
+  "pollParticipantsCount": "{count}人参与",
+  "@pollParticipantsCount": {
+    "placeholders": {
+      "count": {
+        "type": "int"
+      }
+    }
+  },
+  "pollVoteButton": "投票",
+  "pollVoteSuccess": "投票已提交。",
+  "pollVoteFailed": "投票失败。",
+  "pollLoginToVote": "请登录后投票。",
+  "pollVoteToSeeResults": "投票后可查看结果。",
+  "moreOptions": "更多",
+  "pollVotesUnit": "{count}票",
+  "@pollVotesUnit": {
+    "placeholders": {
+      "count": {
+        "type": "int"
+      }
+    }
+  },
+  "categorySelectAtLeastOne": "请至少选择一个分类。",
+  "groupSelectAtLeastOne": "请至少选择一个分组。",
+  "postImageUploading": "图片上传中，请稍候…",
+  "postComposeImageRequired": "添加图片",
+  "postComposeImageHelper": "最多可添加15张图片。",
+  "postComposeVisibilityPrompt": "选择谁可以查看这条动态。",
+  "postVisibilityPublicTitle": "公开",
+  "postVisibilityPublicDescription": "所有用户可见",
+  "postVisibilityAnonymousTitle": "匿名公开",
+  "postVisibilityAnonymousDescription": "所有用户可见，不显示你的资料",
+  "postVisibilityGroupTitle": "仅分组",
+  "postVisibilityGroupDescription": "仅所选分组中的好友可见",
+  "postVisibilityNoGroupsSelected": "未选择分组",
+  "postVisibilityGroupsSelected": "已选{count}个分组",
+  "@postVisibilityGroupsSelected": {
+    "placeholders": {
+      "count": {
+        "type": "int"
+      }
+    }
+  },
+  "postSelectImageRequired": "请添加图片。",
+  "postEnterContentRequired": "请输入内容。",
+  "postDraftIncompleteMessage": "添加文字或图片后再继续。",
+  "postPreparingImages": "正在准备照片，请稍候。",
+  "postSelectedPeopleTitle": "已选成员",
+  "postSelectedPeopleEmpty": "未选择成员。",
+  "postAudienceTitle": "可见成员",
+  "postAudienceSubtitle": "点击头像查看个人资料。",
+  "totalImageSizeWarning": "提醒：图片总大小为{sizeMB}MB，发布可能需要一些时间。",
+  "@totalImageSizeWarning": {
+    "placeholders": {
+      "sizeMB": {
+        "type": "String"
+      }
+    }
+  },
+  "nicknameChangeLimited": "昵称每3天只能修改一次，请在{days}天后重试。",
+  "@nicknameChangeLimited": {
+    "placeholders": {
+      "days": {
+        "type": "int"
+      }
+    }
+  },
+  "nationalityChangeLimited": "国籍每3天只能修改一次，请在{days}天后重试。",
+  "@nationalityChangeLimited": {
+    "placeholders": {
+      "days": {
+        "type": "int"
+      }
+    }
+  },
+  "disableAllNotificationsTitle": "关闭全部通知",
+  "disableAllNotificationsMessage": "确定关闭全部通知吗？\n你可能会错过重要提醒。",
+  "turnOff": "关闭",
+  "exitMeetupCreation": "退出创建聚会",
+  "exitMeetupCreationMessage": "确定退出吗？\n已填写的信息不会保存。",
+  "exitMeetupEditing": "退出编辑聚会",
+  "exitMeetupEditingMessage": "确定退出吗？\n修改内容不会保存。",
+  "exit": "退出",
+  "stay": "继续编辑",
+  "termsAgreementTitle": "同意条款",
+  "termsAgreementDescription": "使用服务前\n请先同意条款。",
+  "snackChatUnfavoriteTitle": "取消收藏",
+  "snackChatUnfavoriteMessage": "取消收藏此群聊吗？",
+  "postCategoriesTitle": "分类",
+  "postCategoriesSubtitle": "按话题发现新动态。",
+  "postCategorySelectTitle": "动态分类",
+  "postCategorySelectAction": "选择分类",
+  "postCategoryRequired": "请选择动态分类。",
+  "postCategoryEmpty": "{category}暂无动态。",
+  "@postCategoryEmpty": {
+    "placeholders": {
+      "category": {
+        "type": "String"
+      }
+    }
+  },
+  "postCategoryEmptySubtitle": "来发布第一条吧。",
+  "postCategoryCreateAction": "发动态",
+  "postCategoryStyle": "穿搭",
+  "postCategoryStyleDescription": "时尚、美妆与好物",
+  "postCategoryCreate": "美食",
+  "postCategoryCreateDescription": "餐厅、用餐与美食",
+  "postCategoryPhoto": "摄影",
+  "postCategoryPhotoDescription": "照片、视频与相机",
+  "postCategoryContent": "文娱",
+  "postCategoryContentDescription": "音乐、电影与剧集",
+  "postCategoryCafe": "咖啡",
+  "postCategoryCafeDescription": "咖啡、甜点与空间",
+  "postCategoryAcademicStudy": "学业",
+  "postCategoryAcademicStudyDescription": "课程、作业、考试与学习小组",
+  "postCategoryBooksWriting": "阅读",
+  "postCategoryBooksWritingDescription": "读书、写作与摘录",
+  "postCategoryTravelLocal": "旅行",
+  "postCategoryTravelLocalDescription": "旅行、街区与好去处",
+  "postCategoryGlobal": "国际",
+  "postCategoryGlobalDescription": "语言、文化与学生交流",
+  "postCategoryOther": "其他",
+  "postCategoryOtherDescription": "以往动态与自由交流"
+}

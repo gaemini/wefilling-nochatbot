@@ -21,6 +21,7 @@ import '../utils/account_status_helper.dart';
 import '../services/user_info_cache_service.dart';
 import '../utils/responsive_helper.dart';
 import '../services/notification_service.dart';
+import '../l10n/ui_locale.dart';
 
 class ReviewDetailScreen extends StatefulWidget {
   final ReviewPost review;
@@ -277,7 +278,7 @@ class _ReviewDetailScreenState extends State<ReviewDetailScreen> {
             maxLines: 1,
             overflow: TextOverflow.ellipsis,
             style: TextStyle(
-              fontFamily: 'Inter',
+              fontFamily: uiFontFamily(context, 'Inter'),
               fontFamilyFallback: const ['NotoSansKR'],
               color: const Color(0xFF111827),
               fontSize: context.rf(18).clamp(16, 19).toDouble(),
@@ -304,8 +305,8 @@ class _ReviewDetailScreenState extends State<ReviewDetailScreen> {
               return Center(
                 child: Text(
                   l10n?.reviewNotFound ?? '',
-                  style: const TextStyle(
-                    fontFamily: 'Inter',
+                  style: TextStyle(
+                    fontFamily: uiFontFamily(context, 'Inter'),
                     fontFamilyFallback: ['NotoSansKR'],
                     fontSize: 15,
                     fontWeight: FontWeight.w600,
@@ -435,12 +436,12 @@ class _ReviewDetailScreenState extends State<ReviewDetailScreen> {
                     maxLines: 1,
                     overflow: TextOverflow.ellipsis,
                     style: TextStyle(
-                      fontFamily: 'Inter',
+                      fontFamily: uiFontFamily(context, 'Inter'),
                       fontFamilyFallback: const ['NotoSansKR'],
                       fontSize: context.rf(15).clamp(14, 16).toDouble(),
                       fontWeight: FontWeight.w700,
                       color: const Color(0xFF111827),
-                      height: 1.2,
+                      height: isChineseUi(context) ? 1.3 : 1.2,
                     ),
                   ),
                 ),
@@ -460,12 +461,12 @@ class _ReviewDetailScreenState extends State<ReviewDetailScreen> {
                     maxLines: 1,
                     overflow: TextOverflow.ellipsis,
                     style: TextStyle(
-                      fontFamily: 'Inter',
+                      fontFamily: uiFontFamily(context, 'Inter'),
                       fontFamilyFallback: const ['NotoSansKR'],
                       fontSize: context.rf(12.5).clamp(11.5, 13).toDouble(),
                       fontWeight: FontWeight.w400,
                       color: const Color(0xFF98A2B3),
-                      height: 1.2,
+                      height: isChineseUi(context) ? 1.3 : 1.2,
                     ),
                   ),
                 ),
@@ -479,9 +480,9 @@ class _ReviewDetailScreenState extends State<ReviewDetailScreen> {
 
   String _formatReviewDate(DateTime createdAt) {
     final locale = Localizations.localeOf(context);
-    final pattern = locale.languageCode.toLowerCase() == 'ko'
+    final pattern = (isChineseUi(context) ? 'yyyy年M月d日' : locale.languageCode.toLowerCase() == 'ko'
         ? 'yyyy년 M월 d일'
-        : 'MMM d, yyyy';
+        : 'MMM d, yyyy');
     return DateFormat(pattern, locale.toLanguageTag()).format(createdAt);
   }
 
@@ -517,9 +518,9 @@ class _ReviewDetailScreenState extends State<ReviewDetailScreen> {
                     return Semantics(
                       button: true,
                       label:
-                          Localizations.localeOf(context).languageCode == 'ko'
+                          (isChineseUi(context) ? '查看回顾图片' : Localizations.localeOf(context).languageCode == 'ko'
                               ? '리뷰 이미지 확대'
-                              : 'Open review image',
+                              : 'Open review image'),
                       child: GestureDetector(
                         behavior: HitTestBehavior.opaque,
                         onTap: () {
@@ -574,8 +575,8 @@ class _ReviewDetailScreenState extends State<ReviewDetailScreen> {
                       ),
                       child: Text(
                         '${_currentImageIndex + 1}/${review.imageUrls.length}',
-                        style: const TextStyle(
-                          fontFamily: 'Inter',
+                        style: TextStyle(
+                          fontFamily: uiFontFamily(context, 'Inter'),
                           fontFamilyFallback: ['NotoSansKR'],
                           color: Colors.white,
                           fontSize: 11,
@@ -648,7 +649,7 @@ class _ReviewDetailScreenState extends State<ReviewDetailScreen> {
               maxLines: 1,
               overflow: TextOverflow.ellipsis,
               style: TextStyle(
-                fontFamily: 'Inter',
+                fontFamily: uiFontFamily(context, 'Inter'),
                 fontFamilyFallback: const ['NotoSansKR'],
                 fontSize: context.rf(13).clamp(12.5, 14).toDouble(),
                 fontWeight: FontWeight.w600,
@@ -666,8 +667,8 @@ class _ReviewDetailScreenState extends State<ReviewDetailScreen> {
             const SizedBox(width: 3),
             Text(
               '${review.rating}',
-              style: const TextStyle(
-                fontFamily: 'Inter',
+              style: TextStyle(
+                fontFamily: uiFontFamily(context, 'Inter'),
                 fontFamilyFallback: ['NotoSansKR'],
                 fontSize: 12,
                 fontWeight: FontWeight.w700,
@@ -717,8 +718,8 @@ class _ReviewDetailScreenState extends State<ReviewDetailScreen> {
           if (review.likeCount > 0) ...[
             Text(
               '${review.likeCount}',
-              style: const TextStyle(
-                fontFamily: 'Inter',
+              style: TextStyle(
+                fontFamily: uiFontFamily(context, 'Inter'),
                 fontFamilyFallback: ['NotoSansKR'],
                 fontSize: 12.5,
                 fontWeight: FontWeight.w700,
@@ -755,7 +756,7 @@ class _ReviewDetailScreenState extends State<ReviewDetailScreen> {
                       maxLines: 1,
                       overflow: TextOverflow.ellipsis,
                       style: TextStyle(
-                        fontFamily: 'Inter',
+                        fontFamily: uiFontFamily(context, 'Inter'),
                         fontFamilyFallback: const ['NotoSansKR'],
                         fontSize: context.rf(13).clamp(12, 14).toDouble(),
                         fontWeight: FontWeight.w600,
@@ -789,7 +790,7 @@ class _ReviewDetailScreenState extends State<ReviewDetailScreen> {
       child: Text(
         review.content,
         style: TextStyle(
-          fontFamily: 'Inter',
+          fontFamily: uiFontFamily(context, 'Inter'),
           fontFamilyFallback: const ['NotoSansKR'],
           fontSize: context.rf(15).clamp(14, 16).toDouble(),
           fontWeight: FontWeight.w500,
@@ -831,7 +832,7 @@ class _ReviewDetailScreenState extends State<ReviewDetailScreen> {
                   maxLines: 1,
                   overflow: TextOverflow.ellipsis,
                   style: TextStyle(
-                    fontFamily: 'Inter',
+                    fontFamily: uiFontFamily(context, 'Inter'),
                     fontFamilyFallback: const ['NotoSansKR'],
                     fontSize: context.rf(14).clamp(13, 14.5).toDouble(),
                     fontWeight: FontWeight.w700,
@@ -900,8 +901,8 @@ class _ReviewDetailScreenState extends State<ReviewDetailScreen> {
                       width: 52,
                       child: Text(
                         participant['nickname'] ?? '익명',
-                        style: const TextStyle(
-                          fontFamily: 'Inter',
+                        style: TextStyle(
+                          fontFamily: uiFontFamily(context, 'Inter'),
                           fontFamilyFallback: ['NotoSansKR'],
                           fontSize: 11.5,
                           fontWeight: FontWeight.w600,

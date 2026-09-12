@@ -10,6 +10,7 @@ import 'audience_ring.dart';
 import 'meetup_public_countdown.dart';
 import 'hanyang_verification_gate.dart';
 import 'translatable_content.dart';
+import '../../l10n/ui_locale.dart';
 
 /// 포스트 피드용 밋업 요약.
 /// 날짜를 고정된 레일로 분리하고 관련 정보를 한 덩어리로 묶어 빠르게 훑을 수 있게 한다.
@@ -34,6 +35,7 @@ class BoardMeetupCard extends StatelessWidget {
 
   String _monthLabel(BuildContext context) {
     final localDate = meetup.date.toLocal();
+    if (isChineseUi(context)) return '${localDate.month}月';
     if (_isKorean(context)) return '${localDate.month}월';
     return DateFormat('MMM', 'en_US').format(localDate).toUpperCase();
   }
@@ -42,6 +44,9 @@ class BoardMeetupCard extends StatelessWidget {
 
   String _weekdayLabel(BuildContext context) {
     final localDate = meetup.date.toLocal();
+    if (isChineseUi(context)) {
+      return const ['周一', '周二', '周三', '周四', '周五', '周六', '周日'][localDate.weekday - 1];
+    }
     if (_isKorean(context)) {
       const weekdays = ['월', '화', '수', '목', '금', '토', '일'];
       return weekdays[localDate.weekday - 1];
@@ -67,11 +72,11 @@ class BoardMeetupCard extends StatelessWidget {
         : context.rs(66).clamp(66.0, 68.0).toDouble();
     final metaSize = context.rf(12.5).clamp(12.0, 13.0).toDouble();
     final metaStyle = TextStyle(
-      fontFamily: 'Inter',
+      fontFamily: uiFontFamily(context, 'Inter'),
       fontFamilyFallback: const ['NotoSansKR'],
       fontSize: metaSize,
       fontWeight: FontWeight.w600,
-      height: 1.18,
+      height: isChineseUi(context) ? 1.3 : 1.18,
       color: const Color(0xFF667085),
     );
     final isHanyangLocked = HanyangVerificationGate.isLockedForCurrentUser(
@@ -104,9 +109,9 @@ class BoardMeetupCard extends StatelessWidget {
                       borderRadius: BorderRadius.circular(
                         context.rs(16).clamp(14.0, 18.0).toDouble(),
                       ),
-                      semanticLabel: _isKorean(context)
+                      semanticLabel: (isChineseUi(context) ? '部分人可见的聚会' : _isKorean(context)
                           ? '공개 범위가 제한된 모임'
-                          : 'Limited audience meetup',
+                          : 'Limited audience meetup'),
                       child: ColoredBox(
                         color: Colors.white,
                         child: Column(
@@ -119,7 +124,7 @@ class BoardMeetupCard extends StatelessWidget {
                               overflow: TextOverflow.ellipsis,
                               textAlign: TextAlign.center,
                               style: TextStyle(
-                                fontFamily: 'Inter',
+                                fontFamily: uiFontFamily(context, 'Inter'),
                                 fontFamilyFallback: const ['NotoSansKR'],
                                 fontSize:
                                     context.rf(9.5).clamp(9.0, 10.0).toDouble(),
@@ -134,7 +139,7 @@ class BoardMeetupCard extends StatelessWidget {
                               _dayLabel(),
                               maxLines: 1,
                               style: TextStyle(
-                                fontFamily: 'Inter',
+                                fontFamily: uiFontFamily(context, 'Inter'),
                                 fontFamilyFallback: const ['NotoSansKR'],
                                 fontSize:
                                     context.rf(23).clamp(21.0, 24.0).toDouble(),
@@ -151,14 +156,14 @@ class BoardMeetupCard extends StatelessWidget {
                               overflow: TextOverflow.ellipsis,
                               textAlign: TextAlign.center,
                               style: TextStyle(
-                                fontFamily: 'Inter',
+                                fontFamily: uiFontFamily(context, 'Inter'),
                                 fontFamilyFallback: const ['NotoSansKR'],
                                 fontSize: context
                                     .rf(10.5)
                                     .clamp(10.0, 11.0)
                                     .toDouble(),
                                 fontWeight: FontWeight.w700,
-                                height: 1.05,
+                                height: isChineseUi(context) ? 1.3 : 1.05,
                                 color: const Color(0xFF667085),
                               ),
                             ),
@@ -191,14 +196,14 @@ class BoardMeetupCard extends StatelessWidget {
                                   maxLines: 1,
                                   overflow: TextOverflow.ellipsis,
                                   style: TextStyle(
-                                    fontFamily: 'Inter',
+                                    fontFamily: uiFontFamily(context, 'Inter'),
                                     fontFamilyFallback: const ['NotoSansKR'],
                                     fontSize: context
                                         .rf(15.5)
                                         .clamp(14.5, 16.0)
                                         .toDouble(),
                                     fontWeight: FontWeight.w800,
-                                    height: 1.18,
+                                    height: isChineseUi(context) ? 1.3 : 1.18,
                                     letterSpacing: -0.2,
                                     color: const Color(0xFF101828),
                                   ),

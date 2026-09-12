@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import '../models/friend_category.dart';
 import '../l10n/app_localizations.dart';
+import '../l10n/ui_locale.dart';
 
 enum FriendCategorySelectorStyle { chips, list }
 
@@ -102,7 +103,7 @@ class FriendCategorySelector extends StatelessWidget {
                 Text(
                   category.name,
                   style: TextStyle(
-                    fontFamily: 'Inter',
+                    fontFamily: uiFontFamily(context, 'Inter'),
                     fontFamilyFallback: const ['NotoSansKR'],
                     fontSize: 14,
                     fontWeight: FontWeight.w600,
@@ -113,7 +114,7 @@ class FriendCategorySelector extends StatelessWidget {
                 Text(
                   '(${category.friendIds.length}${AppLocalizations.of(context)!.people ?? ''})',
                   style: TextStyle(
-                    fontFamily: 'Inter',
+                    fontFamily: uiFontFamily(context, 'Inter'),
                     fontFamilyFallback: const ['NotoSansKR'],
                     fontSize: 12,
                     fontWeight: FontWeight.w500,
@@ -180,7 +181,7 @@ class _CategoryListItem extends StatelessWidget {
                 child: Text(
                   category.name,
                   style: TextStyle(
-                    fontFamily: 'Inter',
+                    fontFamily: uiFontFamily(context, 'Inter'),
                     fontFamilyFallback: const ['NotoSansKR'],
                     fontSize: 15,
                     fontWeight: FontWeight.w700,
@@ -192,7 +193,7 @@ class _CategoryListItem extends StatelessWidget {
               Text(
                 '(${category.friendIds.length}$peopleLabel)',
                 style: TextStyle(
-                  fontFamily: 'Inter',
+                  fontFamily: uiFontFamily(context, 'Inter'),
                   fontFamilyFallback: const ['NotoSansKR'],
                   fontSize: 13,
                   fontWeight: FontWeight.w600,

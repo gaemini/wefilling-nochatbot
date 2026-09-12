@@ -4,6 +4,7 @@ import 'package:flutter/material.dart';
 
 import '../../models/content_translation.dart';
 import '../../services/content_translation_service.dart';
+import '../../l10n/ui_locale.dart';
 
 typedef TranslatedContentBuilder = Widget Function(
   BuildContext context,
@@ -63,7 +64,7 @@ String _sourceLanguageLabel(BuildContext context, String? code) {
   final language =
       (isKo ? koreanNames[normalized] : englishNames[normalized]) ??
           normalized.toUpperCase();
-  return isKo ? '원문 언어 $language' : 'From $language';
+  return (isChineseUi(context) ? '来自${language}' : isKo ? '원문 언어 $language' : 'From $language');
 }
 
 class TranslatableContent extends StatefulWidget {
@@ -416,12 +417,12 @@ class _TranslatableContentState extends State<TranslatableContent> {
                       ],
                       Text(
                         retryExhausted
-                            ? (isKo ? '다시 번역' : 'Retry translation')
+                            ? ((isChineseUi(context) ? '重新翻译' : isKo ? '다시 번역' : 'Retry translation'))
                             : canToggle && !showOriginal
-                                ? (isKo ? '원문 보기' : 'View original')
-                                : (isKo ? '번역 보기' : 'View translation'),
+                                ? ((isChineseUi(context) ? '查看原文' : isKo ? '원문 보기' : 'View original'))
+                                : ((isChineseUi(context) ? '查看译文' : isKo ? '번역 보기' : 'View translation')),
                         style: TextStyle(
-                          fontFamily: 'Inter',
+                          fontFamily: uiFontFamily(context, 'Inter'),
                           fontFamilyFallback: const ['NotoSansKR'],
                           fontSize: 12,
                           fontWeight: FontWeight.w600,
@@ -534,21 +535,21 @@ class _TranslationScopeToggleState extends State<TranslationScopeToggle> {
     }
     final translating = loading && !canToggle;
     final label = translating
-        ? (isKo ? '번역 중' : 'Translating')
+        ? ((isChineseUi(context) ? '翻译中' : isKo ? '번역 중' : 'Translating'))
         : retryExhausted && !canToggle
-            ? (isKo ? '다시 번역' : 'Retry')
+            ? ((isChineseUi(context) ? '重试' : isKo ? '다시 번역' : 'Retry'))
             : canToggle && !showingOriginal
-                ? (isKo ? '원문 보기' : 'Original')
-                : (isKo ? '번역 보기' : 'Translate');
+                ? ((isChineseUi(context) ? '原文' : isKo ? '원문 보기' : 'Original'))
+                : ((isChineseUi(context) ? '翻译' : isKo ? '번역 보기' : 'Translate'));
 
     if (appBarAction) {
       final compactLabel = translating
-          ? (isKo ? '번역 중' : 'Translating')
+          ? ((isChineseUi(context) ? '翻译中' : isKo ? '번역 중' : 'Translating'))
           : retryExhausted && !canToggle
-              ? (isKo ? '재시도' : 'Retry')
+              ? ((isChineseUi(context) ? '重试' : isKo ? '재시도' : 'Retry'))
               : canToggle && !showingOriginal
-                  ? (isKo ? '원문' : 'Original')
-                  : (isKo ? '번역' : 'Translate');
+                  ? ((isChineseUi(context) ? '原文' : isKo ? '원문' : 'Original'))
+                  : ((isChineseUi(context) ? '翻译' : isKo ? '번역' : 'Translate'));
 
       return Row(
         mainAxisSize: MainAxisSize.min,
@@ -585,8 +586,8 @@ class _TranslationScopeToggleState extends State<TranslationScopeToggle> {
                   const SizedBox(width: 2),
                   Text(
                     compactLabel,
-                    style: const TextStyle(
-                      fontFamily: 'Inter',
+                    style: TextStyle(
+                      fontFamily: uiFontFamily(context, 'Inter'),
                       fontFamilyFallback: ['NotoSansKR'],
                       fontSize: 12.5,
                       fontWeight: FontWeight.w600,
@@ -611,9 +612,9 @@ class _TranslationScopeToggleState extends State<TranslationScopeToggle> {
               ),
               icon: const Icon(Icons.refresh_rounded, size: 16),
               label: Text(
-                isKo ? '재시도' : 'Retry',
-                style: const TextStyle(
-                  fontFamily: 'Inter',
+                (isChineseUi(context) ? '重试' : isKo ? '재시도' : 'Retry'),
+                style: TextStyle(
+                  fontFamily: uiFontFamily(context, 'Inter'),
                   fontFamilyFallback: ['NotoSansKR'],
                   fontSize: 12,
                   fontWeight: FontWeight.w600,
@@ -625,7 +626,7 @@ class _TranslationScopeToggleState extends State<TranslationScopeToggle> {
     }
 
     if (postCardHeader) {
-      final settingsLabel = isKo ? '번역 언어 설정' : 'Translation language settings';
+      final settingsLabel = (isChineseUi(context) ? '翻译语言设置' : isKo ? '번역 언어 설정' : 'Translation language settings');
       return Row(
         mainAxisSize: MainAxisSize.min,
         children: [
@@ -661,25 +662,25 @@ class _TranslationScopeToggleState extends State<TranslationScopeToggle> {
                     if (sourceLanguage.isNotEmpty)
                       Text(
                         sourceLanguage,
-                        style: const TextStyle(
-                          fontFamily: 'Inter',
+                        style: TextStyle(
+                          fontFamily: uiFontFamily(context, 'Inter'),
                           fontFamilyFallback: ['NotoSansKR'],
                           fontSize: 11.5,
                           fontWeight: FontWeight.w600,
                           color: Color(0xFF6F7D8D),
-                          height: 1.05,
+                          height: isChineseUi(context) ? 1.3 : 1.05,
                           letterSpacing: -0.15,
                         ),
                       ),
                     Text(
                       label,
-                      style: const TextStyle(
-                        fontFamily: 'Inter',
+                      style: TextStyle(
+                        fontFamily: uiFontFamily(context, 'Inter'),
                         fontFamilyFallback: ['NotoSansKR'],
                         fontSize: 11.5,
                         fontWeight: FontWeight.w600,
                         color: Color(0xFF2F9BE8),
-                        height: 1.05,
+                        height: isChineseUi(context) ? 1.3 : 1.05,
                         letterSpacing: -0.15,
                       ),
                     ),
@@ -692,7 +693,7 @@ class _TranslationScopeToggleState extends State<TranslationScopeToggle> {
             const SizedBox(width: 4),
             Semantics(
               button: true,
-              label: isKo ? '번역 재시도' : 'Retry translation',
+              label: (isChineseUi(context) ? '重新翻译' : isKo ? '번역 재시도' : 'Retry translation'),
               child: InkWell(
                 key: const ValueKey('translation_scope_retry_header'),
                 onTap: retryAvailable
@@ -713,16 +714,16 @@ class _TranslationScopeToggleState extends State<TranslationScopeToggle> {
                       ),
                       const SizedBox(width: 1),
                       Text(
-                        isKo ? '재시도' : 'Retry',
+                        (isChineseUi(context) ? '重试' : isKo ? '재시도' : 'Retry'),
                         style: TextStyle(
-                          fontFamily: 'Inter',
+                          fontFamily: uiFontFamily(context, 'Inter'),
                           fontFamilyFallback: const ['NotoSansKR'],
                           fontSize: 11.5,
                           fontWeight: FontWeight.w600,
                           color: retryAvailable
                               ? const Color(0xFFB54708)
                               : const Color(0xFF9AA5B1),
-                          height: 1.05,
+                          height: isChineseUi(context) ? 1.3 : 1.05,
                         ),
                       ),
                     ],
@@ -776,8 +777,8 @@ class _TranslationScopeToggleState extends State<TranslationScopeToggle> {
           ),
           child: Text(
             label,
-            style: const TextStyle(
-              fontFamily: 'Inter',
+            style: TextStyle(
+              fontFamily: uiFontFamily(context, 'Inter'),
               fontFamilyFallback: ['NotoSansKR'],
               fontSize: 12,
               fontWeight: FontWeight.w600,
@@ -798,9 +799,9 @@ class _TranslationScopeToggleState extends State<TranslationScopeToggle> {
             ),
             icon: const Icon(Icons.refresh_rounded, size: 15),
             label: Text(
-              isKo ? '재시도' : 'Retry',
-              style: const TextStyle(
-                fontFamily: 'Inter',
+              (isChineseUi(context) ? '重试' : isKo ? '재시도' : 'Retry'),
+              style: TextStyle(
+                fontFamily: uiFontFamily(context, 'Inter'),
                 fontFamilyFallback: ['NotoSansKR'],
                 fontSize: 12,
                 fontWeight: FontWeight.w600,

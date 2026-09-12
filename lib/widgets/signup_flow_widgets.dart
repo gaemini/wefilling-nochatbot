@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 
 import '../constants/app_constants.dart';
+import '../l10n/ui_locale.dart';
 
 class SignupPageIntro extends StatelessWidget {
   const SignupPageIntro({
@@ -24,13 +25,13 @@ class SignupPageIntro extends StatelessWidget {
         Text(
           title,
           textAlign: TextAlign.center,
-          style: const TextStyle(
-            fontFamily: 'Inter',
+          style: TextStyle(
+            fontFamily: uiFontFamily(context, 'Inter'),
             fontFamilyFallback: const ['NotoSansKR'],
             fontSize: 24,
             fontWeight: FontWeight.w800,
             color: Color(0xFF0F172A),
-            height: 1.25,
+            height: isChineseUi(context) ? 1.3 : 1.25,
             letterSpacing: -0.6,
           ),
         ),
@@ -38,8 +39,8 @@ class SignupPageIntro extends StatelessWidget {
         Text(
           description,
           textAlign: TextAlign.center,
-          style: const TextStyle(
-            fontFamily: 'Inter',
+          style: TextStyle(
+            fontFamily: uiFontFamily(context, 'Inter'),
             fontFamilyFallback: const ['NotoSansKR'],
             fontSize: 14,
             fontWeight: FontWeight.w400,
@@ -62,8 +63,8 @@ class SignupSectionLabel extends StatelessWidget {
   Widget build(BuildContext context) {
     return Text(
       text,
-      style: const TextStyle(
-        fontFamily: 'Inter',
+      style: TextStyle(
+        fontFamily: uiFontFamily(context, 'Inter'),
         fontFamilyFallback: const ['NotoSansKR'],
         fontSize: 15,
         fontWeight: FontWeight.w700,
@@ -75,6 +76,7 @@ class SignupSectionLabel extends StatelessWidget {
 }
 
 InputDecoration signupInputDecoration({
+  required BuildContext context,
   required String hintText,
   required IconData icon,
   String? helperText,
@@ -88,16 +90,16 @@ InputDecoration signupInputDecoration({
     prefixIcon: Icon(icon, color: const Color(0xFF64748B), size: 21),
     prefixIconConstraints: const BoxConstraints(minWidth: 38, minHeight: 48),
     suffixIcon: suffixIcon,
-    hintStyle: const TextStyle(
-      fontFamily: 'Inter',
+    hintStyle: TextStyle(
+      fontFamily: uiFontFamily(context, 'Inter'),
       fontFamilyFallback: const ['NotoSansKR'],
       fontSize: 16,
       fontWeight: FontWeight.w400,
       color: Color(0xFF94A3B8),
       letterSpacing: -0.2,
     ),
-    helperStyle: const TextStyle(
-      fontFamily: 'Inter',
+    helperStyle: TextStyle(
+      fontFamily: uiFontFamily(context, 'Inter'),
       fontFamilyFallback: const ['NotoSansKR'],
       fontSize: 12,
       fontWeight: FontWeight.w400,
@@ -153,8 +155,8 @@ class SignupVerifiedEmail extends StatelessWidget {
             children: [
               Text(
                 label,
-                style: const TextStyle(
-                  fontFamily: 'Inter',
+                style: TextStyle(
+                  fontFamily: uiFontFamily(context, 'Inter'),
                   fontFamilyFallback: const ['NotoSansKR'],
                   fontSize: 12,
                   fontWeight: FontWeight.w500,
@@ -166,8 +168,8 @@ class SignupVerifiedEmail extends StatelessWidget {
                 email,
                 maxLines: 1,
                 overflow: TextOverflow.ellipsis,
-                style: const TextStyle(
-                  fontFamily: 'Inter',
+                style: TextStyle(
+                  fontFamily: uiFontFamily(context, 'Inter'),
                   fontFamilyFallback: const ['NotoSansKR'],
                   fontSize: 15,
                   fontWeight: FontWeight.w700,
@@ -219,8 +221,8 @@ class SignupPrimaryButton extends StatelessWidget {
                   label,
                   maxLines: 1,
                   overflow: TextOverflow.ellipsis,
-                  style: const TextStyle(
-                    fontFamily: 'Inter',
+                  style: TextStyle(
+                    fontFamily: uiFontFamily(context, 'Inter'),
                     fontFamilyFallback: const ['NotoSansKR'],
                     fontSize: 16,
                     fontWeight: FontWeight.w700,
@@ -271,8 +273,8 @@ class SignupInlineError extends StatelessWidget {
         Expanded(
           child: Text(
             message,
-            style: const TextStyle(
-              fontFamily: 'Inter',
+            style: TextStyle(
+              fontFamily: uiFontFamily(context, 'Inter'),
               fontFamilyFallback: const ['NotoSansKR'],
               fontSize: 14,
               fontWeight: FontWeight.w500,
@@ -298,9 +300,9 @@ Future<bool> showSignupExitConfirmation(BuildContext context) async {
       contentPadding: const EdgeInsets.fromLTRB(24, 12, 24, 8),
       actionsPadding: const EdgeInsets.fromLTRB(16, 8, 16, 16),
       title: Text(
-        isKorean ? '회원가입을 중단할까요?' : 'Leave sign up?',
-        style: const TextStyle(
-          fontFamily: 'Inter',
+        (isChineseUi(context) ? '退出注册？' : isKorean ? '회원가입을 중단할까요?' : 'Leave sign up?'),
+        style: TextStyle(
+          fontFamily: uiFontFamily(context, 'Inter'),
           fontFamilyFallback: const ['NotoSansKR'],
           fontSize: 20,
           fontWeight: FontWeight.w800,
@@ -308,11 +310,11 @@ Future<bool> showSignupExitConfirmation(BuildContext context) async {
         ),
       ),
       content: Text(
-        isKorean
+        (isChineseUi(context) ? '账号尚未注册，退出将放弃当前进度，之后可随时重新注册。' : isKorean
             ? '아직 회원으로 저장되지 않았어요. 지금까지 입력한 내용은 삭제되며 언제든 다시 가입할 수 있어요.'
-            : 'Your account has not been registered yet. Your progress will be discarded, and you can sign up again anytime.',
-        style: const TextStyle(
-          fontFamily: 'Inter',
+            : 'Your account has not been registered yet. Your progress will be discarded, and you can sign up again anytime.'),
+        style: TextStyle(
+          fontFamily: uiFontFamily(context, 'Inter'),
           fontFamilyFallback: const ['NotoSansKR'],
           fontSize: 14,
           fontWeight: FontWeight.w400,
@@ -323,14 +325,14 @@ Future<bool> showSignupExitConfirmation(BuildContext context) async {
       actions: [
         TextButton(
           onPressed: () => Navigator.pop(dialogContext, false),
-          child: Text(isKorean ? '계속 가입' : 'Keep signing up'),
+          child: Text((isChineseUi(context) ? '继续注册' : isKorean ? '계속 가입' : 'Keep signing up')),
         ),
         TextButton(
           onPressed: () => Navigator.pop(dialogContext, true),
           style: TextButton.styleFrom(
             foregroundColor: const Color(0xFFDC2626),
           ),
-          child: Text(isKorean ? '가입 중단' : 'Leave'),
+          child: Text((isChineseUi(context) ? '退出' : isKorean ? '가입 중단' : 'Leave')),
         ),
       ],
     ),

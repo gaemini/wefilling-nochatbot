@@ -43,13 +43,13 @@ class AppTheme {
   static const Color _mediumContrastDark = Color(0xFFE0E0E0); // Light gray
 
   /// 라이트 모드 테마 (2024-2025 트렌드 적용)
-  static ThemeData light() {
+  static ThemeData light({Locale? locale}) {
     final cs = ColorScheme.fromSeed(
       seedColor: _primaryColor, // Modern Indigo primary
       brightness: Brightness.light,
     );
 
-    return ThemeData(
+    final theme = ThemeData(
       useMaterial3: true,
       fontFamily: 'Inter',
       fontFamilyFallback: const ['NotoSansKR'],
@@ -81,6 +81,33 @@ class AppTheme {
       floatingActionButtonTheme: _fabTheme(cs),
       bottomNavigationBarTheme: _bottomNavTheme(cs),
       chipTheme: _chipTheme(cs),
+    );
+    if (locale?.languageCode != 'zh') return theme;
+
+    TextStyle? chineseStyle(TextStyle? style) => style?.copyWith(
+      fontFamily: 'NotoSansSC',
+      height: style.height == null || style.height! < 1.3 ? 1.3 : style.height,
+    );
+    ButtonStyle? chineseButton(ButtonStyle? style) => style?.copyWith(
+      textStyle: WidgetStateProperty.resolveWith(
+        (states) => chineseStyle(style.textStyle?.resolve(states)),
+      ),
+    );
+    return theme.copyWith(
+      textTheme: theme.textTheme.apply(fontFamily: 'NotoSansSC'),
+      primaryTextTheme: theme.primaryTextTheme.apply(fontFamily: 'NotoSansSC'),
+      snackBarTheme: theme.snackBarTheme.copyWith(
+        contentTextStyle: chineseStyle(theme.snackBarTheme.contentTextStyle),
+      ),
+      elevatedButtonTheme: ElevatedButtonThemeData(
+        style: chineseButton(theme.elevatedButtonTheme.style),
+      ),
+      filledButtonTheme: FilledButtonThemeData(
+        style: chineseButton(theme.filledButtonTheme.style),
+      ),
+      outlinedButtonTheme: OutlinedButtonThemeData(
+        style: chineseButton(theme.outlinedButtonTheme.style),
+      ),
     );
   }
 

@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 
 import '../constants/app_constants.dart';
 import '../utils/responsive_helper.dart';
+import '../l10n/ui_locale.dart';
 
 enum RelationshipActionButtonTone { primary, neutral }
 
@@ -51,11 +52,11 @@ class RelationshipActionButton extends StatelessWidget {
           textAlign: TextAlign.center,
           overflow: TextOverflow.visible,
           style: TextStyle(
-            fontFamily: 'Inter',
+            fontFamily: uiFontFamily(context, 'Inter'),
             fontFamilyFallback: const ['NotoSansKR'],
             fontSize: context.rf(12.5).clamp(11.5, 13).toDouble(),
             fontWeight: FontWeight.w700,
-            height: 1.15,
+            height: isChineseUi(context) ? 1.3 : 1.15,
           ),
         ),
       ),

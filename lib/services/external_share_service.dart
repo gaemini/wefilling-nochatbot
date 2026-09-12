@@ -7,6 +7,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 
 import '../models/external_share_request.dart';
+import '../l10n/app_localizations.dart';
 import '../screens/create_post_screen.dart';
 import '../utils/logger.dart';
 import 'navigation_service.dart';
@@ -210,7 +211,7 @@ class ExternalShareService with WidgetsBindingObserver {
                     : 'Finish the required profile setup to continue with the shared link and image.')
                 : (isKo
                     ? '공유한 콘텐츠를 위필링 포스트로 만들려면 먼저 로그인해 주세요.\n로그인 후 공유한 링크와 이미지가 그대로 이어집니다.'
-                    : 'Sign in to turn the shared content into a Wefilling post. Your shared link and image will be kept.'),
+                    : 'Sign in to turn the shared content into a ${AppLocalizations.of(context)!.appName} post. Your shared link and image will be kept.'),
           ),
           actions: [
             TextButton(

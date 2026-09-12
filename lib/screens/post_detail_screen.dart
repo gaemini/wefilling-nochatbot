@@ -51,6 +51,7 @@ import '../ui/widgets/hanyang_verification_gate.dart';
 import '../services/user_info_cache_service.dart';
 import '../services/cache/app_image_cache_manager.dart';
 import '../services/notification_service.dart';
+import '../l10n/ui_locale.dart';
 
 class PostDetailScreen extends StatefulWidget {
   final Post post;
@@ -419,20 +420,20 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
       final confirmed = await showDialog<bool>(
             context: context,
             builder: (context) => AlertDialog(
-              title: Text(isKo ? '익명 게시글 차단' : 'Block anonymous post'),
+              title: Text((isChineseUi(context) ? '屏蔽匿名动态' : isKo ? '익명 게시글 차단' : 'Block anonymous post')),
               content: Text(
-                isKo
+                (isChineseUi(context) ? '要屏蔽这条匿名动态吗？\n可随时在屏蔽列表中取消。' : isKo
                     ? '이 익명 게시글을 차단하시겠습니까?\n차단 목록에서 언제든 해제할 수 있습니다.'
-                    : 'Do you want to block this anonymous post?\nYou can unblock it anytime from Block List.',
+                    : 'Do you want to block this anonymous post?\nYou can unblock it anytime from Block List.'),
               ),
               actions: [
                 TextButton(
                   onPressed: () => Navigator.of(context).pop(false),
-                  child: Text(isKo ? '취소' : 'Cancel'),
+                  child: Text((isChineseUi(context) ? '取消' : isKo ? '취소' : 'Cancel')),
                 ),
                 ElevatedButton(
                   onPressed: () => Navigator.of(context).pop(true),
-                  child: Text(isKo ? '차단' : 'Block'),
+                  child: Text((isChineseUi(context) ? '屏蔽' : isKo ? '차단' : 'Block')),
                 ),
               ],
             ),
@@ -455,7 +456,7 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
             content: Text(
-              isKo ? '익명 게시글을 차단했습니다.' : 'Anonymous post blocked.',
+              (isChineseUi(context) ? '已屏蔽匿名动态。' : isKo ? '익명 게시글을 차단했습니다.' : 'Anonymous post blocked.'),
             ),
             backgroundColor: Colors.green,
           ),
@@ -464,7 +465,7 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
             content: Text(
-              isKo ? '익명 게시글 차단에 실패했습니다.' : 'Failed to block anonymous post.',
+              (isChineseUi(context) ? '屏蔽匿名动态失败。' : isKo ? '익명 게시글 차단에 실패했습니다.' : 'Failed to block anonymous post.'),
             ),
             backgroundColor: Colors.red,
           ),
@@ -535,13 +536,13 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
         for (final category in _currentPost.postCategories)
           Text(
             '#${category.label(l10n)}',
-            style: const TextStyle(
-              fontFamily: 'Inter',
+            style: TextStyle(
+              fontFamily: uiFontFamily(context, 'Inter'),
               fontFamilyFallback: const ['NotoSansKR'],
               fontSize: 13,
               fontWeight: FontWeight.w600,
               color: AppColors.pointColor,
-              height: 1.25,
+              height: isChineseUi(context) ? 1.3 : 1.25,
               letterSpacing: -0.2,
             ),
           ),
@@ -643,9 +644,9 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
       isLiked: isLiked,
       likeLabel: l10n.like,
       commentLabel: l10n.comment,
-      viewsLabel: Localizations.localeOf(context).languageCode == 'ko'
+      viewsLabel: (isChineseUi(context) ? '浏览量' : Localizations.localeOf(context).languageCode == 'ko'
           ? '조회수'
-          : 'Views',
+          : 'Views'),
       onLikeTapDown: (_) {
         if (_isTogglingLike) return;
         _likeHoldTimer?.cancel();
@@ -688,9 +689,9 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
     ScaffoldMessenger.of(context).showSnackBar(
       SnackBar(
         content: Text(
-          isKo
+          (isChineseUi(context) ? '匿名动态不显示点赞信息。' : isKo
               ? '익명 게시글에서는 하트를 누른 사람을 확인할 수 없어요.'
-              : 'Likes are hidden for anonymous posts.',
+              : 'Likes are hidden for anonymous posts.'),
         ),
         duration: const Duration(seconds: 2),
       ),
@@ -782,8 +783,8 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
                                 children: [
                                   TextSpan(
                                     text: l10n.likes,
-                                    style: const TextStyle(
-                                      fontFamily: 'Inter',
+                                    style: TextStyle(
+                                      fontFamily: uiFontFamily(context, 'Inter'),
                                       fontFamilyFallback: const ['NotoSansKR'],
                                       fontSize: 16,
                                       fontWeight: FontWeight.w700,
@@ -792,8 +793,8 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
                                   const TextSpan(text: '  '),
                                   TextSpan(
                                     text: '$likeCount',
-                                    style: const TextStyle(
-                                      fontFamily: 'Inter',
+                                    style: TextStyle(
+                                      fontFamily: uiFontFamily(context, 'Inter'),
                                       fontFamilyFallback: const ['NotoSansKR'],
                                       fontSize: 14,
                                       fontWeight: FontWeight.w700,
@@ -816,11 +817,11 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
                           child: Align(
                             alignment: Alignment.centerLeft,
                             child: Text(
-                              isKo
+                              (isChineseUi(context) ? '最多显示${maxShown}人，另有${hiddenCount}人。' : isKo
                                   ? '최대 $maxShown명만 표시됩니다. (외 $hiddenCount명)'
-                                  : 'Showing up to $maxShown users. (+$hiddenCount more)',
-                              style: const TextStyle(
-                                fontFamily: 'Inter',
+                                  : 'Showing up to $maxShown users. (+$hiddenCount more)'),
+                              style: TextStyle(
+                                fontFamily: uiFontFamily(context, 'Inter'),
                                 fontFamilyFallback: const ['NotoSansKR'],
                                 fontSize: 12,
                                 fontWeight: FontWeight.w500,
@@ -852,9 +853,9 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
                                   padding:
                                       const EdgeInsets.all(DesignTokens.s16),
                                   child: Text(
-                                    isKo ? '아직 좋아요가 없어요' : 'No likes yet.',
-                                    style: const TextStyle(
-                                      fontFamily: 'Inter',
+                                    (isChineseUi(context) ? '暂无点赞。' : isKo ? '아직 좋아요가 없어요' : 'No likes yet.'),
+                                    style: TextStyle(
+                                      fontFamily: uiFontFamily(context, 'Inter'),
                                       fontFamilyFallback: const ['NotoSansKR'],
                                       fontSize: 14,
                                       fontWeight: FontWeight.w500,
@@ -902,8 +903,8 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
                                                   .deletedAccount
                                               : u.nickname,
                                           overflow: TextOverflow.ellipsis,
-                                          style: (const TextStyle(
-                                            fontFamily: 'Inter',
+                                          style: ( TextStyle(
+                                            fontFamily: uiFontFamily(context, 'Inter'),
                                             fontFamilyFallback: const [
                                               'NotoSansKR'
                                             ],
@@ -1096,8 +1097,8 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
             SnackBar(
               content: Text(
                 AppLocalizations.of(context)!.dmFriendsOnlyHint,
-                style: const TextStyle(
-                  fontFamily: 'Inter',
+                style: TextStyle(
+                  fontFamily: uiFontFamily(context, 'Inter'),
                   fontFamilyFallback: const ['NotoSansKR'],
                   fontSize: 16,
                   fontWeight: FontWeight.w700,
@@ -1265,7 +1266,7 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
                   overflow: TextOverflow.ellipsis,
                   textAlign: TextAlign.center,
                   style: TextStyle(
-                    fontFamily: 'Inter',
+                    fontFamily: uiFontFamily(context, 'Inter'),
                     fontFamilyFallback: const ['NotoSansKR'],
                     fontSize: isCompact ? 12 : 13,
                     fontWeight: FontWeight.w500,
@@ -1338,7 +1339,7 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
                                     maxLines: 1,
                                     softWrap: false,
                                     style: TextStyle(
-                                      fontFamily: 'Inter',
+                                      fontFamily: uiFontFamily(context, 'Inter'),
                                       fontFamilyFallback: const ['NotoSansKR'],
                                       fontSize: isCompact ? 13.5 : 14,
                                       fontWeight: FontWeight.w700,
@@ -1516,8 +1517,8 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
                     ),
                     title: Text(
                       AppLocalizations.of(context)!.edit,
-                      style: const TextStyle(
-                        fontFamily: 'Inter',
+                      style: TextStyle(
+                        fontFamily: uiFontFamily(context, 'Inter'),
                         fontFamilyFallback: const ['NotoSansKR'],
                         fontWeight: FontWeight.w600,
                         color: Color(0xFF111827),
@@ -1541,8 +1542,8 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
                     ),
                     title: Text(
                       AppLocalizations.of(context)!.directMessage,
-                      style: const TextStyle(
-                        fontFamily: 'Inter',
+                      style: TextStyle(
+                        fontFamily: uiFontFamily(context, 'Inter'),
                         fontFamilyFallback: const ['NotoSansKR'],
                         fontWeight: FontWeight.w600,
                         color: Color(0xFF111827),
@@ -1563,8 +1564,8 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
                     ),
                     title: Text(
                       AppLocalizations.of(context)!.reportTitle,
-                      style: const TextStyle(
-                        fontFamily: 'Inter',
+                      style: TextStyle(
+                        fontFamily: uiFontFamily(context, 'Inter'),
                         fontFamilyFallback: const ['NotoSansKR'],
                         fontWeight: FontWeight.w600,
                         color: Color(0xFFEF4444),
@@ -1583,8 +1584,8 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
                     ),
                     title: Text(
                       AppLocalizations.of(context)!.blockAction,
-                      style: const TextStyle(
-                        fontFamily: 'Inter',
+                      style: TextStyle(
+                        fontFamily: uiFontFamily(context, 'Inter'),
                         fontFamilyFallback: const ['NotoSansKR'],
                         fontWeight: FontWeight.w600,
                         color: Color(0xFFEF4444),
@@ -1604,7 +1605,7 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
                     title: Text(
                       AppLocalizations.of(context)!.deletePost ?? "",
                       style: TextStyle(
-                        fontFamily: 'Inter',
+                        fontFamily: uiFontFamily(context, 'Inter'),
                         fontFamilyFallback: const ['NotoSansKR'],
                         fontWeight: FontWeight.w600,
                         color: Color(0xFFEF4444),
@@ -1773,7 +1774,7 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
                             maxLines: 2,
                             overflow: TextOverflow.ellipsis,
                             style: TextStyle(
-                              fontFamily: 'Inter',
+                              fontFamily: uiFontFamily(context, 'Inter'),
                               fontFamilyFallback: const ['NotoSansKR'],
                               fontSize: context.rf(18).clamp(17, 19).toDouble(),
                               fontWeight: FontWeight.w700,
@@ -1788,7 +1789,7 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
                     Text(
                       l10n.deletePostConfirm ?? '',
                       style: TextStyle(
-                        fontFamily: 'Inter',
+                        fontFamily: uiFontFamily(context, 'Inter'),
                         fontFamilyFallback: const ['NotoSansKR'],
                         fontSize: context.rf(14).clamp(13.5, 15).toDouble(),
                         fontWeight: FontWeight.w400,
@@ -1815,8 +1816,8 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
                               l10n.cancel ?? '',
                               maxLines: 1,
                               overflow: TextOverflow.ellipsis,
-                              style: const TextStyle(
-                                fontFamily: 'Inter',
+                              style: TextStyle(
+                                fontFamily: uiFontFamily(context, 'Inter'),
                                 fontFamilyFallback: const ['NotoSansKR'],
                                 fontSize: 14,
                                 fontWeight: FontWeight.w600,
@@ -1840,8 +1841,8 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
                               l10n.delete ?? '',
                               maxLines: 1,
                               overflow: TextOverflow.ellipsis,
-                              style: const TextStyle(
-                                fontFamily: 'Inter',
+                              style: TextStyle(
+                                fontFamily: uiFontFamily(context, 'Inter'),
                                 fontFamilyFallback: const ['NotoSansKR'],
                                 fontSize: 14,
                                 fontWeight: FontWeight.w700,
@@ -2085,6 +2086,13 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
     final now = DateTime.now();
     final difference = now.difference(dateTime);
     final locale = Localizations.localeOf(context).languageCode;
+    if (locale == 'zh') {
+      final l10n = AppLocalizations.of(context)!;
+      if (difference.inDays > 0) return l10n.daysAgo(difference.inDays);
+      if (difference.inHours > 0) return l10n.hoursAgo(difference.inHours);
+      if (difference.inMinutes > 0) return l10n.minutesAgo(difference.inMinutes);
+      return l10n.justNow;
+    }
 
     if (difference.inDays > 0) {
       if (locale == 'ko') {
@@ -2475,11 +2483,11 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
                             final imageUrl = standaloneImageUrls[index];
                             return Semantics(
                               button: true,
-                              label: Localizations.localeOf(context)
+                              label: (isChineseUi(context) ? '查看动态图片' : Localizations.localeOf(context)
                                           .languageCode ==
                                       'ko'
                                   ? '게시글 이미지 확대'
-                                  : 'Open post image',
+                                  : 'Open post image'),
                               child: GestureDetector(
                                 behavior: HitTestBehavior.opaque,
                                 onTap: () {
@@ -2527,8 +2535,8 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
                               ),
                               child: Text(
                                 '${_currentImageIndex + 1}/${standaloneImageUrls.length}',
-                                style: const TextStyle(
-                                  fontFamily: 'Inter',
+                                style: TextStyle(
+                                  fontFamily: uiFontFamily(context, 'Inter'),
                                   fontFamilyFallback: const ['NotoSansKR'],
                                   fontSize: 12,
                                   fontWeight: FontWeight.w700,
@@ -2655,9 +2663,9 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
                       ringWidth: 1.5,
                       innerGap: 0.5,
                       semanticLabel:
-                          Localizations.localeOf(context).languageCode == 'ko'
+                          (isChineseUi(context) ? '已分享给所选分组' : Localizations.localeOf(context).languageCode == 'ko'
                               ? '선택한 그룹에 공개된 포스트'
-                              : 'Post shared with selected groups',
+                              : 'Post shared with selected groups'),
                       child: UserAvatar(
                         uid: _currentPost.userId,
                         photoUrl: _currentPost.authorPhotoURL,
@@ -2683,12 +2691,12 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
                         maxLines: 1,
                         overflow: TextOverflow.ellipsis,
                         style: TextStyle(
-                          fontFamily: 'Inter',
+                          fontFamily: uiFontFamily(context, 'Inter'),
                           fontFamilyFallback: const ['NotoSansKR'],
                           fontSize: context.rf(16).clamp(14.5, 16.0).toDouble(),
                           fontWeight: FontWeight.w700,
                           color: BrandColors.textPrimary,
-                          height: 1.2,
+                          height: isChineseUi(context) ? 1.3 : 1.2,
                           letterSpacing: -0.25,
                         ),
                       ),
@@ -2716,12 +2724,12 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
                     maxLines: 1,
                     overflow: TextOverflow.ellipsis,
                     style: TextStyle(
-                      fontFamily: 'Inter',
+                      fontFamily: uiFontFamily(context, 'Inter'),
                       fontFamilyFallback: const ['NotoSansKR'],
                       fontSize: context.rf(14).clamp(12.5, 14.0).toDouble(),
                       fontWeight: FontWeight.w400,
                       color: BrandColors.textTertiary,
-                      height: 1.2,
+                      height: isChineseUi(context) ? 1.3 : 1.2,
                       letterSpacing: -0.15,
                     ),
                   ),
@@ -2744,12 +2752,12 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
               text: fields['content'] ?? content,
               textAlign: TextAlign.left,
               style: TextStyle(
-                fontFamily: 'Inter',
+                fontFamily: uiFontFamily(context, 'Inter'),
                 fontFamilyFallback: const ['NotoSansKR'],
                 fontSize: contentFontSize,
                 fontWeight: FontWeight.w500,
                 color: BrandColors.textPrimary,
-                height: 1.28,
+                height: isChineseUi(context) ? 1.3 : 1.28,
                 letterSpacing: -0.25,
               ),
             ),

@@ -31,7 +31,7 @@ class LanguageService {
       // locale이 없거나 비정상인 경우 기본값 저장
       if (language == null ||
           language.isEmpty ||
-          (language != 'ko' && language != 'en')) {
+          (language != 'ko' && language != 'en' && language != 'zh_Hans')) {
         language = _defaultLanguage;
         await prefs.setString(_key, language);
         if (Logger.isVerboseEnabled) Logger.log('✅ 기본 언어 강제 설정: $language');

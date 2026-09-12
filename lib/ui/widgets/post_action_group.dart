@@ -3,6 +3,7 @@ import 'dart:math' as math;
 import 'package:flutter/material.dart';
 
 import '../../design/tokens.dart';
+import '../../l10n/ui_locale.dart';
 
 /// 피드 카드와 게시글 상세가 공유하는 반응형 액션 그룹.
 ///
@@ -307,12 +308,12 @@ class _PostActionItem extends StatelessWidget {
                 maxLines: 1,
                 overflow: TextOverflow.ellipsis,
                 style: TextStyle(
-                  fontFamily: 'Inter',
+                  fontFamily: uiFontFamily(context, 'Inter'),
                   fontFamilyFallback: const ['NotoSansKR'],
                   fontSize: countFontSize,
                   fontWeight: emphasized ? FontWeight.w700 : FontWeight.w600,
                   color: BrandColors.textSecondary,
-                  height: 1.15,
+                  height: isChineseUi(context) ? 1.3 : 1.15,
                   letterSpacing: -0.15,
                 ),
               ),
@@ -323,12 +324,12 @@ class _PostActionItem extends StatelessWidget {
                 '$count',
                 maxLines: 1,
                 style: TextStyle(
-                  fontFamily: 'Inter',
+                  fontFamily: uiFontFamily(context, 'Inter'),
                   fontFamilyFallback: const ['NotoSansKR'],
                   fontSize: countFontSize,
                   fontWeight: FontWeight.w600,
                   color: BrandColors.textSecondary,
-                  height: 1.15,
+                  height: isChineseUi(context) ? 1.3 : 1.15,
                   letterSpacing: -0.15,
                 ),
               ),

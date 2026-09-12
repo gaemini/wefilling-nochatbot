@@ -38,6 +38,7 @@ import 'hanyang_verification_gate.dart';
 import 'translatable_content.dart';
 import 'post_translation_feed.dart';
 import '../sheets/translation_language_sheet.dart';
+import '../../l10n/ui_locale.dart';
 
 /// Board/Home 피드에서 사용하는 content-first 일반 게시글 카드.
 class OptimizedPostCard extends StatefulWidget {
@@ -263,9 +264,9 @@ class _OptimizedPostCardState extends State<OptimizedPostCard> {
     ScaffoldMessenger.of(context).showSnackBar(
       SnackBar(
         content: Text(
-          isKo
+          (isChineseUi(context) ? '匿名动态不显示点赞信息。' : isKo
               ? '익명 게시글에서는 하트를 누른 사람을 확인할 수 없어요.'
-              : 'Likes are hidden for anonymous posts.',
+              : 'Likes are hidden for anonymous posts.'),
         ),
         duration: const Duration(seconds: 2),
       ),
@@ -383,8 +384,8 @@ class _OptimizedPostCardState extends State<OptimizedPostCard> {
                                 children: [
                                   TextSpan(
                                     text: l10n.likes,
-                                    style: const TextStyle(
-                                      fontFamily: 'Inter',
+                                    style: TextStyle(
+                                      fontFamily: uiFontFamily(context, 'Inter'),
                                       fontFamilyFallback: const ['NotoSansKR'],
                                       fontSize: 16,
                                       fontWeight: FontWeight.w700,
@@ -394,8 +395,8 @@ class _OptimizedPostCardState extends State<OptimizedPostCard> {
                                   const TextSpan(text: '  '),
                                   TextSpan(
                                     text: '$likeCount',
-                                    style: const TextStyle(
-                                      fontFamily: 'Inter',
+                                    style: TextStyle(
+                                      fontFamily: uiFontFamily(context, 'Inter'),
                                       fontFamilyFallback: const ['NotoSansKR'],
                                       fontSize: 14,
                                       fontWeight: FontWeight.w700,
@@ -419,11 +420,11 @@ class _OptimizedPostCardState extends State<OptimizedPostCard> {
                           child: Align(
                             alignment: Alignment.centerLeft,
                             child: Text(
-                              isKo
+                              (isChineseUi(context) ? '最多显示${maxShown}人，另有${hiddenCount}人。' : isKo
                                   ? '최대 $maxShown명만 표시됩니다. (외 $hiddenCount명)'
-                                  : 'Showing up to $maxShown users. (+$hiddenCount more)',
-                              style: const TextStyle(
-                                fontFamily: 'Inter',
+                                  : 'Showing up to $maxShown users. (+$hiddenCount more)'),
+                              style: TextStyle(
+                                fontFamily: uiFontFamily(context, 'Inter'),
                                 fontFamilyFallback: const ['NotoSansKR'],
                                 fontSize: 12,
                                 fontWeight: FontWeight.w500,
@@ -454,9 +455,9 @@ class _OptimizedPostCardState extends State<OptimizedPostCard> {
                                   padding:
                                       const EdgeInsets.all(DesignTokens.s16),
                                   child: Text(
-                                    isKo ? '아직 좋아요가 없어요' : 'No likes yet.',
-                                    style: const TextStyle(
-                                      fontFamily: 'Inter',
+                                    (isChineseUi(context) ? '暂无点赞。' : isKo ? '아직 좋아요가 없어요' : 'No likes yet.'),
+                                    style: TextStyle(
+                                      fontFamily: uiFontFamily(context, 'Inter'),
                                       fontFamilyFallback: const ['NotoSansKR'],
                                       fontSize: 14,
                                       fontWeight: FontWeight.w500,
@@ -505,8 +506,8 @@ class _OptimizedPostCardState extends State<OptimizedPostCard> {
                                                   .deletedAccount
                                               : u.nickname,
                                           overflow: TextOverflow.ellipsis,
-                                          style: const TextStyle(
-                                            fontFamily: 'Inter',
+                                          style: TextStyle(
+                                            fontFamily: uiFontFamily(context, 'Inter'),
                                             fontFamilyFallback: const [
                                               'NotoSansKR'
                                             ],
@@ -527,9 +528,9 @@ class _OptimizedPostCardState extends State<OptimizedPostCard> {
                                       if (u.uid == currentUserId) ...[
                                         const SizedBox(width: 6),
                                         Text(
-                                          isKo ? '(나)' : '(You)',
-                                          style: const TextStyle(
-                                            fontFamily: 'Inter',
+                                          (isChineseUi(context) ? '（你）' : isKo ? '(나)' : '(You)'),
+                                          style: TextStyle(
+                                            fontFamily: uiFontFamily(context, 'Inter'),
                                             fontFamilyFallback: const [
                                               'NotoSansKR'
                                             ],
@@ -749,11 +750,11 @@ class _OptimizedPostCardState extends State<OptimizedPostCard> {
                                   maxLines: 4,
                                   style: TextStyle(
                                     color: BrandColors.textPrimary,
-                                    fontFamily: 'Inter',
+                                    fontFamily: uiFontFamily(context, 'Inter'),
                                     fontFamilyFallback: const ['NotoSansKR'],
                                     fontWeight: FontWeight.w500,
                                     fontSize: contentSize,
-                                    height: 1.24,
+                                    height: isChineseUi(context) ? 1.3 : 1.24,
                                     letterSpacing: -0.3,
                                   ),
                                 ),
@@ -1013,9 +1014,9 @@ class _OptimizedPostCardState extends State<OptimizedPostCard> {
                         innerGap: usesLimitedAudienceIdentity ? 0.75 : 0.5,
                         emphasized: usesLimitedAudienceIdentity,
                         semanticLabel:
-                            Localizations.localeOf(context).languageCode == 'ko'
+                            (isChineseUi(context) ? '部分人可见的动态' : Localizations.localeOf(context).languageCode == 'ko'
                                 ? '공개 범위가 제한된 포스트'
-                                : 'Limited audience post',
+                                : 'Limited audience post'),
                         child: ColoredBox(
                           color: Colors.grey.shade300,
                           child: (resolvedImageUrl != null && !isAnonymous)
@@ -1075,13 +1076,13 @@ class _OptimizedPostCardState extends State<OptimizedPostCard> {
                               maxLines: 1,
                               overflow: TextOverflow.ellipsis,
                               style: TextStyle(
-                                fontFamily: 'Inter',
+                                fontFamily: uiFontFamily(context, 'Inter'),
                                 fontFamilyFallback: const ['NotoSansKR'],
                                 fontSize:
                                     context.rf(15).clamp(14.0, 15.5).toDouble(),
                                 fontWeight: FontWeight.w700,
                                 color: BrandColors.textPrimary,
-                                height: 1.22,
+                                height: isChineseUi(context) ? 1.3 : 1.22,
                                 letterSpacing: -0.25,
                               ),
                             ),
@@ -1107,7 +1108,7 @@ class _OptimizedPostCardState extends State<OptimizedPostCard> {
                           maxLines: 1,
                           style: theme.textTheme.bodySmall?.copyWith(
                             color: BrandColors.textTertiary,
-                            fontFamily: 'Inter',
+                            fontFamily: uiFontFamily(context, 'Inter'),
                             fontFamilyFallback: const ['NotoSansKR'],
                             fontSize:
                                 context.rf(14).clamp(13.0, 14.5).toDouble(),
@@ -1241,13 +1242,13 @@ class _OptimizedPostCardState extends State<OptimizedPostCard> {
               child: Text(
                 '#${category.label(l10n)}',
                 textAlign: TextAlign.right,
-                style: const TextStyle(
-                  fontFamily: 'Inter',
+                style: TextStyle(
+                  fontFamily: uiFontFamily(context, 'Inter'),
                   fontFamilyFallback: const ['NotoSansKR'],
                   fontSize: 12.5,
                   fontWeight: FontWeight.w600,
                   color: BrandColors.info,
-                  height: 1.2,
+                  height: isChineseUi(context) ? 1.3 : 1.2,
                   letterSpacing: -0.2,
                 ),
               ),
@@ -1271,9 +1272,9 @@ class _OptimizedPostCardState extends State<OptimizedPostCard> {
       isLiked: isLikedByMe,
       likeLabel: l10n.like,
       commentLabel: l10n.comment,
-      viewsLabel: Localizations.localeOf(context).languageCode == 'ko'
+      viewsLabel: (isChineseUi(context) ? '浏览量' : Localizations.localeOf(context).languageCode == 'ko'
           ? '조회수'
-          : 'Views',
+          : 'Views'),
       onLikeTapDown: (_) {
         if (_isLikeInFlight) return;
         _likeHoldTimer?.cancel();
@@ -1548,8 +1549,8 @@ class _OptimizedPostCardState extends State<OptimizedPostCard> {
                     ),
                     title: Text(
                       l10n.directMessage,
-                      style: const TextStyle(
-                        fontFamily: 'Inter',
+                      style: TextStyle(
+                        fontFamily: uiFontFamily(context, 'Inter'),
                         fontFamilyFallback: const ['NotoSansKR'],
                         fontWeight: FontWeight.w600,
                         color: Color(0xFF111827),
@@ -1568,8 +1569,8 @@ class _OptimizedPostCardState extends State<OptimizedPostCard> {
                     ),
                     title: Text(
                       l10n.reportTitle,
-                      style: const TextStyle(
-                        fontFamily: 'Inter',
+                      style: TextStyle(
+                        fontFamily: uiFontFamily(context, 'Inter'),
                         fontFamilyFallback: const ['NotoSansKR'],
                         fontWeight: FontWeight.w600,
                         color: Color(0xFFEF4444),
@@ -1596,8 +1597,8 @@ class _OptimizedPostCardState extends State<OptimizedPostCard> {
                     ),
                     title: Text(
                       l10n.blockAction,
-                      style: const TextStyle(
-                        fontFamily: 'Inter',
+                      style: TextStyle(
+                        fontFamily: uiFontFamily(context, 'Inter'),
                         fontFamilyFallback: const ['NotoSansKR'],
                         fontWeight: FontWeight.w600,
                         color: Color(0xFFEF4444),
@@ -1613,23 +1614,23 @@ class _OptimizedPostCardState extends State<OptimizedPostCard> {
                               context: context,
                               builder: (context) => AlertDialog(
                                 title: Text(
-                                  isKo ? '익명 게시글 차단' : 'Block anonymous post',
+                                  (isChineseUi(context) ? '屏蔽匿名动态' : isKo ? '익명 게시글 차단' : 'Block anonymous post'),
                                 ),
                                 content: Text(
-                                  isKo
+                                  (isChineseUi(context) ? '要屏蔽这条匿名动态吗？\n可随时在屏蔽列表中取消。' : isKo
                                       ? '이 익명 게시글을 차단하시겠습니까?\n차단 목록에서 언제든 해제할 수 있습니다.'
-                                      : 'Do you want to block this anonymous post?\nYou can unblock it anytime from Block List.',
+                                      : 'Do you want to block this anonymous post?\nYou can unblock it anytime from Block List.'),
                                 ),
                                 actions: [
                                   TextButton(
                                     onPressed: () =>
                                         Navigator.of(context).pop(false),
-                                    child: Text(isKo ? '취소' : 'Cancel'),
+                                    child: Text((isChineseUi(context) ? '取消' : isKo ? '취소' : 'Cancel')),
                                   ),
                                   ElevatedButton(
                                     onPressed: () =>
                                         Navigator.of(context).pop(true),
-                                    child: Text(isKo ? '차단' : 'Block'),
+                                    child: Text((isChineseUi(context) ? '屏蔽' : isKo ? '차단' : 'Block')),
                                   ),
                                 ],
                               ),
@@ -1648,12 +1649,12 @@ class _OptimizedPostCardState extends State<OptimizedPostCard> {
                           SnackBar(
                             content: Text(
                               success
-                                  ? (isKo
+                                  ? ((isChineseUi(context) ? '已屏蔽匿名动态。' : isKo
                                       ? '익명 게시글을 차단했습니다.'
-                                      : 'Anonymous post blocked.')
-                                  : (isKo
+                                      : 'Anonymous post blocked.'))
+                                  : ((isChineseUi(context) ? '屏蔽匿名动态失败。' : isKo
                                       ? '익명 게시글 차단에 실패했습니다.'
-                                      : 'Failed to block anonymous post.'),
+                                      : 'Failed to block anonymous post.')),
                             ),
                             backgroundColor:
                                 success ? Colors.green : Colors.red,
@@ -1695,7 +1696,7 @@ class _FriendsOnlyIndicator extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final label = isKorean ? '친구만' : 'For friends';
+    final label = (isChineseUi(context) ? '好友可见' : isKorean ? '친구만' : 'For friends');
     final indicator = ShaderMask(
       blendMode: BlendMode.srcIn,
       shaderCallback: AudienceRing.emphasizedRestrictedGradient.createShader,
@@ -1713,12 +1714,12 @@ class _FriendsOnlyIndicator extends StatelessWidget {
             maxLines: 1,
             softWrap: false,
             style: TextStyle(
-              fontFamily: 'Inter',
+              fontFamily: uiFontFamily(context, 'Inter'),
               fontFamilyFallback: const ['NotoSansKR'],
               fontSize: context.rf(12).clamp(11.5, 12.5).toDouble(),
               fontWeight: FontWeight.w600,
               color: Colors.white,
-              height: 1.15,
+              height: isChineseUi(context) ? 1.3 : 1.15,
               letterSpacing: -0.15,
             ),
           ),
@@ -1784,7 +1785,7 @@ class _PostImageError extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final isKo = Localizations.localeOf(context).languageCode == 'ko';
-    final label = isKo ? '이미지를 불러올 수 없어요' : 'Image unavailable';
+    final label = (isChineseUi(context) ? '图片不可用' : isKo ? '이미지를 불러올 수 없어요' : 'Image unavailable');
     return Semantics(
       label: label,
       image: true,
@@ -1802,8 +1803,8 @@ class _PostImageError extends StatelessWidget {
               const SizedBox(height: DesignTokens.s8),
               Text(
                 label,
-                style: const TextStyle(
-                  fontFamily: 'Inter',
+                style: TextStyle(
+                  fontFamily: uiFontFamily(context, 'Inter'),
                   fontFamilyFallback: const ['NotoSansKR'],
                   fontSize: 13,
                   fontWeight: FontWeight.w500,
@@ -1956,8 +1957,8 @@ class _ImageSliderState extends State<_ImageSlider> {
               ),
               child: Text(
                 '${_currentPage + 1}/${widget.imageUrls.length}',
-                style: const TextStyle(
-                  fontFamily: 'Inter',
+                style: TextStyle(
+                  fontFamily: uiFontFamily(context, 'Inter'),
                   fontFamilyFallback: const ['NotoSansKR'],
                   fontSize: 12,
                   fontWeight: FontWeight.w700,

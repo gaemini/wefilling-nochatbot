@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'shape_icon.dart';
 import '../../constants/app_constants.dart';
+import '../../l10n/ui_locale.dart';
 
 /// 친구 공개(Friends Only) 배지
 /// - 크기는 호출부에서 패딩/아이콘 크기로 동일 유지
@@ -44,7 +45,7 @@ class FriendsOnlyBadge extends StatelessWidget {
         Text(
           label,
           style: TextStyle(
-            fontFamily: 'Inter',
+            fontFamily: uiFontFamily(context, 'Inter'),
             fontFamilyFallback: const ['NotoSansKR'],
             fontSize: fontSize,
             fontWeight: fontWeight,

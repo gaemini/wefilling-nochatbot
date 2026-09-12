@@ -19,6 +19,7 @@ import '../utils/responsive_helper.dart';
 import '../widgets/social_profile_fields.dart';
 import '../widgets/signup_flow_widgets.dart';
 import 'main_screen.dart';
+import '../l10n/ui_locale.dart';
 
 class NicknameSetupScreen extends StatefulWidget {
   const NicknameSetupScreen({super.key, this.pendingSignup});
@@ -163,7 +164,7 @@ class _NicknameSetupScreenState extends State<NicknameSetupScreen>
             children: [
               ListTile(
                 leading: const Icon(Icons.photo_outlined),
-                title: Text(_isKorean ? '사진 선택' : 'Choose a photo'),
+                title: Text((isChineseUi(context) ? '选择照片' : _isKorean ? '사진 선택' : 'Choose a photo')),
                 onTap: () {
                   Navigator.pop(sheetContext);
                   _pickImage(ImageSource.gallery);
@@ -171,7 +172,7 @@ class _NicknameSetupScreenState extends State<NicknameSetupScreen>
               ),
               ListTile(
                 leading: const Icon(Icons.camera_alt_outlined),
-                title: Text(_isKorean ? '사진 촬영' : 'Take a photo'),
+                title: Text((isChineseUi(context) ? '拍照' : _isKorean ? '사진 촬영' : 'Take a photo')),
                 onTap: () {
                   Navigator.pop(sheetContext);
                   _pickImage(ImageSource.camera);
@@ -180,7 +181,7 @@ class _NicknameSetupScreenState extends State<NicknameSetupScreen>
               if (_selectedImage != null)
                 ListTile(
                   leading: const Icon(Icons.delete_outline_rounded),
-                  title: Text(_isKorean ? '사진 삭제' : 'Remove photo'),
+                  title: Text((isChineseUi(context) ? '移除照片' : _isKorean ? '사진 삭제' : 'Remove photo')),
                   onTap: () {
                     Navigator.pop(sheetContext);
                     setState(() => _selectedImage = null);
@@ -485,12 +486,12 @@ class _NicknameSetupScreenState extends State<NicknameSetupScreen>
           content: Text(nicknameTaken
               ? l10n.nicknameTaken
               : networkError
-                  ? (_isKorean
+                  ? ((isChineseUi(context) ? '请检查网络，已保留填写内容。' : _isKorean
                       ? '인터넷 연결을 확인해 주세요. 입력한 내용은 유지됩니다.'
-                      : 'Check your internet connection. Your input was kept.')
-                  : (_isKorean
+                      : 'Check your internet connection. Your input was kept.'))
+                  : ((isChineseUi(context) ? '资料保存失败，请重试。' : _isKorean
                       ? '프로필을 저장하지 못했어요. 다시 시도해 주세요.'
-                      : 'Could not save your profile. Please try again.')),
+                      : 'Could not save your profile. Please try again.'))),
         ),
       );
     } finally {
@@ -526,9 +527,9 @@ class _NicknameSetupScreenState extends State<NicknameSetupScreen>
     if (_currentStep == 1 && _interests.isEmpty) {
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
-          content: Text(_isKorean
+          content: Text((isChineseUi(context) ? '请至少选择一项兴趣。' : _isKorean
               ? '관심 있는 것을 하나 이상 선택해 주세요.'
-              : 'Choose at least one interest.'),
+              : 'Choose at least one interest.')),
         ),
       );
       return;
@@ -586,11 +587,11 @@ class _NicknameSetupScreenState extends State<NicknameSetupScreen>
                   ),
                 ),
           title: Text(
-            _isKorean ? '프로필 설정' : 'Set up profile',
+            (isChineseUi(context) ? '完善资料' : _isKorean ? '프로필 설정' : 'Set up profile'),
             maxLines: 1,
             overflow: TextOverflow.ellipsis,
             style: TextStyle(
-              fontFamily: 'Inter',
+              fontFamily: uiFontFamily(context, 'Inter'),
               fontFamilyFallback: const <String>['NotoSansKR'],
               fontSize: context.rf(18).clamp(16, 19).toDouble(),
               fontWeight: FontWeight.w700,
@@ -683,12 +684,12 @@ class _NicknameSetupScreenState extends State<NicknameSetupScreen>
                           )
                         : Text(
                             _currentStep == 1
-                                ? (_isKorean ? '가입 완료' : 'Complete signup')
-                                : (_isKorean ? '다음' : 'Next'),
+                                ? ((isChineseUi(context) ? '完成注册' : _isKorean ? '가입 완료' : 'Complete signup'))
+                                : ((isChineseUi(context) ? '下一步' : _isKorean ? '다음' : 'Next')),
                             maxLines: 1,
                             overflow: TextOverflow.ellipsis,
                             style: TextStyle(
-                              fontFamily: 'Inter',
+                              fontFamily: uiFontFamily(context, 'Inter'),
                               fontFamilyFallback: const <String>['NotoSansKR'],
                               fontSize: context.rf(15).clamp(14, 16).toDouble(),
                               fontWeight: FontWeight.w700,
@@ -747,10 +748,10 @@ class _NicknameSetupScreenState extends State<NicknameSetupScreen>
   Widget _basicProfileStep() {
     return _stepScroll([
       ProfileSectionHeading(
-        title: _isKorean ? '가입에 필요한 정보만 알려주세요' : 'Just the essentials',
-        description: _isKorean
+        title: (isChineseUi(context) ? '先填写基本信息' : _isKorean ? '가입에 필요한 정보만 알려주세요' : 'Just the essentials'),
+        description: (isChineseUi(context) ? '照片可以稍后添加，先设置昵称和国籍。' : _isKorean
             ? '사진은 선택 사항이에요. 닉네임과 국적만 설정하면 다음 단계로 넘어갈 수 있어요.'
-            : 'A photo is optional. Set a nickname and nationality, then move on.',
+            : 'A photo is optional. Set a nickname and nationality, then move on.'),
       ),
       SizedBox(height: context.rs(20).clamp(16, 24).toDouble()),
       _profilePhotoPicker(),
@@ -760,7 +761,7 @@ class _NicknameSetupScreenState extends State<NicknameSetupScreen>
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            _fieldLabel(_isKorean ? '닉네임' : 'Nickname'),
+            _fieldLabel((isChineseUi(context) ? '昵称' : _isKorean ? '닉네임' : 'Nickname')),
             SizedBox(height: context.rs(4).clamp(2, 6).toDouble()),
             TextFormField(
               controller: _nicknameController,
@@ -768,8 +769,8 @@ class _NicknameSetupScreenState extends State<NicknameSetupScreen>
               maxLength: 20,
               textInputAction: TextInputAction.done,
               onFieldSubmitted: (_) => FocusScope.of(context).unfocus(),
-              decoration: socialProfileInputDecoration(
-                hintText: _isKorean ? '닉네임 입력' : 'Enter a nickname',
+              decoration: socialProfileInputDecoration(context: context,
+                hintText: (isChineseUi(context) ? '输入昵称' : _isKorean ? '닉네임 입력' : 'Enter a nickname'),
                 prefixIcon: Icon(
                   Icons.alternate_email_rounded,
                   size: context.ri(20).clamp(19, 22).toDouble(),
@@ -780,7 +781,7 @@ class _NicknameSetupScreenState extends State<NicknameSetupScreen>
               validator: _nicknameValidationMessage,
             ),
             SizedBox(height: context.rs(20).clamp(16, 24).toDouble()),
-            _fieldLabel(_isKorean ? '국적' : 'Nationality'),
+            _fieldLabel((isChineseUi(context) ? '国籍' : _isKorean ? '국적' : 'Nationality')),
             SizedBox(height: context.rs(4).clamp(2, 6).toDouble()),
             DropdownButtonFormField<String>(
               key: ValueKey<String>(
@@ -791,8 +792,8 @@ class _NicknameSetupScreenState extends State<NicknameSetupScreen>
               ),
               isExpanded: true,
               menuMaxHeight: MediaQuery.sizeOf(context).height * 0.5,
-              decoration: socialProfileInputDecoration(
-                hintText: _isKorean ? '국적 선택' : 'Choose nationality',
+              decoration: socialProfileInputDecoration(context: context,
+                hintText: (isChineseUi(context) ? '选择国籍' : _isKorean ? '국적 선택' : 'Choose nationality'),
                 prefixIcon: Icon(
                   Icons.public_rounded,
                   size: context.ri(20).clamp(19, 22).toDouble(),
@@ -811,9 +812,9 @@ class _NicknameSetupScreenState extends State<NicknameSetupScreen>
                 );
               }).toList(growable: false),
               validator: (value) => value == null
-                  ? (_isKorean
+                  ? ((isChineseUi(context) ? '请选择国籍。' : _isKorean
                       ? '국적을 선택해 주세요.'
-                      : 'Please choose your nationality.')
+                      : 'Please choose your nationality.'))
                   : null,
               onChanged: (value) {
                 if (value != null) {
@@ -833,7 +834,7 @@ class _NicknameSetupScreenState extends State<NicknameSetupScreen>
     final cameraSize = context.ri(27).clamp(25, 30).toDouble();
     return Semantics(
       button: true,
-      label: _isKorean ? '프로필 사진 선택' : 'Choose a profile photo',
+      label: (isChineseUi(context) ? '选择头像' : _isKorean ? '프로필 사진 선택' : 'Choose a profile photo'),
       child: InkWell(
         onTap: _showImageOptions,
         borderRadius: BorderRadius.circular(8),
@@ -883,9 +884,9 @@ class _NicknameSetupScreenState extends State<NicknameSetupScreen>
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
                     Text(
-                      _isKorean ? '프로필 사진' : 'Profile photo',
+                      (isChineseUi(context) ? '头像' : _isKorean ? '프로필 사진' : 'Profile photo'),
                       style: TextStyle(
-                        fontFamily: 'Inter',
+                        fontFamily: uiFontFamily(context, 'Inter'),
                         fontFamilyFallback: const <String>['NotoSansKR'],
                         fontSize: context.rf(14).clamp(13, 15).toDouble(),
                         fontWeight: FontWeight.w800,
@@ -895,16 +896,16 @@ class _NicknameSetupScreenState extends State<NicknameSetupScreen>
                     SizedBox(height: context.rs(4).clamp(3, 5).toDouble()),
                     Text(
                       _selectedImage == null
-                          ? (_isKorean
+                          ? ((isChineseUi(context) ? '选填，可稍后添加。' : _isKorean
                               ? '선택 사항 · 나중에도 추가할 수 있어요.'
-                              : 'Optional · You can add one later.')
-                          : (_isKorean
+                              : 'Optional · You can add one later.'))
+                          : ((isChineseUi(context) ? '点击更换照片。' : _isKorean
                               ? '눌러서 사진을 변경할 수 있어요.'
-                              : 'Tap to change your photo.'),
+                              : 'Tap to change your photo.')),
                       maxLines: 2,
                       overflow: TextOverflow.ellipsis,
                       style: TextStyle(
-                        fontFamily: 'Inter',
+                        fontFamily: uiFontFamily(context, 'Inter'),
                         fontFamilyFallback: const <String>['NotoSansKR'],
                         fontSize: context.rf(12.5).clamp(12, 13.5).toDouble(),
                         fontWeight: FontWeight.w500,
@@ -931,7 +932,7 @@ class _NicknameSetupScreenState extends State<NicknameSetupScreen>
     return Text(
       label,
       style: TextStyle(
-        fontFamily: 'Inter',
+        fontFamily: uiFontFamily(context, 'Inter'),
         fontFamilyFallback: const <String>['NotoSansKR'],
         fontSize: context.rf(14).clamp(13, 15).toDouble(),
         fontWeight: FontWeight.w800,
@@ -942,14 +943,14 @@ class _NicknameSetupScreenState extends State<NicknameSetupScreen>
 
   Widget _interestsStep() => _stepScroll([
         ProfileSectionHeading(
-          title: _isKorean ? '요즘 무엇에 관심 있나요?' : 'What are you into these days?',
-          description: _isKorean
+          title: (isChineseUi(context) ? '最近对什么感兴趣？' : _isKorean ? '요즘 무엇에 관심 있나요?' : 'What are you into these days?'),
+          description: (isChineseUi(context) ? '请选择1–5项，帮助你认识同好。' : _isKorean
               ? '비슷한 관심사를 가진 친구를 만나는 데 도움이 돼요. 1~5개를 선택해 주세요.'
-              : 'Choose 1–5 so we can help you meet people with similar interests.',
+              : 'Choose 1–5 so we can help you meet people with similar interests.'),
           trailing: Text(
             '${_interests.length}/5',
             style: TextStyle(
-              fontFamily: 'Inter',
+              fontFamily: uiFontFamily(context, 'Inter'),
               fontFamilyFallback: const <String>['NotoSansKR'],
               fontSize: context.rf(13).clamp(12, 14).toDouble(),
               fontWeight: FontWeight.w700,
@@ -978,11 +979,11 @@ class _NicknameSetupScreenState extends State<NicknameSetupScreen>
             SizedBox(width: context.rs(8).clamp(7, 10).toDouble()),
             Expanded(
               child: Text(
-                _isKorean
+                (isChineseUi(context) ? '个人简介等资料可稍后在“我的”中完善。' : _isKorean
                     ? '한 줄 소개 등 나머지 프로필은 가입 후 마이페이지에서 작성할 수 있어요.'
-                    : 'Complete your bio and the rest of your profile later from My Page.',
+                    : 'Complete your bio and the rest of your profile later from My Page.'),
                 style: TextStyle(
-                  fontFamily: 'Inter',
+                  fontFamily: uiFontFamily(context, 'Inter'),
                   fontFamilyFallback: const <String>['NotoSansKR'],
                   fontSize: context.rf(12.5).clamp(12, 13.5).toDouble(),
                   fontWeight: FontWeight.w500,

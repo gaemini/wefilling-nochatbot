@@ -41,6 +41,7 @@ import '../ui/sheets/snack_chat_attachment_sheet.dart';
 import '../ui/sheets/snack_chat_file_confirmation_sheet.dart';
 import '../ui/sheets/snack_chat_image_confirmation_sheet.dart';
 import '../ui/sheets/snack_chat_people_sheet.dart';
+import '../ui/sheets/snack_chat_today_summary_picker_sheet.dart';
 import '../ui/sheets/snack_chat_unread_summary_sheet.dart';
 import '../ui/sheets/translation_language_sheet.dart';
 import '../utils/responsive_helper.dart';
@@ -51,6 +52,7 @@ import '../utils/snack_chat_unread_summary_policy.dart';
 import 'friend_categories_screen.dart';
 import 'main_screen.dart';
 import 'snack_chat_info_screen.dart';
+import '../l10n/ui_locale.dart';
 
 @visibleForTesting
 bool isSnackChatMessageMeaningfullyVisible({
@@ -979,8 +981,7 @@ class _SnackChatScreenState extends State<SnackChatScreen>
     // 계속 보장한다.
     final availableCapacity = userInitiatedRetry
         ? 1
-        : _maxTranslationRequestsInFlight -
-            _translationRequestsInFlight.length;
+        : _maxTranslationRequestsInFlight - _translationRequestsInFlight.length;
     if (availableCapacity <= 0) return;
     final boundedCandidates = candidates
         .where(
@@ -3203,8 +3204,11 @@ class _SnackChatScreenState extends State<SnackChatScreen>
     return fallbackLabel;
   }
 
-  String get _genericUserLabel =>
-      Localizations.localeOf(context).languageCode == 'ko' ? '사용자' : 'User';
+  String get _genericUserLabel => (isChineseUi(context)
+      ? '用户'
+      : Localizations.localeOf(context).languageCode == 'ko'
+          ? '사용자'
+          : 'User');
 
   bool _looksLikeInternalIdentifier(String value) =>
       RegExp(r'^[A-Za-z0-9_-]{20,}$').hasMatch(value.trim());
@@ -3220,9 +3224,11 @@ class _SnackChatScreenState extends State<SnackChatScreen>
     final candidate = value?.trim() ?? '';
     if (candidate == 'DELETED_ACCOUNT' || candidate == 'Deleted') {
       return AppLocalizations.of(context)?.deletedAccount ??
-          (Localizations.localeOf(context).languageCode == 'ko'
-              ? '탈퇴한 계정'
-              : 'Deleted Account');
+          ((isChineseUi(context)
+              ? '已注销账号'
+              : Localizations.localeOf(context).languageCode == 'ko'
+                  ? '탈퇴한 계정'
+                  : 'Deleted Account'));
     }
     if (candidate.isEmpty || _looksLikeInternalIdentifier(candidate)) {
       return _genericUserLabel;
@@ -4543,11 +4549,13 @@ class _SnackChatScreenState extends State<SnackChatScreen>
         children: [
           Expanded(
             child: Text(
-              isKo
-                  ? '일부 프로필을 불러오지 못해 저장된 정보를 표시합니다.'
-                  : 'Some profiles could not be loaded. Showing saved information.',
-              style: const TextStyle(
-                fontFamily: 'Inter',
+              (isChineseUi(context)
+                  ? '部分资料加载失败，正在显示已保存的信息。'
+                  : isKo
+                      ? '일부 프로필을 불러오지 못해 저장된 정보를 표시합니다.'
+                      : 'Some profiles could not be loaded. Showing saved information.'),
+              style: TextStyle(
+                fontFamily: uiFontFamily(context, 'Inter'),
                 fontFamilyFallback: const ['NotoSansKR'],
                 fontSize: 12.5,
                 height: 1.35,
@@ -4558,7 +4566,11 @@ class _SnackChatScreenState extends State<SnackChatScreen>
           TextButton.icon(
             onPressed: onRetry,
             icon: const Icon(Icons.refresh_rounded, size: 17),
-            label: Text(isKo ? '다시 시도' : 'Retry'),
+            label: Text((isChineseUi(context)
+                ? '重试'
+                : isKo
+                    ? '다시 시도'
+                    : 'Retry')),
           ),
         ],
       ),
@@ -4601,18 +4613,22 @@ class _SnackChatScreenState extends State<SnackChatScreen>
                       ),
                     ),
                   _peopleSectionTitle(
-                    isKo
-                        ? '확인 ${receipt.read.length}명'
-                        : 'Seen ${receipt.read.length}',
+                    (isChineseUi(context)
+                        ? '已读 ${receipt.read.length}'
+                        : isKo
+                            ? '확인 ${receipt.read.length}명'
+                            : 'Seen ${receipt.read.length}'),
                   ),
                   ...receipt.read.map(
                     (id) => _personTile(id, users[id], loading: loading),
                   ),
                   const SizedBox(height: 16),
                   _peopleSectionTitle(
-                    isKo
-                        ? '미확인 ${receipt.unread.length}명'
-                        : 'Not seen ${receipt.unread.length}',
+                    (isChineseUi(context)
+                        ? '未读 ${receipt.unread.length}'
+                        : isKo
+                            ? '미확인 ${receipt.unread.length}명'
+                            : 'Not seen ${receipt.unread.length}'),
                   ),
                   ...receipt.unread.map(
                     (id) => _personTile(id, users[id], loading: loading),
@@ -4685,8 +4701,8 @@ class _SnackChatScreenState extends State<SnackChatScreen>
         padding: const EdgeInsets.symmetric(vertical: 10),
         child: Text(
           text,
-          style: const TextStyle(
-            fontFamily: 'Inter',
+          style: TextStyle(
+            fontFamily: uiFontFamily(context, 'Inter'),
             fontFamilyFallback: const ['NotoSansKR'],
             fontSize: 16,
             fontWeight: FontWeight.w700,
@@ -4735,8 +4751,8 @@ class _SnackChatScreenState extends State<SnackChatScreen>
         name,
         maxLines: 1,
         overflow: TextOverflow.ellipsis,
-        style: const TextStyle(
-          fontFamily: 'Inter',
+        style: TextStyle(
+          fontFamily: uiFontFamily(context, 'Inter'),
           fontFamilyFallback: const ['NotoSansKR'],
           fontSize: 14,
           fontWeight: FontWeight.w600,
@@ -4938,12 +4954,12 @@ class _SnackChatScreenState extends State<SnackChatScreen>
                     maxLines: 1,
                     overflow: TextOverflow.ellipsis,
                     style: TextStyle(
-                      fontFamily: 'Inter',
+                      fontFamily: uiFontFamily(context, 'Inter'),
                       fontFamilyFallback: const ['NotoSansKR'],
                       fontSize: 15,
                       fontWeight: FontWeight.w600,
                       color: color,
-                      height: 1.25,
+                      height: isChineseUi(context) ? 1.3 : 1.25,
                     ),
                   ),
                 ),
@@ -5054,9 +5070,11 @@ class _SnackChatScreenState extends State<SnackChatScreen>
         messenger!.showSnackBar(
           SnackBar(
             content: Text(
-              isKo
-                  ? '채팅방에서 나가지 못했습니다. 다시 시도해 주세요.'
-                  : 'Could not leave the chat. Please try again.',
+              (isChineseUi(messenger.context)
+                  ? '退出群聊失败，请重试。'
+                  : isKo
+                      ? '채팅방에서 나가지 못했습니다. 다시 시도해 주세요.'
+                      : 'Could not leave the chat. Please try again.'),
             ),
           ),
         );
@@ -5137,7 +5155,11 @@ class _SnackChatScreenState extends State<SnackChatScreen>
                     TextButton.icon(
                       onPressed: _retryRoomStream,
                       icon: const Icon(Icons.refresh_rounded),
-                      label: Text(isKo ? '다시 시도' : 'Retry'),
+                      label: Text((isChineseUi(context)
+                          ? '重试'
+                          : isKo
+                              ? '다시 시도'
+                              : 'Retry')),
                     ),
                   ],
                 ],
@@ -5195,7 +5217,11 @@ class _SnackChatScreenState extends State<SnackChatScreen>
                     height: 44,
                   ),
                   padding: EdgeInsets.zero,
-                  tooltip: isKo ? '더보기' : 'More',
+                  tooltip: (isChineseUi(context)
+                      ? '更多'
+                      : isKo
+                          ? '더보기'
+                          : 'More'),
                 ),
                 SizedBox(width: context.rs(2).clamp(0, 4).toDouble()),
               ],
@@ -5265,18 +5291,42 @@ class _SnackChatScreenState extends State<SnackChatScreen>
 
   Widget _buildTranslationControl({required bool isKo}) {
     final showingOriginal = _translationShowsOriginal;
-    final translationActionLabel = isKo ? '번역 보기' : 'View translation';
-    final originalActionLabel = isKo ? '원문 보기' : 'View original';
-    final recapActionLabel = isKo ? '오늘 정리' : 'Today recap';
+    final translationActionLabel = (isChineseUi(context)
+        ? '查看译文'
+        : isKo
+            ? '번역 보기'
+            : 'View translation');
+    final originalActionLabel = (isChineseUi(context)
+        ? '查看原文'
+        : isKo
+            ? '원문 보기'
+            : 'View original');
+    final recapActionLabel = (isChineseUi(context)
+        ? '今日总结'
+        : isKo
+            ? '오늘 정리'
+            : 'Today recap');
     final toggleLabel =
         showingOriginal ? translationActionLabel : originalActionLabel;
     final toggleTooltip = showingOriginal
-        ? (isKo ? '번역 보기' : 'View translation')
-        : (isKo ? '원문 보기' : 'View original');
-    final settingsTooltip = isKo ? '번역 언어 설정' : 'Translation language';
+        ? ((isChineseUi(context)
+            ? '查看译文'
+            : isKo
+                ? '번역 보기'
+                : 'View translation'))
+        : ((isChineseUi(context)
+            ? '查看原文'
+            : isKo
+                ? '원문 보기'
+                : 'View original'));
+    final settingsTooltip = (isChineseUi(context)
+        ? '翻译语言'
+        : isKo
+            ? '번역 언어 설정'
+            : 'Translation language');
     final toggleLoading = !_translationModeReady;
     final controlTextStyle = TextStyle(
-      fontFamily: 'Inter',
+      fontFamily: uiFontFamily(context, 'Inter'),
       fontFamilyFallback: const ['NotoSansKR'],
       fontSize: context.rf(11).clamp(10.5, 12).toDouble(),
       fontWeight: FontWeight.w700,
@@ -5341,7 +5391,11 @@ class _SnackChatScreenState extends State<SnackChatScreen>
                   runSpacing: 4,
                   children: [
                     Tooltip(
-                      message: isKo ? '오늘 대화 정리' : "Today's recap",
+                      message: (isChineseUi(context)
+                          ? '今日总结'
+                          : isKo
+                              ? '오늘 대화 정리'
+                              : "Today's recap"),
                       child: SizedBox(
                         width: recapControlWidth,
                         height: 28,
@@ -5539,10 +5593,14 @@ class _SnackChatScreenState extends State<SnackChatScreen>
                   color: _tertiaryText, size: 40),
               const SizedBox(height: 10),
               Text(
-                isKo ? '메시지를 불러오지 못했습니다.' : 'Messages could not be loaded.',
+                (isChineseUi(context)
+                    ? '消息加载失败。'
+                    : isKo
+                        ? '메시지를 불러오지 못했습니다.'
+                        : 'Messages could not be loaded.'),
                 textAlign: TextAlign.center,
-                style: const TextStyle(
-                  fontFamily: 'Inter',
+                style: TextStyle(
+                  fontFamily: uiFontFamily(context, 'Inter'),
                   fontFamilyFallback: const ['NotoSansKR'],
                   fontSize: 14,
                   color: _secondaryText,
@@ -5551,7 +5609,11 @@ class _SnackChatScreenState extends State<SnackChatScreen>
               TextButton.icon(
                 onPressed: _subscribeToMessages,
                 icon: const Icon(Icons.refresh_rounded),
-                label: Text(isKo ? '다시 시도' : 'Retry'),
+                label: Text((isChineseUi(context)
+                    ? '重试'
+                    : isKo
+                        ? '다시 시도'
+                        : 'Retry')),
               ),
             ],
           ),
@@ -5572,12 +5634,14 @@ class _SnackChatScreenState extends State<SnackChatScreen>
               ),
               SizedBox(height: context.rs(10)),
               Text(
-                isKo
-                    ? '스낵챗의 첫 메시지를 보내보세요.'
-                    : 'Send the first message in this Snack Chat.',
+                (isChineseUi(context)
+                    ? '发送此群聊的第一条消息吧。'
+                    : isKo
+                        ? '스낵챗의 첫 메시지를 보내보세요.'
+                        : 'Send the first message in this Snack Chat.'),
                 textAlign: TextAlign.center,
                 style: TextStyle(
-                  fontFamily: 'Inter',
+                  fontFamily: uiFontFamily(context, 'Inter'),
                   fontFamilyFallback: const ['NotoSansKR'],
                   fontSize: context.rf(14).clamp(13, 15).toDouble(),
                   color: _secondaryText,
@@ -5627,9 +5691,11 @@ class _SnackChatScreenState extends State<SnackChatScreen>
                         ? TextButton.icon(
                             onPressed: _loadMoreMessages,
                             icon: const Icon(Icons.refresh_rounded, size: 18),
-                            label: Text(isKo
-                                ? '이전 메시지 다시 불러오기'
-                                : 'Retry older messages'),
+                            label: Text((isChineseUi(context)
+                                ? '重新加载更早的消息'
+                                : isKo
+                                    ? '이전 메시지 다시 불러오기'
+                                    : 'Retry older messages')),
                           )
                         : const SizedBox.shrink(),
               ),
@@ -5662,7 +5728,7 @@ class _SnackChatScreenState extends State<SnackChatScreen>
               if (showDateSeparator)
                 SnackChatDateSeparator(
                   date: message.createdAt,
-                  languageCode: isKo ? 'ko' : 'en',
+                  languageCode: Localizations.localeOf(context).languageCode,
                 ),
               if (message.id == _firstUnreadMessageId)
                 _buildUnreadDivider(isKo: isKo),
@@ -5724,13 +5790,15 @@ class _SnackChatScreenState extends State<SnackChatScreen>
                         const SizedBox(width: 6),
                         Flexible(
                           child: Text(
-                            isKo
-                                ? '연결이 잠시 멈췄습니다. 다시 연결'
-                                : 'Live updates paused. Reconnect',
+                            (isChineseUi(context)
+                                ? '实时更新已暂停，点击重连'
+                                : isKo
+                                    ? '연결이 잠시 멈췄습니다. 다시 연결'
+                                    : 'Live updates paused. Reconnect'),
                             maxLines: 1,
                             overflow: TextOverflow.ellipsis,
-                            style: const TextStyle(
-                              fontFamily: 'Inter',
+                            style: TextStyle(
+                              fontFamily: uiFontFamily(context, 'Inter'),
                               fontFamilyFallback: const ['NotoSansKR'],
                               fontSize: 12,
                               fontWeight: FontWeight.w600,
@@ -5751,9 +5819,11 @@ class _SnackChatScreenState extends State<SnackChatScreen>
             bottom: context.rs(10).clamp(8, 14).toDouble(),
             child: Semantics(
               button: true,
-              label: isKo
-                  ? '새 메시지 $_newMessageCount개로 이동'
-                  : 'Jump to $_newMessageCount new messages',
+              label: (isChineseUi(context)
+                  ? '查看${_newMessageCount}条新消息'
+                  : isKo
+                      ? '새 메시지 $_newMessageCount개로 이동'
+                      : 'Jump to $_newMessageCount new messages'),
               child: Material(
                 color: const Color(0xFF344054),
                 borderRadius: BorderRadius.circular(22),
@@ -5776,8 +5846,8 @@ class _SnackChatScreenState extends State<SnackChatScreen>
                         const SizedBox(width: 4),
                         Text(
                           '$_newMessageCount',
-                          style: const TextStyle(
-                            fontFamily: 'Inter',
+                          style: TextStyle(
+                            fontFamily: uiFontFamily(context, 'Inter'),
                             fontFamilyFallback: const ['NotoSansKR'],
                             fontSize: 12,
                             fontWeight: FontWeight.w700,
@@ -5839,7 +5909,11 @@ class _SnackChatScreenState extends State<SnackChatScreen>
                           ),
                           IconButton(
                             onPressed: () => setState(_clearReplyState),
-                            tooltip: isKo ? '답장 취소' : 'Cancel reply',
+                            tooltip: (isChineseUi(context)
+                                ? '取消回复'
+                                : isKo
+                                    ? '답장 취소'
+                                    : 'Cancel reply'),
                             icon: const Icon(Icons.close_rounded, size: 19),
                           ),
                         ],
@@ -5859,7 +5933,11 @@ class _SnackChatScreenState extends State<SnackChatScreen>
                             width: actionExtent,
                             height: actionExtent,
                             radius: actionExtent / 2,
-                            tooltip: isKo ? '첨부' : 'Attach',
+                            tooltip: (isChineseUi(context)
+                                ? '添加附件'
+                                : isKo
+                                    ? '첨부'
+                                    : 'Attach'),
                             onPressed: _isAttachmentFlowOpen
                                 ? null
                                 : _showAttachmentOptions,
@@ -5899,7 +5977,7 @@ class _SnackChatScreenState extends State<SnackChatScreen>
                                   textInputAction: TextInputAction.newline,
                                   cursorColor: const Color(0xFFD1D5DB),
                                   style: TextStyle(
-                                    fontFamily: 'Inter',
+                                    fontFamily: uiFontFamily(context, 'Inter'),
                                     fontFamilyFallback: const ['NotoSansKR'],
                                     fontSize:
                                         context.rf(15).clamp(14, 16).toDouble(),
@@ -5908,11 +5986,14 @@ class _SnackChatScreenState extends State<SnackChatScreen>
                                     height: 1.35,
                                   ),
                                   decoration: InputDecoration(
-                                    hintText: isKo
-                                        ? '메시지를 입력하세요...'
-                                        : 'Type a message...',
-                                    hintStyle: const TextStyle(
-                                      fontFamily: 'Inter',
+                                    hintText: (isChineseUi(context)
+                                        ? '输入消息…'
+                                        : isKo
+                                            ? '메시지를 입력하세요...'
+                                            : 'Type a message...'),
+                                    hintStyle: TextStyle(
+                                      fontFamily:
+                                          uiFontFamily(context, 'Inter'),
                                       fontFamilyFallback: const ['NotoSansKR'],
                                       fontWeight: FontWeight.w500,
                                       color: Color(0xFF9CA3AF),
@@ -5942,7 +6023,11 @@ class _SnackChatScreenState extends State<SnackChatScreen>
                                   width: sendWidth,
                                   height: actionExtent,
                                   radius: actionExtent / 2,
-                                  tooltip: isKo ? '전송' : 'Send',
+                                  tooltip: (isChineseUi(context)
+                                      ? '发送'
+                                      : isKo
+                                          ? '전송'
+                                          : 'Send'),
                                   onPressed: canSend ? _send : null,
                                   enabledColor: _composerAction,
                                   disabledColor: _composerActionDisabled,
@@ -6065,7 +6150,11 @@ class _SnackChatScreenState extends State<SnackChatScreen>
             if (initialTranslationInFlight) ...[
               const SizedBox(width: 5),
               Semantics(
-                label: isKo ? '번역 중' : 'Translating',
+                label: (isChineseUi(context)
+                    ? '翻译中'
+                    : isKo
+                        ? '번역 중'
+                        : 'Translating'),
                 child: const Padding(
                   padding: EdgeInsets.only(bottom: 3),
                   child: SizedBox.square(
@@ -6103,9 +6192,13 @@ class _SnackChatScreenState extends State<SnackChatScreen>
                     )
                   : const Icon(Icons.refresh_rounded, size: 14),
               label: Text(
-                isKo ? '다시 번역' : 'Retry translation',
-                style: const TextStyle(
-                  fontFamily: 'Inter',
+                (isChineseUi(context)
+                    ? '重新翻译'
+                    : isKo
+                        ? '다시 번역'
+                        : 'Retry translation'),
+                style: TextStyle(
+                  fontFamily: uiFontFamily(context, 'Inter'),
                   fontFamilyFallback: ['NotoSansKR'],
                   fontSize: 11,
                   fontWeight: FontWeight.w600,
@@ -6221,7 +6314,7 @@ class _SnackChatScreenState extends State<SnackChatScreen>
               : 9,
     );
     final textStyle = TextStyle(
-      fontFamily: 'Inter',
+      fontFamily: uiFontFamily(context, 'Inter'),
       fontFamilyFallback: const ['NotoSansKR'],
       fontSize: context.rf(14).clamp(13.5, 15).toDouble(),
       fontWeight: FontWeight.w500,
@@ -6391,7 +6484,7 @@ class _SnackChatScreenState extends State<SnackChatScreen>
                 maxLines: 1,
                 overflow: TextOverflow.ellipsis,
                 style: TextStyle(
-                  fontFamily: 'Inter',
+                  fontFamily: uiFontFamily(context, 'Inter'),
                   fontFamilyFallback: const ['NotoSansKR'],
                   fontSize: context.rf(13).clamp(12, 14).toDouble(),
                   fontWeight: FontWeight.w700,
@@ -6482,26 +6575,64 @@ class _SnackChatScreenState extends State<SnackChatScreen>
     final progress = (message.transferProgress ?? 0).clamp(0.0, 1.0).toDouble();
     String statusText;
     if (expired) {
-      statusText = isKo ? '만료됨' : 'Expired';
+      statusText = (isChineseUi(context)
+          ? '已过期'
+          : isKo
+              ? '만료됨'
+              : 'Expired');
     } else {
       statusText = switch (status) {
-        SnackChatFileTransferStatus.queued => isKo ? '업로드 대기' : 'Waiting',
-        SnackChatFileTransferStatus.uploading => isKo
-            ? '업로드 ${(progress * 100).round()}%'
-            : 'Uploading ${(progress * 100).round()}%',
-        SnackChatFileTransferStatus.finalizing => isKo ? '전송 처리 중' : 'Sending',
-        SnackChatFileTransferStatus.downloading => isKo
-            ? '다운로드 ${(progress * 100).round()}%'
-            : 'Downloading ${(progress * 100).round()}%',
-        SnackChatFileTransferStatus.downloaded =>
-          isKo ? '다운로드 완료' : 'Downloaded',
-        SnackChatFileTransferStatus.failed =>
-          isKo ? '실패 · 다시 시도' : 'Failed · Retry',
-        SnackChatFileTransferStatus.canceled => isKo ? '전송 취소' : 'Canceled',
-        SnackChatFileTransferStatus.expired => isKo ? '만료됨' : 'Expired',
+        SnackChatFileTransferStatus.queued => (isChineseUi(context)
+            ? '等待中'
+            : isKo
+                ? '업로드 대기'
+                : 'Waiting'),
+        SnackChatFileTransferStatus.uploading => (isChineseUi(context)
+            ? '上传中 ${(progress * 100).round()}%'
+            : isKo
+                ? '업로드 ${(progress * 100).round()}%'
+                : 'Uploading ${(progress * 100).round()}%'),
+        SnackChatFileTransferStatus.finalizing => (isChineseUi(context)
+            ? '发送中'
+            : isKo
+                ? '전송 처리 중'
+                : 'Sending'),
+        SnackChatFileTransferStatus.downloading => (isChineseUi(context)
+            ? '下载中 ${(progress * 100).round()}%'
+            : isKo
+                ? '다운로드 ${(progress * 100).round()}%'
+                : 'Downloading ${(progress * 100).round()}%'),
+        SnackChatFileTransferStatus.downloaded => (isChineseUi(context)
+            ? '已下载'
+            : isKo
+                ? '다운로드 완료'
+                : 'Downloaded'),
+        SnackChatFileTransferStatus.failed => (isChineseUi(context)
+            ? '失败 · 重试'
+            : isKo
+                ? '실패 · 다시 시도'
+                : 'Failed · Retry'),
+        SnackChatFileTransferStatus.canceled => (isChineseUi(context)
+            ? '已取消'
+            : isKo
+                ? '전송 취소'
+                : 'Canceled'),
+        SnackChatFileTransferStatus.expired => (isChineseUi(context)
+            ? '已过期'
+            : isKo
+                ? '만료됨'
+                : 'Expired'),
         _ => message.isPending
-            ? (isKo ? '전송 준비 중' : 'Preparing')
-            : (isKo ? '눌러서 열기' : 'Tap to open'),
+            ? ((isChineseUi(context)
+                ? '准备中'
+                : isKo
+                    ? '전송 준비 중'
+                    : 'Preparing'))
+            : ((isChineseUi(context)
+                ? '点击打开'
+                : isKo
+                    ? '눌러서 열기'
+                    : 'Tap to open')),
       };
     }
     final foreground = isMe ? Colors.white : const Color(0xFF111827);
@@ -6533,16 +6664,24 @@ class _SnackChatScreenState extends State<SnackChatScreen>
                   children: [
                     Text(
                       expired
-                          ? (isKo ? '만료된 파일입니다' : 'This file expired')
+                          ? ((isChineseUi(context)
+                              ? '此文件已过期'
+                              : isKo
+                                  ? '만료된 파일입니다'
+                                  : 'This file expired'))
                           : message.originalFileName ??
-                              (isKo ? '문서 파일' : 'Document'),
+                              ((isChineseUi(context)
+                                  ? '文档'
+                                  : isKo
+                                      ? '문서 파일'
+                                      : 'Document')),
                       maxLines: 2,
                       overflow: TextOverflow.ellipsis,
                       style: TextStyle(
-                        fontFamily: 'Inter',
+                        fontFamily: uiFontFamily(context, 'Inter'),
                         fontFamilyFallback: const ['NotoSansKR'],
                         fontSize: context.rf(14).clamp(13.5, 15).toDouble(),
-                        height: 1.25,
+                        height: isChineseUi(context) ? 1.3 : 1.25,
                         fontWeight: FontWeight.w700,
                         color: expired ? _tertiaryText : foreground,
                       ),
@@ -6557,7 +6696,7 @@ class _SnackChatScreenState extends State<SnackChatScreen>
                       maxLines: 1,
                       overflow: TextOverflow.ellipsis,
                       style: TextStyle(
-                        fontFamily: 'Inter',
+                        fontFamily: uiFontFamily(context, 'Inter'),
                         fontFamilyFallback: const ['NotoSansKR'],
                         fontSize: 11.5,
                         fontWeight: FontWeight.w500,
@@ -6578,7 +6717,7 @@ class _SnackChatScreenState extends State<SnackChatScreen>
                   maxLines: 1,
                   overflow: TextOverflow.ellipsis,
                   style: TextStyle(
-                    fontFamily: 'Inter',
+                    fontFamily: uiFontFamily(context, 'Inter'),
                     fontFamilyFallback: const ['NotoSansKR'],
                     fontSize: 11.5,
                     fontWeight: FontWeight.w600,
@@ -6593,10 +6732,18 @@ class _SnackChatScreenState extends State<SnackChatScreen>
               if (!expired && message.expiresAt != null)
                 Text(
                   message.retentionMode == 'temporary24h'
-                      ? (isKo ? '24시간' : '24h')
-                      : (isKo ? '30일' : '30d'),
+                      ? ((isChineseUi(context)
+                          ? '24小时'
+                          : isKo
+                              ? '24시간'
+                              : '24h'))
+                      : ((isChineseUi(context)
+                          ? '30天'
+                          : isKo
+                              ? '30일'
+                              : '30d')),
                   style: TextStyle(
-                    fontFamily: 'Inter',
+                    fontFamily: uiFontFamily(context, 'Inter'),
                     fontFamilyFallback: const ['NotoSansKR'],
                     fontSize: 11.5,
                     fontWeight: FontWeight.w700,
@@ -6646,7 +6793,7 @@ class _SnackChatScreenState extends State<SnackChatScreen>
           _localizedSystemMessage(message),
           textAlign: TextAlign.center,
           style: TextStyle(
-            fontFamily: 'Inter',
+            fontFamily: uiFontFamily(context, 'Inter'),
             fontFamilyFallback: const ['NotoSansKR'],
             fontSize: context.rf(11.5).clamp(10.5, 12.5).toDouble(),
             fontWeight: FontWeight.w600,
@@ -6675,42 +6822,56 @@ class _SnackChatScreenState extends State<SnackChatScreen>
     switch (systemType) {
       case 'member_joined':
         if (userName.isNotEmpty) {
-          return isKorean
-              ? '$userName님이 스낵챗에 참여했어요.'
-              : '$userName joined the Snack Chat.';
+          return (isChineseUi(context)
+              ? '${userName}加入了群聊。'
+              : isKorean
+                  ? '$userName님이 스낵챗에 참여했어요.'
+                  : '$userName joined the Snack Chat.');
         }
         break;
       case 'member_left':
         if (userName.isNotEmpty) {
-          return isKorean
-              ? '$userName님이 스낵챗에서 나갔어요.'
-              : '$userName left the Snack Chat.';
+          return (isChineseUi(context)
+              ? '${userName}退出了群聊。'
+              : isKorean
+                  ? '$userName님이 스낵챗에서 나갔어요.'
+                  : '$userName left the Snack Chat.');
         }
         break;
       case 'title_changed':
         if (newTitle.isNotEmpty) {
-          return isKorean
-              ? '스낵챗 이름이 "$newTitle"로 변경됐어요.'
-              : 'The Snack Chat name changed to "$newTitle".';
+          return (isChineseUi(context)
+              ? '群聊名称已改为“${newTitle}”。'
+              : isKorean
+                  ? '스낵챗 이름이 "$newTitle"로 변경됐어요.'
+                  : 'The Snack Chat name changed to "$newTitle".');
         }
         break;
       case 'poll_created':
         if (userName.isNotEmpty && question.isNotEmpty) {
-          return isKorean
-              ? '$userName님이 투표를 만들었어요: $question'
-              : '$userName created a poll: $question';
+          return (isChineseUi(context)
+              ? '${userName}创建了投票：${question}'
+              : isKorean
+                  ? '$userName님이 투표를 만들었어요: $question'
+                  : '$userName created a poll: $question');
         }
         break;
       case 'poll_closed':
         if (question.isNotEmpty) {
-          return isKorean ? '투표가 종료됐어요: $question' : 'Poll ended: $question';
+          return (isChineseUi(context)
+              ? '投票已结束：${question}'
+              : isKorean
+                  ? '투표가 종료됐어요: $question'
+                  : 'Poll ended: $question');
         }
         break;
       case 'announcement':
         if (announcement.isNotEmpty) {
-          return isKorean
-              ? '📢 공지 · $announcement'
-              : '📢 Announcement · $announcement';
+          return (isChineseUi(context)
+              ? '📢 公告 · ${announcement}'
+              : isKorean
+                  ? '📢 공지 · $announcement'
+                  : '📢 Announcement · $announcement');
         }
         break;
     }
@@ -6720,9 +6881,11 @@ class _SnackChatScreenState extends State<SnackChatScreen>
     );
     if (localizedLegacy != null) return localizedLegacy;
     if (fallback.isNotEmpty) return _redactInternalIdentifiers(fallback);
-    return isKorean
-        ? '채팅방 정보가 변경되었습니다.'
-        : 'Snack Chat information was updated.';
+    return (isChineseUi(context)
+        ? '群聊信息已更新。'
+        : isKorean
+            ? '채팅방 정보가 변경되었습니다.'
+            : 'Snack Chat information was updated.');
   }
 
   String? _localizedLegacySystemMessage(
@@ -6736,14 +6899,22 @@ class _SnackChatScreenState extends State<SnackChatScreen>
     match ??= RegExp(r'^(.+)님이 스낵챗에 참여했어요\.$').firstMatch(fallback);
     if (match != null) {
       final name = _redactInternalIdentifiers(match.group(1)!.trim());
-      return isKorean ? '$name님이 스낵챗에 참여했어요.' : '$name joined the Snack Chat.';
+      return (isChineseUi(context)
+          ? '${name}加入了群聊。'
+          : isKorean
+              ? '$name님이 스낵챗에 참여했어요.'
+              : '$name joined the Snack Chat.');
     }
 
     match = RegExp(r'^(.+) left the Snack Chat\.$').firstMatch(fallback);
     match ??= RegExp(r'^(.+)님이 스낵챗에서 나갔어요\.$').firstMatch(fallback);
     if (match != null) {
       final name = _redactInternalIdentifiers(match.group(1)!.trim());
-      return isKorean ? '$name님이 스낵챗에서 나갔어요.' : '$name left the Snack Chat.';
+      return (isChineseUi(context)
+          ? '${name}退出了群聊。'
+          : isKorean
+              ? '$name님이 스낵챗에서 나갔어요.'
+              : '$name left the Snack Chat.');
     }
 
     match = RegExp(r'^The Snack Chat name changed to "(.+)"\.$')
@@ -6751,9 +6922,11 @@ class _SnackChatScreenState extends State<SnackChatScreen>
     match ??= RegExp(r'^스낵챗 이름이 "(.+)"로 변경됐어요\.$').firstMatch(fallback);
     if (match != null) {
       final title = match.group(1)!.trim();
-      return isKorean
-          ? '스낵챗 이름이 "$title"로 변경됐어요.'
-          : 'The Snack Chat name changed to "$title".';
+      return (isChineseUi(context)
+          ? '群聊名称已改为“${title}”。'
+          : isKorean
+              ? '스낵챗 이름이 "$title"로 변경됐어요.'
+              : 'The Snack Chat name changed to "$title".');
     }
 
     match = RegExp(r'^(.+) created a poll: (.+)$').firstMatch(fallback);
@@ -6761,16 +6934,22 @@ class _SnackChatScreenState extends State<SnackChatScreen>
     if (match != null) {
       final name = _redactInternalIdentifiers(match.group(1)!.trim());
       final question = match.group(2)!.trim();
-      return isKorean
-          ? '$name님이 투표를 만들었어요: $question'
-          : '$name created a poll: $question';
+      return (isChineseUi(context)
+          ? '${name}创建了投票：${question}'
+          : isKorean
+              ? '$name님이 투표를 만들었어요: $question'
+              : '$name created a poll: $question');
     }
 
     match = RegExp(r'^Poll ended: (.+)$').firstMatch(fallback);
     match ??= RegExp(r'^투표가 종료됐어요: (.+)$').firstMatch(fallback);
     if (match != null) {
       final question = match.group(1)!.trim();
-      return isKorean ? '투표가 종료됐어요: $question' : 'Poll ended: $question';
+      return (isChineseUi(context)
+          ? '投票已结束：${question}'
+          : isKorean
+              ? '투표가 종료됐어요: $question'
+              : 'Poll ended: $question');
     }
 
     return null;
@@ -6831,8 +7010,11 @@ class _SnackChatScreenState extends State<SnackChatScreen>
             )
           else if (hasReceipt && remainingUnread > 0)
             Tooltip(
-              message:
-                  isKo ? '$remainingUnread명 미확인' : '$remainingUnread not seen',
+              message: (isChineseUi(context)
+                  ? '${remainingUnread}人未读'
+                  : isKo
+                      ? '$remainingUnread명 미확인'
+                      : '$remainingUnread not seen'),
               child: InkWell(
                 onTap: () => _showReadReceiptDetails(message),
                 borderRadius: BorderRadius.circular(12),
@@ -6844,7 +7026,7 @@ class _SnackChatScreenState extends State<SnackChatScreen>
                     child: Text(
                       '$remainingUnread',
                       style: TextStyle(
-                        fontFamily: 'Inter',
+                        fontFamily: uiFontFamily(context, 'Inter'),
                         fontFamilyFallback: const ['NotoSansKR'],
                         fontSize: context.rf(11).clamp(10.5, 12).toDouble(),
                         fontWeight: FontWeight.w700,
@@ -6865,7 +7047,7 @@ class _SnackChatScreenState extends State<SnackChatScreen>
   Widget _messageTimeText(String timeText) => Text(
         timeText,
         style: TextStyle(
-          fontFamily: 'Inter',
+          fontFamily: uiFontFamily(context, 'Inter'),
           fontFamilyFallback: const ['NotoSansKR'],
           fontSize: context.rf(10.5).clamp(10, 11.5).toDouble(),
           fontWeight: FontWeight.w600,
@@ -7026,8 +7208,17 @@ class _SnackChatScreenState extends State<SnackChatScreen>
   String _formatTime(DateTime t) {
     final local = t.toLocal();
     final isKo = Localizations.localeOf(context).languageCode == 'ko';
-    final period =
-        local.hour < 12 ? (isKo ? '오전' : 'AM') : (isKo ? '오후' : 'PM');
+    final period = local.hour < 12
+        ? ((isChineseUi(context)
+            ? '上午'
+            : isKo
+                ? '오전'
+                : 'AM'))
+        : ((isChineseUi(context)
+            ? '下午'
+            : isKo
+                ? '오후'
+                : 'PM'));
     final hour = local.hour % 12 == 0 ? 12 : local.hour % 12;
     final minute = local.minute.toString().padLeft(2, '0');
     return '$period $hour:$minute';
@@ -7134,6 +7325,8 @@ class _SnackChatScreenState extends State<SnackChatScreen>
               isKo: isKo,
               targetLanguage: targetLanguage,
             ),
+            sourceMessageIds: <String>[message.id],
+            representativeMessageId: message.id,
             sourceSequences: <int>[
               if (message.sequence != null) message.sequence!,
             ],
@@ -7154,7 +7347,11 @@ class _SnackChatScreenState extends State<SnackChatScreen>
     final roomId = widget.snackChatId;
     final isKo = Localizations.localeOf(context).languageCode == 'ko';
     final uiLanguageCode = Localizations.localeOf(context).languageCode;
-    final targetLanguage = uiLanguageCode == 'en' ? 'en' : 'ko';
+    final targetLanguage = uiLanguageCode == 'zh'
+        ? 'zh'
+        : uiLanguageCode == 'en'
+            ? 'en'
+            : 'ko';
     final requestGeneration = ++_unreadSummaryRequestGeneration;
     setState(() => _unreadSummaryLoading = true);
     try {
@@ -7204,22 +7401,27 @@ class _SnackChatScreenState extends State<SnackChatScreen>
         sourceEndedAt: sourceEndedAt,
         overview: overview,
         otherConversationSummary: otherConversationSummary,
+        onOpenSource: _openSummarySource,
       );
     } on SnackChatSummaryNotEnoughContentException {
       if (mounted && requestGeneration == _unreadSummaryRequestGeneration) {
         _showNotice(
-          isKo
-              ? '요약할 핵심 내용이 충분하지 않아요. 새 메시지를 확인해 주세요.'
-              : 'There is not enough key information to summarize.',
+          (isChineseUi(context)
+              ? '关键信息不足，暂无法总结。'
+              : isKo
+                  ? '요약할 핵심 내용이 충분하지 않아요. 새 메시지를 확인해 주세요.'
+                  : 'There is not enough key information to summarize.'),
         );
       }
     } catch (error, stackTrace) {
       Logger.error('스낵챗 안 읽은 대화 요약 실패', error, stackTrace);
       if (mounted && requestGeneration == _unreadSummaryRequestGeneration) {
         _showNotice(
-          isKo
-              ? '요약을 불러오지 못했어요. 다시 시도해 주세요.'
-              : 'Could not load the summary. Please try again.',
+          (isChineseUi(context)
+              ? '总结加载失败，请重试。'
+              : isKo
+                  ? '요약을 불러오지 못했어요. 다시 시도해 주세요.'
+                  : 'Could not load the summary. Please try again.'),
         );
       }
     } finally {
@@ -7231,23 +7433,371 @@ class _SnackChatScreenState extends State<SnackChatScreen>
     }
   }
 
+  Future<void> _openSummarySource(String messageId) async {
+    await Future<void>.delayed(const Duration(milliseconds: 120));
+    if (!mounted || messageId.isEmpty) return;
+    await _jumpToMessage(messageId);
+  }
+
+  String _summaryCategoryTitle(SnackChatTodaySummaryCategory category) {
+    final isKo = Localizations.localeOf(context).languageCode == 'ko';
+    switch (category) {
+      case SnackChatTodaySummaryCategory.highlights:
+        return isChineseUi(context)
+            ? '核心内容'
+            : isKo
+                ? '핵심 내용'
+                : 'Highlights';
+      case SnackChatTodaySummaryCategory.schedule:
+        return isChineseUi(context)
+            ? '日程·约定'
+            : isKo
+                ? '일정·약속'
+                : 'Plans';
+      case SnackChatTodaySummaryCategory.tasks:
+        return isChineseUi(context)
+            ? '待办事项'
+            : isKo
+                ? '해야 할 일'
+                : 'Tasks';
+      case SnackChatTodaySummaryCategory.decisions:
+        return isChineseUi(context)
+            ? '决定·通知'
+            : isKo
+                ? '결정·공지'
+                : 'Decisions';
+      case SnackChatTodaySummaryCategory.questions:
+        return isChineseUi(context)
+            ? '问答'
+            : isKo
+                ? '질문·답변'
+                : 'Q&A';
+      case SnackChatTodaySummaryCategory.information:
+        return isChineseUi(context)
+            ? '资料·信息'
+            : isKo
+                ? '자료·정보'
+                : 'Resources';
+      case SnackChatTodaySummaryCategory.people:
+        return isChineseUi(context)
+            ? '人员·参与'
+            : isKo
+                ? '사람·참여'
+                : 'People';
+      case SnackChatTodaySummaryCategory.casual:
+        return isChineseUi(context)
+            ? '有趣的话题'
+            : isKo
+                ? '재밌었던 이야기'
+                : 'Fun chat';
+    }
+  }
+
+  List<SnackChatMessage> _summaryItemMessages(
+    SnackChatUnreadSummaryItem item,
+  ) {
+    final ids = item.sourceMessageIds.toSet();
+    final sequences = item.sourceSequences.toSet();
+    return _messages
+        .where((message) =>
+            ids.contains(message.id) ||
+            (message.sequence != null && sequences.contains(message.sequence)))
+        .toList(growable: false);
+  }
+
+  bool _summaryItemIsRelatedToMe(
+    SnackChatSummarySectionType sectionType,
+    SnackChatUnreadSummaryItem item,
+  ) {
+    // The server assigns these two sections only when a request or unanswered
+    // question is grounded as belonging to the requester. Keep the remaining
+    // checks deliberately strict to avoid pulling unrelated group discussion.
+    if (sectionType == SnackChatSummarySectionType.mustKnow ||
+        sectionType == SnackChatSummarySectionType.responseRequired) {
+      return true;
+    }
+    final uid = _uid;
+    if (uid == null) return false;
+    final ownNames = _messages
+        .where((message) => message.senderId == uid)
+        .map((message) => message.senderName?.trim() ?? '')
+        .where((name) => name.isNotEmpty)
+        .toSet();
+    for (final message in _summaryItemMessages(item)) {
+      if (message.senderId == uid || message.replyPreview?.senderId == uid) {
+        return true;
+      }
+      final text = message.text;
+      if (ownNames
+          .any((name) => text.contains('@$name') || text.contains('＠$name'))) {
+        return true;
+      }
+    }
+    return false;
+  }
+
+  List<SnackChatUnreadSummarySection> _selectedSummarySections(
+    SnackChatUnreadSummaryResult result,
+    Set<SnackChatTodaySummaryCategory> categories, {
+    required bool relatedOnly,
+  }) {
+    final sourceSections = result.sections
+        .map((section) => SnackChatUnreadSummarySection(
+              type: section.type,
+              title: section.title,
+              items: relatedOnly
+                  ? section.items
+                      .where((item) =>
+                          _summaryItemIsRelatedToMe(section.type, item))
+                      .toList(growable: false)
+                  : section.items,
+            ))
+        .where((section) => section.items.isNotEmpty)
+        .toList(growable: false);
+    final output = <SnackChatUnreadSummarySection>[];
+    final emitted = <String>{};
+
+    List<SnackChatUnreadSummaryItem> itemsForTypes(
+      Set<SnackChatSummarySectionType> types,
+    ) =>
+        sourceSections
+            .where((section) => types.contains(section.type))
+            .expand((section) => section.items)
+            .where((item) {
+              final key = item.representativeMessageId.isNotEmpty
+                  ? item.representativeMessageId
+                  : item.sourceSequences.join(',');
+              return emitted.add(key);
+            })
+            .take(5)
+            .toList(growable: false);
+
+    void add(
+      SnackChatTodaySummaryCategory category,
+      Set<SnackChatSummarySectionType> types,
+    ) {
+      if (!categories.contains(category)) return;
+      final items = itemsForTypes(types);
+      if (items.isEmpty) return;
+      output.add(SnackChatUnreadSummarySection(
+        type: types.first,
+        title: _summaryCategoryTitle(category),
+        items: items,
+      ));
+    }
+
+    add(SnackChatTodaySummaryCategory.schedule,
+        {SnackChatSummarySectionType.scheduleAndPlace});
+    add(SnackChatTodaySummaryCategory.tasks,
+        {SnackChatSummarySectionType.mustKnow});
+    add(SnackChatTodaySummaryCategory.decisions,
+        {SnackChatSummarySectionType.decisionsAndChanges});
+    if (categories.contains(SnackChatTodaySummaryCategory.questions)) {
+      final questionItems = sourceSections
+          .expand((section) => section.items.map((item) => (section, item)))
+          .where((entry) =>
+              entry.$1.type == SnackChatSummarySectionType.responseRequired ||
+              entry.$1.type == SnackChatSummarySectionType.unresolved ||
+              (entry.$1.type == SnackChatSummarySectionType.sharedInformation &&
+                  _summaryItemMessages(entry.$2).any(
+                      (message) => RegExp(r'[?？]').hasMatch(message.text))))
+          .map((entry) => entry.$2)
+          .where((item) {
+            final key = item.representativeMessageId.isNotEmpty
+                ? item.representativeMessageId
+                : item.sourceSequences.join(',');
+            return emitted.add(key);
+          })
+          .take(5)
+          .toList(growable: false);
+      if (questionItems.isNotEmpty) {
+        output.add(SnackChatUnreadSummarySection(
+          type: SnackChatSummarySectionType.responseRequired,
+          title: _summaryCategoryTitle(
+            SnackChatTodaySummaryCategory.questions,
+          ),
+          items: questionItems,
+        ));
+      }
+    }
+    add(SnackChatTodaySummaryCategory.information,
+        {SnackChatSummarySectionType.sharedInformation});
+
+    if (categories.contains(SnackChatTodaySummaryCategory.people)) {
+      final peopleItems = sourceSections
+          .expand((section) => section.items)
+          .where((item) {
+            final messages = _summaryItemMessages(item);
+            final participants =
+                messages.map((message) => message.senderId).toSet();
+            return participants.length > 1 ||
+                messages.any((message) => message.text.contains('@'));
+          })
+          .where((item) {
+            final key = item.representativeMessageId.isNotEmpty
+                ? item.representativeMessageId
+                : item.sourceSequences.join(',');
+            return emitted.add(key);
+          })
+          .take(5)
+          .toList(growable: false);
+      if (peopleItems.isNotEmpty) {
+        output.add(SnackChatUnreadSummarySection(
+          type: SnackChatSummarySectionType.sharedInformation,
+          title: _summaryCategoryTitle(SnackChatTodaySummaryCategory.people),
+          items: peopleItems,
+        ));
+      }
+    }
+    if (categories.contains(SnackChatTodaySummaryCategory.highlights)) {
+      final important = sourceSections
+          .expand((section) => section.items)
+          .where((item) => item.importance != 'general')
+          .where((item) {
+            final key = item.representativeMessageId.isNotEmpty
+                ? item.representativeMessageId
+                : item.sourceSequences.join(',');
+            return emitted.add(key);
+          })
+          .take(5)
+          .toList(growable: false);
+      if (important.isNotEmpty) {
+        output.insert(
+          0,
+          SnackChatUnreadSummarySection(
+            type: SnackChatSummarySectionType.mustKnow,
+            title: _summaryCategoryTitle(
+              SnackChatTodaySummaryCategory.highlights,
+            ),
+            items: important,
+          ),
+        );
+      }
+    }
+    return output;
+  }
+
   Future<void> _openTodaySummary() async {
     if (_todaySummaryLoading) return;
+    final unreadPlan = _currentUnreadSummaryPlan();
+    final request = await showSnackChatTodaySummaryPickerSheet(
+      context,
+      hasUnreadMessages: unreadPlan.shouldShowButton,
+    );
+    if (!mounted || request == null) return;
     final roomId = widget.snackChatId;
     final isKo = Localizations.localeOf(context).languageCode == 'ko';
     final uiLanguageCode = Localizations.localeOf(context).languageCode;
-    final targetLanguage = uiLanguageCode == 'en' ? 'en' : 'ko';
+    final targetLanguage = uiLanguageCode == 'zh'
+        ? 'zh'
+        : uiLanguageCode == 'en'
+            ? 'en'
+            : 'ko';
     final requestedAt = DateTime.now();
     final latestSequence = _currentRoomLatestSequence();
     final requestGeneration = ++_todaySummaryRequestGeneration;
     setState(() => _todaySummaryLoading = true);
     try {
-      final result = await _snackChatService.summarizeTodayRange(
-        snackChatId: roomId,
-        latestSequence: latestSequence,
-        targetLanguage: targetLanguage,
-        requestedAt: requestedAt,
-      );
+      if (request.isDirectSearch) {
+        final search = await _snackChatService.searchTodayMessages(
+          snackChatId: roomId,
+          latestSequence: latestSequence,
+          targetLanguage: targetLanguage,
+          question: request.question,
+          requestedAt: requestedAt,
+        );
+        if (!mounted || requestGeneration != _todaySummaryRequestGeneration) {
+          return;
+        }
+        setState(() => _todaySummaryLoading = false);
+        final item = SnackChatUnreadSummaryItem(
+          content: search.answer,
+          label: search.found
+              ? (isChineseUi(context)
+                  ? '查找结果'
+                  : isKo
+                      ? '찾은 내용'
+                      : 'Result')
+              : (isChineseUi(context)
+                  ? '未找到'
+                  : isKo
+                      ? '찾지 못했어요'
+                      : 'Not found'),
+          importance: search.found ? 'important' : 'general',
+          sourceMessageIds: search.sourceMessageIds,
+          representativeMessageId: search.representativeMessageId,
+          sourceSequences: search.sourceSequences,
+        );
+        await showSnackChatUnreadSummarySheet(
+          context,
+          items: <SnackChatUnreadSummaryItem>[item],
+          messageCount: search.messageCount,
+          sections: <SnackChatUnreadSummarySection>[
+            SnackChatUnreadSummarySection(
+              type: SnackChatSummarySectionType.sharedInformation,
+              title: request.question,
+              items: <SnackChatUnreadSummaryItem>[item],
+            ),
+          ],
+          rangeType: SnackChatSummaryRangeType.today,
+          titleOverride: isChineseUi(context)
+              ? '直接查找'
+              : isKo
+                  ? '직접 찾기'
+                  : 'Direct search',
+          onOpenSource: _openSummarySource,
+          useProvidedSectionTitles: true,
+        );
+        return;
+      }
+
+      late final SnackChatUnreadSummaryResult result;
+      if (request.scope == SnackChatTodaySummaryScope.unread) {
+        final firstUnread = _firstUnreadSequence;
+        final unreadLatest = _currentUnreadSummaryLatestSequence();
+        if (firstUnread == null || unreadLatest < firstUnread) {
+          throw const SnackChatSummaryNotEnoughContentException();
+        }
+        if (unreadPlan.useLocalSummary) {
+          final localItems = _localUnreadSummaryItems(
+            unreadPlan,
+            isKo: isKo,
+            targetLanguage: targetLanguage,
+            maximumItems: maximumLocalSummaryMessages,
+          );
+          result = SnackChatUnreadSummaryResult(
+            items: localItems,
+            sections: <SnackChatUnreadSummarySection>[
+              SnackChatUnreadSummarySection(
+                type: SnackChatSummarySectionType.mustKnow,
+                title: '',
+                items: localItems,
+              ),
+            ],
+            messageCount: unreadPlan.declaredUnreadCount,
+            rangeHash: '',
+            cacheSource: 'local',
+            summarySource: 'fallback',
+            firstUnreadSequence: firstUnread,
+            latestSequence: unreadLatest,
+            targetLanguage: targetLanguage,
+          );
+        } else {
+          result = await _snackChatService.summarizeUnreadRange(
+            snackChatId: roomId,
+            firstUnreadSequence: firstUnread,
+            latestSequence: unreadLatest,
+            targetLanguage: targetLanguage,
+          );
+        }
+      } else {
+        result = await _snackChatService.summarizeTodayRange(
+          snackChatId: roomId,
+          latestSequence: latestSequence,
+          targetLanguage: targetLanguage,
+          requestedAt: requestedAt,
+        );
+      }
       if (!mounted ||
           requestGeneration != _todaySummaryRequestGeneration ||
           roomId != widget.snackChatId ||
@@ -7255,38 +7805,77 @@ class _SnackChatScreenState extends State<SnackChatScreen>
         return;
       }
       setState(() => _todaySummaryLoading = false);
+      final relatedOnly =
+          request.scope == SnackChatTodaySummaryScope.relatedToMe;
+      final selectedSections = _selectedSummarySections(
+        result,
+        request.categories,
+        relatedOnly: relatedOnly,
+      );
+      final includeCasual = request.categories.contains(
+        SnackChatTodaySummaryCategory.casual,
+      );
+      final includeOverview = request.categories.contains(
+            SnackChatTodaySummaryCategory.highlights,
+          ) &&
+          !relatedOnly;
+      if (selectedSections.isEmpty &&
+          !(includeCasual && result.otherConversationSummary.isNotEmpty) &&
+          !(includeOverview && result.overview.isNotEmpty)) {
+        _showNotice(
+          isChineseUi(context)
+              ? '今天的对话中没有找到所选内容。'
+              : isKo
+                  ? '오늘 대화에서 선택한 내용을 찾지 못했어요.'
+                  : 'No matching content was found in today’s chat.',
+        );
+        return;
+      }
       await showSnackChatUnreadSummarySheet(
         context,
-        items: result.items,
+        items: selectedSections.expand((section) => section.items).toList(),
         messageCount: result.messageCount,
-        sections: result.sections,
+        sections: selectedSections,
         sourceStartedAt: result.sourceStartedAt,
         sourceEndedAt: result.sourceEndedAt,
-        overview: result.isFallback ? '' : result.overview,
-        otherConversationSummary: result.otherConversationSummary,
-        rangeType: SnackChatSummaryRangeType.today,
+        overview: includeOverview && !result.isFallback ? result.overview : '',
+        otherConversationSummary:
+            includeCasual ? result.otherConversationSummary : '',
+        rangeType: request.scope == SnackChatTodaySummaryScope.unread
+            ? SnackChatSummaryRangeType.unread
+            : SnackChatSummaryRangeType.today,
+        onOpenSource: _openSummarySource,
+        useProvidedSectionTitles: true,
       );
     } on SnackChatNoMessagesTodayException {
       if (mounted && requestGeneration == _todaySummaryRequestGeneration) {
         _showNotice(
-          isKo ? '오늘 대화가 아직 없어요.' : 'No messages today yet.',
+          (isChineseUi(context)
+              ? '今天还没有消息。'
+              : isKo
+                  ? '오늘 대화가 아직 없어요.'
+                  : 'No messages today yet.'),
         );
       }
     } on SnackChatSummaryNotEnoughContentException {
       if (mounted && requestGeneration == _todaySummaryRequestGeneration) {
         _showNotice(
-          isKo
-              ? '오늘 대화에서 정리할 핵심 내용이 충분하지 않아요.'
-              : 'There is not enough meaningful content to recap today.',
+          (isChineseUi(context)
+              ? '今日可总结的有效内容不足。'
+              : isKo
+                  ? '오늘 대화에서 정리할 핵심 내용이 충분하지 않아요.'
+                  : 'There is not enough meaningful content to recap today.'),
         );
       }
     } catch (error, stackTrace) {
       Logger.error('스낵챗 오늘 대화 정리 실패', error, stackTrace);
       if (mounted && requestGeneration == _todaySummaryRequestGeneration) {
         _showNotice(
-          isKo
-              ? '오늘 대화 정리를 불러오지 못했어요. 다시 시도해 주세요.'
-              : "Could not load today's recap. Please try again.",
+          (isChineseUi(context)
+              ? '今日总结加载失败，请重试。'
+              : isKo
+                  ? '오늘 대화 정리를 불러오지 못했어요. 다시 시도해 주세요.'
+                  : "Could not load today's recap. Please try again."),
         );
       }
     } finally {
@@ -7318,11 +7907,15 @@ class _SnackChatScreenState extends State<SnackChatScreen>
                 right: summaryPlan.shouldShowButton ? 2 : 9,
               ),
               child: Text(
-                isKo ? '여기부터 읽지 않은 메시지' : 'Unread messages',
+                (isChineseUi(context)
+                    ? '未读消息'
+                    : isKo
+                        ? '여기부터 읽지 않은 메시지'
+                        : 'Unread messages'),
                 maxLines: 1,
                 softWrap: false,
                 style: TextStyle(
-                  fontFamily: 'Inter',
+                  fontFamily: uiFontFamily(context, 'Inter'),
                   fontFamilyFallback: const ['NotoSansKR'],
                   fontSize: context.rf(11.5).clamp(10.5, 12).toDouble(),
                   fontWeight: FontWeight.w600,
@@ -7332,7 +7925,11 @@ class _SnackChatScreenState extends State<SnackChatScreen>
             ),
             if (summaryPlan.shouldShowButton)
               Tooltip(
-                message: isKo ? '놓친 대화 정리 보기' : 'View what you missed',
+                message: (isChineseUi(context)
+                    ? '查看错过的消息'
+                    : isKo
+                        ? '놓친 대화 정리 보기'
+                        : 'View what you missed'),
                 child: TextButton.icon(
                   key: const ValueKey('snack_unread_summary_button'),
                   onPressed: _unreadSummaryLoading
@@ -7357,11 +7954,15 @@ class _SnackChatScreenState extends State<SnackChatScreen>
                         )
                       : const Icon(Icons.notes_rounded, size: 14),
                   label: Text(
-                    isKo ? '정리보기' : 'Recap',
+                    (isChineseUi(context)
+                        ? '总结'
+                        : isKo
+                            ? '정리보기'
+                            : 'Recap'),
                     maxLines: 1,
                     softWrap: false,
                     style: TextStyle(
-                      fontFamily: 'Inter',
+                      fontFamily: uiFontFamily(context, 'Inter'),
                       fontFamilyFallback: const ['NotoSansKR'],
                       fontSize: context.rf(11).clamp(10.5, 12).toDouble(),
                       fontWeight: FontWeight.w700,

@@ -1,6 +1,7 @@
 import 'dart:io';
 
 import 'package:flutter/material.dart';
+import '../l10n/ui_locale.dart';
 
 class DMImageSendPreviewScreen extends StatelessWidget {
   final File imageFile;
@@ -13,8 +14,8 @@ class DMImageSendPreviewScreen extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final isKo = Localizations.localeOf(context).languageCode == 'ko';
-    final title = isKo ? '사진 미리보기' : 'Photo preview';
-    final sendLabel = isKo ? '보내기' : 'Send';
+    final title = (isChineseUi(context) ? '照片预览' : isKo ? '사진 미리보기' : 'Photo preview');
+    final sendLabel = (isChineseUi(context) ? '发送' : isKo ? '보내기' : 'Send');
 
     return Scaffold(
       backgroundColor: Colors.black,
@@ -44,7 +45,7 @@ class DMImageSendPreviewScreen extends StatelessWidget {
                   fit: BoxFit.contain,
                   errorBuilder: (_, __, ___) {
                     return Text(
-                      isKo ? '이미지를 불러올 수 없습니다' : 'Unable to load image',
+                      (isChineseUi(context) ? '图片加载失败' : isKo ? '이미지를 불러올 수 없습니다' : 'Unable to load image'),
                       style: const TextStyle(color: Colors.white70),
                     );
                   },

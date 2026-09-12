@@ -29,6 +29,7 @@ import '../ui/widgets/shared_link_preview_card.dart';
 import '../utils/logger.dart';
 import '../utils/responsive_helper.dart';
 import 'post_detail_screen.dart';
+import '../l10n/ui_locale.dart';
 
 class CreatePostScreen extends StatefulWidget {
   final Function onPostCreated;
@@ -477,7 +478,7 @@ class _CreatePostScreenState extends State<CreatePostScreen> {
                         maxLines: 1,
                         overflow: TextOverflow.ellipsis,
                         style: TextStyle(
-                          fontFamily: 'Inter',
+                          fontFamily: uiFontFamily(context, 'Inter'),
                           fontFamilyFallback: const ['NotoSansKR'],
                           fontSize: context.rf(16).clamp(15, 17).toDouble(),
                           fontWeight: FontWeight.w800,
@@ -488,7 +489,7 @@ class _CreatePostScreenState extends State<CreatePostScreen> {
                     Text(
                       '${_selectedImages.length}/$_maxPostImages',
                       style: TextStyle(
-                        fontFamily: 'Inter',
+                        fontFamily: uiFontFamily(context, 'Inter'),
                         fontSize: context.rf(13).clamp(12, 14).toDouble(),
                         fontWeight: FontWeight.w700,
                         color: const Color(0xFF6B7280),
@@ -552,7 +553,7 @@ class _CreatePostScreenState extends State<CreatePostScreen> {
                   maxLines: 2,
                   overflow: TextOverflow.ellipsis,
                   style: TextStyle(
-                    fontFamily: 'Inter',
+                    fontFamily: uiFontFamily(context, 'Inter'),
                     fontFamilyFallback: const ['NotoSansKR'],
                     fontSize: context.rf(14).clamp(13, 15).toDouble(),
                     fontWeight: FontWeight.w700,
@@ -746,7 +747,7 @@ class _CreatePostScreenState extends State<CreatePostScreen> {
     HapticFeedback.mediumImpact();
     final l10n = AppLocalizations.of(context)!;
     final isKo = Localizations.localeOf(context).languageCode == 'ko';
-    final bodyText = isKo ? '포스트를 등록할까요?' : 'Do you want to post this?';
+    final bodyText = (isChineseUi(context) ? '发布此动态？' : isKo ? '포스트를 등록할까요?' : 'Do you want to post this?');
 
     final result = await showDialog<bool>(
       context: context,
@@ -762,8 +763,8 @@ class _CreatePostScreenState extends State<CreatePostScreen> {
           content: Text(
             bodyText,
             textAlign: TextAlign.center,
-            style: const TextStyle(
-              fontFamily: 'Inter',
+            style: TextStyle(
+              fontFamily: uiFontFamily(context, 'Inter'),
               fontFamilyFallback: const ['NotoSansKR'],
               fontSize: 16,
               fontWeight: FontWeight.w700,
@@ -787,8 +788,8 @@ class _CreatePostScreenState extends State<CreatePostScreen> {
                     ),
                     child: Text(
                       l10n.cancel,
-                      style: const TextStyle(
-                        fontFamily: 'Inter',
+                      style: TextStyle(
+                        fontFamily: uiFontFamily(context, 'Inter'),
                         fontFamilyFallback: const ['NotoSansKR'],
                         fontSize: 14,
                         fontWeight: FontWeight.w700,
@@ -811,8 +812,8 @@ class _CreatePostScreenState extends State<CreatePostScreen> {
                     ),
                     child: Text(
                       l10n.registration,
-                      style: const TextStyle(
-                        fontFamily: 'Inter',
+                      style: TextStyle(
+                        fontFamily: uiFontFamily(context, 'Inter'),
                         fontFamilyFallback: const ['NotoSansKR'],
                         fontSize: 14,
                         fontWeight: FontWeight.w700,
@@ -866,29 +867,29 @@ class _CreatePostScreenState extends State<CreatePostScreen> {
       context: context,
       barrierDismissible: false,
       builder: (dialogContext) => AlertDialog(
-        title: Text(isKo ? '작성을 종료할까요?' : 'Leave this post?'),
+        title: Text((isChineseUi(context) ? '离开编辑页面？' : isKo ? '작성을 종료할까요?' : 'Leave this post?')),
         content: Text(
-          isKo
+          (isChineseUi(context) ? '保留草稿以便下次继续，或放弃此次分享。' : isKo
               ? '공유한 내용과 현재 입력을 다음 앱 실행에서 이어서 작성하거나, 공유 요청을 완전히 폐기할 수 있어요.'
-              : 'Keep this draft for the next app launch or discard the shared request.',
+              : 'Keep this draft for the next app launch or discard the shared request.'),
         ),
         actions: [
           TextButton(
             onPressed: () => Navigator.of(dialogContext).pop(),
-            child: Text(isKo ? '계속 작성' : 'Keep writing'),
+            child: Text((isChineseUi(context) ? '继续编辑' : isKo ? '계속 작성' : 'Keep writing')),
           ),
           TextButton(
             onPressed: () => Navigator.of(dialogContext)
                 .pop(ExternalShareComposeOutcome.discarded),
             child: Text(
-              isKo ? '공유 요청 폐기' : 'Discard',
+              (isChineseUi(context) ? '放弃修改' : isKo ? '공유 요청 폐기' : 'Discard'),
               style: const TextStyle(color: Colors.red),
             ),
           ),
           FilledButton(
             onPressed: () => Navigator.of(dialogContext)
                 .pop(ExternalShareComposeOutcome.saved),
-            child: Text(isKo ? '초안 유지' : 'Keep draft'),
+            child: Text((isChineseUi(context) ? '保留草稿' : isKo ? '초안 유지' : 'Keep draft')),
           ),
         ],
       ),
@@ -904,9 +905,9 @@ class _CreatePostScreenState extends State<CreatePostScreen> {
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
             content: Text(
-              isKo
+              (isChineseUi(context) ? '草稿保存失败，请重试。' : isKo
                   ? '초안을 저장하지 못했어요. 잠시 후 다시 시도해 주세요.'
-                  : 'Could not save the draft. Please try again.',
+                  : 'Could not save the draft. Please try again.'),
             ),
           ),
         );
@@ -949,9 +950,9 @@ class _CreatePostScreenState extends State<CreatePostScreen> {
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
           content: Text(
-            Localizations.localeOf(context).languageCode == 'ko'
+            (isChineseUi(context) ? '请至少选择一个标签。' : Localizations.localeOf(context).languageCode == 'ko'
                 ? '태그를 한 개 이상 선택해 주세요.'
-                : 'Choose at least one tag.',
+                : 'Choose at least one tag.'),
           ),
         ),
       );
@@ -993,9 +994,9 @@ class _CreatePostScreenState extends State<CreatePostScreen> {
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
           content: Text(
-            Localizations.localeOf(context).languageCode == 'ko'
+            (isChineseUi(context) ? '验证汉阳大学邮箱后，即可使用校内可见范围。' : Localizations.localeOf(context).languageCode == 'ko'
                 ? '한양메일 인증 후 한양대학생 전용으로 게시할 수 있어요.'
-                : 'Verify your Hanyang email to use Hanyang-only visibility.',
+                : 'Verify your Hanyang email to use Hanyang-only visibility.'),
           ),
         ),
       );
@@ -1069,9 +1070,9 @@ class _CreatePostScreenState extends State<CreatePostScreen> {
           ScaffoldMessenger.of(context).showSnackBar(
             SnackBar(
               content: Text(
-                isKo
+                (isChineseUi(context) ? 'Instagram预览保存失败，链接仍会发布。' : isKo
                     ? 'Instagram 미리보기를 저장하지 못했어요. 링크만 포함해서 게시합니다.'
-                    : 'The Instagram preview could not be saved. The link will still be posted.',
+                    : 'The Instagram preview could not be saved. The link will still be posted.'),
               ),
             ),
           );
@@ -1212,7 +1213,7 @@ class _CreatePostScreenState extends State<CreatePostScreen> {
             label: Text(
               l10n.share,
               style: TextStyle(
-                fontFamily: 'Inter',
+                fontFamily: uiFontFamily(context, 'Inter'),
                 fontFamilyFallback: const ['NotoSansKR'],
                 fontSize: context.rf(14).clamp(13, 15).toDouble(),
                 fontWeight: FontWeight.w700,
@@ -1254,7 +1255,7 @@ class _CreatePostScreenState extends State<CreatePostScreen> {
               overflow: TextOverflow.ellipsis,
               textAlign: TextAlign.center,
               style: TextStyle(
-                fontFamily: 'Inter',
+                fontFamily: uiFontFamily(context, 'Inter'),
                 fontFamilyFallback: const ['NotoSansKR'],
                 fontSize: context.rf(18).clamp(16, 19).toDouble(),
                 fontWeight: FontWeight.w700,
@@ -1274,7 +1275,7 @@ class _CreatePostScreenState extends State<CreatePostScreen> {
           child: Text(
             text,
             style: TextStyle(
-              fontFamily: 'Inter',
+              fontFamily: uiFontFamily(context, 'Inter'),
               fontFamilyFallback: const ['NotoSansKR'],
               fontSize: context.rf(15).clamp(14, 16).toDouble(),
               fontWeight: FontWeight.w800,
@@ -1286,7 +1287,7 @@ class _CreatePostScreenState extends State<CreatePostScreen> {
           Text(
             trailing,
             style: TextStyle(
-              fontFamily: 'Inter',
+              fontFamily: uiFontFamily(context, 'Inter'),
               fontFamilyFallback: const ['NotoSansKR'],
               fontSize: context.rf(13).clamp(12, 14).toDouble(),
               fontWeight: FontWeight.w700,
@@ -1317,7 +1318,7 @@ class _CreatePostScreenState extends State<CreatePostScreen> {
         label: Text(
           l10n.addImage,
           style: TextStyle(
-            fontFamily: 'Inter',
+            fontFamily: uiFontFamily(context, 'Inter'),
             fontFamilyFallback: const ['NotoSansKR'],
             fontSize: context.rf(13).clamp(12, 14).toDouble(),
             fontWeight: FontWeight.w700,
@@ -1434,7 +1435,7 @@ class _CreatePostScreenState extends State<CreatePostScreen> {
                 Text(
                   l10n.postComposeImageHelper,
                   style: TextStyle(
-                    fontFamily: 'Inter',
+                    fontFamily: uiFontFamily(context, 'Inter'),
                     fontFamilyFallback: const ['NotoSansKR'],
                     fontSize: context.rf(12).clamp(11, 13).toDouble(),
                     fontWeight: FontWeight.w500,
@@ -1455,7 +1456,7 @@ class _CreatePostScreenState extends State<CreatePostScreen> {
                 decoration: InputDecoration(
                   hintText: l10n.enterContent,
                   hintStyle: TextStyle(
-                    fontFamily: 'Inter',
+                    fontFamily: uiFontFamily(context, 'Inter'),
                     fontFamilyFallback: const ['NotoSansKR'],
                     fontSize: context.rf(15).clamp(14, 16).toDouble(),
                     fontWeight: FontWeight.w400,
@@ -1465,7 +1466,7 @@ class _CreatePostScreenState extends State<CreatePostScreen> {
                   contentPadding: const EdgeInsets.fromLTRB(0, 2, 0, 16),
                 ),
                 style: TextStyle(
-                  fontFamily: 'Inter',
+                  fontFamily: uiFontFamily(context, 'Inter'),
                   fontFamilyFallback: const ['NotoSansKR'],
                   fontSize: context.rf(15).clamp(14, 16).toDouble(),
                   fontWeight: FontWeight.w500,
@@ -1539,7 +1540,7 @@ class _CreatePostScreenState extends State<CreatePostScreen> {
                             maxLines: 2,
                             overflow: TextOverflow.ellipsis,
                             style: TextStyle(
-                              fontFamily: 'Inter',
+                              fontFamily: uiFontFamily(context, 'Inter'),
                               fontFamilyFallback: const ['NotoSansKR'],
                               fontSize: context.rf(15).clamp(14, 16).toDouble(),
                               fontWeight: FontWeight.w800,
@@ -1550,7 +1551,7 @@ class _CreatePostScreenState extends State<CreatePostScreen> {
                           Text(
                             description,
                             style: TextStyle(
-                              fontFamily: 'Inter',
+                              fontFamily: uiFontFamily(context, 'Inter'),
                               fontFamilyFallback: const ['NotoSansKR'],
                               fontSize: context.rf(12).clamp(11, 13).toDouble(),
                               fontWeight: FontWeight.w500,
@@ -1628,7 +1629,7 @@ class _CreatePostScreenState extends State<CreatePostScreen> {
                           maxLines: 1,
                           overflow: TextOverflow.ellipsis,
                           style: TextStyle(
-                            fontFamily: 'Inter',
+                            fontFamily: uiFontFamily(context, 'Inter'),
                             fontFamilyFallback: const ['NotoSansKR'],
                             fontSize: context.rf(14).clamp(13, 15).toDouble(),
                             fontWeight:
@@ -1677,8 +1678,8 @@ class _CreatePostScreenState extends State<CreatePostScreen> {
                   ? l10n.postVisibilityNoGroupsSelected
                   : l10n.postVisibilityGroupsSelected(
                       _selectedCategoryIds.length),
-              style: const TextStyle(
-                fontFamily: 'Inter',
+              style: TextStyle(
+                fontFamily: uiFontFamily(context, 'Inter'),
                 fontFamilyFallback: const ['NotoSansKR'],
                 fontSize: 12,
                 fontWeight: FontWeight.w700,
@@ -1700,8 +1701,8 @@ class _CreatePostScreenState extends State<CreatePostScreen> {
             padding: const EdgeInsets.only(top: 8),
             child: Text(
               l10n.groupSelectAtLeastOne,
-              style: const TextStyle(
-                fontFamily: 'Inter',
+              style: TextStyle(
+                fontFamily: uiFontFamily(context, 'Inter'),
                 fontFamilyFallback: const ['NotoSansKR'],
                 fontSize: 12,
                 fontWeight: FontWeight.w700,
@@ -1743,7 +1744,7 @@ class _CreatePostScreenState extends State<CreatePostScreen> {
               Text(
                 l10n.postComposeVisibilityPrompt,
                 style: TextStyle(
-                  fontFamily: 'Inter',
+                  fontFamily: uiFontFamily(context, 'Inter'),
                   fontFamilyFallback: const ['NotoSansKR'],
                   fontSize: context.rf(17).clamp(15.5, 18).toDouble(),
                   fontWeight: FontWeight.w800,
@@ -1794,13 +1795,13 @@ class _CreatePostScreenState extends State<CreatePostScreen> {
                 ),
                 _buildVisibilityOption(
                   icon: Icons.school_outlined,
-                  title: Localizations.localeOf(context).languageCode == 'ko'
+                  title: (isChineseUi(context) ? '仅限汉阳学生' : Localizations.localeOf(context).languageCode == 'ko'
                       ? '한양대학생만'
-                      : 'Hanyang students only',
-                  description: Localizations.localeOf(context).languageCode ==
+                      : 'Hanyang students only'),
+                  description: (isChineseUi(context) ? '所有人都能看到卡片，但只有认证用户可查看内容。' : Localizations.localeOf(context).languageCode ==
                           'ko'
                       ? '카드는 모두에게 보이고, 인증된 사용자만 내용을 볼 수 있어요.'
-                      : 'Everyone sees the card, but only verified users can view its content.',
+                      : 'Everyone sees the card, but only verified users can view its content.'),
                   selected: _requiresHanyangVerification,
                   onTap: () {
                     setState(() {

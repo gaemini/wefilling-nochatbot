@@ -4,6 +4,7 @@ import '../constants/app_constants.dart';
 import '../models/app_notification.dart';
 import '../services/user_info_cache_service.dart';
 import '../l10n/app_localizations.dart';
+import '../l10n/ui_locale.dart';
 
 class NotificationListItem extends StatelessWidget {
   final AppNotification notification;
@@ -104,10 +105,10 @@ class NotificationListItem extends StatelessWidget {
                                   primaryColor.withAlpha(primaryTextAlpha);
 
                               final strongStyle = TextStyle(
-                                fontFamily: 'Inter',
+                                fontFamily: uiFontFamily(context, 'Inter'),
                                 fontFamilyFallback: const ['NotoSansKR'],
                                 fontSize: 15,
-                                height: 1.25,
+                                height: isChineseUi(context) ? 1.3 : 1.25,
                                 // 아이디(닉네임)는 더 굵게
                                 fontWeight: isUnread
                                     ? FontWeight.w800
@@ -116,10 +117,10 @@ class NotificationListItem extends StatelessWidget {
                               );
 
                               final normalStyle = TextStyle(
-                                fontFamily: 'Inter',
+                                fontFamily: uiFontFamily(context, 'Inter'),
                                 fontFamilyFallback: const ['NotoSansKR'],
                                 fontSize: 15,
-                                height: 1.25,
+                                height: isChineseUi(context) ? 1.3 : 1.25,
                                 fontWeight: FontWeight.w500,
                                 color: baseColor,
                               );
@@ -183,10 +184,10 @@ class NotificationListItem extends StatelessWidget {
                             TextSpan(
                               text: ' · $timeText',
                               style: TextStyle(
-                                fontFamily: 'Inter',
+                                fontFamily: uiFontFamily(context, 'Inter'),
                                 fontFamilyFallback: const ['NotoSansKR'],
                                 fontSize: 15,
-                                height: 1.25,
+                                height: isChineseUi(context) ? 1.3 : 1.25,
                                 fontWeight: FontWeight.w500,
                                 color: secondaryColor.withAlpha(
                                   theme.brightness == Brightness.dark

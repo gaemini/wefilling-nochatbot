@@ -11,6 +11,7 @@ import '../utils/logger.dart';
 import '../utils/latest_request_guard.dart';
 import '../ui/widgets/empty_state.dart';
 import 'package:flutter/foundation.dart';
+import '../l10n/ui_locale.dart';
 
 class MeetupSearchScreen extends StatefulWidget {
   const MeetupSearchScreen({Key? key}) : super(key: key);
@@ -129,9 +130,9 @@ class _MeetupSearchScreenState extends State<MeetupSearchScreen> {
           onPressed: () => Navigator.pop(context),
         ),
         title: Text(
-          Localizations.localeOf(context).languageCode == 'ko'
+          (isChineseUi(context) ? '搜索动态' : Localizations.localeOf(context).languageCode == 'ko'
               ? '포스트 검색'
-              : 'Search posts',
+              : 'Search posts'),
           style: const TextStyle(
             fontWeight: FontWeight.w700,
             fontSize: 20,
@@ -166,10 +167,10 @@ class _MeetupSearchScreenState extends State<MeetupSearchScreen> {
                           textInputAction: TextInputAction.search,
                           decoration: InputDecoration(
                             hintText:
-                                Localizations.localeOf(context).languageCode ==
+                                (isChineseUi(context) ? '搜索动态…' : Localizations.localeOf(context).languageCode ==
                                         'ko'
                                     ? '포스트를 검색하세요...'
-                                    : 'Search posts...',
+                                    : 'Search posts...'),
                             hintStyle: TextStyle(color: Colors.grey[500]),
                             border: InputBorder.none,
                           ),
@@ -260,7 +261,7 @@ class _MeetupSearchScreenState extends State<MeetupSearchScreen> {
                                 if (_searchQuery.isNotEmpty) ...[
                                   const SizedBox(height: 8),
                                   Text(
-                                    '"$_searchQuery"${Localizations.localeOf(context).languageCode == 'ko' ? '에 대한 결과를 찾을 수 없습니다' : ' - No results found'}',
+                                    '"$_searchQuery"${(isChineseUi(context) ? ' - 未找到结果' : Localizations.localeOf(context).languageCode == 'ko' ? '에 대한 결과를 찾을 수 없습니다' : ' - No results found')}',
                                     style: TextStyle(
                                       fontSize: 14,
                                       color: Colors.grey[500],

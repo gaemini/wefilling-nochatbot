@@ -26,6 +26,7 @@ import '../models/social_profile_data.dart';
 import 'social_tag_people_screen.dart';
 import '../utils/account_status_helper.dart';
 import '../services/notification_service.dart';
+import '../l10n/ui_locale.dart';
 
 class FriendProfileScreen extends StatefulWidget {
   final String userId;
@@ -377,10 +378,10 @@ class _FriendProfileScreenState extends State<FriendProfileScreen>
             ),
             const SizedBox(height: 16),
             Text(
-              isKo ? '프로필을 불러오지 못했어요' : 'Unable to load profile',
+              (isChineseUi(context) ? '资料加载失败' : isKo ? '프로필을 불러오지 못했어요' : 'Unable to load profile'),
               textAlign: TextAlign.center,
-              style: const TextStyle(
-                fontFamily: 'Inter',
+              style: TextStyle(
+                fontFamily: uiFontFamily(context, 'Inter'),
                 fontFamilyFallback: ['NotoSansKR'],
                 fontSize: 18,
                 fontWeight: FontWeight.w700,
@@ -389,10 +390,10 @@ class _FriendProfileScreenState extends State<FriendProfileScreen>
             ),
             const SizedBox(height: 8),
             Text(
-              isKo ? '잠시 후 다시 시도해 주세요.' : 'Please try again in a moment.',
+              (isChineseUi(context) ? '请稍后重试。' : isKo ? '잠시 후 다시 시도해 주세요.' : 'Please try again in a moment.'),
               textAlign: TextAlign.center,
-              style: const TextStyle(
-                fontFamily: 'Inter',
+              style: TextStyle(
+                fontFamily: uiFontFamily(context, 'Inter'),
                 fontFamilyFallback: ['NotoSansKR'],
                 fontSize: 14,
                 color: Color(0xFF6B7280),
@@ -402,7 +403,7 @@ class _FriendProfileScreenState extends State<FriendProfileScreen>
             TextButton.icon(
               onPressed: _retryProfileLoad,
               icon: const Icon(Icons.refresh_rounded, size: 19),
-              label: Text(isKo ? '다시 시도' : 'Retry'),
+              label: Text((isChineseUi(context) ? '重试' : isKo ? '다시 시도' : 'Retry')),
             ),
           ],
         ),
@@ -462,8 +463,8 @@ class _FriendProfileScreenState extends State<FriendProfileScreen>
             Text(
               l10n.deletedAccount,
               textAlign: TextAlign.center,
-              style: const TextStyle(
-                fontFamily: 'Inter',
+              style: TextStyle(
+                fontFamily: uiFontFamily(context, 'Inter'),
                 fontFamilyFallback: ['NotoSansKR'],
                 fontSize: 21,
                 fontWeight: FontWeight.w700,
@@ -472,12 +473,12 @@ class _FriendProfileScreenState extends State<FriendProfileScreen>
             ),
             const SizedBox(height: 8),
             Text(
-              isKo
+              (isChineseUi(context) ? '此账号已不可用。' : isKo
                   ? '탈퇴하여 더 이상 조회할 수 없는 계정입니다.'
-                  : 'This account is no longer available.',
+                  : 'This account is no longer available.'),
               textAlign: TextAlign.center,
-              style: const TextStyle(
-                fontFamily: 'Inter',
+              style: TextStyle(
+                fontFamily: uiFontFamily(context, 'Inter'),
                 fontFamilyFallback: ['NotoSansKR'],
                 fontSize: 14,
                 fontWeight: FontWeight.w400,
@@ -515,10 +516,10 @@ class _FriendProfileScreenState extends State<FriendProfileScreen>
             ),
             const SizedBox(height: 16),
             Text(
-              isKo ? '프로필을 볼 수 없어요' : 'Profile unavailable',
+              (isChineseUi(context) ? '无法查看资料' : isKo ? '프로필을 볼 수 없어요' : 'Profile unavailable'),
               textAlign: TextAlign.center,
-              style: const TextStyle(
-                fontFamily: 'Inter',
+              style: TextStyle(
+                fontFamily: uiFontFamily(context, 'Inter'),
                 fontFamilyFallback: const ['NotoSansKR'],
                 fontSize: 18,
                 fontWeight: FontWeight.w700,
@@ -527,12 +528,12 @@ class _FriendProfileScreenState extends State<FriendProfileScreen>
             ),
             const SizedBox(height: 8),
             Text(
-              isKo
+              (isChineseUi(context) ? '账号被拉黑时，资料和好友列表将隐藏。' : isKo
                   ? '차단 관계에서는 프로필과 친구 목록이 표시되지 않아요.'
-                  : 'Profiles and friend lists are hidden when an account is blocked.',
+                  : 'Profiles and friend lists are hidden when an account is blocked.'),
               textAlign: TextAlign.center,
-              style: const TextStyle(
-                fontFamily: 'Inter',
+              style: TextStyle(
+                fontFamily: uiFontFamily(context, 'Inter'),
                 fontFamilyFallback: const ['NotoSansKR'],
                 fontSize: 14,
                 fontWeight: FontWeight.w400,
@@ -688,8 +689,8 @@ class _FriendProfileScreenState extends State<FriendProfileScreen>
                   children: [
                     Text(
                       nickname,
-                      style: const TextStyle(
-                        fontFamily: 'Inter',
+                      style: TextStyle(
+                        fontFamily: uiFontFamily(context, 'Inter'),
                         fontFamilyFallback: const ['NotoSansKR'],
                         fontSize: 20,
                         fontWeight: FontWeight.w600,
@@ -714,8 +715,8 @@ class _FriendProfileScreenState extends State<FriendProfileScreen>
                                           Localizations.localeOf(context)
                                               .languageCode) ??
                                   nationality,
-                              style: const TextStyle(
-                                fontFamily: 'Inter',
+                              style: TextStyle(
+                                fontFamily: uiFontFamily(context, 'Inter'),
                                 fontFamilyFallback: const ['NotoSansKR'],
                                 fontSize: 14,
                                 fontWeight: FontWeight.w400,
@@ -732,8 +733,8 @@ class _FriendProfileScreenState extends State<FriendProfileScreen>
                       const SizedBox(height: 8),
                       Text(
                         bio.toString(),
-                        style: const TextStyle(
-                          fontFamily: 'Inter',
+                        style: TextStyle(
+                          fontFamily: uiFontFamily(context, 'Inter'),
                           fontFamilyFallback: const ['NotoSansKR'],
                           fontSize: 14,
                           fontWeight: FontWeight.w400,
@@ -762,12 +763,12 @@ class _FriendProfileScreenState extends State<FriendProfileScreen>
                           const SizedBox(width: 6),
                           Flexible(
                             child: Text(
-                              '${(university?.isNotEmpty ?? false) ? university : 'Hanyang University'}${isSchoolVerified ? ' · ${Localizations.localeOf(context).languageCode == 'ko' ? '인증됨' : 'Verified'}' : ''}',
-                              style: AppTheme.bodyMedium.copyWith(
+                              '${(university?.isNotEmpty ?? false) ? university : 'Hanyang University'}${isSchoolVerified ? ' · ${(isChineseUi(context) ? '已验证' : Localizations.localeOf(context).languageCode == 'ko' ? '인증됨' : 'Verified')}' : ''}',
+                              style: uiTextStyle(context, AppTheme.bodyMedium.copyWith(
                                 color: Colors.black54,
                                 fontSize: 14,
                                 fontWeight: FontWeight.w500,
-                              ),
+                              )),
                               maxLines: 1,
                               overflow: TextOverflow.ellipsis,
                             ),
@@ -853,13 +854,13 @@ class _FriendProfileScreenState extends State<FriendProfileScreen>
                   isPending
                       ? l10n.requestPending
                       : hasIncomingRequest
-                          ? (Localizations.localeOf(context).languageCode ==
+                          ? ((isChineseUi(context) ? '收到好友申请' : Localizations.localeOf(context).languageCode ==
                                   'ko'
                               ? '받은 친구 요청이 있어요'
-                              : 'Friend request received')
+                              : 'Friend request received'))
                           : l10n.friendRequest,
-                  style: const TextStyle(
-                    fontFamily: 'Inter',
+                  style: TextStyle(
+                    fontFamily: uiFontFamily(context, 'Inter'),
                     fontFamilyFallback: const ['NotoSansKR'],
                     fontSize: 15,
                     fontWeight: FontWeight.w700,
@@ -887,8 +888,8 @@ class _FriendProfileScreenState extends State<FriendProfileScreen>
                 icon: const Icon(Icons.message, size: 20),
                 label: Text(
                   AppLocalizations.of(context)!.sendMessage,
-                  style: const TextStyle(
-                    fontFamily: 'Inter',
+                  style: TextStyle(
+                    fontFamily: uiFontFamily(context, 'Inter'),
                     fontFamilyFallback: const ['NotoSansKR'],
                     fontSize: 15,
                     fontWeight: FontWeight.w600,
@@ -929,8 +930,8 @@ class _FriendProfileScreenState extends State<FriendProfileScreen>
         children: [
           Text(
             title,
-            style: const TextStyle(
-              fontFamily: 'Inter',
+            style: TextStyle(
+              fontFamily: uiFontFamily(context, 'Inter'),
               fontFamilyFallback: const ['NotoSansKR'],
               fontSize: 13,
               fontWeight: FontWeight.w700,
@@ -965,13 +966,13 @@ class _FriendProfileScreenState extends State<FriendProfileScreen>
                           '#$label',
                           maxLines: 1,
                           overflow: TextOverflow.ellipsis,
-                          style: const TextStyle(
-                            fontFamily: 'Inter',
+                          style: TextStyle(
+                            fontFamily: uiFontFamily(context, 'Inter'),
                             fontFamilyFallback: const ['NotoSansKR'],
                             fontSize: 14,
                             fontWeight: FontWeight.w600,
                             color: AppColors.pointColor,
-                            height: 1.2,
+                            height: isChineseUi(context) ? 1.3 : 1.2,
                           ),
                         ),
                       ),
@@ -1002,8 +1003,8 @@ class _FriendProfileScreenState extends State<FriendProfileScreen>
                     if (profile.showDepartment) profile.department,
                     if (profile.showGrade) profile.grade,
                   ].where((value) => value.isNotEmpty).join(' · '),
-                  style: const TextStyle(
-                    fontFamily: 'Inter',
+                  style: TextStyle(
+                    fontFamily: uiFontFamily(context, 'Inter'),
                     fontFamilyFallback: const ['NotoSansKR'],
                     fontSize: 14,
                     fontWeight: FontWeight.w600,
@@ -1016,7 +1017,7 @@ class _FriendProfileScreenState extends State<FriendProfileScreen>
         if (profile.interests.isNotEmpty) ...[
           const SizedBox(height: 18),
           tags(
-            title: languageCode == 'ko' ? '요즘 관심 있는 것' : 'Into these days',
+            title: (isChineseUi(context) ? '最近感兴趣' : languageCode == 'ko' ? '요즘 관심 있는 것' : 'Into these days'),
             ids: profile.interests,
             catalog: SocialProfileCatalog.interests,
             kind: SocialProfileTagKind.interest,
@@ -1025,7 +1026,7 @@ class _FriendProfileScreenState extends State<FriendProfileScreen>
         if (profile.preferredActivities.isNotEmpty) ...[
           const SizedBox(height: 18),
           tags(
-            title: languageCode == 'ko' ? '같이 하고 싶은 것' : 'Let\'s do together',
+            title: (isChineseUi(context) ? '想一起做' : languageCode == 'ko' ? '같이 하고 싶은 것' : 'Let\'s do together'),
             ids: profile.preferredActivities,
             catalog: SocialProfileCatalog.activities,
             kind: SocialProfileTagKind.activity,
@@ -1035,8 +1036,8 @@ class _FriendProfileScreenState extends State<FriendProfileScreen>
           const SizedBox(height: 18),
           Text(
             profile.friendshipPrompt,
-            style: const TextStyle(
-              fontFamily: 'Inter',
+            style: TextStyle(
+              fontFamily: uiFontFamily(context, 'Inter'),
               fontFamilyFallback: const ['NotoSansKR'],
               fontSize: 15,
               fontWeight: FontWeight.w600,
@@ -1053,11 +1054,11 @@ class _FriendProfileScreenState extends State<FriendProfileScreen>
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
                 Text(
-                  languageCode == 'ko'
+                  (isChineseUi(context) ? '想问问你' : languageCode == 'ko'
                       ? '그대에게 물어보고 싶어요'
-                      : "I'd like to ask you",
-                  style: const TextStyle(
-                    fontFamily: 'Inter',
+                      : "I'd like to ask you"),
+                  style: TextStyle(
+                    fontFamily: uiFontFamily(context, 'Inter'),
                     fontFamilyFallback: ['NotoSansKR'],
                     fontSize: 12,
                     fontWeight: FontWeight.w600,
@@ -1068,8 +1069,8 @@ class _FriendProfileScreenState extends State<FriendProfileScreen>
                 const SizedBox(height: 5),
                 Text(
                   profile.conversationStarter,
-                  style: const TextStyle(
-                    fontFamily: 'Inter',
+                  style: TextStyle(
+                    fontFamily: uiFontFamily(context, 'Inter'),
                     fontFamilyFallback: ['NotoSansKR'],
                     fontSize: 16,
                     fontWeight: FontWeight.w600,
@@ -1115,9 +1116,9 @@ class _FriendProfileScreenState extends State<FriendProfileScreen>
               children: [
                 Expanded(
                   child: Text(
-                    isKo ? '친구' : 'Friends',
-                    style: const TextStyle(
-                      fontFamily: 'Inter',
+                    (isChineseUi(context) ? '好友' : isKo ? '친구' : 'Friends'),
+                    style: TextStyle(
+                      fontFamily: uiFontFamily(context, 'Inter'),
                       fontFamilyFallback: ['NotoSansKR'],
                       fontSize: 17,
                       fontWeight: FontWeight.w700,
@@ -1133,9 +1134,9 @@ class _FriendProfileScreenState extends State<FriendProfileScreen>
                     minimumSize: const Size(44, 36),
                   ),
                   child: Text(
-                    isKo ? '전체 보기' : 'View all',
-                    style: const TextStyle(
-                      fontFamily: 'Inter',
+                    (isChineseUi(context) ? '查看全部' : isKo ? '전체 보기' : 'View all'),
+                    style: TextStyle(
+                      fontFamily: uiFontFamily(context, 'Inter'),
                       fontFamilyFallback: ['NotoSansKR'],
                       fontSize: 13,
                       fontWeight: FontWeight.w600,
@@ -1145,13 +1146,13 @@ class _FriendProfileScreenState extends State<FriendProfileScreen>
               ],
             ),
             Text(
-              isKo
+              (isChineseUi(context) ? '${preview.totalCount}位好友' : isKo
                   ? '친구 ${preview.totalCount}명'
                       '${preview.mutualCount > 0 ? ' · 함께 아는 친구 ${preview.mutualCount}명' : ''}'
                   : '${preview.totalCount} friends'
-                      '${preview.mutualCount > 0 ? ' · ${preview.mutualCount} mutual' : ''}',
-              style: const TextStyle(
-                fontFamily: 'Inter',
+                      '${preview.mutualCount > 0 ? ' · ${preview.mutualCount} mutual' : ''}'),
+              style: TextStyle(
+                fontFamily: uiFontFamily(context, 'Inter'),
                 fontFamilyFallback: ['NotoSansKR'],
                 fontSize: 13,
                 fontWeight: FontWeight.w500,
@@ -1161,9 +1162,9 @@ class _FriendProfileScreenState extends State<FriendProfileScreen>
             const SizedBox(height: 14),
             if (preview.friends.isEmpty)
               Text(
-                isKo ? '공개된 친구가 아직 없어요.' : 'No public friends yet.',
-                style: const TextStyle(
-                  fontFamily: 'Inter',
+                (isChineseUi(context) ? '暂无公开好友。' : isKo ? '공개된 친구가 아직 없어요.' : 'No public friends yet.'),
+                style: TextStyle(
+                  fontFamily: uiFontFamily(context, 'Inter'),
                   fontFamilyFallback: ['NotoSansKR'],
                   fontSize: 13,
                   color: Color(0xFF94A3B8),
@@ -1233,8 +1234,8 @@ class _FriendProfileScreenState extends State<FriendProfileScreen>
                 maxLines: 1,
                 overflow: TextOverflow.ellipsis,
                 textAlign: TextAlign.center,
-                style: const TextStyle(
-                  fontFamily: 'Inter',
+                style: TextStyle(
+                  fontFamily: uiFontFamily(context, 'Inter'),
                   fontFamilyFallback: ['NotoSansKR'],
                   fontSize: 12,
                   fontWeight: FontWeight.w600,
@@ -1278,9 +1279,9 @@ class _FriendProfileScreenState extends State<FriendProfileScreen>
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
             Text(
-              isKo ? '함께한 모임 후기' : 'Meetup moments together',
-              style: const TextStyle(
-                fontFamily: 'Inter',
+              (isChineseUi(context) ? '一起聚会的瞬间' : isKo ? '함께한 모임 후기' : 'Meetup moments together'),
+              style: TextStyle(
+                fontFamily: uiFontFamily(context, 'Inter'),
                 fontFamilyFallback: ['NotoSansKR'],
                 fontSize: 17,
                 fontWeight: FontWeight.w700,
@@ -1290,9 +1291,9 @@ class _FriendProfileScreenState extends State<FriendProfileScreen>
             const SizedBox(height: 14),
             if (_reviewPreview.isEmpty)
               Text(
-                isKo ? '아직 공개된 모임 후기가 없어요.' : 'No public meetup reviews yet.',
-                style: const TextStyle(
-                  fontFamily: 'Inter',
+                (isChineseUi(context) ? '暂无公开聚会回顾。' : isKo ? '아직 공개된 모임 후기가 없어요.' : 'No public meetup reviews yet.'),
+                style: TextStyle(
+                  fontFamily: uiFontFamily(context, 'Inter'),
                   fontFamilyFallback: ['NotoSansKR'],
                   fontSize: 13,
                   color: Color(0xFF94A3B8),
@@ -1312,8 +1313,8 @@ class _FriendProfileScreenState extends State<FriendProfileScreen>
         '${review.createdAt.month.toString().padLeft(2, '0')}.'
         '${review.createdAt.day.toString().padLeft(2, '0')}';
     final role = review.participationRole == 'host'
-        ? (isKo ? '모임장' : 'Host')
-        : (isKo ? '참여자' : 'Participant');
+        ? ((isChineseUi(context) ? '发起人' : isKo ? '모임장' : 'Host'))
+        : ((isChineseUi(context) ? '参与者' : isKo ? '참여자' : 'Participant'));
     final imageSize = MediaQuery.sizeOf(context).width < 360 ? 68.0 : 76.0;
     return InkWell(
       onTap: () => Navigator.push(
@@ -1349,8 +1350,8 @@ class _FriendProfileScreenState extends State<FriendProfileScreen>
                     review.meetupTitle,
                     maxLines: 1,
                     overflow: TextOverflow.ellipsis,
-                    style: const TextStyle(
-                      fontFamily: 'Inter',
+                    style: TextStyle(
+                      fontFamily: uiFontFamily(context, 'Inter'),
                       fontFamilyFallback: ['NotoSansKR'],
                       fontSize: 14,
                       fontWeight: FontWeight.w700,
@@ -1362,8 +1363,8 @@ class _FriendProfileScreenState extends State<FriendProfileScreen>
                     '${review.category} · $date · $role',
                     maxLines: 1,
                     overflow: TextOverflow.ellipsis,
-                    style: const TextStyle(
-                      fontFamily: 'Inter',
+                    style: TextStyle(
+                      fontFamily: uiFontFamily(context, 'Inter'),
                       fontFamilyFallback: ['NotoSansKR'],
                       fontSize: 12,
                       fontWeight: FontWeight.w500,
@@ -1376,8 +1377,8 @@ class _FriendProfileScreenState extends State<FriendProfileScreen>
                       review.content.trim(),
                       maxLines: 2,
                       overflow: TextOverflow.ellipsis,
-                      style: const TextStyle(
-                        fontFamily: 'Inter',
+                      style: TextStyle(
+                        fontFamily: uiFontFamily(context, 'Inter'),
                         fontFamilyFallback: ['NotoSansKR'],
                         fontSize: 12,
                         height: 1.35,
@@ -1438,19 +1439,19 @@ class _FriendProfileScreenState extends State<FriendProfileScreen>
         ? Text(
             '$value',
             key: ValueKey<String>('count_$cacheKey:$value'),
-            style: const TextStyle(
-              fontFamily: 'Inter',
+            style: TextStyle(
+              fontFamily: uiFontFamily(context, 'Inter'),
               fontFamilyFallback: const ['NotoSansKR'],
               fontWeight: FontWeight.w700,
               color: Color(0xFF111827),
               fontSize: 20,
             ),
           )
-        : const Text(
+        : Text(
             '—',
             key: ValueKey<String>('count_loading'),
             style: TextStyle(
-              fontFamily: 'Inter',
+              fontFamily: uiFontFamily(context, 'Inter'),
               fontFamilyFallback: const ['NotoSansKR'],
               fontWeight: FontWeight.w700,
               color: Color(0xFF9CA3AF),
@@ -1476,8 +1477,8 @@ class _FriendProfileScreenState extends State<FriendProfileScreen>
         const SizedBox(height: 4),
         Text(
           label,
-          style: const TextStyle(
-            fontFamily: 'Inter',
+          style: TextStyle(
+            fontFamily: uiFontFamily(context, 'Inter'),
             fontFamilyFallback: const ['NotoSansKR'],
             color: Color(0xFF6B7280),
             fontSize: 12,
@@ -1540,19 +1541,19 @@ class _FriendProfileScreenState extends State<FriendProfileScreen>
                   const SizedBox(height: 16),
                   Text(
                     AppLocalizations.of(context)!.noReviewsYet,
-                    style: AppTheme.bodyMedium.copyWith(
+                    style: uiTextStyle(context, AppTheme.bodyMedium.copyWith(
                       color: Colors.grey[600],
                       fontWeight: FontWeight.w500,
                       fontSize: 16,
-                    ),
+                    )),
                   ),
                   const SizedBox(height: 6),
                   Text(
                     AppLocalizations.of(context)!.joinMeetupAndWriteReview,
-                    style: AppTheme.bodySmall.copyWith(
+                    style: uiTextStyle(context, AppTheme.bodySmall.copyWith(
                       color: Colors.grey[500],
                       fontSize: 13,
-                    ),
+                    )),
                   ),
                 ],
               ),

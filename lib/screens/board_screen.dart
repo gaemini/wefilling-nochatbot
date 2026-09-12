@@ -33,6 +33,7 @@ import '../l10n/app_localizations.dart';
 import '../utils/logger.dart';
 import '../utils/responsive_helper.dart';
 import '../ui/widgets/post_translation_feed.dart';
+import '../l10n/ui_locale.dart';
 
 
 class BoardScreen extends StatefulWidget {
@@ -656,9 +657,9 @@ class BoardScreenState extends State<BoardScreen> {
       final isKo = Localizations.localeOf(context).languageCode == 'ko';
       AppSnackBar.show(
         context,
-        message: isKo
+        message: (isChineseUi(context) ? '刷新失败，请稍后重试。' : isKo
             ? '새로고침에 실패했습니다. 잠시 후 다시 시도해 주세요.'
-            : 'Refresh failed. Please try again shortly.',
+            : 'Refresh failed. Please try again shortly.'),
         type: AppSnackBarType.error,
       );
     }
@@ -973,7 +974,7 @@ class BoardScreenState extends State<BoardScreen> {
                 maxLines: 1,
                 overflow: TextOverflow.ellipsis,
                 style: TextStyle(
-                  fontFamily: 'Inter',
+                  fontFamily: uiFontFamily(context, 'Inter'),
                   fontFamilyFallback: const ['NotoSansKR'],
                   fontSize: _sectionTitleSize,
                   fontWeight: FontWeight.w800,
@@ -1002,7 +1003,7 @@ class BoardScreenState extends State<BoardScreen> {
                 child: Text(
                   actionLabel,
                   style: TextStyle(
-                    fontFamily: 'Inter',
+                    fontFamily: uiFontFamily(context, 'Inter'),
                     fontFamilyFallback: const ['NotoSansKR'],
                     fontSize: context.rf(12.5).clamp(12.0, 13.0).toDouble(),
                     fontWeight: FontWeight.w800,
@@ -1032,7 +1033,7 @@ class BoardScreenState extends State<BoardScreen> {
         child: Text(
           message,
           style: TextStyle(
-            fontFamily: 'Inter',
+            fontFamily: uiFontFamily(context, 'Inter'),
             fontFamilyFallback: const ['NotoSansKR'],
             fontSize: _sectionBodySize,
             fontWeight: FontWeight.w600,
@@ -1125,8 +1126,8 @@ class BoardScreenState extends State<BoardScreen> {
                       const SizedBox(width: 8),
                       Text(
                         todayMeetupsTitle,
-                        style: const TextStyle(
-                          fontFamily: 'Inter',
+                        style: TextStyle(
+                          fontFamily: uiFontFamily(context, 'Inter'),
                           fontFamilyFallback: const ['NotoSansKR'],
                           fontSize: 16,
                           fontWeight: FontWeight.w800,
@@ -1143,8 +1144,8 @@ class BoardScreenState extends State<BoardScreen> {
                       else
                         Text(
                           '${todayMeetups.length}',
-                          style: const TextStyle(
-                            fontFamily: 'Inter',
+                          style: TextStyle(
+                            fontFamily: uiFontFamily(context, 'Inter'),
                             fontFamilyFallback: const ['NotoSansKR'],
                             fontSize: 13,
                             fontWeight: FontWeight.w700,
@@ -1174,8 +1175,8 @@ class BoardScreenState extends State<BoardScreen> {
                     padding: const EdgeInsets.fromLTRB(16, 0, 16, 10),
                     child: Text(
                       noTodayMeetupsText,
-                      style: const TextStyle(
-                        fontFamily: 'Inter',
+                      style: TextStyle(
+                        fontFamily: uiFontFamily(context, 'Inter'),
                         fontFamilyFallback: const ['NotoSansKR'],
                         fontSize: 14,
                         fontWeight: FontWeight.w600,
@@ -1219,8 +1220,8 @@ class BoardScreenState extends State<BoardScreen> {
                       const SizedBox(width: 8),
                       Text(
                         todayPostsTitle,
-                        style: const TextStyle(
-                          fontFamily: 'Inter',
+                        style: TextStyle(
+                          fontFamily: uiFontFamily(context, 'Inter'),
                           fontFamilyFallback: const ['NotoSansKR'],
                           fontSize: 16,
                           fontWeight: FontWeight.w800,
@@ -1239,8 +1240,8 @@ class BoardScreenState extends State<BoardScreen> {
                   padding: const EdgeInsets.fromLTRB(16, 0, 16, 24),
                   child: Text(
                     noTodayPostsText,
-                    style: const TextStyle(
-                      fontFamily: 'Inter',
+                    style: TextStyle(
+                      fontFamily: uiFontFamily(context, 'Inter'),
                       fontFamilyFallback: const ['NotoSansKR'],
                       fontSize: 14,
                       fontWeight: FontWeight.w600,
@@ -1368,7 +1369,7 @@ class BoardScreenState extends State<BoardScreen> {
           Text(
             '${l10n.previous} ${l10n.posts}',
             style: TextStyle(
-              fontFamily: 'Inter',
+              fontFamily: uiFontFamily(context, 'Inter'),
               fontFamilyFallback: const ['NotoSansKR'],
               fontSize: context.rf(11.5).clamp(11, 12.5).toDouble(),
               fontWeight: FontWeight.w600,
@@ -1413,7 +1414,7 @@ class BoardScreenState extends State<BoardScreen> {
                 unawaited(_loadMoreHistoricalPosts());
               }
             },
-            child: Text(isKo ? '이전 포스트 다시 불러오기' : 'Retry earlier posts'),
+            child: Text((isChineseUi(context) ? '重新加载更早的动态' : isKo ? '이전 포스트 다시 불러오기' : 'Retry earlier posts')),
           ),
         ),
       );
@@ -1523,9 +1524,9 @@ class BoardScreenState extends State<BoardScreen> {
                   title: todayMeetupsTitle,
                   isLoading: isMeetupsLoading,
                   actionLabel:
-                      Localizations.localeOf(context).languageCode == 'ko'
+                      (isChineseUi(context) ? '全部' : Localizations.localeOf(context).languageCode == 'ko'
                           ? '모두 보기'
-                          : 'ALL',
+                          : 'ALL'),
                   onAction: widget.onOpenMeetups,
                 );
               }

@@ -4,6 +4,7 @@ import 'package:flutter/material.dart';
 
 import '../../config/snack_chat_file_policy.dart';
 import '../../utils/responsive_helper.dart';
+import '../../l10n/ui_locale.dart';
 
 Future<List<SnackChatSelectedFile>?> showSnackChatFileConfirmationSheet(
   BuildContext context, {
@@ -78,9 +79,9 @@ class _SnackChatFileConfirmationSheetState
               children: [
                 Expanded(
                   child: Text(
-                    isKorean ? '파일 보내기' : 'Send files',
+                    (isChineseUi(context) ? '发送文件' : isKorean ? '파일 보내기' : 'Send files'),
                     style: TextStyle(
-                      fontFamily: 'Inter',
+                      fontFamily: uiFontFamily(context, 'Inter'),
                       fontFamilyFallback: const ['NotoSansKR'],
                       fontSize: context.rf(18).clamp(17, 20).toDouble(),
                       fontWeight: FontWeight.w800,
@@ -89,11 +90,11 @@ class _SnackChatFileConfirmationSheetState
                   ),
                 ),
                 Text(
-                  isKorean
+                  (isChineseUi(context) ? '已选${_files.length}项' : isKorean
                       ? '${_files.length}개 선택'
-                      : '${_files.length} selected',
-                  style: const TextStyle(
-                    fontFamily: 'Inter',
+                      : '${_files.length} selected'),
+                  style: TextStyle(
+                    fontFamily: uiFontFamily(context, 'Inter'),
                     fontFamilyFallback: const ['NotoSansKR'],
                     fontSize: 13,
                     fontWeight: FontWeight.w600,
@@ -105,14 +106,14 @@ class _SnackChatFileConfirmationSheetState
             const SizedBox(height: 6),
             Text(
               widget.temporary24h
-                  ? (isKorean
+                  ? ((isChineseUi(context) ? '文件发送后保留24小时。' : isKorean
                       ? '이 파일은 전송 후 24시간 동안 확인할 수 있습니다.'
-                      : 'These files remain available for 24 hours after sending.')
-                  : (isKorean
+                      : 'These files remain available for 24 hours after sending.'))
+                  : ((isChineseUi(context) ? '文件发送后保留30天。' : isKorean
                       ? '이 파일은 전송 후 30일 동안 확인할 수 있습니다.'
-                      : 'These files remain available for 30 days after sending.'),
-              style: const TextStyle(
-                fontFamily: 'Inter',
+                      : 'These files remain available for 30 days after sending.')),
+              style: TextStyle(
+                fontFamily: uiFontFamily(context, 'Inter'),
                 fontFamilyFallback: const ['NotoSansKR'],
                 fontSize: 13,
                 height: 1.4,
@@ -150,20 +151,20 @@ class _SnackChatFileConfirmationSheetState
                                 file.originalFileName,
                                 maxLines: 2,
                                 overflow: TextOverflow.ellipsis,
-                                style: const TextStyle(
-                                  fontFamily: 'Inter',
+                                style: TextStyle(
+                                  fontFamily: uiFontFamily(context, 'Inter'),
                                   fontFamilyFallback: const ['NotoSansKR'],
                                   fontSize: 14,
                                   fontWeight: FontWeight.w700,
-                                  height: 1.25,
+                                  height: isChineseUi(context) ? 1.3 : 1.25,
                                   color: Color(0xFF111827),
                                 ),
                               ),
                               const SizedBox(height: 2),
                               Text(
                                 '${file.fileExtension.toUpperCase()} · ${SnackChatFilePolicy.formatBytes(file.fileSize)}',
-                                style: const TextStyle(
-                                  fontFamily: 'Inter',
+                                style: TextStyle(
+                                  fontFamily: uiFontFamily(context, 'Inter'),
                                   fontFamilyFallback: const ['NotoSansKR'],
                                   fontSize: 12,
                                   color: Color(0xFF667085),
@@ -173,7 +174,7 @@ class _SnackChatFileConfirmationSheetState
                           ),
                         ),
                         IconButton(
-                          tooltip: isKorean ? '제거' : 'Remove',
+                          tooltip: (isChineseUi(context) ? '移除' : isKorean ? '제거' : 'Remove'),
                           onPressed: () {
                             setState(() => _files.removeAt(index));
                             if (_files.isEmpty) Navigator.of(context).pop();
@@ -202,9 +203,9 @@ class _SnackChatFileConfirmationSheetState
                   elevation: 0,
                 ),
                 child: Text(
-                  isKorean ? '전송' : 'Send',
-                  style: const TextStyle(
-                    fontFamily: 'Inter',
+                  (isChineseUi(context) ? '发送' : isKorean ? '전송' : 'Send'),
+                  style: TextStyle(
+                    fontFamily: uiFontFamily(context, 'Inter'),
                     fontFamilyFallback: const ['NotoSansKR'],
                     fontSize: 15,
                     fontWeight: FontWeight.w800,

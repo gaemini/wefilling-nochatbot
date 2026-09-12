@@ -4,6 +4,7 @@
 import 'package:flutter/material.dart';
 import '../../services/report_service.dart';
 import '../../l10n/app_localizations.dart';
+import '../../l10n/ui_locale.dart';
 
 // 사용자 차단 확인 다이얼로그
 class BlockUserDialog extends StatefulWidget {
@@ -49,8 +50,8 @@ class _BlockUserDialogState extends State<BlockUserDialog> {
           const SizedBox(width: 12),
           Text(
             AppLocalizations.of(context)!.blockUserTitle,
-            style: const TextStyle(
-              fontFamily: 'Inter',
+            style: TextStyle(
+              fontFamily: uiFontFamily(context, 'Inter'),
               fontFamilyFallback: const ['NotoSansKR'],
               fontSize: 18,
               fontWeight: FontWeight.w700,
@@ -65,8 +66,8 @@ class _BlockUserDialogState extends State<BlockUserDialog> {
         children: [
           Text(
             AppLocalizations.of(context)!.blockUserMessage(widget.userName),
-            style: const TextStyle(
-              fontFamily: 'Inter',
+            style: TextStyle(
+              fontFamily: uiFontFamily(context, 'Inter'),
               fontFamilyFallback: const ['NotoSansKR'],
               fontSize: 15,
               fontWeight: FontWeight.w500,
@@ -92,8 +93,8 @@ class _BlockUserDialogState extends State<BlockUserDialog> {
                     const SizedBox(width: 8),
                     Text(
                       AppLocalizations.of(context)!.blockUserWarningTitle,
-                      style: const TextStyle(
-                        fontFamily: 'Inter',
+                      style: TextStyle(
+                        fontFamily: uiFontFamily(context, 'Inter'),
                         fontFamilyFallback: const ['NotoSansKR'],
                         fontSize: 14,
                         fontWeight: FontWeight.w600,
@@ -108,8 +109,8 @@ class _BlockUserDialogState extends State<BlockUserDialog> {
                   '• ${AppLocalizations.of(context)!.blockUserWarning2}\n'
                   '• ${AppLocalizations.of(context)!.blockUserWarning3}\n'
                   '• ${AppLocalizations.of(context)!.blockUserWarning4}',
-                  style: const TextStyle(
-                    fontFamily: 'Inter',
+                  style: TextStyle(
+                    fontFamily: uiFontFamily(context, 'Inter'),
                     fontFamilyFallback: const ['NotoSansKR'],
                     fontSize: 13,
                     fontWeight: FontWeight.w500,
@@ -138,8 +139,8 @@ class _BlockUserDialogState extends State<BlockUserDialog> {
                 ),
                 child: Text(
                   AppLocalizations.of(context)!.cancel,
-                  style: const TextStyle(
-                    fontFamily: 'Inter',
+                  style: TextStyle(
+                    fontFamily: uiFontFamily(context, 'Inter'),
                     fontFamilyFallback: const ['NotoSansKR'],
                     fontSize: 14,
                     fontWeight: FontWeight.w700,
@@ -174,8 +175,8 @@ class _BlockUserDialogState extends State<BlockUserDialog> {
                       )
                     : Text(
                         AppLocalizations.of(context)!.blockUserButton,
-                        style: const TextStyle(
-                          fontFamily: 'Inter',
+                        style: TextStyle(
+                          fontFamily: uiFontFamily(context, 'Inter'),
                           fontFamilyFallback: const ['NotoSansKR'],
                           fontSize: 14,
                           fontWeight: FontWeight.w700,
@@ -220,9 +221,9 @@ class _BlockUserDialogState extends State<BlockUserDialog> {
                   const SizedBox(width: 8),
                   Expanded(
                     child: Text(
-                      isKo
+                      (isChineseUi(context) ? '已拉黑${blockedUserName}。' : isKo
                           ? '$blockedUserName님을 차단했습니다.'
-                          : 'Blocked $blockedUserName.',
+                          : 'Blocked $blockedUserName.'),
                     ),
                   ),
                 ],
@@ -321,8 +322,8 @@ class _UnblockUserDialogState extends State<UnblockUserDialog> {
           const SizedBox(width: 12),
           Text(
             AppLocalizations.of(context)!.unblockUserTitle,
-            style: const TextStyle(
-              fontFamily: 'Inter',
+            style: TextStyle(
+              fontFamily: uiFontFamily(context, 'Inter'),
               fontFamilyFallback: const ['NotoSansKR'],
               fontSize: 18,
               fontWeight: FontWeight.w700,
@@ -333,8 +334,8 @@ class _UnblockUserDialogState extends State<UnblockUserDialog> {
       ),
       content: Text(
         AppLocalizations.of(context)!.unblockUserMessage(widget.userName),
-        style: const TextStyle(
-          fontFamily: 'Inter',
+        style: TextStyle(
+          fontFamily: uiFontFamily(context, 'Inter'),
           fontFamilyFallback: const ['NotoSansKR'],
           fontSize: 15,
           fontWeight: FontWeight.w500,
@@ -358,8 +359,8 @@ class _UnblockUserDialogState extends State<UnblockUserDialog> {
                 ),
                 child: Text(
                   AppLocalizations.of(context)!.cancel,
-                  style: const TextStyle(
-                    fontFamily: 'Inter',
+                  style: TextStyle(
+                    fontFamily: uiFontFamily(context, 'Inter'),
                     fontFamilyFallback: const ['NotoSansKR'],
                     fontSize: 14,
                     fontWeight: FontWeight.w700,
@@ -394,8 +395,8 @@ class _UnblockUserDialogState extends State<UnblockUserDialog> {
                       )
                     : Text(
                         AppLocalizations.of(context)!.unblockUserButton,
-                        style: const TextStyle(
-                          fontFamily: 'Inter',
+                        style: TextStyle(
+                          fontFamily: uiFontFamily(context, 'Inter'),
                           fontFamilyFallback: const ['NotoSansKR'],
                           fontSize: 14,
                           fontWeight: FontWeight.w700,
@@ -428,7 +429,7 @@ class _UnblockUserDialogState extends State<UnblockUserDialog> {
           messenger.showSnackBar(
             SnackBar(
               content: Text(
-                isKo ? '$userName님의 차단을 해제했습니다.' : 'Unblocked $userName.',
+                (isChineseUi(context) ? '已取消拉黑${userName}。' : isKo ? '$userName님의 차단을 해제했습니다.' : 'Unblocked $userName.'),
               ),
               backgroundColor: Colors.green,
             ),

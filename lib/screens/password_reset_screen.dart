@@ -7,6 +7,7 @@ import 'package:flutter/services.dart';
 import '../constants/app_constants.dart';
 import '../l10n/app_localizations.dart';
 import '../widgets/signup_flow_widgets.dart';
+import '../l10n/ui_locale.dart';
 
 class PasswordResetScreen extends StatefulWidget {
   const PasswordResetScreen({
@@ -227,8 +228,8 @@ class _PasswordResetScreenState extends State<PasswordResetScreen> {
         ),
         title: Text(
           l10n.resetPassword,
-          style: const TextStyle(
-            fontFamily: 'Inter',
+          style: TextStyle(
+            fontFamily: uiFontFamily(context, 'Inter'),
             fontFamilyFallback: ['NotoSansKR'],
             fontSize: 18,
             fontWeight: FontWeight.w700,
@@ -288,7 +289,7 @@ class _PasswordResetScreenState extends State<PasswordResetScreen> {
           autofillHints: const [AutofillHints.email],
           textInputAction: TextInputAction.next,
           validator: _validateEmail,
-          decoration: signupInputDecoration(
+          decoration: signupInputDecoration(context: context,
             hintText: 'example@gmail.com',
             icon: Icons.mail_outline_rounded,
           ),
@@ -307,7 +308,7 @@ class _PasswordResetScreenState extends State<PasswordResetScreen> {
             textInputAction: TextInputAction.next,
             validator: (value) =>
                 value?.length == 6 ? null : l10n.invalidVerificationCode,
-            decoration: signupInputDecoration(
+            decoration: signupInputDecoration(context: context,
               hintText: l10n.verificationCodeHint,
               icon: Icons.pin_outlined,
               counterText: '',
@@ -337,7 +338,7 @@ class _PasswordResetScreenState extends State<PasswordResetScreen> {
             obscureText: _obscurePassword,
             autofillHints: const [AutofillHints.newPassword],
             validator: _validatePassword,
-            decoration: signupInputDecoration(
+            decoration: signupInputDecoration(context: context,
               hintText: l10n.passwordPlaceholder,
               icon: Icons.lock_outline_rounded,
               suffixIcon: IconButton(
@@ -368,7 +369,7 @@ class _PasswordResetScreenState extends State<PasswordResetScreen> {
               }
               return null;
             },
-            decoration: signupInputDecoration(
+            decoration: signupInputDecoration(context: context,
               hintText: l10n.confirmPasswordPlaceholder,
               icon: Icons.lock_outline_rounded,
               suffixIcon: IconButton(
@@ -427,8 +428,8 @@ class _PasswordResetScreenState extends State<PasswordResetScreen> {
         Text(
           l10n.passwordChangedSuccessfully,
           textAlign: TextAlign.center,
-          style: const TextStyle(
-            fontFamily: 'Inter',
+          style: TextStyle(
+            fontFamily: uiFontFamily(context, 'Inter'),
             fontFamilyFallback: ['NotoSansKR'],
             fontSize: 23,
             fontWeight: FontWeight.w700,
@@ -439,8 +440,8 @@ class _PasswordResetScreenState extends State<PasswordResetScreen> {
         Text(
           l10n.signInWithNewPassword,
           textAlign: TextAlign.center,
-          style: const TextStyle(
-            fontFamily: 'Inter',
+          style: TextStyle(
+            fontFamily: uiFontFamily(context, 'Inter'),
             fontFamilyFallback: ['NotoSansKR'],
             fontSize: 14,
             height: 1.5,
@@ -479,7 +480,7 @@ class _StatusMessage extends StatelessWidget {
           child: Text(
             message,
             style: TextStyle(
-              fontFamily: 'Inter',
+              fontFamily: uiFontFamily(context, 'Inter'),
               fontFamilyFallback: const ['NotoSansKR'],
               fontSize: 13.5,
               height: 1.45,

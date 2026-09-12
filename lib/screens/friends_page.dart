@@ -30,6 +30,7 @@ import '../ui/widgets/shape_icon.dart';
 import 'requests_page.dart';
 import 'social_tag_explorer_screen.dart';
 import '../widgets/user_tile.dart';
+import '../l10n/ui_locale.dart';
 
 class FriendsPage extends StatefulWidget {
   const FriendsPage({super.key});
@@ -117,9 +118,9 @@ class _FriendsPageState extends State<FriendsPage> {
     if (_friendCategories.length >=
         FriendCategoryService.maxCategoriesPerUser) {
       _showSnackBar(
-        isKorean
+        (isChineseUi(context) ? '最多可创建10个分组。' : isKorean
             ? '그룹은 최대 10개까지 생성할 수 있어요.'
-            : 'You can create up to 10 groups.',
+            : 'You can create up to 10 groups.'),
         const Color(0xFF667085),
       );
       return;
@@ -254,8 +255,8 @@ class _FriendsPageState extends State<FriendsPage> {
               Text(
                 l10n.noSearchResults,
                 textAlign: TextAlign.center,
-                style: const TextStyle(
-                  fontFamily: 'Inter',
+                style: TextStyle(
+                  fontFamily: uiFontFamily(context, 'Inter'),
                   fontFamilyFallback: const ['NotoSansKR'],
                   fontSize: 18,
                   fontWeight: FontWeight.w700,
@@ -266,8 +267,8 @@ class _FriendsPageState extends State<FriendsPage> {
               Text(
                 '\'$query\' ${l10n.tryDifferentKeyword}',
                 textAlign: TextAlign.center,
-                style: const TextStyle(
-                  fontFamily: 'Inter',
+                style: TextStyle(
+                  fontFamily: uiFontFamily(context, 'Inter'),
                   fontFamilyFallback: const ['NotoSansKR'],
                   fontSize: 14,
                   fontWeight: FontWeight.w500,
@@ -478,19 +479,19 @@ class _FriendsPageState extends State<FriendsPage> {
         actionsPadding: const EdgeInsets.fromLTRB(24, 20, 24, 20),
         title: Text(
           title,
-          style: const TextStyle(
-            fontFamily: 'Inter',
+          style: TextStyle(
+            fontFamily: uiFontFamily(context, 'Inter'),
             fontFamilyFallback: ['NotoSansKR'],
             fontSize: 20,
             fontWeight: FontWeight.w700,
             color: Color(0xFF111827),
-            height: 1.25,
+            height: isChineseUi(context) ? 1.3 : 1.25,
           ),
         ),
         content: Text(
           message,
-          style: const TextStyle(
-            fontFamily: 'Inter',
+          style: TextStyle(
+            fontFamily: uiFontFamily(context, 'Inter'),
             fontFamilyFallback: ['NotoSansKR'],
             fontSize: 15,
             fontWeight: FontWeight.w400,
@@ -516,8 +517,8 @@ class _FriendsPageState extends State<FriendsPage> {
                     AppLocalizations.of(dialogContext)!.cancel,
                     maxLines: 1,
                     overflow: TextOverflow.ellipsis,
-                    style: const TextStyle(
-                      fontFamily: 'Inter',
+                    style: TextStyle(
+                      fontFamily: uiFontFamily(context, 'Inter'),
                       fontFamilyFallback: ['NotoSansKR'],
                       fontSize: 14,
                       fontWeight: FontWeight.w700,
@@ -543,8 +544,8 @@ class _FriendsPageState extends State<FriendsPage> {
                     AppLocalizations.of(dialogContext)!.confirm,
                     maxLines: 1,
                     overflow: TextOverflow.ellipsis,
-                    style: const TextStyle(
-                      fontFamily: 'Inter',
+                    style: TextStyle(
+                      fontFamily: uiFontFamily(context, 'Inter'),
                       fontFamilyFallback: ['NotoSansKR'],
                       fontSize: 14,
                       fontWeight: FontWeight.w700,
@@ -624,12 +625,12 @@ class _FriendsPageState extends State<FriendsPage> {
                         child: Text(
                           friend.displayNameOrNickname,
                           style: TextStyle(
-                            fontFamily: 'Inter',
+                            fontFamily: uiFontFamily(context, 'Inter'),
                             fontFamilyFallback: const ['NotoSansKR'],
                             fontSize:
                                 sheetContext.rf(18).clamp(17, 20).toDouble(),
                             fontWeight: FontWeight.w700,
-                            height: 1.25,
+                            height: isChineseUi(context) ? 1.3 : 1.25,
                             color: const Color(0xFF111827),
                           ),
                           maxLines: 1,
@@ -742,14 +743,14 @@ class _FriendsPageState extends State<FriendsPage> {
                                 maxLines: 2,
                                 overflow: TextOverflow.ellipsis,
                                 style: TextStyle(
-                                  fontFamily: 'Inter',
+                                  fontFamily: uiFontFamily(context, 'Inter'),
                                   fontFamilyFallback: const ['NotoSansKR'],
                                   fontSize: sheetContext
                                       .rf(18)
                                       .clamp(17, 20)
                                       .toDouble(),
                                   fontWeight: FontWeight.w700,
-                                  height: 1.25,
+                                  height: isChineseUi(context) ? 1.3 : 1.25,
                                   color: const Color(0xFF111827),
                                 ),
                               ),
@@ -779,8 +780,8 @@ class _FriendsPageState extends State<FriendsPage> {
                                       Text(
                                         l10n.noFriendGroupsYet,
                                         textAlign: TextAlign.center,
-                                        style: const TextStyle(
-                                          fontFamily: 'Inter',
+                                        style: TextStyle(
+                                          fontFamily: uiFontFamily(context, 'Inter'),
                                           fontFamilyFallback: ['NotoSansKR'],
                                           fontSize: 14,
                                           fontWeight: FontWeight.w400,
@@ -799,11 +800,11 @@ class _FriendsPageState extends State<FriendsPage> {
                                           size: 19,
                                         ),
                                         label: Text(
-                                          Localizations.localeOf(sheetContext)
+                                          (isChineseUi(context) ? '创建分组' : Localizations.localeOf(sheetContext)
                                                       .languageCode ==
                                                   'ko'
                                               ? '그룹 만들기'
-                                              : 'Create group',
+                                              : 'Create group'),
                                         ),
                                       ),
                                     ],
@@ -863,8 +864,8 @@ class _FriendsPageState extends State<FriendsPage> {
                                                     maxLines: 1,
                                                     overflow:
                                                         TextOverflow.ellipsis,
-                                                    style: const TextStyle(
-                                                      fontFamily: 'Inter',
+                                                    style: TextStyle(
+                                                      fontFamily: uiFontFamily(context, 'Inter'),
                                                       fontFamilyFallback: [
                                                         'NotoSansKR'
                                                       ],
@@ -879,8 +880,8 @@ class _FriendsPageState extends State<FriendsPage> {
                                                     l10n.friendsInGroup(
                                                       category.friendIds.length,
                                                     ),
-                                                    style: const TextStyle(
-                                                      fontFamily: 'Inter',
+                                                    style: TextStyle(
+                                                      fontFamily: uiFontFamily(context, 'Inter'),
                                                       fontFamilyFallback: [
                                                         'NotoSansKR'
                                                       ],
@@ -1103,7 +1104,7 @@ class _FriendsPageState extends State<FriendsPage> {
               children: [
                 Text(
                   AppLocalizations.of(context)!.category,
-                  style: TypographyStyles.titleMedium,
+                  style: uiTextStyle(context, TypographyStyles.titleMedium),
                 ),
                 const SizedBox(height: 12),
                 Wrap(
@@ -1213,7 +1214,7 @@ class _FriendsPageState extends State<FriendsPage> {
                   child: TextField(
                     controller: _searchController,
                     style: TextStyle(
-                      fontFamily: 'Inter',
+                      fontFamily: uiFontFamily(context, 'Inter'),
                       fontFamilyFallback: const ['NotoSansKR'],
                       fontSize: context.rf(14).clamp(13, 15).toDouble(),
                       fontWeight: FontWeight.w500,
@@ -1222,8 +1223,8 @@ class _FriendsPageState extends State<FriendsPage> {
                     decoration: InputDecoration(
                       hintText:
                           AppLocalizations.of(context)!.searchByFriendName,
-                      hintStyle: const TextStyle(
-                        fontFamily: 'Inter',
+                      hintStyle: TextStyle(
+                        fontFamily: uiFontFamily(context, 'Inter'),
                         fontFamilyFallback: const ['NotoSansKR'],
                         fontWeight: FontWeight.w400,
                         color: Color(0xFF8B93A1),
@@ -1313,11 +1314,11 @@ class _FriendsPageState extends State<FriendsPage> {
                     const SizedBox(width: 12),
                     Expanded(
                       child: Text(
-                        isKorean ? '태그로 친구 찾기' : 'Find friends by tag',
+                        (isChineseUi(context) ? '按标签找好友' : isKorean ? '태그로 친구 찾기' : 'Find friends by tag'),
                         maxLines: 1,
                         overflow: TextOverflow.ellipsis,
                         style: TextStyle(
-                          fontFamily: 'Inter',
+                          fontFamily: uiFontFamily(context, 'Inter'),
                           fontFamilyFallback: const ['NotoSansKR'],
                           fontSize: context.rf(14).clamp(13, 15).toDouble(),
                           fontWeight: FontWeight.w700,
@@ -1385,7 +1386,7 @@ class _FriendsPageState extends State<FriendsPage> {
                             maxLines: 1,
                             overflow: TextOverflow.ellipsis,
                             style: TextStyle(
-                              fontFamily: 'Inter',
+                              fontFamily: uiFontFamily(context, 'Inter'),
                               fontFamilyFallback: const ['NotoSansKR'],
                               fontSize: context.rf(14).clamp(13, 15).toDouble(),
                               fontWeight: FontWeight.w700,
@@ -1408,8 +1409,8 @@ class _FriendsPageState extends State<FriendsPage> {
                             child: Text(
                               incomingCount > 99 ? '99+' : '$incomingCount',
                               textAlign: TextAlign.center,
-                              style: const TextStyle(
-                                fontFamily: 'Inter',
+                              style: TextStyle(
+                                fontFamily: uiFontFamily(context, 'Inter'),
                                 fontFamilyFallback: const ['NotoSansKR'],
                                 fontSize: 10.5,
                                 fontWeight: FontWeight.w700,
@@ -1463,11 +1464,11 @@ class _FriendsPageState extends State<FriendsPage> {
                     const SizedBox(width: 12),
                     Expanded(
                       child: Text(
-                        isKorean ? '그룹 만들기' : 'Create group',
+                        (isChineseUi(context) ? '创建分组' : isKorean ? '그룹 만들기' : 'Create group'),
                         maxLines: 1,
                         overflow: TextOverflow.ellipsis,
                         style: TextStyle(
-                          fontFamily: 'Inter',
+                          fontFamily: uiFontFamily(context, 'Inter'),
                           fontFamilyFallback: const ['NotoSansKR'],
                           fontSize: context.rf(14).clamp(13, 15).toDouble(),
                           fontWeight: FontWeight.w700,
@@ -1590,11 +1591,11 @@ class _FriendsPageState extends State<FriendsPage> {
                                   Text(
                                     friend.displayNameOrNickname,
                                     style:
-                                        TypographyStyles.titleMedium.copyWith(
+                                        uiTextStyle(context, TypographyStyles.titleMedium.copyWith(
                                       fontSize: nameSize,
                                       fontWeight: FontWeight.w700,
                                       height: 1.2,
-                                    ),
+                                    )),
                                     maxLines: 1,
                                     overflow: TextOverflow.ellipsis,
                                   ),
@@ -1619,15 +1620,15 @@ class _FriendsPageState extends State<FriendsPage> {
                                                   ).languageCode,
                                                 ) ??
                                                 friend.nationality!,
-                                            style: const TextStyle(
-                                              fontFamily: 'Inter',
+                                            style: TextStyle(
+                                              fontFamily: uiFontFamily(context, 'Inter'),
                                               fontFamilyFallback: const [
                                                 'NotoSansKR'
                                               ],
                                               fontSize: 12,
                                               fontWeight: FontWeight.w500,
                                               color: Color(0xFF8B93A1),
-                                              height: 1.2,
+                                              height: isChineseUi(context) ? 1.3 : 1.2,
                                             ),
                                             maxLines: 1,
                                             overflow: TextOverflow.ellipsis,
@@ -1698,8 +1699,8 @@ class _FriendsPageState extends State<FriendsPage> {
               const SizedBox(height: 12),
               Text(
                 AppLocalizations.of(context)!.error,
-                style: const TextStyle(
-                  fontFamily: 'Inter',
+                style: TextStyle(
+                  fontFamily: uiFontFamily(context, 'Inter'),
                   fontFamilyFallback: const ['NotoSansKR'],
                   fontSize: 16,
                   color: Color(0xFF111827),
@@ -1712,8 +1713,8 @@ class _FriendsPageState extends State<FriendsPage> {
                 // localized message in the search/list UI.
                 AppLocalizations.of(context)!.errorOccurred,
                 textAlign: TextAlign.center,
-                style: const TextStyle(
-                  fontFamily: 'Inter',
+                style: TextStyle(
+                  fontFamily: uiFontFamily(context, 'Inter'),
                   fontFamilyFallback: const ['NotoSansKR'],
                   fontSize: 13,
                   color: Color(0xFF667085),
@@ -1775,13 +1776,13 @@ class _CategoryBadge extends StatelessWidget {
               label,
               maxLines: 1,
               overflow: TextOverflow.ellipsis,
-              style: const TextStyle(
-                fontFamily: 'Inter',
+              style: TextStyle(
+                fontFamily: uiFontFamily(context, 'Inter'),
                 fontFamilyFallback: const ['NotoSansKR'],
                 fontSize: 11,
                 color: neutral,
                 fontWeight: FontWeight.w600,
-                height: 1.15,
+                height: isChineseUi(context) ? 1.3 : 1.15,
               ),
             ),
           ),
@@ -1806,13 +1807,13 @@ class _OverflowBadge extends StatelessWidget {
         label,
         maxLines: 1,
         overflow: TextOverflow.ellipsis,
-        style: const TextStyle(
-          fontFamily: 'Inter',
+        style: TextStyle(
+          fontFamily: uiFontFamily(context, 'Inter'),
           fontFamilyFallback: const ['NotoSansKR'],
           fontSize: 11,
           fontWeight: FontWeight.w700,
           color: Color(0xFF667085),
-          height: 1.15,
+          height: isChineseUi(context) ? 1.3 : 1.15,
         ),
       ),
     );
@@ -1861,11 +1862,11 @@ class _ActionTile extends StatelessWidget {
                 maxLines: 1,
                 overflow: TextOverflow.ellipsis,
                 style: TextStyle(
-                  fontFamily: 'Inter',
+                  fontFamily: uiFontFamily(context, 'Inter'),
                   fontFamilyFallback: const ['NotoSansKR'],
                   fontSize: context.rf(15).clamp(14, 16).toDouble(),
                   fontWeight: FontWeight.w600,
-                  height: 1.25,
+                  height: isChineseUi(context) ? 1.3 : 1.25,
                   color: isDestructive
                       ? const Color(0xFFB42318)
                       : const Color(0xFF111827),

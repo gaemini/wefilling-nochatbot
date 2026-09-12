@@ -9,6 +9,7 @@ import '../l10n/app_localizations.dart';
 import '../providers/auth_provider.dart' as app_auth;
 import '../widgets/signup_flow_widgets.dart';
 import 'nickname_setup_screen.dart';
+import '../l10n/ui_locale.dart';
 
 class EmailSignUpScreen extends StatefulWidget {
   const EmailSignUpScreen({
@@ -152,8 +153,8 @@ class _EmailSignUpScreenState extends State<EmailSignUpScreen> {
           l10n.emailSignUpTitle,
           maxLines: 1,
           overflow: TextOverflow.ellipsis,
-          style: const TextStyle(
-            fontFamily: 'Inter',
+          style: TextStyle(
+            fontFamily: uiFontFamily(context, 'Inter'),
             fontFamilyFallback: const ['NotoSansKR'],
             fontSize: 18,
             fontWeight: FontWeight.w700,
@@ -202,13 +203,13 @@ class _EmailSignUpScreenState extends State<EmailSignUpScreen> {
                           textInputAction: TextInputAction.next,
                           autocorrect: false,
                           autofillHints: const [AutofillHints.newUsername],
-                          decoration: signupInputDecoration(
+                          decoration: signupInputDecoration(context: context,
                             hintText: 'example@gmail.com',
                             icon: Icons.mail_outline_rounded,
                             helperText: l10n.emailHelperText,
                           ),
-                          style: const TextStyle(
-                            fontFamily: 'Inter',
+                          style: TextStyle(
+                            fontFamily: uiFontFamily(context, 'Inter'),
                             fontFamilyFallback: const ['NotoSansKR'],
                             fontSize: 16,
                             fontWeight: FontWeight.w500,
@@ -234,7 +235,7 @@ class _EmailSignUpScreenState extends State<EmailSignUpScreen> {
                           autocorrect: false,
                           enableSuggestions: false,
                           autofillHints: const [AutofillHints.newPassword],
-                          decoration: signupInputDecoration(
+                          decoration: signupInputDecoration(context: context,
                             hintText: l10n.passwordInputHint,
                             icon: Icons.lock_outline_rounded,
                             suffixIcon: IconButton(
@@ -251,8 +252,8 @@ class _EmailSignUpScreenState extends State<EmailSignUpScreen> {
                               ),
                             ),
                           ),
-                          style: const TextStyle(
-                            fontFamily: 'Inter',
+                          style: TextStyle(
+                            fontFamily: uiFontFamily(context, 'Inter'),
                             fontFamilyFallback: const ['NotoSansKR'],
                             fontSize: 16,
                             fontWeight: FontWeight.w500,
@@ -270,7 +271,7 @@ class _EmailSignUpScreenState extends State<EmailSignUpScreen> {
                           autocorrect: false,
                           enableSuggestions: false,
                           onFieldSubmitted: (_) => _handleSignUp(),
-                          decoration: signupInputDecoration(
+                          decoration: signupInputDecoration(context: context,
                             hintText: l10n.confirmPasswordPlaceholder,
                             icon: Icons.lock_outline_rounded,
                             suffixIcon: IconButton(
@@ -289,8 +290,8 @@ class _EmailSignUpScreenState extends State<EmailSignUpScreen> {
                               ),
                             ),
                           ),
-                          style: const TextStyle(
-                            fontFamily: 'Inter',
+                          style: TextStyle(
+                            fontFamily: uiFontFamily(context, 'Inter'),
                             fontFamilyFallback: const ['NotoSansKR'],
                             fontSize: 16,
                             fontWeight: FontWeight.w500,

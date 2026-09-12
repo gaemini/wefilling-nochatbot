@@ -6,6 +6,7 @@ import '../models/semester_todo.dart';
 import '../models/student_type.dart';
 import '../providers/auth_provider.dart';
 import '../services/semester_todo_service.dart';
+import '../l10n/ui_locale.dart';
 
 class SemesterTodoAdminScreen extends StatefulWidget {
   const SemesterTodoAdminScreen({super.key});
@@ -36,9 +37,9 @@ class _SemesterTodoAdminScreenState extends State<SemesterTodoAdminScreen> {
         elevation: 0,
         scrolledUnderElevation: 0,
         title: Text(
-          _isKorean ? '학기 To-do 관리' : 'Semester To-do admin',
-          style: const TextStyle(
-            fontFamily: 'Inter',
+          (isChineseUi(context) ? '学期待办管理' : _isKorean ? '학기 To-do 관리' : 'Semester To-do admin'),
+          style: TextStyle(
+            fontFamily: uiFontFamily(context, 'Inter'),
             fontFamilyFallback: const ['NotoSansKR'],
             fontSize: 18,
             fontWeight: FontWeight.w700,
@@ -75,9 +76,9 @@ class _SemesterTodoAdminScreenState extends State<SemesterTodoAdminScreen> {
                   final semesters = snapshot.data ?? const <Semester>[];
                   if (semesters.isEmpty) {
                     return Center(
-                      child: Text(_isKorean
+                      child: Text((isChineseUi(context) ? '创建第一个学期。' : _isKorean
                           ? '학기를 생성해 주세요.'
-                          : 'Create your first semester.'),
+                          : 'Create your first semester.')),
                     );
                   }
                   return ListView.separated(
@@ -91,8 +92,8 @@ class _SemesterTodoAdminScreenState extends State<SemesterTodoAdminScreen> {
                         contentPadding: const EdgeInsets.symmetric(vertical: 8),
                         title: Text(
                           semester.title.resolve(_isKorean ? 'ko' : 'en'),
-                          style: const TextStyle(
-                            fontFamily: 'Inter',
+                          style: TextStyle(
+                            fontFamily: uiFontFamily(context, 'Inter'),
                             fontFamilyFallback: const ['NotoSansKR'],
                             fontSize: 17,
                             fontWeight: FontWeight.w700,
@@ -119,10 +120,10 @@ class _SemesterTodoAdminScreenState extends State<SemesterTodoAdminScreen> {
                           itemBuilder: (_) => [
                             PopupMenuItem(
                                 value: 'edit',
-                                child: Text(_isKorean ? '수정' : 'Edit')),
+                                child: Text((isChineseUi(context) ? '编辑' : _isKorean ? '수정' : 'Edit'))),
                             PopupMenuItem(
                                 value: 'clone',
-                                child: Text(_isKorean ? '복제' : 'Clone')),
+                                child: Text((isChineseUi(context) ? '复制' : _isKorean ? '복제' : 'Clone'))),
                           ],
                         ),
                       );

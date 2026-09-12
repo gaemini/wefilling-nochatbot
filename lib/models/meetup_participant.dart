@@ -94,6 +94,13 @@ class MeetupParticipant {
 
   // 상태 텍스트 반환 (로케일 대응)
   String getStatusTextLocalized(String languageCode) {
+    if (languageCode == 'zh') {
+      return switch (status) {
+        'approved' => '已通过',
+        'rejected' => '已拒绝',
+        _ => '待审核',
+      };
+    }
     if (languageCode == 'en') {
       switch (status) {
         case 'approved':

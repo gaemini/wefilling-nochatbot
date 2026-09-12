@@ -4,6 +4,7 @@ import 'package:flutter/services.dart';
 
 import '../constants/app_constants.dart';
 import '../utils/responsive_helper.dart';
+import '../l10n/ui_locale.dart';
 
 class SnackChatPollScheduleScreen extends StatefulWidget {
   const SnackChatPollScheduleScreen({
@@ -111,14 +112,14 @@ class _SnackChatPollScheduleScreenState
                   child: Column(
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
-                      _sectionTitle(_isKo ? '날짜' : 'Date'),
+                      _sectionTitle((isChineseUi(context) ? '日期' : _isKo ? '날짜' : 'Date')),
                       const SizedBox(height: 6),
                       Text(
                         _selectedDateLabel(),
                         maxLines: 2,
                         overflow: TextOverflow.ellipsis,
                         style: TextStyle(
-                          fontFamily: 'Inter',
+                          fontFamily: uiFontFamily(context, 'Inter'),
                           fontFamilyFallback: const ['NotoSansKR'],
                           fontSize: context.rf(16).clamp(15, 17).toDouble(),
                           height: 1.35,
@@ -137,17 +138,17 @@ class _SnackChatPollScheduleScreenState
                       SizedBox(
                         height: context.rs(20).clamp(16, 24).toDouble(),
                       ),
-                      _sectionTitle(_isKo ? '시간 (24시간)' : 'Time (24-hour)'),
+                      _sectionTitle((isChineseUi(context) ? '时间（24小时制）' : _isKo ? '시간 (24시간)' : 'Time (24-hour)')),
                       const SizedBox(height: 8),
                       Center(child: _buildTimeWheels()),
                       if (!_canComplete) ...[
                         const SizedBox(height: 12),
                         Text(
-                          _isKo
+                          (isChineseUi(context) ? '请选择晚于当前的时间。' : _isKo
                               ? '현재 시간 이후로 선택해 주세요.'
-                              : 'Choose a time later than now.',
-                          style: const TextStyle(
-                            fontFamily: 'Inter',
+                              : 'Choose a time later than now.'),
+                          style: TextStyle(
+                            fontFamily: uiFontFamily(context, 'Inter'),
                             fontFamilyFallback: const ['NotoSansKR'],
                             fontSize: 12.5,
                             fontWeight: FontWeight.w600,
@@ -192,12 +193,12 @@ class _SnackChatPollScheduleScreenState
             child: Padding(
               padding: const EdgeInsets.symmetric(horizontal: 96),
               child: Text(
-                _isKo ? '종료 시간' : 'End time',
+                (isChineseUi(context) ? '结束时间' : _isKo ? '종료 시간' : 'End time'),
                 maxLines: 1,
                 overflow: TextOverflow.ellipsis,
                 textAlign: TextAlign.center,
                 style: TextStyle(
-                  fontFamily: 'Inter',
+                  fontFamily: uiFontFamily(context, 'Inter'),
                   fontFamilyFallback: const ['NotoSansKR'],
                   fontSize: context.rf(18).clamp(16, 19).toDouble(),
                   fontWeight: FontWeight.w700,
@@ -214,7 +215,7 @@ class _SnackChatPollScheduleScreenState
             dimension: 48,
             child: IconButton(
               onPressed: _canComplete ? _complete : null,
-              tooltip: _isKo ? '완료' : 'Done',
+              tooltip: (isChineseUi(context) ? '完成' : _isKo ? '완료' : 'Done'),
               icon: const Icon(Icons.check_rounded, size: 22),
               color: const Color(0xFF111827),
               disabledColor: const Color(0xFFD1D5DB),
@@ -230,9 +231,9 @@ class _SnackChatPollScheduleScreenState
               minimumSize: const Size(44, 44),
             ),
             child: Text(
-              _isKo ? '완료' : 'Done',
-              style: const TextStyle(
-                fontFamily: 'Inter',
+              (isChineseUi(context) ? '完成' : _isKo ? '완료' : 'Done'),
+              style: TextStyle(
+                fontFamily: uiFontFamily(context, 'Inter'),
                 fontFamilyFallback: const ['NotoSansKR'],
                 fontSize: 14,
                 fontWeight: FontWeight.w700,
@@ -275,9 +276,9 @@ class _SnackChatPollScheduleScreenState
 
   Widget _buildTimeWheels() {
     return Semantics(
-      label: _isKo
+      label: (isChineseUi(context) ? '${_selectedHour}小时${_selectedMinute}分钟' : _isKo
           ? '$_selectedHour시 $_selectedMinute분'
-          : '$_selectedHour hours $_selectedMinute minutes',
+          : '$_selectedHour hours $_selectedMinute minutes'),
       child: SizedBox(
         height: 132,
         child: Row(
@@ -289,12 +290,12 @@ class _SnackChatPollScheduleScreenState
               valueLabel: (value) => value.toString().padLeft(2, '0'),
               onChanged: (value) => setState(() => _selectedHour = value),
             ),
-            const Padding(
+             Padding(
               padding: EdgeInsets.symmetric(horizontal: 8),
               child: Text(
                 ':',
                 style: TextStyle(
-                  fontFamily: 'Inter',
+                  fontFamily: uiFontFamily(context, 'Inter'),
                   fontFamilyFallback: const ['NotoSansKR'],
                   fontSize: 24,
                   fontWeight: FontWeight.w700,
@@ -318,7 +319,7 @@ class _SnackChatPollScheduleScreenState
     return Text(
       value,
       style: TextStyle(
-        fontFamily: 'Inter',
+        fontFamily: uiFontFamily(context, 'Inter'),
         fontFamilyFallback: const ['NotoSansKR'],
         fontSize: context.rf(15).clamp(14, 16).toDouble(),
         fontWeight: FontWeight.w800,
@@ -357,8 +358,8 @@ class _TimeWheel extends StatelessWidget {
         itemBuilder: (context, index) => Center(
           child: Text(
             valueLabel(index),
-            style: const TextStyle(
-              fontFamily: 'Inter',
+            style: TextStyle(
+              fontFamily: uiFontFamily(context, 'Inter'),
               fontFamilyFallback: const ['NotoSansKR'],
               fontSize: 21,
               fontWeight: FontWeight.w600,

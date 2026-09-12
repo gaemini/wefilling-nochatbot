@@ -361,6 +361,37 @@ class SnackChatNoMessagesTodayException implements Exception {
   const SnackChatNoMessagesTodayException();
 }
 
+class SnackChatTodaySearchResult {
+  const SnackChatTodaySearchResult({
+    required this.answer,
+    required this.found,
+    required this.messageCount,
+    this.sourceMessageIds = const <String>[],
+    this.representativeMessageId = '',
+    this.sourceSequences = const <int>[],
+  });
+
+  final String answer;
+  final bool found;
+  final int messageCount;
+  final List<String> sourceMessageIds;
+  final String representativeMessageId;
+  final List<int> sourceSequences;
+
+  factory SnackChatTodaySearchResult.fromMap(Map<String, dynamic> data) =>
+      SnackChatTodaySearchResult(
+        answer: (data['answer'] ?? '').toString().trim(),
+        found: data['found'] == true,
+        messageCount: data['messageCount'] is num
+            ? (data['messageCount'] as num).toInt().clamp(0, 10000)
+            : 0,
+        sourceMessageIds: _summaryMessageIds(data['sourceMessageIds']),
+        representativeMessageId:
+            (data['representativeMessageId'] ?? '').toString().trim(),
+        sourceSequences: _summarySequences(data['sourceSequences']),
+      );
+}
+
 class _SnackChatEntryCacheRecord {
   const _SnackChatEntryCacheRecord({
     required this.ownerUid,
@@ -566,6 +597,46 @@ class SnackChatService {
         'tomorrowStartUtc': window.nextStart.toUtc().toIso8601String(),
       },
     );
+  }
+
+  Future<SnackChatTodaySearchResult> searchTodayMessages({
+    required String snackChatId,
+    required int latestSequence,
+    required String targetLanguage,
+    required String question,
+    DateTime? requestedAt,
+  }) async {
+    final cleanQuestion = question.trim();
+    if (cleanQuestion.isEmpty) throw ArgumentError('Question is required.');
+    final window = buildSnackChatTodaySummaryWindow(
+      requestedAt ?? DateTime.now(),
+    );
+    final response = await _functions
+        .httpsCallable('summarizeSnackChatUnread')
+        .call(<String, dynamic>{
+      'snackChatId': snackChatId,
+      'summaryRangeType': 'today',
+      'summaryMode': 'question',
+      'directQuestion': cleanQuestion,
+      'targetLanguage': targetLanguage,
+      'latestSequence': latestSequence,
+      'localDate': window.localDate,
+      'timezoneOffsetMinutes': window.timezoneOffsetMinutes,
+      'timezoneName': window.timezoneName,
+      'todayStartUtc': window.start.toUtc().toIso8601String(),
+      'tomorrowStartUtc': window.nextStart.toUtc().toIso8601String(),
+    }).timeout(const Duration(seconds: 65));
+    final data = response.data is Map
+        ? Map<String, dynamic>.from(response.data as Map)
+        : const <String, dynamic>{};
+    if (data['status'] == 'no_messages_today') {
+      throw const SnackChatNoMessagesTodayException();
+    }
+    final result = SnackChatTodaySearchResult.fromMap(data);
+    if (data['success'] != true || result.answer.isEmpty) {
+      throw StateError('The Snack Chat search response was empty.');
+    }
+    return result;
   }
 
   Future<SnackChatUnreadSummaryResult> _summarizeRange({

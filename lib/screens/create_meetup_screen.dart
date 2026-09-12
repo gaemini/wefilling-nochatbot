@@ -20,6 +20,7 @@ import 'meetup_favorites_screen.dart';
 import '../ui/snackbar/app_snackbar.dart';
 import '../ui/sheets/participant_count_sheet.dart';
 import '../utils/responsive_helper.dart';
+import '../l10n/ui_locale.dart';
 
 // 모임 생성화면
 // 모임 정보 입력 및 저장
@@ -45,50 +46,50 @@ class CreateMeetupScreen extends StatefulWidget {
 class _CreateMeetupScreenState extends State<CreateMeetupScreen> {
   // ---- Typography (Inter + Noto Sans KR fallback) ----
   // 화면 전반 타이포 계층을 통일해서 “기본 폰트 섞임” 느낌을 제거
-  static const TextStyle _appBarTitleStyle = TextStyle(
-    fontFamily: 'Inter',
+  TextStyle get _appBarTitleStyle => TextStyle(
+    fontFamily: uiFontFamily(context, 'Inter'),
     fontFamilyFallback: const ['NotoSansKR'],
     fontSize: 20,
     fontWeight: FontWeight.w700,
-    height: 1.2,
+    height: isChineseUi(context) ? 1.3 : 1.2,
     letterSpacing: -0.2,
     color: Color(0xFF111827),
   );
 
-  static const TextStyle _sectionTitleStyle = TextStyle(
-    fontFamily: 'Inter',
+  TextStyle get _sectionTitleStyle => TextStyle(
+    fontFamily: uiFontFamily(context, 'Inter'),
     fontFamilyFallback: const ['NotoSansKR'],
     fontSize: 16,
     fontWeight: FontWeight.w700,
-    height: 1.25,
+    height: isChineseUi(context) ? 1.3 : 1.25,
     letterSpacing: -0.1,
     color: Color(0xFF111827),
   );
 
-  static const TextStyle _helperStyle = TextStyle(
-    fontFamily: 'Inter',
+  TextStyle get _helperStyle => TextStyle(
+    fontFamily: uiFontFamily(context, 'Inter'),
     fontFamilyFallback: const ['NotoSansKR'],
     fontSize: 12,
     fontWeight: FontWeight.w500,
-    height: 1.25,
+    height: isChineseUi(context) ? 1.3 : 1.25,
     color: Color(0xFF6B7280),
   );
 
-  static const TextStyle _inputTextStyle = TextStyle(
-    fontFamily: 'Inter',
+  TextStyle get _inputTextStyle => TextStyle(
+    fontFamily: uiFontFamily(context, 'Inter'),
     fontFamilyFallback: const ['NotoSansKR'],
     fontSize: 14,
     fontWeight: FontWeight.w500,
-    height: 1.2,
+    height: isChineseUi(context) ? 1.3 : 1.2,
     color: Color(0xFF111827),
   );
 
-  static const TextStyle _hintTextStyle = TextStyle(
-    fontFamily: 'Inter',
+  TextStyle get _hintTextStyle => TextStyle(
+    fontFamily: uiFontFamily(context, 'Inter'),
     fontFamilyFallback: const ['NotoSansKR'],
     fontSize: 14,
     fontWeight: FontWeight.w400,
-    height: 1.2,
+    height: isChineseUi(context) ? 1.3 : 1.2,
     color: Color(0xFF9CA3AF),
   );
 
@@ -208,12 +209,12 @@ class _CreateMeetupScreenState extends State<CreateMeetupScreen> {
                             maxLines: 1,
                             overflow: TextOverflow.ellipsis,
                             style: TextStyle(
-                              fontFamily: 'Inter',
+                              fontFamily: uiFontFamily(context, 'Inter'),
                               fontFamilyFallback: const ['NotoSansKR'],
                               fontSize:
                                   sheetContext.rf(20).clamp(18, 22).toDouble(),
                               fontWeight: FontWeight.w700,
-                              height: 1.2,
+                              height: isChineseUi(context) ? 1.3 : 1.2,
                               color: const Color(0xFF111827),
                             ),
                           ),
@@ -277,10 +278,10 @@ class _CreateMeetupScreenState extends State<CreateMeetupScreen> {
                           SizedBox(
                             height: pickerHeight,
                             child: CupertinoTheme(
-                              data: const CupertinoThemeData(
+                              data:  CupertinoThemeData(
                                 textTheme: CupertinoTextThemeData(
                                   dateTimePickerTextStyle: TextStyle(
-                                    fontFamily: 'Inter',
+                                    fontFamily: uiFontFamily(context, 'Inter'),
                                     fontFamilyFallback: ['NotoSansKR'],
                                     fontSize: 18,
                                     fontWeight: FontWeight.w600,
@@ -351,8 +352,8 @@ class _CreateMeetupScreenState extends State<CreateMeetupScreen> {
   String _publicDurationLabel(BuildContext context, [int? hours]) {
     final value = hours ?? _publicDurationHours;
     final isKo = Localizations.localeOf(context).languageCode == 'ko';
-    if (value == null) return isKo ? '시간 제한 없음' : 'No time limit';
-    return isKo ? '$value시간' : '$value ${value == 1 ? 'hour' : 'hours'}';
+    if (value == null) return (isChineseUi(context) ? '不限时' : isKo ? '시간 제한 없음' : 'No time limit');
+    return (isChineseUi(context) ? '${value} ${value == 1 ? 'hour' : 'hours'}' : isKo ? '$value시간' : '$value ${value == 1 ? 'hour' : 'hours'}');
   }
 
   Future<void> _showPublicDurationSheet() async {
@@ -384,9 +385,9 @@ class _CreateMeetupScreenState extends State<CreateMeetupScreen> {
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
                     Text(
-                      isKo ? '밋업 공개 시간' : 'Meetup public time',
-                      style: const TextStyle(
-                        fontFamily: 'Inter',
+                      (isChineseUi(context) ? '聚会公开时长' : isKo ? '밋업 공개 시간' : 'Meetup public time'),
+                      style: TextStyle(
+                        fontFamily: uiFontFamily(context, 'Inter'),
                         fontFamilyFallback: const ['NotoSansKR'],
                         fontSize: 20,
                         fontWeight: FontWeight.w800,
@@ -395,23 +396,23 @@ class _CreateMeetupScreenState extends State<CreateMeetupScreen> {
                     ),
                     const SizedBox(height: 7),
                     Text(
-                      isKo
+                      (isChineseUi(context) ? '所选时间结束后，未确认的聚会将消失。' : isKo
                           ? '선택한 시간이 지나면 미확정 밋업은 목록에서 사라져요.'
-                          : 'Unconfirmed meetups disappear when the selected time ends.',
+                          : 'Unconfirmed meetups disappear when the selected time ends.'),
                       style: _helperStyle.copyWith(height: 1.45),
                     ),
                     const SizedBox(height: 16),
                     _PublicDurationOption(
-                      label: isKo ? '시간 제한 없음' : 'No time limit',
+                      label: (isChineseUi(context) ? '不限时' : isKo ? '시간 제한 없음' : 'No time limit'),
                       selected: _publicDurationHours == null,
                       icon: Icons.all_inclusive_rounded,
                       onTap: () => Navigator.pop(sheetContext, 0),
                     ),
                     const SizedBox(height: 14),
                     Text(
-                      isKo ? '공개 시간' : 'Public duration',
-                      style: const TextStyle(
-                        fontFamily: 'Inter',
+                      (isChineseUi(context) ? '公开时长' : isKo ? '공개 시간' : 'Public duration'),
+                      style: TextStyle(
+                        fontFamily: uiFontFamily(context, 'Inter'),
                         fontFamilyFallback: const ['NotoSansKR'],
                         fontSize: 13,
                         fontWeight: FontWeight.w700,
@@ -432,7 +433,7 @@ class _CreateMeetupScreenState extends State<CreateMeetupScreen> {
                       itemBuilder: (context, index) {
                         final hours = index + 1;
                         return _PublicDurationOption(
-                          label: isKo ? '$hours시간' : '${hours}H',
+                          label: (isChineseUi(context) ? '${hours}小时' : isKo ? '$hours시간' : '${hours}H'),
                           selected: _publicDurationHours == hours,
                           compact: true,
                           onTap: () => Navigator.pop(sheetContext, hours),
@@ -521,7 +522,7 @@ class _CreateMeetupScreenState extends State<CreateMeetupScreen> {
                   Text(
                     l10n.exitMeetupCreation,
                     style: TextStyle(
-                      fontFamily: 'Inter',
+                      fontFamily: uiFontFamily(context, 'Inter'),
                       fontFamilyFallback: const ['NotoSansKR'],
                       fontSize: context.rf(17).clamp(16, 18).toDouble(),
                       fontWeight: FontWeight.w700,
@@ -533,7 +534,7 @@ class _CreateMeetupScreenState extends State<CreateMeetupScreen> {
                   Text(
                     l10n.exitMeetupCreationMessage,
                     style: TextStyle(
-                      fontFamily: 'Inter',
+                      fontFamily: uiFontFamily(context, 'Inter'),
                       fontFamilyFallback: const ['NotoSansKR'],
                       fontSize: context.rf(13.5).clamp(13, 14.5).toDouble(),
                       fontWeight: FontWeight.w400,
@@ -563,8 +564,8 @@ class _CreateMeetupScreenState extends State<CreateMeetupScreen> {
                           ),
                           child: Text(
                             l10n.stay,
-                            style: const TextStyle(
-                              fontFamily: 'Inter',
+                            style: TextStyle(
+                              fontFamily: uiFontFamily(context, 'Inter'),
                               fontFamilyFallback: const ['NotoSansKR'],
                               fontSize: 14,
                               fontWeight: FontWeight.w600,
@@ -585,8 +586,8 @@ class _CreateMeetupScreenState extends State<CreateMeetupScreen> {
                           ),
                           child: Text(
                             l10n.exit,
-                            style: const TextStyle(
-                              fontFamily: 'Inter',
+                            style: TextStyle(
+                              fontFamily: uiFontFamily(context, 'Inter'),
                               fontFamilyFallback: const ['NotoSansKR'],
                               fontSize: 14,
                               fontWeight: FontWeight.w700,
@@ -797,7 +798,7 @@ class _CreateMeetupScreenState extends State<CreateMeetupScreen> {
     return Text(
       '*',
       style: TextStyle(
-        fontFamily: 'Inter',
+        fontFamily: uiFontFamily(context, 'Inter'),
         fontFamilyFallback: const ['NotoSansKR'],
         fontSize: context.rf(14).clamp(13, 15).toDouble(),
         fontWeight: FontWeight.w700,
@@ -856,9 +857,9 @@ class _CreateMeetupScreenState extends State<CreateMeetupScreen> {
             SizedBox.square(
               dimension: 48,
               child: IconButton(
-                tooltip: Localizations.localeOf(context).languageCode == 'ko'
+                tooltip: (isChineseUi(context) ? '收藏' : Localizations.localeOf(context).languageCode == 'ko'
                     ? '즐겨찾기'
-                    : 'Favorites',
+                    : 'Favorites'),
                 onPressed: _openMeetupFavorites,
                 icon: Icon(
                   Icons.star_border_rounded,
@@ -1051,7 +1052,7 @@ class _CreateMeetupScreenState extends State<CreateMeetupScreen> {
                                       AppLocalizations.of(context)!
                                           .optionalField,
                                       style: TextStyle(
-                                        fontFamily: 'Inter',
+                                        fontFamily: uiFontFamily(context, 'Inter'),
                                         fontFamilyFallback: const [
                                           'NotoSansKR'
                                         ],
@@ -1060,7 +1061,7 @@ class _CreateMeetupScreenState extends State<CreateMeetupScreen> {
                                             .clamp(11, 13)
                                             .toDouble(),
                                         fontWeight: FontWeight.w500,
-                                        height: 1.2,
+                                        height: isChineseUi(context) ? 1.3 : 1.2,
                                         color: Color(0xFF9CA3AF),
                                       ),
                                     ),
@@ -1127,7 +1128,7 @@ class _CreateMeetupScreenState extends State<CreateMeetupScreen> {
                                         maxLines: 1,
                                         overflow: TextOverflow.ellipsis,
                                         style: TextStyle(
-                                          fontFamily: 'Inter',
+                                          fontFamily: uiFontFamily(context, 'Inter'),
                                           fontFamilyFallback: const [
                                             'NotoSansKR'
                                           ],
@@ -1251,8 +1252,8 @@ class _CreateMeetupScreenState extends State<CreateMeetupScreen> {
                                                         child: Text(
                                                           '$total/$_maxMeetupImages',
                                                           style:
-                                                              const TextStyle(
-                                                            fontFamily: 'Inter',
+                                                               TextStyle(
+                                                            fontFamily: uiFontFamily(context, 'Inter'),
                                                             fontFamilyFallback: const [
                                                               'NotoSansKR'
                                                             ],
@@ -1467,12 +1468,12 @@ class _CreateMeetupScreenState extends State<CreateMeetupScreen> {
                                             });
                                             AppSnackBar.show(
                                               context,
-                                              message: Localizations.localeOf(
+                                              message: (isChineseUi(context) ? '验证汉阳大学邮箱后，即可使用校内可见范围。' : Localizations.localeOf(
                                                               context)
                                                           .languageCode ==
                                                       'ko'
                                                   ? '한양메일 인증 후 한양대 공개 범위를 사용할 수 있어요.'
-                                                  : 'Verify your Hanyang email to use Hanyang-only visibility.',
+                                                  : 'Verify your Hanyang email to use Hanyang-only visibility.'),
                                               type: AppSnackBarType.warning,
                                             );
                                             return;
@@ -1666,7 +1667,7 @@ class _CreateMeetupScreenState extends State<CreateMeetupScreen> {
                   : Text(
                       label,
                       style: TextStyle(
-                        fontFamily: 'Inter',
+                        fontFamily: uiFontFamily(context, 'Inter'),
                         fontFamilyFallback: const ['NotoSansKR'],
                         fontSize: context.rf(15).clamp(14, 16).toDouble(),
                         fontWeight: FontWeight.w700,
@@ -1841,9 +1842,9 @@ class _CreateMeetupScreenState extends State<CreateMeetupScreen> {
       final isKo = Localizations.localeOf(context).languageCode == 'ko';
       AppSnackBar.show(
         context,
-        message: isKo
+        message: (isChineseUi(context) ? '最多可添加${_maxMeetupImages}张图片' : isKo
             ? '이미지는 최대 $_maxMeetupImages장까지 첨부할 수 있어요'
-            : 'You can attach up to $_maxMeetupImages images',
+            : 'You can attach up to $_maxMeetupImages images'),
         type: AppSnackBarType.warning,
       );
       return;
@@ -1859,9 +1860,9 @@ class _CreateMeetupScreenState extends State<CreateMeetupScreen> {
       final isKo = Localizations.localeOf(context).languageCode == 'ko';
       AppSnackBar.show(
         context,
-        message: isKo
+        message: (isChineseUi(context) ? '仅添加了前${_maxMeetupImages}张图片' : isKo
             ? '이미지는 최대 $_maxMeetupImages장까지만 추가했어요'
-            : 'Only the first $_maxMeetupImages images were added',
+            : 'Only the first $_maxMeetupImages images were added'),
         type: AppSnackBarType.info,
       );
     }
@@ -1948,20 +1949,20 @@ class _CreateMeetupScreenState extends State<CreateMeetupScreen> {
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
         Text(
-          isKo ? '공개 시간' : 'Public time',
+          (isChineseUi(context) ? '公开时长' : isKo ? '공개 시간' : 'Public time'),
           style: _responsiveSectionTitle(context),
         ),
         const SizedBox(height: 3),
         Text(
-          isKo
+          (isChineseUi(context) ? '未确认聚会的可见时长。' : isKo
               ? '미확정 밋업이 목록에 표시되는 시간이에요.'
-              : 'How long an unconfirmed meetup stays visible.',
+              : 'How long an unconfirmed meetup stays visible.'),
           style: _helperStyle,
         ),
         const SizedBox(height: 5),
         Semantics(
           button: true,
-          label: isKo ? '밋업 공개 시간 선택' : 'Select meetup public time',
+          label: (isChineseUi(context) ? '选择聚会公开时长' : isKo ? '밋업 공개 시간 선택' : 'Select meetup public time'),
           value: _publicDurationLabel(context),
           child: InkWell(
             onTap: _showPublicDurationSheet,
@@ -2014,6 +2015,7 @@ class _CreateMeetupScreenState extends State<CreateMeetupScreen> {
     String short(DateTime d) => '${d.month}/${d.day}';
     String monthTitle(DateTime d) {
       final local = d.toLocal();
+      if (lang == 'zh') return '${local.month}月';
       if (lang == 'ko') return '${local.month}월';
       const names = <int, String>{
         1: 'January',
@@ -2082,8 +2084,8 @@ class _CreateMeetupScreenState extends State<CreateMeetupScreen> {
                           child: Center(
                             child: Text(
                               monthTitle(_focusedDay),
-                              style: const TextStyle(
-                                fontFamily: 'Inter',
+                              style: TextStyle(
+                                fontFamily: uiFontFamily(context, 'Inter'),
                                 fontFamilyFallback: const ['NotoSansKR'],
                                 fontSize: 16,
                                 fontWeight: FontWeight.w900,
@@ -2115,7 +2117,7 @@ class _CreateMeetupScreenState extends State<CreateMeetupScreen> {
                           firstDay: DateTime.utc(2020, 1, 1),
                           lastDay: DateTime.utc(2035, 12, 31),
                           focusedDay: _focusedDay,
-                          locale: lang == 'ko' ? 'ko_KR' : 'en_US',
+                          locale: lang == 'zh' ? 'zh_CN' : lang == 'ko' ? 'ko_KR' : 'en_US',
                           calendarFormat: CalendarFormat.month,
                           startingDayOfWeek: StartingDayOfWeek.sunday,
                           availableGestures: AvailableGestures.horizontalSwipe,
@@ -2170,7 +2172,7 @@ class _CreateMeetupScreenState extends State<CreateMeetupScreen> {
                                 child: Text(
                                   label,
                                   style: TextStyle(
-                                    fontFamily: 'Inter',
+                                    fontFamily: uiFontFamily(context, 'Inter'),
                                     fontFamilyFallback: const ['NotoSansKR'],
                                     fontSize:
                                         context.rf(12).clamp(11, 13).toDouble(),
@@ -2402,7 +2404,7 @@ class _PublicDurationOption extends StatelessWidget {
                   overflow: TextOverflow.ellipsis,
                   textAlign: TextAlign.center,
                   style: TextStyle(
-                    fontFamily: 'Inter',
+                    fontFamily: uiFontFamily(context, 'Inter'),
                     fontFamilyFallback: const ['NotoSansKR'],
                     fontSize: context.rf(13).clamp(12, 14).toDouble(),
                     fontWeight: FontWeight.w700,
@@ -2473,14 +2475,14 @@ class _VisibilitySegmentedControl extends StatelessWidget {
               ),
               child: DefaultTextStyle(
                 style: TextStyle(
-                  fontFamily: 'Inter',
+                  fontFamily: uiFontFamily(context, 'Inter'),
                   fontFamilyFallback: const ['NotoSansKR'],
                   fontSize: context.rf(14).clamp(12, 15).toDouble(),
                   fontWeight: isSelected ? FontWeight.w800 : FontWeight.w600,
                   color: isSelected
                       ? const Color(0xFF111827)
                       : const Color(0xFF667085),
-                  height: 1.2,
+                  height: isChineseUi(context) ? 1.3 : 1.2,
                 ),
                 child: MediaQuery.withClampedTextScaling(
                   maxScaleFactor: 1.15,
@@ -2530,9 +2532,9 @@ class _VisibilitySegmentedControl extends StatelessWidget {
               isSelected: isHanyang,
               onTap: onSelectHanyang,
               child: Text(
-                Localizations.localeOf(context).languageCode == 'ko'
+                (isChineseUi(context) ? '汉阳' : Localizations.localeOf(context).languageCode == 'ko'
                     ? '한양대'
-                    : 'Hanyang',
+                    : 'Hanyang'),
                 maxLines: 1,
                 overflow: TextOverflow.ellipsis,
               ),
@@ -2605,7 +2607,7 @@ class _CreateMeetupCalendarDayCell extends StatelessWidget {
                 child: Text(
                   '${day.day}',
                   style: TextStyle(
-                    fontFamily: 'Inter',
+                    fontFamily: uiFontFamily(context, 'Inter'),
                     fontFamilyFallback: const ['NotoSansKR'],
                     fontSize: context.rf(14).clamp(12.5, 15).toDouble(),
                     fontWeight: fontWeight,

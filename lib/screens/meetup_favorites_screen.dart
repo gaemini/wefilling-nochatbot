@@ -7,6 +7,7 @@ import '../services/meetup_favorites_service.dart';
 import '../ui/snackbar/app_snackbar.dart';
 import '../utils/responsive_helper.dart';
 import 'meetup_favorite_editor_screen.dart';
+import '../l10n/ui_locale.dart';
 
 const TextStyle _kDialogTitleStyle = TextStyle(
   fontFamily: 'Inter',
@@ -109,9 +110,9 @@ class _MeetupFavoritesScreenState extends State<MeetupFavoritesScreen> {
     if (template == null && _templates.length >= _maxTemplates) {
       AppSnackBar.show(
         context,
-        message: isKo
+        message: (isChineseUi(context) ? '最多可保存${_maxTemplates}个收藏模板。' : isKo
             ? '즐겨찾기는 최대 $_maxTemplates개까지 저장할 수 있어요.'
-            : 'You can save up to $_maxTemplates favorites.',
+            : 'You can save up to $_maxTemplates favorites.'),
         type: AppSnackBarType.warning,
       );
       return;
@@ -133,7 +134,7 @@ class _MeetupFavoritesScreenState extends State<MeetupFavoritesScreen> {
     setState(() => _templates = list);
     AppSnackBar.show(
       context,
-      message: isKo ? '즐겨찾기에 저장했어요.' : 'Saved to favorites.',
+      message: (isChineseUi(context) ? '已加入收藏。' : isKo ? '즐겨찾기에 저장했어요.' : 'Saved to favorites.'),
       type: AppSnackBarType.success,
     );
   }
@@ -166,14 +167,14 @@ class _MeetupFavoritesScreenState extends State<MeetupFavoritesScreen> {
               ),
             ),
             const SizedBox(width: 12),
-            Text(isKo ? '삭제할까요?' : 'Delete?', style: _kDialogTitleStyle),
+            Text((isChineseUi(context) ? '确定删除？' : isKo ? '삭제할까요?' : 'Delete?'), style: uiTextStyle(context, _kDialogTitleStyle)),
           ],
         ),
         content: Text(
-          isKo
+          (isChineseUi(context) ? '此模板将被永久删除。' : isKo
               ? '이 템플릿을 삭제하면 되돌릴 수 없어요.'
-              : 'This template will be permanently deleted.',
-          style: _kDialogBodyStyle,
+              : 'This template will be permanently deleted.'),
+          style: uiTextStyle(context, _kDialogBodyStyle),
         ),
         actions: [
           Row(
@@ -191,8 +192,8 @@ class _MeetupFavoritesScreenState extends State<MeetupFavoritesScreen> {
                   ),
                   child: Text(
                     l10n.cancel,
-                    style: _kDialogButtonStyle.copyWith(
-                        color: const Color(0xFF6B7280)),
+                    style: uiTextStyle(context, _kDialogButtonStyle.copyWith(
+                        color: const Color(0xFF6B7280))),
                   ),
                 ),
               ),
@@ -209,7 +210,7 @@ class _MeetupFavoritesScreenState extends State<MeetupFavoritesScreen> {
                       borderRadius: BorderRadius.circular(12),
                     ),
                   ),
-                  child: Text(l10n.delete, style: _kDialogButtonStyle),
+                  child: Text(l10n.delete, style: uiTextStyle(context, _kDialogButtonStyle)),
                 ),
               ),
             ],
@@ -250,9 +251,9 @@ class _MeetupFavoritesScreenState extends State<MeetupFavoritesScreen> {
           onPressed: () => Navigator.of(context).pop(),
         ),
         title: Text(
-          isKo ? '즐겨찾기' : 'Favorites',
+          (isChineseUi(context) ? '收藏' : isKo ? '즐겨찾기' : 'Favorites'),
           style: TextStyle(
-            fontFamily: 'Inter',
+            fontFamily: uiFontFamily(context, 'Inter'),
             fontFamilyFallback: const ['NotoSansKR'],
             fontSize: context.rf(18).clamp(16, 19).toDouble(),
             fontWeight: FontWeight.w700,
@@ -296,9 +297,9 @@ class _MeetupFavoritesScreenState extends State<MeetupFavoritesScreen> {
                               mainAxisAlignment: MainAxisAlignment.center,
                               children: [
                                 Text(
-                                  isKo ? '새 즐겨찾기 만들기' : 'Create a favorite',
-                                  style: const TextStyle(
-                                    fontFamily: 'Inter',
+                                  (isChineseUi(context) ? '创建收藏模板' : isKo ? '새 즐겨찾기 만들기' : 'Create a favorite'),
+                                  style: TextStyle(
+                                    fontFamily: uiFontFamily(context, 'Inter'),
                                     fontFamilyFallback: const ['NotoSansKR'],
                                     fontSize: 15,
                                     fontWeight: FontWeight.w700,
@@ -307,11 +308,11 @@ class _MeetupFavoritesScreenState extends State<MeetupFavoritesScreen> {
                                 ),
                                 const SizedBox(height: 3),
                                 Text(
-                                  isKo
+                                  (isChineseUi(context) ? '保存不含日期的聚会信息。' : isKo
                                       ? '날짜를 제외한 밋업 정보를 미리 저장합니다.'
-                                      : 'Save meetup details without a date.',
-                                  style: const TextStyle(
-                                    fontFamily: 'Inter',
+                                      : 'Save meetup details without a date.'),
+                                  style: TextStyle(
+                                    fontFamily: uiFontFamily(context, 'Inter'),
                                     fontFamilyFallback: const ['NotoSansKR'],
                                     fontSize: 12,
                                     fontWeight: FontWeight.w400,
@@ -332,11 +333,11 @@ class _MeetupFavoritesScreenState extends State<MeetupFavoritesScreen> {
                   ),
                   const SizedBox(height: 18),
                   Text(
-                    isKo
+                    (isChineseUi(context) ? '点击已保存的模板，将其用于聚会。' : isKo
                         ? '저장한 항목을 눌러 밋업에 불러오세요.'
-                        : 'Tap a saved item to load it into your meetup.',
-                    style: const TextStyle(
-                      fontFamily: 'Inter',
+                        : 'Tap a saved item to load it into your meetup.'),
+                    style: TextStyle(
+                      fontFamily: uiFontFamily(context, 'Inter'),
                       fontFamilyFallback: const ['NotoSansKR'],
                       fontSize: 13,
                       fontWeight: FontWeight.w500,
@@ -356,9 +357,9 @@ class _MeetupFavoritesScreenState extends State<MeetupFavoritesScreen> {
                           ),
                           const SizedBox(height: 10),
                           Text(
-                            isKo ? '저장된 즐겨찾기가 없어요.' : 'No saved favorites yet.',
-                            style: const TextStyle(
-                              fontFamily: 'Inter',
+                            (isChineseUi(context) ? '暂无收藏模板。' : isKo ? '저장된 즐겨찾기가 없어요.' : 'No saved favorites yet.'),
+                            style: TextStyle(
+                              fontFamily: uiFontFamily(context, 'Inter'),
                               fontFamilyFallback: const ['NotoSansKR'],
                               fontSize: 14,
                               fontWeight: FontWeight.w500,
@@ -411,7 +412,7 @@ class _TemplateCard extends StatelessWidget {
         ? template.title
         : (template.name.trim().isNotEmpty
             ? template.name
-            : (isKo ? '(제목 없음)' : '(No title)'));
+            : ((isChineseUi(context) ? '（无标题）' : isKo ? '(제목 없음)' : '(No title)')));
 
     final subtitleParts = <String>[
       if (template.location.trim().isNotEmpty) template.location.trim(),
@@ -445,12 +446,12 @@ class _TemplateCard extends StatelessWidget {
                   children: [
                     Text(
                       title,
-                      style: const TextStyle(
-                        fontFamily: 'Inter',
+                      style: TextStyle(
+                        fontFamily: uiFontFamily(context, 'Inter'),
                         fontFamilyFallback: const ['NotoSansKR'],
                         fontSize: 15,
                         fontWeight: FontWeight.w800,
-                        height: 1.2,
+                        height: isChineseUi(context) ? 1.3 : 1.2,
                         color: Color(0xFF111827),
                       ),
                       maxLines: 1,
@@ -459,12 +460,12 @@ class _TemplateCard extends StatelessWidget {
                     const SizedBox(height: 6),
                     Text(
                       subtitleParts.join(' · '),
-                      style: const TextStyle(
-                        fontFamily: 'Inter',
+                      style: TextStyle(
+                        fontFamily: uiFontFamily(context, 'Inter'),
                         fontFamilyFallback: const ['NotoSansKR'],
                         fontSize: 13,
                         fontWeight: FontWeight.w600,
-                        height: 1.2,
+                        height: isChineseUi(context) ? 1.3 : 1.2,
                         color: Color(0xFF6B7280),
                       ),
                       maxLines: 2,
@@ -474,7 +475,7 @@ class _TemplateCard extends StatelessWidget {
                 ),
               ),
               PopupMenuButton<String>(
-                tooltip: isKo ? '더보기' : 'More',
+                tooltip: (isChineseUi(context) ? '更多' : isKo ? '더보기' : 'More'),
                 icon: const Icon(
                   Icons.more_horiz_rounded,
                   color: Color(0xFF98A2B3),
@@ -486,11 +487,11 @@ class _TemplateCard extends StatelessWidget {
                 itemBuilder: (_) => [
                   PopupMenuItem<String>(
                     value: 'edit',
-                    child: Text(isKo ? '수정' : 'Edit'),
+                    child: Text((isChineseUi(context) ? '编辑' : isKo ? '수정' : 'Edit')),
                   ),
                   PopupMenuItem<String>(
                     value: 'delete',
-                    child: Text(isKo ? '삭제' : 'Delete'),
+                    child: Text((isChineseUi(context) ? '删除' : isKo ? '삭제' : 'Delete')),
                   ),
                 ],
               ),
@@ -598,30 +599,30 @@ class _TemplateNameDialogState extends State<_TemplateNameDialog> {
             ),
           ),
           const SizedBox(width: 12),
-          Text(isKo ? '템플릿 저장' : 'Save template', style: _kDialogTitleStyle),
+          Text((isChineseUi(context) ? '保存模板' : isKo ? '템플릿 저장' : 'Save template'), style: uiTextStyle(context, _kDialogTitleStyle)),
         ],
       ),
       content: Column(
         mainAxisSize: MainAxisSize.min,
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          Text(isKo ? '템플릿 이름' : 'Template name', style: _kDialogBodyStyle),
+          Text((isChineseUi(context) ? '模板名称' : isKo ? '템플릿 이름' : 'Template name'), style: uiTextStyle(context, _kDialogBodyStyle)),
           const SizedBox(height: 10),
           TextField(
             controller: _controller,
             autofocus: true,
             textInputAction: TextInputAction.done,
-            style: const TextStyle(
-              fontFamily: 'Inter',
+            style: TextStyle(
+              fontFamily: uiFontFamily(context, 'Inter'),
               fontFamilyFallback: const ['NotoSansKR'],
               fontSize: 14,
               fontWeight: FontWeight.w600,
               color: Color(0xFF111827),
             ),
             decoration: InputDecoration(
-              hintText: isKo ? '예) 오버피팅 모임' : 'e.g. Outfitting meetup',
-              hintStyle: const TextStyle(
-                fontFamily: 'Inter',
+              hintText: (isChineseUi(context) ? '例如：穿搭聚会' : isKo ? '예) 오버피팅 모임' : 'e.g. Outfitting meetup'),
+              hintStyle: TextStyle(
+                fontFamily: uiFontFamily(context, 'Inter'),
                 fontFamilyFallback: const ['NotoSansKR'],
                 fontSize: 14,
                 fontWeight: FontWeight.w400,
@@ -673,8 +674,8 @@ class _TemplateNameDialogState extends State<_TemplateNameDialog> {
                     ),
                     child: Text(
                       l10n.cancel,
-                      style: _kDialogButtonStyle.copyWith(
-                          color: const Color(0xFF6B7280)),
+                      style: uiTextStyle(context, _kDialogButtonStyle.copyWith(
+                          color: const Color(0xFF6B7280))),
                     ),
                   ),
                 ),
@@ -694,7 +695,7 @@ class _TemplateNameDialogState extends State<_TemplateNameDialog> {
                       ),
                       disabledBackgroundColor: const Color(0xFFE5E7EB),
                     ),
-                    child: Text(l10n.save, style: _kDialogButtonStyle),
+                    child: Text(l10n.save, style: uiTextStyle(context, _kDialogButtonStyle)),
                   ),
                 ),
               ],

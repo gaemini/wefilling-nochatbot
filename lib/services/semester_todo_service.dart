@@ -251,6 +251,9 @@ class SemesterTodoService {
     bool completed = false,
     bool archived = false,
     DateTime? completedAt,
+    int? timeMinutes,
+    PersonalTodoCategory category = PersonalTodoCategory.personal,
+    PersonalTodoPriority priority = PersonalTodoPriority.normal,
   }) async {
     final cleanTitle = title.trim();
     if (cleanTitle.isEmpty) throw ArgumentError('Task title is required.');
@@ -268,6 +271,9 @@ class SemesterTodoService {
       dueAt: dueAt,
       reminderStartAt: reminderStartAt,
       completedAt: completed ? (completedAt ?? DateTime.now()) : null,
+      timeMinutes: timeMinutes,
+      category: category,
+      priority: priority,
     );
     final settings = await getPersonalTodoNotificationSettings();
     if (settings.enabled && reminderEnabled) {

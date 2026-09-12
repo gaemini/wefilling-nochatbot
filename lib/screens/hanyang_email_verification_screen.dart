@@ -12,6 +12,7 @@ import '../screens/signup_method_selection_screen.dart';
 import '../l10n/app_localizations.dart';
 import '../widgets/signup_flow_widgets.dart';
 import 'password_setup_screen.dart';
+import '../l10n/ui_locale.dart';
 
 enum SignupEmailPolicy {
   hanyangOnly,
@@ -82,9 +83,9 @@ class _HanyangEmailVerificationScreenState
     ScaffoldMessenger.of(context).showSnackBar(
       SnackBar(
         content: Text(
-          isKo
+          (isChineseUi(context) ? '你的汉阳邮箱已验证。' : isKo
               ? '이미 한양메일 인증이 완료된 계정이에요.'
-              : 'Your Hanyang email is already verified.',
+              : 'Your Hanyang email is already verified.'),
         ),
       ),
     );
@@ -181,9 +182,9 @@ class _HanyangEmailVerificationScreenState
     } on TimeoutException {
       if (mounted) {
         setState(() {
-          _errorMessage = Localizations.localeOf(context).languageCode == 'ko'
+          _errorMessage = (isChineseUi(context) ? '请检查网络后重试。' : Localizations.localeOf(context).languageCode == 'ko'
               ? '인터넷 연결을 확인한 뒤 다시 시도해 주세요.'
-              : 'Check your internet connection and try again.';
+              : 'Check your internet connection and try again.');
           _isLoading = false;
         });
       }
@@ -275,19 +276,19 @@ class _HanyangEmailVerificationScreenState
           if (!mounted) return;
           if (!completed) {
             setState(() {
-              _errorMessage = Localizations.localeOf(context).languageCode ==
+              _errorMessage = (isChineseUi(context) ? '汉阳邮箱验证失败，请重试。' : Localizations.localeOf(context).languageCode ==
                       'ko'
                   ? '한양메일 인증을 완료하지 못했어요. 잠시 후 다시 시도해주세요.'
-                  : 'Could not complete Hanyang email verification. Please try again.';
+                  : 'Could not complete Hanyang email verification. Please try again.');
             });
             return;
           }
           ScaffoldMessenger.of(context).showSnackBar(
             SnackBar(
               content: Text(
-                Localizations.localeOf(context).languageCode == 'ko'
+                (isChineseUi(context) ? '汉阳邮箱验证成功。' : Localizations.localeOf(context).languageCode == 'ko'
                     ? '한양메일 인증이 완료되었어요.'
-                    : 'Your Hanyang email is now verified.',
+                    : 'Your Hanyang email is now verified.'),
               ),
             ),
           );
@@ -336,9 +337,9 @@ class _HanyangEmailVerificationScreenState
     } on TimeoutException {
       if (mounted) {
         setState(() {
-          _errorMessage = Localizations.localeOf(context).languageCode == 'ko'
+          _errorMessage = (isChineseUi(context) ? '请检查网络，已保留验证码。' : Localizations.localeOf(context).languageCode == 'ko'
               ? '인터넷 연결을 확인해 주세요. 입력한 인증번호는 유지됩니다.'
-              : 'Check your internet connection. Your verification code was kept.';
+              : 'Check your internet connection. Your verification code was kept.');
         });
       }
     } catch (e) {
@@ -400,14 +401,14 @@ class _HanyangEmailVerificationScreenState
           ),
           title: Text(
             _isProfileVerification
-                ? (Localizations.localeOf(context).languageCode == 'ko'
+                ? ((isChineseUi(context) ? '验证汉阳邮箱' : Localizations.localeOf(context).languageCode == 'ko'
                     ? '한양메일 인증'
-                    : 'Verify Hanyang email')
+                    : 'Verify Hanyang email'))
                 : (_allowsAnyEmail
                     ? l10n.generalEmailVerificationTitle
                     : l10n.emailVerificationRequired),
-            style: const TextStyle(
-              fontFamily: 'Inter',
+            style: TextStyle(
+              fontFamily: uiFontFamily(context, 'Inter'),
               fontFamilyFallback: const ['NotoSansKR'],
               fontSize: 18,
               fontWeight: FontWeight.w700,
@@ -451,20 +452,20 @@ class _HanyangEmailVerificationScreenState
                                 ? Icons.mark_email_read_outlined
                                 : Icons.school_outlined,
                             title: _isProfileVerification
-                                ? (Localizations.localeOf(context)
+                                ? ((isChineseUi(context) ? '验证学校邮箱' : Localizations.localeOf(context)
                                             .languageCode ==
                                         'ko'
                                     ? '한양메일로 학교를 인증하세요'
-                                    : 'Verify your school email')
+                                    : 'Verify your school email'))
                                 : (_allowsAnyEmail
                                     ? l10n.generalEmailVerificationHeading
                                     : '${l10n.hanyangEmailHeadlineLine1}\n${l10n.hanyangEmailHeadlineLine2}'),
                             description: _isProfileVerification
-                                ? (Localizations.localeOf(context)
+                                ? ((isChineseUi(context) ? '输入4位验证码，为资料添加汉阳大学认证。' : Localizations.localeOf(context)
                                             .languageCode ==
                                         'ko'
                                     ? '4자리 인증번호를 확인하면 프로필에 한양대학교 인증 상태가 표시돼요.'
-                                    : 'Enter the 4-digit code to add Hanyang University verification to your profile.')
+                                    : 'Enter the 4-digit code to add Hanyang University verification to your profile.'))
                                 : (_allowsAnyEmail
                                     ? l10n.generalEmailVerificationDescription
                                     : l10n.hanyangEmailDescription),
@@ -485,14 +486,14 @@ class _HanyangEmailVerificationScreenState
                                 _sendVerificationCode();
                               }
                             },
-                            decoration: signupInputDecoration(
+                            decoration: signupInputDecoration(context: context,
                               hintText: _allowsAnyEmail
                                   ? 'name@example.com'
                                   : 'example@hanyang.ac.kr',
                               icon: Icons.mail_outline_rounded,
                             ),
-                            style: const TextStyle(
-                              fontFamily: 'Inter',
+                            style: TextStyle(
+                              fontFamily: uiFontFamily(context, 'Inter'),
                               fontFamilyFallback: const ['NotoSansKR'],
                               fontSize: 16,
                               fontWeight: FontWeight.w500,
@@ -537,8 +538,8 @@ class _HanyangEmailVerificationScreenState
                                 Expanded(
                                   child: Text(
                                     l10n.verificationCodeSent,
-                                    style: const TextStyle(
-                                      fontFamily: 'Inter',
+                                    style: TextStyle(
+                                      fontFamily: uiFontFamily(context, 'Inter'),
                                       fontFamilyFallback: const ['NotoSansKR'],
                                       fontSize: 14,
                                       fontWeight: FontWeight.w500,
@@ -561,13 +562,13 @@ class _HanyangEmailVerificationScreenState
                               onFieldSubmitted: (_) {
                                 if (!_isLoading) _verifyAndComplete();
                               },
-                              decoration: signupInputDecoration(
+                              decoration: signupInputDecoration(context: context,
                                 hintText: l10n.verificationCodePlaceholder,
                                 icon: Icons.lock_outline_rounded,
                                 counterText: '',
                               ),
-                              style: const TextStyle(
-                                fontFamily: 'Inter',
+                              style: TextStyle(
+                                fontFamily: uiFontFamily(context, 'Inter'),
                                 fontFamilyFallback: const ['NotoSansKR'],
                                 fontSize: 18,
                                 fontWeight: FontWeight.w700,
@@ -607,8 +608,8 @@ class _HanyangEmailVerificationScreenState
                               ),
                               child: Text(
                                 l10n.retryAction,
-                                style: const TextStyle(
-                                  fontFamily: 'Inter',
+                                style: TextStyle(
+                                  fontFamily: uiFontFamily(context, 'Inter'),
                                   fontFamilyFallback: const ['NotoSansKR'],
                                   fontSize: 14,
                                   fontWeight: FontWeight.w600,

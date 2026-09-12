@@ -7,6 +7,7 @@ import '../models/meetup.dart';
 import '../services/user_stats_service.dart';
 import '../ui/widgets/meetup_home_card.dart';
 import 'meetup_detail_screen.dart';
+import '../l10n/ui_locale.dart';
 
 /// 주최/참여 목록을 하나로 합치고 동일한 모임은 한 번만 표시한다.
 List<Meetup> mergeMyMeetups(
@@ -134,8 +135,8 @@ class _UserMeetupsViewState extends State<UserMeetupsView> {
             Text(
               l10n.noMeetupsYet,
               textAlign: TextAlign.center,
-              style: const TextStyle(
-                fontFamily: 'Inter',
+              style: TextStyle(
+                fontFamily: uiFontFamily(context, 'Inter'),
                 fontFamilyFallback: ['NotoSansKR'],
                 fontSize: 15,
                 fontWeight: FontWeight.w700,
@@ -165,8 +166,8 @@ class _UserMeetupsViewState extends State<UserMeetupsView> {
             Text(
               l10n.meetupLoadError,
               textAlign: TextAlign.center,
-              style: const TextStyle(
-                fontFamily: 'Inter',
+              style: TextStyle(
+                fontFamily: uiFontFamily(context, 'Inter'),
                 fontFamilyFallback: ['NotoSansKR'],
                 fontSize: 14,
                 fontWeight: FontWeight.w600,

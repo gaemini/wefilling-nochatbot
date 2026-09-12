@@ -17,8 +17,8 @@ void main() {
     test('uses KST day boundaries', () {
       expect(semester.currentWeek(DateTime.utc(2026, 8, 31, 14, 59)), 0);
       expect(semester.currentWeek(DateTime.utc(2026, 8, 31, 15)), 1);
-      expect(semester.currentWeek(DateTime.utc(2026, 9, 7, 14, 59)), 1);
-      expect(semester.currentWeek(DateTime.utc(2026, 9, 7, 15)), 2);
+      expect(semester.currentWeek(DateTime.utc(2026, 9, 6, 14, 59)), 1);
+      expect(semester.currentWeek(DateTime.utc(2026, 9, 6, 15)), 2);
     });
 
     test('returns an ended state after the final week', () {
@@ -72,5 +72,28 @@ void main() {
 
   test('personal tasks are excluded from the app-bar badge by policy', () {
     expect(SemesterTodoService.includePersonalTodosInBadge, isFalse);
+  });
+
+  test('personal task planning fields persist without breaking legacy items',
+      () {
+    final legacy = PersonalTodo.fromLocal(<String, dynamic>{
+      'id': 'legacy',
+      'semesterId': '2026_fall',
+      'title': '기존 할 일',
+      'weekNumber': 2,
+    });
+    expect(legacy.category, PersonalTodoCategory.personal);
+    expect(legacy.priority, PersonalTodoPriority.normal);
+    expect(legacy.timeMinutes, isNull);
+
+    final planned = legacy.copyWith(
+      timeMinutes: 18 * 60 + 30,
+      category: PersonalTodoCategory.project,
+      priority: PersonalTodoPriority.high,
+    );
+    final restored = PersonalTodo.fromLocal(planned.toLocalJson());
+    expect(restored.timeMinutes, 1110);
+    expect(restored.category, PersonalTodoCategory.project);
+    expect(restored.priority, PersonalTodoPriority.high);
   });
 }

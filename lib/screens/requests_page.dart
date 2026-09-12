@@ -15,6 +15,7 @@ import '../l10n/app_localizations.dart';
 import '../utils/responsive_helper.dart';
 import '../services/notification_service.dart';
 import '../widgets/relationship_action_button.dart';
+import '../l10n/ui_locale.dart';
 
 class RequestsPage extends StatefulWidget {
   const RequestsPage({super.key});
@@ -198,7 +199,7 @@ class _RequestsPageState extends State<RequestsPage>
         title: Text(
           AppLocalizations.of(context)!.requests,
           style: TextStyle(
-            fontFamily: 'Inter',
+            fontFamily: uiFontFamily(context, 'Inter'),
             fontFamilyFallback: const ['NotoSansKR'],
             fontSize: context.rf(18).clamp(17, 19).toDouble(),
             fontWeight: FontWeight.w700,
@@ -233,14 +234,14 @@ class _RequestsPageState extends State<RequestsPage>
                       indicatorWeight: 2.0,
                       dividerColor: const Color(0xFFEAECF0),
                       indicatorSize: TabBarIndicatorSize.label,
-                      labelStyle: const TextStyle(
-                        fontFamily: 'Inter',
+                      labelStyle: TextStyle(
+                        fontFamily: uiFontFamily(context, 'Inter'),
                         fontFamilyFallback: const ['NotoSansKR'],
                         fontSize: 14,
                         fontWeight: FontWeight.w700,
                       ),
-                      unselectedLabelStyle: const TextStyle(
-                        fontFamily: 'Inter',
+                      unselectedLabelStyle: TextStyle(
+                        fontFamily: uiFontFamily(context, 'Inter'),
                         fontFamilyFallback: const ['NotoSansKR'],
                         fontSize: 14,
                         fontWeight: FontWeight.w500,
@@ -450,12 +451,12 @@ class _RequestsPageState extends State<RequestsPage>
                             maxLines: 1,
                             overflow: TextOverflow.ellipsis,
                             style: TextStyle(
-                              fontFamily: 'Inter',
+                              fontFamily: uiFontFamily(context, 'Inter'),
                               fontFamilyFallback: const ['NotoSansKR'],
                               fontSize: context.rf(14).clamp(13, 15).toDouble(),
                               fontWeight: FontWeight.w700,
                               color: const Color(0xFF111827),
-                              height: 1.2,
+                              height: isChineseUi(context) ? 1.3 : 1.2,
                             ),
                           ),
                           const SizedBox(height: 3),
@@ -463,13 +464,13 @@ class _RequestsPageState extends State<RequestsPage>
                             timestamp,
                             maxLines: 1,
                             overflow: TextOverflow.ellipsis,
-                            style: const TextStyle(
-                              fontFamily: 'Inter',
+                            style: TextStyle(
+                              fontFamily: uiFontFamily(context, 'Inter'),
                               fontFamilyFallback: const ['NotoSansKR'],
                               fontSize: 12,
                               fontWeight: FontWeight.w500,
                               color: Color(0xFF8B93A1),
-                              height: 1.2,
+                              height: isChineseUi(context) ? 1.3 : 1.2,
                             ),
                           ),
                         ],
@@ -603,8 +604,8 @@ class _RequestsPageState extends State<RequestsPage>
             Text(
               title,
               textAlign: TextAlign.center,
-              style: const TextStyle(
-                fontFamily: 'Inter',
+              style: TextStyle(
+                fontFamily: uiFontFamily(context, 'Inter'),
                 fontFamilyFallback: const ['NotoSansKR'],
                 fontSize: 15,
                 fontWeight: FontWeight.w700,
@@ -615,8 +616,8 @@ class _RequestsPageState extends State<RequestsPage>
             Text(
               subtitle,
               textAlign: TextAlign.center,
-              style: const TextStyle(
-                fontFamily: 'Inter',
+              style: TextStyle(
+                fontFamily: uiFontFamily(context, 'Inter'),
                 fontFamilyFallback: const ['NotoSansKR'],
                 fontSize: 13,
                 fontWeight: FontWeight.w500,
@@ -645,8 +646,8 @@ class _RequestsPageState extends State<RequestsPage>
             const SizedBox(height: 12),
             Text(
               AppLocalizations.of(context)!.error,
-              style: const TextStyle(
-                fontFamily: 'Inter',
+              style: TextStyle(
+                fontFamily: uiFontFamily(context, 'Inter'),
                 fontFamilyFallback: const ['NotoSansKR'],
                 fontSize: 15,
                 fontWeight: FontWeight.w700,
@@ -657,8 +658,8 @@ class _RequestsPageState extends State<RequestsPage>
             Text(
               errorMessage,
               textAlign: TextAlign.center,
-              style: const TextStyle(
-                fontFamily: 'Inter',
+              style: TextStyle(
+                fontFamily: uiFontFamily(context, 'Inter'),
                 fontFamilyFallback: const ['NotoSansKR'],
                 fontSize: 13,
                 fontWeight: FontWeight.w500,

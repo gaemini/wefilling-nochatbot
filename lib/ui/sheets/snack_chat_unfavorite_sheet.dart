@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 
 import '../../l10n/app_localizations.dart';
+import '../../l10n/ui_locale.dart';
 
 Future<bool> showSnackChatUnfavoriteSheet(BuildContext context) async {
   final result = await showModalBottomSheet<bool>(
@@ -34,8 +35,8 @@ Future<bool> showSnackChatUnfavoriteSheet(BuildContext context) async {
                   Expanded(
                     child: Text(
                       l10n.snackChatUnfavoriteTitle,
-                      style: const TextStyle(
-                        fontFamily: 'Inter',
+                      style: TextStyle(
+                        fontFamily: uiFontFamily(context, 'Inter'),
                         fontFamilyFallback: const ['NotoSansKR'],
                         fontSize: 20,
                         height: 1.3,
@@ -49,8 +50,8 @@ Future<bool> showSnackChatUnfavoriteSheet(BuildContext context) async {
               const SizedBox(height: 12),
               Text(
                 l10n.snackChatUnfavoriteMessage,
-                style: const TextStyle(
-                  fontFamily: 'Inter',
+                style: TextStyle(
+                  fontFamily: uiFontFamily(context, 'Inter'),
                   fontFamilyFallback: const ['NotoSansKR'],
                   fontSize: 15,
                   height: 1.5,
@@ -73,8 +74,8 @@ Future<bool> showSnackChatUnfavoriteSheet(BuildContext context) async {
                     ),
                     child: Text(
                       l10n.cancel,
-                      style: const TextStyle(
-                        fontFamily: 'Inter',
+                      style: TextStyle(
+                        fontFamily: uiFontFamily(context, 'Inter'),
                         fontFamilyFallback: const ['NotoSansKR'],
                         fontSize: 15,
                         fontWeight: FontWeight.w600,
@@ -93,8 +94,8 @@ Future<bool> showSnackChatUnfavoriteSheet(BuildContext context) async {
                     ),
                     child: Text(
                       l10n.confirm,
-                      style: const TextStyle(
-                        fontFamily: 'Inter',
+                      style: TextStyle(
+                        fontFamily: uiFontFamily(context, 'Inter'),
                         fontFamilyFallback: const ['NotoSansKR'],
                         fontSize: 15,
                         fontWeight: FontWeight.w700,

@@ -296,6 +296,29 @@ class TodoProgress {
   }
 }
 
+enum PersonalTodoCategory {
+  academics,
+  school,
+  meetup,
+  project,
+  personal;
+
+  static PersonalTodoCategory parse(Object? value) => values.firstWhere(
+        (item) => item.name == value?.toString(),
+        orElse: () => PersonalTodoCategory.personal,
+      );
+}
+
+enum PersonalTodoPriority {
+  normal,
+  high;
+
+  static PersonalTodoPriority parse(Object? value) => values.firstWhere(
+        (item) => item.name == value?.toString(),
+        orElse: () => PersonalTodoPriority.normal,
+      );
+}
+
 class PersonalTodo {
   const PersonalTodo({
     required this.id,
@@ -310,6 +333,9 @@ class PersonalTodo {
     this.dueAt,
     this.reminderStartAt,
     this.completedAt,
+    this.timeMinutes,
+    this.category = PersonalTodoCategory.personal,
+    this.priority = PersonalTodoPriority.normal,
   });
 
   final String id;
@@ -324,6 +350,9 @@ class PersonalTodo {
   final DateTime? dueAt;
   final DateTime? reminderStartAt;
   final DateTime? completedAt;
+  final int? timeMinutes;
+  final PersonalTodoCategory category;
+  final PersonalTodoPriority priority;
 
   factory PersonalTodo.fromFirestore(
       DocumentSnapshot<Map<String, dynamic>> doc) {
@@ -341,6 +370,9 @@ class PersonalTodo {
       dueAt: _date(data['dueDate'] ?? data['dueAt']),
       reminderStartAt: _date(data['reminderStartAt']),
       completedAt: _date(data['completedAt']),
+      timeMinutes: (data['timeMinutes'] as num?)?.toInt(),
+      category: PersonalTodoCategory.parse(data['category']),
+      priority: PersonalTodoPriority.parse(data['priority']),
     );
   }
 
@@ -357,6 +389,9 @@ class PersonalTodo {
         dueAt: _date(data['dueAt']),
         reminderStartAt: _date(data['reminderStartAt']),
         completedAt: _date(data['completedAt']),
+        timeMinutes: (data['timeMinutes'] as num?)?.toInt(),
+        category: PersonalTodoCategory.parse(data['category']),
+        priority: PersonalTodoPriority.parse(data['priority']),
       );
 
   Map<String, dynamic> toLocalJson() => <String, dynamic>{
@@ -372,6 +407,9 @@ class PersonalTodo {
         'dueAt': dueAt?.toIso8601String(),
         'reminderStartAt': reminderStartAt?.toIso8601String(),
         'completedAt': completedAt?.toIso8601String(),
+        'timeMinutes': timeMinutes,
+        'category': category.name,
+        'priority': priority.name,
       };
 
   PersonalTodo copyWith({
@@ -386,6 +424,10 @@ class PersonalTodo {
     DateTime? reminderStartAt,
     DateTime? completedAt,
     bool clearCompletedAt = false,
+    int? timeMinutes,
+    bool clearTime = false,
+    PersonalTodoCategory? category,
+    PersonalTodoPriority? priority,
   }) =>
       PersonalTodo(
         id: id,
@@ -401,5 +443,8 @@ class PersonalTodo {
         reminderStartAt: reminderStartAt ?? this.reminderStartAt,
         completedAt:
             clearCompletedAt ? null : (completedAt ?? this.completedAt),
+        timeMinutes: clearTime ? null : (timeMinutes ?? this.timeMinutes),
+        category: category ?? this.category,
+        priority: priority ?? this.priority,
       );
 }

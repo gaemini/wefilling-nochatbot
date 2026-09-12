@@ -3,6 +3,7 @@ import 'package:flutter/material.dart';
 import 'package:intl/intl.dart';
 
 import '../l10n/app_localizations.dart';
+import '../l10n/ui_locale.dart';
 
 List<Object?> _safeSnackChatList(Object? raw) =>
     raw is List ? List<Object?>.from(raw) : const <Object?>[];
@@ -264,6 +265,6 @@ class SnackChat {
     if (difference.inMinutes > 0) {
       return AppLocalizations.of(context)!.minutesAgo(difference.inMinutes);
     }
-    return locale == 'ko' ? '방금 전' : 'Just now';
+    return (isChineseUi(context) ? '刚刚' : locale == 'ko' ? '방금 전' : 'Just now');
   }
 }

@@ -14,6 +14,7 @@ import 'hanyang_email_verification_screen.dart';
 import 'nickname_setup_screen.dart';
 import 'privacy_policy_screen.dart';
 import 'terms_screen.dart';
+import '../l10n/ui_locale.dart';
 
 class SignUpMethodSelectionScreen extends StatefulWidget {
   const SignUpMethodSelectionScreen({
@@ -277,8 +278,8 @@ class _SignUpMethodSelectionScreenState
             l10n.signUpMethodSelectionTitle,
             maxLines: 1,
             overflow: TextOverflow.ellipsis,
-            style: const TextStyle(
-              fontFamily: 'Inter',
+            style: TextStyle(
+              fontFamily: uiFontFamily(context, 'Inter'),
               fontFamilyFallback: const ['NotoSansKR'],
               fontSize: 18,
               fontWeight: FontWeight.w700,
@@ -358,8 +359,8 @@ class _SignUpMethodSelectionScreenState
                                           child: Text(
                                             l10n.loginTermsNotice,
                                             textAlign: TextAlign.left,
-                                            style: const TextStyle(
-                                              fontFamily: 'Inter',
+                                            style: TextStyle(
+                                              fontFamily: uiFontFamily(context, 'Inter'),
                                               fontFamilyFallback: const [
                                                 'NotoSansKR'
                                               ],
@@ -496,8 +497,8 @@ class _PolicyLink extends StatelessWidget {
       ),
       child: Text(
         label,
-        style: const TextStyle(
-          fontFamily: 'Inter',
+        style: TextStyle(
+          fontFamily: uiFontFamily(context, 'Inter'),
           fontFamilyFallback: const ['NotoSansKR'],
           fontSize: 14,
           fontWeight: FontWeight.w600,
@@ -549,8 +550,8 @@ class _SocialSignupButton extends StatelessWidget {
                 label,
                 maxLines: 1,
                 overflow: TextOverflow.ellipsis,
-                style: const TextStyle(
-                  fontFamily: 'Inter',
+                style: TextStyle(
+                  fontFamily: uiFontFamily(context, 'Inter'),
                   fontFamilyFallback: const ['NotoSansKR'],
                   fontSize: 15,
                   fontWeight: FontWeight.w700,

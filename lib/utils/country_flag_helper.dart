@@ -1,5 +1,6 @@
 // lib/utils/country_flag_helper.dart
 // 국적에 따른 국기 코드 및 이모티콘 매핑 유틸리티
+import '../l10n/chinese_country_names.dart';
 
 /// 국가 정보 클래스
 class CountryInfo {
@@ -20,6 +21,7 @@ class CountryInfo {
 
   /// 현재 언어에 맞는 국가 이름 반환
   String getLocalizedName(String languageCode) {
+    if (languageCode == 'zh') return chineseCountryNames[isoCode] ?? english;
     if (languageCode == 'en') {
       return english;
     } else {

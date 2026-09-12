@@ -5,10 +5,12 @@ import 'package:provider/provider.dart';
 import 'package:url_launcher/url_launcher.dart';
 
 import '../constants/app_constants.dart';
+import '../l10n/app_localizations.dart';
 import '../models/semester_todo.dart';
 import '../models/student_type.dart';
 import '../providers/semester_todo_controller.dart';
 import 'student_type_selection_screen.dart';
+import '../l10n/ui_locale.dart';
 
 class SemesterTodoScreen extends StatefulWidget {
   const SemesterTodoScreen({
@@ -33,6 +35,7 @@ class _SemesterTodoScreenState extends State<SemesterTodoScreen> {
   final Map<int, GlobalKey> _personalSectionKeys = {};
   String? _initializedSemesterId;
   bool _didFocusPersonalSection = false;
+  final Set<int> _expandedCompletedWeeks = <int>{};
 
   bool get _isKorean => Localizations.localeOf(context).languageCode == 'ko';
   String get _languageCode => _isKorean ? 'ko' : 'en';
@@ -44,9 +47,11 @@ class _SemesterTodoScreenState extends State<SemesterTodoScreen> {
 
   String _dateLabel(DateTime value) {
     final date = _kstCalendarDate(value);
-    return _isKorean
-        ? '${date.month}월 ${date.day}일'
-        : DateFormat('MMM d', 'en').format(date);
+    return isChineseUi(context)
+        ? '${date.month}月${date.day}日'
+        : _isKorean
+            ? '${date.month}월 ${date.day}일'
+            : DateFormat('MMM d', 'en').format(date);
   }
 
   @override
@@ -136,9 +141,13 @@ class _SemesterTodoScreenState extends State<SemesterTodoScreen> {
             icon: const Icon(Icons.arrow_back_rounded),
           ),
           title: Text(
-            _isKorean ? '학기 To-do' : 'Semester To-do',
-            style: const TextStyle(
-              fontFamily: 'Inter',
+            (isChineseUi(context)
+                ? '学期待办'
+                : _isKorean
+                    ? '학기 To-do'
+                    : 'Semester To-do'),
+            style: TextStyle(
+              fontFamily: uiFontFamily(context, 'Inter'),
               fontFamilyFallback: const ['NotoSansKR'],
               fontSize: 18,
               fontWeight: FontWeight.w700,
@@ -149,7 +158,11 @@ class _SemesterTodoScreenState extends State<SemesterTodoScreen> {
           actions: [
             IconButton(
               onPressed: _changeStudentType,
-              tooltip: _isKorean ? '학생 유형 변경' : 'Change student type',
+              tooltip: (isChineseUi(context)
+                  ? '更改学生类型'
+                  : _isKorean
+                      ? '학생 유형 변경'
+                      : 'Change student type'),
               icon: const Icon(Icons.tune_rounded, size: 22),
             ),
           ],
@@ -204,10 +217,22 @@ class _SemesterTodoScreenState extends State<SemesterTodoScreen> {
     final semester = controller.semester!;
     final current = semester.currentWeek(DateTime.now());
     final status = current < 1
-        ? (_isKorean ? '학기 시작 전' : 'Before semester')
+        ? ((isChineseUi(context)
+            ? '学期开始前'
+            : _isKorean
+                ? '학기 시작 전'
+                : 'Before semester'))
         : current > semester.totalWeeks
-            ? (_isKorean ? '학기 종료' : 'Semester ended')
-            : (_isKorean ? '현재 $current주차' : 'Current week $current');
+            ? ((isChineseUi(context)
+                ? '学期已结束'
+                : _isKorean
+                    ? '학기 종료'
+                    : 'Semester ended'))
+            : ((isChineseUi(context)
+                ? '当前第${current}周'
+                : _isKorean
+                    ? '현재 $current주차'
+                    : 'Current week $current'));
     return Padding(
       padding: const EdgeInsets.fromLTRB(20, 14, 20, 10),
       child: Row(
@@ -220,8 +245,8 @@ class _SemesterTodoScreenState extends State<SemesterTodoScreen> {
                   semester.title.resolve(_languageCode),
                   maxLines: 1,
                   overflow: TextOverflow.ellipsis,
-                  style: const TextStyle(
-                    fontFamily: 'Inter',
+                  style: TextStyle(
+                    fontFamily: uiFontFamily(context, 'Inter'),
                     fontFamilyFallback: const ['NotoSansKR'],
                     fontSize: 22,
                     fontWeight: FontWeight.w800,
@@ -231,8 +256,8 @@ class _SemesterTodoScreenState extends State<SemesterTodoScreen> {
                 const SizedBox(height: 4),
                 Text(
                   '$status · ${_studentType.title(context)}',
-                  style: const TextStyle(
-                    fontFamily: 'Inter',
+                  style: TextStyle(
+                    fontFamily: uiFontFamily(context, 'Inter'),
                     fontFamilyFallback: const ['NotoSansKR'],
                     fontSize: 13,
                     color: Color(0xFF64748B),
@@ -281,7 +306,7 @@ class _SemesterTodoScreenState extends State<SemesterTodoScreen> {
                 child: Text(
                   _weekLabel(controller.weeks, index),
                   style: TextStyle(
-                    fontFamily: 'Inter',
+                    fontFamily: uiFontFamily(context, 'Inter'),
                     fontFamilyFallback: const ['NotoSansKR'],
                     fontSize: 14,
                     fontWeight: selected ? FontWeight.w800 : FontWeight.w600,
@@ -311,9 +336,11 @@ class _SemesterTodoScreenState extends State<SemesterTodoScreen> {
     final firstDay = DateTime(anchor.year, anchor.month);
     final monthWeek =
         (anchor.day + firstDay.weekday - DateTime.monday) ~/ 7 + 1;
-    return _isKorean
-        ? '${anchor.month}월 $monthWeek주차'
-        : '${DateFormat('MMM', 'en').format(anchor)} W$monthWeek';
+    return (isChineseUi(context)
+        ? '${DateFormat('MMM', 'en').format(anchor)} 第${monthWeek}周'
+        : _isKorean
+            ? '${anchor.month}월 $monthWeek주차'
+            : '${DateFormat('MMM', 'en').format(anchor)} W$monthWeek');
   }
 
   Widget _weekPage(
@@ -395,12 +422,14 @@ class _SemesterTodoScreenState extends State<SemesterTodoScreen> {
         children: [
           Text(
             weekIndex < 0
-                ? (_isKorean
-                    ? '${week.weekNumber}주차'
-                    : 'Week ${week.weekNumber}')
+                ? ((isChineseUi(context)
+                    ? '第${week.weekNumber}周'
+                    : _isKorean
+                        ? '${week.weekNumber}주차'
+                        : 'Week ${week.weekNumber}'))
                 : _weekLabel(controller.weeks, weekIndex),
-            style: const TextStyle(
-              fontFamily: 'Inter',
+            style: TextStyle(
+              fontFamily: uiFontFamily(context, 'Inter'),
               fontFamilyFallback: const ['NotoSansKR'],
               fontSize: 19,
               fontWeight: FontWeight.w800,
@@ -413,8 +442,8 @@ class _SemesterTodoScreenState extends State<SemesterTodoScreen> {
               Expanded(
                 child: Text(
                   '${_dateLabel(week.startDate)} – ${_dateLabel(week.endDate)}',
-                  style: const TextStyle(
-                    fontFamily: 'Inter',
+                  style: TextStyle(
+                    fontFamily: uiFontFamily(context, 'Inter'),
                     fontFamilyFallback: const ['NotoSansKR'],
                     fontSize: 14,
                     fontWeight: FontWeight.w600,
@@ -423,11 +452,13 @@ class _SemesterTodoScreenState extends State<SemesterTodoScreen> {
                 ),
               ),
               Text(
-                _isKorean
-                    ? '${required.length}개 중 $done개 완료'
-                    : '$done of ${required.length} done',
-                style: const TextStyle(
-                  fontFamily: 'Inter',
+                (isChineseUi(context)
+                    ? '已完成${done}/${required.length}'
+                    : _isKorean
+                        ? '${required.length}개 중 $done개 완료'
+                        : '$done of ${required.length} done'),
+                style: TextStyle(
+                  fontFamily: uiFontFamily(context, 'Inter'),
                   fontFamilyFallback: const ['NotoSansKR'],
                   fontSize: 13,
                   fontWeight: FontWeight.w700,
@@ -495,17 +526,29 @@ class _SemesterTodoScreenState extends State<SemesterTodoScreen> {
     }
 
     addSection(
-      _isKorean ? '지난주 미완료' : 'Carried over',
+      (isChineseUi(context)
+          ? '已顺延'
+          : _isKorean
+              ? '지난주 미완료'
+              : 'Carried over'),
       carryover.map((task) => _taskRow(controller, task)).toList(),
     );
     addSection(
-      _isKorean ? 'Wefilling 안내' : 'From Wefilling',
+      (isChineseUi(context)
+          ? '来自${AppLocalizations.of(context)!.appName}'
+          : _isKorean
+              ? 'Wefilling 안내'
+              : 'From Wefilling'),
       [...required, ...notices]
           .map((task) => _taskRow(controller, task))
           .toList(),
     );
     addSection(
-      _isKorean ? '이번 주 추천' : 'Recommended',
+      (isChineseUi(context)
+          ? '推荐'
+          : _isKorean
+              ? '이번 주 추천'
+              : 'Recommended'),
       recommendations.map((task) => _taskRow(controller, task)).toList(),
     );
 
@@ -516,11 +559,13 @@ class _SemesterTodoScreenState extends State<SemesterTodoScreen> {
         Padding(
           padding: const EdgeInsets.only(top: 4, bottom: 12),
           child: Text(
-            _isKorean
-                ? '할 일을 불러오지 못했어요. 아래로 당겨 다시 시도해주세요.'
-                : 'Could not load tasks. Pull down to try again.',
-            style: const TextStyle(
-              fontFamily: 'Inter',
+            (isChineseUi(context)
+                ? '待办加载失败，请下拉重试。'
+                : _isKorean
+                    ? '할 일을 불러오지 못했어요. 아래로 당겨 다시 시도해주세요.'
+                    : 'Could not load tasks. Pull down to try again.'),
+            style: TextStyle(
+              fontFamily: uiFontFamily(context, 'Inter'),
               fontFamilyFallback: const ['NotoSansKR'],
               fontSize: 14,
               height: 1.5,
@@ -534,11 +579,13 @@ class _SemesterTodoScreenState extends State<SemesterTodoScreen> {
         Padding(
           padding: const EdgeInsets.only(top: 4, bottom: 12),
           child: Text(
-            _isKorean
-                ? '이번 주에 등록된 안내가 없어요.\n나만의 할 일을 추가해 보세요.'
-                : 'Nothing is scheduled for this week.\nAdd a task of your own.',
-            style: const TextStyle(
-              fontFamily: 'Inter',
+            (isChineseUi(context)
+                ? '本周暂无安排。\n添加自己的待办吧。'
+                : _isKorean
+                    ? '이번 주에 등록된 안내가 없어요.\n나만의 할 일을 추가해 보세요.'
+                    : 'Nothing is scheduled for this week.\nAdd a task of your own.'),
+            style: TextStyle(
+              fontFamily: uiFontFamily(context, 'Inter'),
               fontFamilyFallback: const ['NotoSansKR'],
               fontSize: 14,
               height: 1.5,
@@ -549,48 +596,180 @@ class _SemesterTodoScreenState extends State<SemesterTodoScreen> {
       );
     }
 
-    addSection(
-      _isKorean ? '내 할 일' : 'My tasks',
-      [
-        _globalReminderRow(controller),
-        if (personal.isEmpty)
-          Padding(
-            padding: const EdgeInsets.symmetric(vertical: 10),
-            child: Text(
-              _isKorean
-                  ? '직접 관리할 일이 있다면 추가해 보세요.'
-                  : 'Add anything you want to manage for yourself.',
-              style: const TextStyle(
-                fontFamily: 'Inter',
-                fontFamilyFallback: const ['NotoSansKR'],
-                fontSize: 14,
-                color: Color(0xFF64748B),
-              ),
-            ),
-          )
-        else
-          ...personal.map((todo) => _personalRow(controller, todo)),
-        Align(
-          alignment: Alignment.center,
-          child: IconButton(
-            tooltip: _isKorean ? '이 주차에 할 일 추가' : 'Add task to this week',
-            onPressed: () => _editPersonalTodo(
-              controller,
-              initialWeekNumber: weekNumber,
-            ),
-            icon: const Icon(Icons.add_rounded),
-            color: AppColors.pointColor,
-            iconSize: 28,
-            padding: const EdgeInsets.all(10),
+    final activePersonal = personal.where((todo) => !todo.completed).toList()
+      ..sort(_comparePersonalTodos);
+    final completedPersonal = personal.where((todo) => todo.completed).toList()
+      ..sort(_comparePersonalTodos);
+    final today = _kstCalendarDate(DateTime.now());
+    final selectedWeek = controller.weeks.firstWhere(
+      (week) => week.weekNumber == weekNumber,
+    );
+    final weekEnd = _kstCalendarDate(selectedWeek.endDate);
+    final todayItems = <PersonalTodo>[];
+    final soonItems = <PersonalTodo>[];
+    final weekItems = <PersonalTodo>[];
+    final laterItems = <PersonalTodo>[];
+    for (final todo in activePersonal) {
+      final due = todo.dueAt == null ? null : _kstCalendarDate(todo.dueAt!);
+      if (due != null && due == today) {
+        todayItems.add(todo);
+      } else if (due != null && due.difference(today).inDays <= 2) {
+        // Overdue items also stay at the top until the user completes them.
+        soonItems.add(todo);
+      } else if (due != null && !due.isAfter(weekEnd)) {
+        weekItems.add(todo);
+      } else {
+        laterItems.add(todo);
+      }
+    }
+    final personalRows = <Widget>[_globalReminderRow(controller)];
+    void addPersonalGroup(String title, List<PersonalTodo> items) {
+      if (items.isEmpty) return;
+      personalRows.add(Padding(
+        padding: const EdgeInsets.only(top: 13, bottom: 3),
+        child: Text(
+          title,
+          style: TextStyle(
+            fontFamily: uiFontFamily(context, 'Inter'),
+            fontFamilyFallback: const ['NotoSansKR'],
+            fontSize: 13,
+            fontWeight: FontWeight.w800,
+            color: const Color(0xFF64748B),
           ),
         ),
-      ],
+      ));
+      personalRows.addAll(items.map((todo) => _personalRow(controller, todo)));
+    }
+
+    addPersonalGroup(
+      isChineseUi(context)
+          ? '今天'
+          : _isKorean
+              ? '오늘'
+              : 'Today',
+      todayItems,
+    );
+    addPersonalGroup(
+      isChineseUi(context)
+          ? '即将到期'
+          : _isKorean
+              ? '곧 마감'
+              : 'Due soon',
+      soonItems,
+    );
+    addPersonalGroup(
+      isChineseUi(context)
+          ? '本周'
+          : _isKorean
+              ? '이번 주'
+              : 'This week',
+      weekItems,
+    );
+    addPersonalGroup(
+      isChineseUi(context)
+          ? '稍后'
+          : _isKorean
+              ? '나중에'
+              : 'Later',
+      laterItems,
+    );
+    if (personal.isEmpty) {
+      personalRows.add(Padding(
+        padding: const EdgeInsets.symmetric(vertical: 10),
+        child: Text(
+          isChineseUi(context)
+              ? '添加想要自己管理的事项。'
+              : _isKorean
+                  ? '직접 관리할 일이 있다면 추가해 보세요.'
+                  : 'Add anything you want to manage for yourself.',
+          style: TextStyle(
+            fontFamily: uiFontFamily(context, 'Inter'),
+            fontFamilyFallback: const ['NotoSansKR'],
+            fontSize: 14,
+            color: const Color(0xFF64748B),
+          ),
+        ),
+      ));
+    }
+    if (completedPersonal.isNotEmpty) {
+      final expanded = _expandedCompletedWeeks.contains(weekNumber);
+      personalRows.add(Align(
+        alignment: Alignment.centerLeft,
+        child: TextButton.icon(
+          onPressed: () => setState(() {
+            expanded
+                ? _expandedCompletedWeeks.remove(weekNumber)
+                : _expandedCompletedWeeks.add(weekNumber);
+          }),
+          style: TextButton.styleFrom(
+            foregroundColor: const Color(0xFF64748B),
+            padding: const EdgeInsets.only(top: 10, right: 8, bottom: 4),
+          ),
+          icon: Icon(
+            expanded ? Icons.expand_less_rounded : Icons.expand_more_rounded,
+            size: 20,
+          ),
+          label: Text(
+            isChineseUi(context)
+                ? '已完成 ${completedPersonal.length}项'
+                : _isKorean
+                    ? '완료 ${completedPersonal.length}개'
+                    : '${completedPersonal.length} completed',
+          ),
+        ),
+      ));
+      if (expanded) {
+        personalRows.addAll(
+          completedPersonal.map((todo) => _personalRow(controller, todo)),
+        );
+      }
+    }
+    personalRows.add(Align(
+      alignment: Alignment.center,
+      child: IconButton(
+        tooltip: isChineseUi(context)
+            ? '为本周添加待办'
+            : _isKorean
+                ? '이 주차에 할 일 추가'
+                : 'Add task to this week',
+        onPressed: () => _editPersonalTodo(
+          controller,
+          initialWeekNumber: weekNumber,
+        ),
+        icon: const Icon(Icons.add_rounded),
+        color: AppColors.pointColor,
+        iconSize: 28,
+        padding: const EdgeInsets.all(10),
+      ),
+    ));
+
+    addSection(
+      (isChineseUi(context)
+          ? '我的待办'
+          : _isKorean
+              ? '내 할 일'
+              : 'My tasks'),
+      personalRows,
       sectionKey: _personalSectionKeys.putIfAbsent(
         weekNumber,
         GlobalKey.new,
       ),
     );
     return children;
+  }
+
+  int _comparePersonalTodos(PersonalTodo first, PersonalTodo second) {
+    final priority = second.priority.index.compareTo(first.priority.index);
+    if (priority != 0) return priority;
+    if (first.dueAt != null && second.dueAt != null) {
+      final due = first.dueAt!.compareTo(second.dueAt!);
+      if (due != 0) return due;
+    } else if (first.dueAt != null) {
+      return -1;
+    } else if (second.dueAt != null) {
+      return 1;
+    }
+    return first.title.compareTo(second.title);
   }
 
   Widget _globalReminderRow(SemesterTodoController controller) {
@@ -626,9 +805,13 @@ class _SemesterTodoScreenState extends State<SemesterTodoScreen> {
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
                     Text(
-                      _isKorean ? '매일 $time 알림' : 'Daily reminder at $time',
-                      style: const TextStyle(
-                        fontFamily: 'Inter',
+                      (isChineseUi(context)
+                          ? '每天${time}提醒'
+                          : _isKorean
+                              ? '매일 $time 알림'
+                              : 'Daily reminder at $time'),
+                      style: TextStyle(
+                        fontFamily: uiFontFamily(context, 'Inter'),
                         fontFamilyFallback: const ['NotoSansKR'],
                         fontSize: 14,
                         fontWeight: FontWeight.w700,
@@ -637,9 +820,13 @@ class _SemesterTodoScreenState extends State<SemesterTodoScreen> {
                     ),
                     const SizedBox(height: 2),
                     Text(
-                      _isKorean ? '시간을 눌러 변경' : 'Tap to change time',
-                      style: const TextStyle(
-                        fontFamily: 'Inter',
+                      (isChineseUi(context)
+                          ? '点击修改时间'
+                          : _isKorean
+                              ? '시간을 눌러 변경'
+                              : 'Tap to change time'),
+                      style: TextStyle(
+                        fontFamily: uiFontFamily(context, 'Inter'),
                         fontFamilyFallback: const ['NotoSansKR'],
                         fontSize: 12,
                         color: Color(0xFF94A3B8),
@@ -701,7 +888,7 @@ class _SemesterTodoScreenState extends State<SemesterTodoScreen> {
                   Text(
                     task.title.resolve(_languageCode),
                     style: TextStyle(
-                      fontFamily: 'Inter',
+                      fontFamily: uiFontFamily(context, 'Inter'),
                       fontFamilyFallback: const ['NotoSansKR'],
                       fontSize: 16,
                       height: 1.35,
@@ -716,8 +903,8 @@ class _SemesterTodoScreenState extends State<SemesterTodoScreen> {
                     const SizedBox(height: 4),
                     Text(
                       task.description.resolve(_languageCode),
-                      style: const TextStyle(
-                        fontFamily: 'Inter',
+                      style: TextStyle(
+                        fontFamily: uiFontFamily(context, 'Inter'),
                         fontFamilyFallback: const ['NotoSansKR'],
                         fontSize: 13,
                         height: 1.45,
@@ -746,6 +933,88 @@ class _SemesterTodoScreenState extends State<SemesterTodoScreen> {
     );
   }
 
+  String _personalCategoryLabel(PersonalTodoCategory category) {
+    switch (category) {
+      case PersonalTodoCategory.academics:
+        return isChineseUi(context)
+            ? '学习'
+            : _isKorean
+                ? '학업'
+                : 'Study';
+      case PersonalTodoCategory.school:
+        return isChineseUi(context)
+            ? '学校'
+            : _isKorean
+                ? '학교'
+                : 'School';
+      case PersonalTodoCategory.meetup:
+        return isChineseUi(context)
+            ? '聚会'
+            : _isKorean
+                ? '모임'
+                : 'Meetup';
+      case PersonalTodoCategory.project:
+        return isChineseUi(context)
+            ? '项目'
+            : _isKorean
+                ? '프로젝트'
+                : 'Project';
+      case PersonalTodoCategory.personal:
+        return isChineseUi(context)
+            ? '个人'
+            : _isKorean
+                ? '개인'
+                : 'Personal';
+    }
+  }
+
+  String _personalDueLabel(PersonalTodo todo) {
+    if (todo.dueAt == null) {
+      return isChineseUi(context)
+          ? '日期待确认'
+          : _isKorean
+              ? '날짜 확인 필요'
+              : 'Date needed';
+    }
+    final due = _kstCalendarDate(todo.dueAt!);
+    final today = _kstCalendarDate(DateTime.now());
+    final difference = due.difference(today).inDays;
+    if (difference < 0) {
+      return isChineseUi(context)
+          ? '已逾期'
+          : _isKorean
+              ? '기한 지남'
+              : 'Overdue';
+    }
+    if (difference == 0) {
+      return isChineseUi(context)
+          ? '今天截止'
+          : _isKorean
+              ? '오늘 마감'
+              : 'Due today';
+    }
+    if (difference == 1) {
+      return isChineseUi(context)
+          ? '明天截止'
+          : _isKorean
+              ? '내일 마감'
+              : 'Due tomorrow';
+    }
+    return isChineseUi(context)
+        ? '截止${_dateLabel(todo.dueAt!)}'
+        : _isKorean
+            ? '마감 ${_dateLabel(todo.dueAt!)}'
+            : 'Due ${_dateLabel(todo.dueAt!)}';
+  }
+
+  String? _personalTimeLabel(PersonalTodo todo) {
+    final minutes = todo.timeMinutes;
+    if (minutes == null || minutes < 0 || minutes >= 24 * 60) return null;
+    return MaterialLocalizations.of(context).formatTimeOfDay(
+      TimeOfDay(hour: minutes ~/ 60, minute: minutes % 60),
+    );
+  }
+
   Widget _personalRow(SemesterTodoController controller, PersonalTodo todo) {
     return Padding(
       padding: const EdgeInsets.symmetric(vertical: 2),
@@ -755,8 +1024,16 @@ class _SemesterTodoScreenState extends State<SemesterTodoScreen> {
           Semantics(
             button: true,
             label: todo.completed
-                ? (_isKorean ? '완료 취소' : 'Mark incomplete')
-                : (_isKorean ? '완료' : 'Mark complete'),
+                ? ((isChineseUi(context)
+                    ? '标为未完成'
+                    : _isKorean
+                        ? '완료 취소'
+                        : 'Mark incomplete'))
+                : ((isChineseUi(context)
+                    ? '标为已完成'
+                    : _isKorean
+                        ? '완료'
+                        : 'Mark complete')),
             child: InkResponse(
               onTap: () => _togglePersonalTodo(controller, todo),
               radius: 24,
@@ -782,7 +1059,7 @@ class _SemesterTodoScreenState extends State<SemesterTodoScreen> {
                     Text(
                       todo.title,
                       style: TextStyle(
-                        fontFamily: 'Inter',
+                        fontFamily: uiFontFamily(context, 'Inter'),
                         fontFamilyFallback: const ['NotoSansKR'],
                         fontSize: 16,
                         fontWeight: FontWeight.w600,
@@ -799,29 +1076,67 @@ class _SemesterTodoScreenState extends State<SemesterTodoScreen> {
                         todo.memo!,
                         maxLines: 2,
                         overflow: TextOverflow.ellipsis,
-                        style: const TextStyle(
-                          fontFamily: 'Inter',
+                        style: TextStyle(
+                          fontFamily: uiFontFamily(context, 'Inter'),
                           fontFamilyFallback: const ['NotoSansKR'],
                           fontSize: 13,
                           color: Color(0xFF64748B),
                         ),
                       ),
                     ],
-                    if (todo.dueAt != null) ...[
-                      const SizedBox(height: 4),
-                      Text(
-                        _isKorean
-                            ? '마감 ${_dateLabel(todo.dueAt!)}'
-                            : 'Due ${_dateLabel(todo.dueAt!)}',
-                        style: const TextStyle(
-                          fontFamily: 'Inter',
-                          fontFamilyFallback: const ['NotoSansKR'],
-                          fontSize: 12,
-                          fontWeight: FontWeight.w600,
-                          color: Color(0xFF64748B),
+                    const SizedBox(height: 5),
+                    Wrap(
+                      spacing: 8,
+                      runSpacing: 3,
+                      crossAxisAlignment: WrapCrossAlignment.center,
+                      children: [
+                        Text(
+                          _personalDueLabel(todo),
+                          style: TextStyle(
+                            fontFamily: uiFontFamily(context, 'Inter'),
+                            fontFamilyFallback: const ['NotoSansKR'],
+                            fontSize: 12,
+                            fontWeight: FontWeight.w700,
+                            color: !todo.completed &&
+                                    todo.dueAt != null &&
+                                    !_kstCalendarDate(todo.dueAt!).isAfter(
+                                        _kstCalendarDate(DateTime.now()))
+                                ? const Color(0xFFB42318)
+                                : const Color(0xFF64748B),
+                          ),
                         ),
-                      ),
-                    ],
+                        if (_personalTimeLabel(todo) case final time?)
+                          Text(
+                            time,
+                            style: const TextStyle(
+                              fontSize: 12,
+                              fontWeight: FontWeight.w600,
+                              color: Color(0xFF64748B),
+                            ),
+                          ),
+                        Text(
+                          _personalCategoryLabel(todo.category),
+                          style: const TextStyle(
+                            fontSize: 12,
+                            fontWeight: FontWeight.w600,
+                            color: Color(0xFF64748B),
+                          ),
+                        ),
+                        if (todo.priority == PersonalTodoPriority.high)
+                          Text(
+                            isChineseUi(context)
+                                ? '重要'
+                                : _isKorean
+                                    ? '중요'
+                                    : 'High priority',
+                            style: const TextStyle(
+                              fontSize: 12,
+                              fontWeight: FontWeight.w800,
+                              color: Color(0xFF087BB5),
+                            ),
+                          ),
+                      ],
+                    ),
                   ],
                 ),
               ),
@@ -829,8 +1144,16 @@ class _SemesterTodoScreenState extends State<SemesterTodoScreen> {
           ),
           Tooltip(
             message: todo.reminderEnabled
-                ? (_isKorean ? '이 할 일 알림 끄기' : 'Turn off this task reminder')
-                : (_isKorean ? '이 할 일 알림 켜기' : 'Turn on this task reminder'),
+                ? ((isChineseUi(context)
+                    ? '关闭此待办提醒'
+                    : _isKorean
+                        ? '이 할 일 알림 끄기'
+                        : 'Turn off this task reminder'))
+                : ((isChineseUi(context)
+                    ? '开启此待办提醒'
+                    : _isKorean
+                        ? '이 할 일 알림 켜기'
+                        : 'Turn on this task reminder')),
             child: IconButton(
               onPressed: todo.completed
                   ? null
@@ -902,9 +1225,11 @@ class _SemesterTodoScreenState extends State<SemesterTodoScreen> {
     ScaffoldMessenger.of(context).showSnackBar(
       SnackBar(
         content: Text(
-          _isKorean
-              ? '알림 설정을 저장하지 못했어요. 잠시 후 다시 시도해 주세요.'
-              : 'Could not save reminder settings. Please try again.',
+          (isChineseUi(context)
+              ? '提醒设置保存失败，请重试。'
+              : _isKorean
+                  ? '알림 설정을 저장하지 못했어요. 잠시 후 다시 시도해 주세요.'
+                  : 'Could not save reminder settings. Please try again.'),
         ),
       ),
     );
@@ -916,20 +1241,34 @@ class _SemesterTodoScreenState extends State<SemesterTodoScreen> {
     final enable = await showDialog<bool>(
       context: context,
       builder: (dialogContext) => AlertDialog(
-        title: Text(_isKorean ? '개인 알림을 켤까요?' : 'Turn on personal reminders?'),
+        title: Text((isChineseUi(context)
+            ? '开启个人提醒？'
+            : _isKorean
+                ? '개인 알림을 켤까요?'
+                : 'Turn on personal reminders?')),
         content: Text(
-          _isKorean
-              ? '전체 개인 알림이 꺼져 있어요. 이 할 일의 알림을 받으려면 먼저 전체 알림을 켜야 해요.'
-              : 'Personal reminders are currently off. Turn them on to receive this task reminder.',
+          (isChineseUi(context)
+              ? '个人提醒当前已关闭，开启后可接收此待办提醒。'
+              : _isKorean
+                  ? '전체 개인 알림이 꺼져 있어요. 이 할 일의 알림을 받으려면 먼저 전체 알림을 켜야 해요.'
+                  : 'Personal reminders are currently off. Turn them on to receive this task reminder.'),
         ),
         actions: [
           TextButton(
             onPressed: () => Navigator.pop(dialogContext, false),
-            child: Text(_isKorean ? '나중에' : 'Not now'),
+            child: Text((isChineseUi(context)
+                ? '暂不开启'
+                : _isKorean
+                    ? '나중에'
+                    : 'Not now')),
           ),
           TextButton(
             onPressed: () => Navigator.pop(dialogContext, true),
-            child: Text(_isKorean ? '알림 켜기' : 'Turn on'),
+            child: Text((isChineseUi(context)
+                ? '开启'
+                : _isKorean
+                    ? '알림 켜기'
+                    : 'Turn on')),
           ),
         ],
       ),
@@ -973,7 +1312,11 @@ class _SemesterTodoScreenState extends State<SemesterTodoScreen> {
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
           content: Text(
-            _isKorean ? '연결된 화면을 열 수 없어요.' : 'This page is unavailable.',
+            (isChineseUi(context)
+                ? '此页面不可用。'
+                : _isKorean
+                    ? '연결된 화면을 열 수 없어요.'
+                    : 'This page is unavailable.'),
           ),
         ),
       );
@@ -992,17 +1335,45 @@ class _SemesterTodoScreenState extends State<SemesterTodoScreen> {
     SemesterTodoController controller,
     PersonalTodo todo,
   ) async {
-    await controller.togglePersonalTodo(todo);
-    if (mounted && controller.error != null) _showSaveError();
+    final completed = !todo.completed;
+    await controller.setPersonalTodoCompleted(todo, completed);
+    if (!mounted) return;
+    if (controller.error != null) {
+      _showSaveError();
+      return;
+    }
+    if (completed) {
+      ScaffoldMessenger.of(context)
+        ..hideCurrentSnackBar()
+        ..showSnackBar(SnackBar(
+          content: Text(
+            isChineseUi(context)
+                ? '已完成'
+                : _isKorean
+                    ? '완료했어요.'
+                    : 'Task completed.',
+          ),
+          action: SnackBarAction(
+            label: isChineseUi(context)
+                ? '撤销'
+                : _isKorean
+                    ? '되돌리기'
+                    : 'Undo',
+            onPressed: () => controller.setPersonalTodoCompleted(todo, false),
+          ),
+        ));
+    }
   }
 
   void _showSaveError() {
     ScaffoldMessenger.of(context).showSnackBar(
       SnackBar(
         content: Text(
-          _isKorean
-              ? '변경사항을 저장하지 못했어요. 이전 상태로 되돌렸습니다.'
-              : 'Could not save the change. Your previous state was restored.',
+          (isChineseUi(context)
+              ? '保存失败，已恢复原来的状态。'
+              : _isKorean
+                  ? '변경사항을 저장하지 못했어요. 이전 상태로 되돌렸습니다.'
+                  : 'Could not save the change. Your previous state was restored.'),
         ),
       ),
     );
@@ -1041,7 +1412,11 @@ class _SemesterTodoScreenState extends State<SemesterTodoScreen> {
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
             content: Text(
-              _isKorean ? '할 일을 삭제하지 못했어요.' : 'Could not delete this task.',
+              (isChineseUi(context)
+                  ? '删除待办失败。'
+                  : _isKorean
+                      ? '할 일을 삭제하지 못했어요.'
+                      : 'Could not delete this task.'),
             ),
           ),
         );
@@ -1057,6 +1432,9 @@ class _SemesterTodoScreenState extends State<SemesterTodoScreen> {
         reminderEnabled: result.reminderEnabled,
         carryOver: result.carryOver,
         weekNumber: result.weekNumber,
+        timeMinutes: result.timeMinutes,
+        category: result.category,
+        priority: result.priority,
       );
     } catch (_) {
       if (mounted) _showSaveError();
@@ -1072,6 +1450,9 @@ class _PersonalTodoEditorResult {
     required this.dueAt,
     required this.reminderEnabled,
     required this.carryOver,
+    required this.timeMinutes,
+    required this.category,
+    required this.priority,
   }) : deleteRequested = false;
 
   const _PersonalTodoEditorResult.delete()
@@ -1081,6 +1462,9 @@ class _PersonalTodoEditorResult {
         dueAt = null,
         reminderEnabled = false,
         carryOver = false,
+        timeMinutes = null,
+        category = PersonalTodoCategory.personal,
+        priority = PersonalTodoPriority.normal,
         deleteRequested = true;
 
   final String title;
@@ -1089,6 +1473,9 @@ class _PersonalTodoEditorResult {
   final DateTime? dueAt;
   final bool reminderEnabled;
   final bool carryOver;
+  final int? timeMinutes;
+  final PersonalTodoCategory category;
+  final PersonalTodoPriority priority;
   final bool deleteRequested;
 }
 
@@ -1129,6 +1516,10 @@ class _PersonalTodoEditorPageState extends State<_PersonalTodoEditorPage> {
   late bool _reminderEnabled;
   late bool _carryOver;
   DateTime? _dueAt;
+  int? _timeMinutes;
+  late PersonalTodoCategory _category;
+  late PersonalTodoPriority _priority;
+  late bool _showOptions;
 
   @override
   void initState() {
@@ -1143,7 +1534,37 @@ class _PersonalTodoEditorPageState extends State<_PersonalTodoEditorPage> {
     _reminderEnabled =
         widget.existing?.reminderEnabled ?? widget.notificationsEnabled;
     _carryOver = widget.existing?.carryOver ?? true;
-    _dueAt = widget.existing?.dueAt;
+    _dueAt = widget.existing?.dueAt ?? _defaultDueAt();
+    _timeMinutes = widget.existing?.timeMinutes;
+    _category = widget.existing?.category ?? PersonalTodoCategory.personal;
+    _priority = widget.existing?.priority ?? PersonalTodoPriority.normal;
+    _showOptions = widget.existing != null &&
+        ((_memoController.text.trim().isNotEmpty) ||
+            _timeMinutes != null ||
+            _category != PersonalTodoCategory.personal ||
+            _priority != PersonalTodoPriority.normal ||
+            widget.existing!.reminderEnabled);
+  }
+
+  DateTime _defaultDueAt() {
+    final now = _calendarDate(DateTime.now());
+    SemesterWeek? selected;
+    for (final week in widget.weeks) {
+      if (week.weekNumber == _weekNumber) selected = week;
+    }
+    if (selected == null) {
+      return DateTime.utc(now.year, now.month, now.day)
+          .subtract(const Duration(hours: 9));
+    }
+    final start = _calendarDate(selected.startDate);
+    final end = _calendarDate(selected.endDate);
+    final date = now.isBefore(start)
+        ? start
+        : now.isAfter(end)
+            ? end
+            : now;
+    return DateTime.utc(date.year, date.month, date.day)
+        .subtract(const Duration(hours: 9));
   }
 
   @override
@@ -1160,17 +1581,56 @@ class _PersonalTodoEditorPageState extends State<_PersonalTodoEditorPage> {
 
   String _dateLabel(DateTime value) {
     final date = _calendarDate(value);
-    return widget.isKorean
-        ? '${date.month}월 ${date.day}일'
-        : DateFormat('MMM d', 'en').format(date);
+    return isChineseUi(context)
+        ? '${date.month}月${date.day}日'
+        : widget.isKorean
+            ? '${date.month}월 ${date.day}일'
+            : DateFormat('MMM d', 'en').format(date);
   }
 
   String _weekRange(SemesterWeek week) {
     final start = _calendarDate(week.startDate);
     final end = _calendarDate(week.endDate);
-    return widget.isKorean
+    return isChineseUi(context)
         ? '${start.month}/${start.day}–${end.month}/${end.day}'
-        : '${DateFormat('MMM d', 'en').format(start)}–${DateFormat('MMM d', 'en').format(end)}';
+        : widget.isKorean
+            ? '${start.month}/${start.day}–${end.month}/${end.day}'
+            : '${DateFormat('MMM d', 'en').format(start)}–${DateFormat('MMM d', 'en').format(end)}';
+  }
+
+  String _categoryLabel(PersonalTodoCategory category) {
+    switch (category) {
+      case PersonalTodoCategory.academics:
+        return isChineseUi(context)
+            ? '学习'
+            : widget.isKorean
+                ? '학업'
+                : 'Study';
+      case PersonalTodoCategory.school:
+        return isChineseUi(context)
+            ? '学校'
+            : widget.isKorean
+                ? '학교'
+                : 'School';
+      case PersonalTodoCategory.meetup:
+        return isChineseUi(context)
+            ? '聚会'
+            : widget.isKorean
+                ? '모임'
+                : 'Meetup';
+      case PersonalTodoCategory.project:
+        return isChineseUi(context)
+            ? '项目'
+            : widget.isKorean
+                ? '프로젝트'
+                : 'Project';
+      case PersonalTodoCategory.personal:
+        return isChineseUi(context)
+            ? '个人'
+            : widget.isKorean
+                ? '개인'
+                : 'Personal';
+    }
   }
 
   Future<void> _pickDueDate() async {
@@ -1190,7 +1650,27 @@ class _PersonalTodoEditorPageState extends State<_PersonalTodoEditorPage> {
     setState(() {
       _dueAt = DateTime.utc(picked.year, picked.month, picked.day)
           .subtract(const Duration(hours: 9));
+      for (final week in widget.weeks) {
+        final start = _calendarDate(week.startDate);
+        final end = _calendarDate(week.endDate);
+        if (!picked.isBefore(start) && !picked.isAfter(end)) {
+          _weekNumber = week.weekNumber;
+          break;
+        }
+      }
     });
+  }
+
+  Future<void> _pickTime() async {
+    final initial = _timeMinutes == null
+        ? TimeOfDay.now()
+        : TimeOfDay(
+            hour: _timeMinutes! ~/ 60,
+            minute: _timeMinutes! % 60,
+          );
+    final picked = await showTimePicker(context: context, initialTime: initial);
+    if (!mounted || picked == null) return;
+    setState(() => _timeMinutes = picked.hour * 60 + picked.minute);
   }
 
   void _save() {
@@ -1205,13 +1685,16 @@ class _PersonalTodoEditorPageState extends State<_PersonalTodoEditorPage> {
         dueAt: _dueAt,
         reminderEnabled: _reminderEnabled,
         carryOver: _carryOver,
+        timeMinutes: _timeMinutes,
+        category: _category,
+        priority: _priority,
       ),
     );
   }
 
   @override
   Widget build(BuildContext context) {
-    final canSave = _titleController.text.trim().isNotEmpty;
+    final canSave = _titleController.text.trim().isNotEmpty && _dueAt != null;
     final reminderTime = MaterialLocalizations.of(context).formatTimeOfDay(
       TimeOfDay(hour: widget.reminderHour, minute: widget.reminderMinute),
     );
@@ -1233,10 +1716,18 @@ class _PersonalTodoEditorPageState extends State<_PersonalTodoEditorPage> {
         ),
         title: Text(
           widget.existing == null
-              ? (widget.isKorean ? '할 일 추가' : 'Add task')
-              : (widget.isKorean ? '할 일 수정' : 'Edit task'),
-          style: const TextStyle(
-            fontFamily: 'Inter',
+              ? ((isChineseUi(context)
+                  ? '添加待办'
+                  : widget.isKorean
+                      ? '할 일 추가'
+                      : 'Add task'))
+              : ((isChineseUi(context)
+                  ? '编辑待办'
+                  : widget.isKorean
+                      ? '할 일 수정'
+                      : 'Edit task')),
+          style: TextStyle(
+            fontFamily: uiFontFamily(context, 'Inter'),
             fontFamilyFallback: const ['NotoSansKR'],
             fontSize: 20,
             fontWeight: FontWeight.w800,
@@ -1252,9 +1743,13 @@ class _PersonalTodoEditorPageState extends State<_PersonalTodoEditorPage> {
               padding: const EdgeInsets.symmetric(horizontal: 18),
             ),
             child: Text(
-              widget.isKorean ? '저장' : 'Save',
-              style: const TextStyle(
-                fontFamily: 'Inter',
+              (isChineseUi(context)
+                  ? '保存'
+                  : widget.isKorean
+                      ? '저장'
+                      : 'Save'),
+              style: TextStyle(
+                fontFamily: uiFontFamily(context, 'Inter'),
                 fontFamilyFallback: const ['NotoSansKR'],
                 fontSize: 16,
                 fontWeight: FontWeight.w800,
@@ -1276,17 +1771,11 @@ class _PersonalTodoEditorPageState extends State<_PersonalTodoEditorPage> {
               textInputAction: TextInputAction.next,
               onChanged: (_) => setState(() {}),
               decoration: InputDecoration(
-                hintText: widget.isKorean ? '할 일' : 'Task',
-                border: const UnderlineInputBorder(),
-              ),
-            ),
-            TextField(
-              controller: _memoController,
-              maxLength: 200,
-              minLines: 1,
-              maxLines: 3,
-              decoration: InputDecoration(
-                hintText: widget.isKorean ? '메모 (선택)' : 'Note (optional)',
+                hintText: (isChineseUi(context)
+                    ? '待办事项'
+                    : widget.isKorean
+                        ? '할 일'
+                        : 'Task'),
                 border: const UnderlineInputBorder(),
               ),
             ),
@@ -1295,7 +1784,11 @@ class _PersonalTodoEditorPageState extends State<_PersonalTodoEditorPage> {
                 initialValue: _weekNumber,
                 isExpanded: true,
                 decoration: InputDecoration(
-                  labelText: widget.isKorean ? '주차' : 'Week',
+                  labelText: (isChineseUi(context)
+                      ? '周'
+                      : widget.isKorean
+                          ? '주차'
+                          : 'Week'),
                   border: const UnderlineInputBorder(),
                 ),
                 items: widget.weeks
@@ -1303,9 +1796,11 @@ class _PersonalTodoEditorPageState extends State<_PersonalTodoEditorPage> {
                       (week) => DropdownMenuItem<int>(
                         value: week.weekNumber,
                         child: Text(
-                          widget.isKorean
-                              ? '${week.weekNumber}주차 · ${_weekRange(week)}'
-                              : 'Week ${week.weekNumber} · ${_weekRange(week)}',
+                          (isChineseUi(context)
+                              ? '第${week.weekNumber}周 · ${_weekRange(week)}'
+                              : widget.isKorean
+                                  ? '${week.weekNumber}주차 · ${_weekRange(week)}'
+                                  : 'Week ${week.weekNumber} · ${_weekRange(week)}'),
                           overflow: TextOverflow.ellipsis,
                         ),
                       ),
@@ -1313,7 +1808,23 @@ class _PersonalTodoEditorPageState extends State<_PersonalTodoEditorPage> {
                     .toList(growable: false),
                 onChanged: (value) {
                   if (value != null) {
-                    setState(() => _weekNumber = value);
+                    setState(() {
+                      _weekNumber = value;
+                      final week = widget.weeks.firstWhere(
+                        (item) => item.weekNumber == value,
+                      );
+                      final due =
+                          _dueAt == null ? null : _calendarDate(_dueAt!);
+                      final start = _calendarDate(week.startDate);
+                      final end = _calendarDate(week.endDate);
+                      if (due == null ||
+                          due.isBefore(start) ||
+                          due.isAfter(end)) {
+                        _dueAt =
+                            DateTime.utc(start.year, start.month, start.day)
+                                .subtract(const Duration(hours: 9));
+                      }
+                    });
                   }
                 },
               ),
@@ -1325,53 +1836,191 @@ class _PersonalTodoEditorPageState extends State<_PersonalTodoEditorPage> {
               ),
               title: Text(
                 _dueAt == null
-                    ? (widget.isKorean
-                        ? '마감일 추가 (선택)'
-                        : 'Add due date (optional)')
+                    ? ((isChineseUi(context)
+                        ? '选择日期'
+                        : widget.isKorean
+                            ? '날짜 선택'
+                            : 'Choose date'))
                     : _dateLabel(_dueAt!),
               ),
-              trailing: _dueAt == null
-                  ? const Icon(Icons.chevron_right_rounded)
-                  : IconButton(
-                      onPressed: () => setState(() => _dueAt = null),
-                      icon: const Icon(Icons.close_rounded),
-                    ),
+              subtitle: Text(
+                isChineseUi(context)
+                    ? '必填'
+                    : widget.isKorean
+                        ? '필수'
+                        : 'Required',
+              ),
+              trailing: const Icon(Icons.chevron_right_rounded),
               onTap: _pickDueDate,
             ),
-            SwitchListTile.adaptive(
-              contentPadding: EdgeInsets.zero,
-              value: _reminderEnabled,
-              activeThumbColor: AppColors.pointColor,
-              secondary: const Icon(Icons.notifications_none_rounded),
-              title: Text(
-                widget.isKorean
-                    ? '매일 $reminderTime 알림'
-                    : 'Daily reminder at $reminderTime',
+            Align(
+              alignment: Alignment.centerLeft,
+              child: TextButton.icon(
+                onPressed: () => setState(() => _showOptions = !_showOptions),
+                style: TextButton.styleFrom(
+                  foregroundColor: const Color(0xFF475569),
+                  padding: const EdgeInsets.symmetric(vertical: 10),
+                ),
+                icon: Icon(
+                  _showOptions ? Icons.expand_less_rounded : Icons.tune_rounded,
+                  size: 20,
+                ),
+                label: Text(
+                  isChineseUi(context)
+                      ? '更多选项'
+                      : widget.isKorean
+                          ? '추가 옵션'
+                          : 'More options',
+                  style: const TextStyle(fontWeight: FontWeight.w700),
+                ),
               ),
-              subtitle: Text(
-                widget.isKorean
-                    ? '선택한 주차가 시작되면 미완료 상태에서 알려드려요.'
-                    : 'Starts with the selected week and stops when completed.',
-              ),
-              onChanged: (value) async {
-                if (value && !widget.notificationsEnabled) {
-                  final enabled = await widget.onEnableGlobalReminders();
-                  if (!enabled || !mounted) return;
-                }
-                setState(() => _reminderEnabled = value);
-              },
             ),
-            SwitchListTile.adaptive(
-              contentPadding: EdgeInsets.zero,
-              value: _carryOver,
-              activeThumbColor: AppColors.pointColor,
-              title: Text(
-                widget.isKorean
-                    ? '미완료 시 다음 주로 이어가기'
-                    : 'Carry over when incomplete',
+            if (_showOptions) ...[
+              TextField(
+                controller: _memoController,
+                maxLength: 200,
+                minLines: 1,
+                maxLines: 3,
+                decoration: InputDecoration(
+                  hintText: isChineseUi(context)
+                      ? '备注（选填）'
+                      : widget.isKorean
+                          ? '메모 (선택)'
+                          : 'Note (optional)',
+                  border: const UnderlineInputBorder(),
+                ),
               ),
-              onChanged: (value) => setState(() => _carryOver = value),
-            ),
+              ListTile(
+                contentPadding: EdgeInsets.zero,
+                leading: const Icon(Icons.schedule_rounded),
+                title: Text(
+                  _timeMinutes == null
+                      ? (isChineseUi(context)
+                          ? '添加时间'
+                          : widget.isKorean
+                              ? '시간 추가'
+                              : 'Add time')
+                      : MaterialLocalizations.of(context).formatTimeOfDay(
+                          TimeOfDay(
+                            hour: _timeMinutes! ~/ 60,
+                            minute: _timeMinutes! % 60,
+                          ),
+                        ),
+                ),
+                trailing: _timeMinutes == null
+                    ? const Icon(Icons.chevron_right_rounded)
+                    : IconButton(
+                        onPressed: () => setState(() => _timeMinutes = null),
+                        icon: const Icon(Icons.close_rounded),
+                      ),
+                onTap: _pickTime,
+              ),
+              DropdownButtonFormField<PersonalTodoCategory>(
+                initialValue: _category,
+                isExpanded: true,
+                decoration: InputDecoration(
+                  labelText: isChineseUi(context)
+                      ? '类别'
+                      : widget.isKorean
+                          ? '카테고리'
+                          : 'Category',
+                  border: const UnderlineInputBorder(),
+                ),
+                items: PersonalTodoCategory.values
+                    .map((category) => DropdownMenuItem(
+                          value: category,
+                          child: Text(_categoryLabel(category)),
+                        ))
+                    .toList(growable: false),
+                onChanged: (value) {
+                  if (value != null) setState(() => _category = value);
+                },
+              ),
+              const SizedBox(height: 14),
+              Row(
+                children: [
+                  Expanded(
+                    child: Text(
+                      isChineseUi(context)
+                          ? '重要度'
+                          : widget.isKorean
+                              ? '중요도'
+                              : 'Priority',
+                      style: const TextStyle(
+                        fontSize: 15,
+                        fontWeight: FontWeight.w600,
+                        color: Color(0xFF334155),
+                      ),
+                    ),
+                  ),
+                  ChoiceChip(
+                    selected: _priority == PersonalTodoPriority.normal,
+                    showCheckmark: false,
+                    label: Text(isChineseUi(context)
+                        ? '普通'
+                        : widget.isKorean
+                            ? '보통'
+                            : 'Normal'),
+                    onSelected: (_) => setState(
+                      () => _priority = PersonalTodoPriority.normal,
+                    ),
+                  ),
+                  const SizedBox(width: 6),
+                  ChoiceChip(
+                    selected: _priority == PersonalTodoPriority.high,
+                    showCheckmark: false,
+                    label: Text(isChineseUi(context)
+                        ? '重要'
+                        : widget.isKorean
+                            ? '중요'
+                            : 'High'),
+                    onSelected: (_) => setState(
+                      () => _priority = PersonalTodoPriority.high,
+                    ),
+                  ),
+                ],
+              ),
+              SwitchListTile.adaptive(
+                contentPadding: EdgeInsets.zero,
+                value: _reminderEnabled,
+                activeThumbColor: AppColors.pointColor,
+                secondary: const Icon(Icons.notifications_none_rounded),
+                title: Text(
+                  isChineseUi(context)
+                      ? '每天${reminderTime}提醒'
+                      : widget.isKorean
+                          ? '매일 $reminderTime 알림'
+                          : 'Daily reminder at $reminderTime',
+                ),
+                subtitle: Text(
+                  isChineseUi(context)
+                      ? '沿用当前提醒政策，完成后停止。'
+                      : widget.isKorean
+                          ? '기존 알림 시간에 알려드리고, 완료하면 멈춰요.'
+                          : 'Uses the current reminder time and stops when completed.',
+                ),
+                onChanged: (value) async {
+                  if (value && !widget.notificationsEnabled) {
+                    final enabled = await widget.onEnableGlobalReminders();
+                    if (!enabled || !mounted) return;
+                  }
+                  setState(() => _reminderEnabled = value);
+                },
+              ),
+              SwitchListTile.adaptive(
+                contentPadding: EdgeInsets.zero,
+                value: _carryOver,
+                activeThumbColor: AppColors.pointColor,
+                title: Text(
+                  isChineseUi(context)
+                      ? '未完成时顺延'
+                      : widget.isKorean
+                          ? '미완료 시 다음 주로 이어가기'
+                          : 'Carry over when incomplete',
+                ),
+                onChanged: (value) => setState(() => _carryOver = value),
+              ),
+            ],
             if (widget.existing != null) ...[
               const SizedBox(height: 24),
               Align(
@@ -1387,9 +2036,13 @@ class _PersonalTodoEditorPageState extends State<_PersonalTodoEditorPage> {
                   ),
                   icon: const Icon(Icons.delete_outline_rounded),
                   label: Text(
-                    widget.isKorean ? '할 일 삭제' : 'Delete task',
-                    style: const TextStyle(
-                      fontFamily: 'Inter',
+                    (isChineseUi(context)
+                        ? '删除待办'
+                        : widget.isKorean
+                            ? '할 일 삭제'
+                            : 'Delete task'),
+                    style: TextStyle(
+                      fontFamily: uiFontFamily(context, 'Inter'),
                       fontFamilyFallback: const ['NotoSansKR'],
                       fontWeight: FontWeight.w700,
                     ),
@@ -1416,8 +2069,8 @@ class _SectionTitle extends StatelessWidget {
           Expanded(
             child: Text(
               title,
-              style: const TextStyle(
-                fontFamily: 'Inter',
+              style: TextStyle(
+                fontFamily: uiFontFamily(context, 'Inter'),
                 fontFamilyFallback: const ['NotoSansKR'],
                 fontSize: 18,
                 fontWeight: FontWeight.w800,
@@ -1475,9 +2128,13 @@ class _ReminderTimeSheetState extends State<_ReminderTimeSheet> {
                 const SizedBox(width: 10),
                 Expanded(
                   child: Text(
-                    widget.isKorean ? '알림 시간' : 'Reminder time',
-                    style: const TextStyle(
-                      fontFamily: 'Inter',
+                    (isChineseUi(context)
+                        ? '提醒时间'
+                        : widget.isKorean
+                            ? '알림 시간'
+                            : 'Reminder time'),
+                    style: TextStyle(
+                      fontFamily: uiFontFamily(context, 'Inter'),
                       fontFamilyFallback: const ['NotoSansKR'],
                       fontSize: 20,
                       height: 1.3,
@@ -1487,7 +2144,11 @@ class _ReminderTimeSheetState extends State<_ReminderTimeSheet> {
                   ),
                 ),
                 IconButton(
-                  tooltip: widget.isKorean ? '닫기' : 'Close',
+                  tooltip: (isChineseUi(context)
+                      ? '关闭'
+                      : widget.isKorean
+                          ? '닫기'
+                          : 'Close'),
                   onPressed: () => Navigator.pop(context),
                   icon: const Icon(Icons.close_rounded),
                   color: const Color(0xFF64748B),
@@ -1496,11 +2157,13 @@ class _ReminderTimeSheetState extends State<_ReminderTimeSheet> {
             ),
             const SizedBox(height: 4),
             Text(
-              widget.isKorean
-                  ? '매일 알림을 받을 시간을 선택해 주세요.'
-                  : 'Choose when you want to receive the daily reminder.',
-              style: const TextStyle(
-                fontFamily: 'Inter',
+              (isChineseUi(context)
+                  ? '选择每天接收提醒的时间。'
+                  : widget.isKorean
+                      ? '매일 알림을 받을 시간을 선택해 주세요.'
+                      : 'Choose when you want to receive the daily reminder.'),
+              style: TextStyle(
+                fontFamily: uiFontFamily(context, 'Inter'),
                 fontFamilyFallback: const ['NotoSansKR'],
                 fontSize: 14,
                 height: 1.45,
@@ -1511,10 +2174,10 @@ class _ReminderTimeSheetState extends State<_ReminderTimeSheet> {
             SizedBox(
               height: 190,
               child: CupertinoTheme(
-                data: const CupertinoThemeData(
+                data: CupertinoThemeData(
                   textTheme: CupertinoTextThemeData(
                     dateTimePickerTextStyle: TextStyle(
-                      fontFamily: 'Inter',
+                      fontFamily: uiFontFamily(context, 'Inter'),
                       fontFamilyFallback: const ['NotoSansKR'],
                       fontSize: 21,
                       fontWeight: FontWeight.w600,
@@ -1547,9 +2210,13 @@ class _ReminderTimeSheetState extends State<_ReminderTimeSheet> {
                     minimumSize: const Size(72, 48),
                   ),
                   child: Text(
-                    widget.isKorean ? '취소' : 'Cancel',
-                    style: const TextStyle(
-                      fontFamily: 'Inter',
+                    (isChineseUi(context)
+                        ? '取消'
+                        : widget.isKorean
+                            ? '취소'
+                            : 'Cancel'),
+                    style: TextStyle(
+                      fontFamily: uiFontFamily(context, 'Inter'),
                       fontFamilyFallback: const ['NotoSansKR'],
                       fontSize: 15,
                       fontWeight: FontWeight.w600,
@@ -1564,9 +2231,13 @@ class _ReminderTimeSheetState extends State<_ReminderTimeSheet> {
                     minimumSize: const Size(72, 48),
                   ),
                   child: Text(
-                    widget.isKorean ? '저장' : 'Save',
-                    style: const TextStyle(
-                      fontFamily: 'Inter',
+                    (isChineseUi(context)
+                        ? '保存'
+                        : widget.isKorean
+                            ? '저장'
+                            : 'Save'),
+                    style: TextStyle(
+                      fontFamily: uiFontFamily(context, 'Inter'),
                       fontFamilyFallback: const ['NotoSansKR'],
                       fontSize: 15,
                       fontWeight: FontWeight.w800,
@@ -1627,11 +2298,19 @@ class _ErrorState extends StatelessWidget {
             ),
             const SizedBox(height: 12),
             Text(
-              korean ? 'To-do를 불러오지 못했어요.' : 'Could not load your to-do list.',
+              (isChineseUi(context)
+                  ? '待办列表加载失败。'
+                  : korean
+                      ? 'To-do를 불러오지 못했어요.'
+                      : 'Could not load your to-do list.'),
             ),
             TextButton(
               onPressed: onRetry,
-              child: Text(korean ? '다시 시도' : 'Try again'),
+              child: Text((isChineseUi(context)
+                  ? '重试'
+                  : korean
+                      ? '다시 시도'
+                      : 'Try again')),
             ),
           ],
         ),
@@ -1659,9 +2338,13 @@ class _EmptySemesterState extends StatelessWidget {
             ),
             const SizedBox(height: 14),
             Text(
-              korean ? '진행 중인 학기가 없어요.' : 'There is no active semester.',
-              style: const TextStyle(
-                fontFamily: 'Inter',
+              (isChineseUi(context)
+                  ? '当前没有进行中的学期。'
+                  : korean
+                      ? '진행 중인 학기가 없어요.'
+                      : 'There is no active semester.'),
+              style: TextStyle(
+                fontFamily: uiFontFamily(context, 'Inter'),
                 fontFamilyFallback: const ['NotoSansKR'],
                 fontSize: 16,
                 fontWeight: FontWeight.w600,
@@ -1670,12 +2353,14 @@ class _EmptySemesterState extends StatelessWidget {
             ),
             const SizedBox(height: 6),
             Text(
-              korean
-                  ? '새 학기가 공개되면 주차별 안내가 여기에 보여요.'
-                  : 'Weekly guidance will appear here when a semester is published.',
+              (isChineseUi(context)
+                  ? '学期发布后，这里将显示每周指南。'
+                  : korean
+                      ? '새 학기가 공개되면 주차별 안내가 여기에 보여요.'
+                      : 'Weekly guidance will appear here when a semester is published.'),
               textAlign: TextAlign.center,
-              style: const TextStyle(
-                fontFamily: 'Inter',
+              style: TextStyle(
+                fontFamily: uiFontFamily(context, 'Inter'),
                 fontFamilyFallback: const ['NotoSansKR'],
                 fontSize: 14,
                 color: Color(0xFF64748B),

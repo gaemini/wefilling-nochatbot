@@ -22,6 +22,7 @@ import '../config/app_config.dart';
 import '../services/content_translation_service.dart';
 import '../ui/sheets/translation_language_sheet.dart';
 import 'release_diagnostics_screen.dart';
+import '../l10n/ui_locale.dart';
 
 class AccountSettingsScreen extends StatefulWidget {
   const AccountSettingsScreen({Key? key}) : super(key: key);
@@ -55,8 +56,8 @@ class _AccountSettingsScreenState extends State<AccountSettingsScreen> {
         ),
         title: Text(
           AppLocalizations.of(context)!.accountSettings ?? "",
-          style: const TextStyle(
-            fontFamily: 'Inter',
+          style: TextStyle(
+            fontFamily: uiFontFamily(context, 'Inter'),
             fontFamilyFallback: const ['NotoSansKR'],
             fontSize: 18,
             fontWeight: FontWeight.w600,
@@ -111,8 +112,9 @@ class _AccountSettingsScreenState extends State<AccountSettingsScreen> {
                     AppLocalizations.of(context)!.language,
                     Icons.language,
                     () => _showLanguageDialog(context),
-                    subtitle:
-                        Localizations.localeOf(context).languageCode == 'ko'
+                    subtitle: isChineseUi(context)
+                        ? '简体中文'
+                        : Localizations.localeOf(context).languageCode == 'ko'
                             ? (AppLocalizations.of(context)!.korean ?? "")
                             : AppLocalizations.of(context)!.english,
                   ),
@@ -126,9 +128,12 @@ class _AccountSettingsScreenState extends State<AccountSettingsScreen> {
                       final code = snapshot.data ??
                           Localizations.localeOf(context).languageCode;
                       return _buildListItem(
-                        Localizations.localeOf(context).languageCode == 'ko'
-                            ? '번역 언어'
-                            : 'Translation language',
+                        (isChineseUi(context)
+                            ? '翻译语言'
+                            : Localizations.localeOf(context).languageCode ==
+                                    'ko'
+                                ? '번역 언어'
+                                : 'Translation language'),
                         Icons.translate_rounded,
                         () => _showTranslationLanguageDialog(context),
                         subtitle: ContentTranslationService
@@ -218,9 +223,11 @@ class _AccountSettingsScreenState extends State<AccountSettingsScreen> {
                   if (kDebugMode) ...[
                     _buildDivider(),
                     _buildListItem(
-                      Localizations.localeOf(context).languageCode == 'ko'
-                          ? '릴리스 진단'
-                          : 'Release diagnostics',
+                      (isChineseUi(context)
+                          ? '发布诊断'
+                          : Localizations.localeOf(context).languageCode == 'ko'
+                              ? '릴리스 진단'
+                              : 'Release diagnostics'),
                       Icons.fact_check_outlined,
                       () => Navigator.push(
                         context,
@@ -244,8 +251,8 @@ class _AccountSettingsScreenState extends State<AccountSettingsScreen> {
       padding: const EdgeInsets.fromLTRB(16.0, 8.0, 16.0, 8.0),
       child: Text(
         title,
-        style: const TextStyle(
-          fontFamily: 'Inter',
+        style: TextStyle(
+          fontFamily: uiFontFamily(context, 'Inter'),
           fontFamilyFallback: const ['NotoSansKR'],
           fontSize: 13,
           fontWeight: FontWeight.w600,
@@ -283,7 +290,7 @@ class _AccountSettingsScreenState extends State<AccountSettingsScreen> {
                   Text(
                     title,
                     style: TextStyle(
-                      fontFamily: 'Inter',
+                      fontFamily: uiFontFamily(context, 'Inter'),
                       fontFamilyFallback: const ['NotoSansKR'],
                       fontSize: 16,
                       fontWeight: FontWeight.w500,
@@ -294,8 +301,8 @@ class _AccountSettingsScreenState extends State<AccountSettingsScreen> {
                     const SizedBox(height: 4),
                     Text(
                       subtitle,
-                      style: const TextStyle(
-                        fontFamily: 'Inter',
+                      style: TextStyle(
+                        fontFamily: uiFontFamily(context, 'Inter'),
                         fontFamilyFallback: const ['NotoSansKR'],
                         fontSize: 14,
                         color: Color(0xFF6B7280),
@@ -341,7 +348,10 @@ class _AccountSettingsScreenState extends State<AccountSettingsScreen> {
 
     showModalBottomSheet<void>(
       context: context,
-      isScrollControlled: false,
+      isScrollControlled: true,
+      constraints: BoxConstraints(
+        maxHeight: MediaQuery.sizeOf(context).height * 0.85,
+      ),
       backgroundColor: Colors.white,
       useSafeArea: true,
       showDragHandle: false,
@@ -352,7 +362,7 @@ class _AccountSettingsScreenState extends State<AccountSettingsScreen> {
         return SafeArea(
           top: false,
           minimum: const EdgeInsets.only(bottom: 8),
-          child: Padding(
+          child: SingleChildScrollView(
             padding: const EdgeInsets.fromLTRB(20, 10, 20, 4),
             child: Column(
               mainAxisSize: MainAxisSize.min,
@@ -375,8 +385,8 @@ class _AccountSettingsScreenState extends State<AccountSettingsScreen> {
                   textScaler: MediaQuery.textScalerOf(
                     sheetContext,
                   ).clamp(maxScaleFactor: 1.2),
-                  style: const TextStyle(
-                    fontFamily: 'Inter',
+                  style: TextStyle(
+                    fontFamily: uiFontFamily(context, 'Inter'),
                     fontFamilyFallback: const ['NotoSansKR'],
                     fontSize: 20,
                     fontWeight: FontWeight.w700,
@@ -400,6 +410,16 @@ class _AccountSettingsScreenState extends State<AccountSettingsScreen> {
                   selected: currentLocale == 'en',
                   onTap: () => applyAndClose('en', sheetContext),
                 ),
+                const Padding(
+                  padding: EdgeInsets.only(left: 44),
+                  child: Divider(height: 1, color: Color(0xFFF0F2F5)),
+                ),
+                _LanguageOptionTile(
+                  title: '简体中文',
+                  code: 'ZH',
+                  selected: currentLocale == 'zh',
+                  onTap: () => applyAndClose('zh_Hans', sheetContext),
+                ),
                 const SizedBox(height: 6),
                 Align(
                   alignment: Alignment.center,
@@ -412,8 +432,8 @@ class _AccountSettingsScreenState extends State<AccountSettingsScreen> {
                     ),
                     child: Text(
                       l10n.cancel,
-                      style: const TextStyle(
-                        fontFamily: 'Inter',
+                      style: TextStyle(
+                        fontFamily: uiFontFamily(context, 'Inter'),
                         fontFamilyFallback: const ['NotoSansKR'],
                         fontSize: 15,
                         fontWeight: FontWeight.w600,
@@ -596,16 +616,16 @@ class _AccountSettingsScreenState extends State<AccountSettingsScreen> {
                           SizedBox(width: compact ? 10 : 12),
                           Expanded(
                             child: Text(
-                              AppConfig.appName,
+                              l10n.appName,
                               maxLines: 1,
                               overflow: TextOverflow.ellipsis,
                               style: TextStyle(
-                                fontFamily: 'Inter',
+                                fontFamily: uiFontFamily(context, 'Inter'),
                                 fontFamilyFallback: const ['NotoSansKR'],
                                 fontSize: compact ? 21 : 23,
                                 fontWeight: FontWeight.w700,
                                 color: const Color(0xFF111827),
-                                height: 1.15,
+                                height: isChineseUi(context) ? 1.3 : 1.15,
                                 letterSpacing: -0.3,
                               ),
                             ),
@@ -629,12 +649,12 @@ class _AccountSettingsScreenState extends State<AccountSettingsScreen> {
                       Text(
                         '${l10n.appVersion} ${AppConfig.fullVersion}',
                         style: TextStyle(
-                          fontFamily: 'Inter',
+                          fontFamily: uiFontFamily(context, 'Inter'),
                           fontFamilyFallback: const ['NotoSansKR'],
                           fontSize: compact ? 15 : 16,
                           fontWeight: FontWeight.w700,
                           color: const Color(0xFF111827),
-                          height: 1.25,
+                          height: isChineseUi(context) ? 1.3 : 1.25,
                           letterSpacing: -0.2,
                         ),
                       ),
@@ -642,7 +662,7 @@ class _AccountSettingsScreenState extends State<AccountSettingsScreen> {
                       Text(
                         l10n.appTaglineShort,
                         style: TextStyle(
-                          fontFamily: 'Inter',
+                          fontFamily: uiFontFamily(context, 'Inter'),
                           fontFamilyFallback: const ['NotoSansKR'],
                           fontSize: compact ? 13 : 14,
                           fontWeight: FontWeight.w400,
@@ -653,9 +673,9 @@ class _AccountSettingsScreenState extends State<AccountSettingsScreen> {
                       ),
                       SizedBox(height: compact ? 18 : 22),
                       Text(
-                        '© $currentYear Wefilling. All rights reserved.',
+                        '© $currentYear ${l10n.appName}. All rights reserved.',
                         style: TextStyle(
-                          fontFamily: 'Inter',
+                          fontFamily: uiFontFamily(context, 'Inter'),
                           fontFamilyFallback: const ['NotoSansKR'],
                           fontSize: compact ? 11.5 : 12,
                           fontWeight: FontWeight.w400,
@@ -676,12 +696,12 @@ class _AccountSettingsScreenState extends State<AccountSettingsScreen> {
                             child: Text(
                               l10n.patentPending,
                               style: TextStyle(
-                                fontFamily: 'Inter',
+                                fontFamily: uiFontFamily(context, 'Inter'),
                                 fontFamilyFallback: const ['NotoSansKR'],
                                 fontSize: compact ? 14 : 15,
                                 fontWeight: FontWeight.w700,
                                 color: const Color(0xFF111827),
-                                height: 1.25,
+                                height: isChineseUi(context) ? 1.3 : 1.25,
                                 letterSpacing: -0.2,
                               ),
                             ),
@@ -692,7 +712,7 @@ class _AccountSettingsScreenState extends State<AccountSettingsScreen> {
                       Text(
                         l10n.patentApplicationNumber,
                         style: TextStyle(
-                          fontFamily: 'Inter',
+                          fontFamily: uiFontFamily(context, 'Inter'),
                           fontFamilyFallback: const ['NotoSansKR'],
                           fontSize: compact ? 12 : 13,
                           fontWeight: FontWeight.w500,
@@ -705,7 +725,7 @@ class _AccountSettingsScreenState extends State<AccountSettingsScreen> {
                       Text(
                         l10n.patentInventionTitle,
                         style: TextStyle(
-                          fontFamily: 'Inter',
+                          fontFamily: uiFontFamily(context, 'Inter'),
                           fontFamilyFallback: const ['NotoSansKR'],
                           fontSize: compact ? 11.5 : 12.5,
                           fontWeight: FontWeight.w400,
@@ -726,8 +746,8 @@ class _AccountSettingsScreenState extends State<AccountSettingsScreen> {
                           ),
                           child: Text(
                             l10n.confirm,
-                            style: const TextStyle(
-                              fontFamily: 'Inter',
+                            style: TextStyle(
+                              fontFamily: uiFontFamily(context, 'Inter'),
                               fontFamilyFallback: ['NotoSansKR'],
                               fontSize: 15,
                               fontWeight: FontWeight.w700,
@@ -774,7 +794,7 @@ class _LanguageOptionTile extends StatelessWidget {
               child: Text(
                 code,
                 style: TextStyle(
-                  fontFamily: 'Inter',
+                  fontFamily: uiFontFamily(context, 'Inter'),
                   fontFamilyFallback: const ['NotoSansKR'],
                   fontSize: 13,
                   fontWeight: FontWeight.w700,
@@ -794,7 +814,7 @@ class _LanguageOptionTile extends StatelessWidget {
                   context,
                 ).clamp(maxScaleFactor: 1.2),
                 style: TextStyle(
-                  fontFamily: 'Inter',
+                  fontFamily: uiFontFamily(context, 'Inter'),
                   fontFamilyFallback: const ['NotoSansKR'],
                   fontSize: 16,
                   fontWeight: FontWeight.w600,

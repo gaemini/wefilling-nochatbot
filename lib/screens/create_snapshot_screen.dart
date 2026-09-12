@@ -23,6 +23,7 @@ import '../ui/snackbar/app_snackbar.dart';
 import '../ui/widgets/group_audience_preview.dart';
 import '../utils/logger.dart';
 import '../utils/responsive_helper.dart';
+import '../l10n/ui_locale.dart';
 
 class CreateSnapshotScreen extends StatefulWidget {
   const CreateSnapshotScreen({super.key, this.onCreated});
@@ -573,12 +574,12 @@ class _CreateSnapshotScreenState extends State<CreateSnapshotScreen>
     double? fontScale,
   }) {
     return TextStyle(
-      fontFamily: 'Inter',
+      fontFamily: uiFontFamily(context, 'Inter'),
       fontFamilyFallback: const ['NotoSansKR'],
       fontSize: (imageWidth * .066).clamp(19, 34).toDouble() *
           (fontScale ?? _overlayFontScale),
       fontWeight: FontWeight.w800,
-      height: 1.18,
+      height: isChineseUi(context) ? 1.3 : 1.18,
       color: _lightText ? Colors.white : const Color(0xFF111111),
       shadows: _lightText
           ? const [
@@ -888,7 +889,7 @@ class _CreateSnapshotScreenState extends State<CreateSnapshotScreen>
                   strings.deleteConfirm,
                   textAlign: TextAlign.center,
                   style: TextStyle(
-                    fontFamily: 'Inter',
+                    fontFamily: uiFontFamily(context, 'Inter'),
                     fontFamilyFallback: const ['NotoSansKR'],
                     fontSize: sheetContext.rf(16).clamp(15, 17).toDouble(),
                     fontWeight: FontWeight.w700,
@@ -1025,7 +1026,7 @@ class _CreateSnapshotScreenState extends State<CreateSnapshotScreen>
                   label: Text(
                     strings.upload,
                     style: TextStyle(
-                      fontFamily: 'Inter',
+                      fontFamily: uiFontFamily(context, 'Inter'),
                       fontFamilyFallback: const ['NotoSansKR'],
                       fontSize: context.rf(14).clamp(13, 15).toDouble(),
                       fontWeight: FontWeight.w700,
@@ -1079,7 +1080,7 @@ class _CreateSnapshotScreenState extends State<CreateSnapshotScreen>
                 overflow: TextOverflow.ellipsis,
                 textAlign: TextAlign.center,
                 style: TextStyle(
-                  fontFamily: 'Inter',
+                  fontFamily: uiFontFamily(context, 'Inter'),
                   fontFamilyFallback: const ['NotoSansKR'],
                   fontSize: context.rf(18).clamp(16, 19).toDouble(),
                   fontWeight: FontWeight.w700,
@@ -1168,7 +1169,7 @@ class _CreateSnapshotScreenState extends State<CreateSnapshotScreen>
                                                     strings.tapPhotoToType,
                                                     textAlign: TextAlign.center,
                                                     style: TextStyle(
-                                                      fontFamily: 'Inter',
+                                                      fontFamily: uiFontFamily(context, 'Inter'),
                                                       fontFamilyFallback: const [
                                                         'NotoSansKR'
                                                       ],
@@ -1426,7 +1427,7 @@ class _CreateSnapshotScreenState extends State<CreateSnapshotScreen>
             Text(
               strings.visibilityPrompt,
               style: TextStyle(
-                fontFamily: 'Inter',
+                fontFamily: uiFontFamily(context, 'Inter'),
                 fontFamilyFallback: const ['NotoSansKR'],
                 fontSize: context.rf(17).clamp(15.5, 18).toDouble(),
                 fontWeight: FontWeight.w800,
@@ -1481,7 +1482,7 @@ class _CreateSnapshotScreenState extends State<CreateSnapshotScreen>
         child: Text(
           strings.noGroups,
           style: TextStyle(
-            fontFamily: 'Inter',
+            fontFamily: uiFontFamily(context, 'Inter'),
             fontFamilyFallback: const ['NotoSansKR'],
             fontSize: context.rf(12).clamp(11, 13).toDouble(),
             fontWeight: FontWeight.w500,
@@ -1497,7 +1498,7 @@ class _CreateSnapshotScreenState extends State<CreateSnapshotScreen>
         Text(
           strings.groupsSelected(_selectedCategoryIds.length),
           style: TextStyle(
-            fontFamily: 'Inter',
+            fontFamily: uiFontFamily(context, 'Inter'),
             fontFamilyFallback: const ['NotoSansKR'],
             fontSize: context.rf(12).clamp(11, 13).toDouble(),
             fontWeight: FontWeight.w700,
@@ -1536,7 +1537,7 @@ class _CreateSnapshotScreenState extends State<CreateSnapshotScreen>
             child: Text(
               strings.groupRequired,
               style: TextStyle(
-                fontFamily: 'Inter',
+                fontFamily: uiFontFamily(context, 'Inter'),
                 fontFamilyFallback: const ['NotoSansKR'],
                 fontSize: context.rf(12).clamp(11, 13).toDouble(),
                 fontWeight: FontWeight.w700,
@@ -1628,8 +1629,8 @@ class _RecentPhotoGallery extends StatelessWidget {
               Text(
                 permissionMessage,
                 textAlign: TextAlign.center,
-                style: const TextStyle(
-                  fontFamily: 'Inter',
+                style: TextStyle(
+                  fontFamily: uiFontFamily(context, 'Inter'),
                   fontFamilyFallback: ['NotoSansKR'],
                   fontSize: 14,
                   height: 1.45,
@@ -1677,8 +1678,8 @@ class _RecentPhotoGallery extends StatelessWidget {
               Text(
                 loadFailedMessage,
                 textAlign: TextAlign.center,
-                style: const TextStyle(
-                  fontFamily: 'Inter',
+                style: TextStyle(
+                  fontFamily: uiFontFamily(context, 'Inter'),
                   fontFamilyFallback: ['NotoSansKR'],
                   fontSize: 14,
                   height: 1.45,
@@ -1817,8 +1818,8 @@ class _PhotoActionCell extends StatelessWidget {
                     textAlign: TextAlign.center,
                     maxLines: 2,
                     overflow: TextOverflow.ellipsis,
-                    style: const TextStyle(
-                      fontFamily: 'Inter',
+                    style: TextStyle(
+                      fontFamily: uiFontFamily(context, 'Inter'),
                       fontFamilyFallback: ['NotoSansKR'],
                       fontSize: 12,
                       fontWeight: FontWeight.w700,
@@ -1917,7 +1918,7 @@ class _VisibilityRow extends StatelessWidget {
                       Text(
                         title,
                         style: TextStyle(
-                          fontFamily: 'Inter',
+                          fontFamily: uiFontFamily(context, 'Inter'),
                           fontFamilyFallback: const ['NotoSansKR'],
                           fontSize: 15,
                           fontWeight:
@@ -1930,8 +1931,8 @@ class _VisibilityRow extends StatelessWidget {
                         description,
                         maxLines: 2,
                         overflow: TextOverflow.ellipsis,
-                        style: const TextStyle(
-                          fontFamily: 'Inter',
+                        style: TextStyle(
+                          fontFamily: uiFontFamily(context, 'Inter'),
                           fontFamilyFallback: ['NotoSansKR'],
                           fontSize: 12.5,
                           height: 1.3,
@@ -2000,7 +2001,7 @@ class _CategoryRow extends StatelessWidget {
                       maxLines: 1,
                       overflow: TextOverflow.ellipsis,
                       style: TextStyle(
-                        fontFamily: 'Inter',
+                        fontFamily: uiFontFamily(context, 'Inter'),
                         fontFamilyFallback: const ['NotoSansKR'],
                         fontSize: context.rf(14).clamp(13, 15).toDouble(),
                         fontWeight:

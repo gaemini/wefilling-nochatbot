@@ -4,6 +4,7 @@ import 'package:flutter/material.dart';
 
 import '../../models/meetup.dart';
 import '../../utils/responsive_helper.dart';
+import '../../l10n/ui_locale.dart';
 
 /// 미확정 밋업의 공개 잔여 시간을 화면 새로고침 없이 갱신한다.
 class MeetupPublicCountdown extends StatefulWidget {
@@ -94,7 +95,7 @@ class _MeetupPublicCountdownState extends State<MeetupPublicCountdown> {
                 label,
                 maxLines: 1,
                 style: TextStyle(
-                  fontFamily: 'Inter',
+                  fontFamily: uiFontFamily(context, 'Inter'),
                   fontFamilyFallback: const ['NotoSansKR'],
                   fontSize: context.rf(8.5).clamp(8.0, 9.0).toDouble(),
                   fontWeight: FontWeight.w700,
@@ -136,7 +137,7 @@ class _MeetupPublicCountdownState extends State<MeetupPublicCountdown> {
                 maxLines: 1,
                 overflow: TextOverflow.ellipsis,
                 style: TextStyle(
-                  fontFamily: 'Inter',
+                  fontFamily: uiFontFamily(context, 'Inter'),
                   fontFamilyFallback: const ['NotoSansKR'],
                   fontSize: context.rf(12.5).clamp(12, 13).toDouble(),
                   fontWeight: FontWeight.w700,

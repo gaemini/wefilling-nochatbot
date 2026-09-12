@@ -12,6 +12,7 @@ import 'friends_page.dart';
 import 'friend_categories_screen.dart';
 import '../l10n/app_localizations.dart';
 import '../constants/app_constants.dart';
+import '../l10n/ui_locale.dart';
 
 class FriendsMainPage extends StatefulWidget {
   const FriendsMainPage({super.key});
@@ -83,8 +84,8 @@ class _FriendsMainPageState extends State<FriendsMainPage>
                             Flexible(
                               child: Text(
                                 AppLocalizations.of(context)!.friends,
-                                style: const TextStyle(
-                                  fontFamily: 'Inter',
+                                style: TextStyle(
+                                  fontFamily: uiFontFamily(context, 'Inter'),
                                   fontFamilyFallback: const ['NotoSansKR'],
                                   fontSize: 10,
                                   fontWeight: FontWeight.w600,
@@ -103,8 +104,8 @@ class _FriendsMainPageState extends State<FriendsMainPage>
                                 ),
                                 child: Text(
                                   friendsCount > 99 ? '99+' : friendsCount.toString(),
-                                  style: const TextStyle(
-                                    fontFamily: 'Inter',
+                                  style: TextStyle(
+                                    fontFamily: uiFontFamily(context, 'Inter'),
                                     fontFamilyFallback: const ['NotoSansKR'],
                                     fontSize: 8.5,
                                     fontWeight: FontWeight.w600,
@@ -130,8 +131,8 @@ class _FriendsMainPageState extends State<FriendsMainPage>
                   const SizedBox(height: 2),
                   Text(
                     AppLocalizations.of(context)!.search,
-                    style: const TextStyle(
-                      fontFamily: 'Inter',
+                    style: TextStyle(
+                      fontFamily: uiFontFamily(context, 'Inter'),
                       fontFamilyFallback: const ['NotoSansKR'],
                       fontSize: 11,
                       fontWeight: FontWeight.w600,
@@ -158,8 +159,8 @@ class _FriendsMainPageState extends State<FriendsMainPage>
                           const SizedBox(height: 2),
                           Text(
                             AppLocalizations.of(context)!.requests,
-                            style: const TextStyle(
-                              fontFamily: 'Inter',
+                            style: TextStyle(
+                              fontFamily: uiFontFamily(context, 'Inter'),
                               fontFamilyFallback: const ['NotoSansKR'],
                               fontSize: 10,
                               fontWeight: FontWeight.w600,
@@ -185,8 +186,8 @@ class _FriendsMainPageState extends State<FriendsMainPage>
                             ),
                             child: Text(
                               incomingCount > 99 ? '99+' : incomingCount.toString(),
-                              style: const TextStyle(
-                                fontFamily: 'Inter',
+                              style: TextStyle(
+                                fontFamily: uiFontFamily(context, 'Inter'),
                                 fontFamilyFallback: const ['NotoSansKR'],
                                 color: Colors.white,
                                 fontSize: 9,
@@ -211,8 +212,8 @@ class _FriendsMainPageState extends State<FriendsMainPage>
                   const SizedBox(height: 2),
                   Text(
                     AppLocalizations.of(context)!.groups,
-                    style: const TextStyle(
-                      fontFamily: 'Inter',
+                    style: TextStyle(
+                      fontFamily: uiFontFamily(context, 'Inter'),
                       fontFamilyFallback: const ['NotoSansKR'],
                       fontSize: 11,
                       fontWeight: FontWeight.w600,

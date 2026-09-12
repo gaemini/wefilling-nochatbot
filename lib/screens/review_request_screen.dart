@@ -11,6 +11,7 @@ import '../models/review_request.dart';
 import '../services/review_consensus_service.dart';
 import '../services/feature_flag_service.dart';
 import '../utils/responsive_helper.dart';
+import '../l10n/ui_locale.dart';
 
 class ReviewRequestScreen extends StatefulWidget {
   final Meetup meetup;
@@ -272,7 +273,7 @@ class _ReviewRequestScreenState extends State<ReviewRequestScreen> {
           maxLines: 1,
           overflow: TextOverflow.ellipsis,
           style: TextStyle(
-            fontFamily: 'Inter',
+            fontFamily: uiFontFamily(context, 'Inter'),
             fontFamilyFallback: const ['NotoSansKR'],
             color: const Color(0xFF111827),
             fontSize: context.rf(18).clamp(16, 19).toDouble(),
@@ -295,8 +296,8 @@ class _ReviewRequestScreenState extends State<ReviewRequestScreen> {
       children: [
         Text(
           localizedCategoryLabel(context, widget.meetup.category),
-          style: const TextStyle(
-            fontFamily: 'Inter',
+          style: TextStyle(
+            fontFamily: uiFontFamily(context, 'Inter'),
             fontFamilyFallback: ['NotoSansKR'],
             color: Color(0xFF2E90FA),
             fontSize: 12,
@@ -307,7 +308,7 @@ class _ReviewRequestScreenState extends State<ReviewRequestScreen> {
         Text(
           widget.meetup.title,
           style: TextStyle(
-            fontFamily: 'Inter',
+            fontFamily: uiFontFamily(context, 'Inter'),
             fontFamilyFallback: const ['NotoSansKR'],
             fontSize: context.rf(18).clamp(16, 19).toDouble(),
             fontWeight: FontWeight.w700,
@@ -329,8 +330,8 @@ class _ReviewRequestScreenState extends State<ReviewRequestScreen> {
                 widget.meetup.location,
                 maxLines: 2,
                 overflow: TextOverflow.ellipsis,
-                style: const TextStyle(
-                  fontFamily: 'Inter',
+                style: TextStyle(
+                  fontFamily: uiFontFamily(context, 'Inter'),
                   fontFamilyFallback: ['NotoSansKR'],
                   fontSize: 14,
                   color: Color(0xFF667085),
@@ -354,8 +355,8 @@ class _ReviewRequestScreenState extends State<ReviewRequestScreen> {
                 '${widget.meetup.date.month}/${widget.meetup.date.day} ${widget.meetup.time}',
                 maxLines: 1,
                 overflow: TextOverflow.ellipsis,
-                style: const TextStyle(
-                  fontFamily: 'Inter',
+                style: TextStyle(
+                  fontFamily: uiFontFamily(context, 'Inter'),
                   fontFamilyFallback: ['NotoSansKR'],
                   fontSize: 14,
                   color: Color(0xFF667085),
@@ -373,10 +374,10 @@ class _ReviewRequestScreenState extends State<ReviewRequestScreen> {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        const Text(
+         Text(
           '요청 대상',
           style: TextStyle(
-            fontFamily: 'Inter',
+            fontFamily: uiFontFamily(context, 'Inter'),
             fontFamilyFallback: ['NotoSansKR'],
             fontSize: 13,
             fontWeight: FontWeight.w700,
@@ -409,8 +410,8 @@ class _ReviewRequestScreenState extends State<ReviewRequestScreen> {
                     widget.recipientName,
                     maxLines: 1,
                     overflow: TextOverflow.ellipsis,
-                    style: const TextStyle(
-                      fontFamily: 'Inter',
+                    style: TextStyle(
+                      fontFamily: uiFontFamily(context, 'Inter'),
                       fontFamilyFallback: ['NotoSansKR'],
                       fontSize: 15,
                       fontWeight: FontWeight.w700,
@@ -418,10 +419,10 @@ class _ReviewRequestScreenState extends State<ReviewRequestScreen> {
                     ),
                   ),
                   const SizedBox(height: 2),
-                  const Text(
+                   Text(
                     '리뷰를 요청받을 사용자',
                     style: TextStyle(
-                      fontFamily: 'Inter',
+                      fontFamily: uiFontFamily(context, 'Inter'),
                       fontFamilyFallback: ['NotoSansKR'],
                       fontSize: 12,
                       color: Color(0xFF98A2B3),
@@ -444,7 +445,7 @@ class _ReviewRequestScreenState extends State<ReviewRequestScreen> {
         Text(
           '요청 메시지',
           style: TextStyle(
-            fontFamily: 'Inter',
+            fontFamily: uiFontFamily(context, 'Inter'),
             fontFamilyFallback: const ['NotoSansKR'],
             fontSize: context.rf(15).clamp(14, 16).toDouble(),
             fontWeight: FontWeight.w700,
@@ -459,8 +460,8 @@ class _ReviewRequestScreenState extends State<ReviewRequestScreen> {
           maxLength: 500,
           decoration: InputDecoration(
             hintText: '리뷰 요청 사유를 입력해주세요.\n예: 모임이 어땠는지 솔직한 후기를 부탁드립니다.',
-            hintStyle: const TextStyle(
-              fontFamily: 'Inter',
+            hintStyle: TextStyle(
+              fontFamily: uiFontFamily(context, 'Inter'),
               fontFamilyFallback: ['NotoSansKR'],
               fontSize: 14,
               color: Color(0xFF98A2B3),
@@ -475,16 +476,16 @@ class _ReviewRequestScreenState extends State<ReviewRequestScreen> {
             focusedBorder: const UnderlineInputBorder(
               borderSide: BorderSide(color: Color(0xFF2E90FA), width: 1.5),
             ),
-            counterStyle: const TextStyle(
-              fontFamily: 'Inter',
+            counterStyle: TextStyle(
+              fontFamily: uiFontFamily(context, 'Inter'),
               fontFamilyFallback: ['NotoSansKR'],
               fontSize: 11,
               color: Color(0xFF98A2B3),
             ),
             contentPadding: const EdgeInsets.symmetric(vertical: 10),
           ),
-          style: const TextStyle(
-            fontFamily: 'Inter',
+          style: TextStyle(
+            fontFamily: uiFontFamily(context, 'Inter'),
             fontFamilyFallback: ['NotoSansKR'],
             fontSize: 14,
             color: Color(0xFF111827),
@@ -518,7 +519,7 @@ class _ReviewRequestScreenState extends State<ReviewRequestScreen> {
                 maxLines: 1,
                 overflow: TextOverflow.ellipsis,
                 style: TextStyle(
-                  fontFamily: 'Inter',
+                  fontFamily: uiFontFamily(context, 'Inter'),
                   fontFamilyFallback: const ['NotoSansKR'],
                   fontSize: context.rf(15).clamp(14, 16).toDouble(),
                   fontWeight: FontWeight.w700,
@@ -529,8 +530,8 @@ class _ReviewRequestScreenState extends State<ReviewRequestScreen> {
             if (_selectedImages.isNotEmpty)
               Text(
                 '${_selectedImages.length}/5',
-                style: const TextStyle(
-                  fontFamily: 'Inter',
+                style: TextStyle(
+                  fontFamily: uiFontFamily(context, 'Inter'),
                   fontFamilyFallback: ['NotoSansKR'],
                   fontSize: 12,
                   color: Color(0xFF667085),
@@ -549,10 +550,10 @@ class _ReviewRequestScreenState extends State<ReviewRequestScreen> {
               tapTargetSize: MaterialTapTargetSize.shrinkWrap,
             ),
             icon: const Icon(Icons.add_photo_alternate_outlined, size: 21),
-            label: const Text(
+            label: Text(
               '이미지 추가',
               style: TextStyle(
-                fontFamily: 'Inter',
+                fontFamily: uiFontFamily(context, 'Inter'),
                 fontFamilyFallback: ['NotoSansKR'],
                 fontSize: 14,
                 fontWeight: FontWeight.w600,
@@ -631,10 +632,10 @@ class _ReviewRequestScreenState extends State<ReviewRequestScreen> {
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              const Text(
+               Text(
                 '리뷰 요청 안내',
                 style: TextStyle(
-                  fontFamily: 'Inter',
+                  fontFamily: uiFontFamily(context, 'Inter'),
                   fontFamilyFallback: ['NotoSansKR'],
                   fontSize: 13,
                   fontWeight: FontWeight.w700,
@@ -642,12 +643,12 @@ class _ReviewRequestScreenState extends State<ReviewRequestScreen> {
                 ),
               ),
               const SizedBox(height: 6),
-              const Text(
+               Text(
                 '요청은 7일 후 자동으로 만료됩니다.\n'
                 '상대방이 수락하면 리뷰 작성이 시작됩니다.\n'
                 '거절하거나 응답이 없으면 다른 참여자에게 요청할 수 있습니다.',
                 style: TextStyle(
-                  fontFamily: 'Inter',
+                  fontFamily: uiFontFamily(context, 'Inter'),
                   fontFamilyFallback: ['NotoSansKR'],
                   fontSize: 12,
                   color: Color(0xFF667085),
@@ -694,10 +695,10 @@ class _ReviewRequestScreenState extends State<ReviewRequestScreen> {
                         color: Colors.white,
                       ),
                     )
-                  : const Text(
+                  : Text(
                       '리뷰 요청 보내기',
                       style: TextStyle(
-                        fontFamily: 'Inter',
+                        fontFamily: uiFontFamily(context, 'Inter'),
                         fontFamilyFallback: ['NotoSansKR'],
                         fontSize: 15,
                         fontWeight: FontWeight.w700,

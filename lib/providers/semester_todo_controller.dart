@@ -265,6 +265,9 @@ class SemesterTodoController extends ChangeNotifier {
     bool? reminderEnabled,
     bool carryOver = true,
     int? weekNumber,
+    int? timeMinutes,
+    PersonalTodoCategory category = PersonalTodoCategory.personal,
+    PersonalTodoPriority priority = PersonalTodoPriority.normal,
   }) async {
     if (semester == null) return;
     await _service.savePersonalTodo(
@@ -282,14 +285,24 @@ class SemesterTodoController extends ChangeNotifier {
       completed: existing?.completed ?? false,
       archived: existing?.archived ?? false,
       completedAt: existing?.completedAt,
+      timeMinutes: timeMinutes,
+      category: category,
+      priority: priority,
     );
     personalTodos = await _service.getPersonalTodos(semester!.id);
     notifyListeners();
   }
 
   Future<void> togglePersonalTodo(PersonalTodo todo) async {
+    await setPersonalTodoCompleted(todo, !todo.completed);
+  }
+
+  Future<void> setPersonalTodoCompleted(
+    PersonalTodo todo,
+    bool completed,
+  ) async {
     error = null;
-    final next = !todo.completed;
+    final next = completed;
     personalTodos = personalTodos
         .map((item) => item.id == todo.id
             ? item.copyWith(

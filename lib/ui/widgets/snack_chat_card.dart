@@ -8,6 +8,7 @@ import '../../models/user_profile.dart';
 import '../../repositories/users_repository.dart';
 import '../../services/cache/app_image_cache_manager.dart';
 import 'audience_ring.dart';
+import '../../l10n/ui_locale.dart';
 
 class SnackChatCard extends StatelessWidget {
   final SnackChat snackChat;
@@ -43,40 +44,41 @@ class SnackChatCard extends StatelessWidget {
 
     final isKo = Localizations.localeOf(context).languageCode == 'ko';
     final period =
-        timestamp.hour < 12 ? (isKo ? '오전' : 'AM') : (isKo ? '오후' : 'PM');
+        timestamp.hour < 12 ? ((isChineseUi(context) ? '上午' : isKo ? '오전' : 'AM')) : ((isChineseUi(context) ? '下午' : isKo ? '오후' : 'PM'));
     final hour = timestamp.hour % 12 == 0 ? 12 : timestamp.hour % 12;
     final minute = timestamp.minute.toString().padLeft(2, '0');
+    if (isChineseUi(context)) return '$period $hour:$minute';
     return isKo ? '$period $hour:$minute' : '$hour:$minute $period';
   }
 
-  String? _remainingTimeLabel({required bool isKo}) {
+  String? _remainingTimeLabel(BuildContext context, {required bool isKo}) {
     if (snackChat.activeDurationHours != 24) return null;
     final remaining = snackChat.expiresAt.difference(DateTime.now());
-    if (remaining <= Duration.zero) return isKo ? '만료됨' : 'Expired';
-    if (remaining.inSeconds < 60) return isKo ? '곧 만료' : 'Ending soon';
+    if (remaining <= Duration.zero) return (isChineseUi(context) ? '已过期' : isKo ? '만료됨' : 'Expired');
+    if (remaining.inSeconds < 60) return (isChineseUi(context) ? '即将结束' : isKo ? '곧 만료' : 'Ending soon');
 
     final minutes = (remaining.inSeconds / 60).ceil();
     if (minutes < 60) {
-      return isKo ? '$minutes분 남음' : '$minutes min left';
+      return (isChineseUi(context) ? '剩余${minutes}分钟' : isKo ? '$minutes분 남음' : '$minutes min left');
     }
     final hours = (minutes / 60).ceil();
-    return isKo ? '$hours시간 남음' : '$hours h left';
+    return (isChineseUi(context) ? '剩余${hours}小时' : isKo ? '$hours시간 남음' : '$hours h left');
   }
 
-  String _localizedSystemPreview(String raw, {required bool isKo}) {
+  String _localizedSystemPreview(BuildContext context, String raw, {required bool isKo}) {
     RegExpMatch? match =
         RegExp(r'^(.+) joined the Snack Chat\.$').firstMatch(raw);
     match ??= RegExp(r'^(.+)님이 스낵챗에 참여했어요\.$').firstMatch(raw);
     if (match != null) {
       final name = match.group(1)!.trim();
-      return isKo ? '$name님이 스낵챗에 참여했어요.' : '$name joined the Snack Chat.';
+      return (isChineseUi(context) ? '${name}加入了群聊。' : isKo ? '$name님이 스낵챗에 참여했어요.' : '$name joined the Snack Chat.');
     }
 
     match = RegExp(r'^(.+) left the Snack Chat\.$').firstMatch(raw);
     match ??= RegExp(r'^(.+)님이 스낵챗에서 나갔어요\.$').firstMatch(raw);
     if (match != null) {
       final name = match.group(1)!.trim();
-      return isKo ? '$name님이 스낵챗에서 나갔어요.' : '$name left the Snack Chat.';
+      return (isChineseUi(context) ? '${name}退出了群聊。' : isKo ? '$name님이 스낵챗에서 나갔어요.' : '$name left the Snack Chat.');
     }
 
     match =
@@ -84,9 +86,9 @@ class SnackChatCard extends StatelessWidget {
     match ??= RegExp(r'^스낵챗 이름이 "(.+)"로 변경됐어요\.$').firstMatch(raw);
     if (match != null) {
       final title = match.group(1)!.trim();
-      return isKo
+      return (isChineseUi(context) ? '群聊名称已改为“${title}”。' : isKo
           ? '스낵챗 이름이 "$title"로 변경됐어요.'
-          : 'The Snack Chat name changed to "$title".';
+          : 'The Snack Chat name changed to "$title".');
     }
 
     match = RegExp(r'^(.+) created a poll: (.+)$').firstMatch(raw);
@@ -94,16 +96,16 @@ class SnackChatCard extends StatelessWidget {
     if (match != null) {
       final name = match.group(1)!.trim();
       final question = match.group(2)!.trim();
-      return isKo
+      return (isChineseUi(context) ? '${name}创建了投票：${question}' : isKo
           ? '$name님이 투표를 만들었어요: $question'
-          : '$name created a poll: $question';
+          : '$name created a poll: $question');
     }
 
     match = RegExp(r'^Poll ended: (.+)$').firstMatch(raw);
     match ??= RegExp(r'^투표가 종료됐어요: (.+)$').firstMatch(raw);
     if (match != null) {
       final question = match.group(1)!.trim();
-      return isKo ? '투표가 종료됐어요: $question' : 'Poll ended: $question';
+      return (isChineseUi(context) ? '投票已结束：${question}' : isKo ? '투표가 종료됐어요: $question' : 'Poll ended: $question');
     }
 
     return raw;
@@ -117,7 +119,7 @@ class SnackChatCard extends StatelessWidget {
         (screenWidth * 0.045).clamp(14.0, 20.0).toDouble();
     final isCompact = screenWidth < 360;
     final is24HourChat = snackChat.activeDurationHours == 24;
-    final remainingTimeLabel = _remainingTimeLabel(isKo: isKo);
+    final remainingTimeLabel = _remainingTimeLabel(context, isKo: isKo);
     final isFavorited = snackChat.isFavoritedBy(currentUserId);
     final unreadCount =
         currentUserId == null ? 0 : snackChat.getMyUnreadCount(currentUserId!);
@@ -127,13 +129,13 @@ class SnackChatCard extends StatelessWidget {
         snackChat.lastMessageExpiresAt != null &&
         !DateTime.now().isBefore(snackChat.lastMessageExpiresAt!);
     final lastMessage = fileSummaryExpired
-        ? (isKo ? '만료된 파일입니다' : 'File expired')
+        ? ((isChineseUi(context) ? '文件已过期' : isKo ? '만료된 파일입니다' : 'File expired'))
         : snackChat.lastMessageType == 'system'
-            ? _localizedSystemPreview(rawLastMessage, isKo: isKo)
+            ? _localizedSystemPreview(context, rawLastMessage, isKo: isKo)
             : rawLastMessage == '[이미지]'
-                ? (isKo ? '[이미지]' : '[Image]')
+                ? ((isChineseUi(context) ? '[图片]' : isKo ? '[이미지]' : '[Image]'))
                 : rawLastMessage.isEmpty
-                    ? (isKo ? '아직 메시지가 없습니다' : 'No messages yet')
+                    ? ((isChineseUi(context) ? '暂无消息' : isKo ? '아직 메시지가 없습니다' : 'No messages yet'))
                     : rawLastMessage;
 
     return Material(
@@ -166,7 +168,7 @@ class SnackChatCard extends StatelessWidget {
                     ringWidth: 3,
                     innerGap: 1.5,
                     borderRadius: BorderRadius.circular(11),
-                    semanticLabel: isKo ? '24시간 스낵챗' : '24-hour Snack Chat',
+                    semanticLabel: (isChineseUi(context) ? '24小时群聊' : isKo ? '24시간 스낵챗' : '24-hour Snack Chat'),
                     child: _ParticipantAvatarMosaic(
                       participantIds: snackChat.participantIds,
                       currentUserId: currentUserId,
@@ -190,10 +192,10 @@ class SnackChatCard extends StatelessWidget {
                               maxLines: 1,
                               overflow: TextOverflow.ellipsis,
                               style: TextStyle(
-                                fontFamily: 'Inter',
+                                fontFamily: uiFontFamily(context, 'Inter'),
                                 fontFamilyFallback: const ['NotoSansKR'],
                                 fontSize: 17,
-                                height: 1.25,
+                                height: isChineseUi(context) ? 1.3 : 1.25,
                                 fontWeight: hasUnread
                                     ? FontWeight.w800
                                     : FontWeight.w700,
@@ -204,11 +206,11 @@ class SnackChatCard extends StatelessWidget {
                           const SizedBox(width: 5),
                           Text(
                             '${snackChat.participantCount}',
-                            style: const TextStyle(
-                              fontFamily: 'Inter',
+                            style: TextStyle(
+                              fontFamily: uiFontFamily(context, 'Inter'),
                               fontFamilyFallback: ['NotoSansKR'],
                               fontSize: 14,
-                              height: 1.25,
+                              height: isChineseUi(context) ? 1.3 : 1.25,
                               fontWeight: FontWeight.w600,
                               color: BrandColors.neutral500,
                             ),
@@ -229,7 +231,7 @@ class SnackChatCard extends StatelessWidget {
                         maxLines: 1,
                         overflow: TextOverflow.ellipsis,
                         style: TextStyle(
-                          fontFamily: 'Inter',
+                          fontFamily: uiFontFamily(context, 'Inter'),
                           fontFamilyFallback: const ['NotoSansKR'],
                           fontSize: 13,
                           height: 1.35,
@@ -262,10 +264,10 @@ class SnackChatCard extends StatelessWidget {
                         maxLines: 1,
                         overflow: TextOverflow.ellipsis,
                         style: TextStyle(
-                          fontFamily: 'Inter',
+                          fontFamily: uiFontFamily(context, 'Inter'),
                           fontFamilyFallback: const ['NotoSansKR'],
                           fontSize: 11,
-                          height: 1.25,
+                          height: isChineseUi(context) ? 1.3 : 1.25,
                           fontWeight:
                               hasUnread ? FontWeight.w700 : FontWeight.w500,
                           color: hasUnread
@@ -291,11 +293,11 @@ class SnackChatCard extends StatelessWidget {
                               child: Text(
                                 unreadCount > 99 ? '99+' : '$unreadCount',
                                 textAlign: TextAlign.center,
-                                style: const TextStyle(
-                                  fontFamily: 'Inter',
+                                style: TextStyle(
+                                  fontFamily: uiFontFamily(context, 'Inter'),
                                   fontFamilyFallback: ['NotoSansKR'],
                                   fontSize: 9.5,
-                                  height: 1.2,
+                                  height: isChineseUi(context) ? 1.3 : 1.2,
                                   fontWeight: FontWeight.w700,
                                   color: Colors.white,
                                 ),
@@ -307,12 +309,12 @@ class SnackChatCard extends StatelessWidget {
                             button: true,
                             selected: isFavorited,
                             label: isFavorited
-                                ? (isKo ? '즐겨찾기 해제' : 'Remove from favorites')
-                                : (isKo ? '즐겨찾기 추가' : 'Add to favorites'),
+                                ? ((isChineseUi(context) ? '取消收藏' : isKo ? '즐겨찾기 해제' : 'Remove from favorites'))
+                                : ((isChineseUi(context) ? '加入收藏' : isKo ? '즐겨찾기 추가' : 'Add to favorites')),
                             child: Tooltip(
                               message: isFavorited
-                                  ? (isKo ? '즐겨찾기 해제' : 'Remove from favorites')
-                                  : (isKo ? '즐겨찾기 추가' : 'Add to favorites'),
+                                  ? ((isChineseUi(context) ? '取消收藏' : isKo ? '즐겨찾기 해제' : 'Remove from favorites'))
+                                  : ((isChineseUi(context) ? '加入收藏' : isKo ? '즐겨찾기 추가' : 'Add to favorites')),
                               child: SizedBox.square(
                                 dimension: 44,
                                 child: InkResponse(
@@ -391,11 +393,11 @@ class SnackChatDurationStatus extends StatelessWidget {
             label,
             maxLines: 1,
             overflow: TextOverflow.ellipsis,
-            style: const TextStyle(
-              fontFamily: 'Inter',
+            style: TextStyle(
+              fontFamily: uiFontFamily(context, 'Inter'),
               fontFamilyFallback: ['NotoSansKR'],
               fontSize: 11,
-              height: 1.2,
+              height: isChineseUi(context) ? 1.3 : 1.2,
               fontWeight: FontWeight.w700,
               color: statusColor,
             ),
@@ -476,9 +478,9 @@ class _ParticipantAvatarMosaicState extends State<_ParticipantAvatarMosaic> {
     final ids = _displayIds;
 
     return Semantics(
-      label: Localizations.localeOf(context).languageCode == 'ko'
+      label: (isChineseUi(context) ? '参与者资料' : Localizations.localeOf(context).languageCode == 'ko'
           ? '참여자 프로필'
-          : 'Participant profiles',
+          : 'Participant profiles'),
       child: ExcludeSemantics(
         child: SizedBox(
           width: 52,

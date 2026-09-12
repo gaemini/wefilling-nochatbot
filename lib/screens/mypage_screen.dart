@@ -41,6 +41,7 @@ import 'social_tag_people_screen.dart';
 import 'semester_todo_admin_screen.dart';
 import '../ui/widgets/profile_image_viewer.dart';
 import '../utils/profile_photo_policy.dart';
+import '../l10n/ui_locale.dart';
 
 class MyPageScreen extends StatefulWidget {
   const MyPageScreen({Key? key}) : super(key: key);
@@ -281,7 +282,7 @@ class _MyPageScreenState extends State<MyPageScreen>
             final isKorean =
                 Localizations.localeOf(context).languageCode == 'ko';
             final postsLabel = AppLocalizations.of(context)!.posts;
-            final reviewsLabel = isKorean ? '모임 후기' : 'Meetup Reviews';
+            final reviewsLabel = (isChineseUi(context) ? '聚会回顾' : isKorean ? '모임 후기' : 'Meetup Reviews');
             final myMeetupsLabel = AppLocalizations.of(context)!.myMeetups;
 
             return <Widget>[
@@ -477,8 +478,8 @@ class _MyPageScreenState extends State<MyPageScreen>
                       nickname.isNotEmpty
                           ? nickname
                           : AppLocalizations.of(context)!.user,
-                      style: const TextStyle(
-                        fontFamily: 'Inter',
+                      style: TextStyle(
+                        fontFamily: uiFontFamily(context, 'Inter'),
                         fontFamilyFallback: const ['NotoSansKR'],
                         fontSize: 20,
                         fontWeight: FontWeight.w600,
@@ -503,8 +504,8 @@ class _MyPageScreenState extends State<MyPageScreen>
                                           Localizations.localeOf(context)
                                               .languageCode) ??
                                   nationality,
-                              style: const TextStyle(
-                                fontFamily: 'Inter',
+                              style: TextStyle(
+                                fontFamily: uiFontFamily(context, 'Inter'),
                                 fontFamilyFallback: const ['NotoSansKR'],
                                 fontSize: 14,
                                 fontWeight: FontWeight.w400,
@@ -522,8 +523,8 @@ class _MyPageScreenState extends State<MyPageScreen>
                       const SizedBox(height: 4),
                       Text(
                         bio,
-                        style: const TextStyle(
-                          fontFamily: 'Inter',
+                        style: TextStyle(
+                          fontFamily: uiFontFamily(context, 'Inter'),
                           fontFamilyFallback: const ['NotoSansKR'],
                           fontSize: 14,
                           fontWeight: FontWeight.w400,
@@ -607,8 +608,8 @@ class _MyPageScreenState extends State<MyPageScreen>
                           Center(
                             child: Text(
                               '$profileCompletion',
-                              style: const TextStyle(
-                                fontFamily: 'Inter',
+                              style: TextStyle(
+                                fontFamily: uiFontFamily(context, 'Inter'),
                                 fontFamilyFallback: const ['NotoSansKR'],
                                 fontSize: 10,
                                 fontWeight: FontWeight.w700,
@@ -629,8 +630,8 @@ class _MyPageScreenState extends State<MyPageScreen>
                             : (social.interests.isEmpty
                                 ? 'Add interests so similar people can find you.'
                                 : 'Add a question to make the first DM easier.'),
-                        style: const TextStyle(
-                          fontFamily: 'Inter',
+                        style: TextStyle(
+                          fontFamily: uiFontFamily(context, 'Inter'),
                           fontFamilyFallback: const ['NotoSansKR'],
                           fontSize: 13,
                           fontWeight: FontWeight.w500,
@@ -710,13 +711,13 @@ class _MyPageScreenState extends State<MyPageScreen>
               '#$label',
               maxLines: 1,
               overflow: TextOverflow.ellipsis,
-              style: const TextStyle(
-                fontFamily: 'Inter',
+              style: TextStyle(
+                fontFamily: uiFontFamily(context, 'Inter'),
                 fontFamilyFallback: const ['NotoSansKR'],
                 fontSize: 13,
                 fontWeight: FontWeight.w600,
                 color: AppColors.pointColor,
-                height: 1.2,
+                height: isChineseUi(context) ? 1.3 : 1.2,
               ),
             ),
           ),
@@ -753,7 +754,7 @@ class _MyPageScreenState extends State<MyPageScreen>
             Text(
               AppLocalizations.of(context)!.loginRequired,
               style: TextStyle(
-                fontFamily: 'Inter',
+                fontFamily: uiFontFamily(context, 'Inter'),
                 fontFamilyFallback: const ['NotoSansKR'],
                 fontSize: 18,
                 fontWeight: FontWeight.w600,
@@ -764,7 +765,7 @@ class _MyPageScreenState extends State<MyPageScreen>
             Text(
               AppLocalizations.of(context)!.loginToViewReviews,
               style: TextStyle(
-                fontFamily: 'Inter',
+                fontFamily: uiFontFamily(context, 'Inter'),
                 fontFamilyFallback: const ['NotoSansKR'],
                 fontSize: 14,
                 color: Color(0xFF6B7280),
@@ -788,8 +789,8 @@ class _MyPageScreenState extends State<MyPageScreen>
       return Center(
         child: Text(
           AppLocalizations.of(context)!.error,
-          style: const TextStyle(
-            fontFamily: 'Inter',
+          style: TextStyle(
+            fontFamily: uiFontFamily(context, 'Inter'),
             fontFamilyFallback: const ['NotoSansKR'],
             fontSize: 16,
             color: Color(0xFFEF4444),
@@ -819,7 +820,7 @@ class _MyPageScreenState extends State<MyPageScreen>
             Text(
               AppLocalizations.of(context)!.noReviewsYet,
               style: TextStyle(
-                fontFamily: 'Inter',
+                fontFamily: uiFontFamily(context, 'Inter'),
                 fontFamilyFallback: const ['NotoSansKR'],
                 fontSize: 20,
                 fontWeight: FontWeight.w600,
@@ -830,7 +831,7 @@ class _MyPageScreenState extends State<MyPageScreen>
             Text(
               AppLocalizations.of(context)!.joinMeetupAndWriteReview,
               style: TextStyle(
-                fontFamily: 'Inter',
+                fontFamily: uiFontFamily(context, 'Inter'),
                 fontFamilyFallback: const ['NotoSansKR'],
                 fontSize: 15,
                 color: Color(0xFF6B7280),
@@ -958,10 +959,10 @@ class _MyPageScreenState extends State<MyPageScreen>
                           SizedBox(width: 2),
                           Text(
                             '${review.likedBy.length}',
-                            style: AppTheme.labelSmall.copyWith(
+                            style: uiTextStyle(context, AppTheme.labelSmall.copyWith(
                               color: Colors.white,
                               fontWeight: FontWeight.w500,
-                            ),
+                            )),
                           ),
                         ],
                       ),
@@ -1017,7 +1018,7 @@ class _MyPageScreenState extends State<MyPageScreen>
             Text(
               AppLocalizations.of(context)!.loginRequired,
               style: TextStyle(
-                fontFamily: 'Inter',
+                fontFamily: uiFontFamily(context, 'Inter'),
                 fontFamilyFallback: const ['NotoSansKR'],
                 fontSize: 18,
                 fontWeight: FontWeight.w600,
@@ -1026,9 +1027,9 @@ class _MyPageScreenState extends State<MyPageScreen>
             ),
             SizedBox(height: 8),
             Text(
-              isKo ? '포스트를 보려면 로그인해주세요' : 'Please login to view posts',
+              (isChineseUi(context) ? '请先登录再查看动态' : isKo ? '포스트를 보려면 로그인해주세요' : 'Please login to view posts'),
               style: TextStyle(
-                fontFamily: 'Inter',
+                fontFamily: uiFontFamily(context, 'Inter'),
                 fontFamilyFallback: const ['NotoSansKR'],
                 fontSize: 14,
                 color: Color(0xFF6B7280),
@@ -1072,8 +1073,8 @@ class _MyPageScreenState extends State<MyPageScreen>
             const SizedBox(height: 20),
             Text(
               AppLocalizations.of(context)!.noWrittenPosts,
-              style: const TextStyle(
-                fontFamily: 'Inter',
+              style: TextStyle(
+                fontFamily: uiFontFamily(context, 'Inter'),
                 fontFamilyFallback: const ['NotoSansKR'],
                 fontSize: 20,
                 fontWeight: FontWeight.w600,
@@ -1137,8 +1138,8 @@ class _MyPageScreenState extends State<MyPageScreen>
                         ),
                         child: Text(
                           l10n.all,
-                          style: const TextStyle(
-                            fontFamily: 'Inter',
+                          style: TextStyle(
+                            fontFamily: uiFontFamily(context, 'Inter'),
                             fontFamilyFallback: const ['NotoSansKR'],
                             fontSize: 12,
                             fontWeight: FontWeight.w700,
@@ -1161,9 +1162,9 @@ class _MyPageScreenState extends State<MyPageScreen>
                       tapTargetSize: MaterialTapTargetSize.shrinkWrap,
                     ),
                     child: Text(
-                      isKo ? '저장한 글' : 'Saved Posts',
-                      style: const TextStyle(
-                        fontFamily: 'Inter',
+                      (isChineseUi(context) ? '收藏的动态' : isKo ? '저장한 글' : 'Saved Posts'),
+                      style: TextStyle(
+                        fontFamily: uiFontFamily(context, 'Inter'),
                         fontFamilyFallback: const ['NotoSansKR'],
                         fontSize: 12,
                         fontWeight: FontWeight.w600,
@@ -1256,12 +1257,12 @@ class _MyPageScreenState extends State<MyPageScreen>
                         maxLines: 2,
                         overflow: TextOverflow.ellipsis,
                         style: TextStyle(
-                          fontFamily: 'Inter',
+                          fontFamily: uiFontFamily(context, 'Inter'),
                           fontFamilyFallback: const <String>['NotoSansKR'],
                           fontSize: metrics.titleFontSize,
                           fontWeight: FontWeight.w700,
                           color: const Color(0xFF111827),
-                          height: 1.25,
+                          height: isChineseUi(context) ? 1.3 : 1.25,
                         ),
                       ),
                       SizedBox(height: metrics.titleGap),
@@ -1270,12 +1271,12 @@ class _MyPageScreenState extends State<MyPageScreen>
                         maxLines: 1,
                         overflow: TextOverflow.ellipsis,
                         style: TextStyle(
-                          fontFamily: 'Inter',
+                          fontFamily: uiFontFamily(context, 'Inter'),
                           fontFamilyFallback: const <String>['NotoSansKR'],
                           fontSize: metrics.supportingFontSize,
                           fontWeight: FontWeight.w500,
                           color: const Color(0xFF9CA3AF),
-                          height: 1.2,
+                          height: isChineseUi(context) ? 1.3 : 1.2,
                         ),
                       ),
                       const Spacer(),
@@ -1294,14 +1295,14 @@ class _MyPageScreenState extends State<MyPageScreen>
                               maxLines: 1,
                               overflow: TextOverflow.ellipsis,
                               style: TextStyle(
-                                fontFamily: 'Inter',
+                                fontFamily: uiFontFamily(context, 'Inter'),
                                 fontFamilyFallback: const <String>[
                                   'NotoSansKR',
                                 ],
                                 fontSize: metrics.supportingFontSize,
                                 fontWeight: FontWeight.w500,
                                 color: const Color(0xFF6B7280),
-                                height: 1.2,
+                                height: isChineseUi(context) ? 1.3 : 1.2,
                               ),
                             ),
                           ),
@@ -1336,14 +1337,14 @@ class _MyPageScreenState extends State<MyPageScreen>
                             '${post.likes}',
                             maxLines: 1,
                             style: TextStyle(
-                              fontFamily: 'Inter',
+                              fontFamily: uiFontFamily(context, 'Inter'),
                               fontFamilyFallback: const <String>[
                                 'NotoSansKR',
                               ],
                               fontSize: metrics.supportingFontSize,
                               fontWeight: FontWeight.w600,
                               color: const Color(0xFF6B7280),
-                              height: 1.2,
+                              height: isChineseUi(context) ? 1.3 : 1.2,
                             ),
                           ),
                         ],
@@ -1589,8 +1590,8 @@ class _MyPageScreenState extends State<MyPageScreen>
               const SizedBox(height: 4),
               Text(
                 label,
-                style: const TextStyle(
-                  fontFamily: 'Inter',
+                style: TextStyle(
+                  fontFamily: uiFontFamily(context, 'Inter'),
                   fontFamilyFallback: const ['NotoSansKR'],
                   fontSize: 12,
                   fontWeight: FontWeight.w400,
@@ -1610,8 +1611,8 @@ class _MyPageScreenState extends State<MyPageScreen>
         ? Text(
             '$value',
             key: ValueKey<String>('count_$cacheKey:$value'),
-            style: const TextStyle(
-              fontFamily: 'Inter',
+            style: TextStyle(
+              fontFamily: uiFontFamily(context, 'Inter'),
               fontFamilyFallback: const ['NotoSansKR'],
               fontSize: 17,
               fontWeight: FontWeight.w700,
@@ -1621,8 +1622,8 @@ class _MyPageScreenState extends State<MyPageScreen>
         : Text(
             '—',
             key: ValueKey<String>('count_$cacheKey:loading'),
-            style: const TextStyle(
-              fontFamily: 'Inter',
+            style: TextStyle(
+              fontFamily: uiFontFamily(context, 'Inter'),
               fontFamilyFallback: const ['NotoSansKR'],
               fontSize: 17,
               fontWeight: FontWeight.w700,
@@ -1882,9 +1883,9 @@ class _MyPageScreenState extends State<MyPageScreen>
                 ),
                 _buildMenuItem(
                   context,
-                  Localizations.localeOf(context).languageCode == 'ko'
+                  (isChineseUi(context) ? '收藏的动态' : Localizations.localeOf(context).languageCode == 'ko'
                       ? '저장된 게시글'
-                      : 'Saved Posts',
+                      : 'Saved Posts'),
                   Icons.bookmark_border_rounded,
                   () {
                     Navigator.pop(context);
@@ -1967,7 +1968,7 @@ class _MyPageScreenState extends State<MyPageScreen>
             Text(
               title,
               style: TextStyle(
-                fontFamily: 'Inter',
+                fontFamily: uiFontFamily(context, 'Inter'),
                 fontFamilyFallback: const ['NotoSansKR'],
                 fontSize: 16,
                 fontWeight: FontWeight.w500,
@@ -2006,8 +2007,8 @@ class _MyPageScreenState extends State<MyPageScreen>
               maxScaleFactor: 1.2,
               child: Text(
                 AppLocalizations.of(context)!.friends,
-                style: const TextStyle(
-                  fontFamily: 'Inter',
+                style: TextStyle(
+                  fontFamily: uiFontFamily(context, 'Inter'),
                   fontFamilyFallback: const ['NotoSansKR'],
                   fontSize: 18,
                   fontWeight: FontWeight.w700,
@@ -2102,9 +2103,9 @@ class MyPageSettingsSheet {
                 ),
                 _menuItem(
                   sheetContext,
-                  Localizations.localeOf(sheetContext).languageCode == 'ko'
+                  (isChineseUi(context) ? '收藏的动态' : Localizations.localeOf(sheetContext).languageCode == 'ko'
                       ? '저장된 게시글'
-                      : 'Saved Posts',
+                      : 'Saved Posts'),
                   Icons.bookmark_border_rounded,
                   () {
                     Navigator.pop(sheetContext);
@@ -2145,9 +2146,9 @@ class MyPageSettingsSheet {
                 if (authProvider.userData?['isAdmin'] == true)
                   _menuItem(
                     sheetContext,
-                    Localizations.localeOf(sheetContext).languageCode == 'ko'
+                    (isChineseUi(context) ? '学期待办管理' : Localizations.localeOf(sheetContext).languageCode == 'ko'
                         ? '학기 To-do 관리'
-                        : 'Semester To-do Admin',
+                        : 'Semester To-do Admin'),
                     Icons.admin_panel_settings_outlined,
                     () {
                       Navigator.pop(sheetContext);
@@ -2207,7 +2208,7 @@ class MyPageSettingsSheet {
             Text(
               title,
               style: TextStyle(
-                fontFamily: 'Inter',
+                fontFamily: uiFontFamily(context, 'Inter'),
                 fontFamilyFallback: const ['NotoSansKR'],
                 fontSize: 16,
                 fontWeight: FontWeight.w500,

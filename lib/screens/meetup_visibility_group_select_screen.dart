@@ -5,6 +5,7 @@ import '../models/user_profile.dart';
 import '../repositories/users_repository.dart';
 import '../ui/widgets/group_audience_preview.dart';
 import '../utils/responsive_helper.dart';
+import '../l10n/ui_locale.dart';
 
 class MeetupVisibilityGroupSelectScreen extends StatefulWidget {
   final List<FriendCategory> categories;
@@ -129,7 +130,7 @@ class _MeetupVisibilityGroupSelectScreenState
                           maxLines: 1,
                           overflow: TextOverflow.ellipsis,
                           style: TextStyle(
-                            fontFamily: 'Inter',
+                            fontFamily: uiFontFamily(context, 'Inter'),
                             fontFamilyFallback: const ['NotoSansKR'],
                             fontSize: context.rf(14).clamp(13, 15).toDouble(),
                             fontWeight:
@@ -172,8 +173,8 @@ class _MeetupVisibilityGroupSelectScreenState
         _selectedCategoryIds.isEmpty
             ? l10n.postVisibilityNoGroupsSelected
             : l10n.postVisibilityGroupsSelected(_selectedCategoryIds.length),
-        style: const TextStyle(
-          fontFamily: 'Inter',
+        style: TextStyle(
+          fontFamily: uiFontFamily(context, 'Inter'),
           fontFamilyFallback: ['NotoSansKR'],
           fontSize: 12,
           fontWeight: FontWeight.w700,
@@ -211,11 +212,11 @@ class _MeetupVisibilityGroupSelectScreenState
             maxLines: 1,
             overflow: TextOverflow.ellipsis,
             style: TextStyle(
-              fontFamily: 'Inter',
+              fontFamily: uiFontFamily(context, 'Inter'),
               fontFamilyFallback: const ['NotoSansKR'],
               fontSize: context.rf(18).clamp(16, 19).toDouble(),
               fontWeight: FontWeight.w700,
-              height: 1.2,
+              height: isChineseUi(context) ? 1.3 : 1.2,
               letterSpacing: -0.2,
               color: const Color(0xFF111827),
             ),
@@ -235,7 +236,7 @@ class _MeetupVisibilityGroupSelectScreenState
                     child: Text(
                       l10n.noFriendGroupsYet,
                       style: TextStyle(
-                        fontFamily: 'Inter',
+                        fontFamily: uiFontFamily(context, 'Inter'),
                         fontFamilyFallback: const ['NotoSansKR'],
                         fontSize: context.rf(14).clamp(13, 15).toDouble(),
                         fontWeight: FontWeight.w500,
@@ -315,11 +316,11 @@ class _MeetupVisibilityGroupSelectScreenState
                     child: Text(
                       l10n.done,
                       style: TextStyle(
-                        fontFamily: 'Inter',
+                        fontFamily: uiFontFamily(context, 'Inter'),
                         fontFamilyFallback: const ['NotoSansKR'],
                         fontSize: context.rf(15).clamp(14, 16).toDouble(),
                         fontWeight: FontWeight.w700,
-                        height: 1.1,
+                        height: isChineseUi(context) ? 1.3 : 1.1,
                         letterSpacing: -0.1,
                       ),
                     ),

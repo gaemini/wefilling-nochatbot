@@ -1,6 +1,7 @@
 import 'dart:math' as math;
 
 import 'package:flutter/material.dart';
+import '../../l10n/ui_locale.dart';
 
 Future<int?> showParticipantCountSheet({
   required BuildContext context,
@@ -43,13 +44,13 @@ Future<int?> showParticipantCountSheet({
             children: [
               Text(
                 title,
-                style: const TextStyle(
-                  fontFamily: 'Inter',
+                style: TextStyle(
+                  fontFamily: uiFontFamily(context, 'Inter'),
                   fontFamilyFallback: const ['NotoSansKR'],
                   fontSize: 17,
                   fontWeight: FontWeight.w700,
                   color: Color(0xFF111827),
-                  height: 1.25,
+                  height: isChineseUi(context) ? 1.3 : 1.25,
                 ),
               ),
               const SizedBox(height: 8),
@@ -102,12 +103,12 @@ class _ParticipantCountRow extends StatelessWidget {
                 maxLines: 1,
                 overflow: TextOverflow.ellipsis,
                 style: TextStyle(
-                  fontFamily: 'Inter',
+                  fontFamily: uiFontFamily(context, 'Inter'),
                   fontFamilyFallback: const ['NotoSansKR'],
                   fontSize: 15,
                   fontWeight: selected ? FontWeight.w700 : FontWeight.w500,
                   color: const Color(0xFF111827),
-                  height: 1.2,
+                  height: isChineseUi(context) ? 1.3 : 1.2,
                 ),
               ),
             ),

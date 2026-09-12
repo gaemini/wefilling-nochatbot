@@ -21,6 +21,7 @@ import 'snack_chat_tab_view.dart';
 import '../l10n/app_localizations.dart';
 import '../utils/logger.dart';
 import '../utils/responsive_helper.dart';
+import '../l10n/ui_locale.dart';
 
 /// Stable internal tab mapping used by direct-entry routes.
 const int snackChatTabIndex = 0;
@@ -137,14 +138,14 @@ class _FriendCategoriesScreenState extends State<FriendCategoriesScreen>
               ),
               labelColor: const Color(0xFF111827),
               unselectedLabelColor: const Color(0xFF9CA3AF),
-              labelStyle: const TextStyle(
-                fontFamily: 'Inter',
+              labelStyle: TextStyle(
+                fontFamily: uiFontFamily(context, 'Inter'),
                 fontFamilyFallback: const ['NotoSansKR'],
                 fontSize: 14,
                 fontWeight: FontWeight.w600,
               ),
-              unselectedLabelStyle: const TextStyle(
-                fontFamily: 'Inter',
+              unselectedLabelStyle: TextStyle(
+                fontFamily: uiFontFamily(context, 'Inter'),
                 fontFamilyFallback: const ['NotoSansKR'],
                 fontSize: 14,
                 fontWeight: FontWeight.w500,
@@ -253,11 +254,11 @@ class _FriendCategoriesScreenState extends State<FriendCategoriesScreen>
               vertical: 12,
             ),
             child: Text(
-              isKo
+              (isChineseUi(context) ? '用好友分组设置动态和聚会的可见范围。' : isKo
                   ? '친구 그룹으로 포스트와 밋업의 공개 범위를 설정하세요.'
-                  : 'Use friend groups to set post and meetup visibility.',
-              style: const TextStyle(
-                fontFamily: 'Inter',
+                  : 'Use friend groups to set post and meetup visibility.'),
+              style: TextStyle(
+                fontFamily: uiFontFamily(context, 'Inter'),
                 fontFamilyFallback: const ['NotoSansKR'],
                 fontSize: 13,
                 fontWeight: FontWeight.w500,
@@ -320,7 +321,7 @@ class _FriendCategoriesScreenState extends State<FriendCategoriesScreen>
                           l10n.createFirstCategory,
                           textAlign: TextAlign.center,
                           style: TextStyle(
-                            fontFamily: 'Inter',
+                            fontFamily: uiFontFamily(context, 'Inter'),
                             fontFamilyFallback: const ['NotoSansKR'],
                             fontSize: context.rf(21).clamp(18, 22).toDouble(),
                             fontWeight: FontWeight.w800,
@@ -334,7 +335,7 @@ class _FriendCategoriesScreenState extends State<FriendCategoriesScreen>
                           l10n.createFirstCategoryDescription,
                           textAlign: TextAlign.center,
                           style: TextStyle(
-                            fontFamily: 'Inter',
+                            fontFamily: uiFontFamily(context, 'Inter'),
                             fontFamilyFallback: const ['NotoSansKR'],
                             fontSize:
                                 context.rf(13.5).clamp(12.5, 14).toDouble(),
@@ -361,9 +362,9 @@ class _FriendCategoriesScreenState extends State<FriendCategoriesScreen>
                               .toDouble(),
                         ),
                         Text(
-                          isKo ? '친구 그룹으로 할 수 있어요' : 'What friend groups offer',
+                          (isChineseUi(context) ? '好友分组功能' : isKo ? '친구 그룹으로 할 수 있어요' : 'What friend groups offer'),
                           style: TextStyle(
-                            fontFamily: 'Inter',
+                            fontFamily: uiFontFamily(context, 'Inter'),
                             fontFamilyFallback: const ['NotoSansKR'],
                             fontSize: context.rf(13).clamp(12, 14).toDouble(),
                             fontWeight: FontWeight.w800,
@@ -375,23 +376,23 @@ class _FriendCategoriesScreenState extends State<FriendCategoriesScreen>
                             height: context.rs(10).clamp(8, 12).toDouble()),
                         _GroupFeatureRow(
                           icon: Icons.people_outline_rounded,
-                          title: isKo
+                          title: (isChineseUi(context) ? '按你的方式管理好友' : isKo
                               ? '친구를 목적에 맞게 정리'
-                              : 'Organize friends your way',
-                          description: isKo
+                              : 'Organize friends your way'),
+                          description: (isChineseUi(context) ? '按学校、聚会或社交圈整理好友。' : isKo
                               ? '학교, 모임, 친한 친구처럼 필요한 기준으로 묶어요.'
-                              : 'Group friends by school, meetup, or any circle you need.',
+                              : 'Group friends by school, meetup, or any circle you need.'),
                         ),
                         SizedBox(
                             height: context.rs(12).clamp(10, 14).toDouble()),
                         _GroupFeatureRow(
                           icon: Icons.visibility_outlined,
-                          title: isKo
+                          title: (isChineseUi(context) ? '选择谁能看到内容' : isKo
                               ? '공개할 사람을 간편하게 선택'
-                              : 'Choose who can see your content',
-                          description: isKo
+                              : 'Choose who can see your content'),
+                          description: (isChineseUi(context) ? '发布动态和聚会时，可重复使用已有分组。' : isKo
                               ? '포스트와 밋업을 만들 때 같은 그룹을 바로 사용해요.'
-                              : 'Reuse the same groups when creating posts and meetups.',
+                              : 'Reuse the same groups when creating posts and meetups.'),
                         ),
                         SizedBox(
                           height: context
@@ -413,7 +414,7 @@ class _FriendCategoriesScreenState extends State<FriendCategoriesScreen>
                               maxLines: 1,
                               overflow: TextOverflow.ellipsis,
                               style: TextStyle(
-                                fontFamily: 'Inter',
+                                fontFamily: uiFontFamily(context, 'Inter'),
                                 fontFamilyFallback: const ['NotoSansKR'],
                                 fontSize:
                                     context.rf(14).clamp(13, 15).toDouble(),
@@ -485,8 +486,8 @@ class _FriendCategoriesScreenState extends State<FriendCategoriesScreen>
           category.name,
           maxLines: 1,
           overflow: TextOverflow.ellipsis,
-          style: const TextStyle(
-            fontFamily: 'Inter',
+          style: TextStyle(
+            fontFamily: uiFontFamily(context, 'Inter'),
             fontFamilyFallback: const ['NotoSansKR'],
             fontSize: 15,
             fontWeight: FontWeight.w700,
@@ -549,8 +550,8 @@ class _FriendCategoriesScreenState extends State<FriendCategoriesScreen>
                   const SizedBox(width: 12),
                   Text(
                     l10n.editAction ?? "",
-                    style: const TextStyle(
-                      fontFamily: 'Inter',
+                    style: TextStyle(
+                      fontFamily: uiFontFamily(context, 'Inter'),
                       fontFamilyFallback: const ['NotoSansKR'],
                       fontSize: 14,
                       fontWeight: FontWeight.w600,
@@ -575,8 +576,8 @@ class _FriendCategoriesScreenState extends State<FriendCategoriesScreen>
                   const SizedBox(width: 12),
                   Text(
                     l10n.delete,
-                    style: const TextStyle(
-                      fontFamily: 'Inter',
+                    style: TextStyle(
+                      fontFamily: uiFontFamily(context, 'Inter'),
                       fontFamilyFallback: const ['NotoSansKR'],
                       fontSize: 14,
                       fontWeight: FontWeight.w600,
@@ -674,7 +675,7 @@ class _FriendCategoriesScreenState extends State<FriendCategoriesScreen>
     ScaffoldMessenger.of(context).showSnackBar(
       SnackBar(
         content: Text(
-          isKo ? '그룹은 최대 10개까지 생성할 수 있어요.' : 'You can create up to 10 groups.',
+          (isChineseUi(context) ? '最多可创建10个分组。' : isKo ? '그룹은 최대 10개까지 생성할 수 있어요.' : 'You can create up to 10 groups.'),
         ),
       ),
     );
@@ -726,12 +727,12 @@ class _FriendCategoriesScreenState extends State<FriendCategoriesScreen>
                       Text(
                         l10n.deleteCategory,
                         style: TextStyle(
-                          fontFamily: 'Inter',
+                          fontFamily: uiFontFamily(context, 'Inter'),
                           fontFamilyFallback: const ['NotoSansKR'],
                           fontSize: compact ? 19 : 20,
                           fontWeight: FontWeight.w700,
                           color: const Color(0xFF111827),
-                          height: 1.2,
+                          height: isChineseUi(context) ? 1.3 : 1.2,
                           letterSpacing: -0.3,
                         ),
                       ),
@@ -739,7 +740,7 @@ class _FriendCategoriesScreenState extends State<FriendCategoriesScreen>
                       Text(
                         question,
                         style: TextStyle(
-                          fontFamily: 'Inter',
+                          fontFamily: uiFontFamily(context, 'Inter'),
                           fontFamilyFallback: const ['NotoSansKR'],
                           fontSize: compact ? 14 : 15,
                           fontWeight: FontWeight.w500,
@@ -753,7 +754,7 @@ class _FriendCategoriesScreenState extends State<FriendCategoriesScreen>
                         Text(
                           supportingMessage,
                           style: TextStyle(
-                            fontFamily: 'Inter',
+                            fontFamily: uiFontFamily(context, 'Inter'),
                             fontFamilyFallback: const ['NotoSansKR'],
                             fontSize: compact ? 12.5 : 13.5,
                             fontWeight: FontWeight.w400,
@@ -779,8 +780,8 @@ class _FriendCategoriesScreenState extends State<FriendCategoriesScreen>
                                 l10n.cancel,
                                 maxLines: 1,
                                 overflow: TextOverflow.ellipsis,
-                                style: const TextStyle(
-                                  fontFamily: 'Inter',
+                                style: TextStyle(
+                                  fontFamily: uiFontFamily(context, 'Inter'),
                                   fontFamilyFallback: ['NotoSansKR'],
                                   fontSize: 14,
                                   fontWeight: FontWeight.w600,
@@ -829,8 +830,8 @@ class _FriendCategoriesScreenState extends State<FriendCategoriesScreen>
                                 l10n.delete,
                                 maxLines: 1,
                                 overflow: TextOverflow.ellipsis,
-                                style: const TextStyle(
-                                  fontFamily: 'Inter',
+                                style: TextStyle(
+                                  fontFamily: uiFontFamily(context, 'Inter'),
                                   fontFamilyFallback: ['NotoSansKR'],
                                   fontSize: 14,
                                   fontWeight: FontWeight.w700,
@@ -1040,7 +1041,7 @@ class _GroupFeatureRow extends StatelessWidget {
               Text(
                 title,
                 style: TextStyle(
-                  fontFamily: 'Inter',
+                  fontFamily: uiFontFamily(context, 'Inter'),
                   fontFamilyFallback: const ['NotoSansKR'],
                   fontSize: context.rf(14).clamp(13, 15).toDouble(),
                   fontWeight: FontWeight.w800,
@@ -1052,7 +1053,7 @@ class _GroupFeatureRow extends StatelessWidget {
               Text(
                 description,
                 style: TextStyle(
-                  fontFamily: 'Inter',
+                  fontFamily: uiFontFamily(context, 'Inter'),
                   fontFamilyFallback: const ['NotoSansKR'],
                   fontSize: context.rf(12).clamp(11, 13).toDouble(),
                   fontWeight: FontWeight.w500,
@@ -1151,8 +1152,8 @@ class _FriendCountSubtitleState extends State<_FriendCountSubtitle> {
   @override
   Widget build(BuildContext context) {
     final isKo = Localizations.localeOf(context).languageCode == 'ko';
-    final baseStyle = const TextStyle(
-      fontFamily: 'Inter',
+    final baseStyle =  TextStyle(
+      fontFamily: uiFontFamily(context, 'Inter'),
       fontFamilyFallback: const ['NotoSansKR'],
       fontSize: 12,
       fontWeight: FontWeight.w500,
@@ -1169,7 +1170,7 @@ class _FriendCountSubtitleState extends State<_FriendCountSubtitle> {
             ),
           ),
           TextSpan(
-            text: isKo ? '명의 친구' : ' friend(s)',
+            text: (isChineseUi(context) ? '位好友' : isKo ? '명의 친구' : ' friend(s)'),
             style: baseStyle,
           ),
         ],

@@ -4,6 +4,7 @@
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/material.dart';
+import '../l10n/ui_locale.dart';
 
 import '../services/post_service.dart';
 import '../services/meetup_service.dart';
@@ -348,10 +349,10 @@ class _SnackChatNotParticipantScreen extends StatelessWidget {
       appBar: AppBar(
         backgroundColor: Colors.transparent,
         elevation: 0,
-        title: const Text(
-          'Snack Chat',
+        title: Text(
+          isChineseUi(context) ? '群聊' : 'Snack Chat',
           style: TextStyle(
-            fontFamily: 'Inter',
+            fontFamily: uiFontFamily(context, 'Inter'),
             fontFamilyFallback: const ['NotoSansKR'],
             fontWeight: FontWeight.w800,
           ),
@@ -378,9 +379,9 @@ class _SnackChatNotParticipantScreen extends StatelessWidget {
               ),
               const SizedBox(height: 20),
               Text(
-                isKo ? '참여할 수 없는 채팅방이에요' : 'You cannot join this room',
-                style: const TextStyle(
-                  fontFamily: 'Inter',
+                isChineseUi(context) ? '无法加入此群聊' : isKo ? '참여할 수 없는 채팅방이에요' : 'You cannot join this room',
+                style: TextStyle(
+                  fontFamily: uiFontFamily(context, 'Inter'),
                   fontFamilyFallback: const ['NotoSansKR'],
                   fontSize: 18,
                   fontWeight: FontWeight.w800,
@@ -390,11 +391,13 @@ class _SnackChatNotParticipantScreen extends StatelessWidget {
               ),
               const SizedBox(height: 10),
               Text(
-                isKo
+                isChineseUi(context)
+                    ? '你已退出此群聊，或邀请已取消。\n请联系群主重新邀请。'
+                    : isKo
                     ? '이미 나갔거나 초대가 취소된 채팅방입니다.\n방장에게 다시 초대를 요청해 보세요.'
                     : 'You have already left or the invite was cancelled.\nAsk the host to invite you again.',
-                style: const TextStyle(
-                  fontFamily: 'Inter',
+                style: TextStyle(
+                  fontFamily: uiFontFamily(context, 'Inter'),
                   fontFamilyFallback: const ['NotoSansKR'],
                   fontSize: 14,
                   fontWeight: FontWeight.w500,
@@ -418,9 +421,9 @@ class _SnackChatNotParticipantScreen extends StatelessWidget {
                     ),
                   ),
                   child: Text(
-                    isKo ? '돌아가기' : 'Go back',
-                    style: const TextStyle(
-                      fontFamily: 'Inter',
+                    isChineseUi(context) ? '返回' : isKo ? '돌아가기' : 'Go back',
+                    style: TextStyle(
+                      fontFamily: uiFontFamily(context, 'Inter'),
                       fontFamilyFallback: const ['NotoSansKR'],
                       fontSize: 15,
                       fontWeight: FontWeight.w700,

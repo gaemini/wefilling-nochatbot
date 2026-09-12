@@ -5,6 +5,7 @@
 import 'package:flutter/material.dart';
 import '../services/notification_settings_service.dart';
 import '../l10n/app_localizations.dart';
+import '../l10n/ui_locale.dart';
 
 class NotificationSettingsScreen extends StatefulWidget {
   const NotificationSettingsScreen({Key? key}) : super(key: key);
@@ -87,8 +88,8 @@ class _NotificationSettingsScreenState
         ),
         title: Text(
           AppLocalizations.of(context)!.notificationSettings ?? "",
-          style: const TextStyle(
-            fontFamily: 'Inter',
+          style: TextStyle(
+            fontFamily: uiFontFamily(context, 'Inter'),
             fontFamilyFallback: const ['NotoSansKR'],
             fontSize: 18,
             fontWeight: FontWeight.w600,
@@ -187,8 +188,8 @@ class _NotificationSettingsScreenState
         ),
         title: Text(
           AppLocalizations.of(context)!.allNotifications,
-          style: const TextStyle(
-            fontFamily: 'Inter',
+          style: TextStyle(
+            fontFamily: uiFontFamily(context, 'Inter'),
             fontFamilyFallback: const ['NotoSansKR'],
             fontSize: 17,
             fontWeight: FontWeight.w800,
@@ -200,7 +201,7 @@ class _NotificationSettingsScreenState
           child: Text(
             AppLocalizations.of(context)!.allNotificationsSubtitle,
             style: TextStyle(
-              fontFamily: 'Inter',
+              fontFamily: uiFontFamily(context, 'Inter'),
               fontFamilyFallback: const ['NotoSansKR'],
               fontSize: 13,
               fontWeight: FontWeight.w600,
@@ -237,8 +238,8 @@ class _NotificationSettingsScreenState
           const SizedBox(width: 8),
           Text(
             title,
-            style: const TextStyle(
-              fontFamily: 'Inter',
+            style: TextStyle(
+              fontFamily: uiFontFamily(context, 'Inter'),
               fontFamilyFallback: const ['NotoSansKR'],
               fontSize: 15,
               fontWeight: FontWeight.w800,
@@ -260,8 +261,8 @@ class _NotificationSettingsScreenState
           backgroundColor: Colors.white,
           title: Text(
             AppLocalizations.of(context)!.disableAllNotificationsTitle,
-            style: const TextStyle(
-              fontFamily: 'Inter',
+            style: TextStyle(
+              fontFamily: uiFontFamily(context, 'Inter'),
               fontFamilyFallback: const ['NotoSansKR'],
               fontSize: 18,
               fontWeight: FontWeight.w800,
@@ -269,8 +270,8 @@ class _NotificationSettingsScreenState
           ),
           content: Text(
             AppLocalizations.of(context)!.disableAllNotificationsMessage,
-            style: const TextStyle(
-              fontFamily: 'Inter',
+            style: TextStyle(
+              fontFamily: uiFontFamily(context, 'Inter'),
               fontFamilyFallback: const ['NotoSansKR'],
               fontSize: 15,
               fontWeight: FontWeight.w600,
@@ -282,8 +283,8 @@ class _NotificationSettingsScreenState
               onPressed: () => Navigator.of(dialogContext).pop(false),
               child: Text(
                 AppLocalizations.of(context)!.cancel,
-                style: const TextStyle(
-                  fontFamily: 'Inter',
+                style: TextStyle(
+                  fontFamily: uiFontFamily(context, 'Inter'),
                   fontFamilyFallback: const ['NotoSansKR'],
                   fontWeight: FontWeight.w700,
                 ),
@@ -297,8 +298,8 @@ class _NotificationSettingsScreenState
               ),
               child: Text(
                 AppLocalizations.of(context)!.turnOff,
-                style: const TextStyle(
-                  fontFamily: 'Inter',
+                style: TextStyle(
+                  fontFamily: uiFontFamily(context, 'Inter'),
                   fontFamilyFallback: const ['NotoSansKR'],
                   fontWeight: FontWeight.w700,
                 ),
@@ -375,7 +376,7 @@ class _NotificationSettingsScreenState
       title: Text(
         title,
         style: TextStyle(
-          fontFamily: 'Inter',
+          fontFamily: uiFontFamily(context, 'Inter'),
           fontFamilyFallback: const ['NotoSansKR'],
           fontSize: 15,
           fontWeight: FontWeight.w700,
@@ -387,7 +388,7 @@ class _NotificationSettingsScreenState
         child: Text(
           subtitle,
           style: TextStyle(
-            fontFamily: 'Inter',
+            fontFamily: uiFontFamily(context, 'Inter'),
             fontFamilyFallback: const ['NotoSansKR'],
             fontSize: 13,
             fontWeight: FontWeight.w600,

@@ -10,6 +10,7 @@ import '../../models/post.dart';
 import '../../utils/post_translation_policy.dart';
 import 'translatable_content.dart';
 import 'post_translation_feed.dart';
+import '../../l10n/ui_locale.dart';
 
 class PollPostWidget extends StatefulWidget {
   final String postId;
@@ -108,7 +109,7 @@ class _PollPostWidgetState extends State<PollPostWidget> {
                             child: Text(
                               text,
                               style: TextStyle(
-                                fontFamily: 'Inter',
+                                fontFamily: uiFontFamily(context, 'Inter'),
                                 fontFamilyFallback: const ['NotoSansKR'],
                                 fontSize: 14,
                                 fontWeight:
@@ -121,7 +122,7 @@ class _PollPostWidgetState extends State<PollPostWidget> {
                           Text(
                             '$percent%',
                             style: TextStyle(
-                              fontFamily: 'Inter',
+                              fontFamily: uiFontFamily(context, 'Inter'),
                               fontFamilyFallback: const ['NotoSansKR'],
                               fontSize: 12,
                               fontWeight: FontWeight.w800,
@@ -158,8 +159,8 @@ class _PollPostWidgetState extends State<PollPostWidget> {
                                           countIndex + countStr.length)),
                                 ],
                         ),
-                        style: const TextStyle(
-                          fontFamily: 'Inter',
+                        style: TextStyle(
+                          fontFamily: uiFontFamily(context, 'Inter'),
                           fontFamilyFallback: const ['NotoSansKR'],
                           fontSize: 12,
                           fontWeight: FontWeight.w500,
@@ -213,8 +214,8 @@ class _PollPostWidgetState extends State<PollPostWidget> {
                           Expanded(
                             child: Text(
                               text,
-                              style: const TextStyle(
-                                fontFamily: 'Inter',
+                              style: TextStyle(
+                                fontFamily: uiFontFamily(context, 'Inter'),
                                 fontFamilyFallback: const ['NotoSansKR'],
                                 fontSize: 14,
                                 fontWeight: FontWeight.w600,
@@ -274,8 +275,8 @@ class _PollPostWidgetState extends State<PollPostWidget> {
                         )
                       : Text(
                           AppLocalizations.of(context)!.pollVoteButton,
-                          style: const TextStyle(
-                            fontFamily: 'Inter',
+                          style: TextStyle(
+                            fontFamily: uiFontFamily(context, 'Inter'),
                             fontFamilyFallback: const ['NotoSansKR'],
                             fontWeight: FontWeight.w700,
                           ),
@@ -287,8 +288,8 @@ class _PollPostWidgetState extends State<PollPostWidget> {
                   padding: EdgeInsets.only(top: 8),
                   child: Text(
                     AppLocalizations.of(context)!.pollLoginToVote,
-                    style: const TextStyle(
-                      fontFamily: 'Inter',
+                    style: TextStyle(
+                      fontFamily: uiFontFamily(context, 'Inter'),
                       fontFamilyFallback: const ['NotoSansKR'],
                       fontSize: 12,
                       fontWeight: FontWeight.w500,
@@ -321,8 +322,8 @@ class _PollPostWidgetState extends State<PollPostWidget> {
                     alignment: Alignment.centerRight,
                     child: Text(
                       AppLocalizations.of(context)!.pollVoteToSeeResults,
-                      style: const TextStyle(
-                        fontFamily: 'Inter',
+                      style: TextStyle(
+                        fontFamily: uiFontFamily(context, 'Inter'),
                         fontFamilyFallback: const ['NotoSansKR'],
                         fontSize: 12,
                         fontWeight: FontWeight.w600,

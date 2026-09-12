@@ -5,6 +5,7 @@ import 'package:flutter/material.dart';
 
 import '../../constants/app_constants.dart';
 import '../../utils/responsive_helper.dart';
+import '../../l10n/ui_locale.dart';
 
 Future<bool> showSnackChatImageConfirmationSheet(
   BuildContext context, {
@@ -76,23 +77,23 @@ class _SnackChatImageConfirmationSheet extends StatelessWidget {
               ),
               SizedBox(height: compact ? 14 : 18),
               Text(
-                isKorean ? '이 사진을 보낼까요?' : 'Send this photo?',
+                (isChineseUi(context) ? '发送这张照片？' : isKorean ? '이 사진을 보낼까요?' : 'Send this photo?'),
                 style: TextStyle(
-                  fontFamily: 'Inter',
+                  fontFamily: uiFontFamily(context, 'Inter'),
                   fontFamilyFallback: const ['NotoSansKR'],
                   fontSize: context.rf(18).clamp(17, 20).toDouble(),
                   fontWeight: FontWeight.w800,
                   color: const Color(0xFF111827),
-                  height: 1.25,
+                  height: isChineseUi(context) ? 1.3 : 1.25,
                 ),
               ),
               const SizedBox(height: 6),
               Text(
-                isKorean
+                (isChineseUi(context) ? '发送前确认所选照片。' : isKorean
                     ? '전송하기 전에 선택한 사진을 확인해 주세요.'
-                    : 'Check the selected photo before sending.',
-                style: const TextStyle(
-                  fontFamily: 'Inter',
+                    : 'Check the selected photo before sending.'),
+                style: TextStyle(
+                  fontFamily: uiFontFamily(context, 'Inter'),
                   fontFamilyFallback: ['NotoSansKR'],
                   fontSize: 13,
                   fontWeight: FontWeight.w500,
@@ -123,11 +124,11 @@ class _SnackChatImageConfirmationSheet extends StatelessWidget {
                               ),
                               const SizedBox(height: 8),
                               Text(
-                                isKorean
+                                (isChineseUi(context) ? '无法预览。' : isKorean
                                     ? '사진을 미리 볼 수 없습니다.'
-                                    : 'Preview unavailable.',
-                                style: const TextStyle(
-                                  fontFamily: 'Inter',
+                                    : 'Preview unavailable.'),
+                                style: TextStyle(
+                                  fontFamily: uiFontFamily(context, 'Inter'),
                                   fontFamilyFallback: ['NotoSansKR'],
                                   fontSize: 13,
                                   color: Color(0xFF667085),
@@ -157,9 +158,9 @@ class _SnackChatImageConfirmationSheet extends StatelessWidget {
                           shape: const StadiumBorder(),
                         ),
                         child: Text(
-                          isKorean ? '취소' : 'Cancel',
-                          style: const TextStyle(
-                            fontFamily: 'Inter',
+                          (isChineseUi(context) ? '取消' : isKorean ? '취소' : 'Cancel'),
+                          style: TextStyle(
+                            fontFamily: uiFontFamily(context, 'Inter'),
                             fontFamilyFallback: ['NotoSansKR'],
                             fontSize: 14,
                             fontWeight: FontWeight.w700,
@@ -184,9 +185,9 @@ class _SnackChatImageConfirmationSheet extends StatelessWidget {
                           shape: const StadiumBorder(),
                         ),
                         child: Text(
-                          isKorean ? '보내기' : 'Send',
-                          style: const TextStyle(
-                            fontFamily: 'Inter',
+                          (isChineseUi(context) ? '发送' : isKorean ? '보내기' : 'Send'),
+                          style: TextStyle(
+                            fontFamily: uiFontFamily(context, 'Inter'),
                             fontFamilyFallback: ['NotoSansKR'],
                             fontSize: 14,
                             fontWeight: FontWeight.w800,

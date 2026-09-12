@@ -5,6 +5,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import '../../constants/app_constants.dart';
+import '../../l10n/ui_locale.dart';
 
 /// 2024-2025 트렌드 Enhanced FAB
 /// 
@@ -322,11 +323,11 @@ class _EnhancedFabState extends State<EnhancedFab>
           const SizedBox(width: 12),
           Text(
             widget.text,
-            style: AppTheme.labelLarge.copyWith(
+            style: uiTextStyle(context, AppTheme.labelLarge.copyWith(
               color: Colors.white,
               fontWeight: FontWeight.w700,
               fontSize: widget.size == EnhancedFabSize.large ? 16 : 14,
-            ),
+            )),
           ),
         ],
       ],

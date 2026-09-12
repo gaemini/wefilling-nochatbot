@@ -10,6 +10,7 @@ import '../services/auth_service.dart';
 import '../design/tokens.dart';
 import '../ui/widgets/empty_state.dart';
 import '../utils/logger.dart';
+import '../l10n/ui_locale.dart';
 
 class BlockedUsersScreen extends StatefulWidget {
   const BlockedUsersScreen({super.key});
@@ -34,6 +35,7 @@ class _BlockedUsersScreenState extends State<BlockedUsersScreen> {
   }
 
   Future<void> _loadBlockedUsers() async {
+    final chineseUiAtStart = isChineseUi(context);
     setState(() {
       _isLoading = true;
       _hasError = false;
@@ -77,9 +79,9 @@ class _BlockedUsersScreenState extends State<BlockedUsersScreen> {
       Logger.error('❌ 차단 목록 조회 실패: $e');
       
       final isKo = Localizations.localeOf(context).languageCode == 'ko';
-      final errorMsg = isKo
+      final errorMsg = (chineseUiAtStart ? '屏蔽列表加载失败。\n请稍后重试。' : isKo
           ? '차단 목록을 불러오는데 실패했습니다.\n잠시 후 다시 시도해주세요.'
-          : 'Failed to load blocked users.\nPlease try again later.';
+          : 'Failed to load blocked users.\nPlease try again later.');
       
       setState(() {
         _isLoading = false;
@@ -111,9 +113,9 @@ class _BlockedUsersScreenState extends State<BlockedUsersScreen> {
           ScaffoldMessenger.of(context).showSnackBar(
             SnackBar(
               content: Text(
-                isKo 
+                (isChineseUi(context) ? '已取消拉黑${_getUserName(blockedUser.blockedUserId)}。' : isKo
                     ? '${_getUserName(blockedUser.blockedUserId)} 사용자의 차단을 해제했습니다.'
-                    : 'Unblocked ${_getUserName(blockedUser.blockedUserId)}.',
+                    : 'Unblocked ${_getUserName(blockedUser.blockedUserId)}.'),
               ),
               backgroundColor: Colors.green,
             ),
@@ -124,7 +126,7 @@ class _BlockedUsersScreenState extends State<BlockedUsersScreen> {
           final isKo = Localizations.localeOf(context).languageCode == 'ko';
           ScaffoldMessenger.of(context).showSnackBar(
             SnackBar(
-              content: Text(isKo ? '차단 해제에 실패했습니다.' : 'Failed to unblock user.'),
+              content: Text((isChineseUi(context) ? '取消拉黑失败。' : isKo ? '차단 해제에 실패했습니다.' : 'Failed to unblock user.')),
               backgroundColor: Colors.red,
             ),
           );
@@ -136,7 +138,7 @@ class _BlockedUsersScreenState extends State<BlockedUsersScreen> {
         final isKo = Localizations.localeOf(context).languageCode == 'ko';
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
-            content: Text(isKo ? '차단 해제 중 오류가 발생했습니다.' : 'An error occurred while unblocking.'),
+            content: Text((isChineseUi(context) ? '取消拉黑时出错。' : isKo ? '차단 해제 중 오류가 발생했습니다.' : 'An error occurred while unblocking.')),
             backgroundColor: Colors.red,
           ),
         );
@@ -149,20 +151,20 @@ class _BlockedUsersScreenState extends State<BlockedUsersScreen> {
     final confirmed = await showDialog<bool>(
           context: context,
           builder: (context) => AlertDialog(
-            title: Text(isKo ? '익명 게시글 차단 해제' : 'Unblock anonymous post'),
+            title: Text((isChineseUi(context) ? '取消屏蔽匿名动态' : isKo ? '익명 게시글 차단 해제' : 'Unblock anonymous post')),
             content: Text(
-              isKo
+              (isChineseUi(context) ? '要取消屏蔽这条匿名动态吗？' : isKo
                   ? '이 익명 게시글 차단을 해제하시겠습니까?'
-                  : 'Do you want to unblock this anonymous post?',
+                  : 'Do you want to unblock this anonymous post?'),
             ),
             actions: [
               TextButton(
                 onPressed: () => Navigator.of(context).pop(false),
-                child: Text(isKo ? '취소' : 'Cancel'),
+                child: Text((isChineseUi(context) ? '取消' : isKo ? '취소' : 'Cancel')),
               ),
               ElevatedButton(
                 onPressed: () => Navigator.of(context).pop(true),
-                child: Text(isKo ? '해제' : 'Unblock'),
+                child: Text((isChineseUi(context) ? '取消屏蔽' : isKo ? '해제' : 'Unblock')),
               ),
             ],
           ),
@@ -180,9 +182,9 @@ class _BlockedUsersScreenState extends State<BlockedUsersScreen> {
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
           content: Text(
-            isKo
+            (isChineseUi(context) ? '已取消屏蔽匿名动态。' : isKo
                 ? '익명 게시글 차단을 해제했습니다.'
-                : 'Anonymous post unblocked.',
+                : 'Anonymous post unblocked.'),
           ),
           backgroundColor: Colors.green,
         ),
@@ -191,9 +193,9 @@ class _BlockedUsersScreenState extends State<BlockedUsersScreen> {
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
           content: Text(
-            isKo
+            (isChineseUi(context) ? '取消屏蔽匿名动态失败。' : isKo
                 ? '익명 게시글 차단 해제에 실패했습니다.'
-                : 'Failed to unblock anonymous post.',
+                : 'Failed to unblock anonymous post.'),
           ),
           backgroundColor: Colors.red,
         ),
@@ -208,19 +210,19 @@ class _BlockedUsersScreenState extends State<BlockedUsersScreen> {
       context: context,
       builder: (context) => AlertDialog(
         title: Text(
-          isKo ? '차단 해제' : 'Unblock User',
-          style: const TextStyle(
-            fontFamily: 'Inter',
+          (isChineseUi(context) ? '取消拉黑' : isKo ? '차단 해제' : 'Unblock User'),
+          style: TextStyle(
+            fontFamily: uiFontFamily(context, 'Inter'),
             fontFamilyFallback: const ['NotoSansKR'],
             fontWeight: FontWeight.w600,
           ),
         ),
         content: Text(
-          isKo 
+          (isChineseUi(context) ? '要取消拉黑${userName}吗？' : isKo
               ? '$userName 사용자의 차단을 해제하시겠습니까?' 
-              : 'Do you want to unblock $userName?',
-          style: const TextStyle(
-            fontFamily: 'Inter',
+              : 'Do you want to unblock $userName?'),
+          style: TextStyle(
+            fontFamily: uiFontFamily(context, 'Inter'),
             fontFamilyFallback: const ['NotoSansKR'],
           ),
         ),
@@ -228,9 +230,9 @@ class _BlockedUsersScreenState extends State<BlockedUsersScreen> {
           TextButton(
             onPressed: () => Navigator.of(context).pop(false),
             child: Text(
-              isKo ? '취소' : 'Cancel',
-              style: const TextStyle(
-                fontFamily: 'Inter',
+              (isChineseUi(context) ? '取消' : isKo ? '취소' : 'Cancel'),
+              style: TextStyle(
+                fontFamily: uiFontFamily(context, 'Inter'),
                 fontFamilyFallback: const ['NotoSansKR'],
                 color: Color(0xFF6B7280),
               ),
@@ -247,9 +249,9 @@ class _BlockedUsersScreenState extends State<BlockedUsersScreen> {
               ),
             ),
             child: Text(
-              isKo ? '해제' : 'Unblock',
-              style: const TextStyle(
-                fontFamily: 'Inter',
+              (isChineseUi(context) ? '取消屏蔽' : isKo ? '해제' : 'Unblock'),
+              style: TextStyle(
+                fontFamily: uiFontFamily(context, 'Inter'),
                 fontFamilyFallback: const ['NotoSansKR'],
                 fontWeight: FontWeight.w600,
               ),
@@ -265,7 +267,7 @@ class _BlockedUsersScreenState extends State<BlockedUsersScreen> {
     final isKo = Localizations.localeOf(context).languageCode == 'ko';
     final nick = (profile?['nickname'] ?? '').toString().trim();
     if (nick.isNotEmpty) return nick;
-    return isKo ? '알 수 없는 사용자' : 'Unknown User';
+    return (isChineseUi(context) ? '未知用户' : isKo ? '알 수 없는 사용자' : 'Unknown User');
   }
 
   String _getFormattedDate(DateTime dateTime) {
@@ -274,13 +276,13 @@ class _BlockedUsersScreenState extends State<BlockedUsersScreen> {
     final isKo = Localizations.localeOf(context).languageCode == 'ko';
     
     if (difference.inDays > 0) {
-      return isKo ? '${difference.inDays}일 전' : '${difference.inDays}d ago';
+      return (isChineseUi(context) ? '${difference.inDays}天前' : isKo ? '${difference.inDays}일 전' : '${difference.inDays}d ago');
     } else if (difference.inHours > 0) {
-      return isKo ? '${difference.inHours}시간 전' : '${difference.inHours}h ago';
+      return (isChineseUi(context) ? '${difference.inHours}小时前' : isKo ? '${difference.inHours}시간 전' : '${difference.inHours}h ago');
     } else if (difference.inMinutes > 0) {
-      return isKo ? '${difference.inMinutes}분 전' : '${difference.inMinutes}m ago';
+      return (isChineseUi(context) ? '${difference.inMinutes}分钟前' : isKo ? '${difference.inMinutes}분 전' : '${difference.inMinutes}m ago');
     } else {
-      return isKo ? '방금 전' : 'Just now';
+      return (isChineseUi(context) ? '刚刚' : isKo ? '방금 전' : 'Just now');
     }
   }
 
@@ -299,8 +301,8 @@ class _BlockedUsersScreenState extends State<BlockedUsersScreen> {
         ),
         title: Text(
           AppLocalizations.of(context)!.blockList ?? "",
-          style: const TextStyle(
-            fontFamily: 'Inter',
+          style: TextStyle(
+            fontFamily: uiFontFamily(context, 'Inter'),
             fontFamilyFallback: const ['NotoSansKR'],
             fontSize: 18,
             fontWeight: FontWeight.w600,
@@ -334,9 +336,9 @@ class _BlockedUsersScreenState extends State<BlockedUsersScreen> {
             ),
             const SizedBox(height: 16),
             Text(
-              isKo ? '오류가 발생했습니다' : 'An error occurred',
+              (isChineseUi(context) ? '发生错误' : isKo ? '오류가 발생했습니다' : 'An error occurred'),
               style: TextStyle(
-                fontFamily: 'Inter',
+                fontFamily: uiFontFamily(context, 'Inter'),
                 fontFamilyFallback: const ['NotoSansKR'],
                 fontSize: 20,
                 fontWeight: FontWeight.bold,
@@ -347,8 +349,8 @@ class _BlockedUsersScreenState extends State<BlockedUsersScreen> {
             Text(
               _errorMessage,
               textAlign: TextAlign.center,
-              style: const TextStyle(
-                fontFamily: 'Inter',
+              style: TextStyle(
+                fontFamily: uiFontFamily(context, 'Inter'),
                 fontFamilyFallback: const ['NotoSansKR'],
                 fontSize: 14,
                 color: Color(0xFF111827),
@@ -358,7 +360,7 @@ class _BlockedUsersScreenState extends State<BlockedUsersScreen> {
             ElevatedButton.icon(
               onPressed: _loadBlockedUsers,
               icon: const Icon(Icons.refresh),
-              label: Text(isKo ? '다시 시도' : 'Retry'),
+              label: Text((isChineseUi(context) ? '重试' : isKo ? '다시 시도' : 'Retry')),
               style: ElevatedButton.styleFrom(
                 backgroundColor: const Color(0xFF6366F1),
                 foregroundColor: Colors.white,
@@ -380,10 +382,10 @@ class _BlockedUsersScreenState extends State<BlockedUsersScreen> {
     return Center(
       child: AppEmptyState(
         icon: Icons.block,
-        title: isKo ? '차단한 항목이 없습니다' : 'No blocked items',
-        description: isKo
+        title: (isChineseUi(context) ? '暂无屏蔽内容' : isKo ? '차단한 항목이 없습니다' : 'No blocked items'),
+        description: (isChineseUi(context) ? '被拉黑的用户和被屏蔽的匿名动态会显示在这里。' : isKo
             ? '차단한 사용자 또는 익명 게시글이 있으면 여기에 표시됩니다.'
-            : 'Blocked users or anonymous posts will appear here.',
+            : 'Blocked users or anonymous posts will appear here.'),
       ),
     );
   }
@@ -399,12 +401,12 @@ class _BlockedUsersScreenState extends State<BlockedUsersScreen> {
         padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
         children: [
           if (hasUsers) ...[
-            _buildSectionTitle(isKo ? '사용자 차단' : 'Blocked users'),
+            _buildSectionTitle((isChineseUi(context) ? '已拉黑的用户' : isKo ? '사용자 차단' : 'Blocked users')),
             ..._blockedUsers.map(_buildBlockedUserCard),
             const SizedBox(height: 8),
           ],
           if (hasAnonymousPosts) ...[
-            _buildSectionTitle(isKo ? '익명 게시글 차단' : 'Blocked anonymous posts'),
+            _buildSectionTitle((isChineseUi(context) ? '已屏蔽的匿名动态' : isKo ? '익명 게시글 차단' : 'Blocked anonymous posts')),
             ..._blockedAnonymousPosts.map(_buildBlockedAnonymousPostCard),
           ],
         ],
@@ -417,8 +419,8 @@ class _BlockedUsersScreenState extends State<BlockedUsersScreen> {
       padding: const EdgeInsets.only(top: 8, bottom: 8),
       child: Text(
         text,
-        style: const TextStyle(
-          fontFamily: 'Inter',
+        style: TextStyle(
+          fontFamily: uiFontFamily(context, 'Inter'),
           fontFamilyFallback: const ['NotoSansKR'],
           fontSize: 13,
           fontWeight: FontWeight.w700,
@@ -481,8 +483,8 @@ class _BlockedUsersScreenState extends State<BlockedUsersScreen> {
               children: [
                 Text(
                   userName,
-                  style: const TextStyle(
-                    fontFamily: 'Inter',
+                  style: TextStyle(
+                    fontFamily: uiFontFamily(context, 'Inter'),
                     fontFamilyFallback: const ['NotoSansKR'],
                     fontSize: 16,
                     fontWeight: FontWeight.w500,
@@ -496,10 +498,10 @@ class _BlockedUsersScreenState extends State<BlockedUsersScreen> {
                   () {
                     final isKo = Localizations.localeOf(context).languageCode == 'ko';
                     final timeAgo = _getFormattedDate(blockedUser.createdAt);
-                    return isKo ? '$timeAgo에 차단' : 'Blocked $timeAgo';
+                    return (isChineseUi(context) ? '已屏蔽 ${timeAgo}' : isKo ? '$timeAgo에 차단' : 'Blocked $timeAgo');
                   }(),
-                  style: const TextStyle(
-                    fontFamily: 'Inter',
+                  style: TextStyle(
+                    fontFamily: uiFontFamily(context, 'Inter'),
                     fontFamilyFallback: const ['NotoSansKR'],
                     fontSize: 14,
                     color: Color(0xFF6B7280),
@@ -519,10 +521,10 @@ class _BlockedUsersScreenState extends State<BlockedUsersScreen> {
             child: Text(
               () {
                 final isKo = Localizations.localeOf(context).languageCode == 'ko';
-                return isKo ? '차단 해제' : 'Unblock';
+                return (isChineseUi(context) ? '取消屏蔽' : isKo ? '차단 해제' : 'Unblock');
               }(),
-              style: const TextStyle(
-                fontFamily: 'Inter',
+              style: TextStyle(
+                fontFamily: uiFontFamily(context, 'Inter'),
                 fontFamilyFallback: const ['NotoSansKR'],
                 fontWeight: FontWeight.w600,
                 fontSize: 14,
@@ -542,7 +544,7 @@ class _BlockedUsersScreenState extends State<BlockedUsersScreen> {
         ? title
         : (preview.isNotEmpty
             ? preview
-            : (isKo ? '익명 게시글' : 'Anonymous post'));
+            : ((isChineseUi(context) ? '匿名动态' : isKo ? '익명 게시글' : 'Anonymous post')));
 
     return Container(
       padding: const EdgeInsets.symmetric(vertical: 14),
@@ -572,9 +574,9 @@ class _BlockedUsersScreenState extends State<BlockedUsersScreen> {
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
                 Text(
-                  isKo ? '익명 게시글' : 'Anonymous post',
-                  style: const TextStyle(
-                    fontFamily: 'Inter',
+                  (isChineseUi(context) ? '匿名动态' : isKo ? '익명 게시글' : 'Anonymous post'),
+                  style: TextStyle(
+                    fontFamily: uiFontFamily(context, 'Inter'),
                     fontFamilyFallback: const ['NotoSansKR'],
                     fontSize: 16,
                     fontWeight: FontWeight.w600,
@@ -586,8 +588,8 @@ class _BlockedUsersScreenState extends State<BlockedUsersScreen> {
                   subtitle,
                   maxLines: 1,
                   overflow: TextOverflow.ellipsis,
-                  style: const TextStyle(
-                    fontFamily: 'Inter',
+                  style: TextStyle(
+                    fontFamily: uiFontFamily(context, 'Inter'),
                     fontFamilyFallback: const ['NotoSansKR'],
                     fontSize: 13,
                     fontWeight: FontWeight.w500,
@@ -596,11 +598,11 @@ class _BlockedUsersScreenState extends State<BlockedUsersScreen> {
                 ),
                 const SizedBox(height: 2),
                 Text(
-                  isKo
+                  (isChineseUi(context) ? '已屏蔽 ${_getFormattedDate(blockedPost.createdAt)}' : isKo
                       ? '${_getFormattedDate(blockedPost.createdAt)}에 차단'
-                      : 'Blocked ${_getFormattedDate(blockedPost.createdAt)}',
-                  style: const TextStyle(
-                    fontFamily: 'Inter',
+                      : 'Blocked ${_getFormattedDate(blockedPost.createdAt)}'),
+                  style: TextStyle(
+                    fontFamily: uiFontFamily(context, 'Inter'),
                     fontFamilyFallback: const ['NotoSansKR'],
                     fontSize: 12,
                     color: Color(0xFF9CA3AF),
@@ -612,9 +614,9 @@ class _BlockedUsersScreenState extends State<BlockedUsersScreen> {
           TextButton(
             onPressed: () => _unblockAnonymousPost(blockedPost),
             child: Text(
-              isKo ? '차단 해제' : 'Unblock',
-              style: const TextStyle(
-                fontFamily: 'Inter',
+              (isChineseUi(context) ? '取消屏蔽' : isKo ? '차단 해제' : 'Unblock'),
+              style: TextStyle(
+                fontFamily: uiFontFamily(context, 'Inter'),
                 fontFamilyFallback: const ['NotoSansKR'],
                 fontWeight: FontWeight.w600,
                 fontSize: 14,

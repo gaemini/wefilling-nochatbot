@@ -4,6 +4,7 @@
 import 'package:flutter/material.dart';
 import 'notification_badge.dart';
 import '../utils/responsive_helper.dart';
+import '../l10n/ui_locale.dart';
 
 /// 하단 네비게이션 아이템 데이터 클래스
 class BottomNavigationItem {
@@ -74,7 +75,7 @@ class AdaptiveBottomNavigation extends StatelessWidget {
         final effectiveTextScale = textScale.clamp(1.0, 1.3);
         final requiredNavHeight = largestIconSize +
             3 +
-            (fontSize * 1.1 * effectiveTextScale) +
+            (fontSize * (isChineseUi(context) ? 1.3 : 1.1) * effectiveTextScale) +
             8 +
             (verticalPadding * 2) +
             2;
@@ -242,7 +243,7 @@ class AdaptiveBottomNavigation extends StatelessWidget {
                       fontWeight:
                           isSelected ? FontWeight.w600 : FontWeight.w400,
                       color: isSelected ? activeColor : unselectedColor,
-                      height: 1.1,
+                      height: isChineseUi(context) ? 1.3 : 1.1,
                     ),
                     maxLines: 1,
                     softWrap: false,

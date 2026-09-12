@@ -8,6 +8,7 @@ import '../models/pending_signup_session.dart';
 import '../providers/auth_provider.dart' as app_auth;
 import '../widgets/signup_flow_widgets.dart';
 import 'nickname_setup_screen.dart';
+import '../l10n/ui_locale.dart';
 
 /// Password step shared by the Hanyang and general verified-email sign-up
 /// routes.
@@ -191,8 +192,8 @@ class _PasswordSetupScreenState extends State<PasswordSetupScreen> {
             l10n.passwordSetupTitle,
             maxLines: 1,
             overflow: TextOverflow.ellipsis,
-            style: const TextStyle(
-              fontFamily: 'Inter',
+            style: TextStyle(
+              fontFamily: uiFontFamily(context, 'Inter'),
               fontFamilyFallback: const ['NotoSansKR'],
               fontSize: 18,
               fontWeight: FontWeight.w700,
@@ -247,7 +248,7 @@ class _PasswordSetupScreenState extends State<PasswordSetupScreen> {
                             autocorrect: false,
                             enableSuggestions: false,
                             autofillHints: const [AutofillHints.newPassword],
-                            decoration: signupInputDecoration(
+                            decoration: signupInputDecoration(context: context,
                               hintText: l10n.passwordInputHint,
                               icon: Icons.lock_outline_rounded,
                               suffixIcon: IconButton(
@@ -263,8 +264,8 @@ class _PasswordSetupScreenState extends State<PasswordSetupScreen> {
                                 ),
                               ),
                             ),
-                            style: const TextStyle(
-                              fontFamily: 'Inter',
+                            style: TextStyle(
+                              fontFamily: uiFontFamily(context, 'Inter'),
                               fontFamilyFallback: const ['NotoSansKR'],
                               fontSize: 16,
                               fontWeight: FontWeight.w500,
@@ -282,7 +283,7 @@ class _PasswordSetupScreenState extends State<PasswordSetupScreen> {
                             autocorrect: false,
                             enableSuggestions: false,
                             onFieldSubmitted: (_) => _handleSignUp(),
-                            decoration: signupInputDecoration(
+                            decoration: signupInputDecoration(context: context,
                               hintText: l10n.confirmPasswordPlaceholder,
                               icon: Icons.lock_outline_rounded,
                               suffixIcon: IconButton(
@@ -299,8 +300,8 @@ class _PasswordSetupScreenState extends State<PasswordSetupScreen> {
                                 ),
                               ),
                             ),
-                            style: const TextStyle(
-                              fontFamily: 'Inter',
+                            style: TextStyle(
+                              fontFamily: uiFontFamily(context, 'Inter'),
                               fontFamilyFallback: const ['NotoSansKR'],
                               fontSize: 16,
                               fontWeight: FontWeight.w500,

@@ -1,4 +1,5 @@
 import 'package:flutter/widgets.dart';
+import '../l10n/ui_locale.dart';
 
 /// 학기별 안내를 개인화하기 위한 사용자 유형입니다.
 ///
@@ -25,20 +26,20 @@ enum StudentType {
     return switch (this) {
       // 저장 키는 기존 사용자 호환을 위해 exchange를 유지하고, 사용자에게
       // 보이는 이메일 가입 명칭만 더 넓은 학생 구분으로 표시한다.
-      StudentType.exchange => koreanUi ? '외국인 학생' : 'Foreign student',
-      StudentType.korean => koreanUi ? '한국 학생' : 'Korean student',
+      StudentType.exchange => (isChineseUi(context) ? '留学生' : koreanUi ? '외국인 학생' : 'Foreign student'),
+      StudentType.korean => (isChineseUi(context) ? '韩国学生' : koreanUi ? '한국 학생' : 'Korean student'),
     };
   }
 
   String description(BuildContext context) {
     final koreanUi = Localizations.localeOf(context).languageCode == 'ko';
     return switch (this) {
-      StudentType.exchange => koreanUi
+      StudentType.exchange => (isChineseUi(context) ? '获取校园生活、本地活动和文化交流指南。' : koreanUi
           ? '한국 생활, 학교 행사와 교류 활동을 중심으로 안내해요.'
-          : 'Get guidance for campus life, local events, and cultural exchange.',
-      StudentType.korean => koreanUi
+          : 'Get guidance for campus life, local events, and cultural exchange.'),
+      StudentType.korean => (isChineseUi(context) ? '获取学业、校园活动和留学生活动指南。' : koreanUi
           ? '학사 일정, 교내 활동과 외국인 학생 교류 기회를 중심으로 안내해요.'
-          : 'Get guidance for academics, campus activities, and international student events.',
+          : 'Get guidance for academics, campus activities, and international student events.'),
     };
   }
 }

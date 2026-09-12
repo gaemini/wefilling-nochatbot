@@ -14,6 +14,7 @@ import '../ui/widgets/post_translation_feed.dart';
 import '../ui/widgets/skeletons.dart';
 import 'post_category_feed_screen.dart';
 import 'post_detail_screen.dart';
+import '../l10n/ui_locale.dart';
 
 typedef AllPostsPageLoader = Future<AllPostsPage> Function({
   AllPostsCursor? startAfter,
@@ -265,7 +266,7 @@ class _AllPostsScreenState extends State<AllPostsScreen> {
             key: const ValueKey('all_posts_load_more_retry'),
             onPressed: _loadMore,
             icon: const Icon(Icons.refresh_rounded, size: 18),
-            label: Text(isKo ? '더 불러오기' : 'Load more'),
+            label: Text((isChineseUi(context) ? '加载更多' : isKo ? '더 불러오기' : 'Load more')),
           ),
         ),
       );
@@ -274,10 +275,10 @@ class _AllPostsScreenState extends State<AllPostsScreen> {
       return Padding(
         padding: const EdgeInsets.fromLTRB(20, 18, 20, 36),
         child: Text(
-          isKo ? '모든 포스트를 확인했어요.' : 'You have reached the end.',
+          (isChineseUi(context) ? '已经到底了。' : isKo ? '모든 포스트를 확인했어요.' : 'You have reached the end.'),
           textAlign: TextAlign.center,
-          style: const TextStyle(
-            fontFamily: 'Inter',
+          style: TextStyle(
+            fontFamily: uiFontFamily(context, 'Inter'),
             fontFamilyFallback: const ['NotoSansKR'],
             fontSize: 13,
             fontWeight: FontWeight.w400,
@@ -298,10 +299,10 @@ class _AllPostsScreenState extends State<AllPostsScreen> {
         backgroundColor: BrandColors.surface,
         surfaceTintColor: Colors.transparent,
         elevation: 0,
-        title: const Text(
+        title: Text(
           'ALL',
           style: TextStyle(
-            fontFamily: 'Inter',
+            fontFamily: uiFontFamily(context, 'Inter'),
             fontFamilyFallback: const ['NotoSansKR'],
             fontSize: 18,
             fontWeight: FontWeight.w600,
@@ -340,7 +341,7 @@ class _AllPostsScreenState extends State<AllPostsScreen> {
                     child: TextButton.icon(
                       onPressed: _loadFirstPage,
                       icon: const Icon(Icons.refresh_rounded),
-                      label: Text(isKo ? '다시 시도' : 'Try again'),
+                      label: Text((isChineseUi(context) ? '重试' : isKo ? '다시 시도' : 'Try again')),
                     ),
                   ),
                 )
@@ -359,12 +360,12 @@ class _AllPostsScreenState extends State<AllPostsScreen> {
                         ),
                         const SizedBox(height: DesignTokens.s16),
                         Text(
-                          isKo
+                          (isChineseUi(context) ? '暂无动态。' : isKo
                               ? '표시할 포스트가 없어요.'
-                              : 'There are no posts to show.',
+                              : 'There are no posts to show.'),
                           textAlign: TextAlign.center,
-                          style: const TextStyle(
-                            fontFamily: 'Inter',
+                          style: TextStyle(
+                            fontFamily: uiFontFamily(context, 'Inter'),
                             fontFamilyFallback: const ['NotoSansKR'],
                             fontSize: 16,
                             fontWeight: FontWeight.w500,

@@ -9,6 +9,7 @@ import '../models/comment.dart';
 import '../l10n/app_localizations.dart';
 import '../services/user_info_cache_service.dart';
 import '../utils/responsive_helper.dart';
+import '../l10n/ui_locale.dart';
 
 class ReviewCommentsScreen extends StatefulWidget {
   final ReviewPost review;
@@ -81,7 +82,7 @@ class _ReviewCommentsScreenState extends State<ReviewCommentsScreen> {
               maxLines: 1,
               overflow: TextOverflow.ellipsis,
               style: TextStyle(
-                fontFamily: 'Inter',
+                fontFamily: uiFontFamily(context, 'Inter'),
                 fontFamilyFallback: const ['NotoSansKR'],
                 color: const Color(0xFF111827),
                 fontSize: context.rf(18).clamp(16, 19).toDouble(),
@@ -106,8 +107,8 @@ class _ReviewCommentsScreenState extends State<ReviewCommentsScreen> {
                           child: Text(
                             l10n?.loadingComments ?? '',
                             textAlign: TextAlign.center,
-                            style: const TextStyle(
-                              fontFamily: 'Inter',
+                            style: TextStyle(
+                              fontFamily: uiFontFamily(context, 'Inter'),
                               fontFamilyFallback: ['NotoSansKR'],
                               fontSize: 14,
                               fontWeight: FontWeight.w600,
@@ -132,8 +133,8 @@ class _ReviewCommentsScreenState extends State<ReviewCommentsScreen> {
                             const SizedBox(height: 12),
                             Text(
                               l10n?.noCommentsYet ?? '',
-                              style: const TextStyle(
-                                fontFamily: 'Inter',
+                              style: TextStyle(
+                                fontFamily: uiFontFamily(context, 'Inter'),
                                 fontFamilyFallback: ['NotoSansKR'],
                                 fontSize: 15,
                                 color: Color(0xFF475467),
@@ -143,8 +144,8 @@ class _ReviewCommentsScreenState extends State<ReviewCommentsScreen> {
                             const SizedBox(height: 5),
                             Text(
                               l10n?.beFirstToComment ?? '',
-                              style: const TextStyle(
-                                fontFamily: 'Inter',
+                              style: TextStyle(
+                                fontFamily: uiFontFamily(context, 'Inter'),
                                 fontFamilyFallback: ['NotoSansKR'],
                                 fontSize: 13,
                                 color: Color(0xFF98A2B3),
@@ -261,7 +262,7 @@ class _ReviewCommentsScreenState extends State<ReviewCommentsScreen> {
                         maxLines: 1,
                         overflow: TextOverflow.ellipsis,
                         style: TextStyle(
-                          fontFamily: 'Inter',
+                          fontFamily: uiFontFamily(context, 'Inter'),
                           fontFamilyFallback: const ['NotoSansKR'],
                           fontSize: context.rf(13).clamp(12.5, 14).toDouble(),
                           fontWeight: FontWeight.w700,
@@ -274,7 +275,7 @@ class _ReviewCommentsScreenState extends State<ReviewCommentsScreen> {
                       comment.getFormattedTime(context),
                       maxLines: 1,
                       style: TextStyle(
-                        fontFamily: 'Inter',
+                        fontFamily: uiFontFamily(context, 'Inter'),
                         fontFamilyFallback: const ['NotoSansKR'],
                         fontSize: context.rf(11).clamp(10.5, 12).toDouble(),
                         fontWeight: FontWeight.w500,
@@ -287,7 +288,7 @@ class _ReviewCommentsScreenState extends State<ReviewCommentsScreen> {
                 Text(
                   comment.content,
                   style: TextStyle(
-                    fontFamily: 'Inter',
+                    fontFamily: uiFontFamily(context, 'Inter'),
                     fontFamilyFallback: const ['NotoSansKR'],
                     fontSize: context.rf(14).clamp(13, 15).toDouble(),
                     fontWeight: FontWeight.w400,
@@ -344,7 +345,7 @@ class _ReviewCommentsScreenState extends State<ReviewCommentsScreen> {
                         decoration: InputDecoration(
                           hintText: l10n?.writeComment ?? '',
                           hintStyle: TextStyle(
-                            fontFamily: 'Inter',
+                            fontFamily: uiFontFamily(context, 'Inter'),
                             fontFamilyFallback: const ['NotoSansKR'],
                             color: const Color(0xFF98A2B3),
                             fontSize: context.rf(14).clamp(13, 15).toDouble(),
@@ -358,7 +359,7 @@ class _ReviewCommentsScreenState extends State<ReviewCommentsScreen> {
                           isDense: true,
                         ),
                         style: TextStyle(
-                          fontFamily: 'Inter',
+                          fontFamily: uiFontFamily(context, 'Inter'),
                           fontFamilyFallback: const ['NotoSansKR'],
                           fontSize: context.rf(14).clamp(13, 15).toDouble(),
                           color: const Color(0xFF111827),

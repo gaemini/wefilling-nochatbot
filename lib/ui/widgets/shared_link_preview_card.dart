@@ -6,6 +6,7 @@ import 'package:url_launcher/url_launcher.dart';
 import '../../models/shared_link_preview.dart';
 import '../../services/shared_link_preview_service.dart';
 import 'adaptive_post_image_frame.dart';
+import '../../l10n/ui_locale.dart';
 
 class SharedLinkPreviewCard extends StatelessWidget {
   const SharedLinkPreviewCard({
@@ -239,8 +240,8 @@ class SharedLinkPreviewCard extends StatelessWidget {
                           children: [
                             Text(
                               _providerLabel(),
-                              style: const TextStyle(
-                                fontFamily: 'Inter',
+                              style: TextStyle(
+                                fontFamily: uiFontFamily(context, 'Inter'),
                                 fontFamilyFallback: ['NotoSansKR'],
                                 fontSize: 12,
                                 fontWeight: FontWeight.w700,
@@ -252,8 +253,8 @@ class SharedLinkPreviewCard extends StatelessWidget {
                               _effectiveTitle(),
                               maxLines: compact ? 2 : 3,
                               overflow: TextOverflow.ellipsis,
-                              style: const TextStyle(
-                                fontFamily: 'Inter',
+                              style: TextStyle(
+                                fontFamily: uiFontFamily(context, 'Inter'),
                                 fontFamilyFallback: ['NotoSansKR'],
                                 fontSize: 15,
                                 fontWeight: FontWeight.w600,
@@ -267,8 +268,8 @@ class SharedLinkPreviewCard extends StatelessWidget {
                                 preview.authorName.trim(),
                                 maxLines: 1,
                                 overflow: TextOverflow.ellipsis,
-                                style: const TextStyle(
-                                  fontFamily: 'Inter',
+                                style: TextStyle(
+                                  fontFamily: uiFontFamily(context, 'Inter'),
                                   fontFamilyFallback: ['NotoSansKR'],
                                   fontSize: 12,
                                   fontWeight: FontWeight.w500,
@@ -282,8 +283,8 @@ class SharedLinkPreviewCard extends StatelessWidget {
                                 domain,
                                 maxLines: 1,
                                 overflow: TextOverflow.ellipsis,
-                                style: const TextStyle(
-                                  fontFamily: 'Inter',
+                                style: TextStyle(
+                                  fontFamily: uiFontFamily(context, 'Inter'),
                                   fontFamilyFallback: ['NotoSansKR'],
                                   fontSize: 11,
                                   fontWeight: FontWeight.w400,
@@ -341,8 +342,8 @@ class SharedLinkPreviewCard extends StatelessWidget {
                 _compactInstagramTitle(),
                 maxLines: compact ? 2 : 3,
                 overflow: TextOverflow.ellipsis,
-                style: const TextStyle(
-                  fontFamily: 'Inter',
+                style: TextStyle(
+                  fontFamily: uiFontFamily(context, 'Inter'),
                   fontFamilyFallback: ['NotoSansKR'],
                   fontSize: 14,
                   fontWeight: FontWeight.w600,
@@ -355,8 +356,8 @@ class SharedLinkPreviewCard extends StatelessWidget {
                 secondary,
                 maxLines: 1,
                 overflow: TextOverflow.ellipsis,
-                style: const TextStyle(
-                  fontFamily: 'Inter',
+                style: TextStyle(
+                  fontFamily: uiFontFamily(context, 'Inter'),
                   fontFamilyFallback: ['NotoSansKR'],
                   fontSize: 11,
                   color: Color(0xFF98A2B3),
@@ -434,8 +435,8 @@ class SharedLinkPreviewCard extends StatelessWidget {
                                 title,
                                 maxLines: compact ? 1 : 2,
                                 overflow: TextOverflow.ellipsis,
-                                style: const TextStyle(
-                                  fontFamily: 'Inter',
+                                style: TextStyle(
+                                  fontFamily: uiFontFamily(context, 'Inter'),
                                   fontFamilyFallback: ['NotoSansKR'],
                                   fontSize: 14,
                                   fontWeight: FontWeight.w600,
@@ -448,8 +449,8 @@ class SharedLinkPreviewCard extends StatelessWidget {
                                 isReel ? 'Instagram Reel' : 'Instagram',
                                 maxLines: 1,
                                 overflow: TextOverflow.ellipsis,
-                                style: const TextStyle(
-                                  fontFamily: 'Inter',
+                                style: TextStyle(
+                                  fontFamily: uiFontFamily(context, 'Inter'),
                                   fontFamilyFallback: ['NotoSansKR'],
                                   fontSize: 11,
                                   fontWeight: FontWeight.w400,
@@ -499,9 +500,9 @@ class SharedLinkPreviewCard extends StatelessWidget {
 
   Widget _buildLoading(BuildContext context) {
     return Semantics(
-      label: Localizations.localeOf(context).languageCode == 'ko'
+      label: (isChineseUi(context) ? '正在加载链接预览' : Localizations.localeOf(context).languageCode == 'ko'
           ? '링크 미리보기 불러오는 중'
-          : 'Loading link preview',
+          : 'Loading link preview'),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
@@ -553,7 +554,7 @@ class _InstagramVisualSurface extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return const ColoredBox(
+    return  ColoredBox(
       color: Color(0xFFF7F8FA),
       child: Center(
         child: Column(
@@ -568,7 +569,7 @@ class _InstagramVisualSurface extends StatelessWidget {
             Text(
               'Instagram',
               style: TextStyle(
-                fontFamily: 'Inter',
+                fontFamily: uiFontFamily(context, 'Inter'),
                 fontFamilyFallback: ['NotoSansKR'],
                 fontSize: 14,
                 fontWeight: FontWeight.w600,

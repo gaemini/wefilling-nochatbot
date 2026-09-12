@@ -23,6 +23,7 @@ import '../models/social_profile_data.dart';
 import '../models/student_type.dart';
 import '../widgets/social_profile_fields.dart';
 import 'hanyang_email_verification_screen.dart';
+import '../l10n/ui_locale.dart';
 
 class ProfileEditScreen extends StatefulWidget {
   const ProfileEditScreen({Key? key}) : super(key: key);
@@ -109,21 +110,21 @@ class _ProfileEditScreenState extends State<ProfileEditScreen> {
     final discard = await showDialog<bool>(
       context: context,
       builder: (dialogContext) => AlertDialog(
-        title: Text(isKorean ? '저장하지 않은 변경사항' : 'Unsaved changes'),
+        title: Text((isChineseUi(context) ? '尚未保存' : isKorean ? '저장하지 않은 변경사항' : 'Unsaved changes')),
         content: Text(
-          isKorean
+          (isChineseUi(context) ? '离开后，资料修改将不会保存。' : isKorean
               ? '저장하지 않고 나가면 수정한 내용이 사라져요.'
-              : 'Your profile edits will be lost if you leave now.',
+              : 'Your profile edits will be lost if you leave now.'),
         ),
         actions: [
           TextButton(
             onPressed: () => Navigator.pop(dialogContext, false),
-            child: Text(isKorean ? '계속 수정' : 'Keep editing'),
+            child: Text((isChineseUi(context) ? '继续编辑' : isKorean ? '계속 수정' : 'Keep editing')),
           ),
           TextButton(
             onPressed: () => Navigator.pop(dialogContext, true),
             child: Text(
-              isKorean ? '저장 안 함' : 'Discard',
+              (isChineseUi(context) ? '放弃修改' : isKorean ? '저장 안 함' : 'Discard'),
               style: const TextStyle(color: Color(0xFFDC2626)),
             ),
           ),
@@ -672,12 +673,12 @@ class _ProfileEditScreenState extends State<ProfileEditScreen> {
           final message = nicknameTaken
               ? AppLocalizations.of(context)!.nicknameTaken
               : networkError
-                  ? (isKorean
+                  ? ((isChineseUi(context) ? '请检查网络连接。' : isKorean
                       ? '인터넷 연결을 확인해 주세요.'
-                      : 'Check your internet connection.')
-                  : (isKorean
+                      : 'Check your internet connection.'))
+                  : ((isChineseUi(context) ? '资料保存失败，请稍后重试。' : isKorean
                       ? '프로필을 저장하지 못했어요. 잠시 후 다시 시도해 주세요.'
-                      : 'Could not save your profile. Please try again shortly.');
+                      : 'Could not save your profile. Please try again shortly.'));
           ScaffoldMessenger.of(context).showSnackBar(
             SnackBar(content: Text(message)),
           );
@@ -830,8 +831,8 @@ class _ProfileEditScreenState extends State<ProfileEditScreen> {
             ),
             title: Text(
               AppLocalizations.of(context)!.profileEdit ?? "",
-              style: const TextStyle(
-                fontFamily: 'Inter',
+              style: TextStyle(
+                fontFamily: uiFontFamily(context, 'Inter'),
                 fontFamilyFallback: const ['NotoSansKR'],
                 fontSize: 18,
                 fontWeight: FontWeight.w600,
@@ -856,8 +857,8 @@ class _ProfileEditScreenState extends State<ProfileEditScreen> {
                       onPressed: _updateProfile,
                       child: Text(
                         AppLocalizations.of(context)!.save,
-                        style: const TextStyle(
-                          fontFamily: 'Inter',
+                        style: TextStyle(
+                          fontFamily: uiFontFamily(context, 'Inter'),
                           fontFamilyFallback: const ['NotoSansKR'],
                           fontSize: 16,
                           fontWeight: FontWeight.w600,
@@ -885,8 +886,8 @@ class _ProfileEditScreenState extends State<ProfileEditScreen> {
                       children: [
                         Text(
                           AppLocalizations.of(context)!.profileImage,
-                          style: const TextStyle(
-                            fontFamily: 'Inter',
+                          style: TextStyle(
+                            fontFamily: uiFontFamily(context, 'Inter'),
                             fontFamilyFallback: const ['NotoSansKR'],
                             fontWeight: FontWeight.w600,
                             fontSize: 16,
@@ -1008,8 +1009,8 @@ class _ProfileEditScreenState extends State<ProfileEditScreen> {
                         const SizedBox(height: 8),
                         Text(
                           AppLocalizations.of(context)!.tapToChangeImage,
-                          style: const TextStyle(
-                            fontFamily: 'Inter',
+                          style: TextStyle(
+                            fontFamily: uiFontFamily(context, 'Inter'),
                             fontFamilyFallback: const ['NotoSansKR'],
                             color: AppColors.pointColor,
                             fontSize: 14,
@@ -1025,8 +1026,8 @@ class _ProfileEditScreenState extends State<ProfileEditScreen> {
                   Text(
                     AppLocalizations.of(context)!.nicknameQuestion ??
                         'What is your nickname?',
-                    style: const TextStyle(
-                      fontFamily: 'Inter',
+                    style: TextStyle(
+                      fontFamily: uiFontFamily(context, 'Inter'),
                       fontFamilyFallback: const ['NotoSansKR'],
                       fontWeight: FontWeight.w600,
                       fontSize: 16,
@@ -1038,12 +1039,12 @@ class _ProfileEditScreenState extends State<ProfileEditScreen> {
                     controller: _nicknameController,
                     onChanged: _onNicknameChanged,
                     enabled: !_nicknameLocked,
-                    decoration: socialProfileInputDecoration(
+                    decoration: socialProfileInputDecoration(context: context,
                       hintText: '닉네임을 입력하세요',
                       helperText: _nicknameHelperText(),
                     ),
-                    style: const TextStyle(
-                      fontFamily: 'Inter',
+                    style: TextStyle(
+                      fontFamily: uiFontFamily(context, 'Inter'),
                       fontFamilyFallback: const ['NotoSansKR'],
                       fontSize: 16,
                       fontWeight: FontWeight.w500,
@@ -1056,8 +1057,8 @@ class _ProfileEditScreenState extends State<ProfileEditScreen> {
                     Text(
                       AppLocalizations.of(context)!
                           .nicknameChangeLimited(_nicknameRemainingDays!),
-                      style: const TextStyle(
-                        fontFamily: 'Inter',
+                      style: TextStyle(
+                        fontFamily: uiFontFamily(context, 'Inter'),
                         fontFamilyFallback: const ['NotoSansKR'],
                         fontSize: 12,
                         color: Color(0xFF6B7280),
@@ -1067,10 +1068,10 @@ class _ProfileEditScreenState extends State<ProfileEditScreen> {
                   const SizedBox(height: 24),
 
                   // 한 줄 소개 입력 (선택)
-                  const Text(
+                   Text(
                     'Bio',
                     style: TextStyle(
-                      fontFamily: 'Inter',
+                      fontFamily: uiFontFamily(context, 'Inter'),
                       fontFamilyFallback: const ['NotoSansKR'],
                       fontWeight: FontWeight.w600,
                       fontSize: 16,
@@ -1081,15 +1082,15 @@ class _ProfileEditScreenState extends State<ProfileEditScreen> {
                   TextFormField(
                     controller: _bioController,
                     maxLength: 60, // 영어/한국어 모두 안전한 길이
-                    decoration: socialProfileInputDecoration(
+                    decoration: socialProfileInputDecoration(context: context,
                       hintText: AppLocalizations.of(context)!.bioPlaceholder,
                       helperText:
-                          Localizations.localeOf(context).languageCode == 'ko'
+                          (isChineseUi(context) ? '用一句话介绍自己。' : Localizations.localeOf(context).languageCode == 'ko'
                               ? '나의 분위기가 느껴지는 한 문장을 적어보세요.'
-                              : 'Write one line that feels like you.',
+                              : 'Write one line that feels like you.'),
                     ),
-                    style: const TextStyle(
-                      fontFamily: 'Inter',
+                    style: TextStyle(
+                      fontFamily: uiFontFamily(context, 'Inter'),
                       fontFamilyFallback: const ['NotoSansKR'],
                       fontSize: 16,
                       fontWeight: FontWeight.w500,
@@ -1102,10 +1103,10 @@ class _ProfileEditScreenState extends State<ProfileEditScreen> {
                   const SizedBox(height: 24),
 
                   // 국적 선택
-                  const Text(
+                   Text(
                     'Where are you from?',
                     style: TextStyle(
-                      fontFamily: 'Inter',
+                      fontFamily: uiFontFamily(context, 'Inter'),
                       fontFamilyFallback: const ['NotoSansKR'],
                       fontWeight: FontWeight.w600,
                       fontSize: 16,
@@ -1117,11 +1118,11 @@ class _ProfileEditScreenState extends State<ProfileEditScreen> {
                     key: ValueKey<String>(
                       'profile_nationality_${_nationalityDropdownValue ?? 'unselected'}',
                     ),
-                    decoration: socialProfileInputDecoration(
+                    decoration: socialProfileInputDecoration(context: context,
                       hintText:
-                          Localizations.localeOf(context).languageCode == 'ko'
+                          (isChineseUi(context) ? '国家或地区' : Localizations.localeOf(context).languageCode == 'ko'
                               ? '국가'
-                              : 'Country',
+                              : 'Country'),
                     ),
                     initialValue: _nationalityDropdownValue,
                     isExpanded: true, // 긴 텍스트 표시를 위해
@@ -1134,8 +1135,8 @@ class _ProfileEditScreenState extends State<ProfileEditScreen> {
                         child: Text(
                           country.getLocalizedName(
                               currentLanguage), // 현재 언어에 맞게 표시
-                          style: const TextStyle(
-                            fontFamily: 'Inter',
+                          style: TextStyle(
+                            fontFamily: uiFontFamily(context, 'Inter'),
                             fontFamilyFallback: const ['NotoSansKR'],
                             fontSize: 14,
                             fontWeight: FontWeight.w500,
@@ -1147,10 +1148,10 @@ class _ProfileEditScreenState extends State<ProfileEditScreen> {
                     }).toList(growable: false),
                     validator: (value) {
                       if (value != null) return null;
-                      return Localizations.localeOf(context).languageCode ==
+                      return (isChineseUi(context) ? '请选择国籍。' : Localizations.localeOf(context).languageCode ==
                               'ko'
                           ? '국적을 선택해 주세요.'
-                          : 'Please choose your nationality.';
+                          : 'Please choose your nationality.');
                     },
                     onChanged: _nationalityLocked
                         ? null
@@ -1168,8 +1169,8 @@ class _ProfileEditScreenState extends State<ProfileEditScreen> {
                     Text(
                       AppLocalizations.of(context)!
                           .nationalityChangeLimited(_nationalityRemainingDays!),
-                      style: const TextStyle(
-                        fontFamily: 'Inter',
+                      style: TextStyle(
+                        fontFamily: uiFontFamily(context, 'Inter'),
                         fontFamilyFallback: const ['NotoSansKR'],
                         fontSize: 12,
                         color: Color(0xFF6B7280),
@@ -1178,13 +1179,13 @@ class _ProfileEditScreenState extends State<ProfileEditScreen> {
                   ],
                   const SizedBox(height: 28),
                   ProfileSectionHeading(
-                    title: Localizations.localeOf(context).languageCode == 'ko'
+                    title: (isChineseUi(context) ? '学生类型' : Localizations.localeOf(context).languageCode == 'ko'
                         ? '학생 유형'
-                        : 'Student type',
-                    description: Localizations.localeOf(context).languageCode ==
+                        : 'Student type'),
+                    description: (isChineseUi(context) ? '用于个性化学期待办和推荐内容。' : Localizations.localeOf(context).languageCode ==
                             'ko'
                         ? '학기별 To-do와 추천을 개인화해요.'
-                        : 'Personalizes your semester To-do and recommendations.',
+                        : 'Personalizes your semester To-do and recommendations.'),
                   ),
                   const SizedBox(height: 10),
                   Row(
@@ -1214,7 +1215,7 @@ class _ProfileEditScreenState extends State<ProfileEditScreen> {
                                 maxLines: 1,
                                 overflow: TextOverflow.ellipsis,
                                 style: TextStyle(
-                                  fontFamily: 'Inter',
+                                  fontFamily: uiFontFamily(context, 'Inter'),
                                   fontFamilyFallback: const ['NotoSansKR'],
                                   fontSize: 14,
                                   fontWeight: FontWeight.w700,
@@ -1233,13 +1234,13 @@ class _ProfileEditScreenState extends State<ProfileEditScreen> {
                   const Divider(height: 1, color: Color(0xFFE5E7EB)),
                   const SizedBox(height: 30),
                   ProfileSectionHeading(
-                    title: Localizations.localeOf(context).languageCode == 'ko'
+                    title: (isChineseUi(context) ? '最近感兴趣' : Localizations.localeOf(context).languageCode == 'ko'
                         ? '요즘 관심 있는 것'
-                        : 'Into these days',
-                    description: Localizations.localeOf(context).languageCode ==
+                        : 'Into these days'),
+                    description: (isChineseUi(context) ? '让同好更容易找到你，最多选5项' : Localizations.localeOf(context).languageCode ==
                             'ko'
                         ? '비슷한 관심사를 가진 친구들이 더 쉽게 다가올 수 있어요. 최대 5개'
-                        : 'Help people with similar interests find you. Up to 5',
+                        : 'Help people with similar interests find you. Up to 5'),
                   ),
                   const SizedBox(height: 16),
                   SocialProfileTagSelector(
@@ -1249,13 +1250,13 @@ class _ProfileEditScreenState extends State<ProfileEditScreen> {
                   ),
                   const SizedBox(height: 32),
                   ProfileSectionHeading(
-                    title: Localizations.localeOf(context).languageCode == 'ko'
+                    title: (isChineseUi(context) ? '想一起做' : Localizations.localeOf(context).languageCode == 'ko'
                         ? '같이 하고 싶은 것'
-                        : 'Let\'s do together',
-                    description: Localizations.localeOf(context).languageCode ==
+                        : 'Let\'s do together'),
+                    description: (isChineseUi(context) ? '选择想和朋友一起做的事，最多选5项' : Localizations.localeOf(context).languageCode ==
                             'ko'
                         ? '다른 친구와 실제로 함께하고 싶은 활동을 골라보세요. 최대 5개'
-                        : 'Choose activities you would actually like to share. Up to 5',
+                        : 'Choose activities you would actually like to share. Up to 5'),
                   ),
                   const SizedBox(height: 16),
                   SocialProfileTagSelector(
@@ -1270,45 +1271,45 @@ class _ProfileEditScreenState extends State<ProfileEditScreen> {
                   SocialProfilePromptField(
                     controller: _conversationController,
                     suggestions: SocialProfileCatalog.conversationStarters,
-                    title: Localizations.localeOf(context).languageCode == 'ko'
+                    title: (isChineseUi(context) ? '聊天话题' : Localizations.localeOf(context).languageCode == 'ko'
                         ? '대화 시작 질문'
-                        : 'Conversation starter',
+                        : 'Conversation starter'),
                     description:
-                        Localizations.localeOf(context).languageCode == 'ko'
+                        (isChineseUi(context) ? '新朋友可以先问你什么？' : Localizations.localeOf(context).languageCode == 'ko'
                             ? '친구들이 어떤 말로 대화를 시작하면 좋을까요?'
-                            : 'What could a new friend ask you first?',
+                            : 'What could a new friend ask you first?'),
                     hintText:
-                        Localizations.localeOf(context).languageCode == 'ko'
+                        (isChineseUi(context) ? '也可以自己写一个问题。' : Localizations.localeOf(context).languageCode == 'ko'
                             ? '질문을 직접 적어보세요.'
-                            : 'Write your own question.',
+                            : 'Write your own question.'),
                   ),
                   const SizedBox(height: 28),
                   SocialProfilePromptField(
                     controller: _friendshipController,
                     suggestions: SocialProfileCatalog.friendshipPrompts,
-                    title: Localizations.localeOf(context).languageCode == 'ko'
+                    title: (isChineseUi(context) ? '如何和我成为朋友' : Localizations.localeOf(context).languageCode == 'ko'
                         ? '나와 친해지는 방법'
-                        : 'How to become friends with me',
+                        : 'How to become friends with me'),
                     description:
-                        Localizations.localeOf(context).languageCode == 'ko'
+                        (isChineseUi(context) ? '分享一个轻松又让人记住你的特点。' : Localizations.localeOf(context).languageCode == 'ko'
                             ? '나의 성격을 부담 없이 보여주는 한 문장을 골라보세요.'
-                            : 'Share a light, memorable clue about you.',
+                            : 'Share a light, memorable clue about you.'),
                     hintText:
-                        Localizations.localeOf(context).languageCode == 'ko'
+                        (isChineseUi(context) ? '也可以自己填写。' : Localizations.localeOf(context).languageCode == 'ko'
                             ? '직접 적어도 좋아요.'
-                            : 'Or write your own.',
+                            : 'Or write your own.'),
                   ),
                   const SizedBox(height: 36),
                   const Divider(height: 1, color: Color(0xFFE5E7EB)),
                   const SizedBox(height: 30),
                   ProfileSectionHeading(
-                    title: Localizations.localeOf(context).languageCode == 'ko'
+                    title: (isChineseUi(context) ? '学校信息' : Localizations.localeOf(context).languageCode == 'ko'
                         ? '학교 정보'
-                        : 'School information',
-                    description: Localizations.localeOf(context).languageCode ==
+                        : 'School information'),
+                    description: (isChineseUi(context) ? '学校邮箱不会公开，院系和年级为选填。' : Localizations.localeOf(context).languageCode ==
                             'ko'
                         ? '학교 이메일은 공개되지 않아요. 학과와 학년만 선택적으로 표시할 수 있어요.'
-                        : 'Your school email stays private. Department and year are optional.',
+                        : 'Your school email stays private. Department and year are optional.'),
                   ),
                   const SizedBox(height: 14),
                   Consumer<AuthProvider>(
@@ -1327,39 +1328,39 @@ class _ProfileEditScreenState extends State<ProfileEditScreen> {
                       final String statusTitle;
                       final String? statusDescription;
                       if (checking) {
-                        statusTitle = isKorean
+                        statusTitle = (isChineseUi(context) ? '正在检查汉阳邮箱验证状态' : isKorean
                             ? '한양메일 인증 상태 확인 중'
-                            : 'Checking Hanyang email verification';
+                            : 'Checking Hanyang email verification');
                         statusDescription = null;
                       } else if (verified) {
                         statusTitle =
-                            '$school · ${isKorean ? '인증됨' : 'Verified'}';
+                            '$school · ${(isChineseUi(context) ? '已验证' : isKorean ? '인증됨' : 'Verified')}';
                         statusDescription =
                             authProvider.maskedHanyangEmail.isEmpty
                                 ? null
                                 : authProvider.maskedHanyangEmail;
                       } else if (status ==
                           HanyangVerificationStatus.unavailable) {
-                        statusTitle = isKorean
+                        statusTitle = (isChineseUi(context) ? '无法获取验证状态' : isKorean
                             ? '인증 상태를 확인하지 못했어요'
-                            : 'Could not check verification status';
-                        statusDescription = isKorean
+                            : 'Could not check verification status');
+                        statusDescription = (isChineseUi(context) ? '请检查网络后重试。' : isKorean
                             ? '네트워크 연결을 확인한 뒤 다시 시도해주세요.'
-                            : 'Check your connection and try again.';
+                            : 'Check your connection and try again.');
                       } else if (status == HanyangVerificationStatus.conflict) {
-                        statusTitle = isKorean
+                        statusTitle = (isChineseUi(context) ? '学校认证需要审核' : isKorean
                             ? '학교 인증 정보를 확인할 수 없어요'
-                            : 'School verification needs review';
-                        statusDescription = isKorean
+                            : 'School verification needs review');
+                        statusDescription = (isChineseUi(context) ? '请联系客服。' : isKorean
                             ? '고객 지원이 필요한 상태입니다.'
-                            : 'Please contact customer support.';
+                            : 'Please contact customer support.');
                       } else {
-                        statusTitle = isKorean
+                        statusTitle = (isChineseUi(context) ? '汉阳邮箱未验证' : isKorean
                             ? '한양메일 미인증'
-                            : 'Hanyang email not verified';
-                        statusDescription = isKorean
+                            : 'Hanyang email not verified');
+                        statusDescription = (isChineseUi(context) ? '验证汉阳大学邮箱后，即可使用学校信息。' : isKorean
                             ? '학교 정보를 사용하려면 한양메일 인증이 필요해요.'
-                            : 'Verify your Hanyang email to use school information.';
+                            : 'Verify your Hanyang email to use school information.');
                       }
                       return Column(
                         crossAxisAlignment: CrossAxisAlignment.stretch,
@@ -1393,8 +1394,8 @@ class _ProfileEditScreenState extends State<ProfileEditScreen> {
                                   children: [
                                     Text(
                                       statusTitle,
-                                      style: const TextStyle(
-                                        fontFamily: 'Inter',
+                                      style: TextStyle(
+                                        fontFamily: uiFontFamily(context, 'Inter'),
                                         fontFamilyFallback: const [
                                           'NotoSansKR'
                                         ],
@@ -1408,8 +1409,8 @@ class _ProfileEditScreenState extends State<ProfileEditScreen> {
                                       const SizedBox(height: 4),
                                       Text(
                                         statusDescription,
-                                        style: const TextStyle(
-                                          fontFamily: 'Inter',
+                                        style: TextStyle(
+                                          fontFamily: uiFontFamily(context, 'Inter'),
                                           fontFamilyFallback: const [
                                             'NotoSansKR'
                                           ],
@@ -1449,10 +1450,10 @@ class _ProfileEditScreenState extends State<ProfileEditScreen> {
                                 label: Text(
                                   status ==
                                           HanyangVerificationStatus.unavailable
-                                      ? (isKorean ? '다시 확인' : 'Check again')
-                                      : (isKorean
+                                      ? ((isChineseUi(context) ? '重新检查' : isKorean ? '다시 확인' : 'Check again'))
+                                      : ((isChineseUi(context) ? '验证汉阳邮箱' : isKorean
                                           ? '한양메일 인증하기'
-                                          : 'Verify Hanyang email'),
+                                          : 'Verify Hanyang email')),
                                 ),
                                 style: TextButton.styleFrom(
                                   foregroundColor: AppColors.pointColor,
@@ -1461,8 +1462,8 @@ class _ProfileEditScreenState extends State<ProfileEditScreen> {
                                     horizontal: 0,
                                     vertical: 10,
                                   ),
-                                  textStyle: const TextStyle(
-                                    fontFamily: 'Inter',
+                                  textStyle: TextStyle(
+                                    fontFamily: uiFontFamily(context, 'Inter'),
                                     fontFamilyFallback: const ['NotoSansKR'],
                                     fontSize: 14,
                                     fontWeight: FontWeight.w700,
@@ -1476,14 +1477,14 @@ class _ProfileEditScreenState extends State<ProfileEditScreen> {
                             TextFormField(
                               controller: _departmentController,
                               maxLength: 40,
-                              decoration: socialProfileInputDecoration(
-                                hintText: isKorean ? '학과' : 'Department',
+                              decoration: socialProfileInputDecoration(context: context,
+                                hintText: (isChineseUi(context) ? '院系' : isKorean ? '학과' : 'Department'),
                               ),
                             ),
                             SwitchListTile.adaptive(
                               contentPadding: EdgeInsets.zero,
                               title:
-                                  Text(isKorean ? '학과 공개' : 'Show department'),
+                                  Text((isChineseUi(context) ? '显示院系' : isKorean ? '학과 공개' : 'Show department')),
                               value: _showDepartment,
                               activeColor: AppColors.pointColor,
                               onChanged: (value) =>
@@ -1492,13 +1493,13 @@ class _ProfileEditScreenState extends State<ProfileEditScreen> {
                             TextFormField(
                               controller: _gradeController,
                               maxLength: 20,
-                              decoration: socialProfileInputDecoration(
-                                hintText: isKorean ? '학년' : 'Year',
+                              decoration: socialProfileInputDecoration(context: context,
+                                hintText: (isChineseUi(context) ? '年级' : isKorean ? '학년' : 'Year'),
                               ),
                             ),
                             SwitchListTile.adaptive(
                               contentPadding: EdgeInsets.zero,
-                              title: Text(isKorean ? '학년 공개' : 'Show year'),
+                              title: Text((isChineseUi(context) ? '显示年级' : isKorean ? '학년 공개' : 'Show year')),
                               value: _showGrade,
                               activeColor: AppColors.pointColor,
                               onChanged: (value) =>
@@ -1513,9 +1514,9 @@ class _ProfileEditScreenState extends State<ProfileEditScreen> {
                   const Divider(height: 1, color: Color(0xFFE5E7EB)),
                   const SizedBox(height: 30),
                   ProfileSectionHeading(
-                    title: Localizations.localeOf(context).languageCode == 'ko'
+                    title: (isChineseUi(context) ? '公开资料预览' : Localizations.localeOf(context).languageCode == 'ko'
                         ? '공개 프로필 미리보기'
-                        : 'Public profile preview',
+                        : 'Public profile preview'),
                   ),
                   const SizedBox(height: 18),
                   AnimatedBuilder(

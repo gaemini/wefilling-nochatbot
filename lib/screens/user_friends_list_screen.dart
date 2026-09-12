@@ -15,6 +15,7 @@ import '../l10n/app_localizations.dart';
 import '../utils/logger.dart';
 import '../utils/responsive_helper.dart';
 import 'friend_profile_screen.dart';
+import '../l10n/ui_locale.dart';
 
 class UserFriendsListScreen extends StatefulWidget {
   final String userId;
@@ -165,7 +166,7 @@ class _UserFriendsListScreenState extends State<UserFriendsListScreen> {
           maxLines: 1,
           overflow: TextOverflow.ellipsis,
           style: TextStyle(
-            fontFamily: 'Inter',
+            fontFamily: uiFontFamily(context, 'Inter'),
             fontFamilyFallback: const ['NotoSansKR'],
             fontSize: context.rf(18).clamp(17, 19).toDouble(),
             fontWeight: FontWeight.w700,
@@ -201,8 +202,8 @@ class _UserFriendsListScreenState extends State<UserFriendsListScreen> {
             Text(
               _errorMessage!,
               textAlign: TextAlign.center,
-              style: const TextStyle(
-                fontFamily: 'Inter',
+              style: TextStyle(
+                fontFamily: uiFontFamily(context, 'Inter'),
                 fontFamilyFallback: const ['NotoSansKR'],
                 fontSize: 14,
                 fontWeight: FontWeight.w600,
@@ -215,10 +216,10 @@ class _UserFriendsListScreenState extends State<UserFriendsListScreen> {
               style: TextButton.styleFrom(
                 foregroundColor: const Color(0xFF344054),
               ),
-              child: const Text(
+              child: Text(
                 '다시 시도',
                 style: TextStyle(
-                  fontFamily: 'Inter',
+                  fontFamily: uiFontFamily(context, 'Inter'),
                   fontFamilyFallback: const ['NotoSansKR'],
                   fontSize: 14,
                   fontWeight: FontWeight.w600,
@@ -243,8 +244,8 @@ class _UserFriendsListScreenState extends State<UserFriendsListScreen> {
             const SizedBox(height: 12),
             Text(
               AppLocalizations.of(context)!.noFriendsYet,
-              style: const TextStyle(
-                fontFamily: 'Inter',
+              style: TextStyle(
+                fontFamily: uiFontFamily(context, 'Inter'),
                 fontFamilyFallback: const ['NotoSansKR'],
                 fontSize: 14,
                 fontWeight: FontWeight.w600,
@@ -284,13 +285,13 @@ class _UserFriendsListScreenState extends State<UserFriendsListScreen> {
             child: Padding(
               padding: const EdgeInsets.fromLTRB(20, 2, 20, 8),
               child: Text(
-                Localizations.localeOf(context).languageCode == 'ko'
+                (isChineseUi(context) ? '${_totalCount}位好友' : Localizations.localeOf(context).languageCode == 'ko'
                     ? '친구 $_totalCount명'
                         '${_mutualCount > 0 ? ' · 함께 아는 친구 $_mutualCount명' : ''}'
                     : '$_totalCount friends'
-                        '${_mutualCount > 0 ? ' · $_mutualCount mutual' : ''}',
-                style: const TextStyle(
-                  fontFamily: 'Inter',
+                        '${_mutualCount > 0 ? ' · $_mutualCount mutual' : ''}'),
+                style: TextStyle(
+                  fontFamily: uiFontFamily(context, 'Inter'),
                   fontFamilyFallback: ['NotoSansKR'],
                   fontSize: 13,
                   fontWeight: FontWeight.w500,
@@ -304,11 +305,11 @@ class _UserFriendsListScreenState extends State<UserFriendsListScreen> {
               hasScrollBody: false,
               child: Center(
                 child: Text(
-                  Localizations.localeOf(context).languageCode == 'ko'
+                  (isChineseUi(context) ? '没有匹配的好友。' : Localizations.localeOf(context).languageCode == 'ko'
                       ? '검색 결과가 없어요.'
-                      : 'No matching friends.',
-                  style: const TextStyle(
-                    fontFamily: 'Inter',
+                      : 'No matching friends.'),
+                  style: TextStyle(
+                    fontFamily: uiFontFamily(context, 'Inter'),
                     fontFamilyFallback: ['NotoSansKR'],
                     fontSize: 14,
                     color: Color(0xFF98A2B3),
@@ -319,9 +320,9 @@ class _UserFriendsListScreenState extends State<UserFriendsListScreen> {
           if (mutualGroup.isNotEmpty) ...[
             SliverToBoxAdapter(
               child: _SectionHeader(
-                title: Localizations.localeOf(context).languageCode == 'ko'
+                title: (isChineseUi(context) ? '共同好友' : Localizations.localeOf(context).languageCode == 'ko'
                     ? '함께 아는 친구'
-                    : 'Mutual friends',
+                    : 'Mutual friends'),
                 count: mutualGroup.length,
               ),
             ),
@@ -396,7 +397,7 @@ class _UserFriendsListScreenState extends State<UserFriendsListScreen> {
         onChanged: _onSearchChanged,
         textInputAction: TextInputAction.search,
         decoration: InputDecoration(
-          hintText: isKo ? '닉네임 검색' : 'Search by nickname',
+          hintText: (isChineseUi(context) ? '搜索昵称' : isKo ? '닉네임 검색' : 'Search by nickname'),
           prefixIcon: const Icon(Icons.search_rounded, size: 21),
           suffixIcon: _searchController.text.isEmpty
               ? null
@@ -472,13 +473,13 @@ class _UserFriendsListScreenState extends State<UserFriendsListScreen> {
                                   isMe,
                                 ),
                                 style: TextStyle(
-                                  fontFamily: 'Inter',
+                                  fontFamily: uiFontFamily(context, 'Inter'),
                                   fontFamilyFallback: const ['NotoSansKR'],
                                   fontSize:
                                       context.rf(14).clamp(13, 15).toDouble(),
                                   fontWeight: FontWeight.w700,
                                   color: const Color(0xFF111827),
-                                  height: 1.2,
+                                  height: isChineseUi(context) ? 1.3 : 1.2,
                                 ),
                                 maxLines: 1,
                                 overflow: TextOverflow.ellipsis,
@@ -492,15 +493,15 @@ class _UserFriendsListScreenState extends State<UserFriendsListScreen> {
                                     const SizedBox(width: 4),
                                     Expanded(
                                       child: Text(
-                                        Localizations.localeOf(context)
+                                        (isChineseUi(context) ? '已通过学校认证' : Localizations.localeOf(context)
                                                     .languageCode ==
                                                 'ko'
                                             ? '학교 인증'
-                                            : 'School verified',
+                                            : 'School verified'),
                                         maxLines: 1,
                                         overflow: TextOverflow.ellipsis,
-                                        style: const TextStyle(
-                                          fontFamily: 'Inter',
+                                        style: TextStyle(
+                                          fontFamily: uiFontFamily(context, 'Inter'),
                                           fontFamilyFallback: ['NotoSansKR'],
                                           fontSize: 11,
                                           fontWeight: FontWeight.w600,
@@ -524,15 +525,15 @@ class _UserFriendsListScreenState extends State<UserFriendsListScreen> {
                                     Expanded(
                                       child: Text(
                                         friend.nationality!,
-                                        style: const TextStyle(
-                                          fontFamily: 'Inter',
+                                        style: TextStyle(
+                                          fontFamily: uiFontFamily(context, 'Inter'),
                                           fontFamilyFallback: const [
                                             'NotoSansKR'
                                           ],
                                           fontSize: 12,
                                           fontWeight: FontWeight.w500,
                                           color: Color(0xFF8B93A1),
-                                          height: 1.2,
+                                          height: isChineseUi(context) ? 1.3 : 1.2,
                                         ),
                                         maxLines: 1,
                                         overflow: TextOverflow.ellipsis,
@@ -583,8 +584,8 @@ class _UserFriendsListScreenState extends State<UserFriendsListScreen> {
                                         : l10n.friendRequest,
                                     maxLines: 1,
                                     overflow: TextOverflow.ellipsis,
-                                    style: const TextStyle(
-                                      fontFamily: 'Inter',
+                                    style: TextStyle(
+                                      fontFamily: uiFontFamily(context, 'Inter'),
                                       fontFamilyFallback: const ['NotoSansKR'],
                                       fontSize: 12,
                                       fontWeight: FontWeight.w700,
@@ -670,7 +671,7 @@ class _UserFriendsListScreenState extends State<UserFriendsListScreen> {
   String _displayNameWithMeSuffix(String name, bool isMe) {
     if (!isMe) return name;
     final locale = Localizations.localeOf(context).languageCode;
-    return locale == 'ko' ? '$name (나)' : '$name (Me)';
+    return (isChineseUi(context) ? '${name}（我）' : locale == 'ko' ? '$name (나)' : '$name (Me)');
   }
 
   Future<void> _sendFriendRequest(UserProfile user) async {
@@ -744,8 +745,8 @@ class _SectionHeader extends StatelessWidget {
             '$title  ${count > 99 ? '99+' : count}',
             maxLines: 1,
             overflow: TextOverflow.ellipsis,
-            style: const TextStyle(
-              fontFamily: 'Inter',
+            style: TextStyle(
+              fontFamily: uiFontFamily(context, 'Inter'),
               fontFamilyFallback: const ['NotoSansKR'],
               fontSize: 13,
               fontWeight: FontWeight.w700,

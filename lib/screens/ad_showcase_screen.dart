@@ -11,6 +11,7 @@ import '../models/ad_banner.dart';
 import '../services/ad_banner_service.dart';
 import '../utils/logger.dart';
 import '../services/notification_service.dart';
+import '../l10n/app_localizations.dart';
 
 class AdShowcaseScreen extends StatefulWidget {
   const AdShowcaseScreen({
@@ -138,7 +139,7 @@ class _AdShowcaseScreenState extends State<AdShowcaseScreen> {
           TextSpan(
             children: [
               TextSpan(
-                text: 'Wefilling ',
+                text: '${AppLocalizations.of(context)!.appName} ',
                 style: TextStyle(
                   fontSize: 18,
                   fontWeight: FontWeight.w700,

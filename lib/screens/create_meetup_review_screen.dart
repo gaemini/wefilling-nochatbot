@@ -13,6 +13,7 @@ import 'main_screen.dart';
 import '../utils/logger.dart';
 import '../utils/responsive_helper.dart';
 import '../ui/snackbar/app_snackbar.dart';
+import '../l10n/ui_locale.dart';
 
 class CreateMeetupReviewScreen extends StatefulWidget {
   final Meetup meetup;
@@ -70,6 +71,7 @@ class _CreateMeetupReviewScreenState extends State<CreateMeetupReviewScreen> {
   }
 
   Future<void> _pickImages() async {
+    final chineseUiAtStart = isChineseUi(context);
     try {
       // 현재 선택된 총 이미지 수 확인
       final currentCount = _selectedImages.length + _imageUrls.length;
@@ -77,9 +79,9 @@ class _CreateMeetupReviewScreenState extends State<CreateMeetupReviewScreen> {
         final isKo = Localizations.localeOf(context).languageCode == 'ko';
         AppSnackBar.show(
           context,
-          message: isKo
+          message: (chineseUiAtStart ? '最多可选${maxImages}张图片' : isKo
               ? '최대 ${maxImages}장까지 선택 가능합니다'
-              : 'You can select up to $maxImages images',
+              : 'You can select up to $maxImages images'),
           type: AppSnackBarType.warning,
         );
         return;
@@ -109,9 +111,9 @@ class _CreateMeetupReviewScreenState extends State<CreateMeetupReviewScreen> {
           final isKo = Localizations.localeOf(context).languageCode == 'ko';
           AppSnackBar.show(
             context,
-            message: isKo
+            message: (chineseUiAtStart ? '已添加${filesToAdd.length}张图片，最多${maxImages}张' : isKo
                 ? '${filesToAdd.length}장의 사진이 추가되었습니다 (최대 ${maxImages}장 제한)'
-                : '${filesToAdd.length} images added (max $maxImages)',
+                : '${filesToAdd.length} images added (max $maxImages)'),
             type: AppSnackBarType.info,
           );
         }
@@ -187,7 +189,7 @@ class _CreateMeetupReviewScreenState extends State<CreateMeetupReviewScreen> {
       final isKo = Localizations.localeOf(context).languageCode == 'ko';
       AppSnackBar.show(
         context,
-        message: isKo ? '최소 1장의 사진을 선택해주세요' : 'Please select at least 1 photo',
+        message: (isChineseUi(context) ? '请至少选择1张照片' : isKo ? '최소 1장의 사진을 선택해주세요' : 'Please select at least 1 photo'),
         type: AppSnackBarType.warning,
       );
       return;
@@ -445,7 +447,7 @@ class _CreateMeetupReviewScreenState extends State<CreateMeetupReviewScreen> {
               maxLines: 1,
               overflow: TextOverflow.ellipsis,
               style: TextStyle(
-                fontFamily: 'Inter',
+                fontFamily: uiFontFamily(context, 'Inter'),
                 fontFamilyFallback: const ['NotoSansKR'],
                 fontSize: context.rf(18).clamp(16, 19).toDouble(),
                 fontWeight: FontWeight.w700,
@@ -512,7 +514,7 @@ class _CreateMeetupReviewScreenState extends State<CreateMeetupReviewScreen> {
                               maxLines: 2,
                               overflow: TextOverflow.ellipsis,
                               style: TextStyle(
-                                fontFamily: 'Inter',
+                                fontFamily: uiFontFamily(context, 'Inter'),
                                 fontFamilyFallback: const ['NotoSansKR'],
                                 fontSize:
                                     context.rf(15).clamp(14, 16).toDouble(),
@@ -531,7 +533,7 @@ class _CreateMeetupReviewScreenState extends State<CreateMeetupReviewScreen> {
                           child: Text(
                             l10n.reviewPhoto,
                             style: TextStyle(
-                              fontFamily: 'Inter',
+                              fontFamily: uiFontFamily(context, 'Inter'),
                               fontFamilyFallback: const ['NotoSansKR'],
                               fontSize: context.rf(15).clamp(14, 16).toDouble(),
                               fontWeight: FontWeight.w800,
@@ -542,7 +544,7 @@ class _CreateMeetupReviewScreenState extends State<CreateMeetupReviewScreen> {
                         Text(
                           '$selectedCount/$maxImages',
                           style: TextStyle(
-                            fontFamily: 'Inter',
+                            fontFamily: uiFontFamily(context, 'Inter'),
                             fontFamilyFallback: const ['NotoSansKR'],
                             fontSize: context.rf(13).clamp(12, 14).toDouble(),
                             fontWeight: FontWeight.w700,
@@ -573,7 +575,7 @@ class _CreateMeetupReviewScreenState extends State<CreateMeetupReviewScreen> {
                         label: Text(
                           l10n.pickPhoto,
                           style: TextStyle(
-                            fontFamily: 'Inter',
+                            fontFamily: uiFontFamily(context, 'Inter'),
                             fontFamilyFallback: const ['NotoSansKR'],
                             fontSize: context.rf(13).clamp(12, 14).toDouble(),
                             fontWeight: FontWeight.w700,
@@ -615,11 +617,11 @@ class _CreateMeetupReviewScreenState extends State<CreateMeetupReviewScreen> {
                       SizedBox(height: context.rs(8)),
                     ],
                     Text(
-                      isKo
+                      (isChineseUi(context) ? '最多可选${maxImages}张照片。' : isKo
                           ? '최대 $maxImages장까지 선택할 수 있어요.'
-                          : 'Select up to $maxImages photos.',
+                          : 'Select up to $maxImages photos.'),
                       style: TextStyle(
-                        fontFamily: 'Inter',
+                        fontFamily: uiFontFamily(context, 'Inter'),
                         fontFamilyFallback: const ['NotoSansKR'],
                         fontSize: context.rf(12).clamp(11, 13).toDouble(),
                         fontWeight: FontWeight.w500,
@@ -630,7 +632,7 @@ class _CreateMeetupReviewScreenState extends State<CreateMeetupReviewScreen> {
                     Text(
                       l10n.reviewContent,
                       style: TextStyle(
-                        fontFamily: 'Inter',
+                        fontFamily: uiFontFamily(context, 'Inter'),
                         fontFamilyFallback: const ['NotoSansKR'],
                         fontSize: context.rf(15).clamp(14, 16).toDouble(),
                         fontWeight: FontWeight.w800,
@@ -647,7 +649,7 @@ class _CreateMeetupReviewScreenState extends State<CreateMeetupReviewScreen> {
                       maxLength: 500,
                       textAlignVertical: TextAlignVertical.top,
                       style: TextStyle(
-                        fontFamily: 'Inter',
+                        fontFamily: uiFontFamily(context, 'Inter'),
                         fontFamilyFallback: const ['NotoSansKR'],
                         fontSize: context.rf(15).clamp(14, 16).toDouble(),
                         fontWeight: FontWeight.w500,
@@ -657,7 +659,7 @@ class _CreateMeetupReviewScreenState extends State<CreateMeetupReviewScreen> {
                       decoration: InputDecoration(
                         hintText: l10n.reviewWriteHint,
                         hintStyle: TextStyle(
-                          fontFamily: 'Inter',
+                          fontFamily: uiFontFamily(context, 'Inter'),
                           fontFamilyFallback: const ['NotoSansKR'],
                           fontSize: context.rf(15).clamp(14, 16).toDouble(),
                           fontWeight: FontWeight.w400,
@@ -666,7 +668,7 @@ class _CreateMeetupReviewScreenState extends State<CreateMeetupReviewScreen> {
                         border: InputBorder.none,
                         contentPadding: const EdgeInsets.fromLTRB(0, 2, 0, 4),
                         counterStyle: TextStyle(
-                          fontFamily: 'Inter',
+                          fontFamily: uiFontFamily(context, 'Inter'),
                           fontFamilyFallback: const ['NotoSansKR'],
                           fontSize: context.rf(12).clamp(11, 13).toDouble(),
                           fontWeight: FontWeight.w600,
@@ -689,7 +691,7 @@ class _CreateMeetupReviewScreenState extends State<CreateMeetupReviewScreen> {
                             child: Text(
                               l10n.reviewRequestInfo,
                               style: TextStyle(
-                                fontFamily: 'Inter',
+                                fontFamily: uiFontFamily(context, 'Inter'),
                                 fontFamilyFallback: const ['NotoSansKR'],
                                 fontSize:
                                     context.rf(12).clamp(11, 13).toDouble(),

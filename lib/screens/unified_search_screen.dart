@@ -25,6 +25,7 @@ import '../widgets/post_search_card.dart';
 import '../widgets/user_tile.dart';
 import '../utils/responsive_helper.dart';
 import '../utils/latest_request_guard.dart';
+import '../l10n/ui_locale.dart';
 
 class UnifiedSearchScreen extends StatefulWidget {
   /// 0: 이름(유저), 1: 게시글, 2: 모임
@@ -518,11 +519,11 @@ class _UnifiedSearchScreenState extends State<UnifiedSearchScreen>
     final isKo = locale == 'ko';
     switch (index) {
       case 0:
-        return isKo ? '이름' : 'Name';
+        return (isChineseUi(context) ? '名称' : isKo ? '이름' : 'Name');
       case 1:
-        return isKo ? '포스트' : 'Posts';
+        return (isChineseUi(context) ? '动态' : isKo ? '포스트' : 'Posts');
       case 2:
-        return isKo ? '모임' : 'Meetups';
+        return (isChineseUi(context) ? '聚会' : isKo ? '모임' : 'Meetups');
       default:
         return '';
     }
@@ -572,7 +573,7 @@ class _UnifiedSearchScreenState extends State<UnifiedSearchScreen>
                             EdgeInsets.symmetric(horizontal: 0, vertical: 12),
                       ),
                       style: TextStyle(
-                        fontFamily: 'Inter',
+                        fontFamily: uiFontFamily(context, 'Inter'),
                         fontFamilyFallback: const ['NotoSansKR'],
                         fontSize: context.rf(14).clamp(13.5, 15).toDouble(),
                         fontWeight: FontWeight.w500,
@@ -614,7 +615,7 @@ class _UnifiedSearchScreenState extends State<UnifiedSearchScreen>
                       maxLines: 1,
                       overflow: TextOverflow.ellipsis,
                       style: TextStyle(
-                        fontFamily: 'Inter',
+                        fontFamily: uiFontFamily(context, 'Inter'),
                         fontFamilyFallback: const ['NotoSansKR'],
                         color: const Color(0xFF98A2B3),
                         fontSize: context.rf(14).clamp(13, 15).toDouble(),
@@ -657,8 +658,8 @@ class _UnifiedSearchScreenState extends State<UnifiedSearchScreen>
                     Text(
                       title,
                       textAlign: TextAlign.center,
-                      style: const TextStyle(
-                        fontFamily: 'Inter',
+                      style: TextStyle(
+                        fontFamily: uiFontFamily(context, 'Inter'),
                         fontFamilyFallback: ['NotoSansKR'],
                         fontSize: 17,
                         fontWeight: FontWeight.w700,
@@ -670,8 +671,8 @@ class _UnifiedSearchScreenState extends State<UnifiedSearchScreen>
                     Text(
                       subtitle,
                       textAlign: TextAlign.center,
-                      style: const TextStyle(
-                        fontFamily: 'Inter',
+                      style: TextStyle(
+                        fontFamily: uiFontFamily(context, 'Inter'),
                         fontFamilyFallback: ['NotoSansKR'],
                         fontSize: 13.5,
                         fontWeight: FontWeight.w400,
@@ -692,8 +693,8 @@ class _UnifiedSearchScreenState extends State<UnifiedSearchScreen>
                             horizontal: 18,
                             vertical: 11,
                           ),
-                          textStyle: const TextStyle(
-                            fontFamily: 'Inter',
+                          textStyle: TextStyle(
+                            fontFamily: uiFontFamily(context, 'Inter'),
                             fontFamilyFallback: ['NotoSansKR'],
                             fontSize: 14,
                             fontWeight: FontWeight.w700,
@@ -727,11 +728,11 @@ class _UnifiedSearchScreenState extends State<UnifiedSearchScreen>
           semanticLabel: AppLocalizations.of(context)!.back,
         ),
         title: Text(
-          Localizations.localeOf(context).languageCode == 'ko'
+          (isChineseUi(context) ? '搜索' : Localizations.localeOf(context).languageCode == 'ko'
               ? '검색'
-              : 'Search',
-          style: const TextStyle(
-            fontFamily: 'Inter',
+              : 'Search'),
+          style: TextStyle(
+            fontFamily: uiFontFamily(context, 'Inter'),
             fontFamilyFallback: ['NotoSansKR'],
             fontSize: 18,
             fontWeight: FontWeight.w700,
@@ -756,15 +757,15 @@ class _UnifiedSearchScreenState extends State<UnifiedSearchScreen>
                     isScrollable: false,
                     labelColor: const Color(0xFF111827),
                     unselectedLabelColor: const Color(0xFF6B7280),
-                    labelStyle: const TextStyle(
-                      fontFamily: 'Inter',
+                    labelStyle: TextStyle(
+                      fontFamily: uiFontFamily(context, 'Inter'),
                       fontFamilyFallback: ['NotoSansKR'],
                       fontSize: 14,
                       fontWeight: FontWeight.w700,
                       letterSpacing: -0.1,
                     ),
-                    unselectedLabelStyle: const TextStyle(
-                      fontFamily: 'Inter',
+                    unselectedLabelStyle: TextStyle(
+                      fontFamily: uiFontFamily(context, 'Inter'),
                       fontFamilyFallback: ['NotoSansKR'],
                       fontSize: 14,
                       fontWeight: FontWeight.w500,
@@ -905,8 +906,8 @@ class _UnifiedSearchScreenState extends State<UnifiedSearchScreen>
                   padding: const EdgeInsets.fromLTRB(20, 16, 20, 8),
                   child: Text(
                     l10n.interestPeopleTitle(selected.label(languageCode)),
-                    style: const TextStyle(
-                      fontFamily: 'Inter',
+                    style: TextStyle(
+                      fontFamily: uiFontFamily(context, 'Inter'),
                       fontFamilyFallback: ['NotoSansKR'],
                       fontSize: 15,
                       fontWeight: FontWeight.w700,
@@ -952,8 +953,8 @@ class _UnifiedSearchScreenState extends State<UnifiedSearchScreen>
           if (selected == null) ...[
             Text(
               l10n.userSearchIdleTitle,
-              style: const TextStyle(
-                fontFamily: 'Inter',
+              style: TextStyle(
+                fontFamily: uiFontFamily(context, 'Inter'),
                 fontFamilyFallback: ['NotoSansKR'],
                 fontSize: 16,
                 fontWeight: FontWeight.w700,
@@ -964,8 +965,8 @@ class _UnifiedSearchScreenState extends State<UnifiedSearchScreen>
             const SizedBox(height: 4),
             Text(
               l10n.userSearchIdleDescription,
-              style: const TextStyle(
-                fontFamily: 'Inter',
+              style: TextStyle(
+                fontFamily: uiFontFamily(context, 'Inter'),
                 fontFamilyFallback: ['NotoSansKR'],
                 fontSize: 13,
                 color: Color(0xFF667085),
@@ -976,8 +977,8 @@ class _UnifiedSearchScreenState extends State<UnifiedSearchScreen>
           ],
           Text(
             l10n.interestFriendDiscoveryTitle,
-            style: const TextStyle(
-              fontFamily: 'Inter',
+            style: TextStyle(
+              fontFamily: uiFontFamily(context, 'Inter'),
               fontFamilyFallback: ['NotoSansKR'],
               fontSize: 16,
               fontWeight: FontWeight.w700,
@@ -988,8 +989,8 @@ class _UnifiedSearchScreenState extends State<UnifiedSearchScreen>
           const SizedBox(height: 5),
           Text(
             l10n.interestFriendDiscoveryDescription,
-            style: const TextStyle(
-              fontFamily: 'Inter',
+            style: TextStyle(
+              fontFamily: uiFontFamily(context, 'Inter'),
               fontFamilyFallback: ['NotoSansKR'],
               fontSize: 13,
               color: Color(0xFF667085),
@@ -1015,7 +1016,7 @@ class _UnifiedSearchScreenState extends State<UnifiedSearchScreen>
                   vertical: compact ? 5 : 6,
                 ),
                 labelStyle: TextStyle(
-                  fontFamily: 'Inter',
+                  fontFamily: uiFontFamily(context, 'Inter'),
                   fontFamilyFallback: const ['NotoSansKR'],
                   fontSize: compact ? 12 : 13,
                   fontWeight: FontWeight.w600,
@@ -1135,8 +1136,8 @@ class _UnifiedSearchScreenState extends State<UnifiedSearchScreen>
           Text(
             title,
             textAlign: TextAlign.center,
-            style: const TextStyle(
-              fontFamily: 'Inter',
+            style: TextStyle(
+              fontFamily: uiFontFamily(context, 'Inter'),
               fontFamilyFallback: ['NotoSansKR'],
               fontSize: 16,
               fontWeight: FontWeight.w700,
@@ -1148,8 +1149,8 @@ class _UnifiedSearchScreenState extends State<UnifiedSearchScreen>
           Text(
             subtitle,
             textAlign: TextAlign.center,
-            style: const TextStyle(
-              fontFamily: 'Inter',
+            style: TextStyle(
+              fontFamily: uiFontFamily(context, 'Inter'),
               fontFamilyFallback: ['NotoSansKR'],
               fontSize: 13,
               color: Color(0xFF667085),
@@ -1176,9 +1177,9 @@ class _UnifiedSearchScreenState extends State<UnifiedSearchScreen>
     if (q.isEmpty) {
       return _buildEmptyPrompt(
         icon: Icons.search,
-        title: isKo ? '포스트를 검색해보세요' : 'Search posts',
+        title: (isChineseUi(context) ? '搜索动态' : isKo ? '포스트를 검색해보세요' : 'Search posts'),
         subtitle:
-            isKo ? '제목/내용 기준으로\n포스트를 찾아볼 수 있어요' : 'Search by title/content',
+            (isChineseUi(context) ? '搜索标题或内容' : isKo ? '제목/내용 기준으로\n포스트를 찾아볼 수 있어요' : 'Search by title/content'),
       );
     }
 
@@ -1200,7 +1201,7 @@ class _UnifiedSearchScreenState extends State<UnifiedSearchScreen>
       return _buildEmptyPrompt(
         icon: Icons.search_off,
         title: AppLocalizations.of(context)!.noSearchResults,
-        subtitle: '"$q"${isKo ? '에 대한 검색 결과가 없습니다' : ' - No results found'}',
+        subtitle: '"$q"${(isChineseUi(context) ? ' - 未找到结果' : isKo ? '에 대한 검색 결과가 없습니다' : ' - No results found')}',
       );
     }
 
@@ -1222,10 +1223,10 @@ class _UnifiedSearchScreenState extends State<UnifiedSearchScreen>
     if (q.isEmpty) {
       return _buildEmptyPrompt(
         icon: Icons.search,
-        title: isKo ? '모임을 검색해보세요' : 'Search meetups',
-        subtitle: isKo
+        title: (isChineseUi(context) ? '搜索聚会' : isKo ? '모임을 검색해보세요' : 'Search meetups'),
+        subtitle: (isChineseUi(context) ? '搜索标题、介绍、地点或发起人' : isKo
             ? '제목/설명/위치/호스트 기준으로\n모임을 찾아볼 수 있어요'
-            : 'Search by title/description/location/host',
+            : 'Search by title/description/location/host'),
       );
     }
 
@@ -1247,7 +1248,7 @@ class _UnifiedSearchScreenState extends State<UnifiedSearchScreen>
       return _buildEmptyPrompt(
         icon: Icons.search_off,
         title: AppLocalizations.of(context)!.noSearchResults,
-        subtitle: '"$q"${isKo ? '에 대한 검색 결과가 없습니다' : ' - No results found'}',
+        subtitle: '"$q"${(isChineseUi(context) ? ' - 未找到结果' : isKo ? '에 대한 검색 결과가 없습니다' : ' - No results found')}',
       );
     }
 
@@ -1314,7 +1315,7 @@ class _UnifiedSearchScreenState extends State<UnifiedSearchScreen>
                             maxLines: 2,
                             overflow: TextOverflow.ellipsis,
                             style: TextStyle(
-                              fontFamily: 'Inter',
+                              fontFamily: uiFontFamily(context, 'Inter'),
                               fontFamilyFallback: const ['NotoSansKR'],
                               fontSize: compact ? 14.5 : 15.5,
                               fontWeight: FontWeight.w700,
@@ -1328,8 +1329,8 @@ class _UnifiedSearchScreenState extends State<UnifiedSearchScreen>
                         Text(
                           meetup.getFormattedDate(context),
                           maxLines: 1,
-                          style: const TextStyle(
-                            fontFamily: 'Inter',
+                          style: TextStyle(
+                            fontFamily: uiFontFamily(context, 'Inter'),
                             fontFamilyFallback: ['NotoSansKR'],
                             fontSize: 12,
                             color: Color(0xFF667085),
@@ -1343,8 +1344,8 @@ class _UnifiedSearchScreenState extends State<UnifiedSearchScreen>
                       '${AppLocalizations.of(context)!.host}: $hostName',
                       maxLines: 1,
                       overflow: TextOverflow.ellipsis,
-                      style: const TextStyle(
-                        fontFamily: 'Inter',
+                      style: TextStyle(
+                        fontFamily: uiFontFamily(context, 'Inter'),
                         fontFamilyFallback: ['NotoSansKR'],
                         fontSize: 12.5,
                         color: Color(0xFF667085),
@@ -1354,8 +1355,8 @@ class _UnifiedSearchScreenState extends State<UnifiedSearchScreen>
                     const SizedBox(height: 8),
                     Text(
                       meetup.description,
-                      style: const TextStyle(
-                        fontFamily: 'Inter',
+                      style: TextStyle(
+                        fontFamily: uiFontFamily(context, 'Inter'),
                         fontFamilyFallback: ['NotoSansKR'],
                         fontSize: 13.5,
                         color: Color(0xFF475467),
@@ -1376,8 +1377,8 @@ class _UnifiedSearchScreenState extends State<UnifiedSearchScreen>
                         Expanded(
                           child: Text(
                             meetup.location,
-                            style: const TextStyle(
-                              fontFamily: 'Inter',
+                            style: TextStyle(
+                              fontFamily: uiFontFamily(context, 'Inter'),
                               fontFamilyFallback: ['NotoSansKR'],
                               fontSize: 12,
                               color: Color(0xFF667085),
@@ -1396,8 +1397,8 @@ class _UnifiedSearchScreenState extends State<UnifiedSearchScreen>
                         const SizedBox(width: 4),
                         Text(
                           '${meetup.currentParticipants}/${meetup.maxParticipants}',
-                          style: const TextStyle(
-                            fontFamily: 'Inter',
+                          style: TextStyle(
+                            fontFamily: uiFontFamily(context, 'Inter'),
                             fontFamilyFallback: ['NotoSansKR'],
                             fontSize: 12,
                             color: Color(0xFF475467),

@@ -16,6 +16,7 @@ import '../l10n/app_localizations.dart';
 import '../ui/widgets/user_avatar.dart';
 import '../utils/responsive_helper.dart';
 import 'post_detail_screen.dart';
+import '../l10n/ui_locale.dart';
 
 class SavedPostsScreen extends StatefulWidget {
   const SavedPostsScreen({Key? key}) : super(key: key);
@@ -86,11 +87,11 @@ class _SavedPostsScreenState extends State<SavedPostsScreen> {
         title: MediaQuery.withClampedTextScaling(
           maxScaleFactor: 1.2,
           child: Text(
-            isKo ? '저장된 게시글' : 'Saved Posts',
+            (isChineseUi(context) ? '收藏的动态' : isKo ? '저장된 게시글' : 'Saved Posts'),
             maxLines: 1,
             overflow: TextOverflow.ellipsis,
             style: TextStyle(
-              fontFamily: 'Inter',
+              fontFamily: uiFontFamily(context, 'Inter'),
               fontFamilyFallback: const ['NotoSansKR'],
               fontSize: context.rf(18).clamp(16, 19).toDouble(),
               fontWeight: FontWeight.w700,
@@ -153,11 +154,11 @@ class _SavedPostsScreenState extends State<SavedPostsScreen> {
                                 6,
                               ),
                               child: Text(
-                                isKo
+                                (isChineseUi(context) ? '已收藏${savedPosts.length}${savedPosts.length == 1 ? 'post' : 'posts'}' : isKo
                                     ? '저장한 글 ${savedPosts.length}개'
-                                    : '${savedPosts.length} saved ${savedPosts.length == 1 ? 'post' : 'posts'}',
-                                style: const TextStyle(
-                                  fontFamily: 'Inter',
+                                    : '${savedPosts.length} saved ${savedPosts.length == 1 ? 'post' : 'posts'}'),
+                                style: TextStyle(
+                                  fontFamily: uiFontFamily(context, 'Inter'),
                                   fontFamilyFallback: ['NotoSansKR'],
                                   fontSize: 12.5,
                                   fontWeight: FontWeight.w600,
@@ -223,7 +224,7 @@ class _SavedPostsScreenState extends State<SavedPostsScreen> {
               title,
               textAlign: TextAlign.center,
               style: TextStyle(
-                fontFamily: 'Inter',
+                fontFamily: uiFontFamily(context, 'Inter'),
                 fontFamilyFallback: const ['NotoSansKR'],
                 fontSize: context.rf(17).clamp(16, 19).toDouble(),
                 fontWeight: FontWeight.w700,
@@ -235,8 +236,8 @@ class _SavedPostsScreenState extends State<SavedPostsScreen> {
               Text(
                 description,
                 textAlign: TextAlign.center,
-                style: const TextStyle(
-                  fontFamily: 'Inter',
+                style: TextStyle(
+                  fontFamily: uiFontFamily(context, 'Inter'),
                   fontFamilyFallback: ['NotoSansKR'],
                   fontSize: 14,
                   color: Color(0xFF667085),
@@ -302,8 +303,8 @@ class _SavedPostsScreenState extends State<SavedPostsScreen> {
                             authorName,
                             maxLines: 1,
                             overflow: TextOverflow.ellipsis,
-                            style: const TextStyle(
-                              fontFamily: 'Inter',
+                            style: TextStyle(
+                              fontFamily: uiFontFamily(context, 'Inter'),
                               fontFamilyFallback: ['NotoSansKR'],
                               fontSize: 12.5,
                               fontWeight: FontWeight.w700,
@@ -315,8 +316,8 @@ class _SavedPostsScreenState extends State<SavedPostsScreen> {
                         Text(
                           post.getFormattedTime(context),
                           maxLines: 1,
-                          style: const TextStyle(
-                            fontFamily: 'Inter',
+                          style: TextStyle(
+                            fontFamily: uiFontFamily(context, 'Inter'),
                             fontFamilyFallback: ['NotoSansKR'],
                             fontSize: 11,
                             fontWeight: FontWeight.w500,
@@ -337,7 +338,7 @@ class _SavedPostsScreenState extends State<SavedPostsScreen> {
                       maxLines: 2,
                       overflow: TextOverflow.ellipsis,
                       style: TextStyle(
-                        fontFamily: 'Inter',
+                        fontFamily: uiFontFamily(context, 'Inter'),
                         fontFamilyFallback: const ['NotoSansKR'],
                         fontSize: context.rf(15).clamp(14, 16).toDouble(),
                         fontWeight: FontWeight.w700,
@@ -357,9 +358,9 @@ class _SavedPostsScreenState extends State<SavedPostsScreen> {
                           ),
                           const SizedBox(width: 4),
                           Text(
-                            isKo ? '투표' : 'Poll',
-                            style: const TextStyle(
-                              fontFamily: 'Inter',
+                            (isChineseUi(context) ? '投票' : isKo ? '투표' : 'Poll'),
+                            style: TextStyle(
+                              fontFamily: uiFontFamily(context, 'Inter'),
                               fontFamilyFallback: ['NotoSansKR'],
                               fontSize: 11.5,
                               fontWeight: FontWeight.w700,
@@ -373,8 +374,8 @@ class _SavedPostsScreenState extends State<SavedPostsScreen> {
                             categories,
                             maxLines: 1,
                             overflow: TextOverflow.ellipsis,
-                            style: const TextStyle(
-                              fontFamily: 'Inter',
+                            style: TextStyle(
+                              fontFamily: uiFontFamily(context, 'Inter'),
                               fontFamilyFallback: ['NotoSansKR'],
                               fontSize: 11.5,
                               fontWeight: FontWeight.w600,
@@ -392,17 +393,17 @@ class _SavedPostsScreenState extends State<SavedPostsScreen> {
                         _buildMetric(
                           Icons.favorite_border_rounded,
                           _compactCount(post.likes),
-                          isKo ? '좋아요' : 'Likes',
+                          (isChineseUi(context) ? '赞' : isKo ? '좋아요' : 'Likes'),
                         ),
                         _buildMetric(
                           Icons.mode_comment_outlined,
                           _compactCount(post.commentCount),
-                          isKo ? '댓글' : 'Comments',
+                          (isChineseUi(context) ? '评论' : isKo ? '댓글' : 'Comments'),
                         ),
                         _buildMetric(
                           Icons.visibility_outlined,
                           _compactCount(post.viewCount),
-                          isKo ? '조회수' : 'Views',
+                          (isChineseUi(context) ? '浏览量' : isKo ? '조회수' : 'Views'),
                         ),
                       ],
                     ),
@@ -461,8 +462,8 @@ class _SavedPostsScreenState extends State<SavedPostsScreen> {
                   ),
                   child: Text(
                     '${post.imageUrls.length}',
-                    style: const TextStyle(
-                      fontFamily: 'Inter',
+                    style: TextStyle(
+                      fontFamily: uiFontFamily(context, 'Inter'),
                       color: Colors.white,
                       fontSize: 10,
                       fontWeight: FontWeight.w700,
@@ -486,8 +487,8 @@ class _SavedPostsScreenState extends State<SavedPostsScreen> {
           const SizedBox(width: 3),
           Text(
             value,
-            style: const TextStyle(
-              fontFamily: 'Inter',
+            style: TextStyle(
+              fontFamily: uiFontFamily(context, 'Inter'),
               fontFamilyFallback: ['NotoSansKR'],
               fontSize: 11.5,
               fontWeight: FontWeight.w600,

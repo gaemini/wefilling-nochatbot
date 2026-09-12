@@ -13,6 +13,7 @@ import '../utils/logger.dart';
 import '../utils/responsive_helper.dart';
 import '../widgets/country_flag_circle.dart';
 import 'friend_profile_screen.dart';
+import '../l10n/ui_locale.dart';
 
 enum SocialProfileTagKind {
   interest('interests'),
@@ -249,11 +250,11 @@ class _SocialTagPeopleScreenState extends State<SocialTagPeopleScreen> {
         ),
         titleSpacing: 2,
         title: Text(
-          _isKorean ? '태그로 사람 찾기' : 'People by tag',
+          (isChineseUi(context) ? '同标签用户' : _isKorean ? '태그로 사람 찾기' : 'People by tag'),
           maxLines: 1,
           overflow: TextOverflow.ellipsis,
           style: TextStyle(
-            fontFamily: 'Inter',
+            fontFamily: uiFontFamily(context, 'Inter'),
             fontFamilyFallback: const ['NotoSansKR'],
             fontSize: context.rf(17).clamp(16, 18).toDouble(),
             fontWeight: FontWeight.w700,
@@ -287,23 +288,23 @@ class _SocialTagPeopleScreenState extends State<SocialTagPeopleScreen> {
                           maxLines: 2,
                           overflow: TextOverflow.ellipsis,
                           style: TextStyle(
-                            fontFamily: 'Inter',
+                            fontFamily: uiFontFamily(context, 'Inter'),
                             fontFamilyFallback: const ['NotoSansKR'],
                             fontSize: context.rf(22).clamp(20, 24).toDouble(),
                             fontWeight: FontWeight.w700,
                             color: AppColors.pointColor,
-                            height: 1.25,
+                            height: isChineseUi(context) ? 1.3 : 1.25,
                           ),
                         ),
                         const SizedBox(height: 7),
                         Text(
-                          _isKorean
+                          (isChineseUi(context) ? '认识选择了相同标签的人。' : _isKorean
                               ? '같은 태그를 선택한 사람들을 확인해 보세요.'
-                              : 'Meet people who chose the same tag.',
+                              : 'Meet people who chose the same tag.'),
                           maxLines: 2,
                           overflow: TextOverflow.ellipsis,
                           style: TextStyle(
-                            fontFamily: 'Inter',
+                            fontFamily: uiFontFamily(context, 'Inter'),
                             fontFamilyFallback: const ['NotoSansKR'],
                             fontSize: context.rf(13).clamp(12.5, 14).toDouble(),
                             fontWeight: FontWeight.w500,
@@ -337,8 +338,8 @@ class _SocialTagPeopleScreenState extends State<SocialTagPeopleScreen> {
     if (_error != null && _people.isEmpty) {
       return _TagPeopleMessage(
         icon: Icons.refresh_rounded,
-        title: _isKorean ? '사람 목록을 불러오지 못했어요' : 'Could not load people',
-        actionLabel: _isKorean ? '다시 시도' : 'Try again',
+        title: (isChineseUi(context) ? '加载用户失败' : _isKorean ? '사람 목록을 불러오지 못했어요' : 'Could not load people'),
+        actionLabel: (isChineseUi(context) ? '重试' : _isKorean ? '다시 시도' : 'Try again'),
         onAction: _refresh,
       );
     }
@@ -346,9 +347,9 @@ class _SocialTagPeopleScreenState extends State<SocialTagPeopleScreen> {
     if (_people.isEmpty) {
       return _TagPeopleMessage(
         icon: Icons.people_outline_rounded,
-        title: _isKorean
+        title: (isChineseUi(context) ? '还没有人选择此标签' : _isKorean
             ? '아직 이 태그를 선택한 사람이 없어요'
-            : 'No one has chosen this tag yet',
+            : 'No one has chosen this tag yet'),
       );
     }
 
@@ -381,7 +382,7 @@ class _SocialTagPeopleScreenState extends State<SocialTagPeopleScreen> {
             return Center(
               child: TextButton(
                 onPressed: _loadNextPage,
-                child: Text(_isKorean ? '다시 시도' : 'Try again'),
+                child: Text((isChineseUi(context) ? '重试' : _isKorean ? '다시 시도' : 'Try again')),
               ),
             );
           }
@@ -464,12 +465,12 @@ class _TagPersonRow extends StatelessWidget {
                         maxLines: 1,
                         overflow: TextOverflow.ellipsis,
                         style: TextStyle(
-                          fontFamily: 'Inter',
+                          fontFamily: uiFontFamily(context, 'Inter'),
                           fontFamilyFallback: const ['NotoSansKR'],
                           fontSize: context.rf(15).clamp(14, 16).toDouble(),
                           fontWeight: FontWeight.w700,
                           color: const Color(0xFF111827),
-                          height: 1.25,
+                          height: isChineseUi(context) ? 1.3 : 1.25,
                         ),
                       ),
                       if (supportingText.isNotEmpty) ...[
@@ -489,13 +490,13 @@ class _TagPersonRow extends StatelessWidget {
                                 maxLines: 1,
                                 overflow: TextOverflow.ellipsis,
                                 style: TextStyle(
-                                  fontFamily: 'Inter',
+                                  fontFamily: uiFontFamily(context, 'Inter'),
                                   fontFamilyFallback: const ['NotoSansKR'],
                                   fontSize:
                                       context.rf(12).clamp(11.5, 13).toDouble(),
                                   fontWeight: FontWeight.w500,
                                   color: const Color(0xFF7C8491),
-                                  height: 1.25,
+                                  height: isChineseUi(context) ? 1.3 : 1.25,
                                 ),
                               ),
                             ),
@@ -508,9 +509,9 @@ class _TagPersonRow extends StatelessWidget {
                 const SizedBox(width: 8),
                 if (isCurrentUser)
                   Text(
-                    isKorean ? '나' : 'You',
+                    (isChineseUi(context) ? '你' : isKorean ? '나' : 'You'),
                     style: TextStyle(
-                      fontFamily: 'Inter',
+                      fontFamily: uiFontFamily(context, 'Inter'),
                       fontFamilyFallback: const ['NotoSansKR'],
                       fontSize: context.rf(12).clamp(11.5, 13).toDouble(),
                       fontWeight: FontWeight.w600,
@@ -562,7 +563,7 @@ class _TagPeopleMessage extends StatelessWidget {
               title,
               textAlign: TextAlign.center,
               style: TextStyle(
-                fontFamily: 'Inter',
+                fontFamily: uiFontFamily(context, 'Inter'),
                 fontFamilyFallback: const ['NotoSansKR'],
                 fontSize: context.rf(14).clamp(13, 15).toDouble(),
                 fontWeight: FontWeight.w600,

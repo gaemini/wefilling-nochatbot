@@ -9,6 +9,7 @@ import '../screens/privacy_policy_screen.dart';
 import '../l10n/app_localizations.dart';
 import '../constants/app_constants.dart';
 import '../widgets/signup_flow_widgets.dart';
+import '../l10n/ui_locale.dart';
 
 class TermsAgreementSheet extends StatefulWidget {
   const TermsAgreementSheet({Key? key}) : super(key: key);
@@ -60,8 +61,8 @@ class _TermsAgreementSheetState extends State<TermsAgreementSheet> {
               const SizedBox(height: 24),
               Text(
                 l10n.welcomeTitle,
-                style: const TextStyle(
-                  fontFamily: 'Inter',
+                style: TextStyle(
+                  fontFamily: uiFontFamily(context, 'Inter'),
                   fontFamilyFallback: const ['NotoSansKR'],
                   fontSize: 22,
                   fontWeight: FontWeight.w800,
@@ -72,8 +73,8 @@ class _TermsAgreementSheetState extends State<TermsAgreementSheet> {
               const SizedBox(height: 8),
               Text(
                 l10n.termsAgreementDescription,
-                style: const TextStyle(
-                  fontFamily: 'Inter',
+                style: TextStyle(
+                  fontFamily: uiFontFamily(context, 'Inter'),
                   fontFamilyFallback: const ['NotoSansKR'],
                   fontSize: 14,
                   color: Color(0xFF64748B),
@@ -103,8 +104,8 @@ class _TermsAgreementSheetState extends State<TermsAgreementSheet> {
                               padding: const EdgeInsets.only(top: 8),
                               child: Text(
                                 l10n.loginTermsNotice,
-                                style: const TextStyle(
-                                  fontFamily: 'Inter',
+                                style: TextStyle(
+                                  fontFamily: uiFontFamily(context, 'Inter'),
                                   fontFamilyFallback: const ['NotoSansKR'],
                                   fontSize: 14,
                                   color: Color(0xFF334155),

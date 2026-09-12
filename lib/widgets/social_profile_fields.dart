@@ -3,6 +3,7 @@ import 'package:flutter/material.dart';
 import '../constants/app_constants.dart';
 import '../models/social_profile_data.dart';
 import '../utils/responsive_helper.dart';
+import '../l10n/ui_locale.dart';
 
 class ProfileSectionHeading extends StatelessWidget {
   const ProfileSectionHeading({
@@ -30,7 +31,7 @@ class ProfileSectionHeading extends StatelessWidget {
                 maxLines: 2,
                 overflow: TextOverflow.ellipsis,
                 style: TextStyle(
-                  fontFamily: 'Inter',
+                  fontFamily: uiFontFamily(context, 'Inter'),
                   fontFamilyFallback: const <String>['NotoSansKR'],
                   fontSize: context.rf(20).clamp(18, 21).toDouble(),
                   fontWeight: FontWeight.w800,
@@ -48,7 +49,7 @@ class ProfileSectionHeading extends StatelessWidget {
           Text(
             description!,
             style: TextStyle(
-              fontFamily: 'Inter',
+              fontFamily: uiFontFamily(context, 'Inter'),
               fontFamilyFallback: const <String>['NotoSansKR'],
               fontSize: context.rf(14).clamp(13, 15).toDouble(),
               fontWeight: FontWeight.w500,
@@ -108,9 +109,9 @@ class SocialProfileTagSelector extends StatelessWidget {
                         ..showSnackBar(
                           SnackBar(
                             content: Text(
-                              languageCode == 'ko'
+                              (isChineseUi(context) ? '最多可选${maxSelection}项。' : languageCode == 'ko'
                                   ? '최대 $maxSelection개까지 선택할 수 있어요.'
-                                  : 'You can select up to $maxSelection.',
+                                  : 'You can select up to $maxSelection.'),
                             ),
                           ),
                         );
@@ -147,7 +148,7 @@ class SocialProfileTagSelector extends StatelessWidget {
                             maxLines: 1,
                             overflow: TextOverflow.ellipsis,
                             style: TextStyle(
-                              fontFamily: 'Inter',
+                              fontFamily: uiFontFamily(context, 'Inter'),
                               fontFamilyFallback: const <String>['NotoSansKR'],
                               fontSize: context.rf(13).clamp(12, 14).toDouble(),
                               fontWeight:
@@ -223,7 +224,7 @@ class _SocialProfilePromptFieldState extends State<SocialProfilePromptField> {
 
   bool _matchesSuggestion(String value) {
     return widget.suggestions.any(
-      (option) => option.ko == value || option.en == value,
+      (option) => option.ko == value || option.en == value || option.zh == value,
     );
   }
 
@@ -295,7 +296,7 @@ class _SocialProfilePromptFieldState extends State<SocialProfilePromptField> {
                 child: Text(
                   text,
                   style: TextStyle(
-                    fontFamily: 'Inter',
+                    fontFamily: uiFontFamily(context, 'Inter'),
                     fontFamilyFallback: const ['NotoSansKR'],
                     fontSize: 15,
                     fontWeight: selected ? FontWeight.w700 : FontWeight.w500,
@@ -333,14 +334,14 @@ class _SocialProfilePromptFieldState extends State<SocialProfilePromptField> {
               _optionRow(
                 text: suggestion.label(languageCode),
                 selected: (currentValue == suggestion.ko ||
-                        currentValue == suggestion.en) &&
+                        currentValue == suggestion.en || currentValue == suggestion.zh) &&
                     !_showCustomInput,
                 onTap: () => _selectSuggestion(suggestion.label(languageCode)),
               ),
             _optionRow(
-              text: languageCode == 'ko'
+              text: (isChineseUi(context) ? '自己填写（选填）' : languageCode == 'ko'
                   ? '직접 입력 (선택)'
-                  : 'Write my own (optional)',
+                  : 'Write my own (optional)'),
               selected: _showCustomInput,
               onTap: _selectCustomInput,
             ),
@@ -361,10 +362,11 @@ class _SocialProfilePromptFieldState extends State<SocialProfilePromptField> {
                     maxLines: 2,
                     autofocus: false,
                     decoration: socialProfileInputDecoration(
+                      context: context,
                       hintText: widget.hintText,
                     ),
-                    style: const TextStyle(
-                      fontFamily: 'Inter',
+                    style: TextStyle(
+                      fontFamily: uiFontFamily(context, 'Inter'),
                       fontFamilyFallback: ['NotoSansKR'],
                       fontSize: 15,
                       fontWeight: FontWeight.w500,
@@ -380,6 +382,7 @@ class _SocialProfilePromptFieldState extends State<SocialProfilePromptField> {
 }
 
 InputDecoration socialProfileInputDecoration({
+  required BuildContext context,
   required String hintText,
   Widget? prefixIcon,
   String? helperText,
@@ -391,15 +394,15 @@ InputDecoration socialProfileInputDecoration({
     prefixIconConstraints: prefixIcon == null
         ? null
         : const BoxConstraints(minWidth: 38, minHeight: 44),
-    hintStyle: const TextStyle(
-      fontFamily: 'Inter',
+    hintStyle: TextStyle(
+      fontFamily: uiFontFamily(context, 'Inter'),
       fontFamilyFallback: ['NotoSansKR'],
       fontSize: 15,
       fontWeight: FontWeight.w400,
       color: Color(0xFF94A3B8),
     ),
-    helperStyle: const TextStyle(
-      fontFamily: 'Inter',
+    helperStyle: TextStyle(
+      fontFamily: uiFontFamily(context, 'Inter'),
       fontFamilyFallback: ['NotoSansKR'],
       fontSize: 12,
       color: Color(0xFF64748B),
@@ -470,12 +473,12 @@ class SocialProfilePreview extends StatelessWidget {
                 children: [
                   Text(
                     nickname.trim().isEmpty
-                        ? (languageCode == 'ko' ? '나의 프로필' : 'My profile')
+                        ? ((isChineseUi(context) ? '我的资料' : languageCode == 'ko' ? '나의 프로필' : 'My profile'))
                         : nickname.trim(),
                     maxLines: 1,
                     overflow: TextOverflow.ellipsis,
-                    style: const TextStyle(
-                      fontFamily: 'Inter',
+                    style: TextStyle(
+                      fontFamily: uiFontFamily(context, 'Inter'),
                       fontFamilyFallback: ['NotoSansKR'],
                       fontSize: 20,
                       fontWeight: FontWeight.w800,
@@ -488,8 +491,8 @@ class SocialProfilePreview extends StatelessWidget {
                       bio.trim(),
                       maxLines: 2,
                       overflow: TextOverflow.ellipsis,
-                      style: const TextStyle(
-                        fontFamily: 'Inter',
+                      style: TextStyle(
+                        fontFamily: uiFontFamily(context, 'Inter'),
                         fontFamilyFallback: ['NotoSansKR'],
                         fontSize: 14,
                         color: Color(0xFF475569),
@@ -505,7 +508,7 @@ class SocialProfilePreview extends StatelessWidget {
         if (interests.isNotEmpty) ...[
           const SizedBox(height: 22),
           _PreviewSection(
-            title: languageCode == 'ko' ? '요즘 관심 있는 것' : 'Into these days',
+            title: (isChineseUi(context) ? '最近感兴趣' : languageCode == 'ko' ? '요즘 관심 있는 것' : 'Into these days'),
             values: interests
                 .map((id) => label(id, SocialProfileCatalog.interests))
                 .toList(growable: false),
@@ -514,7 +517,7 @@ class SocialProfilePreview extends StatelessWidget {
         if (activities.isNotEmpty) ...[
           const SizedBox(height: 18),
           _PreviewSection(
-            title: languageCode == 'ko' ? '같이 하고 싶은 것' : 'Let\'s do together',
+            title: (isChineseUi(context) ? '想一起做' : languageCode == 'ko' ? '같이 하고 싶은 것' : 'Let\'s do together'),
             values: activities
                 .map((id) => label(id, SocialProfileCatalog.activities))
                 .toList(growable: false),
@@ -524,8 +527,8 @@ class SocialProfilePreview extends StatelessWidget {
           const SizedBox(height: 18),
           Text(
             friendshipPrompt.trim(),
-            style: const TextStyle(
-              fontFamily: 'Inter',
+            style: TextStyle(
+              fontFamily: uiFontFamily(context, 'Inter'),
               fontFamilyFallback: ['NotoSansKR'],
               fontSize: 15,
               fontWeight: FontWeight.w600,
@@ -540,9 +543,9 @@ class SocialProfilePreview extends StatelessWidget {
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
               Text(
-                languageCode == 'ko' ? '그대에게 물어보고 싶어요' : "I'd like to ask you",
-                style: const TextStyle(
-                  fontFamily: 'Inter',
+                (isChineseUi(context) ? '想问问你' : languageCode == 'ko' ? '그대에게 물어보고 싶어요' : "I'd like to ask you"),
+                style: TextStyle(
+                  fontFamily: uiFontFamily(context, 'Inter'),
                   fontFamilyFallback: ['NotoSansKR'],
                   fontSize: 12,
                   fontWeight: FontWeight.w600,
@@ -553,8 +556,8 @@ class SocialProfilePreview extends StatelessWidget {
               const SizedBox(height: 5),
               Text(
                 conversationStarter.trim(),
-                style: const TextStyle(
-                  fontFamily: 'Inter',
+                style: TextStyle(
+                  fontFamily: uiFontFamily(context, 'Inter'),
                   fontFamilyFallback: ['NotoSansKR'],
                   fontSize: 16,
                   fontWeight: FontWeight.w600,
@@ -583,8 +586,8 @@ class _PreviewSection extends StatelessWidget {
       children: [
         Text(
           title,
-          style: const TextStyle(
-            fontFamily: 'Inter',
+          style: TextStyle(
+            fontFamily: uiFontFamily(context, 'Inter'),
             fontFamilyFallback: ['NotoSansKR'],
             fontSize: 13,
             fontWeight: FontWeight.w700,
@@ -599,8 +602,8 @@ class _PreviewSection extends StatelessWidget {
               .map(
                 (value) => Text(
                   '#$value',
-                  style: const TextStyle(
-                    fontFamily: 'Inter',
+                  style: TextStyle(
+                    fontFamily: uiFontFamily(context, 'Inter'),
                     fontFamilyFallback: ['NotoSansKR'],
                     fontSize: 14,
                     fontWeight: FontWeight.w600,

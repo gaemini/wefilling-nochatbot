@@ -17,6 +17,7 @@ import '../ui/widgets/shape_icon.dart';
 import 'create_meetup_screen.dart';
 import 'create_post_screen.dart';
 import 'create_snack_chat_screen.dart';
+import '../l10n/ui_locale.dart';
 
 class CategoryDetailScreen extends StatefulWidget {
   final FriendCategory category;
@@ -215,8 +216,8 @@ class _CategoryDetailScreenState extends State<CategoryDetailScreen> {
             Expanded(
               child: Text(
                 widget.category.name,
-                style: const TextStyle(
-                  fontFamily: 'Inter',
+                style: TextStyle(
+                  fontFamily: uiFontFamily(context, 'Inter'),
                   fontFamilyFallback: const ['NotoSansKR'],
                   color: Color(0xFF111827),
                   fontSize: 17,
@@ -244,7 +245,7 @@ class _CategoryDetailScreenState extends State<CategoryDetailScreen> {
                 : Text(
                     AppLocalizations.of(context)!.save,
                     style: TextStyle(
-                      fontFamily: 'Inter',
+                      fontFamily: uiFontFamily(context, 'Inter'),
                       fontFamilyFallback: const ['NotoSansKR'],
                       fontSize: 13,
                       fontWeight: FontWeight.w700,
@@ -305,18 +306,18 @@ class _CategoryDetailScreenState extends State<CategoryDetailScreen> {
                         children: [
                           Text(
                             AppLocalizations.of(context)!.noFriendsInCategory,
-                            style: TypographyStyles.headlineMedium.copyWith(
+                            style: uiTextStyle(context, TypographyStyles.headlineMedium.copyWith(
                               color: BrandColors.textPrimary,
-                            ),
+                            )),
                             textAlign: TextAlign.center,
                           ),
                           const SizedBox(height: DesignTokens.s12),
                           Text(
                             AppLocalizations.of(context)!.addFriendsToCategory,
-                            style: TypographyStyles.bodyLarge.copyWith(
+                            style: uiTextStyle(context, TypographyStyles.bodyLarge.copyWith(
                               color: BrandColors.textSecondary,
                               height: 1.5,
-                            ),
+                            )),
                             textAlign: TextAlign.center,
                           ),
                         ],
@@ -338,8 +339,8 @@ class _CategoryDetailScreenState extends State<CategoryDetailScreen> {
                                 child: Text(
                                   AppLocalizations.of(context)!
                                       .groupNoFriendsSelected,
-                                  style: const TextStyle(
-                                    fontFamily: 'Inter',
+                                  style: TextStyle(
+                                    fontFamily: uiFontFamily(context, 'Inter'),
                                     fontFamilyFallback: const ['NotoSansKR'],
                                     fontSize: 13,
                                     fontWeight: FontWeight.w600,
@@ -366,16 +367,16 @@ class _CategoryDetailScreenState extends State<CategoryDetailScreen> {
                         child: TextField(
                           controller: _searchController,
                           textInputAction: TextInputAction.search,
-                          style: const TextStyle(
-                            fontFamily: 'Inter',
+                          style: TextStyle(
+                            fontFamily: uiFontFamily(context, 'Inter'),
                             fontFamilyFallback: const ['NotoSansKR'],
                             fontSize: 14,
                           ),
                           decoration: InputDecoration(
                             hintText: AppLocalizations.of(context)!
                                 .searchByFriendName,
-                            hintStyle: const TextStyle(
-                              fontFamily: 'Inter',
+                            hintStyle: TextStyle(
+                              fontFamily: uiFontFamily(context, 'Inter'),
                               fontFamilyFallback: const ['NotoSansKR'],
                               fontSize: 14,
                               color: Color(0xFF6B7280),
@@ -422,8 +423,8 @@ class _CategoryDetailScreenState extends State<CategoryDetailScreen> {
                       padding: const EdgeInsets.symmetric(horizontal: 20),
                       child: Text(
                         AppLocalizations.of(context)!.friends,
-                        style: const TextStyle(
-                          fontFamily: 'Inter',
+                        style: TextStyle(
+                          fontFamily: uiFontFamily(context, 'Inter'),
                           fontFamilyFallback: const ['NotoSansKR'],
                           fontSize: 14,
                           fontWeight: FontWeight.w700,
@@ -438,8 +439,8 @@ class _CategoryDetailScreenState extends State<CategoryDetailScreen> {
                               child: Text(
                                 AppLocalizations.of(context)!
                                     .groupNoSearchResults,
-                                style: const TextStyle(
-                                  fontFamily: 'Inter',
+                                style: TextStyle(
+                                  fontFamily: uiFontFamily(context, 'Inter'),
                                   fontFamilyFallback: const ['NotoSansKR'],
                                   fontSize: 14,
                                   fontWeight: FontWeight.w600,
@@ -520,8 +521,8 @@ class _CategoryDetailScreenState extends State<CategoryDetailScreen> {
                     friend.displayNameOrNickname,
                     maxLines: 1,
                     overflow: TextOverflow.ellipsis,
-                    style: const TextStyle(
-                      fontFamily: 'Inter',
+                    style: TextStyle(
+                      fontFamily: uiFontFamily(context, 'Inter'),
                       fontFamilyFallback: const ['NotoSansKR'],
                       fontSize: 14,
                       fontWeight: FontWeight.w600,
@@ -609,8 +610,8 @@ class _CategoryDetailScreenState extends State<CategoryDetailScreen> {
                 maxLines: 1,
                 overflow: TextOverflow.ellipsis,
                 textAlign: TextAlign.center,
-                style: const TextStyle(
-                  fontFamily: 'Inter',
+                style: TextStyle(
+                  fontFamily: uiFontFamily(context, 'Inter'),
                   fontFamilyFallback: const ['NotoSansKR'],
                   fontSize: 12,
                   fontWeight: FontWeight.w600,
@@ -663,7 +664,7 @@ class _CategoryDetailScreenState extends State<CategoryDetailScreen> {
       child: Text(
         label.isEmpty ? '?' : label[0],
         style: TextStyle(
-          fontFamily: 'Inter',
+          fontFamily: uiFontFamily(context, 'Inter'),
           fontFamilyFallback: const ['NotoSansKR'],
           fontSize: avatarSize * 0.34,
           fontWeight: FontWeight.w700,

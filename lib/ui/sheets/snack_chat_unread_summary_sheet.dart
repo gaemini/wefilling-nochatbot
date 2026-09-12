@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 
 import '../../services/snack_chat_service.dart';
 import '../../utils/responsive_helper.dart';
+import '../../l10n/ui_locale.dart';
 
 Future<void> showSnackChatUnreadSummarySheet(
   BuildContext context, {
@@ -14,6 +15,9 @@ Future<void> showSnackChatUnreadSummarySheet(
   String overview = '',
   String otherConversationSummary = '',
   SnackChatSummaryRangeType rangeType = SnackChatSummaryRangeType.unread,
+  String titleOverride = '',
+  Future<void> Function(String messageId)? onOpenSource,
+  bool useProvidedSectionTitles = false,
 }) async {
   if (items.isEmpty &&
       sections.isEmpty &&
@@ -43,6 +47,9 @@ Future<void> showSnackChatUnreadSummarySheet(
       overview: overview,
       otherConversationSummary: otherConversationSummary,
       rangeType: rangeType,
+      titleOverride: titleOverride,
+      onOpenSource: onOpenSource,
+      useProvidedSectionTitles: useProvidedSectionTitles,
       rootBottomInset: rootBottomInset,
     ),
   );
@@ -58,6 +65,9 @@ class _SnackChatUnreadSummarySheet extends StatelessWidget {
     required this.overview,
     required this.otherConversationSummary,
     required this.rangeType,
+    required this.titleOverride,
+    required this.onOpenSource,
+    required this.useProvidedSectionTitles,
     required this.rootBottomInset,
   });
 
@@ -69,14 +79,18 @@ class _SnackChatUnreadSummarySheet extends StatelessWidget {
   final String overview;
   final String otherConversationSummary;
   final SnackChatSummaryRangeType rangeType;
+  final String titleOverride;
+  final Future<void> Function(String messageId)? onOpenSource;
+  final bool useProvidedSectionTitles;
   final double rootBottomInset;
 
-  List<SnackChatUnreadSummarySection> _displaySections(bool isKo) {
+  List<SnackChatUnreadSummarySection> _displaySections(
+      BuildContext context, bool isKo) {
     if (sections.isNotEmpty) {
       return sections
           .where((section) =>
               section.type != SnackChatSummarySectionType.otherConversation)
-          .take(5)
+          .take(8)
           .toList(growable: false);
     }
     if (overview.isNotEmpty) {
@@ -85,33 +99,62 @@ class _SnackChatUnreadSummarySheet extends StatelessWidget {
     return <SnackChatUnreadSummarySection>[
       SnackChatUnreadSummarySection(
         type: SnackChatSummarySectionType.mustKnow,
-        title: isKo ? '꼭 확인하세요' : 'Must know',
+        title: (isChineseUi(context)
+            ? '重要信息'
+            : isKo
+                ? '꼭 확인하세요'
+                : 'Must know'),
         items: items,
       ),
     ];
   }
 
   String _defaultSectionTitle(
+    BuildContext context,
     SnackChatUnreadSummarySection section,
     bool isKo,
   ) {
     switch (section.type) {
       case SnackChatSummarySectionType.mustKnow:
-        return isKo ? '해야 할 일' : 'Your next steps';
+        return (isChineseUi(context)
+            ? '接下来要做'
+            : isKo
+                ? '해야 할 일'
+                : 'Your next steps');
       case SnackChatSummarySectionType.responseRequired:
-        return isKo ? '답장이 필요한 내용' : 'Needs your reply';
+        return (isChineseUi(context)
+            ? '待你回复'
+            : isKo
+                ? '답장이 필요한 내용'
+                : 'Needs your reply');
       case SnackChatSummarySectionType.scheduleAndPlace:
-        return isKo ? '일정' : 'Schedule';
+        return (isChineseUi(context)
+            ? '日程'
+            : isKo
+                ? '일정'
+                : 'Schedule');
       case SnackChatSummarySectionType.decisionsAndChanges:
         final statuses = section.items.map((item) => item.status).toSet();
         if (statuses.length == 1) {
           switch (statuses.single) {
             case SnackChatSummaryStatus.changed:
-              return isKo ? '변경된 내용' : 'Changed';
+              return (isChineseUi(context)
+                  ? '已变更'
+                  : isKo
+                      ? '변경된 내용'
+                      : 'Changed');
             case SnackChatSummaryStatus.cancelled:
-              return isKo ? '취소된 내용' : 'Cancelled';
+              return (isChineseUi(context)
+                  ? '已取消'
+                  : isKo
+                      ? '취소된 내용'
+                      : 'Cancelled');
             case SnackChatSummaryStatus.confirmed:
-              return isKo ? '확정된 내용' : 'Confirmed';
+              return (isChineseUi(context)
+                  ? '已确认'
+                  : isKo
+                      ? '확정된 내용'
+                      : 'Confirmed');
             case SnackChatSummaryStatus.proposed:
             case SnackChatSummaryStatus.unresolved:
             case SnackChatSummaryStatus.responseRequired:
@@ -119,26 +162,51 @@ class _SnackChatUnreadSummarySheet extends StatelessWidget {
               break;
           }
         }
-        return isKo ? '결정 및 변경' : 'Decisions and changes';
+        return (isChineseUi(context)
+            ? '决定与变更'
+            : isKo
+                ? '결정 및 변경'
+                : 'Decisions and changes');
       case SnackChatSummarySectionType.unresolved:
-        return isKo ? '아직 정해지지 않은 내용' : 'Still undecided';
+        return (isChineseUi(context)
+            ? '尚未确定'
+            : isKo
+                ? '아직 정해지지 않은 내용'
+                : 'Still undecided');
       case SnackChatSummarySectionType.sharedInformation:
-        return isKo ? '공유된 내용' : 'Shared';
+        return (isChineseUi(context)
+            ? '分享内容'
+            : isKo
+                ? '공유된 내용'
+                : 'Shared');
       case SnackChatSummarySectionType.otherConversation:
-        return isKo ? '그 외 이야기' : 'Other conversation';
+        return (isChineseUi(context)
+            ? '其他对话'
+            : isKo
+                ? '그 외 이야기'
+                : 'Other conversation');
     }
   }
 
-  String _statusLabel(SnackChatSummaryStatus status, bool isKo) {
+  String _statusLabel(
+      BuildContext context, SnackChatSummaryStatus status, bool isKo) {
     switch (status) {
       case SnackChatSummaryStatus.confirmed:
         return '';
       case SnackChatSummaryStatus.proposed:
         return '';
       case SnackChatSummaryStatus.changed:
-        return isKo ? '변경' : 'Changed';
+        return (isChineseUi(context)
+            ? '已变更'
+            : isKo
+                ? '변경'
+                : 'Changed');
       case SnackChatSummaryStatus.cancelled:
-        return isKo ? '취소' : 'Cancelled';
+        return (isChineseUi(context)
+            ? '已取消'
+            : isKo
+                ? '취소'
+                : 'Cancelled');
       case SnackChatSummaryStatus.unresolved:
         return '';
       case SnackChatSummaryStatus.responseRequired:
@@ -169,7 +237,7 @@ class _SnackChatUnreadSummarySheet extends StatelessWidget {
     final sheetBottomInset = MediaQuery.viewPaddingOf(context).bottom;
     final safeBottom =
         rootBottomInset > sheetBottomInset ? rootBottomInset : sheetBottomInset;
-    final displaySections = _displaySections(isKo);
+    final displaySections = _displaySections(context, isKo);
     final count = messageCount > 0
         ? messageCount
         : displaySections.fold<int>(
@@ -207,15 +275,25 @@ class _SnackChatUnreadSummarySheet extends StatelessWidget {
                         crossAxisAlignment: CrossAxisAlignment.start,
                         children: [
                           Text(
-                            isToday
-                                ? (isKo ? '오늘 대화 정리' : "Today's recap")
-                                : (isKo ? '놓친 대화 정리' : 'What you missed'),
+                            titleOverride.isNotEmpty
+                                ? titleOverride
+                                : isToday
+                                    ? ((isChineseUi(context)
+                                        ? '今日总结'
+                                        : isKo
+                                            ? '오늘 대화 정리'
+                                            : "Today's recap"))
+                                    : ((isChineseUi(context)
+                                        ? '错过的内容'
+                                        : isKo
+                                            ? '놓친 대화 정리'
+                                            : 'What you missed')),
                             style: TextStyle(
-                              fontFamily: 'Inter',
+                              fontFamily: uiFontFamily(context, 'Inter'),
                               fontFamilyFallback: const ['NotoSansKR'],
                               fontSize: context.rf(20).clamp(18, 21).toDouble(),
                               fontWeight: FontWeight.w800,
-                              height: 1.25,
+                              height: isChineseUi(context) ? 1.3 : 1.25,
                               color: const Color(0xFF111827),
                             ),
                           ),
@@ -225,21 +303,29 @@ class _SnackChatUnreadSummarySheet extends StatelessWidget {
                           Text(
                             isToday
                                 ? (range.isEmpty
-                                    ? (isKo
-                                        ? '오늘 메시지 $count개'
-                                        : '$count messages today')
-                                    : (isKo
-                                        ? '오늘 메시지 $count개 · $range'
-                                        : '$count messages today · $range'))
+                                    ? ((isChineseUi(context)
+                                        ? '今日${count}条消息'
+                                        : isKo
+                                            ? '오늘 메시지 $count개'
+                                            : '$count messages today'))
+                                    : ((isChineseUi(context)
+                                        ? '今日${count}条消息 · ${range}'
+                                        : isKo
+                                            ? '오늘 메시지 $count개 · $range'
+                                            : '$count messages today · $range')))
                                 : (range.isEmpty
-                                    ? (isKo
-                                        ? '새 메시지 $count개'
-                                        : '$count new messages')
-                                    : (isKo
-                                        ? '새 메시지 $count개 · $range'
-                                        : '$count new messages · $range')),
+                                    ? ((isChineseUi(context)
+                                        ? '${count}条新消息'
+                                        : isKo
+                                            ? '새 메시지 $count개'
+                                            : '$count new messages'))
+                                    : ((isChineseUi(context)
+                                        ? '${count}条新消息 · ${range}'
+                                        : isKo
+                                            ? '새 메시지 $count개 · $range'
+                                            : '$count new messages · $range'))),
                             style: TextStyle(
-                              fontFamily: 'Inter',
+                              fontFamily: uiFontFamily(context, 'Inter'),
                               fontFamilyFallback: const ['NotoSansKR'],
                               fontSize: context.rf(13).clamp(12, 14).toDouble(),
                               fontWeight: FontWeight.w600,
@@ -251,7 +337,11 @@ class _SnackChatUnreadSummarySheet extends StatelessWidget {
                     ),
                   ),
                   IconButton(
-                    tooltip: isKo ? '닫기' : 'Close',
+                    tooltip: (isChineseUi(context)
+                        ? '关闭'
+                        : isKo
+                            ? '닫기'
+                            : 'Close'),
                     onPressed: () => Navigator.of(context).pop(),
                     icon: const Icon(Icons.close_rounded),
                     color: const Color(0xFF475467),
@@ -267,7 +357,11 @@ class _SnackChatUnreadSummarySheet extends StatelessWidget {
               SizedBox(height: context.rs(22).clamp(18, 26).toDouble()),
               if (overview.isNotEmpty) ...[
                 _SummaryTextBlock(
-                  title: isKo ? '한눈에 보기' : 'Quick recap',
+                  title: (isChineseUi(context)
+                      ? '快速总结'
+                      : isKo
+                          ? '한눈에 보기'
+                          : 'Quick recap'),
                   content: overview,
                 ),
                 if (displaySections.isNotEmpty ||
@@ -285,9 +379,15 @@ class _SnackChatUnreadSummarySheet extends StatelessWidget {
               for (var index = 0; index < displaySections.length; index++) ...[
                 _SummarySectionView(
                   section: displaySections[index],
-                  title: _defaultSectionTitle(displaySections[index], isKo),
+                  title: useProvidedSectionTitles &&
+                          displaySections[index].title.trim().isNotEmpty
+                      ? displaySections[index].title.trim()
+                      : _defaultSectionTitle(
+                          context, displaySections[index], isKo),
                   isKo: isKo,
-                  statusLabel: _statusLabel,
+                  statusLabel: (status, korean) =>
+                      _statusLabel(context, status, korean),
+                  onOpenSource: onOpenSource,
                 ),
                 if (index != displaySections.length - 1 ||
                     otherConversationSummary.isNotEmpty)
@@ -300,7 +400,11 @@ class _SnackChatUnreadSummarySheet extends StatelessWidget {
               ],
               if (otherConversationSummary.isNotEmpty)
                 _SummaryTextBlock(
-                  title: isKo ? '그 외 이야기' : 'Other conversation',
+                  title: (isChineseUi(context)
+                      ? '其他对话'
+                      : isKo
+                          ? '그 외 이야기'
+                          : 'Other conversation'),
                   content: otherConversationSummary,
                 ),
             ],
@@ -325,7 +429,7 @@ class _SummaryTextBlock extends StatelessWidget {
         Text(
           title,
           style: TextStyle(
-            fontFamily: 'Inter',
+            fontFamily: uiFontFamily(context, 'Inter'),
             fontFamilyFallback: const ['NotoSansKR'],
             fontSize: context.rf(16).clamp(15, 17).toDouble(),
             fontWeight: FontWeight.w800,
@@ -339,7 +443,7 @@ class _SummaryTextBlock extends StatelessWidget {
           softWrap: true,
           textWidthBasis: TextWidthBasis.parent,
           style: TextStyle(
-            fontFamily: 'Inter',
+            fontFamily: uiFontFamily(context, 'Inter'),
             fontFamilyFallback: const ['NotoSansKR'],
             fontSize: context.rf(15).clamp(14, 16).toDouble(),
             fontWeight: FontWeight.w500,
@@ -358,12 +462,14 @@ class _SummarySectionView extends StatelessWidget {
     required this.title,
     required this.isKo,
     required this.statusLabel,
+    required this.onOpenSource,
   });
 
   final SnackChatUnreadSummarySection section;
   final String title;
   final bool isKo;
   final String Function(SnackChatSummaryStatus status, bool isKo) statusLabel;
+  final Future<void> Function(String messageId)? onOpenSource;
 
   @override
   Widget build(BuildContext context) {
@@ -384,7 +490,7 @@ class _SummarySectionView extends StatelessWidget {
         Text(
           title,
           style: TextStyle(
-            fontFamily: 'Inter',
+            fontFamily: uiFontFamily(context, 'Inter'),
             fontFamilyFallback: const ['NotoSansKR'],
             fontSize: context.rf(16).clamp(15, 17).toDouble(),
             fontWeight: FontWeight.w800,
@@ -400,6 +506,7 @@ class _SummarySectionView extends StatelessWidget {
             statusText: hideRepeatedDecisionStatus
                 ? ''
                 : statusLabel(section.items[index].status, isKo),
+            onOpenSource: onOpenSource,
           ),
           if (index != section.items.length - 1)
             SizedBox(height: context.rs(14).clamp(12, 17).toDouble()),
@@ -414,11 +521,13 @@ class _SummaryItemView extends StatelessWidget {
     required this.item,
     required this.isOtherConversation,
     required this.statusText,
+    required this.onOpenSource,
   });
 
   final SnackChatUnreadSummaryItem item;
   final bool isOtherConversation;
   final String statusText;
+  final Future<void> Function(String messageId)? onOpenSource;
 
   Widget _label(BuildContext context) {
     return Wrap(
@@ -430,7 +539,7 @@ class _SummaryItemView extends StatelessWidget {
           Text(
             item.label,
             style: TextStyle(
-              fontFamily: 'Inter',
+              fontFamily: uiFontFamily(context, 'Inter'),
               fontFamilyFallback: const ['NotoSansKR'],
               fontSize: context.rf(13).clamp(12, 14).toDouble(),
               fontWeight: FontWeight.w700,
@@ -442,7 +551,7 @@ class _SummaryItemView extends StatelessWidget {
           Text(
             statusText,
             style: TextStyle(
-              fontFamily: 'Inter',
+              fontFamily: uiFontFamily(context, 'Inter'),
               fontFamilyFallback: const ['NotoSansKR'],
               fontSize: context.rf(12).clamp(11, 13).toDouble(),
               fontWeight: FontWeight.w700,
@@ -455,18 +564,56 @@ class _SummaryItemView extends StatelessWidget {
   }
 
   Widget _content(BuildContext context) {
-    return Text(
-      item.content,
-      softWrap: true,
-      textWidthBasis: TextWidthBasis.parent,
-      style: TextStyle(
-        fontFamily: 'Inter',
-        fontFamilyFallback: const ['NotoSansKR'],
-        fontSize: context.rf(15).clamp(14, 16).toDouble(),
-        fontWeight: FontWeight.w500,
-        height: 1.5,
-        color: const Color(0xFF1D2939),
-      ),
+    final messageId = item.representativeMessageId.isNotEmpty
+        ? item.representativeMessageId
+        : (item.sourceMessageIds.isEmpty ? null : item.sourceMessageIds.first);
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Text(
+          item.content,
+          softWrap: true,
+          textWidthBasis: TextWidthBasis.parent,
+          style: TextStyle(
+            fontFamily: uiFontFamily(context, 'Inter'),
+            fontFamilyFallback: const ['NotoSansKR'],
+            fontSize: context.rf(15).clamp(14, 16).toDouble(),
+            fontWeight: FontWeight.w500,
+            height: 1.5,
+            color: const Color(0xFF1D2939),
+          ),
+        ),
+        if (messageId != null && onOpenSource != null) ...[
+          const SizedBox(height: 4),
+          TextButton.icon(
+            onPressed: () async {
+              Navigator.of(context).pop();
+              await onOpenSource!(messageId);
+            },
+            style: TextButton.styleFrom(
+              foregroundColor: const Color(0xFF087BB5),
+              minimumSize: const Size(0, 34),
+              padding: EdgeInsets.zero,
+              tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+              visualDensity: VisualDensity.compact,
+            ),
+            icon: const Icon(Icons.forum_outlined, size: 16),
+            label: Text(
+              isChineseUi(context)
+                  ? '查看原消息'
+                  : Localizations.localeOf(context).languageCode == 'ko'
+                      ? '원문 보기'
+                      : 'View message',
+              style: TextStyle(
+                fontFamily: uiFontFamily(context, 'Inter'),
+                fontFamilyFallback: const ['NotoSansKR'],
+                fontSize: 12.5,
+                fontWeight: FontWeight.w700,
+              ),
+            ),
+          ),
+        ],
+      ],
     );
   }
 

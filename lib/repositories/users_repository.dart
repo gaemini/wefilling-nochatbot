@@ -531,7 +531,12 @@ class UsersRepository {
     if (trimmedQuery.isEmpty || currentUid == null) return [];
 
     try {
-      await FirebaseAppCheckService.instance.ensureReady();
+      final appCheck = FirebaseAppCheckService.instance;
+      if (!appCheck.isReady) {
+        unawaited(appCheck.ensureReady().catchError((Object _) {}));
+        return _searchUsersLegacy(trimmedQuery, limit: limit);
+      }
+      await appCheck.ensureReady();
       final response = await _functions.httpsCallable('searchSocialUsers').call(
         <String, dynamic>{
           'query': trimmedQuery,
@@ -571,6 +576,13 @@ class UsersRepository {
           })
           .take(limit.clamp(1, 100))
           .toList(growable: false);
+    } on AppCheckUnavailableException catch (error) {
+      // App Check can be temporarily unavailable before the callable request
+      // is sent (for example immediately after install or network recovery).
+      // Keep the existing authenticated Firestore search usable instead of
+      // replacing the whole search screen with an error state.
+      Logger.error('App Check 준비 전 사용자 검색 호환 경로 사용: $error');
+      return _searchUsersLegacy(trimmedQuery, limit: limit);
     } on FirebaseFunctionsException catch (error) {
       // 릴리스에서는 함수 미배포나 잘못된 Firebase 프로젝트를
       // 과거의 100명 스캔으로 숨기지 않는다. 부분 가입자만 보이는 결과보다

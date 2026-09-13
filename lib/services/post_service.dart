@@ -2172,7 +2172,12 @@ class PostService {
     if (normalizedQuery.isEmpty || _auth.currentUser == null) return const [];
 
     try {
-      await FirebaseAppCheckService.instance.ensureReady();
+      final appCheck = FirebaseAppCheckService.instance;
+      if (!appCheck.isReady) {
+        unawaited(appCheck.ensureReady().catchError((Object _) {}));
+        return _searchPostsLegacy(normalizedQuery, category: category);
+      }
+      await appCheck.ensureReady();
       final response = await _functions
           .httpsCallable('searchPostsSecure')
           .call<Map<String, dynamic>>(<String, dynamic>{
@@ -2211,6 +2216,10 @@ class PostService {
       final filtered = await ContentFilterService.filterPosts(parsed);
       return ContentHideService.filterPostsSync(filtered);
     } catch (error) {
+      if (error is AppCheckUnavailableException) {
+        Logger.error('App Check 준비 전 포스트 검색 호환 경로 사용: $error');
+        return _searchPostsLegacy(normalizedQuery, category: category);
+      }
       if (_canUseLegacySearchFallback(error)) {
         Logger.error('서버 포스트 검색을 사용할 수 없어 레거시 검색으로 전환: $error');
         return _searchPostsLegacy(normalizedQuery, category: category);

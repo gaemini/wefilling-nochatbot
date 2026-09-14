@@ -6,7 +6,8 @@ import {COL} from './firestore_paths';
 import {runtimeInfo, runtimeLogsEnabled} from './runtime_logging';
 import {buildUserSearchTokens} from './user_search_index';
 
-export const NICKNAME_POLICY_VERSION = 2;
+export const NICKNAME_POLICY_VERSION = 3;
+export const NICKNAME_POLICY_STATE_PATH = 'nicknamePolicyState/current';
 const NICKNAME_PATTERN = /^[a-zA-Z0-9가-힣_]+$/;
 const LEGACY_NICKNAME_PATTERN = /^[a-zA-Z0-9가-힣_.]+$/;
 const NICKNAME_IDENTITY_PATTERN = /[a-zA-Z가-힣]/;
@@ -40,11 +41,9 @@ export type NicknameIdentity = {
 };
 
 /**
- * Display value cleanup and uniqueness normalization intentionally live on the
- * server. Clients may mirror validation for UX, but this function is the only
- * authority used by availability, sign-up, profile edits, and migration.
+ * Preserve v2 read-only SnackChat lookup semantics. Never use for a new claim.
  */
-export function normalizeNickname(raw: unknown): NicknameIdentity {
+export function normalizeNicknameLookup(raw: unknown): NicknameIdentity {
   const nickname = removeControlAndZeroWidth(
     String(raw ?? '').normalize('NFKC'),
   ).trim().replace(/\s+/g, '_');
@@ -67,6 +66,43 @@ export function normalizeNickname(raw: unknown): NicknameIdentity {
     nickname,
     nicknameKey,
   };
+}
+
+/** Canonical identity for ALL stored names, including grandfathered names. */
+export function storedNicknameIdentity(raw: unknown): NicknameIdentity {
+  const nickname = String(raw ?? '').trim().normalize('NFC');
+  return {nickname, nicknameKey: nickname.toLowerCase()};
+}
+
+/** Server authority for NEW / CHANGED identities; mirrored by the client. */
+export function normalizeNickname(raw: unknown): NicknameIdentity {
+  const identity = storedNicknameIdentity(raw);
+  if (typeof raw !== 'string' || identity.nickname.length < 2 ||
+      identity.nickname.length > 20 || !/^[A-Za-z가-힣]+$/.test(identity.nickname) ||
+      RESERVED_NICKNAME_KEYS.has(identity.nicknameKey)) {
+    throw new functions.https.HttpsError('invalid-argument',
+      '닉네임은 2~20자의 한글과 영문만 사용할 수 있습니다.');
+  }
+  return identity;
+}
+
+// Preserve existing claim IDs. Hash only legacy keys that are not safe doc IDs.
+export function nicknameClaimId(key: string): string {
+  return key && !key.includes('/') && key !== '.' && key !== '..' &&
+    !/^__.*__$/.test(key) && Buffer.byteLength(key) <= 1500 ? key :
+    `__legacy_${crypto.createHash('sha256').update(key).digest('hex')}`;
+}
+
+export async function requireNicknameIndexReady(
+  transaction?: admin.firestore.Transaction,
+): Promise<void> {
+  const ref = admin.firestore().doc(NICKNAME_POLICY_STATE_PATH);
+  const snap = transaction ? await transaction.get(ref) : await ref.get();
+  if (snap.get('version') !== NICKNAME_POLICY_VERSION ||
+      snap.get('status') !== 'ready') {
+    throw new functions.https.HttpsError('unavailable',
+      '닉네임 확인을 잠시 사용할 수 없습니다. 잠시 후 다시 시도해 주세요.');
+  }
 }
 
 /**
@@ -113,39 +149,41 @@ export async function prepareNicknameReservation(
   uid: string,
   rawNickname: unknown,
   existingUserData: Record<string, unknown> = {},
+  allowRename = false,
 ): Promise<PreparedNicknameReservation> {
   const db = admin.firestore();
   const identity = normalizeNickname(rawNickname);
+  await requireNicknameIndexReady(transaction);
   const storedKey = String(existingUserData.nicknameKey ?? '').trim();
   const storedNickname = String(existingUserData.nickname ?? '').trim();
-  let currentKey = storedKey;
-  if (!currentKey && storedNickname) {
-    try {
-      currentKey = normalizeNickname(storedNickname).nicknameKey;
-    } catch (_) {
-      try {
-        currentKey = normalizeLegacyStoredNickname(storedNickname).nicknameKey;
-      } catch (_) {
-        // An invalid legacy nickname cannot have a reliable normalized claim.
-        // It must not prevent the user from moving to a valid new nickname.
-        currentKey = '';
-      }
-    }
+  const status = String(existingUserData.registrationStatus ?? '').trim();
+  if (existingUserData.deleting === true || existingUserData.deleted === true ||
+      existingUserData.isDeleted === true || existingUserData.deletedAt != null ||
+      ['deleted', 'deleting'].includes(status)) {
+    throw new functions.https.HttpsError('failed-precondition', '이용할 수 없는 계정입니다.');
   }
+  const completed = status === 'complete' ||
+    (status === '' && existingUserData.emailVerified === true);
+  if (!allowRename && completed && storedNickname && storedNickname !== identity.nickname) {
+    throw new functions.https.HttpsError('failed-precondition',
+      '가입이 이미 완료되었습니다. 닉네임은 프로필 수정에서 변경해 주세요.');
+  }
+  const currentKey = storedNicknameIdentity(storedNickname).nicknameKey;
   const nextRef = db.collection(COL.nicknameClaims).doc(identity.nicknameKey);
   const nextSnap = await transaction.get(nextRef);
 
-  let currentRef: admin.firestore.DocumentReference | null = null;
-  let currentSnap: admin.firestore.DocumentSnapshot | null = null;
-  if (currentKey && currentKey !== identity.nicknameKey) {
-    currentRef = db.collection(COL.nicknameClaims).doc(currentKey);
-    currentSnap = await transaction.get(currentRef);
+  const previousClaims: admin.firestore.DocumentSnapshot[] = [];
+  for (const key of new Set([currentKey, storedKey])) {
+    if (key && key !== identity.nicknameKey) {
+      previousClaims.push(await transaction.get(
+        db.collection(COL.nicknameClaims).doc(nicknameClaimId(key))));
+    }
   }
 
   const nextOwner = nextSnap.exists
     ? String(nextSnap.get('ownerUid') ?? '')
     : '';
-  if (nextSnap.exists && nextOwner !== uid) {
+  if (nextSnap.exists && (nextOwner !== uid || nextSnap.get('status') === 'conflict')) {
     functions.logger.warn('nickname save', {
       uid,
       oldNicknameKeyHash: nicknameKeyFingerprint(currentKey),
@@ -169,6 +207,7 @@ export async function prepareNicknameReservation(
         ownerUid: uid,
         nicknameKey: identity.nicknameKey,
         nickname: identity.nickname,
+        status: 'owned',
         createdAt: nextSnap.exists
           ? nextSnap.get('createdAt') ?? admin.firestore.FieldValue.serverTimestamp()
           : admin.firestore.FieldValue.serverTimestamp(),
@@ -177,9 +216,9 @@ export async function prepareNicknameReservation(
 
       // The new reservation is secured before the old one is released. Only
       // delete an old claim still owned by this UID.
-      if (currentRef && currentSnap?.exists &&
-          String(currentSnap.get('ownerUid') ?? '') === uid) {
-        transaction.delete(currentRef);
+      for (const previous of previousClaims) {
+        if (previous.exists && previous.get('ownerUid') === uid &&
+            previous.get('status') !== 'conflict') transaction.delete(previous.ref);
       }
     },
   };
@@ -191,10 +230,11 @@ export async function releaseNicknameClaimIfOwned(
 ): Promise<boolean> {
   if (!nicknameKey) return false;
   const db = admin.firestore();
-  const ref = db.collection(COL.nicknameClaims).doc(nicknameKey);
+  const ref = db.collection(COL.nicknameClaims).doc(nicknameClaimId(nicknameKey));
   return db.runTransaction(async (transaction) => {
     const snap = await transaction.get(ref);
-    if (!snap.exists || String(snap.get('ownerUid') ?? '') !== uid) {
+    if (!snap.exists || String(snap.get('ownerUid') ?? '') !== uid ||
+        snap.get('status') === 'conflict') {
       return false;
     }
     transaction.delete(ref);
@@ -207,18 +247,23 @@ export async function releaseNicknameClaimIfOwned(
  * In that recovery path there is no nicknameKey left to address directly, so
  * remove only claims whose indexed ownerUid still matches the deleted UID.
  */
-async function releaseAllNicknameClaimsOwnedByUid(uid: string): Promise<number> {
+export async function releaseAllNicknameClaimsOwnedByUid(uid: string): Promise<number> {
   const db = admin.firestore();
   const ownedClaims = await db.collection(COL.nicknameClaims)
     .where('ownerUid', '==', uid)
     .get();
   let deleted = 0;
-  for (let offset = 0; offset < ownedClaims.docs.length; offset += 400) {
-    const batch = db.batch();
-    const page = ownedClaims.docs.slice(offset, offset + 400);
-    page.forEach((claim) => batch.delete(claim.ref));
-    await batch.commit();
-    deleted += page.length;
+  for (const claim of ownedClaims.docs) {
+    const removed = await db.runTransaction(async (transaction) => {
+      // Use the resolved reference from the query. Legacy claim IDs may already
+      // be hashes and must not be normalized/hashed a second time.
+      const current = await transaction.get(claim.ref);
+      if (!current.exists || current.get('ownerUid') !== uid ||
+          current.get('status') === 'conflict') return false;
+      transaction.delete(claim.ref);
+      return true;
+    });
+    if (removed) deleted++;
   }
   return deleted;
 }
@@ -237,14 +282,15 @@ export const checkNicknameAvailability = functions
 
     try {
       const identity = normalizeNickname(data?.nickname);
+      await requireNicknameIndexReady();
       const snap = await admin.firestore()
         .collection(COL.nicknameClaims)
         .doc(identity.nicknameKey)
         .get();
       const claimReadMs = Date.now() - startedAt;
       const ownerUid = snap.exists ? String(snap.get('ownerUid') ?? '') : '';
-      const available = !snap.exists ||
-        (Boolean(context.auth?.uid) && ownerUid === context.auth?.uid);
+      const available = !snap.exists || (snap.get('status') !== 'conflict' &&
+        Boolean(context.auth?.uid) && ownerUid === context.auth?.uid);
       runtimeLogsEnabled && runtimeInfo('nickname check completed', {
         authenticated: Boolean(context.auth?.uid),
         appCheckPresent: Boolean(context.app),
@@ -280,7 +326,6 @@ export const updateMyNicknameSecure = functions
         '로그인이 필요합니다.',
       );
     }
-    const requested = normalizeNickname(data?.nickname);
     const db = admin.firestore();
     const userRef = db.collection(COL.users).doc(uid);
 
@@ -295,6 +340,7 @@ export const updateMyNicknameSecure = functions
       const existing = userSnap.data() ?? {};
       const status = String(existing.registrationStatus ?? '').trim();
       if (existing.isDeleted === true || existing.deleted === true ||
+          existing.deleting === true || existing.deletedAt != null ||
           status === 'deleted') {
         throw new functions.https.HttpsError(
           'failed-precondition',
@@ -311,6 +357,18 @@ export const updateMyNicknameSecure = functions
       }
 
       const currentNickname = String(existing.nickname ?? '').trim();
+      // Idempotent retry / unchanged legacy name: do not validate or claim it.
+      if (typeof data?.nickname === 'string' && data.nickname.trim() === currentNickname) {
+        const key = String(existing.nicknameKey ?? '') ||
+          storedNicknameIdentity(currentNickname).nicknameKey;
+        return {
+          response: {success: true, nickname: existing.nickname, nicknameKey: key},
+          oldNicknameKeyHash: nicknameKeyFingerprint(key),
+          newNicknameKeyHash: nicknameKeyFingerprint(key),
+          claimExists: false, claimOwnedByCurrentUser: false,
+        };
+      }
+      const requested = normalizeNickname(data?.nickname);
       let currentNicknameKey = String(existing.nicknameKey ?? '').trim();
       if (!currentNicknameKey && currentNickname) {
         try {
@@ -345,6 +403,7 @@ export const updateMyNicknameSecure = functions
         uid,
         requested.nickname,
         existing,
+        true,
       );
       reservation.apply();
 
@@ -390,18 +449,11 @@ export const onDeletedAuthUserNicknameCleanup = functions.auth.user().onDelete(
     const userRef = admin.firestore().collection(COL.users).doc(user.uid);
     const userSnap = await userRef.get();
     const nicknameKey = String(userSnap.data()?.nicknameKey ?? '').trim();
-    if (nicknameKey) {
-      await releaseNicknameClaimIfOwned(user.uid, nicknameKey);
-    }
-    const releasedClaimCount = await releaseAllNicknameClaimsOwnedByUid(
-      user.uid,
-    );
-    runtimeLogsEnabled && runtimeInfo('deleted user nickname cleanup', {
-      releasedClaimCount,
-    });
     // Covers console/Admin SDK deletions and the rare callable failure between
     // Auth deletion and its final cleanup. Anonymous content remains intact;
     // only the real-person directory projection is quarantined.
+    // Quarantine first: a concurrent migration must not recreate a claim after
+    // cleanup has scanned this UID (including console/Admin Auth deletions).
     await userRef.set({
       uid: user.uid,
       nickname: 'DELETED_ACCOUNT',
@@ -420,5 +472,12 @@ export const onDeletedAuthUserNicknameCleanup = functions.auth.user().onDelete(
       deletedAt: admin.firestore.FieldValue.serverTimestamp(),
       updatedAt: admin.firestore.FieldValue.serverTimestamp(),
     }, {merge: true});
+    if (nicknameKey) {
+      await releaseNicknameClaimIfOwned(user.uid, nicknameKey);
+    }
+    const releasedClaimCount = await releaseAllNicknameClaimsOwnedByUid(user.uid);
+    runtimeLogsEnabled && runtimeInfo('deleted user nickname cleanup', {
+      releasedClaimCount,
+    });
   },
 );

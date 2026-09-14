@@ -70,21 +70,27 @@ service cloud.firestore {
     function activeUserAccount(userId) {
       return userId is string
         && exists(/databases/$(database)/documents/users/$(userId))
-        && get(/databases/$(database)/documents/users/$(userId)).data.get('isDeleted', false) != true
-        && get(/databases/$(database)/documents/users/$(userId)).data.get('deleted', false) != true
-        && get(/databases/$(database)/documents/users/$(userId)).data.get('disabled', false) != true
-        && get(/databases/$(database)/documents/users/$(userId)).data.get('isSuspended', false) != true
-        && get(/databases/$(database)/documents/users/$(userId)).data.get('deletedAt', null) == null
-        && get(/databases/$(database)/documents/users/$(userId)).data.get('status', '') != 'deleted'
-        && get(/databases/$(database)/documents/users/$(userId)).data.get('status', '') != 'suspended'
-        && get(/databases/$(database)/documents/users/$(userId)).data.get('accountStatus', '') != 'deleted'
-        && get(/databases/$(database)/documents/users/$(userId)).data.get('accountStatus', '') != 'suspended'
+        && activeUserAccountData(get(/databases/$(database)/documents/users/$(userId)).data);
+    }
+
+    // Same predicates, one document expression: chat atomic batches must stay
+    // below the Rules expression limit even on the second/concurrent send.
+    function activeUserAccountData(data) {
+      return data.get('isDeleted', false) != true
+        && data.get('deleted', false) != true
+        && data.get('disabled', false) != true
+        && data.get('isSuspended', false) != true
+        && data.get('deletedAt', null) == null
+        && data.get('status', '') != 'deleted'
+        && data.get('status', '') != 'suspended'
+        && data.get('accountStatus', '') != 'deleted'
+        && data.get('accountStatus', '') != 'suspended'
         && (
-          get(/databases/$(database)/documents/users/$(userId)).data.get('registrationStatus', '') == 'complete'
+          data.get('registrationStatus', '') == 'complete'
           || (
-            get(/databases/$(database)/documents/users/$(userId)).data.get('registrationStatus', '') == ''
-            && get(/databases/$(database)/documents/users/$(userId)).data.get('emailVerified', false) == true
-            && get(/databases/$(database)/documents/users/$(userId)).data.get('nickname', '') != ''
+            data.get('registrationStatus', '') == ''
+            && data.get('emailVerified', false) == true
+            && data.get('nickname', '') != ''
           )
         );
     }
@@ -254,6 +260,12 @@ service cloud.firestore {
     // Nickname uniqueness is enforced by Cloud Functions transactions only.
     // It is not a searchable nickname directory.
     match /nicknameClaims/{nicknameKey} {
+      allow read, write: if false;
+      match /{document=**} {
+        allow read, write: if false;
+      }
+    }
+    match /nicknamePolicyState/{document} {
       allow read, write: if false;
     }
     // ===== 이메일 인증 코드 컬렉션 =====
@@ -1410,9 +1422,9 @@ service cloud.firestore {
           // recipients, reply/poll/image data, and the same room sequence/id/
           // sender/time linkage. Repeating those checks here pushes the second
           // message in a room past Firestore's 1,000-expression limit.
-          && messageAfter.get('senderId', '') == request.auth.uid
-          && messageAfter.get('sequence', 0)
-            == request.resource.data.lastMessageSequence
+          // createdAt == request.time below requires a new message in this
+          // atomic request. Its create rule already checks senderId and links
+          // sequence to roomAfter; do not evaluate those predicates twice.
           && messageAfter.get('createdAt', null)
             == request.resource.data.lastMessageTime
           && request.resource.data.lastMessageSenderId == request.auth.uid
@@ -1446,9 +1458,9 @@ service cloud.firestore {
       // 아니라 현재 참여자 여부, 활성 계정, 양방향 차단 상태를 검증하는
       // inviteSnackChatParticipants callable에서만 처리한다.
       allow update: if isParticipant() && (
-        onlyOwnUnreadReset()
+        validClientMessageMetadataUpdate()
+        || onlyOwnUnreadReset()
         || onlyOwnFavoriteToggle()
-        || validClientMessageMetadataUpdate()
         || isSelfLeaveUpdate()
       );
 
@@ -1652,7 +1664,8 @@ service cloud.firestore {
         }
 
         function validTypeSpecificPayload(data) {
-          let type = clientMessageType(data);
+          // Called only after validClientMessageCreate requires a valid type.
+          let type = data.type;
           return (
               type == 'text'
               && !data.keys().hasAny(['poll', 'imageUrl', 'imagePath'])
@@ -1689,11 +1702,10 @@ service cloud.firestore {
             // User messages resolve the live profile at display/push time;
             // server-authored system messages may still carry senderName.
             && !data.keys().hasAny(['senderName'])
-            && data.keys().hasAll(['type'])
             && data.type in ['text', 'image', 'poll']
             && data.text is string
             && data.text.size() <= 500
-            && (clientMessageType(data) != 'text' || data.text.size() > 0)
+            && (data.type != 'text' || data.text.size() > 0)
             && data.createdAt is timestamp
             && data.createdAt == request.time
             && data.sequence is int
@@ -1962,7 +1974,14 @@ service cloud.firestore {
             // 일반 메시지 관련 변경 + 보관 + 나가기 기록
             request.resource.data.participants == resource.data.participants &&
             request.resource.data.diff(resource.data).affectedKeys()
-              .hasOnly(['lastMessage', 'lastMessageTime', 'lastMessageSenderId', 'updatedAt', 'archivedBy', 'userLeftAt'])
+              .hasOnly(['lastMessage', 'lastMessageTime', 'lastMessageSenderId', 'lastMessageId', 'updatedAt', 'archivedBy', 'userLeftAt']) &&
+            // New clients atomically reference the just-created message. Legacy
+            // clients (no lastMessageId change) retain their existing write path.
+            (!request.resource.data.diff(resource.data).affectedKeys().hasAny(['lastMessageId']) ||
+              (request.resource.data.lastMessageTime == request.time &&
+               request.resource.data.lastMessageSenderId == request.auth.uid &&
+               getAfter(/databases/$(database)/documents/conversations/$(conversationId)/messages/$(request.resource.data.lastMessageId)).data.createdAt == request.time &&
+               getAfter(/databases/$(database)/documents/conversations/$(conversationId)/messages/$(request.resource.data.lastMessageId)).data.senderId == request.auth.uid))
           ) ||
           (
             // 레거시 '나가기': participants에서 본인만 제거 (N → N-1).
@@ -2000,6 +2019,12 @@ service cloud.firestore {
             && activeUserAccount(room.data.participants[0])
             && activeUserAccount(room.data.participants[1]);
         }
+
+        function roomBlockFree() {
+          let room = get(/databases/$(database)/documents/conversations/$(conversationId)).data;
+          return !exists(/databases/$(database)/documents/blocks/$(room.participants[0] + '_' + room.participants[1]))
+            && !exists(/databases/$(database)/documents/blocks/$(room.participants[1] + '_' + room.participants[0]));
+        }
         
         // conversationId에서 사용자 ID 추출 (일반: uid1_uid2, 익명: anon_uid1_uid2_postId)
         function isMyConversation() {
@@ -2023,6 +2048,7 @@ service cloud.firestore {
         allow create: if request.auth != null &&
           (isParticipant() || isMyConversation()) &&
           bothRoomParticipantsActive() &&
+          roomBlockFree() &&
           // 발신자는 본인
           request.auth.uid == request.resource.data.senderId &&
           // DM은 post_context 타입만 사용한다. Snack Chat의 투표/시스템

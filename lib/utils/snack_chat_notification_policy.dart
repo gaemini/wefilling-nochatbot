@@ -102,7 +102,10 @@ class SnackChatNotificationBurstGate {
   }
 
   void clearRoom(String roomKey) {
-    _latestSentAtByRoom.remove(roomKey);
+    // Clearing a display is not a rewind: delayed older pushes must not
+    // overwrite the last known preview after the room was opened.
+    // This is NOT an authoritative read watermark.
+
     _lastAlertAtByRoom.remove(roomKey);
   }
 

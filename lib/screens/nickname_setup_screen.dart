@@ -3,6 +3,7 @@ import 'dart:io';
 
 import 'package:cloud_functions/cloud_functions.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:image_picker/image_picker.dart';
 import 'package:provider/provider.dart';
 import 'package:shared_preferences/shared_preferences.dart';
@@ -43,6 +44,23 @@ class _NicknameSetupScreenState extends State<NicknameSetupScreen>
   var _isLoading = false;
   Timer? _nicknameDebounce;
   int _nicknameCheckGeneration = 0;
+  String? _lastNicknameText;
+  TextRange? _lastNicknameComposition;
+
+  bool get _isComposingNickname =>
+      _nicknameController.value.composing.isValid &&
+      !_nicknameController.value.composing.isCollapsed;
+
+  void _onNicknameEditingChanged() {
+    final value = _nicknameController.value;
+    if (_lastNicknameText == value.text &&
+        _lastNicknameComposition == value.composing) {
+      return;
+    }
+    _lastNicknameText = value.text;
+    _lastNicknameComposition = value.composing;
+    _onNicknameChanged(value.text);
+  }
   bool _isCheckingNickname = false;
   bool? _isNicknameAvailable;
   String? _nicknameCheckedKey;
@@ -57,12 +75,14 @@ class _NicknameSetupScreenState extends State<NicknameSetupScreen>
   @override
   void initState() {
     super.initState();
+    _nicknameController.addListener(_onNicknameEditingChanged);
     WidgetsBinding.instance.addObserver(this);
     unawaited(_restoreDraft());
   }
 
   @override
   void dispose() {
+    _nicknameController.removeListener(_onNicknameEditingChanged);
     _nicknameDebounce?.cancel();
     _draftDebounce?.cancel();
     WidgetsBinding.instance.removeObserver(this);
@@ -209,6 +229,15 @@ class _NicknameSetupScreenState extends State<NicknameSetupScreen>
     _scheduleDraftSave();
     _nicknameDebounce?.cancel();
     final generation = ++_nicknameCheckGeneration;
+    if (_isComposingNickname) {
+      setState(() {
+        _isNicknameAvailable = null;
+        _nicknameCheckedKey = null;
+        _nicknameAvailabilityError = null;
+        _isCheckingNickname = false;
+      });
+      return;
+    }
     final identity = NicknamePolicy.identityOrNull(raw);
     final localError = raw.isEmpty ? null : _nicknameValidationMessage(raw);
     setState(() {
@@ -224,6 +253,7 @@ class _NicknameSetupScreenState extends State<NicknameSetupScreen>
   }
 
   String? _nicknameValidationMessage(String? raw) {
+    if (_isComposingNickname) return null;
     final l10n = AppLocalizations.of(context)!;
     return switch (NicknamePolicy.validate(raw)) {
       null => null,
@@ -317,7 +347,7 @@ class _NicknameSetupScreenState extends State<NicknameSetupScreen>
   }
 
   Future<void> _submit() async {
-    if (_isLoading) return;
+    if (_isLoading || _isComposingNickname) return;
     final nicknameValue = _nicknameController.text;
     final nicknameIdentity = NicknamePolicy.identityOrNull(nicknameValue);
     if (_nicknameValidationMessage(nicknameValue) != null) {
@@ -350,6 +380,7 @@ class _NicknameSetupScreenState extends State<NicknameSetupScreen>
       );
       if (!available || !mounted) return;
     }
+    if (_isLoading) return;
     final nickname = nicknameIdentity.nickname;
     final languageCode =
         Localizations.localeOf(context).languageCode == 'ko' ? 'ko' : 'en';
@@ -765,8 +796,8 @@ class _NicknameSetupScreenState extends State<NicknameSetupScreen>
             SizedBox(height: context.rs(4).clamp(2, 6).toDouble()),
             TextFormField(
               controller: _nicknameController,
-              onChanged: _onNicknameChanged,
               maxLength: 20,
+              maxLengthEnforcement: MaxLengthEnforcement.none,
               textInputAction: TextInputAction.done,
               onFieldSubmitted: (_) => FocusScope.of(context).unfocus(),
               decoration: socialProfileInputDecoration(context: context,

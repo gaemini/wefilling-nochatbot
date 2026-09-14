@@ -125,7 +125,7 @@ class SnackChatLocalCacheService {
     }
     final messages = byId.values.toList(growable: true)
       ..sort(_compareMessagesDescending);
-    final bounded = messages.take(_maxMessagesPerRoom).toList(growable: false);
+    final bounded = _takeMessages(messages, _maxMessagesPerRoom);
     _storeMemory(baseKey, bounded, complete: true);
     return _takeMessages(bounded, limit);
   }
@@ -158,8 +158,7 @@ class SnackChatLocalCacheService {
         }
         final ordered = byId.values.toList(growable: true)
           ..sort(_compareMessagesDescending);
-        final bounded =
-            ordered.take(_maxMessagesPerRoom).toList(growable: false);
+        final bounded = _takeMessages(ordered, _maxMessagesPerRoom);
         _storeMemory(baseKey, bounded, complete: true);
         final limited = bounded.map(_encodeMessage);
         try {
@@ -413,20 +412,19 @@ class SnackChatLocalCacheService {
     }
   }
 
-  int _compareMessagesDescending(SnackChatMessage a, SnackChatMessage b) {
-    if (a.sequence != null && b.sequence != null && a.sequence != b.sequence) {
-      return b.sequence!.compareTo(a.sequence!);
-    }
-    final byTime = b.createdAt.compareTo(a.createdAt);
-    return byTime != 0 ? byTime : b.id.compareTo(a.id);
-  }
+  int _compareMessagesDescending(SnackChatMessage a, SnackChatMessage b) =>
+      SnackChatMessage.compareDescending(a, b);
 
   List<SnackChatMessage> _takeMessages(
     List<SnackChatMessage> messages,
     int limit,
   ) {
     if (messages.length <= limit) return List<SnackChatMessage>.of(messages);
-    return messages.take(limit).toList(growable: false);
+    // History caps must never discard an unsent packet during a long outage.
+    return [
+      ...messages.take(limit),
+      ...messages.skip(limit).where((m) => m.isPending || m.hasFailed),
+    ];
   }
 
   _MemoryMessageSnapshot? _touchMemory(String key) {
@@ -465,7 +463,7 @@ class SnackChatLocalCacheService {
       ..sort(_compareMessagesDescending);
     _storeMemory(
       key,
-      ordered.take(_maxMessagesPerRoom).toList(growable: false),
+      _takeMessages(ordered, _maxMessagesPerRoom),
       complete: existing?.complete ?? false,
     );
   }

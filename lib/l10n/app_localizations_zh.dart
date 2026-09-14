@@ -2472,7 +2472,7 @@ class AppLocalizationsZh extends AppLocalizations {
   String get nicknameQuestion => '怎么称呼你？';
 
   @override
-  String get nicknamePolicyHelp => '支持韩文、英文字母、数字和下划线。空格将转换为下划线。';
+  String get nicknamePolicyHelp => '请输入2–20个韩文或英文字母，不支持数字、空格或符号。';
 
   @override
   String get nicknameChecking => '正在检查…';
@@ -2484,7 +2484,7 @@ class AppLocalizationsZh extends AppLocalizations {
   String get nicknameTaken => '此昵称已被使用。';
 
   @override
-  String get nicknameInvalidCharacters => '仅支持韩文、英文字母、数字和下划线。';
+  String get nicknameInvalidCharacters => '仅支持韩文和英文字母，不支持数字、空格或符号。';
 
   @override
   String get nicknameLetterRequired => '至少包含一个韩文或英文字母。';

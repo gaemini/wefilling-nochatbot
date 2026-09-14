@@ -18,6 +18,7 @@ export type SearchableUserDecision = {
   nickname: string;
   nicknameKey: string;
   needsNicknameKeyRepair: boolean;
+  needsSearchableRepair: boolean;
 };
 
 const SENTINEL_USER_IDS = new Set([
@@ -38,6 +39,7 @@ function rejected(
     nickname,
     nicknameKey,
     needsNicknameKeyRepair: false,
+    needsSearchableRepair: false,
   };
 }
 
@@ -71,7 +73,11 @@ export function evaluateSearchableUser(
       ['deleted', 'deleting'].includes(registrationStatus)) {
     return rejected('deleted_or_disabled');
   }
-  if (data.searchable === false || data.isSearchable === false ||
+  // `searchable` is a server-maintained projection, not a privacy preference.
+  // Old completed profiles can be left false after a pending-signup shell.
+  // Explicit privacy fields remain authoritative; lifecycle and malformed
+  // profiles are rejected independently above/below this check.
+  if (data.isSearchable === false ||
       data.allowUserSearch === false || data.isProfilePrivate === true) {
     return rejected('private');
   }
@@ -109,6 +115,7 @@ export function evaluateSearchableUser(
     nickname: normalized.nickname,
     nicknameKey: normalized.nicknameKey,
     needsNicknameKeyRepair: !storedKey,
+    needsSearchableRepair: data.searchable !== true,
   };
 }
 

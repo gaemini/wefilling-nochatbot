@@ -2515,7 +2515,8 @@ class AppLocalizationsKo extends AppLocalizations {
   String get nicknameQuestion => '닉네임이 무엇인가요?';
 
   @override
-  String get nicknamePolicyHelp => '한글, 영문, 숫자, _만 사용할 수 있어요. 공백은 _로 바뀝니다.';
+  String get nicknamePolicyHelp =>
+      '한글과 영문만 2~20자로 입력해 주세요. 숫자, 공백, 특수문자는 사용할 수 없어요.';
 
   @override
   String get nicknameChecking => '사용 가능 여부를 확인하고 있어요.';
@@ -2527,7 +2528,8 @@ class AppLocalizationsKo extends AppLocalizations {
   String get nicknameTaken => '이미 사용 중인 닉네임이에요.';
 
   @override
-  String get nicknameInvalidCharacters => '한글, 영문, 숫자, _만 입력해 주세요.';
+  String get nicknameInvalidCharacters =>
+      '한글과 영문만 입력해 주세요. 숫자, 공백, 특수문자는 사용할 수 없어요.';
 
   @override
   String get nicknameLetterRequired => '한글 또는 영문자를 하나 이상 포함해 주세요.';

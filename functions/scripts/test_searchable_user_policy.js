@@ -10,6 +10,7 @@ const valid = {
   nicknameSearchTokens: ['j'],
   emailVerified: true,
   registrationStatus: 'complete',
+  searchable: true,
 };
 const decision = (uid, patch) => evaluateSearchableUser(
   uid,
@@ -25,6 +26,7 @@ assert.strictEqual(decision('uid-valid', {}).searchable, true); // 1
 assert.strictEqual(decision('uid-valid', {registrationStatus: ''}).searchable, true); // 2
 assert.strictEqual(decision('uid-valid', {nicknameKey: ''}).searchable, true); // 3
 assert.strictEqual(decision('uid-valid', {nicknameKey: ''}).needsNicknameKeyRepair, true); // 4
+assert.strictEqual(decision('uid-valid', {}).needsSearchableRepair, false);
 rejects('uid-valid', null, 'missing_document'); // 5
 rejects('', {}, 'invalid_uid'); // 6
 rejects('deleted', {}, 'invalid_uid'); // 7
@@ -40,7 +42,10 @@ rejects('uid-valid', {registrationStatus: 'profile_pending'}, 'incomplete_regist
 rejects('uid-valid', {registrationStatus: 'auth_created'}, 'incomplete_registration'); // 17
 rejects('uid-valid', {registrationStatus: '', emailVerified: false}, 'incomplete_registration'); // 18
 rejects('uid-valid', {registrationStatus: '', signupState: 'profilePending'}, 'incomplete_registration'); // 19
-rejects('uid-valid', {searchable: false}, 'private'); // 20
+assert.strictEqual(decision('uid-valid', {searchable: false}).searchable, true); // 20
+assert.strictEqual(decision('uid-valid', {searchable: false}).needsSearchableRepair, true);
+rejects('uid-valid', {isSearchable: false}, 'private');
+rejects('uid-valid', {allowUserSearch: false}, 'private');
 rejects('uid-valid', {isProfilePrivate: true}, 'private'); // 21
 rejects('uid-valid', {nickname: ''}, 'missing_nickname'); // 22
 rejects('uid-valid', {nickname: '익명', nicknameKey: '익명'}, 'sentinel_nickname'); // 23

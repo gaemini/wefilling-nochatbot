@@ -11,6 +11,7 @@ import 'content_filter_service.dart';
 import 'snack_chat_local_cache_service.dart';
 import '../utils/local_calendar_day.dart';
 import '../utils/logger.dart';
+import '../utils/chat_timing.dart';
 import 'snack_chat_active_conversation.dart';
 import '../utils/snack_chat_list_policy.dart';
 
@@ -1907,8 +1908,8 @@ class SnackChatService {
       final firestoreWriteStopwatch = Stopwatch()..start();
       var transactionAttempt = 0;
       var committedSequence = 0;
-      if (Logger.isVerboseEnabled) {
-        Logger.info(
+      if (ChatTiming.enabled) {
+        ChatTiming.record(
           '[SnackChatTiming] stage=firestoreWriteStartedAt '
           'at=${DateTime.now().millisecondsSinceEpoch} roomId=$snackChatId '
           'messageId=$resolvedMessageId sequence=0 '
@@ -1925,8 +1926,8 @@ class SnackChatService {
       final committed = await _firestore.runTransaction<bool>(
         (transaction) async {
           transactionAttempt++;
-          if (Logger.isVerboseEnabled) {
-            Logger.info(
+          if (ChatTiming.enabled) {
+            ChatTiming.record(
               '[SnackChatTiming] stage=transactionStartedAt '
               'at=${DateTime.now().millisecondsSinceEpoch} '
               'roomId=$snackChatId messageId=$resolvedMessageId '
@@ -1934,12 +1935,20 @@ class SnackChatService {
               'durationMs=${firestoreWriteStopwatch.elapsedMilliseconds}',
             );
           }
-          final roomDoc = await transaction.get(roomRef);
+          if (_uid != uid) return false;
+          final documents = await Future.wait([
+            transaction.get(roomRef),
+            transaction.get(messageRef),
+          ]);
+          if (_uid != uid) return false;
+          final roomDoc = documents[0];
           if (!roomDoc.exists) return false;
-          final room = SnackChat.fromFirestore(roomDoc);
-          if (!room.participantIds.contains(uid)) return false;
+          final roomData = roomDoc.data()!;
+          final participants =
+              List<String>.from(roomData['participantIds'] ?? []);
+          if (!participants.contains(uid)) return false;
 
-          final existingMessage = await transaction.get(messageRef);
+          final existingMessage = documents[1];
           if (existingMessage.exists) {
             final existingSender =
                 (existingMessage.data()?['senderId'] ?? '').toString();
@@ -1948,9 +1957,10 @@ class SnackChatService {
             return existingSender == uid;
           }
 
-          final sequence = room.lastMessageSequence + 1;
+          final sequence =
+              ((roomData['lastMessageSequence'] as num?)?.toInt() ?? 0) + 1;
           committedSequence = sequence;
-          final recipients = room.participantIds
+          final recipients = participants
               .where((participantId) => participantId != uid)
               .toSet()
               .toList(growable: false);
@@ -1994,8 +2004,8 @@ class SnackChatService {
         maxAttempts: 8,
       ).timeout(const Duration(seconds: 25));
 
-      if (Logger.isVerboseEnabled) {
-        Logger.info(
+      if (ChatTiming.enabled) {
+        ChatTiming.record(
           '[SnackChatTiming] stage=transactionCommittedAt '
           'at=${DateTime.now().millisecondsSinceEpoch} roomId=$snackChatId '
           'messageId=$resolvedMessageId sequence=$committedSequence '

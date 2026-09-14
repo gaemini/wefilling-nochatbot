@@ -426,6 +426,21 @@ class SnackChatMember {
 }
 
 class SnackChatMessage {
+  /// Total order: local outbox, canonical sequence history, then pre-sequence
+  /// legacy history. Pairwise sequence-or-time fallbacks can form sort cycles.
+  static int compareDescending(SnackChatMessage a, SnackChatMessage b) {
+    int bucket(SnackChatMessage m) =>
+        m.sequence != null ? 1 : (m.isPending || m.hasFailed ? 2 : 0);
+    final group = bucket(b).compareTo(bucket(a));
+    if (group != 0) return group;
+    if (a.sequence != null && b.sequence != null) {
+      final sequence = b.sequence!.compareTo(a.sequence!);
+      if (sequence != 0) return sequence;
+    }
+    final time = b.createdAt.compareTo(a.createdAt);
+    return time != 0 ? time : b.id.compareTo(a.id);
+  }
+
   final String id;
   final String senderId;
   final String? senderName;

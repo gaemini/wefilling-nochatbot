@@ -1,4 +1,5 @@
 import * as admin from 'firebase-admin';
+import {decorateChatPush} from './chat_push_presentation';
 import * as crypto from 'crypto';
 import * as dns from 'dns';
 import * as functions from 'firebase-functions';
@@ -8,7 +9,7 @@ import * as https from 'https';
 import * as net from 'net';
 import {TextDecoder} from 'util';
 
-import {normalizeNickname} from './nickname_claims';
+import {normalizeNicknameLookup as normalizeNickname} from './nickname_claims';
 import {
   GeminiHttpError,
   GeminiStructuredResponseError,
@@ -7160,7 +7161,10 @@ async function applySnackChatUnreadOnce(args: {
   const frozenRecipients = uniqueStrings(args.message.recipientIds)
     .filter((userId) => userId !== senderId);
 
+  const transactionStartedAt = Date.now();
+  let attempts = 0;
   const pushRecipientIds = await db().runTransaction(async (transaction) => {
+    attempts += 1;
     const marker = await transaction.get(eventRef);
     if (marker.exists) {
       const delivered = uniqueStrings(marker.get('deliveryRecipientIds'));
@@ -7207,15 +7211,11 @@ async function applySnackChatUnreadOnce(args: {
         db().collection(BLOCKS).doc(userId + '_' + senderId),
       );
     }
-    const memberDocs = memberRefs.length > 0
-      ? await transaction.getAll(...memberRefs)
-      : [];
-    const userDocs = userRefs.length > 0
-      ? await transaction.getAll(...userRefs)
-      : [];
-    const blockDocs = blockRefs.length > 0
-      ? await transaction.getAll(...blockRefs)
-      : [];
+    const [memberDocs, userDocs, blockDocs] = await Promise.all([
+      memberRefs.length > 0 ? transaction.getAll(...memberRefs) : Promise.resolve([]),
+      userRefs.length > 0 ? transaction.getAll(...userRefs) : Promise.resolve([]),
+      blockRefs.length > 0 ? transaction.getAll(...blockRefs) : Promise.resolve([]),
+    ]);
 
     const deliveryRecipients: string[] = [];
     const unreadRecipients: string[] = [];
@@ -7288,6 +7288,11 @@ async function applySnackChatUnreadOnce(args: {
     });
     return unreadRecipients;
   });
+  runtimeLogsEnabled && runtimeInfo(
+    '[SnackChatTiming] stage=unreadTransaction roomId=' + args.roomRef.id +
+    ' messageId=' + args.messageId + ' attempts=' + attempts +
+    ' durationMs=' + (Date.now() - transactionStartedAt),
+  );
   return {eventRef, recipientIds: pushRecipientIds};
 }
 
@@ -7540,7 +7545,7 @@ async function sendSnackChatPush(args: {
 
       for (let offset = 0; offset < tokens.length; offset += 500) {
         const chunk = tokens.slice(offset, offset + 500);
-        const result = await admin.messaging().sendEachForMulticast({
+        const result = await admin.messaging().sendEachForMulticast(decorateChatPush({
           tokens: chunk,
           notification: {title: groupedTitle, body},
           data: {
@@ -7588,7 +7593,12 @@ async function sendSnackChatPush(args: {
               notificationCount: roomUnreadCount,
             },
           },
-        });
+        }, {
+          kind: 'snack', title: roomTitle, sender: args.senderName,
+          message: args.message, language, unreadCount: roomUnreadCount,
+          threadKey: notificationGroupKey, messageId: args.messageId,
+          sentAtMillis: timestampMillis(args.message.createdAt) || Date.now(),
+        }));
         result.responses.forEach((response, index) => {
           if (response.success) return;
           const code = response.error?.code ?? '';

@@ -56,6 +56,23 @@ class _ProfileEditScreenState extends State<ProfileEditScreen> {
   bool _isSubmitting = false;
   Timer? _nicknameDebounce;
   int _nicknameCheckGeneration = 0;
+  String? _lastNicknameText;
+  TextRange? _lastNicknameComposition;
+
+  bool get _isComposingNickname =>
+      _nicknameController.value.composing.isValid &&
+      !_nicknameController.value.composing.isCollapsed;
+
+  void _onNicknameEditingChanged() {
+    final value = _nicknameController.value;
+    if (_lastNicknameText == value.text &&
+        _lastNicknameComposition == value.composing) {
+      return;
+    }
+    _lastNicknameText = value.text;
+    _lastNicknameComposition = value.composing;
+    _onNicknameChanged(value.text);
+  }
   bool _isCheckingNickname = false;
   bool? _isNicknameAvailable;
   String? _nicknameCheckedKey;
@@ -154,6 +171,7 @@ class _ProfileEditScreenState extends State<ProfileEditScreen> {
   @override
   void initState() {
     super.initState();
+    _nicknameController.addListener(_onNicknameEditingChanged);
     // 초기 데이터 설정
     WidgetsBinding.instance.addPostFrameCallback((_) async {
       final authProvider = Provider.of<AuthProvider>(context, listen: false);
@@ -214,6 +232,7 @@ class _ProfileEditScreenState extends State<ProfileEditScreen> {
 
   @override
   void dispose() {
+    _nicknameController.removeListener(_onNicknameEditingChanged);
     _nicknameDebounce?.cancel();
     _nicknameController.dispose();
     _bioController.dispose();
@@ -227,6 +246,15 @@ class _ProfileEditScreenState extends State<ProfileEditScreen> {
   void _onNicknameChanged(String raw) {
     _nicknameDebounce?.cancel();
     final generation = ++_nicknameCheckGeneration;
+    if (_isComposingNickname) {
+      setState(() {
+        _isNicknameAvailable = null;
+        _nicknameCheckedKey = null;
+        _nicknameAvailabilityError = null;
+        _isCheckingNickname = false;
+      });
+      return;
+    }
     final current = (context.read<AuthProvider>().userData?['nickname'] ?? '')
         .toString()
         .trim();
@@ -247,6 +275,7 @@ class _ProfileEditScreenState extends State<ProfileEditScreen> {
   }
 
   String? _nicknameValidationMessage(String? raw) {
+    if (_isComposingNickname) return null;
     final current = (context.read<AuthProvider>().userData?['nickname'] ?? '')
         .toString()
         .trim();
@@ -446,6 +475,7 @@ class _ProfileEditScreenState extends State<ProfileEditScreen> {
 
   // 프로필 업데이트
   Future<void> _updateProfile() async {
+    if (_isSubmitting || _isComposingNickname) return;
     if (_formKey.currentState?.validate() ?? false) {
       final selectedNationality = _nationalityDropdownValue;
       if (selectedNationality == null) return;
@@ -1037,7 +1067,6 @@ class _ProfileEditScreenState extends State<ProfileEditScreen> {
                   const SizedBox(height: 8),
                   TextFormField(
                     controller: _nicknameController,
-                    onChanged: _onNicknameChanged,
                     enabled: !_nicknameLocked,
                     decoration: socialProfileInputDecoration(context: context,
                       hintText: '닉네임을 입력하세요',

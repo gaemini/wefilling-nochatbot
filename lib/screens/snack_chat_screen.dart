@@ -1,4 +1,7 @@
 import 'dart:async';
+
+import '../utils/chat_work_queue.dart';
+import '../services/chat_outbox_store.dart';
 import 'dart:io';
 
 import 'package:cached_network_image/cached_network_image.dart';
@@ -46,6 +49,7 @@ import '../ui/sheets/snack_chat_unread_summary_sheet.dart';
 import '../ui/sheets/translation_language_sheet.dart';
 import '../utils/responsive_helper.dart';
 import '../utils/logger.dart';
+import '../utils/chat_timing.dart';
 import '../utils/snack_chat_message_grouping.dart';
 import '../utils/snack_chat_translation_policy.dart';
 import '../utils/snack_chat_unread_summary_policy.dart';
@@ -191,6 +195,8 @@ class _SnackChatScreenState extends State<SnackChatScreen>
       SnackChatToolbarScrollTracker();
 
   bool _isUploadingImage = false;
+  static final _imageUploadQueue = ChatWorkQueue();
+  bool _followingLatest = false;
   bool _isCreatingPoll = false;
   bool _isAttachmentFlowOpen = false;
   bool _isLeavingRoom = false;
@@ -217,7 +223,13 @@ class _SnackChatScreenState extends State<SnackChatScreen>
   final Map<String, GlobalKey> _messageKeys = {};
   final GlobalKey _messageViewportKey =
       GlobalKey(debugLabel: 'snack-chat-message-viewport');
-  String? get _uid => FirebaseAuth.instance.currentUser?.uid;
+  final String? _screenOwnerUid = FirebaseAuth.instance.currentUser?.uid;
+  bool _accountInvalidated = false;
+  StreamSubscription<User?>? _accountSubscription;
+  String? get _uid => !_accountInvalidated &&
+          FirebaseAuth.instance.currentUser?.uid == _screenOwnerUid
+      ? _screenOwnerUid
+      : null;
   late Stream<SnackChat?> _roomStream;
   Future<void>? _membershipReady;
   AppLifecycleState _appLifecycleState = AppLifecycleState.detached;
@@ -235,7 +247,8 @@ class _SnackChatScreenState extends State<SnackChatScreen>
   final Set<String> _voteMutationsInFlight = <String>{};
   final Set<String> _retryingMessageIds = <String>{};
   final Set<String> _sendingTextMessageIds = <String>{};
-  final Map<String, Future<void>> _outboundQueues = <String, Future<void>>{};
+  static final Map<String, Future<void>> _outboundQueues =
+      <String, Future<void>>{};
   final Set<String> _outboundEntranceMessageIds = <String>{};
   final Map<String, Timer> _outboundEntranceExpiryTimers = <String, Timer>{};
   final Set<String> _removingFailedMessageIds = <String>{};
@@ -340,6 +353,17 @@ class _SnackChatScreenState extends State<SnackChatScreen>
   @override
   void initState() {
     super.initState();
+    _accountSubscription =
+        FirebaseAuth.instance.authStateChanges().listen((user) {
+      if (user?.uid == _screenOwnerUid) return;
+      _accountInvalidated = true;
+      _cacheHydrationGeneration++;
+      _readSyncGeneration++;
+      _draftSaveDebounce?.cancel();
+      _messageCacheDebounce?.cancel();
+      _outboxRetryTimer?.cancel();
+      unawaited(_msgSub?.cancel());
+    });
     unawaited(NotificationService().markRelatedNotificationsAsRead(
       types: const <String>{'snack_chat_invite'},
       targets: <String, String>{'snackChatId': widget.snackChatId},
@@ -999,9 +1023,9 @@ class _SnackChatScreenState extends State<SnackChatScreen>
     final uiLanguageCode = Localizations.localeOf(context).languageCode;
     final translationStopwatch = Stopwatch()..start();
     final translationStartedAt = DateTime.now().millisecondsSinceEpoch;
-    if (Logger.isVerboseEnabled) {
+    if (ChatTiming.enabled) {
       for (final message in boundedCandidates) {
-        Logger.info(
+        ChatTiming.record(
           '[SnackChatTiming] stage=translationStartedAt '
           'at=$translationStartedAt roomId=$roomId messageId=${message.id} '
           'sequence=${message.sequence ?? 0}',
@@ -1066,10 +1090,10 @@ class _SnackChatScreenState extends State<SnackChatScreen>
     }).toList(growable: false);
 
     await Future.wait<_SnackTranslationOutcome>(outcomeFutures);
-    if (Logger.isVerboseEnabled) {
+    if (ChatTiming.enabled) {
       final completedAt = DateTime.now().millisecondsSinceEpoch;
       for (final message in boundedCandidates) {
-        Logger.info(
+        ChatTiming.record(
           '[SnackChatTiming] stage=translationCompletedAt '
           'at=$completedAt roomId=$roomId messageId=${message.id} '
           'sequence=${message.sequence ?? 0} '
@@ -1984,13 +2008,17 @@ class _SnackChatScreenState extends State<SnackChatScreen>
   }
 
   void _onDraftChanged() {
-    if (_restoringDraft || _isLeavingRoom) return;
+    if (_restoringDraft || _isLeavingRoom || _uid == null) return;
     _draftTouched = true;
     _draftSaveDebounce?.cancel();
     final roomId = widget.snackChatId;
+    final owner = _uid;
     final value = _messageController.text;
     _draftSaveDebounce = Timer(const Duration(milliseconds: 280), () {
-      if (!_isLeavingRoom && roomId == widget.snackChatId) {
+      if (!_isLeavingRoom &&
+          owner != null &&
+          _uid == owner &&
+          roomId == widget.snackChatId) {
         unawaited(_localCache.saveDraft(roomId, value));
       }
     });
@@ -1998,15 +2026,20 @@ class _SnackChatScreenState extends State<SnackChatScreen>
 
   void _scheduleMessageCacheWrite() {
     _messageCacheDebounce?.cancel();
+    final owner = _uid;
     final roomId = widget.snackChatId;
     _messageCacheDebounce = Timer(const Duration(milliseconds: 180), () {
-      if (!_isLeavingRoom && roomId == widget.snackChatId) {
+      if (!_isLeavingRoom &&
+          owner != null &&
+          _uid == owner &&
+          roomId == widget.snackChatId) {
         unawaited(_localCache.upsertMessages(roomId, List.of(_messages)));
       }
     });
   }
 
   void _cacheRoomIfChanged(SnackChat room) {
+    if (_uid == null) return;
     final token = '${room.id}:${room.updatedAt.millisecondsSinceEpoch}:'
         '${room.title}:${room.participantCount}:${room.lastMessageId}';
     if (_cachedRoomWriteToken == token) return;
@@ -2587,17 +2620,17 @@ class _SnackChatScreenState extends State<SnackChatScreen>
                 )
                 .toList(growable: false)
             : const <SnackChatMessage>[];
-        if (Logger.isVerboseEnabled) {
+        if (ChatTiming.enabled) {
           for (final message in receiverTraceMessages) {
             final serverAgeMs = receiverSnapshotAt
                 .difference(message.createdAt)
                 .inMilliseconds
                 .clamp(0, 1 << 31);
-            Logger.info(
+            ChatTiming.record(
               '[SnackChatTiming] stage=receiverSnapshotReceivedAt '
               'at=${receiverSnapshotAt.millisecondsSinceEpoch} '
               'roomId=${widget.snackChatId} messageId=${message.id} '
-              'sequence=${message.sequence ?? 0} serverAgeMs=$serverAgeMs',
+              'sequence=${message.sequence ?? 0} uncalibratedServerAgeMs=$serverAgeMs',
             );
           }
         }
@@ -2666,14 +2699,14 @@ class _SnackChatScreenState extends State<SnackChatScreen>
             _newMessageCount += addedRemoteMessages;
           }
         });
-        if (Logger.isVerboseEnabled && receiverTraceMessages.isNotEmpty) {
+        if (ChatTiming.enabled && receiverTraceMessages.isNotEmpty) {
           WidgetsBinding.instance.addPostFrameCallback((_) {
             if (!mounted || generation != _messageSubscriptionGeneration) {
               return;
             }
             final renderedAt = DateTime.now().millisecondsSinceEpoch;
             for (final message in receiverTraceMessages) {
-              Logger.info(
+              ChatTiming.record(
                 '[SnackChatTiming] stage=receiverBubbleRenderedAt '
                 'at=$renderedAt roomId=${widget.snackChatId} '
                 'messageId=${message.id} sequence=${message.sequence ?? 0} '
@@ -2944,17 +2977,7 @@ class _SnackChatScreenState extends State<SnackChatScreen>
     if ((target - position.pixels).abs() >= .5) position.jumpTo(target);
   }
 
-  void _sortMessages() {
-    _messages.sort((a, b) {
-      final aSequence = a.sequence;
-      final bSequence = b.sequence;
-      if (aSequence != null && bSequence != null && aSequence != bSequence) {
-        return bSequence.compareTo(aSequence);
-      }
-      final byTime = b.createdAt.compareTo(a.createdAt);
-      return byTime != 0 ? byTime : b.id.compareTo(a.id);
-    });
-  }
+  void _sortMessages() => _messages.sort(SnackChatMessage.compareDescending);
 
   void _updateOldestMessageCursor(Iterable<SnackChatMessage> candidates) {
     var oldest = _oldestMessage;
@@ -3168,7 +3191,8 @@ class _SnackChatScreenState extends State<SnackChatScreen>
   }
 
   void _scrollToLatest({bool animated = true}) {
-    if (_isUserScrolling || !_scrollController.hasClients) return;
+    if (_isUserScrolling || !_scrollController.hasClients || _followingLatest)
+      return;
     if (_newMessageCount != 0 || !_isNearLatest) {
       setState(() {
         _newMessageCount = 0;
@@ -3177,11 +3201,16 @@ class _SnackChatScreenState extends State<SnackChatScreen>
     }
     final target = _scrollController.position.minScrollExtent;
     if (animated && (_scrollController.position.pixels - target).abs() > 1) {
-      unawaited(_scrollController.animateTo(
-        target,
-        duration: const Duration(milliseconds: 220),
-        curve: Curves.easeOutCubic,
-      ));
+      _followingLatest = true;
+      unawaited(_scrollController
+          .animateTo(
+            target,
+            duration: MediaQuery.disableAnimationsOf(context)
+                ? Duration.zero
+                : const Duration(milliseconds: 140),
+            curve: Curves.easeOutCubic,
+          )
+          .whenComplete(() => _followingLatest = false));
     } else if ((_scrollController.position.pixels - target).abs() > .5) {
       _scrollController.jumpTo(target);
     }
@@ -3277,6 +3306,7 @@ class _SnackChatScreenState extends State<SnackChatScreen>
 
   @override
   void dispose() {
+    unawaited(_accountSubscription?.cancel());
     // 화면 이동은 막지 않고, 읽음 동기화 Future만 백그라운드에서 완료한다.
     _startBackgroundReadFlush();
     _readSyncGeneration++;
@@ -3315,7 +3345,7 @@ class _SnackChatScreenState extends State<SnackChatScreen>
     _translationStateGeneration++;
     _translationService.removeListener(_handleTranslationServiceChange);
     _messageController.removeListener(_onDraftChanged);
-    if (!_roomWasLeft) {
+    if (!_roomWasLeft && _uid != null) {
       unawaited(
         _localCache.saveDraft(widget.snackChatId, _messageController.text),
       );
@@ -3429,8 +3459,8 @@ class _SnackChatScreenState extends State<SnackChatScreen>
     if (uid == null) return;
     final messageId = _snackChatService.createMessageId(roomId);
     if (!_sendingTextMessageIds.add(messageId)) return;
-    if (Logger.isVerboseEnabled) {
-      Logger.info(
+    if (ChatTiming.enabled) {
+      ChatTiming.record(
         '[SnackChatTiming] stage=sendTappedAt at=$sendTappedAt '
         'roomId=$roomId messageId=$messageId sequence=0',
       );
@@ -3455,8 +3485,8 @@ class _SnackChatScreenState extends State<SnackChatScreen>
       _clearReplyState();
       _insertLocalMessage(localMessage);
     });
-    if (Logger.isVerboseEnabled) {
-      Logger.info(
+    if (ChatTiming.enabled) {
+      ChatTiming.record(
         '[SnackChatTiming] stage=localBubbleInsertedAt '
         'at=${DateTime.now().millisecondsSinceEpoch} roomId=$roomId '
         'messageId=$messageId sequence=0 '
@@ -3464,6 +3494,10 @@ class _SnackChatScreenState extends State<SnackChatScreen>
       );
     }
     WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (mounted && ChatTiming.enabled)
+        ChatTiming.record(
+            '[SnackChatTiming] stage=localFrame roomId=$roomId messageId=$messageId '
+            'durationMs=${localBubbleStopwatch.elapsedMilliseconds}');
       if (mounted && keepFocus && !_messageFocusNode.hasFocus) {
         _messageFocusNode.requestFocus();
       }
@@ -3505,14 +3539,26 @@ class _SnackChatScreenState extends State<SnackChatScreen>
     String roomId,
     Future<void> Function() operation,
   ) async {
-    final previous = _outboundQueues[roomId] ?? Future<void>.value();
-    final next = previous.catchError((_) {}).then((_) => operation());
-    _outboundQueues[roomId] = next;
+    final owner = _uid;
+    final waiting = Stopwatch()..start();
+    final queueKey = '$owner::$roomId';
+    final previous = _outboundQueues[queueKey] ?? Future<void>.value();
+    final next = previous.catchError((_) {}).then((_) async {
+      if (owner == null ||
+          _uid != owner ||
+          _isLeavingRoom ||
+          _roomAccessTerminated) return;
+      if (ChatTiming.enabled)
+        ChatTiming.record(
+            '[SnackChatTiming] stage=queueWait roomId=$roomId durationMs=${waiting.elapsedMilliseconds}');
+      await operation();
+    });
+    _outboundQueues[queueKey] = next;
     try {
       await next;
     } finally {
-      if (identical(_outboundQueues[roomId], next)) {
-        _outboundQueues.remove(roomId);
+      if (identical(_outboundQueues[queueKey], next)) {
+        _outboundQueues.remove(queueKey);
       }
     }
   }
@@ -3562,19 +3608,36 @@ class _SnackChatScreenState extends State<SnackChatScreen>
           localImagePath: picked.path,
         ));
       });
-      await _enqueueOutbound(roomId, () async {
-        final upload = await _storageService.uploadPrivateSnackChatImage(
-          imageFile,
+      // Upload preparation does not occupy the ordered message-commit queue.
+      final upload = await _imageUploadQueue.run(uid, () async {
+        if (_uid != uid) return null;
+        final path = await ChatOutboxStore.instance
+            .retainImage(uid, messageId, picked.path);
+        if (_uid != uid) return null;
+        if (mounted && roomId == widget.snackChatId) {
+          _updateLocalMessage(
+              messageId, (m) => m.copyWith(localImagePath: path));
+        }
+        return _storageService.uploadPrivateSnackChatImage(
+          File(path),
           userId: uid,
           snackChatId: roomId,
+          onProgress: (progress) {
+            if (mounted && _uid == uid && roomId == widget.snackChatId) {
+              _updateLocalMessage(
+                  messageId, (m) => m.copyWith(transferProgress: progress));
+            }
+          },
         );
-        if (upload == null || upload.storagePath.isEmpty) {
-          if (mounted && roomId == widget.snackChatId) {
-            _markMessageFailed(messageId, '이미지 업로드에 실패했습니다.');
-          }
-          return;
+      });
+      if (upload == null || upload.storagePath.isEmpty || _uid != uid) {
+        if (mounted && roomId == widget.snackChatId && _uid == uid) {
+          _markMessageFailed(messageId, '이미지 업로드에 실패했습니다.');
         }
-
+        return;
+      }
+      await _enqueueOutbound(roomId, () async {
+        if (_uid != uid) return;
         final imageUrl = upload.imageUrl;
         final imagePath = upload.storagePath;
         if (mounted && roomId == widget.snackChatId) {
@@ -3642,6 +3705,11 @@ class _SnackChatScreenState extends State<SnackChatScreen>
       _messages[index] = message;
     }
     _sortMessages();
+    // Do not leave a newly captured packet behind the UI-cache debounce. This
+    // starts the existing account-scoped, serialized cache write immediately.
+    if (message.sendStatus != MessageSendStatus.sent && _uid != null) {
+      unawaited(_localCache.upsertMessages(widget.snackChatId, [message]));
+    }
     _scheduleMessageCacheWrite();
   }
 
@@ -3722,7 +3790,9 @@ class _SnackChatScreenState extends State<SnackChatScreen>
       _updateLocalMessage(
         messageId,
         (message) => message.copyWith(
-          sendStatus: MessageSendStatus.sent,
+          sendStatus: message.sequence == null
+              ? MessageSendStatus.sending
+              : MessageSendStatus.sent,
           clearErrorMessage: true,
         ),
       );
@@ -3759,6 +3829,8 @@ class _SnackChatScreenState extends State<SnackChatScreen>
   }
 
   Future<void> _retryMessage(SnackChatMessage message) async {
+    final owner = _uid;
+    if (owner == null || message.senderId != owner) return;
     final roomId = widget.snackChatId;
     if (!message.hasFailed ||
         _isLeavingRoom ||
@@ -3777,34 +3849,31 @@ class _SnackChatScreenState extends State<SnackChatScreen>
           clearErrorMessage: true,
         ),
       );
+      var imageUrl = message.imageUrl;
+      var imagePath = message.imagePath;
+      if (message.type == SnackChatMessageType.image &&
+          (imageUrl?.isNotEmpty != true) &&
+          (imagePath?.isNotEmpty != true) &&
+          message.localImagePath?.isNotEmpty == true) {
+        final upload = await _imageUploadQueue.run(owner, () async {
+          if (_uid != owner) return null;
+          return _storageService.uploadPrivateSnackChatImage(
+              File(message.localImagePath!),
+              userId: owner,
+              snackChatId: roomId);
+        });
+        if (_uid != owner) return;
+        if (upload != null) {
+          imageUrl = upload.imageUrl;
+          imagePath = upload.storagePath;
+          _updateLocalMessage(message.id,
+              (m) => m.copyWith(imageUrl: imageUrl, imagePath: imagePath));
+        }
+      }
+      if (_uid != owner) return;
       await _enqueueOutbound(roomId, () async {
         bool ok = false;
         if (message.type == SnackChatMessageType.image) {
-          var imageUrl = message.imageUrl;
-          var imagePath = message.imagePath;
-          if ((imageUrl == null || imageUrl.isEmpty) &&
-              (imagePath == null || imagePath.isEmpty) &&
-              message.localImagePath?.isNotEmpty == true) {
-            final uid = _uid;
-            if (uid != null) {
-              final upload = await _storageService.uploadPrivateSnackChatImage(
-                File(message.localImagePath!),
-                userId: uid,
-                snackChatId: roomId,
-              );
-              if (upload != null && mounted && roomId == widget.snackChatId) {
-                imageUrl = upload.imageUrl;
-                imagePath = upload.storagePath;
-                _updateLocalMessage(
-                  message.id,
-                  (value) => value.copyWith(
-                    imageUrl: imageUrl,
-                    imagePath: imagePath,
-                  ),
-                );
-              }
-            }
-          }
           if ((imageUrl?.isNotEmpty ?? false) ||
               (imagePath?.isNotEmpty ?? false)) {
             ok = await _snackChatService.sendImageMessage(
@@ -6371,6 +6440,16 @@ class _SnackChatScreenState extends State<SnackChatScreen>
               )
             else ...[
               if (hasImage) _buildImageBubble(message: message, isMe: isMe),
+              if (hasImage &&
+                  message.isPending &&
+                  message.transferProgress != null)
+                Padding(
+                  padding: const EdgeInsets.only(top: 4),
+                  child: LinearProgressIndicator(
+                    minHeight: 2,
+                    value: message.transferProgress!.clamp(0.0, 1.0),
+                  ),
+                ),
               if (hasFile) _buildFileBubble(message: message, isMe: isMe),
               if (hasImage && (hasText || message.poll != null))
                 const SizedBox(height: 8),

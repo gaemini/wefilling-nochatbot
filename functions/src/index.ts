@@ -4,6 +4,7 @@
 
 import * as functions from 'firebase-functions';
 import * as admin from 'firebase-admin';
+import {decorateChatPush} from './chat_push_presentation';
 import * as nodemailer from 'nodemailer';
 import * as crypto from 'crypto';
 import { COL } from './firestore_paths';
@@ -24,6 +25,7 @@ import {
   normalizeNickname,
   prepareNicknameReservation,
   releaseNicknameClaimIfOwned,
+  releaseAllNicknameClaimsOwnedByUid,
 } from './nickname_claims';
 import {
   buildUserSearchTokens,
@@ -62,6 +64,7 @@ export {
 } from './content_search';
 export {
   markDMConversationReadSecure,
+  onDMReceiptCleanupRequested,
   reconcileDMUnreadTotalSecure,
 } from './dm_chat';
 
@@ -1316,7 +1319,7 @@ function isCompletedRegistrationData(data: any): boolean {
  */
 function completedRegistrationSearchRepair(
   data: any,
-): {nicknameSearchTokens: string[]} | null {
+): Record<string, unknown> | null {
   if (!isCompletedRegistrationData(data)) return null;
   const nickname = String(data?.nickname || '').trim();
   if (!nickname) return null;
@@ -1331,11 +1334,19 @@ function completedRegistrationSearchRepair(
   const current = Array.isArray(data?.nicknameSearchTokens) ?
     data.nicknameSearchTokens.filter((token: unknown) => typeof token === 'string') :
     [];
-  if (current.length === expected.length &&
-      current.every((token: string, index: number) => token === expected[index])) {
-    return null;
+  const repair: Record<string, unknown> = {};
+  if (current.length !== expected.length ||
+      !current.every((token: string, index: number) => token === expected[index])) {
+    repair.nicknameSearchTokens = expected;
   }
-  return {nicknameSearchTokens: expected};
+  // `searchable` is derived server metadata. User privacy is represented by
+  // explicit fields and must never be overridden here.
+  const explicitlyPrivate = data?.isSearchable === false ||
+    data?.allowUserSearch === false || data?.isProfilePrivate === true;
+  if (!explicitlyPrivate && data?.searchable !== true) {
+    repair.searchable = true;
+  }
+  return Object.keys(repair).length === 0 ? null : repair;
 }
 
 function isHanyangEmailVerifiedData(data: any): boolean {
@@ -5047,13 +5058,20 @@ async function repairSearchableProfileMetadata(
   for (const document of documents) {
     const data = document.data() as Record<string, unknown>;
     const decision = evaluateSearchableUser(document.id, data);
-    if (decision.searchable && decision.needsNicknameKeyRepair) {
+    if (decision.searchable &&
+        (decision.needsNicknameKeyRepair || decision.needsSearchableRepair)) {
+      const dataToRepair: Record<string, unknown> = {
+        searchIndexRepairedAt: admin.firestore.FieldValue.serverTimestamp(),
+      };
+      if (decision.needsNicknameKeyRepair) {
+        dataToRepair.nicknameKey = decision.nicknameKey;
+      }
+      if (decision.needsSearchableRepair) {
+        dataToRepair.searchable = true;
+      }
       repairs.push({
         ref: document.ref,
-        data: {
-          nicknameKey: decision.nicknameKey,
-          searchIndexRepairedAt: admin.firestore.FieldValue.serverTimestamp(),
-        },
+        data: dataToRepair,
       });
       continue;
     }
@@ -7330,6 +7348,7 @@ export const deleteAccountImmediately = functions.https.onCall(async (data, cont
         uid,
         userInfo.nicknameKey,
       );
+      await releaseAllNicknameClaimsOwnedByUid(uid);
       await userRef.update({nicknameKey: ''}).catch(() => {});
       runtimeLogsEnabled && runtimeInfo(`👤 닉네임 claim 해제: ${released ? '완료' : '스킵'}`);
     } catch (error) {
@@ -9666,6 +9685,7 @@ export const onDMMessageCreated = functions
       // - 중요: push 가능 여부(토큰 유무)와 무관하게 항상 실행
       // -----------------------------------------------------------------------
       let newDmUnreadTotal = 0;
+      let displayRoomUnread: number | null = null;
       let shouldSendNotification = false;
       const dmCreateEventRef = db.collection('_dm_function_events').doc(
         crypto.createHash('sha256')
@@ -9685,10 +9705,7 @@ export const onDMMessageCreated = functions
 
           // recipients의 user 문서도 미리 읽기 (dmUnreadTotal 음수 보정 위해)
           const userRefs = recipients.filter(Boolean).map((rid) => db.collection('users').doc(rid));
-          const userSnaps: FirebaseFirestore.DocumentSnapshot[] = [];
-          for (const ref of userRefs) {
-            userSnaps.push(await tx.get(ref));
-          }
+          const userSnaps = await Promise.all(userRefs.map((ref) => tx.get(ref)));
 
           // The receiver can open the room and mark this message read before
           // this asynchronous create trigger starts. In that case an unread
@@ -9804,10 +9821,15 @@ export const onDMMessageCreated = functions
           return {
             shouldSend: true,
             dmUnreadTotal: nextDmUnreadTotal,
+            displayRoomUnread: toNonNegativeInt(unreadCount[recipientId]),
           };
         });
         shouldSendNotification = transactionResult.shouldSend;
         newDmUnreadTotal = transactionResult.dmUnreadTotal;
+        if ('displayRoomUnread' in transactionResult &&
+            typeof transactionResult.displayRoomUnread === 'number') {
+          displayRoomUnread = transactionResult.displayRoomUnread;
+        }
       } catch (e) {
         console.warn('⚠️ DM unreadCount/dmUnreadTotal 증분 업데이트 실패:', e);
         // A push without the matching counter creates a badge that cannot be
@@ -9928,7 +9950,14 @@ export const onDMMessageCreated = functions
       };
 
       // 푸시 전송
-      const response = await admin.messaging().sendEachForMulticast(pushMessage);
+      const response = await admin.messaging().sendEachForMulticast(decorateChatPush(pushMessage, {
+        kind: 'dm', title: senderName, sender: senderName, message: messageData,
+        language: recipientSettingsDoc.data()?.locale ?? recipientData?.preferredLanguage ??
+          recipientData?.language ?? 'ko', unreadCount: displayRoomUnread,
+        threadKey: dmNotificationTag, messageId,
+        // Commit time is server-owned; legacy client createdAt may be skewed.
+        sentAtMillis: snapshot.createTime.toMillis(),
+      }));
       runtimeLogsEnabled && runtimeInfo(`✅ DM 푸시 전송 완료: ${response.successCount}/${tokens.length}`);
 
       // 실패 토큰 정리
@@ -10051,7 +10080,7 @@ export const onDMMessageRead = functions
             dmUnreadCounterVersion: 2,
           });
         });
-        tx.set(convRef, {
+        if (recipientsToDecrement.length > 0) tx.set(convRef, {
           unreadCount,
           updatedAt: admin.firestore.FieldValue.serverTimestamp(),
         }, {merge: true});

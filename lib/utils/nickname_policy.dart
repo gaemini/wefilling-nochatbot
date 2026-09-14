@@ -1,3 +1,5 @@
+import 'package:unorm_dart/unorm_dart.dart' as unorm;
+
 enum NicknameValidationIssue {
   empty,
   length,
@@ -23,16 +25,15 @@ class NicknameIdentity {
 class NicknamePolicy {
   const NicknamePolicy._();
 
-  static const int version = 2;
+  static const int version = 3;
   static const int minLength = 2;
   static const int maxLength = 20;
 
-  static final RegExp _controlAndInvisible = RegExp(
-    r'[\u0000-\u001F\u007F-\u009F\u200B-\u200D\u2060\uFEFF]',
-    unicode: true,
+  static final RegExp _allowed = RegExp(r'^[A-Za-z가-힣]+$');
+  // Match ECMAScript String.trim on the server (Dart also trims U+0085).
+  static final RegExp _edgeWhitespace = RegExp(
+    r'^[\u0009-\u000D\u0020\u00A0\u1680\u2000-\u200A\u2028\u2029\u202F\u205F\u3000\uFEFF]+|[\u0009-\u000D\u0020\u00A0\u1680\u2000-\u200A\u2028\u2029\u202F\u205F\u3000\uFEFF]+$',
   );
-  static final RegExp _whitespace = RegExp(r'\s+', unicode: true);
-  static final RegExp _allowed = RegExp(r'^[A-Za-z0-9가-힣_]+$');
   static final RegExp _hasLetter = RegExp(r'[A-Za-z가-힣]');
   static const Set<String> _reservedKeys = <String>{
     '익명',
@@ -43,28 +44,8 @@ class NicknamePolicy {
     '탈퇴한_사용자',
   };
 
-  /// Mirrors the compatibility characters users commonly enter from mobile
-  /// keyboards. The server additionally performs full Unicode NFKC.
-  static String _normalizeCompatibilityCharacters(String value) {
-    final buffer = StringBuffer();
-    for (final rune in value.runes) {
-      if (rune == 0x3000) {
-        buffer.write(' ');
-      } else if (rune >= 0xff01 && rune <= 0xff5e) {
-        buffer.writeCharCode(rune - 0xfee0);
-      } else {
-        buffer.writeCharCode(rune);
-      }
-    }
-    return buffer.toString();
-  }
-
   static String normalizePreview(String? raw) {
-    final compatible = _normalizeCompatibilityCharacters(raw ?? '');
-    return compatible
-        .replaceAll(_controlAndInvisible, '')
-        .trim()
-        .replaceAll(_whitespace, '_');
+    return unorm.nfc((raw ?? '').replaceAll(_edgeWhitespace, ''));
   }
 
   static String canonicalKey(String? raw) =>

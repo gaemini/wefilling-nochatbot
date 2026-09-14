@@ -11,16 +11,90 @@ import '../models/student_type.dart';
 import '../providers/semester_todo_controller.dart';
 import 'student_type_selection_screen.dart';
 import '../l10n/ui_locale.dart';
+import '../utils/responsive_helper.dart';
+
+// Match the compact compose-screen scale without suppressing accessibility text
+// scaling or changing the shared theme used by the rest of the app.
+double _todoFont(BuildContext context, double size) =>
+    context.rf(size).clamp(size - 1, size).toDouble();
+double _todoInset(BuildContext context) =>
+    MediaQuery.sizeOf(context).width < 360 ? 16 : 20;
+double _todoToolbarHeight(BuildContext context, {String? title}) {
+  final base =
+      MediaQuery.textScalerOf(context).scale(_todoFont(context, 18)) * 1.3 + 24;
+  if (title == null) return base.clamp(56, 96).toDouble();
+  final painter = TextPainter(
+    text: TextSpan(
+        text: title,
+        style: TextStyle(
+            fontFamily: uiFontFamily(context, 'Inter'),
+            fontFamilyFallback: const ['NotoSansKR'],
+            fontSize: _todoFont(context, 18),
+            fontWeight: FontWeight.w700,
+            height: 1.3)),
+    textDirection: Directionality.of(context),
+    textScaler: MediaQuery.textScalerOf(context),
+    maxLines: 2,
+  )..layout(
+      maxWidth:
+          (MediaQuery.sizeOf(context).width - 160).clamp(80, double.infinity));
+  final height = (painter.height + 24).clamp(56, double.infinity).toDouble();
+  painter.dispose();
+  return height;
+}
+
+ThemeData _todoEditorTheme(BuildContext context) {
+  final theme = Theme.of(context);
+  final body = TextStyle(
+    fontFamily: uiFontFamily(context, 'Inter'),
+    fontFamilyFallback: const ['NotoSansKR'],
+    fontSize: _todoFont(context, 14),
+    height: 1.45,
+    color: const Color(0xFF111827),
+  );
+  final caption = body.copyWith(
+      fontSize: _todoFont(context, 12), color: const Color(0xFF6B7280));
+  return theme.copyWith(
+    iconTheme:
+        theme.iconTheme.copyWith(size: 20, color: const Color(0xFF6B7280)),
+    textTheme: theme.textTheme.copyWith(
+        bodyLarge: body,
+        bodyMedium: body,
+        titleMedium: body,
+        labelLarge: body.copyWith(fontWeight: FontWeight.w600)),
+    listTileTheme: theme.listTileTheme.copyWith(
+        titleTextStyle: body,
+        subtitleTextStyle: caption,
+        minLeadingWidth: 20,
+        horizontalTitleGap: 12,
+        iconColor: const Color(0xFF6B7280)),
+    inputDecorationTheme: theme.inputDecorationTheme.copyWith(
+        hintStyle: body.copyWith(color: const Color(0xFF9CA3AF)),
+        labelStyle: caption),
+    chipTheme: theme.chipTheme.copyWith(
+      backgroundColor: Colors.white,
+      selectedColor: const Color(0xFFF3F4F6),
+      surfaceTintColor: Colors.transparent,
+      side: BorderSide.none,
+      labelStyle: caption.copyWith(color: const Color(0xFF111827)),
+    ),
+  );
+}
 
 class SemesterTodoScreen extends StatefulWidget {
   const SemesterTodoScreen({
     super.key,
     required this.studentType,
     this.focusPersonalSection = false,
+    this.controller,
   });
 
   final StudentType studentType;
   final bool focusPersonalSection;
+
+  /// Optional presentation-test controller; the screen owns its lifecycle.
+  @visibleForTesting
+  final SemesterTodoController? controller;
 
   @override
   State<SemesterTodoScreen> createState() => _SemesterTodoScreenState();
@@ -28,8 +102,8 @@ class SemesterTodoScreen extends StatefulWidget {
 
 class _SemesterTodoScreenState extends State<SemesterTodoScreen> {
   late StudentType _studentType = widget.studentType;
-  late SemesterTodoController _controller =
-      SemesterTodoController(studentType: _studentType)..load();
+  late SemesterTodoController _controller = widget.controller ??
+      (SemesterTodoController(studentType: _studentType)..load());
   final PageController _pageController = PageController();
   List<GlobalKey> _weekKeys = const [];
   final Map<int, GlobalKey> _personalSectionKeys = {};
@@ -127,29 +201,32 @@ class _SemesterTodoScreenState extends State<SemesterTodoScreen> {
 
   @override
   Widget build(BuildContext context) {
+    final pageTitle = isChineseUi(context)
+        ? '学期待办'
+        : _isKorean
+            ? '학기 To-do'
+            : 'Semester To-do';
     return ChangeNotifierProvider.value(
       value: _controller,
       child: Scaffold(
         backgroundColor: Colors.white,
         appBar: AppBar(
+          toolbarHeight: _todoToolbarHeight(context, title: pageTitle),
           backgroundColor: Colors.white,
           surfaceTintColor: Colors.white,
           elevation: 0,
           scrolledUnderElevation: 0,
           leading: IconButton(
             onPressed: () => Navigator.maybePop(context),
-            icon: const Icon(Icons.arrow_back_rounded),
+            icon: const Icon(Icons.arrow_back_rounded, size: 22),
           ),
           title: Text(
-            (isChineseUi(context)
-                ? '学期待办'
-                : _isKorean
-                    ? '학기 To-do'
-                    : 'Semester To-do'),
+            pageTitle,
             style: TextStyle(
               fontFamily: uiFontFamily(context, 'Inter'),
               fontFamilyFallback: const ['NotoSansKR'],
-              fontSize: 18,
+              fontSize: _todoFont(context, 18),
+              height: 1.3,
               fontWeight: FontWeight.w700,
               color: Color(0xFF0F172A),
             ),
@@ -234,7 +311,8 @@ class _SemesterTodoScreenState extends State<SemesterTodoScreen> {
                     ? '현재 $current주차'
                     : 'Current week $current'));
     return Padding(
-      padding: const EdgeInsets.fromLTRB(20, 14, 20, 10),
+      padding:
+          EdgeInsets.fromLTRB(_todoInset(context), 8, _todoInset(context), 12),
       child: Row(
         children: [
           Expanded(
@@ -243,13 +321,12 @@ class _SemesterTodoScreenState extends State<SemesterTodoScreen> {
               children: [
                 Text(
                   semester.title.resolve(_languageCode),
-                  maxLines: 1,
-                  overflow: TextOverflow.ellipsis,
+                  softWrap: true,
                   style: TextStyle(
                     fontFamily: uiFontFamily(context, 'Inter'),
                     fontFamilyFallback: const ['NotoSansKR'],
-                    fontSize: 22,
-                    fontWeight: FontWeight.w800,
+                    fontSize: _todoFont(context, 18),
+                    fontWeight: FontWeight.w700,
                     color: Color(0xFF0F172A),
                   ),
                 ),
@@ -259,7 +336,7 @@ class _SemesterTodoScreenState extends State<SemesterTodoScreen> {
                   style: TextStyle(
                     fontFamily: uiFontFamily(context, 'Inter'),
                     fontFamilyFallback: const ['NotoSansKR'],
-                    fontSize: 13,
+                    fontSize: _todoFont(context, 12),
                     color: Color(0xFF64748B),
                   ),
                 ),
@@ -273,9 +350,13 @@ class _SemesterTodoScreenState extends State<SemesterTodoScreen> {
 
   Widget _weekPicker(SemesterTodoController controller) {
     return SizedBox(
-      height: 54,
+      height: (MediaQuery.textScalerOf(context).scale(_todoFont(context, 13)) *
+                  1.4 +
+              20)
+          .clamp(48, 96)
+          .toDouble(),
       child: ListView.separated(
-        padding: const EdgeInsets.symmetric(horizontal: 14),
+        padding: const EdgeInsets.symmetric(horizontal: 12),
         scrollDirection: Axis.horizontal,
         itemCount: controller.weeks.length,
         separatorBuilder: (_, __) => const SizedBox(width: 2),
@@ -292,12 +373,12 @@ class _SemesterTodoScreenState extends State<SemesterTodoScreen> {
               borderRadius: BorderRadius.circular(8),
               child: AnimatedContainer(
                 duration: const Duration(milliseconds: 180),
-                padding: const EdgeInsets.symmetric(horizontal: 14),
+                padding: const EdgeInsets.symmetric(horizontal: 12),
                 alignment: Alignment.center,
                 decoration: BoxDecoration(
                   border: Border(
                     bottom: BorderSide(
-                      width: 2.5,
+                      width: 2,
                       color:
                           selected ? AppColors.pointColor : Colors.transparent,
                     ),
@@ -308,8 +389,8 @@ class _SemesterTodoScreenState extends State<SemesterTodoScreen> {
                   style: TextStyle(
                     fontFamily: uiFontFamily(context, 'Inter'),
                     fontFamilyFallback: const ['NotoSansKR'],
-                    fontSize: 14,
-                    fontWeight: selected ? FontWeight.w800 : FontWeight.w600,
+                    fontSize: _todoFont(context, 13),
+                    fontWeight: selected ? FontWeight.w700 : FontWeight.w500,
                     color: selected
                         ? const Color(0xFF0F172A)
                         : const Color(0xFF94A3B8),
@@ -389,7 +470,8 @@ class _SemesterTodoScreenState extends State<SemesterTodoScreen> {
               child: LinearProgressIndicator(minHeight: 2),
             ),
           SliverPadding(
-            padding: const EdgeInsets.fromLTRB(20, 8, 20, 32),
+            padding: EdgeInsets.fromLTRB(
+                _todoInset(context), 4, _todoInset(context), 24),
             sliver: SliverList(
               delegate: SliverChildListDelegate(
                 _sections(controller, week.weekNumber, tasks),
@@ -416,7 +498,8 @@ class _SemesterTodoScreenState extends State<SemesterTodoScreen> {
       (item) => item.weekNumber == week.weekNumber,
     );
     return Padding(
-      padding: const EdgeInsets.fromLTRB(20, 18, 20, 12),
+      padding:
+          EdgeInsets.fromLTRB(_todoInset(context), 16, _todoInset(context), 12),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
@@ -431,24 +514,25 @@ class _SemesterTodoScreenState extends State<SemesterTodoScreen> {
             style: TextStyle(
               fontFamily: uiFontFamily(context, 'Inter'),
               fontFamilyFallback: const ['NotoSansKR'],
-              fontSize: 19,
-              fontWeight: FontWeight.w800,
+              fontSize: _todoFont(context, 16),
+              fontWeight: FontWeight.w700,
               color: Color(0xFF0F172A),
             ),
           ),
           const SizedBox(height: 4),
-          Row(
+          Wrap(
+            spacing: 16,
+            runSpacing: 4,
+            crossAxisAlignment: WrapCrossAlignment.center,
             children: [
-              Expanded(
-                child: Text(
-                  '${_dateLabel(week.startDate)} – ${_dateLabel(week.endDate)}',
-                  style: TextStyle(
-                    fontFamily: uiFontFamily(context, 'Inter'),
-                    fontFamilyFallback: const ['NotoSansKR'],
-                    fontSize: 14,
-                    fontWeight: FontWeight.w600,
-                    color: Color(0xFF64748B),
-                  ),
+              Text(
+                '${_dateLabel(week.startDate)} – ${_dateLabel(week.endDate)}',
+                style: TextStyle(
+                  fontFamily: uiFontFamily(context, 'Inter'),
+                  fontFamilyFallback: const ['NotoSansKR'],
+                  fontSize: _todoFont(context, 12),
+                  fontWeight: FontWeight.w500,
+                  color: Color(0xFF64748B),
                 ),
               ),
               Text(
@@ -460,7 +544,7 @@ class _SemesterTodoScreenState extends State<SemesterTodoScreen> {
                 style: TextStyle(
                   fontFamily: uiFontFamily(context, 'Inter'),
                   fontFamilyFallback: const ['NotoSansKR'],
-                  fontSize: 13,
+                  fontSize: _todoFont(context, 12),
                   fontWeight: FontWeight.w700,
                   color: Color(0xFF334155),
                 ),
@@ -471,7 +555,7 @@ class _SemesterTodoScreenState extends State<SemesterTodoScreen> {
           ClipRRect(
             borderRadius: BorderRadius.circular(2),
             child: LinearProgressIndicator(
-              minHeight: 4,
+              minHeight: 3,
               value: progress,
               color: AppColors.pointColor,
               backgroundColor: const Color(0xFFE2E8F0),
@@ -514,7 +598,7 @@ class _SemesterTodoScreenState extends State<SemesterTodoScreen> {
       Key? sectionKey,
     }) {
       if (rows.isEmpty) return;
-      if (children.isNotEmpty) children.add(const SizedBox(height: 24));
+      if (children.isNotEmpty) children.add(const SizedBox(height: 18));
       children.add(
         KeyedSubtree(
           key: sectionKey,
@@ -738,8 +822,8 @@ class _SemesterTodoScreenState extends State<SemesterTodoScreen> {
         ),
         icon: const Icon(Icons.add_rounded),
         color: AppColors.pointColor,
-        iconSize: 28,
-        padding: const EdgeInsets.all(10),
+        iconSize: 24,
+        padding: const EdgeInsets.all(12),
       ),
     ));
 
@@ -868,7 +952,7 @@ class _SemesterTodoScreenState extends State<SemesterTodoScreen> {
           : () => _openAction(task),
       borderRadius: BorderRadius.circular(10),
       child: Padding(
-        padding: const EdgeInsets.symmetric(vertical: 10),
+        padding: const EdgeInsets.symmetric(vertical: 8),
         child: Row(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
@@ -877,10 +961,10 @@ class _SemesterTodoScreenState extends State<SemesterTodoScreen> {
             else
               const Icon(
                 Icons.auto_awesome_outlined,
-                size: 22,
+                size: 20,
                 color: AppColors.pointColor,
               ),
-            const SizedBox(width: 13),
+            const SizedBox(width: 12),
             Expanded(
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
@@ -890,7 +974,7 @@ class _SemesterTodoScreenState extends State<SemesterTodoScreen> {
                     style: TextStyle(
                       fontFamily: uiFontFamily(context, 'Inter'),
                       fontFamilyFallback: const ['NotoSansKR'],
-                      fontSize: 16,
+                      fontSize: _todoFont(context, 14),
                       height: 1.35,
                       fontWeight: FontWeight.w600,
                       color: completed
@@ -906,7 +990,7 @@ class _SemesterTodoScreenState extends State<SemesterTodoScreen> {
                       style: TextStyle(
                         fontFamily: uiFontFamily(context, 'Inter'),
                         fontFamilyFallback: const ['NotoSansKR'],
-                        fontSize: 13,
+                        fontSize: _todoFont(context, 12),
                         height: 1.45,
                         color: Color(0xFF64748B),
                       ),
@@ -918,12 +1002,12 @@ class _SemesterTodoScreenState extends State<SemesterTodoScreen> {
             if (task.actionType != SemesterTodoActionType.none)
               IconButton(
                 onPressed: () => _openAction(task),
-                visualDensity: VisualDensity.compact,
+                constraints: const BoxConstraints(minWidth: 48, minHeight: 48),
                 icon: Icon(
                   task.actionType == SemesterTodoActionType.externalUrl
                       ? Icons.open_in_new_rounded
                       : Icons.chevron_right_rounded,
-                  size: 20,
+                  size: 18,
                   color: const Color(0xFF94A3B8),
                 ),
               ),
@@ -1037,9 +1121,13 @@ class _SemesterTodoScreenState extends State<SemesterTodoScreen> {
             child: InkResponse(
               onTap: () => _togglePersonalTodo(controller, todo),
               radius: 24,
-              child: Padding(
-                padding: const EdgeInsets.fromLTRB(0, 10, 12, 10),
-                child: _CompletionCircle(completed: todo.completed),
+              child: SizedBox(
+                width: 44,
+                height: 48,
+                child: Align(
+                  alignment: Alignment.centerLeft,
+                  child: _CompletionCircle(completed: todo.completed),
+                ),
               ),
             ),
           ),
@@ -1061,7 +1149,7 @@ class _SemesterTodoScreenState extends State<SemesterTodoScreen> {
                       style: TextStyle(
                         fontFamily: uiFontFamily(context, 'Inter'),
                         fontFamilyFallback: const ['NotoSansKR'],
-                        fontSize: 16,
+                        fontSize: _todoFont(context, 14),
                         fontWeight: FontWeight.w600,
                         color: todo.completed
                             ? const Color(0xFF94A3B8)
@@ -1079,7 +1167,7 @@ class _SemesterTodoScreenState extends State<SemesterTodoScreen> {
                         style: TextStyle(
                           fontFamily: uiFontFamily(context, 'Inter'),
                           fontFamilyFallback: const ['NotoSansKR'],
-                          fontSize: 13,
+                          fontSize: _todoFont(context, 12),
                           color: Color(0xFF64748B),
                         ),
                       ),
@@ -1164,7 +1252,7 @@ class _SemesterTodoScreenState extends State<SemesterTodoScreen> {
                         ? Icons.notifications_active_rounded
                         : Icons.notifications_paused_outlined
                     : Icons.notifications_none_rounded,
-                size: 21,
+                size: 20,
                 color: todo.reminderEnabled &&
                         controller.personalTodoNotificationsEnabled
                     ? AppColors.pointColor
@@ -1386,20 +1474,23 @@ class _SemesterTodoScreenState extends State<SemesterTodoScreen> {
   }) async {
     final result = await Navigator.of(context).push<_PersonalTodoEditorResult>(
       MaterialPageRoute(
-        builder: (_) => _PersonalTodoEditorPage(
-          existing: existing,
-          weeks: controller.weeks,
-          semesterStart: controller.semester!.startDate,
-          semesterEnd: controller.weeks.isEmpty
-              ? controller.semester!.endDate
-              : controller.weeks.last.endDate,
-          initialWeekNumber: initialWeekNumber,
-          notificationsEnabled: controller.personalTodoNotificationsEnabled,
-          reminderHour: controller.personalTodoReminderHour,
-          reminderMinute: controller.personalTodoReminderMinute,
-          isKorean: _isKorean,
-          onEnableGlobalReminders: () =>
-              _askToEnableGlobalReminders(controller),
+        builder: (editorContext) => Theme(
+          data: _todoEditorTheme(editorContext),
+          child: _PersonalTodoEditorPage(
+            existing: existing,
+            weeks: controller.weeks,
+            semesterStart: controller.semester!.startDate,
+            semesterEnd: controller.weeks.isEmpty
+                ? controller.semester!.endDate
+                : controller.weeks.last.endDate,
+            initialWeekNumber: initialWeekNumber,
+            notificationsEnabled: controller.personalTodoNotificationsEnabled,
+            reminderHour: controller.personalTodoReminderHour,
+            reminderMinute: controller.personalTodoReminderMinute,
+            isKorean: _isKorean,
+            onEnableGlobalReminders: () =>
+                _askToEnableGlobalReminders(controller),
+          ),
         ),
       ),
     );
@@ -1702,6 +1793,8 @@ class _PersonalTodoEditorPageState extends State<_PersonalTodoEditorPage> {
       backgroundColor: Colors.white,
       resizeToAvoidBottomInset: true,
       appBar: AppBar(
+        toolbarHeight: _todoToolbarHeight(context),
+        scrolledUnderElevation: 0,
         backgroundColor: Colors.white,
         surfaceTintColor: Colors.white,
         elevation: 0,
@@ -1729,8 +1822,8 @@ class _PersonalTodoEditorPageState extends State<_PersonalTodoEditorPage> {
           style: TextStyle(
             fontFamily: uiFontFamily(context, 'Inter'),
             fontFamilyFallback: const ['NotoSansKR'],
-            fontSize: 20,
-            fontWeight: FontWeight.w800,
+            fontSize: _todoFont(context, 18),
+            fontWeight: FontWeight.w700,
             color: Color(0xFF0F172A),
           ),
         ),
@@ -1751,8 +1844,8 @@ class _PersonalTodoEditorPageState extends State<_PersonalTodoEditorPage> {
               style: TextStyle(
                 fontFamily: uiFontFamily(context, 'Inter'),
                 fontFamilyFallback: const ['NotoSansKR'],
-                fontSize: 16,
-                fontWeight: FontWeight.w800,
+                fontSize: _todoFont(context, 14),
+                fontWeight: FontWeight.w700,
               ),
             ),
           ),
@@ -1762,7 +1855,8 @@ class _PersonalTodoEditorPageState extends State<_PersonalTodoEditorPage> {
         top: false,
         child: ListView(
           keyboardDismissBehavior: ScrollViewKeyboardDismissBehavior.onDrag,
-          padding: const EdgeInsets.fromLTRB(20, 20, 20, 32),
+          padding: EdgeInsets.fromLTRB(
+              _todoInset(context), 12, _todoInset(context), 24),
           children: [
             TextField(
               controller: _titleController,
@@ -1937,20 +2031,21 @@ class _PersonalTodoEditorPageState extends State<_PersonalTodoEditorPage> {
                 },
               ),
               const SizedBox(height: 14),
-              Row(
+              Wrap(
+                spacing: 8,
+                runSpacing: 4,
+                crossAxisAlignment: WrapCrossAlignment.center,
                 children: [
-                  Expanded(
-                    child: Text(
-                      isChineseUi(context)
-                          ? '重要度'
-                          : widget.isKorean
-                              ? '중요도'
-                              : 'Priority',
-                      style: const TextStyle(
-                        fontSize: 15,
-                        fontWeight: FontWeight.w600,
-                        color: Color(0xFF334155),
-                      ),
+                  Text(
+                    isChineseUi(context)
+                        ? '重要度'
+                        : widget.isKorean
+                            ? '중요도'
+                            : 'Priority',
+                    style: const TextStyle(
+                      fontSize: 15,
+                      fontWeight: FontWeight.w600,
+                      color: Color(0xFF334155),
                     ),
                   ),
                   ChoiceChip(
@@ -2072,8 +2167,9 @@ class _SectionTitle extends StatelessWidget {
               style: TextStyle(
                 fontFamily: uiFontFamily(context, 'Inter'),
                 fontFamilyFallback: const ['NotoSansKR'],
-                fontSize: 18,
-                fontWeight: FontWeight.w800,
+                fontSize: _todoFont(context, 15),
+                height: 1.4,
+                fontWeight: FontWeight.w700,
                 color: Color(0xFF0F172A),
               ),
             ),
@@ -2122,7 +2218,7 @@ class _ReminderTimeSheetState extends State<_ReminderTimeSheet> {
               children: [
                 const Icon(
                   Icons.notifications_none_rounded,
-                  size: 24,
+                  size: 20,
                   color: Color(0xFF475569),
                 ),
                 const SizedBox(width: 10),
@@ -2136,9 +2232,9 @@ class _ReminderTimeSheetState extends State<_ReminderTimeSheet> {
                     style: TextStyle(
                       fontFamily: uiFontFamily(context, 'Inter'),
                       fontFamilyFallback: const ['NotoSansKR'],
-                      fontSize: 20,
+                      fontSize: _todoFont(context, 17),
                       height: 1.3,
-                      fontWeight: FontWeight.w800,
+                      fontWeight: FontWeight.w700,
                       color: Color(0xFF0F172A),
                     ),
                   ),
@@ -2165,7 +2261,7 @@ class _ReminderTimeSheetState extends State<_ReminderTimeSheet> {
               style: TextStyle(
                 fontFamily: uiFontFamily(context, 'Inter'),
                 fontFamilyFallback: const ['NotoSansKR'],
-                fontSize: 14,
+                fontSize: _todoFont(context, 13),
                 height: 1.45,
                 color: Color(0xFF64748B),
               ),
@@ -2240,7 +2336,7 @@ class _ReminderTimeSheetState extends State<_ReminderTimeSheet> {
                       fontFamily: uiFontFamily(context, 'Inter'),
                       fontFamilyFallback: const ['NotoSansKR'],
                       fontSize: 15,
-                      fontWeight: FontWeight.w800,
+                      fontWeight: FontWeight.w700,
                     ),
                   ),
                 ),
@@ -2261,18 +2357,18 @@ class _CompletionCircle extends StatelessWidget {
   @override
   Widget build(BuildContext context) => AnimatedContainer(
         duration: const Duration(milliseconds: 160),
-        width: 22,
-        height: 22,
+        width: 20,
+        height: 20,
         decoration: BoxDecoration(
           shape: BoxShape.circle,
           color: completed ? AppColors.pointColor : Colors.transparent,
           border: Border.all(
             color: completed ? AppColors.pointColor : const Color(0xFFCBD5E1),
-            width: 1.8,
+            width: 1.5,
           ),
         ),
         child: completed
-            ? const Icon(Icons.check_rounded, size: 15, color: Colors.white)
+            ? const Icon(Icons.check_rounded, size: 14, color: Colors.white)
             : null,
       );
 }

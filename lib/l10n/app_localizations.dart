@@ -4837,7 +4837,7 @@ abstract class AppLocalizations {
   /// No description provided for @nicknamePolicyHelp.
   ///
   /// In ko, this message translates to:
-  /// **'한글, 영문, 숫자, _만 사용할 수 있어요. 공백은 _로 바뀝니다.'**
+  /// **'한글과 영문만 2~20자로 입력해 주세요. 숫자, 공백, 특수문자는 사용할 수 없어요.'**
   String get nicknamePolicyHelp;
 
   /// No description provided for @nicknameChecking.
@@ -4861,7 +4861,7 @@ abstract class AppLocalizations {
   /// No description provided for @nicknameInvalidCharacters.
   ///
   /// In ko, this message translates to:
-  /// **'한글, 영문, 숫자, _만 입력해 주세요.'**
+  /// **'한글과 영문만 입력해 주세요. 숫자, 공백, 특수문자는 사용할 수 없어요.'**
   String get nicknameInvalidCharacters;
 
   /// No description provided for @nicknameLetterRequired.

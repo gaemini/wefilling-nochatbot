@@ -60,8 +60,9 @@ bool isSearchableUserAccountData(
   }.contains(normalizedUid)) {
     return false;
   }
-  if (data['searchable'] == false ||
-      data['isSearchable'] == false ||
+  // `searchable` is derived server metadata and may be stale on completed
+  // legacy profiles. Only explicit privacy settings hide an active account.
+  if (data['isSearchable'] == false ||
       data['allowUserSearch'] == false ||
       data['isProfilePrivate'] == true ||
       data['deleting'] == true) {

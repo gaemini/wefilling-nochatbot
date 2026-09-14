@@ -1,136 +1,120 @@
 #!/usr/bin/env node
-
-/*
- * One-time admin migration. It is intentionally never imported by the app or
- * Cloud Functions runtime. Run `npm run build` first, then use dry-run output
- * before applying:
- *   npm run migrate:nicknames
- *   npm run migrate:nicknames -- --apply
- */
+// Admin-only, explicit-project rollout. Never changes a user's display name.
 const admin = require('firebase-admin');
-const {normalizeNickname} = require('../lib/nickname_claims');
-const {buildUserSearchTokens} = require('../lib/user_search_index');
+const {
+  NICKNAME_POLICY_VERSION, NICKNAME_POLICY_STATE_PATH,
+  storedNicknameIdentity, nicknameClaimId,
+} = require('../lib/nickname_claims');
 
-admin.initializeApp();
+const args = process.argv.slice(2);
+const option = (name) => args.find((arg) => arg.startsWith(`--${name}=`))?.split('=').slice(1).join('=');
+const projectId = option('project');
+const runId = option('run-id');
+const apply = args.includes('--apply');
+if (!projectId || (apply && !runId)) {
+  throw new Error('Required: --project=PROJECT [--apply --run-id=UNIQUE_ID]. Dry-run is default.');
+}
+admin.initializeApp({projectId});
 const db = admin.firestore();
-const apply = process.argv.includes('--apply');
+const stateRef = db.doc(NICKNAME_POLICY_STATE_PATH);
+const stamp = () => admin.firestore.FieldValue.serverTimestamp();
+const fingerprint = (value) => require('crypto').createHash('sha256')
+  .update(value).digest('hex').slice(0, 12);
+const isDeleted = (data) => data.deleted === true || data.isDeleted === true ||
+  data.deletedAt != null || data.deleting === true ||
+  ['deleted', 'deleting'].includes(String(data.status || '').toLowerCase()) ||
+  ['deleted', 'deleting'].includes(String(data.registrationStatus || '').toLowerCase());
 
 async function main() {
-  const users = await db.collection('users').get();
-  const grouped = new Map();
-  const invalid = [];
-  const searchable = [];
-
-  const isUnavailable = (data) => {
-    const status = String(data.status || data.accountStatus || '')
-      .trim().toLowerCase();
-    const registrationStatus = String(data.registrationStatus || '')
-      .trim().toLowerCase();
-    return data.isDeleted === true || data.deleted === true ||
-      data.disabled === true || data.isSuspended === true ||
-      data.deletedAt != null || status === 'deleted' ||
-      status === 'suspended' || registrationStatus === 'deleted';
-  };
-
-  for (const doc of users.docs) {
-    const data = doc.data();
-    if (isUnavailable(data)) continue;
-    const displayName = String(data.nickname || data.displayName || '').trim();
-    if (displayName) {
-      searchable.push({
-        uid: doc.id,
-        tokens: buildUserSearchTokens(displayName),
-      });
-    }
-    try {
-      const identity = normalizeNickname(data.nickname);
-      const entries = grouped.get(identity.nicknameKey) || [];
-      entries.push({uid: doc.id, nickname: identity.nickname});
-      grouped.set(identity.nicknameKey, entries);
-    } catch (_) {
-      invalid.push({uid: doc.id, nickname: String(data.nickname || '')});
-    }
+  if (apply) {
+    await db.runTransaction(async (tx) => {
+      const state = await tx.get(stateRef);
+      if (state.get('status') === 'migrating' && state.get('runId') !== runId) {
+        throw new Error('Another migration owns the gate. Resume its run-id only after confirming it stopped.');
+      }
+      tx.set(stateRef, {version: NICKNAME_POLICY_VERSION, status: 'migrating', runId, updatedAt: stamp()});
+    });
   }
 
-  const conflicts = [];
-  const unique = [];
-  for (const [nicknameKey, entries] of grouped.entries()) {
-    if (entries.length !== 1) {
-      conflicts.push({nicknameKey, users: entries});
-    } else {
-      unique.push({nicknameKey, ...entries[0]});
-    }
-  }
-
-  // Never reserve a key involved in a normalized collision. Existing claims
-  // that disagree with the unique UID are reported and never overwritten.
-  const writable = [];
-  for (const entry of unique) {
-    const claim = await db.collection('nicknameClaims')
-      .doc(entry.nicknameKey)
-      .get();
-    if (claim.exists && claim.get('ownerUid') !== entry.uid) {
-      const ownerUid = String(claim.get('ownerUid') || '');
-      const owner = ownerUid
-        ? await db.collection('users').doc(ownerUid).get()
-        : null;
-      if (owner?.exists && !isUnavailable(owner.data() || {})) {
-        conflicts.push({
-          nicknameKey: entry.nicknameKey,
-          users: [entry],
-          existingClaimOwnerUid: ownerUid,
-        });
+  let cursor;
+  let scannedUsers = 0;
+  let reservedUsers = 0;
+  const conflicts = new Set();
+  const seen = new Map();
+  for (;;) {
+    let query = db.collection('users').orderBy(admin.firestore.FieldPath.documentId()).limit(200);
+    if (cursor) query = query.startAfter(cursor);
+    const page = await query.get();
+    if (page.empty) break;
+    for (const snapshot of page.docs) {
+      scannedUsers++;
+      if (!apply) {
+        const data = snapshot.data();
+        const identity = storedNicknameIdentity(data.nickname);
+        if (isDeleted(data) || !identity.nicknameKey) continue;
+        const id = nicknameClaimId(identity.nicknameKey);
+        const claim = await db.collection('nicknameClaims').doc(id).get();
+        if ((seen.has(id) && seen.get(id) !== snapshot.id) ||
+            (claim.exists && (claim.get('ownerUid') !== snapshot.id || claim.get('status') === 'conflict'))) {
+          conflicts.add(id);
+        }
+        seen.set(id, snapshot.id);
+        reservedUsers++;
         continue;
       }
+      const result = await db.runTransaction(async (tx) => {
+        const state = await tx.get(stateRef);
+        if (state.get('status') !== 'migrating' || state.get('runId') !== runId) {
+          throw new Error('Migration gate changed; stopping without reopening it.');
+        }
+        const user = await tx.get(snapshot.ref);
+        const data = user.data() || {};
+        const identity = storedNicknameIdentity(data.nickname);
+        if (!user.exists || isDeleted(data) || !identity.nicknameKey) return null;
+        const id = nicknameClaimId(identity.nicknameKey);
+        const ref = db.collection('nicknameClaims').doc(id);
+        const claim = await tx.get(ref);
+        const conflict = claim.exists &&
+          (claim.get('ownerUid') !== user.id || claim.get('status') === 'conflict');
+        if (conflict) {
+          // Never overwrite ownership or remove a previous review lock.
+          tx.set(ref, {status: 'conflict', reviewRequired: true, updatedAt: stamp()}, {merge: true});
+          tx.set(ref.collection('conflictMembers').doc(user.id), {uid: user.id}, {merge: true});
+          const owner = claim.get('ownerUid');
+          if (typeof owner === 'string' && owner && !owner.includes('/')) {
+            tx.set(ref.collection('conflictMembers').doc(owner), {uid: owner}, {merge: true});
+          }
+        } else {
+          tx.set(ref, {
+            ownerUid: user.id, nicknameKey: identity.nicknameKey,
+            nickname: String(data.nickname), status: 'owned',
+            createdAt: claim.get('createdAt') || stamp(), updatedAt: stamp(),
+          }, {merge: true});
+        }
+        return {id, conflict};
+      });
+      if (result) {
+        reservedUsers++;
+        if (result.conflict) conflicts.add(result.id);
+      }
     }
-    writable.push(entry);
+    cursor = page.docs[page.docs.length - 1];
   }
-
   if (apply) {
-    // Search token arrays are larger than claim documents. Keep each commit
-    // comfortably below the Firestore request-size limit.
-    for (let offset = 0; offset < searchable.length; offset += 25) {
-      const batch = db.batch();
-      for (const entry of searchable.slice(offset, offset + 25)) {
-        batch.set(db.collection('users').doc(entry.uid), {
-          nicknameSearchTokens: entry.tokens,
-        }, {merge: true});
+    await db.runTransaction(async (tx) => {
+      const state = await tx.get(stateRef);
+      if (state.get('status') !== 'migrating' || state.get('runId') !== runId) {
+        throw new Error('Migration no longer owns the gate.');
       }
-      await batch.commit();
-    }
-    for (let offset = 0; offset < writable.length; offset += 400) {
-      const batch = db.batch();
-      for (const entry of writable.slice(offset, offset + 400)) {
-        const claimRef = db.collection('nicknameClaims').doc(entry.nicknameKey);
-        const userRef = db.collection('users').doc(entry.uid);
-        batch.set(claimRef, {
-          ownerUid: entry.uid,
-          nicknameKey: entry.nicknameKey,
-          nickname: entry.nickname,
-          createdAt: admin.firestore.FieldValue.serverTimestamp(),
-          updatedAt: admin.firestore.FieldValue.serverTimestamp(),
-        }, {merge: true});
-        batch.set(userRef, {
-          nickname: entry.nickname,
-          nicknameKey: entry.nicknameKey,
-        }, {merge: true});
-      }
-      await batch.commit();
-    }
+      tx.update(stateRef, {status: 'ready', completedAt: stamp(), scannedUsers, reservedUsers});
+    });
   }
-
-  process.stdout.write(`${JSON.stringify({
-    mode: apply ? 'apply' : 'dry-run',
-    scannedUsers: users.size,
-    searchableProfiles: searchable.length,
-    writableClaims: writable.length,
-    conflicts,
-    invalid,
-  }, null, 2)}\n`);
-  if (conflicts.length > 0) process.exitCode = 2;
+  console.log(JSON.stringify({projectId, mode: apply ? 'apply' : 'dry-run',
+    scannedUsers, reservedUsers,
+    reviewClaimHashes: [...conflicts].map(fingerprint)}, null, 2));
 }
-
 main().catch((error) => {
   console.error(error);
+  // Fail closed. Resume with the SAME run-id; scanning again is idempotent.
   process.exitCode = 1;
 });

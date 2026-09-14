@@ -105,9 +105,126 @@ export const reconcileDMUnreadTotalSecure = functions
         dmUnreadTotal: unreadTotal,
         dmUnreadCounterVersion: DM_UNREAD_COUNTER_VERSION,
       });
+
+
       return unreadTotal;
     });
     return {success: true, dmUnreadTotal: total};
+  });
+
+async function materializeDMReceipts(
+  conversationRef: FirebaseFirestore.DocumentReference,
+  userId: string,
+  readThroughAt: Timestamp,
+  initialCursor: string,
+  requestToken?: Timestamp,
+): Promise<{receiptsUpdated: number; cleanupComplete: boolean}> {
+  const firestore = admin.firestore();
+    let cursorId = initialCursor;
+    let receiptsUpdated = 0;
+    let cleanupComplete = true;
+    for (let pageIndex = 0;
+      pageIndex < MAX_RECEIPT_PAGES_PER_CALL;
+      pageIndex += 1) {
+      let query: FirebaseFirestore.Query = conversationRef
+        .collection('messages')
+        .where('isRead', '==', false)
+        .orderBy(admin.firestore.FieldPath.documentId())
+        .limit(RECEIPT_PAGE_SIZE);
+      if (cursorId) query = query.startAfter(cursorId);
+      if (requestToken) {
+        const latest = await conversationRef.get();
+        if (timestampMillis(latest.get('receiptCleanupRequestedAtBy')?.[userId]) !==
+            requestToken.toMillis()) return {receiptsUpdated, cleanupComplete: false};
+      }
+      const page = await query.get();
+      if (page.empty) break;
+
+      const batch = firestore.batch();
+      let writes = 0;
+      page.docs.forEach((message) => {
+        const data = message.data();
+        const senderId = (data.senderId ?? '').toString().trim();
+        // createdAt is authored by the sender's device and can be skewed.
+        // Firestore createTime is server-owned, so it is safe to compare with
+        // the server read-through watermark.
+        const serverCreatedAt = message.createTime!.toMillis();
+        if (senderId && senderId !== userId &&
+            serverCreatedAt <= readThroughAt.toMillis()) {
+          batch.update(message.ref, {
+            isRead: true,
+            readAt: readThroughAt,
+          });
+          writes += 1;
+        }
+      });
+      if (writes > 0) {
+        await batch.commit();
+        receiptsUpdated += writes;
+      }
+      cursorId = page.docs[page.docs.length - 1].id;
+      if (page.size < RECEIPT_PAGE_SIZE) break;
+      if (pageIndex === MAX_RECEIPT_PAGES_PER_CALL - 1) {
+        cleanupComplete = false;
+      }
+    }
+
+    // A bounded call can resume after its last scanned page instead of
+    // repeatedly rereading old outgoing (still-unread-for-the-peer) messages.
+    // Once the end is reached the cursor wraps to null for the next cycle.
+    try {
+      await admin.firestore().runTransaction(async (tx) => {
+        const latest = await tx.get(conversationRef);
+        if (!latest.exists) return;
+        if (requestToken && timestampMillis(
+          latest.get('receiptCleanupRequestedAtBy')?.[userId]) !==
+            requestToken.toMillis()) return;
+        tx.update(conversationRef,
+          new admin.firestore.FieldPath('readReceiptCursorBy', userId),
+          cleanupComplete ? null : cursorId);
+      });
+    } catch (error) {
+      // The conversation can be deleted after the counter transaction. Read
+      // state is already correct; losing only this optimization cursor is safe.
+      console.warn('Could not persist the DM receipt cursor.', error);
+    }
+
+
+  return {receiptsUpdated, cleanupComplete};
+}
+
+// Deploy this worker BEFORE enabling deferred receipts in the callable/client.
+export const onDMReceiptCleanupRequested = functions
+  .runWith({timeoutSeconds: 120, memory: '512MB', failurePolicy: true})
+  .firestore.document('conversations/{conversationId}')
+  .onUpdate(async (change) => {
+    const before = change.before.get('receiptCleanupRequestedAtBy') ?? {};
+    const after = change.after.get('receiptCleanupRequestedAtBy') ?? {};
+    for (const [uid, token] of Object.entries(after)) {
+      if (!(token instanceof Timestamp) ||
+          timestampMillis(before[uid]) >= token.toMillis()) continue;
+      const current = await change.after.ref.get();
+      if (!current.exists ||
+          timestampMillis(current.get('receiptCleanupRequestedAtBy')?.[uid]) !==
+            token.toMillis()) continue; // superseded burst; latest worker wins
+      if (!(current.get('participants') ?? []).includes(uid)) continue;
+      const readThrough = current.get('lastReadAtBy')?.[uid];
+      if (!(readThrough instanceof Timestamp)) continue;
+      const result = await materializeDMReceipts(change.after.ref, uid,
+        readThrough, current.get('readReceiptCursorBy')?.[uid] ?? '', token);
+      if (!result.cleanupComplete) {
+        // Continue bounded pages even when the reader has already closed the app.
+        await admin.firestore().runTransaction(async (tx) => {
+          const latest = await tx.get(change.after.ref);
+          if (!latest.exists || timestampMillis(
+            latest.get('receiptCleanupRequestedAtBy')?.[uid]) !== token.toMillis()) return;
+          tx.update(change.after.ref,
+            new admin.firestore.FieldPath('receiptCleanupRequestedAtBy', uid),
+            Timestamp.now());
+        });
+      }
+    }
+    return null;
   });
 
 /**
@@ -125,7 +242,7 @@ export const markDMConversationReadSecure = functions
     const conversationRef = firestore.collection('conversations')
       .doc(conversationId);
     const userRef = firestore.collection('users').doc(userId);
-    const readThroughAt = Timestamp.now();
+    let readThroughAt = Timestamp.now();
 
     const counterResult = await firestore.runTransaction(async (transaction) => {
       const [conversation, user] = await Promise.all([
@@ -138,6 +255,7 @@ export const markDMConversationReadSecure = functions
           'The authenticated user profile does not exist.',
         );
       }
+      readThroughAt = Timestamp.now();
       const userData = user.data() ?? {};
       const previousTotal = nonNegativeInteger(userData.dmUnreadTotal);
       if (!conversation.exists) {
@@ -188,6 +306,12 @@ export const markDMConversationReadSecure = functions
         unreadCount,
         lastReadAtBy,
         updatedAt: FieldValue.serverTimestamp(),
+        ...(raw?.deferReceipts === true ? {
+          receiptCleanupRequestedAtBy: {
+            ...(data.receiptCleanupRequestedAtBy ?? {}),
+            [userId]: readThroughAt,
+          },
+        } : {}),
       });
       transaction.update(userRef, {
         dmUnreadTotal: newDmUnreadTotal,
@@ -211,69 +335,15 @@ export const markDMConversationReadSecure = functions
       };
     }
 
-    let cursorId = counterResult.receiptCursor;
-    let receiptsUpdated = 0;
-    let cleanupComplete = true;
-    for (let pageIndex = 0;
-      pageIndex < MAX_RECEIPT_PAGES_PER_CALL;
-      pageIndex += 1) {
-      let query: FirebaseFirestore.Query = conversationRef
-        .collection('messages')
-        .where('isRead', '==', false)
-        .orderBy(admin.firestore.FieldPath.documentId())
-        .limit(RECEIPT_PAGE_SIZE);
-      if (cursorId) query = query.startAfter(cursorId);
-      const page = await query.get();
-      if (page.empty) break;
-
-      const batch = firestore.batch();
-      let writes = 0;
-      page.docs.forEach((message) => {
-        const data = message.data();
-        const senderId = (data.senderId ?? '').toString().trim();
-        // createdAt is authored by the sender's device and can be skewed.
-        // Firestore createTime is server-owned, so it is safe to compare with
-        // the server read-through watermark.
-        const serverCreatedAt = message.createTime!.toMillis();
-        if (senderId && senderId !== userId &&
-            serverCreatedAt <= readThroughAt.toMillis()) {
-          batch.update(message.ref, {
-            isRead: true,
-            readAt: readThroughAt,
-          });
-          writes += 1;
-        }
-      });
-      if (writes > 0) {
-        await batch.commit();
-        receiptsUpdated += writes;
-      }
-      cursorId = page.docs[page.docs.length - 1].id;
-      if (page.size < RECEIPT_PAGE_SIZE) break;
-      if (pageIndex === MAX_RECEIPT_PAGES_PER_CALL - 1) {
-        cleanupComplete = false;
-      }
+    // New clients return after the O(1) counter transaction. The durable
+    // conversation request below is processed by onDMReceiptCleanupRequested.
+    if (raw?.deferReceipts === true) {
+      return {success: true, clearedCount: counterResult.clearedCount,
+        newDmUnreadTotal: counterResult.newDmUnreadTotal,
+        receiptsUpdated: 0, cleanupComplete: false};
     }
-
-    // A bounded call can resume after its last scanned page instead of
-    // repeatedly rereading old outgoing (still-unread-for-the-peer) messages.
-    // Once the end is reached the cursor wraps to null for the next cycle.
-    try {
-      await conversationRef.update(
-        new admin.firestore.FieldPath('readReceiptCursorBy', userId),
-        cleanupComplete ? null : cursorId,
-      );
-    } catch (error) {
-      // The conversation can be deleted after the counter transaction. Read
-      // state is already correct; losing only this optimization cursor is safe.
-      console.warn('Could not persist the DM receipt cursor.', error);
-    }
-
-    return {
-      success: true,
-      clearedCount: counterResult.clearedCount,
-      newDmUnreadTotal: counterResult.newDmUnreadTotal,
-      receiptsUpdated,
-      cleanupComplete,
-    };
+    const receipts = await materializeDMReceipts(conversationRef, userId,
+      readThroughAt, counterResult.receiptCursor);
+    return {success: true, clearedCount: counterResult.clearedCount,
+      newDmUnreadTotal: counterResult.newDmUnreadTotal, ...receipts};
   });

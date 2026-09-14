@@ -2594,7 +2594,7 @@ class AppLocalizationsEn extends AppLocalizations {
 
   @override
   String get nicknamePolicyHelp =>
-      'Use Korean or English letters, numbers, and _. Spaces become _.';
+      'Use 2–20 Korean or English letters. No numbers, spaces, or symbols.';
 
   @override
   String get nicknameChecking => 'Checking availability…';
@@ -2607,7 +2607,7 @@ class AppLocalizationsEn extends AppLocalizations {
 
   @override
   String get nicknameInvalidCharacters =>
-      'Use only Korean or English letters, numbers, and _.';
+      'Use only Korean or English letters. No numbers, spaces, or symbols.';
 
   @override
   String get nicknameLetterRequired =>

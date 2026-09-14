@@ -17,6 +17,9 @@ import '../models/conversation.dart';
 import '../models/dm_message.dart';
 import '../models/content_translation.dart';
 import '../services/dm_service.dart';
+import '../services/chat_outbox_store.dart';
+import '../utils/chat_work_queue.dart';
+import '../ui/widgets/snack_chat_outgoing_entrance.dart';
 import '../services/dm_active_conversation.dart';
 import '../services/badge_service.dart';
 import '../services/fcm_service.dart';
@@ -36,6 +39,7 @@ import '../ui/widgets/fullscreen_image_viewer.dart';
 import 'dm_image_send_preview_screen.dart';
 import '../ui/widgets/user_avatar.dart';
 import '../utils/logger.dart';
+import '../utils/chat_timing.dart';
 import '../ui/snackbar/app_snackbar.dart';
 import '../ui/sheets/translation_language_sheet.dart';
 import '../utils/responsive_helper.dart';
@@ -181,7 +185,23 @@ class _DMChatScreenState extends State<DMChatScreen>
   bool _isConversationInitializing = true;
 
   Conversation? _conversation;
-  bool _isLoading = false;
+  final _outbox = ChatOutboxStore.instance;
+  static final _dispatch = ChatWorkQueue();
+  static final _textPreparation = ChatWorkQueue();
+  static final _imagePreparation = ChatWorkQueue();
+  final Map<String, DMMessage> _outgoing = {};
+  final Set<String> _sendingIds = {};
+  final Set<String> _entranceIds = {};
+  final Set<String> _restoredOutboxes = {};
+  final Map<String, double> _uploadById = {};
+  DateTime? _lastLocalSentAt;
+  bool _followingLatest = false;
+  bool _accountInvalidated = false;
+  StreamSubscription<User?>? _accountSubscription;
+  int _messageGeneration = 0;
+  Timer? _messageReconnect;
+  Timer? _outboxRetry;
+  final Map<String, int> _outboxRetryAttempts = {};
   bool _isLeaving = false; // 나가기 진행 중 플래그
   static const String _anonTitlePrefsPrefix =
       'dm_anon_title__'; // conversationId -> post content
@@ -199,6 +219,7 @@ class _DMChatScreenState extends State<DMChatScreen>
     final translationConversationChanged =
         previousConversationId != conversationId;
     _activeConversationId = conversationId;
+    unawaited(_restoreOutbox(conversationId));
     if (_translationLifecycleInitialized && translationConversationChanged) {
       _resetTranslationStateForConversation();
       unawaited(_prepareTranslationMode());
@@ -241,6 +262,17 @@ class _DMChatScreenState extends State<DMChatScreen>
   @override
   void initState() {
     super.initState();
+    _accountSubscription =
+        FirebaseAuth.instance.authStateChanges().listen((user) {
+      if (user?.uid != _currentUser?.uid) {
+        _accountInvalidated = true;
+        _messageGeneration++;
+        _messageReconnect?.cancel();
+        _outboxRetry?.cancel();
+        unawaited(_recentMessagesSub?.cancel());
+        _recentMessagesSub = null;
+      }
+    });
     WidgetsBinding.instance.addObserver(this);
     _appLifecycleState =
         WidgetsBinding.instance.lifecycleState ?? AppLifecycleState.detached;
@@ -283,7 +315,21 @@ class _DMChatScreenState extends State<DMChatScreen>
   @override
   void didChangeAppLifecycleState(AppLifecycleState state) {
     _appLifecycleState = state;
-    if (state == AppLifecycleState.resumed) {
+    if (state != AppLifecycleState.resumed) {
+      _outboxRetry?.cancel();
+      _outboxRetry = null;
+    }
+    if (state == AppLifecycleState.resumed && !_accountInvalidated) {
+      if (_recentMessagesSub == null && _conversationExists == true) {
+        unawaited(_initializeMessagesStream());
+      }
+      final retryable = _outgoing.values
+          .where((m) => m.deliveryState == DMDeliveryState.uncertain)
+          .toList()
+        ..sort((a, b) => -_compareMessagesDesc(a, b));
+      for (final message in retryable) {
+        _queueOutgoing(_activeConversationId, message);
+      }
       DMActiveConversation.setActive(_activeConversationId);
       unawaited(FCMService().cancelDmNotification(_activeConversationId));
       _scheduleAutoMarkAsRead(_messages, forceCounterReconcile: true);
@@ -294,6 +340,21 @@ class _DMChatScreenState extends State<DMChatScreen>
       _translationMicroBatchTimer = null;
       _translationCandidates.clear();
     }
+  }
+
+  @override
+  void didChangeMetrics() {
+    if (!mounted || !_scrollController.hasClients) return;
+    final follow = _scrollController.offset <= 100;
+    final anchor = follow ? null : _captureMessageAnchor();
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!mounted) return;
+      if (follow) {
+        _followLatest(wasNearLatest: true);
+      } else {
+        _restoreMessageAnchor(anchor);
+      }
+    });
   }
 
   String get _translationScope => 'dm-conversation:$_activeConversationId';
@@ -1054,9 +1115,11 @@ class _DMChatScreenState extends State<DMChatScreen>
           Navigator.of(context).pop();
           ScaffoldMessenger.of(context).showSnackBar(
             SnackBar(
-              content: Text((isChineseUi(context) ? '无法向此用户发送消息' : Localizations.localeOf(context).languageCode == 'ko'
-                  ? '이 사용자에게는 메시지를 보낼 수 없습니다'
-                  : 'Cannot send message to this user')),
+              content: Text((isChineseUi(context)
+                  ? '无法向此用户发送消息'
+                  : Localizations.localeOf(context).languageCode == 'ko'
+                      ? '이 사용자에게는 메시지를 보낼 수 없습니다'
+                      : 'Cannot send message to this user')),
               backgroundColor: Colors.orange,
               duration: const Duration(seconds: 3),
             ),
@@ -1129,8 +1192,9 @@ class _DMChatScreenState extends State<DMChatScreen>
             Navigator.of(context).pop();
             ScaffoldMessenger.of(context).showSnackBar(
               SnackBar(
-                content: Text(
-                    (isChineseUi(context) ? '不能给自己发消息' : Localizations.localeOf(context).languageCode == 'ko'
+                content: Text((isChineseUi(context)
+                    ? '不能给自己发消息'
+                    : Localizations.localeOf(context).languageCode == 'ko'
                         ? '본인에게는 메시지를 보낼 수 없습니다'
                         : 'Cannot send message to yourself')),
                 backgroundColor: Colors.orange,
@@ -1160,8 +1224,9 @@ class _DMChatScreenState extends State<DMChatScreen>
             Navigator.of(context).pop();
             ScaffoldMessenger.of(context).showSnackBar(
               SnackBar(
-                content: Text(
-                    (isChineseUi(context) ? '不能给自己发消息' : Localizations.localeOf(context).languageCode == 'ko'
+                content: Text((isChineseUi(context)
+                    ? '不能给自己发消息'
+                    : Localizations.localeOf(context).languageCode == 'ko'
                         ? '본인에게는 메시지를 보낼 수 없습니다'
                         : 'Cannot send message to yourself')),
                 backgroundColor: Colors.orange,
@@ -1229,6 +1294,10 @@ class _DMChatScreenState extends State<DMChatScreen>
 
   @override
   void dispose() {
+    _messageGeneration++;
+    _messageReconnect?.cancel();
+    _outboxRetry?.cancel();
+    unawaited(_accountSubscription?.cancel());
     // PopScope를 거치지 않고 라우트가 제거되는 경우에도 백그라운드 읽음
     // 동기화를 시작한다. 이 Future는 화면 생명주기와 독립적으로 완료된다.
     _startBackgroundReadFlush();
@@ -1370,161 +1439,142 @@ class _DMChatScreenState extends State<DMChatScreen>
   /// - 기본: 전체 대화 표시(일반 진입)
   /// - 예외: 사용자가 실제로 '채팅방 나가기'를 한 기록이 있으면, 그 시점 이후만 표시
   Future<void> _initializeMessagesStream({String? conversationId}) async {
+    final room = conversationId ?? _activeConversationId;
+    final owner = _currentUser?.uid;
+    if (owner == null || !_canSendFor(owner, room)) return;
+    if (_recentMessagesSub != null && _messagesError == null) return;
+    final generation = ++_messageGeneration;
+    bool current() =>
+        mounted && generation == _messageGeneration && _canSendFor(owner, room);
+    _messageReconnect?.cancel();
+    final previous = _recentMessagesSub;
+    _recentMessagesSub = null;
+    await previous?.cancel();
     try {
-      final targetConversationId = conversationId ?? _activeConversationId;
-      final previousConversationId = _activeConversationId;
-      final isConversationChanging =
-          previousConversationId != targetConversationId;
-
-      // 동일 대화방인데 이미 스트림이 살아있으면 재초기화(캐시 덮어쓰기)를 피한다.
-      if (!isConversationChanging &&
-          _recentMessagesSub != null &&
-          _messagesError == null) {
-        return;
-      }
-
-      // 대화방이 바뀌는 경우에만 상태를 리셋한다. (같은 방에서는 유지)
-      if (isConversationChanging) {
-        _setActiveConversationId(targetConversationId);
-        _messages = <DMMessage>[];
-        _messagesError = null;
-        _isMessagesLoading = false;
-        _isLoadingMore = false;
-        _hasMore = true;
-      } else {
-        _setActiveConversationId(targetConversationId);
-      }
-
-      // 사용자가 실제로 '나가기'를 한 적이 있으면 해당 시점 이후만 표시
-      final visibilityStartTime = await _dmService
-          .getUserMessageVisibilityStartTime(targetConversationId);
-      _visibilityStartTime = visibilityStartTime;
-
-      // 1) 로컬 캐시를 먼저 읽어 즉시 렌더링 (문자앱 UX)
-      // ✅ 단, 이미 이 화면에서 한 번이라도 로컬 캐시를 주입했거나,
-      //    이미 메모리에 메시지가 있다면(=과거 로드 포함) 다시 덮어쓰지 않는다.
-      final shouldHydrateFromCache = _messages.isEmpty &&
-          !_hydratedFromLocalCacheConversationIds
-              .contains(targetConversationId);
-      if (shouldHydrateFromCache) {
-        if (mounted) {
-          setState(() {
-            _isMessagesLoading = true;
-            _messagesError = null;
-            _hasMore = true;
-          });
-        }
-        final cached = await _dmService.loadCachedMessages(
-          targetConversationId,
-          limit: _initialCacheLimit,
-          visibilityStartTime: visibilityStartTime,
-        );
-        if (!mounted) return;
-        _hydratedFromLocalCacheConversationIds.add(targetConversationId);
-        if (cached.isNotEmpty) {
-          setState(() {
-            _messages = cached..sort(_compareMessagesDesc);
-          });
+      final visibility =
+          await _dmService.getUserMessageVisibilityStartTime(room);
+      if (!current()) return;
+      _visibilityStartTime = visibility;
+      unawaited(_restoreOutbox(room));
+      // Start cache read and live subscription together. Live objects win every
+      // overlap, including a snapshot received while Hive is still opening.
+      if (_hydratedFromLocalCacheConversationIds.add(room)) {
+        unawaited(_dmService
+            .loadCachedMessages(room,
+                limit: _initialCacheLimit, visibilityStartTime: visibility)
+            .then((cached) {
+          if (!current() || cached.isEmpty || _receivedInitialMessageSnapshot)
+            return;
+          setState(() => _messages = _mergeRecentIntoAll(_messages, cached));
           _scheduleVisibleTranslations();
+        }));
+      }
+      _isMessagesLoading = _messages.isEmpty;
+      void retry(Object? error) {
+        if (!current()) return;
+        final old = _recentMessagesSub;
+        _recentMessagesSub = null;
+        unawaited(old?.cancel());
+        setState(() {
+          _messagesError = error;
+          _isMessagesLoading = false;
+        });
+        final permission =
+            error is FirebaseException && error.code == 'permission-denied';
+        if (!permission) {
+          _messageReconnect?.cancel();
+          _messageReconnect = Timer(const Duration(seconds: 2), () {
+            if (current())
+              unawaited(_initializeMessagesStream(conversationId: room));
+          });
         }
       }
 
-      // 2) 서버 최근 N개 스트림 구독 + 로컬 캐시 저장
-      await _recentMessagesSub?.cancel();
       _recentMessagesSub = _dmService
-          .watchRecentMessagesAndCache(
-        targetConversationId,
-        limit: _recentLimit,
-        visibilityStartTime: visibilityStartTime,
-      )
+          .watchRecentMessagesAndCache(room,
+              limit: _recentLimit, visibilityStartTime: visibility)
           .listen((recent) {
-        if (!mounted) return;
-        final knownIds = _messages.map((message) => message.id).toSet();
-        final newlyReceived = _receivedInitialMessageSnapshot
-            ? recent.where((message) => !knownIds.contains(message.id))
-            : const Iterable<DMMessage>.empty();
+        if (!current()) return;
+        final watch = Stopwatch()..start();
+        final follow =
+            !_scrollController.hasClients || _scrollController.offset <= 100;
+        final anchor = follow ? null : _captureMessageAnchor();
+        final known = _messages.map((m) => m.id).toSet();
+        final incoming = _receivedInitialMessageSnapshot
+            ? recent.where((m) => !known.contains(m.id)).toList()
+            : <DMMessage>[];
+        for (final message in recent) {
+          if (message.deliveryState == DMDeliveryState.sent &&
+              _outgoing.remove(message.id) != null) {
+            _outboxRetryAttempts.remove(message.id);
+            unawaited(
+                _outbox.remove(owner, room, message.id).catchError((Object e) {
+              Logger.error('DM outbox acknowledgement persistence failed: $e');
+            }));
+          }
+        }
         setState(() {
           _messages = _mergeRecentIntoAll(recent, _messages);
+          _messagesError = null;
           _isMessagesLoading = false;
-          _messagesError = null; // 이전 오류 상태 초기화
           _receivedInitialMessageSnapshot = true;
         });
-        _markNewIncomingMessagesForTranslation(newlyReceived);
+        WidgetsBinding.instance.addPostFrameCallback((_) {
+          if (!current()) return;
+          if (follow) {
+            _followLatest(wasNearLatest: true);
+          } else {
+            _restoreMessageAnchor(anchor);
+          }
+          if (ChatTiming.enabled)
+            ChatTiming.record(
+                '[DMChatTiming] stage=receiverFrame roomId=$room durationMs=${watch.elapsedMilliseconds}');
+        });
+        _markNewIncomingMessagesForTranslation(incoming);
         _scheduleVisibleTranslations();
-        // ✅ 채팅 화면이 열려 있을 때 들어오는 메시지는 빠르게 읽음 처리(디바운스)
         _scheduleAutoMarkAsRead(_messages);
-      }, onError: (e) {
-        if (!mounted) return;
-        Logger.error('❌ [메시지 스트림] 오류: $e');
-        setState(() {
-          _messagesError = e;
-          _isMessagesLoading = false;
-        });
-
-        // permission 오류가 아닌 경우 3초 후 재연결 시도
-        // - Firestore SDK는 네트워크 오류에서 자체 재연결하므로 error 이벤트를 보내지 않는다.
-        // - error 이벤트는 주로 권한 문제이므로 permission 오류는 재시도하지 않는다.
-        final isPermissionError = e.toString().contains('permission-denied') ||
-            e.toString().contains('PERMISSION_DENIED');
-        if (!isPermissionError) {
-          if (Logger.isVerboseEnabled) Logger.log('🔄 [메시지 스트림] 3초 후 재연결 예약');
-          Future.delayed(const Duration(seconds: 3), () {
-            if (!mounted) return;
-            if (_messagesError == null) return; // 이미 복구됨
-            if (Logger.isVerboseEnabled)
-              Logger.log(
-                  '🔄 [메시지 스트림] 재연결 시도 - conversationId: $targetConversationId');
-            setState(() {
-              _messagesError = null;
-            });
-            unawaited(_initializeMessagesStream(
-                conversationId: targetConversationId));
-          });
-        }
-      }, onDone: () {
-        // Firestore 스트림은 정상적으로 onDone을 호출하지 않는다.
-        // onDone이 호출된다면 예상치 못한 스트림 종료이므로 재연결한다.
-        if (!mounted) return;
-        if (Logger.isVerboseEnabled)
-          Logger.log('⚠️ [메시지 스트림] 예상치 못한 종료(onDone) - 재연결 시도');
-        Future.delayed(const Duration(seconds: 2), () {
-          if (!mounted) return;
-          if (_recentMessagesSub != null) return; // 이미 새 구독이 있음
-          unawaited(
-              _initializeMessagesStream(conversationId: targetConversationId));
-        });
-      });
-    } catch (e) {
-      Logger.error('메시지 스트림 초기화 실패: $e');
-      if (!mounted) return;
+      }, onError: (Object error) => retry(error), onDone: () => retry(null));
+    } catch (error) {
+      if (!current()) return;
       setState(() {
-        _messagesError = e;
+        _messagesError = error;
         _isMessagesLoading = false;
+      });
+      _messageReconnect = Timer(const Duration(seconds: 2), () {
+        if (current())
+          unawaited(_initializeMessagesStream(conversationId: room));
       });
     }
   }
 
-  int _compareMessagesDesc(DMMessage a, DMMessage b) {
-    final t = b.createdAt.compareTo(a.createdAt);
-    if (t != 0) return t;
-    return b.id.compareTo(a.id);
-  }
+  int _compareMessagesDesc(DMMessage a, DMMessage b) =>
+      DMMessage.compareDescending(a, b);
 
   List<DMMessage> _mergeRecentIntoAll(
       List<DMMessage> recent, List<DMMessage> existingAll) {
-    final byId = <String, DMMessage>{};
-    for (final m in existingAll) {
-      byId[m.id] = m;
-    }
-    for (final m in recent) {
-      byId[m.id] = m;
-    }
-    final merged = byId.values.toList(growable: false)
+    final incoming = {for (final m in recent) m.id: m}.values.toList()
       ..sort(_compareMessagesDesc);
+    final ids = incoming.map((m) => m.id).toSet();
+    final retained = existingAll.where((m) => !ids.contains(m.id)).toList();
+    final merged = <DMMessage>[];
+    var a = 0;
+    var b = 0;
+    while (a < incoming.length && b < retained.length) {
+      merged.add(_compareMessagesDesc(incoming[a], retained[b]) <= 0
+          ? incoming[a++]
+          : retained[b++]);
+    }
+    merged.addAll(incoming.skip(a));
+    merged.addAll(retained.skip(b));
     // 메모리 상한: 너무 오래 열어두거나 과거를 많이 불러와도 과도한 메모리 사용을 방지
     const int hardCap = 800;
     if (merged.length > hardCap) {
-      return merged.take(hardCap).toList(growable: false);
+      return [
+        ...merged.take(hardCap),
+        ...merged
+            .skip(hardCap)
+            .where((message) => message.deliveryState != DMDeliveryState.sent),
+      ];
     }
     return merged;
   }
@@ -1569,15 +1619,24 @@ class _DMChatScreenState extends State<DMChatScreen>
     });
 
     try {
-      final before = _messages.last.createdAt; // 가장 오래된 메시지보다 더 과거를 로드
+      final room = _activeConversationId;
+      final generation = _messageGeneration;
+      final cursor = _messages.last;
+      final before = cursor.createdAt; // 가장 오래된 메시지보다 더 과거를 로드
       final older = await _dmService.fetchOlderMessages(
         _activeConversationId,
         before: before,
+        beforeId: cursor.id,
+        beforeTimestamp: cursor.serverCreatedAt,
         limit: _pageSize,
         visibilityStartTime: _visibilityStartTime,
       );
 
       if (!mounted) return;
+
+      if (room != _activeConversationId ||
+          generation != _messageGeneration ||
+          _accountInvalidated) return;
 
       if (older.isEmpty) {
         setState(() {
@@ -1716,12 +1775,24 @@ class _DMChatScreenState extends State<DMChatScreen>
 
   Widget _buildDmTranslationControl() {
     final isKo = Localizations.localeOf(context).languageCode == 'ko';
-    final translationActionLabel = (isChineseUi(context) ? '查看译文' : isKo ? '번역 보기' : 'View translation');
-    final originalActionLabel = (isChineseUi(context) ? '查看原文' : isKo ? '원문 보기' : 'View original');
+    final translationActionLabel = (isChineseUi(context)
+        ? '查看译文'
+        : isKo
+            ? '번역 보기'
+            : 'View translation');
+    final originalActionLabel = (isChineseUi(context)
+        ? '查看原文'
+        : isKo
+            ? '원문 보기'
+            : 'View original');
     final label = _translationShowsOriginal
         ? translationActionLabel
         : originalActionLabel;
-    final settingsLabel = (isChineseUi(context) ? '翻译语言' : isKo ? '번역 언어 설정' : 'Translation language');
+    final settingsLabel = (isChineseUi(context)
+        ? '翻译语言'
+        : isKo
+            ? '번역 언어 설정'
+            : 'Translation language');
     final controlTextStyle = TextStyle(
       fontFamily: uiFontFamily(context, 'Inter'),
       fontFamilyFallback: const ['NotoSansKR'],
@@ -2337,9 +2408,11 @@ class _DMChatScreenState extends State<DMChatScreen>
       final isKo = Localizations.localeOf(context).languageCode == 'ko';
       AppSnackBar.show(
         context,
-        message: (isChineseUi(context) ? '此聊天已从列表中移除。' : isKo
-            ? '채팅방이 목록에서 삭제되었습니다'
-            : 'This chat has been removed from your list.'),
+        message: (isChineseUi(context)
+            ? '此聊天已从列表中移除。'
+            : isKo
+                ? '채팅방이 목록에서 삭제되었습니다'
+                : 'This chat has been removed from your list.'),
         type: AppSnackBarType.info,
       );
     } catch (e) {
@@ -2400,9 +2473,11 @@ class _DMChatScreenState extends State<DMChatScreen>
             ],
           ),
           content: Text(
-            (isChineseUi(context) ? '确定退出此聊天？' : isKo
-                ? '이 채팅방에서 나가시겠습니까?'
-                : 'Are you sure you want to leave this chat?'),
+            (isChineseUi(context)
+                ? '确定退出此聊天？'
+                : isKo
+                    ? '이 채팅방에서 나가시겠습니까?'
+                    : 'Are you sure you want to leave this chat?'),
             style: TextStyle(
               fontFamily: uiFontFamily(context, 'Inter'),
               fontFamilyFallback: const ['NotoSansKR'],
@@ -2459,7 +2534,11 @@ class _DMChatScreenState extends State<DMChatScreen>
                       disabledBackgroundColor: const Color(0xFFE5E7EB),
                     ),
                     child: Text(
-                      (isChineseUi(context) ? '退出' : isKo ? '나가기' : 'Leave'),
+                      (isChineseUi(context)
+                          ? '退出'
+                          : isKo
+                              ? '나가기'
+                              : 'Leave'),
                       style: TextStyle(
                         fontFamily: uiFontFamily(context, 'Inter'),
                         fontFamilyFallback: const ['NotoSansKR'],
@@ -2501,9 +2580,11 @@ class _DMChatScreenState extends State<DMChatScreen>
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
           content: Text(
-            (isChineseUi(context) ? '你已退出聊天。再次发消息时，将无法查看之前的记录。' : Localizations.localeOf(context).languageCode == 'ko'
-                ? '채팅방에서 나갔습니다. 다시 메시지를 보내면 이전 대화 내역은 보이지 않습니다.'
-                : 'You left the chat. Previous messages will not be visible if you send a new message.'),
+            (isChineseUi(context)
+                ? '你已退出聊天。再次发消息时，将无法查看之前的记录。'
+                : Localizations.localeOf(context).languageCode == 'ko'
+                    ? '채팅방에서 나갔습니다. 다시 메시지를 보내면 이전 대화 내역은 보이지 않습니다.'
+                    : 'You left the chat. Previous messages will not be visible if you send a new message.'),
           ),
           duration: const Duration(seconds: 4),
         ),
@@ -2519,9 +2600,11 @@ class _DMChatScreenState extends State<DMChatScreen>
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
           content: Text(
-            (isChineseUi(context) ? '已退出聊天' : Localizations.localeOf(context).languageCode == 'ko'
-                ? '채팅방에서 나갔습니다'
-                : 'You left the chat'),
+            (isChineseUi(context)
+                ? '已退出聊天'
+                : Localizations.localeOf(context).languageCode == 'ko'
+                    ? '채팅방에서 나갔습니다'
+                    : 'You left the chat'),
           ),
         ),
       );
@@ -2537,7 +2620,9 @@ class _DMChatScreenState extends State<DMChatScreen>
   /// 메시지 목록 빌드
   Widget _buildMessageList() {
     // ✅ 대화방이 없다고 확정되기 전까지는(초기화 중) '없음' 문구 대신 스켈레톤을 유지한다.
-    if (_conversationExists == false && !_isConversationInitializing) {
+    if (_conversationExists == false &&
+        !_isConversationInitializing &&
+        _messages.isEmpty) {
       return _buildStartConversationPlaceholder(isConversationCreated: false);
     }
 
@@ -2560,9 +2645,11 @@ class _DMChatScreenState extends State<DMChatScreen>
                 Icon(Icons.lock_outline, size: 64, color: Colors.red[300]),
                 const SizedBox(height: 16),
                 Text(
-                  (isChineseUi(context) ? '权限错误' : Localizations.localeOf(context).languageCode == 'ko'
-                      ? '권한 오류'
-                      : 'Permission Error'),
+                  (isChineseUi(context)
+                      ? '权限错误'
+                      : Localizations.localeOf(context).languageCode == 'ko'
+                          ? '권한 오류'
+                          : 'Permission Error'),
                   style: const TextStyle(
                     fontSize: 18,
                     fontWeight: FontWeight.w600,
@@ -2571,9 +2658,11 @@ class _DMChatScreenState extends State<DMChatScreen>
                 ),
                 const SizedBox(height: 8),
                 Text(
-                  (isChineseUi(context) ? 'Firebase安全规则尚未部署，或你没有访问权限。\n\n请重新启动应用。' : Localizations.localeOf(context).languageCode == 'ko'
-                      ? 'Firebase Security Rules가 배포되지 않았거나\n권한이 없습니다.\n\n앱을 다시 시작해주세요.'
-                      : 'Firebase Security Rules are not deployed\nor you don\'t have permission.\n\nPlease restart the app.'),
+                  (isChineseUi(context)
+                      ? 'Firebase安全规则尚未部署，或你没有访问权限。\n\n请重新启动应用。'
+                      : Localizations.localeOf(context).languageCode == 'ko'
+                          ? 'Firebase Security Rules가 배포되지 않았거나\n권한이 없습니다.\n\n앱을 다시 시작해주세요.'
+                          : 'Firebase Security Rules are not deployed\nor you don\'t have permission.\n\nPlease restart the app.'),
                   style: TextStyle(
                     color: Colors.grey[600],
                     fontWeight: FontWeight.bold,
@@ -2616,7 +2705,8 @@ class _DMChatScreenState extends State<DMChatScreen>
     String? latestMyUnreadMessageId;
     String? latestMyReadMessageId;
     for (final m in messages) {
-      if (m.senderId != myUid) continue;
+      if (m.senderId != myUid || m.deliveryState != DMDeliveryState.sent)
+        continue;
       if (!m.isRead && latestMyUnreadMessageId == null) {
         latestMyUnreadMessageId = m.id;
       } else if (m.isRead && latestMyReadMessageId == null) {
@@ -2627,23 +2717,20 @@ class _DMChatScreenState extends State<DMChatScreen>
     }
 
     String? _statusFor(DMMessage m) {
-      if (m.senderId != myUid) return null;
+      if (m.senderId != myUid || m.deliveryState != DMDeliveryState.sent)
+        return null;
       if (m.id == latestMyUnreadMessageId) return '1';
       if (m.id == latestMyReadMessageId)
         return AppLocalizations.of(context)!.read;
       return null;
     }
 
-    final timeLabels = List<String>.generate(
-      messages.length,
-      (i) => TimeFormatter.formatMessageTime(context, messages[i].createdAt),
-      growable: false,
-    );
-    final statusLabels = List<String?>.generate(
-      messages.length,
-      (i) => _statusFor(messages[i]),
-      growable: false,
-    );
+    String timeLabel(int index) =>
+        TimeFormatter.formatMessageTime(context, messages[index].createdAt);
+    final indices = <Key, int>{
+      for (var i = 0; i < messages.length; i++)
+        _messageLayoutKeys.putIfAbsent(messages[i].id, GlobalKey.new): i,
+    };
 
     return ListView.builder(
       controller: _scrollController,
@@ -2655,6 +2742,7 @@ class _DMChatScreenState extends State<DMChatScreen>
       ),
       reverse: true,
       itemCount: messages.length + (_hasMore ? 1 : 0),
+      findChildIndexCallback: (key) => indices[key],
       itemBuilder: (context, index) {
         // reverse=true에서 "마지막 인덱스"는 화면 상단(가장 과거) 영역에 위치한다.
         if (_hasMore && index == messages.length) {
@@ -2663,13 +2751,13 @@ class _DMChatScreenState extends State<DMChatScreen>
 
         final message = messages[index];
         final isMine = message.isMine(_currentUser!.uid);
-        final String? statusText = statusLabels[index];
+        final String? statusText = _statusFor(message);
 
         // 시간/읽음 라벨은 동일 내용이 연속될 때 마지막(더 최신) 1개만 노출
-        final String timeText = timeLabels[index];
-        final String? prevTimeText = index > 0 ? timeLabels[index - 1] : null;
+        final String timeText = timeLabel(index);
+        final String? prevTimeText = index > 0 ? timeLabel(index - 1) : null;
         final String? prevStatusText =
-            index > 0 ? statusLabels[index - 1] : null;
+            index > 0 ? _statusFor(messages[index - 1]) : null;
         final bool showTimeText =
             prevTimeText == null || timeText != prevTimeText;
         final bool showStatusText = statusText != null &&
@@ -2688,15 +2776,17 @@ class _DMChatScreenState extends State<DMChatScreen>
           child: Column(
             children: [
               if (showDateSeparator) _buildDateSeparator(message.createdAt),
-              _buildMessageBubble(
-                message,
-                isMine,
-                isConsecutive,
-                timeText: timeText,
-                showTimeText: showTimeText,
-                statusText: statusText,
-                showStatusText: showStatusText,
-              ),
+              _buildOutgoingPresentation(
+                  message,
+                  _buildMessageBubble(
+                    message,
+                    isMine,
+                    isConsecutive,
+                    timeText: timeText,
+                    showTimeText: showTimeText,
+                    statusText: statusText,
+                    showStatusText: showStatusText,
+                  )),
             ],
           ),
         );
@@ -2754,14 +2844,22 @@ class _DMChatScreenState extends State<DMChatScreen>
         _isAnonymous ? 0 : (_serverOtherUserInfo?.photoVersion ?? 0);
 
     final title = resolvedName.isNotEmpty
-        ? ((isChineseUi(context) ? '与${resolvedName}聊天' : isKo
-            ? '$resolvedName님과 대화를 시작해보세요'
-            : 'Start a chat with $resolvedName'))
-        : ((isChineseUi(context) ? '开始聊天' : isKo ? '대화를 시작해보세요' : 'Start a chat'));
+        ? ((isChineseUi(context)
+            ? '与${resolvedName}聊天'
+            : isKo
+                ? '$resolvedName님과 대화를 시작해보세요'
+                : 'Start a chat with $resolvedName'))
+        : ((isChineseUi(context)
+            ? '开始聊天'
+            : isKo
+                ? '대화를 시작해보세요'
+                : 'Start a chat'));
 
-    final subtitle = (isChineseUi(context) ? '发送第一条消息创建聊天，\n然后在这里继续交流。' : isKo
-        ? '첫 메시지를 보내면 대화방이 자동으로 생성되고\n여기서 계속 대화할 수 있어요.'
-        : 'Send your first message to create the chat,\nthen continue the conversation here.');
+    final subtitle = (isChineseUi(context)
+        ? '发送第一条消息创建聊天，\n然后在这里继续交流。'
+        : isKo
+            ? '첫 메시지를 보내면 대화방이 자동으로 생성되고\n여기서 계속 대화할 수 있어요.'
+            : 'Send your first message to create the chat,\nthen continue the conversation here.');
 
     final hint = isKo
         ? (isConversationCreated
@@ -2858,6 +2956,53 @@ class _DMChatScreenState extends State<DMChatScreen>
     );
   }
 
+  Widget _buildOutgoingPresentation(DMMessage message, Widget bubble) {
+    final pending = message.deliveryState != DMDeliveryState.sent;
+    final retryable = message.deliveryState == DMDeliveryState.failed ||
+        message.deliveryState == DMDeliveryState.uncertain;
+    final isKo = Localizations.localeOf(context).languageCode == 'ko';
+    final label = message.deliveryState == DMDeliveryState.uncertain
+        ? (isChineseUi(context)
+            ? '确认发送状态 · 重试'
+            : isKo
+                ? '전송 확인 필요 · 재시도'
+                : 'Delivery unconfirmed · Retry')
+        : message.deliveryState == DMDeliveryState.failed
+            ? AppLocalizations.of(context)!.messageSendFailed
+            : (isChineseUi(context)
+                ? '发送中'
+                : isKo
+                    ? '전송 중'
+                    : 'Sending');
+    return SnackChatOutgoingEntrance(
+      key: ValueKey('dm_entrance_${message.id}'),
+      animateOnMount: _entranceIds.contains(message.id),
+      onAnimationClaimed: () => _entranceIds.remove(message.id),
+      child: Column(crossAxisAlignment: CrossAxisAlignment.end, children: [
+        bubble,
+        if (pending)
+          Padding(
+              padding: const EdgeInsets.only(right: 8, bottom: 4),
+              child: TextButton.icon(
+                onPressed: retryable && !_sendingIds.contains(message.id)
+                    ? () => _queueOutgoing(_activeConversationId, message)
+                    : null,
+                style: TextButton.styleFrom(
+                    padding: const EdgeInsets.symmetric(horizontal: 6),
+                    minimumSize: const Size(0, 32),
+                    tapTargetSize: MaterialTapTargetSize.shrinkWrap),
+                icon:
+                    Icon(retryable ? Icons.refresh : Icons.schedule, size: 14),
+                label: Text(
+                    _uploadById.containsKey(message.id)
+                        ? '$label ${(_uploadById[message.id]! * 100).round()}%'
+                        : label,
+                    style: const TextStyle(fontSize: 11)),
+              )),
+      ]),
+    );
+  }
+
   /// 메시지 버블 빌드
   Widget _buildMessageBubble(
     DMMessage message,
@@ -2874,6 +3019,7 @@ class _DMChatScreenState extends State<DMChatScreen>
     final hasImage = message.imageUrl != null && message.imageUrl!.isNotEmpty;
     final hasText = message.text.trim().isNotEmpty;
     // 게시글 컨텍스트가 있으면 "이미지 단독"으로 취급하지 않음 (컨텍스트 카드도 함께 렌더링)
+    final hasLocalImage = !hasImage && message.localImagePath != null;
     final isImageOnly = hasImage && !hasText && !hasPostContext;
 
     if (isMine) {
@@ -2907,6 +3053,20 @@ class _DMChatScreenState extends State<DMChatScreen>
                       isMine: true,
                       heroTag:
                           'dm_image_${widget.conversationId}_${message.id}',
+                    ),
+                    if (hasText) const SizedBox(height: 8),
+                  ],
+                  if (hasLocalImage) ...[
+                    ClipRRect(
+                      borderRadius: BorderRadius.circular(12),
+                      child: Image.file(File(message.localImagePath!),
+                          width: 220,
+                          height: 160,
+                          fit: BoxFit.cover,
+                          errorBuilder: (_, __, ___) => const SizedBox(
+                              width: 140,
+                              height: 100,
+                              child: Icon(Icons.broken_image_outlined))),
                     ),
                     if (hasText) const SizedBox(height: 8),
                   ],
@@ -3160,7 +3320,11 @@ class _DMChatScreenState extends State<DMChatScreen>
                       const SizedBox(width: 6),
                       Expanded(
                         child: Text(
-                          (isChineseUi(context) ? '来自一条动态' : isKo ? '포스트에서 보낸 메시지' : 'Sent from a post'),
+                          (isChineseUi(context)
+                              ? '来自一条动态'
+                              : isKo
+                                  ? '포스트에서 보낸 메시지'
+                                  : 'Sent from a post'),
                           style: TextStyle(
                             fontSize: 12,
                             fontWeight: FontWeight.w700,
@@ -3173,7 +3337,11 @@ class _DMChatScreenState extends State<DMChatScreen>
                       ),
                       if (postId.isNotEmpty)
                         Text(
-                          (isChineseUi(context) ? '查看' : isKo ? '보기' : 'View'),
+                          (isChineseUi(context)
+                              ? '查看'
+                              : isKo
+                                  ? '보기'
+                                  : 'View'),
                           style: TextStyle(
                             fontSize: 12,
                             fontWeight: FontWeight.w700,
@@ -3253,9 +3421,11 @@ class _DMChatScreenState extends State<DMChatScreen>
                     ),
                     const SizedBox(width: 6),
                     Text(
-                      (isChineseUi(context) ? '图片加载失败' : Localizations.localeOf(context).languageCode == 'ko'
-                          ? '이미지 로드 실패'
-                          : 'Failed to load image'),
+                      (isChineseUi(context)
+                          ? '图片加载失败'
+                          : Localizations.localeOf(context).languageCode == 'ko'
+                              ? '이미지 로드 실패'
+                              : 'Failed to load image'),
                       style: TextStyle(
                         fontSize: 12,
                         color: isMine ? Colors.white70 : Colors.grey[700],
@@ -3303,12 +3473,16 @@ class _DMChatScreenState extends State<DMChatScreen>
   }
 
   /// 입력창 빌드
-  Widget _buildInputArea() {
+  Widget _buildInputArea() => ValueListenableBuilder<TextEditingValue>(
+        valueListenable: _messageController,
+        builder: (context, value, _) => _buildComposer(),
+      );
+
+  Widget _buildComposer() {
     final peerDeleted = _isPeerDeleted;
     final canSend = !peerDeleted &&
         !_isBlocked &&
         !_isBlockedBy &&
-        !_isLoading &&
         (_messageController.text.trim().isNotEmpty || _pendingImage != null);
 
     final originPostId = (widget.originPostId ?? '').trim();
@@ -3344,9 +3518,11 @@ class _DMChatScreenState extends State<DMChatScreen>
                 Align(
                   alignment: Alignment.centerLeft,
                   child: Text(
-                    (isChineseUi(context) ? '发送第一条消息，开始聊天。' : Localizations.localeOf(context).languageCode == 'ko'
-                        ? '첫 메시지를 보내면 대화방이 생성돼요.'
-                        : 'Send your first message to create this chat.'),
+                    (isChineseUi(context)
+                        ? '发送第一条消息，开始聊天。'
+                        : Localizations.localeOf(context).languageCode == 'ko'
+                            ? '첫 메시지를 보내면 대화방이 생성돼요.'
+                            : 'Send your first message to create this chat.'),
                     style: TextStyle(
                       fontFamily: uiFontFamily(context, 'Inter'),
                       fontFamilyFallback: const ['NotoSansKR'],
@@ -3373,10 +3549,7 @@ class _DMChatScreenState extends State<DMChatScreen>
                   children: [
                     // 첨부 버튼 (+)
                     InkWell(
-                      onTap: (peerDeleted ||
-                              _isBlocked ||
-                              _isBlockedBy ||
-                              _isLoading)
+                      onTap: (peerDeleted || _isBlocked || _isBlockedBy)
                           ? null
                           : _pickImage,
                       customBorder: const CircleBorder(),
@@ -3390,10 +3563,7 @@ class _DMChatScreenState extends State<DMChatScreen>
                         ),
                         child: Icon(
                           Icons.add,
-                          color: (peerDeleted ||
-                                  _isBlocked ||
-                                  _isBlockedBy ||
-                                  _isLoading)
+                          color: (peerDeleted || _isBlocked || _isBlockedBy)
                               ? const Color(0xFF667085)
                               : Colors.white,
                           size: 22,
@@ -3416,11 +3586,13 @@ class _DMChatScreenState extends State<DMChatScreen>
                           textInputAction: TextInputAction.newline,
                           decoration: InputDecoration(
                             hintText: peerDeleted
-                                ? ((isChineseUi(context) ? '无法给已注销的账号发消息' : Localizations.localeOf(context)
-                                            .languageCode ==
-                                        'ko'
-                                    ? '탈퇴한 계정에게는 메시지를 보낼 수 없어요'
-                                    : 'You cannot message a deleted account'))
+                                ? ((isChineseUi(context)
+                                    ? '无法给已注销的账号发消息'
+                                    : Localizations.localeOf(context)
+                                                .languageCode ==
+                                            'ko'
+                                        ? '탈퇴한 계정에게는 메시지를 보낼 수 없어요'
+                                        : 'You cannot message a deleted account'))
                                 : (_isBlocked || _isBlockedBy)
                                     ? '차단된 사용자에게 메시지를 보낼 수 없습니다'
                                     : AppLocalizations.of(context)!.typeMessage,
@@ -3448,39 +3620,13 @@ class _DMChatScreenState extends State<DMChatScreen>
                                 : 15,
                             height: 1.35,
                           ),
-                          onChanged: (_) => setState(() {}),
                         ),
                       ),
                     ),
                     const SizedBox(width: 8),
                     // 전송 버튼 - DM 아이콘과 구분되는 상향 화살표 버튼
                     InkWell(
-                      onTap: canSend
-                          ? _sendMessage
-                          : () {
-                              // canSend가 false일 때 디버그 로그
-                              if (Logger.isVerboseEnabled)
-                                Logger.log('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━');
-                              if (Logger.isVerboseEnabled)
-                                Logger.log(
-                                    '❌ [FCM 진단 2단계] 전송 버튼 클릭했지만 canSend=false');
-                              if (Logger.isVerboseEnabled)
-                                Logger.log('  - _isBlocked: $_isBlocked');
-                              if (Logger.isVerboseEnabled)
-                                Logger.log('  - _isBlockedBy: $_isBlockedBy');
-                              if (Logger.isVerboseEnabled)
-                                Logger.log('  - _isLoading: $_isLoading');
-                              if (Logger.isVerboseEnabled)
-                                Logger.log(
-                                    '  - text.isNotEmpty: ${_messageController.text.trim().isNotEmpty}');
-                              if (Logger.isVerboseEnabled)
-                                Logger.log(
-                                    '  - _pendingImage: ${_pendingImage != null}');
-                              if (Logger.isVerboseEnabled)
-                                Logger.log('  - canSend 결과: $canSend');
-                              if (Logger.isVerboseEnabled)
-                                Logger.log('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━');
-                            },
+                      onTap: canSend ? _sendMessage : null,
                       customBorder: const CircleBorder(),
                       child: Container(
                         width: MediaQuery.sizeOf(context).width < 360 ? 38 : 40,
@@ -3493,23 +3639,13 @@ class _DMChatScreenState extends State<DMChatScreen>
                           shape: BoxShape.circle,
                         ),
                         child: Center(
-                          child: _isLoading
-                              ? const SizedBox(
-                                  width: 18,
-                                  height: 18,
-                                  child: CircularProgressIndicator(
-                                    strokeWidth: 2,
-                                    valueColor: AlwaysStoppedAnimation<Color>(
-                                        Colors.white),
-                                  ),
-                                )
-                              : Icon(
-                                  Icons.arrow_upward_rounded,
-                                  color: canSend
-                                      ? DMColors.textPrimary
-                                      : DMColors.textTertiary,
-                                  size: 21,
-                                ),
+                          child: Icon(
+                            Icons.arrow_upward_rounded,
+                            color: canSend
+                                ? DMColors.textPrimary
+                                : DMColors.textTertiary,
+                            size: 21,
+                          ),
                         ),
                       ),
                     ),
@@ -3597,7 +3733,11 @@ class _DMChatScreenState extends State<DMChatScreen>
                     children: [
                       Expanded(
                         child: Text(
-                          (isChineseUi(context) ? '聊聊这条动态' : isKo ? '이 게시글에 대해 DM 보내기' : 'Message about this post'),
+                          (isChineseUi(context)
+                              ? '聊聊这条动态'
+                              : isKo
+                                  ? '이 게시글에 대해 DM 보내기'
+                                  : 'Message about this post'),
                           style: TextStyle(
                             fontFamily: uiFontFamily(context, 'Inter'),
                             fontFamilyFallback: const ['NotoSansKR'],
@@ -3655,7 +3795,7 @@ class _DMChatScreenState extends State<DMChatScreen>
 
   Widget _buildAttachmentPreview() {
     final isKorean = Localizations.localeOf(context).languageCode == 'ko';
-    final showProgress = _isLoading && (_uploadProgress != null);
+    final showProgress = _uploadProgress != null;
     return Container(
       padding: const EdgeInsets.all(10),
       decoration: BoxDecoration(
@@ -3681,7 +3821,11 @@ class _DMChatScreenState extends State<DMChatScreen>
               mainAxisSize: MainAxisSize.min,
               children: [
                 Text(
-                  (isChineseUi(context) ? '已选1张图片' : isKorean ? '이미지 1장 선택됨' : '1 image selected'),
+                  (isChineseUi(context)
+                      ? '已选1张图片'
+                      : isKorean
+                          ? '이미지 1장 선택됨'
+                          : '1 image selected'),
                   style: TextStyle(
                     fontFamily: uiFontFamily(context, 'Inter'),
                     fontFamilyFallback: const ['NotoSansKR'],
@@ -3693,9 +3837,11 @@ class _DMChatScreenState extends State<DMChatScreen>
                 const SizedBox(height: 4),
                 if (showProgress) ...[
                   Text(
-                    (isChineseUi(context) ? '上传中… ${((_uploadProgress ?? 0) * 100).round()}%' : isKorean
-                        ? '업로드 중... ${((_uploadProgress ?? 0) * 100).round()}%'
-                        : 'Uploading... ${((_uploadProgress ?? 0) * 100).round()}%'),
+                    (isChineseUi(context)
+                        ? '上传中… ${((_uploadProgress ?? 0) * 100).round()}%'
+                        : isKorean
+                            ? '업로드 중... ${((_uploadProgress ?? 0) * 100).round()}%'
+                            : 'Uploading... ${((_uploadProgress ?? 0) * 100).round()}%'),
                     style: TextStyle(
                       fontFamily: uiFontFamily(context, 'Inter'),
                       fontFamilyFallback: const ['NotoSansKR'],
@@ -3719,9 +3865,11 @@ class _DMChatScreenState extends State<DMChatScreen>
                   ),
                 ] else ...[
                   Text(
-                    (isChineseUi(context) ? '对方将可以看到' : isKorean
-                        ? '전송하면 상대방에게 이미지가 표시됩니다'
-                        : 'It will be visible to the other user'),
+                    (isChineseUi(context)
+                        ? '对方将可以看到'
+                        : isKorean
+                            ? '전송하면 상대방에게 이미지가 표시됩니다'
+                            : 'It will be visible to the other user'),
                     style: TextStyle(
                       fontFamily: uiFontFamily(context, 'Inter'),
                       fontFamilyFallback: const ['NotoSansKR'],
@@ -3737,14 +3885,12 @@ class _DMChatScreenState extends State<DMChatScreen>
             ),
           ),
           IconButton(
-            onPressed: _isLoading
-                ? null
-                : () {
-                    setState(() {
-                      _pendingImage = null;
-                      _uploadProgress = null;
-                    });
-                  },
+            onPressed: () {
+              setState(() {
+                _pendingImage = null;
+                _uploadProgress = null;
+              });
+            },
             icon: const Icon(Icons.close, size: 18),
             color: Colors.grey[600],
             padding: EdgeInsets.zero,
@@ -3762,9 +3908,11 @@ class _DMChatScreenState extends State<DMChatScreen>
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
           content: Text(
-            (isChineseUi(context) ? '每次只能添加1张图片' : Localizations.localeOf(context).languageCode == 'ko'
-                ? '이미지는 한 번에 1장만 첨부할 수 있어요'
-                : 'You can attach only 1 image at a time'),
+            (isChineseUi(context)
+                ? '每次只能添加1张图片'
+                : Localizations.localeOf(context).languageCode == 'ko'
+                    ? '이미지는 한 번에 1장만 첨부할 수 있어요'
+                    : 'You can attach only 1 image at a time'),
           ),
           duration: const Duration(seconds: 2),
         ),
@@ -3798,7 +3946,11 @@ class _DMChatScreenState extends State<DMChatScreen>
                 ),
                 ListTile(
                   leading: const Icon(Icons.photo_library_outlined),
-                  title: Text((isChineseUi(context) ? '从相册选择' : isKorean ? '사진 선택' : 'Choose from library')),
+                  title: Text((isChineseUi(context)
+                      ? '从相册选择'
+                      : isKorean
+                          ? '사진 선택'
+                          : 'Choose from library')),
                   onTap: () async {
                     Navigator.pop(context);
                     await _pickImageFrom(ImageSource.gallery);
@@ -3806,7 +3958,11 @@ class _DMChatScreenState extends State<DMChatScreen>
                 ),
                 ListTile(
                   leading: const Icon(Icons.photo_camera_outlined),
-                  title: Text((isChineseUi(context) ? '拍照' : isKorean ? '카메라 촬영' : 'Take a photo')),
+                  title: Text((isChineseUi(context)
+                      ? '拍照'
+                      : isKorean
+                          ? '카메라 촬영'
+                          : 'Take a photo')),
                   onTap: () async {
                     Navigator.pop(context);
                     await _pickImageFrom(ImageSource.camera);
@@ -3851,9 +4007,11 @@ class _DMChatScreenState extends State<DMChatScreen>
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
           content: Text(
-            (isChineseUi(context) ? '无法选择图片' : Localizations.localeOf(context).languageCode == 'ko'
-                ? '이미지를 불러올 수 없습니다'
-                : 'Unable to pick an image'),
+            (isChineseUi(context)
+                ? '无法选择图片'
+                : Localizations.localeOf(context).languageCode == 'ko'
+                    ? '이미지를 불러올 수 없습니다'
+                    : 'Unable to pick an image'),
           ),
           duration: const Duration(seconds: 2),
         ),
@@ -3861,221 +4019,293 @@ class _DMChatScreenState extends State<DMChatScreen>
     }
   }
 
-  /// 메시지 전송
   Future<void> _sendMessage() async {
-    if (_isPeerDeleted) return;
-
+    final owner = _currentUser?.uid;
+    final room = _activeConversationId;
+    if (owner == null ||
+        !_canSendFor(owner, room) ||
+        _isPeerDeleted ||
+        _isBlocked ||
+        _isBlockedBy) return;
     final text = _messageController.text.trim();
-    final imageFile = _pendingImage;
-
-    if ((text.isEmpty && imageFile == null) || _isLoading) {
-      return;
-    }
-
-    setState(() => _isLoading = true);
+    final image = _pendingImage;
+    if ((text.isEmpty && image == null) || text.length > 500) return;
+    final watch = Stopwatch()..start();
+    final attach = !_originPostContextAttached &&
+        !_composerPostContextDismissed &&
+        (widget.originPostId ?? '').trim().isNotEmpty;
+    final now = DateTime.now();
+    final at = _lastLocalSentAt != null && !now.isAfter(_lastLocalSentAt!)
+        ? _lastLocalSentAt!.add(const Duration(microseconds: 1))
+        : now;
+    _lastLocalSentAt = at;
+    final message = DMMessage(
+      id: _dmService.createMessageId(room),
+      senderId: owner,
+      text: text,
+      createdAt: at,
+      isRead: false,
+      deliveryState: DMDeliveryState.sending,
+      localImagePath: image?.path,
+      type: attach ? 'post_context' : 'text',
+      postId: attach ? widget.originPostId : null,
+      postImageUrl: attach ? widget.originPostImageUrl : null,
+      postPreview: attach ? widget.originPostPreview : null,
+    );
+    final keepFocus = _messageFocusNode.hasFocus;
     _messageController.clear();
+    _entranceIds.add(message.id);
+    Timer(SnackChatOutgoingEntrance.claimWindow,
+        () => _entranceIds.remove(message.id));
+    setState(() {
+      _pendingImage = null;
+      _uploadProgress = null;
+      if (attach) _originPostContextAttached = true;
+      _outgoing[message.id] = message;
+      _messages = _mergeRecentIntoAll([message], _messages);
+    });
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!mounted) return;
+      if (keepFocus && !_messageFocusNode.hasFocus)
+        _messageFocusNode.requestFocus();
+      _followLatest();
+      if (ChatTiming.enabled)
+        ChatTiming.record(
+            '[DMChatTiming] stage=localFrame messageId=${message.id} durationMs=${watch.elapsedMilliseconds}');
+    });
+    _queueOutgoing(room, message);
+  }
 
-    String? uploadedImageUrl;
-    try {
-      // 실제로 메시지를 보낼 conversationId를 결정
-      String actualConversationId = _activeConversationId;
-      if (Logger.isVerboseEnabled)
-        Logger.log('  - _activeConversationId: $_activeConversationId');
-      if (Logger.isVerboseEnabled)
-        Logger.log('  - _conversationExists: $_conversationExists');
+  bool _canSendFor(String owner, String room) =>
+      !_accountInvalidated &&
+      !_isLeaving &&
+      FirebaseAuth.instance.currentUser?.uid == owner &&
+      _activeConversationId == room;
 
-      // 대화방이 존재하지 않으면 첫 메시지 전송 시 생성
-      if (_conversationExists != true) {
-        // conversationId에서 익명 여부와 postId 추출
-        final isAnonymousConv = _activeConversationId.startsWith('anon_');
-        String? postId;
-        if (isAnonymousConv) {
-          final parts = _activeConversationId.split('_');
-          if (parts.length >= 4) {
-            postId = parts.sublist(3).join('_');
-            // __timestamp 형식의 접미사 제거
-            if (postId.contains('__')) {
-              postId = postId.split('__').first;
-            }
-          }
-        }
-        // 일반(비익명) 대화방이라도 게시글에서 진입했다면 postId를 대화방 문서에 저장해두는 것이 UX에 유리
-        final originPostId = (widget.originPostId ?? '').trim();
-        if (postId == null || postId.trim().isEmpty) {
-          postId = originPostId.isEmpty ? null : originPostId;
-        }
-
-        final newConversationId = await _dmService.getOrCreateConversation(
-          widget.otherUserId,
-          postId: postId,
-          isOtherUserAnonymous: isAnonymousConv,
-        );
-
-        if (newConversationId == null) {
-          Logger.error('❌ 대화방 생성 실패');
-          if (mounted) {
-            ScaffoldMessenger.of(context).showSnackBar(
-              SnackBar(
-                content: Text(AppLocalizations.of(context)!.cannotSendDM ?? ""),
-                backgroundColor: Colors.red,
-                duration: const Duration(seconds: 2),
-              ),
-            );
-          }
-          // 실패 시: 사용자가 이미 새로 입력을 시작했으면 덮어쓰지 않는다.
-          if (_messageController.text.trim().isEmpty && text.isNotEmpty) {
-            _messageController.text = text;
-            _messageController.selection = TextSelection.collapsed(
-              offset: _messageController.text.length,
-            );
-          }
-          return;
-        }
-
-        if (Logger.isVerboseEnabled)
-          Logger.log(
-              '   - 일치 여부: ${newConversationId == _activeConversationId}');
-
-        // ✅ 수정: 새로 생성된 conversationId를 사용
-        actualConversationId = newConversationId;
-        _conversationExists = true;
-      }
-
-      if (Logger.isVerboseEnabled)
-        Logger.log('📤 메시지 전송 시도: conversationId=$actualConversationId');
-      // 이미지가 있으면 먼저 업로드
-      if (imageFile != null) {
-        if (mounted) {
-          setState(() => _uploadProgress = 0.0);
-        }
-        uploadedImageUrl = await _storageService.uploadDmImage(
-          imageFile,
-          userId: _currentUser!.uid,
-          conversationId: actualConversationId,
-          onProgress: (p) {
-            if (!mounted) return;
-            setState(() => _uploadProgress = p);
-          },
-        );
-        if (uploadedImageUrl == null || uploadedImageUrl!.isEmpty) {
-          throw Exception('이미지 업로드에 실패했습니다');
-        }
-      }
-
-      // 게시글에서 DM으로 진입한 경우: 현재 채팅 세션에서 첫 전송 메시지에만 1회 컨텍스트 부착
-      final shouldAttachPostContext = !_originPostContextAttached &&
-          widget.originPostId != null &&
-          widget.originPostId!.trim().isNotEmpty &&
-          !_composerPostContextDismissed;
-
-      final success = await _dmService.sendMessage(
-        actualConversationId,
-        text,
-        imageUrl: uploadedImageUrl,
-        postId: shouldAttachPostContext ? widget.originPostId : null,
-        postImageUrl:
-            shouldAttachPostContext ? widget.originPostImageUrl : null,
-        postPreview: shouldAttachPostContext ? widget.originPostPreview : null,
-      );
-      if (Logger.isVerboseEnabled) Logger.log('📤 메시지 전송 결과: success=$success');
-
-      if (success) {
-        if (Logger.isVerboseEnabled) Logger.log('✅ 메시지 전송 성공 - 후속 처리 시작');
-        final previousConversationId = _activeConversationId;
-        if (shouldAttachPostContext) {
-          _originPostContextAttached = true;
-        }
-        if (mounted) {
-          setState(() {
-            _pendingImage = null; // 전송 성공 시 첨부 해제
-            _uploadProgress = null;
+  void _queueOutgoing(String room, DMMessage packet, {bool automatic = false}) {
+    if (!_canSendFor(packet.senderId, room)) return;
+    if (!_sendingIds.add(packet.id)) return;
+    if (!automatic) _outboxRetryAttempts.remove(packet.id);
+    final owner = packet.senderId;
+    final persisted = _outbox
+        .put(owner, room, packet.id, packet.toLocalMap())
+        .then<Object?>((_) => null, onError: (Object error) => error);
+    Future<void> operation() async {
+      var message = packet.copyWith(deliveryState: DMDeliveryState.sending);
+      try {
+        final persistenceError = await persisted;
+        if (persistenceError != null) throw persistenceError;
+        if (!_canSendFor(owner, room)) return;
+        _updateOutgoing(room, message);
+        if (message.localImagePath != null && message.imageUrl == null) {
+          if (!await _ensureSendRoom(room, message))
+            throw StateError('room-unavailable');
+          message = await _imagePreparation.run(owner, () async {
+            if (!_canSendFor(owner, room))
+              throw StateError('account-or-room-changed');
+            final path = await _outbox.retainImage(
+                owner, message.id, message.localImagePath!);
+            message = message.copyWith(localImagePath: path);
+            await _outbox.put(owner, room, message.id, message.toLocalMap());
+            if (!_canSendFor(owner, room))
+              throw StateError('account-or-room-changed');
+            final url = await _storageService.uploadDmImage(File(path),
+                userId: owner, conversationId: room, onProgress: (progress) {
+              if (mounted && _canSendFor(owner, room)) {
+                setState(() => _uploadById[message.id] = progress);
+              }
+            });
+            if (url == null || url.isEmpty) throw StateError('upload-failed');
+            final uploaded = message.copyWith(imageUrl: url);
+            await _outbox.put(owner, room, uploaded.id, uploaded.toLocalMap());
+            return uploaded;
           });
         }
-
-        // 첫 메시지 전송으로 conversationId가 실제로 확정/변경될 수 있으므로,
-        // 로컬 캐시 기반 메시지 로딩 + 서버 동기화를 해당 ID로 재시작한다.
-        if (_activeConversationId != actualConversationId) {
-          if (Logger.isVerboseEnabled)
-            Logger.log(
-                '🔄 activeConversationId 업데이트: $_activeConversationId → $actualConversationId');
-          _setActiveConversationId(actualConversationId);
+        if (!_canSendFor(owner, room)) return;
+        final result = await _dispatch.run('$owner::$room', () async {
+          if (!_canSendFor(owner, room)) return DMDeliveryState.uncertain;
+          if (!await _ensureSendRoom(room, message))
+            return DMDeliveryState.failed;
+          if (!_canSendFor(owner, room)) return DMDeliveryState.uncertain;
+          return _dmService.sendMessage(room, message);
+        });
+        if (result == DMDeliveryState.sent) {
+          await _outbox.remove(owner, room, message.id);
+        } else {
+          await _outbox.put(owner, room, message.id,
+              message.copyWith(deliveryState: result).toLocalMap());
         }
-        if (mounted) {
-          setState(() {
-            _conversationExists = true;
-          });
-        }
-        // ✅ 동일 대화방에서는 재초기화(캐시 덮어쓰기)를 하지 않는다.
-        // - 새 대화방을 "처음 생성"하여 conversationId가 바뀐 경우에만 재초기화
-        final conversationChanged =
-            previousConversationId != actualConversationId;
-        if (conversationChanged || _recentMessagesSub == null) {
-          await _initializeMessagesStream(conversationId: actualConversationId);
-        }
-
-        if (_conversation == null) {
-          if (Logger.isVerboseEnabled) Logger.log('📖 대화방 정보 로드 시작');
-          await _loadConversation();
-        }
-        // 메시지 목록 맨 아래로 스크롤
-        if (_scrollController.hasClients) {
-          _scrollController.animateTo(
-            0,
-            duration: const Duration(milliseconds: 300),
-            curve: Curves.easeOut,
-          );
-        }
-      } else {
-        if (mounted) {
-          ScaffoldMessenger.of(context).showSnackBar(
-            SnackBar(
-              content:
-                  Text(AppLocalizations.of(context)!.messageSendFailed ?? ""),
-              duration: const Duration(seconds: 2),
-            ),
-          );
-        }
-        // 실패 시 업로드된 이미지 정리(best-effort)
-        if (uploadedImageUrl != null && uploadedImageUrl!.isNotEmpty) {
-          try {
-            await _storageService.deleteImage(uploadedImageUrl!);
-          } catch (_) {}
-        }
-        // 실패 시: 사용자가 이미 새로 입력을 시작했으면 덮어쓰지 않는다.
-        if (_messageController.text.trim().isEmpty && text.isNotEmpty) {
-          _messageController.text = text;
-          _messageController.selection = TextSelection.collapsed(
-            offset: _messageController.text.length,
-          );
-        }
-      }
-    } catch (e) {
-      Logger.error('메시지 전송 오류: $e');
-      if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: Text(AppLocalizations.of(context)!.error ?? ""),
-            duration: const Duration(seconds: 2),
-          ),
-        );
-      }
-      // 실패 시 업로드된 이미지 정리(best-effort)
-      if (uploadedImageUrl != null && uploadedImageUrl!.isNotEmpty) {
+        _updateOutgoing(room, message.copyWith(deliveryState: result));
+      } catch (error) {
+        final failed = message.copyWith(deliveryState: DMDeliveryState.failed);
         try {
-          await _storageService.deleteImage(uploadedImageUrl!);
+          await _outbox.put(owner, room, message.id, failed.toLocalMap());
         } catch (_) {}
-      }
-      if (_messageController.text.trim().isEmpty && text.isNotEmpty) {
-        _messageController.text = text;
-        _messageController.selection = TextSelection.collapsed(
-          offset: _messageController.text.length,
-        );
-      }
-    } finally {
-      if (mounted) {
-        setState(() => _isLoading = false);
+        _updateOutgoing(room, failed);
+        Logger.error('DM outgoing preparation failed: $error');
+      } finally {
+        _sendingIds.remove(packet.id);
+        if (mounted) setState(() => _uploadById.remove(packet.id));
+        _scheduleUncertainRecovery();
       }
     }
+
+    // Text preparation starts in tap order; image preparation never occupies it.
+    unawaited(packet.localImagePath == null
+        ? _textPreparation.run('$owner::$room', operation)
+        : operation());
+  }
+
+  void _scheduleUncertainRecovery() {
+    if (!mounted ||
+        _outboxRetry != null ||
+        _accountInvalidated ||
+        _isLeaving ||
+        _appLifecycleState != AppLifecycleState.resumed) return;
+    final retryable = _outgoing.values.where((message) =>
+        message.deliveryState == DMDeliveryState.uncertain &&
+        !_sendingIds.contains(message.id) &&
+        (_outboxRetryAttempts[message.id] ?? 0) < 3);
+    if (retryable.isEmpty) return;
+    final attempt = retryable
+        .map((m) => _outboxRetryAttempts[m.id] ?? 0)
+        .reduce((a, b) => a < b ? a : b);
+    final room = _activeConversationId;
+    // A bounded foreground retry also recovers when connectivity returns without
+    // a lifecycle event. Same IDs/ordered queues keep a late commit idempotent.
+    _outboxRetry = Timer(Duration(seconds: 2 << attempt), () {
+      _outboxRetry = null;
+      if (!mounted ||
+          _accountInvalidated ||
+          room != _activeConversationId ||
+          _appLifecycleState != AppLifecycleState.resumed) return;
+      final pending = _outgoing.values
+          .where((message) =>
+              message.deliveryState == DMDeliveryState.uncertain &&
+              !_sendingIds.contains(message.id) &&
+              (_outboxRetryAttempts[message.id] ?? 0) < 3)
+          .toList()
+        ..sort((a, b) => -_compareMessagesDesc(a, b));
+      for (final message in pending) {
+        _outboxRetryAttempts.update(message.id, (n) => n + 1,
+            ifAbsent: () => 1);
+        _queueOutgoing(room, message, automatic: true);
+      }
+    });
+  }
+
+  Future<bool> _ensureSendRoom(String room, DMMessage message) async {
+    if (!_canSendFor(message.senderId, room)) return false;
+    if (_conversationExists == true) return true;
+    final id = await _dmService.getOrCreateConversation(widget.otherUserId,
+        postId: message.postId ??
+            widget.originPostId ??
+            (room.startsWith('anon_')
+                ? room.split('_').skip(3).join('_').split('__').first
+                : null),
+        isOtherUserAnonymous: room.startsWith('anon_'),
+        requestedConversationId: room);
+    if (id != room || !_canSendFor(message.senderId, room)) return false;
+    _conversationExists = true;
+    if (mounted) {
+      setState(() {});
+      unawaited(_initializeMessagesStream(conversationId: room));
+    }
+    return true;
+  }
+
+  void _updateOutgoing(String room, DMMessage message) {
+    if (!mounted || !_canSendFor(message.senderId, room)) return;
+    final index = _messages.indexWhere((m) => m.id == message.id);
+    if (index >= 0 &&
+        _messages[index].serverCreatedAt != null &&
+        _messages[index].deliveryState == DMDeliveryState.sent) return;
+    // The transaction acknowledgement proves delivery but does not contain the
+    // canonical timestamp. Keep the local ordering slot until the live object
+    // arrives, instead of inserting a device-time "sent" item into sorted history.
+    final displayed = message.deliveryState == DMDeliveryState.sent &&
+            message.serverCreatedAt == null
+        ? message.copyWith(deliveryState: DMDeliveryState.sending)
+        : message;
+    setState(() {
+      _outgoing[message.id] = displayed;
+      if (index >= 0) _messages[index] = displayed;
+    });
+  }
+
+  Future<void> _restoreOutbox(String room) async {
+    final owner = _currentUser?.uid;
+    if (owner == null || !_restoredOutboxes.add(room)) return;
+    try {
+      final packets = await _outbox.load(owner, room);
+      if (!mounted || !_canSendFor(owner, room)) return;
+      final messages = packets
+          .map(DMMessage.fromLocalMap)
+          .where((m) => m.senderId == owner)
+          .toList()
+        ..sort((a, b) => -DMMessage.compareDescending(a, b));
+      setState(() {
+        for (final message in messages) {
+          _outgoing.putIfAbsent(message.id, () => message);
+        }
+        final pending = _outgoing.values.toList()..sort(_compareMessagesDesc);
+        _messages = _mergeRecentIntoAll(_messages, pending);
+      });
+      for (final message in messages) {
+        if (message.deliveryState != DMDeliveryState.failed)
+          _queueOutgoing(room, message);
+      }
+    } catch (error) {
+      _restoredOutboxes.remove(room);
+      Logger.error('DM outbox restore failed: $error');
+    }
+  }
+
+  ({GlobalKey key, double dy})? _captureMessageAnchor() {
+    for (final message in _messages) {
+      final key = _messageLayoutKeys[message.id];
+      final box = key?.currentContext?.findRenderObject();
+      if (key != null && box is RenderBox && box.attached) {
+        final dy = box.localToGlobal(Offset.zero).dy;
+        if (dy > 120 && dy < MediaQuery.sizeOf(context).height - 160) {
+          return (key: key, dy: dy);
+        }
+      }
+    }
+    return null;
+  }
+
+  void _restoreMessageAnchor(({GlobalKey key, double dy})? anchor) {
+    if (anchor == null ||
+        !_scrollController.hasClients ||
+        _scrollController.position.userScrollDirection != ScrollDirection.idle)
+      return;
+    final box = anchor.key.currentContext?.findRenderObject();
+    if (box is! RenderBox || !box.attached) return;
+    final delta = box.localToGlobal(Offset.zero).dy - anchor.dy;
+    final position = _scrollController.position;
+    final next = (position.pixels - delta)
+        .clamp(position.minScrollExtent, position.maxScrollExtent)
+        .toDouble();
+    if ((next - position.pixels).abs() > .5) _scrollController.jumpTo(next);
+  }
+
+  void _followLatest({bool wasNearLatest = false}) {
+    if (!_scrollController.hasClients ||
+        _followingLatest ||
+        _scrollController.position.userScrollDirection !=
+            ScrollDirection.idle ||
+        (!wasNearLatest && _scrollController.offset > 100)) return;
+    final target = _scrollController.position.minScrollExtent;
+    if ((_scrollController.offset - target).abs() < .5) return;
+    _followingLatest = true;
+    unawaited(_scrollController
+        .animateTo(target,
+            duration: MediaQuery.disableAnimationsOf(context)
+                ? Duration.zero
+                : const Duration(milliseconds: 140),
+            curve: Curves.easeOutCubic)
+        .whenComplete(() => _followingLatest = false));
   }
 
   /// 차단 확인 다이얼로그
@@ -4160,9 +4390,11 @@ class _DMChatScreenState extends State<DMChatScreen>
           const SizedBox(width: 8),
           Expanded(
             child: Text(
-              (isChineseUi(context) ? '此对话来自一条动态' : Localizations.localeOf(context).languageCode == 'ko'
-                  ? '이 대화는 포스트에서 시작되었습니다'
-                  : 'This conversation started from a post'),
+              (isChineseUi(context)
+                  ? '此对话来自一条动态'
+                  : Localizations.localeOf(context).languageCode == 'ko'
+                      ? '이 대화는 포스트에서 시작되었습니다'
+                      : 'This conversation started from a post'),
               style: TextStyle(
                 fontFamily: uiFontFamily(context, 'Inter'),
                 fontFamilyFallback: const ['NotoSansKR'],
@@ -4181,9 +4413,11 @@ class _DMChatScreenState extends State<DMChatScreen>
               tapTargetSize: MaterialTapTargetSize.shrinkWrap,
             ),
             child: Text(
-              (isChineseUi(context) ? '查看动态' : Localizations.localeOf(context).languageCode == 'ko'
-                  ? '포스트 보기'
-                  : 'View Post'),
+              (isChineseUi(context)
+                  ? '查看动态'
+                  : Localizations.localeOf(context).languageCode == 'ko'
+                      ? '포스트 보기'
+                      : 'View Post'),
               style: TextStyle(
                 fontFamily: uiFontFamily(context, 'Inter'),
                 fontFamilyFallback: const ['NotoSansKR'],
@@ -4213,8 +4447,9 @@ class _DMChatScreenState extends State<DMChatScreen>
         if (mounted) {
           ScaffoldMessenger.of(context).showSnackBar(
             SnackBar(
-                content: Text(
-                    (isChineseUi(context) ? '动态不存在' : Localizations.localeOf(context).languageCode == 'ko'
+                content: Text((isChineseUi(context)
+                    ? '动态不存在'
+                    : Localizations.localeOf(context).languageCode == 'ko'
                         ? '포스트를 찾을 수 없습니다'
                         : 'Post not found'))),
           );
@@ -4225,9 +4460,11 @@ class _DMChatScreenState extends State<DMChatScreen>
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
-              content: Text((isChineseUi(context) ? '加载动态时出错' : Localizations.localeOf(context).languageCode == 'ko'
-                  ? '포스트를 불러오는 중 오류가 발생했습니다'
-                  : 'An error occurred while loading the post'))),
+              content: Text((isChineseUi(context)
+                  ? '加载动态时出错'
+                  : Localizations.localeOf(context).languageCode == 'ko'
+                      ? '포스트를 불러오는 중 오류가 발생했습니다'
+                      : 'An error occurred while loading the post'))),
         );
       }
     }

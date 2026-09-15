@@ -59,6 +59,16 @@ function fileWrites(id, overrides = {}) {
   }, overrides);
   return batch;
 }
+function replyWrites(id, targetId, targetSenderId, targetText, targetImageUrl) {
+  const batch = writes(id, `reply ${id}`);
+  Object.assign(batch[0].update.fields, {
+    replyToMessageId: {stringValue: targetId},
+    replyToSenderId: {stringValue: targetSenderId},
+    ...(targetText == null ? {} : {replyToText: {stringValue: targetText}}),
+    ...(targetImageUrl == null ? {} : {replyToImageUrl: {stringValue: targetImageUrl}}),
+  });
+  return batch;
+}
 async function send(id, text = id) {
   for (let attempt = 0; attempt < 12; attempt++) {
     // REST emulator cannot decode a bytes transaction query parameter. An
@@ -168,6 +178,28 @@ async function main() {
   await send('same-id'); // delayed response-loss retry cannot regress preview
   assert.equal((await ref.get()).get('lastMessageId'), 'ordered-7');
   assert.equal((await ref.get()).get('participantNames.keep'), 'metadata');
+  await request(`${base}:commit`, {writes: replyWrites(
+    'valid-reply', 'ordered-7', alice, 'ordered-7', null)});
+  assert.equal((await ref.collection('messages').doc('valid-reply').get())
+    .get('replyToMessageId'), 'ordered-7');
+  await assert.rejects(request(`${base}:commit`, {writes: replyWrites(
+    'forged-reply-sender', 'ordered-7', bob, 'ordered-7', null)}),
+  {code: 'PERMISSION_DENIED'});
+  await assert.rejects(request(`${base}:commit`, {writes: replyWrites(
+    'forged-reply-text', 'ordered-7', alice, 'forged', null)}),
+  {code: 'PERMISSION_DENIED'});
+  await assert.rejects(request(`${base}:commit`, {writes: replyWrites(
+    'missing-reply-target', 'does-not-exist', alice, 'missing', null)}),
+  {code: 'PERMISSION_DENIED'});
+  const replyImageUrl = 'https://firebasestorage.googleapis.com/v0/b/demo-chat-delivery/o/dm.jpg';
+  await ref.collection('messages').doc('reply-image-source').set({
+    senderId: bob, text: '', imageUrl: replyImageUrl, isRead: false,
+    createdAt: admin.firestore.Timestamp.now(),
+  });
+  await request(`${base}:commit`, {writes: replyWrites(
+    'valid-image-reply', 'reply-image-source', bob, null, replyImageUrl)});
+  assert.equal((await ref.collection('messages').doc('valid-image-reply').get())
+    .get('replyToImageUrl'), replyImageUrl);
   await assert.rejects(request(`${base}:commit`, {writes: writes('rollback', 'no partial save', true)}), {code: 'PERMISSION_DENIED'});
   assert.equal((await ref.collection('messages').doc('rollback').get()).exists, false);
   await assert.rejects(request(`${base}:commit`, {writes: writes('stranger', 'forged')}, 'outsider'), {code: 'PERMISSION_DENIED'});

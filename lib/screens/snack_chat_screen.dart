@@ -6036,6 +6036,10 @@ class _SnackChatScreenState extends State<SnackChatScreen>
                         for (final id in room.participantIds)
                           if ((_senderNameCache[id] ?? '').trim().isNotEmpty)
                             id: _senderNameCache[id]!.trim(),
+                      },
+                      participantProfiles: {
+                        for (final id in room.participantIds)
+                          id: _senderProfileNotifier(id),
                       }),
                   if (_replyingTo != null)
                     Padding(

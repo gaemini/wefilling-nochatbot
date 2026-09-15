@@ -874,6 +874,41 @@ class DMService {
     }
   }
 
+  /// 답장 원문 이동에 필요한 단일 메시지만 확인한다.
+  /// 목록 전체를 다시 조회하지 않으며, 나가기 이후 가시성 정책도 유지한다.
+  Future<DMMessage?> getMessageFromServer(
+    String conversationId,
+    String messageId, {
+    DateTime? visibilityStartTime,
+  }) async {
+    final currentUser = _auth.currentUser;
+    final normalizedId = messageId.trim();
+    if (currentUser == null || normalizedId.isEmpty) return null;
+
+    final cached = await _localMessageCache.getMessage(
+      conversationId,
+      normalizedId,
+      visibilityStartTime: visibilityStartTime,
+    );
+    if (_auth.currentUser?.uid != currentUser.uid) return null;
+    if (cached != null) return cached;
+
+    final doc = await _firestore
+        .collection('conversations')
+        .doc(conversationId)
+        .collection('messages')
+        .doc(normalizedId)
+        .get(const GetOptions(source: Source.server));
+    if (_auth.currentUser?.uid != currentUser.uid || !doc.exists) return null;
+
+    final message = DMMessage.fromFirestore(doc);
+    if (visibilityStartTime != null &&
+        message.createdAt.isBefore(visibilityStartTime)) {
+      return null;
+    }
+    return message;
+  }
+
   /// 사용자의 메시지 가시성 시작 시간 계산
   Future<DateTime?> getUserMessageVisibilityStartTime(
       String conversationId) async {

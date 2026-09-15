@@ -2190,6 +2190,66 @@ service cloud.firestore {
               + data.fileExtension
             && !data.keys().hasAny(['imageUrl']);
         }
+
+        function hasDmReply(data) {
+          return data.keys().hasAny([
+            'replyToMessageId', 'replyToSenderId', 'replyToText',
+            'replyToImageUrl'
+          ]);
+        }
+
+        function validDmReplyFields(data) {
+          let targetId = data.replyToMessageId;
+          let targetPath = /databases/$(database)/documents/conversations/$(conversationId)/messages/$(targetId);
+          let original = get(targetPath);
+          let originalText = original.data.get('text', '');
+          let originalImage = original.data.get('imageUrl', '');
+          return data.keys().hasAll(['replyToMessageId', 'replyToSenderId'])
+            && targetId is string
+            && targetId.size() > 0
+            && targetId.size() <= 1500
+            && targetId != messageId
+            && data.replyToSenderId is string
+            && data.replyToSenderId.size() > 0
+            && data.replyToSenderId.size() <= 128
+            && exists(targetPath)
+            && original.data.senderId is string
+            && data.replyToSenderId == original.data.senderId
+            && originalText is string
+            && (
+              originalText.size() == 0
+                ? (
+                  !data.keys().hasAny(['replyToText'])
+                  || (
+                    data.replyToText is string
+                    && data.replyToText in [
+                      '사진', 'Photo', '图片',
+                      '확인할 수 없는 메시지', 'Message unavailable',
+                      '无法查看的消息'
+                    ]
+                  )
+                )
+                : (
+                  data.keys().hasAll(['replyToText'])
+                  && data.replyToText is string
+                  && data.replyToText == originalText
+                )
+            )
+            && originalImage is string
+            && (
+              originalImage.size() == 0
+                ? !data.keys().hasAny(['replyToImageUrl'])
+                : (
+                  data.keys().hasAll(['replyToImageUrl'])
+                  && data.replyToImageUrl is string
+                  && data.replyToImageUrl == originalImage
+                )
+            );
+        }
+
+        function validDmReply(data) {
+          return !hasDmReply(data) || validDmReplyFields(data);
+        }
         
         // 개별 메시지 읽기
         allow get: if request.auth != null && (isParticipant() || isMyConversation());
@@ -2232,6 +2292,7 @@ service cloud.firestore {
               )
             )
           ) &&
+          validDmReply(request.resource.data) &&
           // 초기 읽음 상태는 false
           request.resource.data.isRead == false;
         

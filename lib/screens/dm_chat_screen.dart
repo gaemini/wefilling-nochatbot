@@ -123,6 +123,7 @@ class _DMChatScreenState extends State<DMChatScreen>
       ContentTranslationService.instance;
   final GlobalKey _messageViewportKey = GlobalKey();
   final Map<String, GlobalKey> _messageLayoutKeys = <String, GlobalKey>{};
+  final Set<String> _unavailableReplyTargetIds = <String>{};
   final Map<String, ContentTranslationResult> _messageTranslations =
       <String, ContentTranslationResult>{};
   final Map<String, String> _translationSourceSignatures = <String, String>{};
@@ -392,6 +393,7 @@ class _DMChatScreenState extends State<DMChatScreen>
     _translationFailures.clear();
     _translationRetryAfter.clear();
     _messageLayoutKeys.clear();
+    _unavailableReplyTargetIds.clear();
     _translationLanguageRevision = _translationService.languageRevision;
     _translationShowsOriginal =
         _translationService.showsOriginal(_translationScope);
@@ -2793,7 +2795,7 @@ class _DMChatScreenState extends State<DMChatScreen>
               if (showDateSeparator) _buildDateSeparator(message.createdAt),
               GestureDetector(
                 behavior: HitTestBehavior.translucent,
-                onLongPress: message.deliveryState == DMDeliveryState.sent
+                onLongPress: _canReplyToMessage(message)
                     ? () => _showMessageActions(message)
                     : message.type == 'file'
                         ? () => _showPendingFileActions(message)
@@ -2981,8 +2983,13 @@ class _DMChatScreenState extends State<DMChatScreen>
   }
 
   Future<void> _showMessageActions(DMMessage message) async {
-    if (message.deliveryState != DMDeliveryState.sent) return;
+    if (!_canReplyToMessage(message)) return;
     HapticFeedback.selectionClick();
+    final replyLabel = isChineseUi(context)
+        ? '回复'
+        : Localizations.localeOf(context).languageCode == 'ko'
+            ? '답장'
+            : 'Reply';
     final selected = await showModalBottomSheet<bool>(
       context: context,
       requestFocus: false,
@@ -3008,25 +3015,28 @@ class _DMChatScreenState extends State<DMChatScreen>
                 ),
               ),
               const SizedBox(height: 10),
-              ListTile(
-                minTileHeight: 54,
-                leading: const Icon(
-                  Icons.reply_rounded,
-                  color: Color(0xFF344054),
-                ),
-                title: Text(
-                  isChineseUi(context)
-                      ? '回复'
-                      : Localizations.localeOf(context).languageCode == 'ko'
-                          ? '답장'
-                          : 'Reply',
-                  style: const TextStyle(
-                    fontSize: 15,
-                    fontWeight: FontWeight.w700,
-                    color: Color(0xFF101828),
+              Semantics(
+                button: true,
+                label: replyLabel,
+                child: Tooltip(
+                  message: replyLabel,
+                  child: ListTile(
+                    minTileHeight: 54,
+                    leading: const Icon(
+                      Icons.reply_rounded,
+                      color: Color(0xFF344054),
+                    ),
+                    title: Text(
+                      replyLabel,
+                      style: const TextStyle(
+                        fontSize: 15,
+                        fontWeight: FontWeight.w700,
+                        color: Color(0xFF101828),
+                      ),
+                    ),
+                    onTap: () => Navigator.of(sheetContext).pop(true),
                   ),
                 ),
-                onTap: () => Navigator.of(sheetContext).pop(true),
               ),
             ],
           ),
@@ -3035,8 +3045,16 @@ class _DMChatScreenState extends State<DMChatScreen>
     );
     if (!mounted || selected != true) return;
     setState(() => _replyingTo = message);
-    _messageFocusNode.requestFocus();
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (mounted) _messageFocusNode.requestFocus();
+    });
   }
+
+  bool _canReplyToMessage(DMMessage message) =>
+      message.deliveryState == DMDeliveryState.sent &&
+      message.serverCreatedAt != null &&
+      message.id.trim().isNotEmpty &&
+      message.senderId.trim().isNotEmpty;
 
   Future<void> _showPendingFileActions(DMMessage message) async {
     if (message.type != 'file' ||
@@ -3162,17 +3180,70 @@ class _DMChatScreenState extends State<DMChatScreen>
             : 'Message unavailable';
   }
 
-  Future<void> _jumpToMessage(String messageId) async {
-    var cycles = 0;
-    while (!_messages.any((message) => message.id == messageId) &&
-        _hasMore &&
-        cycles < 16) {
-      cycles++;
-      await _loadMoreMessages();
+  String? _replySnapshotText(DMMessage message) {
+    final text = message.text;
+    return text.isEmpty ? null : text;
+  }
+
+  Future<void> _jumpToMessage(String rawMessageId) async {
+    final messageId = rawMessageId.trim();
+    if (messageId.isEmpty) return;
+    var index = _messages.indexWhere((message) => message.id == messageId);
+    DMMessage? target = index < 0 ? null : _messages[index];
+    var missingWasConfirmed = false;
+
+    if (index < 0) {
+      try {
+        target = await _dmService.getMessageFromServer(
+          _activeConversationId,
+          messageId,
+          visibilityStartTime: _visibilityStartTime,
+        );
+        missingWasConfirmed = target == null;
+      } catch (_) {
+        // 오프라인/일시 오류라면 현재 페이지 캐시로 계속 찾되 부재로 확정하지 않는다.
+      }
       if (!mounted) return;
+
+      if (target != null) {
+        final deadline = DateTime.now().add(const Duration(seconds: 12));
+        var cycles = 0;
+        while (mounted &&
+            _messages.every((message) => message.id != messageId) &&
+            _hasMore &&
+            cycles < 16 &&
+            DateTime.now().isBefore(deadline)) {
+          if (_isLoadingMore) {
+            await Future<void>.delayed(const Duration(milliseconds: 60));
+            continue;
+          }
+          cycles++;
+          final previousOldestId = _messages.isEmpty ? null : _messages.last.id;
+          await _loadMoreMessages();
+          if (!mounted) return;
+          final currentOldestId = _messages.isEmpty ? null : _messages.last.id;
+          if (previousOldestId == currentOldestId) break;
+        }
+        index = _messages.indexWhere((message) => message.id == messageId);
+        if (index < 0) {
+          // 중간 페이지가 일시적으로 끊겨도 서버에서 확인된 원문 한 건만
+          // 임시로 배치한다. 다음 실시간 병합은 동일 ID로 자연스럽게 합쳐진다.
+          setState(() {
+            _messages = <DMMessage>[
+              ..._messages.where((message) => message.id != messageId),
+              target!,
+            ]..sort(_compareMessagesDesc);
+            _unavailableReplyTargetIds.remove(messageId);
+          });
+          index = _messages.indexWhere((message) => message.id == messageId);
+        }
+      }
     }
-    final key = _messageLayoutKeys[messageId];
-    if (key?.currentContext == null) {
+
+    if (!mounted || index < 0) {
+      if (missingWasConfirmed) {
+        setState(() => _unavailableReplyTargetIds.add(messageId));
+      }
       AppSnackBar.show(
         context,
         message: isChineseUi(context)
@@ -3184,12 +3255,48 @@ class _DMChatScreenState extends State<DMChatScreen>
       );
       return;
     }
-    await Scrollable.ensureVisible(
-      key!.currentContext!,
-      duration: const Duration(milliseconds: 220),
-      curve: Curves.easeOutCubic,
-      alignment: .45,
-    );
+    if (_unavailableReplyTargetIds.remove(messageId)) setState(() {});
+    final revealed = await _revealMessage(messageId, index);
+    if (!revealed && mounted) {
+      AppSnackBar.show(
+        context,
+        message: isChineseUi(context)
+            ? '无法显示原消息位置。'
+            : Localizations.localeOf(context).languageCode == 'ko'
+                ? '원본 메시지 위치를 표시하지 못했어요.'
+                : 'Could not show the original message position.',
+        type: AppSnackBarType.info,
+      );
+    }
+  }
+
+  Future<bool> _revealMessage(String messageId, int index) async {
+    for (var attempt = 0; attempt < 3; attempt++) {
+      await WidgetsBinding.instance.endOfFrame;
+      if (!mounted) return false;
+      final context = _messageLayoutKeys[messageId]?.currentContext;
+      if (context != null && context.mounted) {
+        await Scrollable.ensureVisible(
+          context,
+          duration: const Duration(milliseconds: 220),
+          curve: Curves.easeOutCubic,
+          alignment: .45,
+        );
+        return true;
+      }
+      if (!_scrollController.hasClients) continue;
+      final position = _scrollController.position;
+      final denominator = (_messages.length - 1).clamp(1, 1 << 30);
+      final ratio = (index / denominator).clamp(0.0, 1.0);
+      final offset = position.minScrollExtent +
+          (position.maxScrollExtent - position.minScrollExtent) * ratio;
+      await _scrollController.animateTo(
+        offset,
+        duration: const Duration(milliseconds: 180),
+        curve: Curves.easeOutCubic,
+      );
+    }
+    return _messageLayoutKeys[messageId]?.currentContext != null;
   }
 
   Widget _buildOutgoingPresentation(DMMessage message, Widget bubble) {
@@ -3545,97 +3652,116 @@ class _DMChatScreenState extends State<DMChatScreen>
     final messageId = message.replyToMessageId?.trim() ?? '';
     final sender = _senderLabelForId(message.replyToSenderId);
     final storedText = message.replyToText?.trim() ?? '';
-    final imageUrl = message.replyToImageUrl?.trim() ?? '';
-    final preview = storedText.isNotEmpty
-        ? storedText
-        : imageUrl.isNotEmpty
-            ? (isChineseUi(context)
-                ? '图片'
-                : Localizations.localeOf(context).languageCode == 'ko'
-                    ? '사진'
-                    : 'Photo')
-            : (isChineseUi(context)
-                ? '无法查看的消息'
-                : Localizations.localeOf(context).languageCode == 'ko'
-                    ? '확인할 수 없는 메시지'
-                    : 'Message unavailable');
+    final unavailable = _unavailableReplyTargetIds.contains(messageId);
+    final imageUrl = unavailable ? '' : message.replyToImageUrl?.trim() ?? '';
+    final unavailableLabel = isChineseUi(context)
+        ? '无法查看的消息'
+        : Localizations.localeOf(context).languageCode == 'ko'
+            ? '확인할 수 없는 메시지'
+            : 'Message unavailable';
+    final preview = unavailable
+        ? unavailableLabel
+        : storedText.isNotEmpty
+            ? storedText
+            : imageUrl.isNotEmpty
+                ? (isChineseUi(context)
+                    ? '图片'
+                    : Localizations.localeOf(context).languageCode == 'ko'
+                        ? '사진'
+                        : 'Photo')
+                : unavailableLabel;
     final foreground = isMine ? Colors.white : const Color(0xFF344054);
     final secondary = isMine ? Colors.white70 : const Color(0xFF667085);
+    final jumpLabel = isChineseUi(context)
+        ? '查看原消息'
+        : Localizations.localeOf(context).languageCode == 'ko'
+            ? '원본 메시지로 이동'
+            : 'Go to original message';
     return Semantics(
-      button: messageId.isNotEmpty,
-      label: preview,
-      child: InkWell(
-        onTap: messageId.isEmpty ? null : () => _jumpToMessage(messageId),
-        borderRadius: BorderRadius.circular(9),
-        child: Container(
-          constraints: const BoxConstraints(minWidth: 120, maxWidth: 250),
-          padding: const EdgeInsets.fromLTRB(9, 7, 9, 7),
-          decoration: BoxDecoration(
-            color: isMine
-                ? Colors.white.withValues(alpha: .10)
-                : const Color(0xFFF2F4F7),
-            borderRadius: BorderRadius.circular(9),
-          ),
-          child: Row(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              Container(
-                width: 2.5,
-                height: 34,
-                decoration: BoxDecoration(
-                  color: isMine ? Colors.white70 : const Color(0xFF2D9CDB),
-                  borderRadius: BorderRadius.circular(4),
-                ),
-              ),
-              const SizedBox(width: 8),
-              if (imageUrl.isNotEmpty) ...[
-                ClipRRect(
-                  borderRadius: BorderRadius.circular(5),
-                  child: CachedNetworkImage(
-                    imageUrl: imageUrl,
-                    width: 34,
-                    height: 34,
-                    fit: BoxFit.cover,
-                    errorWidget: (_, __, ___) => SizedBox.square(
-                      dimension: 34,
-                      child: Icon(Icons.image_outlined,
-                          size: 18, color: secondary),
-                    ),
+      button: messageId.isNotEmpty && !unavailable,
+      label: '$sender, $preview${unavailable ? '' : ', $jumpLabel'}',
+      child: Tooltip(
+        message: unavailable ? unavailableLabel : jumpLabel,
+        child: InkWell(
+          onTap: messageId.isEmpty || unavailable
+              ? null
+              : () => _jumpToMessage(messageId),
+          borderRadius: BorderRadius.circular(9),
+          child: Container(
+            constraints: const BoxConstraints(minWidth: 120, maxWidth: 250),
+            padding: const EdgeInsets.fromLTRB(9, 7, 9, 7),
+            decoration: BoxDecoration(
+              color: isMine
+                  ? Colors.white.withValues(alpha: .10)
+                  : const Color(0xFFF2F4F7),
+              borderRadius: BorderRadius.circular(9),
+            ),
+            child: Row(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Container(
+                  width: 2.5,
+                  height: 34,
+                  decoration: BoxDecoration(
+                    color: isMine ? Colors.white70 : const Color(0xFF2D9CDB),
+                    borderRadius: BorderRadius.circular(4),
                   ),
                 ),
                 const SizedBox(width: 8),
-              ],
-              Flexible(
-                child: Column(
-                  mainAxisSize: MainAxisSize.min,
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Text(
-                      sender,
-                      maxLines: 1,
-                      overflow: TextOverflow.ellipsis,
-                      style: TextStyle(
-                        fontSize: 11.5,
-                        fontWeight: FontWeight.w700,
-                        color: secondary,
+                if (imageUrl.isNotEmpty) ...[
+                  ClipRRect(
+                    borderRadius: BorderRadius.circular(5),
+                    child: CachedNetworkImage(
+                      imageUrl: imageUrl,
+                      width: 34,
+                      height: 34,
+                      fit: BoxFit.cover,
+                      placeholder: (_, __) => SizedBox.square(
+                        dimension: 34,
+                        child: Icon(Icons.image_outlined,
+                            size: 18, color: secondary),
+                      ),
+                      errorWidget: (_, __, ___) => SizedBox.square(
+                        dimension: 34,
+                        child: Icon(Icons.image_outlined,
+                            size: 18, color: secondary),
                       ),
                     ),
-                    const SizedBox(height: 2),
-                    Text(
-                      preview,
-                      maxLines: 2,
-                      overflow: TextOverflow.ellipsis,
-                      style: TextStyle(
-                        fontSize: 12.5,
-                        height: 1.25,
-                        fontWeight: FontWeight.w600,
-                        color: foreground,
+                  ),
+                  const SizedBox(width: 8),
+                ],
+                Flexible(
+                  child: Column(
+                    mainAxisSize: MainAxisSize.min,
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(
+                        sender,
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                        style: TextStyle(
+                          fontSize: 11.5,
+                          fontWeight: FontWeight.w700,
+                          color: secondary,
+                        ),
                       ),
-                    ),
-                  ],
+                      const SizedBox(height: 2),
+                      Text(
+                        preview,
+                        maxLines: 2,
+                        overflow: TextOverflow.ellipsis,
+                        style: TextStyle(
+                          fontSize: 12.5,
+                          height: 1.25,
+                          fontWeight: FontWeight.w600,
+                          color: foreground,
+                        ),
+                      ),
+                    ],
+                  ),
                 ),
-              ),
-            ],
+              ],
+            ),
           ),
         ),
       ),
@@ -4210,6 +4336,7 @@ class _DMChatScreenState extends State<DMChatScreen>
   }
 
   Widget _buildComposerReplyPreview(DMMessage message) {
+    final imageUrl = message.imageUrl?.trim() ?? '';
     return Container(
       constraints: const BoxConstraints(minHeight: 52),
       padding: const EdgeInsets.fromLTRB(12, 8, 4, 8),
@@ -4258,16 +4385,52 @@ class _DMChatScreenState extends State<DMChatScreen>
               ],
             ),
           ),
-          IconButton(
-            tooltip: isChineseUi(context)
+          if (imageUrl.isNotEmpty) ...[
+            const SizedBox(width: 8),
+            ClipRRect(
+              borderRadius: BorderRadius.circular(7),
+              child: CachedNetworkImage(
+                imageUrl: imageUrl,
+                width: 40,
+                height: 40,
+                fit: BoxFit.cover,
+                placeholder: (_, __) => const SizedBox.square(
+                  dimension: 40,
+                  child: Icon(
+                    Icons.image_outlined,
+                    size: 21,
+                    color: Color(0xFF667085),
+                  ),
+                ),
+                errorWidget: (_, __, ___) => const SizedBox.square(
+                  dimension: 40,
+                  child: Icon(
+                    Icons.image_outlined,
+                    size: 21,
+                    color: Color(0xFF667085),
+                  ),
+                ),
+              ),
+            ),
+          ],
+          Semantics(
+            button: true,
+            label: isChineseUi(context)
                 ? '取消回复'
                 : Localizations.localeOf(context).languageCode == 'ko'
                     ? '답장 취소'
                     : 'Cancel reply',
-            onPressed: () => setState(() => _replyingTo = null),
-            icon: const Icon(Icons.close_rounded, size: 19),
-            color: const Color(0xFF667085),
-            constraints: const BoxConstraints.tightFor(width: 42, height: 42),
+            child: IconButton(
+              tooltip: isChineseUi(context)
+                  ? '取消回复'
+                  : Localizations.localeOf(context).languageCode == 'ko'
+                      ? '답장 취소'
+                      : 'Cancel reply',
+              onPressed: () => setState(() => _replyingTo = null),
+              icon: const Icon(Icons.close_rounded, size: 19),
+              color: const Color(0xFF667085),
+              constraints: const BoxConstraints.tightFor(width: 42, height: 42),
+            ),
           ),
         ],
       ),
@@ -4731,6 +4894,8 @@ class _DMChatScreenState extends State<DMChatScreen>
         : '📎 ${selectedFile.originalFileName}';
     if ((text.isEmpty && image == null && selectedFile == null) ||
         typedText.length > 500) return;
+    final replyTarget = _replyingTo;
+    if (replyTarget != null && !_canReplyToMessage(replyTarget)) return;
     final watch = Stopwatch()..start();
     final attach = !_originPostContextAttached &&
         !_composerPostContextDismissed &&
@@ -4753,10 +4918,10 @@ class _DMChatScreenState extends State<DMChatScreen>
       fileExtension: selectedFile?.fileExtension,
       fileMimeType: selectedFile?.mimeType,
       fileSize: selectedFile?.fileSize,
-      replyToMessageId: _replyingTo?.id,
-      replyToSenderId: _replyingTo?.senderId,
-      replyToText: _replyingTo == null ? null : _replyPreviewText(_replyingTo!),
-      replyToImageUrl: _replyingTo?.imageUrl,
+      replyToMessageId: replyTarget?.id,
+      replyToSenderId: replyTarget?.senderId,
+      replyToText: replyTarget == null ? null : _replySnapshotText(replyTarget),
+      replyToImageUrl: replyTarget?.imageUrl,
       type: selectedFile != null
           ? 'file'
           : attach

@@ -67,14 +67,18 @@ void main() {
         serverCreatedAt: at,
         isRead: true,
         replyToMessageId: 'source',
+        replyToSenderId: 'bob',
         replyToText: 'reply',
+        replyToImageUrl: 'https://example.com/reply.jpg',
         postId: 'post',
         deliveryState: DMDeliveryState.uncertain,
         localImagePath: '/private/image');
     final copy = DMMessage.fromLocalMap(m.toLocalMap());
     expect(copy.serverCreatedAt, at);
     expect(copy.replyToMessageId, 'source');
+    expect(copy.replyToSenderId, 'bob');
     expect(copy.replyToText, 'reply');
+    expect(copy.replyToImageUrl, 'https://example.com/reply.jpg');
     expect(copy.id, 'stable');
     expect(copy.isRead, isTrue);
     expect(copy.deliveryState, DMDeliveryState.uncertain);

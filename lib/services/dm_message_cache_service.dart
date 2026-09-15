@@ -73,6 +73,27 @@ class DMMessageCacheService {
         .toList();
   }
 
+  Future<DMMessage?> getMessage(
+    String conversationId,
+    String messageId, {
+    DateTime? visibilityStartTime,
+  }) async {
+    final owner = _auth.currentUser?.uid;
+    final normalizedId = messageId.trim();
+    if (owner == null || normalizedId.isEmpty) return null;
+    final key = '$owner::$conversationId';
+    final box = await _box();
+    if (box != null) await _hydrate(key, box);
+    if (_auth.currentUser?.uid != owner) return null;
+    final message = _memory[key]?[normalizedId];
+    if (message == null ||
+        visibilityStartTime != null &&
+            message.createdAt.isBefore(visibilityStartTime)) {
+      return null;
+    }
+    return message;
+  }
+
   List<DMMessage> _ordered(String key) =>
       (_memory[key]?.values.toList() ?? <DMMessage>[])
         ..sort(DMMessage.compareDescending);

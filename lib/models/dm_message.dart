@@ -11,6 +11,11 @@ class DMMessage {
   final String senderId;
   final String text;
   final String? imageUrl;
+  final String? fileName;
+  final String? fileExtension;
+  final String? fileMimeType;
+  final int? fileSize;
+  final String? fileStoragePath;
 
   /// 답장(Reply) 컨텍스트 (선택)
   /// - 원본 메시지를 재조회하지 않아도 UI에서 인용 표시를 할 수 있게,
@@ -35,12 +40,18 @@ class DMMessage {
   final Timestamp? serverCreatedAt;
   final DMDeliveryState deliveryState;
   final String? localImagePath;
+  final String? localFilePath;
 
   DMMessage({
     required this.id,
     required this.senderId,
     required this.text,
     this.imageUrl,
+    this.fileName,
+    this.fileExtension,
+    this.fileMimeType,
+    this.fileSize,
+    this.fileStoragePath,
     this.replyToMessageId,
     this.replyToSenderId,
     this.replyToText,
@@ -55,6 +66,7 @@ class DMMessage {
     this.serverCreatedAt,
     this.deliveryState = DMDeliveryState.sent,
     this.localImagePath,
+    this.localFilePath,
   });
 
   /// Firestore 문서에서 DMMessage 객체 생성
@@ -67,6 +79,18 @@ class DMMessage {
       text: data['text'] ?? '',
       imageUrl:
           (data['imageUrl'] is String) ? data['imageUrl'] as String : null,
+      fileName: data['fileName'] is String ? data['fileName'] as String : null,
+      fileExtension: data['fileExtension'] is String
+          ? data['fileExtension'] as String
+          : null,
+      fileMimeType: data['fileMimeType'] is String
+          ? data['fileMimeType'] as String
+          : null,
+      fileSize:
+          data['fileSize'] is num ? (data['fileSize'] as num).toInt() : null,
+      fileStoragePath: data['fileStoragePath'] is String
+          ? data['fileStoragePath'] as String
+          : null,
       replyToMessageId: (data['replyToMessageId'] is String)
           ? data['replyToMessageId'] as String
           : null,
@@ -111,6 +135,14 @@ class DMMessage {
       'senderId': senderId,
       'text': text,
       if (imageUrl != null && imageUrl!.isNotEmpty) 'imageUrl': imageUrl,
+      if (fileName != null && fileName!.isNotEmpty) 'fileName': fileName,
+      if (fileExtension != null && fileExtension!.isNotEmpty)
+        'fileExtension': fileExtension,
+      if (fileMimeType != null && fileMimeType!.isNotEmpty)
+        'fileMimeType': fileMimeType,
+      if (fileSize != null && fileSize! > 0) 'fileSize': fileSize,
+      if (fileStoragePath != null && fileStoragePath!.isNotEmpty)
+        'fileStoragePath': fileStoragePath,
       if (replyToMessageId != null && replyToMessageId!.isNotEmpty)
         'replyToMessageId': replyToMessageId,
       if (replyToSenderId != null && replyToSenderId!.isNotEmpty)
@@ -142,6 +174,11 @@ class DMMessage {
     String? senderId,
     String? text,
     String? imageUrl,
+    String? fileName,
+    String? fileExtension,
+    String? fileMimeType,
+    int? fileSize,
+    String? fileStoragePath,
     String? replyToMessageId,
     String? replyToSenderId,
     String? replyToText,
@@ -156,12 +193,18 @@ class DMMessage {
     Timestamp? serverCreatedAt,
     DMDeliveryState? deliveryState,
     String? localImagePath,
+    String? localFilePath,
   }) {
     return DMMessage(
       id: id ?? this.id,
       senderId: senderId ?? this.senderId,
       text: text ?? this.text,
       imageUrl: imageUrl ?? this.imageUrl,
+      fileName: fileName ?? this.fileName,
+      fileExtension: fileExtension ?? this.fileExtension,
+      fileMimeType: fileMimeType ?? this.fileMimeType,
+      fileSize: fileSize ?? this.fileSize,
+      fileStoragePath: fileStoragePath ?? this.fileStoragePath,
       replyToMessageId: replyToMessageId ?? this.replyToMessageId,
       replyToSenderId: replyToSenderId ?? this.replyToSenderId,
       replyToText: replyToText ?? this.replyToText,
@@ -176,6 +219,7 @@ class DMMessage {
       serverCreatedAt: serverCreatedAt ?? this.serverCreatedAt,
       deliveryState: deliveryState ?? this.deliveryState,
       localImagePath: localImagePath ?? this.localImagePath,
+      localFilePath: localFilePath ?? this.localFilePath,
     );
   }
 
@@ -203,6 +247,7 @@ class DMMessage {
         if (readAt != null) 'readAtMs': readAt!.millisecondsSinceEpoch,
         'deliveryState': deliveryState.name,
         if (localImagePath != null) 'localImagePath': localImagePath,
+        if (localFilePath != null) 'localFilePath': localFilePath,
       };
 
   factory DMMessage.fromLocalMap(Map<String, dynamic> raw) => DMMessage(
@@ -210,6 +255,12 @@ class DMMessage {
         senderId: raw['senderId'] as String,
         text: raw['text'] as String? ?? '',
         imageUrl: raw['imageUrl'] as String?,
+        fileName: raw['fileName'] as String?,
+        fileExtension: raw['fileExtension'] as String?,
+        fileMimeType: raw['fileMimeType'] as String?,
+        fileSize:
+            raw['fileSize'] is num ? (raw['fileSize'] as num).toInt() : null,
+        fileStoragePath: raw['fileStoragePath'] as String?,
         type: raw['type'] as String? ?? 'text',
         postId: raw['postId'] as String?,
         postImageUrl: raw['postImageUrl'] as String?,
@@ -231,6 +282,7 @@ class DMMessage {
             (state) => state.name == raw['deliveryState'],
             orElse: () => DMDeliveryState.sent),
         localImagePath: raw['localImagePath'] as String?,
+        localFilePath: raw['localFilePath'] as String?,
       );
 
   @override

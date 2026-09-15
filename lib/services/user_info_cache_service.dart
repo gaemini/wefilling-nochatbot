@@ -419,6 +419,26 @@ class UserInfoCacheService {
     await _persistUser(ownerUid, info);
   }
 
+  /// Seeds room-scoped profile data returned by an authorized batch endpoint.
+  /// Mention pickers can paint names and avatars immediately on the next open
+  /// without opening one Firestore request per participant.
+  Future<void> seedUserInfoBatch(Iterable<DMUserInfo> users) async {
+    final ownerUid = _auth.currentUser?.uid;
+    if (ownerUid == null) return;
+    final unique = <String, DMUserInfo>{
+      for (final user in users)
+        if (user.uid.trim().isNotEmpty) user.uid.trim(): user,
+    };
+    for (final entry in unique.entries) {
+      final key = '$ownerUid::${entry.key}';
+      _cache[key] = entry.value;
+      _cacheTimestamps[key] = DateTime.now();
+    }
+    await Future.wait(
+      unique.values.map((user) => _persistUser(ownerUid, user)),
+    );
+  }
+
   /// 피드 카드용 휴대폰 캐시 전용 스트림입니다.
   ///
   /// 카드가 스크롤로 다시 생성될 때 Firestore listener를 열지 않고 메모리와

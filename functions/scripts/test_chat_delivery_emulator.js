@@ -47,6 +47,18 @@ function writes(id, text, invalidRoomUpdate = false) {
     updateTransforms: [timestamp('lastMessageTime'), timestamp('updatedAt')],
   }];
 }
+function fileWrites(id, overrides = {}) {
+  const batch = writes(id, `📎 ${id}.pdf`);
+  Object.assign(batch[0].update.fields, {
+    type: {stringValue: 'file'},
+    fileName: {stringValue: `${id}.pdf`},
+    fileExtension: {stringValue: 'pdf'},
+    fileMimeType: {stringValue: 'application/pdf'},
+    fileSize: {integerValue: '2048'},
+    fileStoragePath: {stringValue: `dm_files/${alice}/${room}/${id}/file.pdf`},
+  }, overrides);
+  return batch;
+}
 async function send(id, text = id) {
   for (let attempt = 0; attempt < 12; attempt++) {
     // REST emulator cannot decode a bytes transaction query parameter. An
@@ -159,6 +171,14 @@ async function main() {
   await assert.rejects(request(`${base}:commit`, {writes: writes('rollback', 'no partial save', true)}), {code: 'PERMISSION_DENIED'});
   assert.equal((await ref.collection('messages').doc('rollback').get()).exists, false);
   await assert.rejects(request(`${base}:commit`, {writes: writes('stranger', 'forged')}, 'outsider'), {code: 'PERMISSION_DENIED'});
+  await request(`${base}:commit`, {writes: fileWrites('valid-file')});
+  assert.equal((await ref.collection('messages').doc('valid-file').get()).get('text'), '📎 valid-file.pdf');
+  await assert.rejects(request(`${base}:commit`, {writes: fileWrites('wrong-file-path', {
+    fileStoragePath: {stringValue: `dm_files/${alice}/another-room/wrong-file-path/file.pdf`},
+  })}), {code: 'PERMISSION_DENIED'});
+  await assert.rejects(request(`${base}:commit`, {writes: fileWrites('wrong-file-mime', {
+    fileMimeType: {stringValue: 'application/x-msdownload'},
+  })}), {code: 'PERMISSION_DENIED'});
   await db.collection('blocks').doc(`${bob}_${alice}`).set({blocker: bob, blocked: alice});
   await assert.rejects(send('blocked'), {code: 'PERMISSION_DENIED'});
   await db.collection('blocks').doc(`${bob}_${alice}`).delete();
@@ -201,6 +221,20 @@ async function main() {
   await onCreate(messageBefore, context);
   await onRead({before: messageBefore, after: messageAfter}, {...context, eventId: 'repeated-read'});
   await onRead({before: messageBefore, after: messageAfter}, {...context, eventId: 'repeated-read'});
+  assert.equal((await ref.get()).get(`unreadCount.${bob}`), 0);
+  assert.equal((await db.collection('users').doc(bob).get()).get('dmUnreadTotal'), 0);
+  await request(`${base}:commit`, {writes: fileWrites('file-unread')});
+  const unreadFile = await ref.collection('messages').doc('file-unread').get();
+  const fileContext = {eventId: 'file-unread-create',
+    params: {conversationId: room, messageId: 'file-unread'}};
+  await onCreate(unreadFile, fileContext);
+  await onCreate(unreadFile, fileContext);
+  assert.equal((await ref.get()).get(`unreadCount.${bob}`), 1);
+  assert.equal((await db.collection('users').doc(bob).get()).get('dmUnreadTotal'), 1);
+  await unreadFile.ref.update({isRead: true, readAt: admin.firestore.FieldValue.serverTimestamp()});
+  const readFile = await unreadFile.ref.get();
+  await onRead({before: unreadFile, after: readFile}, {...fileContext, eventId: 'file-unread-read'});
+  await onRead({before: unreadFile, after: readFile}, {...fileContext, eventId: 'file-unread-read'});
   assert.equal((await ref.get()).get(`unreadCount.${bob}`), 0);
   assert.equal((await db.collection('users').doc(bob).get()).get('dmUnreadTotal'), 0);
   // A stale cleanup event must not rewind the newest watermark/cursor.

@@ -12,6 +12,7 @@ import '../utils/logger.dart';
 /// - path: Storage object path (profile_images/{uid}/{file}.jpg)
 typedef ProfileUploadResult = ({String downloadUrl, String path});
 typedef SnackChatImageUploadResult = ({String storagePath, String? imageUrl});
+typedef DmFileUploadResult = ({String storagePath});
 typedef _ChatImageUploadResult = ({String storagePath, String? downloadUrl});
 
 class StorageService {
@@ -26,6 +27,7 @@ class StorageService {
   final FirebaseStorage _profileStorage =
       FirebaseStorage.instanceFor(bucket: _profileBucket);
   final Uuid _uuid = const Uuid();
+  final Map<String, UploadTask> _dmFileUploads = <String, UploadTask>{};
 
   // 이미지 파일을 Firebase Storage에 업로드하고 다운로드 URL을 반환
   Future<String?> uploadImage(
@@ -49,7 +51,8 @@ class StorageService {
       final String fullPath = '$folderPath/$fileName';
 
       if (Logger.isVerboseEnabled) Logger.log('이미지 업로드 시작: $fullPath');
-      if (Logger.isVerboseEnabled) Logger.log('Firebase Storage 버킷: ${_storage.bucket}');
+      if (Logger.isVerboseEnabled)
+        Logger.log('Firebase Storage 버킷: ${_storage.bucket}');
 
       // 이미지 파일 경로 설정 (posts 폴더 아래에 저장)
       final Reference ref = _storage.ref().child(folderPath).child(fileName);
@@ -142,7 +145,8 @@ class StorageService {
       fullPath = '$folderPath/$fileName';
 
       if (Logger.isVerboseEnabled) Logger.log('프로필 이미지 업로드 시작: $fullPath');
-      if (Logger.isVerboseEnabled) Logger.log('Firebase Storage 버킷(프로필): ${_profileStorage.bucket}');
+      if (Logger.isVerboseEnabled)
+        Logger.log('Firebase Storage 버킷(프로필): ${_profileStorage.bucket}');
 
       ref = _profileStorage.ref().child(folderPath).child(fileName);
 
@@ -169,7 +173,8 @@ class StorageService {
       if (Logger.isVerboseEnabled) Logger.log('프로필 이미지 업로드 완료: $fullPath');
 
       final String downloadUrl = await taskSnapshot.ref.getDownloadURL();
-      if (Logger.isVerboseEnabled) Logger.log('프로필 이미지 다운로드 URL 획득: $downloadUrl');
+      if (Logger.isVerboseEnabled)
+        Logger.log('프로필 이미지 다운로드 URL 획득: $downloadUrl');
       return (downloadUrl: downloadUrl, path: fullPath);
     } on TimeoutException catch (e) {
       Logger.error('프로필 이미지 업로드 타임아웃', e);
@@ -196,8 +201,9 @@ class StorageService {
             // 짧은 지연 후 재시도 (resumable finalize/메타데이터 반영 경합 완화)
             await Future.delayed(Duration(milliseconds: 220 * (attempt + 1)));
             final recovered = await ref.getDownloadURL();
-            if (Logger.isVerboseEnabled) Logger.log(
-                '✅ HTTP 400 복구 성공: downloadURL 획득 ($fullPath, attempt=${attempt + 1})');
+            if (Logger.isVerboseEnabled)
+              Logger.log(
+                  '✅ HTTP 400 복구 성공: downloadURL 획득 ($fullPath, attempt=${attempt + 1})');
             return (downloadUrl: recovered, path: fullPath);
           } catch (recoveryError) {
             Logger.error(
@@ -238,6 +244,175 @@ class StorageService {
       createDownloadUrl: true,
     );
     return result?.downloadUrl;
+  }
+
+  /// Uploads one immutable DM document using a deterministic message path.
+  /// A retry first verifies an existing object, so a lost acknowledgement does
+  /// not create a duplicate or overwrite bytes that were already delivered.
+  Future<DmFileUploadResult?> uploadDmFile(
+    File file, {
+    required String userId,
+    required String conversationId,
+    required String messageId,
+    required String fileName,
+    required String fileExtension,
+    required String mimeType,
+    required int fileSize,
+    void Function(double progress)? onProgress,
+  }) async {
+    final normalizedExtension = fileExtension.toLowerCase().trim();
+    final storagePath =
+        'dm_files/$userId/$conversationId/$messageId/file.$normalizedExtension';
+    final reference = _storage.ref(storagePath);
+
+    bool isExpected(FullMetadata metadata) {
+      final custom = metadata.customMetadata ?? const <String, String>{};
+      return metadata.size == fileSize &&
+          metadata.contentType == mimeType &&
+          custom['ownerUid'] == userId &&
+          custom['conversationId'] == conversationId &&
+          custom['messageId'] == messageId &&
+          custom['fileName'] == fileName &&
+          custom['fileExtension'] == normalizedExtension;
+    }
+
+    Future<DmFileUploadResult?> recoverExisting() async {
+      try {
+        final metadata = await reference.getMetadata();
+        return isExpected(metadata) ? (storagePath: storagePath) : null;
+      } on FirebaseException catch (error) {
+        if (error.code == 'object-not-found') return null;
+        rethrow;
+      }
+    }
+
+    try {
+      final existing = await recoverExisting();
+      if (existing != null) {
+        onProgress?.call(1);
+        return existing;
+      }
+
+      final upload = reference.putFile(
+        file,
+        SettableMetadata(
+          contentType: mimeType,
+          cacheControl: 'private,max-age=31536000,immutable',
+          customMetadata: <String, String>{
+            'ownerUid': userId,
+            'conversationId': conversationId,
+            'messageId': messageId,
+            'fileName': fileName,
+            'fileExtension': normalizedExtension,
+            'fileSize': fileSize.toString(),
+          },
+        ),
+      );
+      _dmFileUploads[storagePath] = upload;
+      final subscription = upload.snapshotEvents.listen((snapshot) {
+        if (snapshot.totalBytes <= 0) return;
+        onProgress?.call(
+          (snapshot.bytesTransferred / snapshot.totalBytes).clamp(0.0, 1.0),
+        );
+      });
+      try {
+        await upload.timeout(
+          const Duration(minutes: 3),
+          onTimeout: () {
+            upload.cancel();
+            throw TimeoutException(
+              'DM file upload timeout',
+              const Duration(minutes: 3),
+            );
+          },
+        );
+      } finally {
+        if (identical(_dmFileUploads[storagePath], upload)) {
+          _dmFileUploads.remove(storagePath);
+        }
+        await subscription.cancel();
+      }
+      onProgress?.call(1);
+      return (storagePath: storagePath);
+    } catch (error, stackTrace) {
+      // The upload may have committed before a timeout/disconnect. Confirm the
+      // immutable object before reporting failure and keep the local outbox.
+      try {
+        final recovered = await recoverExisting();
+        if (recovered != null) return recovered;
+      } catch (_) {}
+      Logger.error('DM 파일 업로드 실패', error, stackTrace);
+      return null;
+    }
+  }
+
+  /// Cancels only the current in-process upload. A finalized Storage object is
+  /// never deleted here because a delayed message commit may already refer to
+  /// it. The caller keeps/removes its own outbox packet separately.
+  Future<bool> cancelDmFileUpload({
+    required String userId,
+    required String conversationId,
+    required String messageId,
+    required String fileExtension,
+  }) async {
+    final extension = fileExtension.toLowerCase().trim();
+    final storagePath =
+        'dm_files/$userId/$conversationId/$messageId/file.$extension';
+    final upload = _dmFileUploads[storagePath];
+    if (upload == null) return false;
+    return upload.cancel();
+  }
+
+  /// Returns an account-scoped local copy and only downloads when necessary.
+  Future<File> downloadDmFile({
+    required String ownerUid,
+    required String conversationId,
+    required String messageId,
+    required String storagePath,
+    required String fileName,
+    required int fileSize,
+    void Function(double progress)? onProgress,
+  }) async {
+    final root = await getApplicationSupportDirectory();
+    final directory = Directory(
+      '${root.path}/dm_file_cache/${Uri.encodeComponent(ownerUid)}/'
+      '${Uri.encodeComponent(conversationId)}',
+    );
+    await directory.create(recursive: true);
+    final target = File(
+      '${directory.path}/${Uri.encodeComponent(messageId)}_'
+      '${Uri.encodeComponent(fileName)}',
+    );
+    if (await target.exists()) {
+      final length = await target.length();
+      if (fileSize <= 0 || length == fileSize) {
+        onProgress?.call(1);
+        return target;
+      }
+      await target.delete();
+    }
+
+    final temp = File('${target.path}.part');
+    if (await temp.exists()) await temp.delete();
+    final download = _storage.ref(storagePath).writeToFile(temp);
+    final subscription = download.snapshotEvents.listen((snapshot) {
+      if (snapshot.totalBytes <= 0) return;
+      onProgress?.call(
+        (snapshot.bytesTransferred / snapshot.totalBytes).clamp(0.0, 1.0),
+      );
+    });
+    try {
+      await download.timeout(const Duration(minutes: 3));
+      if (await target.exists()) await target.delete();
+      await temp.rename(target.path);
+      onProgress?.call(1);
+      return target;
+    } catch (_) {
+      if (await temp.exists()) await temp.delete();
+      rethrow;
+    } finally {
+      await subscription.cancel();
+    }
   }
 
   /// Snack Chat 이미지 업로드.
@@ -326,7 +501,8 @@ class StorageService {
       final path = _storage.refFromURL(normalized).fullPath.trim();
       return path.isEmpty ? null : path;
     } catch (error) {
-      if (Logger.isVerboseEnabled) Logger.warning('Storage URL 경로 변환 실패: $error');
+      if (Logger.isVerboseEnabled)
+        Logger.warning('Storage URL 경로 변환 실패: $error');
       return null;
     }
   }
@@ -353,8 +529,10 @@ class StorageService {
       final String folderPath = '$folderName/$userId/$entityId';
       final String fullPath = '$folderPath/$fileName';
 
-      if (Logger.isVerboseEnabled) Logger.log('$logLabel 이미지 업로드 시작: $fullPath');
-      if (Logger.isVerboseEnabled) Logger.log('Firebase Storage 버킷: ${_storage.bucket}');
+      if (Logger.isVerboseEnabled)
+        Logger.log('$logLabel 이미지 업로드 시작: $fullPath');
+      if (Logger.isVerboseEnabled)
+        Logger.log('Firebase Storage 버킷: ${_storage.bucket}');
 
       final Reference ref = _storage.ref().child(folderPath).child(fileName);
 
@@ -397,11 +575,13 @@ class StorageService {
           );
         },
       );
-      if (Logger.isVerboseEnabled) Logger.log('$logLabel 이미지 업로드 완료: $fullPath');
+      if (Logger.isVerboseEnabled)
+        Logger.log('$logLabel 이미지 업로드 완료: $fullPath');
 
       final String? downloadUrl =
           createDownloadUrl ? await taskSnapshot.ref.getDownloadURL() : null;
-      if (downloadUrl != null) if (Logger.isVerboseEnabled) Logger.log('$logLabel 이미지 다운로드 URL 획득');
+      if (downloadUrl != null) if (Logger.isVerboseEnabled)
+        Logger.log('$logLabel 이미지 다운로드 URL 획득');
 
       return (storagePath: fullPath, downloadUrl: downloadUrl);
     } on TimeoutException catch (e) {
@@ -433,7 +613,8 @@ class StorageService {
     try {
       // 이미지 정보 확인
       final fileSize = await file.length();
-      if (Logger.isVerboseEnabled) Logger.log('원본 이미지 크기: ${(fileSize / 1024).round()}KB');
+      if (Logger.isVerboseEnabled)
+        Logger.log('원본 이미지 크기: ${(fileSize / 1024).round()}KB');
 
       // 파일 확장자 확인
       final sourceExt = path.extension(file.path).toLowerCase();
@@ -475,7 +656,8 @@ class StorageService {
       }
 
       final compressedSize = await File(result.path).length();
-      if (Logger.isVerboseEnabled) Logger.log('압축 후 이미지 크기: ${(compressedSize / 1024).round()}KB');
+      if (Logger.isVerboseEnabled)
+        Logger.log('압축 후 이미지 크기: ${(compressedSize / 1024).round()}KB');
 
       // XFile을 File로 변환하여 반환
       return File(result.path);
@@ -505,7 +687,8 @@ class StorageService {
         'storage.googleapis.com/firebasestorage/',
         'firebasestorage.googleapis.com/',
       );
-      if (Logger.isVerboseEnabled) Logger.log('🔧 URL 형식 수정됨 (storage->firebasestorage): $correctedUrl');
+      if (Logger.isVerboseEnabled)
+        Logger.log('🔧 URL 형식 수정됨 (storage->firebasestorage): $correctedUrl');
     }
 
     // 잘못된 .firebase.app을 올바른 .firebasestorage.app으로 변경
@@ -515,9 +698,10 @@ class StorageService {
         '.firebase.app',
         '.firebasestorage.app',
       );
-      if (Logger.isVerboseEnabled) Logger.log(
-        '🔧 URL 도메인 수정됨 (.firebase.app -> .firebasestorage.app): $correctedUrl',
-      );
+      if (Logger.isVerboseEnabled)
+        Logger.log(
+          '🔧 URL 도메인 수정됨 (.firebase.app -> .firebasestorage.app): $correctedUrl',
+        );
     }
 
     // alt=media가 없으면 추가
@@ -527,7 +711,8 @@ class StorageService {
       } else {
         correctedUrl = '$correctedUrl?alt=media';
       }
-      if (Logger.isVerboseEnabled) Logger.log('🔧 alt=media 파라미터 추가: $correctedUrl');
+      if (Logger.isVerboseEnabled)
+        Logger.log('🔧 alt=media 파라미터 추가: $correctedUrl');
     }
 
     if (Logger.isVerboseEnabled) Logger.log('✅ URL 수정 완료: $correctedUrl');

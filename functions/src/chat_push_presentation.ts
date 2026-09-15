@@ -35,7 +35,11 @@ export function chatPushCopy(args: {
   const type = typeof message.type === 'string' ? message.type : '';
   let preview = raw;
   if (type === 'image' || message.imageUrl) preview = '📷 ' + (raw || (ko ? '사진' : zh ? '照片' : 'Photo'));
-  else if (type === 'file') preview = '📎 ' + (pushText(message.originalFileName, 160) || (ko ? '파일' : zh ? '文件' : 'File'));
+  else if (type === 'file') preview = '📎 ' + (
+    pushText(message.originalFileName, 160) ||
+    pushText(message.fileName, 160) ||
+    (ko ? '파일' : zh ? '文件' : 'File')
+  );
   else if (type === 'poll') preview = '📊 ' + (raw || (ko ? '투표' : zh ? '投票' : 'Poll'));
   else if (!preview) preview = ko ? '메시지' : zh ? '消息' : 'Message';
   if (message.replyToMessageId) preview = '↪ ' + preview;

@@ -36,6 +36,7 @@ assert.equal(chatPushCopy({...args, kind: 'dm', sender: '익명'}).title, '익�
 assert.equal(chatPushCopy({...args, kind: 'dm'}).body, '내일 3시에 만나요');
 for (const [message, expected] of [[{type:'image'}, '📷 照片'],
   [{type:'file',originalFileName:'课程.pdf'}, '📎 课程.pdf'],
+  [{type:'file',fileName:'DM课程.pdf',text:'📎 DM课程.pdf'}, '📎 DM课程.pdf'],
   [{type:'poll'}, '📊 投票'], [{text:'好',replyToMessageId:'secret'}, '↪ 好']]) {
   assert.equal(chatPushCopy({...args, message, language:'zh'}).preview, expected);
 }

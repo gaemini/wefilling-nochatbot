@@ -10,6 +10,7 @@ Future<List<SnackChatSelectedFile>?> showSnackChatFileConfirmationSheet(
   BuildContext context, {
   required List<SnackChatSelectedFile> files,
   required bool temporary24h,
+  String? retentionDescription,
 }) {
   return showModalBottomSheet<List<SnackChatSelectedFile>>(
     context: context,
@@ -24,6 +25,7 @@ Future<List<SnackChatSelectedFile>?> showSnackChatFileConfirmationSheet(
     builder: (_) => _SnackChatFileConfirmationSheet(
       files: files,
       temporary24h: temporary24h,
+      retentionDescription: retentionDescription,
     ),
   );
 }
@@ -32,10 +34,12 @@ class _SnackChatFileConfirmationSheet extends StatefulWidget {
   const _SnackChatFileConfirmationSheet({
     required this.files,
     required this.temporary24h,
+    this.retentionDescription,
   });
 
   final List<SnackChatSelectedFile> files;
   final bool temporary24h;
+  final String? retentionDescription;
 
   @override
   State<_SnackChatFileConfirmationSheet> createState() =>
@@ -79,7 +83,11 @@ class _SnackChatFileConfirmationSheetState
               children: [
                 Expanded(
                   child: Text(
-                    (isChineseUi(context) ? '发送文件' : isKorean ? '파일 보내기' : 'Send files'),
+                    (isChineseUi(context)
+                        ? '发送文件'
+                        : isKorean
+                            ? '파일 보내기'
+                            : 'Send files'),
                     style: TextStyle(
                       fontFamily: uiFontFamily(context, 'Inter'),
                       fontFamilyFallback: const ['NotoSansKR'],
@@ -90,9 +98,11 @@ class _SnackChatFileConfirmationSheetState
                   ),
                 ),
                 Text(
-                  (isChineseUi(context) ? '已选${_files.length}项' : isKorean
-                      ? '${_files.length}개 선택'
-                      : '${_files.length} selected'),
+                  (isChineseUi(context)
+                      ? '已选${_files.length}项'
+                      : isKorean
+                          ? '${_files.length}개 선택'
+                          : '${_files.length} selected'),
                   style: TextStyle(
                     fontFamily: uiFontFamily(context, 'Inter'),
                     fontFamilyFallback: const ['NotoSansKR'],
@@ -105,13 +115,18 @@ class _SnackChatFileConfirmationSheetState
             ),
             const SizedBox(height: 6),
             Text(
-              widget.temporary24h
-                  ? ((isChineseUi(context) ? '文件发送后保留24小时。' : isKorean
-                      ? '이 파일은 전송 후 24시간 동안 확인할 수 있습니다.'
-                      : 'These files remain available for 24 hours after sending.'))
-                  : ((isChineseUi(context) ? '文件发送后保留30天。' : isKorean
-                      ? '이 파일은 전송 후 30일 동안 확인할 수 있습니다.'
-                      : 'These files remain available for 30 days after sending.')),
+              widget.retentionDescription ??
+                  (widget.temporary24h
+                      ? ((isChineseUi(context)
+                          ? '文件发送后保留24小时。'
+                          : isKorean
+                              ? '이 파일은 전송 후 24시간 동안 확인할 수 있습니다.'
+                              : 'These files remain available for 24 hours after sending.'))
+                      : ((isChineseUi(context)
+                          ? '文件发送后保留30天。'
+                          : isKorean
+                              ? '이 파일은 전송 후 30일 동안 확인할 수 있습니다.'
+                              : 'These files remain available for 30 days after sending.'))),
               style: TextStyle(
                 fontFamily: uiFontFamily(context, 'Inter'),
                 fontFamilyFallback: const ['NotoSansKR'],
@@ -174,7 +189,11 @@ class _SnackChatFileConfirmationSheetState
                           ),
                         ),
                         IconButton(
-                          tooltip: (isChineseUi(context) ? '移除' : isKorean ? '제거' : 'Remove'),
+                          tooltip: (isChineseUi(context)
+                              ? '移除'
+                              : isKorean
+                                  ? '제거'
+                                  : 'Remove'),
                           onPressed: () {
                             setState(() => _files.removeAt(index));
                             if (_files.isEmpty) Navigator.of(context).pop();
@@ -203,7 +222,11 @@ class _SnackChatFileConfirmationSheetState
                   elevation: 0,
                 ),
                 child: Text(
-                  (isChineseUi(context) ? '发送' : isKorean ? '전송' : 'Send'),
+                  (isChineseUi(context)
+                      ? '发送'
+                      : isKorean
+                          ? '전송'
+                          : 'Send'),
                   style: TextStyle(
                     fontFamily: uiFontFamily(context, 'Inter'),
                     fontFamilyFallback: const ['NotoSansKR'],

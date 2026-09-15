@@ -11,7 +11,9 @@ import 'package:flutter/services.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:image_picker/image_picker.dart';
+import 'package:file_picker/file_picker.dart';
 import 'package:cached_network_image/cached_network_image.dart';
+import 'package:open_filex/open_filex.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import '../models/conversation.dart';
 import '../models/dm_message.dart';
@@ -27,6 +29,7 @@ import '../services/post_service.dart';
 import '../services/content_filter_service.dart';
 import '../services/report_service.dart';
 import '../services/storage_service.dart';
+import '../services/snack_chat_document_import_service.dart';
 import '../services/user_info_cache_service.dart';
 import '../services/content_translation_service.dart';
 import '../utils/time_formatter.dart';
@@ -42,6 +45,9 @@ import '../utils/logger.dart';
 import '../utils/chat_timing.dart';
 import '../ui/snackbar/app_snackbar.dart';
 import '../ui/sheets/translation_language_sheet.dart';
+import '../ui/sheets/snack_chat_attachment_sheet.dart';
+import '../ui/sheets/snack_chat_file_confirmation_sheet.dart';
+import '../config/snack_chat_file_policy.dart';
 import '../utils/responsive_helper.dart';
 import '../l10n/ui_locale.dart';
 
@@ -105,6 +111,8 @@ class _DMChatScreenState extends State<DMChatScreen>
     with WidgetsBindingObserver {
   final DMService _dmService = DMService();
   final StorageService _storageService = StorageService();
+  final SnackChatDocumentImportService _documentImporter =
+      SnackChatDocumentImportService.instance;
   final UserInfoCacheService _userInfoCacheService = UserInfoCacheService();
   final _currentUser = FirebaseAuth.instance.currentUser;
   final _messageController = TextEditingController();
@@ -189,11 +197,16 @@ class _DMChatScreenState extends State<DMChatScreen>
   static final _dispatch = ChatWorkQueue();
   static final _textPreparation = ChatWorkQueue();
   static final _imagePreparation = ChatWorkQueue();
+  static final _filePreparation = ChatWorkQueue();
   final Map<String, DMMessage> _outgoing = {};
   final Set<String> _sendingIds = {};
   final Set<String> _entranceIds = {};
   final Set<String> _restoredOutboxes = {};
   final Map<String, double> _uploadById = {};
+  final Map<String, double> _downloadById = {};
+  final Set<String> _openingFileIds = <String>{};
+  final Set<String> _cancelledOutgoingIds = <String>{};
+  final Set<String> _committingOutgoingIds = <String>{};
   DateTime? _lastLocalSentAt;
   bool _followingLatest = false;
   bool _accountInvalidated = false;
@@ -210,6 +223,8 @@ class _DMChatScreenState extends State<DMChatScreen>
   bool _isBlocked = false; // 차단 여부
   bool _isBlockedBy = false; // 차단당한 여부
   File? _pendingImage; // 첨부 대기 이미지 (1장 제한)
+  SnackChatSelectedFile? _pendingFile;
+  DMMessage? _replyingTo;
   double? _uploadProgress; // 이미지 업로드 진행률 (0~1)
   bool _originPostContextAttached = false; // 현재 진입(세션)에서 게시글 컨텍스트를 1회만 부착
   bool _composerPostContextDismissed = false; // 입력창 위 미리보기 카드 닫힘 여부
@@ -2776,7 +2791,14 @@ class _DMChatScreenState extends State<DMChatScreen>
           child: Column(
             children: [
               if (showDateSeparator) _buildDateSeparator(message.createdAt),
-              _buildOutgoingPresentation(
+              GestureDetector(
+                behavior: HitTestBehavior.translucent,
+                onLongPress: message.deliveryState == DMDeliveryState.sent
+                    ? () => _showMessageActions(message)
+                    : message.type == 'file'
+                        ? () => _showPendingFileActions(message)
+                        : null,
+                child: _buildOutgoingPresentation(
                   message,
                   _buildMessageBubble(
                     message,
@@ -2786,7 +2808,9 @@ class _DMChatScreenState extends State<DMChatScreen>
                     showTimeText: showTimeText,
                     statusText: statusText,
                     showStatusText: showStatusText,
-                  )),
+                  ),
+                ),
+              ),
             ],
           ),
         );
@@ -2956,6 +2980,218 @@ class _DMChatScreenState extends State<DMChatScreen>
     );
   }
 
+  Future<void> _showMessageActions(DMMessage message) async {
+    if (message.deliveryState != DMDeliveryState.sent) return;
+    HapticFeedback.selectionClick();
+    final selected = await showModalBottomSheet<bool>(
+      context: context,
+      requestFocus: false,
+      useSafeArea: false,
+      backgroundColor: Colors.white,
+      barrierColor: Colors.black.withValues(alpha: .42),
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(22)),
+      ),
+      builder: (sheetContext) => SafeArea(
+        top: false,
+        child: Padding(
+          padding: const EdgeInsets.fromLTRB(16, 10, 16, 12),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Container(
+                width: 36,
+                height: 4,
+                decoration: BoxDecoration(
+                  color: const Color(0xFFD0D5DD),
+                  borderRadius: BorderRadius.circular(99),
+                ),
+              ),
+              const SizedBox(height: 10),
+              ListTile(
+                minTileHeight: 54,
+                leading: const Icon(
+                  Icons.reply_rounded,
+                  color: Color(0xFF344054),
+                ),
+                title: Text(
+                  isChineseUi(context)
+                      ? '回复'
+                      : Localizations.localeOf(context).languageCode == 'ko'
+                          ? '답장'
+                          : 'Reply',
+                  style: const TextStyle(
+                    fontSize: 15,
+                    fontWeight: FontWeight.w700,
+                    color: Color(0xFF101828),
+                  ),
+                ),
+                onTap: () => Navigator.of(sheetContext).pop(true),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+    if (!mounted || selected != true) return;
+    setState(() => _replyingTo = message);
+    _messageFocusNode.requestFocus();
+  }
+
+  Future<void> _showPendingFileActions(DMMessage message) async {
+    if (message.type != 'file' ||
+        message.deliveryState == DMDeliveryState.sent) {
+      return;
+    }
+    if (_committingOutgoingIds.contains(message.id)) {
+      AppSnackBar.show(
+        context,
+        message: isChineseUi(context)
+            ? '正在确认发送。'
+            : Localizations.localeOf(context).languageCode == 'ko'
+                ? '전송을 확정하는 중이에요.'
+                : 'Finalizing delivery.',
+        type: AppSnackBarType.info,
+      );
+      return;
+    }
+    final shouldCancel = await showModalBottomSheet<bool>(
+      context: context,
+      requestFocus: false,
+      useSafeArea: false,
+      backgroundColor: Colors.white,
+      barrierColor: Colors.black.withValues(alpha: .42),
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(22)),
+      ),
+      builder: (sheetContext) => SafeArea(
+        top: false,
+        child: ListTile(
+          minTileHeight: 58,
+          leading: const Icon(Icons.close_rounded, color: Color(0xFFD92D20)),
+          title: Text(
+            isChineseUi(context)
+                ? '取消文件发送'
+                : Localizations.localeOf(context).languageCode == 'ko'
+                    ? '파일 전송 취소'
+                    : 'Cancel file upload',
+            style: const TextStyle(
+              fontSize: 15,
+              fontWeight: FontWeight.w700,
+              color: Color(0xFFD92D20),
+            ),
+          ),
+          onTap: () => Navigator.of(sheetContext).pop(true),
+        ),
+      ),
+    );
+    if (!mounted || shouldCancel != true) return;
+    await _cancelPendingFile(message);
+  }
+
+  Future<void> _cancelPendingFile(DMMessage message) async {
+    final owner = _currentUser?.uid;
+    final room = _activeConversationId;
+    if (owner == null ||
+        message.senderId != owner ||
+        _committingOutgoingIds.contains(message.id)) {
+      return;
+    }
+    _cancelledOutgoingIds.add(message.id);
+    unawaited(_storageService.cancelDmFileUpload(
+      userId: owner,
+      conversationId: room,
+      messageId: message.id,
+      fileExtension: message.fileExtension ?? '',
+    ));
+    await _outbox.remove(owner, room, message.id);
+    if (!mounted || !_canSendFor(owner, room)) return;
+    setState(() {
+      _outgoing.remove(message.id);
+      _messages.removeWhere((candidate) => candidate.id == message.id);
+      _uploadById.remove(message.id);
+    });
+  }
+
+  String _replySenderLabel(DMMessage message) {
+    return _senderLabelForId(message.senderId);
+  }
+
+  String _senderLabelForId(String? senderId) {
+    if (senderId == _currentUser?.uid) {
+      return isChineseUi(context)
+          ? '我'
+          : Localizations.localeOf(context).languageCode == 'ko'
+              ? '나'
+              : 'You';
+    }
+    if (_isAnonymous) {
+      return isChineseUi(context)
+          ? '匿名'
+          : Localizations.localeOf(context).languageCode == 'ko'
+              ? '익명'
+              : 'Anonymous';
+    }
+    final name = _serverOtherUserInfo?.nickname.trim() ?? '';
+    return name.isNotEmpty
+        ? name
+        : (isChineseUi(context)
+            ? '对方'
+            : Localizations.localeOf(context).languageCode == 'ko'
+                ? '상대방'
+                : 'Other person');
+  }
+
+  String _replyPreviewText(DMMessage message) {
+    if (message.type == 'file') {
+      return '📎 ${message.fileName?.trim().isNotEmpty == true ? message.fileName!.trim() : message.text.replaceFirst('📎', '').trim()}';
+    }
+    if (message.text.trim().isNotEmpty) return message.text.trim();
+    if ((message.imageUrl ?? '').trim().isNotEmpty ||
+        (message.localImagePath ?? '').trim().isNotEmpty) {
+      return isChineseUi(context)
+          ? '图片'
+          : Localizations.localeOf(context).languageCode == 'ko'
+              ? '사진'
+              : 'Photo';
+    }
+    return isChineseUi(context)
+        ? '无法查看的消息'
+        : Localizations.localeOf(context).languageCode == 'ko'
+            ? '확인할 수 없는 메시지'
+            : 'Message unavailable';
+  }
+
+  Future<void> _jumpToMessage(String messageId) async {
+    var cycles = 0;
+    while (!_messages.any((message) => message.id == messageId) &&
+        _hasMore &&
+        cycles < 16) {
+      cycles++;
+      await _loadMoreMessages();
+      if (!mounted) return;
+    }
+    final key = _messageLayoutKeys[messageId];
+    if (key?.currentContext == null) {
+      AppSnackBar.show(
+        context,
+        message: isChineseUi(context)
+            ? '无法查看原消息。'
+            : Localizations.localeOf(context).languageCode == 'ko'
+                ? '원본 메시지를 확인할 수 없어요.'
+                : 'The original message is unavailable.',
+        type: AppSnackBarType.info,
+      );
+      return;
+    }
+    await Scrollable.ensureVisible(
+      key!.currentContext!,
+      duration: const Duration(milliseconds: 220),
+      curve: Curves.easeOutCubic,
+      alignment: .45,
+    );
+  }
+
   Widget _buildOutgoingPresentation(DMMessage message, Widget bubble) {
     final pending = message.deliveryState != DMDeliveryState.sent;
     final retryable = message.deliveryState == DMDeliveryState.failed ||
@@ -2974,6 +3210,20 @@ class _DMChatScreenState extends State<DMChatScreen>
                 : isKo
                     ? '전송 중'
                     : 'Sending');
+    final progress = _uploadById[message.id];
+    final indicator = message.deliveryState == DMDeliveryState.failed
+        ? const Icon(Icons.error_outline_rounded,
+            size: 17, color: Color(0xFFD92D20))
+        : message.deliveryState == DMDeliveryState.uncertain
+            ? const Icon(Icons.schedule_rounded,
+                size: 17, color: Color(0xFF667085))
+            : const SizedBox.square(
+                dimension: 14,
+                child: CircularProgressIndicator(
+                  strokeWidth: 1.8,
+                  color: Color(0xFF667085),
+                ),
+              );
     return SnackChatOutgoingEntrance(
       key: ValueKey('dm_entrance_${message.id}'),
       animateOnMount: _entranceIds.contains(message.id),
@@ -2982,23 +3232,44 @@ class _DMChatScreenState extends State<DMChatScreen>
         bubble,
         if (pending)
           Padding(
-              padding: const EdgeInsets.only(right: 8, bottom: 4),
-              child: TextButton.icon(
-                onPressed: retryable && !_sendingIds.contains(message.id)
-                    ? () => _queueOutgoing(_activeConversationId, message)
-                    : null,
-                style: TextButton.styleFrom(
-                    padding: const EdgeInsets.symmetric(horizontal: 6),
-                    minimumSize: const Size(0, 32),
-                    tapTargetSize: MaterialTapTargetSize.shrinkWrap),
-                icon:
-                    Icon(retryable ? Icons.refresh : Icons.schedule, size: 14),
-                label: Text(
-                    _uploadById.containsKey(message.id)
-                        ? '$label ${(_uploadById[message.id]! * 100).round()}%'
-                        : label,
-                    style: const TextStyle(fontSize: 11)),
-              )),
+            padding: const EdgeInsets.only(right: 8, bottom: 3),
+            child: Semantics(
+              button: retryable,
+              label: label,
+              child: Tooltip(
+                message: label,
+                child: InkResponse(
+                  onTap: retryable && !_sendingIds.contains(message.id)
+                      ? () => _queueOutgoing(_activeConversationId, message)
+                      : null,
+                  radius: 20,
+                  child: ConstrainedBox(
+                    constraints: const BoxConstraints(
+                      minWidth: 32,
+                      minHeight: 30,
+                    ),
+                    child: Column(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        Center(child: indicator),
+                        if (progress != null) ...[
+                          const SizedBox(height: 2),
+                          Text(
+                            '${(progress * 100).round()}%',
+                            style: const TextStyle(
+                              fontSize: 9.5,
+                              fontWeight: FontWeight.w600,
+                              color: Color(0xFF667085),
+                            ),
+                          ),
+                        ],
+                      ],
+                    ),
+                  ),
+                ),
+              ),
+            ),
+          ),
       ]),
     );
   }
@@ -3017,10 +3288,15 @@ class _DMChatScreenState extends State<DMChatScreen>
     final hasPostContext =
         (message.postId != null && message.postId!.trim().isNotEmpty);
     final hasImage = message.imageUrl != null && message.imageUrl!.isNotEmpty;
-    final hasText = message.text.trim().isNotEmpty;
+    final hasFile = message.type == 'file' &&
+        ((message.fileStoragePath ?? '').trim().isNotEmpty ||
+            (message.localFilePath ?? '').trim().isNotEmpty);
+    final hasText = message.text.trim().isNotEmpty && !hasFile;
+    final hasReply = (message.replyToMessageId ?? '').trim().isNotEmpty;
     // 게시글 컨텍스트가 있으면 "이미지 단독"으로 취급하지 않음 (컨텍스트 카드도 함께 렌더링)
     final hasLocalImage = !hasImage && message.localImagePath != null;
-    final isImageOnly = hasImage && !hasText && !hasPostContext;
+    final isImageOnly =
+        hasImage && !hasText && !hasPostContext && !hasReply && !hasFile;
 
     if (isMine) {
       final bubbleChild = isImageOnly
@@ -3043,6 +3319,11 @@ class _DMChatScreenState extends State<DMChatScreen>
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.end,
                 children: [
+                  if (hasReply) ...[
+                    _buildReplyQuote(message, isMine: true),
+                    if (hasPostContext || hasImage || hasFile || hasText)
+                      const SizedBox(height: 8),
+                  ],
                   if (hasPostContext) ...[
                     _buildPostContextCard(message, isMine: true),
                     if (hasImage || hasText) const SizedBox(height: 8),
@@ -3070,6 +3351,7 @@ class _DMChatScreenState extends State<DMChatScreen>
                     ),
                     if (hasText) const SizedBox(height: 8),
                   ],
+                  if (hasFile) _buildFileBubble(message, isMine: true),
                   if (hasText)
                     Text(
                       message.text,
@@ -3163,6 +3445,11 @@ class _DMChatScreenState extends State<DMChatScreen>
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
+                  if (hasReply) ...[
+                    _buildReplyQuote(message, isMine: false),
+                    if (hasPostContext || hasImage || hasFile || hasText)
+                      const SizedBox(height: 8),
+                  ],
                   if (hasPostContext) ...[
                     _buildPostContextCard(message, isMine: false),
                     if (hasImage || hasText) const SizedBox(height: 8),
@@ -3176,6 +3463,7 @@ class _DMChatScreenState extends State<DMChatScreen>
                     ),
                     if (hasText) const SizedBox(height: 8),
                   ],
+                  if (hasFile) _buildFileBubble(message, isMine: false),
                   if (hasText)
                     Row(
                       mainAxisSize: MainAxisSize.min,
@@ -3250,6 +3538,262 @@ class _DMChatScreenState extends State<DMChatScreen>
           ],
         ),
       );
+    }
+  }
+
+  Widget _buildReplyQuote(DMMessage message, {required bool isMine}) {
+    final messageId = message.replyToMessageId?.trim() ?? '';
+    final sender = _senderLabelForId(message.replyToSenderId);
+    final storedText = message.replyToText?.trim() ?? '';
+    final imageUrl = message.replyToImageUrl?.trim() ?? '';
+    final preview = storedText.isNotEmpty
+        ? storedText
+        : imageUrl.isNotEmpty
+            ? (isChineseUi(context)
+                ? '图片'
+                : Localizations.localeOf(context).languageCode == 'ko'
+                    ? '사진'
+                    : 'Photo')
+            : (isChineseUi(context)
+                ? '无法查看的消息'
+                : Localizations.localeOf(context).languageCode == 'ko'
+                    ? '확인할 수 없는 메시지'
+                    : 'Message unavailable');
+    final foreground = isMine ? Colors.white : const Color(0xFF344054);
+    final secondary = isMine ? Colors.white70 : const Color(0xFF667085);
+    return Semantics(
+      button: messageId.isNotEmpty,
+      label: preview,
+      child: InkWell(
+        onTap: messageId.isEmpty ? null : () => _jumpToMessage(messageId),
+        borderRadius: BorderRadius.circular(9),
+        child: Container(
+          constraints: const BoxConstraints(minWidth: 120, maxWidth: 250),
+          padding: const EdgeInsets.fromLTRB(9, 7, 9, 7),
+          decoration: BoxDecoration(
+            color: isMine
+                ? Colors.white.withValues(alpha: .10)
+                : const Color(0xFFF2F4F7),
+            borderRadius: BorderRadius.circular(9),
+          ),
+          child: Row(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Container(
+                width: 2.5,
+                height: 34,
+                decoration: BoxDecoration(
+                  color: isMine ? Colors.white70 : const Color(0xFF2D9CDB),
+                  borderRadius: BorderRadius.circular(4),
+                ),
+              ),
+              const SizedBox(width: 8),
+              if (imageUrl.isNotEmpty) ...[
+                ClipRRect(
+                  borderRadius: BorderRadius.circular(5),
+                  child: CachedNetworkImage(
+                    imageUrl: imageUrl,
+                    width: 34,
+                    height: 34,
+                    fit: BoxFit.cover,
+                    errorWidget: (_, __, ___) => SizedBox.square(
+                      dimension: 34,
+                      child: Icon(Icons.image_outlined,
+                          size: 18, color: secondary),
+                    ),
+                  ),
+                ),
+                const SizedBox(width: 8),
+              ],
+              Flexible(
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      sender,
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      style: TextStyle(
+                        fontSize: 11.5,
+                        fontWeight: FontWeight.w700,
+                        color: secondary,
+                      ),
+                    ),
+                    const SizedBox(height: 2),
+                    Text(
+                      preview,
+                      maxLines: 2,
+                      overflow: TextOverflow.ellipsis,
+                      style: TextStyle(
+                        fontSize: 12.5,
+                        height: 1.25,
+                        fontWeight: FontWeight.w600,
+                        color: foreground,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+
+  Widget _buildFileBubble(DMMessage message, {required bool isMine}) {
+    final name = message.fileName?.trim().isNotEmpty == true
+        ? message.fileName!.trim()
+        : message.text.replaceFirst('📎', '').trim();
+    final extension = message.fileExtension?.trim().toUpperCase() ?? '';
+    final size = message.fileSize ?? 0;
+    final progress = _downloadById[message.id] ?? _uploadById[message.id];
+    final primary = isMine ? Colors.white : const Color(0xFF101828);
+    final secondary = isMine ? Colors.white70 : const Color(0xFF667085);
+    return Semantics(
+      button: true,
+      label: name,
+      child: InkWell(
+        onTap: _openingFileIds.contains(message.id)
+            ? null
+            : () => _openDmFile(message),
+        borderRadius: BorderRadius.circular(10),
+        child: ConstrainedBox(
+          constraints: const BoxConstraints(minWidth: 190, maxWidth: 260),
+          child: Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 2, vertical: 2),
+            child: Row(
+              children: [
+                SizedBox.square(
+                  dimension: 42,
+                  child: DecoratedBox(
+                    decoration: BoxDecoration(
+                      color: isMine
+                          ? Colors.white.withValues(alpha: .12)
+                          : const Color(0xFFF2F4F7),
+                      borderRadius: BorderRadius.circular(9),
+                    ),
+                    child: Icon(Icons.insert_drive_file_outlined,
+                        size: 23, color: secondary),
+                  ),
+                ),
+                const SizedBox(width: 10),
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      Text(
+                        name.isEmpty
+                            ? (isChineseUi(context)
+                                ? '文件'
+                                : Localizations.localeOf(context)
+                                            .languageCode ==
+                                        'ko'
+                                    ? '파일'
+                                    : 'File')
+                            : name,
+                        maxLines: 2,
+                        overflow: TextOverflow.ellipsis,
+                        style: TextStyle(
+                          color: primary,
+                          fontSize: 13.5,
+                          height: 1.25,
+                          fontWeight: FontWeight.w700,
+                        ),
+                      ),
+                      const SizedBox(height: 3),
+                      Text(
+                        [
+                          if (extension.isNotEmpty) extension,
+                          if (size > 0) SnackChatFilePolicy.formatBytes(size),
+                        ].join(' · '),
+                        style: TextStyle(
+                          color: secondary,
+                          fontSize: 11.5,
+                          fontWeight: FontWeight.w500,
+                        ),
+                      ),
+                      if (progress != null && progress < 1) ...[
+                        const SizedBox(height: 6),
+                        ClipRRect(
+                          borderRadius: BorderRadius.circular(3),
+                          child: LinearProgressIndicator(
+                            value: progress.clamp(0.0, 1.0),
+                            minHeight: 3,
+                            backgroundColor: isMine
+                                ? Colors.white24
+                                : const Color(0xFFE4E7EC),
+                            valueColor: AlwaysStoppedAnimation<Color>(
+                              isMine ? Colors.white : const Color(0xFF2D9CDB),
+                            ),
+                          ),
+                        ),
+                      ],
+                    ],
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+
+  Future<void> _openDmFile(DMMessage message) async {
+    if (!_openingFileIds.add(message.id)) return;
+    if (mounted) setState(() {});
+    try {
+      final localPath = message.localFilePath?.trim() ?? '';
+      if (localPath.isNotEmpty && await File(localPath).exists()) {
+        final result = await OpenFilex.open(localPath);
+        if (result.type != ResultType.done) throw StateError(result.message);
+        return;
+      }
+      final owner = _currentUser?.uid;
+      final room = _activeConversationId;
+      final storagePath = message.fileStoragePath?.trim() ?? '';
+      final expectedPrefix =
+          'dm_files/${message.senderId}/$room/${message.id}/';
+      if (owner == null ||
+          storagePath.isEmpty ||
+          !storagePath.startsWith(expectedPrefix)) {
+        throw StateError('invalid-dm-file');
+      }
+      final local = await _storageService.downloadDmFile(
+        ownerUid: owner,
+        conversationId: room,
+        messageId: message.id,
+        storagePath: storagePath,
+        fileName: message.fileName ?? 'file',
+        fileSize: message.fileSize ?? 0,
+        onProgress: (progress) {
+          if (!mounted || room != _activeConversationId) return;
+          setState(() => _downloadById[message.id] = progress);
+        },
+      );
+      if (!mounted || room != _activeConversationId) return;
+      final result = await OpenFilex.open(local.path);
+      if (result.type != ResultType.done) throw StateError(result.message);
+    } catch (error) {
+      if (!mounted) return;
+      AppSnackBar.show(
+        context,
+        message: isChineseUi(context)
+            ? '无法打开文件。'
+            : Localizations.localeOf(context).languageCode == 'ko'
+                ? '파일을 열 수 없어요.'
+                : 'Could not open the file.',
+        type: AppSnackBarType.error,
+      );
+      Logger.error('DM 파일 열기 실패: $error');
+    } finally {
+      _openingFileIds.remove(message.id);
+      if (mounted) {
+        setState(() => _downloadById.remove(message.id));
+      }
     }
   }
 
@@ -3483,7 +4027,9 @@ class _DMChatScreenState extends State<DMChatScreen>
     final canSend = !peerDeleted &&
         !_isBlocked &&
         !_isBlockedBy &&
-        (_messageController.text.trim().isNotEmpty || _pendingImage != null);
+        (_messageController.text.trim().isNotEmpty ||
+            _pendingImage != null ||
+            _pendingFile != null);
 
     final originPostId = (widget.originPostId ?? '').trim();
     final shouldShowComposerPostContext = originPostId.isNotEmpty &&
@@ -3503,6 +4049,10 @@ class _DMChatScreenState extends State<DMChatScreen>
           child: Column(
             mainAxisSize: MainAxisSize.min,
             children: [
+              if (_replyingTo != null) ...[
+                _buildComposerReplyPreview(_replyingTo!),
+                const SizedBox(height: 8),
+              ],
               // ✅ 게시글에서 DM으로 진입한 경우: "보내기 전" 컨텍스트 미리보기 카드
               // - 사용자는 메시지를 입력한 뒤 전송할 수 있고,
               // - 첫 전송 시에만 실제 메시지에 post_context로 부착된다.
@@ -3551,7 +4101,7 @@ class _DMChatScreenState extends State<DMChatScreen>
                     InkWell(
                       onTap: (peerDeleted || _isBlocked || _isBlockedBy)
                           ? null
-                          : _pickImage,
+                          : _showAttachmentOptions,
                       customBorder: const CircleBorder(),
                       child: Container(
                         width: MediaQuery.sizeOf(context).width < 360 ? 38 : 40,
@@ -3655,6 +4205,71 @@ class _DMChatScreenState extends State<DMChatScreen>
             ],
           ),
         ),
+      ),
+    );
+  }
+
+  Widget _buildComposerReplyPreview(DMMessage message) {
+    return Container(
+      constraints: const BoxConstraints(minHeight: 52),
+      padding: const EdgeInsets.fromLTRB(12, 8, 4, 8),
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(12),
+      ),
+      child: Row(
+        children: [
+          Container(
+            width: 3,
+            height: 34,
+            decoration: BoxDecoration(
+              color: const Color(0xFF2D9CDB),
+              borderRadius: BorderRadius.circular(4),
+            ),
+          ),
+          const SizedBox(width: 10),
+          Expanded(
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  _replySenderLabel(message),
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: const TextStyle(
+                    fontSize: 11.5,
+                    fontWeight: FontWeight.w700,
+                    color: Color(0xFF667085),
+                  ),
+                ),
+                const SizedBox(height: 2),
+                Text(
+                  _replyPreviewText(message),
+                  maxLines: 2,
+                  overflow: TextOverflow.ellipsis,
+                  style: const TextStyle(
+                    fontSize: 13,
+                    height: 1.25,
+                    fontWeight: FontWeight.w600,
+                    color: Color(0xFF101828),
+                  ),
+                ),
+              ],
+            ),
+          ),
+          IconButton(
+            tooltip: isChineseUi(context)
+                ? '取消回复'
+                : Localizations.localeOf(context).languageCode == 'ko'
+                    ? '답장 취소'
+                    : 'Cancel reply',
+            onPressed: () => setState(() => _replyingTo = null),
+            icon: const Icon(Icons.close_rounded, size: 19),
+            color: const Color(0xFF667085),
+            constraints: const BoxConstraints.tightFor(width: 42, height: 42),
+          ),
+        ],
       ),
     );
   }
@@ -3902,6 +4517,87 @@ class _DMChatScreenState extends State<DMChatScreen>
     );
   }
 
+  Future<void> _showAttachmentOptions() async {
+    final action = await showSnackChatAttachmentSheet(
+      context,
+      showPoll: false,
+    );
+    if (!mounted || action == null) return;
+    if (action == SnackChatAttachmentAction.image) {
+      await _pickImage();
+    } else if (action == SnackChatAttachmentAction.file) {
+      await _pickFile();
+    }
+  }
+
+  Future<void> _pickFile() async {
+    try {
+      final picked = await FilePicker.pickFiles(
+        type: FileType.custom,
+        allowMultiple: false,
+        withData: false,
+        withReadStream: false,
+        allowedExtensions:
+            SnackChatFilePolicy.allowedMimeByExtension.keys.toList(),
+      );
+      if (!mounted || picked == null || picked.files.isEmpty) return;
+      final selected = picked.files.single;
+      if (selected.size > SnackChatFilePolicy.maxFileBytes) {
+        throw const SnackChatFileValidationException(
+          '파일은 20MB 이하만 전송할 수 있습니다.',
+        );
+      }
+      final readablePath = await _documentImporter.resolveReadablePath(
+        fileName: selected.name,
+        pickerPath: selected.path,
+        identifier: selected.identifier,
+      );
+      if (readablePath == null) {
+        throw const SnackChatFileValidationException(
+          '선택한 파일을 읽을 수 없습니다.',
+        );
+      }
+      final validated = await SnackChatFilePolicy.validatePath(
+        readablePath,
+        displayName: selected.name,
+        reportedSize: selected.size,
+      );
+      if (!mounted) return;
+      final confirmed = await showSnackChatFileConfirmationSheet(
+        context,
+        files: <SnackChatSelectedFile>[validated],
+        temporary24h: false,
+        retentionDescription: isChineseUi(context)
+            ? '文件将保存在此私信中。'
+            : Localizations.localeOf(context).languageCode == 'ko'
+                ? '파일은 이 DM 대화에 보관됩니다.'
+                : 'The file remains available in this DM.',
+      );
+      if (!mounted || confirmed == null || confirmed.isEmpty) return;
+      setState(() => _pendingFile = confirmed.first);
+      await _sendMessage(preserveDraft: true);
+    } on SnackChatFileValidationException catch (error) {
+      if (!mounted) return;
+      AppSnackBar.show(
+        context,
+        message: error.message,
+        type: AppSnackBarType.error,
+      );
+    } catch (error, stackTrace) {
+      Logger.error('DM 파일 선택 실패', error, stackTrace);
+      if (!mounted) return;
+      AppSnackBar.show(
+        context,
+        message: isChineseUi(context)
+            ? '无法选择文件。'
+            : Localizations.localeOf(context).languageCode == 'ko'
+                ? '파일을 선택할 수 없어요.'
+                : 'Could not select the file.',
+        type: AppSnackBarType.error,
+      );
+    }
+  }
+
   Future<void> _pickImage() async {
     if (_pendingImage != null) {
       // 1장 제한: 이미 선택되어 있으면 안내
@@ -4019,7 +4715,7 @@ class _DMChatScreenState extends State<DMChatScreen>
     }
   }
 
-  Future<void> _sendMessage() async {
+  Future<void> _sendMessage({bool preserveDraft = false}) async {
     final owner = _currentUser?.uid;
     final room = _activeConversationId;
     if (owner == null ||
@@ -4027,9 +4723,14 @@ class _DMChatScreenState extends State<DMChatScreen>
         _isPeerDeleted ||
         _isBlocked ||
         _isBlockedBy) return;
-    final text = _messageController.text.trim();
+    final typedText = _messageController.text.trim();
     final image = _pendingImage;
-    if ((text.isEmpty && image == null) || text.length > 500) return;
+    final selectedFile = _pendingFile;
+    final text = selectedFile == null
+        ? typedText
+        : '📎 ${selectedFile.originalFileName}';
+    if ((text.isEmpty && image == null && selectedFile == null) ||
+        typedText.length > 500) return;
     final watch = Stopwatch()..start();
     final attach = !_originPostContextAttached &&
         !_composerPostContextDismissed &&
@@ -4047,18 +4748,33 @@ class _DMChatScreenState extends State<DMChatScreen>
       isRead: false,
       deliveryState: DMDeliveryState.sending,
       localImagePath: image?.path,
-      type: attach ? 'post_context' : 'text',
+      localFilePath: selectedFile?.path,
+      fileName: selectedFile?.originalFileName,
+      fileExtension: selectedFile?.fileExtension,
+      fileMimeType: selectedFile?.mimeType,
+      fileSize: selectedFile?.fileSize,
+      replyToMessageId: _replyingTo?.id,
+      replyToSenderId: _replyingTo?.senderId,
+      replyToText: _replyingTo == null ? null : _replyPreviewText(_replyingTo!),
+      replyToImageUrl: _replyingTo?.imageUrl,
+      type: selectedFile != null
+          ? 'file'
+          : attach
+              ? 'post_context'
+              : 'text',
       postId: attach ? widget.originPostId : null,
       postImageUrl: attach ? widget.originPostImageUrl : null,
       postPreview: attach ? widget.originPostPreview : null,
     );
     final keepFocus = _messageFocusNode.hasFocus;
-    _messageController.clear();
+    if (!preserveDraft) _messageController.clear();
     _entranceIds.add(message.id);
     Timer(SnackChatOutgoingEntrance.claimWindow,
         () => _entranceIds.remove(message.id));
     setState(() {
       _pendingImage = null;
+      _pendingFile = null;
+      _replyingTo = null;
       _uploadProgress = null;
       if (attach) _originPostContextAttached = true;
       _outgoing[message.id] = message;
@@ -4095,6 +4811,7 @@ class _DMChatScreenState extends State<DMChatScreen>
       try {
         final persistenceError = await persisted;
         if (persistenceError != null) throw persistenceError;
+        if (_cancelledOutgoingIds.contains(message.id)) return;
         if (!_canSendFor(owner, room)) return;
         _updateOutgoing(room, message);
         if (message.localImagePath != null && message.imageUrl == null) {
@@ -4121,14 +4838,87 @@ class _DMChatScreenState extends State<DMChatScreen>
             return uploaded;
           });
         }
+        if (message.localFilePath != null && message.fileStoragePath == null) {
+          if (!await _ensureSendRoom(room, message)) {
+            throw StateError('room-unavailable');
+          }
+          message = await _filePreparation.run(owner, () async {
+            if (_cancelledOutgoingIds.contains(message.id)) {
+              throw StateError('file-upload-cancelled');
+            }
+            if (!_canSendFor(owner, room)) {
+              throw StateError('account-or-room-changed');
+            }
+            final extension = message.fileExtension ?? '';
+            final path = await _outbox.retainFile(
+              owner,
+              message.id,
+              message.localFilePath!,
+              extension,
+            );
+            final checked = await SnackChatFilePolicy.validatePath(
+              path,
+              displayName: message.fileName,
+              reportedSize: message.fileSize,
+            );
+            if (_cancelledOutgoingIds.contains(message.id)) {
+              throw StateError('file-upload-cancelled');
+            }
+            message = message.copyWith(
+              localFilePath: path,
+              fileName: checked.originalFileName,
+              fileExtension: checked.fileExtension,
+              fileMimeType: checked.mimeType,
+              fileSize: checked.fileSize,
+            );
+            await _outbox.put(owner, room, message.id, message.toLocalMap());
+            if (!_canSendFor(owner, room)) {
+              throw StateError('account-or-room-changed');
+            }
+            final result = await _storageService.uploadDmFile(
+              File(path),
+              userId: owner,
+              conversationId: room,
+              messageId: message.id,
+              fileName: checked.originalFileName,
+              fileExtension: checked.fileExtension,
+              mimeType: checked.mimeType,
+              fileSize: checked.fileSize,
+              onProgress: (progress) {
+                if (mounted && _canSendFor(owner, room)) {
+                  setState(() => _uploadById[message.id] = progress);
+                }
+              },
+            );
+            if (_cancelledOutgoingIds.contains(message.id)) {
+              throw StateError('file-upload-cancelled');
+            }
+            if (result == null) throw StateError('file-upload-failed');
+            final uploaded = message.copyWith(
+              fileStoragePath: result.storagePath,
+            );
+            await _outbox.put(owner, room, uploaded.id, uploaded.toLocalMap());
+            return uploaded;
+          });
+        }
+        if (_cancelledOutgoingIds.contains(message.id)) return;
         if (!_canSendFor(owner, room)) return;
-        final result = await _dispatch.run('$owner::$room', () async {
-          if (!_canSendFor(owner, room)) return DMDeliveryState.uncertain;
-          if (!await _ensureSendRoom(room, message))
-            return DMDeliveryState.failed;
-          if (!_canSendFor(owner, room)) return DMDeliveryState.uncertain;
-          return _dmService.sendMessage(room, message);
-        });
+        _committingOutgoingIds.add(message.id);
+        if (mounted && _canSendFor(owner, room)) setState(() {});
+        late final DMDeliveryState result;
+        try {
+          result = await _dispatch.run('$owner::$room', () async {
+            if (!_canSendFor(owner, room)) return DMDeliveryState.uncertain;
+            if (!await _ensureSendRoom(room, message)) {
+              return DMDeliveryState.failed;
+            }
+            if (!_canSendFor(owner, room)) return DMDeliveryState.uncertain;
+            return _dmService.sendMessage(room, message);
+          });
+        } finally {
+          _committingOutgoingIds.remove(message.id);
+          if (mounted && _canSendFor(owner, room)) setState(() {});
+        }
         if (result == DMDeliveryState.sent) {
           await _outbox.remove(owner, room, message.id);
         } else {
@@ -4137,6 +4927,7 @@ class _DMChatScreenState extends State<DMChatScreen>
         }
         _updateOutgoing(room, message.copyWith(deliveryState: result));
       } catch (error) {
+        if (_cancelledOutgoingIds.contains(message.id)) return;
         final failed = message.copyWith(deliveryState: DMDeliveryState.failed);
         try {
           await _outbox.put(owner, room, message.id, failed.toLocalMap());
@@ -4144,6 +4935,11 @@ class _DMChatScreenState extends State<DMChatScreen>
         _updateOutgoing(room, failed);
         Logger.error('DM outgoing preparation failed: $error');
       } finally {
+        if (_cancelledOutgoingIds.remove(packet.id)) {
+          try {
+            await _outbox.remove(owner, room, packet.id);
+          } catch (_) {}
+        }
         _sendingIds.remove(packet.id);
         if (mounted) setState(() => _uploadById.remove(packet.id));
         _scheduleUncertainRecovery();
@@ -4151,7 +4947,7 @@ class _DMChatScreenState extends State<DMChatScreen>
     }
 
     // Text preparation starts in tap order; image preparation never occupies it.
-    unawaited(packet.localImagePath == null
+    unawaited(packet.localImagePath == null && packet.localFilePath == null
         ? _textPreparation.run('$owner::$room', operation)
         : operation());
   }

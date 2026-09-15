@@ -1123,12 +1123,14 @@ class SnapshotService {
       'hasImageStoragePath=${item.imageStoragePath.isNotEmpty})',
     );
     _rememberImage(cacheKey, data);
-    await _mediaCache.write(
+    // Painting must not wait for filesystem flush/LRU cleanup. The cache
+    // service already contains its own best-effort error boundary.
+    unawaited(_mediaCache.write(
       userId: currentUserId,
       snapshotId: item.id,
       sourceKey: sourceKey,
       bytes: data,
-    );
+    ));
     return data;
   }
 

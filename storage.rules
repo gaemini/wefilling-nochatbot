@@ -330,6 +330,32 @@ service firebase.storage {
       allow write: if isSignedIn() && request.auth.uid == userId && isConversationParticipant(conversationId);
     }
 
+    // Immutable DM documents. The deterministic message path makes retries
+    // idempotent; metadata and type checks prevent cross-room/path spoofing.
+    match /dm_files/{userId}/{conversationId}/{messageId}/{fileName} {
+      allow read: if isConversationParticipant(conversationId);
+      allow create: if isConversationParticipant(conversationId)
+        && request.auth.uid == userId
+        && request.resource.size > 0
+        && request.resource.size <= 20 * 1024 * 1024
+        && request.resource.metadata.ownerUid == request.auth.uid
+        && request.resource.metadata.conversationId == conversationId
+        && request.resource.metadata.messageId == messageId
+        && request.resource.metadata.fileName is string
+        && request.resource.metadata.fileName.size() > 0
+        && request.resource.metadata.fileName.size() <= 240
+        && request.resource.metadata.fileExtension is string
+        && fileName == 'file.' + request.resource.metadata.fileExtension
+        && snackChatDocumentMimeAllowed(
+          request.resource.metadata.fileExtension,
+          request.resource.contentType
+        );
+      allow update: if false;
+      // A delayed/retried client must not remove an object that a committed
+      // message may already reference. Orphan cleanup is server-owned.
+      allow delete: if false;
+    }
+
     // Snack Chat 이미지: 해당 방 참여자만 읽고, 본인 폴더에만 업로드 가능
     match /snack_chat_images/{userId}/{snackChatId}/{fileName} {
       allow read: if isSnackChatParticipant(snackChatId);

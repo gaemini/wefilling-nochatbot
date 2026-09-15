@@ -191,6 +191,9 @@ class _SnapshotTodaySectionState extends State<SnapshotTodaySection>
                                 ? null
                                 : _userInfoService.getCachedUserInfo(uid),
                             builder: (context, profileSnapshot) => _MySnackTile(
+                              key: ValueKey<String>(
+                                'my-snack-${own?.id ?? 'empty'}',
+                              ),
                               snapshot: own,
                               label: strings.mySnapshot,
                               uid: uid,
@@ -227,6 +230,7 @@ class _SnapshotTodaySectionState extends State<SnapshotTodaySection>
                       final sourceIndex = viewerItems
                           .indexWhere((candidate) => candidate.id == item.id);
                       return Directionality(
+                        key: ValueKey<String>('snack-tile-${item.id}'),
                         textDirection: pageTextDirection,
                         child: _SnapshotTile(
                           snapshot: item,
@@ -297,6 +301,7 @@ class _SnapshotTile extends StatelessWidget {
 
 class _MySnackTile extends StatelessWidget {
   const _MySnackTile({
+    super.key,
     required this.snapshot,
     required this.label,
     required this.uid,

@@ -211,7 +211,11 @@ export const getSnackChatMentionCandidates = functions.runWith({timeoutSeconds: 
     const latestAccess = await snackReadAccess(context, access.ref.id);
     if (latestAccess.signature !== access.signature) throw new functions.https.HttpsError('aborted', 'Room access changed.');
     return {participants: profiles.filter(p => p.exists && activeUserData(p.data()!, p.id))
-      .map(p => ({userId: p.id, displayName: String(p.get('nickname') || p.get('displayName') || p.get('name') || '')}))
+      .map(p => ({userId: p.id,
+        displayName: String(p.get('nickname') || p.get('displayName') || p.get('name') || ''),
+        photoURL: String(p.get('photoURL') || ''),
+        photoVersion: Number(p.get('photoVersion') || 0),
+      }))
       .filter(p => p.displayName)};
   });
 

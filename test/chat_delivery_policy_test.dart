@@ -87,6 +87,38 @@ void main() {
     expect(DMMessage.compareDescending(m, later), greaterThan(0));
   });
 
+  test('DM file packet keeps immutable metadata and legacy preview locally',
+      () {
+    final message = DMMessage(
+      id: 'file-message',
+      senderId: 'alice',
+      text: '📎 syllabus.pdf',
+      type: 'file',
+      fileName: 'syllabus.pdf',
+      fileExtension: 'pdf',
+      fileMimeType: 'application/pdf',
+      fileSize: 2048,
+      fileStoragePath: 'dm_files/alice/room/file-message/file.pdf',
+      localFilePath: '/private/syllabus.pdf',
+      replyToMessageId: 'source-message',
+      replyToSenderId: 'bob',
+      replyToText: 'Please review this',
+      createdAt: DateTime.fromMillisecondsSinceEpoch(1000),
+      isRead: false,
+      deliveryState: DMDeliveryState.uncertain,
+    );
+
+    final firestore = message.toFirestore();
+    final restored = DMMessage.fromLocalMap(message.toLocalMap());
+    expect(firestore['type'], 'file');
+    expect(firestore['text'], '📎 syllabus.pdf');
+    expect(firestore['fileSize'], 2048);
+    expect(restored.fileStoragePath, message.fileStoragePath);
+    expect(restored.localFilePath, message.localFilePath);
+    expect(restored.replyToMessageId, 'source-message');
+    expect(restored.deliveryState, DMDeliveryState.uncertain);
+  });
+
   test('mixed Snack sequence/legacy/outbox ordering has no cycles', () {
     final messages = List.generate(
         12,

@@ -553,32 +553,19 @@ class _SnapshotDetailScreenState extends State<SnapshotDetailScreen>
                     fit: StackFit.expand,
                     clipBehavior: Clip.hardEdge,
                     children: [
-                      AnimatedSwitcher(
-                        duration: _switchDuration,
-                        reverseDuration: _switchDuration,
-                        switchInCurve: Curves.easeOutCubic,
-                        switchOutCurve: Curves.easeInCubic,
-                        layoutBuilder: (currentChild, previousChildren) =>
-                            Stack(
-                          fit: StackFit.expand,
-                          children: [
-                            ...previousChildren,
-                            if (currentChild != null) currentChild,
-                          ],
-                        ),
-                        transitionBuilder: (child, animation) => FadeTransition(
-                          opacity: CurvedAnimation(
-                            parent: animation,
-                            curve: const Interval(
-                              .08,
-                              1,
-                              curve: Curves.easeOutCubic,
-                            ),
+                      ColoredBox(
+                        color: Colors.black,
+                        child: TweenAnimationBuilder<double>(
+                          key: ValueKey<String>(
+                            'snapshot-page-${_current.id}',
                           ),
-                          child: child,
-                        ),
-                        child: KeyedSubtree(
-                          key: ValueKey(_current.id),
+                          tween: Tween<double>(begin: 0, end: 1),
+                          duration: _switchDuration,
+                          curve: Curves.easeOutCubic,
+                          builder: (context, opacity, child) => Opacity(
+                            opacity: opacity,
+                            child: child,
+                          ),
                           child: _SnapshotDetailPage(
                             snapshot: _current,
                             service: _service,
@@ -916,7 +903,7 @@ class _SnapshotMediaCanvas extends StatelessWidget {
                     placeholderColor: Colors.black,
                     errorBackgroundColor: Colors.black,
                     showLoadingIndicator: false,
-                    fadeInDuration: const Duration(milliseconds: 180),
+                    fadeInDuration: Duration.zero,
                     onImageReady: onReady,
                   ),
                 ],

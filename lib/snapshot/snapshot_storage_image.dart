@@ -150,17 +150,20 @@ class _SnapshotStorageImageState extends State<SnapshotStorageImage> {
           content = placeholder;
         }
 
-        if (widget.fadeInDuration == Duration.zero) return content;
-        return AnimatedSwitcher(
+        if (widget.fadeInDuration == Duration.zero || !snapshot.hasData) {
+          return content;
+        }
+        // Only the current image participates in this transition. Keeping the
+        // previous child in a Stack can reveal a stale Snack while a new image
+        // finishes loading.
+        return TweenAnimationBuilder<double>(
+          key: ValueKey<String>('snapshot-image-fade-${widget.snapshot.id}'),
+          tween: Tween<double>(begin: 0, end: 1),
           duration: widget.fadeInDuration,
-          switchInCurve: Curves.easeOut,
-          switchOutCurve: Curves.easeIn,
-          layoutBuilder: (currentChild, previousChildren) => Stack(
-            fit: StackFit.expand,
-            children: [
-              ...previousChildren,
-              if (currentChild != null) currentChild,
-            ],
+          curve: Curves.easeOut,
+          builder: (context, opacity, child) => Opacity(
+            opacity: opacity,
+            child: child,
           ),
           child: content,
         );

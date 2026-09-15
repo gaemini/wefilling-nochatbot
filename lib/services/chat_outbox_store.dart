@@ -63,4 +63,28 @@ class ChatOutboxStore {
     if (path != target) await File(path).copy(target);
     return target;
   }
+
+  /// Document-picker URIs can also become unavailable after process death.
+  /// Preserve the validated bytes under the account-scoped outbox so the same
+  /// message ID can resume without asking the user to select the file again.
+  Future<String> retainFile(
+    String owner,
+    String id,
+    String path,
+    String extension,
+  ) async {
+    final root = await getApplicationSupportDirectory();
+    final directory =
+        Directory('${root.path}/chat_outbox/${Uri.encodeComponent(owner)}');
+    await directory.create(recursive: true);
+    final normalizedExtension =
+        extension.toLowerCase().replaceAll(RegExp(r'[^a-z0-9]'), '');
+    final safeExtension = normalizedExtension.length > 12
+        ? normalizedExtension.substring(0, 12)
+        : normalizedExtension;
+    final suffix = safeExtension.isEmpty ? 'bin' : safeExtension;
+    final target = '${directory.path}/${Uri.encodeComponent(id)}.$suffix';
+    if (path != target) await File(path).copy(target);
+    return target;
+  }
 }

@@ -8,8 +8,9 @@ import '../../l10n/ui_locale.dart';
 enum SnackChatAttachmentAction { image, file, poll }
 
 Future<SnackChatAttachmentAction?> showSnackChatAttachmentSheet(
-  BuildContext context,
-) {
+  BuildContext context, {
+  bool showPoll = true,
+}) {
   final isKorean = Localizations.localeOf(context).languageCode == 'ko';
   return showModalBottomSheet<SnackChatAttachmentAction>(
     context: context,
@@ -24,6 +25,7 @@ Future<SnackChatAttachmentAction?> showSnackChatAttachmentSheet(
     ),
     builder: (sheetContext) => SnackChatAttachmentSheet(
       isKorean: isKorean,
+      showPoll: showPoll,
     ),
   );
 }
@@ -32,9 +34,11 @@ class SnackChatAttachmentSheet extends StatelessWidget {
   const SnackChatAttachmentSheet({
     super.key,
     required this.isKorean,
+    this.showPoll = true,
   });
 
   final bool isKorean;
+  final bool showPoll;
 
   @override
   Widget build(BuildContext context) {
@@ -96,7 +100,11 @@ class SnackChatAttachmentSheet extends StatelessWidget {
                     isCompact ? 4 : 6,
                   ),
                   child: Text(
-                    (isChineseUi(context) ? '发送' : isKorean ? '보낼 항목' : 'Send'),
+                    (isChineseUi(context)
+                        ? '发送'
+                        : isKorean
+                            ? '보낼 항목'
+                            : 'Send'),
                     maxLines: 1,
                     overflow: TextOverflow.ellipsis,
                     style: TextStyle(
@@ -110,10 +118,16 @@ class SnackChatAttachmentSheet extends StatelessWidget {
                 ),
                 _AttachmentActionRow(
                   icon: Icons.image_outlined,
-                  title: (isChineseUi(context) ? '图片' : isKorean ? '이미지' : 'Image'),
-                  description: (isChineseUi(context) ? '选择要发送到群聊的照片' : isKorean
-                      ? '사진을 선택해 대화에 보내기'
-                      : 'Choose a photo to send in this chat'),
+                  title: (isChineseUi(context)
+                      ? '图片'
+                      : isKorean
+                          ? '이미지'
+                          : 'Image'),
+                  description: (isChineseUi(context)
+                      ? '选择要发送到群聊的照片'
+                      : isKorean
+                          ? '사진을 선택해 대화에 보내기'
+                          : 'Choose a photo to send in this chat'),
                   compact: isCompact,
                   onTap: () => Navigator.of(context).pop(
                     SnackChatAttachmentAction.image,
@@ -121,26 +135,39 @@ class SnackChatAttachmentSheet extends StatelessWidget {
                 ),
                 _AttachmentActionRow(
                   icon: Icons.attach_file_rounded,
-                  title: (isChineseUi(context) ? '文件' : isKorean ? '파일' : 'File'),
-                  description: (isChineseUi(context) ? '选择要发送到群聊的文档' : isKorean
-                      ? '문서 파일을 선택해 대화에 보내기'
-                      : 'Choose documents to send in this chat'),
+                  title: (isChineseUi(context)
+                      ? '文件'
+                      : isKorean
+                          ? '파일'
+                          : 'File'),
+                  description: (isChineseUi(context)
+                      ? '选择要发送到群聊的文档'
+                      : isKorean
+                          ? '문서 파일을 선택해 대화에 보내기'
+                          : 'Choose documents to send in this chat'),
                   compact: isCompact,
                   onTap: () => Navigator.of(context).pop(
                     SnackChatAttachmentAction.file,
                   ),
                 ),
-                _AttachmentActionRow(
-                  icon: Icons.poll_outlined,
-                  title: (isChineseUi(context) ? '投票' : isKorean ? '투표' : 'Poll'),
-                  description: (isChineseUi(context) ? '向群友提问并收集意见' : isKorean
-                      ? '대화 참여자에게 질문하고 의견 모으기'
-                      : 'Ask the chat and collect responses'),
-                  compact: isCompact,
-                  onTap: () => Navigator.of(context).pop(
-                    SnackChatAttachmentAction.poll,
+                if (showPoll)
+                  _AttachmentActionRow(
+                    icon: Icons.poll_outlined,
+                    title: (isChineseUi(context)
+                        ? '投票'
+                        : isKorean
+                            ? '투표'
+                            : 'Poll'),
+                    description: (isChineseUi(context)
+                        ? '向群友提问并收集意见'
+                        : isKorean
+                            ? '대화 참여자에게 질문하고 의견 모으기'
+                            : 'Ask the chat and collect responses'),
+                    compact: isCompact,
+                    onTap: () => Navigator.of(context).pop(
+                      SnackChatAttachmentAction.poll,
+                    ),
                   ),
-                ),
               ],
             ),
           ),

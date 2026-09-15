@@ -5409,7 +5409,7 @@ class _SnackChatScreenState extends State<SnackChatScreen>
                   ),
                 ),
                 if (_summaryRun != null) _buildSummaryRunProgress(_summaryRun!),
-                _buildMessageComposer(isKo: isKo),
+                _buildMessageComposer(isKo: isKo, room: room),
               ],
             ),
           ),
@@ -5994,7 +5994,10 @@ class _SnackChatScreenState extends State<SnackChatScreen>
     );
   }
 
-  Widget _buildMessageComposer({required bool isKo}) {
+  Widget _buildMessageComposer({
+    required bool isKo,
+    required SnackChat room,
+  }) {
     final screenWidth = MediaQuery.sizeOf(context).width;
     final isNarrow = screenWidth < 360;
     final horizontalPadding = (screenWidth * 0.032).clamp(10.0, 18.0);
@@ -6026,7 +6029,14 @@ class _SnackChatScreenState extends State<SnackChatScreen>
                       key: ValueKey(widget.snackChatId),
                       roomId: widget.snackChatId,
                       controller: _messageController,
-                      focusNode: _messageFocusNode),
+                      focusNode: _messageFocusNode,
+                      participantIds: room.participantIds,
+                      blockedUserIds: _blockedUserIds,
+                      fallbackNames: {
+                        for (final id in room.participantIds)
+                          if ((_senderNameCache[id] ?? '').trim().isNotEmpty)
+                            id: _senderNameCache[id]!.trim(),
+                      }),
                   if (_replyingTo != null)
                     Padding(
                       padding: const EdgeInsets.fromLTRB(8, 0, 4, 6),

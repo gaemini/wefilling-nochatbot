@@ -2153,6 +2153,43 @@ service cloud.firestore {
             ? (parts.size() >= 3 && (request.auth.uid == parts[1] || request.auth.uid == parts[2]))
             : (request.auth.uid in parts);
         }
+
+        function dmDocumentMimeAllowed(extension, mimeType) {
+          return (extension == 'pdf' && mimeType == 'application/pdf')
+            || (extension == 'hwp' && mimeType == 'application/x-hwp')
+            || (extension == 'hwpx' && mimeType == 'application/vnd.hancom.hwpx')
+            || (extension == 'doc' && mimeType == 'application/msword')
+            || (extension == 'docx' && mimeType == 'application/vnd.openxmlformats-officedocument.wordprocessingml.document')
+            || (extension == 'ppt' && mimeType == 'application/vnd.ms-powerpoint')
+            || (extension == 'pptx' && mimeType == 'application/vnd.openxmlformats-officedocument.presentationml.presentation')
+            || (extension == 'xls' && mimeType == 'application/vnd.ms-excel')
+            || (extension == 'xlsx' && mimeType == 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet')
+            || (extension == 'txt' && mimeType == 'text/plain')
+            || (extension == 'csv' && mimeType == 'text/csv');
+        }
+
+        function validDmFile(data) {
+          return data.get('type', '') == 'file'
+            && data.keys().hasAll([
+              'fileName', 'fileExtension', 'fileMimeType', 'fileSize',
+              'fileStoragePath'
+            ])
+            && data.fileName is string
+            && data.fileName.size() > 0
+            && data.fileName.size() <= 240
+            && data.fileExtension is string
+            && data.fileExtension.size() > 0
+            && data.fileExtension.size() <= 12
+            && data.fileMimeType is string
+            && data.fileSize is int
+            && data.fileSize > 0
+            && data.fileSize <= 20 * 1024 * 1024
+            && dmDocumentMimeAllowed(data.fileExtension, data.fileMimeType)
+            && data.fileStoragePath == 'dm_files/' + request.auth.uid + '/'
+              + conversationId + '/' + messageId + '/file.'
+              + data.fileExtension
+            && !data.keys().hasAny(['imageUrl']);
+        }
         
         // 개별 메시지 읽기
         allow get: if request.auth != null && (isParticipant() || isMyConversation());
@@ -2167,26 +2204,33 @@ service cloud.firestore {
           roomBlockFree() &&
           // 발신자는 본인
           request.auth.uid == request.resource.data.senderId &&
-          // DM은 post_context 타입만 사용한다. Snack Chat의 투표/시스템
+          // DM은 기존 post_context와 선택적인 file 타입만 사용한다.
+          // Snack Chat의 투표/시스템
           // 수명주기 필드를 주입해 전역 messages collection-group 작업을
           // 고갈시키지 못하게 경계를 명시한다.
           (
             !request.resource.data.keys().hasAny(['type'])
-            || request.resource.data.type == 'post_context'
+            || request.resource.data.type in ['post_context', 'file']
           ) &&
           !request.resource.data.keys().hasAny([
             'poll', 'pollCloseNotifiedAt', 'reactionCounts',
             'recipientIds', 'sequence', 'eventId'
           ]) &&
-          // 텍스트/이미지 중 하나는 있어야 함 (이미지 메시지 지원)
+          // 레거시 텍스트/이미지 또는 검증된 파일 중 하나는 있어야 함.
           request.resource.data.text is string &&
           request.resource.data.text.size() <= 500 &&
           (
-            request.resource.data.text.size() > 0 ||
-            (request.resource.data.keys().hasAny(['imageUrl']) &&
-             request.resource.data.imageUrl is string &&
-             request.resource.data.imageUrl.size() > 0 &&
-             request.resource.data.imageUrl.size() < 3000)
+            validDmFile(request.resource.data)
+            || (
+              request.resource.data.get('type', '') != 'file'
+              && (
+                request.resource.data.text.size() > 0 ||
+                (request.resource.data.keys().hasAny(['imageUrl']) &&
+                 request.resource.data.imageUrl is string &&
+                 request.resource.data.imageUrl.size() > 0 &&
+                 request.resource.data.imageUrl.size() < 3000)
+              )
+            )
           ) &&
           // 초기 읽음 상태는 false
           request.resource.data.isRead == false;

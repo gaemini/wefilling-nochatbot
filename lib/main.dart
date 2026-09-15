@@ -48,6 +48,9 @@ import 'services/firebase_app_check_service.dart';
 import 'services/release_metadata_service.dart';
 import 'services/app_update_service.dart';
 import 'screens/release_diagnostics_screen.dart';
+import 'screens/organization_home_screen.dart';
+import 'screens/organization_invite_screen.dart';
+import 'services/organization_account_service.dart';
 
 void main() {
   runZonedGuarded(
@@ -313,6 +316,7 @@ class _MeetupAppState extends State<MeetupApp> {
   void initState() {
     super.initState();
     _loadLanguage();
+    unawaited(OrganizationAccountService.instance.initialize());
     unawaited(
       AppUpdateService.instance.initialize().whenComplete(() {
         WidgetsBinding.instance.addPostFrameCallback((_) {
@@ -516,54 +520,70 @@ class _MeetupAppState extends State<MeetupApp> {
           '/release-diagnostics': (context) => const ReleaseDiagnosticsScreen(),
       },
       navigatorKey: NavigationService.navigatorKey,
-      home: Consumer<app_auth.AuthProvider>(
-        builder: (context, authProvider, _) {
-          final canRouteExternalShare = !authProvider.isLoading &&
-              authProvider.isLoggedIn &&
-              authProvider.isRegistrationComplete;
-          WidgetsBinding.instance.addPostFrameCallback((_) {
-            ExternalShareService.instance
-                .setRoutingReady(canRouteExternalShare);
-          });
-
-          if (authProvider.isLoading) {
-            return const Scaffold(
-              backgroundColor: Color(0xFFDEEFFF),
-              body: Center(child: CircularProgressIndicator()),
-            );
-          }
-
-          // 로그인되어 있으면
-          if (authProvider.isLoggedIn) {
-            // Firebase Auth 존재 여부가 아니라 서버의 최종 가입 완료 상태를
-            // 기준으로만 앱 진입을 허용한다.
-            if (!authProvider.isRegistrationComplete) {
-              if (authProvider.registrationState ==
-                  app_auth.AccountRegistrationState.authCreated) {
-                final signupLanguage =
-                    (authProvider.userData?['signupLanguage'] ?? 'ko')
-                        .toString();
-                return signupLanguage.startsWith('en')
-                    ? const HanyangEmailVerificationScreen.general(
-                        signupLanguage: 'en',
-                      )
-                    : const HanyangEmailVerificationScreen();
-              }
-              return const NicknameSetupScreen();
+      home: AnimatedBuilder(
+        animation: OrganizationAccountService.instance,
+        builder: (context, _) => Consumer<app_auth.AuthProvider>(
+          builder: (context, authProvider, _) {
+            final organizationService = OrganizationAccountService.instance;
+            if (organizationService.hasInvitation) {
+              ExternalShareService.instance.setRoutingReady(false);
+              return const OrganizationInviteScreen();
             }
-
+            final canRouteExternalShare = !authProvider.isLoading &&
+                authProvider.isLoggedIn &&
+                authProvider.isRegistrationComplete &&
+                !authProvider.isOrganizationOnlyAccount;
             WidgetsBinding.instance.addPostFrameCallback((_) {
-              _initializeCompletedServices(authProvider);
+              ExternalShareService.instance
+                  .setRoutingReady(canRouteExternalShare);
             });
 
-            return MainScreen(
-              key: ValueKey('main_session_${authProvider.user!.uid}'),
-            );
-          }
+            if (authProvider.isLoading) {
+              return const Scaffold(
+                backgroundColor: Color(0xFFDEEFFF),
+                body: Center(child: CircularProgressIndicator()),
+              );
+            }
 
-          // 로그인되어 있지 않으면
-          return const LoginScreen();
-        },
+            // 로그인되어 있으면
+            if (authProvider.isLoggedIn) {
+              if (authProvider.isOrganizationOnlyAccount) {
+                return OrganizationHomeScreen(
+                  key: ValueKey(
+                    'organization_session_${authProvider.user!.uid}',
+                  ),
+                );
+              }
+              // Firebase Auth 존재 여부가 아니라 서버의 최종 가입 완료 상태를
+              // 기준으로만 앱 진입을 허용한다.
+              if (!authProvider.isRegistrationComplete) {
+                if (authProvider.registrationState ==
+                    app_auth.AccountRegistrationState.authCreated) {
+                  final signupLanguage =
+                      (authProvider.userData?['signupLanguage'] ?? 'ko')
+                          .toString();
+                  return signupLanguage.startsWith('en')
+                      ? const HanyangEmailVerificationScreen.general(
+                          signupLanguage: 'en',
+                        )
+                      : const HanyangEmailVerificationScreen();
+                }
+                return const NicknameSetupScreen();
+              }
+
+              WidgetsBinding.instance.addPostFrameCallback((_) {
+                _initializeCompletedServices(authProvider);
+              });
+
+              return MainScreen(
+                key: ValueKey('main_session_${authProvider.user!.uid}'),
+              );
+            }
+
+            // 로그인되어 있지 않으면
+            return const LoginScreen();
+          },
+        ),
       ),
       debugShowCheckedModeBanner: false,
     );

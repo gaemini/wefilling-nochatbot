@@ -5,12 +5,14 @@ import 'package:flutter/material.dart';
 import 'package:flutter/rendering.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:wefilling/constants/app_constants.dart';
 import 'package:wefilling/l10n/app_localizations.dart';
 import 'package:wefilling/models/semester_todo.dart';
 import 'package:wefilling/models/student_type.dart';
 import 'package:wefilling/providers/semester_todo_controller.dart';
 import 'package:wefilling/screens/semester_todo_screen.dart';
 import 'package:wefilling/services/semester_todo_service.dart';
+import 'package:wefilling/ui/widgets/post_linkified_text.dart';
 
 class _NoNetworkService implements SemesterTodoService {
   @override
@@ -38,6 +40,8 @@ class _PreviewController extends SemesterTodoController {
             endDate: semester!.weekEndDate(i + 1),
             isPublished: true));
     selectedWeekNumber = 3;
+    clock = () => DateTime.utc(2026, 9, 14);
+    personalDataLoaded = true;
     tasks = [
       _task(
           'syllabus',
@@ -60,9 +64,11 @@ class _PreviewController extends SemesterTodoController {
           3,
           '언어교환 모임 참여하기',
           'Join a language exchange meetup',
-          '서로의 언어와 문화를 나눌 친구를 만나보세요.',
-          'Meet friends and share your languages and cultures.',
-          type: SemesterTodoType.recommendation),
+          '서로의 언어와 문화를 나눌 친구를 만나보세요. https://example.com/info',
+          'Meet friends and share your languages and cultures. https://example.com/info',
+          type: SemesterTodoType.recommendation,
+          actionType: SemesterTodoActionType.externalUrl,
+          actionValue: 'https://example.com'),
     ];
     personalTodos = [
       PersonalTodo(
@@ -89,6 +95,36 @@ class _PreviewController extends SemesterTodoController {
     ];
   }
   final Set<String> checked = {};
+  DateTime? savedDue;
+  bool? savedReminder;
+  String? savedTitle;
+  @override
+  Future<void> savePersonalTodo(
+      {PersonalTodo? existing,
+      required String title,
+      String? memo,
+      DateTime? dueAt,
+      bool? reminderEnabled,
+      bool carryOver = true,
+      int? weekNumber,
+      int? timeMinutes,
+      PersonalTodoCategory category = PersonalTodoCategory.personal,
+      PersonalTodoPriority priority = PersonalTodoPriority.normal}) async {
+    savedTitle = title;
+    savedDue = dueAt;
+    savedReminder = reminderEnabled;
+  }
+
+  @override
+  Future<void> setPersonalTodoCompleted(
+      PersonalTodo todo, bool completed) async {
+    personalTodos = personalTodos
+        .map((item) =>
+            item.id == todo.id ? item.copyWith(completed: completed) : item)
+        .toList();
+    notifyListeners();
+  }
+
   @override
   Future<void> load() async {}
   @override
@@ -106,6 +142,14 @@ class _PreviewController extends SemesterTodoController {
   @override
   bool isCompleted(String taskId) => checked.contains(taskId);
   @override
+  bool isGuideCompleted(SemesterTodo task) => checked.contains(task.id);
+  @override
+  Future<void> setGuideCompleted(SemesterTodo task, bool completed) async {
+    completed ? checked.add(task.id) : checked.remove(task.id);
+    notifyListeners();
+  }
+
+  @override
   Future<void> toggleTask(SemesterTodo task) async {
     checked.contains(task.id) ? checked.remove(task.id) : checked.add(task.id);
     notifyListeners();
@@ -114,7 +158,9 @@ class _PreviewController extends SemesterTodoController {
 
 SemesterTodo _task(String id, int week, String ko, String en,
         String descriptionKo, String descriptionEn,
-        {SemesterTodoType type = SemesterTodoType.required}) =>
+        {SemesterTodoType type = SemesterTodoType.required,
+        SemesterTodoActionType actionType = SemesterTodoActionType.none,
+        String? actionValue}) =>
     SemesterTodo(
         id: id,
         weekId: 'week_$week',
@@ -125,7 +171,8 @@ SemesterTodo _task(String id, int week, String ko, String en,
         targetAudiences: const ['all'],
         isActive: true,
         order: 0,
-        actionType: SemesterTodoActionType.none);
+        actionType: actionType,
+        actionValue: actionValue);
 
 void main() {
   TestWidgetsFlutterBinding.ensureInitialized();
@@ -139,6 +186,230 @@ void main() {
                 rootBundle.load('assets/fonts/$family/$family-Variable.ttf')))
           .load();
     }
+  });
+
+  testWidgets(
+      'unified list retains week and scroll; title-only save, undo and load error',
+      (tester) async {
+    tester.view.physicalSize = const Size(360, 740);
+    tester.view.devicePixelRatio = 1;
+    addTearDown(tester.view.resetPhysicalSize);
+    addTearDown(tester.view.resetDevicePixelRatio);
+    final controller = _PreviewController();
+    controller.personalTodos = [
+      ...controller.personalTodos,
+      for (var i = 0; i < 24; i++)
+        PersonalTodo(
+            id: 'row_$i',
+            semesterId: 'preview',
+            title: '목록 항목 $i',
+            weekNumber: 3,
+            completed: false,
+            carryOver: true,
+            reminderEnabled: false,
+            archived: false),
+    ];
+    await tester.pumpWidget(MaterialApp(
+      locale: const Locale('ko'),
+      supportedLocales: AppLocalizations.supportedLocales,
+      localizationsDelegates: AppLocalizations.localizationsDelegates,
+      home: SemesterTodoScreen(
+          studentType: StudentType.korean, controller: controller),
+    ));
+    await tester.pumpAndSettle();
+    expect(find.text('할 일 26개 남음'), findsNothing);
+    expect(find.text('Wefilling 안내'), findsNothing);
+    expect(find.textContaining('2026년 2학기 ·'), findsNothing);
+    expect(find.text('9월 3주차').hitTestable(), findsOneWidget);
+    expect(
+        tester.getCenter(find.byKey(const ValueKey('todo-week-date-range'))).dx,
+        closeTo(180, 1));
+    final list = find.byType(CustomScrollView).hitTestable().first;
+    await tester.drag(list, const Offset(0, -450));
+    await tester.pumpAndSettle();
+    double scrollOffset() => tester
+        .state<ScrollableState>(find
+            .descendant(
+                of: find.byType(CustomScrollView).hitTestable().first,
+                matching: find.byType(Scrollable))
+            .first)
+        .position
+        .pixels;
+    final before = scrollOffset();
+    expect(find.byKey(const ValueKey('todo-guide-tab')), findsNothing);
+    expect(find.byKey(const ValueKey('todo-current-badge')), findsOneWidget);
+    final currentWeek =
+        tester.widget<Text>(find.byKey(const ValueKey('todo-current-badge')));
+    final adjacentWeek = tester.widget<Text>(find.text('9월 2주차'));
+    expect(currentWeek.style!.fontSize,
+        greaterThan(adjacentWeek.style!.fontSize!));
+    expect(currentWeek.style!.color, AppColors.pointColor);
+    expect(find.byIcon(Icons.today_rounded), findsNothing);
+    expect(find.text('이번 주'), findsNothing);
+    expect(find.text('학기 안내'), findsNothing);
+    expect(scrollOffset(), closeTo(before, 1));
+    await tester.drag(find.byType(PageView), const Offset(-350, 0));
+    await tester.pumpAndSettle();
+    expect(controller.selectedWeekNumber, 4);
+    await tester
+        .tap(find.byKey(const ValueKey('todo-current-week')).hitTestable());
+    await tester.pumpAndSettle();
+    expect(controller.selectedWeekNumber, 3);
+    expect(scrollOffset(), closeTo(before, 1));
+    await tester.tap(find.byKey(const ValueKey('todo-add')));
+    await tester.pumpAndSettle();
+    expect(find.byType(DropdownButtonFormField<int>), findsNothing);
+    await tester.enterText(find.byType(TextField).first, '제목만 입력');
+    await tester.pump();
+    await tester.tap(find.text('저장'));
+    await tester.pumpAndSettle();
+    expect(controller.savedTitle, '제목만 입력');
+    expect(controller.savedDue, isNull);
+    expect(controller.savedReminder, isFalse);
+    // Complete via the isolated check target, then restore through Snackbar Undo.
+    await tester.drag(find.byType(CustomScrollView).hitTestable().first,
+        const Offset(0, 2000));
+    await tester.pumpAndSettle();
+    await tester.tap(find
+        .byWidgetPredicate(
+            (widget) => widget is Semantics && widget.properties.label == '완료')
+        .hitTestable()
+        .first);
+    await tester.pumpAndSettle();
+    expect(find.text('되돌리기'), findsOneWidget);
+    await tester.tap(find.text('되돌리기'));
+    await tester.pumpAndSettle();
+    expect(
+        controller.personalTodos
+            .where((item) => item.id != 'done')
+            .every((item) => !item.completed),
+        isTrue);
+    controller.personalDataLoaded = false;
+    controller.loadError = 'offline';
+    controller.notifyListeners();
+    await tester.pumpAndSettle();
+    expect(
+        find.text('목록을 불러오지 못했어요. 다시 시도해 주세요.').hitTestable(), findsOneWidget);
+    expect(find.text('이 주 가이드에서 필요한 일을 골라보세요.'), findsNothing);
+    expect(tester.takeException(), isNull);
+  });
+
+  testWidgets('completion undo is available briefly and then dismissed',
+      (tester) async {
+    tester.view.physicalSize = const Size(360, 740);
+    tester.view.devicePixelRatio = 1;
+    addTearDown(tester.view.resetPhysicalSize);
+    addTearDown(tester.view.resetDevicePixelRatio);
+    final controller = _PreviewController();
+    await tester.pumpWidget(MaterialApp(
+        locale: const Locale('ko'),
+        supportedLocales: AppLocalizations.supportedLocales,
+        localizationsDelegates: AppLocalizations.localizationsDelegates,
+        home: SemesterTodoScreen(
+            studentType: StudentType.korean, controller: controller)));
+    await tester.pumpAndSettle();
+
+    final row =
+        find.byKey(const ValueKey('todo-entry-3-guide:week_3/calendar'));
+    await tester.tap(
+        find.descendant(of: row, matching: find.byType(InkResponse)).first);
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 300));
+    expect(find.text('되돌리기'), findsOneWidget);
+
+    await tester.pump(const Duration(milliseconds: 2300));
+    await tester.pumpAndSettle();
+    expect(find.text('되돌리기'), findsNothing);
+    expect(tester.takeException(), isNull);
+  });
+
+  testWidgets('reference details stay compact and expose stored links',
+      (tester) async {
+    tester.view.physicalSize = const Size(320, 700);
+    tester.view.devicePixelRatio = 1;
+    tester.platformDispatcher.textScaleFactorTestValue = 1.5;
+    addTearDown(tester.view.resetPhysicalSize);
+    addTearDown(tester.view.resetDevicePixelRatio);
+    addTearDown(tester.platformDispatcher.clearTextScaleFactorTestValue);
+    final controller = _PreviewController();
+    await tester.pumpWidget(MaterialApp(
+        locale: const Locale('ko'),
+        supportedLocales: AppLocalizations.supportedLocales,
+        localizationsDelegates: AppLocalizations.localizationsDelegates,
+        home: SemesterTodoScreen(
+            studentType: StudentType.korean, controller: controller)));
+    await tester.pumpAndSettle();
+
+    await tester.tap(find.text('언어교환 모임 참여하기').hitTestable());
+    await tester.pumpAndSettle();
+    expect(find.text('AD'), findsOneWidget);
+    expect(find.text('자세히 보기'), findsOneWidget);
+    expect(
+        tester
+            .widgetList<PostLinkifiedText>(find.byType(PostLinkifiedText))
+            .any((widget) => widget.text.contains('https://example.com/info')),
+        isTrue);
+    expect(tester.getSize(find.byType(BottomSheet)).height, lessThan(650));
+    expect(tester.takeException(), isNull);
+  });
+
+  testWidgets(
+      'earlier tasks start above current tasks; check updates source; real week badge persists',
+      (tester) async {
+    tester.view.physicalSize = const Size(360, 740);
+    tester.view.devicePixelRatio = 1;
+    addTearDown(tester.view.resetPhysicalSize);
+    addTearDown(tester.view.resetDevicePixelRatio);
+    final controller = _PreviewController();
+    controller.tasks = [
+      ...controller.tasks,
+      const SemesterTodo(
+          id: 'leftover',
+          weekId: 'week_2',
+          weekNumber: 2,
+          title: LocalizedTodoText(ko: '놓친 일', en: 'Earlier task'),
+          description: LocalizedTodoText(ko: '', en: ''),
+          type: SemesterTodoType.required,
+          targetAudiences: ['korean'],
+          isActive: true,
+          order: 0,
+          actionType: SemesterTodoActionType.none,
+          carryOver: true),
+    ];
+    await tester.pumpWidget(MaterialApp(
+        locale: const Locale('ko'),
+        supportedLocales: AppLocalizations.supportedLocales,
+        localizationsDelegates: AppLocalizations.localizationsDelegates,
+        home: SemesterTodoScreen(
+            studentType: StudentType.korean, controller: controller)));
+    await tester.pumpAndSettle();
+    expect(find.text('놓친 일').hitTestable(), findsOneWidget);
+    expect(tester.getTopLeft(find.text('놓친 일')).dy,
+        lessThan(tester.getTopLeft(find.text('이번 주 할 일')).dy));
+    final row =
+        find.byKey(const ValueKey('todo-entry-2-guide:week_2/leftover'));
+    await tester.tap(
+        find.descendant(of: row, matching: find.byType(InkResponse)).first);
+    await tester.pumpAndSettle();
+    expect(controller.checked, contains('leftover'));
+    expect(find.text('놓친 일'), findsNothing);
+    expect(find.text('할 일 2개 남음'), findsNothing);
+    await tester.tap(find.text('되돌리기'));
+    await tester.pumpAndSettle();
+    expect(find.text('놓친 일').hitTestable(), findsOneWidget);
+    await tester.drag(find.byType(PageView), const Offset(300, 0));
+    await tester.pumpAndSettle();
+    expect(controller.selectedWeekNumber, 2);
+    expect(find.byKey(const ValueKey('todo-current-badge')), findsOneWidget);
+    expect(find.byKey(const ValueKey('todo-current-week')).hitTestable(),
+        findsOneWidget);
+    controller.clock = () => DateTime.utc(2026, 9, 21);
+    tester.binding.handleAppLifecycleStateChanged(AppLifecycleState.paused);
+    tester.binding.handleAppLifecycleStateChanged(AppLifecycleState.resumed);
+    await tester.pumpAndSettle();
+    expect(controller.currentCalendarWeek, 4);
+    expect(controller.selectedWeekNumber, 2);
+    expect(tester.takeException(), isNull);
   });
 
   for (final language in ['ko', 'en', 'zh']) {
@@ -188,7 +459,8 @@ void main() {
               isFalse,
               reason: 'AppBar title must not be clipped');
           if (language == 'ko' && width == 360 && scale == 1) {
-            final title = find.text('강의계획서와 평가 방식 확인하기').hitTestable();
+            final title =
+                find.text('팀 프로젝트 자료 정리 · Project notes').hitTestable();
             expect(tester.widget<Text>(title).style!.fontSize,
                 lessThanOrEqualTo(14));
             if (const bool.fromEnvironment('TODO_UI_CAPTURE')) {
@@ -203,30 +475,14 @@ void main() {
                 image.dispose();
               });
             }
-            await tester.tap(title);
-            await tester.pumpAndSettle();
-            expect(controller.checked, contains('syllabus'));
-            await tester.tap(title);
-            await tester.pumpAndSettle();
-            expect(controller.checked, isEmpty);
           }
-          final addLabel = language == 'ko'
-              ? '이 주차에 할 일 추가'
-              : language == 'zh'
-                  ? '为本周添加待办'
-                  : 'Add task to this week';
-          final scroller = find
-              .descendant(
-                  of: find.byType(CustomScrollView).hitTestable().first,
-                  matching: find.byType(Scrollable))
-              .first;
-          await tester.scrollUntilVisible(find.byTooltip(addLabel), 220,
-              scrollable: scroller, maxScrolls: 40);
-          await tester.pumpAndSettle();
-          expect(tester.takeException(), isNull);
-          expect(tester.getRect(find.byTooltip(addLabel).last).bottom,
+          expect(find.byKey(const ValueKey('todo-guide-tab')), findsNothing);
+          expect(find.byKey(const ValueKey('todo-personal-tab')), findsNothing);
+          expect(
+              find.byKey(const ValueKey('todo-current-badge')), findsOneWidget);
+          expect(tester.getRect(find.byKey(const ValueKey('todo-add'))).bottom,
               lessThanOrEqualTo(716));
-          await tester.tap(find.byTooltip(addLabel).last);
+          await tester.tap(find.byKey(const ValueKey('todo-add')));
           await tester.pumpAndSettle();
           await tester.enterText(
               find.byType(TextField).first, '과제 · Assignment · 作业');

@@ -14,11 +14,14 @@ import '../models/post.dart';
 import '../models/user_profile.dart';
 import '../models/relationship_status.dart';
 import '../models/social_profile_data.dart';
+import '../models/organization_profile.dart';
 import '../providers/relationship_provider.dart';
 import '../screens/meetup_detail_screen.dart';
 import '../screens/friend_profile_screen.dart';
 import '../services/meetup_service.dart';
 import '../services/post_service.dart';
+import '../services/feature_flag_service.dart';
+import '../services/organization_account_service.dart';
 import '../ui/widgets/app_icon_button.dart';
 import '../ui/widgets/hanyang_verification_gate.dart';
 import '../widgets/post_search_card.dart';
@@ -26,6 +29,7 @@ import '../widgets/user_tile.dart';
 import '../utils/responsive_helper.dart';
 import '../utils/latest_request_guard.dart';
 import '../l10n/ui_locale.dart';
+import 'organization_profile_screen.dart';
 
 class UnifiedSearchScreen extends StatefulWidget {
   /// 0: 이름(유저), 1: 게시글, 2: 모임
@@ -70,6 +74,10 @@ class _UnifiedSearchScreenState extends State<UnifiedSearchScreen>
   List<Meetup> _meetupResults = const [];
   final LatestRequestGuard _postSearchGuard = LatestRequestGuard();
   final LatestRequestGuard _meetupSearchGuard = LatestRequestGuard();
+  final LatestRequestGuard _organizationSearchGuard = LatestRequestGuard();
+  List<OrganizationProfile> _organizationResults = const [];
+  bool _isLoadingOrganizations = false;
+  String? _organizationsError;
 
   @override
   void initState() {
@@ -119,6 +127,7 @@ class _UnifiedSearchScreenState extends State<UnifiedSearchScreen>
     _debounceTimer?.cancel();
     _postSearchGuard.invalidate();
     _meetupSearchGuard.invalidate();
+    _organizationSearchGuard.invalidate();
     _tabController.removeListener(_onTabChanged);
     _tabController.dispose();
     _searchController.dispose();
@@ -176,6 +185,7 @@ class _UnifiedSearchScreenState extends State<UnifiedSearchScreen>
     // 시작되기 전 오래된 응답이 도착해도 현재 검색어 결과를 덮지 않는다.
     _postSearchGuard.invalidate();
     _meetupSearchGuard.invalidate();
+    _organizationSearchGuard.invalidate();
     // User search has its own async request guard in RelationshipProvider.
     // Clearing here invalidates it during the debounce window, preventing an
     // old response from being rendered under newly typed text.
@@ -195,6 +205,9 @@ class _UnifiedSearchScreenState extends State<UnifiedSearchScreen>
       _meetupsError = null;
       _isLoadingPosts = false;
       _isLoadingMeetups = false;
+      _organizationResults = const [];
+      _organizationsError = null;
+      _isLoadingOrganizations = false;
     });
 
     _debounceTimer = Timer(const Duration(milliseconds: 300), () {
@@ -206,6 +219,7 @@ class _UnifiedSearchScreenState extends State<UnifiedSearchScreen>
   void _clearAllResults() {
     _postSearchGuard.invalidate();
     _meetupSearchGuard.invalidate();
+    _organizationSearchGuard.invalidate();
     // 유저 검색 결과는 provider에 있음
     context.read<RelationshipProvider>().clearSearchResults();
     setState(() {
@@ -216,6 +230,9 @@ class _UnifiedSearchScreenState extends State<UnifiedSearchScreen>
       _meetupResults = const [];
       _isLoadingPosts = false;
       _isLoadingMeetups = false;
+      _organizationResults = const [];
+      _organizationsError = null;
+      _isLoadingOrganizations = false;
     });
   }
 
@@ -240,6 +257,34 @@ class _UnifiedSearchScreenState extends State<UnifiedSearchScreen>
     if (!_relationshipInitialized) return;
     final provider = context.read<RelationshipProvider>();
     provider.searchUsers(query);
+    if (FeatureFlagService().isFeatureEnabled(
+      FeatureFlagService.FEATURE_ORGANIZATION_PROFILES,
+    )) {
+      unawaited(_searchOrganizations(query));
+    }
+  }
+
+  Future<void> _searchOrganizations(String query) async {
+    final token = _organizationSearchGuard.begin();
+    setState(() {
+      _isLoadingOrganizations = true;
+      _organizationsError = null;
+    });
+    try {
+      final results = await OrganizationAccountService.instance.search(query);
+      if (!mounted || !_organizationSearchGuard.isCurrent(token)) return;
+      setState(() {
+        _organizationResults = results;
+        _isLoadingOrganizations = false;
+      });
+    } catch (_) {
+      if (!mounted || !_organizationSearchGuard.isCurrent(token)) return;
+      setState(() {
+        _organizationResults = const [];
+        _isLoadingOrganizations = false;
+        _organizationsError = 'unavailable';
+      });
+    }
   }
 
   Future<void> _selectInterest(String interestId) async {
@@ -519,11 +564,23 @@ class _UnifiedSearchScreenState extends State<UnifiedSearchScreen>
     final isKo = locale == 'ko';
     switch (index) {
       case 0:
-        return (isChineseUi(context) ? '名称' : isKo ? '이름' : 'Name');
+        return (isChineseUi(context)
+            ? '名称'
+            : isKo
+                ? '이름'
+                : 'Name');
       case 1:
-        return (isChineseUi(context) ? '动态' : isKo ? '포스트' : 'Posts');
+        return (isChineseUi(context)
+            ? '动态'
+            : isKo
+                ? '포스트'
+                : 'Posts');
       case 2:
-        return (isChineseUi(context) ? '聚会' : isKo ? '모임' : 'Meetups');
+        return (isChineseUi(context)
+            ? '聚会'
+            : isKo
+                ? '모임'
+                : 'Meetups');
       default:
         return '';
     }
@@ -728,9 +785,11 @@ class _UnifiedSearchScreenState extends State<UnifiedSearchScreen>
           semanticLabel: AppLocalizations.of(context)!.back,
         ),
         title: Text(
-          (isChineseUi(context) ? '搜索' : Localizations.localeOf(context).languageCode == 'ko'
-              ? '검색'
-              : 'Search'),
+          (isChineseUi(context)
+              ? '搜索'
+              : Localizations.localeOf(context).languageCode == 'ko'
+                  ? '검색'
+                  : 'Search'),
           style: TextStyle(
             fontFamily: uiFontFamily(context, 'Inter'),
             fontFamilyFallback: ['NotoSansKR'],
@@ -802,6 +861,9 @@ class _UnifiedSearchScreenState extends State<UnifiedSearchScreen>
   Widget _buildUsersTab() {
     final q = _searchController.text.trim();
     final l10n = AppLocalizations.of(context)!;
+    final organizationsEnabled = FeatureFlagService().isFeatureEnabled(
+      FeatureFlagService.FEATURE_ORGANIZATION_PROFILES,
+    );
 
     if (!_relationshipInitialized) {
       return const Center(child: CircularProgressIndicator());
@@ -813,11 +875,14 @@ class _UnifiedSearchScreenState extends State<UnifiedSearchScreen>
 
     return Consumer<RelationshipProvider>(
       builder: (context, provider, _) {
-        if (provider.isSearchLoading) {
+        if (provider.isSearchLoading ||
+            (organizationsEnabled && _isLoadingOrganizations)) {
           return const Center(child: CircularProgressIndicator());
         }
 
-        if (provider.errorMessage != null) {
+        if (provider.errorMessage != null &&
+            (!organizationsEnabled || _organizationsError != null) &&
+            _organizationResults.isEmpty) {
           return _buildEmptyPrompt(
             icon: Icons.error_outline,
             title: AppLocalizations.of(context)!.error,
@@ -830,7 +895,8 @@ class _UnifiedSearchScreenState extends State<UnifiedSearchScreen>
           );
         }
 
-        if (provider.searchResults.isEmpty) {
+        if (provider.searchResults.isEmpty &&
+            (!organizationsEnabled || _organizationResults.isEmpty)) {
           return _buildEmptyPrompt(
             icon: Icons.person_off,
             title: AppLocalizations.of(context)!.noResultsFound,
@@ -839,30 +905,132 @@ class _UnifiedSearchScreenState extends State<UnifiedSearchScreen>
         }
 
         final bottomPadding = MediaQuery.of(context).padding.bottom;
-        return ListView.builder(
+        if (!organizationsEnabled) {
+          return ListView.builder(
+            controller: _userResultsController,
+            padding: EdgeInsets.only(
+              top: 8,
+              bottom: bottomPadding > 0 ? bottomPadding + 8 : 8,
+            ),
+            itemCount: provider.searchResults.length,
+            itemBuilder: (context, index) {
+              final user = provider.searchResults[index];
+              final status = provider.getRelationshipStatus(user.uid);
+              return UserTile(
+                user: user,
+                relationshipStatus: status,
+                onActionPressed: () => _handleUserAction(user, status),
+                onRejectPressed: status == RelationshipStatus.pendingIn
+                    ? () => _rejectFriendRequest(user.uid)
+                    : null,
+                onTilePressed: () => _openUserProfile(user),
+                isLoading: provider.isLoading,
+                minimal: true,
+              );
+            },
+          );
+        }
+        return ListView(
           controller: _userResultsController,
           padding: EdgeInsets.only(
             top: 8,
             bottom: bottomPadding > 0 ? bottomPadding + 8 : 8,
           ),
-          itemCount: provider.searchResults.length,
-          itemBuilder: (context, index) {
-            final user = provider.searchResults[index];
-            final status = provider.getRelationshipStatus(user.uid);
-            return UserTile(
-              user: user,
-              relationshipStatus: status,
-              onActionPressed: () => _handleUserAction(user, status),
-              onRejectPressed: status == RelationshipStatus.pendingIn
-                  ? () => _rejectFriendRequest(user.uid)
-                  : null,
-              onTilePressed: () => _openUserProfile(user),
-              isLoading: provider.isLoading,
-              minimal: true,
-            );
-          },
+          children: [
+            if (_organizationResults.isNotEmpty) ...[
+              Padding(
+                padding: const EdgeInsets.fromLTRB(20, 10, 20, 5),
+                child: Text(
+                  isChineseUi(context)
+                      ? '机构'
+                      : Localizations.localeOf(context).languageCode == 'ko'
+                          ? '단체'
+                          : 'Organizations',
+                  style: TextStyle(
+                    fontFamily: uiFontFamily(context, 'Inter'),
+                    fontSize: 13,
+                    fontWeight: FontWeight.w700,
+                    color: const Color(0xFF667085),
+                  ),
+                ),
+              ),
+              ..._organizationResults.map(_buildOrganizationTile),
+              if (provider.searchResults.isNotEmpty)
+                const Divider(height: 20, color: Color(0xFFEAECF0)),
+            ],
+            ...provider.searchResults.map((user) {
+              final status = provider.getRelationshipStatus(user.uid);
+              return UserTile(
+                user: user,
+                relationshipStatus: status,
+                onActionPressed: () => _handleUserAction(user, status),
+                onRejectPressed: status == RelationshipStatus.pendingIn
+                    ? () => _rejectFriendRequest(user.uid)
+                    : null,
+                onTilePressed: () => _openUserProfile(user),
+                isLoading: provider.isLoading,
+                minimal: true,
+              );
+            }),
+          ],
         );
       },
+    );
+  }
+
+  Widget _buildOrganizationTile(OrganizationProfile organization) {
+    return ListTile(
+      contentPadding: const EdgeInsets.symmetric(horizontal: 20, vertical: 4),
+      leading: CircleAvatar(
+        radius: 24,
+        backgroundColor: const Color(0xFFF2F4F7),
+        backgroundImage: organization.logoUrl.isNotEmpty
+            ? NetworkImage(organization.logoUrl)
+            : null,
+        child: organization.logoUrl.isEmpty
+            ? const Icon(Icons.apartment_rounded,
+                size: 23, color: Color(0xFF667085))
+            : null,
+      ),
+      title: Row(
+        children: [
+          Flexible(
+            child: Text(
+              organization.name,
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
+              style: TextStyle(
+                fontFamily: uiFontFamily(context, 'Inter'),
+                fontSize: 15,
+                fontWeight: FontWeight.w700,
+                color: const Color(0xFF101828),
+              ),
+            ),
+          ),
+          if (organization.verificationStatus == 'verified') ...[
+            const SizedBox(width: 5),
+            const Icon(Icons.verified_rounded,
+                size: 17, color: AppColors.pointColor),
+          ],
+        ],
+      ),
+      subtitle: Text(
+        [
+          '@${organization.handle}',
+          organization.organizationType,
+          organization.affiliation,
+        ].where((value) => value.isNotEmpty).join(' · '),
+        maxLines: 2,
+        overflow: TextOverflow.ellipsis,
+        style: const TextStyle(fontSize: 12.5, color: Color(0xFF667085)),
+      ),
+      trailing: const Icon(Icons.chevron_right_rounded,
+          size: 20, color: Color(0xFF98A2B3)),
+      onTap: () => Navigator.of(context).push(MaterialPageRoute<void>(
+        builder: (_) => OrganizationProfileScreen(
+          organization: organization,
+        ),
+      )),
     );
   }
 
@@ -1177,9 +1345,16 @@ class _UnifiedSearchScreenState extends State<UnifiedSearchScreen>
     if (q.isEmpty) {
       return _buildEmptyPrompt(
         icon: Icons.search,
-        title: (isChineseUi(context) ? '搜索动态' : isKo ? '포스트를 검색해보세요' : 'Search posts'),
-        subtitle:
-            (isChineseUi(context) ? '搜索标题或内容' : isKo ? '제목/내용 기준으로\n포스트를 찾아볼 수 있어요' : 'Search by title/content'),
+        title: (isChineseUi(context)
+            ? '搜索动态'
+            : isKo
+                ? '포스트를 검색해보세요'
+                : 'Search posts'),
+        subtitle: (isChineseUi(context)
+            ? '搜索标题或内容'
+            : isKo
+                ? '제목/내용 기준으로\n포스트를 찾아볼 수 있어요'
+                : 'Search by title/content'),
       );
     }
 
@@ -1201,7 +1376,8 @@ class _UnifiedSearchScreenState extends State<UnifiedSearchScreen>
       return _buildEmptyPrompt(
         icon: Icons.search_off,
         title: AppLocalizations.of(context)!.noSearchResults,
-        subtitle: '"$q"${(isChineseUi(context) ? ' - 未找到结果' : isKo ? '에 대한 검색 결과가 없습니다' : ' - No results found')}',
+        subtitle:
+            '"$q"${(isChineseUi(context) ? ' - 未找到结果' : isKo ? '에 대한 검색 결과가 없습니다' : ' - No results found')}',
       );
     }
 
@@ -1223,10 +1399,16 @@ class _UnifiedSearchScreenState extends State<UnifiedSearchScreen>
     if (q.isEmpty) {
       return _buildEmptyPrompt(
         icon: Icons.search,
-        title: (isChineseUi(context) ? '搜索聚会' : isKo ? '모임을 검색해보세요' : 'Search meetups'),
-        subtitle: (isChineseUi(context) ? '搜索标题、介绍、地点或发起人' : isKo
-            ? '제목/설명/위치/호스트 기준으로\n모임을 찾아볼 수 있어요'
-            : 'Search by title/description/location/host'),
+        title: (isChineseUi(context)
+            ? '搜索聚会'
+            : isKo
+                ? '모임을 검색해보세요'
+                : 'Search meetups'),
+        subtitle: (isChineseUi(context)
+            ? '搜索标题、介绍、地点或发起人'
+            : isKo
+                ? '제목/설명/위치/호스트 기준으로\n모임을 찾아볼 수 있어요'
+                : 'Search by title/description/location/host'),
       );
     }
 
@@ -1248,7 +1430,8 @@ class _UnifiedSearchScreenState extends State<UnifiedSearchScreen>
       return _buildEmptyPrompt(
         icon: Icons.search_off,
         title: AppLocalizations.of(context)!.noSearchResults,
-        subtitle: '"$q"${(isChineseUi(context) ? ' - 未找到结果' : isKo ? '에 대한 검색 결과가 없습니다' : ' - No results found')}',
+        subtitle:
+            '"$q"${(isChineseUi(context) ? ' - 未找到结果' : isKo ? '에 대한 검색 결과가 없습니다' : ' - No results found')}',
       );
     }
 

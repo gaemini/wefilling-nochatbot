@@ -170,20 +170,34 @@ export async function prepareNicknameReservation(
   }
   const currentKey = storedNicknameIdentity(storedNickname).nicknameKey;
   const nextRef = db.collection(COL.nicknameClaims).doc(identity.nicknameKey);
-  const nextSnap = await transaction.get(nextRef);
+  const nextIdentityRef = db.collection(COL.identityHandles)
+    .doc(identity.nicknameKey);
+  const [nextSnap, nextIdentitySnap] = await Promise.all([
+    transaction.get(nextRef),
+    transaction.get(nextIdentityRef),
+  ]);
 
   const previousClaims: admin.firestore.DocumentSnapshot[] = [];
+  const previousIdentities: admin.firestore.DocumentSnapshot[] = [];
   for (const key of new Set([currentKey, storedKey])) {
     if (key && key !== identity.nicknameKey) {
       previousClaims.push(await transaction.get(
         db.collection(COL.nicknameClaims).doc(nicknameClaimId(key))));
+      previousIdentities.push(await transaction.get(
+        db.collection(COL.identityHandles).doc(nicknameClaimId(key))));
     }
   }
 
   const nextOwner = nextSnap.exists
     ? String(nextSnap.get('ownerUid') ?? '')
     : '';
-  if (nextSnap.exists && (nextOwner !== uid || nextSnap.get('status') === 'conflict')) {
+  const identityOwnedByCurrentUser = nextIdentitySnap.exists &&
+    nextIdentitySnap.get('entityType') === 'user' &&
+    nextIdentitySnap.get('entityId') === uid &&
+    nextIdentitySnap.get('status') === 'claimed';
+  if ((nextSnap.exists &&
+        (nextOwner !== uid || nextSnap.get('status') === 'conflict')) ||
+      (nextIdentitySnap.exists && !identityOwnedByCurrentUser)) {
     functions.logger.warn('nickname save', {
       uid,
       oldNicknameKeyHash: nicknameKeyFingerprint(currentKey),
@@ -213,12 +227,31 @@ export async function prepareNicknameReservation(
           : admin.firestore.FieldValue.serverTimestamp(),
         updatedAt: admin.firestore.FieldValue.serverTimestamp(),
       }, {merge: true});
+      transaction.set(nextIdentityRef, {
+        normalizedHandle: identity.nicknameKey,
+        displayHandle: identity.nickname,
+        entityType: 'user',
+        entityId: uid,
+        status: 'claimed',
+        claimedAt: nextIdentitySnap.exists
+          ? nextIdentitySnap.get('claimedAt') ??
+            admin.firestore.FieldValue.serverTimestamp()
+          : admin.firestore.FieldValue.serverTimestamp(),
+        updatedAt: admin.firestore.FieldValue.serverTimestamp(),
+      }, {merge: true});
 
       // The new reservation is secured before the old one is released. Only
       // delete an old claim still owned by this UID.
       for (const previous of previousClaims) {
         if (previous.exists && previous.get('ownerUid') === uid &&
             previous.get('status') !== 'conflict') transaction.delete(previous.ref);
+      }
+      for (const previous of previousIdentities) {
+        if (previous.exists && previous.get('entityType') === 'user' &&
+            previous.get('entityId') === uid &&
+            previous.get('status') === 'claimed') {
+          transaction.delete(previous.ref);
+        }
       }
     },
   };
@@ -231,13 +264,23 @@ export async function releaseNicknameClaimIfOwned(
   if (!nicknameKey) return false;
   const db = admin.firestore();
   const ref = db.collection(COL.nicknameClaims).doc(nicknameClaimId(nicknameKey));
+  const identityRef = db.collection(COL.identityHandles)
+    .doc(nicknameClaimId(nicknameKey));
   return db.runTransaction(async (transaction) => {
-    const snap = await transaction.get(ref);
+    const [snap, identity] = await Promise.all([
+      transaction.get(ref),
+      transaction.get(identityRef),
+    ]);
     if (!snap.exists || String(snap.get('ownerUid') ?? '') !== uid ||
         snap.get('status') === 'conflict') {
       return false;
     }
     transaction.delete(ref);
+    if (identity.exists && identity.get('entityType') === 'user' &&
+        identity.get('entityId') === uid &&
+        identity.get('status') === 'claimed') {
+      transaction.delete(identityRef);
+    }
     return true;
   });
 }
@@ -265,6 +308,20 @@ export async function releaseAllNicknameClaimsOwnedByUid(uid: string): Promise<n
     });
     if (removed) deleted++;
   }
+  const ownedIdentities = await db.collection(COL.identityHandles)
+    .where('entityId', '==', uid)
+    .get();
+  for (const identity of ownedIdentities.docs) {
+    const removed = await db.runTransaction(async (transaction) => {
+      const current = await transaction.get(identity.ref);
+      if (!current.exists || current.get('entityType') !== 'user' ||
+          current.get('entityId') !== uid ||
+          current.get('status') !== 'claimed') return false;
+      transaction.delete(identity.ref);
+      return true;
+    });
+    if (removed) deleted++;
+  }
   return deleted;
 }
 
@@ -283,14 +340,26 @@ export const checkNicknameAvailability = functions
     try {
       const identity = normalizeNickname(data?.nickname);
       await requireNicknameIndexReady();
-      const snap = await admin.firestore()
-        .collection(COL.nicknameClaims)
-        .doc(identity.nicknameKey)
-        .get();
+      const [snap, identityHandle] = await Promise.all([
+        admin.firestore()
+          .collection(COL.nicknameClaims)
+          .doc(identity.nicknameKey)
+          .get(),
+        admin.firestore()
+          .collection(COL.identityHandles)
+          .doc(identity.nicknameKey)
+          .get(),
+      ]);
       const claimReadMs = Date.now() - startedAt;
       const ownerUid = snap.exists ? String(snap.get('ownerUid') ?? '') : '';
-      const available = !snap.exists || (snap.get('status') !== 'conflict' &&
-        Boolean(context.auth?.uid) && ownerUid === context.auth?.uid);
+      const handleOwnedByCurrentUser = identityHandle.exists &&
+        identityHandle.get('entityType') === 'user' &&
+        identityHandle.get('entityId') === context.auth?.uid &&
+        identityHandle.get('status') === 'claimed';
+      const available = (!snap.exists ||
+          (snap.get('status') !== 'conflict' &&
+            Boolean(context.auth?.uid) && ownerUid === context.auth?.uid)) &&
+        (!identityHandle.exists || handleOwnedByCurrentUser);
       runtimeLogsEnabled && runtimeInfo('nickname check completed', {
         authenticated: Boolean(context.auth?.uid),
         appCheckPresent: Boolean(context.app),

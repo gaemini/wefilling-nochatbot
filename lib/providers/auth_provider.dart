@@ -413,6 +413,12 @@ class AuthProvider with ChangeNotifier implements WidgetsBindingObserver {
   // 로그인 여부
   bool get isLoggedIn => _user != null;
 
+  /// Server-created organization operators are real Auth users but are not
+  /// public personal profiles and must never enter personal onboarding.
+  bool get isOrganizationOnlyAccount =>
+      _userData?['accountUsage'] == 'organization_only' &&
+      _userData?['provisioningSource'] == 'platform_admin_invite';
+
   /// 사용자가 계정 선택 창을 닫은 경우와 실제 인증 오류를 UI에서 구분합니다.
   bool get lastGoogleSignInWasCancelled => _lastGoogleSignInWasCancelled;
 
@@ -854,7 +860,10 @@ class AuthProvider with ChangeNotifier implements WidgetsBindingObserver {
 
   // 구글 로그인
   // skipEmailVerifiedCheck: 한양메일 인증 완료 후 회원가입 시 true로 설정
-  Future<bool> signInWithGoogle({bool skipEmailVerifiedCheck = false}) async {
+  Future<bool> signInWithGoogle({
+    bool skipEmailVerifiedCheck = false,
+    bool organizationInviteMode = false,
+  }) async {
     var stage = _GoogleAuthStage.initialize;
     _lastGoogleSignInWasCancelled = false;
     try {
@@ -923,6 +932,15 @@ class AuthProvider with ChangeNotifier implements WidgetsBindingObserver {
               'exists=${docSnapshot.exists} signupState=${registrationState.name}',
         );
         if (registrationState != AccountRegistrationState.complete) {
+          // A valid organization invitation owns this onboarding path. Do not
+          // create a partial personal profile or invoke the Hanyang signup
+          // recovery flow; the server will create/link only the membership.
+          if (organizationInviteMode) {
+            _signupRequired = false;
+            _isLoading = false;
+            notifyListeners();
+            return true;
+          }
           stage = _GoogleAuthStage.registrationRecovery;
           await ensureRegistrationProgress();
           _logGoogleAuthStage('REGISTRATION_RECOVERY_READY');
@@ -1070,7 +1088,10 @@ class AuthProvider with ChangeNotifier implements WidgetsBindingObserver {
 
   // Apple 로그인
   // skipEmailVerifiedCheck: 한양메일 인증 완료 후 회원가입 시 true로 설정
-  Future<bool> signInWithApple({bool skipEmailVerifiedCheck = false}) async {
+  Future<bool> signInWithApple({
+    bool skipEmailVerifiedCheck = false,
+    bool organizationInviteMode = false,
+  }) async {
     try {
       // 취소/재시도 뒤에도 이전 가입 필요 플래그가 남지 않게 합니다.
       _signupRequired = false;
@@ -1126,6 +1147,12 @@ class AuthProvider with ChangeNotifier implements WidgetsBindingObserver {
             ? _registrationStateFromData(userData)
             : AccountRegistrationState.missing;
         if (registrationState != AccountRegistrationState.complete) {
+          if (organizationInviteMode) {
+            _signupRequired = false;
+            _isLoading = false;
+            notifyListeners();
+            return true;
+          }
           await ensureRegistrationProgress();
           _signupRequired = true;
           _isLoading = false;
@@ -1283,6 +1310,7 @@ class AuthProvider with ChangeNotifier implements WidgetsBindingObserver {
   Future<bool> signInWithEmail({
     required String email,
     required String password,
+    bool organizationInviteMode = false,
   }) async {
     try {
       _signupRequired = false;
@@ -1314,6 +1342,12 @@ class AuthProvider with ChangeNotifier implements WidgetsBindingObserver {
           ? _registrationStateFromData(docSnapshot.data())
           : AccountRegistrationState.missing;
       if (registrationState != AccountRegistrationState.complete) {
+        if (organizationInviteMode) {
+          _signupRequired = false;
+          _isLoading = false;
+          notifyListeners();
+          return true;
+        }
         await ensureRegistrationProgress();
         _signupRequired = true;
         _isLoading = false;

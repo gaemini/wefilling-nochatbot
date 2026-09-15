@@ -5,6 +5,7 @@
 import * as functions from 'firebase-functions';
 import * as admin from 'firebase-admin';
 import {decorateChatPush} from './chat_push_presentation';
+export {querySnackChatMessages, getSnackChatMessageContext, getSnackChatMentionCandidates, validateSnackChatMentions} from './snack_chat_discovery';
 import * as nodemailer from 'nodemailer';
 import * as crypto from 'crypto';
 import { COL } from './firestore_paths';
@@ -47,6 +48,16 @@ export {
   onDeletedAuthUserNicknameCleanup,
   updateMyNicknameSecure,
 } from './nickname_claims';
+
+export {
+  acceptOrganizationInvite,
+  getMyOrganizationAccess,
+  onOrganizationManagerAuthDeleted,
+  prepareOrganizationPasswordInvite,
+  previewOrganizationInvite,
+  searchOrganizationsSecure,
+  updateMyOrganizationProfile,
+} from './organization_accounts';
 
 export {
   createPostSecure,

@@ -14,6 +14,19 @@ export const COL = {
   emailVerifications: 'email_verifications',
   passwordResetCodes: 'passwordResetCodes',
 
+  // Organization identities are deliberately separate from real people in
+  // `users`. Only trusted server code may write these collections.
+  organizations: 'organizations',
+  organizationPrivate: 'organization_private',
+  organizationMemberships: 'organization_memberships',
+  organizationInvites: 'organization_invites',
+  organizationProvisioning: 'organization_provisioning',
+  organizationAuditLogs: 'organization_audit_logs',
+  organizationEntitlements: 'organization_entitlements',
+  organizationFollows: 'organization_follows',
+  identityHandles: 'identity_handles',
+  searchEntities: 'search_entities',
+
   // Content
   posts: 'posts',
   postSearchIndex: 'post_search_index',

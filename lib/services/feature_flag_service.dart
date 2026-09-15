@@ -20,6 +20,8 @@ class FeatureFlagService {
   // Feature Flag Keys
   static const String FEATURE_PROFILE_GRID = 'feature_profile_grid';
   static const String FEATURE_REVIEW_CONSENSUS = 'feature_review_consensus';
+  static const String FEATURE_ORGANIZATION_PROFILES =
+      'feature_organization_profiles';
 
   /// 서비스 초기화
   Future<void> init() async {
@@ -40,6 +42,9 @@ class FeatureFlagService {
       await _remoteConfig.setDefaults({
         FEATURE_PROFILE_GRID: false,
         FEATURE_REVIEW_CONSENSUS: false,
+        // Public organization search/content stays dark until the compatible
+        // app version and the first operator-created account are verified.
+        FEATURE_ORGANIZATION_PROFILES: false,
       });
 
       // Placeholder/unavailable App Check 상태에서 Remote Config 요청을

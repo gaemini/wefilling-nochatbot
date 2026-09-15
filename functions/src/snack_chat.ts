@@ -1,5 +1,6 @@
 import * as admin from 'firebase-admin';
 import {decorateChatPush} from './chat_push_presentation';
+import {isSummaryAnnouncement, pollSummarySnapshot, selectedSummaryCategories, validSnackMentions, hasGroundedRequesterRelation, normalizeSnackSearch} from './snack_chat_discovery_policy';
 import * as crypto from 'crypto';
 import * as dns from 'dns';
 import * as functions from 'firebase-functions';
@@ -235,7 +236,7 @@ function nextRoomMessageTimestamp(
     : now;
 }
 
-function activeUserData(data: Data, uid?: string): boolean {
+export function activeUserData(data: Data, uid?: string): boolean {
   const status = stringValue(data.status ?? data.accountStatus).toLowerCase();
   const registrationStatus = stringValue(data.registrationStatus)
     .toLowerCase();
@@ -265,7 +266,7 @@ function deletedUserData(data: Data): boolean {
     data.registrationStatus === 'deleted';
 }
 
-function requireUid(context: functions.https.CallableContext): string {
+export function requireUid(context: functions.https.CallableContext): string {
   const uid = context.auth?.uid?.trim() ?? '';
   if (!uid) {
     throw new functions.https.HttpsError(
@@ -276,7 +277,7 @@ function requireUid(context: functions.https.CallableContext): string {
   return uid;
 }
 
-async function requireActiveUser(uid: string): Promise<Data> {
+export async function requireActiveUser(uid: string): Promise<Data> {
   const user = await db().collection(USERS).doc(uid).get();
   const data = user.data() ?? {};
   if (!user.exists || !activeUserData(data, uid)) {
@@ -2570,6 +2571,8 @@ type UnreadSummarySource = {
   replyTargetSenderId: string;
   directlyMentionsRequester: boolean;
   repliesToRequester: boolean;
+  explicitMentionUserIds?: string[];
+  legacyNameMention?: boolean;
 };
 
 type SnackChatSummaryRangeType = 'unread' | 'today';
@@ -2701,6 +2704,7 @@ function unreadSummarySourceText(data: Data): string {
   const type = stringValue(data.type).toLowerCase();
   const parts: string[] = [];
   const text = stringValue(data.text);
+  if (isSummaryAnnouncement(data)) parts.push('[Host announcement]');
   if (text) parts.push(text);
   const attachmentDescription = boundedString(
     data.caption ?? data.description,
@@ -2726,6 +2730,7 @@ function unreadSummarySourceText(data: Data): string {
       if (options.length > 0) parts.push(`Options: ${options.join(' / ')}`);
     }
     parts.push('[Poll]');
+    parts.push(pollSummarySnapshot(data));
   }
   const preview = objectValue(data.linkPreview);
   const previewUrl = boundedString(preview.url, MAX_URL_LENGTH);
@@ -2899,7 +2904,7 @@ function unreadSummaryValidatedSections(
       let sequences = Array.isArray(item.sourceSequences) ?
         Array.from(new Set(item.sourceSequences
           .map(nonNegativeInteger)
-          .filter((sequence) => sourceBySequence.has(sequence))))
+          .filter((sequence) => sequence > 0 && sourceBySequence.has(sequence))))
           .sort((first, second) => first - second)
           .slice(0, MAX_UNREAD_SUMMARY_SOURCE_REFS_PER_ITEM) : [];
       const rawSourceMessageIds = Array.isArray(item.sourceMessageIds) ?
@@ -2918,12 +2923,15 @@ function unreadSummaryValidatedSections(
           .sort((first, second) => first - second)
           .slice(0, MAX_UNREAD_SUMMARY_SOURCE_REFS_PER_ITEM);
       }
-      if (!content || sequences.length === 0 || seenContent.has(normalizedContent)) {
+      if (!content || (sequences.length === 0 && rawSourceMessageIds.length === 0) || seenContent.has(normalizedContent)) {
         continue;
       }
-      const sourceMessages = sequences
-        .map((sequence) => sourceBySequence.get(sequence))
-        .filter((source): source is UnreadSummarySource => source != null);
+      const sourceMessages = Array.from(new Map([
+        ...sequences.map(sequence => sourceBySequence.get(sequence)),
+        ...rawSourceMessageIds.map(id => sourceById.get(id)),
+      ].filter((source): source is UnreadSummarySource => source != null)
+        .map(source => [source.messageId, source])).values())
+        .slice(0, MAX_UNREAD_SUMMARY_SOURCE_REFS_PER_ITEM);
       const sourceMessageIds = sourceMessages.map((source) => source.messageId);
       const requestedRepresentative = stringValue(item.representativeMessageId);
       const representativeMessageId = sourceMessageIds.includes(
@@ -3231,7 +3239,8 @@ function unreadSummaryBriefingFailures(
       failures.add('overviewDuplicatesItem');
     }
     const referenced = sources.filter((source) =>
-      entry.item.sourceSequences.includes(source.sequence));
+      entry.item.sourceMessageIds.includes(source.messageId) ||
+      (source.sequence > 0 && entry.item.sourceSequences.includes(source.sequence)));
     const otherParticipantReferences = requesterId ?
       referenced.filter((source) => source.senderId !== requesterId) :
       referenced;
@@ -3452,7 +3461,8 @@ function unreadSummaryQualityFailures(
       failures.add('mechanicalLabels');
     }
     const referenced = sources.filter((source) =>
-      item.sourceSequences.includes(source.sequence));
+      item.sourceMessageIds.includes(source.messageId) ||
+      (source.sequence > 0 && item.sourceSequences.includes(source.sequence)));
     if (referenced.some((source) =>
       unreadSummaryLooksCopied(item.content, source.content))) {
       failures.add('descriptionCopiesSource');
@@ -3849,6 +3859,7 @@ function unreadSummaryEvaluateCandidate(
   sources: UnreadSummarySource[],
   targetLanguage: string,
   requesterId = '',
+  selectionScoped = false,
 ): UnreadSummaryEvaluation {
   const validated = unreadSummaryValidatedSections(candidate, sources);
   const otherSection = validated.find((section) =>
@@ -3861,7 +3872,7 @@ function unreadSummaryEvaluateCandidate(
     otherSection?.items.map((item) => item.content).join(' '),
     500,
   );
-  const sections = validated.filter((section) =>
+  const sections = selectionScoped ? validated : validated.filter((section) =>
     section.type !== 'otherConversation');
   const normalizedCandidate = {
     schemaVersion: UNREAD_SUMMARY_SCHEMA_VERSION,
@@ -3879,7 +3890,7 @@ function unreadSummaryEvaluateCandidate(
       normalizedCandidate,
       sections,
       sources,
-      unreadSummaryCriticalFacts(sources),
+      selectionScoped ? [] : unreadSummaryCriticalFacts(sources),
       targetLanguage,
       requesterId,
     ),
@@ -3888,7 +3899,11 @@ function unreadSummaryEvaluateCandidate(
     overview,
     otherConversationSummary,
     sections,
-    validation: unreadSummaryValidationResult(failureCodes),
+    // Selected-category queries may correctly have no matches/overview.
+    // Evidence, enums, language (when nonempty), and factual checks still apply.
+    validation: unreadSummaryValidationResult(selectionScoped ? failureCodes.filter(code =>
+      !['missingOverview', 'missingSections'].includes(code) &&
+      !(code === 'targetLanguageMismatch' && !overview && sections.length === 0)) : failureCodes),
   };
 }
 
@@ -4365,8 +4380,48 @@ async function consumeUnreadSummaryQuota(userId: string): Promise<void> {
 export const summarizeSnackChatUnread = functions
   .runWith({secrets: ['GEMINI_API_KEY'], timeoutSeconds: 60, memory: '512MB'})
   .https.onCall(async (raw, context) => {
+    const progress: Record<string, unknown> = {};
+    // Authorization is rechecked after a long generation/cache hit as well.
+    const reader = raw?.paged === true ? await import('./snack_chat_discovery') : null;
+    const before = reader ? await reader.snackReadAccess(context, firestoreId(raw.snackChatId, 'Snack Chat id')) : null;
+    const result = await summarizeSnackChatRange(raw, context, progress);
+    if (reader && before) {
+      const after = await reader.snackReadAccess(context, before.ref.id);
+      if (after.signature !== before.signature) throw new functions.https.HttpsError('permission-denied', 'Room access changed while generating recap.');
+    }
+    if (raw?.paged === true && result.mode === 'question') {
+      const items = result.found ? [{title: boundedString(raw.directQuestion, 80),
+        description: result.answer, sourceMessageIds: result.sourceMessageIds,
+        representativeMessageId: result.representativeMessageId,
+        sourceSequences: result.sourceSequences, status: 'information', importance: 'important'}] : [];
+      return {...result, ...progress, summarySchemaVersion: 3,
+        sections: items.length ? [{type: 'sharedInformation', items}] : [], items};
+    }
+    return {...result, ...progress};
+  });
+
+async function summarizeSnackChatRange(raw: any, context: functions.https.CallableContext,
+  progress: Record<string, unknown>): Promise<Record<string, any>> {
     const requestId = crypto.randomUUID();
-    const requestStartedAt = Date.now();
+    const paged = raw?.paged === true;
+    const reconcileIds = paged && Array.isArray(raw?.reconcileSourceIds)
+      ? uniqueStrings(raw.reconcileSourceIds) : [];
+    if (reconcileIds.length > 180) throw new functions.https.HttpsError(
+      'resource-exhausted', 'Too many source references to reconcile. Narrow the selection.');
+    const reconciling = reconcileIds.length > 0;
+    const now = Date.now();
+    let snapshotAt = Number(raw?.snapshotAtMillis ?? now);
+    // Older paged clients choose the initial snapshot using the device clock.
+    // Accept small forward skew only before a cursor has been established;
+    // subsequent pages must keep the exact server-confirmed snapshot.
+    if (paged && !raw?.pageCursor && !reconciling &&
+        snapshotAt > now && snapshotAt <= now + 5 * 60000) {
+      snapshotAt = now;
+    }
+    if (paged && (!Number.isSafeInteger(snapshotAt) || snapshotAt > now || snapshotAt < now - 72 * 3600000)) {
+      throw new functions.https.HttpsError('invalid-argument', 'Summary snapshot has expired. Start a new recap.');
+    }
+    const requestStartedAt = paged ? snapshotAt : now;
     const appCheckHeaderPresent = Boolean(
       context.rawRequest.header('X-Firebase-AppCheck'),
     );
@@ -4392,12 +4447,14 @@ export const summarizeSnackChatUnread = functions
     }
     const todayRange = rangeType === 'today' ?
       snackChatTodaySummaryRange(request, requestStartedAt) : null;
-    const requestedFirstUnreadSequence = nonNegativeInteger(
+    let requestedFirstUnreadSequence = nonNegativeInteger(
       request.firstUnreadSequence,
     );
-    const requestedLatestSequence = nonNegativeInteger(request.latestSequence);
+    let requestedLatestSequence = nonNegativeInteger(request.latestSequence);
     const targetLanguage = unreadSummaryLanguage(request.targetLanguage);
-    if (rangeType === 'unread' &&
+    const categories = selectedSummaryCategories(request.categories);
+    const relatedToMe = request.relatedToMe === true;
+    if (!paged && rangeType === 'unread' &&
         (requestedFirstUnreadSequence <= 0 ||
           requestedLatestSequence < requestedFirstUnreadSequence)) {
       throw new functions.https.HttpsError(
@@ -4430,38 +4487,134 @@ export const summarizeSnackChatUnread = functions
       );
     }
 
-    const roomLatestSequence = nonNegativeInteger(
-      room.get('lastMessageSequence'),
-    );
-    const latestSequence = rangeType === 'today' ?
-      Math.min(
-        requestedLatestSequence > 0 ?
-          requestedLatestSequence : roomLatestSequence,
-        roomLatestSequence,
-      ) :
-      Math.min(requestedLatestSequence, roomLatestSequence);
+    const roomLatestSequence = nonNegativeInteger(room.get('lastMessageSequence'));
+    if (paged) {
+      if (!requestedLatestSequence) requestedLatestSequence = roomLatestSequence;
+      if (rangeType === 'unread' && requestedFirstUnreadSequence <= 0) {
+        requestedFirstUnreadSequence = nonNegativeInteger(member.get('lastReadSequence')) + 1;
+      }
+    }
+    const latestSequence = Math.min(requestedLatestSequence || roomLatestSequence, roomLatestSequence);
     const messagesRef = roomRef.collection('messages');
-    const snapshot = rangeType === 'today' ?
-      await messagesRef
-        .where('createdAt', '>=', Timestamp.fromMillis(todayRange!.startMillis))
-        .where('createdAt', '<=', Timestamp.fromMillis(requestStartedAt))
-        .orderBy('createdAt', 'asc')
-        .limit(MAX_UNREAD_SUMMARY_RANGE_MESSAGES + 1)
-        .get() :
-      await messagesRef
-        .where('sequence', '>=', requestedFirstUnreadSequence)
-        .where('sequence', '<=', latestSequence)
-        .orderBy('sequence', 'asc')
-        .limit(MAX_UNREAD_SUMMARY_RANGE_MESSAGES + 1)
-        .get();
-    if (snapshot.size > MAX_UNREAD_SUMMARY_RANGE_MESSAGES) {
-      throw new functions.https.HttpsError(
-        'resource-exhausted',
-        'The requested range is too large to summarize safely.',
-      );
+    let query: FirebaseFirestore.Query = rangeType === 'today'
+      ? messagesRef.where('createdAt', '>=', Timestamp.fromMillis(todayRange!.startMillis))
+        .where('createdAt', '<=', Timestamp.fromMillis(requestStartedAt)).orderBy('createdAt', 'asc')
+      : messagesRef.where('sequence', '>=', requestedFirstUnreadSequence)
+        .where('sequence', '<=', latestSequence).orderBy('sequence', 'asc');
+    let totalCandidateMessageCount: number | null = null;
+    if (paged && !reconciling && !request.pageCursor) {
+      try {
+        totalCandidateMessageCount = (await query.count().get()).data().count;
+      } catch (error) {
+        // Progress metadata is optional. A failed aggregate must never block
+        // the existing recap or alter its selected source messages.
+        console.warn('snack_chat_summary_progress_count_failed', {
+          roomId,
+          rangeType,
+          errorType: error instanceof Error ? error.name : 'unknown',
+        });
+      }
+    }
+    const selectionKey = crypto.createHash('sha256').update(JSON.stringify({
+      userId, roomId, rangeType, latestSequence, requestedFirstUnreadSequence,
+      requestStartedAt: paged ? requestStartedAt : null, categories, relatedToMe, targetLanguage,
+      reconcileIds: [...reconcileIds].sort(),
+      start: todayRange?.startMillis ?? null, periods: member.get('periods') ?? [],
+      joinedAfter: member.get('joinedAfterSequence') ?? 0,
+      blocked: [...blockedByRequester.docs.map(d => stringValue(d.get('blocked'))),
+        ...blockingRequester.docs.map(d => stringValue(d.get('blocker')))].sort(),
+    })).digest('hex');
+    query = query.orderBy(admin.firestore.FieldPath.documentId(), 'asc');
+    if (paged && request.pageCursor) {
+      let cursor: any;
+      try { cursor = JSON.parse(Buffer.from(String(request.pageCursor), 'base64url').toString()); } catch (_) {
+        throw new functions.https.HttpsError('invalid-argument', 'Invalid summary cursor.');
+      }
+      if (cursor.key !== selectionKey) throw new functions.https.HttpsError('failed-precondition', 'Summary access or conditions changed. Restart.');
+      const anchor = await messagesRef.doc(firestoreId(cursor.id, 'Cursor message')).get();
+      if (!anchor.exists) throw new functions.https.HttpsError('failed-precondition', 'Source changed. Restart recap.');
+      query = query.startAfter(rangeType === 'today' ? anchor.get('createdAt') : anchor.get('sequence'), anchor.id);
+    }
+    const pageSize = paged ? 120 : MAX_UNREAD_SUMMARY_RANGE_MESSAGES;
+    const snapshot = reconciling
+      ? {docs: (await db().getAll(...reconcileIds.map(value => messagesRef.doc(firestoreId(value, 'Source id'))))).filter(doc => doc.exists),
+        size: reconcileIds.length}
+      : await query.limit(pageSize + 1).get();
+    if (!paged && snapshot.size > MAX_UNREAD_SUMMARY_RANGE_MESSAGES) {
+      throw new functions.https.HttpsError('resource-exhausted', 'The requested range is too large to summarize safely.');
+    }
+    const pageDocs = snapshot.docs.slice(0, reconciling ? 180 : pageSize);
+    if (reconciling && pageDocs.reduce((sum, doc) => sum + unreadSummarySourceText(doc.data()!).length, 0) > 60000) {
+      throw new functions.https.HttpsError('resource-exhausted', 'Reconciliation source budget exceeded. Narrow the selection.');
+    }
+    if (paged && !reconciling) {
+      let characters = 0;
+      let count = 0;
+      for (const doc of pageDocs) {
+        const size = unreadSummarySourceText(doc.data()!).length;
+        if (count > 0 && characters + size > 40000) break;
+        characters += size; count++;
+      }
+      pageDocs.splice(count);
+    }
+    const hasNextPage = !reconciling && snapshot.size > pageDocs.length;
+    if (paged) {
+      const last = pageDocs[pageDocs.length - 1];
+      progress.paged = true;
+      progress.reconciled = reconciling;
+      progress.snapshotAtMillis = requestStartedAt;
+      progress.snapshotLatestSequence = latestSequence;
+      progress.snapshotFirstUnreadSequence = requestedFirstUnreadSequence;
+      progress.scannedMessageCount = pageDocs.length;
+      if (totalCandidateMessageCount != null) {
+        progress.totalCandidateMessageCount = totalCandidateMessageCount;
+      }
+      progress.hasMore = hasNextPage;
+      progress.pageCursor = hasNextPage && last
+        ? Buffer.from(JSON.stringify({key: selectionKey, id: last.id})).toString('base64url') : null;
+      progress.accessSelectionKey = selectionKey;
+      progress.categories = categories;
+      progress.relatedToMe = relatedToMe;
+      progress.pollObservedAt = new Date(now).toISOString();
     }
 
+    const sourceDocs: FirebaseFirestore.DocumentSnapshot[] = [...pageDocs];
+    if (paged && !reconciling && pageDocs.length) {
+      // Source-based overlap, never previous summary prose. Three messages on
+      // each side preserve immediate reply/correction boundaries within budget.
+      const first = pageDocs[0], last = pageDocs[pageDocs.length - 1];
+      const field = rangeType === 'today' ? 'createdAt' : 'sequence';
+      const beforeQuery = messagesRef.orderBy(field, 'desc').orderBy(admin.firestore.FieldPath.documentId(), 'desc')
+        .startAfter(first.get(field), first.id).limit(3);
+      const afterQuery = messagesRef.orderBy(field, 'asc').orderBy(admin.firestore.FieldPath.documentId(), 'asc')
+        .startAfter(last.get(field), last.id).limit(3);
+      const neighbours = await Promise.all([beforeQuery.get(), afterQuery.get()]);
+      sourceDocs.unshift(...neighbours[0].docs.reverse());
+      sourceDocs.push(...neighbours[1].docs);
+    }
+    if (paged) {
+      const presentIds = new Set(sourceDocs.map(doc => doc.id));
+      const replyIds = uniqueStrings(sourceDocs.map(doc => stringValue(doc.get('replyToMessageId'))))
+        .filter(id => !presentIds.has(id));
+      const replies = replyIds.length ? await db().getAll(...replyIds.slice(0, 24)
+        .map(id => messagesRef.doc(firestoreId(id, 'Reply id')))) : [];
+      let contextCharacters = 0;
+      progress.contextLimited = replyIds.length > 24;
+      for (const doc of replies) {
+        if (!doc.exists) continue;
+        const size = unreadSummarySourceText(doc.data()!).length;
+        if (contextCharacters + size > 8000) { progress.contextLimited = true; continue; }
+        contextCharacters += size; sourceDocs.push(doc);
+      }
+    }
     const memberData = member.data() ?? {};
+    let requesterNameIsUnique = false;
+    if (paged && relatedToMe && requesterName) {
+      const participantIds = uniqueStrings(room.get('participantIds')).slice(0, MAX_ROOM_PARTICIPANTS);
+      const people = await db().getAll(...participantIds.map(id => db().collection(USERS).doc(id)));
+      const matches = people.filter(doc => normalizeSnackSearch(doc.get('nickname') ?? doc.get('displayName') ?? doc.get('name')) === normalizeSnackSearch(requesterName));
+      requesterNameIsUnique = matches.length === 1 && matches[0].id === userId;
+    }
     const blockedUserIds = new Set<string>();
     for (const block of blockedByRequester.docs) {
       const blocked = stringValue(block.get('blocked'));
@@ -4473,8 +4626,8 @@ export const summarizeSnackChatUnread = functions
     }
     const sources: UnreadSummarySource[] = [];
     const requesterResponseContext: UnreadSummarySource[] = [];
-    for (const document of snapshot.docs) {
-      const data = document.data();
+    for (const document of sourceDocs) {
+      const data = document.data()!;
       const sequence = nonNegativeInteger(data.sequence);
       const senderId = stringValue(data.senderId);
       const type = stringValue(data.type).toLowerCase();
@@ -4487,12 +4640,14 @@ export const summarizeSnackChatUnread = functions
         ) :
         sequence < requestedFirstUnreadSequence;
       if (isOutsideRequestedRange ||
-          sequence <= 0 ||
+          (!paged && sequence <= 0) ||
           sequence > latestSequence ||
           !senderId ||
-          type === 'system' ||
+          (type === 'system' && !isSummaryAnnouncement(data)) ||
           data.isDeleted === true ||
-          !sequenceIsInMembership(memberData, sequence)) {
+          (sequence > 0 ? !sequenceIsInMembership(memberData, sequence) :
+            (nonNegativeInteger(memberData.joinedAfterSequence) > 0 &&
+              (!timestampMillis(memberData.joinedAt) || sentAtMillis < timestampMillis(memberData.joinedAt))))) {
         continue;
       }
       const delivered = uniqueStrings(data.deliveryRecipientIds);
@@ -4505,7 +4660,9 @@ export const summarizeSnackChatUnread = functions
       const replyPreview = objectValue(data.replyPreview);
       const replyToMessageId = stringValue(data.replyToMessageId);
       const replyTargetSenderId = stringValue(replyPreview.senderId);
-      const directlyMentionsRequester = Boolean(
+      const explicitMentions = validSnackMentions(stringValue(data.text), data.mentions,
+        uniqueStrings(room.get('participantIds')));
+      const legacyNameMention = Boolean(
         requesterName &&
         (content.includes(`@${requesterName}`) ||
           content.includes(`＠${requesterName}`)),
@@ -4521,17 +4678,38 @@ export const summarizeSnackChatUnread = functions
         content: boundedString(content, 4000),
         replyToMessageId,
         replyTargetSenderId,
-        directlyMentionsRequester,
+        directlyMentionsRequester: explicitMentions.some(m => m.userId === userId),
+        explicitMentionUserIds: explicitMentions.map(m => m.userId),
+        legacyNameMention,
         repliesToRequester: replyTargetSenderId === userId,
       };
-      if (isRequesterMessage && rangeType === 'unread') {
+      if (isRequesterMessage && rangeType === 'unread' && !(paged && relatedToMe)) {
         requesterResponseContext.push(source);
       } else {
         sources.push(source);
       }
     }
 
-    sources.sort((first, second) => first.sequence - second.sequence);
+    if (paged && relatedToMe) {
+      // Legacy reply previews are hints. Re-read their actual targets before
+      // using sender identity as personal-relevance evidence.
+      const replyIds = uniqueStrings(sources.filter(s => s.repliesToRequester)
+        .map(s => s.replyToMessageId)).slice(0, 126);
+      const replies = replyIds.length ? await db().getAll(...replyIds.map(id => messagesRef.doc(firestoreId(id, 'Reply id')))) : [];
+      const verified = new Set(replies.filter(doc => {
+        if (!doc.exists || doc.get('isDeleted') === true || doc.get('senderId') !== userId) return false;
+        const sequence = nonNegativeInteger(doc.get('sequence'));
+        return sequence > 0 && sequenceIsInMembership(memberData, sequence);
+      }).map(doc => doc.id));
+      for (const source of sources) source.repliesToRequester = source.repliesToRequester && verified.has(source.replyToMessageId);
+    }
+    if (paged) progress.analyzedMessageIds = sources.map(source => source.messageId);
+    sources.sort((first, second) => {
+      const bucket = Number(first.sequence > 0) - Number(second.sequence > 0);
+      if (bucket) return bucket;
+      if (first.sequence > 0 && first.sequence !== second.sequence) return first.sequence - second.sequence;
+      return first.sentAt.localeCompare(second.sentAt) || first.messageId.localeCompare(second.messageId);
+    });
     requesterResponseContext.sort(
       (first, second) => first.sequence - second.sequence,
     );
@@ -4593,7 +4771,7 @@ export const summarizeSnackChatUnread = functions
       }
 
       await consumeUnreadSummaryQuota(userId);
-      const perMessageCharacters = Math.max(
+      const perMessageCharacters = paged ? 4000 : Math.max(
         80,
         Math.min(
           1200,
@@ -4609,7 +4787,9 @@ export const summarizeSnackChatUnread = functions
           createdAt: source.sentAt,
           sourceText: boundedString(source.content, perMessageCharacters),
           messageType: source.type,
-          directlyMentionsRequester: source.directlyMentionsRequester,
+          explicitMentionUserIds: source.explicitMentionUserIds ?? [],
+      legacyNameMention: source.legacyNameMention ?? false,
+      directlyMentionsRequester: source.directlyMentionsRequester,
           repliesToRequester: source.repliesToRequester,
           isRequesterMessage: source.senderId === userId,
         }),
@@ -4758,7 +4938,25 @@ export const summarizeSnackChatUnread = functions
       };
     }
 
-    if (!unreadSummaryWorthGenerating(sources, rangeType)) {
+    if (paged && sources.length > 0 && sources.length < 3) {
+      const originalText = (source: UnreadSummarySource) => {
+        const data = sourceDocs.find(doc => doc.id === source.messageId)?.data() ?? {};
+        return stringValue(data.text) || stringValue(objectValue(data.poll).question) ||
+          stringValue(data.originalFileName) ||
+          (targetLanguage === 'ko' ? '첨부 메시지' : targetLanguage === 'zh' ? '附件消息' : 'Attachment');
+      };
+      const items = sources.map(source => ({
+        title: source.sender || '', description: originalText(source), content: originalText(source),
+        sourceMessageIds: [source.messageId], representativeMessageId: source.messageId,
+        sourceSequences: source.sequence > 0 ? [source.sequence] : [], importance: 'general',
+        status: 'information',
+      })).filter((_, index) => !relatedToMe || hasGroundedRequesterRelation(sources[index], userId, requesterName, requesterNameIsUnique));
+      return {success: true, status: items.length ? 'source_only' : 'no_related_content',
+        summarySchemaVersion: 3, summarySource: 'source_only', rangeType, targetLanguage, messageCount: sources.length,
+        items, sections: items.length ? [{type: 'sharedInformation', items}] : [], overview: '',
+        firstUnreadSequence: requestedFirstUnreadSequence, latestSequence};
+    }
+    if (sources.length === 0 || (!paged && !unreadSummaryWorthGenerating(sources, rangeType))) {
       return {
         success: true,
         status: 'not_enough_content',
@@ -4774,10 +4972,10 @@ export const summarizeSnackChatUnread = functions
     const firstUnreadSequence = rangeType === 'unread' ?
       requestedFirstUnreadSequence : firstSequence;
 
-    const rangeHash = unreadSummaryHash(
-      [...sources, ...requesterResponseContext]
-        .sort((first, second) => first.sequence - second.sequence),
-    );
+    const sourceHash = unreadSummaryHash(
+      [...sources, ...requesterResponseContext].sort((first, second) => first.sequence - second.sequence));
+    const rangeHash = categories.length || relatedToMe || paged
+      ? crypto.createHash('sha256').update(sourceHash + ':' + selectionKey).digest('hex') : sourceHash;
     const schemaMetadata = unreadSummarySchemaMetadata();
     const sourceLanguageDistribution =
       unreadSummarySourceLanguageDistribution(sources);
@@ -4803,11 +5001,11 @@ export const summarizeSnackChatUnread = functions
           UNREAD_SUMMARY_PROMPT_VERSION,
           schemaMetadata.fingerprint,
         ].join(':') :
-        [userId, roomId, targetLanguage].join(':'),
+        [userId, roomId, targetLanguage, ...(categories.length || relatedToMe || paged ? [selectionKey, rangeHash] : [])].join(':'),
     );
     const cacheRef = db().collection(UNREAD_SUMMARY_CACHE).doc(cacheId);
-    const criticalFacts = unreadSummaryCriticalFacts(sources);
-    const generationSources = unreadSummaryGenerationSources(sources);
+    const criticalFacts = categories.length || relatedToMe ? [] : unreadSummaryCriticalFacts(sources);
+    const generationSources = categories.length > 0 ? sources : unreadSummaryGenerationSources(sources);
     const generationRequesterResponseContext =
       unreadSummaryGenerationSources(requesterResponseContext);
     const sourceStartedAt = sources.find((source) => source.sentAt)?.sentAt ?? '';
@@ -4856,7 +5054,7 @@ export const summarizeSnackChatUnread = functions
       appCheckEnforcedBlock: false,
       callableReached: true,
       authState: 'valid',
-      durationMs: Date.now() - requestStartedAt,
+      durationMs: Date.now() - now,
       ...details,
     });
     const cacheLookupStartedAt = Date.now();
@@ -4887,8 +5085,8 @@ export const summarizeSnackChatUnread = functions
       const cachedItems = cached.get('items');
       const cachedOverview = stringValue(cached.get('overview'));
       if (Array.isArray(cachedSections) &&
-          Array.isArray(cachedItems) && cachedItems.length > 0 &&
-          cachedOverview) {
+          Array.isArray(cachedItems) && (cachedItems.length > 0 || paged) &&
+          (cachedOverview || paged || relatedToMe)) {
         summaryLog('cache', 'hit', {
           cacheHit: true,
           cacheSource: 'firestore',
@@ -4935,7 +5133,27 @@ export const summarizeSnackChatUnread = functions
       }
     }
 
-    await consumeUnreadSummaryQuota(userId);
+    if (paged) {
+      const lease = await db().runTransaction(async tx => {
+        const current = await tx.get(cacheRef);
+        if (timestampMillis(current.get('generationLeaseUntil')) > Date.now()) return false;
+        tx.set(cacheRef, {generationLeaseUntil: Timestamp.fromMillis(Date.now() + 70000),
+          generationLeaseOwner: requestId}, {merge: true});
+        return true;
+      });
+      if (!lease) return {success: true, status: 'processing', retryAfterMillis: 2000};
+    }
+    try {
+      await consumeUnreadSummaryQuota(userId);
+    } catch (error) {
+      if (paged) await db().runTransaction(async tx => {
+        const current = await tx.get(cacheRef);
+        if (current.get('generationLeaseOwner') === requestId) {
+          tx.update(cacheRef, {generationLeaseUntil: FieldValue.delete(), generationLeaseOwner: FieldValue.delete()});
+        }
+      });
+      throw error;
+    }
 
     const missingSenderIds = Array.from(new Set(sources
       .filter((source) => !source.sender)
@@ -4965,7 +5183,7 @@ export const summarizeSnackChatUnread = functions
       }
     }
 
-    const perMessageCharacters = Math.max(
+    const perMessageCharacters = paged ? 4000 : Math.max(
       80,
       Math.min(
         1200,
@@ -4985,6 +5203,8 @@ export const summarizeSnackChatUnread = functions
       sourceText: boundedString(source.content, perMessageCharacters),
       sourceLanguage: 'und',
       messageType: source.type,
+      explicitMentionUserIds: source.explicitMentionUserIds ?? [],
+      legacyNameMention: source.legacyNameMention ?? false,
       directlyMentionsRequester: source.directlyMentionsRequester,
       repliesToRequester: source.repliesToRequester,
       isRequesterMessage: source.senderId === userId,
@@ -5015,6 +5235,12 @@ export const summarizeSnackChatUnread = functions
     const promptParts = [
       summaryScopeInstruction,
       summaryRoleInstruction,
+      ...(categories.length ? ['Extract these SELECTED CATEGORIES from original records, not a generic recap: ' + categories.join(', ') +
+        '. highlights=key facts; schedule=plans; tasks=actions; decisions=decisions AND host announcements; questions=question+grounded answer pairs; information=materials; people=explicit participation/ownership; casual=memorable light conversation. Do not invent a section with no evidence.'] : []),
+      ...(paged ? ['This is a bounded segment of a frozen conversation. Never claim to cover the entire day. Preserve corrections, cancellations, reply targets and exact source IDs for subsequent source-based reconciliation.'] : []),
+      ...(reconciling ? ['This is FINAL RECONCILIATION across all segments. SOURCE_RECORDS contains authoritative raw evidence, not prior summaries. Combine matching topics, connect explicit answers/corrections/cancellations even when far apart, and use the latest grounded state. Retain explicit uncertainty where competing facts remain unresolved.'] : []),
+      ...(relatedToMe ? ['Only extract facts explicitly related to AUTHENTICATED_REQUESTER: a request or direct question to them, their explicit commitment/attendance, or important direct mention. A name occurrence, authorship, room membership or silence is not an obligation. A legacyNameMention is only a string hint, not an explicit UID mention. Omit uncertain personal relevance.'] : []),
+      'Poll aggregates are observed at ' + new Date(now).toISOString() + '. Distinguish current leader, closed poll result, and a separately stated final decision. Do not expose individual/anonymous ballots.',
       'State the actual question, action, decision, time, date, place, option, change, link, or file. Never say only that a question, request, schedule, location, or shared item exists. The requester should understand the current situation and next steps without reopening the chat.',
       'Forbidden meta wording includes: check the original chat, needs checking, a question/request is included, schedule/location information exists, information was shared, confirmed values, related content was mentioned, 원문에서 확인, 확인이 필요, 질문이나 요청이 포함, 일정 관련 내용, 장소 관련 내용, 공유 정보, 확인 가능한 값.',
       'Resolve competing instructions in this order: factual accuracy; requester actions; changed or confirmed facts; schedules and places; unanswered direct questions; unresolved choices; shared information; general conversation.',
@@ -5024,6 +5250,7 @@ export const summarizeSnackChatUnread = functions
       'Use wire section types with these exact meanings: mustKnow means actionRequired only; responseRequired means a real answer, choice, approval, or attendance confirmation is required; decisionsAndChanges means changed, cancelled, or confirmed decisions; scheduleAndPlace means current schedule/place facts; unresolved means named choices still open; sharedInformation means concrete files, links, polls, or materials; otherConversation means only useful remaining context.',
       'When a meaningful question has a grounded answer later in the range, merge the question and its most relevant answer into one sharedInformation item and cite both. Do not place an already answered question in responseRequired.',
       'Preserve participant commitments, ownership, and attendance only when explicitly stated. Include the responsible or participating names in the best matching action, schedule, decision, or sharedInformation item; never infer participation from silence.',
+      'Selected categories may have no matching facts: return empty sections and empty overview in that case. For casual content selected explicitly, use source-grounded otherConversation items, not only otherConversationSummary. Never fill a requested category with unrelated content.',
       'Return only those section type values, never localized headings. Usually produce one or two sections for 3-5 messages, two to four for 6-15 messages, and only as many as genuinely needed for longer ranges. Use at most three items per section.',
       'Order sections by practical priority: requester actions, replies, changes or cancellations, schedules or confirmed decisions, unresolved choices, shared material, then other conversation. A critical change may come first. Never generate every section by default.',
       'A command or execution request such as organize, clean, send, submit, attend, prepare, or deliver belongs in mustKnow, not responseRequired. A request clearly directed to the requester should read as a concrete next step. When its target is uncertain, state the request without claiming the requester must do it.',
@@ -5099,6 +5326,7 @@ export const summarizeSnackChatUnread = functions
         sources,
         targetLanguage,
         userId,
+        paged || categories.length > 0 || relatedToMe,
       );
 
     let generated: Record<string, unknown> | null = null;
@@ -5231,8 +5459,21 @@ export const summarizeSnackChatUnread = functions
       }
     }
 
+    const selectionScoped = paged || categories.length > 0 || relatedToMe;
     const fallbackUsed = !evaluation?.validation.valid ||
-      !evaluation.overview;
+      (!selectionScoped && !evaluation.overview);
+    if (fallbackUsed && selectionScoped) {
+      // A general fallback is not a valid answer to a selected category query.
+      // Preserve the cursor and let the independent job retry, never invent an
+      // empty successful result or leak unrelated topics into selected results.
+      if (paged) await db().runTransaction(async tx => {
+        const current = await tx.get(cacheRef);
+        if (current.get('generationLeaseOwner') === requestId) tx.update(cacheRef, {
+          generationLeaseUntil: FieldValue.delete(), generationLeaseOwner: FieldValue.delete(),
+        });
+      });
+      throw new functions.https.HttpsError('unavailable', 'Selected recap could not be validated. Retry this segment.');
+    }
     const fallbackValidationFailureCodes =
       evaluation?.validation.failureCodes ?? [];
     const fallbackReason = fallbackUsed ? unreadSummaryFallbackReason(
@@ -5304,12 +5545,18 @@ export const summarizeSnackChatUnread = functions
       });
     }
     const finalEvaluation = evaluation as UnreadSummaryEvaluation;
-    const overview = finalEvaluation.overview;
-    const otherConversationSummary =
+    const overview = relatedToMe ? '' : finalEvaluation.overview;
+    const otherConversationSummary = relatedToMe ? '' :
       finalEvaluation.otherConversationSummary;
-    const summarySections = finalEvaluation.sections;
+    const relatedIds = new Set(sources.filter(source => hasGroundedRequesterRelation(
+      source, userId, requesterName,
+      paged ? requesterNameIsUnique : !sources.some(other => other.senderId !== userId && other.sender === requesterName)))
+      .map(source => source.messageId));
+    const summarySections = relatedToMe ? finalEvaluation.sections.map(section => ({...section,
+      items: section.items.filter(item => item.sourceMessageIds.some(id => relatedIds.has(id))),
+    })).filter(section => section.items.length > 0) : finalEvaluation.sections;
     let summaryItems = unreadSummaryLegacyItems(summarySections);
-    if (summaryItems.length === 0) {
+    if (summaryItems.length === 0 && !selectionScoped) {
       summaryItems = [{
         text: overview,
         sourceSequences: sources.slice(0, 20)
@@ -5409,7 +5656,7 @@ export const summarizeSnackChatUnread = functions
       sections: wireSections,
       items: summaryItems,
     };
-  });
+}
 
 /**
  * Advances the caller's read cursor only through the message sequence that was
@@ -7112,7 +7359,7 @@ export const onSnackChatRoomWrittenSecure = functions
     return null;
   });
 
-function sequenceIsInMembership(data: Data, sequence: number): boolean {
+export function sequenceIsInMembership(data: Data, sequence: number): boolean {
   let periods = periodsFrom(data.periods);
   if (periods.length === 0 &&
       Object.prototype.hasOwnProperty.call(data, 'joinedAfterSequence')) {

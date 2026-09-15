@@ -21,11 +21,13 @@ class SnackChatTodaySummaryRequest {
     required this.categories,
     required this.scope,
     this.question = '',
+    this.relatedToMe = false,
   });
 
   final Set<SnackChatTodaySummaryCategory> categories;
   final SnackChatTodaySummaryScope scope;
   final String question;
+  final bool relatedToMe;
 
   bool get isDirectSearch => question.trim().isNotEmpty;
 }
@@ -74,6 +76,7 @@ class _TodaySummaryPickerSheetState extends State<_TodaySummaryPickerSheet> {
     SnackChatTodaySummaryCategory.highlights,
   };
   SnackChatTodaySummaryScope _scope = SnackChatTodaySummaryScope.today;
+  bool _relatedToMe = false;
 
   bool get _isKo => Localizations.localeOf(context).languageCode == 'ko';
   bool get _isZh => isChineseUi(context);
@@ -169,6 +172,7 @@ class _TodaySummaryPickerSheetState extends State<_TodaySummaryPickerSheet> {
         categories: Set.unmodifiable(_categories),
         scope: _scope,
         question: question,
+        relatedToMe: _relatedToMe,
       ),
     );
   }
@@ -277,6 +281,15 @@ class _TodaySummaryPickerSheetState extends State<_TodaySummaryPickerSheet> {
                     );
                   }).toList(growable: false),
                 ),
+                CheckboxListTile(
+                  value: _relatedToMe,
+                  onChanged: (value) => setState(() => _relatedToMe = value ?? false),
+                  controlAffinity: ListTileControlAffinity.leading,
+                  contentPadding: EdgeInsets.zero,
+                  title: Text(_scopeLabel(SnackChatTodaySummaryScope.relatedToMe),
+                    style: const TextStyle(fontSize: 14)),
+                  activeColor: const Color(0xFF475467),
+                ),
                 const SizedBox(height: 22),
                 Text(
                   _isZh
@@ -290,7 +303,7 @@ class _TodaySummaryPickerSheetState extends State<_TodaySummaryPickerSheet> {
                 Wrap(
                   spacing: 6,
                   runSpacing: 4,
-                  children: SnackChatTodaySummaryScope.values.map((scope) {
+                  children: SnackChatTodaySummaryScope.values.where((scope) => scope != SnackChatTodaySummaryScope.relatedToMe).map((scope) {
                     final disabled =
                         scope == SnackChatTodaySummaryScope.unread &&
                             !widget.hasUnreadMessages;

@@ -11,6 +11,7 @@ import 'package:http/http.dart' as http;
 import 'package:permission_handler/permission_handler.dart' as permissions;
 
 import '../../services/cache/app_image_cache_manager.dart';
+import '../../services/firebase_app_check_service.dart';
 import '../../services/snack_chat_media_cache_service.dart';
 import '../../l10n/ui_locale.dart';
 
@@ -337,6 +338,7 @@ class _FullscreenImageViewerState extends State<FullscreenImageViewer>
         storagePath: storagePath,
       );
       if (cached != null && cached.isNotEmpty) return cached;
+      await FirebaseAppCheckService.instance.ensureReady();
       final bytes = await FirebaseStorage.instance
           .ref(storagePath)
           .getData(_maxImageBytes)
@@ -481,7 +483,11 @@ class _FullscreenImageViewerState extends State<FullscreenImageViewer>
           content: Text(message),
           action: showSettings
               ? SnackBarAction(
-                  label: (isChineseUi(context) ? '设置' : _isKorean ? '설정' : 'Settings'),
+                  label: (isChineseUi(context)
+                      ? '设置'
+                      : _isKorean
+                          ? '설정'
+                          : 'Settings'),
                   onPressed: () {
                     permissions.openAppSettings();
                   },
@@ -521,7 +527,11 @@ class _FullscreenImageViewerState extends State<FullscreenImageViewer>
         throw UnsupportedError('Image saving is supported on Android and iOS.');
       }
       _showSaveMessage(
-        (chineseUiAtStart ? '图片已保存到相册。' : _isKorean ? '사진 앱에 이미지를 저장했습니다.' : 'Image saved to Photos.'),
+        (chineseUiAtStart
+            ? '图片已保存到相册。'
+            : _isKorean
+                ? '사진 앱에 이미지를 저장했습니다.'
+                : 'Image saved to Photos.'),
       );
     } on PlatformException catch (error) {
       permissionDenied = permissionDenied ||
@@ -529,19 +539,25 @@ class _FullscreenImageViewerState extends State<FullscreenImageViewer>
           error.code == 'permission-denied';
       _showSaveMessage(
         permissionDenied
-            ? ((chineseUiAtStart ? '保存图片需要相册权限。' : _isKorean
-                ? '사진 저장 권한이 필요합니다.'
-                : 'Photo permission is required to save this image.'))
-            : ((chineseUiAtStart ? '图片保存失败，请重试。' : _isKorean
-                ? '이미지를 저장하지 못했습니다. 잠시 후 다시 시도해 주세요.'
-                : 'Could not save the image. Please try again.')),
+            ? ((chineseUiAtStart
+                ? '保存图片需要相册权限。'
+                : _isKorean
+                    ? '사진 저장 권한이 필요합니다.'
+                    : 'Photo permission is required to save this image.'))
+            : ((chineseUiAtStart
+                ? '图片保存失败，请重试。'
+                : _isKorean
+                    ? '이미지를 저장하지 못했습니다. 잠시 후 다시 시도해 주세요.'
+                    : 'Could not save the image. Please try again.')),
         showSettings: permissionDenied,
       );
     } catch (_) {
       _showSaveMessage(
-        (chineseUiAtStart ? '图片保存失败，请重试。' : _isKorean
-            ? '이미지를 저장하지 못했습니다. 잠시 후 다시 시도해 주세요.'
-            : 'Could not save the image. Please try again.'),
+        (chineseUiAtStart
+            ? '图片保存失败，请重试。'
+            : _isKorean
+                ? '이미지를 저장하지 못했습니다. 잠시 후 다시 시도해 주세요.'
+                : 'Could not save the image. Please try again.'),
       );
     } finally {
       if (mounted) setState(() => _isSaving = false);
@@ -602,7 +618,11 @@ class _FullscreenImageViewerState extends State<FullscreenImageViewer>
         return Center(
           child: IconButton(
             onPressed: () => _retryStorageImage(index),
-            tooltip: (isChineseUi(context) ? '重新加载图片' : _isKorean ? '이미지 다시 불러오기' : 'Retry image'),
+            tooltip: (isChineseUi(context)
+                ? '重新加载图片'
+                : _isKorean
+                    ? '이미지 다시 불러오기'
+                    : 'Retry image'),
             color: Colors.white70,
             iconSize: 32,
             icon: const Icon(Icons.refresh_rounded),
@@ -733,7 +753,11 @@ class _FullscreenImageViewerState extends State<FullscreenImageViewer>
                 top: false,
                 child: Semantics(
                   button: true,
-                  label: (isChineseUi(context) ? '保存图片' : _isKorean ? '이미지 저장' : 'Save image'),
+                  label: (isChineseUi(context)
+                      ? '保存图片'
+                      : _isKorean
+                          ? '이미지 저장'
+                          : 'Save image'),
                   child: Container(
                     decoration: BoxDecoration(
                       color: Colors.black54,
@@ -741,7 +765,11 @@ class _FullscreenImageViewerState extends State<FullscreenImageViewer>
                     ),
                     child: IconButton(
                       onPressed: _isSaving ? null : _saveCurrentImage,
-                      tooltip: (isChineseUi(context) ? '保存图片' : _isKorean ? '이미지 저장' : 'Save image'),
+                      tooltip: (isChineseUi(context)
+                          ? '保存图片'
+                          : _isKorean
+                              ? '이미지 저장'
+                              : 'Save image'),
                       icon: _isSaving
                           ? const SizedBox(
                               width: 20,

@@ -4,6 +4,8 @@ import 'package:hive/hive.dart';
 
 import '../models/snack_chat.dart';
 import '../models/snack_chat_message.dart';
+import 'snack_chat_discovery_cache_service.dart';
+import '../utils/snack_chat_mentions.dart';
 import '../utils/logger.dart';
 
 /// Small, account-scoped snapshot used only to position the first frame of a
@@ -44,7 +46,9 @@ class SnackChatLocalCacheService {
   SnackChatLocalCacheService._();
 
   static const String _boxName = 'snack_chat_state_v1';
-  static const int _maxMessagesPerRoom = 400;
+  // Keep previously loaded history available offline. This is metadata/text,
+  // while large media bytes remain in their separate bounded disk cache.
+  static const int _maxMessagesPerRoom = 2000;
   static const int _maxMemoryRooms = 8;
 
   final FirebaseAuth _auth = FirebaseAuth.instance;
@@ -407,6 +411,7 @@ class SnackChatLocalCacheService {
         '$base::room',
         '$base::entry',
       ]);
+      await SnackChatDiscoveryCacheService.instance.clearRoom(roomId);
     } catch (error) {
       Logger.error('SnackChatLocalCacheService: room clear failed: $error');
     }
@@ -491,6 +496,8 @@ class SnackChatLocalCacheService {
         return MessageSendStatus.sending;
       case 'failed':
         return MessageSendStatus.failed;
+      case 'uncertain':
+        return MessageSendStatus.uncertain;
       default:
         return MessageSendStatus.sent;
     }
@@ -570,7 +577,10 @@ class SnackChatLocalCacheService {
           'totalVoters': poll.totalVoters,
         },
       'reactionCounts': message.reactionCounts,
-      'sendStatus': message.sendStatus.name,
+      if (message.mentions.isNotEmpty)
+        'mentions': message.mentions.map((m) => m.toMap()).toList(),
+      'sendStatus': message.isUncertain ? 'sending' : message.sendStatus.name,
+      if (message.isUncertain) 'deliveryUncertain': true,
       if (message.localImagePath != null)
         'localImagePath': message.localImagePath,
       if (message.localFilePath != null) 'localFilePath': message.localFilePath,
@@ -674,7 +684,11 @@ class SnackChatLocalCacheService {
         linkPreviewRemoved: map['linkPreviewRemoved'] == true,
         poll: poll,
         reactionCounts: _intMap(map['reactionCounts']),
-        sendStatus: _decodeStatus(map['sendStatus']),
+        mentions: SnackChatMention.parse(
+            map['mentions'], (map['text'] ?? '').toString()),
+        sendStatus: map['deliveryUncertain'] == true
+            ? MessageSendStatus.uncertain
+            : _decodeStatus(map['sendStatus']),
         localImagePath: (map['localImagePath'] ?? '').toString().trim().isEmpty
             ? null
             : map['localImagePath'].toString(),

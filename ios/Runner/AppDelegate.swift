@@ -5,11 +5,63 @@ import Photos
 import UIKit
 import UserNotifications
 
+private enum OrganizationInviteLinkStore {
+  static var pendingURL: String?
+  static let notificationName = Notification.Name(
+    "com.wefilling.app.organizationInviteReceived"
+  )
+
+  static func capture(_ url: URL) -> Bool {
+    guard url.scheme == "wefilling",
+          url.host == "organization-invite",
+          let components = URLComponents(url: url, resolvingAgainstBaseURL: false),
+          components.queryItems?.contains(where: {
+            $0.name == "token" && !($0.value ?? "").isEmpty
+          }) == true else {
+      return false
+    }
+    pendingURL = url.absoluteString
+    NotificationCenter.default.post(name: notificationName, object: nil)
+    return true
+  }
+}
+
+@objc(OrganizationInviteSceneDelegate)
+class OrganizationInviteSceneDelegate: FlutterSceneDelegate {
+  override func scene(
+    _ scene: UIScene,
+    willConnectTo session: UISceneSession,
+    options connectionOptions: UIScene.ConnectionOptions
+  ) {
+    if let url = connectionOptions.urlContexts.first?.url {
+      _ = OrganizationInviteLinkStore.capture(url)
+    }
+    super.scene(
+      scene,
+      willConnectTo: session,
+      options: connectionOptions
+    )
+  }
+
+  override func scene(
+    _ scene: UIScene,
+    openURLContexts URLContexts: Set<UIOpenURLContext>
+  ) {
+    if let url = URLContexts.first?.url,
+       OrganizationInviteLinkStore.capture(url) {
+      return
+    }
+    super.scene(scene, openURLContexts: URLContexts)
+  }
+}
+
 @main
 @objc class AppDelegate: FlutterAppDelegate, FlutterImplicitEngineDelegate {
   private var mediaSaverChannel: FlutterMethodChannel?
   private var externalShareChannel: FlutterMethodChannel?
   private var sharedFirebaseAuthChannel: FlutterMethodChannel?
+  private var organizationInviteChannel: FlutterMethodChannel?
+  private var organizationInviteObserver: NSObjectProtocol?
   private var isSavingMedia = false
   private let externalShareStore = ExternalShareStore()
   private var externalShareBridgeReady = false
@@ -27,6 +79,9 @@ import UserNotifications
       "bundleId=\(Bundle.main.bundleIdentifier ?? "unknown") appGroup=\(ExternalShareStore.appGroupIdentifier) launch=start"
     )
     externalShareStore.migrateLegacyDefaultsIfNeeded()
+    if let invitationURL = launchOptions?[.url] as? URL {
+      _ = OrganizationInviteLinkStore.capture(invitationURL)
+    }
 
     // 중요: iOS 앱 시작 시점에는 APNs 등록을 즉시 호출하지 않는다.
     // 푸시 활성화는 Flutter 레이어의 상태 머신(locale/session/active/권한) 이후에 진행한다.
@@ -56,6 +111,30 @@ import UserNotifications
       self?.enableSharedFirebaseAuth(result: result)
     }
     sharedFirebaseAuthChannel = authChannel
+
+    let inviteChannel = FlutterMethodChannel(
+      name: "com.wefilling.app/organization_invite",
+      binaryMessenger: engineBridge.applicationRegistrar.messenger()
+    )
+    inviteChannel.setMethodCallHandler { call, result in
+      switch call.method {
+      case "getPendingLink":
+        result(OrganizationInviteLinkStore.pendingURL)
+      case "consumeLink":
+        OrganizationInviteLinkStore.pendingURL = nil
+        result(nil)
+      default:
+        result(FlutterMethodNotImplemented)
+      }
+    }
+    organizationInviteChannel = inviteChannel
+    organizationInviteObserver = NotificationCenter.default.addObserver(
+      forName: OrganizationInviteLinkStore.notificationName,
+      object: nil,
+      queue: .main
+    ) { [weak inviteChannel] _ in
+      inviteChannel?.invokeMethod("inviteReceived", arguments: nil)
+    }
 
     let channel = FlutterMethodChannel(
       name: "com.wefilling.app/media_saver",
@@ -177,6 +256,17 @@ import UserNotifications
     }
     externalShareChannel = shareChannel
     Self.externalShareLog("method-channel=created bridge-ready=false")
+  }
+
+  override func application(
+    _ app: UIApplication,
+    open url: URL,
+    options: [UIApplication.OpenURLOptionsKey: Any] = [:]
+  ) -> Bool {
+    if OrganizationInviteLinkStore.capture(url) {
+      return true
+    }
+    return super.application(app, open: url, options: options)
   }
 
   private func enableSharedFirebaseAuth(result: @escaping FlutterResult) {

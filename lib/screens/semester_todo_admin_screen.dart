@@ -1,4 +1,8 @@
+import 'dart:io';
+
+import 'package:cached_network_image/cached_network_image.dart';
 import 'package:flutter/material.dart';
+import 'package:image_picker/image_picker.dart';
 import 'package:provider/provider.dart';
 
 import '../constants/app_constants.dart';
@@ -7,6 +11,14 @@ import '../models/student_type.dart';
 import '../providers/auth_provider.dart';
 import '../services/semester_todo_service.dart';
 import '../l10n/ui_locale.dart';
+
+String? _adminHttpUrl(String? raw) {
+  final value = raw?.trim() ?? '';
+  final uri = Uri.tryParse(value);
+  return uri != null && (uri.scheme == 'https' || uri.scheme == 'http')
+      ? value
+      : null;
+}
 
 class SemesterTodoAdminScreen extends StatefulWidget {
   const SemesterTodoAdminScreen({super.key});
@@ -37,7 +49,11 @@ class _SemesterTodoAdminScreenState extends State<SemesterTodoAdminScreen> {
         elevation: 0,
         scrolledUnderElevation: 0,
         title: Text(
-          (isChineseUi(context) ? '学期待办管理' : _isKorean ? '학기 To-do 관리' : 'Semester To-do admin'),
+          (isChineseUi(context)
+              ? '学期待办管理'
+              : _isKorean
+                  ? '학기 To-do 관리'
+                  : 'Semester To-do admin'),
           style: TextStyle(
             fontFamily: uiFontFamily(context, 'Inter'),
             fontFamilyFallback: const ['NotoSansKR'],
@@ -76,9 +92,11 @@ class _SemesterTodoAdminScreenState extends State<SemesterTodoAdminScreen> {
                   final semesters = snapshot.data ?? const <Semester>[];
                   if (semesters.isEmpty) {
                     return Center(
-                      child: Text((isChineseUi(context) ? '创建第一个学期。' : _isKorean
-                          ? '학기를 생성해 주세요.'
-                          : 'Create your first semester.')),
+                      child: Text((isChineseUi(context)
+                          ? '创建第一个学期。'
+                          : _isKorean
+                              ? '학기를 생성해 주세요.'
+                              : 'Create your first semester.')),
                     );
                   }
                   return ListView.separated(
@@ -91,7 +109,9 @@ class _SemesterTodoAdminScreenState extends State<SemesterTodoAdminScreen> {
                       return ListTile(
                         contentPadding: const EdgeInsets.symmetric(vertical: 8),
                         title: Text(
-                          semester.title.resolve(_isKorean ? 'ko' : 'en'),
+                          semester.title.resolve(
+                            Localizations.localeOf(context).languageCode,
+                          ),
                           style: TextStyle(
                             fontFamily: uiFontFamily(context, 'Inter'),
                             fontFamilyFallback: const ['NotoSansKR'],
@@ -120,10 +140,18 @@ class _SemesterTodoAdminScreenState extends State<SemesterTodoAdminScreen> {
                           itemBuilder: (_) => [
                             PopupMenuItem(
                                 value: 'edit',
-                                child: Text((isChineseUi(context) ? '编辑' : _isKorean ? '수정' : 'Edit'))),
+                                child: Text((isChineseUi(context)
+                                    ? '编辑'
+                                    : _isKorean
+                                        ? '수정'
+                                        : 'Edit'))),
                             PopupMenuItem(
                                 value: 'clone',
-                                child: Text((isChineseUi(context) ? '复制' : _isKorean ? '복제' : 'Clone'))),
+                                child: Text((isChineseUi(context)
+                                    ? '复制'
+                                    : _isKorean
+                                        ? '복제'
+                                        : 'Clone'))),
                           ],
                         ),
                       );
@@ -138,6 +166,7 @@ class _SemesterTodoAdminScreenState extends State<SemesterTodoAdminScreen> {
   Future<void> _editSemester([Semester? existing]) async {
     final ko = TextEditingController(text: existing?.title.ko);
     final en = TextEditingController(text: existing?.title.en);
+    final zh = TextEditingController(text: existing?.title.zh);
     final weeks = TextEditingController(
       text: (existing?.totalWeeks ?? 16).toString(),
     );
@@ -176,6 +205,10 @@ class _SemesterTodoAdminScreenState extends State<SemesterTodoAdminScreen> {
                     controller: en,
                     decoration: const InputDecoration(
                         labelText: 'English semester name')),
+                TextField(
+                    controller: zh,
+                    decoration:
+                        const InputDecoration(labelText: '简体中文学期名称')),
                 TextField(
                     controller: weeks,
                     keyboardType: TextInputType.number,
@@ -255,7 +288,11 @@ class _SemesterTodoAdminScreenState extends State<SemesterTodoAdminScreen> {
       final totalWeeks = int.tryParse(weeks.text) ?? 16;
       final id = await _service.saveSemester(
         id: existing?.id,
-        title: LocalizedTodoText(ko: ko.text.trim(), en: en.text.trim()),
+        title: LocalizedTodoText(
+          ko: ko.text.trim(),
+          en: en.text.trim(),
+          zh: zh.text.trim(),
+        ),
         startDate: start,
         endDate: end,
         totalWeeks: totalWeeks,
@@ -273,6 +310,7 @@ class _SemesterTodoAdminScreenState extends State<SemesterTodoAdminScreen> {
     }
     ko.dispose();
     en.dispose();
+    zh.dispose();
     weeks.dispose();
     override.dispose();
   }
@@ -280,6 +318,11 @@ class _SemesterTodoAdminScreenState extends State<SemesterTodoAdminScreen> {
   Future<void> _cloneSemester(Semester source) async {
     final ko = TextEditingController(text: '${source.title.ko} 복사본');
     final en = TextEditingController(text: '${source.title.en} copy');
+    final zh = TextEditingController(
+      text: source.title.zh == null || source.title.zh!.isEmpty
+          ? ''
+          : '${source.title.zh} 副本',
+    );
     var start = DateTime(source.startDate.year + 1, source.startDate.month,
         source.startDate.day);
     var includeExchange = true;
@@ -308,6 +351,10 @@ class _SemesterTodoAdminScreenState extends State<SemesterTodoAdminScreen> {
                   controller: en,
                   decoration: const InputDecoration(
                       labelText: 'English semester name')),
+              TextField(
+                  controller: zh,
+                  decoration:
+                      const InputDecoration(labelText: '简体中文学期名称')),
               ListTile(
                   contentPadding: EdgeInsets.zero,
                   title: const Text('새 시작일'),
@@ -353,7 +400,11 @@ class _SemesterTodoAdminScreenState extends State<SemesterTodoAdminScreen> {
     if (accepted == true) {
       await _service.cloneSemester(
         source: source,
-        title: LocalizedTodoText(ko: ko.text.trim(), en: en.text.trim()),
+        title: LocalizedTodoText(
+          ko: ko.text.trim(),
+          en: en.text.trim(),
+          zh: zh.text.trim(),
+        ),
         startDate: start,
         endDate: start.add(Duration(days: source.totalWeeks * 7 - 1)),
         includeExchange: includeExchange,
@@ -364,6 +415,7 @@ class _SemesterTodoAdminScreenState extends State<SemesterTodoAdminScreen> {
     }
     ko.dispose();
     en.dispose();
+    zh.dispose();
   }
 }
 
@@ -445,12 +497,25 @@ class SemesterTasksAdminScreen extends StatefulWidget {
 
 class _SemesterTasksAdminScreenState extends State<SemesterTasksAdminScreen> {
   final _service = SemesterTodoService.instance;
+  final _imagePicker = ImagePicker();
   late Future<List<SemesterTodo>> _future =
       _service.getAdminTasks(widget.semester.id, widget.week);
   String _filter = 'all';
 
   void _refresh() => setState(
       () => _future = _service.getAdminTasks(widget.semester.id, widget.week));
+
+  String _typeLabel(SemesterTodoType type) => switch (type) {
+        SemesterTodoType.required => '체크할 일',
+        SemesterTodoType.recommendation => '참고 안내 · 광고',
+        SemesterTodoType.notice => '참고 안내 · 정보',
+      };
+
+  String _actionTypeLabel(SemesterTodoActionType type) => switch (type) {
+        SemesterTodoActionType.none => '연결 없음',
+        SemesterTodoActionType.externalUrl => '외부 URL',
+        SemesterTodoActionType.internalRoute => '앱 내부 화면',
+      };
 
   @override
   Widget build(BuildContext context) => Scaffold(
@@ -491,9 +556,8 @@ class _SemesterTasksAdminScreenState extends State<SemesterTasksAdminScreen> {
               if (_filter == 'all') return true;
               return task.targetAudiences.contains(_filter);
             }).toList();
-            int count(String type) => all
-                .where((task) => task.targetAudiences.contains(type))
-                .length;
+            int count(String type) =>
+                all.where((task) => task.targetAudiences.contains(type)).length;
             return Column(
               children: [
                 Padding(
@@ -510,7 +574,8 @@ class _SemesterTasksAdminScreenState extends State<SemesterTasksAdminScreen> {
                         child: SegmentedButton<String>(
                           segments: const [
                             ButtonSegment(value: 'all', label: Text('전체')),
-                            ButtonSegment(value: 'exchange', label: Text('외국인')),
+                            ButtonSegment(
+                                value: 'exchange', label: Text('외국인')),
                             ButtonSegment(value: 'korean', label: Text('한국')),
                           ],
                           selected: {_filter},
@@ -528,11 +593,27 @@ class _SemesterTasksAdminScreenState extends State<SemesterTasksAdminScreen> {
                     separatorBuilder: (_, __) => const Divider(height: 1),
                     itemBuilder: (context, index) {
                       final task = visible[index];
+                      final imageUrl = _adminHttpUrl(task.imageUrl);
                       return ListTile(
                         enabled: task.isActive,
+                        leading: imageUrl == null
+                            ? Icon(task.type == SemesterTodoType.required
+                                ? Icons.check_circle_outline_rounded
+                                : Icons.campaign_outlined)
+                            : ClipRRect(
+                                borderRadius: BorderRadius.circular(7),
+                                child: CachedNetworkImage(
+                                  imageUrl: imageUrl,
+                                  width: 44,
+                                  height: 44,
+                                  fit: BoxFit.cover,
+                                  errorWidget: (_, __, ___) => const Icon(
+                                      Icons.image_not_supported_outlined),
+                                ),
+                              ),
                         title: Text(task.title.ko),
                         subtitle: Text(
-                            '${task.type.value} · ${task.targetAudiences.join(', ')} · 순서 ${task.order}'),
+                            '${_typeLabel(task.type)} · ${task.targetAudiences.join(', ')} · 순서 ${task.order}'),
                         onTap: () => _editTask(task),
                         trailing: Icon(task.isActive
                             ? Icons.chevron_right_rounded
@@ -583,14 +664,24 @@ class _SemesterTasksAdminScreenState extends State<SemesterTasksAdminScreen> {
                   separatorBuilder: (_, __) => const Divider(height: 1),
                   itemBuilder: (_, index) {
                     final task = tasks[index];
+                    final imageUrl = _adminHttpUrl(task.imageUrl);
                     return ListTile(
                       contentPadding: EdgeInsets.zero,
-                      leading: Icon(
-                        task.type == SemesterTodoType.recommendation
-                            ? Icons.auto_awesome_outlined
-                            : Icons.circle_outlined,
-                        color: AppColors.pointColor,
-                      ),
+                      leading: imageUrl == null
+                          ? Icon(
+                              task.type == SemesterTodoType.recommendation
+                                  ? Icons.campaign_outlined
+                                  : Icons.circle_outlined,
+                              color: AppColors.pointColor,
+                            )
+                          : ClipRRect(
+                              borderRadius: BorderRadius.circular(7),
+                              child: CachedNetworkImage(
+                                  imageUrl: imageUrl,
+                                  width: 44,
+                                  height: 44,
+                                  fit: BoxFit.cover),
+                            ),
                       title: Text(task.title.resolve(languageCode)),
                       subtitle: task.description.resolve(languageCode).isEmpty
                           ? null
@@ -608,11 +699,14 @@ class _SemesterTasksAdminScreenState extends State<SemesterTasksAdminScreen> {
   Future<void> _editTask([SemesterTodo? existing]) async {
     final titleKo = TextEditingController(text: existing?.title.ko);
     final titleEn = TextEditingController(text: existing?.title.en);
+    final titleZh = TextEditingController(text: existing?.title.zh);
     final descKo = TextEditingController(text: existing?.description.ko);
     final descEn = TextEditingController(text: existing?.description.en);
+    final descZh = TextEditingController(text: existing?.description.zh);
     final order =
         TextEditingController(text: (existing?.order ?? 0).toString());
     final action = TextEditingController(text: existing?.actionValue);
+    final imageUrl = TextEditingController(text: existing?.imageUrl);
     var type = existing?.type ?? SemesterTodoType.required;
     var actionType = existing?.actionType ?? SemesterTodoActionType.none;
     var audience = existing?.targetAudiences.contains('korean') == true
@@ -621,6 +715,8 @@ class _SemesterTasksAdminScreenState extends State<SemesterTasksAdminScreen> {
     var active = existing?.isActive ?? true;
     var carryOver = existing?.carryOver ?? type == SemesterTodoType.required;
     var dueDate = existing?.dueAt;
+    XFile? selectedImage;
+    var saving = false;
     final accepted = await showModalBottomSheet<bool>(
       context: context,
       isScrollControlled: true,
@@ -628,158 +724,322 @@ class _SemesterTasksAdminScreenState extends State<SemesterTasksAdminScreen> {
       showDragHandle: true,
       backgroundColor: Colors.white,
       builder: (sheetContext) => StatefulBuilder(
-        builder: (context, setSheetState) => Padding(
-          padding: EdgeInsets.fromLTRB(
-              20, 0, 20, MediaQuery.viewInsetsOf(context).bottom + 20),
-          child: SingleChildScrollView(
-            child: Column(
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                Align(
-                    alignment: Alignment.centerLeft,
-                    child: Text(existing == null ? '항목 추가' : '항목 수정',
-                        style: const TextStyle(
-                            fontSize: 20, fontWeight: FontWeight.w800))),
-                TextField(
-                    controller: titleKo,
-                    decoration: const InputDecoration(labelText: '한국어 제목')),
-                TextField(
-                    controller: titleEn,
-                    decoration:
-                        const InputDecoration(labelText: 'English title')),
-                TextField(
-                    controller: descKo,
-                    maxLines: 2,
-                    decoration: const InputDecoration(labelText: '한국어 설명')),
-                TextField(
-                    controller: descEn,
-                    maxLines: 2,
-                    decoration: const InputDecoration(
-                        labelText: 'English description')),
-                DropdownButtonFormField<SemesterTodoType>(
-                    initialValue: type,
-                    decoration: const InputDecoration(labelText: '유형'),
-                    items: SemesterTodoType.values
-                        .map((value) => DropdownMenuItem(
-                            value: value, child: Text(value.value)))
-                        .toList(),
-                    onChanged: (value) =>
-                        setSheetState(() => type = value ?? type)),
-                DropdownButtonFormField<StudentType>(
-                    initialValue: audience,
-                    decoration: const InputDecoration(labelText: '노출 대상'),
-                    items: const [
-                      DropdownMenuItem(
-                          value: StudentType.exchange,
-                          child: Text('외국인 학생')),
-                      DropdownMenuItem(
-                          value: StudentType.korean,
-                          child: Text('한국인 학생')),
-                    ],
-                    onChanged: existing == null
-                        ? (value) => setSheetState(
-                            () => audience = value ?? audience)
-                        : null),
-                CheckboxListTile(
-                    contentPadding: EdgeInsets.zero,
-                    value: carryOver,
-                    title: const Text('미완료 시 다음 주 이월'),
-                    onChanged: (value) =>
-                        setSheetState(() => carryOver = value == true)),
-                SwitchListTile(
-                    contentPadding: EdgeInsets.zero,
-                    value: active,
-                    title: const Text('활성 상태'),
-                    onChanged: (value) => setSheetState(() => active = value)),
-                TextField(
-                    controller: order,
-                    keyboardType: TextInputType.number,
-                    decoration: const InputDecoration(labelText: '정렬 순서')),
-                ListTile(
-                  contentPadding: EdgeInsets.zero,
-                  title: const Text('마감일 (선택)'),
-                  subtitle: Text(
-                    dueDate == null
-                        ? '설정 안 함'
-                        : '${dueDate!.year}.${dueDate!.month}.${dueDate!.day}',
-                  ),
-                  trailing: dueDate == null
-                      ? const Icon(Icons.calendar_today_outlined)
-                      : IconButton(
-                          onPressed: () => setSheetState(() => dueDate = null),
-                          icon: const Icon(Icons.close_rounded),
-                        ),
-                  onTap: () async {
-                    final value = await showDatePicker(
-                      context: context,
-                      initialDate: dueDate ?? widget.week.endDate,
-                      firstDate: widget.week.startDate,
-                      lastDate: widget.semester.endDate,
-                    );
-                    if (value != null) {
-                      setSheetState(() => dueDate = value);
-                    }
-                  },
-                ),
-                DropdownButtonFormField<SemesterTodoActionType>(
-                    initialValue: actionType,
-                    decoration: const InputDecoration(labelText: '연결 방식'),
-                    items: SemesterTodoActionType.values
-                        .map((value) => DropdownMenuItem(
-                            value: value, child: Text(value.value)))
-                        .toList(),
-                    onChanged: (value) =>
-                        setSheetState(() => actionType = value ?? actionType)),
-                if (actionType != SemesterTodoActionType.none)
+        builder: (context, setSheetState) {
+          final remoteImageUrl = _adminHttpUrl(imageUrl.text);
+          void showError(String message) {
+            ScaffoldMessenger.of(sheetContext)
+              ..hideCurrentSnackBar()
+              ..showSnackBar(SnackBar(content: Text(message)));
+          }
+
+          return Padding(
+            padding: EdgeInsets.fromLTRB(
+                20, 0, 20, MediaQuery.viewInsetsOf(context).bottom + 20),
+            child: SingleChildScrollView(
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Align(
+                      alignment: Alignment.centerLeft,
+                      child: Text(existing == null ? '항목 추가' : '항목 수정',
+                          style: const TextStyle(
+                              fontSize: 20, fontWeight: FontWeight.w800))),
                   TextField(
-                      controller: action,
+                      controller: titleKo,
+                      decoration: const InputDecoration(labelText: '한국어 제목')),
+                  TextField(
+                      controller: titleEn,
                       decoration:
-                          const InputDecoration(labelText: '외부 URL 또는 내부 경로')),
-                const SizedBox(height: 18),
-                SizedBox(
-                    width: double.infinity,
-                    child: ElevatedButton(
-                        onPressed: () {
-                          if (titleKo.text.trim().isEmpty &&
-                              titleEn.text.trim().isEmpty) {
-                            ScaffoldMessenger.of(sheetContext).showSnackBar(
-                                const SnackBar(content: Text('제목을 입력해 주세요.')));
-                            return;
-                          }
-                          Navigator.pop(sheetContext, true);
-                        },
-                        child: const Text('저장'))),
-              ],
+                          const InputDecoration(labelText: 'English title')),
+                  TextField(
+                      controller: titleZh,
+                      decoration: const InputDecoration(labelText: '简体中文标题')),
+                  TextField(
+                      controller: descKo,
+                      minLines: 2,
+                      maxLines: 5,
+                      decoration: const InputDecoration(
+                          labelText: '한국어 설명',
+                          helperText:
+                              '설명에 입력한 http/https 주소는 사용자 화면에서 열 수 있습니다.')),
+                  TextField(
+                      controller: descEn,
+                      minLines: 2,
+                      maxLines: 5,
+                      decoration: const InputDecoration(
+                          labelText: 'English description')),
+                  TextField(
+                      controller: descZh,
+                      minLines: 2,
+                      maxLines: 5,
+                      decoration: const InputDecoration(labelText: '简体中文说明')),
+                  DropdownButtonFormField<SemesterTodoType>(
+                      initialValue: type,
+                      decoration: const InputDecoration(labelText: '유형'),
+                      items: SemesterTodoType.values
+                          .map((value) => DropdownMenuItem(
+                              value: value, child: Text(_typeLabel(value))))
+                          .toList(),
+                      onChanged: (value) =>
+                          setSheetState(() => type = value ?? type)),
+                  DropdownButtonFormField<StudentType>(
+                      initialValue: audience,
+                      decoration: const InputDecoration(labelText: '노출 대상'),
+                      items: const [
+                        DropdownMenuItem(
+                            value: StudentType.exchange, child: Text('외국인 학생')),
+                        DropdownMenuItem(
+                            value: StudentType.korean, child: Text('한국인 학생')),
+                      ],
+                      onChanged: existing == null
+                          ? (value) =>
+                              setSheetState(() => audience = value ?? audience)
+                          : null),
+                  CheckboxListTile(
+                      contentPadding: EdgeInsets.zero,
+                      value: carryOver,
+                      title: const Text('미완료 시 다음 주 이월'),
+                      onChanged: (value) =>
+                          setSheetState(() => carryOver = value == true)),
+                  SwitchListTile(
+                      contentPadding: EdgeInsets.zero,
+                      value: active,
+                      title: const Text('활성 상태'),
+                      onChanged: (value) =>
+                          setSheetState(() => active = value)),
+                  TextField(
+                      controller: order,
+                      keyboardType: TextInputType.number,
+                      decoration: const InputDecoration(labelText: '정렬 순서')),
+                  const SizedBox(height: 14),
+                  Text('대표 이미지 (선택)',
+                      style: Theme.of(context).textTheme.titleSmall?.copyWith(
+                          fontWeight: FontWeight.w700,
+                          color: const Color(0xFF111827))),
+                  const SizedBox(height: 8),
+                  if (selectedImage != null || remoteImageUrl != null)
+                    ClipRRect(
+                      borderRadius: BorderRadius.circular(10),
+                      child: AspectRatio(
+                        aspectRatio: 16 / 9,
+                        child: selectedImage != null
+                            ? Image.file(File(selectedImage!.path),
+                                fit: BoxFit.cover)
+                            : CachedNetworkImage(
+                                imageUrl: remoteImageUrl!,
+                                fit: BoxFit.cover,
+                                errorWidget: (_, __, ___) => const ColoredBox(
+                                  color: Color(0xFFF8FAFC),
+                                  child: Center(
+                                    child: Icon(
+                                        Icons.image_not_supported_outlined),
+                                  ),
+                                ),
+                              ),
+                      ),
+                    ),
+                  Wrap(spacing: 8, children: [
+                    TextButton.icon(
+                      onPressed: saving
+                          ? null
+                          : () async {
+                              final picked = await _imagePicker.pickImage(
+                                source: ImageSource.gallery,
+                                maxWidth: 1600,
+                                maxHeight: 1600,
+                                imageQuality: 85,
+                              );
+                              if (picked != null) {
+                                setSheetState(() => selectedImage = picked);
+                              }
+                            },
+                      icon: const Icon(Icons.add_photo_alternate_outlined,
+                          size: 19),
+                      label: const Text('갤러리에서 선택'),
+                    ),
+                    if (selectedImage != null ||
+                        imageUrl.text.trim().isNotEmpty)
+                      TextButton(
+                        onPressed: saving
+                            ? null
+                            : () => setSheetState(() {
+                                  selectedImage = null;
+                                  imageUrl.clear();
+                                }),
+                        child: const Text('이미지 제거'),
+                      ),
+                  ]),
+                  TextField(
+                    controller: imageUrl,
+                    enabled: !saving,
+                    keyboardType: TextInputType.url,
+                    onChanged: (_) => setSheetState(() {}),
+                    decoration: const InputDecoration(
+                      labelText: '이미지 URL 직접 입력 (선택)',
+                      hintText: 'https://...',
+                    ),
+                  ),
+                  ListTile(
+                    contentPadding: EdgeInsets.zero,
+                    title: const Text('마감일 (선택)'),
+                    subtitle: Text(
+                      dueDate == null
+                          ? '설정 안 함'
+                          : '${dueDate!.year}.${dueDate!.month}.${dueDate!.day}',
+                    ),
+                    trailing: dueDate == null
+                        ? const Icon(Icons.calendar_today_outlined)
+                        : IconButton(
+                            onPressed: () =>
+                                setSheetState(() => dueDate = null),
+                            icon: const Icon(Icons.close_rounded),
+                          ),
+                    onTap: () async {
+                      final value = await showDatePicker(
+                        context: context,
+                        initialDate: dueDate ?? widget.week.endDate,
+                        firstDate: widget.week.startDate,
+                        lastDate: widget.semester.endDate,
+                      );
+                      if (value != null) {
+                        setSheetState(() => dueDate = value);
+                      }
+                    },
+                  ),
+                  DropdownButtonFormField<SemesterTodoActionType>(
+                      initialValue: actionType,
+                      decoration: const InputDecoration(labelText: '연결 방식'),
+                      items: SemesterTodoActionType.values
+                          .map((value) => DropdownMenuItem(
+                              value: value,
+                              child: Text(_actionTypeLabel(value))))
+                          .toList(),
+                      onChanged: (value) => setSheetState(
+                          () => actionType = value ?? actionType)),
+                  if (actionType != SemesterTodoActionType.none)
+                    TextField(
+                        controller: action,
+                        keyboardType:
+                            actionType == SemesterTodoActionType.externalUrl
+                                ? TextInputType.url
+                                : TextInputType.text,
+                        decoration: InputDecoration(
+                            labelText:
+                                actionType == SemesterTodoActionType.externalUrl
+                                    ? '자세히 보기 URL'
+                                    : '앱 내부 경로')),
+                  const SizedBox(height: 18),
+                  SizedBox(
+                      width: double.infinity,
+                      child: ElevatedButton(
+                          onPressed: saving
+                              ? null
+                              : () async {
+                                  if (titleKo.text.trim().isEmpty &&
+                                      titleEn.text.trim().isEmpty) {
+                                    showError('제목을 입력해 주세요.');
+                                    return;
+                                  }
+                                  if (selectedImage == null &&
+                                      imageUrl.text.trim().isNotEmpty &&
+                                      _adminHttpUrl(imageUrl.text) == null) {
+                                    showError(
+                                        '이미지 URL은 http 또는 https 주소로 입력해 주세요.');
+                                    return;
+                                  }
+                                  if (actionType ==
+                                          SemesterTodoActionType.externalUrl &&
+                                      action.text.trim().isNotEmpty &&
+                                      _adminHttpUrl(action.text) == null) {
+                                    showError(
+                                        '연결 URL은 http 또는 https 주소로 입력해 주세요.');
+                                    return;
+                                  }
+                                  setSheetState(() => saving = true);
+                                  SemesterTodoImageUpload? uploaded;
+                                  try {
+                                    var nextImageUrl = imageUrl.text.trim();
+                                    var nextStoragePath = nextImageUrl ==
+                                            (existing?.imageUrl?.trim() ?? '')
+                                        ? existing?.imageStoragePath
+                                        : null;
+                                    if (selectedImage != null) {
+                                      uploaded =
+                                          await _service.uploadAdminTaskImage(
+                                        semesterId: widget.semester.id,
+                                        weekId: widget.week.id,
+                                        image: File(selectedImage!.path),
+                                        contentType: selectedImage!.mimeType,
+                                      );
+                                      nextImageUrl = uploaded.downloadUrl;
+                                      nextStoragePath = uploaded.storagePath;
+                                    }
+                                    await _service.saveAdminTask(
+                                      id: existing?.id,
+                                      semesterId: widget.semester.id,
+                                      week: widget.week,
+                                      title: LocalizedTodoText(
+                                          ko: titleKo.text.trim(),
+                                          en: titleEn.text.trim(),
+                                          zh: titleZh.text.trim()),
+                                      description: LocalizedTodoText(
+                                          ko: descKo.text.trim(),
+                                          en: descEn.text.trim(),
+                                          zh: descZh.text.trim()),
+                                      type: type,
+                                      targetAudiences: [audience.value],
+                                      order: int.tryParse(order.text) ?? 0,
+                                      isActive: active,
+                                      actionType: actionType,
+                                      actionValue: action.text,
+                                      imageUrl: nextImageUrl,
+                                      imageStoragePath: nextStoragePath,
+                                      carryOver: carryOver,
+                                      dueDate: dueDate,
+                                    );
+                                    if (existing?.imageStoragePath != null &&
+                                        existing!.imageStoragePath !=
+                                            nextStoragePath) {
+                                      await _service.deleteAdminTaskImage(
+                                          existing.imageStoragePath);
+                                    }
+                                    if (sheetContext.mounted) {
+                                      Navigator.pop(sheetContext, true);
+                                    }
+                                  } catch (_) {
+                                    if (uploaded != null) {
+                                      await _service.deleteAdminTaskImage(
+                                          uploaded.storagePath);
+                                    }
+                                    if (sheetContext.mounted) {
+                                      setSheetState(() => saving = false);
+                                      showError('저장하지 못했어요. 다시 시도해 주세요.');
+                                    }
+                                  }
+                                },
+                          child: saving
+                              ? const SizedBox.square(
+                                  dimension: 20,
+                                  child: CircularProgressIndicator(
+                                      strokeWidth: 2, color: Colors.white))
+                              : const Text('저장'))),
+                ],
+              ),
             ),
-          ),
-        ),
+          );
+        },
       ),
     );
-    if (accepted == true) {
-      await _service.saveAdminTask(
-        id: existing?.id,
-        semesterId: widget.semester.id,
-        week: widget.week,
-        title:
-            LocalizedTodoText(ko: titleKo.text.trim(), en: titleEn.text.trim()),
-        description:
-            LocalizedTodoText(ko: descKo.text.trim(), en: descEn.text.trim()),
-        type: type,
-        targetAudiences: [audience.value],
-        order: int.tryParse(order.text) ?? 0,
-        isActive: active,
-        actionType: actionType,
-        actionValue: action.text,
-        carryOver: carryOver,
-        dueDate: dueDate,
-      );
-      _refresh();
-    }
+    if (accepted == true && mounted) _refresh();
     titleKo.dispose();
     titleEn.dispose();
+    titleZh.dispose();
     descKo.dispose();
     descEn.dispose();
+    descZh.dispose();
     order.dispose();
     action.dispose();
+    imageUrl.dispose();
   }
 }

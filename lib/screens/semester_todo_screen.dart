@@ -1,3 +1,6 @@
+import 'dart:async';
+
+import 'package:cached_network_image/cached_network_image.dart';
 import 'package:flutter/cupertino.dart';
 import 'package:flutter/material.dart';
 import 'package:intl/intl.dart';
@@ -5,13 +8,14 @@ import 'package:provider/provider.dart';
 import 'package:url_launcher/url_launcher.dart';
 
 import '../constants/app_constants.dart';
-import '../l10n/app_localizations.dart';
 import '../models/semester_todo.dart';
 import '../models/student_type.dart';
 import '../providers/semester_todo_controller.dart';
-import 'student_type_selection_screen.dart';
 import '../l10n/ui_locale.dart';
+import '../services/cache/app_image_cache_manager.dart';
+import '../ui/widgets/post_linkified_text.dart';
 import '../utils/responsive_helper.dart';
+import 'student_type_selection_screen.dart';
 
 // Match the compact compose-screen scale without suppressing accessibility text
 // scaling or changing the shared theme used by the rest of the app.
@@ -19,6 +23,16 @@ double _todoFont(BuildContext context, double size) =>
     context.rf(size).clamp(size - 1, size).toDouble();
 double _todoInset(BuildContext context) =>
     MediaQuery.sizeOf(context).width < 360 ? 16 : 20;
+
+String? _todoHttpUrl(String? raw) {
+  final value = raw?.trim() ?? '';
+  final uri = Uri.tryParse(value);
+  if (uri == null || (uri.scheme != 'https' && uri.scheme != 'http')) {
+    return null;
+  }
+  return value;
+}
+
 double _todoToolbarHeight(BuildContext context, {String? title}) {
   final base =
       MediaQuery.textScalerOf(context).scale(_todoFont(context, 18)) * 1.3 + 24;
@@ -28,7 +42,7 @@ double _todoToolbarHeight(BuildContext context, {String? title}) {
         text: title,
         style: TextStyle(
             fontFamily: uiFontFamily(context, 'Inter'),
-            fontFamilyFallback: const ['NotoSansKR'],
+            fontFamilyFallback: const ['NotoSansKR', 'NotoSansSC'],
             fontSize: _todoFont(context, 18),
             fontWeight: FontWeight.w700,
             height: 1.3)),
@@ -47,7 +61,7 @@ ThemeData _todoEditorTheme(BuildContext context) {
   final theme = Theme.of(context);
   final body = TextStyle(
     fontFamily: uiFontFamily(context, 'Inter'),
-    fontFamilyFallback: const ['NotoSansKR'],
+    fontFamilyFallback: const ['NotoSansKR', 'NotoSansSC'],
     fontSize: _todoFont(context, 14),
     height: 1.45,
     color: const Color(0xFF111827),
@@ -55,6 +69,26 @@ ThemeData _todoEditorTheme(BuildContext context) {
   final caption = body.copyWith(
       fontSize: _todoFont(context, 12), color: const Color(0xFF6B7280));
   return theme.copyWith(
+    colorScheme: theme.colorScheme.copyWith(
+      primary: const Color(0xFF111827),
+      onPrimary: Colors.white,
+      secondary: const Color(0xFF475569),
+      onSecondary: Colors.white,
+      surface: Colors.white,
+      onSurface: const Color(0xFF111827),
+      surfaceTint: Colors.transparent,
+      primaryContainer: const Color(0xFFF3F4F6),
+      secondaryContainer: const Color(0xFFF3F4F6),
+    ),
+    textButtonTheme: TextButtonThemeData(
+        style: TextButton.styleFrom(
+      foregroundColor: const Color(0xFF475569),
+      textStyle: body.copyWith(fontWeight: FontWeight.w500),
+    )),
+    dialogTheme: theme.dialogTheme.copyWith(
+        backgroundColor: Colors.white, surfaceTintColor: Colors.transparent),
+    bottomSheetTheme: theme.bottomSheetTheme.copyWith(
+        backgroundColor: Colors.white, surfaceTintColor: Colors.transparent),
     iconTheme:
         theme.iconTheme.copyWith(size: 20, color: const Color(0xFF6B7280)),
     textTheme: theme.textTheme.copyWith(
@@ -100,19 +134,24 @@ class SemesterTodoScreen extends StatefulWidget {
   State<SemesterTodoScreen> createState() => _SemesterTodoScreenState();
 }
 
-class _SemesterTodoScreenState extends State<SemesterTodoScreen> {
+class _SemesterTodoScreenState extends State<SemesterTodoScreen>
+    with WidgetsBindingObserver {
   late StudentType _studentType = widget.studentType;
   late SemesterTodoController _controller = widget.controller ??
       (SemesterTodoController(studentType: _studentType)..load());
   final PageController _pageController = PageController();
   List<GlobalKey> _weekKeys = const [];
-  final Map<int, GlobalKey> _personalSectionKeys = {};
+  final Set<int> _collapsedPreviousWeeks = {};
+  final Set<int> _expandedPreviousWeeks = {};
+  final Set<int> _expandedHiddenWeeks = {};
+  Timer? _completionNoticeTimer;
+  int _completionNoticeRevision = 0;
+
   String? _initializedSemesterId;
-  bool _didFocusPersonalSection = false;
   final Set<int> _expandedCompletedWeeks = <int>{};
 
   bool get _isKorean => Localizations.localeOf(context).languageCode == 'ko';
-  String get _languageCode => _isKorean ? 'ko' : 'en';
+  String get _languageCode => Localizations.localeOf(context).languageCode;
 
   DateTime _kstCalendarDate(DateTime value) {
     final kst = value.toUtc().add(const Duration(hours: 9));
@@ -129,7 +168,20 @@ class _SemesterTodoScreenState extends State<SemesterTodoScreen> {
   }
 
   @override
+  void initState() {
+    super.initState();
+    WidgetsBinding.instance.addObserver(this);
+  }
+
+  @override
+  void didChangeAppLifecycleState(AppLifecycleState state) {
+    if (state == AppLifecycleState.resumed) _controller.refreshCalendar();
+  }
+
+  @override
   void dispose() {
+    WidgetsBinding.instance.removeObserver(this);
+    _completionNoticeTimer?.cancel();
     _pageController.dispose();
     _controller.dispose();
     super.dispose();
@@ -208,149 +260,127 @@ class _SemesterTodoScreenState extends State<SemesterTodoScreen> {
             : 'Semester To-do';
     return ChangeNotifierProvider.value(
       value: _controller,
-      child: Scaffold(
-        backgroundColor: Colors.white,
-        appBar: AppBar(
-          toolbarHeight: _todoToolbarHeight(context, title: pageTitle),
+      child: Theme(
+        data: _todoEditorTheme(context),
+        child: Scaffold(
           backgroundColor: Colors.white,
-          surfaceTintColor: Colors.white,
-          elevation: 0,
-          scrolledUnderElevation: 0,
-          leading: IconButton(
-            onPressed: () => Navigator.maybePop(context),
-            icon: const Icon(Icons.arrow_back_rounded, size: 22),
-          ),
-          title: Text(
-            pageTitle,
-            style: TextStyle(
-              fontFamily: uiFontFamily(context, 'Inter'),
-              fontFamilyFallback: const ['NotoSansKR'],
-              fontSize: _todoFont(context, 18),
-              height: 1.3,
-              fontWeight: FontWeight.w700,
-              color: Color(0xFF0F172A),
+          appBar: AppBar(
+            toolbarHeight: _todoToolbarHeight(context, title: pageTitle),
+            backgroundColor: Colors.white,
+            surfaceTintColor: Colors.white,
+            elevation: 0,
+            scrolledUnderElevation: 0,
+            leading: IconButton(
+              onPressed: () => Navigator.maybePop(context),
+              icon: const Icon(Icons.arrow_back_rounded, size: 22),
             ),
-          ),
-          centerTitle: true,
-          actions: [
-            IconButton(
-              onPressed: _changeStudentType,
-              tooltip: (isChineseUi(context)
-                  ? '更改学生类型'
-                  : _isKorean
-                      ? '학생 유형 변경'
-                      : 'Change student type'),
-              icon: const Icon(Icons.tune_rounded, size: 22),
+            title: Text(
+              pageTitle,
+              style: TextStyle(
+                fontFamily: uiFontFamily(context, 'Inter'),
+                fontFamilyFallback: const ['NotoSansKR', 'NotoSansSC'],
+                fontSize: _todoFont(context, 18),
+                height: 1.3,
+                fontWeight: FontWeight.w700,
+                color: Color(0xFF0F172A),
+              ),
             ),
-          ],
-        ),
-        body: SafeArea(
-          top: false,
-          child: Consumer<SemesterTodoController>(
-            builder: (context, controller, _) {
-              if (controller.loading && controller.semester == null) {
-                return const Center(child: CircularProgressIndicator());
-              }
-              if (controller.error != null && controller.semester == null) {
-                return _ErrorState(onRetry: controller.load);
-              }
-              if (controller.semester == null) {
-                return const _EmptySemesterState();
-              }
-              _prepareWeekNavigation(controller);
-              return Column(
-                children: [
-                  _semesterHeader(controller),
-                  _weekPicker(controller),
-                  const Divider(height: 1, color: Color(0xFFE8EDF3)),
-                  Expanded(
-                    child: PageView.builder(
-                      controller: _pageController,
-                      itemCount: controller.weeks.length,
-                      physics: const PageScrollPhysics(
-                        parent: ClampingScrollPhysics(),
+            centerTitle: true,
+            actions: [
+              IconButton(
+                onPressed: _changeStudentType,
+                tooltip: (isChineseUi(context)
+                    ? '更改学生类型'
+                    : _isKorean
+                        ? '학생 유형 변경'
+                        : 'Change student type'),
+                icon: const Icon(Icons.tune_rounded, size: 22),
+              ),
+            ],
+          ),
+          body: SafeArea(
+            top: false,
+            child: Consumer<SemesterTodoController>(
+              builder: (context, controller, _) {
+                if (controller.loading && controller.semester == null) {
+                  return const Center(child: CircularProgressIndicator());
+                }
+                if (controller.error != null && controller.semester == null) {
+                  return _ErrorState(onRetry: controller.load);
+                }
+                if (controller.semester == null) {
+                  return const _EmptySemesterState();
+                }
+                _prepareWeekNavigation(controller);
+                return Column(
+                  children: [
+                    _weekPicker(controller),
+                    const Divider(height: 1, color: Color(0xFFE8EDF3)),
+                    Expanded(
+                      child: PageView.builder(
+                        controller: _pageController,
+                        itemCount: controller.weeks.length,
+                        physics: const PageScrollPhysics(
+                          parent: ClampingScrollPhysics(),
+                        ),
+                        onPageChanged: (index) {
+                          final week = controller.weeks[index];
+                          controller.selectWeek(week.weekNumber);
+                          _centerWeekTab(index);
+                        },
+                        itemBuilder: (context, index) {
+                          final week = controller.weeks[index];
+                          return _weekPage(controller, week);
+                        },
                       ),
-                      onPageChanged: (index) {
-                        final week = controller.weeks[index];
-                        controller.selectWeek(week.weekNumber);
-                        _centerWeekTab(index);
-                      },
-                      itemBuilder: (context, index) {
-                        final week = controller.weeks[index];
-                        return _weekPage(controller, week);
-                      },
                     ),
-                  ),
-                ],
-              );
-            },
+                    if (controller.weeks.isNotEmpty)
+                      Padding(
+                        padding: EdgeInsets.fromLTRB(
+                            _todoInset(context), 4, _todoInset(context), 4),
+                        child: SizedBox(
+                            width: double.infinity,
+                            child: TextButton.icon(
+                              key: const ValueKey('todo-add'),
+                              onPressed: !controller.personalDataLoaded
+                                  ? null
+                                  : () => _editPersonalTodo(controller,
+                                      initialWeekNumber:
+                                          controller.selectedWeekNumber),
+                              style: TextButton.styleFrom(
+                                  minimumSize: const Size(48, 48),
+                                  foregroundColor: AppColors.pointColor),
+                              icon: const Icon(Icons.add_rounded, size: 22),
+                              label: Text(_copy('할 일 추가', 'Add task', '添加待办')),
+                            )),
+                      ),
+                  ],
+                );
+              },
+            ),
           ),
         ),
       ),
     );
   }
 
-  Widget _semesterHeader(SemesterTodoController controller) {
-    final semester = controller.semester!;
-    final current = semester.currentWeek(DateTime.now());
-    final status = current < 1
-        ? ((isChineseUi(context)
-            ? '学期开始前'
-            : _isKorean
-                ? '학기 시작 전'
-                : 'Before semester'))
-        : current > semester.totalWeeks
-            ? ((isChineseUi(context)
-                ? '学期已结束'
-                : _isKorean
-                    ? '학기 종료'
-                    : 'Semester ended'))
-            : ((isChineseUi(context)
-                ? '当前第${current}周'
-                : _isKorean
-                    ? '현재 $current주차'
-                    : 'Current week $current'));
-    return Padding(
-      padding:
-          EdgeInsets.fromLTRB(_todoInset(context), 8, _todoInset(context), 12),
-      child: Row(
-        children: [
-          Expanded(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Text(
-                  semester.title.resolve(_languageCode),
-                  softWrap: true,
-                  style: TextStyle(
-                    fontFamily: uiFontFamily(context, 'Inter'),
-                    fontFamilyFallback: const ['NotoSansKR'],
-                    fontSize: _todoFont(context, 18),
-                    fontWeight: FontWeight.w700,
-                    color: Color(0xFF0F172A),
-                  ),
-                ),
-                const SizedBox(height: 4),
-                Text(
-                  '$status · ${_studentType.title(context)}',
-                  style: TextStyle(
-                    fontFamily: uiFontFamily(context, 'Inter'),
-                    fontFamilyFallback: const ['NotoSansKR'],
-                    fontSize: _todoFont(context, 12),
-                    color: Color(0xFF64748B),
-                  ),
-                ),
-              ],
-            ),
-          ),
-        ],
-      ),
-    );
-  }
+  String _copy(String ko, String en, String zh) => isChineseUi(context)
+      ? zh
+      : _isKorean
+          ? ko
+          : en;
+
+  TextStyle get _captionStyle => TextStyle(
+        fontFamily: uiFontFamily(context, 'Inter'),
+        fontFamilyFallback: const ['NotoSansKR', 'NotoSansSC'],
+        fontSize: _todoFont(context, 12),
+        height: 1.35,
+        color: const Color(0xFF64748B),
+      );
 
   Widget _weekPicker(SemesterTodoController controller) {
     return SizedBox(
-      height: (MediaQuery.textScalerOf(context).scale(_todoFont(context, 13)) *
+      height: (MediaQuery.textScalerOf(context).scale(_todoFont(context, 14)) *
                   1.4 +
               20)
           .clamp(48, 96)
@@ -363,10 +393,14 @@ class _SemesterTodoScreenState extends State<SemesterTodoScreen> {
         itemBuilder: (context, index) {
           final week = controller.weeks[index];
           final selected = week.weekNumber == controller.selectedWeekNumber;
+          final isCurrent = week.weekNumber == controller.currentCalendarWeek;
+          final weekLabel = _weekLabel(controller.weeks, index);
           return Semantics(
             button: true,
             selected: selected,
-            label: _weekLabel(controller.weeks, index),
+            label: isCurrent
+                ? '$weekLabel, ${_copy('이번 주', 'This week', '本周')}'
+                : weekLabel,
             child: InkWell(
               key: _weekKeys[index],
               onTap: () => _goToWeek(controller, index),
@@ -385,15 +419,22 @@ class _SemesterTodoScreenState extends State<SemesterTodoScreen> {
                   ),
                 ),
                 child: Text(
-                  _weekLabel(controller.weeks, index),
+                  weekLabel,
+                  key: isCurrent ? const ValueKey('todo-current-badge') : null,
+                  maxLines: 1,
+                  softWrap: false,
                   style: TextStyle(
                     fontFamily: uiFontFamily(context, 'Inter'),
-                    fontFamilyFallback: const ['NotoSansKR'],
-                    fontSize: _todoFont(context, 13),
-                    fontWeight: selected ? FontWeight.w700 : FontWeight.w500,
-                    color: selected
-                        ? const Color(0xFF0F172A)
-                        : const Color(0xFF94A3B8),
+                    fontFamilyFallback: const ['NotoSansKR', 'NotoSansSC'],
+                    fontSize: _todoFont(context, isCurrent ? 14 : 13),
+                    fontWeight: isCurrent || selected
+                        ? FontWeight.w700
+                        : FontWeight.w500,
+                    color: isCurrent
+                        ? AppColors.pointColor
+                        : selected
+                            ? const Color(0xFF0F172A)
+                            : const Color(0xFF94A3B8),
                   ),
                 ),
               ),
@@ -418,442 +459,248 @@ class _SemesterTodoScreenState extends State<SemesterTodoScreen> {
     final monthWeek =
         (anchor.day + firstDay.weekday - DateTime.monday) ~/ 7 + 1;
     return (isChineseUi(context)
-        ? '${DateFormat('MMM', 'en').format(anchor)} 第${monthWeek}周'
+        ? '${anchor.month}月 第${monthWeek}周'
         : _isKorean
             ? '${anchor.month}월 $monthWeek주차'
             : '${DateFormat('MMM', 'en').format(anchor)} W$monthWeek');
   }
 
-  Widget _weekPage(
-    SemesterTodoController controller,
-    SemesterWeek week,
-  ) {
+  Widget _weekPage(SemesterTodoController controller, SemesterWeek week) {
     if (!controller.hasWeekData(week.weekNumber) &&
-        !controller.isWeekLoading(week.weekNumber)) {
+        !controller.isWeekLoading(week.weekNumber) &&
+        !controller.weekErrors.containsKey(week.weekNumber)) {
       WidgetsBinding.instance.addPostFrameCallback((_) {
-        controller.preloadWeek(week.weekNumber);
-      });
-    }
-    final tasks = controller.tasksForWeek(week.weekNumber);
-    final loading = controller.isWeekLoading(week.weekNumber) ||
-        (week.weekNumber == controller.selectedWeekNumber &&
-            controller.loading &&
-            tasks.isEmpty);
-    if (widget.focusPersonalSection &&
-        !_didFocusPersonalSection &&
-        week.weekNumber == controller.selectedWeekNumber &&
-        controller.hasWeekData(week.weekNumber)) {
-      WidgetsBinding.instance.addPostFrameCallback((_) {
-        final targetContext =
-            _personalSectionKeys[week.weekNumber]?.currentContext;
-        if (!mounted || targetContext == null || _didFocusPersonalSection) {
-          return;
-        }
-        _didFocusPersonalSection = true;
-        Scrollable.ensureVisible(
-          targetContext,
-          alignment: .05,
-          duration: const Duration(milliseconds: 320),
-          curve: Curves.easeOutCubic,
-        );
+        if (mounted) controller.preloadWeek(week.weekNumber);
       });
     }
     return RefreshIndicator(
       onRefresh: controller.load,
       child: CustomScrollView(
-        key: PageStorageKey('semester_week_${week.weekNumber}'),
+        key: PageStorageKey(
+            'todo_${controller.semester!.id}_${week.weekNumber}'),
         physics: const AlwaysScrollableScrollPhysics(),
         slivers: [
-          SliverToBoxAdapter(child: _weekSummary(controller, week, tasks)),
-          if (loading)
+          SliverToBoxAdapter(child: _weekSummary(controller, week)),
+          if (controller.loading || controller.isWeekLoading(week.weekNumber))
             const SliverToBoxAdapter(
-              child: LinearProgressIndicator(minHeight: 2),
-            ),
+                child: LinearProgressIndicator(minHeight: 2)),
           SliverPadding(
             padding: EdgeInsets.fromLTRB(
-                _todoInset(context), 4, _todoInset(context), 24),
+                _todoInset(context), 0, _todoInset(context), 20),
             sliver: SliverList(
-              delegate: SliverChildListDelegate(
-                _sections(controller, week.weekNumber, tasks),
-              ),
-            ),
+                delegate: SliverChildListDelegate(
+                    _unifiedSections(controller, week.weekNumber))),
           ),
         ],
       ),
     );
   }
 
-  Widget _weekSummary(
-    SemesterTodoController controller,
-    SemesterWeek week,
-    List<SemesterTodo> tasks,
-  ) {
-    final required = tasks
-        .where((task) => task.type == SemesterTodoType.required)
-        .toList(growable: false);
-    final done =
-        required.where((task) => controller.isCompleted(task.id)).length;
-    final progress = required.isEmpty ? 0.0 : done / required.length;
-    final weekIndex = controller.weeks.indexWhere(
-      (item) => item.weekNumber == week.weekNumber,
-    );
+  Widget _weekSummary(SemesterTodoController controller, SemesterWeek week) {
+    final current = controller.currentCalendarWeek;
+    final currentIndex =
+        controller.weeks.indexWhere((w) => w.weekNumber == current);
     return Padding(
       padding:
-          EdgeInsets.fromLTRB(_todoInset(context), 16, _todoInset(context), 12),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Text(
-            weekIndex < 0
-                ? ((isChineseUi(context)
-                    ? '第${week.weekNumber}周'
-                    : _isKorean
-                        ? '${week.weekNumber}주차'
-                        : 'Week ${week.weekNumber}'))
-                : _weekLabel(controller.weeks, weekIndex),
-            style: TextStyle(
-              fontFamily: uiFontFamily(context, 'Inter'),
-              fontFamilyFallback: const ['NotoSansKR'],
-              fontSize: _todoFont(context, 16),
-              fontWeight: FontWeight.w700,
-              color: Color(0xFF0F172A),
-            ),
+          EdgeInsets.fromLTRB(_todoInset(context), 6, _todoInset(context), 2),
+      child: Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
+        Center(
+          child: Text(
+            _dateLabel(week.startDate) + ' – ' + _dateLabel(week.endDate),
+            key: const ValueKey('todo-week-date-range'),
+            textAlign: TextAlign.center,
+            style: _captionStyle,
           ),
-          const SizedBox(height: 4),
-          Wrap(
-            spacing: 16,
-            runSpacing: 4,
-            crossAxisAlignment: WrapCrossAlignment.center,
-            children: [
-              Text(
-                '${_dateLabel(week.startDate)} – ${_dateLabel(week.endDate)}',
-                style: TextStyle(
-                  fontFamily: uiFontFamily(context, 'Inter'),
-                  fontFamilyFallback: const ['NotoSansKR'],
-                  fontSize: _todoFont(context, 12),
-                  fontWeight: FontWeight.w500,
-                  color: Color(0xFF64748B),
-                ),
-              ),
-              Text(
-                (isChineseUi(context)
-                    ? '已完成${done}/${required.length}'
-                    : _isKorean
-                        ? '${required.length}개 중 $done개 완료'
-                        : '$done of ${required.length} done'),
-                style: TextStyle(
-                  fontFamily: uiFontFamily(context, 'Inter'),
-                  fontFamilyFallback: const ['NotoSansKR'],
-                  fontSize: _todoFont(context, 12),
-                  fontWeight: FontWeight.w700,
-                  color: Color(0xFF334155),
-                ),
-              ),
-            ],
+        ),
+        if (current != week.weekNumber && currentIndex >= 0)
+          Align(
+            alignment: Alignment.center,
+            child: TextButton(
+                key: const ValueKey('todo-current-week'),
+                onPressed: () => _goToWeek(controller, currentIndex),
+                child: Text(_copy('이번 주로', 'Go to this week', '回到本周'))),
           ),
-          const SizedBox(height: 11),
-          ClipRRect(
-            borderRadius: BorderRadius.circular(2),
-            child: LinearProgressIndicator(
-              minHeight: 3,
-              value: progress,
-              color: AppColors.pointColor,
-              backgroundColor: const Color(0xFFE2E8F0),
-            ),
-          ),
-        ],
-      ),
+      ]),
     );
   }
 
-  List<Widget> _sections(
-    SemesterTodoController controller,
-    int weekNumber,
-    List<SemesterTodo> tasks,
-  ) {
-    final children = <Widget>[];
-    final required = tasks
-        .where((task) =>
-            task.type == SemesterTodoType.required &&
-            task.weekNumber == weekNumber)
-        .toList(growable: false);
-    final carryover = tasks
-        .where((task) =>
-            task.type == SemesterTodoType.required &&
-            task.weekNumber < weekNumber)
-        .toList(growable: false);
-    final notices = tasks
-        .where((task) => task.type == SemesterTodoType.notice)
-        .toList(growable: false);
-    final recommendations = tasks
-        .where((task) => task.type == SemesterTodoType.recommendation)
-        .toList(growable: false);
-    final personal =
-        controller.personalTodosForWeek(weekNumber).toList(growable: false);
-
-    void addSection(
-      String title,
-      List<Widget> rows, {
-      Widget? trailing,
-      Key? sectionKey,
-    }) {
-      if (rows.isEmpty) return;
-      if (children.isNotEmpty) children.add(const SizedBox(height: 18));
-      children.add(
-        KeyedSubtree(
-          key: sectionKey,
-          child: _SectionTitle(title: title, trailing: trailing),
-        ),
-      );
-      children.add(const SizedBox(height: 6));
-      children.addAll(rows);
-    }
-
-    addSection(
-      (isChineseUi(context)
-          ? '已顺延'
-          : _isKorean
-              ? '지난주 미완료'
-              : 'Carried over'),
-      carryover.map((task) => _taskRow(controller, task)).toList(),
-    );
-    addSection(
-      (isChineseUi(context)
-          ? '来自${AppLocalizations.of(context)!.appName}'
-          : _isKorean
-              ? 'Wefilling 안내'
-              : 'From Wefilling'),
-      [...required, ...notices]
-          .map((task) => _taskRow(controller, task))
-          .toList(),
-    );
-    addSection(
-      (isChineseUi(context)
-          ? '推荐'
-          : _isKorean
-              ? '이번 주 추천'
-              : 'Recommended'),
-      recommendations.map((task) => _taskRow(controller, task)).toList(),
-    );
-
-    if (children.isEmpty &&
-        !controller.isWeekLoading(weekNumber) &&
-        controller.error != null) {
-      children.add(
-        Padding(
-          padding: const EdgeInsets.only(top: 4, bottom: 12),
-          child: Text(
-            (isChineseUi(context)
-                ? '待办加载失败，请下拉重试。'
-                : _isKorean
-                    ? '할 일을 불러오지 못했어요. 아래로 당겨 다시 시도해주세요.'
-                    : 'Could not load tasks. Pull down to try again.'),
-            style: TextStyle(
-              fontFamily: uiFontFamily(context, 'Inter'),
-              fontFamilyFallback: const ['NotoSansKR'],
-              fontSize: 14,
-              height: 1.5,
-              color: Color(0xFF64748B),
-            ),
-          ),
-        ),
-      );
-    } else if (children.isEmpty && !controller.isWeekLoading(weekNumber)) {
-      children.add(
-        Padding(
-          padding: const EdgeInsets.only(top: 4, bottom: 12),
-          child: Text(
-            (isChineseUi(context)
-                ? '本周暂无安排。\n添加自己的待办吧。'
-                : _isKorean
-                    ? '이번 주에 등록된 안내가 없어요.\n나만의 할 일을 추가해 보세요.'
-                    : 'Nothing is scheduled for this week.\nAdd a task of your own.'),
-            style: TextStyle(
-              fontFamily: uiFontFamily(context, 'Inter'),
-              fontFamilyFallback: const ['NotoSansKR'],
-              fontSize: 14,
-              height: 1.5,
-              color: Color(0xFF64748B),
-            ),
-          ),
-        ),
-      );
-    }
-
-    final activePersonal = personal.where((todo) => !todo.completed).toList()
-      ..sort(_comparePersonalTodos);
-    final completedPersonal = personal.where((todo) => todo.completed).toList()
-      ..sort(_comparePersonalTodos);
-    final today = _kstCalendarDate(DateTime.now());
-    final selectedWeek = controller.weeks.firstWhere(
-      (week) => week.weekNumber == weekNumber,
-    );
-    final weekEnd = _kstCalendarDate(selectedWeek.endDate);
-    final todayItems = <PersonalTodo>[];
-    final soonItems = <PersonalTodo>[];
-    final weekItems = <PersonalTodo>[];
-    final laterItems = <PersonalTodo>[];
-    for (final todo in activePersonal) {
-      final due = todo.dueAt == null ? null : _kstCalendarDate(todo.dueAt!);
-      if (due != null && due == today) {
-        todayItems.add(todo);
-      } else if (due != null && due.difference(today).inDays <= 2) {
-        // Overdue items also stay at the top until the user completes them.
-        soonItems.add(todo);
-      } else if (due != null && !due.isAfter(weekEnd)) {
-        weekItems.add(todo);
-      } else {
-        laterItems.add(todo);
-      }
-    }
-    final personalRows = <Widget>[_globalReminderRow(controller)];
-    void addPersonalGroup(String title, List<PersonalTodo> items) {
-      if (items.isEmpty) return;
-      personalRows.add(Padding(
-        padding: const EdgeInsets.only(top: 13, bottom: 3),
-        child: Text(
-          title,
-          style: TextStyle(
-            fontFamily: uiFontFamily(context, 'Inter'),
-            fontFamilyFallback: const ['NotoSansKR'],
-            fontSize: 13,
-            fontWeight: FontWeight.w800,
-            color: const Color(0xFF64748B),
-          ),
-        ),
-      ));
-      personalRows.addAll(items.map((todo) => _personalRow(controller, todo)));
-    }
-
-    addPersonalGroup(
-      isChineseUi(context)
-          ? '今天'
-          : _isKorean
-              ? '오늘'
-              : 'Today',
-      todayItems,
-    );
-    addPersonalGroup(
-      isChineseUi(context)
-          ? '即将到期'
-          : _isKorean
-              ? '곧 마감'
-              : 'Due soon',
-      soonItems,
-    );
-    addPersonalGroup(
-      isChineseUi(context)
-          ? '本周'
-          : _isKorean
-              ? '이번 주'
-              : 'This week',
-      weekItems,
-    );
-    addPersonalGroup(
-      isChineseUi(context)
-          ? '稍后'
-          : _isKorean
-              ? '나중에'
-              : 'Later',
-      laterItems,
-    );
-    if (personal.isEmpty) {
-      personalRows.add(Padding(
-        padding: const EdgeInsets.symmetric(vertical: 10),
-        child: Text(
-          isChineseUi(context)
-              ? '添加想要自己管理的事项。'
-              : _isKorean
-                  ? '직접 관리할 일이 있다면 추가해 보세요.'
-                  : 'Add anything you want to manage for yourself.',
-          style: TextStyle(
-            fontFamily: uiFontFamily(context, 'Inter'),
-            fontFamilyFallback: const ['NotoSansKR'],
-            fontSize: 14,
-            color: const Color(0xFF64748B),
-          ),
-        ),
-      ));
-    }
-    if (completedPersonal.isNotEmpty) {
-      final expanded = _expandedCompletedWeeks.contains(weekNumber);
-      personalRows.add(Align(
+  Widget _fold(String label, bool expanded, VoidCallback toggle) => Align(
         alignment: Alignment.centerLeft,
         child: TextButton.icon(
-          onPressed: () => setState(() {
-            expanded
-                ? _expandedCompletedWeeks.remove(weekNumber)
-                : _expandedCompletedWeeks.add(weekNumber);
-          }),
+          onPressed: toggle,
           style: TextButton.styleFrom(
-            foregroundColor: const Color(0xFF64748B),
-            padding: const EdgeInsets.only(top: 10, right: 8, bottom: 4),
-          ),
+              foregroundColor: const Color(0xFF64748B),
+              minimumSize: const Size(48, 48),
+              padding: const EdgeInsets.symmetric(horizontal: 0, vertical: 8)),
           icon: Icon(
-            expanded ? Icons.expand_less_rounded : Icons.expand_more_rounded,
-            size: 20,
-          ),
-          label: Text(
-            isChineseUi(context)
-                ? '已完成 ${completedPersonal.length}项'
-                : _isKorean
-                    ? '완료 ${completedPersonal.length}개'
-                    : '${completedPersonal.length} completed',
-          ),
+              expanded ? Icons.expand_less_rounded : Icons.expand_more_rounded,
+              size: 20),
+          label: Text(label,
+              style: _captionStyle.copyWith(fontWeight: FontWeight.w600)),
         ),
-      ));
-      if (expanded) {
-        personalRows.addAll(
-          completedPersonal.map((todo) => _personalRow(controller, todo)),
-        );
+      );
+
+  Widget _loadFailure(SemesterTodoController controller) => Padding(
+        padding: const EdgeInsets.symmetric(vertical: 12),
+        child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+          Text(
+              controller.personalLoadWarning != null &&
+                      controller.loadError == null
+                  ? _copy(
+                      '이전 기록을 불러오지 못했어요. 저장된 할 일은 유지되며 새 할 일을 추가할 수 있어요.',
+                      'Could not load earlier records. Saved tasks are kept and you can add new tasks.',
+                      '历史记录加载失败。已保存的待办仍会保留，也可添加新待办。')
+                  : _copy('목록을 불러오지 못했어요. 다시 시도해 주세요.',
+                      'Could not load the list. Please retry.', '列表加载失败，请重试。'),
+              style: _captionStyle),
+          TextButton(
+              onPressed: controller.load,
+              child: Text(_copy('다시 시도', 'Retry', '重试'))),
+        ]),
+      );
+
+  bool _weekReady(SemesterTodoController controller, int week) =>
+      !controller.loading &&
+      controller.personalDataLoaded &&
+      controller.personalLoadWarning == null &&
+      controller.guideLoadWarning == null &&
+      controller.loadError == null &&
+      controller.hasWeekData(week) &&
+      !controller.weekErrors.containsKey(week);
+
+  Widget _sectionHeading(String label) => Padding(
+      padding: const EdgeInsets.only(top: 10, bottom: 4),
+      child: Text(label,
+          style: _captionStyle.copyWith(
+              fontSize: _todoFont(context, 14),
+              fontWeight: FontWeight.w700,
+              color: const Color(0xFF0F172A))));
+
+  List<Widget> _unifiedSections(
+      SemesterTodoController controller, int weekNumber) {
+    final current = controller.currentCalendarWeek == weekNumber;
+    final entries = controller.entriesForWeek(weekNumber);
+    final active = entries.where((e) => e.actionable && !e.completed).toList();
+    final completed =
+        entries.where((e) => e.actionable && e.completed).toList();
+    final info = entries.where((e) => !e.actionable).toList();
+    final previous = controller.previousEntries(weekNumber);
+    final hidden = controller.personalTodos
+        .where((e) => e.archived && e.weekNumber <= weekNumber)
+        .toList();
+    final ready = _weekReady(controller, weekNumber);
+    final children = <Widget>[
+      if (controller.loadError != null ||
+          controller.personalLoadWarning != null ||
+          controller.guideLoadWarning != null ||
+          controller.weekErrors.keys.any((w) => w <= weekNumber))
+        _loadFailure(controller),
+    ];
+    if (previous.isNotEmpty) {
+      // Start open, with a bounded preview; completing edits the source item.
+      final collapsed = _collapsedPreviousWeeks.contains(weekNumber);
+      final all = _expandedPreviousWeeks.contains(weekNumber);
+      children.add(_fold(
+          (current
+                  ? _copy('이전 주에 남은 일', 'Earlier unfinished tasks', '之前未完成的事项')
+                  : _copy('선택한 주 이전의 남은 일 · 현재 상태',
+                      'Earlier tasks · current status', '所选周之前的事项 · 当前状态')) +
+              ' (${previous.length})',
+          !collapsed,
+          () => setState(() {
+                collapsed
+                    ? _collapsedPreviousWeeks.remove(weekNumber)
+                    : _collapsedPreviousWeeks.add(weekNumber);
+              })));
+      if (!collapsed) {
+        for (final entry in (all ? previous : previous.take(3))) {
+          children.add(_entryRow(controller, entry, earlier: true));
+          if (entry.personal != null)
+            children.add(Padding(
+                padding: const EdgeInsets.only(left: 48),
+                child: Wrap(spacing: 8, children: [
+                  if (controller.weeks.any(
+                      (w) => w.weekNumber == controller.currentCalendarWeek))
+                    TextButton(
+                        onPressed: controller.isPersonalBusy(entry.personal!.id)
+                            ? null
+                            : () => _moveTodo(controller, entry.personal!),
+                        child: Text(
+                            _copy('이번 주로 옮기기', 'Move to this week', '移至本周'))),
+                  TextButton(
+                      onPressed: controller.isPersonalBusy(entry.personal!.id)
+                          ? null
+                          : () => _hideTodo(controller, entry.personal!, true),
+                      child: Text(_copy('그만 보기', 'Hide', '隐藏'))),
+                ])));
+        }
+        if (previous.length > 3)
+          children.add(TextButton(
+              onPressed: () => setState(() {
+                    all
+                        ? _expandedPreviousWeeks.remove(weekNumber)
+                        : _expandedPreviousWeeks.add(weekNumber);
+                  }),
+              child: Text(all
+                  ? _copy('간단히 보기', 'Show less', '收起')
+                  : _copy('더 보기', 'Show more', '查看更多'))));
       }
     }
-    personalRows.add(Align(
-      alignment: Alignment.center,
-      child: IconButton(
-        tooltip: isChineseUi(context)
-            ? '为本周添加待办'
-            : _isKorean
-                ? '이 주차에 할 일 추가'
-                : 'Add task to this week',
-        onPressed: () => _editPersonalTodo(
-          controller,
-          initialWeekNumber: weekNumber,
-        ),
-        icon: const Icon(Icons.add_rounded),
-        color: AppColors.pointColor,
-        iconSize: 24,
-        padding: const EdgeInsets.all(12),
-      ),
-    ));
-
-    addSection(
-      (isChineseUi(context)
-          ? '我的待办'
-          : _isKorean
-              ? '내 할 일'
-              : 'My tasks'),
-      personalRows,
-      sectionKey: _personalSectionKeys.putIfAbsent(
-        weekNumber,
-        GlobalKey.new,
-      ),
-    );
-    return children;
-  }
-
-  int _comparePersonalTodos(PersonalTodo first, PersonalTodo second) {
-    final priority = second.priority.index.compareTo(first.priority.index);
-    if (priority != 0) return priority;
-    if (first.dueAt != null && second.dueAt != null) {
-      final due = first.dueAt!.compareTo(second.dueAt!);
-      if (due != 0) return due;
-    } else if (first.dueAt != null) {
-      return -1;
-    } else if (second.dueAt != null) {
-      return 1;
+    children.add(_sectionHeading(current
+        ? _copy('이번 주 할 일', 'This week’s tasks', '本周待办')
+        : _copy('선택한 주 할 일', 'Selected week’s tasks', '所选周待办')));
+    if (ready && active.isEmpty && completed.isEmpty)
+      children.add(Padding(
+          padding: const EdgeInsets.symmetric(vertical: 10),
+          child: Text(
+              _copy(
+                  '등록된 할 일이 없어요. 필요한 일을 추가해 보세요.',
+                  'No tasks yet. Add something you need to do.',
+                  '暂无待办，可以添加需要完成的事项。'),
+              style: _captionStyle)));
+    children.addAll(active.map((e) => _entryRow(controller, e)));
+    if (info.isNotEmpty) {
+      children.add(
+          _sectionHeading(_copy('참고 안내', 'Information & suggestions', '参考信息')));
+      children.addAll(info.map((e) => _entryRow(controller, e)));
     }
-    return first.title.compareTo(second.title);
+    if (completed.isNotEmpty) {
+      final expanded = _expandedCompletedWeeks.contains(weekNumber);
+      children.add(_fold(
+          _copy('완료 ${completed.length}개', '${completed.length} completed',
+              '已完成 ${completed.length} 项'),
+          expanded,
+          () => setState(() {
+                expanded
+                    ? _expandedCompletedWeeks.remove(weekNumber)
+                    : _expandedCompletedWeeks.add(weekNumber);
+              })));
+      if (expanded)
+        children.addAll(completed.map((e) => _entryRow(controller, e)));
+    }
+    if (hidden.isNotEmpty) {
+      final expanded = _expandedHiddenWeeks.contains(weekNumber);
+      children.add(_fold(
+          _copy('숨긴 할 일', 'Hidden tasks', '已隐藏的待办') + ' (${hidden.length})',
+          expanded,
+          () => setState(() {
+                expanded
+                    ? _expandedHiddenWeeks.remove(weekNumber)
+                    : _expandedHiddenWeeks.add(weekNumber);
+              })));
+      if (expanded)
+        for (final todo in hidden)
+          children.add(Row(children: [
+            Expanded(child: Text(todo.title, style: _captionStyle)),
+            TextButton(
+                onPressed: controller.isPersonalBusy(todo.id)
+                    ? null
+                    : () => _hideTodo(controller, todo, false),
+                child: Text(_copy('복구', 'Restore', '恢复'))),
+          ]));
+    }
+    children.add(_globalReminderRow(controller));
+    return children;
   }
 
   Widget _globalReminderRow(SemesterTodoController controller) {
@@ -896,9 +743,9 @@ class _SemesterTodoScreenState extends State<SemesterTodoScreen> {
                               : 'Daily reminder at $time'),
                       style: TextStyle(
                         fontFamily: uiFontFamily(context, 'Inter'),
-                        fontFamilyFallback: const ['NotoSansKR'],
-                        fontSize: 14,
-                        fontWeight: FontWeight.w700,
+                        fontFamilyFallback: const ['NotoSansKR', 'NotoSansSC'],
+                        fontSize: _todoFont(context, 13),
+                        fontWeight: FontWeight.w500,
                         color: Color(0xFF334155),
                       ),
                     ),
@@ -911,7 +758,7 @@ class _SemesterTodoScreenState extends State<SemesterTodoScreen> {
                               : 'Tap to change time'),
                       style: TextStyle(
                         fontFamily: uiFontFamily(context, 'Inter'),
-                        fontFamilyFallback: const ['NotoSansKR'],
+                        fontFamilyFallback: const ['NotoSansKR', 'NotoSansSC'],
                         fontSize: 12,
                         color: Color(0xFF94A3B8),
                       ),
@@ -943,78 +790,389 @@ class _SemesterTodoScreenState extends State<SemesterTodoScreen> {
     );
   }
 
-  Widget _taskRow(SemesterTodoController controller, SemesterTodo task) {
-    final completed = controller.isCompleted(task.id);
-    final actionable = task.type != SemesterTodoType.recommendation;
-    return InkWell(
-      onTap: actionable
-          ? () => _toggleTask(controller, task)
-          : () => _openAction(task),
-      borderRadius: BorderRadius.circular(10),
-      child: Padding(
-        padding: const EdgeInsets.symmetric(vertical: 8),
-        child: Row(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            if (actionable)
-              _CompletionCircle(completed: completed)
-            else
-              const Icon(
-                Icons.auto_awesome_outlined,
-                size: 20,
-                color: AppColors.pointColor,
-              ),
-            const SizedBox(width: 12),
-            Expanded(
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Text(
-                    task.title.resolve(_languageCode),
-                    style: TextStyle(
-                      fontFamily: uiFontFamily(context, 'Inter'),
-                      fontFamilyFallback: const ['NotoSansKR'],
-                      fontSize: _todoFont(context, 14),
-                      height: 1.35,
-                      fontWeight: FontWeight.w600,
-                      color: completed
-                          ? const Color(0xFF94A3B8)
-                          : const Color(0xFF0F172A),
-                      decoration: completed ? TextDecoration.lineThrough : null,
-                    ),
-                  ),
-                  if (task.description.resolve(_languageCode).isNotEmpty) ...[
-                    const SizedBox(height: 4),
-                    Text(
-                      task.description.resolve(_languageCode),
-                      style: TextStyle(
-                        fontFamily: uiFontFamily(context, 'Inter'),
-                        fontFamilyFallback: const ['NotoSansKR'],
-                        fontSize: _todoFont(context, 12),
-                        height: 1.45,
-                        color: Color(0xFF64748B),
+  Widget _entryRow(SemesterTodoController controller, SemesterTodoEntry entry,
+      {bool earlier = false}) {
+    final todo = entry.personal;
+    final guide = entry.guide;
+    final busy = todo != null
+        ? controller.isPersonalBusy(todo.id)
+        : controller.isGuideBusy(guide!) || controller.guideLoadWarning != null;
+    final title = todo?.title ?? guide!.title.resolve(_languageCode);
+    final description = todo != null
+        ? todo.memo ?? ''
+        : guide!.description.resolve(_languageCode);
+    final weekIndex =
+        controller.weeks.indexWhere((w) => w.weekNumber == entry.weekNumber);
+    final overdue = entry.dueAt != null &&
+        _kstCalendarDate(entry.dueAt!)
+            .isBefore(_kstCalendarDate(controller.clock()));
+    final imageUrl = _todoHttpUrl(guide?.imageUrl);
+    final metadata = <({String text, bool alert})>[];
+    if (earlier && weekIndex >= 0) {
+      metadata.add((
+        text: _weekLabel(controller.weeks, weekIndex),
+        alert: false,
+      ));
+    }
+    if (entry.dueAt != null) {
+      metadata.add((
+        text: (overdue ? _copy('기한 지남 ', 'Overdue ', '已逾期 ') : '') +
+            (todo != null ? _personalDueLabel(todo) : _dateLabel(entry.dueAt!)),
+        alert: overdue,
+      ));
+    }
+    if (todo?.timeMinutes != null) {
+      metadata.add((text: _personalTimeLabel(todo!)!, alert: false));
+    }
+    if (todo != null &&
+        (todo.priority == PersonalTodoPriority.high ||
+            todo.category != PersonalTodoCategory.personal)) {
+      metadata.add((
+        text: (todo.priority == PersonalTodoPriority.high
+                ? _copy('중요', 'Important', '重要') +
+                    (todo.category != PersonalTodoCategory.personal
+                        ? ' · '
+                        : '')
+                : '') +
+            (todo.category != PersonalTodoCategory.personal
+                ? _personalCategoryLabel(todo.category)
+                : ''),
+        alert: false,
+      ));
+    }
+    return Padding(
+      key: ValueKey('todo-entry-${entry.weekNumber}-${entry.identity}'),
+      padding: const EdgeInsets.symmetric(vertical: 1),
+      child: Row(crossAxisAlignment: CrossAxisAlignment.start, children: [
+        if (entry.actionable)
+          Semantics(
+              button: true,
+              checked: entry.completed,
+              label: entry.completed
+                  ? _copy('완료 취소', 'Mark incomplete', '标为未完成')
+                  : _copy('완료', 'Mark complete', '标为已完成'),
+              child: InkResponse(
+                  onTap: busy
+                      ? null
+                      : () => todo != null
+                          ? _togglePersonalTodo(controller, todo)
+                          : _toggleTask(controller, guide!),
+                  radius: 24,
+                  child: SizedBox(
+                      width: 48,
+                      height: 48,
+                      child: Align(
+                          alignment: Alignment.centerLeft,
+                          child:
+                              _CompletionCircle(completed: entry.completed))))),
+        if (!entry.actionable)
+          SizedBox(
+              width: 48,
+              height: 48,
+              child: Align(
+                  alignment: Alignment.centerLeft,
+                  child: imageUrl == null
+                      ? const Icon(Icons.info_outline_rounded,
+                          size: 21, color: Color(0xFF64748B))
+                      : ClipRRect(
+                          borderRadius: BorderRadius.circular(7),
+                          child: CachedNetworkImage(
+                            imageUrl: imageUrl,
+                            cacheManager: AppImageCacheManager.instance,
+                            width: 38,
+                            height: 38,
+                            fit: BoxFit.cover,
+                            errorWidget: (_, __, ___) => const Icon(
+                                Icons.info_outline_rounded,
+                                size: 21,
+                                color: Color(0xFF64748B)),
+                          ),
+                        ))),
+        Expanded(
+            child: InkWell(
+                onTap: busy
+                    ? null
+                    : () => todo != null
+                        ? _editPersonalTodo(controller,
+                            existing: todo, initialWeekNumber: todo.weekNumber)
+                        : _guideDetails(controller, guide!),
+                child: Padding(
+                    padding: const EdgeInsets.symmetric(vertical: 8),
+                    child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Text(title,
+                              style: _captionStyle.copyWith(
+                                  fontSize: _todoFont(context, 14),
+                                  height: 1.3,
+                                  fontWeight: FontWeight.w600,
+                                  color: entry.completed
+                                      ? const Color(0xFF94A3B8)
+                                      : const Color(0xFF0F172A),
+                                  decoration: entry.completed
+                                      ? TextDecoration.lineThrough
+                                      : null)),
+                          if (description.trim().isNotEmpty &&
+                              description.trim() != title.trim())
+                            Padding(
+                                padding: const EdgeInsets.only(top: 3),
+                                child: PostLinkifiedText(
+                                    text: description,
+                                    maxLines: 2,
+                                    overflow: TextOverflow.ellipsis,
+                                    style: _captionStyle.copyWith(
+                                        color: const Color(0xFF667085)),
+                                    linkStyle: _captionStyle.copyWith(
+                                        color: AppColors.pointColor,
+                                        decoration: TextDecoration.underline))),
+                          if (metadata.isNotEmpty)
+                            Padding(
+                              padding: const EdgeInsets.only(top: 3),
+                              child: Wrap(
+                                spacing: 5,
+                                runSpacing: 1,
+                                crossAxisAlignment: WrapCrossAlignment.center,
+                                children: [
+                                  for (var index = 0;
+                                      index < metadata.length;
+                                      index++) ...[
+                                    if (index > 0)
+                                      Text('·',
+                                          style: _captionStyle.copyWith(
+                                              fontSize:
+                                                  _todoFont(context, 11))),
+                                    Text(
+                                      metadata[index].text,
+                                      style: _captionStyle.copyWith(
+                                        fontSize: _todoFont(context, 11),
+                                        height: 1.3,
+                                        fontWeight: metadata[index].alert
+                                            ? FontWeight.w600
+                                            : FontWeight.w400,
+                                        color: metadata[index].alert
+                                            ? const Color(0xFFB42318)
+                                            : const Color(0xFF8491A3),
+                                      ),
+                                    ),
+                                  ],
+                                ],
+                              ),
+                            ),
+                        ])))),
+        if (todo != null)
+          IconButton(
+              onPressed:
+                  busy ? null : () => _toggleItemReminder(controller, todo),
+              tooltip: todo.reminderEnabled
+                  ? _copy('알림 끄기', 'Turn reminder off', '关闭提醒')
+                  : _copy('알림 켜기', 'Turn reminder on', '开启提醒'),
+              icon: Icon(
+                  todo.reminderEnabled
+                      ? Icons.notifications_active_outlined
+                      : Icons.notifications_none_rounded,
+                  size: 21,
+                  color: todo.reminderEnabled
+                      ? AppColors.pointColor
+                      : const Color(0xFF94A3B8))),
+        if (todo == null) const SizedBox(width: 48),
+      ]),
+    );
+  }
+
+  Future<void> _guideDetails(
+      SemesterTodoController controller, SemesterTodo task) async {
+    final title = task.title.resolve(_languageCode);
+    final description = task.description.resolve(_languageCode);
+    final imageUrl = _todoHttpUrl(task.imageUrl);
+    final hasAction = task.actionType != SemesterTodoActionType.none &&
+        (task.actionValue?.trim().isNotEmpty ?? false);
+    await showModalBottomSheet<void>(
+      context: context,
+      isScrollControlled: true,
+      useSafeArea: true,
+      showDragHandle: true,
+      backgroundColor: Colors.white,
+      builder: (sheetContext) => SafeArea(
+        top: false,
+        child: ConstrainedBox(
+          constraints: BoxConstraints(
+              maxHeight: MediaQuery.sizeOf(sheetContext).height * .88),
+          child: SingleChildScrollView(
+            padding: EdgeInsets.fromLTRB(
+                _todoInset(context), 0, _todoInset(context), 24),
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                if (imageUrl != null) ...[
+                  ClipRRect(
+                    borderRadius: BorderRadius.circular(12),
+                    child: AspectRatio(
+                      aspectRatio: 16 / 9,
+                      child: CachedNetworkImage(
+                        imageUrl: imageUrl,
+                        cacheManager: AppImageCacheManager.instance,
+                        fit: BoxFit.cover,
+                        placeholder: (_, __) => const ColoredBox(
+                          color: Color(0xFFF8FAFC),
+                          child: Center(
+                            child: CircularProgressIndicator(
+                                strokeWidth: 2, color: AppColors.pointColor),
+                          ),
+                        ),
+                        errorWidget: (_, __, ___) => const ColoredBox(
+                          color: Color(0xFFF8FAFC),
+                          child: Center(
+                            child: Icon(Icons.image_not_supported_outlined,
+                                color: Color(0xFF94A3B8)),
+                          ),
+                        ),
                       ),
                     ),
-                  ],
+                  ),
+                  const SizedBox(height: 18),
                 ],
-              ),
+                Row(crossAxisAlignment: CrossAxisAlignment.start, children: [
+                  Expanded(
+                      child: Text(title,
+                          style: _captionStyle.copyWith(
+                              fontSize: _todoFont(context, 18),
+                              height: 1.3,
+                              fontWeight: FontWeight.w700,
+                              color: const Color(0xFF0F172A)))),
+                  const SizedBox(width: 8),
+                  IconButton(
+                    visualDensity: VisualDensity.compact,
+                    onPressed: () => Navigator.pop(sheetContext),
+                    tooltip: MaterialLocalizations.of(sheetContext)
+                        .closeButtonTooltip,
+                    icon: const Icon(Icons.close_rounded, size: 21),
+                  ),
+                ]),
+                if (task.type == SemesterTodoType.recommendation)
+                  Padding(
+                    padding: const EdgeInsets.only(top: 2),
+                    child: Text('AD',
+                        style: _captionStyle.copyWith(
+                            fontSize: _todoFont(context, 10),
+                            fontWeight: FontWeight.w700,
+                            letterSpacing: .5)),
+                  ),
+                if (description.isNotEmpty && description != title)
+                  Padding(
+                      padding: const EdgeInsets.only(top: 14, bottom: 12),
+                      child: PostLinkifiedText(
+                        text: description,
+                        style: _captionStyle.copyWith(
+                            fontSize: _todoFont(context, 14),
+                            height: 1.55,
+                            color: const Color(0xFF334155)),
+                        linkStyle: _captionStyle.copyWith(
+                            fontSize: _todoFont(context, 14),
+                            height: 1.55,
+                            color: AppColors.pointColor,
+                            decoration: TextDecoration.underline),
+                      )),
+                // Show only stored information. dueAt is a deadline, not an inferred expiry.
+                if (task.dueAt != null)
+                  _guideInfoRow(Icons.event_outlined,
+                      _copy('기한 ', 'Due ', '截止 ') + _dateLabel(task.dueAt!)),
+                _guideInfoRow(
+                    Icons.person_outline_rounded,
+                    _copy('대상 ', 'Audience ', '适用对象 ') +
+                        _studentType.title(context)),
+                if (hasAction) ...[
+                  const SizedBox(height: 8),
+                  TextButton.icon(
+                    style: TextButton.styleFrom(
+                      foregroundColor: AppColors.pointColor,
+                      minimumSize: const Size(48, 46),
+                      padding: EdgeInsets.zero,
+                    ),
+                    onPressed: () => _openAction(task),
+                    icon: Icon(
+                        task.actionType == SemesterTodoActionType.externalUrl
+                            ? Icons.open_in_new_rounded
+                            : Icons.arrow_forward_rounded,
+                        size: 18),
+                    label: Text(_copy('자세히 보기', 'Learn more', '查看详情'),
+                        style: _captionStyle.copyWith(
+                            fontSize: _todoFont(context, 13),
+                            fontWeight: FontWeight.w700,
+                            color: AppColors.pointColor)),
+                  ),
+                ],
+                if (task.type == SemesterTodoType.required)
+                  TextButton(
+                    style: TextButton.styleFrom(
+                        minimumSize: const Size(48, 46),
+                        padding: EdgeInsets.zero,
+                        foregroundColor: const Color(0xFF334155)),
+                    onPressed: () async {
+                      await _toggleTask(controller, task);
+                      if (sheetContext.mounted) Navigator.pop(sheetContext);
+                    },
+                    child: Text(controller.isGuideCompleted(task)
+                        ? _copy('기존 완료 기록 되돌리기', 'Undo recorded completion',
+                            '撤销完成记录')
+                        : _copy('확인 완료로 기록', 'Record as reviewed', '标记已查看')),
+                  ),
+              ],
             ),
-            if (task.actionType != SemesterTodoActionType.none)
-              IconButton(
-                onPressed: () => _openAction(task),
-                constraints: const BoxConstraints(minWidth: 48, minHeight: 48),
-                icon: Icon(
-                  task.actionType == SemesterTodoActionType.externalUrl
-                      ? Icons.open_in_new_rounded
-                      : Icons.chevron_right_rounded,
-                  size: 18,
-                  color: const Color(0xFF94A3B8),
-                ),
-              ),
-          ],
+          ),
         ),
       ),
     );
+  }
+
+  Widget _guideInfoRow(IconData icon, String label) => Padding(
+        padding: const EdgeInsets.only(top: 7),
+        child: Row(crossAxisAlignment: CrossAxisAlignment.start, children: [
+          Padding(
+            padding: const EdgeInsets.only(top: 1),
+            child: Icon(icon, size: 16, color: const Color(0xFF64748B)),
+          ),
+          const SizedBox(width: 7),
+          Expanded(child: Text(label, style: _captionStyle)),
+        ]),
+      );
+
+  Future<void> _moveTodo(
+      SemesterTodoController controller, PersonalTodo todo) async {
+    final current = controller.currentCalendarWeek;
+    try {
+      await controller.movePersonalTodo(todo, current);
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+        content: Text(_copy(
+            '이번 주로 옮겼어요. 기한은 그대로 유지됩니다.',
+            'Moved to this week. The deadline is unchanged.',
+            '已移至本周，截止日期保持不变。')),
+      ));
+    } catch (_) {
+      if (mounted) _showSaveError();
+    }
+  }
+
+  Future<void> _hideTodo(
+      SemesterTodoController controller, PersonalTodo todo, bool hidden) async {
+    try {
+      await controller.setPersonalTodoHidden(todo, hidden);
+      if (!mounted || !hidden) return;
+      ScaffoldMessenger.of(context)
+        ..hideCurrentSnackBar()
+        ..showSnackBar(SnackBar(
+          content: Text(_copy(
+              '숨겼어요. 숨긴 할 일에서 복구할 수 있어요.',
+              'Hidden. You can restore it from Hidden tasks.',
+              '已隐藏，可在已隐藏的待办中恢复。')),
+          action: SnackBarAction(
+              label: _copy('되돌리기', 'Undo', '撤销'),
+              onPressed: () => _hideTodo(controller, todo, false)),
+        ));
+    } catch (_) {
+      if (mounted) _showSaveError();
+    }
   }
 
   String _personalCategoryLabel(PersonalTodoCategory category) {
@@ -1096,172 +1254,6 @@ class _SemesterTodoScreenState extends State<SemesterTodoScreen> {
     if (minutes == null || minutes < 0 || minutes >= 24 * 60) return null;
     return MaterialLocalizations.of(context).formatTimeOfDay(
       TimeOfDay(hour: minutes ~/ 60, minute: minutes % 60),
-    );
-  }
-
-  Widget _personalRow(SemesterTodoController controller, PersonalTodo todo) {
-    return Padding(
-      padding: const EdgeInsets.symmetric(vertical: 2),
-      child: Row(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Semantics(
-            button: true,
-            label: todo.completed
-                ? ((isChineseUi(context)
-                    ? '标为未完成'
-                    : _isKorean
-                        ? '완료 취소'
-                        : 'Mark incomplete'))
-                : ((isChineseUi(context)
-                    ? '标为已完成'
-                    : _isKorean
-                        ? '완료'
-                        : 'Mark complete')),
-            child: InkResponse(
-              onTap: () => _togglePersonalTodo(controller, todo),
-              radius: 24,
-              child: SizedBox(
-                width: 44,
-                height: 48,
-                child: Align(
-                  alignment: Alignment.centerLeft,
-                  child: _CompletionCircle(completed: todo.completed),
-                ),
-              ),
-            ),
-          ),
-          Expanded(
-            child: InkWell(
-              onTap: () => _editPersonalTodo(
-                controller,
-                existing: todo,
-                initialWeekNumber: todo.weekNumber,
-              ),
-              borderRadius: BorderRadius.circular(10),
-              child: Padding(
-                padding: const EdgeInsets.symmetric(vertical: 9),
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Text(
-                      todo.title,
-                      style: TextStyle(
-                        fontFamily: uiFontFamily(context, 'Inter'),
-                        fontFamilyFallback: const ['NotoSansKR'],
-                        fontSize: _todoFont(context, 14),
-                        fontWeight: FontWeight.w600,
-                        color: todo.completed
-                            ? const Color(0xFF94A3B8)
-                            : const Color(0xFF0F172A),
-                        decoration:
-                            todo.completed ? TextDecoration.lineThrough : null,
-                      ),
-                    ),
-                    if ((todo.memo ?? '').isNotEmpty) ...[
-                      const SizedBox(height: 4),
-                      Text(
-                        todo.memo!,
-                        maxLines: 2,
-                        overflow: TextOverflow.ellipsis,
-                        style: TextStyle(
-                          fontFamily: uiFontFamily(context, 'Inter'),
-                          fontFamilyFallback: const ['NotoSansKR'],
-                          fontSize: _todoFont(context, 12),
-                          color: Color(0xFF64748B),
-                        ),
-                      ),
-                    ],
-                    const SizedBox(height: 5),
-                    Wrap(
-                      spacing: 8,
-                      runSpacing: 3,
-                      crossAxisAlignment: WrapCrossAlignment.center,
-                      children: [
-                        Text(
-                          _personalDueLabel(todo),
-                          style: TextStyle(
-                            fontFamily: uiFontFamily(context, 'Inter'),
-                            fontFamilyFallback: const ['NotoSansKR'],
-                            fontSize: 12,
-                            fontWeight: FontWeight.w700,
-                            color: !todo.completed &&
-                                    todo.dueAt != null &&
-                                    !_kstCalendarDate(todo.dueAt!).isAfter(
-                                        _kstCalendarDate(DateTime.now()))
-                                ? const Color(0xFFB42318)
-                                : const Color(0xFF64748B),
-                          ),
-                        ),
-                        if (_personalTimeLabel(todo) case final time?)
-                          Text(
-                            time,
-                            style: const TextStyle(
-                              fontSize: 12,
-                              fontWeight: FontWeight.w600,
-                              color: Color(0xFF64748B),
-                            ),
-                          ),
-                        Text(
-                          _personalCategoryLabel(todo.category),
-                          style: const TextStyle(
-                            fontSize: 12,
-                            fontWeight: FontWeight.w600,
-                            color: Color(0xFF64748B),
-                          ),
-                        ),
-                        if (todo.priority == PersonalTodoPriority.high)
-                          Text(
-                            isChineseUi(context)
-                                ? '重要'
-                                : _isKorean
-                                    ? '중요'
-                                    : 'High priority',
-                            style: const TextStyle(
-                              fontSize: 12,
-                              fontWeight: FontWeight.w800,
-                              color: Color(0xFF087BB5),
-                            ),
-                          ),
-                      ],
-                    ),
-                  ],
-                ),
-              ),
-            ),
-          ),
-          Tooltip(
-            message: todo.reminderEnabled
-                ? ((isChineseUi(context)
-                    ? '关闭此待办提醒'
-                    : _isKorean
-                        ? '이 할 일 알림 끄기'
-                        : 'Turn off this task reminder'))
-                : ((isChineseUi(context)
-                    ? '开启此待办提醒'
-                    : _isKorean
-                        ? '이 할 일 알림 켜기'
-                        : 'Turn on this task reminder')),
-            child: IconButton(
-              onPressed: todo.completed
-                  ? null
-                  : () => _toggleItemReminder(controller, todo),
-              icon: Icon(
-                todo.reminderEnabled
-                    ? controller.personalTodoNotificationsEnabled
-                        ? Icons.notifications_active_rounded
-                        : Icons.notifications_paused_outlined
-                    : Icons.notifications_none_rounded,
-                size: 20,
-                color: todo.reminderEnabled &&
-                        controller.personalTodoNotificationsEnabled
-                    ? AppColors.pointColor
-                    : const Color(0xFF94A3B8),
-              ),
-            ),
-          ),
-        ],
-      ),
     );
   }
 
@@ -1415,8 +1407,24 @@ class _SemesterTodoScreenState extends State<SemesterTodoScreen> {
     SemesterTodoController controller,
     SemesterTodo task,
   ) async {
-    await controller.toggleTask(task);
-    if (mounted && controller.error != null) _showSaveError();
+    final completed = !controller.isGuideCompleted(task);
+    try {
+      await controller.setGuideCompleted(task, completed);
+      if (!mounted) return;
+      if (completed) {
+        _showCompletionNotice(() async {
+          try {
+            await controller.setGuideCompleted(task, false);
+          } catch (_) {
+            if (mounted) _showSaveError();
+          }
+        });
+      } else {
+        _dismissCompletionNotice();
+      }
+    } catch (_) {
+      if (mounted) _showSaveError();
+    }
   }
 
   Future<void> _togglePersonalTodo(
@@ -1424,33 +1432,62 @@ class _SemesterTodoScreenState extends State<SemesterTodoScreen> {
     PersonalTodo todo,
   ) async {
     final completed = !todo.completed;
-    await controller.setPersonalTodoCompleted(todo, completed);
-    if (!mounted) return;
-    if (controller.error != null) {
-      _showSaveError();
+    try {
+      await controller.setPersonalTodoCompleted(todo, completed);
+    } catch (_) {
+      if (mounted) _showSaveError();
       return;
     }
+    if (!mounted) return;
     if (completed) {
-      ScaffoldMessenger.of(context)
-        ..hideCurrentSnackBar()
-        ..showSnackBar(SnackBar(
-          content: Text(
-            isChineseUi(context)
-                ? '已完成'
-                : _isKorean
-                    ? '완료했어요.'
-                    : 'Task completed.',
-          ),
-          action: SnackBarAction(
-            label: isChineseUi(context)
-                ? '撤销'
-                : _isKorean
-                    ? '되돌리기'
-                    : 'Undo',
-            onPressed: () => controller.setPersonalTodoCompleted(todo, false),
-          ),
-        ));
+      _showCompletionNotice(() async {
+        try {
+          await controller.setPersonalTodoCompleted(todo, false);
+        } catch (_) {
+          if (mounted) _showSaveError();
+        }
+      });
+    } else {
+      _dismissCompletionNotice();
     }
+  }
+
+  void _showCompletionNotice(Future<void> Function() undo) {
+    const visibleFor = Duration(milliseconds: 2200);
+    _completionNoticeTimer?.cancel();
+    final revision = ++_completionNoticeRevision;
+    final messenger = ScaffoldMessenger.of(context);
+    messenger
+      ..hideCurrentSnackBar()
+      ..showSnackBar(SnackBar(
+        duration: visibleFor,
+        content: Text(_copy('완료했어요.', 'Task completed.', '已完成')),
+        action: SnackBarAction(
+          label: _copy('되돌리기', 'Undo', '撤销'),
+          onPressed: () async {
+            if (revision != _completionNoticeRevision) return;
+            _completionNoticeTimer?.cancel();
+            _completionNoticeTimer = null;
+            ++_completionNoticeRevision;
+            await undo();
+          },
+        ),
+      ));
+    // SnackBars with an action can remain indefinitely in accessibility mode.
+    // Keep Undo available briefly without leaving it pinned to this screen.
+    _completionNoticeTimer = Timer(visibleFor, () {
+      if (!mounted || revision != _completionNoticeRevision) return;
+      _completionNoticeTimer = null;
+      ++_completionNoticeRevision;
+      messenger.hideCurrentSnackBar(reason: SnackBarClosedReason.timeout);
+    });
+  }
+
+  void _dismissCompletionNotice() {
+    _completionNoticeTimer?.cancel();
+    _completionNoticeTimer = null;
+    ++_completionNoticeRevision;
+    if (mounted) ScaffoldMessenger.of(context).hideCurrentSnackBar();
   }
 
   void _showSaveError() {
@@ -1458,10 +1495,10 @@ class _SemesterTodoScreenState extends State<SemesterTodoScreen> {
       SnackBar(
         content: Text(
           (isChineseUi(context)
-              ? '保存失败，已恢复原来的状态。'
+              ? '保存失败，请重试。'
               : _isKorean
-                  ? '변경사항을 저장하지 못했어요. 이전 상태로 되돌렸습니다.'
-                  : 'Could not save the change. Your previous state was restored.'),
+                  ? '변경사항을 저장하지 못했어요. 다시 시도해 주세요.'
+                  : 'Could not save the change. Please retry.'),
         ),
       ),
     );
@@ -1622,10 +1659,9 @@ class _PersonalTodoEditorPageState extends State<_PersonalTodoEditorPage> {
     _weekNumber = widget.weeks.any((week) => week.weekNumber == requestedWeek)
         ? requestedWeek
         : (widget.weeks.isEmpty ? 1 : widget.weeks.first.weekNumber);
-    _reminderEnabled =
-        widget.existing?.reminderEnabled ?? widget.notificationsEnabled;
+    _reminderEnabled = widget.existing?.reminderEnabled ?? false;
     _carryOver = widget.existing?.carryOver ?? true;
-    _dueAt = widget.existing?.dueAt ?? _defaultDueAt();
+    _dueAt = widget.existing?.dueAt;
     _timeMinutes = widget.existing?.timeMinutes;
     _category = widget.existing?.category ?? PersonalTodoCategory.personal;
     _priority = widget.existing?.priority ?? PersonalTodoPriority.normal;
@@ -1635,27 +1671,6 @@ class _PersonalTodoEditorPageState extends State<_PersonalTodoEditorPage> {
             _category != PersonalTodoCategory.personal ||
             _priority != PersonalTodoPriority.normal ||
             widget.existing!.reminderEnabled);
-  }
-
-  DateTime _defaultDueAt() {
-    final now = _calendarDate(DateTime.now());
-    SemesterWeek? selected;
-    for (final week in widget.weeks) {
-      if (week.weekNumber == _weekNumber) selected = week;
-    }
-    if (selected == null) {
-      return DateTime.utc(now.year, now.month, now.day)
-          .subtract(const Duration(hours: 9));
-    }
-    final start = _calendarDate(selected.startDate);
-    final end = _calendarDate(selected.endDate);
-    final date = now.isBefore(start)
-        ? start
-        : now.isAfter(end)
-            ? end
-            : now;
-    return DateTime.utc(date.year, date.month, date.day)
-        .subtract(const Duration(hours: 9));
   }
 
   @override
@@ -1785,7 +1800,7 @@ class _PersonalTodoEditorPageState extends State<_PersonalTodoEditorPage> {
 
   @override
   Widget build(BuildContext context) {
-    final canSave = _titleController.text.trim().isNotEmpty && _dueAt != null;
+    final canSave = _titleController.text.trim().isNotEmpty;
     final reminderTime = MaterialLocalizations.of(context).formatTimeOfDay(
       TimeOfDay(hour: widget.reminderHour, minute: widget.reminderMinute),
     );
@@ -1821,7 +1836,7 @@ class _PersonalTodoEditorPageState extends State<_PersonalTodoEditorPage> {
                       : 'Edit task')),
           style: TextStyle(
             fontFamily: uiFontFamily(context, 'Inter'),
-            fontFamilyFallback: const ['NotoSansKR'],
+            fontFamilyFallback: const ['NotoSansKR', 'NotoSansSC'],
             fontSize: _todoFont(context, 18),
             fontWeight: FontWeight.w700,
             color: Color(0xFF0F172A),
@@ -1843,7 +1858,7 @@ class _PersonalTodoEditorPageState extends State<_PersonalTodoEditorPage> {
                       : 'Save'),
               style: TextStyle(
                 fontFamily: uiFontFamily(context, 'Inter'),
-                fontFamilyFallback: const ['NotoSansKR'],
+                fontFamilyFallback: const ['NotoSansKR', 'NotoSansSC'],
                 fontSize: _todoFont(context, 14),
                 fontWeight: FontWeight.w700,
               ),
@@ -1873,80 +1888,6 @@ class _PersonalTodoEditorPageState extends State<_PersonalTodoEditorPage> {
                 border: const UnderlineInputBorder(),
               ),
             ),
-            if (widget.weeks.isNotEmpty)
-              DropdownButtonFormField<int>(
-                initialValue: _weekNumber,
-                isExpanded: true,
-                decoration: InputDecoration(
-                  labelText: (isChineseUi(context)
-                      ? '周'
-                      : widget.isKorean
-                          ? '주차'
-                          : 'Week'),
-                  border: const UnderlineInputBorder(),
-                ),
-                items: widget.weeks
-                    .map(
-                      (week) => DropdownMenuItem<int>(
-                        value: week.weekNumber,
-                        child: Text(
-                          (isChineseUi(context)
-                              ? '第${week.weekNumber}周 · ${_weekRange(week)}'
-                              : widget.isKorean
-                                  ? '${week.weekNumber}주차 · ${_weekRange(week)}'
-                                  : 'Week ${week.weekNumber} · ${_weekRange(week)}'),
-                          overflow: TextOverflow.ellipsis,
-                        ),
-                      ),
-                    )
-                    .toList(growable: false),
-                onChanged: (value) {
-                  if (value != null) {
-                    setState(() {
-                      _weekNumber = value;
-                      final week = widget.weeks.firstWhere(
-                        (item) => item.weekNumber == value,
-                      );
-                      final due =
-                          _dueAt == null ? null : _calendarDate(_dueAt!);
-                      final start = _calendarDate(week.startDate);
-                      final end = _calendarDate(week.endDate);
-                      if (due == null ||
-                          due.isBefore(start) ||
-                          due.isAfter(end)) {
-                        _dueAt =
-                            DateTime.utc(start.year, start.month, start.day)
-                                .subtract(const Duration(hours: 9));
-                      }
-                    });
-                  }
-                },
-              ),
-            ListTile(
-              contentPadding: EdgeInsets.zero,
-              leading: const Icon(
-                Icons.event_outlined,
-                color: Color(0xFF64748B),
-              ),
-              title: Text(
-                _dueAt == null
-                    ? ((isChineseUi(context)
-                        ? '选择日期'
-                        : widget.isKorean
-                            ? '날짜 선택'
-                            : 'Choose date'))
-                    : _dateLabel(_dueAt!),
-              ),
-              subtitle: Text(
-                isChineseUi(context)
-                    ? '必填'
-                    : widget.isKorean
-                        ? '필수'
-                        : 'Required',
-              ),
-              trailing: const Icon(Icons.chevron_right_rounded),
-              onTap: _pickDueDate,
-            ),
             Align(
               alignment: Alignment.centerLeft,
               child: TextButton.icon(
@@ -1970,6 +1911,75 @@ class _PersonalTodoEditorPageState extends State<_PersonalTodoEditorPage> {
               ),
             ),
             if (_showOptions) ...[
+              if (widget.weeks.isNotEmpty)
+                DropdownButtonFormField<int>(
+                  initialValue: _weekNumber,
+                  isExpanded: true,
+                  decoration: InputDecoration(
+                    labelText: (isChineseUi(context)
+                        ? '周'
+                        : widget.isKorean
+                            ? '주차'
+                            : 'Week'),
+                    border: const UnderlineInputBorder(),
+                  ),
+                  items: widget.weeks
+                      .map(
+                        (week) => DropdownMenuItem<int>(
+                          value: week.weekNumber,
+                          child: Text(
+                            (isChineseUi(context)
+                                ? '第${week.weekNumber}周 · ${_weekRange(week)}'
+                                : widget.isKorean
+                                    ? '${week.weekNumber}주차 · ${_weekRange(week)}'
+                                    : 'Week ${week.weekNumber} · ${_weekRange(week)}'),
+                            overflow: TextOverflow.ellipsis,
+                          ),
+                        ),
+                      )
+                      .toList(growable: false),
+                  onChanged: (value) {
+                    if (value != null) {
+                      setState(() {
+                        _weekNumber = value;
+                      });
+                    }
+                  },
+                ),
+              ListTile(
+                contentPadding: EdgeInsets.zero,
+                leading: const Icon(
+                  Icons.event_outlined,
+                  color: Color(0xFF64748B),
+                ),
+                title: Text(
+                  _dueAt == null
+                      ? ((isChineseUi(context)
+                          ? '选择日期'
+                          : widget.isKorean
+                              ? '날짜 선택'
+                              : 'Choose date'))
+                      : _dateLabel(_dueAt!),
+                ),
+                subtitle: Text(
+                  isChineseUi(context)
+                      ? '选填'
+                      : widget.isKorean
+                          ? '선택'
+                          : 'Optional',
+                ),
+                trailing: _dueAt == null
+                    ? const Icon(Icons.chevron_right_rounded)
+                    : IconButton(
+                        tooltip: isChineseUi(context)
+                            ? '清除日期'
+                            : widget.isKorean
+                                ? '날짜 지우기'
+                                : 'Clear date',
+                        onPressed: () => setState(() => _dueAt = null),
+                        icon: const Icon(Icons.close_rounded, size: 20)),
+                onTap: _pickDueDate,
+              ),
               TextField(
                 controller: _memoController,
                 maxLength: 200,
@@ -2138,7 +2148,7 @@ class _PersonalTodoEditorPageState extends State<_PersonalTodoEditorPage> {
                             : 'Delete task'),
                     style: TextStyle(
                       fontFamily: uiFontFamily(context, 'Inter'),
-                      fontFamilyFallback: const ['NotoSansKR'],
+                      fontFamilyFallback: const ['NotoSansKR', 'NotoSansSC'],
                       fontWeight: FontWeight.w700,
                     ),
                   ),
@@ -2150,33 +2160,6 @@ class _PersonalTodoEditorPageState extends State<_PersonalTodoEditorPage> {
       ),
     );
   }
-}
-
-class _SectionTitle extends StatelessWidget {
-  const _SectionTitle({required this.title, this.trailing});
-
-  final String title;
-  final Widget? trailing;
-
-  @override
-  Widget build(BuildContext context) => Row(
-        children: [
-          Expanded(
-            child: Text(
-              title,
-              style: TextStyle(
-                fontFamily: uiFontFamily(context, 'Inter'),
-                fontFamilyFallback: const ['NotoSansKR'],
-                fontSize: _todoFont(context, 15),
-                height: 1.4,
-                fontWeight: FontWeight.w700,
-                color: Color(0xFF0F172A),
-              ),
-            ),
-          ),
-          if (trailing != null) trailing!,
-        ],
-      );
 }
 
 class _ReminderTimeSheet extends StatefulWidget {
@@ -2231,7 +2214,7 @@ class _ReminderTimeSheetState extends State<_ReminderTimeSheet> {
                             : 'Reminder time'),
                     style: TextStyle(
                       fontFamily: uiFontFamily(context, 'Inter'),
-                      fontFamilyFallback: const ['NotoSansKR'],
+                      fontFamilyFallback: const ['NotoSansKR', 'NotoSansSC'],
                       fontSize: _todoFont(context, 17),
                       height: 1.3,
                       fontWeight: FontWeight.w700,
@@ -2260,7 +2243,7 @@ class _ReminderTimeSheetState extends State<_ReminderTimeSheet> {
                       : 'Choose when you want to receive the daily reminder.'),
               style: TextStyle(
                 fontFamily: uiFontFamily(context, 'Inter'),
-                fontFamilyFallback: const ['NotoSansKR'],
+                fontFamilyFallback: const ['NotoSansKR', 'NotoSansSC'],
                 fontSize: _todoFont(context, 13),
                 height: 1.45,
                 color: Color(0xFF64748B),
@@ -2274,7 +2257,7 @@ class _ReminderTimeSheetState extends State<_ReminderTimeSheet> {
                   textTheme: CupertinoTextThemeData(
                     dateTimePickerTextStyle: TextStyle(
                       fontFamily: uiFontFamily(context, 'Inter'),
-                      fontFamilyFallback: const ['NotoSansKR'],
+                      fontFamilyFallback: const ['NotoSansKR', 'NotoSansSC'],
                       fontSize: 21,
                       fontWeight: FontWeight.w600,
                       color: Color(0xFF0F172A),
@@ -2313,7 +2296,7 @@ class _ReminderTimeSheetState extends State<_ReminderTimeSheet> {
                             : 'Cancel'),
                     style: TextStyle(
                       fontFamily: uiFontFamily(context, 'Inter'),
-                      fontFamilyFallback: const ['NotoSansKR'],
+                      fontFamilyFallback: const ['NotoSansKR', 'NotoSansSC'],
                       fontSize: 15,
                       fontWeight: FontWeight.w600,
                     ),
@@ -2334,7 +2317,7 @@ class _ReminderTimeSheetState extends State<_ReminderTimeSheet> {
                             : 'Save'),
                     style: TextStyle(
                       fontFamily: uiFontFamily(context, 'Inter'),
-                      fontFamilyFallback: const ['NotoSansKR'],
+                      fontFamilyFallback: const ['NotoSansKR', 'NotoSansSC'],
                       fontSize: 15,
                       fontWeight: FontWeight.w700,
                     ),
@@ -2441,7 +2424,7 @@ class _EmptySemesterState extends StatelessWidget {
                       : 'There is no active semester.'),
               style: TextStyle(
                 fontFamily: uiFontFamily(context, 'Inter'),
-                fontFamilyFallback: const ['NotoSansKR'],
+                fontFamilyFallback: const ['NotoSansKR', 'NotoSansSC'],
                 fontSize: 16,
                 fontWeight: FontWeight.w600,
                 color: Color(0xFF334155),
@@ -2457,7 +2440,7 @@ class _EmptySemesterState extends StatelessWidget {
               textAlign: TextAlign.center,
               style: TextStyle(
                 fontFamily: uiFontFamily(context, 'Inter'),
-                fontFamilyFallback: const ['NotoSansKR'],
+                fontFamilyFallback: const ['NotoSansKR', 'NotoSansSC'],
                 fontSize: 14,
                 color: Color(0xFF64748B),
               ),

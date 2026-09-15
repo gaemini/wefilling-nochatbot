@@ -52,11 +52,21 @@ List<String> _strings(Object? raw) => raw is List
         .toList()
     : const <String>[];
 
+String? _firstNonEmptyLocalizedValue(Map<dynamic, dynamic> map,
+    Iterable<String> keys) {
+  for (final key in keys) {
+    final value = map[key]?.toString().trim() ?? '';
+    if (value.isNotEmpty) return value;
+  }
+  return null;
+}
+
 class LocalizedTodoText {
-  const LocalizedTodoText({required this.ko, required this.en});
+  const LocalizedTodoText({required this.ko, required this.en, this.zh});
 
   final String ko;
   final String en;
+  final String? zh;
 
   factory LocalizedTodoText.fromMap(Object? raw) {
     if (raw is String) {
@@ -67,11 +77,30 @@ class LocalizedTodoText {
     return LocalizedTodoText(
       ko: (map['ko'] ?? map['en'] ?? '').toString().trim(),
       en: (map['en'] ?? map['ko'] ?? '').toString().trim(),
+      zh: _firstNonEmptyLocalizedValue(
+        map,
+        const ['zh_Hans_CN', 'zh_Hans', 'zh'],
+      ),
     );
   }
 
-  String resolve(String languageCode) => languageCode == 'ko' ? ko : en;
-  Map<String, String> toMap() => {'ko': ko, 'en': en};
+  String resolve(String languageCode) =>
+      languageCode.startsWith('zh') && zh != null && zh!.isNotEmpty
+          ? zh!
+          : languageCode == 'ko'
+              ? ko
+              : en;
+  Map<String, String> toMap() => {
+        'ko': ko,
+        'en': en,
+        if (zh != null) ...{
+          // zh_Hans is the canonical server key. Keep zh mirrored so builds
+          // released while Simplified Chinese support was being introduced
+          // continue to read the same operator-managed value.
+          'zh_Hans': zh!,
+          'zh': zh!,
+        },
+      };
 }
 
 class Semester {
@@ -106,6 +135,21 @@ class Semester {
       status: (data['status'] ?? 'draft').toString(),
       currentWeekOverride: (data['currentWeekOverride'] as num?)?.toInt(),
     );
+  }
+
+  /// Calendar-only week for navigation; administrative overrides remain available
+  /// to existing consumers through currentWeek().
+  int calendarWeek(DateTime now) {
+    final today = _kstCalendarDay(now);
+    if (today.isBefore(_kstCalendarDay(startDate))) return 0;
+    if (today.isAfter(_kstCalendarDay(endDate))) return totalWeeks + 1;
+    for (var week = 1; week <= totalWeeks; week++) {
+      if (!today.isBefore(_kstCalendarDay(weekStartDate(week))) &&
+          !today.isAfter(_kstCalendarDay(weekEndDate(week)))) {
+        return week;
+      }
+    }
+    return totalWeeks + 1;
   }
 
   int currentWeek(DateTime now) {
@@ -219,6 +263,8 @@ class SemesterTodo {
     required this.order,
     required this.actionType,
     this.actionValue,
+    this.imageUrl,
+    this.imageStoragePath,
     this.iconName,
     this.dueAt,
     this.carryOver = false,
@@ -235,6 +281,8 @@ class SemesterTodo {
   final int order;
   final SemesterTodoActionType actionType;
   final String? actionValue;
+  final String? imageUrl;
+  final String? imageStoragePath;
   final String? iconName;
   final DateTime? dueAt;
   final bool carryOver;
@@ -259,6 +307,8 @@ class SemesterTodo {
           0,
       actionType: SemesterTodoActionType.parse(data['actionType']),
       actionValue: data['actionValue']?.toString(),
+      imageUrl: data['imageUrl']?.toString().trim(),
+      imageStoragePath: data['imageStoragePath']?.toString().trim(),
       iconName: data['iconName']?.toString(),
       dueAt: _date(data['dueDate'] ?? data['dueAt']),
       carryOver: data['carryOver'] == true,
@@ -336,6 +386,8 @@ class PersonalTodo {
     this.timeMinutes,
     this.category = PersonalTodoCategory.personal,
     this.priority = PersonalTodoPriority.normal,
+    this.sourceGuideKey,
+    this.guideCompletionHandled = false,
   });
 
   final String id;
@@ -353,6 +405,13 @@ class PersonalTodo {
   final int? timeMinutes;
   final PersonalTodoCategory category;
   final PersonalTodoPriority priority;
+
+  /// Optional identity of an explicitly added guide. Never inferred from title.
+  final String? sourceGuideKey;
+
+  /// An explicit local check/undo takes precedence over older guide progress.
+  /// Optional for backward-compatible restoration of already-added guides.
+  final bool guideCompletionHandled;
 
   factory PersonalTodo.fromFirestore(
       DocumentSnapshot<Map<String, dynamic>> doc) {
@@ -373,6 +432,8 @@ class PersonalTodo {
       timeMinutes: (data['timeMinutes'] as num?)?.toInt(),
       category: PersonalTodoCategory.parse(data['category']),
       priority: PersonalTodoPriority.parse(data['priority']),
+      sourceGuideKey: data['sourceGuideKey']?.toString(),
+      guideCompletionHandled: data['guideCompletionHandled'] == true,
     );
   }
 
@@ -392,6 +453,8 @@ class PersonalTodo {
         timeMinutes: (data['timeMinutes'] as num?)?.toInt(),
         category: PersonalTodoCategory.parse(data['category']),
         priority: PersonalTodoPriority.parse(data['priority']),
+        sourceGuideKey: data['sourceGuideKey']?.toString(),
+        guideCompletionHandled: data['guideCompletionHandled'] == true,
       );
 
   Map<String, dynamic> toLocalJson() => <String, dynamic>{
@@ -410,6 +473,8 @@ class PersonalTodo {
         'timeMinutes': timeMinutes,
         'category': category.name,
         'priority': priority.name,
+        if (sourceGuideKey != null) 'sourceGuideKey': sourceGuideKey,
+        if (guideCompletionHandled) 'guideCompletionHandled': true,
       };
 
   PersonalTodo copyWith({
@@ -424,6 +489,7 @@ class PersonalTodo {
     DateTime? reminderStartAt,
     DateTime? completedAt,
     bool clearCompletedAt = false,
+    bool? guideCompletionHandled,
     int? timeMinutes,
     bool clearTime = false,
     PersonalTodoCategory? category,
@@ -446,5 +512,8 @@ class PersonalTodo {
         timeMinutes: clearTime ? null : (timeMinutes ?? this.timeMinutes),
         category: category ?? this.category,
         priority: priority ?? this.priority,
+        sourceGuideKey: sourceGuideKey,
+        guideCompletionHandled:
+            guideCompletionHandled ?? this.guideCompletionHandled,
       );
 }

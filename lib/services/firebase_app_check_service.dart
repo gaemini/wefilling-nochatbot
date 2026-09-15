@@ -63,6 +63,7 @@ class FirebaseAppCheckService {
     final activeRetry = _tokenRetry;
     if (activeRetry != null) await activeRetry;
     if (!isReady &&
+        _providerRetryCooldownElapsed(DateTime.now()) &&
         shouldRetryUnavailableAppCheck(
           readiness: _readiness,
           manualRetryCount: _manualRetryCount,
@@ -78,6 +79,19 @@ class FirebaseAppCheckService {
     if (!isReady) {
       throw const AppCheckUnavailableException();
     }
+  }
+
+  bool _providerRetryCooldownElapsed(DateTime now) {
+    if (_manualRetryCount == 0 || _lastFailureAt == null) return true;
+    final cooldown = switch (_lastErrorCode) {
+      // The native SDK also throttles these failures. Forcing a new token for
+      // every visible media tile only extends that throttle window.
+      'too_many_attempts' => const Duration(minutes: 10),
+      'attestation_failed' => const Duration(minutes: 5),
+      'app_check_failed' => const Duration(minutes: 2),
+      _ => Duration.zero,
+    };
+    return now.difference(_lastFailureAt!) >= cooldown;
   }
 
   Future<void> _initializeOnce() async {
@@ -174,6 +188,7 @@ class FirebaseAppCheckService {
     if (error is AppCheckUnavailableException) return 'token_unavailable';
     final value = error.toString().toLowerCase();
     if (value.contains('too many attempts')) return 'too_many_attempts';
+    if (value.contains('attestation failed')) return 'attestation_failed';
     if (value.contains('network')) return 'network';
     if (value.contains('unavailable')) return 'unavailable';
     return 'app_check_failed';

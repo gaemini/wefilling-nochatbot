@@ -6,6 +6,7 @@ import 'package:firebase_auth/firebase_auth.dart';
 
 import '../models/snack_chat.dart';
 import '../models/snack_chat_message.dart';
+import '../utils/snack_chat_mentions.dart';
 import '../repositories/users_repository.dart';
 import 'content_filter_service.dart';
 import 'snack_chat_local_cache_service.dart';
@@ -218,7 +219,7 @@ class SnackChatUnreadSummarySection {
                   Map<String, dynamic>.from(raw),
                 ))
             .where((item) =>
-                item.content.isNotEmpty && item.sourceSequences.isNotEmpty)
+                item.content.isNotEmpty && (item.sourceSequences.isNotEmpty || item.sourceMessageIds.isNotEmpty))
             .take(3)
             .toList(growable: false)
         : const <SnackChatUnreadSummaryItem>[];
@@ -301,7 +302,7 @@ class SnackChatUnreadSummaryResult {
                   Map<String, dynamic>.from(raw),
                 ))
             .where((item) =>
-                item.content.isNotEmpty && item.sourceSequences.isNotEmpty)
+                item.content.isNotEmpty && (item.sourceSequences.isNotEmpty || item.sourceMessageIds.isNotEmpty))
             .take(12)
             .toList(growable: false)
         : const <SnackChatUnreadSummaryItem>[];
@@ -515,6 +516,10 @@ class SnackChatService {
   final FirebaseFirestore _firestore = FirebaseFirestore.instance;
   final FirebaseAuth _auth = FirebaseAuth.instance;
   final FirebaseFunctions _functions = FirebaseFunctions.instance;
+  // Only authoritative rejections are terminal; timeouts remain uncertain.
+  final Set<String> _definitiveSendRejections = {};
+  bool wasSendRejected(String owner, String room, String id) =>
+      _definitiveSendRejections.contains('$owner::$room::$id');
   final UsersRepository _usersRepository = UsersRepository();
   final SnackChatLocalCacheService _localCache = SnackChatLocalCacheService();
   StreamController<List<SnackChat>>? _sharedMySnackChatsController;
@@ -1826,6 +1831,7 @@ class SnackChatService {
   Future<bool> sendMessage(
     String snackChatId,
     String text, {
+    List<SnackChatMention> mentions = const [],
     String? messageId,
     ReplyMessagePreview? replyPreview,
     bool suppressLinkPreview = false,
@@ -1834,6 +1840,7 @@ class SnackChatService {
     if (trimmed.isEmpty) return false;
     return _sendMessageInternal(
       snackChatId: snackChatId,
+      mentions: mentions,
       messageId: messageId,
       type: SnackChatMessageType.text,
       text: trimmed,
@@ -1883,6 +1890,7 @@ class SnackChatService {
   }
 
   Future<bool> _sendMessageInternal({
+    List<SnackChatMention> mentions = const [],
     required String snackChatId,
     String? messageId,
     required SnackChatMessageType type,
@@ -1904,7 +1912,17 @@ class SnackChatService {
     try {
       final roomRef = _collection.doc(snackChatId);
       final resolvedMessageId = messageId ?? createMessageId(snackChatId);
+      _definitiveSendRejections.remove('$uid::$snackChatId::$resolvedMessageId');
       final messageRef = roomRef.collection('messages').doc(resolvedMessageId);
+      List<String> mentionTargets = [];
+      if (mentions.isNotEmpty) {
+        final proof = await _functions.httpsCallable('validateSnackChatMentions').call({
+          'snackChatId': snackChatId, 'messageId': resolvedMessageId, 'text': text,
+          'mentions': mentions.map((m) => m.toMap()).toList(),
+        }).timeout(const Duration(seconds: 20));
+        if (_uid != uid || proof.data is! Map || proof.data['success'] != true) return false;
+        mentionTargets = List<String>.from(proof.data['targetIds'] ?? []);
+      }
       final firestoreWriteStopwatch = Stopwatch()..start();
       var transactionAttempt = 0;
       var committedSequence = 0;
@@ -1970,6 +1988,10 @@ class SnackChatService {
             'chatId': snackChatId,
             'type': snackChatMessageTypeWireName(type),
             'text': text,
+            if (mentions.isNotEmpty) ...{
+              'mentions': mentions.map((m) => m.toMap()).toList(),
+              'mentionTargetIds': mentionTargets,
+            },
             // Private Snack Chat images are addressed by their authenticated
             // Storage path. The upload URL remains local preview state only, so
             if (imagePath != null && imagePath.isNotEmpty)
@@ -2028,6 +2050,11 @@ class SnackChatService {
       }
       return true;
     } catch (e) {
+      if (messageId != null && e is FirebaseException &&
+          const {'permission-denied', 'invalid-argument', 'not-found', 'failed-precondition', 'unauthenticated'}.contains(e.code)) {
+        if (_definitiveSendRejections.length >= 200) _definitiveSendRejections.remove(_definitiveSendRejections.first);
+        _definitiveSendRejections.add('$uid::$snackChatId::$messageId');
+      }
       Logger.error('Snack Chat 메시지 전송 실패: $e');
       return false;
     }

@@ -4,11 +4,14 @@ import 'dart:math' as math;
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/material.dart';
 
+import '../constants/app_constants.dart';
 import '../l10n/app_localizations.dart';
 import '../models/snack_chat.dart';
 import '../models/user_profile.dart';
 import '../repositories/users_repository.dart';
 import '../services/snack_chat_service.dart';
+import '../services/snack_chat_discovery_service.dart';
+import 'snack_chat_discovery_screen.dart';
 import '../ui/sheets/snack_chat_unfavorite_sheet.dart';
 import '../ui/widgets/snack_chat_participant_picker.dart';
 import '../utils/country_flag_helper.dart';
@@ -89,9 +92,11 @@ class _SnackChatInfoScreenState extends State<SnackChatInfoScreen> {
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
           content: Text(
-            (isChineseUi(context) ? '通知设置更新失败。' : isKo
-                ? '알림 설정을 저장하지 못했습니다.'
-                : 'Could not update notification settings.'),
+            (isChineseUi(context)
+                ? '通知设置更新失败。'
+                : isKo
+                    ? '알림 설정을 저장하지 못했습니다.'
+                    : 'Could not update notification settings.'),
           ),
         ),
       );
@@ -213,11 +218,16 @@ class _SnackChatInfoScreenState extends State<SnackChatInfoScreen> {
                                   children: [
                                     Expanded(
                                       child: Text(
-                                        (isChineseUi(context) ? '邀请参与者' : isKo ? '참여자 초대' : 'Invite participants'),
+                                        (isChineseUi(context)
+                                            ? '邀请参与者'
+                                            : isKo
+                                                ? '참여자 초대'
+                                                : 'Invite participants'),
                                         maxLines: 1,
                                         overflow: TextOverflow.ellipsis,
                                         style: TextStyle(
-                                          fontFamily: uiFontFamily(context, 'Inter'),
+                                          fontFamily:
+                                              uiFontFamily(context, 'Inter'),
                                           fontFamilyFallback: const [
                                             'NotoSansKR',
                                           ],
@@ -252,12 +262,15 @@ class _SnackChatInfoScreenState extends State<SnackChatInfoScreen> {
                                         ),
                                       ),
                                       child: Text(
-                                        (isChineseUi(context) ? '邀请${selected.length}人' : isKo
-                                            ? '${selected.length}명 초대'
-                                            : 'Invite ${selected.length}'),
+                                        (isChineseUi(context)
+                                            ? '邀请${selected.length}人'
+                                            : isKo
+                                                ? '${selected.length}명 초대'
+                                                : 'Invite ${selected.length}'),
                                         maxLines: 1,
                                         style: TextStyle(
-                                          fontFamily: uiFontFamily(context, 'Inter'),
+                                          fontFamily:
+                                              uiFontFamily(context, 'Inter'),
                                           fontFamilyFallback: const [
                                             'NotoSansKR',
                                           ],
@@ -274,11 +287,14 @@ class _SnackChatInfoScreenState extends State<SnackChatInfoScreen> {
                                 if (!keyboardVisible) ...[
                                   const SizedBox(height: 2),
                                   Text(
-                                    (isChineseUi(context) ? '邀请好友，或通过用户ID搜索。' : isKo
-                                        ? '친구 또는 사용자 아이디로 초대할 수 있어요.'
-                                        : 'Invite friends or search by user ID.'),
+                                    (isChineseUi(context)
+                                        ? '邀请好友，或通过用户ID搜索。'
+                                        : isKo
+                                            ? '친구 또는 사용자 아이디로 초대할 수 있어요.'
+                                            : 'Invite friends or search by user ID.'),
                                     style: TextStyle(
-                                      fontFamily: uiFontFamily(context, 'Inter'),
+                                      fontFamily:
+                                          uiFontFamily(context, 'Inter'),
                                       fontFamilyFallback: const ['NotoSansKR'],
                                       fontSize: context
                                           .rf(12.5)
@@ -336,9 +352,11 @@ class _SnackChatInfoScreenState extends State<SnackChatInfoScreen> {
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
           content: Text(
-            (isChineseUi(context) ? '已邀请${invited.length}位参与者。' : isKo
-                ? '${invited.length}명을 초대했습니다.'
-                : 'Invited ${invited.length} participants.'),
+            (isChineseUi(context)
+                ? '已邀请${invited.length}位参与者。'
+                : isKo
+                    ? '${invited.length}명을 초대했습니다.'
+                    : 'Invited ${invited.length} participants.'),
           ),
         ),
       );
@@ -347,9 +365,11 @@ class _SnackChatInfoScreenState extends State<SnackChatInfoScreen> {
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
           content: Text(
-            (isChineseUi(context) ? '邀请失败，请重试。' : isKo
-                ? '초대하지 못했습니다. 잠시 후 다시 시도해 주세요.'
-                : 'Could not invite. Please try again.'),
+            (isChineseUi(context)
+                ? '邀请失败，请重试。'
+                : isKo
+                    ? '초대하지 못했습니다. 잠시 후 다시 시도해 주세요.'
+                    : 'Could not invite. Please try again.'),
           ),
         ),
       );
@@ -375,9 +395,11 @@ class _SnackChatInfoScreenState extends State<SnackChatInfoScreen> {
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
           content: Text(
-            (isChineseUi(context) ? '收藏设置更新失败。' : isKo
-                ? '즐겨찾기 설정을 저장하지 못했습니다.'
-                : 'Could not update favorite settings.'),
+            (isChineseUi(context)
+                ? '收藏设置更新失败。'
+                : isKo
+                    ? '즐겨찾기 설정을 저장하지 못했습니다.'
+                    : 'Could not update favorite settings.'),
           ),
         ),
       );
@@ -432,9 +454,21 @@ class _SnackChatInfoScreenState extends State<SnackChatInfoScreen> {
     if (_isUpdatingTitle || _uid != room.creatorId) return;
     final isKo = Localizations.localeOf(context).languageCode == 'ko';
     final nextTitle = await _showCreatorTextDialog(
-      title: (isChineseUi(context) ? '修改群聊名称' : isKo ? '스낵챗 이름 변경' : 'Rename Snack Chat'),
-      hintText: (isChineseUi(context) ? '输入新名称。' : isKo ? '새 이름을 입력해 주세요.' : 'Enter a new name.'),
-      actionLabel: (isChineseUi(context) ? '修改名称' : isKo ? '변경' : 'Rename'),
+      title: (isChineseUi(context)
+          ? '修改群聊名称'
+          : isKo
+              ? '스낵챗 이름 변경'
+              : 'Rename Snack Chat'),
+      hintText: (isChineseUi(context)
+          ? '输入新名称。'
+          : isKo
+              ? '새 이름을 입력해 주세요.'
+              : 'Enter a new name.'),
+      actionLabel: (isChineseUi(context)
+          ? '修改名称'
+          : isKo
+              ? '변경'
+              : 'Rename'),
       maxLength: 40,
       maxLines: 1,
       initialValue: room.title,
@@ -447,7 +481,11 @@ class _SnackChatInfoScreenState extends State<SnackChatInfoScreen> {
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
           content: Text(
-            (isChineseUi(context) ? '群聊名称已修改。' : isKo ? '스낵챗 이름을 변경했습니다.' : 'Snack Chat renamed.'),
+            (isChineseUi(context)
+                ? '群聊名称已修改。'
+                : isKo
+                    ? '스낵챗 이름을 변경했습니다.'
+                    : 'Snack Chat renamed.'),
           ),
         ),
       );
@@ -456,7 +494,11 @@ class _SnackChatInfoScreenState extends State<SnackChatInfoScreen> {
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
           content: Text(
-            (isChineseUi(context) ? '修改群聊名称失败。' : isKo ? '이름을 변경하지 못했습니다.' : 'Could not rename the Snack Chat.'),
+            (isChineseUi(context)
+                ? '修改群聊名称失败。'
+                : isKo
+                    ? '이름을 변경하지 못했습니다.'
+                    : 'Could not rename the Snack Chat.'),
           ),
         ),
       );
@@ -469,9 +511,21 @@ class _SnackChatInfoScreenState extends State<SnackChatInfoScreen> {
     if (_isSendingAnnouncement || _uid != room.creatorId) return;
     final isKo = Localizations.localeOf(context).languageCode == 'ko';
     final body = await _showCreatorTextDialog(
-      title: (isChineseUi(context) ? '发布公告' : isKo ? '공지 등록' : 'Post announcement'),
-      hintText: (isChineseUi(context) ? '填写公告内容。' : isKo ? '멤버에게 알릴 내용을 입력해 주세요.' : 'Write an announcement.'),
-      actionLabel: (isChineseUi(context) ? '动态' : isKo ? '등록' : 'Post'),
+      title: (isChineseUi(context)
+          ? '发布公告'
+          : isKo
+              ? '공지 등록'
+              : 'Post announcement'),
+      hintText: (isChineseUi(context)
+          ? '填写公告内容。'
+          : isKo
+              ? '멤버에게 알릴 내용을 입력해 주세요.'
+              : 'Write an announcement.'),
+      actionLabel: (isChineseUi(context)
+          ? '动态'
+          : isKo
+              ? '등록'
+              : 'Post'),
       maxLength: 500,
       maxLines: 6,
     );
@@ -503,7 +557,11 @@ class _SnackChatInfoScreenState extends State<SnackChatInfoScreen> {
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
           content: Text(
-            (isChineseUi(context) ? '公告已发布。' : isKo ? '공지를 등록했습니다.' : 'Announcement posted.'),
+            (isChineseUi(context)
+                ? '公告已发布。'
+                : isKo
+                    ? '공지를 등록했습니다.'
+                    : 'Announcement posted.'),
           ),
         ),
       );
@@ -512,7 +570,11 @@ class _SnackChatInfoScreenState extends State<SnackChatInfoScreen> {
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
           content: Text(
-            (isChineseUi(context) ? '发布公告失败。' : isKo ? '공지를 등록하지 못했습니다.' : 'Could not post announcement.'),
+            (isChineseUi(context)
+                ? '发布公告失败。'
+                : isKo
+                    ? '공지를 등록하지 못했습니다.'
+                    : 'Could not post announcement.'),
           ),
         ),
       );
@@ -560,8 +622,16 @@ class _SnackChatInfoScreenState extends State<SnackChatInfoScreen> {
                   children: [
                     Text(
                       deletesMeetupRoom
-                          ? ((isChineseUi(context) ? '删除群聊' : dialogIsKo ? '스낵챗 삭제' : 'Delete Snack Chat'))
-                          : ((isChineseUi(context) ? '退出群聊' : dialogIsKo ? '채팅방 나가기' : 'Leave Chat Room')),
+                          ? ((isChineseUi(context)
+                              ? '删除群聊'
+                              : dialogIsKo
+                                  ? '스낵챗 삭제'
+                                  : 'Delete Snack Chat'))
+                          : ((isChineseUi(context)
+                              ? '退出群聊'
+                              : dialogIsKo
+                                  ? '채팅방 나가기'
+                                  : 'Leave Chat Room')),
                       style: TextStyle(
                         fontFamily: uiFontFamily(context, 'Inter'),
                         fontFamilyFallback: const ['NotoSansKR'],
@@ -574,12 +644,16 @@ class _SnackChatInfoScreenState extends State<SnackChatInfoScreen> {
                     SizedBox(height: context.rs(8).clamp(6, 10).toDouble()),
                     Text(
                       deletesMeetupRoom
-                          ? ((isChineseUi(context) ? '聚会发起人退出后，此群聊及全部消息将被删除。之后可从聚会页面创建新的群聊。' : dialogIsKo
-                              ? '밋업 호스트가 나가면 이 스낵챗과 모든 대화가 삭제됩니다. 이후 밋업에서 새 스낵챗을 만들 수 있습니다.'
-                              : 'When the Meetup host leaves, this Snack Chat and all messages are deleted. A new Snack Chat can then be created from the Meetup.'))
-                          : ((isChineseUi(context) ? '退出后将无法查看此群聊及消息，需要再次受邀才能加入。' : dialogIsKo
-                              ? '채팅방에서 나가면 목록과 대화를 볼 수 없으며, 다시 참여하려면 초대를 받아야 합니다.'
-                              : 'After leaving, this room and its messages will no longer be available. You will need another invitation to rejoin.')),
+                          ? ((isChineseUi(context)
+                              ? '聚会发起人退出后，此群聊及全部消息将被删除。之后可从聚会页面创建新的群聊。'
+                              : dialogIsKo
+                                  ? '밋업 호스트가 나가면 이 스낵챗과 모든 대화가 삭제됩니다. 이후 밋업에서 새 스낵챗을 만들 수 있습니다.'
+                                  : 'When the Meetup host leaves, this Snack Chat and all messages are deleted. A new Snack Chat can then be created from the Meetup.'))
+                          : ((isChineseUi(context)
+                              ? '退出后将无法查看此群聊及消息，需要再次受邀才能加入。'
+                              : dialogIsKo
+                                  ? '채팅방에서 나가면 목록과 대화를 볼 수 없으며, 다시 참여하려면 초대를 받아야 합니다.'
+                                  : 'After leaving, this room and its messages will no longer be available. You will need another invitation to rejoin.')),
                       style: TextStyle(
                         fontFamily: uiFontFamily(context, 'Inter'),
                         fontFamilyFallback: const ['NotoSansKR'],
@@ -611,7 +685,11 @@ class _SnackChatInfoScreenState extends State<SnackChatInfoScreen> {
                               ),
                             ),
                             child: Text(
-                              (isChineseUi(context) ? '取消' : dialogIsKo ? '취소' : 'Cancel'),
+                              (isChineseUi(context)
+                                  ? '取消'
+                                  : dialogIsKo
+                                      ? '취소'
+                                      : 'Cancel'),
                               style: TextStyle(
                                 fontFamily: uiFontFamily(context, 'Inter'),
                                 fontFamilyFallback: ['NotoSansKR'],
@@ -635,8 +713,16 @@ class _SnackChatInfoScreenState extends State<SnackChatInfoScreen> {
                             ),
                             child: Text(
                               deletesMeetupRoom
-                                  ? ((isChineseUi(context) ? '删除' : dialogIsKo ? '삭제' : 'Delete'))
-                                  : ((isChineseUi(context) ? '退出' : dialogIsKo ? '나가기' : 'Leave')),
+                                  ? ((isChineseUi(context)
+                                      ? '删除'
+                                      : dialogIsKo
+                                          ? '삭제'
+                                          : 'Delete'))
+                                  : ((isChineseUi(context)
+                                      ? '退出'
+                                      : dialogIsKo
+                                          ? '나가기'
+                                          : 'Leave')),
                               style: TextStyle(
                                 fontFamily: uiFontFamily(context, 'Inter'),
                                 fontFamilyFallback: ['NotoSansKR'],
@@ -766,67 +852,86 @@ class _SnackChatInfoScreenState extends State<SnackChatInfoScreen> {
     );
   }
 
-  Widget _buildSettingRow({
+  Widget _buildTopToggleAction({
     required BuildContext context,
-    required IconData icon,
-    required Color iconColor,
-    required String title,
-    required bool value,
-    required ValueChanged<bool>? onChanged,
+    required IconData activeIcon,
+    required IconData inactiveIcon,
+    required bool active,
+    required bool busy,
+    required String tooltip,
+    required VoidCallback onPressed,
   }) {
     return Semantics(
-      toggled: value,
-      label: title,
-      child: ConstrainedBox(
-        constraints: const BoxConstraints(minHeight: 52),
-        child: Row(
-          children: [
-            SizedBox.square(
-              dimension: 32,
-              child: Center(
-                child: Icon(
-                  icon,
-                  color: iconColor,
-                  size: context.ri(19).clamp(18, 20).toDouble(),
+      toggled: active,
+      label: tooltip,
+      child: IconButton(
+        onPressed: busy ? null : onPressed,
+        tooltip: tooltip,
+        color: active ? AppColors.pointColor : const Color(0xFF475569),
+        disabledColor: const Color(0xFF98A2B3),
+        icon: busy
+            ? const SizedBox.square(
+                dimension: 18,
+                child: CircularProgressIndicator(
+                  strokeWidth: 2,
+                  color: AppColors.pointColor,
                 ),
+              )
+            : Icon(
+                active ? activeIcon : inactiveIcon,
+                size: context.ri(22).clamp(21, 24).toDouble(),
               ),
-            ),
-            SizedBox(width: context.rs(8)),
-            Expanded(
-              child: Text(
-                title,
-                maxLines: 2,
+      ),
+    );
+  }
+
+  void _openDiscovery({required String initialKind}) {
+    Navigator.push<void>(
+      context,
+      MaterialPageRoute(
+        builder: (_) => SnackChatDiscoveryScreen(
+          roomId: widget.snackChatId,
+          initialKind: initialKind,
+        ),
+      ),
+    );
+  }
+
+  Widget _buildDiscoveryShortcut({
+    required BuildContext context,
+    required IconData icon,
+    required String label,
+    required String kind,
+  }) {
+    return Expanded(
+      child: InkWell(
+        onTap: () => _openDiscovery(initialKind: kind),
+        borderRadius: BorderRadius.circular(10),
+        child: ConstrainedBox(
+          constraints: const BoxConstraints(minHeight: 58),
+          child: Column(
+            mainAxisAlignment: MainAxisAlignment.center,
+            children: [
+              Icon(
+                icon,
+                size: context.ri(22).clamp(20, 23).toDouble(),
+                color: const Color(0xFF475569),
+              ),
+              const SizedBox(height: 5),
+              Text(
+                label,
+                maxLines: 1,
                 overflow: TextOverflow.ellipsis,
                 style: TextStyle(
                   fontFamily: uiFontFamily(context, 'Inter'),
                   fontFamilyFallback: const ['NotoSansKR'],
-                  fontSize: context.rf(14.5).clamp(13.5, 15.5).toDouble(),
+                  fontSize: context.rf(12).clamp(11.5, 13).toDouble(),
                   fontWeight: FontWeight.w600,
-                  color: const Color(0xFF1F2937),
+                  color: const Color(0xFF475569),
                 ),
               ),
-            ),
-            const SizedBox(width: 8),
-            SizedBox(
-              width: 46,
-              height: 38,
-              child: FittedBox(
-                fit: BoxFit.contain,
-                child: Switch(
-                  value: value,
-                  onChanged: onChanged,
-                  activeThumbColor: const Color(0xFF344054),
-                  activeTrackColor: const Color(0xFFD0D5DD),
-                  inactiveThumbColor: const Color(0xFF98A2B3),
-                  inactiveTrackColor: const Color(0xFFEAECF0),
-                  trackOutlineColor: const WidgetStatePropertyAll(
-                    Colors.transparent,
-                  ),
-                  materialTapTargetSize: MaterialTapTargetSize.shrinkWrap,
-                ),
-              ),
-            ),
-          ],
+            ],
+          ),
         ),
       ),
     );
@@ -867,16 +972,22 @@ class _SnackChatInfoScreenState extends State<SnackChatInfoScreen> {
                   mainAxisSize: MainAxisSize.min,
                   children: [
                     Text(
-                      (isChineseUi(context) ? '群聊信息加载失败。' : isKo
-                          ? '채팅방 정보를 불러올 수 없습니다.'
-                          : 'Unable to load chat room information.'),
+                      (isChineseUi(context)
+                          ? '群聊信息加载失败。'
+                          : isKo
+                              ? '채팅방 정보를 불러올 수 없습니다.'
+                              : 'Unable to load chat room information.'),
                     ),
                     if (snap.hasError) ...[
                       const SizedBox(height: 8),
                       TextButton.icon(
                         onPressed: _retryRoomStream,
                         icon: const Icon(Icons.refresh_rounded),
-                        label: Text((isChineseUi(context) ? '重试' : isKo ? '다시 시도' : 'Retry')),
+                        label: Text((isChineseUi(context)
+                            ? '重试'
+                            : isKo
+                                ? '다시 시도'
+                                : 'Retry')),
                       ),
                     ],
                   ],
@@ -924,6 +1035,47 @@ class _SnackChatInfoScreenState extends State<SnackChatInfoScreen> {
                   ),
                 ),
               ),
+              actions: [
+                _buildTopToggleAction(
+                  context: context,
+                  activeIcon: Icons.star_rounded,
+                  inactiveIcon: Icons.star_border_rounded,
+                  active: room.isFavoritedBy(_uid),
+                  busy: _isUpdatingFavorite,
+                  tooltip: room.isFavoritedBy(_uid)
+                      ? (isChineseUi(context)
+                          ? '取消收藏'
+                          : isKo
+                              ? '즐겨찾기 해제'
+                              : 'Remove favorite')
+                      : (isChineseUi(context)
+                          ? '收藏'
+                          : isKo
+                              ? '즐겨찾기'
+                              : 'Favorite'),
+                  onPressed: () => _toggleFavorite(room),
+                ),
+                _buildTopToggleAction(
+                  context: context,
+                  activeIcon: Icons.notifications_rounded,
+                  inactiveIcon: Icons.notifications_off_outlined,
+                  active: !_isMuted,
+                  busy: _isUpdatingMute,
+                  tooltip: _isMuted
+                      ? (isChineseUi(context)
+                          ? '开启通知'
+                          : isKo
+                              ? '알림 켜기'
+                              : 'Turn notifications on')
+                      : (isChineseUi(context)
+                          ? '关闭通知'
+                          : isKo
+                              ? '알림 끄기'
+                              : 'Turn notifications off'),
+                  onPressed: _toggleMute,
+                ),
+                const SizedBox(width: 4),
+              ],
             ),
             body: Center(
               child: ConstrainedBox(
@@ -987,9 +1139,14 @@ class _SnackChatInfoScreenState extends State<SnackChatInfoScreen> {
                                           size: 17,
                                         ),
                                   label: Text(
-                                    (isChineseUi(context) ? '修改名称' : isKo ? '이름 변경' : 'Rename'),
+                                    (isChineseUi(context)
+                                        ? '修改名称'
+                                        : isKo
+                                            ? '이름 변경'
+                                            : 'Rename'),
                                     style: TextStyle(
-                                      fontFamily: uiFontFamily(context, 'Inter'),
+                                      fontFamily:
+                                          uiFontFamily(context, 'Inter'),
                                       fontFamilyFallback: ['NotoSansKR'],
                                       fontSize: 13,
                                       fontWeight: FontWeight.w600,
@@ -1021,9 +1178,14 @@ class _SnackChatInfoScreenState extends State<SnackChatInfoScreen> {
                                           size: 18,
                                         ),
                                   label: Text(
-                                    (isChineseUi(context) ? '公告' : isKo ? '공지 등록' : 'Announcement'),
+                                    (isChineseUi(context)
+                                        ? '公告'
+                                        : isKo
+                                            ? '공지 등록'
+                                            : 'Announcement'),
                                     style: TextStyle(
-                                      fontFamily: uiFontFamily(context, 'Inter'),
+                                      fontFamily:
+                                          uiFontFamily(context, 'Inter'),
                                       fontFamilyFallback: ['NotoSansKR'],
                                       fontSize: 13,
                                       fontWeight: FontWeight.w600,
@@ -1033,38 +1195,46 @@ class _SnackChatInfoScreenState extends State<SnackChatInfoScreen> {
                               ],
                             ),
                           ),
-                        const Divider(height: 1, color: Color(0xFFE5E7EB)),
-                        _buildSettingRow(
-                          context: context,
-                          icon: room.isFavoritedBy(_uid)
-                              ? Icons.star_rounded
-                              : Icons.star_border_rounded,
-                          iconColor: const Color(0xFF667085),
-                          title: (isChineseUi(context) ? '收藏此群聊' : isKo ? '채팅 즐겨찾기' : 'Favorite this chat'),
-                          value: room.isFavoritedBy(_uid),
-                          onChanged: _isUpdatingFavorite
-                              ? null
-                              : (_) => _toggleFavorite(room),
-                        ),
-                        const Divider(height: 1, color: Color(0xFFE5E7EB)),
-                        _buildSettingRow(
-                          context: context,
-                          icon: _isMuted
-                              ? Icons.notifications_off_outlined
-                              : Icons.notifications_none_rounded,
-                          iconColor: const Color(0xFF667085),
-                          title: (isChineseUi(context) ? '通知' : isKo ? '알림' : 'Notifications'),
-                          value: !_isMuted,
-                          onChanged:
-                              _isUpdatingMute ? null : (_) => _toggleMute(),
-                        ),
+                        if (snackChatDiscoveryEnabled) ...[
+                          const Divider(height: 1, color: Color(0xFFE5E7EB)),
+                          const SizedBox(height: 8),
+                          Row(
+                            children: [
+                              _buildDiscoveryShortcut(
+                                context: context,
+                                icon: Icons.photo_outlined,
+                                label: snackDiscoveryText(
+                                    context, '사진', 'Photos', '照片'),
+                                kind: 'image',
+                              ),
+                              _buildDiscoveryShortcut(
+                                context: context,
+                                icon: Icons.insert_drive_file_outlined,
+                                label: snackDiscoveryText(
+                                    context, '파일', 'Files', '文件'),
+                                kind: 'file',
+                              ),
+                              _buildDiscoveryShortcut(
+                                context: context,
+                                icon: Icons.link_rounded,
+                                label: snackDiscoveryText(
+                                    context, '링크', 'Links', '链接'),
+                                kind: 'link',
+                              ),
+                            ],
+                          ),
+                        ],
                         SizedBox(
                             height: context.rs(18).clamp(16, 22).toDouble()),
                         Row(
                           children: [
                             Expanded(
                               child: Text(
-                                (isChineseUi(context) ? '成员' : isKo ? '참여 멤버' : 'MEMBERS'),
+                                (isChineseUi(context)
+                                    ? '成员'
+                                    : isKo
+                                        ? '참여 멤버'
+                                        : 'MEMBERS'),
                                 style: TextStyle(
                                   fontFamily: uiFontFamily(context, 'Inter'),
                                   fontFamilyFallback: const ['NotoSansKR'],
@@ -1089,7 +1259,11 @@ class _SnackChatInfoScreenState extends State<SnackChatInfoScreen> {
                                     disabledForegroundColor:
                                         const Color(0xFF98A2B3),
                                   ),
-                                  tooltip: (isChineseUi(context) ? '邀请成员' : isKo ? '멤버 초대' : 'Invite members'),
+                                  tooltip: (isChineseUi(context)
+                                      ? '邀请成员'
+                                      : isKo
+                                          ? '멤버 초대'
+                                          : 'Invite members'),
                                   icon: _isInviting
                                       ? const SizedBox.square(
                                           dimension: 17,
@@ -1127,7 +1301,11 @@ class _SnackChatInfoScreenState extends State<SnackChatInfoScreen> {
                           Padding(
                             padding: const EdgeInsets.symmetric(vertical: 20),
                             child: Text(
-                              (isChineseUi(context) ? '暂无成员。' : isKo ? '표시할 멤버가 없습니다.' : 'No members to show.'),
+                              (isChineseUi(context)
+                                  ? '暂无成员。'
+                                  : isKo
+                                      ? '표시할 멤버가 없습니다.'
+                                      : 'No members to show.'),
                               style: TextStyle(
                                 fontFamily: uiFontFamily(context, 'Inter'),
                                 fontFamilyFallback: ['NotoSansKR'],
@@ -1158,7 +1336,11 @@ class _SnackChatInfoScreenState extends State<SnackChatInfoScreen> {
                             ),
                             icon: const Icon(Icons.logout_rounded, size: 17),
                             label: Text(
-                              (isChineseUi(context) ? '退出群聊' : isKo ? '채팅방 나가기' : 'Leave Room'),
+                              (isChineseUi(context)
+                                  ? '退出群聊'
+                                  : isKo
+                                      ? '채팅방 나가기'
+                                      : 'Leave Room'),
                               style: TextStyle(
                                 fontFamily: uiFontFamily(context, 'Inter'),
                                 fontFamilyFallback: ['NotoSansKR'],
@@ -1306,7 +1488,11 @@ class _CreatorTextDialogState extends State<_CreatorTextDialog> {
       actions: [
         TextButton(
           onPressed: _cancel,
-          child: Text((isChineseUi(context) ? '取消' : isKo ? '취소' : 'Cancel')),
+          child: Text((isChineseUi(context)
+              ? '取消'
+              : isKo
+                  ? '취소'
+                  : 'Cancel')),
         ),
         TextButton(
           onPressed: _canSubmit ? _submit : null,

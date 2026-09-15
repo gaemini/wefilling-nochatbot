@@ -1,8 +1,11 @@
+import 'dart:async';
 import 'dart:convert';
+import 'dart:io';
 import 'dart:ui' as ui;
 
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
+import 'package:firebase_storage/firebase_storage.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:uuid/uuid.dart';
 
@@ -28,18 +31,47 @@ class PersonalTodoNotificationSettings {
   final int minute;
 }
 
+typedef SemesterTodoImageUpload = ({
+  String downloadUrl,
+  String storagePath,
+});
+
 class SemesterTodoService {
-  SemesterTodoService({FirebaseFirestore? firestore, FirebaseAuth? auth})
+  SemesterTodoService(
+      {FirebaseFirestore? firestore,
+      FirebaseAuth? auth,
+      FirebaseStorage? storage,
+      PersonalTodoLocalNotificationService? notifications})
       : _firestore = firestore ?? FirebaseFirestore.instance,
-        _auth = auth ?? FirebaseAuth.instance;
+        _auth = auth ?? FirebaseAuth.instance,
+        _storageOverride = storage,
+        _localNotifications =
+            notifications ?? PersonalTodoLocalNotificationService.instance;
 
   static final SemesterTodoService instance = SemesterTodoService();
 
   final FirebaseFirestore _firestore;
   final FirebaseAuth _auth;
+  final FirebaseStorage? _storageOverride;
+  FirebaseStorage get _storage => _storageOverride ?? FirebaseStorage.instance;
   final Uuid _uuid = const Uuid();
-  final PersonalTodoLocalNotificationService _localNotifications =
-      PersonalTodoLocalNotificationService.instance;
+  String? personalLoadWarning;
+  final PersonalTodoLocalNotificationService _localNotifications;
+  static final Object _writeOwner = Object();
+  Future<void> _personalWriteQueue = Future<void>.value();
+
+  // SharedPreferences uses a single account-scoped list. Serialize read-modify-
+  // write operations, including guide additions, so adjacent taps cannot lose data.
+  Future<T> _personalWrite<T>(Future<T> Function() operation) {
+    final uid = _uid;
+    final next = _personalWriteQueue.then((_) async {
+      if (_uid != uid) throw StateError('Account changed. Please retry.');
+      return runZoned(operation, zoneValues: {_writeOwner: uid});
+    });
+    _personalWriteQueue =
+        next.then<void>((_) {}, onError: (Object _, StackTrace __) {});
+    return next;
+  }
 
   /// 개인 할 일은 운영상 필수 항목이 아니므로 기본 배지에서 제외한다.
   static const bool includePersonalTodosInBadge = false;
@@ -50,6 +82,8 @@ class SemesterTodoService {
   String get _uid {
     final uid = _auth.currentUser?.uid;
     if (uid == null) throw StateError('Authentication is required.');
+    final owner = Zone.current[_writeOwner];
+    if (owner != null && owner != uid) throw StateError('Account changed.');
     return uid;
   }
 
@@ -166,12 +200,14 @@ class SemesterTodoService {
       'semester_personal_todos_migrated_v1_${_uid}_$semesterId';
 
   Future<List<PersonalTodo>> _readAllLocalPersonalTodos() async {
+    final key = _personalTodosKey;
     final preferences = await SharedPreferences.getInstance();
-    final raw = preferences.getString(_personalTodosKey);
+    final raw = preferences.getString(key);
     if (raw == null || raw.isEmpty) return <PersonalTodo>[];
     try {
       final decoded = jsonDecode(raw);
-      if (decoded is! List) return <PersonalTodo>[];
+      if (decoded is! List)
+        throw const FormatException('Invalid personal tasks');
       return decoded
           .whereType<Map>()
           .map((item) => PersonalTodo.fromLocal(
@@ -180,19 +216,21 @@ class SemesterTodoService {
           .where((item) => item.id.isNotEmpty && item.title.trim().isNotEmpty)
           .toList(growable: true);
     } catch (_) {
-      // 손상된 로컬 데이터 하나 때문에 화면 전체가 비지 않도록 한다.
-      return <PersonalTodo>[];
+      // Never present damaged data as an empty list, or overwrite it on the next add.
+      rethrow;
     }
   }
 
   Future<void> _writeAllLocalPersonalTodos(
     Iterable<PersonalTodo> todos,
   ) async {
+    final key = _personalTodosKey;
     final preferences = await SharedPreferences.getInstance();
-    await preferences.setString(
-      _personalTodosKey,
+    final saved = await preferences.setString(
+      key,
       jsonEncode(todos.map((todo) => todo.toLocalJson()).toList()),
     );
+    if (!saved) throw StateError('Could not save personal tasks.');
   }
 
   Future<List<PersonalTodo>> _importLegacyPersonalTodosOnce(
@@ -208,7 +246,8 @@ class SemesterTodoService {
       final snapshot = await _userRef
           .collection('personalTodos')
           .where('semesterId', isEqualTo: semesterId)
-          .get();
+          .get(const GetOptions(source: Source.server))
+          .timeout(const Duration(seconds: 8));
       final merged = <String, PersonalTodo>{
         for (final doc in snapshot.docs)
           doc.id: PersonalTodo.fromFirestore(doc),
@@ -219,23 +258,73 @@ class SemesterTodoService {
       await preferences.setBool(migrationKey, true);
       return merged;
     } catch (_) {
-      // 오프라인/규칙 제한 중에는 로컬 항목만 사용하고 다음 실행에 재시도한다.
+      // Existing local users remain usable during a failed legacy lookup.
+      // Expose an explicit warning; never claim that missing remote data is empty.
+      // Validate the account before falling back. Keep migration pending even
+      // when this device has no tasks yet, so a network failure cannot disable
+      // new local tasks or silently mark the remote history as imported.
+      _uid;
+      personalLoadWarning = 'Legacy task lookup failed; showing saved tasks.';
       return localItems;
     }
   }
 
-  Future<List<PersonalTodo>> getPersonalTodos(String semesterId) async {
-    var allItems = await _readAllLocalPersonalTodos();
-    allItems = await _importLegacyPersonalTodosOnce(semesterId, allItems);
-    final items = allItems
-        .where((item) => item.semesterId == semesterId && !item.archived)
-        .toList(growable: true);
-    items.sort((a, b) {
-      final week = a.weekNumber.compareTo(b.weekNumber);
-      if (week != 0) return week;
-      return a.title.compareTo(b.title);
-    });
-    return items;
+  Future<List<PersonalTodo>> getPersonalTodos(String semesterId,
+          {bool includeArchived = false}) =>
+      _personalWrite(() async {
+        personalLoadWarning = null;
+        var allItems = await _readAllLocalPersonalTodos();
+        allItems = await _importLegacyPersonalTodosOnce(semesterId, allItems);
+        final items = allItems
+            .where((item) =>
+                item.semesterId == semesterId &&
+                (includeArchived || !item.archived))
+            .toList(growable: true);
+        items.sort((a, b) {
+          final week = a.weekNumber.compareTo(b.weekNumber);
+          if (week != 0) return week;
+          return a.title.compareTo(b.title);
+        });
+        return items;
+      });
+
+  Future<void> _persistPersonalChange(
+    List<PersonalTodo> items,
+    List<PersonalTodo> previous,
+    PersonalTodo next,
+    PersonalTodoNotificationSettings settings,
+  ) async {
+    await _writeAllLocalPersonalTodos(items);
+    final old = previous.where((item) => item.id == next.id).firstOrNull;
+    // A new task with reminders OFF has no OS reservation to create/cancel.
+    // Native initialization must not make this local-only save fail.
+    if (!next.reminderEnabled && old?.reminderEnabled != true) return;
+    try {
+      await _localNotifications.schedule(
+          userId: _uid,
+          todo: next,
+          globalEnabled: settings.enabled,
+          hour: settings.hour,
+          minute: settings.minute);
+    } catch (_) {
+      // Keep storage and the controller's error rollback consistent.
+      await _writeAllLocalPersonalTodos(previous);
+      try {
+        if (old == null) {
+          await _localNotifications.cancel(_uid, next.id);
+        } else {
+          await _localNotifications.schedule(
+              userId: _uid,
+              todo: old,
+              globalEnabled: settings.enabled,
+              hour: settings.hour,
+              minute: settings.minute);
+        }
+      } catch (_) {
+        /* Reload retries OS synchronization without deleting data. */
+      }
+      rethrow;
+    }
   }
 
   Future<String> savePersonalTodo({
@@ -254,71 +343,80 @@ class SemesterTodoService {
     int? timeMinutes,
     PersonalTodoCategory category = PersonalTodoCategory.personal,
     PersonalTodoPriority priority = PersonalTodoPriority.normal,
-  }) async {
-    final cleanTitle = title.trim();
-    if (cleanTitle.isEmpty) throw ArgumentError('Task title is required.');
-    final todoId = id ?? _uuid.v4();
-    final todo = PersonalTodo(
-      id: todoId,
-      semesterId: semesterId,
-      title: cleanTitle,
-      weekNumber: weekNumber,
-      completed: completed,
-      carryOver: carryOver,
-      reminderEnabled: reminderEnabled,
-      archived: archived,
-      memo: memo?.trim(),
-      dueAt: dueAt,
-      reminderStartAt: reminderStartAt,
-      completedAt: completed ? (completedAt ?? DateTime.now()) : null,
-      timeMinutes: timeMinutes,
-      category: category,
-      priority: priority,
-    );
-    final settings = await getPersonalTodoNotificationSettings();
-    if (settings.enabled && reminderEnabled) {
-      final allowed = await _localNotifications.requestPermission();
-      if (!allowed) {
-        throw StateError('Notification permission is required.');
-      }
-    }
-    final items = await _readAllLocalPersonalTodos();
-    final index = items.indexWhere((item) => item.id == todoId);
-    if (index < 0) {
-      items.add(todo);
-    } else {
-      items[index] = todo;
-    }
-    await _writeAllLocalPersonalTodos(items);
-    await _localNotifications.schedule(
-      userId: _uid,
-      todo: todo,
-      globalEnabled: settings.enabled,
-      hour: settings.hour,
-      minute: settings.minute,
-    );
-    return todoId;
-  }
+    String? sourceGuideKey,
+  }) =>
+      _personalWrite(() async {
+        final items = await _readAllLocalPersonalTodos();
+        final previous = List<PersonalTodo>.of(items);
+        if (sourceGuideKey != null && id == null) {
+          for (final item in items) {
+            if (item.semesterId == semesterId &&
+                item.weekNumber == weekNumber &&
+                item.sourceGuideKey == sourceGuideKey) return item.id;
+          }
+        }
+        final cleanTitle = title.trim();
+        if (cleanTitle.isEmpty) throw ArgumentError('Task title is required.');
+        final todoId = id ?? _uuid.v4();
+        final todo = PersonalTodo(
+          id: todoId,
+          semesterId: semesterId,
+          title: cleanTitle,
+          weekNumber: weekNumber,
+          completed: completed,
+          carryOver: carryOver,
+          reminderEnabled: reminderEnabled,
+          archived: archived,
+          memo: memo?.trim(),
+          dueAt: dueAt,
+          reminderStartAt: reminderStartAt,
+          completedAt: completed ? (completedAt ?? DateTime.now()) : null,
+          timeMinutes: timeMinutes,
+          category: category,
+          priority: priority,
+          guideCompletionHandled: items
+                  .where((item) => item.id == todoId)
+                  .firstOrNull
+                  ?.guideCompletionHandled ??
+              false,
+          sourceGuideKey: sourceGuideKey ??
+              items
+                  .where((item) => item.id == todoId)
+                  .firstOrNull
+                  ?.sourceGuideKey,
+        );
+        final settings = await getPersonalTodoNotificationSettings();
+        if (settings.enabled && reminderEnabled) {
+          final allowed = await _localNotifications.requestPermission();
+          if (!allowed) {
+            throw StateError('Notification permission is required.');
+          }
+        }
+        final index = items.indexWhere((item) => item.id == todoId);
+        if (index < 0) {
+          items.add(todo);
+        } else {
+          items[index] = todo;
+        }
+        await _persistPersonalChange(items, previous, todo, settings);
+        return todoId;
+      });
 
-  Future<void> setPersonalTodoCompleted(String id, bool completed) async {
-    final items = await _readAllLocalPersonalTodos();
-    final index = items.indexWhere((item) => item.id == id);
-    if (index < 0) return;
-    items[index] = items[index].copyWith(
-      completed: completed,
-      completedAt: completed ? DateTime.now() : null,
-      clearCompletedAt: !completed,
-    );
-    await _writeAllLocalPersonalTodos(items);
-    final settings = await getPersonalTodoNotificationSettings();
-    await _localNotifications.schedule(
-      userId: _uid,
-      todo: items[index],
-      globalEnabled: settings.enabled,
-      hour: settings.hour,
-      minute: settings.minute,
-    );
-  }
+  Future<void> setPersonalTodoCompleted(String id, bool completed) =>
+      _personalWrite(() async {
+        final items = await _readAllLocalPersonalTodos();
+        final previous = List<PersonalTodo>.of(items);
+        final index = items.indexWhere((item) => item.id == id);
+        if (index < 0) return;
+        items[index] = items[index].copyWith(
+          completed: completed,
+          completedAt: completed ? DateTime.now() : null,
+          clearCompletedAt: !completed,
+          guideCompletionHandled: items[index].sourceGuideKey != null,
+        );
+        final settings = await getPersonalTodoNotificationSettings();
+        await _persistPersonalChange(items, previous, items[index], settings);
+      });
 
   Future<PersonalTodoNotificationSettings>
       getPersonalTodoNotificationSettings() async {
@@ -352,88 +450,117 @@ class SemesterTodoService {
     required bool enabled,
     required int hour,
     required int minute,
-  }) async {
-    if (hour < 0 || hour > 23 || minute < 0 || minute > 59) {
-      throw ArgumentError('Invalid reminder time: $hour:$minute');
-    }
-    if (enabled) {
-      final allowed = await _localNotifications.requestPermission();
-      if (!allowed) {
-        throw StateError('Notification permission is required.');
-      }
-    }
-    final preferences = await SharedPreferences.getInstance();
-    await preferences.setString(
-        _personalNotificationSettingsKey,
-        jsonEncode({
-          'enabled': enabled,
-          'reminderHour': hour,
-          'reminderMinute': minute,
-          'timeZone': 'Asia/Seoul',
-        }));
-    final items = await _readAllLocalPersonalTodos();
-    await _localNotifications.syncAll(
-      userId: _uid,
-      todos: items,
-      enabled: enabled,
-      hour: hour,
-      minute: minute,
-    );
-  }
+  }) =>
+      _personalWrite(() async {
+        if (hour < 0 || hour > 23 || minute < 0 || minute > 59) {
+          throw ArgumentError('Invalid reminder time: $hour:$minute');
+        }
+        if (enabled) {
+          final allowed = await _localNotifications.requestPermission();
+          if (!allowed) {
+            throw StateError('Notification permission is required.');
+          }
+        }
+        final preferences = await SharedPreferences.getInstance();
+        await preferences.setString(
+            _personalNotificationSettingsKey,
+            jsonEncode({
+              'enabled': enabled,
+              'reminderHour': hour,
+              'reminderMinute': minute,
+              'timeZone': 'Asia/Seoul',
+            }));
+        final items = await _readAllLocalPersonalTodos();
+        await _localNotifications.syncAll(
+          userId: _uid,
+          todos: items,
+          enabled: enabled,
+          hour: hour,
+          minute: minute,
+        );
+      });
 
   Future<void> setPersonalTodoReminderEnabled(
     String id,
     bool enabled,
     DateTime reminderStartAt,
-  ) async {
-    final settings = await getPersonalTodoNotificationSettings();
-    if (enabled && settings.enabled) {
-      final allowed = await _localNotifications.requestPermission();
-      if (!allowed) {
-        throw StateError('Notification permission is required.');
-      }
-    }
-    final items = await _readAllLocalPersonalTodos();
-    final index = items.indexWhere((item) => item.id == id);
-    if (index < 0) return;
-    items[index] = items[index].copyWith(
-      reminderEnabled: enabled,
-      reminderStartAt: reminderStartAt,
-    );
-    await _writeAllLocalPersonalTodos(items);
-    await _localNotifications.schedule(
-      userId: _uid,
-      todo: items[index],
-      globalEnabled: settings.enabled,
-      hour: settings.hour,
-      minute: settings.minute,
-    );
-  }
+  ) =>
+      _personalWrite(() async {
+        final settings = await getPersonalTodoNotificationSettings();
+        if (enabled && settings.enabled) {
+          final allowed = await _localNotifications.requestPermission();
+          if (!allowed) {
+            throw StateError('Notification permission is required.');
+          }
+        }
+        final items = await _readAllLocalPersonalTodos();
+        final previous = List<PersonalTodo>.of(items);
+        final index = items.indexWhere((item) => item.id == id);
+        if (index < 0) return;
+        items[index] = items[index].copyWith(
+          reminderEnabled: enabled,
+          reminderStartAt: reminderStartAt,
+        );
+        await _persistPersonalChange(items, previous, items[index], settings);
+      });
 
-  Future<void> deletePersonalTodo(String id) async {
-    final items = await _readAllLocalPersonalTodos();
-    items.removeWhere((todo) => todo.id == id);
-    await _writeAllLocalPersonalTodos(items);
-    await _localNotifications.cancel(_uid, id);
-  }
+  Future<void> deletePersonalTodo(String id) => _personalWrite(() async {
+        final items = await _readAllLocalPersonalTodos();
+        items.removeWhere((todo) => todo.id == id);
+        await _writeAllLocalPersonalTodos(items);
+        await _localNotifications.cancel(_uid, id);
+      });
+
+  /// Move/hide the same record; leave its due date and reminder preference intact.
+  Future<void> updatePersonalTodoPlacement(
+    String id, {
+    int? weekNumber,
+    DateTime? reminderStartAt,
+    bool? archived,
+  }) =>
+      _personalWrite(() async {
+        final items = await _readAllLocalPersonalTodos();
+        final index = items.indexWhere((item) => item.id == id);
+        if (index < 0) throw StateError('Task no longer exists.');
+        final previous = List<PersonalTodo>.of(items);
+        final next = items[index].copyWith(
+            weekNumber: weekNumber,
+            reminderStartAt: reminderStartAt,
+            archived: archived);
+        if (next.sourceGuideKey != null &&
+            items.any((other) =>
+                other.id != next.id &&
+                other.semesterId == next.semesterId &&
+                other.weekNumber == next.weekNumber &&
+                other.sourceGuideKey == next.sourceGuideKey)) {
+          throw StateError(
+              'This guide already has a task in the destination week.');
+        }
+        final settings = await getPersonalTodoNotificationSettings();
+        items[index] = next;
+        await _persistPersonalChange(items, previous, next, settings);
+      });
 
   /// 앱 시작 시 OS가 지운 예약을 복구한다. 권한 팝업은 사용자 조작 시에만 띄운다.
   Future<void> syncPersonalTodoNotifications({
     required Iterable<PersonalTodo> todos,
     required PersonalTodoNotificationSettings settings,
-  }) async {
-    try {
-      await _localNotifications.syncAll(
-        userId: _uid,
-        todos: todos,
-        enabled: settings.enabled,
-        hour: settings.hour,
-        minute: settings.minute,
-      );
-    } catch (_) {
-      // 알림 권한이 꺼져 있어도 할 일 화면 자체는 정상적으로 연다.
-    }
-  }
+  }) =>
+      _personalWrite(() async {
+        try {
+          // Read inside the same queue as edits: a late load cannot revive an old reminder.
+          final latest = await _readAllLocalPersonalTodos();
+          final current = await getPersonalTodoNotificationSettings();
+          await _localNotifications.syncAll(
+              userId: _uid,
+              todos: latest,
+              enabled: current.enabled,
+              hour: current.hour,
+              minute: current.minute);
+        } catch (_) {
+          // Permission/OS failures do not make the task list unavailable.
+        }
+      });
 
   /// 앱 언어가 바뀌면 이미 OS에 등록된 알림 문구도 새 언어로 다시 예약한다.
   Future<void> refreshPersonalTodoNotificationLanguage() async {
@@ -625,6 +752,8 @@ class SemesterTodoService {
     bool isActive = true,
     SemesterTodoActionType actionType = SemesterTodoActionType.none,
     String? actionValue,
+    String? imageUrl,
+    String? imageStoragePath,
     bool carryOver = false,
     DateTime? dueDate,
   }) async {
@@ -661,6 +790,8 @@ class SemesterTodoService {
       'isActive': isActive,
       'actionType': actionType.value,
       'actionValue': actionValue?.trim() ?? '',
+      'imageUrl': imageUrl?.trim() ?? '',
+      'imageStoragePath': imageStoragePath?.trim() ?? '',
       'carryOver': carryOver,
       'dueDate': dueDate == null ? null : Timestamp.fromDate(dueDate),
       'updatedAt': FieldValue.serverTimestamp(),
@@ -668,6 +799,62 @@ class SemesterTodoService {
       'schemaVersion': 2,
     }, SetOptions(merge: true));
     return ref.id;
+  }
+
+  Future<SemesterTodoImageUpload> uploadAdminTaskImage({
+    required String semesterId,
+    required String weekId,
+    required File image,
+    String? contentType,
+  }) async {
+    final ownerUid = _uid;
+    final normalizedType =
+        contentType?.startsWith('image/') == true ? contentType! : 'image/jpeg';
+    final extension = switch (normalizedType) {
+      'image/png' => 'png',
+      'image/webp' => 'webp',
+      'image/heic' || 'image/heif' => 'heic',
+      _ => 'jpg',
+    };
+    final storagePath =
+        'semester_todo_images/$semesterId/$weekId/${_uuid.v4()}.$extension';
+    final reference = _storage.ref(storagePath);
+    final upload = reference.putFile(
+      image,
+      SettableMetadata(
+        contentType: normalizedType,
+        cacheControl: 'public,max-age=31536000,immutable',
+        customMetadata: {
+          'ownerUid': ownerUid,
+          'semesterId': semesterId,
+          'weekId': weekId,
+        },
+      ),
+    );
+    final snapshot = await upload.timeout(
+      const Duration(seconds: 120),
+      onTimeout: () {
+        upload.cancel();
+        throw TimeoutException(
+          'Semester To-do image upload timed out.',
+          const Duration(seconds: 120),
+        );
+      },
+    );
+    return (
+      downloadUrl: await snapshot.ref.getDownloadURL(),
+      storagePath: storagePath,
+    );
+  }
+
+  Future<void> deleteAdminTaskImage(String? storagePath) async {
+    final normalized = storagePath?.trim() ?? '';
+    if (!normalized.startsWith('semester_todo_images/')) return;
+    try {
+      await _storage.ref(normalized).delete();
+    } catch (_) {
+      // A stale promotional image must not roll back the saved server content.
+    }
   }
 
   String _sourceTaskId(String taskId, String audience) {
@@ -736,6 +923,8 @@ class SemesterTodoService {
           isActive: task.isActive,
           actionType: task.actionType,
           actionValue: task.actionValue,
+          imageUrl: task.imageUrl,
+          imageStoragePath: task.imageStoragePath,
           carryOver: task.carryOver,
           dueDate: includeOldDueDates ? task.dueAt : null,
         );

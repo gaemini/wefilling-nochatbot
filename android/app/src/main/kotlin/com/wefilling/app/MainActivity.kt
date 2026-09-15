@@ -28,15 +28,20 @@ class MainActivity : FlutterActivity() {
 
     private val mediaSaverChannelName = "com.wefilling.app/media_saver"
     private val documentImportChannelName = "com.wefilling.app/document_import"
+    private val organizationInviteChannelName =
+        "com.wefilling.app/organization_invite"
     private val maxDocumentBytes = 20L * 1024L * 1024L
     private val legacyPhotoSaveRequest = 7241
     private var pendingImageBytes: ByteArray? = null
     private var pendingSaveResult: MethodChannel.Result? = null
     private val mediaSaveInProgress = AtomicBoolean(false)
     private var externalShareChannel: MethodChannel? = null
+    private var organizationInviteChannel: MethodChannel? = null
+    private var pendingOrganizationInviteUrl: String? = null
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
+        captureOrganizationInvite(intent)
     }
 
     override fun configureFlutterEngine(@NonNull flutterEngine: FlutterEngine) {
@@ -84,6 +89,22 @@ class MainActivity : FlutterActivity() {
             importDocument(uri, fileName, result)
         }
 
+        organizationInviteChannel = MethodChannel(
+            flutterEngine.dartExecutor.binaryMessenger,
+            organizationInviteChannelName,
+        ).also { channel ->
+            channel.setMethodCallHandler { call, result ->
+                when (call.method) {
+                    "getPendingLink" -> result.success(pendingOrganizationInviteUrl)
+                    "consumeLink" -> {
+                        pendingOrganizationInviteUrl = null
+                        result.success(null)
+                    }
+                    else -> result.notImplemented()
+                }
+            }
+        }
+
         externalShareChannel = MethodChannel(
             flutterEngine.dartExecutor.binaryMessenger,
             "com.wefilling.app/external_share",
@@ -114,11 +135,22 @@ class MainActivity : FlutterActivity() {
     override fun onNewIntent(intent: Intent) {
         super.onNewIntent(intent)
         setIntent(intent)
+        captureOrganizationInvite(intent)
         if (intent.action == externalShareReadyAction) {
             externalShareChannel?.invokeMethod(
                 "shareReceived",
                 mapOf("id" to intent.getStringExtra(externalShareIdExtra)),
             )
+        }
+    }
+
+    private fun captureOrganizationInvite(intent: Intent?) {
+        val uri = intent?.data ?: return
+        if (uri.scheme == "wefilling" && uri.host == "organization-invite" &&
+            !uri.getQueryParameter("token").isNullOrBlank()
+        ) {
+            pendingOrganizationInviteUrl = uri.toString()
+            organizationInviteChannel?.invokeMethod("inviteReceived", null)
         }
     }
 

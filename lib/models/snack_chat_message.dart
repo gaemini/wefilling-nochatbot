@@ -1,8 +1,9 @@
 import 'package:cloud_firestore/cloud_firestore.dart';
+import '../utils/snack_chat_mentions.dart';
 
 enum SnackChatMessageType { text, image, file, poll, system, unknown }
 
-enum MessageSendStatus { sending, sent, failed }
+enum MessageSendStatus { sending, sent, failed, uncertain }
 
 enum SnackChatFileTransferStatus {
   queued,
@@ -471,6 +472,7 @@ class SnackChatMessage {
   final SnackChatPoll? poll;
   final Map<String, int> reactionCounts;
   final MessageSendStatus sendStatus;
+  final List<SnackChatMention> mentions;
   final String? localImagePath;
   final String? localFilePath;
   final SnackChatFileTransferStatus? fileTransferStatus;
@@ -508,6 +510,7 @@ class SnackChatMessage {
     this.poll,
     this.reactionCounts = const <String, int>{},
     this.sendStatus = MessageSendStatus.sent,
+    this.mentions = const [],
     this.localImagePath,
     this.localFilePath,
     this.fileTransferStatus,
@@ -515,7 +518,9 @@ class SnackChatMessage {
     this.errorMessage,
   });
 
-  bool get isPending => sendStatus == MessageSendStatus.sending;
+  bool get isUncertain => sendStatus == MessageSendStatus.uncertain;
+  bool get isPending => sendStatus == MessageSendStatus.sending || isUncertain;
+  bool get needsRetry => hasFailed || isUncertain;
   bool get hasFailed => sendStatus == MessageSendStatus.failed;
   bool get isTemporaryFile =>
       retentionMode == 'temporary24h' || retentionMode == 'temporary30d';
@@ -528,6 +533,10 @@ class SnackChatMessage {
 
   factory SnackChatMessage.fromFirestore(DocumentSnapshot doc) {
     final data = doc.data() as Map<String, dynamic>? ?? <String, dynamic>{};
+    return SnackChatMessage.fromMap(doc.id, data);
+  }
+
+  factory SnackChatMessage.fromMap(String id, Map<String, dynamic> data) {
     final created = data['createdAt'];
     final rawSenderName = data['senderName'];
     final imageUrl = (data['imageUrl'] ?? '').toString().trim();
@@ -542,7 +551,7 @@ class SnackChatMessage {
     final replyId = (data['replyToMessageId'] ?? '').toString().trim();
     final metadata = data['metadata'];
     return SnackChatMessage(
-      id: doc.id,
+      id: id,
       senderId: (data['senderId'] ?? '').toString(),
       senderName: rawSenderName is String && rawSenderName.trim().isNotEmpty
           ? rawSenderName.trim()
@@ -598,6 +607,7 @@ class SnackChatMessage {
           : null,
       linkPreviewRemoved: data['linkPreviewRemoved'] == true,
       poll: data['poll'] is Map ? SnackChatPoll.fromMap(data['poll']) : null,
+      mentions: SnackChatMention.parse(data['mentions'], (data['text'] ?? '').toString()),
       reactionCounts: (data['reactionCounts'] is Map
               ? Map<String, dynamic>.from(data['reactionCounts'] as Map)
               : const <String, dynamic>{})
@@ -615,6 +625,7 @@ class SnackChatMessage {
         'senderName': senderName!.trim(),
       'type': snackChatMessageTypeWireName(type),
       'text': text,
+      if (mentions.isNotEmpty) 'mentions': mentions.map((m) => m.toMap()).toList(),
       if (imageUrl != null && imageUrl!.isNotEmpty) 'imageUrl': imageUrl,
       if (imagePath != null && imagePath!.isNotEmpty) 'imagePath': imagePath,
       if (originalFileName != null && originalFileName!.isNotEmpty)
@@ -676,6 +687,7 @@ class SnackChatMessage {
     bool? linkPreviewRemoved,
     SnackChatPoll? poll,
     Map<String, int>? reactionCounts,
+    List<SnackChatMention>? mentions,
     MessageSendStatus? sendStatus,
     String? localImagePath,
     String? localFilePath,
@@ -699,6 +711,7 @@ class SnackChatMessage {
       id: id,
       senderId: senderId,
       senderName: senderName ?? this.senderName,
+      mentions: SnackChatMention.parse((mentions ?? this.mentions).map((m) => m.toMap()).toList(), text ?? this.text),
       type: type ?? this.type,
       text: text ?? this.text,
       imageUrl: clearImageUrl ? null : imageUrl ?? this.imageUrl,

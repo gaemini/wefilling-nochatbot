@@ -10,8 +10,9 @@ import '../utils/logger.dart';
 ///
 /// The Storage path is still the source of truth. Keeping each account in a
 /// separate directory prevents one signed-in account from reusing another
-/// account's private media, while the bounded 30-day LRU cache avoids fetching
-/// the same immutable image on every widget rebuild or app restart.
+/// account's private media. Files live in application support (not the OS
+/// temporary cache) and remain available offline until the bounded LRU needs
+/// space or the owning account's private state is explicitly cleared.
 class SnackChatMediaCacheService {
   SnackChatMediaCacheService._();
 
@@ -19,9 +20,8 @@ class SnackChatMediaCacheService {
       SnackChatMediaCacheService._();
 
   static const int _maxImageBytes = 15 * 1024 * 1024;
-  static const int _maxFiles = 160;
-  static const int _maxCacheBytes = 256 * 1024 * 1024;
-  static const Duration _stalePeriod = Duration(days: 30);
+  static const int _maxFiles = 600;
+  static const int _maxCacheBytes = 512 * 1024 * 1024;
   static const String _cacheFolder = 'private_snack_chat_images_v1';
 
   Future<Uint8List?> read({
@@ -43,9 +43,7 @@ class SnackChatMediaCacheService {
       }
 
       final stat = await files.media.stat();
-      if (stat.size <= 0 ||
-          stat.size > _maxImageBytes ||
-          DateTime.now().difference(stat.modified) > _stalePeriod) {
+      if (stat.size <= 0 || stat.size > _maxImageBytes) {
         await _deletePair(files);
         return null;
       }
@@ -57,7 +55,9 @@ class SnackChatMediaCacheService {
       await files.media.setLastModified(DateTime.now());
       return bytes;
     } catch (error) {
-      if (Logger.isVerboseEnabled) Logger.warning('Snack Chat 이미지 기기 캐시 읽기 실패: $error');
+      if (Logger.isVerboseEnabled) {
+        Logger.warning('Snack Chat 이미지 기기 캐시 읽기 실패: $error');
+      }
       return null;
     }
   }
@@ -86,7 +86,9 @@ class SnackChatMediaCacheService {
       await _trim(userId);
     } catch (error) {
       // Cache failure must never make a valid chat image fail to display.
-      if (Logger.isVerboseEnabled) Logger.warning('Snack Chat 이미지 기기 캐시 저장 실패: $error');
+      if (Logger.isVerboseEnabled) {
+        Logger.warning('Snack Chat 이미지 기기 캐시 저장 실패: $error');
+      }
     }
   }
 
@@ -99,7 +101,9 @@ class SnackChatMediaCacheService {
       );
       if (await directory.exists()) await directory.delete(recursive: true);
     } catch (error) {
-      if (Logger.isVerboseEnabled) Logger.warning('Snack Chat 계정 이미지 캐시 삭제 실패: $error');
+      if (Logger.isVerboseEnabled) {
+        Logger.warning('Snack Chat 계정 이미지 캐시 삭제 실패: $error');
+      }
     }
   }
 
@@ -128,15 +132,10 @@ class SnackChatMediaCacheService {
     final directory = await _directory(userId);
     final records = <({File file, DateTime modified, int size})>[];
     var totalBytes = 0;
-    final now = DateTime.now();
     await for (final entity in directory.list()) {
       if (entity is! File || !entity.path.endsWith('.media')) continue;
       try {
         final stat = await entity.stat();
-        if (now.difference(stat.modified) > _stalePeriod) {
-          await _deletePair(_pairForMedia(entity));
-          continue;
-        }
         totalBytes += stat.size;
         records.add((file: entity, modified: stat.modified, size: stat.size));
       } catch (_) {}

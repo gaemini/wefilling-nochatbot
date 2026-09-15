@@ -18,6 +18,7 @@ import '../utils/logger.dart';
 import 'snack_chat_local_cache_service.dart';
 import 'snack_chat_media_cache_service.dart';
 import 'snack_chat_service.dart';
+import 'firebase_app_check_service.dart';
 
 class SnackChatFileTransferEvent {
   const SnackChatFileTransferEvent({
@@ -230,7 +231,8 @@ class SnackChatFileTransferService {
       ).timeout(const Duration(seconds: 20));
     } catch (error) {
       // A missing job/object is already the desired idempotent end state.
-      if (Logger.isVerboseEnabled) Logger.warning('Snack Chat 파일 취소 서버 정리 지연: $error');
+      if (Logger.isVerboseEnabled)
+        Logger.warning('Snack Chat 파일 취소 서버 정리 지연: $error');
     }
     record.status = SnackChatFileTransferStatus.canceled;
     _emit(record, removed: true);
@@ -284,6 +286,7 @@ class SnackChatFileTransferService {
     if (storagePath == null || storagePath.isEmpty) {
       throw StateError('파일 정보를 확인할 수 없습니다.');
     }
+    await FirebaseAppCheckService.instance.ensureReady();
     final room = await _chatService.getSnackChatFromServer(roomId);
     if (room == null || !room.participantIds.contains(uid)) {
       throw StateError('이 파일에 접근할 수 없습니다.');
@@ -622,7 +625,8 @@ class SnackChatFileTransferService {
           }
         }
       } catch (error) {
-        if (Logger.isVerboseEnabled) Logger.warning('Snack Chat 파일 대기열 복원 실패: $error');
+        if (Logger.isVerboseEnabled)
+          Logger.warning('Snack Chat 파일 대기열 복원 실패: $error');
       }
     }
     _loadedUid = uid;
@@ -740,7 +744,8 @@ class SnackChatFileTransferService {
       if (await destination.exists()) {
         await destination.delete().catchError((_) => destination);
       }
-      if (Logger.isVerboseEnabled) Logger.warning('Snack Chat 전송 파일 캐시 승격 실패: $error');
+      if (Logger.isVerboseEnabled)
+        Logger.warning('Snack Chat 전송 파일 캐시 승격 실패: $error');
       return message.copyWith(localFilePath: source.path);
     }
   }

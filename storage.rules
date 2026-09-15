@@ -28,6 +28,31 @@ service firebase.storage {
         ).data.get('status', '') != 'suspended';
     }
 
+    function isAdmin() {
+      return currentUserAccountAllowed()
+        && firestore.get(
+          /databases/(default)/documents/users/$(request.auth.uid)
+        ).data.get('isAdmin', false) == true;
+    }
+
+    function isPlatformAdmin() {
+      return isSignedIn()
+        && request.auth.token.get('platformAdmin', false) == true;
+    }
+
+    function canEditOrganizationMedia(organizationId) {
+      let membershipPath = /databases/(default)/documents/organization_memberships/$(organizationId + '_' + request.auth.uid);
+      return isPlatformAdmin()
+        || (
+          isSignedIn()
+          && firestore.exists(membershipPath)
+          && firestore.get(membershipPath).data.get('status', '') == 'active'
+          && firestore.get(membershipPath).data.get('role', '') in [
+            'owner', 'manager', 'editor'
+          ]
+        );
+    }
+
     function contentBlockFree(ownerId) {
       return !firestore.exists(/databases/(default)/documents/blocks/$(request.auth.uid + '_' + ownerId))
         && !firestore.exists(/databases/(default)/documents/blocks/$(ownerId + '_' + request.auth.uid));
@@ -194,6 +219,39 @@ service firebase.storage {
     match /profile_images/{userId}/{fileName} {
       allow read: if true;
       allow write: if isSignedIn() && request.auth.uid == userId;
+    }
+
+    // 단체는 Auth 사용자가 아니므로 실제 담당자의 활성 membership을
+    // 확인한다. 로고/커버는 공개 프로필 자산이지만 쓰기는 immutable 생성과
+    // 소유 조직 단위 삭제만 허용한다.
+    match /organization_profile_images/{organizationId}/{fileName} {
+      allow read: if true;
+      allow create: if canEditOrganizationMedia(organizationId)
+        && request.resource.size > 0
+        && request.resource.size <= 8 * 1024 * 1024
+        && request.resource.contentType.matches('image/.*')
+        && request.resource.metadata.organizationId == organizationId
+        && request.resource.metadata.uploaderUid == request.auth.uid;
+      allow update: if false;
+      allow delete: if canEditOrganizationMedia(organizationId)
+        && resource.metadata.organizationId == organizationId;
+    }
+
+    // 학기 To-do의 참고 안내/광고 이미지. 운영자만 immutable 객체를
+    // 추가·삭제하고 로그인 가능한 사용자는 게시된 문서의 URL로 조회한다.
+    match /semester_todo_images/{semesterId}/{weekId}/{fileName} {
+      allow read: if currentUserAccountAllowed();
+      allow create: if isAdmin()
+        && request.resource.size > 0
+        && request.resource.size <= 8 * 1024 * 1024
+        && request.resource.contentType.matches('image/.*')
+        && request.resource.metadata.ownerUid == request.auth.uid
+        && request.resource.metadata.semesterId == semesterId
+        && request.resource.metadata.weekId == weekId;
+      allow update: if false;
+      allow delete: if isAdmin()
+        && resource.metadata.semesterId == semesterId
+        && resource.metadata.weekId == weekId;
     }
 
     // (레거시) 사용자별 포스트 이미지 폴더

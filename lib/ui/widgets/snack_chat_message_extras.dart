@@ -9,6 +9,7 @@ import 'package:flutter/material.dart';
 
 import '../../models/snack_chat_message.dart';
 import '../../services/cache/app_image_cache_manager.dart';
+import '../../services/firebase_app_check_service.dart';
 import '../../services/snack_chat_media_cache_service.dart';
 import '../../l10n/ui_locale.dart';
 
@@ -40,6 +41,10 @@ class _SnackChatStorageImageState extends State<SnackChatStorageImage> {
       <String, Future<Uint8List?>>{};
   static final LinkedHashMap<String, Uint8List> _memoryBytes =
       LinkedHashMap<String, Uint8List>();
+  static final Queue<Completer<void>> _downloadWaiters =
+      Queue<Completer<void>>();
+  static const int _maxConcurrentDownloads = 3;
+  static int _activeDownloads = 0;
   static int _memoryByteCount = 0;
   late Future<Uint8List?> _bytes;
 
@@ -79,10 +84,16 @@ class _SnackChatStorageImageState extends State<SnackChatStorageImage> {
           storagePath: path,
         );
         if (data == null || data.isEmpty) {
-          data = await FirebaseStorage.instance
-              .ref(path)
-              .getData(_maxBytes)
-              .timeout(const Duration(seconds: 15));
+          // App Check failures are shared and cooled down by the central
+          // service. Do not let every visible gallery cell trigger its own
+          // Storage token attempt when attestation is unavailable.
+          await FirebaseAppCheckService.instance.ensureReady();
+          data = await _withDownloadSlot(
+            () => FirebaseStorage.instance
+                .ref(path)
+                .getData(_maxBytes)
+                .timeout(const Duration(seconds: 15)),
+          );
           if (data == null || data.isEmpty) return null;
           await SnackChatMediaCacheService.instance.write(
             userId: viewerId,
@@ -103,6 +114,23 @@ class _SnackChatStorageImageState extends State<SnackChatStorageImage> {
     });
     _memoryRequests[requestKey] = operation;
     return operation;
+  }
+
+  static Future<T> _withDownloadSlot<T>(Future<T> Function() operation) async {
+    if (_activeDownloads >= _maxConcurrentDownloads) {
+      final waiter = Completer<void>();
+      _downloadWaiters.addLast(waiter);
+      await waiter.future;
+    }
+    _activeDownloads++;
+    try {
+      return await operation();
+    } finally {
+      _activeDownloads--;
+      if (_downloadWaiters.isNotEmpty) {
+        _downloadWaiters.removeFirst().complete();
+      }
+    }
   }
 
   static void _rememberBytes(String key, Uint8List bytes) {

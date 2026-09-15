@@ -4,6 +4,22 @@ import '../models/semester_todo.dart';
 import '../models/student_type.dart';
 import '../services/semester_todo_service.dart';
 
+class SemesterTodoEntry {
+  const SemesterTodoEntry({this.personal, this.guide, required this.completed});
+  final PersonalTodo? personal;
+  final SemesterTodo? guide;
+  final bool completed;
+  bool get actionable =>
+      personal != null || guide!.type == SemesterTodoType.required;
+  int get weekNumber => personal?.weekNumber ?? guide!.weekNumber;
+  DateTime? get dueAt => personal != null ? personal!.dueAt : guide!.dueAt;
+  String get identity => personal?.sourceGuideKey != null
+      ? 'guide:${personal!.sourceGuideKey}'
+      : personal != null
+          ? 'personal:${personal!.id}'
+          : 'guide:${SemesterTodoController.guideKey(guide!)}';
+}
+
 class SemesterTodoController extends ChangeNotifier {
   SemesterTodoController({
     required this.studentType,
@@ -25,6 +41,30 @@ class SemesterTodoController extends ChangeNotifier {
   int personalTodoReminderMinute = 0;
   bool personalTodoNotificationSaving = false;
   String? error;
+  String? loadError;
+  bool personalDataLoaded = false;
+  String? personalLoadWarning;
+  String? guideLoadWarning;
+  final Map<int, String> weekErrors = {};
+  final Set<String> _busyPersonalIds = {};
+  final Set<String> _busyGuideIds = {};
+  int _guideRevision = 0;
+  bool isGuideBusy(SemesterTodo task) => _busyGuideIds.contains(guideKey(task));
+  DateTime Function() clock = DateTime.now;
+  int get currentCalendarWeek => semester?.calendarWeek(clock()) ?? 0;
+  void refreshCalendar() => notifyListeners();
+  bool isPersonalBusy(String id) => _busyPersonalIds.contains(id);
+  bool _disposed = false;
+  @override
+  void dispose() {
+    _disposed = true;
+    super.dispose();
+  }
+
+  @override
+  void notifyListeners() {
+    if (!_disposed) super.notifyListeners();
+  }
 
   final Map<int, List<SemesterTodo>> _taskCache = {};
   final Map<int, Future<List<SemesterTodo>>> _taskRequests = {};
@@ -47,8 +87,9 @@ class SemesterTodoController extends ChangeNotifier {
     try {
       await _loadVisibleTasks(weekNumber);
       notifyListeners();
-    } catch (_) {
-      // 인접 페이지 선로딩 실패는 실제 페이지 선택 시 다시 시도한다.
+    } catch (e) {
+      weekErrors[weekNumber] = e.toString();
+      notifyListeners();
     }
   }
 
@@ -64,6 +105,9 @@ class SemesterTodoController extends ChangeNotifier {
     final previousSelectedWeek = selectedWeekNumber;
     loading = true;
     error = null;
+    loadError = null;
+    guideLoadWarning = null;
+    weekErrors.clear();
     notifyListeners();
     try {
       _taskCache.clear();
@@ -71,24 +115,39 @@ class SemesterTodoController extends ChangeNotifier {
       _visibleTaskCache.clear();
       semester = await _service.getActiveSemester();
       if (semester == null) return;
+      if (previousSemesterId != semester!.id) {
+        progress = const {};
+        personalTodos = const [];
+        personalDataLoaded = false;
+      }
       final storedWeeks = await _service.getPublishedWeeks(semester!.id);
       // 과거에 화요일~월요일로 저장된 주차도 화면과 알림에서는
       // 2026년 실제 달력(첫 주 부분 주차, 이후 월~일)에 맞춰 정규화한다.
       weeks = storedWeeks
           .map((week) => week.alignToCalendar(semester!))
           .toList(growable: false);
-      progress = await _service.getProgress(semester!.id);
-      personalTodos = await _service.getPersonalTodos(semester!.id);
+      // A guide-progress lookup must not disable local personal tasks.
+      // Keep existing completion records and make the guide retry explicit.
+      try {
+        final revision = _guideRevision;
+        final loadedProgress = await _service.getProgress(semester!.id);
+        if (revision == _guideRevision && _busyGuideIds.isEmpty) {
+          progress = loadedProgress;
+        }
+      } catch (e) {
+        guideLoadWarning = e.toString();
+      }
+      personalTodos =
+          await _service.getPersonalTodos(semester!.id, includeArchived: true);
+      personalDataLoaded = true;
+      personalLoadWarning = _service.personalLoadWarning;
       final notificationSettings =
           await _service.getPersonalTodoNotificationSettings();
       personalTodoNotificationsEnabled = notificationSettings.enabled;
       personalTodoReminderHour = notificationSettings.hour;
       personalTodoReminderMinute = notificationSettings.minute;
-      await _service.syncPersonalTodoNotifications(
-        todos: personalTodos,
-        settings: notificationSettings,
-      );
-      final current = semester!.currentWeek(DateTime.now());
+      // Viewing/refreshing the list must not re-register OS reminders.
+      final current = currentCalendarWeek;
       final canKeepSelection = previousSemesterId == semester!.id &&
           weeks.any((week) => week.weekNumber == previousSelectedWeek);
       selectedWeekNumber = canKeepSelection
@@ -103,6 +162,7 @@ class SemesterTodoController extends ChangeNotifier {
       await _loadVisibleTasks(selectedWeekNumber);
     } catch (e) {
       error = e.toString();
+      loadError = error;
     } finally {
       loading = false;
       notifyListeners();
@@ -116,9 +176,11 @@ class SemesterTodoController extends ChangeNotifier {
     notifyListeners();
     try {
       await _loadVisibleTasks(weekNumber);
+      weekErrors.remove(weekNumber);
       error = null;
     } catch (e) {
       error = e.toString();
+      weekErrors[weekNumber] = error!;
     } finally {
       loading = false;
       notifyListeners();
@@ -158,16 +220,18 @@ class SemesterTodoController extends ChangeNotifier {
     _loadingWeeks.add(weekNumber);
     try {
       final selectedTasks = await _tasksFor(selected);
-      final previousWeeks = weeks
-          .where((week) => week.weekNumber < weekNumber)
-          .toList(growable: false);
-      final previousTaskLists = await Future.wait(previousWeeks.map(_tasksFor));
-      final carryover = previousTaskLists.expand((items) => items).where(
-          (task) =>
-              task.type == SemesterTodoType.required &&
-              task.carryOver &&
-              progress[task.id]?.completed != true);
-      final visible = [...carryover, ...selectedTasks];
+      // Guides stay in their assigned week; do not infer an ongoing validity.
+      final visible = selectedTasks;
+      // Only explicit carry-over guides are projected, never copied.
+      for (final previous
+          in weeks.where((item) => item.weekNumber < weekNumber)) {
+        try {
+          _visibleTaskCache[previous.weekNumber] = await _tasksFor(previous);
+          weekErrors.remove(previous.weekNumber);
+        } catch (e) {
+          weekErrors[previous.weekNumber] = e.toString();
+        }
+      }
       _visibleTaskCache[weekNumber] = visible;
       if (weekNumber == selectedWeekNumber) tasks = visible;
     } finally {
@@ -177,33 +241,41 @@ class SemesterTodoController extends ChangeNotifier {
 
   bool isCompleted(String taskId) => progress[taskId]?.completed == true;
 
-  Future<void> toggleTask(SemesterTodo task) async {
-    if (semester == null || task.type == SemesterTodoType.recommendation) {
-      return;
+  Future<void> toggleTask(SemesterTodo task) =>
+      setGuideCompleted(task, !isGuideCompleted(task));
+
+  bool isGuideCompleted(SemesterTodo task) {
+    final record = progress[task.id];
+    return record != null &&
+        (record.weekNumber == 0 || record.weekNumber == task.weekNumber) &&
+        record.completed;
+  }
+
+  Future<void> setGuideCompleted(SemesterTodo task, bool completed) async {
+    if (semester == null || task.type != SemesterTodoType.required) return;
+    if (guideLoadWarning != null) {
+      throw StateError('Guide completion could not be loaded. Retry first.');
     }
-    error = null;
+    if (!_busyGuideIds.add(guideKey(task))) return;
     final old = progress[task.id];
-    final next = old?.completed != true;
+    _guideRevision++;
+    error = null;
     progress = {
       ...progress,
       task.id: TodoProgress(
-        taskId: task.id,
-        semesterId: semester!.id,
-        weekNumber: task.weekNumber,
-        completed: next,
-        completedAt: next ? DateTime.now() : null,
-      ),
+          taskId: task.id,
+          semesterId: semester!.id,
+          weekNumber: task.weekNumber,
+          completed: completed,
+          completedAt: completed ? clock() : null)
     };
     notifyListeners();
     try {
       await _service.setTaskCompleted(
-        semesterId: semester!.id,
-        taskId: task.id,
-        weekNumber: task.weekNumber,
-        completed: next,
-      );
-      _visibleTaskCache.clear();
-      await _loadVisibleTasks();
+          semesterId: semester!.id,
+          taskId: task.id,
+          weekNumber: task.weekNumber,
+          completed: completed);
     } catch (e) {
       final reverted = {...progress};
       if (old == null) {
@@ -213,27 +285,170 @@ class SemesterTodoController extends ChangeNotifier {
       }
       progress = reverted;
       error = e.toString();
+      rethrow;
+    } finally {
+      _guideRevision++;
+      _busyGuideIds.remove(guideKey(task));
+      notifyListeners();
     }
+  }
+
+  /// Projection only: source identity, never translated titles, drives dedup.
+  List<SemesterTodoEntry> entriesForWeek(int weekNumber) {
+    final guides =
+        tasksForWeek(weekNumber).where((g) => g.weekNumber == weekNumber);
+    final allGuides = {
+      for (final week in weeks)
+        for (final guide in tasksForWeek(week.weekNumber))
+          guideKey(guide): guide,
+    };
+    final entries = <SemesterTodoEntry>[];
+    final seen = <String>{};
+    final personal = personalTodosForWeek(weekNumber).toList()
+      ..sort((a, b) {
+        final group = (a.sourceGuideKey ?? 'personal:${a.title}:${a.id}')
+            .compareTo(b.sourceGuideKey ?? 'personal:${b.title}:${b.id}');
+        if (group != 0) return group;
+        // Prefer an explicit completion/undo over old duplicated linked copies.
+        if (a.sourceGuideKey != null && a.sourceGuideKey == b.sourceGuideKey) {
+          if (a.guideCompletionHandled != b.guideCompletionHandled)
+            return a.guideCompletionHandled ? -1 : 1;
+          if (a.completed != b.completed) return a.completed ? -1 : 1;
+        }
+        return a.id.compareTo(b.id);
+      });
+    for (final todo in personal) {
+      if (todo.sourceGuideKey != null &&
+          !todo.guideCompletionHandled &&
+          !todo.completed &&
+          guideLoadWarning != null) continue;
+      final identity = todo.sourceGuideKey == null
+          ? 'personal:${todo.id}'
+          : 'guide:${todo.sourceGuideKey}';
+      if (!seen.add(identity)) continue;
+      final guide = allGuides[todo.sourceGuideKey];
+      final source = todo.sourceGuideKey?.split('/');
+      final sourceWeek = source?.length == 2
+          ? weeks.where((w) => w.id == source!.first).firstOrNull
+          : null;
+      final sourceProgress =
+          source?.length == 2 ? progress[source!.last] : null;
+      final sourceCompleted = guide != null
+          ? isGuideCompleted(guide)
+          : sourceWeek != null &&
+              sourceProgress?.completed == true &&
+              (sourceProgress!.weekNumber == 0 ||
+                  sourceProgress.weekNumber == sourceWeek.weekNumber);
+      final completed =
+          todo.completed || (!todo.guideCompletionHandled && sourceCompleted);
+      entries.add(SemesterTodoEntry(
+          personal: todo.copyWith(completed: completed),
+          guide: guide,
+          completed: completed));
+    }
+    for (final guide in guides) {
+      if (guideLoadWarning != null) continue;
+      // Hidden/moved linked records also suppress the original source row.
+      if (personalTodos.any((todo) => todo.sourceGuideKey == guideKey(guide)))
+        continue;
+      if (!seen.add('guide:${guideKey(guide)}')) continue;
+      entries.add(
+          SemesterTodoEntry(guide: guide, completed: isGuideCompleted(guide)));
+    }
+    return entries;
+  }
+
+  List<SemesterTodoEntry> previousEntries(int selectedWeek) {
+    final result = <SemesterTodoEntry>[];
+    final seen = <String>{};
+    final selectedIds =
+        entriesForWeek(selectedWeek).map((e) => e.identity).toSet();
+    for (var week = selectedWeek - 1; week >= 1; week--) {
+      for (final entry in entriesForWeek(week)) {
+        final carries = entry.personal?.carryOver ?? entry.guide!.carryOver;
+        if (!entry.actionable || entry.completed || !carries) continue;
+        if (selectedIds.contains(entry.identity)) continue;
+        if (seen.add(entry.identity)) result.add(entry);
+      }
+    }
+    return result;
+  }
+
+  Iterable<PersonalTodo> get visiblePersonalTodos =>
+      personalTodosForWeek(selectedWeekNumber);
+
+  Iterable<PersonalTodo> personalTodosForWeek(int weekNumber) => personalTodos
+      .where((todo) => !todo.archived && todo.weekNumber == weekNumber);
+
+  Iterable<PersonalTodo> previousPersonalTodos(int weekNumber) =>
+      personalTodos.where((todo) =>
+          !todo.archived &&
+          !todo.completed &&
+          todo.carryOver &&
+          todo.weekNumber < weekNumber);
+
+  static String guideKey(SemesterTodo guide) => guide.weekId + '/' + guide.id;
+
+  PersonalTodo? addedGuide(SemesterTodo guide, int weekNumber) => personalTodos
+      .where((todo) =>
+          todo.weekNumber == weekNumber &&
+          todo.sourceGuideKey == guideKey(guide))
+      .firstOrNull;
+
+  Future<void> addGuide(
+      SemesterTodo guide, int weekNumber, String language) async {
+    if (semester == null) return;
+    await _service.savePersonalTodo(
+        semesterId: semester!.id,
+        weekNumber: weekNumber,
+        title: guide.title.resolve(language),
+        memo: guide.description.resolve(language),
+        dueAt: guide.dueAt,
+        reminderStartAt: reminderStartForWeek(weekNumber),
+        reminderEnabled: false,
+        carryOver: false,
+        sourceGuideKey: guideKey(guide));
+    await _refreshPersonalTodos();
+  }
+
+  Future<void> _refreshPersonalTodos() async {
+    personalTodos =
+        await _service.getPersonalTodos(semester!.id, includeArchived: true);
+    personalLoadWarning = _service.personalLoadWarning;
     notifyListeners();
   }
 
-  Iterable<PersonalTodo> get visiblePersonalTodos => personalTodos.where(
-        (todo) =>
-            todo.weekNumber == selectedWeekNumber ||
-            (todo.carryOver &&
-                todo.weekNumber < selectedWeekNumber &&
-                !todo.completed),
-      );
+  Future<void> movePersonalTodo(PersonalTodo todo, int weekNumber) async {
+    if (semester == null || !weeks.any((week) => week.weekNumber == weekNumber))
+      return;
+    await _personalMutation(todo.id, () async {
+      await _service.updatePersonalTodoPlacement(todo.id,
+          weekNumber: weekNumber,
+          reminderStartAt: reminderStartForWeek(weekNumber));
+    });
+  }
 
-  Iterable<PersonalTodo> personalTodosForWeek(int weekNumber) =>
-      personalTodos.where(
-        (todo) =>
-            !todo.archived &&
-            (todo.weekNumber == weekNumber ||
-                (todo.carryOver &&
-                    todo.weekNumber < weekNumber &&
-                    !todo.completed)),
-      );
+  Future<void> setPersonalTodoHidden(PersonalTodo todo, bool hidden) async {
+    await _personalMutation(todo.id,
+        () => _service.updatePersonalTodoPlacement(todo.id, archived: hidden));
+  }
+
+  Future<void> _personalMutation(
+      String id, Future<void> Function() action) async {
+    if (!_busyPersonalIds.add(id)) return;
+    error = null;
+    notifyListeners();
+    try {
+      await action();
+      await _refreshPersonalTodos();
+    } catch (e) {
+      error = e.toString();
+      rethrow;
+    } finally {
+      _busyPersonalIds.remove(id);
+      notifyListeners();
+    }
+  }
 
   DateTime reminderStartForWeek(int weekNumber) {
     final fallback = DateTime.now();
@@ -289,8 +504,7 @@ class SemesterTodoController extends ChangeNotifier {
       category: category,
       priority: priority,
     );
-    personalTodos = await _service.getPersonalTodos(semester!.id);
-    notifyListeners();
+    await _refreshPersonalTodos();
   }
 
   Future<void> togglePersonalTodo(PersonalTodo todo) async {
@@ -301,7 +515,9 @@ class SemesterTodoController extends ChangeNotifier {
     PersonalTodo todo,
     bool completed,
   ) async {
+    if (!_busyPersonalIds.add(todo.id)) return;
     error = null;
+    final previous = personalTodos.firstWhere((item) => item.id == todo.id);
     final next = completed;
     personalTodos = personalTodos
         .map((item) => item.id == todo.id
@@ -309,6 +525,7 @@ class SemesterTodoController extends ChangeNotifier {
                 completed: next,
                 completedAt: next ? DateTime.now() : null,
                 clearCompletedAt: !next,
+                guideCompletionHandled: item.sourceGuideKey != null,
               )
             : item)
         .toList();
@@ -316,8 +533,13 @@ class SemesterTodoController extends ChangeNotifier {
     try {
       await _service.setPersonalTodoCompleted(todo.id, next);
     } catch (e) {
-      await load();
+      personalTodos = personalTodos
+          .map((item) => item.id == todo.id ? previous : item)
+          .toList();
       error = e.toString();
+      rethrow;
+    } finally {
+      _busyPersonalIds.remove(todo.id);
       notifyListeners();
     }
   }
@@ -379,29 +601,11 @@ class SemesterTodoController extends ChangeNotifier {
     }
   }
 
-  Future<void> togglePersonalReminder(
-    PersonalTodo todo,
-    bool enabled,
-  ) async {
-    final previous = personalTodos;
-    personalTodos = personalTodos
-        .map((item) =>
-            item.id == todo.id ? item.copyWith(reminderEnabled: enabled) : item)
-        .toList(growable: false);
-    notifyListeners();
-    try {
-      await _service.setPersonalTodoReminderEnabled(
-        todo.id,
-        enabled,
-        todo.reminderStartAt ?? reminderStartForWeek(todo.weekNumber),
-      );
-    } catch (e) {
-      personalTodos = previous;
-      error = e.toString();
-      notifyListeners();
-      rethrow;
-    }
-  }
+  Future<void> togglePersonalReminder(PersonalTodo todo, bool enabled) =>
+      _personalMutation(
+          todo.id,
+          () => _service.setPersonalTodoReminderEnabled(todo.id, enabled,
+              todo.reminderStartAt ?? reminderStartForWeek(todo.weekNumber)));
 
   Future<void> deletePersonalTodo(String id) async {
     error = null;

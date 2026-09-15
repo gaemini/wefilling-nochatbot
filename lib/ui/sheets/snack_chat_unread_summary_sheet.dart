@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:firebase_auth/firebase_auth.dart';
 
 import '../../services/snack_chat_service.dart';
 import '../../utils/responsive_helper.dart';
@@ -18,6 +19,9 @@ Future<void> showSnackChatUnreadSummarySheet(
   String titleOverride = '',
   Future<void> Function(String messageId)? onOpenSource,
   bool useProvidedSectionTitles = false,
+  bool keepOpenOnSource = false,
+  bool includeOtherConversation = false,
+  String? accountOwnerUid,
 }) async {
   if (items.isEmpty &&
       sections.isEmpty &&
@@ -26,6 +30,7 @@ Future<void> showSnackChatUnreadSummarySheet(
     return;
   }
   final rootBottomInset = MediaQuery.viewPaddingOf(context).bottom;
+  final owner = accountOwnerUid;
   await showModalBottomSheet<void>(
     context: context,
     useSafeArea: false,
@@ -38,7 +43,8 @@ Future<void> showSnackChatUnreadSummarySheet(
     shape: const RoundedRectangleBorder(
       borderRadius: BorderRadius.vertical(top: Radius.circular(24)),
     ),
-    builder: (sheetContext) => _SnackChatUnreadSummarySheet(
+    builder: (sheetContext) {
+      final sheet = _SnackChatUnreadSummarySheet(
       items: items,
       sections: sections,
       messageCount: messageCount,
@@ -49,9 +55,18 @@ Future<void> showSnackChatUnreadSummarySheet(
       rangeType: rangeType,
       titleOverride: titleOverride,
       onOpenSource: onOpenSource,
+      keepOpenOnSource: keepOpenOnSource,
+      includeOtherConversation: includeOtherConversation,
       useProvidedSectionTitles: useProvidedSectionTitles,
       rootBottomInset: rootBottomInset,
-    ),
+      );
+      if (owner == null) return sheet;
+      return StreamBuilder<User?>(
+        stream: FirebaseAuth.instance.authStateChanges(),
+        builder: (context, _) => FirebaseAuth.instance.currentUser?.uid == owner
+            ? sheet : const SizedBox.shrink(),
+      );
+    },
   );
 }
 
@@ -67,6 +82,8 @@ class _SnackChatUnreadSummarySheet extends StatelessWidget {
     required this.rangeType,
     required this.titleOverride,
     required this.onOpenSource,
+    required this.keepOpenOnSource,
+    required this.includeOtherConversation,
     required this.useProvidedSectionTitles,
     required this.rootBottomInset,
   });
@@ -81,6 +98,8 @@ class _SnackChatUnreadSummarySheet extends StatelessWidget {
   final SnackChatSummaryRangeType rangeType;
   final String titleOverride;
   final Future<void> Function(String messageId)? onOpenSource;
+  final bool keepOpenOnSource;
+  final bool includeOtherConversation;
   final bool useProvidedSectionTitles;
   final double rootBottomInset;
 
@@ -89,7 +108,7 @@ class _SnackChatUnreadSummarySheet extends StatelessWidget {
     if (sections.isNotEmpty) {
       return sections
           .where((section) =>
-              section.type != SnackChatSummarySectionType.otherConversation)
+              includeOtherConversation || section.type != SnackChatSummarySectionType.otherConversation)
           .take(8)
           .toList(growable: false);
     }
@@ -388,6 +407,7 @@ class _SnackChatUnreadSummarySheet extends StatelessWidget {
                   statusLabel: (status, korean) =>
                       _statusLabel(context, status, korean),
                   onOpenSource: onOpenSource,
+      keepOpenOnSource: keepOpenOnSource,
                 ),
                 if (index != displaySections.length - 1 ||
                     otherConversationSummary.isNotEmpty)
@@ -463,6 +483,7 @@ class _SummarySectionView extends StatelessWidget {
     required this.isKo,
     required this.statusLabel,
     required this.onOpenSource,
+    required this.keepOpenOnSource,
   });
 
   final SnackChatUnreadSummarySection section;
@@ -470,6 +491,7 @@ class _SummarySectionView extends StatelessWidget {
   final bool isKo;
   final String Function(SnackChatSummaryStatus status, bool isKo) statusLabel;
   final Future<void> Function(String messageId)? onOpenSource;
+  final bool keepOpenOnSource;
 
   @override
   Widget build(BuildContext context) {
@@ -507,6 +529,7 @@ class _SummarySectionView extends StatelessWidget {
                 ? ''
                 : statusLabel(section.items[index].status, isKo),
             onOpenSource: onOpenSource,
+      keepOpenOnSource: keepOpenOnSource,
           ),
           if (index != section.items.length - 1)
             SizedBox(height: context.rs(14).clamp(12, 17).toDouble()),
@@ -522,12 +545,14 @@ class _SummaryItemView extends StatelessWidget {
     required this.isOtherConversation,
     required this.statusText,
     required this.onOpenSource,
+    required this.keepOpenOnSource,
   });
 
   final SnackChatUnreadSummaryItem item;
   final bool isOtherConversation;
   final String statusText;
   final Future<void> Function(String messageId)? onOpenSource;
+  final bool keepOpenOnSource;
 
   Widget _label(BuildContext context) {
     return Wrap(
@@ -587,7 +612,7 @@ class _SummaryItemView extends StatelessWidget {
           const SizedBox(height: 4),
           TextButton.icon(
             onPressed: () async {
-              Navigator.of(context).pop();
+              if (!keepOpenOnSource) Navigator.of(context).pop();
               await onOpenSource!(messageId);
             },
             style: TextButton.styleFrom(

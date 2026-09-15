@@ -119,6 +119,29 @@ service cloud.firestore {
         && get(/databases/$(database)/documents/users/$(request.auth.uid)).data.get('isAdmin', false) == true;
     }
 
+    // Organization issuance is a platform operation. Unlike legacy content
+    // administration, this authority must come from an Auth custom claim and
+    // can never be granted by editing a users document.
+    function isPlatformAdmin() {
+      return request.auth != null
+        && request.auth.token.get('platformAdmin', false) == true;
+    }
+
+    function organizationMembershipId(organizationId, uid) {
+      return organizationId + '_' + uid;
+    }
+
+    function hasActiveOrganizationMembership(organizationId) {
+      return request.auth != null
+        && exists(/databases/$(database)/documents/organization_memberships/$(organizationMembershipId(organizationId, request.auth.uid)))
+        && get(/databases/$(database)/documents/organization_memberships/$(organizationMembershipId(organizationId, request.auth.uid))).data.get('status', '') == 'active';
+    }
+
+    function hasOrganizationRole(organizationId, roles) {
+      return hasActiveOrganizationMembership(organizationId)
+        && get(/databases/$(database)/documents/organization_memberships/$(organizationMembershipId(organizationId, request.auth.uid))).data.get('role', '') in roles;
+    }
+
     function hasFrozenAudience(data) {
       return data.get('visibilitySchemaVersion', 0) >= 2
         && data.keys().hasAll([
@@ -267,6 +290,82 @@ service cloud.firestore {
     }
     match /nicknamePolicyState/{document} {
       allow read, write: if false;
+    }
+
+    // ===== 단체 계정/프로필 =====
+    // All lifecycle, ownership, invitation and handle writes are performed by
+    // verified server functions. The general app has no create/apply path.
+    match /organizations/{organizationId} {
+      allow read: if request.auth != null
+        && (
+          (
+            resource.data.get('lifecycleStatus', '') == 'active'
+            && resource.data.get('isSearchable', false) == true
+          )
+          || hasActiveOrganizationMembership(organizationId)
+          || isPlatformAdmin()
+        );
+      allow create, update, delete: if false;
+    }
+
+    match /organization_private/{organizationId} {
+      allow read: if isPlatformAdmin()
+        || hasOrganizationRole(organizationId, ['owner', 'manager']);
+      allow create, update, delete: if false;
+    }
+
+    match /organization_memberships/{membershipId} {
+      allow read: if request.auth != null
+        && (
+          resource.data.get('uid', '') == request.auth.uid
+          || isPlatformAdmin()
+        );
+      allow create, update, delete: if false;
+    }
+
+    match /organization_invites/{inviteId} {
+      // Even invite metadata is private. Token preview and acceptance are
+      // rate-limited server calls that never return the recipient email/hash.
+      allow read, write: if false;
+    }
+
+    match /organization_provisioning/{requestId} {
+      allow read, write: if false;
+    }
+
+    match /organization_audit_logs/{logId} {
+      allow read, write: if false;
+    }
+
+    match /organization_entitlements/{organizationId} {
+      allow read, write: if false;
+    }
+
+    match /identity_handles/{normalizedHandle} {
+      allow read, write: if false;
+    }
+
+    match /search_entities/{entityId} {
+      allow read, write: if false;
+    }
+
+    match /organization_follows/{followId} {
+      allow read: if currentUserAccountAllowed()
+        && resource.data.get('followerUid', '') == request.auth.uid;
+      allow create: if currentUserAccountAllowed()
+        && request.resource.data.get('followerUid', '') == request.auth.uid
+        && request.resource.data.get('organizationId', '') is string
+        && followId == request.resource.data.organizationId + '_' + request.auth.uid
+        && request.resource.data.keys().hasOnly([
+          'organizationId', 'followerUid', 'createdAt'
+        ])
+        && request.resource.data.createdAt is timestamp
+        && exists(/databases/$(database)/documents/organizations/$(request.resource.data.organizationId))
+        && get(/databases/$(database)/documents/organizations/$(request.resource.data.organizationId)).data.get('lifecycleStatus', '') == 'active';
+      allow delete: if currentUserAccountAllowed()
+        && resource.data.get('followerUid', '') == request.auth.uid
+        && followId == resource.data.organizationId + '_' + request.auth.uid;
+      allow update: if false;
     }
     // ===== 이메일 인증 코드 컬렉션 =====
     // 앱 클라이언트에서 직접 접근하지 못하도록 전면 차단 (클라우드 함수 전용)
@@ -1684,6 +1783,22 @@ service cloud.firestore {
             );
         }
 
+        function validMentions(data, room) {
+          let intentPath = /databases/$(database)/documents/snack_chats/$(chatId)/mention_intents/$(messageId);
+          return !data.keys().hasAny(['mentions', 'mentionTargetIds']) || (
+            data.type == 'text'
+            && data.mentions is list && data.mentions.size() > 0 && data.mentions.size() <= 10
+            && data.mentionTargetIds is list
+            && room.participantIds.hasAll(data.mentionTargetIds)
+            && exists(intentPath)
+            && get(intentPath).data.owner == request.auth.uid
+            && get(intentPath).data.expiresAt > request.time
+            && get(intentPath).data.text == data.text
+            && get(intentPath).data.mentions == data.mentions
+            && get(intentPath).data.targetIds == data.mentionTargetIds
+          );
+        }
+
         function validClientMessageCreate(data) {
           let roomPath = /databases/$(database)/documents/snack_chats/$(chatId);
           let roomBefore = get(roomPath).data;
@@ -1693,7 +1808,7 @@ service cloud.firestore {
               'type', 'text', 'imageUrl',
               'imagePath', 'createdAt', 'sequence', 'recipientIds', 'readBy',
               'replyToMessageId', 'replyPreview', 'isDeleted',
-              'linkPreviewRemoved', 'poll', 'reactionCounts'
+              'linkPreviewRemoved', 'poll', 'reactionCounts', 'mentions', 'mentionTargetIds'
             ])
             && data.senderId == request.auth.uid
             && data.messageScope == 'snack_chat'
@@ -1728,6 +1843,7 @@ service cloud.firestore {
             && data.get('linkPreviewRemoved', false) is bool
             && data.get('reactionCounts', {}) is map
             && data.get('reactionCounts', {}).size() == 0
+            && validMentions(data, roomBefore)
             && validReply(data)
             && validTypeSpecificPayload(data);
         }

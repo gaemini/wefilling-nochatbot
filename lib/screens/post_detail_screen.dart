@@ -82,9 +82,8 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
   bool _isTogglingSave = false;
   late Post _currentPost;
   StreamSubscription<PostEngagement>? _engagementSubscription;
-  bool _hasResolvedCommentStreamCount = false;
-  int? _lastPublishedThreadCommentCount;
   bool _accessValidated = false;
+  bool _postUnavailableHandled = false;
   final PageController _imagePageController =
       PageController(initialPage: 0, keepPage: false);
   int _currentImageIndex = 0;
@@ -117,6 +116,9 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
 
   // 댓글 스트림(목록/카운트) - 단일 스트림을 공유해서 UI/카운트 동기화
   late final Stream<List<Comment>> _commentsStream;
+  final Set<String> _commentProfileAttemptedIds = <String>{};
+  final Set<String> _commentProfileInFlightIds = <String>{};
+  bool _initialCommentProfilesReady = false;
 
   static const List<Duration> _commentReadRetryDelays = <Duration>[
     Duration(milliseconds: 800),
@@ -170,6 +172,10 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
         .listen(
       _applyLiveEngagement,
       onError: (Object error) {
+        if (error is PostUnavailableException) {
+          _handleUnavailablePost();
+          return;
+        }
         if (Logger.isVerboseEnabled)
           Logger.warning('포스트 상세 실시간 지표 구독 오류: $error');
       },
@@ -178,6 +184,18 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
     // 여러 이미지는 진입 시 병렬 프리패치로 "넘길 때 바로 보이게" 최적화
     WidgetsBinding.instance.addPostFrameCallback((_) {
       _prefetchPostImages(initial: true);
+    });
+  }
+
+  void _handleUnavailablePost() {
+    if (!mounted || _postUnavailableHandled) return;
+    _postUnavailableHandled = true;
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text(AppLocalizations.of(context)!.noPermission)),
+      );
+      Navigator.of(context).maybePop();
     });
   }
 
@@ -343,6 +361,82 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
     });
   }
 
+  bool _prepareCommentAuthorProfiles(List<Comment> comments) {
+    if (_currentPost.isAnonymous) return true;
+    final cache = UserInfoCacheService();
+    final ids = comments
+        .map((comment) => comment.userId.trim())
+        .where((id) => id.isNotEmpty && id != 'deleted')
+        .toSet();
+    final missing = ids
+        .where((id) =>
+            cache.getCachedUserInfo(id) == null &&
+            !_commentProfileAttemptedIds.contains(id) &&
+            !_commentProfileInFlightIds.contains(id))
+        .toList(growable: false);
+    if (missing.isEmpty) {
+      if (ids.any(_commentProfileInFlightIds.contains)) {
+        return _initialCommentProfilesReady;
+      }
+      _initialCommentProfilesReady = true;
+      return true;
+    }
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (mounted) unawaited(_loadCommentAuthorProfiles(missing));
+    });
+    return _initialCommentProfilesReady;
+  }
+
+  Future<void> _loadCommentAuthorProfiles(List<String> userIds) async {
+    final pending = userIds
+        .where((id) => _commentProfileInFlightIds.add(id))
+        .toList(growable: false);
+    if (pending.isEmpty) return;
+    try {
+      final profiles = await UserInfoCacheService()
+          .getUserInfoBatch(pending)
+          .timeout(const Duration(seconds: 10));
+      if (!mounted) return;
+      final imageProviders = profiles.values
+          .whereType<DMUserInfo>()
+          .where((profile) =>
+              !profile.isDeletedAccount &&
+              profile.photoURL.trim().startsWith('http'))
+          .map((profile) => CachedNetworkImageProvider(
+                profile.photoURL.trim(),
+                cacheManager: AppImageCacheManager.instance,
+          ))
+          .toList(growable: false);
+      const concurrency = 6;
+      var nextImage = 0;
+      Future<void> preloadWorker() async {
+        while (nextImage < imageProviders.length && mounted) {
+          final provider = imageProviders[nextImage++];
+          await precacheImage(provider, context)
+              .timeout(const Duration(seconds: 3))
+              .catchError((_) => null);
+        }
+      }
+
+      await Future.wait<void>([
+        for (var i = 0;
+            i < concurrency && i < imageProviders.length;
+            i++)
+          preloadWorker(),
+      ], eagerError: false).timeout(const Duration(seconds: 7));
+    } catch (error) {
+      if (Logger.isVerboseEnabled) {
+        Logger.warning('댓글 작성자 일괄 조회 실패(문서 정보 사용): $error');
+      }
+    } finally {
+      _commentProfileAttemptedIds.addAll(pending);
+      _commentProfileInFlightIds.removeAll(pending);
+      if (mounted) {
+        setState(() => _initialCommentProfilesReady = true);
+      }
+    }
+  }
+
   /// 현재 게시글은 제목/본문 구분 없이 content를 사용한다.
   /// content가 비어 있는 과거 데이터만 legacy title로 폴백한다.
   String _getUnifiedBodyText(Post post) {
@@ -420,20 +514,34 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
       final confirmed = await showDialog<bool>(
             context: context,
             builder: (context) => AlertDialog(
-              title: Text((isChineseUi(context) ? '屏蔽匿名动态' : isKo ? '익명 게시글 차단' : 'Block anonymous post')),
+              title: Text((isChineseUi(context)
+                  ? '屏蔽匿名动态'
+                  : isKo
+                      ? '익명 게시글 차단'
+                      : 'Block anonymous post')),
               content: Text(
-                (isChineseUi(context) ? '要屏蔽这条匿名动态吗？\n可随时在屏蔽列表中取消。' : isKo
-                    ? '이 익명 게시글을 차단하시겠습니까?\n차단 목록에서 언제든 해제할 수 있습니다.'
-                    : 'Do you want to block this anonymous post?\nYou can unblock it anytime from Block List.'),
+                (isChineseUi(context)
+                    ? '要屏蔽这条匿名动态吗？\n可随时在屏蔽列表中取消。'
+                    : isKo
+                        ? '이 익명 게시글을 차단하시겠습니까?\n차단 목록에서 언제든 해제할 수 있습니다.'
+                        : 'Do you want to block this anonymous post?\nYou can unblock it anytime from Block List.'),
               ),
               actions: [
                 TextButton(
                   onPressed: () => Navigator.of(context).pop(false),
-                  child: Text((isChineseUi(context) ? '取消' : isKo ? '취소' : 'Cancel')),
+                  child: Text((isChineseUi(context)
+                      ? '取消'
+                      : isKo
+                          ? '취소'
+                          : 'Cancel')),
                 ),
                 ElevatedButton(
                   onPressed: () => Navigator.of(context).pop(true),
-                  child: Text((isChineseUi(context) ? '屏蔽' : isKo ? '차단' : 'Block')),
+                  child: Text((isChineseUi(context)
+                      ? '屏蔽'
+                      : isKo
+                          ? '차단'
+                          : 'Block')),
                 ),
               ],
             ),
@@ -456,7 +564,11 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
             content: Text(
-              (isChineseUi(context) ? '已屏蔽匿名动态。' : isKo ? '익명 게시글을 차단했습니다.' : 'Anonymous post blocked.'),
+              (isChineseUi(context)
+                  ? '已屏蔽匿名动态。'
+                  : isKo
+                      ? '익명 게시글을 차단했습니다.'
+                      : 'Anonymous post blocked.'),
             ),
             backgroundColor: Colors.green,
           ),
@@ -465,7 +577,11 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
             content: Text(
-              (isChineseUi(context) ? '屏蔽匿名动态失败。' : isKo ? '익명 게시글 차단에 실패했습니다.' : 'Failed to block anonymous post.'),
+              (isChineseUi(context)
+                  ? '屏蔽匿名动态失败。'
+                  : isKo
+                      ? '익명 게시글 차단에 실패했습니다.'
+                      : 'Failed to block anonymous post.'),
             ),
             backgroundColor: Colors.red,
           ),
@@ -518,11 +634,9 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
         likes: engagement.likes,
         likedBy: engagement.likedBy,
         viewCount: engagement.viewCount,
-        // 댓글 서브컬렉션 스냅샷이 도착한 뒤에는 실제 활성 스레드 수가
-        // 트리거 기반 집계 필드보다 더 최신일 수 있으므로 그 값을 우선한다.
-        commentCount: _hasResolvedCommentStreamCount
-            ? _currentPost.commentCount
-            : engagement.commentCount,
+        // 차단/숨김은 사용자별 표시 정책이다. 정식 댓글 수는 포스트 문서의
+        // 서버 집계만 사용해 다른 사용자의 댓글을 임의로 제외하지 않는다.
+        commentCount: engagement.commentCount,
       );
       _isLiked = me != null && engagement.likedBy.contains(me);
     });
@@ -644,9 +758,11 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
       isLiked: isLiked,
       likeLabel: l10n.like,
       commentLabel: l10n.comment,
-      viewsLabel: (isChineseUi(context) ? '浏览量' : Localizations.localeOf(context).languageCode == 'ko'
-          ? '조회수'
-          : 'Views'),
+      viewsLabel: (isChineseUi(context)
+          ? '浏览量'
+          : Localizations.localeOf(context).languageCode == 'ko'
+              ? '조회수'
+              : 'Views'),
       onLikeTapDown: (_) {
         if (_isTogglingLike) return;
         _likeHoldTimer?.cancel();
@@ -689,9 +805,11 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
     ScaffoldMessenger.of(context).showSnackBar(
       SnackBar(
         content: Text(
-          (isChineseUi(context) ? '匿名动态不显示点赞信息。' : isKo
-              ? '익명 게시글에서는 하트를 누른 사람을 확인할 수 없어요.'
-              : 'Likes are hidden for anonymous posts.'),
+          (isChineseUi(context)
+              ? '匿名动态不显示点赞信息。'
+              : isKo
+                  ? '익명 게시글에서는 하트를 누른 사람을 확인할 수 없어요.'
+                  : 'Likes are hidden for anonymous posts.'),
         ),
         duration: const Duration(seconds: 2),
       ),
@@ -784,7 +902,8 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
                                   TextSpan(
                                     text: l10n.likes,
                                     style: TextStyle(
-                                      fontFamily: uiFontFamily(context, 'Inter'),
+                                      fontFamily:
+                                          uiFontFamily(context, 'Inter'),
                                       fontFamilyFallback: const ['NotoSansKR'],
                                       fontSize: 16,
                                       fontWeight: FontWeight.w700,
@@ -794,7 +913,8 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
                                   TextSpan(
                                     text: '$likeCount',
                                     style: TextStyle(
-                                      fontFamily: uiFontFamily(context, 'Inter'),
+                                      fontFamily:
+                                          uiFontFamily(context, 'Inter'),
                                       fontFamilyFallback: const ['NotoSansKR'],
                                       fontSize: 14,
                                       fontWeight: FontWeight.w700,
@@ -817,9 +937,11 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
                           child: Align(
                             alignment: Alignment.centerLeft,
                             child: Text(
-                              (isChineseUi(context) ? '最多显示${maxShown}人，另有${hiddenCount}人。' : isKo
-                                  ? '최대 $maxShown명만 표시됩니다. (외 $hiddenCount명)'
-                                  : 'Showing up to $maxShown users. (+$hiddenCount more)'),
+                              (isChineseUi(context)
+                                  ? '最多显示${maxShown}人，另有${hiddenCount}人。'
+                                  : isKo
+                                      ? '최대 $maxShown명만 표시됩니다. (외 $hiddenCount명)'
+                                      : 'Showing up to $maxShown users. (+$hiddenCount more)'),
                               style: TextStyle(
                                 fontFamily: uiFontFamily(context, 'Inter'),
                                 fontFamilyFallback: const ['NotoSansKR'],
@@ -853,9 +975,14 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
                                   padding:
                                       const EdgeInsets.all(DesignTokens.s16),
                                   child: Text(
-                                    (isChineseUi(context) ? '暂无点赞。' : isKo ? '아직 좋아요가 없어요' : 'No likes yet.'),
+                                    (isChineseUi(context)
+                                        ? '暂无点赞。'
+                                        : isKo
+                                            ? '아직 좋아요가 없어요'
+                                            : 'No likes yet.'),
                                     style: TextStyle(
-                                      fontFamily: uiFontFamily(context, 'Inter'),
+                                      fontFamily:
+                                          uiFontFamily(context, 'Inter'),
                                       fontFamilyFallback: const ['NotoSansKR'],
                                       fontSize: 14,
                                       fontWeight: FontWeight.w500,
@@ -903,8 +1030,9 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
                                                   .deletedAccount
                                               : u.nickname,
                                           overflow: TextOverflow.ellipsis,
-                                          style: ( TextStyle(
-                                            fontFamily: uiFontFamily(context, 'Inter'),
+                                          style: (TextStyle(
+                                            fontFamily:
+                                                uiFontFamily(context, 'Inter'),
                                             fontFamilyFallback: const [
                                               'NotoSansKR'
                                             ],
@@ -1339,7 +1467,8 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
                                     maxLines: 1,
                                     softWrap: false,
                                     style: TextStyle(
-                                      fontFamily: uiFontFamily(context, 'Inter'),
+                                      fontFamily:
+                                          uiFontFamily(context, 'Inter'),
                                       fontFamilyFallback: const ['NotoSansKR'],
                                       fontSize: isCompact ? 13.5 : 14,
                                       fontWeight: FontWeight.w700,
@@ -2090,7 +2219,8 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
       final l10n = AppLocalizations.of(context)!;
       if (difference.inDays > 0) return l10n.daysAgo(difference.inDays);
       if (difference.inHours > 0) return l10n.hoursAgo(difference.inHours);
-      if (difference.inMinutes > 0) return l10n.minutesAgo(difference.inMinutes);
+      if (difference.inMinutes > 0)
+        return l10n.minutesAgo(difference.inMinutes);
       return l10n.justNow;
     }
 
@@ -2483,11 +2613,13 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
                             final imageUrl = standaloneImageUrls[index];
                             return Semantics(
                               button: true,
-                              label: (isChineseUi(context) ? '查看动态图片' : Localizations.localeOf(context)
-                                          .languageCode ==
-                                      'ko'
-                                  ? '게시글 이미지 확대'
-                                  : 'Open post image'),
+                              label: (isChineseUi(context)
+                                  ? '查看动态图片'
+                                  : Localizations.localeOf(context)
+                                              .languageCode ==
+                                          'ko'
+                                      ? '게시글 이미지 확대'
+                                      : 'Open post image'),
                               child: GestureDetector(
                                 behavior: HitTestBehavior.opaque,
                                 onTap: () {
@@ -2662,8 +2794,9 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
                       size: avatarSize,
                       ringWidth: 1.5,
                       innerGap: 0.5,
-                      semanticLabel:
-                          (isChineseUi(context) ? '已分享给所选分组' : Localizations.localeOf(context).languageCode == 'ko'
+                      semanticLabel: (isChineseUi(context)
+                          ? '已分享给所选分组'
+                          : Localizations.localeOf(context).languageCode == 'ko'
                               ? '선택한 그룹에 공개된 포스트'
                               : 'Post shared with selected groups'),
                       child: UserAvatar(
@@ -2925,35 +3058,6 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
                               allComments.where((c) => c.isTopLevel).toList();
                           _syncCommentTranslationScope(allComments);
                           final currentUser = FirebaseAuth.instance.currentUser;
-                          final activeCommentCount =
-                              CommentService.countActiveThreadComments(
-                            allComments,
-                          );
-                          _hasResolvedCommentStreamCount = true;
-
-                          if (_lastPublishedThreadCommentCount !=
-                              activeCommentCount) {
-                            _lastPublishedThreadCommentCount =
-                                activeCommentCount;
-                            _postService.updateLocalPostCommentCount(
-                              _currentPost.id,
-                              activeCommentCount,
-                            );
-                          }
-
-                          // 댓글 수를 스트림 기준으로 정합성 유지 (무한 setState 루프 방지)
-                          if (_currentPost.commentCount != activeCommentCount) {
-                            WidgetsBinding.instance.addPostFrameCallback((_) {
-                              if (!mounted) return;
-                              if (_currentPost.commentCount ==
-                                  activeCommentCount) return;
-                              setState(() {
-                                _currentPost = _currentPost.copyWith(
-                                    commentCount: activeCommentCount);
-                              });
-                            });
-                          }
-
                           if (allComments.isEmpty) {
                             return Padding(
                               padding: const EdgeInsets.all(16.0),
@@ -2961,6 +3065,14 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
                                   child: Text(AppLocalizations.of(context)!
                                           .firstCommentPrompt ??
                                       "")),
+                            );
+                          }
+                          if (!_prepareCommentAuthorProfiles(allComments)) {
+                            return const Center(
+                              child: Padding(
+                                padding: EdgeInsets.all(16),
+                                child: CircularProgressIndicator(),
+                              ),
                             );
                           }
 
@@ -3001,6 +3113,7 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
                                       );
                                     },
                               parentTopLevelCommentId: parentTopId,
+                              watchAuthorProfile: false,
                             );
                           }
 
@@ -3046,6 +3159,7 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
                                         );
                                       },
                                 parentTopLevelCommentId: comment.id,
+                                watchAuthorProfile: false,
                                 // 대댓글을 위한 빌더: 각 대댓글마다 개별 콜백 생성
                                 replyWidgetBuilder: (reply) =>
                                     buildCommentWidget(reply, comment.id),

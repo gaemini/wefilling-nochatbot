@@ -9,6 +9,7 @@ import 'package:firebase_auth/firebase_auth.dart';
 import 'package:url_launcher/url_launcher.dart';
 import 'package:linkify/linkify.dart' as linkify;
 import '../../models/comment.dart';
+import '../../constants/app_constants.dart';
 import '../../services/comment_service.dart';
 import '../../services/content_hide_service.dart';
 import '../../services/user_info_cache_service.dart';
@@ -36,6 +37,7 @@ class EnhancedCommentWidget extends StatefulWidget {
   final bool isReplyTarget; // 현재 하이라이트 대상인지
   final String? parentTopLevelCommentId; // 최상위 댓글 ID (대댓글 작성용)
   final Widget Function(Comment)? replyWidgetBuilder; // 대댓글 위젯 빌더
+  final bool watchAuthorProfile;
 
   const EnhancedCommentWidget({
     super.key,
@@ -51,6 +53,7 @@ class EnhancedCommentWidget extends StatefulWidget {
     this.isReplyTarget = false,
     this.parentTopLevelCommentId,
     this.replyWidgetBuilder,
+    this.watchAuthorProfile = true,
   });
 
   @override
@@ -320,13 +323,16 @@ class _EnhancedCommentWidgetState extends State<EnhancedCommentWidget> {
                   color: Color(0xFF111827),
                 ),
                 decoration: InputDecoration(
-                  labelText:
-                      (isChineseUi(context) ? '原因' : Localizations.localeOf(context).languageCode == 'ko'
+                  labelText: (isChineseUi(context)
+                      ? '原因'
+                      : Localizations.localeOf(context).languageCode == 'ko'
                           ? '신고 사유'
                           : 'Reason'),
-                  hintText: (isChineseUi(context) ? '请填写原因，如辱骂、垃圾信息等' : Localizations.localeOf(context).languageCode == 'ko'
-                      ? '신고 사유를 입력해주세요 (예: 욕설, 비방)'
-                      : 'Please enter the reason (e.g., abuse, spam)'),
+                  hintText: (isChineseUi(context)
+                      ? '请填写原因，如辱骂、垃圾信息等'
+                      : Localizations.localeOf(context).languageCode == 'ko'
+                          ? '신고 사유를 입력해주세요 (예: 욕설, 비방)'
+                          : 'Please enter the reason (e.g., abuse, spam)'),
                   labelStyle: TextStyle(
                     fontFamily: uiFontFamily(context, 'Inter'),
                     fontFamilyFallback: const ['NotoSansKR'],
@@ -424,7 +430,11 @@ class _EnhancedCommentWidgetState extends State<EnhancedCommentWidget> {
         final isKo = Localizations.localeOf(context).languageCode == 'ko';
         AppSnackBar.show(
           context,
-          message: (isChineseUi(context) ? '请填写举报原因。' : isKo ? '신고 사유를 입력해주세요.' : 'Please enter a report reason.'),
+          message: (isChineseUi(context)
+              ? '请填写举报原因。'
+              : isKo
+                  ? '신고 사유를 입력해주세요.'
+                  : 'Please enter a report reason.'),
           type: AppSnackBarType.warning,
         );
         return;
@@ -604,14 +614,20 @@ class _EnhancedCommentWidgetState extends State<EnhancedCommentWidget> {
 
   String _getDeleteQuestion(BuildContext context) {
     final locale = Localizations.localeOf(context).languageCode;
-    return (isChineseUi(context) ? '删除这条评论？' : locale == 'ko' ? '댓글을 삭제할까요?' : 'Delete this comment?');
+    return (isChineseUi(context)
+        ? '删除这条评论？'
+        : locale == 'ko'
+            ? '댓글을 삭제할까요?'
+            : 'Delete this comment?');
   }
 
   String _getDeleteWarning(BuildContext context) {
     final locale = Localizations.localeOf(context).languageCode;
-    return (isChineseUi(context) ? '删除后，此评论将无法恢复。' : locale == 'ko'
-        ? '삭제한 댓글은 다시 복구할 수 없어요.'
-        : 'This comment cannot be restored after deletion.');
+    return (isChineseUi(context)
+        ? '删除后，此评论将无法恢复。'
+        : locale == 'ko'
+            ? '삭제한 댓글은 다시 복구할 수 없어요.'
+            : 'This comment cannot be restored after deletion.');
   }
 
   String _localizedText({required String ko, required String en}) {
@@ -1018,10 +1034,9 @@ class _EnhancedCommentWidgetState extends State<EnhancedCommentWidget> {
     final isMyComment = currentUser?.uid == widget.comment.userId;
     final isLiked =
         currentUser != null && widget.comment.isLikedBy(currentUser.uid);
-    final likeColor =
-        isLiked ? const Color(0xFFEF4444) : const Color(0xFF9CA3AF);
+    final likeColor = isLiked ? AppColors.pointColor : const Color(0xFF9CA3AF);
     final likeCountColor =
-        isLiked ? const Color(0xFFEF4444) : const Color(0xFF6B7280);
+        isLiked ? AppColors.pointColor : const Color(0xFF6B7280);
     final bodyStyle = TextStyle(
       fontFamily: uiFontFamily(context, 'Inter'),
       fontFamilyFallback: const ['NotoSansKR'],
@@ -1148,7 +1163,8 @@ class _EnhancedCommentWidgetState extends State<EnhancedCommentWidget> {
                                 ? Text(
                                     effectiveDisplayName,
                                     style: TextStyle(
-                                      fontFamily: uiFontFamily(context, 'Inter'),
+                                      fontFamily:
+                                          uiFontFamily(context, 'Inter'),
                                       fontFamilyFallback: const ['NotoSansKR'],
                                       fontSize: 14,
                                       fontWeight: FontWeight.w700,
@@ -1162,7 +1178,8 @@ class _EnhancedCommentWidgetState extends State<EnhancedCommentWidget> {
                                     child: Text(
                                       effectiveDisplayName,
                                       style: TextStyle(
-                                        fontFamily: uiFontFamily(context, 'Inter'),
+                                        fontFamily:
+                                            uiFontFamily(context, 'Inter'),
                                         fontFamilyFallback: const [
                                           'NotoSansKR'
                                         ],
@@ -1311,6 +1328,25 @@ class _EnhancedCommentWidgetState extends State<EnhancedCommentWidget> {
             ? ''
             : widget.comment.authorPhotoUrl,
         isDeletedAccount: widget.comment.userId == 'deleted',
+      );
+    }
+
+    if (!widget.watchAuthorProfile) {
+      final cached = cache.getCachedUserInfo(widget.comment.userId);
+      final cachedName = (cached?.nickname ?? '').trim();
+      final cachedPhoto = (cached?.photoURL ?? '').trim();
+      return buildContent(
+        displayName: cached?.isDeletedAccount == true
+            ? ''
+            : (cachedName.isNotEmpty
+                ? cachedName
+                : widget.comment.authorNickname),
+        photoUrl: cached?.isDeletedAccount == true
+            ? ''
+            : (cachedPhoto.isNotEmpty
+                ? cachedPhoto
+                : widget.comment.authorPhotoUrl),
+        isDeletedAccount: cached?.isDeletedAccount == true,
       );
     }
 

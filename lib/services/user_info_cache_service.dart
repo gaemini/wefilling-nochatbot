@@ -460,29 +460,105 @@ class UserInfoCacheService {
     Duration cacheValidity = const Duration(minutes: 30),
     bool forceRefresh = false,
   }) async {
-    final result = <String, DMUserInfo?>{};
+    final ownerUid = _auth.currentUser?.uid;
+    final ids = userIds
+        .map((id) => id.trim())
+        .where((id) => id.isNotEmpty)
+        .toSet()
+        .toList(growable: false);
+    if (ownerUid == null || ids.isEmpty) return const <String, DMUserInfo?>{};
 
-    // Keep the existing per-user cache/fallback semantics, but avoid making a
-    // read-receipt sheet wait for every profile request serially. A small
-    // concurrency window is fast enough for group chats without producing an
-    // unbounded burst for larger rooms.
-    const concurrency = 8;
-    for (var start = 0; start < userIds.length; start += concurrency) {
-      final end = (start + concurrency).clamp(0, userIds.length).toInt();
-      final batch = userIds.sublist(start, end);
-      final entries = await Future.wait(
-        batch.map((userId) async => MapEntry(
-              userId,
-              await getUserInfo(
-                userId,
-                cacheValidity: cacheValidity,
-                forceRefresh: forceRefresh,
-              ),
-            )),
-      );
-      result.addEntries(entries);
+    // Restore persisted profiles in parallel before deciding which documents
+    // need a server read. The caller can still use memory synchronously before
+    // awaiting this method.
+    if (!forceRefresh) await hydrateUsers(ids);
+    if (_auth.currentUser?.uid != ownerUid) {
+      return const <String, DMUserInfo?>{};
     }
 
+    final result = <String, DMUserInfo?>{
+      for (final id in ids) id: _cache['$ownerUid::$id'],
+    };
+    final now = DateTime.now();
+    final serverIds = ids.where((id) {
+      if (forceRefresh) return true;
+      final key = '$ownerUid::$id';
+      final cached = _cache[key];
+      final savedAt = _cacheTimestamps[key];
+      return cached == null ||
+          cached.isFromCache ||
+          savedAt == null ||
+          now.difference(savedAt) >= cacheValidity;
+    }).toList(growable: false);
+    if (serverIds.isEmpty) return result;
+
+    const chunkSize = 10;
+    final chunks = <List<String>>[
+      for (var start = 0; start < serverIds.length; start += chunkSize)
+        serverIds.sublist(
+          start,
+          (start + chunkSize).clamp(0, serverIds.length).toInt(),
+        ),
+    ];
+
+    await Future.wait(chunks.map((chunk) async {
+      try {
+        final snapshot = await _firestore
+            .collection('users')
+            .where(FieldPath.documentId, whereIn: chunk)
+            .get(const GetOptions(source: Source.server))
+            .timeout(const Duration(seconds: 8));
+        if (_auth.currentUser?.uid != ownerUid) return;
+        final found = <String>{};
+        for (final document in snapshot.docs) {
+          found.add(document.id);
+          final data = document.data();
+          final unavailable = isUnavailableUserAccountData(data);
+          final info = DMUserInfo(
+            uid: document.id,
+            nickname: unavailable
+                ? 'DELETED_ACCOUNT'
+                : (data['nickname'] ?? '').toString().trim().isNotEmpty
+                    ? (data['nickname'] ?? '').toString().trim()
+                    : 'User',
+            photoURL: unavailable ? '' : (data['photoURL'] ?? '').toString(),
+            photoVersion: unavailable
+                ? 0
+                : data['photoVersion'] is num
+                    ? (data['photoVersion'] as num).toInt()
+                    : 0,
+            nationality: unavailable
+                ? ''
+                : (data['nationality'] ?? data['country'] ?? '')
+                    .toString()
+                    .trim(),
+            isDeletedAccount: unavailable,
+          );
+          final key = '$ownerUid::${document.id}';
+          _cache[key] = info;
+          _cacheTimestamps[key] = DateTime.now();
+          result[document.id] = info;
+          unawaited(_persistUser(ownerUid, info));
+        }
+        for (final id in chunk.where((id) => !found.contains(id))) {
+          final deleted = DMUserInfo(
+            uid: id,
+            nickname: 'DELETED_ACCOUNT',
+            photoURL: '',
+            isDeletedAccount: true,
+          );
+          final key = '$ownerUid::$id';
+          _cache[key] = deleted;
+          _cacheTimestamps[key] = DateTime.now();
+          result[id] = deleted;
+          unawaited(_persistUser(ownerUid, deleted));
+        }
+      } catch (error) {
+        // Keep memory/persistent values. One failed chunk must not prevent the
+        // remaining comment authors from rendering.
+        Logger.error('UserInfoCache: batch profile read failed: $error');
+      }
+    }), eagerError: false);
     return result;
   }
 

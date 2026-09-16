@@ -5,6 +5,9 @@ import {FieldValue, Timestamp} from 'firebase-admin/firestore';
 const MAX_RECEIPT_PAGES_PER_CALL = 25;
 const RECEIPT_PAGE_SIZE = 400;
 const DM_UNREAD_COUNTER_VERSION = 2;
+const ALLOWED_DM_REACTIONS = new Set([
+  '👍', '❤️', '😂', '😮', '😢', '🙏',
+]);
 
 function requireUid(context: functions.https.CallableContext): string {
   const uid = context.auth?.uid?.trim() ?? '';
@@ -36,6 +39,41 @@ function nonNegativeInteger(value: unknown): number {
 function timestampMillis(value: unknown): number {
   return value instanceof Timestamp ? value.toMillis() : 0;
 }
+
+/**
+ * Rebuilds a DM message's reaction aggregate from the authoritative per-user
+ * documents. Trigger retries and out-of-order rapid taps therefore converge
+ * without touching room ordering, unread counters, receipts, or push paths.
+ */
+export const onDMReactionWritten = functions
+  .runWith({timeoutSeconds: 60, memory: '256MB', failurePolicy: true})
+  .firestore
+  .document(
+    'conversations/{conversationId}/messages/{messageId}/reactions/{userId}',
+  )
+  .onWrite(async (_change, context) => {
+    const conversationId = firestoreId(context.params.conversationId);
+    const messageId = firestoreId(context.params.messageId);
+    const firestore = admin.firestore();
+    const messageRef = firestore.collection('conversations')
+      .doc(conversationId)
+      .collection('messages')
+      .doc(messageId);
+
+    await firestore.runTransaction(async (transaction) => {
+      const message = await transaction.get(messageRef);
+      if (!message.exists) return;
+      const reactions = await transaction.get(messageRef.collection('reactions'));
+      const counts: Record<string, number> = {};
+      for (const reaction of reactions.docs) {
+        const emoji = (reaction.get('emoji') ?? '').toString();
+        if (!ALLOWED_DM_REACTIONS.has(emoji)) continue;
+        counts[emoji] = (counts[emoji] ?? 0) + 1;
+      }
+      transaction.update(messageRef, {reactionCounts: counts});
+    });
+    return null;
+  });
 
 function roomUnreadForUser(
   data: FirebaseFirestore.DocumentData,

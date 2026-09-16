@@ -35,6 +35,7 @@ import '../services/storage_service.dart';
 import '../services/user_info_cache_service.dart';
 import '../ui/widgets/fullscreen_image_viewer.dart';
 import '../ui/widgets/snack_chat_message_extras.dart';
+import '../ui/widgets/chat_reaction_widgets.dart';
 import '../ui/widgets/snack_chat_chrome.dart';
 import '../ui/widgets/snack_chat_outgoing_entrance.dart';
 import '../ui/widgets/user_avatar.dart';
@@ -4520,7 +4521,7 @@ class _SnackChatScreenState extends State<SnackChatScreen>
                   messageId,
                   _confirmedReactions[messageId],
                 ));
-            _showNotice('반응을 저장하지 못했습니다.');
+            _showNotice(AppLocalizations.of(context)!.chatReactionSaveFailed);
           }
         }
       }
@@ -4547,7 +4548,8 @@ class _SnackChatScreenState extends State<SnackChatScreen>
           .map((reaction) => reaction.userId)
           .toList(growable: false);
       if (!mounted) return;
-      await _showPeopleSheet(title: '$emoji ${ids.length}명', userIds: ids);
+      final label = AppLocalizations.of(context)!.chatReactionPeople;
+      await _showPeopleSheet(title: '$label · ${ids.length}', userIds: ids);
     } catch (_) {
       if (mounted) _showNotice('반응한 사용자를 불러오지 못했습니다.');
     }
@@ -4929,40 +4931,24 @@ class _SnackChatScreenState extends State<SnackChatScreen>
                   if (!message.hasFailed &&
                       !message.isPending &&
                       !message.isDeleted) ...[
-                    Padding(
-                      padding: const EdgeInsets.symmetric(horizontal: 14),
-                      child: SizedBox(
-                        height: 50,
-                        child: Row(
-                          children: const ['👍', '❤️', '😂', '😮', '😢', '🙏']
-                              .map(
-                                (emoji) => Expanded(
-                                  child: IconButton(
-                                    onPressed: () => Navigator.pop(
-                                      sheetContext,
-                                      _MessageAction(
-                                        _MessageActionType.reaction,
-                                        emoji: emoji,
-                                      ),
-                                    ),
-                                    padding: EdgeInsets.zero,
-                                    constraints: const BoxConstraints.expand(),
-                                    tooltip: emoji,
-                                    icon: Text(
-                                      emoji,
-                                      style: const TextStyle(fontSize: 22),
-                                    ),
-                                  ),
-                                ),
-                              )
-                              .toList(growable: false),
+                    ChatReactionPickerRow(
+                      selectedReaction: _myReactions[message.id],
+                      addLabel:
+                          AppLocalizations.of(sheetContext)!.chatReactionAdd,
+                      removeLabel:
+                          AppLocalizations.of(sheetContext)!.chatReactionRemove,
+                      onSelected: (emoji) => Navigator.pop(
+                        sheetContext,
+                        _MessageAction(
+                          _MessageActionType.reaction,
+                          emoji: emoji,
                         ),
                       ),
                     ),
                     const SizedBox(height: 2),
                     _messageActionTile(
                       icon: Icons.reply_rounded,
-                      label: '답장',
+                      label: AppLocalizations.of(sheetContext)!.chatReply,
                       onTap: () => Navigator.pop(
                         sheetContext,
                         const _MessageAction(_MessageActionType.reply),
@@ -4991,7 +4977,8 @@ class _SnackChatScreenState extends State<SnackChatScreen>
                   if (!isMe && !message.hasFailed && !message.isPending) ...[
                     _messageActionTile(
                       icon: Icons.report_gmailerrorred_outlined,
-                      label: '메시지 신고',
+                      label:
+                          AppLocalizations.of(sheetContext)!.chatReportMessage,
                       destructive: true,
                       onTap: () => Navigator.pop(
                         sheetContext,
@@ -5000,7 +4987,7 @@ class _SnackChatScreenState extends State<SnackChatScreen>
                     ),
                     _messageActionTile(
                       icon: Icons.block_outlined,
-                      label: '사용자 차단',
+                      label: AppLocalizations.of(sheetContext)!.blockUser,
                       destructive: true,
                       onTap: () => Navigator.pop(
                         sheetContext,

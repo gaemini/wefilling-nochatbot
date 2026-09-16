@@ -121,13 +121,21 @@ void main() {
       final metadata = ko['@$key'];
       if (metadata is Map && metadata['placeholders'] is Map) {
         for (final placeholder in (metadata['placeholders'] as Map).keys) {
-          expect((zh[key] as String).contains('{$placeholder}'), isTrue,
+          final value = zh[key] as String;
+          expect(
+              value.contains('{$placeholder}') ||
+                  value.contains('{$placeholder,'),
+              isTrue,
               reason: '$key: $placeholder');
         }
       }
     }
     expect(zh['appName'], '微邻');
     expect(zh['appInfoTitle'], '微邻');
+    expect(zh['meetupTabLabel'], '搭子');
+    expect(zh['meetupEmptyTitle'], '在微邻，找搭子');
+    expect(zh['meetupEmptyDescription'], '找兴趣相投的人，一起出门、学习或参加活动。');
+    expect(zh['postSubmitAction'], '上传');
     expect(zh['wefillingMeaning'], contains('微邻'));
     expect(zh['continueWithWefillingAccount'], contains('微邻'));
     expect(zh['copyright'], contains('微邻'));
@@ -222,13 +230,13 @@ void main() {
             selectedIndex: 2,
             onItemTapped: (_) {},
             items: [
-              for (final label in ['动态', '聚会', '群聊', '我的', '私信'])
+              for (final label in ['动态', '搭子', '群聊', '我的', '私信'])
                 BottomNavigationItem(icon: Icons.circle_outlined, label: label)
             ],
           )),
           scale: 2));
       await tester.pumpAndSettle();
-      for (final label in ['动态', '聚会', '群聊', '我的', '私信']) {
+      for (final label in ['动态', '搭子', '群聊', '我的', '私信']) {
         expect(find.text(label), findsOneWidget);
       }
       expect(tester.takeException(), isNull);

@@ -89,6 +89,12 @@ class PostEngagement {
   }
 }
 
+class PostUnavailableException implements Exception {
+  const PostUnavailableException(this.postId);
+
+  final String postId;
+}
+
 class _PostLikeMutationResult {
   const _PostLikeMutationResult({
     required this.engagement,
@@ -142,10 +148,7 @@ class PostService {
   final Map<String, int> _postLikeMutationSequences = {};
   final Map<String, int> _postLikeMutationsInFlight = {};
   final Set<String> _postViewMutationsInFlight = {};
-  final Map<String, int> _threadCommentCountOverrides = {};
-  final Map<String, Timer> _threadCommentOverrideTimers = {};
   static const Duration _postEngagementListenerGrace = Duration(seconds: 12);
-  static const Duration _threadCommentOverrideLifetime = Duration(seconds: 20);
   static const int _maxRetainedPostEngagements = 240;
 
   // Feed stream caching:
@@ -159,8 +162,10 @@ class PostService {
   StreamSubscription<User?>? _authSub;
   String? _postsListenUid;
   int _postsSubscriptionGeneration = 0;
+  int _postsStreamLifecycleGeneration = 0;
   String? _blockListenUid;
   List<Post>? _lastParsedPosts;
+  String? _lastParsedPostsUid;
 
   /// Callable에는 실제 포스트 생성에 필요한 링크 필드만 전달한다.
   /// Instagram oEmbed의 HTML/시간 객체처럼 플랫폼별 부가 데이터가 섞이면
@@ -989,8 +994,7 @@ class PostService {
           (_postEngagementListenerCounts[candidate] ?? 0) > 0 ||
           _postEngagementRemoteSubscriptions.containsKey(candidate) ||
           _postLikeMutationsInFlight.containsKey(candidate) ||
-          _postViewMutationsInFlight.contains(candidate) ||
-          _threadCommentCountOverrides.containsKey(candidate)) {
+          _postViewMutationsInFlight.contains(candidate)) {
         continue;
       }
       _postEngagementCache.remove(candidate);
@@ -1016,10 +1020,6 @@ class PostService {
       return;
     }
     var next = _engagementFromPost(post);
-    final threadCount = _threadCommentCountOverrides[post.id];
-    if (threadCount != null) {
-      next = next.copyWith(commentCount: threadCount);
-    }
     final current = _postEngagementCache[post.id];
     if (current != null &&
         current.likes == next.likes &&
@@ -1056,7 +1056,14 @@ class PostService {
         .listen(
       (snapshot) {
         final data = snapshot.data();
-        if (!snapshot.exists || data == null) return;
+        if (!snapshot.exists || data == null) {
+          // A missing cache entry is not proof of deletion. Only a server
+          // snapshot can terminate an already-open detail screen safely.
+          if (!snapshot.metadata.isFromCache && !controller.isClosed) {
+            controller.addError(PostUnavailableException(postId));
+          }
+          return;
+        }
 
         final current = _postEngagementCache[postId];
         // 로컬/디스크 캐시가 서버에서 이미 확인한 값이나 현재 낙관적 상태를
@@ -1073,14 +1080,6 @@ class PostService {
           }
           if (_postViewMutationsInFlight.contains(postId)) {
             next = next.copyWith(viewCount: current.viewCount);
-          }
-          final threadCount = _threadCommentCountOverrides[postId];
-          if (threadCount != null) {
-            if (threadCount == next.commentCount) {
-              _clearThreadCommentOverride(postId);
-            } else {
-              next = next.copyWith(commentCount: threadCount);
-            }
           }
         }
         _publishPostEngagement(postId, next);
@@ -1173,33 +1172,6 @@ class PostService {
     return relay.stream;
   }
 
-  /// 댓글 서브컬렉션의 실제 활성 스레드 수를 상세 화면에서 계산한 즉시 카드와
-  /// 공유한다. 포스트 문서의 canonical count가 따라오면 override를 해제한다.
-  void updateLocalPostCommentCount(String postId, int commentCount) {
-    final normalized = commentCount.clamp(0, 1 << 30).toInt();
-    _threadCommentCountOverrides[postId] = normalized;
-    _threadCommentOverrideTimers.remove(postId)?.cancel();
-    _threadCommentOverrideTimers[postId] = Timer(
-      _threadCommentOverrideLifetime,
-      () {
-        _clearThreadCommentOverride(postId);
-        unawaited(_reconcilePostEngagementFromServer(postId));
-      },
-    );
-    final current = _postEngagementCache[postId];
-    if (current != null && current.commentCount != normalized) {
-      _publishPostEngagement(
-        postId,
-        current.copyWith(commentCount: normalized),
-      );
-    }
-  }
-
-  void _clearThreadCommentOverride(String postId) {
-    _threadCommentCountOverrides.remove(postId);
-    _threadCommentOverrideTimers.remove(postId)?.cancel();
-  }
-
   Future<void> _reconcilePostEngagementFromServer(String postId) async {
     try {
       final snapshot = await _firestore
@@ -1215,10 +1187,6 @@ class PostService {
       }
       if (current != null && _postViewMutationsInFlight.contains(postId)) {
         next = next.copyWith(viewCount: current.viewCount);
-      }
-      final threadCount = _threadCommentCountOverrides[postId];
-      if (threadCount != null) {
-        next = next.copyWith(commentCount: threadCount);
       }
       _publishPostEngagement(postId, next);
     } catch (error) {
@@ -1920,17 +1888,31 @@ class PostService {
 
     _postsStreamController = StreamController<List<Post>>.broadcast(
       onListen: () {
+        final lifecycleGeneration = ++_postsStreamLifecycleGeneration;
+        bool isCurrentLifecycle() =>
+            lifecycleGeneration == _postsStreamLifecycleGeneration &&
+            (_postsStreamController?.hasListener ?? false);
         // ✅ 무조건 1회는 emit해서 StreamBuilder가 waiting에 고정되지 않게 한다.
         // (Firestore snapshots가 지연/실패하더라도 UI는 로딩 뷰에서 빠져나오게 됨)
         scheduleMicrotask(() {
+          if (!isCurrentLifecycle()) return;
           try {
-            _postsStreamController?.add(const <Post>[]);
+            final user = _auth.currentUser;
+            final canReuse = _lastParsedPostsUid == user?.uid;
+            final cached = canReuse
+                ? (_lastParsedPosts ?? const <Post>[])
+                    .where((post) => _canUserReadPost(post, user))
+                    .toList(growable: false)
+                : const <Post>[];
+            _postsStreamController
+                ?.add(ContentHideService.filterPostsSync(cached));
           } catch (_) {}
         });
 
         Future<void> start() async {
           try {
             Future<void> emitFiltered() async {
+              if (!isCurrentLifecycle()) return;
               final parsed = _lastParsedPosts ?? const <Post>[];
               final currentUser = _auth.currentUser;
 
@@ -1965,6 +1947,7 @@ class PostService {
                 Logger.error('차단 필터 오류(폴백): $e');
                 nonBlocked = visibilityFiltered;
               }
+              if (!isCurrentLifecycle()) return;
 
               // 3) If changed after block-filtering, emit again.
               if (nonBlocked.length != visibilityFiltered.length) {
@@ -1982,18 +1965,24 @@ class PostService {
             }
 
             Future<void> ensureBlockSubscriptions() async {
+              if (!isCurrentLifecycle()) return;
               final u = _auth.currentUser;
               final uid = u?.uid;
 
               // 로그아웃 또는 계정 변경 시: 기존 구독 정리
               if (uid == null ||
                   (_blockListenUid != null && _blockListenUid != uid)) {
-                await _blocksByMeSub?.cancel();
-                await _blockedBySub?.cancel();
+                final blocksByMeSub = _blocksByMeSub;
+                final blockedBySub = _blockedBySub;
                 _blocksByMeSub = null;
                 _blockedBySub = null;
                 _blockListenUid = null;
+                await Future.wait<void>([
+                  if (blocksByMeSub != null) blocksByMeSub.cancel(),
+                  if (blockedBySub != null) blockedBySub.cancel(),
+                ]);
               }
+              if (!isCurrentLifecycle()) return;
 
               // 로그인 전이면 blocks 구독 없이 종료
               if (uid == null) return;
@@ -2012,6 +2001,7 @@ class PostService {
                   .where('blocker', isEqualTo: uid)
                   .snapshots()
                   .listen((snap) async {
+                if (!isCurrentLifecycle()) return;
                 // blocks snapshot으로 캐시를 즉시 채워, 다음 필터링이 get()에 의존하지 않게 한다.
                 final ids = snap.docs
                     .map((d) => (d.data()['blocked'] ?? '').toString().trim())
@@ -2020,6 +2010,7 @@ class PostService {
                 ContentFilterService.setBlockedUserIds(ids);
                 unawaited(emitFiltered());
               }, onError: (e) {
+                if (!isCurrentLifecycle()) return;
                 Logger.error('blocks(byMe) 스트림 오류: $e');
                 _postsStreamController?.addError(e);
               });
@@ -2029,6 +2020,7 @@ class PostService {
                   .where('blocked', isEqualTo: uid)
                   .snapshots()
                   .listen((snap) async {
+                if (!isCurrentLifecycle()) return;
                 final ids = snap.docs
                     .map((d) => (d.data()['blocker'] ?? '').toString().trim())
                     .where((v) => v.isNotEmpty)
@@ -2036,27 +2028,33 @@ class PostService {
                 ContentFilterService.setBlockedByUserIds(ids);
                 unawaited(emitFiltered());
               }, onError: (e) {
+                if (!isCurrentLifecycle()) return;
                 Logger.error('blocks(blockedBy) 스트림 오류: $e');
                 _postsStreamController?.addError(e);
               });
             }
 
             Future<void> restartPostsSubscription() async {
+              if (!isCurrentLifecycle()) return;
               final expectedUid = _auth.currentUser?.uid;
               final generation = ++_postsSubscriptionGeneration;
 
               await _postsSub?.cancel();
-              if (generation != _postsSubscriptionGeneration) return;
+              if (!isCurrentLifecycle() ||
+                  generation != _postsSubscriptionGeneration) return;
 
               _postsSub = null;
               _postsListenUid = expectedUid;
-              // 계정이 바뀌는 순간 이전 계정의 포스트가 노출되지 않도록
-              // 로컬 기준 목록을 즉시 비운다. 로딩 상태는 빈 결과 emit으로
-              // 항상 종료되고, 최신 스냅샷이 도착하면 바로 대체된다.
-              _lastParsedPosts = const <Post>[];
+              // 같은 계정이 화면에 재구독하면 마지막 이벤트 결과를 즉시
+              // 재사용한다. 계정이 바뀐 경우에만 이전 계정 데이터를 비운다.
+              if (_lastParsedPostsUid != expectedUid) {
+                _lastParsedPosts = const <Post>[];
+                _lastParsedPostsUid = expectedUid;
+              }
               await emitFiltered();
 
-              if (expectedUid == null ||
+              if (!isCurrentLifecycle() ||
+                  expectedUid == null ||
                   _auth.currentUser?.uid != expectedUid) {
                 return;
               }
@@ -2064,15 +2062,18 @@ class PostService {
               _postsSub =
                   _watchAccessiblePosts(limit: _feedRealtimeLimit).listen(
                 (posts) {
-                  if (generation != _postsSubscriptionGeneration ||
+                  if (!isCurrentLifecycle() ||
+                      generation != _postsSubscriptionGeneration ||
                       _postsListenUid != expectedUid) {
                     return;
                   }
                   _lastParsedPosts = posts;
+                  _lastParsedPostsUid = expectedUid;
                   unawaited(emitFiltered());
                 },
                 onError: (e) {
-                  if (generation != _postsSubscriptionGeneration ||
+                  if (!isCurrentLifecycle() ||
+                      generation != _postsSubscriptionGeneration ||
                       _postsListenUid != expectedUid) {
                     return;
                   }
@@ -2086,11 +2087,13 @@ class PostService {
 
             // 현재 인증 상태로 최신 포스트 구독을 시작한다.
             await restartPostsSubscription();
+            if (!isCurrentLifecycle()) return;
 
             // Auth가 늦게 확정되면(앱 초기 부팅 타이밍) cached stream이 "로그아웃 필터"에 고정될 수 있음.
             // Auth 변화를 따라 posts와 blocks 구독을 같이 갱신해,
             // 수동 새로고침 전까지 빈 피드에 머무는 현상을 방지한다.
             _authSub ??= _auth.authStateChanges().listen((user) async {
+              if (!isCurrentLifecycle()) return;
               ContentFilterService.refreshCache();
               final shouldRestartPosts = user?.uid != _postsListenUid ||
                   (user != null && _postsSub == null);
@@ -2099,13 +2102,16 @@ class PostService {
               } else {
                 unawaited(emitFiltered());
               }
+              if (!isCurrentLifecycle()) return;
               await ensureBlockSubscriptions();
             }, onError: (e) {
+              if (!isCurrentLifecycle()) return;
               Logger.error('Auth 스트림 오류: $e');
               _postsStreamController?.addError(e);
             });
 
             // 현재 상태 기준 blocks 구독 설정
+            if (!isCurrentLifecycle()) return;
             await ensureBlockSubscriptions();
           } catch (e, st) {
             Logger.error('getPostsStream start() 실패: $e', e, st);
@@ -2119,11 +2125,14 @@ class PostService {
         unawaited(start());
       },
       onCancel: () async {
-        // When there are no listeners, close underlying subscriptions.
-        await _postsSub?.cancel();
-        await _blocksByMeSub?.cancel();
-        await _blockedBySub?.cancel();
-        await _authSub?.cancel();
+        // Capture and detach this generation synchronously. A replacement
+        // onListen can start while cancellation Futures are still running;
+        // stale cleanup must never cancel those new subscriptions.
+        _postsStreamLifecycleGeneration++;
+        final postsSub = _postsSub;
+        final blocksByMeSub = _blocksByMeSub;
+        final blockedBySub = _blockedBySub;
+        final authSub = _authSub;
         _postsSub = null;
         _blocksByMeSub = null;
         _blockedBySub = null;
@@ -2131,7 +2140,12 @@ class PostService {
         _postsListenUid = null;
         _postsSubscriptionGeneration++;
         _blockListenUid = null;
-        _lastParsedPosts = null;
+        await Future.wait<void>([
+          if (postsSub != null) postsSub.cancel(),
+          if (blocksByMeSub != null) blocksByMeSub.cancel(),
+          if (blockedBySub != null) blockedBySub.cancel(),
+          if (authSub != null) authSub.cancel(),
+        ]);
       },
     );
 

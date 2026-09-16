@@ -470,6 +470,14 @@
       ]
     },
     {
+      "collectionGroup": "reactions",
+      "queryScope": "COLLECTION_GROUP",
+      "fields": [
+        { "fieldPath": "conversationId", "order": "ASCENDING" },
+        { "fieldPath": "userId", "order": "ASCENDING" }
+      ]
+    },
+    {
       "collectionGroup": "votes",
       "queryScope": "COLLECTION_GROUP",
       "fields": [
@@ -516,6 +524,12 @@
     }
   ],
   "fieldOverrides": [
+    {
+      "collectionGroup": "_comment_function_events",
+      "fieldPath": "expiresAt",
+      "ttl": true,
+      "indexes": []
+    },
     {
       "collectionGroup": "_snack_chat_function_events",
       "fieldPath": "expiresAt",

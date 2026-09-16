@@ -1463,5 +1463,23 @@
   "postCategoryGlobal": "国际",
   "postCategoryGlobalDescription": "语言、文化与学生交流",
   "postCategoryOther": "其他",
-  "postCategoryOtherDescription": "以往动态与自由交流"
+  "postCategoryOtherDescription": "以往动态与自由交流",
+  "meetupTabLabel": "搭子",
+  "meetupEmptyTitle": "在微邻，找搭子",
+  "meetupEmptyDescription": "找兴趣相投的人，一起出门、学习或参加活动。",
+  "postSubmitAction": "上传",
+  "chatReactionAdd": "添加回应",
+  "chatReactionRemove": "取消回应",
+  "chatReactionPeople": "回应的人",
+  "chatReactionSaveFailed": "保存回应失败。",
+  "chatReply": "回复",
+  "chatReportMessage": "举报消息",
+  "semesterGuideTitleById": "{guideId, select, check_enrollment{确认选课结果} exchange_orientation{确认交换生迎新说明会} campus_welcome_meetup{浏览新学期搭子活动} check_syllabus{查看课程大纲和评分标准} course_change_period{确认课程增退选时间} club_fair{了解社团和学生活动} academic_calendar{保存重要校历日期} arc_documents{确认居留证材料} language_exchange{参加语言交换活动} campus_services{了解校内支持服务} dorm_rules{确认宿舍生活规则} buddy_program{了解伙伴计划} assignment_check{检查未完成的作业和出勤记录} study_meetup{寻找专业课或考试学习搭子} midterm_schedule{整理期中考试安排} library_space{寻找专注学习的场所} midterm_readiness{检查期中考试准备情况} study_break{参加轻松的休息活动} midterm_followup{期中考试后重新调整课程计划} wellbeing_check{关注本学期的身心状态} festival_events{确认近期校内活动} exchange_culture_event{参加文化交流活动} grade_progress{查看各门课程的学习进度} academic_advising{根据需要预约学业咨询} final_projects{确认期末作业和团队项目日程} career_program{了解职业发展项目} next_term_notice{确认下学期重要日期} exchange_departure_plan{确认回国前手续} final_schedule{确认期末考试安排} semester_memory{计划学期结束聚会} final_readiness{检查期末考试准备情况} return_items{确认借用物品和图书归还日期} final_submissions{确认所有期末提交内容} semester_reflection{回顾本学期} stay_connected{与这学期认识的朋友保持联系} semester_wrap_up{完成学期收尾检查} next_semester_plan{制定下学期计划} other{}}",
+  "@semesterGuideTitleById": {
+    "placeholders": { "guideId": { "type": "String" } }
+  },
+  "semesterGuideDescriptionById": "{guideId, select, check_enrollment{在学生门户中确认上课时间和教室。} exchange_orientation{确认国际处的日程和需携带的物品。} campus_welcome_meetup{找到兴趣相投的同学，轻松认识彼此。} check_syllabus{将作业、考试和出勤要求添加到日程中。} course_change_period{如需调整，请在截止日期前完成。} club_fair{找一项本学期想参加的活动。} academic_calendar{记录考试、假期及退课截止日期。} arc_documents{如适用，请确认需要提交的材料。} language_exchange{认识可以分享语言和文化的朋友。} campus_services{确认校医院、心理咨询和学习支持中心的位置及使用方式。} dorm_rules{如住校，请确认门禁、垃圾分类和设施使用规则。} buddy_program{查看连接交换生和韩国学生的交流项目。} assignment_check{确认各门课程没有遗漏事项。} study_meetup{对于难以独自准备的课程，可以一起学习。} midterm_schedule{汇总考试日期、范围和作业截止时间。} library_space{可以尝试图书馆或其他校内学习空间。} midterm_readiness{确认各门课程剩余内容和复习时间。} study_break{在学习间隙通过吃饭或散步恢复精力。} midterm_followup{根据反馈和剩余考核调整计划。} wellbeing_check{检查睡眠、饮食和压力状况，并在需要时寻求帮助。} festival_events{保存感兴趣的庆典、演出或展览。} exchange_culture_event{与不同背景的同学自然交流。} grade_progress{确认当前成绩和剩余考核占比。} academic_advising{如对课程或学分有疑问，请联系相关部门。} final_projects{提前确认分工、阶段截止日期和提交格式。} career_program{查看感兴趣的职业咨询、讲座或招聘活动。} next_term_notice{查看休学、复学、宿舍和选课相关日期。} exchange_departure_plan{查看成绩单、退宿和出入境相关说明。} final_schedule{最后确认考试日期、教室、范围和提交截止时间。} semester_memory{和这学期认识的朋友轻松地为学期收尾。} final_readiness{确认各门课程剩余学习内容和提交材料。} return_items{确认图书馆图书和校内借用物品的归还日期。} final_submissions{最后检查所有内容是否已正确提交。} semester_reflection{记录做得好的地方以及下学期想继续的目标。} stay_connected{和这学期认识的人约好下一次见面。} semester_wrap_up{检查成绩公布日期、需归还物品和剩余行政手续。} next_semester_plan{回顾本学期并整理下学期想继续的目标。} other{}}",
+  "@semesterGuideDescriptionById": {
+    "placeholders": { "guideId": { "type": "String" } }
+  }
 }

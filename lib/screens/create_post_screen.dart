@@ -811,7 +811,7 @@ class _CreatePostScreenState extends State<CreatePostScreen> {
                       ),
                     ),
                     child: Text(
-                      l10n.registration,
+                      l10n.postSubmitAction,
                       style: TextStyle(
                         fontFamily: uiFontFamily(context, 'Inter'),
                         fontFamilyFallback: const ['NotoSansKR'],

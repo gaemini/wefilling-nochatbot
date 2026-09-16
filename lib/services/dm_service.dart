@@ -35,6 +35,14 @@ class DMService {
   static const Duration _secureReadCallableRetryDelay = Duration(minutes: 5);
   static const int _legacyReadPageSize = 400;
   static const int _legacyReadMaxPages = 25;
+  static const Set<String> _allowedReactions = <String>{
+    '👍',
+    '❤️',
+    '😂',
+    '😮',
+    '😢',
+    '🙏',
+  };
 
   static String _visibilityPrefsKey(String myUid, String conversationId) =>
       'dm_visibility_start__${myUid}__${conversationId}';
@@ -797,6 +805,68 @@ class DMService {
           ownerUid: owner));
       return messages;
     });
+  }
+
+  /// One room-scoped listener for only the signed-in user's reaction docs.
+  /// Aggregate counts continue to arrive through the existing message stream.
+  Stream<List<DMReaction>> watchMyReactions(String conversationId) {
+    final uid = _auth.currentUser?.uid;
+    if (uid == null) return Stream.value(const <DMReaction>[]);
+    return _firestore
+        .collectionGroup('reactions')
+        .where('conversationId', isEqualTo: conversationId)
+        .where('userId', isEqualTo: uid)
+        .snapshots()
+        .map((snapshot) => snapshot.docs
+            .map(DMReaction.fromFirestore)
+            .where((reaction) => reaction.messageId.isNotEmpty)
+            .toList(growable: false));
+  }
+
+  Future<void> setReaction({
+    required String conversationId,
+    required String messageId,
+    required String? emoji,
+  }) async {
+    final uid = _auth.currentUser?.uid;
+    if (uid == null ||
+        messageId.trim().isEmpty ||
+        (emoji != null && !_allowedReactions.contains(emoji))) {
+      return;
+    }
+    final ref = _firestore
+        .collection('conversations')
+        .doc(conversationId)
+        .collection('messages')
+        .doc(messageId)
+        .collection('reactions')
+        .doc(uid);
+    if (emoji == null) {
+      await ref.delete();
+      return;
+    }
+    await ref.set(<String, dynamic>{
+      'conversationId': conversationId,
+      'messageId': messageId,
+      'userId': uid,
+      'emoji': emoji,
+      'updatedAt': FieldValue.serverTimestamp(),
+    });
+  }
+
+  Future<List<DMReaction>> fetchMessageReactions({
+    required String conversationId,
+    required String messageId,
+  }) async {
+    final snapshot = await _firestore
+        .collection('conversations')
+        .doc(conversationId)
+        .collection('messages')
+        .doc(messageId)
+        .collection('reactions')
+        .get()
+        .timeout(const Duration(seconds: 8));
+    return snapshot.docs.map(DMReaction.fromFirestore).toList(growable: false);
   }
 
   /// 과거 메시지 페이지 로드 (descending)

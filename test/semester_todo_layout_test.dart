@@ -354,6 +354,66 @@ void main() {
   });
 
   testWidgets(
+      'Chinese system guides use resources while personal task text is unchanged',
+      (tester) async {
+    tester.view.physicalSize = const Size(320, 700);
+    tester.view.devicePixelRatio = 1;
+    tester.platformDispatcher.textScaleFactorTestValue = 1.5;
+    addTearDown(tester.view.resetPhysicalSize);
+    addTearDown(tester.view.resetDevicePixelRatio);
+    addTearDown(tester.platformDispatcher.clearTextScaleFactorTestValue);
+    final controller = _PreviewController();
+    controller.tasks = [
+      _task(
+        'check_syllabus',
+        3,
+        '강의계획서와 평가 방식 확인하기',
+        'Review syllabi and grading policies',
+        '과제, 시험, 출석 기준을 일정에 정리하세요.',
+        'Add assignments, exams, and attendance rules to your schedule.',
+      ),
+    ];
+    controller.personalTodos = [
+      const PersonalTodo(
+        id: 'personal-original',
+        semesterId: 'preview',
+        title: 'My 原文 할 일',
+        weekNumber: 3,
+        completed: false,
+        carryOver: true,
+        reminderEnabled: false,
+        archived: false,
+        memo: 'Keep this 原文',
+      ),
+    ];
+    await tester.pumpWidget(MaterialApp(
+      locale: const Locale.fromSubtags(languageCode: 'zh', scriptCode: 'Hans'),
+      supportedLocales: AppLocalizations.supportedLocales,
+      localizationsDelegates: AppLocalizations.localizationsDelegates,
+      home: SemesterTodoScreen(
+        studentType: StudentType.korean,
+        controller: controller,
+      ),
+    ));
+    await tester.pumpAndSettle();
+
+    expect(find.text('查看课程大纲和评分标准'), findsOneWidget);
+    expect(
+        find.byWidgetPredicate((widget) =>
+            widget is PostLinkifiedText && widget.text == '将作业、考试和出勤要求添加到日程中。'),
+        findsOneWidget);
+    expect(find.text('Review syllabi and grading policies'), findsNothing);
+    expect(find.text('My 原文 할 일'), findsOneWidget);
+    expect(
+        find.byWidgetPredicate((widget) =>
+            widget is PostLinkifiedText && widget.text == 'Keep this 原文'),
+        findsOneWidget);
+    expect(find.text('9月第3周'), findsOneWidget);
+    expect(find.text('9月14日－9月20日'), findsOneWidget);
+    expect(tester.takeException(), isNull);
+  });
+
+  testWidgets(
       'earlier tasks start above current tasks; check updates source; real week badge persists',
       (tester) async {
     tester.view.physicalSize = const Size(360, 740);

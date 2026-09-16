@@ -1999,17 +1999,25 @@ service cloud.firestore {
     // signed-in user's own raw reaction/vote documents for one room. Direct
     // reaction detail reads remain governed by the participant rule above;
     // other users' raw votes are never exposed.
-    match /{snackChatNestedPath=**}/reactions/{reactionId} {
-      function canListOwnSnackChatEntry() {
+    match /{chatNestedPath=**}/reactions/{reactionId} {
+      function canListOwnChatReaction() {
         let chatId = resource.data.get('chatId', '');
-        let roomPath = /databases/$(database)/documents/snack_chats/$(chatId);
-        return currentUserAccountAllowed()
-          && chatId is string
-          && resource.data.get('userId', '') == request.auth.uid
-          && exists(roomPath)
-          && request.auth.uid in get(roomPath).data.participantIds;
+        let snackRoomPath = /databases/$(database)/documents/snack_chats/$(chatId);
+        let conversationId = resource.data.get('conversationId', '');
+        let conversationPath = /databases/$(database)/documents/conversations/$(conversationId);
+        let ownsEntry = resource.data.get('userId', '') == request.auth.uid;
+        let canListSnackReaction = chatId is string
+          && chatId.size() > 0
+          && exists(snackRoomPath)
+          && request.auth.uid in get(snackRoomPath).data.participantIds;
+        let canListDmReaction = conversationId is string
+          && conversationId.size() > 0
+          && exists(conversationPath)
+          && request.auth.uid in get(conversationPath).data.participants;
+        return currentUserAccountAllowed() && ownsEntry
+          && (canListSnackReaction || canListDmReaction);
       }
-      allow list: if canListOwnSnackChatEntry();
+      allow list: if canListOwnChatReaction();
     }
 
     match /{snackChatNestedPath=**}/votes/{voteId} {
@@ -2028,6 +2036,10 @@ service cloud.firestore {
     // Server-only idempotency and link metadata caches. Explicit rules make
     // the denial durable even if a broad fallback rule is added later.
     match /_snack_chat_function_events/{eventId} {
+      allow read, write: if false;
+    }
+
+    match /_comment_function_events/{eventId} {
       allow read, write: if false;
     }
 
@@ -2311,6 +2323,46 @@ service cloud.firestore {
         
         // 삭제: 대화방 참여자는 자신의 채팅방 하위 메시지를 삭제 가능 (대화방 완전 삭제 시 사용)
         allow delete: if request.auth != null && (isParticipant() || isMyConversation());
+
+        // One optional reaction per participant and message. The parent
+        // message aggregate is server-maintained and remains read-only to
+        // clients, so reactions cannot change delivery/read state or room
+        // ordering metadata.
+        match /reactions/{userId} {
+          function validDmReaction(data) {
+            return data.keys().hasOnly([
+                'conversationId', 'messageId', 'userId', 'emoji', 'updatedAt'
+              ])
+              && data.conversationId == conversationId
+              && data.messageId == messageId
+              && data.userId == userId
+              && data.emoji in ['👍', '❤️', '😂', '😮', '😢', '🙏']
+              && data.updatedAt == request.time;
+          }
+
+          function dmReactionParentExists() {
+            return exists(
+              /databases/$(database)/documents/conversations/$(conversationId)/messages/$(messageId)
+            );
+          }
+
+          allow read: if request.auth != null && isParticipant();
+          allow create: if request.auth != null
+            && request.auth.uid == userId
+            && isParticipant()
+            && dmReactionParentExists()
+            && validDmReaction(request.resource.data);
+          allow update: if request.auth != null
+            && request.auth.uid == userId
+            && resource.data.userId == userId
+            && isParticipant()
+            && dmReactionParentExists()
+            && validDmReaction(request.resource.data);
+          allow delete: if request.auth != null
+            && request.auth.uid == userId
+            && resource.data.userId == userId
+            && isParticipant();
+        }
       }
     }
 

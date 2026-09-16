@@ -3228,4 +3228,131 @@ class AppLocalizationsKo extends AppLocalizations {
 
   @override
   String get postCategoryOtherDescription => '기존 글과 자유로운 이야기';
+
+  @override
+  String get meetupTabLabel => '밋업';
+
+  @override
+  String get meetupEmptyTitle => 'Wefilling의 뜻을 아시나요?';
+
+  @override
+  String get meetupEmptyDescription =>
+      '\"We\"와 \"filling\"의 합성어로,\n사람과 사람 사이의 공간을 채운다는 뜻입니다.';
+
+  @override
+  String get postSubmitAction => '등록';
+
+  @override
+  String get chatReactionAdd => '반응 추가';
+
+  @override
+  String get chatReactionRemove => '반응 취소';
+
+  @override
+  String get chatReactionPeople => '반응한 사람';
+
+  @override
+  String get chatReactionSaveFailed => '반응을 저장하지 못했습니다.';
+
+  @override
+  String get chatReply => '답장';
+
+  @override
+  String get chatReportMessage => '메시지 신고';
+
+  @override
+  String semesterGuideTitleById(String guideId) {
+    String _temp0 = intl.Intl.selectLogic(
+      guideId,
+      {
+        'check_enrollment': '수강신청 내역 확인하기',
+        'exchange_orientation': '교환학생 오리엔테이션 확인하기',
+        'campus_welcome_meetup': '새 학기 모임 둘러보기',
+        'check_syllabus': '강의계획서와 평가 방식 확인하기',
+        'course_change_period': '수강 정정 기간 확인하기',
+        'club_fair': '동아리와 학생 활동 찾아보기',
+        'academic_calendar': '학사 일정 저장하기',
+        'arc_documents': '외국인등록 관련 서류 확인하기',
+        'language_exchange': '언어교환 모임 참여하기',
+        'campus_services': '교내 지원 서비스 알아두기',
+        'dorm_rules': '기숙사 생활 규칙 확인하기',
+        'buddy_program': '버디 프로그램 찾아보기',
+        'assignment_check': '밀린 과제와 출석 확인하기',
+        'study_meetup': '전공 또는 시험 스터디 찾아보기',
+        'midterm_schedule': '중간고사 일정 정리하기',
+        'library_space': '집중할 공부 장소 찾아보기',
+        'midterm_readiness': '중간고사 준비 상태 점검하기',
+        'study_break': '짧은 휴식 모임 참여하기',
+        'midterm_followup': '시험 후 과목별 계획 다시 세우기',
+        'wellbeing_check': '이번 학기 컨디션 돌아보기',
+        'festival_events': '교내 행사 일정 확인하기',
+        'exchange_culture_event': '문화 교류 행사 참여하기',
+        'grade_progress': '과목별 성취도 확인하기',
+        'academic_advising': '필요한 학업 상담 예약하기',
+        'final_projects': '기말 과제와 팀 프로젝트 일정 확인하기',
+        'career_program': '진로·취업 프로그램 찾아보기',
+        'next_term_notice': '다음 학기 주요 일정 확인하기',
+        'exchange_departure_plan': '귀국 전 행정 절차 확인하기',
+        'final_schedule': '기말고사 일정 확정하기',
+        'semester_memory': '학기 마무리 모임 계획하기',
+        'final_readiness': '기말 준비 상태 점검하기',
+        'return_items': '대여 물품과 도서 반납 일정 확인하기',
+        'final_submissions': '최종 제출물 확인하기',
+        'semester_reflection': '이번 학기 기록 돌아보기',
+        'stay_connected': '함께한 친구들과 연락 이어가기',
+        'semester_wrap_up': '학기 마무리 항목 확인하기',
+        'next_semester_plan': '다음 학기 계획 세우기',
+        'other': '',
+      },
+    );
+    return '$_temp0';
+  }
+
+  @override
+  String semesterGuideDescriptionById(String guideId) {
+    String _temp0 = intl.Intl.selectLogic(
+      guideId,
+      {
+        'check_enrollment': '포털에서 강의 시간과 강의실을 다시 확인하세요.',
+        'exchange_orientation': '국제처 일정과 준비물을 확인하세요.',
+        'campus_welcome_meetup': '관심사가 맞는 학생들과 가볍게 인사해 보세요.',
+        'check_syllabus': '과제, 시험, 출석 기준을 일정에 정리하세요.',
+        'course_change_period': '변경이 필요하다면 마감 전에 처리하세요.',
+        'club_fair': '이번 학기에 함께할 활동을 하나 찾아보세요.',
+        'academic_calendar': '시험, 휴일, 수강 철회 일정을 캘린더에 기록하세요.',
+        'arc_documents': '신청 대상이라면 국제처 안내와 준비 서류를 확인하세요.',
+        'language_exchange': '서로의 언어와 문화를 나눌 친구를 만나보세요.',
+        'campus_services': '보건, 상담, 학습 지원센터의 위치와 이용 방법을 확인하세요.',
+        'dorm_rules': '거주 중이라면 출입, 분리수거, 시설 이용 규칙을 확인하세요.',
+        'buddy_program': '교환학생과 한국인 학생이 함께하는 교류 프로그램을 확인하세요.',
+        'assignment_check': '과목별 누락 항목이 없는지 점검하세요.',
+        'study_meetup': '혼자 준비하기 어려운 과목은 함께 공부해 보세요.',
+        'midterm_schedule': '시험일, 범위, 과제 마감일을 한곳에 정리하세요.',
+        'library_space': '도서관이나 교내 학습 공간을 이용해 보세요.',
+        'midterm_readiness': '과목별 남은 분량과 준비 시간을 확인하세요.',
+        'study_break': '시험 준비 사이에 식사나 산책으로 재충전해 보세요.',
+        'midterm_followup': '피드백과 남은 평가 일정을 반영해 계획을 조정하세요.',
+        'wellbeing_check': '수면, 식사, 스트레스 상태를 확인하고 필요한 도움을 받으세요.',
+        'festival_events': '축제, 공연, 전시 등 관심 있는 행사를 저장하세요.',
+        'exchange_culture_event': '다른 배경의 학생들과 자연스럽게 교류해 보세요.',
+        'grade_progress': '현재 점수와 남은 평가 비중을 확인하세요.',
+        'academic_advising': '수업이나 학점에 고민이 있다면 담당 부서에 문의하세요.',
+        'final_projects': '역할, 중간 마감, 제출 형식을 미리 확인하세요.',
+        'career_program': '관심 있는 진로 상담, 특강, 채용 행사를 확인하세요.',
+        'next_term_notice': '휴학, 복학, 기숙사, 수강신청 관련 일정을 확인하세요.',
+        'exchange_departure_plan': '성적표, 기숙사 퇴실, 체류 관련 안내를 확인하세요.',
+        'final_schedule': '시험일, 장소, 범위와 제출 마감을 최종 확인하세요.',
+        'semester_memory': '함께한 친구들과 가볍게 학기를 마무리해 보세요.',
+        'final_readiness': '남은 학습량과 제출물을 과목별로 확인하세요.',
+        'return_items': '도서관 도서와 교내 대여 물품의 반납일을 확인하세요.',
+        'final_submissions': '제출 완료 여부와 파일 상태를 마지막으로 확인하세요.',
+        'semester_reflection': '좋았던 활동과 다음 학기에 이어갈 목표를 기록해 보세요.',
+        'stay_connected': '학기 중 만난 사람들과 다음 약속을 만들어 보세요.',
+        'semester_wrap_up': '성적 확인 일정, 반납할 물품, 남은 행정 절차를 점검하세요.',
+        'next_semester_plan': '이번 학기를 돌아보고 다음 학기에 이어갈 목표를 정리하세요.',
+        'other': '',
+      },
+    );
+    return '$_temp0';
+  }
 }

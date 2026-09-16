@@ -22,6 +22,7 @@ import '../services/dm_service.dart';
 import '../services/chat_outbox_store.dart';
 import '../utils/chat_work_queue.dart';
 import '../ui/widgets/snack_chat_outgoing_entrance.dart';
+import '../ui/widgets/chat_reaction_widgets.dart';
 import '../services/dm_active_conversation.dart';
 import '../services/badge_service.dart';
 import '../services/fcm_service.dart';
@@ -169,6 +170,12 @@ class _DMChatScreenState extends State<DMChatScreen>
 
   // 대화방이 없을 수 있으므로 초기에 서버 구독을 시작하지 않는다.
   StreamSubscription<List<DMMessage>>? _recentMessagesSub;
+  StreamSubscription<List<DMReaction>>? _reactionSub;
+  final Map<String, String> _myReactions = <String, String>{};
+  final Map<String, String?> _confirmedReactions = <String, String?>{};
+  final Map<String, String?> _pendingReactionTargets = <String, String?>{};
+  final Set<String> _reactionMutationsInFlight = <String>{};
+  int _reactionSubscriptionGeneration = 0;
   List<DMMessage> _messages = <DMMessage>[];
   Object? _messagesError;
   bool _isMessagesLoading = false; // 캐시/서버 초기 로드
@@ -235,6 +242,13 @@ class _DMChatScreenState extends State<DMChatScreen>
     final translationConversationChanged =
         previousConversationId != conversationId;
     _activeConversationId = conversationId;
+    if (translationConversationChanged) {
+      _myReactions.clear();
+      _confirmedReactions.clear();
+      _pendingReactionTargets.clear();
+      _reactionMutationsInFlight.clear();
+      _subscribeToReactions(conversationId);
+    }
     unawaited(_restoreOutbox(conversationId));
     if (_translationLifecycleInitialized && translationConversationChanged) {
       _resetTranslationStateForConversation();
@@ -246,6 +260,43 @@ class _DMChatScreenState extends State<DMChatScreen>
       unawaited(FCMService().cancelDmNotification(conversationId));
     }
     _watchConversationUnreadCounter(conversationId);
+  }
+
+  void _subscribeToReactions(String conversationId) {
+    final generation = ++_reactionSubscriptionGeneration;
+    final previous = _reactionSub;
+    _reactionSub = null;
+    unawaited(previous?.cancel() ?? Future<void>.value());
+    if (conversationId.trim().isEmpty || _currentUser == null) return;
+    _reactionSub = _dmService.watchMyReactions(conversationId).listen(
+      (reactions) {
+        if (!mounted || generation != _reactionSubscriptionGeneration) return;
+        final next = <String, String>{
+          for (final reaction in reactions) reaction.messageId: reaction.emoji,
+        };
+        setState(() {
+          final messageIds = <String>{
+            ..._myReactions.keys,
+            ..._confirmedReactions.keys,
+            ...next.keys,
+          };
+          for (final messageId in messageIds) {
+            if (_reactionMutationsInFlight.contains(messageId) ||
+                _pendingReactionTargets.containsKey(messageId)) {
+              continue;
+            }
+            final value = next[messageId];
+            value == null
+                ? _myReactions.remove(messageId)
+                : _myReactions[messageId] = value;
+            _confirmedReactions[messageId] = value;
+          }
+        });
+      },
+      onError: (Object error) {
+        Logger.error('DM reaction stream failed: $error');
+      },
+    );
   }
 
   void _watchConversationUnreadCounter(String conversationId) {
@@ -287,6 +338,12 @@ class _DMChatScreenState extends State<DMChatScreen>
         _outboxRetry?.cancel();
         unawaited(_recentMessagesSub?.cancel());
         _recentMessagesSub = null;
+        _reactionSubscriptionGeneration++;
+        unawaited(_reactionSub?.cancel());
+        _reactionSub = null;
+        _myReactions.clear();
+        _confirmedReactions.clear();
+        _pendingReactionTargets.clear();
       }
     });
     WidgetsBinding.instance.addObserver(this);
@@ -1329,6 +1386,8 @@ class _DMChatScreenState extends State<DMChatScreen>
     WidgetsBinding.instance.removeObserver(this);
     _conversationReadSub?.cancel();
     _recentMessagesSub?.cancel();
+    _reactionSubscriptionGeneration++;
+    _reactionSub?.cancel();
     _messageController.dispose();
     _messageFocusNode.dispose();
     _scrollController.removeListener(_onScroll);
@@ -1569,7 +1628,19 @@ class _DMChatScreenState extends State<DMChatScreen>
 
   List<DMMessage> _mergeRecentIntoAll(
       List<DMMessage> recent, List<DMMessage> existingAll) {
-    final incoming = {for (final m in recent) m.id: m}.values.toList()
+    final existingById = <String, DMMessage>{
+      for (final message in existingAll) message.id: message,
+    };
+    final incoming = {
+      for (final message in recent)
+        message.id: (_reactionMutationsInFlight.contains(message.id) ||
+                _pendingReactionTargets.containsKey(message.id))
+            ? message.copyWith(
+                reactionCounts: existingById[message.id]?.reactionCounts ??
+                    message.reactionCounts,
+              )
+            : message,
+    }.values.toList()
       ..sort(_compareMessagesDesc);
     final ids = incoming.map((m) => m.id).toSet();
     final retained = existingAll.where((m) => !ids.contains(m.id)).toList();
@@ -2800,17 +2871,46 @@ class _DMChatScreenState extends State<DMChatScreen>
                     : message.type == 'file'
                         ? () => _showPendingFileActions(message)
                         : null,
-                child: _buildOutgoingPresentation(
-                  message,
-                  _buildMessageBubble(
-                    message,
-                    isMine,
-                    isConsecutive,
-                    timeText: timeText,
-                    showTimeText: showTimeText,
-                    statusText: statusText,
-                    showStatusText: showStatusText,
-                  ),
+                child: Column(
+                  crossAxisAlignment: isMine
+                      ? CrossAxisAlignment.end
+                      : CrossAxisAlignment.start,
+                  children: [
+                    _buildOutgoingPresentation(
+                      message,
+                      _buildMessageBubble(
+                        message,
+                        isMine,
+                        isConsecutive,
+                        timeText: timeText,
+                        showTimeText: showTimeText,
+                        statusText: statusText,
+                        showStatusText: showStatusText,
+                      ),
+                    ),
+                    if (message.reactionCounts.isNotEmpty)
+                      Padding(
+                        padding: EdgeInsets.only(
+                          left: isMine ? 0 : 44,
+                          right: isMine ? 2 : 0,
+                          bottom: 4,
+                        ),
+                        child: ChatReactionBar(
+                          counts: message.reactionCounts,
+                          myReaction: _myReactions[message.id],
+                          isOutgoing: false,
+                          addLabel:
+                              AppLocalizations.of(context)!.chatReactionAdd,
+                          removeLabel:
+                              AppLocalizations.of(context)!.chatReactionRemove,
+                          peopleLabel:
+                              AppLocalizations.of(context)!.chatReactionPeople,
+                          onToggle: (emoji) => _toggleReaction(message, emoji),
+                          onShowUsers: (emoji) =>
+                              _showReactionUsers(message, emoji),
+                        ),
+                      ),
+                  ],
                 ),
               ),
             ],
@@ -2985,15 +3085,10 @@ class _DMChatScreenState extends State<DMChatScreen>
   Future<void> _showMessageActions(DMMessage message) async {
     if (!_canReplyToMessage(message)) return;
     HapticFeedback.selectionClick();
-    final replyLabel = isChineseUi(context)
-        ? '回复'
-        : Localizations.localeOf(context).languageCode == 'ko'
-            ? '답장'
-            : 'Reply';
-    final selected = await showModalBottomSheet<bool>(
+    final selected = await showModalBottomSheet<String>(
       context: context,
       requestFocus: false,
-      useSafeArea: false,
+      useSafeArea: true,
       backgroundColor: Colors.white,
       barrierColor: Colors.black.withValues(alpha: .42),
       shape: const RoundedRectangleBorder(
@@ -3015,11 +3110,20 @@ class _DMChatScreenState extends State<DMChatScreen>
                 ),
               ),
               const SizedBox(height: 10),
+              ChatReactionPickerRow(
+                selectedReaction: _myReactions[message.id],
+                addLabel: AppLocalizations.of(sheetContext)!.chatReactionAdd,
+                removeLabel:
+                    AppLocalizations.of(sheetContext)!.chatReactionRemove,
+                onSelected: (emoji) =>
+                    Navigator.of(sheetContext).pop('reaction:$emoji'),
+              ),
+              const SizedBox(height: 2),
               Semantics(
                 button: true,
-                label: replyLabel,
+                label: AppLocalizations.of(sheetContext)!.chatReply,
                 child: Tooltip(
-                  message: replyLabel,
+                  message: AppLocalizations.of(sheetContext)!.chatReply,
                   child: ListTile(
                     minTileHeight: 54,
                     leading: const Icon(
@@ -3027,14 +3131,14 @@ class _DMChatScreenState extends State<DMChatScreen>
                       color: Color(0xFF344054),
                     ),
                     title: Text(
-                      replyLabel,
+                      AppLocalizations.of(sheetContext)!.chatReply,
                       style: const TextStyle(
                         fontSize: 15,
                         fontWeight: FontWeight.w700,
                         color: Color(0xFF101828),
                       ),
                     ),
-                    onTap: () => Navigator.of(sheetContext).pop(true),
+                    onTap: () => Navigator.of(sheetContext).pop('reply'),
                   ),
                 ),
               ),
@@ -3043,7 +3147,15 @@ class _DMChatScreenState extends State<DMChatScreen>
         ),
       ),
     );
-    if (!mounted || selected != true) return;
+    if (!mounted || selected == null) return;
+    if (selected.startsWith('reaction:')) {
+      final emoji = selected.substring('reaction:'.length);
+      if (chatReactionEmojis.contains(emoji)) {
+        await _toggleReaction(message, emoji);
+      }
+      return;
+    }
+    if (selected != 'reply') return;
     setState(() => _replyingTo = message);
     WidgetsBinding.instance.addPostFrameCallback((_) {
       if (mounted) _messageFocusNode.requestFocus();
@@ -3055,6 +3167,168 @@ class _DMChatScreenState extends State<DMChatScreen>
       message.serverCreatedAt != null &&
       message.id.trim().isNotEmpty &&
       message.senderId.trim().isNotEmpty;
+
+  Future<void> _toggleReaction(DMMessage message, String emoji) async {
+    if (!_canReplyToMessage(message) || !chatReactionEmojis.contains(emoji)) {
+      return;
+    }
+    final previous = _myReactions[message.id];
+    final target = previous == emoji ? null : emoji;
+    if (!_reactionMutationsInFlight.contains(message.id) &&
+        !_pendingReactionTargets.containsKey(message.id)) {
+      _confirmedReactions[message.id] = previous;
+    }
+    setState(() => _applyReactionTargetInState(message.id, target));
+    _pendingReactionTargets[message.id] = target;
+    await _flushReactionMutations(message.id);
+  }
+
+  void _applyReactionTargetInState(String messageId, String? target) {
+    final current = _myReactions[messageId];
+    if (current == target) return;
+    if (target == null) {
+      _myReactions.remove(messageId);
+    } else {
+      _myReactions[messageId] = target;
+    }
+    final index = _messages.indexWhere((message) => message.id == messageId);
+    if (index < 0) return;
+    final counts = Map<String, int>.from(_messages[index].reactionCounts);
+    if (current != null) {
+      final remaining = (counts[current] ?? 1) - 1;
+      if (remaining <= 0) {
+        counts.remove(current);
+      } else {
+        counts[current] = remaining;
+      }
+    }
+    if (target != null) counts[target] = (counts[target] ?? 0) + 1;
+    _messages[index] = _messages[index].copyWith(reactionCounts: counts);
+  }
+
+  Future<void> _flushReactionMutations(String messageId) async {
+    if (!_reactionMutationsInFlight.add(messageId)) return;
+    try {
+      while (_pendingReactionTargets.containsKey(messageId)) {
+        final target = _pendingReactionTargets.remove(messageId);
+        try {
+          await _dmService
+              .setReaction(
+                conversationId: _activeConversationId,
+                messageId: messageId,
+                emoji: target,
+              )
+              .timeout(const Duration(seconds: 10));
+          _confirmedReactions[messageId] = target;
+        } on TimeoutException {
+          // A Firestore write can still be queued after the Future times out.
+          // Keep the explicit target so a late acknowledgement cannot flicker.
+          _confirmedReactions[messageId] = target;
+        } catch (_) {
+          if (!_pendingReactionTargets.containsKey(messageId) && mounted) {
+            setState(() => _applyReactionTargetInState(
+                  messageId,
+                  _confirmedReactions[messageId],
+                ));
+            AppSnackBar.show(
+              context,
+              message: AppLocalizations.of(context)!.chatReactionSaveFailed,
+              type: AppSnackBarType.error,
+            );
+          }
+        }
+      }
+    } finally {
+      _reactionMutationsInFlight.remove(messageId);
+      if (_pendingReactionTargets.containsKey(messageId)) {
+        unawaited(_flushReactionMutations(messageId));
+      }
+    }
+  }
+
+  Future<void> _showReactionUsers(DMMessage message, String emoji) async {
+    try {
+      final reactions = await _dmService.fetchMessageReactions(
+        conversationId: _activeConversationId,
+        messageId: message.id,
+      );
+      final userIds = reactions
+          .where((reaction) => reaction.emoji == emoji)
+          .map((reaction) => reaction.userId)
+          .where((id) => id.isNotEmpty)
+          .toSet()
+          .toList(growable: false);
+      if (!mounted) return;
+      final cached = <String, DMUserInfo?>{
+        for (final id in userIds)
+          id: _userInfoCacheService.getCachedUserInfo(id),
+      };
+      final usersFuture = _userInfoCacheService.getUserInfoBatch(userIds);
+      await showModalBottomSheet<void>(
+        context: context,
+        useSafeArea: true,
+        showDragHandle: true,
+        backgroundColor: Colors.white,
+        builder: (sheetContext) => FutureBuilder<Map<String, DMUserInfo?>>(
+          future: usersFuture,
+          initialData: cached,
+          builder: (context, snapshot) {
+            final profiles = <String, DMUserInfo?>{...cached};
+            if (snapshot.data != null) profiles.addAll(snapshot.data!);
+            return ListView(
+              shrinkWrap: true,
+              padding: const EdgeInsets.fromLTRB(20, 0, 20, 24),
+              children: [
+                Text(
+                  '${AppLocalizations.of(context)!.chatReactionPeople} · ${userIds.length}',
+                  style: const TextStyle(
+                    fontSize: 17,
+                    fontWeight: FontWeight.w800,
+                    color: DMColors.textPrimary,
+                  ),
+                ),
+                const SizedBox(height: 8),
+                ...userIds.map((id) {
+                  final profile = profiles[id];
+                  final name = profile?.nickname.trim();
+                  return ListTile(
+                    contentPadding: EdgeInsets.zero,
+                    leading: UserAvatar(
+                      uid: id,
+                      photoUrl: profile?.photoURL ?? '',
+                      photoVersion: profile?.photoVersion ?? 0,
+                      isAnonymous: profile?.isDeletedAccount == true,
+                      size: 38,
+                    ),
+                    title: Text(
+                      name?.isNotEmpty == true
+                          ? name!
+                          : AppLocalizations.of(context)!.user,
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      style: const TextStyle(
+                        fontSize: 14,
+                        fontWeight: FontWeight.w700,
+                        color: DMColors.textPrimary,
+                      ),
+                    ),
+                    trailing: ChatReactionIcon(emoji, size: 20),
+                  );
+                }),
+              ],
+            );
+          },
+        ),
+      );
+    } catch (_) {
+      if (!mounted) return;
+      AppSnackBar.show(
+        context,
+        message: AppLocalizations.of(context)!.chatReactionSaveFailed,
+        type: AppSnackBarType.error,
+      );
+    }
+  }
 
   Future<void> _showPendingFileActions(DMMessage message) async {
     if (message.type != 'file' ||

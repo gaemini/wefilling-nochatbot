@@ -8,10 +8,11 @@ import 'package:provider/provider.dart';
 import 'package:url_launcher/url_launcher.dart';
 
 import '../constants/app_constants.dart';
+import '../l10n/app_localizations.dart';
+import '../l10n/ui_locale.dart';
 import '../models/semester_todo.dart';
 import '../models/student_type.dart';
 import '../providers/semester_todo_controller.dart';
-import '../l10n/ui_locale.dart';
 import '../services/cache/app_image_cache_manager.dart';
 import '../ui/widgets/post_linkified_text.dart';
 import '../utils/responsive_helper.dart';
@@ -165,6 +166,28 @@ class _SemesterTodoScreenState extends State<SemesterTodoScreen>
         : _isKorean
             ? '${date.month}월 ${date.day}일'
             : DateFormat('MMM d', 'en').format(date);
+  }
+
+  String _guideTitle(SemesterTodo guide) {
+    final stored = guide.title.resolve(_languageCode);
+    if (!isChineseUi(context) || (guide.title.zh?.trim().isNotEmpty ?? false)) {
+      return stored;
+    }
+    final fallback =
+        AppLocalizations.of(context)!.semesterGuideTitleById(guide.id).trim();
+    return fallback.isEmpty ? stored : fallback;
+  }
+
+  String _guideDescription(SemesterTodo guide) {
+    final stored = guide.description.resolve(_languageCode);
+    if (!isChineseUi(context) ||
+        (guide.description.zh?.trim().isNotEmpty ?? false)) {
+      return stored;
+    }
+    final fallback = AppLocalizations.of(context)!
+        .semesterGuideDescriptionById(guide.id)
+        .trim();
+    return fallback.isEmpty ? stored : fallback;
   }
 
   @override
@@ -459,7 +482,7 @@ class _SemesterTodoScreenState extends State<SemesterTodoScreen>
     final monthWeek =
         (anchor.day + firstDay.weekday - DateTime.monday) ~/ 7 + 1;
     return (isChineseUi(context)
-        ? '${anchor.month}月 第${monthWeek}周'
+        ? '${anchor.month}月第${monthWeek}周'
         : _isKorean
             ? '${anchor.month}월 $monthWeek주차'
             : '${DateFormat('MMM', 'en').format(anchor)} W$monthWeek');
@@ -506,7 +529,9 @@ class _SemesterTodoScreenState extends State<SemesterTodoScreen>
       child: Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
         Center(
           child: Text(
-            _dateLabel(week.startDate) + ' – ' + _dateLabel(week.endDate),
+            isChineseUi(context)
+                ? '${_dateLabel(week.startDate)}－${_dateLabel(week.endDate)}'
+                : '${_dateLabel(week.startDate)} – ${_dateLabel(week.endDate)}',
             key: const ValueKey('todo-week-date-range'),
             textAlign: TextAlign.center,
             style: _captionStyle,
@@ -797,10 +822,9 @@ class _SemesterTodoScreenState extends State<SemesterTodoScreen>
     final busy = todo != null
         ? controller.isPersonalBusy(todo.id)
         : controller.isGuideBusy(guide!) || controller.guideLoadWarning != null;
-    final title = todo?.title ?? guide!.title.resolve(_languageCode);
-    final description = todo != null
-        ? todo.memo ?? ''
-        : guide!.description.resolve(_languageCode);
+    final title = todo?.title ?? _guideTitle(guide!);
+    final description =
+        todo != null ? todo.memo ?? '' : _guideDescription(guide!);
     final weekIndex =
         controller.weeks.indexWhere((w) => w.weekNumber == entry.weekNumber);
     final overdue = entry.dueAt != null &&
@@ -981,8 +1005,8 @@ class _SemesterTodoScreenState extends State<SemesterTodoScreen>
 
   Future<void> _guideDetails(
       SemesterTodoController controller, SemesterTodo task) async {
-    final title = task.title.resolve(_languageCode);
-    final description = task.description.resolve(_languageCode);
+    final title = _guideTitle(task);
+    final description = _guideDescription(task);
     final imageUrl = _todoHttpUrl(task.imageUrl);
     final hasAction = task.actionType != SemesterTodoActionType.none &&
         (task.actionValue?.trim().isNotEmpty ?? false);
@@ -1698,7 +1722,7 @@ class _PersonalTodoEditorPageState extends State<_PersonalTodoEditorPage> {
     final start = _calendarDate(week.startDate);
     final end = _calendarDate(week.endDate);
     return isChineseUi(context)
-        ? '${start.month}/${start.day}–${end.month}/${end.day}'
+        ? '${start.month}月${start.day}日－${end.month}月${end.day}日'
         : widget.isKorean
             ? '${start.month}/${start.day}–${end.month}/${end.day}'
             : '${DateFormat('MMM d', 'en').format(start)}–${DateFormat('MMM d', 'en').format(end)}';

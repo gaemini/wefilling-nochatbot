@@ -6,6 +6,37 @@ import 'package:cloud_firestore/cloud_firestore.dart';
 
 enum DMDeliveryState { sent, sending, uncertain, failed }
 
+Map<String, int> _dmReactionCounts(Object? raw) {
+  if (raw is! Map) return const <String, int>{};
+  final result = <String, int>{};
+  raw.forEach((key, value) {
+    if (key is! String || value is! num || value.toInt() <= 0) return;
+    result[key] = value.toInt();
+  });
+  return Map<String, int>.unmodifiable(result);
+}
+
+class DMReaction {
+  const DMReaction({
+    required this.userId,
+    required this.messageId,
+    required this.emoji,
+  });
+
+  final String userId;
+  final String messageId;
+  final String emoji;
+
+  factory DMReaction.fromFirestore(DocumentSnapshot doc) {
+    final data = doc.data() as Map<String, dynamic>? ?? const {};
+    return DMReaction(
+      userId: (data['userId'] ?? doc.id).toString(),
+      messageId: (data['messageId'] ?? '').toString(),
+      emoji: (data['emoji'] ?? '').toString(),
+    );
+  }
+}
+
 class DMMessage {
   final String id;
   final String senderId;
@@ -24,6 +55,7 @@ class DMMessage {
   final String? replyToSenderId;
   final String? replyToText;
   final String? replyToImageUrl;
+  final Map<String, int> reactionCounts;
 
   /// 메시지 타입 (기본: text)
   /// - text: 일반 메시지
@@ -56,6 +88,7 @@ class DMMessage {
     this.replyToSenderId,
     this.replyToText,
     this.replyToImageUrl,
+    this.reactionCounts = const <String, int>{},
     this.type = 'text',
     this.postId,
     this.postImageUrl,
@@ -103,6 +136,7 @@ class DMMessage {
       replyToImageUrl: (data['replyToImageUrl'] is String)
           ? data['replyToImageUrl'] as String
           : null,
+      reactionCounts: _dmReactionCounts(data['reactionCounts']),
       type: (data['type'] is String && (data['type'] as String).isNotEmpty)
           ? (data['type'] as String)
           : 'text',
@@ -183,6 +217,7 @@ class DMMessage {
     String? replyToSenderId,
     String? replyToText,
     String? replyToImageUrl,
+    Map<String, int>? reactionCounts,
     String? type,
     String? postId,
     String? postImageUrl,
@@ -209,6 +244,7 @@ class DMMessage {
       replyToSenderId: replyToSenderId ?? this.replyToSenderId,
       replyToText: replyToText ?? this.replyToText,
       replyToImageUrl: replyToImageUrl ?? this.replyToImageUrl,
+      reactionCounts: reactionCounts ?? this.reactionCounts,
       type: type ?? this.type,
       postId: postId ?? this.postId,
       postImageUrl: postImageUrl ?? this.postImageUrl,
@@ -248,6 +284,7 @@ class DMMessage {
         'deliveryState': deliveryState.name,
         if (localImagePath != null) 'localImagePath': localImagePath,
         if (localFilePath != null) 'localFilePath': localFilePath,
+        if (reactionCounts.isNotEmpty) 'reactionCounts': reactionCounts,
       };
 
   factory DMMessage.fromLocalMap(Map<String, dynamic> raw) => DMMessage(
@@ -269,6 +306,7 @@ class DMMessage {
         replyToSenderId: raw['replyToSenderId'] as String?,
         replyToText: raw['replyToText'] as String?,
         replyToImageUrl: raw['replyToImageUrl'] as String?,
+        reactionCounts: _dmReactionCounts(raw['reactionCounts']),
         createdAt:
             DateTime.fromMillisecondsSinceEpoch(raw['createdAtMs'] as int),
         serverCreatedAt: raw['serverSeconds'] is int

@@ -76,6 +76,7 @@ export {
 export {
   markDMConversationReadSecure,
   onDMReceiptCleanupRequested,
+  onDMReactionWritten,
   reconcileDMUnreadTotalSecure,
 } from './dm_chat';
 
@@ -3380,6 +3381,71 @@ async function isVerifiedCommentNotificationRecipient(
     recipientCommentId === verifiedReply.parentCommentId;
 }
 
+async function adjustCommentTargetCount(
+  targetId: string,
+  delta: 1 | -1,
+  eventId: string,
+): Promise<'post' | 'meetup' | null> {
+  const postRef = db.collection('posts').doc(targetId);
+  const meetupRef = db.collection('meetups').doc(targetId);
+  const markerId = crypto.createHash('sha256')
+    .update(`comment-count:${eventId}`)
+    .digest('hex');
+  const markerRef = db.collection('_comment_function_events').doc(markerId);
+  return db.runTransaction(async (transaction) => {
+    const marker = await transaction.get(markerRef);
+    if (marker.exists) return null;
+    const post = await transaction.get(postRef);
+    if (post.exists) {
+      const current = Number(post.get('commentCount'));
+      const next = Math.max(
+        0,
+        (Number.isFinite(current) ? Math.trunc(current) : 0) + delta,
+      );
+      transaction.update(postRef, {commentCount: next});
+      transaction.create(markerRef, {
+        targetId,
+        delta,
+        sourceEventId: eventId,
+        createdAt: admin.firestore.FieldValue.serverTimestamp(),
+        expiresAt: admin.firestore.Timestamp.fromMillis(
+          Date.now() + 7 * 24 * 60 * 60 * 1000,
+        ),
+      });
+      return 'post';
+    }
+    const meetup = await transaction.get(meetupRef);
+    if (!meetup.exists) {
+      transaction.create(markerRef, {
+        targetId,
+        delta,
+        sourceEventId: eventId,
+        createdAt: admin.firestore.FieldValue.serverTimestamp(),
+        expiresAt: admin.firestore.Timestamp.fromMillis(
+          Date.now() + 7 * 24 * 60 * 60 * 1000,
+        ),
+      });
+      return null;
+    }
+    const current = Number(meetup.get('commentCount'));
+    const next = Math.max(
+      0,
+      (Number.isFinite(current) ? Math.trunc(current) : 0) + delta,
+    );
+    transaction.update(meetupRef, {commentCount: next});
+    transaction.create(markerRef, {
+      targetId,
+      delta,
+      sourceEventId: eventId,
+      createdAt: admin.firestore.FieldValue.serverTimestamp(),
+      expiresAt: admin.firestore.Timestamp.fromMillis(
+        Date.now() + 7 * 24 * 60 * 60 * 1000,
+      ),
+    });
+    return 'meetup';
+  });
+}
+
 // 댓글 생성 시 게시글 작성자에게 알림 (new_comment)
 export const onCommentCreated = functions.firestore
   .document('comments/{commentId}')
@@ -3392,17 +3458,9 @@ export const onCommentCreated = functions.firestore
       const parentCommentId = normalizeUidLoose(comment.parentCommentId);
       if (!postId) return null;
 
-      // ✅ 댓글 수 업데이트 (posts / meetups)
-      // - Firestore rules로 인해 클라이언트가 commentCount를 업데이트할 수 없는 케이스가 있어
-      //   서버(Admin SDK)에서 안전하게 반영한다.
-      // - 존재하는 문서에만 적용 (not-found는 무시)
-      const inc = admin.firestore.FieldValue.increment(1);
-      try {
-        await db.collection('posts').doc(postId).update({ commentCount: inc });
-      } catch (_) {}
-      try {
-        await db.collection('meetups').doc(postId).update({ commentCount: inc });
-      } catch (_) {}
+      // posts와 meetups 중 실제 대상 하나만 원자적으로 갱신한다. 문서가
+      // 겹치거나 트리거가 재시도돼도 음수 및 잘못된 경로 갱신을 만들지 않는다.
+      await adjustCommentTargetCount(postId, 1, context.eventId);
 
       const postDoc = await db.collection('posts').doc(postId).get();
       if (!postDoc.exists) return null;
@@ -3594,13 +3652,7 @@ export const onCommentDeleted = functions.firestore
       // 이미 soft-delete 시점에 집계에서 제외된 문서는 보관 기간 만료 등으로
       // 실제 제거되더라도 다시 차감하지 않는다.
       if (comment?.isDeleted !== true) {
-        const dec = admin.firestore.FieldValue.increment(-1);
-        try {
-          await db.collection('posts').doc(postId).update({ commentCount: dec });
-        } catch (_) {}
-        try {
-          await db.collection('meetups').doc(postId).update({ commentCount: dec });
-        } catch (_) {}
+        await adjustCommentTargetCount(postId, -1, context.eventId);
       }
 
       // ✅ 부모(최상위) 댓글이 삭제되면, 해당 댓글의 대댓글도 함께 삭제한다.
@@ -3638,7 +3690,7 @@ export const onCommentDeleted = functions.firestore
 // ID와 parentCommentId를 보존하므로 중간 대댓글 삭제 후에도 스레드 순서가 유지된다.
 export const onCommentSoftDeleted = functions.firestore
   .document('comments/{commentId}')
-  .onUpdate(async (change) => {
+  .onUpdate(async (change, context) => {
     try {
       const before = change.before.data();
       const after = change.after.data();
@@ -3647,13 +3699,7 @@ export const onCommentSoftDeleted = functions.firestore
       const postId = after?.postId;
       if (!postId) return null;
 
-      const dec = admin.firestore.FieldValue.increment(-1);
-      try {
-        await db.collection('posts').doc(postId).update({ commentCount: dec });
-      } catch (_) {}
-      try {
-        await db.collection('meetups').doc(postId).update({ commentCount: dec });
-      } catch (_) {}
+      await adjustCommentTargetCount(postId, -1, context.eventId);
       return null;
     } catch (error) {
       console.error('onCommentSoftDeleted 오류:', error);

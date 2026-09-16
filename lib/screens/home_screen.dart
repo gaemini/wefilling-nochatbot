@@ -1777,7 +1777,7 @@ class _MeetupEmptyContent extends StatelessWidget {
                       ),
                       SizedBox(height: compact ? 18 : 24),
                       Text(
-                        l10n.wefillingMeaning,
+                        l10n.meetupEmptyTitle,
                         textAlign: TextAlign.center,
                         style: TextStyle(
                           fontFamily: uiFontFamily(context, 'Inter'),
@@ -1791,7 +1791,7 @@ class _MeetupEmptyContent extends StatelessWidget {
                       ),
                       SizedBox(height: compact ? 10 : 12),
                       Text(
-                        l10n.wefillingExplanation,
+                        l10n.meetupEmptyDescription,
                         textAlign: TextAlign.center,
                         style: TextStyle(
                           fontFamily: uiFontFamily(context, 'Inter'),

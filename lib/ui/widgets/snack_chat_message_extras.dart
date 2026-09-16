@@ -11,7 +11,9 @@ import '../../models/snack_chat_message.dart';
 import '../../services/cache/app_image_cache_manager.dart';
 import '../../services/firebase_app_check_service.dart';
 import '../../services/snack_chat_media_cache_service.dart';
+import '../../l10n/app_localizations.dart';
 import '../../l10n/ui_locale.dart';
+import 'chat_reaction_widgets.dart';
 
 class SnackChatStorageImage extends StatefulWidget {
   const SnackChatStorageImage({
@@ -498,52 +500,16 @@ class SnackChatReactionBar extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final visible = counts.entries.where((entry) => entry.value > 0).toList();
-    if (visible.isEmpty) return const SizedBox.shrink();
-    return Padding(
-      padding: const EdgeInsets.only(top: 6),
-      child: Wrap(
-        spacing: 5,
-        runSpacing: 5,
-        children: visible.map((entry) {
-          final selected = myReaction == entry.key;
-          return Semantics(
-            button: true,
-            selected: selected,
-            label: '${entry.key} ${entry.value}명',
-            child: Material(
-              color: selected
-                  ? (isOutgoing
-                      ? Colors.white.withValues(alpha: 0.24)
-                      : const Color(0x17344054))
-                  : (isOutgoing
-                      ? Colors.white.withValues(alpha: 0.12)
-                      : const Color(0x0D344054)),
-              borderRadius: BorderRadius.circular(14),
-              child: InkWell(
-                onTap: () => onToggle(entry.key),
-                onLongPress: () => onShowUsers(entry.key),
-                borderRadius: BorderRadius.circular(14),
-                child: Padding(
-                  padding:
-                      const EdgeInsets.symmetric(horizontal: 7, vertical: 3),
-                  child: Text(
-                    '${entry.key} ${entry.value}',
-                    style: TextStyle(
-                      fontFamily: uiFontFamily(context, 'Inter'),
-                      fontFamilyFallback: const ['NotoSansKR'],
-                      fontSize: 11.5,
-                      fontWeight: selected ? FontWeight.w700 : FontWeight.w600,
-                      color:
-                          isOutgoing ? Colors.white : const Color(0xFF344054),
-                    ),
-                  ),
-                ),
-              ),
-            ),
-          );
-        }).toList(growable: false),
-      ),
+    final l10n = AppLocalizations.of(context)!;
+    return ChatReactionBar(
+      counts: counts,
+      myReaction: myReaction,
+      onToggle: onToggle,
+      onShowUsers: onShowUsers,
+      isOutgoing: isOutgoing,
+      addLabel: l10n.chatReactionAdd,
+      removeLabel: l10n.chatReactionRemove,
+      peopleLabel: l10n.chatReactionPeople,
     );
   }
 }

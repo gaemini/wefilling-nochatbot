@@ -437,7 +437,7 @@ class _MainScreenState extends State<MainScreen>
                 BottomNavigationItem(
                   icon: Icons.groups_outlined,
                   selectedIcon: Icons.groups,
-                  label: l10n.meetup,
+                  label: l10n.meetupTabLabel,
                   iconSizeMultiplier: 1.35,
                 ),
                 BottomNavigationItem(

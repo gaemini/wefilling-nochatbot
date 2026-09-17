@@ -1,4 +1,5 @@
 // lib/ui/widgets/fullscreen_image_viewer.dart
+import 'dart:async';
 import 'dart:io';
 import 'dart:typed_data';
 
@@ -11,7 +12,6 @@ import 'package:http/http.dart' as http;
 import 'package:permission_handler/permission_handler.dart' as permissions;
 
 import '../../services/cache/app_image_cache_manager.dart';
-import '../../services/firebase_app_check_service.dart';
 import '../../services/snack_chat_media_cache_service.dart';
 import '../../l10n/ui_locale.dart';
 
@@ -338,17 +338,18 @@ class _FullscreenImageViewerState extends State<FullscreenImageViewer>
         storagePath: storagePath,
       );
       if (cached != null && cached.isNotEmpty) return cached;
-      await FirebaseAppCheckService.instance.ensureReady();
       final bytes = await FirebaseStorage.instance
           .ref(storagePath)
           .getData(_maxImageBytes)
           .timeout(const Duration(seconds: 15));
       if (bytes == null || bytes.isEmpty) return null;
-      await SnackChatMediaCacheService.instance.write(
+      // Show the downloaded image as soon as its bytes arrive. Persisting the
+      // private cache must not hold the full-screen viewer on a spinner.
+      unawaited(SnackChatMediaCacheService.instance.write(
         userId: viewerId,
         storagePath: storagePath,
         bytes: bytes,
-      );
+      ));
       return bytes;
     } catch (_) {
       // path-only 신규 이미지가 아니라면 아래 URL 호환 경로로 복구한다.

@@ -2435,6 +2435,9 @@ exports.joinMeetupSecure = functions.https.onCall(async (data, context) => {
     }
     const initialData = (initialMeetup.data() || {});
     const ownerId = normalizeUidLoose(initialData.userId);
+    if (!ownerId) {
+        throw new functions.https.HttpsError('failed-precondition', '밋업 주최자 정보를 확인할 수 없습니다.');
+    }
     if (userId === ownerId) {
         throw new functions.https.HttpsError('already-exists', '주최자는 이미 참여 중입니다.');
     }
@@ -2459,12 +2462,18 @@ exports.joinMeetupSecure = functions.https.onCall(async (data, context) => {
         .collection(firestore_paths_1.COL.meetupParticipants)
         .doc(`${meetupId}_${userId}`);
     const userRef = db.collection(firestore_paths_1.COL.users).doc(userId);
+    const userBlockedHostRef = db.collection('blocks')
+        .doc(`${userId}_${ownerId}`);
+    const hostBlockedUserRef = db.collection('blocks')
+        .doc(`${ownerId}_${userId}`);
     const result = await db.runTransaction(async (tx) => {
         var _a, _b;
-        const [meetupDoc, participantDoc, userDoc] = await Promise.all([
+        const [meetupDoc, participantDoc, userDoc, userBlockedHost, hostBlockedUser] = await Promise.all([
             tx.get(meetupRef),
             tx.get(participantRef),
             tx.get(userRef),
+            tx.get(userBlockedHostRef),
+            tx.get(hostBlockedUserRef),
         ]);
         if (!meetupDoc.exists) {
             throw new functions.https.HttpsError('not-found', '밋업을 찾을 수 없습니다.');
@@ -2474,6 +2483,10 @@ exports.joinMeetupSecure = functions.https.onCall(async (data, context) => {
         }
         if (!userDoc.exists) {
             throw new functions.https.HttpsError('failed-precondition', '사용자 정보를 찾을 수 없습니다.');
+        }
+        // 차단과 참여가 동시에 처리되어도 같은 트랜잭션 순서로 확정한다.
+        if (userBlockedHost.exists || hostBlockedUser.exists) {
+            throw new functions.https.HttpsError('permission-denied', '참여할 수 없는 밋업입니다.');
         }
         const meetup = (meetupDoc.data() || {});
         if (toStr(meetup.visibilityMode || meetup.visibility) !==
@@ -4990,21 +5003,16 @@ exports.sendFriendRequest = functions.https.onCall(async (data, context) => {
             // 기존 요청 확인
             const requestId = `${fromUid}_${toUid}`;
             const reverseRequestId = `${toUid}_${fromUid}`;
-            const [existingRequest, reverseRequest] = await transaction.getAll(db.collection('friend_requests').doc(requestId), db.collection('friend_requests').doc(reverseRequestId));
+            const directBlockRef = db.collection('blocks')
+                .doc(`${fromUid}_${toUid}`);
+            const reverseBlockRef = db.collection('blocks')
+                .doc(`${toUid}_${fromUid}`);
+            const [existingRequest, reverseRequest, directBlock, reverseBlock] = await transaction.getAll(db.collection('friend_requests').doc(requestId), db.collection('friend_requests').doc(reverseRequestId), directBlockRef, reverseBlockRef);
             const existingPending = ((_a = existingRequest.data()) === null || _a === void 0 ? void 0 : _a.status) === 'PENDING';
             const reversePending = ((_b = reverseRequest.data()) === null || _b === void 0 ? void 0 : _b.status) === 'PENDING';
-            // 차단 관계 확인
-            // - 명시적으로 내가 차단한 사용자(isImplicit != true)에게는 요청 불가
-            // - 상대가 나를 차단한 경우(isImplicit == true)에는 요청은 저장하되,
-            //   onFriendRequestCreated에서 알림/푸시는 보내지 않는다.
-            const blockId = `${fromUid}_${toUid}`;
-            const blockDoc = await transaction.get(db.collection('blocks').doc(blockId));
-            if (blockDoc.exists) {
-                const blockData = blockDoc.data();
-                const isImplicitBlock = (blockData === null || blockData === void 0 ? void 0 : blockData.isImplicit) === true;
-                if (!isImplicitBlock) {
-                    throw new functions.https.HttpsError('permission-denied', '차단된 사용자에게 친구요청을 보낼 수 없습니다.');
-                }
+            // 한쪽의 차단만 있어도 새 직접 요청은 양방향으로 금지한다.
+            if (directBlock.exists || reverseBlock.exists) {
+                throw new functions.https.HttpsError('permission-denied', '차단 관계에서는 친구요청을 보낼 수 없습니다.');
             }
             // 이미 친구인지 확인
             const sortedIds = [fromUid, toUid].sort();
@@ -5140,7 +5148,11 @@ exports.acceptFriendRequest = functions.https.onCall(async (data, context) => {
             const friendshipRef = db.collection('friendships').doc(friendshipId);
             const fromUserRef = db.collection('users').doc(fromUid);
             const toUserRef = db.collection('users').doc(toUid);
-            const [requestDoc, friendshipDoc, fromUserDoc, toUserDoc] = await transaction.getAll(requestRef, friendshipRef, fromUserRef, toUserRef);
+            const directBlockRef = db.collection('blocks')
+                .doc(`${fromUid}_${toUid}`);
+            const reverseBlockRef = db.collection('blocks')
+                .doc(`${toUid}_${fromUid}`);
+            const [requestDoc, friendshipDoc, fromUserDoc, toUserDoc, directBlockDoc, reverseBlockDoc] = await transaction.getAll(requestRef, friendshipRef, fromUserRef, toUserRef, directBlockRef, reverseBlockRef);
             if (!requestDoc.exists) {
                 throw new functions.https.HttpsError('not-found', '친구요청을 찾을 수 없습니다.');
             }
@@ -5153,6 +5165,9 @@ exports.acceptFriendRequest = functions.https.onCall(async (data, context) => {
             }
             if (!fromUserDoc.exists || !toUserDoc.exists) {
                 throw new functions.https.HttpsError('not-found', '사용자 정보를 찾을 수 없습니다.');
+            }
+            if (directBlockDoc.exists || reverseBlockDoc.exists) {
+                throw new functions.https.HttpsError('permission-denied', '차단 중에는 대기 중인 친구요청을 수락할 수 없습니다.');
             }
             // 네트워크 응답 유실이나 빠른 중복 탭으로 수락 요청이 다시 들어와도
             // 이미 생성된 친구 관계를 오류로 돌려보내지 않는다. 알림 역시 아래
@@ -5391,86 +5406,29 @@ exports.blockUser = functions.https.onCall(async (data, context) => {
         if (blockerUid === targetUid) {
             throw new functions.https.HttpsError('invalid-argument', '자기 자신을 차단할 수 없습니다.');
         }
-        // 트랜잭션 외부에서 먼저 카테고리 조회
-        const categoriesSnapshot = await db.collection('friend_categories')
-            .where('userId', '==', blockerUid)
-            .get();
-        const categoriesToUpdate = [];
-        for (const categoryDoc of categoriesSnapshot.docs) {
-            const categoryData = categoryDoc.data();
-            const friendIds = categoryData.friendIds || [];
-            if (friendIds.includes(targetUid)) {
-                categoriesToUpdate.push(categoryDoc.ref);
-            }
-        }
-        // 트랜잭션으로 사용자 차단
+        // 차단은 기존 친구·요청·그룹 데이터를 삭제하지 않는 별도의
+        // 접근 조건이다. 호출자가 설정한 단방향 문서만 소유한다.
         const result = await db.runTransaction(async (transaction) => {
-            var _a, _b;
-            // ⚠️ 중요: 모든 읽기 작업을 먼저 실행해야 함
+            var _a;
             const directBlockRef = db.collection('blocks')
                 .doc(`${blockerUid}_${targetUid}`);
-            const reverseBlockRef = db.collection('blocks')
-                .doc(`${targetUid}_${blockerUid}`);
-            // 1. 기존 친구 관계 확인
-            const sortedIds = [blockerUid, targetUid].sort();
-            const friendshipId = `${sortedIds[0]}__${sortedIds[1]}`;
-            const friendshipDoc = await transaction.get(db.collection('friendships').doc(friendshipId));
-            // 2. 기존 친구요청 확인
-            const requestId = `${blockerUid}_${targetUid}`;
-            const reverseRequestId = `${targetUid}_${blockerUid}`;
-            const requestDoc = await transaction.get(db.collection('friend_requests').doc(requestId));
-            const reverseRequestDoc = await transaction.get(db.collection('friend_requests').doc(reverseRequestId));
-            // 3. 기존 양방향 차단 소유권 확인. 상대방이 먼저 설정한 explicit
-            // 차단을 현재 호출자의 implicit 문서로 덮어쓰면 피차단자가 차단
-            // 소유권을 뒤집은 뒤 스스로 해제할 수 있다.
-            const reverseBlockDoc = await transaction.get(reverseBlockRef);
-            // 친구 관계 삭제가 필요한 경우에도 카운트를 0 미만으로 만들지 않도록
-            // 사용자 문서를 쓰기 전에 함께 읽는다.
             const blockerUserRef = db.collection('users').doc(blockerUid);
             const blockedUserRef = db.collection('users').doc(targetUid);
-            const [blockerUserDoc, blockedUserDoc] = await transaction.getAll(blockerUserRef, blockedUserRef);
-            const blockerFriendsCount = toNonNegativeInt((_a = blockerUserDoc.data()) === null || _a === void 0 ? void 0 : _a.friendsCount);
-            const blockedFriendsCount = toNonNegativeInt((_b = blockedUserDoc.data()) === null || _b === void 0 ? void 0 : _b.friendsCount);
-            const nextBlockerFriendsCount = friendshipDoc.exists
-                ? Math.max(0, blockerFriendsCount - 1)
-                : blockerFriendsCount;
-            const nextBlockedFriendsCount = friendshipDoc.exists
-                ? Math.max(0, blockedFriendsCount - 1)
-                : blockedFriendsCount;
-            // ✅ 모든 읽기 완료, 이제 쓰기 작업 시작
-            // 4. A → B 차단 관계 생성 (현재 호출자가 설정한 실제 차단)
-            transaction.set(directBlockRef, {
-                blocker: blockerUid,
-                blocked: targetUid,
-                isImplicit: false, // 실제 차단임을 명시
-                mutualBlock: true,
-                createdAt: admin.firestore.FieldValue.serverTimestamp(),
-            });
-            const reverseData = reverseBlockDoc.data();
-            const reverseIsExplicit = reverseBlockDoc.exists
-                && (reverseData === null || reverseData === void 0 ? void 0 : reverseData.blocker) === targetUid
-                && (reverseData === null || reverseData === void 0 ? void 0 : reverseData.blocked) === blockerUid
-                && (reverseData === null || reverseData === void 0 ? void 0 : reverseData.isImplicit) !== true;
-            if (!reverseIsExplicit) {
-                // 상대방도 명시적으로 차단한 상태라면 그 소유 차단은 보존한다.
-                transaction.set(reverseBlockRef, {
-                    blocker: targetUid,
-                    blocked: blockerUid,
-                    isImplicit: true, // 암묵적 차단임을 명시
-                    mutualBlock: true,
-                    createdAt: admin.firestore.FieldValue.serverTimestamp(),
-                });
+            const [directBlockDoc, blockerUserDoc, blockedUserDoc] = await transaction.getAll(directBlockRef, blockerUserRef, blockedUserRef);
+            if (!blockedUserDoc.exists) {
+                throw new functions.https.HttpsError('not-found', '사용자를 찾을 수 없습니다.');
             }
-            // 5. 기존 친구 관계가 있다면 삭제
-            if (friendshipDoc.exists) {
-                transaction.delete(db.collection('friendships').doc(friendshipId));
-                transaction.update(blockerUserRef, {
-                    friendsCount: nextBlockerFriendsCount,
-                    updatedAt: admin.firestore.FieldValue.serverTimestamp(),
-                });
-                transaction.update(blockedUserRef, {
-                    friendsCount: nextBlockedFriendsCount,
-                    updatedAt: admin.firestore.FieldValue.serverTimestamp(),
+            const directData = directBlockDoc.data();
+            const alreadyExplicit = directBlockDoc.exists &&
+                (directData === null || directData === void 0 ? void 0 : directData.blocker) === blockerUid &&
+                (directData === null || directData === void 0 ? void 0 : directData.blocked) === targetUid &&
+                (directData === null || directData === void 0 ? void 0 : directData.isImplicit) !== true;
+            if (!alreadyExplicit) {
+                transaction.set(directBlockRef, {
+                    blocker: blockerUid,
+                    blocked: targetUid,
+                    isImplicit: false,
+                    createdAt: admin.firestore.FieldValue.serverTimestamp(),
                 });
             }
             // Existing notification documents are hidden immediately by the block
@@ -5478,64 +5436,24 @@ exports.blockUser = functions.https.onCall(async (data, context) => {
             // the exact document fallback; old clients ignore this optional field.
             transaction.set(blockerUserRef, {
                 notificationUnreadCounterVersion: 0,
+                dmUnreadCounterVersion: 0,
             }, { merge: true });
             transaction.set(blockedUserRef, {
                 notificationUnreadCounterVersion: 0,
+                dmUnreadCounterVersion: 0,
             }, { merge: true });
-            // 6. 기존 친구요청이 있다면 삭제
-            if (requestDoc.exists) {
-                const requestData = requestDoc.data();
-                if ((requestData === null || requestData === void 0 ? void 0 : requestData.status) === 'PENDING') {
-                    transaction.update(db.collection('friend_requests').doc(requestId), {
-                        status: 'CANCELED',
-                        updatedAt: admin.firestore.FieldValue.serverTimestamp(),
-                    });
-                    // 카운터 조정
-                    const blockerUserRef = db.collection('users').doc(blockerUid);
-                    const blockedUserRef = db.collection('users').doc(targetUid);
-                    transaction.update(blockerUserRef, {
-                        outgoingCount: admin.firestore.FieldValue.increment(-1),
-                        updatedAt: admin.firestore.FieldValue.serverTimestamp(),
-                    });
-                    transaction.update(blockedUserRef, {
-                        incomingCount: admin.firestore.FieldValue.increment(-1),
-                        updatedAt: admin.firestore.FieldValue.serverTimestamp(),
-                    });
-                }
-            }
-            if (reverseRequestDoc.exists) {
-                const requestData = reverseRequestDoc.data();
-                if ((requestData === null || requestData === void 0 ? void 0 : requestData.status) === 'PENDING') {
-                    transaction.update(db.collection('friend_requests').doc(reverseRequestId), {
-                        status: 'CANCELED',
-                        updatedAt: admin.firestore.FieldValue.serverTimestamp(),
-                    });
-                    // 카운터 조정
-                    const blockerUserRef = db.collection('users').doc(blockerUid);
-                    const blockedUserRef = db.collection('users').doc(targetUid);
-                    transaction.update(blockerUserRef, {
-                        incomingCount: admin.firestore.FieldValue.increment(-1),
-                        updatedAt: admin.firestore.FieldValue.serverTimestamp(),
-                    });
-                    transaction.update(blockedUserRef, {
-                        outgoingCount: admin.firestore.FieldValue.increment(-1),
-                        updatedAt: admin.firestore.FieldValue.serverTimestamp(),
-                    });
-                }
-            }
-            // 모든 친구 카테고리에서 제거 (트랜잭션 외부에서 조회한 결과 사용)
-            for (const categoryRef of categoriesToUpdate) {
-                transaction.update(categoryRef, {
-                    friendIds: admin.firestore.FieldValue.arrayRemove(targetUid),
-                    updatedAt: admin.firestore.FieldValue.serverTimestamp(),
-                });
-            }
-            return { success: true, friendsCount: nextBlockerFriendsCount };
+            return {
+                success: true,
+                created: !alreadyExplicit,
+                friendsCount: toNonNegativeInt((_a = blockerUserDoc.data()) === null || _a === void 0 ? void 0 : _a.friendsCount),
+            };
         });
         // Developer notification for blocking (Guideline 1.2)
         // - Reuse existing reports pipeline (onReportCreated trigger sends email)
         // - Best-effort: blocking should succeed even if reporting fails
         try {
+            if (!result.created)
+                return result;
             await db.collection(firestore_paths_1.COL.reports).add({
                 reporterId: blockerUid,
                 reportedUserId: targetUid,
@@ -5574,8 +5492,9 @@ exports.unblockUser = functions.https.onCall(async (data, context) => {
         if (!targetUid || typeof targetUid !== 'string') {
             throw new functions.https.HttpsError('invalid-argument', '유효하지 않은 사용자 ID입니다.');
         }
-        // 양방향 차단 관계 모두 삭제
-        await db.runTransaction(async (transaction) => {
+        // 호출자가 설정한 차단만 해제한다. 역방향 explicit 차단은
+        // 독립적으로 보존하고, 구버전이 만든 mirror implicit만 정리한다.
+        const removed = await db.runTransaction(async (transaction) => {
             const directBlockRef = db.collection('blocks')
                 .doc(`${blockerUid}_${targetUid}`);
             const reverseBlockRef = db.collection('blocks')
@@ -5585,8 +5504,11 @@ exports.unblockUser = functions.https.onCall(async (data, context) => {
             // Only the caller's own explicit block can be removed. A mirrored
             // implicit document belongs to the other user's block and must not let
             // the blocked party undo it.
-            if (!blockDoc.exists
-                || (blockData === null || blockData === void 0 ? void 0 : blockData.blocker) !== blockerUid
+            // 응답 유실 뒤 같은 해제 요청이 재시도되면 멱등 성공으로 처리한다.
+            // 상대방 소유의 역방향 차단은 어떤 경우에도 건드리지 않는다.
+            if (!blockDoc.exists)
+                return false;
+            if ((blockData === null || blockData === void 0 ? void 0 : blockData.blocker) !== blockerUid
                 || (blockData === null || blockData === void 0 ? void 0 : blockData.blocked) !== targetUid
                 || (blockData === null || blockData === void 0 ? void 0 : blockData.isImplicit) === true) {
                 throw new functions.https.HttpsError('not-found', '본인이 설정한 차단 관계를 찾을 수 없습니다.');
@@ -5603,12 +5525,15 @@ exports.unblockUser = functions.https.onCall(async (data, context) => {
             // unblock. Force a lazy reconciliation instead of trusting a stale sum.
             transaction.set(db.collection('users').doc(blockerUid), {
                 notificationUnreadCounterVersion: 0,
+                dmUnreadCounterVersion: 0,
             }, { merge: true });
             transaction.set(db.collection('users').doc(targetUid), {
                 notificationUnreadCounterVersion: 0,
+                dmUnreadCounterVersion: 0,
             }, { merge: true });
+            return true;
         });
-        return { success: true };
+        return { success: true, removed };
     }
     catch (error) {
         console.error('사용자 차단 해제 오류:', error);
@@ -7160,6 +7085,13 @@ exports.onNotificationCreated = functions
                 console.warn('친구 수락 badge 정확 조회 실패 - aggregate 사용:', error);
             }
         }
+        // 알림 문서 생성 뒤 큐 처리 중 차단이 생긴 경우 실제 FCM 전송 직전
+        // 문서를 제거한다. delete 트리거가 이미 반영된 미확인 수도 정리한다.
+        if (actorId && await hasBlockRelationship(userId, actorId)) {
+            runtime_logging_1.runtimeLogsEnabled && (0, runtime_logging_1.runtimeInfo)(`⏭️ 차단 관계(notification=${notificationId}) - 최종 푸시 스킵`);
+            await snapshot.ref.delete();
+            return null;
+        }
         if (totalTokens === 0) {
             runtime_logging_1.runtimeLogsEnabled && (0, runtime_logging_1.runtimeInfo)('FCM 토큰이 없어 카운터만 반영하고 푸시는 전송하지 않습니다.');
             return null;
@@ -8240,7 +8172,27 @@ exports.onDMMessageCreated = functions
                 const convSnap = await tx.get(convRef);
                 // recipients의 user 문서도 미리 읽기 (dmUnreadTotal 음수 보정 위해)
                 const userRefs = recipients.filter(Boolean).map((rid) => db.collection('users').doc(rid));
-                const userSnaps = await Promise.all(userRefs.map((ref) => tx.get(ref)));
+                const blockRefs = recipients.filter(Boolean).flatMap((rid) => [
+                    db.collection('blocks').doc(`${senderId}_${rid}`),
+                    db.collection('blocks').doc(`${rid}_${senderId}`),
+                ]);
+                const [userSnaps, blockSnaps] = await Promise.all([
+                    Promise.all(userRefs.map((ref) => tx.get(ref))),
+                    Promise.all(blockRefs.map((ref) => tx.get(ref))),
+                ]);
+                // 차단과 전송이 동시에 처리되면 이 읽기와 blockUser의 문서 쓰기가
+                // 충돌하므로 Firestore가 트랜잭션을 재시도해 확정 순서를 반영한다.
+                if (blockSnaps.some((document) => document.exists)) {
+                    tx.create(dmCreateEventRef, {
+                        type: 'dm_message_created',
+                        conversationId,
+                        messageId,
+                        applied: false,
+                        skippedByBlock: true,
+                        createdAt: admin.firestore.FieldValue.serverTimestamp(),
+                    });
+                    return { shouldSend: false, dmUnreadTotal: 0 };
+                }
                 // The receiver can open the room and mark this message read before
                 // this asynchronous create trigger starts. In that case an unread
                 // increment would resurrect the Kakao-style "1" after it vanished.
@@ -8453,6 +8405,11 @@ exports.onDMMessageCreated = functions
                 },
             },
         };
+        // 큐 처리 도중 새 차단이 생긴 경우 실제 FCM 전송 직전에도 억제한다.
+        if (await hasBlockRelationship(senderId, recipientId)) {
+            runtime_logging_1.runtimeLogsEnabled && (0, runtime_logging_1.runtimeInfo)('⏭️ 차단 관계(dm_received) - 최종 푸시 스킵');
+            return null;
+        }
         // 푸시 전송
         const response = await admin.messaging().sendEachForMulticast((0, chat_push_presentation_1.decorateChatPush)(pushMessage, {
             kind: 'dm', title: senderName, sender: senderName, message: messageData,

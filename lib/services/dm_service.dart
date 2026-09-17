@@ -238,7 +238,9 @@ class DMService {
       return results[0].exists || results[1].exists;
     } catch (e) {
       Logger.error('차단 확인 오류: $e');
-      return false;
+      // Direct contact must fail closed when the current relationship cannot
+      // be verified (including an offline cache miss).
+      return true;
     }
   }
 
@@ -1054,10 +1056,11 @@ class DMService {
 
   /// Stable-ID create and room preview are atomic; retries never overwrite.
   Future<DMDeliveryState> sendMessage(
-      String conversationId, DMMessage message) {
+      String conversationId, DMMessage message) async {
     final owner = message.senderId;
     final queued = Stopwatch()..start();
-    return _commits.run('$owner::$conversationId', () async {
+    Object? commitError;
+    final result = await _commits.run('$owner::$conversationId', () async {
       if (_auth.currentUser?.uid != owner) return DMDeliveryState.failed;
       if (ChatTiming.enabled) {
         ChatTiming.record(
@@ -1105,25 +1108,7 @@ class DMService {
         }, maxAttempts: 5, timeout: const Duration(seconds: 15));
         return DMDeliveryState.sent;
       } catch (error) {
-        // A cache miss is not proof of failure. Keep the same ID and uploaded file.
-        if (_auth.currentUser?.uid != owner) return DMDeliveryState.uncertain;
-        try {
-          final existing = await messageRef
-              .get(const GetOptions(source: Source.server))
-              .timeout(const Duration(seconds: 5));
-          if (existing.exists) {
-            return existing.get('senderId') == owner
-                ? DMDeliveryState.sent
-                : DMDeliveryState.failed;
-          }
-        } catch (_) {}
-        if (error is StateError ||
-            error is FirebaseException &&
-                const {
-                  'permission-denied',
-                  'invalid-argument',
-                  'unauthenticated',
-                }.contains(error.code)) return DMDeliveryState.failed;
+        commitError = error;
         return DMDeliveryState.uncertain;
       } finally {
         if (ChatTiming.enabled)
@@ -1132,6 +1117,49 @@ class DMService {
               'attempts=$attempts durationMs=${watch.elapsedMilliseconds}');
       }
     });
+
+    if (result != DMDeliveryState.uncertain ||
+        _auth.currentUser?.uid != owner) {
+      return result;
+    }
+
+    // A timeout is not proof that the stable-ID transaction failed. Resolve
+    // that ambiguity after releasing the ordered commit queue, so a slow
+    // server read cannot stall later messages in the same conversation.
+    final resolutionWatch = Stopwatch()..start();
+    try {
+      final existing = await _firestore
+          .collection('conversations')
+          .doc(conversationId)
+          .collection('messages')
+          .doc(message.id)
+          .get(const GetOptions(source: Source.server))
+          .timeout(const Duration(seconds: 5));
+      if (existing.exists) {
+        return existing.get('senderId') == owner
+            ? DMDeliveryState.sent
+            : DMDeliveryState.failed;
+      }
+    } catch (_) {
+      // Keep the same message ID and outbox entry for bounded recovery.
+    } finally {
+      if (ChatTiming.enabled) {
+        ChatTiming.record(
+            '[DMChatTiming] stage=outcomeResolution roomId=$conversationId '
+            'messageId=${message.id} durationMs=${resolutionWatch.elapsedMilliseconds}');
+      }
+    }
+    final error = commitError;
+    if (error is StateError ||
+        error is FirebaseException &&
+            const {
+              'permission-denied',
+              'invalid-argument',
+              'unauthenticated',
+            }.contains(error.code)) {
+      return DMDeliveryState.failed;
+    }
+    return DMDeliveryState.uncertain;
   }
 
   /// 대화방 보관(삭제) - 현재 사용자 기준으로 archivedBy에 추가

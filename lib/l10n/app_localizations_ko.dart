@@ -3261,6 +3261,15 @@ class AppLocalizationsKo extends AppLocalizations {
   String get chatReportMessage => '메시지 신고';
 
   @override
+  String get chatTranslationTranslating => '번역 중';
+
+  @override
+  String get chatTranslationTranslated => '번역됨';
+
+  @override
+  String get chatTranslationRetry => '다시 번역';
+
+  @override
   String semesterGuideTitleById(String guideId) {
     String _temp0 = intl.Intl.selectLogic(
       guideId,

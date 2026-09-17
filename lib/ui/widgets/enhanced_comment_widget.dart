@@ -38,6 +38,7 @@ class EnhancedCommentWidget extends StatefulWidget {
   final String? parentTopLevelCommentId; // 최상위 댓글 ID (대댓글 작성용)
   final Widget Function(Comment)? replyWidgetBuilder; // 대댓글 위젯 빌더
   final bool watchAuthorProfile;
+  final bool directInteractionBlocked;
 
   const EnhancedCommentWidget({
     super.key,
@@ -54,6 +55,7 @@ class EnhancedCommentWidget extends StatefulWidget {
     this.parentTopLevelCommentId,
     this.replyWidgetBuilder,
     this.watchAuthorProfile = true,
+    this.directInteractionBlocked = false,
   });
 
   @override
@@ -121,8 +123,10 @@ class _EnhancedCommentWidgetState extends State<EnhancedCommentWidget> {
     final l10n = AppLocalizations.of(context)!;
 
     final canReport = !isMyComment;
-    final canReply =
-        !isMyComment && widget.isAnonymousPost && widget.onReplyTap != null;
+    final canReply = !isMyComment &&
+        !widget.directInteractionBlocked &&
+        widget.isAnonymousPost &&
+        widget.onReplyTap != null;
     final canDelete = isMyComment;
     final canBlock = !isMyComment &&
         !widget.isAnonymousPost &&
@@ -829,7 +833,7 @@ class _EnhancedCommentWidgetState extends State<EnhancedCommentWidget> {
 
   void _openCommentAuthorProfile() {
     // 익명 게시글에서는 프로필 접근 불가
-    if (widget.isAnonymousPost) return;
+    if (widget.isAnonymousPost || widget.directInteractionBlocked) return;
     if (widget.comment.userId.isEmpty || widget.comment.userId == 'deleted') {
       return;
     }
@@ -868,6 +872,8 @@ class _EnhancedCommentWidgetState extends State<EnhancedCommentWidget> {
       }
       return;
     }
+    final alreadyLiked = widget.comment.likedBy.contains(user.uid);
+    if (widget.directInteractionBlocked && !alreadyLiked) return;
 
     try {
       // 댓글 좋아요 토글 실행
@@ -1093,11 +1099,13 @@ class _EnhancedCommentWidgetState extends State<EnhancedCommentWidget> {
             _showCommentActionsSheet(isMyComment: true);
           } else if (widget.isAnonymousPost) {
             _showCommentActionsSheet(isMyComment: false);
-          } else {
+          } else if (!widget.directInteractionBlocked) {
             // 답글 모드로 진입
             if (widget.onReplyTap != null) {
               widget.onReplyTap!();
             }
+          } else {
+            _showCommentActionsSheet(isMyComment: false);
           }
         },
         child: Container(
@@ -1117,8 +1125,9 @@ class _EnhancedCommentWidgetState extends State<EnhancedCommentWidget> {
                   // 익명 게시글이 아닐 때만 프로필 이미지 표시
                   if (!widget.isAnonymousPost) ...[
                     GestureDetector(
-                      onTap:
-                          isDeletedAccount ? null : _openCommentAuthorProfile,
+                      onTap: isDeletedAccount || widget.directInteractionBlocked
+                          ? null
+                          : _openCommentAuthorProfile,
                       child: Container(
                         width: 32,
                         height: 32,
@@ -1172,7 +1181,8 @@ class _EnhancedCommentWidgetState extends State<EnhancedCommentWidget> {
                                     ),
                                   )
                                 : GestureDetector(
-                                    onTap: isDeletedAccount
+                                    onTap: isDeletedAccount ||
+                                            widget.directInteractionBlocked
                                         ? null
                                         : _openCommentAuthorProfile,
                                     child: Text(
@@ -1268,7 +1278,9 @@ class _EnhancedCommentWidgetState extends State<EnhancedCommentWidget> {
                         mainAxisSize: MainAxisSize.min,
                         children: [
                           InkWell(
-                            onTap: _toggleLike,
+                            onTap: widget.directInteractionBlocked && !isLiked
+                                ? null
+                                : _toggleLike,
                             customBorder: const CircleBorder(),
                             child: Padding(
                               padding: const EdgeInsets.all(8.0),

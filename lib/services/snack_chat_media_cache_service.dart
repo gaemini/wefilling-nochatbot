@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:io';
 import 'dart:typed_data';
 
@@ -52,7 +53,13 @@ class SnackChatMediaCacheService {
         await _deletePair(files);
         return null;
       }
-      await files.media.setLastModified(DateTime.now());
+      // Returning cached bytes should not wait on a metadata write. The touch
+      // is only used by the bounded LRU and is safe as best-effort work.
+      unawaited(
+        files.media
+            .setLastModified(DateTime.now())
+            .catchError((_) => files.media),
+      );
       return bytes;
     } catch (error) {
       if (Logger.isVerboseEnabled) {
@@ -88,6 +95,22 @@ class SnackChatMediaCacheService {
       // Cache failure must never make a valid chat image fail to display.
       if (Logger.isVerboseEnabled) {
         Logger.warning('Snack Chat 이미지 기기 캐시 저장 실패: $error');
+      }
+    }
+  }
+
+  /// Removes one failed/corrupt cached image before an explicit user retry.
+  /// Other room images remain available offline.
+  Future<void> remove({
+    required String userId,
+    required String storagePath,
+  }) async {
+    if (userId.trim().isEmpty || storagePath.trim().isEmpty) return;
+    try {
+      await _deletePair(await _files(userId, storagePath));
+    } catch (error) {
+      if (Logger.isVerboseEnabled) {
+        Logger.warning('Snack Chat 이미지 기기 캐시 개별 삭제 실패: $error');
       }
     }
   }

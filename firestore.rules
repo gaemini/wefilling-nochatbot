@@ -64,6 +64,27 @@ service cloud.firestore {
         && !exists(/databases/$(database)/documents/blocks/$(authorId + '_' + request.auth.uid));
     }
 
+    function blockRelationshipFree(userA, userB) {
+      return userA is string
+        && userB is string
+        && userA.size() > 0
+        && userB.size() > 0
+        && (
+          userA == userB
+          || (
+            !exists(/databases/$(database)/documents/blocks/$(userA + '_' + userB))
+            && !exists(/databases/$(database)/documents/blocks/$(userB + '_' + userA))
+          )
+        );
+    }
+
+    function directContentOwnerBlockFree(ownerId) {
+      return !(ownerId is string)
+        || ownerId.size() == 0
+        || ownerId == 'deleted'
+        || blockRelationshipFree(request.auth.uid, ownerId);
+    }
+
     // Firebase Auth 비활성화와 별개로 Firestore에 기록된 정지/탈퇴 상태도
     // 콘텐츠 공개범위보다 우선한다. 삭제 후 지연된 merge로 uid/token만 남은
     // 껍데기 문서도 활성 계정으로 인정하지 않는다.
@@ -508,11 +529,14 @@ service cloud.firestore {
              resource.data.type == 'meetup_review' &&
              request.resource.data.diff(resource.data).affectedKeys().hasOnly(['imageUrls', 'imageUrl', 'content', 'updatedAt'])) ||
             
-            // 모든 사용자: 좋아요 토글
-            request.resource.data.diff(resource.data).affectedKeys().hasOnly(['likedBy', 'likeCount']) ||
+            // 모든 사용자: 좋아요 토글. 작성자와 차단 관계인 사용자는
+            // 프로필 후기에서 새 직접 상호작용을 만들 수 없다.
+            (blockRelationshipFree(request.auth.uid, userId) &&
+             request.resource.data.diff(resource.data).affectedKeys().hasOnly(['likedBy', 'likeCount'])) ||
             
             // 모든 사용자: 댓글 수 업데이트
-            request.resource.data.diff(resource.data).affectedKeys().hasOnly(['commentCount'])
+            (blockRelationshipFree(request.auth.uid, userId) &&
+             request.resource.data.diff(resource.data).affectedKeys().hasOnly(['commentCount']))
           );
         
         // 삭제: 본인만 가능 (후기 삭제 시)
@@ -623,6 +647,10 @@ service cloud.firestore {
         currentUserAccountAllowed() &&
         request.auth.uid == request.resource.data.fromUid &&
         request.auth.uid != request.resource.data.toUid &&
+        blockRelationshipFree(
+          request.resource.data.fromUid,
+          request.resource.data.toUid
+        ) &&
         activeUserAccount(request.resource.data.toUid) &&
         request.resource.data.status == 'PENDING';
       
@@ -654,7 +682,9 @@ service cloud.firestore {
           (resource.data.status == 'PENDING' && 
            (request.resource.data.status == 'ACCEPTED' || 
             request.resource.data.status == 'REJECTED') &&
-           request.auth.uid == resource.data.toUid)
+           request.auth.uid == resource.data.toUid &&
+           (request.resource.data.status != 'ACCEPTED' ||
+            blockRelationshipFree(resource.data.fromUid, resource.data.toUid)))
         );
       
       // 요청 삭제: 금지 (상태 변경으로 처리)
@@ -747,7 +777,12 @@ service cloud.firestore {
       // 게시글 읽기: 공개 범위에 따라 제한
       // 1. 전체 공개(visibility == 'public' 또는 필드 없음) → 인증된 사용자만 읽기 가능
       // 2. 카테고리별 공개(visibility == 'category') → allowedUserIds에 포함된 사용자만 읽기 가능
-      allow read: if canReadPostData(resource.data);
+      // 목록 쿼리는 기존 공개범위 조건을 유지하고, 단건 상세/딥링크는
+      // 작성자와의 차단 관계까지 서버에서 다시 확인한다. Rules는 필터가
+      // 아니므로 차단 조건을 list에 섞어 전체 피드 쿼리를 깨지 않는다.
+      allow get: if canReadPostData(resource.data)
+        && directContentOwnerBlockFree(resource.data.get('userId', ''));
+      allow list: if canReadPostData(resource.data);
       
       // 신규 문서는 createPostSecure(Admin SDK)에서만 생성한다.
       allow create: if false;
@@ -771,12 +806,14 @@ service cloud.firestore {
         (!request.resource.data.diff(resource.data).affectedKeys().hasAny(['linkPreview'])) &&
         visibilityFieldsUnchanged() &&
         (request.auth.uid == resource.data.userId ||
-         // 좋아요 필드만 변경하는 경우 누구나 가능 (읽기 권한이 있으면)
-         request.resource.data.diff(resource.data).affectedKeys().hasOnly(['likes', 'likedBy']) ||
-         // 조회수 필드만 변경하는 경우 누구나 가능 (읽기 권한이 있으면)
-         request.resource.data.diff(resource.data).affectedKeys().hasOnly(['viewCount']) ||
-         // 투표 카운트 업데이트 (1인 1표 로직은 앱/트랜잭션에서 처리)
-         request.resource.data.diff(resource.data).affectedKeys().hasOnly(['pollOptions', 'pollTotalVotes']));
+         (directContentOwnerBlockFree(resource.data.get('userId', '')) && (
+           // 좋아요 필드만 변경하는 경우 누구나 가능 (읽기 권한이 있으면)
+           request.resource.data.diff(resource.data).affectedKeys().hasOnly(['likes', 'likedBy']) ||
+           // 조회수 필드만 변경하는 경우 누구나 가능 (읽기 권한이 있으면)
+           request.resource.data.diff(resource.data).affectedKeys().hasOnly(['viewCount']) ||
+           // 투표 카운트 업데이트 (1인 1표 로직은 앱/트랜잭션에서 처리)
+           request.resource.data.diff(resource.data).affectedKeys().hasOnly(['pollOptions', 'pollTotalVotes'])
+         )));
       
       // 게시글 삭제: 작성자만 가능 (userId='deleted'는 삭제 불가)
       allow delete: if request.auth != null && 
@@ -822,6 +859,9 @@ service cloud.firestore {
         //   MVP에서는 인증된 사용자라면 투표를 허용합니다.
         allow create: if request.auth != null
           && canReadThisPost()
+          && directContentOwnerBlockFree(
+            get(/databases/$(database)/documents/posts/$(postId)).data.get('userId', '')
+          )
           && request.auth.uid == voteId
           && request.resource.data.userId == request.auth.uid
           && request.resource.data.optionId is string;
@@ -834,7 +874,16 @@ service cloud.firestore {
     match /meetups/{meetupId} {
       // 보안 규칙은 필터가 아니므로 목록 쿼리도 visibility/allowedUserIds/userId 중
       // 하나를 명시해야 합니다. 권한 없는 밋업 문서는 기기로 내려가지 않습니다.
-      allow get: if canReadMeetupData(resource.data);
+      // 차단 전 이미 승인된 참가자는 일정 확인·취소·신고 경로를 유지한다.
+      // 그 외 단건 상세/딥링크 접근은 주최자와의 차단 관계를 적용한다.
+      allow get: if canReadMeetupData(resource.data)
+        && (
+          directContentOwnerBlockFree(resource.data.get('userId', ''))
+          || (
+            exists(/databases/$(database)/documents/meetup_participants/$(meetupId + '_' + request.auth.uid))
+            && get(/databases/$(database)/documents/meetup_participants/$(meetupId + '_' + request.auth.uid)).data.get('status', '') == 'approved'
+          )
+        );
       allow list: if canReadMeetupData(resource.data);
       // 신규 문서는 createMeetupSecure(Admin SDK)에서만 생성한다.
       allow create: if false;
@@ -1334,6 +1383,25 @@ service cloud.firestore {
             );
       }
 
+      function directCommentTargetsBlockFree(data) {
+        let targetId = data.postId;
+        let postPath = /databases/$(database)/documents/posts/$(targetId);
+        let meetupPath = /databases/$(database)/documents/meetups/$(targetId);
+        let contentOwnerId = exists(postPath)
+          ? get(postPath).data.get('userId', '')
+          : (exists(meetupPath)
+            ? get(meetupPath).data.get('userId', '')
+            : request.auth.uid);
+        return blockRelationshipFree(request.auth.uid, contentOwnerId)
+          && (
+            data.get('parentCommentId', null) == null
+            || blockRelationshipFree(
+              request.auth.uid,
+              data.get('replyToUserId', '')
+            )
+          );
+      }
+
       function isCommentSoftDelete() {
         let changed = request.resource.data.diff(resource.data).affectedKeys();
         return request.auth.uid == resource.data.userId
@@ -1352,10 +1420,24 @@ service cloud.firestore {
       }
 
       function isCommentLikeUpdate() {
+        let before = resource.data.get('likedBy', []);
+        let after = request.resource.data.get('likedBy', []);
+        let removingOwnLike = request.auth.uid in before
+          && !(request.auth.uid in after)
+          && before.size() == after.size() + 1
+          && before.hasAll(after)
+          && request.resource.data.likeCount == resource.data.likeCount - 1;
+        let addingOwnLike = !(request.auth.uid in before)
+          && request.auth.uid in after
+          && after.size() == before.size() + 1
+          && after.hasAll(before)
+          && request.resource.data.likeCount == resource.data.likeCount + 1
+          && blockRelationshipFree(request.auth.uid, resource.data.userId);
         return resource.data.get('isDeleted', false) != true
           && request.resource.data.get('isDeleted', false) != true
           && request.resource.data.diff(resource.data).affectedKeys()
-            .hasOnly(['likeCount', 'likedBy']);
+            .hasOnly(['likeCount', 'likedBy'])
+          && (removingOwnLike || addingOwnLike);
       }
 
       allow read: if canReadCommentTarget(resource.data);
@@ -1370,6 +1452,7 @@ service cloud.firestore {
         request.auth.uid == request.resource.data.userId &&
         request.resource.data.get('isDeleted', false) == false &&
         request.resource.data.get('deletedAt', null) == null &&
+        directCommentTargetsBlockFree(request.resource.data) &&
         // 대댓글의 표시 부모, 실제 답글 대상, 수신자 UID가 모두 같은
         // 게시글/스레드에 속하는지 검증한다.
         validCommentThread(request.resource.data);
@@ -1604,6 +1687,7 @@ service cloud.firestore {
               : '';
           let originalText = original.data.get('text', '');
           return exists(originalPath)
+            && blockRelationshipFree(request.auth.uid, originalSenderId)
             && data.replyPreview is map
             && data.replyPreview.keys().hasOnly([
               'messageId', 'senderId', 'senderName', 'type',
@@ -1886,11 +1970,19 @@ service cloud.firestore {
               && parentMessage().get('isDeleted', false) != true;
           }
 
+          function reactionTargetBlockFree() {
+            return blockRelationshipFree(
+              request.auth.uid,
+              parentMessage().get('senderId', '')
+            );
+          }
+
           // Reactions are visible to room participants only. The UI reads
           // this subcollection once when the user opens the reaction detail;
           // normal message rendering uses the parent aggregate instead.
           allow read: if isChatParticipant();
           allow create, update: if isChatParticipant()
+            && reactionTargetBlockFree()
             && validReaction(request.resource.data);
           allow delete: if isChatParticipant()
             && userId == request.auth.uid
@@ -2000,6 +2092,17 @@ service cloud.firestore {
     // reaction detail reads remain governed by the participant rule above;
     // other users' raw votes are never exposed.
     match /{chatNestedPath=**}/reactions/{reactionId} {
+      function currentUserInDmConversationId(conversationId) {
+        let parts = conversationId.split('_');
+        let isAnonymous = conversationId.matches('anon_.*');
+        return conversationId is string
+          && (isAnonymous
+            ? (parts.size() >= 3
+              && (request.auth.uid == parts[1]
+                || request.auth.uid == parts[2]))
+            : request.auth.uid in parts);
+      }
+
       function canListOwnChatReaction() {
         let chatId = resource.data.get('chatId', '');
         let snackRoomPath = /databases/$(database)/documents/snack_chats/$(chatId);
@@ -2013,7 +2116,8 @@ service cloud.firestore {
         let canListDmReaction = conversationId is string
           && conversationId.size() > 0
           && exists(conversationPath)
-          && request.auth.uid in get(conversationPath).data.participants;
+          && (request.auth.uid in get(conversationPath).data.get('participants', [])
+            || currentUserInDmConversationId(conversationId));
         return currentUserAccountAllowed() && ownsEntry
           && (canListSnackReaction || canListDmReaction);
       }
@@ -2092,6 +2196,10 @@ service cloud.firestore {
         request.resource.data.participants is list &&
         request.resource.data.participants.size() == 2 &&
         bothParticipantsActive(request.resource.data) &&
+        blockRelationshipFree(
+          request.resource.data.participants[0],
+          request.resource.data.participants[1]
+        ) &&
         request.auth.uid in request.resource.data.participants;
       
       // 수정: (1) 메시지 관련 필드/보관, (2) '나가기' 허용
@@ -2346,22 +2454,25 @@ service cloud.firestore {
             );
           }
 
-          allow read: if request.auth != null && isParticipant();
+          allow read: if request.auth != null
+            && (isParticipant() || isMyConversation());
           allow create: if request.auth != null
             && request.auth.uid == userId
-            && isParticipant()
+            && (isParticipant() || isMyConversation())
+            && roomBlockFree()
             && dmReactionParentExists()
             && validDmReaction(request.resource.data);
           allow update: if request.auth != null
             && request.auth.uid == userId
             && resource.data.userId == userId
-            && isParticipant()
+            && (isParticipant() || isMyConversation())
+            && roomBlockFree()
             && dmReactionParentExists()
             && validDmReaction(request.resource.data);
           allow delete: if request.auth != null
             && request.auth.uid == userId
             && resource.data.userId == userId
-            && isParticipant();
+            && (isParticipant() || isMyConversation());
         }
       }
     }

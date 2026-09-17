@@ -140,6 +140,15 @@ class ContentTranslationService extends ChangeNotifier {
     // exhausting against a still-pending document at roughly 57 seconds.
     Duration(milliseconds: 24000),
   ];
+  // A manual retry may encounter a provider call that is already holding the
+  // server cache lock. Polling at the automatic 350/800 ms cadence only causes
+  // repeated callable/App Check work. The server permits a manual takeover
+  // after five seconds, so wait beyond that boundary before checking again.
+  static const List<Duration> _manualPendingRetryDelays = <Duration>[
+    Duration(milliseconds: 5500),
+    Duration(milliseconds: 15000),
+    Duration(milliseconds: 30000),
+  ];
 
   static const Map<String, String> supportedLanguages = <String, String>{
     'ko': '한국어',
@@ -1291,6 +1300,7 @@ class ContentTranslationService extends ChangeNotifier {
     String? scope,
     bool manualRetry = false,
     bool userInitiatedRetry = false,
+    bool forceRefresh = false,
     TranslationRequestPriority priority =
         TranslationRequestPriority.interactive,
   }) async {
@@ -1309,7 +1319,7 @@ class ContentTranslationService extends ChangeNotifier {
         _failureIdentity(request, target),
       );
     }
-    final memory = _memory[key];
+    final memory = forceRefresh ? null : _memory[key];
     if (memory != null) {
       if (_isUsableCachedResult(
         request,
@@ -1327,7 +1337,7 @@ class ContentTranslationService extends ChangeNotifier {
 
     final box = await _ensureBox();
     if (generation != _requestGeneration) return null;
-    final stored = box?.get(key);
+    final stored = forceRefresh ? null : box?.get(key);
     if (stored is Map) {
       final result = ContentTranslationResult.fromMap(stored);
       if (_isUsableCachedResult(
@@ -1407,6 +1417,7 @@ class ContentTranslationService extends ChangeNotifier {
       priority: priority,
       sequence: _queueSequence++,
       forceRetry: retryFromUserAction,
+      forceRegenerate: forceRefresh && retryFromUserAction,
     );
     _pending[key] = queued;
     _queue[key] = queued;
@@ -1616,11 +1627,13 @@ class ContentTranslationService extends ChangeNotifier {
     _QueuedTranslation queued,
   ) {
     if (!_isActive(key, queued)) return false;
-    if (queued.pendingRetryCount >= _pendingRetryDelays.length) {
+    final delays =
+        queued.forceRetry ? _manualPendingRetryDelays : _pendingRetryDelays;
+    if (queued.pendingRetryCount >= delays.length) {
       _completeFailure(key, queued, 'pending_timeout', status: 'pending');
       return false;
     }
-    final delay = _pendingRetryDelays[queued.pendingRetryCount++];
+    final delay = delays[queued.pendingRetryCount++];
     queued.state = TranslationItemState.failedRetryable;
     Timer(delay, () {
       if (!_isActive(key, queued)) return;
@@ -1700,6 +1713,7 @@ class ContentTranslationService extends ChangeNotifier {
         'items': batchEntries.map((entry) {
           final item = entry.value.request.toCallableMap();
           if (entry.value.forceRetry) item['forceRetry'] = true;
+          if (entry.value.forceRegenerate) item['forceRegenerate'] = true;
           return item;
         }).toList(growable: false),
       }).timeout(const Duration(seconds: 70));
@@ -1903,6 +1917,7 @@ class _QueuedTranslation {
     required this.priority,
     required this.sequence,
     required this.forceRetry,
+    required this.forceRegenerate,
   });
 
   final ContentTranslationRequest request;
@@ -1918,6 +1933,7 @@ class _QueuedTranslation {
   int batchId = 0;
   bool forceSingleItemRetry = false;
   final bool forceRetry;
+  final bool forceRegenerate;
   final Completer<ContentTranslationResult?> completer =
       Completer<ContentTranslationResult?>();
 }

@@ -511,6 +511,40 @@ void main() {
   });
 
   testWidgets(
+      'an explicit retranslation bypasses the local result and requests server regeneration',
+      (tester) async {
+    final request = backend.request(unique(), type: 'snack_chat_message');
+    backend.handler = backend.completedBatch;
+    ContentTranslationResult? first;
+    unawaited(service.request(request).then((result) => first = result));
+    await pumpUntil(tester, () => first != null);
+    expect(first?.isReady, isTrue);
+    final callsAfterFirstResult = backend.calls.length;
+
+    ContentTranslationResult? refreshed;
+    unawaited(service
+        .request(
+          request,
+          scope: 'snack-room:test',
+          manualRetry: true,
+          userInitiatedRetry: true,
+          forceRefresh: true,
+        )
+        .then((result) => refreshed = result));
+    await pumpUntil(tester, () => refreshed != null);
+
+    expect(refreshed?.isReady, isTrue);
+    expect(backend.calls.length, callsAfterFirstResult + 1);
+    final sentItem = (backend.calls.last['items'] as List).single as Map;
+    expect(sentItem['forceRetry'], isTrue);
+    expect(
+      sentItem['forceRegenerate'],
+      isTrue,
+      reason: 'message-level retranslation must not reuse a completed cache',
+    );
+  });
+
+  testWidgets(
       'account switch and logout discard old pending results and isolate cache',
       (tester) async {
     await tester.runAsync(() => backend.setAccount('account-a'));

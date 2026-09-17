@@ -9,7 +9,6 @@ import 'package:flutter/material.dart';
 
 import '../../models/snack_chat_message.dart';
 import '../../services/cache/app_image_cache_manager.dart';
-import '../../services/firebase_app_check_service.dart';
 import '../../services/snack_chat_media_cache_service.dart';
 import '../../l10n/app_localizations.dart';
 import '../../l10n/ui_locale.dart';
@@ -37,7 +36,7 @@ class SnackChatStorageImage extends StatefulWidget {
 
 class _SnackChatStorageImageState extends State<SnackChatStorageImage> {
   static const int _maxBytes = 15 * 1024 * 1024;
-  static const int _maxMemoryEntries = 12;
+  static const int _maxMemoryEntries = 20;
   static const int _maxMemoryBytes = 32 * 1024 * 1024;
   static final Map<String, Future<Uint8List?>> _memoryRequests =
       <String, Future<Uint8List?>>{};
@@ -45,10 +44,12 @@ class _SnackChatStorageImageState extends State<SnackChatStorageImage> {
       LinkedHashMap<String, Uint8List>();
   static final Queue<Completer<void>> _downloadWaiters =
       Queue<Completer<void>>();
-  static const int _maxConcurrentDownloads = 3;
+  static const int _maxConcurrentDownloads = 4;
   static int _activeDownloads = 0;
   static int _memoryByteCount = 0;
   late Future<Uint8List?> _bytes;
+  var _retryGeneration = 0;
+  var _retrying = false;
 
   @override
   void initState() {
@@ -66,10 +67,11 @@ class _SnackChatStorageImageState extends State<SnackChatStorageImage> {
 
   Future<Uint8List?> _load(String path) {
     final viewerId = FirebaseAuth.instance.currentUser?.uid;
-    if (viewerId == null || viewerId.isEmpty) {
+    final normalizedPath = path.trim();
+    if (viewerId == null || viewerId.isEmpty || normalizedPath.isEmpty) {
       return Future<Uint8List?>.value(null);
     }
-    final requestKey = '$viewerId::$path';
+    final requestKey = '$viewerId::$normalizedPath';
     final cachedBytes = _memoryBytes.remove(requestKey);
     if (cachedBytes != null) {
       _memoryBytes[requestKey] = cachedBytes;
@@ -83,27 +85,30 @@ class _SnackChatStorageImageState extends State<SnackChatStorageImage> {
       try {
         var data = await SnackChatMediaCacheService.instance.read(
           userId: viewerId,
-          storagePath: path,
+          storagePath: normalizedPath,
         );
+        var downloaded = false;
         if (data == null || data.isEmpty) {
-          // App Check failures are shared and cooled down by the central
-          // service. Do not let every visible gallery cell trigger its own
-          // Storage token attempt when attestation is unavailable.
-          await FirebaseAppCheckService.instance.ensureReady();
           data = await _withDownloadSlot(
             () => FirebaseStorage.instance
-                .ref(path)
+                .ref(normalizedPath)
                 .getData(_maxBytes)
                 .timeout(const Duration(seconds: 15)),
           );
           if (data == null || data.isEmpty) return null;
-          await SnackChatMediaCacheService.instance.write(
-            userId: viewerId,
-            storagePath: path,
-            bytes: data,
-          );
+          downloaded = true;
         }
         _rememberBytes(requestKey, data);
+        if (downloaded) {
+          // Rendering must not wait for disk flush and the bounded LRU scan.
+          // The in-memory entry already deduplicates another visible tile;
+          // persistence remains best-effort and survives future app launches.
+          unawaited(SnackChatMediaCacheService.instance.write(
+            userId: viewerId,
+            storagePath: normalizedPath,
+            bytes: data,
+          ));
+        }
         return data;
       } catch (_) {
         return null;
@@ -149,14 +154,35 @@ class _SnackChatStorageImageState extends State<SnackChatStorageImage> {
   }
 
   void _retry() {
+    if (_retrying) return;
     final viewerId = FirebaseAuth.instance.currentUser?.uid;
-    if (viewerId != null) {
-      final key = '$viewerId::${widget.storagePath}';
+    final normalizedPath = widget.storagePath.trim();
+    if (viewerId != null && viewerId.isNotEmpty) {
+      final key = '$viewerId::$normalizedPath';
       _memoryRequests.remove(key);
       final removed = _memoryBytes.remove(key);
       if (removed != null) _memoryByteCount -= removed.lengthInBytes;
     }
-    setState(() => _bytes = _load(widget.storagePath));
+    final retryFuture = () async {
+      if (viewerId != null &&
+          viewerId.isNotEmpty &&
+          normalizedPath.isNotEmpty) {
+        await SnackChatMediaCacheService.instance.remove(
+          userId: viewerId,
+          storagePath: normalizedPath,
+        );
+      }
+      return _load(normalizedPath);
+    }();
+    setState(() {
+      _retrying = true;
+      _retryGeneration++;
+      _bytes = retryFuture;
+    });
+    unawaited(retryFuture.whenComplete(() {
+      if (!mounted || !identical(_bytes, retryFuture)) return;
+      setState(() => _retrying = false);
+    }));
   }
 
   @override
@@ -181,20 +207,32 @@ class _SnackChatStorageImageState extends State<SnackChatStorageImage> {
         return Stack(
           fit: StackFit.expand,
           children: [
-            widget.error ??
-                const Center(child: Icon(Icons.broken_image_outlined)),
+            KeyedSubtree(
+              key: ValueKey<int>(_retryGeneration),
+              child: widget.error ??
+                  const Center(child: Icon(Icons.broken_image_outlined)),
+            ),
             Center(
               child: SizedBox.square(
                 dimension: 32,
                 child: IconButton(
-                  onPressed: _retry,
+                  onPressed: _retrying ? null : _retry,
                   padding: EdgeInsets.zero,
                   constraints: const BoxConstraints.tightFor(
                     width: 32,
                     height: 32,
                   ),
-                  tooltip: '이미지 다시 불러오기',
-                  icon: const Icon(Icons.refresh_rounded, size: 18),
+                  tooltip: (isChineseUi(context)
+                      ? '重新加载图片'
+                      : Localizations.localeOf(context).languageCode == 'ko'
+                          ? '이미지 다시 불러오기'
+                          : 'Retry image'),
+                  icon: _retrying
+                      ? const SizedBox.square(
+                          dimension: 16,
+                          child: CircularProgressIndicator(strokeWidth: 1.6),
+                        )
+                      : const Icon(Icons.refresh_rounded, size: 18),
                 ),
               ),
             ),

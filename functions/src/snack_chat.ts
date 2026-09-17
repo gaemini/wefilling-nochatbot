@@ -2329,7 +2329,24 @@ export const joinMeetupSnackChatSecure = functions
           'The Meetup does not point to this Snack Chat.',
         );
       }
+      const roomParticipants = uniqueStrings(room.get('participantIds'));
+      // Blocking never ejects an already-confirmed participant from the
+      // shared room. Only a new join is subject to the host relationship.
+      if (roomParticipants.includes(userId)) return true;
       const meetupData = meetup.data() ?? {};
+      const hostId = meetupOwnerId(meetupData);
+      if (hostId && hostId !== userId) {
+        const [userBlockedHost, hostBlockedUser] = await transaction.getAll(
+          db().collection(BLOCKS).doc(userId + '_' + hostId),
+          db().collection(BLOCKS).doc(hostId + '_' + userId),
+        );
+        if (userBlockedHost.exists || hostBlockedUser.exists) {
+          throw new functions.https.HttpsError(
+            'permission-denied',
+            'You cannot newly join this Meetup Snack Chat.',
+          );
+        }
+      }
       if (meetupHasEnded(meetupData)) {
         throw new functions.https.HttpsError(
           'failed-precondition',
@@ -2342,7 +2359,7 @@ export const joinMeetupSnackChatSecure = functions
           'You cannot join this Meetup Snack Chat.',
         );
       }
-      const isHost = meetupOwnerId(meetupData) === userId;
+      const isHost = hostId === userId;
       if (!isHost && !isApprovedMeetupParticipant(
         participant,
         meetupId,
@@ -2359,8 +2376,7 @@ export const joinMeetupSnackChatSecure = functions
           'You cannot join this Meetup Snack Chat.',
         );
       }
-      const participants = uniqueStrings(room.get('participantIds'));
-      if (participants.includes(userId)) return true;
+      const participants = roomParticipants;
       if (participants.length >= MAX_ROOM_PARTICIPANTS) {
         throw new functions.https.HttpsError(
           'resource-exhausted',
@@ -4465,13 +4481,7 @@ async function summarizeSnackChatRange(raw: any, context: functions.https.Callab
 
     const roomRef = db().collection(SNACK_CHATS).doc(roomId);
     const memberRef = roomRef.collection('members').doc(userId);
-    const blocksRef = db().collection('blocks');
-    const [roomAndMember, blockedByRequester, blockingRequester] =
-      await Promise.all([
-        db().getAll(roomRef, memberRef),
-        blocksRef.where('blocker', '==', userId).get(),
-        blocksRef.where('blocked', '==', userId).get(),
-      ]);
+    const roomAndMember = await db().getAll(roomRef, memberRef);
     const [room, member] = roomAndMember;
     if (!room.exists ||
         !uniqueStrings(room.get('participantIds')).includes(userId)) {
@@ -4521,8 +4531,6 @@ async function summarizeSnackChatRange(raw: any, context: functions.https.Callab
       reconcileIds: [...reconcileIds].sort(),
       start: todayRange?.startMillis ?? null, periods: member.get('periods') ?? [],
       joinedAfter: member.get('joinedAfterSequence') ?? 0,
-      blocked: [...blockedByRequester.docs.map(d => stringValue(d.get('blocked'))),
-        ...blockingRequester.docs.map(d => stringValue(d.get('blocker')))].sort(),
     })).digest('hex');
     query = query.orderBy(admin.firestore.FieldPath.documentId(), 'asc');
     if (paged && request.pageCursor) {
@@ -4615,15 +4623,6 @@ async function summarizeSnackChatRange(raw: any, context: functions.https.Callab
       const matches = people.filter(doc => normalizeSnackSearch(doc.get('nickname') ?? doc.get('displayName') ?? doc.get('name')) === normalizeSnackSearch(requesterName));
       requesterNameIsUnique = matches.length === 1 && matches[0].id === userId;
     }
-    const blockedUserIds = new Set<string>();
-    for (const block of blockedByRequester.docs) {
-      const blocked = stringValue(block.get('blocked'));
-      if (blocked) blockedUserIds.add(blocked);
-    }
-    for (const block of blockingRequester.docs) {
-      const blocker = stringValue(block.get('blocker'));
-      if (blocker) blockedUserIds.add(blocker);
-    }
     const sources: UnreadSummarySource[] = [];
     const requesterResponseContext: UnreadSummarySource[] = [];
     for (const document of sourceDocs) {
@@ -4653,8 +4652,7 @@ async function summarizeSnackChatRange(raw: any, context: functions.https.Callab
       const delivered = uniqueStrings(data.deliveryRecipientIds);
       const isRequesterMessage = senderId === userId;
       if (!isRequesterMessage &&
-          (blockedUserIds.has(senderId) ||
-            (delivered.length > 0 && !delivered.includes(userId)))) continue;
+          delivered.length > 0 && !delivered.includes(userId)) continue;
       const content = unreadSummarySourceText(data);
       if (!content) continue;
       const replyPreview = objectValue(data.replyPreview);
@@ -7466,13 +7464,16 @@ async function applySnackChatUnreadOnce(args: {
 
     const deliveryRecipients: string[] = [];
     const unreadRecipients: string[] = [];
+    const blockedPushRecipients = new Set<string>();
     candidates.forEach((userId, index) => {
       const member = memberDocs[index];
       const user = userDocs[index];
       if (!user?.exists ||
           !activeUserData(user.data() ?? {}, userId)) return;
       if (blockDocs[index * 2]?.exists || blockDocs[index * 2 + 1]?.exists) {
-        return;
+        // Shared-room history and unread state stay intact. Only the personal
+        // push caused by this sender is suppressed while either block exists.
+        blockedPushRecipients.add(userId);
       }
       const memberData = member?.data() ?? {};
       // Canonical recipientIds are the immutable send-time audience. A user
@@ -7489,6 +7490,9 @@ async function applySnackChatUnreadOnce(args: {
       }
       unreadRecipients.push(userId);
     });
+    const notificationRecipients = unreadRecipients.filter(
+      (userId) => !blockedPushRecipients.has(userId),
+    );
 
     const unreadBefore = normalizedCountMap(room.get('unreadCount'));
     const unreadAfter: Record<string, number> = {};
@@ -7528,12 +7532,12 @@ async function applySnackChatUnreadOnce(args: {
       sequence,
       senderId,
       deliveryRecipientIds: deliveryRecipients,
-      pushRecipientIds: unreadRecipients,
+      pushRecipientIds: notificationRecipients,
       pushAttemptedRecipientIds: [],
       createdAt: FieldValue.serverTimestamp(),
       expiresAt: eventExpiry(),
     });
-    return unreadRecipients;
+    return notificationRecipients;
   });
   runtimeLogsEnabled && runtimeInfo(
     '[SnackChatTiming] stage=unreadTransaction roomId=' + args.roomRef.id +

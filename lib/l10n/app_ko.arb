@@ -1490,6 +1490,9 @@
   "chatReactionSaveFailed": "반응을 저장하지 못했습니다.",
   "chatReply": "답장",
   "chatReportMessage": "메시지 신고",
+  "chatTranslationTranslating": "번역 중",
+  "chatTranslationTranslated": "번역됨",
+  "chatTranslationRetry": "다시 번역",
   "semesterGuideTitleById": "{guideId, select, check_enrollment{수강신청 내역 확인하기} exchange_orientation{교환학생 오리엔테이션 확인하기} campus_welcome_meetup{새 학기 모임 둘러보기} check_syllabus{강의계획서와 평가 방식 확인하기} course_change_period{수강 정정 기간 확인하기} club_fair{동아리와 학생 활동 찾아보기} academic_calendar{학사 일정 저장하기} arc_documents{외국인등록 관련 서류 확인하기} language_exchange{언어교환 모임 참여하기} campus_services{교내 지원 서비스 알아두기} dorm_rules{기숙사 생활 규칙 확인하기} buddy_program{버디 프로그램 찾아보기} assignment_check{밀린 과제와 출석 확인하기} study_meetup{전공 또는 시험 스터디 찾아보기} midterm_schedule{중간고사 일정 정리하기} library_space{집중할 공부 장소 찾아보기} midterm_readiness{중간고사 준비 상태 점검하기} study_break{짧은 휴식 모임 참여하기} midterm_followup{시험 후 과목별 계획 다시 세우기} wellbeing_check{이번 학기 컨디션 돌아보기} festival_events{교내 행사 일정 확인하기} exchange_culture_event{문화 교류 행사 참여하기} grade_progress{과목별 성취도 확인하기} academic_advising{필요한 학업 상담 예약하기} final_projects{기말 과제와 팀 프로젝트 일정 확인하기} career_program{진로·취업 프로그램 찾아보기} next_term_notice{다음 학기 주요 일정 확인하기} exchange_departure_plan{귀국 전 행정 절차 확인하기} final_schedule{기말고사 일정 확정하기} semester_memory{학기 마무리 모임 계획하기} final_readiness{기말 준비 상태 점검하기} return_items{대여 물품과 도서 반납 일정 확인하기} final_submissions{최종 제출물 확인하기} semester_reflection{이번 학기 기록 돌아보기} stay_connected{함께한 친구들과 연락 이어가기} semester_wrap_up{학기 마무리 항목 확인하기} next_semester_plan{다음 학기 계획 세우기} other{}}",
   "@semesterGuideTitleById": {
     "placeholders": { "guideId": { "type": "String" } }

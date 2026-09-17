@@ -6238,6 +6238,24 @@ abstract class AppLocalizations {
   /// **'메시지 신고'**
   String get chatReportMessage;
 
+  /// No description provided for @chatTranslationTranslating.
+  ///
+  /// In ko, this message translates to:
+  /// **'번역 중'**
+  String get chatTranslationTranslating;
+
+  /// No description provided for @chatTranslationTranslated.
+  ///
+  /// In ko, this message translates to:
+  /// **'번역됨'**
+  String get chatTranslationTranslated;
+
+  /// No description provided for @chatTranslationRetry.
+  ///
+  /// In ko, this message translates to:
+  /// **'다시 번역'**
+  String get chatTranslationRetry;
+
   /// No description provided for @semesterGuideTitleById.
   ///
   /// In ko, this message translates to:

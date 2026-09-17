@@ -23,11 +23,12 @@ import '../services/chat_outbox_store.dart';
 import '../utils/chat_work_queue.dart';
 import '../ui/widgets/snack_chat_outgoing_entrance.dart';
 import '../ui/widgets/chat_reaction_widgets.dart';
+import '../ui/widgets/soft_translate_reveal.dart';
+import '../ui/widgets/retryable_chat_network_image.dart';
 import '../services/dm_active_conversation.dart';
 import '../services/badge_service.dart';
 import '../services/fcm_service.dart';
 import '../services/post_service.dart';
-import '../services/content_filter_service.dart';
 import '../services/report_service.dart';
 import '../services/storage_service.dart';
 import '../services/snack_chat_document_import_service.dart';
@@ -36,6 +37,7 @@ import '../services/content_translation_service.dart';
 import '../utils/time_formatter.dart';
 import '../utils/snack_chat_translation_policy.dart';
 import '../l10n/app_localizations.dart';
+import '../constants/app_constants.dart';
 import '../design/tokens.dart';
 import 'package:intl/intl.dart';
 import 'post_detail_screen.dart';
@@ -83,6 +85,18 @@ class _DmTranslationCandidate {
   final DMMessage message;
   final _DmTranslationPriority priority;
   final double distanceFromViewportCenter;
+}
+
+class _DmTranslationOutcome {
+  const _DmTranslationOutcome({
+    required this.message,
+    required this.requestKey,
+    required this.result,
+  });
+
+  final DMMessage message;
+  final String requestKey;
+  final ContentTranslationResult? result;
 }
 
 class DMChatScreen extends StatefulWidget {
@@ -136,6 +150,8 @@ class _DMChatScreenState extends State<DMChatScreen>
       <String, DateTime>{};
   final Map<String, int> _translationFailures = <String, int>{};
   final Map<String, DateTime> _translationRetryAfter = <String, DateTime>{};
+  final Map<String, _DmTranslationOutcome> _deferredTranslationOutcomes =
+      <String, _DmTranslationOutcome>{};
   static const Duration _translationMicroBatchWindow =
       Duration(milliseconds: 70);
   static const Duration _translationStyleAnimationDuration =
@@ -148,6 +164,7 @@ class _DMChatScreenState extends State<DMChatScreen>
   bool _translationModeReady = false;
   bool _translationLanguageSheetOpen = false;
   bool _translationLifecycleInitialized = false;
+  bool _isUserScrolling = false;
   bool _receivedInitialMessageSnapshot = false;
   int _translationStateGeneration = 0;
   late int _translationLanguageRevision;
@@ -203,7 +220,6 @@ class _DMChatScreenState extends State<DMChatScreen>
   Conversation? _conversation;
   final _outbox = ChatOutboxStore.instance;
   static final _dispatch = ChatWorkQueue();
-  static final _textPreparation = ChatWorkQueue();
   static final _imagePreparation = ChatWorkQueue();
   static final _filePreparation = ChatWorkQueue();
   final Map<String, DMMessage> _outgoing = {};
@@ -219,6 +235,10 @@ class _DMChatScreenState extends State<DMChatScreen>
   bool _followingLatest = false;
   bool _accountInvalidated = false;
   StreamSubscription<User?>? _accountSubscription;
+  StreamSubscription<DocumentSnapshot<Map<String, dynamic>>>?
+      _directBlockSubscription;
+  StreamSubscription<DocumentSnapshot<Map<String, dynamic>>>?
+      _reverseBlockSubscription;
   int _messageGeneration = 0;
   Timer? _messageReconnect;
   Timer? _outboxRetry;
@@ -230,6 +250,12 @@ class _DMChatScreenState extends State<DMChatScreen>
   String? _backfilledPostId; // dmContent 백필을 1회만 수행하기 위한 가드
   bool _isBlocked = false; // 차단 여부
   bool _isBlockedBy = false; // 차단당한 여부
+  bool _directBlockStatusServerConfirmed = false;
+  bool _reverseBlockStatusServerConfirmed = false;
+  bool get _blockStatusReady =>
+      _directBlockStatusServerConfirmed && _reverseBlockStatusServerConfirmed;
+  bool get _directInteractionRestricted =>
+      !_blockStatusReady || _isBlocked || _isBlockedBy;
   File? _pendingImage; // 첨부 대기 이미지 (1장 제한)
   SnackChatSelectedFile? _pendingFile;
   DMMessage? _replyingTo;
@@ -373,7 +399,7 @@ class _DMChatScreenState extends State<DMChatScreen>
         _userInfoCacheService.watchUserInfo(widget.otherUserId);
     _scrollController.addListener(_onScroll);
 
-    _checkBlockStatus(); // 차단 상태 확인
+    _watchBlockStatus(); // 열린 DM에도 차단 변경을 즉시 반영
     _preloadPostContentIfAnonymous(); // 익명이면 게시글 본문 미리 로드
     _initConversationState();
 
@@ -400,8 +426,10 @@ class _DMChatScreenState extends State<DMChatScreen>
           .where((m) => m.deliveryState == DMDeliveryState.uncertain)
           .toList()
         ..sort((a, b) => -_compareMessagesDesc(a, b));
-      for (final message in retryable) {
-        _queueOutgoing(_activeConversationId, message);
+      if (!_directInteractionRestricted) {
+        for (final message in retryable) {
+          _queueOutgoing(_activeConversationId, message);
+        }
       }
       DMActiveConversation.setActive(_activeConversationId);
       unawaited(FCMService().cancelDmNotification(_activeConversationId));
@@ -449,6 +477,7 @@ class _DMChatScreenState extends State<DMChatScreen>
     _liveTranslationPriorityUntil.clear();
     _translationFailures.clear();
     _translationRetryAfter.clear();
+    _deferredTranslationOutcomes.clear();
     _messageLayoutKeys.clear();
     _unavailableReplyTargetIds.clear();
     _translationLanguageRevision = _translationService.languageRevision;
@@ -500,12 +529,17 @@ class _DMChatScreenState extends State<DMChatScreen>
         _liveTranslationPriorityUntil.clear();
         _translationFailures.clear();
         _translationRetryAfter.clear();
+        _deferredTranslationOutcomes.clear();
       } else if (showingOriginal) {
         // 이미 시작된 요청은 캐시에 저장되도록 두되 아직 서버 요청 전인
         // 후보는 제거하여 원문 보기 중 불필요한 비용이 생기지 않게 한다.
         _translationMicroBatchTimer?.cancel();
         _translationMicroBatchTimer = null;
         _translationCandidates.clear();
+        _translationRequestsInFlight.removeAll(
+          _deferredTranslationOutcomes.keys,
+        );
+        _deferredTranslationOutcomes.clear();
       }
     });
     if (!showingOriginal) _scheduleVisibleTranslations();
@@ -576,14 +610,6 @@ class _DMChatScreenState extends State<DMChatScreen>
     return _isCompleteTranslation(message, shared) ? shared : null;
   }
 
-  String _displayTextForMessage(DMMessage message) {
-    if (_translationShowsOriginal) return message.text;
-    final result = _currentTranslation(message);
-    if (result == null || result.isSameLanguage) return message.text;
-    final translated = (result.translatedFields['text'] ?? '').trim();
-    return translated.isEmpty ? message.text : translated;
-  }
-
   bool _isTranslationPending(DMMessage message) {
     if (!_canTranslateMessage(message) ||
         _translationShowsOriginal ||
@@ -593,7 +619,47 @@ class _DMChatScreenState extends State<DMChatScreen>
     final key = _translationRequestKey(message);
     return _translationCacheLookupsInFlight.contains(key) ||
         _translationCandidates.containsKey(key) ||
+        _deferredTranslationOutcomes.containsKey(key) ||
         _translationRequestsInFlight.contains(key);
+  }
+
+  Widget _buildDmTranslatedText(DMMessage message) {
+    final result = _currentTranslation(message);
+    final translatedText = (result?.translatedFields['text'] ?? '').trim();
+    final canShowTranslation = !_translationShowsOriginal &&
+        result?.isReady == true &&
+        result?.isSameLanguage != true &&
+        translatedText.isNotEmpty;
+    final pending = _isTranslationPending(message);
+    final requestKey = _translationRequestKey(message);
+    final failed = !_translationShowsOriginal &&
+        result == null &&
+        (_translationFailures[requestKey] ?? 0) >= 2 &&
+        !pending;
+    final presentationKey = canShowTranslation
+        ? 'translated:${result!.sourceHash}:${result.targetLanguage}'
+        : 'original:${_translationSourceSignature(message)}';
+
+    return SoftTranslateReveal(
+      key: ValueKey<String>('dm-message-text:${message.id}'),
+      presentationKey: presentationKey,
+      isPending: pending,
+      isTranslated: canShowTranslation,
+      translationFailed: failed,
+      onRetry: failed ? () => _retryFailedDmTranslation(message) : null,
+      statusColor: DMColors.textSecondary,
+      child: Text(
+        canShowTranslation ? translatedText : message.text,
+        style: TextStyle(
+          color: DMColors.otherMessageText,
+          fontFamily: uiFontFamily(context, 'Inter'),
+          fontFamilyFallback: const ['NotoSansKR'],
+          fontSize: 15,
+          height: 1.35,
+          fontWeight: FontWeight.w500,
+        ),
+      ),
+    );
   }
 
   void _scheduleVisibleTranslations() {
@@ -651,6 +717,7 @@ class _DMChatScreenState extends State<DMChatScreen>
       final requestKey = _translationRequestKey(message);
       if (_translationRequestsInFlight.contains(requestKey) ||
           _translationCacheLookupsInFlight.contains(requestKey) ||
+          _deferredTranslationOutcomes.containsKey(requestKey) ||
           (!includeQueued && _translationCandidates.containsKey(requestKey))) {
         continue;
       }
@@ -766,12 +833,20 @@ class _DMChatScreenState extends State<DMChatScreen>
         );
         final result = cached[request.serverId];
         if (_isCompleteTranslation(current, result)) {
-          _messageTranslations[current.id] = result!;
-          _translationSourceSignatures[current.id] =
-              _translationSourceSignature(current);
-          _translationFailures.remove(requestKey);
-          _translationRetryAfter.remove(requestKey);
-          _liveTranslationPriorityUntil.remove(current.id);
+          if (_isUserScrolling) {
+            _deferredTranslationOutcomes[requestKey] = _DmTranslationOutcome(
+              message: current,
+              requestKey: requestKey,
+              result: result,
+            );
+          } else {
+            _messageTranslations[current.id] = result!;
+            _translationSourceSignatures[current.id] =
+                _translationSourceSignature(current);
+            _translationFailures.remove(requestKey);
+            _translationRetryAfter.remove(requestKey);
+            _liveTranslationPriorityUntil.remove(current.id);
+          }
         } else if (!_translationShowsOriginal) {
           _translationCandidates[requestKey] = _DmTranslationCandidate(
             message: current,
@@ -853,7 +928,10 @@ class _DMChatScreenState extends State<DMChatScreen>
     await _translateVisibleMessages(messages);
   }
 
-  Future<void> _translateVisibleMessages(List<DMMessage> messages) async {
+  Future<void> _translateVisibleMessages(
+    List<DMMessage> messages, {
+    bool userInitiatedRetry = false,
+  }) async {
     if (!(ModalRoute.of(context)?.isCurrent ?? false)) return;
     final generation = _translationStateGeneration;
     final revision = _translationLanguageRevision;
@@ -872,7 +950,7 @@ class _DMChatScreenState extends State<DMChatScreen>
         _translationRequestsInFlight.add(_translationRequestKey(message));
       }
     });
-    final outcomes = await Future.wait(
+    final outcomes = await Future.wait<_DmTranslationOutcome>(
       eligible.map((message) async {
         final key = _translationRequestKey(message);
         final failureCount = _translationFailures[key] ?? 0;
@@ -885,12 +963,17 @@ class _DMChatScreenState extends State<DMChatScreen>
             ),
             uiLanguageCode: uiLanguage,
             scope: _translationScope,
-            manualRetry: failureCount > 0,
+            manualRetry: failureCount > 0 || userInitiatedRetry,
+            userInitiatedRetry: userInitiatedRetry,
           );
         } catch (_) {
           result = null;
         }
-        return (message: message, key: key, result: result);
+        return _DmTranslationOutcome(
+          message: message,
+          requestKey: key,
+          result: result,
+        );
       }),
     );
     if (!mounted ||
@@ -900,40 +983,97 @@ class _DMChatScreenState extends State<DMChatScreen>
       return;
     }
 
+    if (_isUserScrolling && !_translationShowsOriginal) {
+      setState(() {
+        for (final outcome in outcomes) {
+          _deferredTranslationOutcomes[outcome.requestKey] = outcome;
+        }
+      });
+      return;
+    }
+    _commitDmTranslationOutcomes(outcomes);
+  }
+
+  void _commitDmTranslationOutcomes(List<_DmTranslationOutcome> outcomes) {
+    if (!mounted || outcomes.isEmpty) return;
+    final follow =
+        !_scrollController.hasClients || _scrollController.offset <= 100;
+    final anchor = follow ? null : _captureMessageAnchor();
     setState(() {
       for (final outcome in outcomes) {
-        _translationRequestsInFlight.remove(outcome.key);
+        _translationRequestsInFlight.remove(outcome.requestKey);
+        _translationCacheLookupsInFlight.remove(outcome.requestKey);
         final current = _messageById(outcome.message.id);
         if (current == null ||
             !_canTranslateMessage(current) ||
-            _translationRequestKey(current) != outcome.key) {
-          _translationFailures.remove(outcome.key);
-          _translationRetryAfter.remove(outcome.key);
+            _translationRequestKey(current) != outcome.requestKey) {
+          _translationFailures.remove(outcome.requestKey);
+          _translationRetryAfter.remove(outcome.requestKey);
           continue;
         }
         if (_isCompleteTranslation(current, outcome.result)) {
           _messageTranslations[current.id] = outcome.result!;
           _translationSourceSignatures[current.id] =
               _translationSourceSignature(current);
-          _translationFailures.remove(outcome.key);
-          _translationRetryAfter.remove(outcome.key);
+          _translationFailures.remove(outcome.requestKey);
+          _translationRetryAfter.remove(outcome.requestKey);
           _liveTranslationPriorityUntil.remove(current.id);
         } else {
-          final failures = (_translationFailures[outcome.key] ?? 0) + 1;
-          _translationFailures[outcome.key] = failures;
+          final failures = (_translationFailures[outcome.requestKey] ?? 0) + 1;
+          _translationFailures[outcome.requestKey] = failures;
           if (failures < 2 &&
-              (outcome.result == null || outcome.result!.isRetryableFailure)) {
-            _translationRetryAfter[outcome.key] = DateTime.now().add(
+              (outcome.result == null || outcome.result!.isTransientFailure)) {
+            _translationRetryAfter[outcome.requestKey] = DateTime.now().add(
               const Duration(seconds: 15),
             );
           } else {
-            _translationRetryAfter.remove(outcome.key);
+            _translationRetryAfter.remove(outcome.requestKey);
           }
         }
       }
     });
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!mounted || _isUserScrolling) return;
+      if (follow) {
+        _followLatest(wasNearLatest: true);
+      } else {
+        _restoreMessageAnchor(anchor);
+      }
+    });
     _scheduleTranslationRetryScan();
     _scheduleVisibleTranslations();
+  }
+
+  void _commitDeferredDmTranslations() {
+    if (!mounted || _isUserScrolling || _deferredTranslationOutcomes.isEmpty) {
+      return;
+    }
+    final outcomes =
+        _deferredTranslationOutcomes.values.toList(growable: false);
+    _deferredTranslationOutcomes.clear();
+    _commitDmTranslationOutcomes(outcomes);
+  }
+
+  void _retryFailedDmTranslation(DMMessage message) {
+    if (!_translationModeReady ||
+        _translationShowsOriginal ||
+        !_canTranslateMessage(message) ||
+        _currentTranslation(message) != null) {
+      return;
+    }
+    final key = _translationRequestKey(message);
+    if ((_translationFailures[key] ?? 0) < 2 ||
+        _translationRequestsInFlight.contains(key) ||
+        _translationCacheLookupsInFlight.contains(key)) {
+      return;
+    }
+    _translationRetryAfter.remove(key);
+    unawaited(
+      _translateVisibleMessages(
+        <DMMessage>[message],
+        userInitiatedRetry: true,
+      ),
+    );
   }
 
   void _scheduleTranslationRetryScan() {
@@ -1042,23 +1182,113 @@ class _DMChatScreenState extends State<DMChatScreen>
     return status == 'deleted' || name == 'DELETED_ACCOUNT';
   }
 
-  /// 디버그: Firestore에 실제로 저장된 데이터 확인
-  /// 차단 상태 확인
-  Future<void> _checkBlockStatus() async {
-    try {
-      final isBlocked =
-          await ContentFilterService.isUserBlocked(widget.otherUserId);
-      final isBlockedBy =
-          await ContentFilterService.isBlockedByUser(widget.otherUserId);
-
+  /// 현재 대화 상대와 관련된 두 문서만 구독해 전체 목록 재조회와
+  /// 메시지별 차단 조회를 피한다.
+  void _watchBlockStatus() {
+    final currentUid = _currentUser?.uid;
+    if (currentUid == null || widget.otherUserId.trim().isEmpty) return;
+    final blocks = FirebaseFirestore.instance.collection('blocks');
+    _directBlockSubscription = blocks
+        .doc('${currentUid}_${widget.otherUserId}')
+        .snapshots(includeMetadataChanges: true)
+        .listen((snapshot) {
       if (mounted) {
-        setState(() {
-          _isBlocked = isBlocked;
-          _isBlockedBy = isBlockedBy;
-        });
+        _applyBlockStatus(
+          isBlocked: snapshot.exists,
+          directServerConfirmed: !snapshot.metadata.isFromCache,
+        );
       }
-    } catch (e) {
-      Logger.error('차단 상태 확인 실패: $e');
+    }, onError: (Object error) {
+      Logger.error('내 차단 상태 구독 실패: $error');
+    });
+    _reverseBlockSubscription = blocks
+        .doc('${widget.otherUserId}_$currentUid')
+        .snapshots(includeMetadataChanges: true)
+        .listen((snapshot) {
+      if (mounted) {
+        _applyBlockStatus(
+          isBlockedBy: snapshot.exists,
+          reverseServerConfirmed: !snapshot.metadata.isFromCache,
+        );
+      }
+    }, onError: (Object error) {
+      // 오프라인/권한 오류에서는 마지막으로 확인한 제한을 풀지 않는다.
+      Logger.error('피차단 상태 구독 실패: $error');
+    });
+  }
+
+  void _applyBlockStatus({
+    bool? isBlocked,
+    bool? isBlockedBy,
+    bool directServerConfirmed = false,
+    bool reverseServerConfirmed = false,
+  }) {
+    final nextBlocked = isBlocked ?? _isBlocked;
+    final nextBlockedBy = isBlockedBy ?? _isBlockedBy;
+    final nextDirectConfirmed =
+        _directBlockStatusServerConfirmed || directServerConfirmed;
+    final nextReverseConfirmed =
+        _reverseBlockStatusServerConfirmed || reverseServerConfirmed;
+    final becameRestricted =
+        (nextBlocked || nextBlockedBy) && !(_isBlocked || _isBlockedBy);
+    final becameReady =
+        nextDirectConfirmed && nextReverseConfirmed && !_blockStatusReady;
+    if (nextBlocked == _isBlocked &&
+        nextBlockedBy == _isBlockedBy &&
+        nextDirectConfirmed == _directBlockStatusServerConfirmed &&
+        nextReverseConfirmed == _reverseBlockStatusServerConfirmed) {
+      return;
+    }
+    setState(() {
+      _isBlocked = nextBlocked;
+      _isBlockedBy = nextBlockedBy;
+      _directBlockStatusServerConfirmed = nextDirectConfirmed;
+      _reverseBlockStatusServerConfirmed = nextReverseConfirmed;
+    });
+    if (becameRestricted) {
+      _outboxRetry?.cancel();
+      _outboxRetry = null;
+      _markUncertainMessagesFailedByBlock();
+      return;
+    }
+    if (becameReady && !_directInteractionRestricted) {
+      final pending = _outgoing.values
+          .where((message) =>
+              message.deliveryState != DMDeliveryState.sent &&
+              message.deliveryState != DMDeliveryState.failed)
+          .toList()
+        ..sort((a, b) => -_compareMessagesDesc(a, b));
+      for (final message in pending) {
+        _queueOutgoing(_activeConversationId, message, automatic: true);
+      }
+      _scheduleUncertainRecovery();
+    }
+  }
+
+  void _markUncertainMessagesFailedByBlock() {
+    final owner = _currentUser?.uid;
+    final room = _activeConversationId;
+    if (owner == null || room.isEmpty) return;
+    final changed = <DMMessage>[];
+    for (final entry in _outgoing.entries.toList()) {
+      if (entry.value.deliveryState == DMDeliveryState.sent ||
+          entry.value.deliveryState == DMDeliveryState.failed) continue;
+      final failed =
+          entry.value.copyWith(deliveryState: DMDeliveryState.failed);
+      _outgoing[entry.key] = failed;
+      final index = _messages.indexWhere((message) => message.id == entry.key);
+      if (index >= 0) _messages[index] = failed;
+      changed.add(failed);
+    }
+    if (changed.isNotEmpty && mounted) setState(() {});
+    for (final message in changed) {
+      unawaited(
+        _outbox
+            .put(owner, room, message.id, message.toLocalMap())
+            .catchError((Object error) {
+          Logger.error('차단 중 DM 대기 상태 저장 실패: $error');
+        }),
+      );
     }
   }
 
@@ -1372,6 +1602,8 @@ class _DMChatScreenState extends State<DMChatScreen>
     _messageReconnect?.cancel();
     _outboxRetry?.cancel();
     unawaited(_accountSubscription?.cancel());
+    unawaited(_directBlockSubscription?.cancel());
+    unawaited(_reverseBlockSubscription?.cancel());
     // PopScope를 거치지 않고 라우트가 제거되는 경우에도 백그라운드 읽음
     // 동기화를 시작한다. 이 Future는 화면 생명주기와 독립적으로 완료된다.
     _startBackgroundReadFlush();
@@ -2820,103 +3052,91 @@ class _DMChatScreenState extends State<DMChatScreen>
         _messageLayoutKeys.putIfAbsent(messages[i].id, GlobalKey.new): i,
     };
 
-    return ListView.builder(
-      controller: _scrollController,
-      padding: EdgeInsets.fromLTRB(
-        MediaQuery.sizeOf(context).width < 360 ? 10 : 14,
-        46,
-        MediaQuery.sizeOf(context).width < 360 ? 10 : 14,
-        14,
-      ),
-      reverse: true,
-      itemCount: messages.length + (_hasMore ? 1 : 0),
-      findChildIndexCallback: (key) => indices[key],
-      itemBuilder: (context, index) {
-        // reverse=true에서 "마지막 인덱스"는 화면 상단(가장 과거) 영역에 위치한다.
-        if (_hasMore && index == messages.length) {
-          return _buildLoadMoreIndicator();
+    return NotificationListener<UserScrollNotification>(
+      onNotification: (notification) {
+        final scrolling = notification.direction != ScrollDirection.idle;
+        if (_isUserScrolling != scrolling) {
+          _isUserScrolling = scrolling;
+          if (!scrolling) _commitDeferredDmTranslations();
         }
-
-        final message = messages[index];
-        final isMine = message.isMine(_currentUser!.uid);
-        final String? statusText = _statusFor(message);
-
-        // 시간/읽음 라벨은 동일 내용이 연속될 때 마지막(더 최신) 1개만 노출
-        final String timeText = timeLabel(index);
-        final String? prevTimeText = index > 0 ? timeLabel(index - 1) : null;
-        final String? prevStatusText =
-            index > 0 ? _statusFor(messages[index - 1]) : null;
-        final bool showTimeText =
-            prevTimeText == null || timeText != prevTimeText;
-        final bool showStatusText = statusText != null &&
-            (prevStatusText == null || statusText != prevStatusText);
-
-        // 같은 발신자의 연속 메시지인지 확인
-        final isConsecutive = index < messages.length - 1 &&
-            messages[index + 1].senderId == message.senderId;
-
-        // 날짜 구분선 표시 여부 확인 (해당 날짜의 첫 메시지 위에 표시)
-        final showDateSeparator = index == messages.length - 1 ||
-            !_isSameDay(message.createdAt, messages[index + 1].createdAt);
-
-        return KeyedSubtree(
-          key: _messageLayoutKeys.putIfAbsent(message.id, GlobalKey.new),
-          child: Column(
-            children: [
-              if (showDateSeparator) _buildDateSeparator(message.createdAt),
-              GestureDetector(
-                behavior: HitTestBehavior.translucent,
-                onLongPress: _canReplyToMessage(message)
-                    ? () => _showMessageActions(message)
-                    : message.type == 'file'
-                        ? () => _showPendingFileActions(message)
-                        : null,
-                child: Column(
-                  crossAxisAlignment: isMine
-                      ? CrossAxisAlignment.end
-                      : CrossAxisAlignment.start,
-                  children: [
-                    _buildOutgoingPresentation(
-                      message,
-                      _buildMessageBubble(
-                        message,
-                        isMine,
-                        isConsecutive,
-                        timeText: timeText,
-                        showTimeText: showTimeText,
-                        statusText: statusText,
-                        showStatusText: showStatusText,
-                      ),
-                    ),
-                    if (message.reactionCounts.isNotEmpty)
-                      Padding(
-                        padding: EdgeInsets.only(
-                          left: isMine ? 0 : 44,
-                          right: isMine ? 2 : 0,
-                          bottom: 4,
-                        ),
-                        child: ChatReactionBar(
-                          counts: message.reactionCounts,
-                          myReaction: _myReactions[message.id],
-                          isOutgoing: false,
-                          addLabel:
-                              AppLocalizations.of(context)!.chatReactionAdd,
-                          removeLabel:
-                              AppLocalizations.of(context)!.chatReactionRemove,
-                          peopleLabel:
-                              AppLocalizations.of(context)!.chatReactionPeople,
-                          onToggle: (emoji) => _toggleReaction(message, emoji),
-                          onShowUsers: (emoji) =>
-                              _showReactionUsers(message, emoji),
-                        ),
-                      ),
-                  ],
-                ),
-              ),
-            ],
-          ),
-        );
+        return false;
       },
+      child: ListView.builder(
+        controller: _scrollController,
+        padding: EdgeInsets.fromLTRB(
+          MediaQuery.sizeOf(context).width < 360 ? 10 : 14,
+          46,
+          MediaQuery.sizeOf(context).width < 360 ? 10 : 14,
+          14,
+        ),
+        reverse: true,
+        itemCount: messages.length + (_hasMore ? 1 : 0),
+        findChildIndexCallback: (key) => indices[key],
+        itemBuilder: (context, index) {
+          // reverse=true에서 "마지막 인덱스"는 화면 상단(가장 과거) 영역에 위치한다.
+          if (_hasMore && index == messages.length) {
+            return _buildLoadMoreIndicator();
+          }
+
+          final message = messages[index];
+          final isMine = message.isMine(_currentUser!.uid);
+          final String? statusText = _statusFor(message);
+
+          // 시간/읽음 라벨은 동일 내용이 연속될 때 마지막(더 최신) 1개만 노출
+          final String timeText = timeLabel(index);
+          final String? prevTimeText = index > 0 ? timeLabel(index - 1) : null;
+          final String? prevStatusText =
+              index > 0 ? _statusFor(messages[index - 1]) : null;
+          final bool showTimeText =
+              prevTimeText == null || timeText != prevTimeText;
+          final bool showStatusText = statusText != null &&
+              (prevStatusText == null || statusText != prevStatusText);
+
+          // 같은 발신자의 연속 메시지인지 확인
+          final isConsecutive = index < messages.length - 1 &&
+              messages[index + 1].senderId == message.senderId;
+
+          // 날짜 구분선 표시 여부 확인 (해당 날짜의 첫 메시지 위에 표시)
+          final showDateSeparator = index == messages.length - 1 ||
+              !_isSameDay(message.createdAt, messages[index + 1].createdAt);
+
+          return KeyedSubtree(
+            key: _messageLayoutKeys.putIfAbsent(message.id, GlobalKey.new),
+            child: Column(
+              children: [
+                if (showDateSeparator) _buildDateSeparator(message.createdAt),
+                GestureDetector(
+                  behavior: HitTestBehavior.translucent,
+                  onLongPress: _canReplyToMessage(message)
+                      ? () => _showMessageActions(message)
+                      : message.type == 'file'
+                          ? () => _showPendingFileActions(message)
+                          : null,
+                  child: Column(
+                    crossAxisAlignment: isMine
+                        ? CrossAxisAlignment.end
+                        : CrossAxisAlignment.start,
+                    children: [
+                      _buildOutgoingPresentation(
+                        message,
+                        _buildMessageBubble(
+                          message,
+                          isMine,
+                          isConsecutive,
+                          timeText: timeText,
+                          showTimeText: showTimeText,
+                          statusText: statusText,
+                          showStatusText: showStatusText,
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+              ],
+            ),
+          );
+        },
+      ),
     );
   }
 
@@ -3110,38 +3330,7 @@ class _DMChatScreenState extends State<DMChatScreen>
                 ),
               ),
               const SizedBox(height: 10),
-              ChatReactionPickerRow(
-                selectedReaction: _myReactions[message.id],
-                addLabel: AppLocalizations.of(sheetContext)!.chatReactionAdd,
-                removeLabel:
-                    AppLocalizations.of(sheetContext)!.chatReactionRemove,
-                onSelected: (emoji) =>
-                    Navigator.of(sheetContext).pop('reaction:$emoji'),
-              ),
-              const SizedBox(height: 2),
-              Semantics(
-                button: true,
-                label: AppLocalizations.of(sheetContext)!.chatReply,
-                child: Tooltip(
-                  message: AppLocalizations.of(sheetContext)!.chatReply,
-                  child: ListTile(
-                    minTileHeight: 54,
-                    leading: const Icon(
-                      Icons.reply_rounded,
-                      color: Color(0xFF344054),
-                    ),
-                    title: Text(
-                      AppLocalizations.of(sheetContext)!.chatReply,
-                      style: const TextStyle(
-                        fontSize: 15,
-                        fontWeight: FontWeight.w700,
-                        color: Color(0xFF101828),
-                      ),
-                    ),
-                    onTap: () => Navigator.of(sheetContext).pop('reply'),
-                  ),
-                ),
-              ),
+              _buildDmMessageQuickActions(sheetContext, message),
             ],
           ),
         ),
@@ -3162,7 +3351,84 @@ class _DMChatScreenState extends State<DMChatScreen>
     });
   }
 
+  Widget _buildDmMessageQuickActions(
+    BuildContext sheetContext,
+    DMMessage message,
+  ) {
+    final l10n = AppLocalizations.of(sheetContext)!;
+    final selectedReaction = _myReactions[message.id];
+
+    Widget actionSlot({
+      required String semanticLabel,
+      required VoidCallback onTap,
+      required Widget child,
+      Color backgroundColor = Colors.transparent,
+    }) {
+      return Expanded(
+        child: Semantics(
+          button: true,
+          label: semanticLabel,
+          child: Tooltip(
+            message: semanticLabel,
+            child: Material(
+              color: Colors.transparent,
+              child: InkWell(
+                onTap: onTap,
+                borderRadius: BorderRadius.circular(14),
+                child: Container(
+                  height: 48,
+                  margin: const EdgeInsets.symmetric(horizontal: 1),
+                  alignment: Alignment.center,
+                  decoration: BoxDecoration(
+                    color: backgroundColor,
+                    borderRadius: BorderRadius.circular(14),
+                  ),
+                  child: child,
+                ),
+              ),
+            ),
+          ),
+        ),
+      );
+    }
+
+    return Padding(
+      padding: const EdgeInsets.symmetric(horizontal: 2),
+      child: Row(
+        children: [
+          for (final emoji in chatReactionEmojis)
+            actionSlot(
+              semanticLabel:
+                  '${selectedReaction == emoji ? l10n.chatReactionRemove : l10n.chatReactionAdd} $emoji',
+              onTap: () => Navigator.of(sheetContext).pop('reaction:$emoji'),
+              backgroundColor: selectedReaction == emoji
+                  ? AppColors.pointColor.withValues(alpha: .10)
+                  : Colors.transparent,
+              child: ChatReactionIcon(emoji),
+            ),
+          Container(
+            width: 1,
+            height: 28,
+            margin: const EdgeInsets.symmetric(horizontal: 3),
+            color: DMColors.divider,
+          ),
+          actionSlot(
+            semanticLabel: l10n.chatReply,
+            onTap: () => Navigator.of(sheetContext).pop('reply'),
+            backgroundColor: const Color(0xFFF2F4F7),
+            child: const Icon(
+              Icons.reply_rounded,
+              size: 23,
+              color: DMColors.graphite,
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
   bool _canReplyToMessage(DMMessage message) =>
+      !_directInteractionRestricted &&
       message.deliveryState == DMDeliveryState.sent &&
       message.serverCreatedAt != null &&
       message.id.trim().isNotEmpty &&
@@ -3574,9 +3840,19 @@ class _DMChatScreenState extends State<DMChatScreen>
   }
 
   Widget _buildOutgoingPresentation(DMMessage message, Widget bubble) {
-    final pending = message.deliveryState != DMDeliveryState.sent;
     final retryable = message.deliveryState == DMDeliveryState.failed ||
         message.deliveryState == DMDeliveryState.uncertain;
+    // Match Snack Chat's optimistic presentation: a locally-created bubble is
+    // already the sending feedback, so do not add a second loading indicator.
+    // Failed/uncertain messages keep the existing explicit retry affordance.
+    if (!retryable) {
+      return SnackChatOutgoingEntrance(
+        key: ValueKey('dm_entrance_${message.id}'),
+        animateOnMount: _entranceIds.contains(message.id),
+        onAnimationClaimed: () => _entranceIds.remove(message.id),
+        child: bubble,
+      );
+    }
     final isKo = Localizations.localeOf(context).languageCode == 'ko';
     final label = message.deliveryState == DMDeliveryState.uncertain
         ? (isChineseUi(context)
@@ -3591,67 +3867,59 @@ class _DMChatScreenState extends State<DMChatScreen>
                 : isKo
                     ? '전송 중'
                     : 'Sending');
-    final progress = _uploadById[message.id];
     final indicator = message.deliveryState == DMDeliveryState.failed
         ? const Icon(Icons.error_outline_rounded,
             size: 17, color: Color(0xFFD92D20))
-        : message.deliveryState == DMDeliveryState.uncertain
-            ? const Icon(Icons.schedule_rounded,
-                size: 17, color: Color(0xFF667085))
-            : const SizedBox.square(
-                dimension: 14,
-                child: CircularProgressIndicator(
-                  strokeWidth: 1.8,
-                  color: Color(0xFF667085),
-                ),
-              );
+        : const Icon(Icons.schedule_rounded,
+            size: 17, color: Color(0xFF667085));
     return SnackChatOutgoingEntrance(
       key: ValueKey('dm_entrance_${message.id}'),
       animateOnMount: _entranceIds.contains(message.id),
       onAnimationClaimed: () => _entranceIds.remove(message.id),
       child: Column(crossAxisAlignment: CrossAxisAlignment.end, children: [
         bubble,
-        if (pending)
-          Padding(
-            padding: const EdgeInsets.only(right: 8, bottom: 3),
-            child: Semantics(
-              button: retryable,
-              label: label,
-              child: Tooltip(
-                message: label,
-                child: InkResponse(
-                  onTap: retryable && !_sendingIds.contains(message.id)
-                      ? () => _queueOutgoing(_activeConversationId, message)
-                      : null,
-                  radius: 20,
-                  child: ConstrainedBox(
-                    constraints: const BoxConstraints(
-                      minWidth: 32,
-                      minHeight: 30,
-                    ),
-                    child: Column(
-                      mainAxisSize: MainAxisSize.min,
-                      children: [
-                        Center(child: indicator),
-                        if (progress != null) ...[
-                          const SizedBox(height: 2),
-                          Text(
-                            '${(progress * 100).round()}%',
-                            style: const TextStyle(
-                              fontSize: 9.5,
-                              fontWeight: FontWeight.w600,
-                              color: Color(0xFF667085),
-                            ),
-                          ),
-                        ],
-                      ],
-                    ),
+        Padding(
+          padding: const EdgeInsets.only(right: 8, bottom: 3),
+          child: Semantics(
+            button: true,
+            label: label,
+            child: Tooltip(
+              message: label,
+              child: InkResponse(
+                onTap: !_sendingIds.contains(message.id)
+                    ? () => _queueOutgoing(_activeConversationId, message)
+                    : null,
+                radius: 20,
+                child: ConstrainedBox(
+                  constraints: const BoxConstraints(
+                    minWidth: 32,
+                    minHeight: 30,
                   ),
+                  child: Center(child: indicator),
                 ),
               ),
             ),
           ),
+        ),
       ]),
+    );
+  }
+
+  Widget _buildInlineReactionBar(DMMessage message) {
+    final maxWidth = MediaQuery.sizeOf(context).width < 360 ? 78.0 : 106.0;
+    return ConstrainedBox(
+      constraints: BoxConstraints(maxWidth: maxWidth),
+      child: ChatReactionBar(
+        counts: message.reactionCounts,
+        myReaction: _myReactions[message.id],
+        // The reaction lives beside, rather than inside, both bubble colors.
+        isOutgoing: false,
+        addLabel: AppLocalizations.of(context)!.chatReactionAdd,
+        removeLabel: AppLocalizations.of(context)!.chatReactionRemove,
+        peopleLabel: AppLocalizations.of(context)!.chatReactionPeople,
+        onToggle: (emoji) => _toggleReaction(message, emoji),
+        onShowUsers: (emoji) => _showReactionUsers(message, emoji),
+      ),
     );
   }
 
@@ -3802,6 +4070,10 @@ class _DMChatScreenState extends State<DMChatScreen>
                 child: bubbleChild,
               ),
             ),
+            if (message.reactionCounts.isNotEmpty) ...[
+              const SizedBox(width: 5),
+              _buildInlineReactionBar(message),
+            ],
           ],
         ),
       );
@@ -3845,40 +4117,7 @@ class _DMChatScreenState extends State<DMChatScreen>
                     if (hasText) const SizedBox(height: 8),
                   ],
                   if (hasFile) _buildFileBubble(message, isMine: false),
-                  if (hasText)
-                    Row(
-                      mainAxisSize: MainAxisSize.min,
-                      crossAxisAlignment: CrossAxisAlignment.center,
-                      children: [
-                        Flexible(
-                          child: Text(
-                            _displayTextForMessage(message),
-                            key: ValueKey(
-                              'dm_message_text_${message.id}_'
-                              '${_translationShowsOriginal ? 'original' : 'translated'}',
-                            ),
-                            style: TextStyle(
-                              color: DMColors.otherMessageText,
-                              fontFamily: uiFontFamily(context, 'Inter'),
-                              fontFamilyFallback: const ['NotoSansKR'],
-                              fontSize: 15,
-                              height: 1.35,
-                              fontWeight: FontWeight.w500,
-                            ),
-                          ),
-                        ),
-                        if (_isTranslationPending(message)) ...[
-                          const SizedBox(width: 6),
-                          const SizedBox.square(
-                            dimension: 12,
-                            child: CircularProgressIndicator(
-                              strokeWidth: 1.6,
-                              color: Color(0xFF76AFCB),
-                            ),
-                          ),
-                        ],
-                      ],
-                    ),
+                  if (hasText) _buildDmTranslatedText(message),
                 ],
               ),
             );
@@ -3901,6 +4140,10 @@ class _DMChatScreenState extends State<DMChatScreen>
                 child: bubbleChild,
               ),
             ),
+            if (message.reactionCounts.isNotEmpty) ...[
+              const SizedBox(width: 5),
+              _buildInlineReactionBar(message),
+            ],
             const SizedBox(width: 6),
             // 시간 표시
             Visibility(
@@ -4338,7 +4581,7 @@ class _DMChatScreenState extends State<DMChatScreen>
           ),
           child: Hero(
             tag: heroTag,
-            child: CachedNetworkImage(
+            child: RetryableChatNetworkImage(
               imageUrl: imageUrl,
               fit: BoxFit.cover,
               fadeInDuration: const Duration(milliseconds: 150),
@@ -4352,30 +4595,40 @@ class _DMChatScreenState extends State<DMChatScreen>
                   child: CircularProgressIndicator(strokeWidth: 2),
                 ),
               ),
-              errorWidget: (_, __, ___) => _buildMediaPlaceholder(
+              errorBuilder: (_, __, ___, retry) => _buildMediaPlaceholder(
                 isMine: isMine,
                 borderRadius: BorderRadius.circular(14),
-                child: Row(
-                  mainAxisSize: MainAxisSize.min,
-                  children: [
-                    Icon(
-                      Icons.broken_image_outlined,
-                      size: 18,
-                      color: isMine ? Colors.white70 : Colors.grey[600],
+                child: Semantics(
+                  button: true,
+                  label: (isChineseUi(context)
+                      ? '重新加载图片'
+                      : Localizations.localeOf(context).languageCode == 'ko'
+                          ? '이미지 다시 불러오기'
+                          : 'Retry image'),
+                  child: TextButton.icon(
+                    onPressed: retry,
+                    style: TextButton.styleFrom(
+                      foregroundColor:
+                          isMine ? Colors.white70 : Colors.grey[700],
+                      padding: const EdgeInsets.symmetric(
+                        horizontal: 10,
+                        vertical: 8,
+                      ),
+                      minimumSize: const Size(44, 44),
                     ),
-                    const SizedBox(width: 6),
-                    Text(
+                    icon: const Icon(Icons.refresh_rounded, size: 18),
+                    label: Text(
                       (isChineseUi(context)
-                          ? '图片加载失败'
+                          ? '重新加载'
                           : Localizations.localeOf(context).languageCode == 'ko'
-                              ? '이미지 로드 실패'
-                              : 'Failed to load image'),
-                      style: TextStyle(
+                              ? '다시 불러오기'
+                              : 'Retry'),
+                      style: const TextStyle(
                         fontSize: 12,
-                        color: isMine ? Colors.white70 : Colors.grey[700],
+                        fontWeight: FontWeight.w600,
                       ),
                     ),
-                  ],
+                  ),
                 ),
               ),
             ),
@@ -4425,8 +4678,7 @@ class _DMChatScreenState extends State<DMChatScreen>
   Widget _buildComposer() {
     final peerDeleted = _isPeerDeleted;
     final canSend = !peerDeleted &&
-        !_isBlocked &&
-        !_isBlockedBy &&
+        !_directInteractionRestricted &&
         (_messageController.text.trim().isNotEmpty ||
             _pendingImage != null ||
             _pendingFile != null);
@@ -4463,8 +4715,7 @@ class _DMChatScreenState extends State<DMChatScreen>
               if (_conversationExists == false &&
                   !_isAnonymous &&
                   !peerDeleted &&
-                  !_isBlocked &&
-                  !_isBlockedBy) ...[
+                  !_directInteractionRestricted) ...[
                 Align(
                   alignment: Alignment.centerLeft,
                   child: Text(
@@ -4499,7 +4750,7 @@ class _DMChatScreenState extends State<DMChatScreen>
                   children: [
                     // 첨부 버튼 (+)
                     InkWell(
-                      onTap: (peerDeleted || _isBlocked || _isBlockedBy)
+                      onTap: (peerDeleted || _directInteractionRestricted)
                           ? null
                           : _showAttachmentOptions,
                       customBorder: const CircleBorder(),
@@ -4513,7 +4764,7 @@ class _DMChatScreenState extends State<DMChatScreen>
                         ),
                         child: Icon(
                           Icons.add,
-                          color: (peerDeleted || _isBlocked || _isBlockedBy)
+                          color: (peerDeleted || _directInteractionRestricted)
                               ? const Color(0xFF667085)
                               : Colors.white,
                           size: 22,
@@ -4530,7 +4781,8 @@ class _DMChatScreenState extends State<DMChatScreen>
                         child: TextField(
                           controller: _messageController,
                           focusNode: _messageFocusNode,
-                          enabled: !peerDeleted && !_isBlocked && !_isBlockedBy,
+                          enabled:
+                              !peerDeleted && !_directInteractionRestricted,
                           maxLines: null,
                           maxLength: 500,
                           textInputAction: TextInputAction.newline,
@@ -4547,9 +4799,10 @@ class _DMChatScreenState extends State<DMChatScreen>
                                     ? '차단된 사용자에게 메시지를 보낼 수 없습니다'
                                     : AppLocalizations.of(context)!.typeMessage,
                             hintStyle: TextStyle(
-                              color: (peerDeleted || _isBlocked || _isBlockedBy)
-                                  ? const Color(0xFF667085)
-                                  : const Color(0xFF98A2B3),
+                              color:
+                                  (peerDeleted || _directInteractionRestricted)
+                                      ? const Color(0xFF667085)
+                                      : const Color(0xFF98A2B3),
                               fontSize: MediaQuery.sizeOf(context).width < 360
                                   ? 14
                                   : 15,
@@ -5158,8 +5411,7 @@ class _DMChatScreenState extends State<DMChatScreen>
     if (owner == null ||
         !_canSendFor(owner, room) ||
         _isPeerDeleted ||
-        _isBlocked ||
-        _isBlockedBy) return;
+        _directInteractionRestricted) return;
     final typedText = _messageController.text.trim();
     final image = _pendingImage;
     final selectedFile = _pendingFile;
@@ -5238,6 +5490,7 @@ class _DMChatScreenState extends State<DMChatScreen>
       _activeConversationId == room;
 
   void _queueOutgoing(String room, DMMessage packet, {bool automatic = false}) {
+    if (_directInteractionRestricted) return;
     if (!_canSendFor(packet.senderId, room)) return;
     if (!_sendingIds.add(packet.id)) return;
     if (!automatic) _outboxRetryAttempts.remove(packet.id);
@@ -5245,12 +5498,19 @@ class _DMChatScreenState extends State<DMChatScreen>
     final persisted = _outbox
         .put(owner, room, packet.id, packet.toLocalMap())
         .then<Object?>((_) => null, onError: (Object error) => error);
-    Future<void> operation() async {
+    final isTextOnly =
+        packet.localImagePath == null && packet.localFilePath == null;
+    Future<void> operation({required bool persistInsideDispatch}) async {
       var message = packet.copyWith(deliveryState: DMDeliveryState.sending);
       try {
-        final persistenceError = await persisted;
-        if (persistenceError != null) throw persistenceError;
+        if (!persistInsideDispatch) {
+          final persistenceError = await persisted;
+          if (persistenceError != null) throw persistenceError;
+        }
         if (_cancelledOutgoingIds.contains(message.id)) return;
+        if (_directInteractionRestricted) {
+          throw StateError('blocked-direct-message');
+        }
         if (!_canSendFor(owner, room)) return;
         _updateOutgoing(room, message);
         if (message.localImagePath != null && message.imageUrl == null) {
@@ -5346,14 +5606,47 @@ class _DMChatScreenState extends State<DMChatScreen>
         if (mounted && _canSendFor(owner, room)) setState(() {});
         late final DMDeliveryState result;
         try {
-          result = await _dispatch.run('$owner::$room', () async {
-            if (!_canSendFor(owner, room)) return DMDeliveryState.uncertain;
-            if (!await _ensureSendRoom(room, message)) {
-              return DMDeliveryState.failed;
+          late Future<DMDeliveryState> delivery;
+          await _dispatch.run<void>('$owner::$room', () async {
+            // Text commits enter this queue in tap order before waiting for
+            // their local outbox write. The write still completes before the
+            // network call. Once DMService has registered its stable-ID commit,
+            // response resolution and outbox cleanup no longer occupy this
+            // screen-level ordering gate.
+            if (persistInsideDispatch) {
+              final persistenceError = await persisted;
+              if (persistenceError != null) throw persistenceError;
             }
-            if (!_canSendFor(owner, room)) return DMDeliveryState.uncertain;
-            return _dmService.sendMessage(room, message);
+            if (_cancelledOutgoingIds.contains(message.id)) {
+              throw StateError('outgoing-cancelled');
+            }
+            if (_directInteractionRestricted) {
+              delivery = Future<DMDeliveryState>.value(
+                DMDeliveryState.failed,
+              );
+              return;
+            }
+            if (!_canSendFor(owner, room)) {
+              delivery = Future<DMDeliveryState>.value(
+                DMDeliveryState.uncertain,
+              );
+              return;
+            }
+            if (!await _ensureSendRoom(room, message)) {
+              delivery = Future<DMDeliveryState>.value(
+                DMDeliveryState.failed,
+              );
+              return;
+            }
+            if (!_canSendFor(owner, room)) {
+              delivery = Future<DMDeliveryState>.value(
+                DMDeliveryState.uncertain,
+              );
+              return;
+            }
+            delivery = _dmService.sendMessage(room, message);
           });
+          result = await delivery;
         } finally {
           _committingOutgoingIds.remove(message.id);
           if (mounted && _canSendFor(owner, room)) setState(() {});
@@ -5385,10 +5678,9 @@ class _DMChatScreenState extends State<DMChatScreen>
       }
     }
 
-    // Text preparation starts in tap order; image preparation never occupies it.
-    unawaited(packet.localImagePath == null && packet.localFilePath == null
-        ? _textPreparation.run('$owner::$room', operation)
-        : operation());
+    // Invoking immediately registers text commits in tap order. Image/file
+    // preparation remains on its existing independent queues.
+    unawaited(operation(persistInsideDispatch: isTextOnly));
   }
 
   void _scheduleUncertainRecovery() {
@@ -5396,6 +5688,7 @@ class _DMChatScreenState extends State<DMChatScreen>
         _outboxRetry != null ||
         _accountInvalidated ||
         _isLeaving ||
+        _directInteractionRestricted ||
         _appLifecycleState != AppLifecycleState.resumed) return;
     final retryable = _outgoing.values.where((message) =>
         message.deliveryState == DMDeliveryState.uncertain &&
@@ -5412,6 +5705,7 @@ class _DMChatScreenState extends State<DMChatScreen>
       _outboxRetry = null;
       if (!mounted ||
           _accountInvalidated ||
+          _directInteractionRestricted ||
           room != _activeConversationId ||
           _appLifecycleState != AppLifecycleState.resumed) return;
       final pending = _outgoing.values
@@ -5486,8 +5780,13 @@ class _DMChatScreenState extends State<DMChatScreen>
         final pending = _outgoing.values.toList()..sort(_compareMessagesDesc);
         _messages = _mergeRecentIntoAll(_messages, pending);
       });
+      if (_isBlocked || _isBlockedBy) {
+        _markUncertainMessagesFailedByBlock();
+        return;
+      }
       for (final message in messages) {
-        if (message.deliveryState != DMDeliveryState.failed)
+        if (!_directInteractionRestricted &&
+            message.deliveryState != DMDeliveryState.failed)
           _queueOutgoing(room, message);
       }
     } catch (error) {

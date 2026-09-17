@@ -56,6 +56,30 @@ void main() {
     expect(delivered.last, 'after-failure');
   });
 
+  test('slow outcome resolution does not occupy the ordered commit queue',
+      () async {
+    final commits = ChatWorkQueue();
+    final slowResolution = Completer<void>();
+    final events = <String>[];
+
+    Future<void> send(String id, {bool waitForResolution = false}) async {
+      await commits.run('alice/room', () async {
+        events.add('commit-$id');
+      });
+      if (waitForResolution) await slowResolution.future;
+      events.add('resolved-$id');
+    }
+
+    final first = send('first', waitForResolution: true);
+    await Future<void>.delayed(Duration.zero);
+    await send('second');
+
+    expect(events, ['commit-first', 'commit-second', 'resolved-second']);
+    slowResolution.complete();
+    await first;
+    expect(events.last, 'resolved-first');
+  });
+
   test('DM cache/outbox roundtrip preserves reply, precision, ID and status',
       () {
     final at = Timestamp(100, 123456789);

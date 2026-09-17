@@ -83,6 +83,42 @@ class ContentTranslationResult {
   // and still contain translated text. Only the explicit server/client outcome
   // can mark it as not needing translation; language metadata cannot hide it.
   bool get isSameLanguage => status == 'same_language';
+
+  /// The provider/service may have exhausted its immediate retry, while the
+  /// underlying error is still transient enough for one later screen-level
+  /// retry after the existing cooldown.
+  bool get isTransientFailure =>
+      !isReady &&
+      (status == 'pending' ||
+          const <String>{
+            'quality_validation_failed',
+            'missing_result',
+            'id_mismatch',
+            'invalid_source_language',
+            'coverage_incomplete',
+            'missing_translations',
+            'field_mismatch',
+            'semantic_or_structure_guard',
+            'strict_metadata_guard',
+            'UNTRANSLATED_TEMPORAL_UNIT',
+            'TEMPORAL_VALUE_MISMATCH',
+            'TEMPORAL_DAY_PERIOD_MISMATCH',
+            'translation_failed',
+            'provider_unavailable',
+            'missing_server_response',
+            'empty_translation',
+            'pending_timeout',
+            'network_error',
+            'timeout',
+            'resource-exhausted',
+            'too-many-requests',
+            'aborted',
+            'unavailable',
+            'deadline-exceeded',
+            'internal',
+            'unknown',
+          }.contains(errorCode));
+
   bool get isRetryableFailure =>
       !isReady &&
       !automaticRetryExhausted &&

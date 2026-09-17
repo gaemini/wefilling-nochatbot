@@ -119,11 +119,17 @@ export const reconcileDMUnreadTotalSecure = functions
     const userRef = firestore.collection('users').doc(userId);
     const roomsQuery = firestore.collection('conversations')
       .where('participants', 'array-contains', userId);
+    const outgoingBlocksQuery = firestore.collection('blocks')
+      .where('blocker', '==', userId);
+    const incomingBlocksQuery = firestore.collection('blocks')
+      .where('blocked', '==', userId);
 
     const total = await firestore.runTransaction(async (transaction) => {
-      const [user, rooms] = await Promise.all([
+      const [user, rooms, outgoingBlocks, incomingBlocks] = await Promise.all([
         transaction.get(userRef),
         transaction.get(roomsQuery),
+        transaction.get(outgoingBlocksQuery),
+        transaction.get(incomingBlocksQuery),
       ]);
       if (!user.exists) {
         throw new functions.https.HttpsError(
@@ -131,14 +137,28 @@ export const reconcileDMUnreadTotalSecure = functions
           'The authenticated user profile does not exist.',
         );
       }
-      const unreadTotal = rooms.docs.reduce(
-        (sum, room) => sum + roomUnreadForUser(
+      const excludedUserIds = new Set<string>();
+      outgoingBlocks.docs.forEach((document) => {
+        const value = (document.get('blocked') ?? '').toString().trim();
+        if (value) excludedUserIds.add(value);
+      });
+      incomingBlocks.docs.forEach((document) => {
+        const value = (document.get('blocker') ?? '').toString().trim();
+        if (value) excludedUserIds.add(value);
+      });
+      const unreadTotal = rooms.docs.reduce((sum, room) => {
+        const participants = Array.isArray(room.get('participants')) ?
+          room.get('participants') as unknown[] : [];
+        const hasExcludedPeer = participants.some((value) => {
+          const participantId = (value ?? '').toString().trim();
+          return participantId !== userId && excludedUserIds.has(participantId);
+        });
+        return hasExcludedPeer ? sum : sum + roomUnreadForUser(
           room.data(),
           userId,
           room.id,
-        ),
-        0,
-      );
+        );
+      }, 0);
       transaction.update(userRef, {
         dmUnreadTotal: unreadTotal,
         dmUnreadCounterVersion: DM_UNREAD_COUNTER_VERSION,

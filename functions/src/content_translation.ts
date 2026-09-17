@@ -126,6 +126,7 @@ type TranslationRequest = {
   contentId: string;
   parentId?: string;
   forceRetry?: boolean;
+  forceRegenerate?: boolean;
 };
 
 type ResolvedContent = TranslationRequest & {
@@ -2010,6 +2011,7 @@ export const translateContentBatch = functions
         contentId: safeId(item.contentId, 'contentId'),
         parentId: stringValue(item.parentId).trim() || undefined,
         forceRetry: item.forceRetry === true,
+        forceRegenerate: item.forceRegenerate === true,
       };
     });
     if (new Set(requests.map(requestKey)).size !== requests.length) {
@@ -2090,7 +2092,12 @@ export const translateContentBatch = functions
       const acquiredLock = await db.runTransaction(async (transaction) => {
         const snap = await transaction.get(ref);
         const cached = snap.data();
-        if (isCurrentCompletedCache(cached, item, targetLanguage)) {
+        // An explicit message-level retry must run the provider again. Reusing
+        // the same completed document here made "retry translation" return a
+        // previously rejected/unchanged sentence without doing new work.
+        // Automatic requests keep the existing completed-cache fast path.
+        if (!item.forceRegenerate &&
+            isCurrentCompletedCache(cached, item, targetLanguage)) {
           cacheHits++;
           responses.set(key, {
             id: key,

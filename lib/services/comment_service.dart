@@ -327,24 +327,6 @@ class CommentService {
       ));
     }
 
-    late final List<Set<String>> blockedRelationships;
-    try {
-      blockedRelationships = await Future.wait<Set<String>>([
-        ContentFilterService.getBlockedUserIds(),
-        ContentFilterService.getBlockedByUserIds(),
-      ]).timeout(queryTimeout);
-    } catch (error) {
-      // 차단 목록 네트워크 조회가 멈춰도 댓글 수 새로고침 전체가 대기하지
-      // 않도록 마지막으로 확인된 메모리 캐시를 사용한다.
-      if (Logger.isVerboseEnabled) Logger.warning('댓글 수 집계용 차단 목록 조회 실패(캐시 사용): $error');
-      blockedRelationships = <Set<String>>[
-        ContentFilterService.getBlockedUserIdsCached(),
-        ContentFilterService.getBlockedByUserIdsCached(),
-      ];
-    }
-    final blockedUserIds = blockedRelationships[0];
-    final blockedByUserIds = blockedRelationships[1];
-
     Future<Map<String, int>> fetchChunk(List<String> chunk) async {
       final counts = <String, int>{};
       try {
@@ -361,12 +343,10 @@ class CommentService {
           final comment = Comment.fromFirestore(doc);
           final postComments = commentsByPost[comment.postId];
           if (postComments == null) continue;
-          if (blockedUserIds.contains(comment.userId) ||
-              blockedByUserIds.contains(comment.userId) ||
-              ContentHideService.shouldHideComment(
-                commentId: comment.id,
-                userId: comment.userId,
-              )) {
+          if (ContentHideService.shouldHideComment(
+            commentId: comment.id,
+            userId: comment.userId,
+          )) {
             continue;
           }
           postComments.add(comment);
@@ -439,19 +419,6 @@ class CommentService {
         List<Comment> comments = snapshot.docs.map((doc) {
           return Comment.fromFirestore(doc);
         }).toList();
-
-        // 차단/차단당한 사용자의 댓글 필터링
-        final blockedUserIds = await ContentFilterService.getBlockedUserIds();
-        final blockedByUserIds =
-            await ContentFilterService.getBlockedByUserIds();
-        if (blockedUserIds.isNotEmpty || blockedByUserIds.isNotEmpty) {
-          comments = comments
-              .where((comment) =>
-                  comment.userId != null &&
-                  !blockedUserIds.contains(comment.userId) &&
-                  !blockedByUserIds.contains(comment.userId))
-              .toList();
-        }
 
         // 신고/숨김 처리된 댓글/사용자 즉시 제외
         await ReportService.getHiddenAnonymousCommentIdsForPost(postId);
@@ -527,7 +494,8 @@ class CommentService {
   // 댓글 좋아요 토글
   Future<bool> toggleCommentLike(String commentId, String userId) async {
     try {
-      if (Logger.isVerboseEnabled) Logger.log('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━');
+      if (Logger.isVerboseEnabled)
+        Logger.log('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━');
       if (Logger.isVerboseEnabled) Logger.log('댓글 좋아요 토글 시작');
       if (Logger.isVerboseEnabled) Logger.log('  - commentId: $commentId');
       if (Logger.isVerboseEnabled) Logger.log('  - userId: $userId');
@@ -544,16 +512,20 @@ class CommentService {
 
         final commentData = commentDoc.data()!;
         if (commentData['isDeleted'] == true) {
-          if (Logger.isVerboseEnabled) Logger.log('  ❌ 삭제된 댓글에는 좋아요를 변경할 수 없습니다.');
+          if (Logger.isVerboseEnabled)
+            Logger.log('  ❌ 삭제된 댓글에는 좋아요를 변경할 수 없습니다.');
           return false;
         }
         final List<String> likedBy =
             List<String>.from(commentData['likedBy'] ?? []);
         final int currentLikeCount = commentData['likeCount'] ?? 0;
 
-        if (Logger.isVerboseEnabled) Logger.log('  - 현재 좋아요 수: $currentLikeCount');
-        if (Logger.isVerboseEnabled) Logger.log('  - 좋아요 누른 사용자: ${likedBy.length}명');
-        if (Logger.isVerboseEnabled) Logger.log('  - 사용자가 이미 좋아요 눌렀는지: ${likedBy.contains(userId)}');
+        if (Logger.isVerboseEnabled)
+          Logger.log('  - 현재 좋아요 수: $currentLikeCount');
+        if (Logger.isVerboseEnabled)
+          Logger.log('  - 좋아요 누른 사용자: ${likedBy.length}명');
+        if (Logger.isVerboseEnabled)
+          Logger.log('  - 사용자가 이미 좋아요 눌렀는지: ${likedBy.contains(userId)}');
 
         if (likedBy.contains(userId)) {
           // 좋아요 취소
@@ -576,15 +548,18 @@ class CommentService {
         }
       });
     } catch (e, stackTrace) {
-      if (Logger.isVerboseEnabled) Logger.log('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━');
+      if (Logger.isVerboseEnabled)
+        Logger.log('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━');
       Logger.error('❌ 댓글 좋아요 토글 오류');
       Logger.error('  에러: $e');
       if (Logger.isVerboseEnabled) Logger.log('  스택 트레이스: $stackTrace');
-      if (Logger.isVerboseEnabled) Logger.log('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━');
+      if (Logger.isVerboseEnabled)
+        Logger.log('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━');
       return false;
     } finally {
       if (Logger.isVerboseEnabled) Logger.log('댓글 좋아요 토글 종료');
-      if (Logger.isVerboseEnabled) Logger.log('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━');
+      if (Logger.isVerboseEnabled)
+        Logger.log('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━');
     }
   }
 
@@ -608,18 +583,6 @@ class CommentService {
         List<Comment> allComments = snapshot.docs.map((doc) {
           return Comment.fromFirestore(doc);
         }).toList();
-
-        final blockedUserIds = await ContentFilterService.getBlockedUserIds();
-        final blockedByUserIds =
-            await ContentFilterService.getBlockedByUserIds();
-        if (blockedUserIds.isNotEmpty || blockedByUserIds.isNotEmpty) {
-          allComments = allComments.where((comment) {
-            final uid = comment.userId;
-            return uid != null &&
-                !blockedUserIds.contains(uid) &&
-                !blockedByUserIds.contains(uid);
-          }).toList();
-        }
 
         // 클라이언트 측에서 정렬 수행
         allComments.sort((a, b) => a.createdAt.compareTo(b.createdAt));

@@ -2,6 +2,7 @@ import 'dart:async';
 import 'dart:math' as math;
 
 import 'package:firebase_auth/firebase_auth.dart';
+import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 
 import '../constants/app_constants.dart';
@@ -9,6 +10,7 @@ import '../l10n/app_localizations.dart';
 import '../models/snack_chat.dart';
 import '../models/user_profile.dart';
 import '../repositories/users_repository.dart';
+import '../services/content_filter_service.dart';
 import '../services/snack_chat_service.dart';
 import '../services/snack_chat_discovery_service.dart';
 import 'snack_chat_discovery_screen.dart';
@@ -50,6 +52,8 @@ class _SnackChatInfoScreenState extends State<SnackChatInfoScreen> {
   String _participantsSignature = '';
   SnackChat? _lastRoom;
   late Stream<SnackChat?> _roomStream;
+  Set<String> _excludedProfileUserIds =
+      ContentFilterService.getExcludedUserIdsCached();
   String? get _uid => FirebaseAuth.instance.currentUser?.uid;
 
   @override
@@ -57,6 +61,13 @@ class _SnackChatInfoScreenState extends State<SnackChatInfoScreen> {
     super.initState();
     _roomStream = _snackChatService.watchSnackChat(widget.snackChatId);
     _loadMuteState();
+    unawaited(_refreshExcludedProfileUserIds());
+  }
+
+  Future<void> _refreshExcludedProfileUserIds() async {
+    final excluded = await ContentFilterService.getExcludedUserIds();
+    if (!mounted || setEquals(_excludedProfileUserIds, excluded)) return;
+    setState(() => _excludedProfileUserIds = excluded);
   }
 
   Future<void> _loadMuteState() async {
@@ -138,7 +149,9 @@ class _SnackChatInfoScreenState extends State<SnackChatInfoScreen> {
     try {
       myFriends = await _usersRepository.getUserFriends(_uid!);
       myFriends = myFriends
-          .where((profile) => !room.participantIds.contains(profile.uid))
+          .where((profile) =>
+              !room.participantIds.contains(profile.uid) &&
+              !_excludedProfileUserIds.contains(profile.uid))
           .toList(growable: false)
         ..sort(
           (left, right) => left.displayNameOrNickname.compareTo(
@@ -1320,6 +1333,8 @@ class _SnackChatInfoScreenState extends State<SnackChatInfoScreen> {
                             (index) => _MemberTile(
                               user: participants[index],
                               showDivider: index < participants.length - 1,
+                              canOpenProfile: !_excludedProfileUserIds
+                                  .contains(participants[index].uid),
                             ),
                           ),
                         SizedBox(height: context.rs(14)),
@@ -1506,10 +1521,12 @@ class _CreatorTextDialogState extends State<_CreatorTextDialog> {
 class _MemberTile extends StatelessWidget {
   final UserProfile user;
   final bool showDivider;
+  final bool canOpenProfile;
 
   const _MemberTile({
     required this.user,
     required this.showDivider,
+    required this.canOpenProfile,
   });
 
   @override
@@ -1517,24 +1534,26 @@ class _MemberTile extends StatelessWidget {
     return Column(
       children: [
         Semantics(
-          button: true,
+          button: canOpenProfile,
           label: user.displayNameOrNickname,
           child: InkWell(
-            onTap: () {
-              Navigator.push(
-                context,
-                MaterialPageRoute(
-                  builder: (_) => FriendProfileScreen(
-                    userId: user.uid,
-                    nickname: user.displayNameOrNickname,
-                    photoURL: user.photoURL,
-                    email: user.email,
-                    university: user.university,
-                    allowNonFriendsPreview: true,
-                  ),
-                ),
-              );
-            },
+            onTap: canOpenProfile
+                ? () {
+                    Navigator.push(
+                      context,
+                      MaterialPageRoute(
+                        builder: (_) => FriendProfileScreen(
+                          userId: user.uid,
+                          nickname: user.displayNameOrNickname,
+                          photoURL: user.photoURL,
+                          email: user.email,
+                          university: user.university,
+                          allowNonFriendsPreview: true,
+                        ),
+                      ),
+                    );
+                  }
+                : null,
             borderRadius: BorderRadius.circular(10),
             child: ConstrainedBox(
               constraints: const BoxConstraints(minHeight: 56),

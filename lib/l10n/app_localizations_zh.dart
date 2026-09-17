@@ -3211,6 +3211,15 @@ class AppLocalizationsZh extends AppLocalizations {
   String get chatReportMessage => '举报消息';
 
   @override
+  String get chatTranslationTranslating => '翻译中';
+
+  @override
+  String get chatTranslationTranslated => '已翻译';
+
+  @override
+  String get chatTranslationRetry => '重新翻译';
+
+  @override
   String semesterGuideTitleById(String guideId) {
     String _temp0 = intl.Intl.selectLogic(
       guideId,

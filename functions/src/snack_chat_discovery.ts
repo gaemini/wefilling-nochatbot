@@ -36,7 +36,9 @@ export async function snackReadAccess(context: functions.https.CallableContext, 
     categories: room.get('visibleToCategoryIds') ?? [],
   })).digest('hex');
   function canRead(data: admin.firestore.DocumentData): boolean {
-    if (data.isDeleted === true || blocked.has(data.senderId)) return false;
+    // A block limits new direct interaction, not the history of a room both
+    // users already share. Media/search/context must match the message list.
+    if (data.isDeleted === true) return false;
     const sequence = typeof data.sequence === 'number' ? data.sequence : 0;
     if (sequence > 0 && !sequenceIsInMembership(memberData, sequence)) return false;
     // A legacy message has no sequence. Only show it when membership predates

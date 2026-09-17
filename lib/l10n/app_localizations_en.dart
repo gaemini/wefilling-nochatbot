@@ -3368,6 +3368,15 @@ class AppLocalizationsEn extends AppLocalizations {
   String get chatReportMessage => 'Report message';
 
   @override
+  String get chatTranslationTranslating => 'Translating';
+
+  @override
+  String get chatTranslationTranslated => 'Translated';
+
+  @override
+  String get chatTranslationRetry => 'Retry translation';
+
+  @override
   String semesterGuideTitleById(String guideId) {
     String _temp0 = intl.Intl.selectLogic(
       guideId,

@@ -515,13 +515,18 @@ class RelationshipProvider with ChangeNotifier {
       if (success) {
         // 관계 상태 업데이트
         await updateRelationshipStatus(targetUid);
-        // 검색 결과에 해당 사용자 다시 추가
-        final userProfile = await _relationshipService.getUserProfile(
-          targetUid,
-        );
-        if (userProfile != null &&
-            !_searchResults.any((u) => u.uid == targetUid)) {
-          _searchResults.add(userProfile);
+        final relationship = getRelationshipStatus(targetUid);
+        // 상대방의 독립적인 차단이 남아 있으면 검색/직접 접근은 계속
+        // 제한한다. 양쪽 차단이 모두 사라진 경우에만 후보를 복구한다.
+        if (relationship != RelationshipStatus.blocked &&
+            relationship != RelationshipStatus.blockedBy) {
+          final userProfile = await _relationshipService.getUserProfile(
+            targetUid,
+          );
+          if (userProfile != null &&
+              !_searchResults.any((u) => u.uid == targetUid)) {
+            _searchResults.add(userProfile);
+          }
         }
         notifyListeners();
       }

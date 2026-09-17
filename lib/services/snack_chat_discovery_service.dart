@@ -2,7 +2,6 @@ import 'package:cloud_functions/cloud_functions.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import '../models/snack_chat_message.dart';
-import 'firebase_app_check_service.dart';
 
 const snackChatDiscoveryEnabled =
     bool.fromEnvironment('SNACK_CHAT_DISCOVERY', defaultValue: true);
@@ -19,7 +18,10 @@ class SnackChatDiscoveryService {
       String name, Map<String, dynamic> payload) async {
     final owner = FirebaseAuth.instance.currentUser?.uid;
     if (owner == null) throw StateError('Sign-in required');
-    await FirebaseAppCheckService.instance.ensureReady();
+    // App Check is initialized for the app and the Functions SDK attaches a
+    // token whenever one is available. Do not make these read-only views wait
+    // for a forced token refresh: a device in App Check backoff used to fail
+    // before the authenticated, membership-checked callable was even invoked.
     final result = await FirebaseFunctions.instance
         .httpsCallable(name)
         .call(payload)

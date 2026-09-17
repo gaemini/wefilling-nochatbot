@@ -18,7 +18,6 @@ import '../utils/logger.dart';
 import 'snack_chat_local_cache_service.dart';
 import 'snack_chat_media_cache_service.dart';
 import 'snack_chat_service.dart';
-import 'firebase_app_check_service.dart';
 
 class SnackChatFileTransferEvent {
   const SnackChatFileTransferEvent({
@@ -286,7 +285,6 @@ class SnackChatFileTransferService {
     if (storagePath == null || storagePath.isEmpty) {
       throw StateError('파일 정보를 확인할 수 없습니다.');
     }
-    await FirebaseAppCheckService.instance.ensureReady();
     final room = await _chatService.getSnackChatFromServer(roomId);
     if (room == null || !room.participantIds.contains(uid)) {
       throw StateError('이 파일에 접근할 수 없습니다.');
@@ -295,7 +293,9 @@ class SnackChatFileTransferService {
 
     final destination = await _cacheDestination(uid, message);
     await destination.parent.create(recursive: true);
-    final download = _storage.reference(storagePath).writeToFile(destination);
+    final partial = File('${destination.path}.part');
+    if (await partial.exists()) await partial.delete();
+    final download = _storage.reference(storagePath).writeToFile(partial);
     _activeDownloadTasks[message.id] = download;
     _events.add(SnackChatFileTransferEvent(
       roomId: roomId,
@@ -321,9 +321,28 @@ class SnackChatFileTransferService {
     });
     try {
       await download;
+      final downloadedSize = await partial.length();
+      final expectedSize = message.fileSize;
+      if (downloadedSize <= 0 ||
+          (expectedSize != null &&
+              expectedSize > 0 &&
+              downloadedSize != expectedSize)) {
+        throw StateError('다운로드한 파일이 완전하지 않습니다.');
+      }
       if (message.isFileExpired) {
-        await destination.delete().catchError((_) => destination);
+        await partial.delete().catchError((_) => partial);
         throw StateError('만료된 파일입니다.');
+      }
+      if (await destination.exists()) await destination.delete();
+      try {
+        await partial.rename(destination.path);
+      } on FileSystemException {
+        await partial.openRead().pipe(destination.openWrite());
+        if (await destination.length() != downloadedSize) {
+          await destination.delete().catchError((_) => destination);
+          throw StateError('다운로드한 파일을 저장하지 못했습니다.');
+        }
+        await partial.delete().catchError((_) => partial);
       }
       await _touchCache(uid, message, destination);
       _events.add(SnackChatFileTransferEvent(
@@ -336,7 +355,7 @@ class SnackChatFileTransferService {
       final result = await OpenFilex.open(destination.path);
       if (result.type != ResultType.done) throw StateError(result.message);
     } catch (error) {
-      if (await destination.exists()) await destination.delete();
+      if (await partial.exists()) await partial.delete();
       _events.add(SnackChatFileTransferEvent(
         roomId: roomId,
         message: message.copyWith(
@@ -769,7 +788,17 @@ class SnackChatFileTransferService {
     final record = index[_cacheRecordKey(message)];
     if (record == null) return null;
     final file = File(record.path);
-    if (!await file.exists()) {
+    final exists = await file.exists();
+    final actualSize = exists ? await file.length() : 0;
+    final expectedSize = message.fileSize;
+    final valid = exists &&
+        actualSize > 0 &&
+        actualSize == record.size &&
+        (expectedSize == null ||
+            expectedSize <= 0 ||
+            actualSize == expectedSize);
+    if (!valid) {
+      if (exists) await file.delete().catchError((_) => file);
       index.remove(_cacheRecordKey(message));
       await _saveCacheIndex(prefs, uid, index);
       return null;

@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'package:cached_network_image/cached_network_image.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:cloud_functions/cloud_functions.dart';
 import 'package:flutter/material.dart';
@@ -7,6 +8,7 @@ import 'package:url_launcher/url_launcher.dart';
 import '../constants/app_constants.dart';
 import '../l10n/ui_locale.dart';
 import '../models/snack_chat_message.dart';
+import '../services/cache/app_image_cache_manager.dart';
 import '../services/snack_chat_discovery_cache_service.dart';
 import '../services/snack_chat_discovery_service.dart';
 import '../services/snack_chat_file_transfer_service.dart';
@@ -125,6 +127,10 @@ class _SnackChatDiscoveryScreenState extends State<SnackChatDiscoveryScreen> {
     await _hydrateCachedRows();
     if (!mounted || FirebaseAuth.instance.currentUser?.uid != _owner) return;
     if (_historyComplete) {
+      // Render the local index first, then revalidate only the most recent
+      // bounded set. Offline/App Check failures keep the usable local copy;
+      // a successful response removes deleted or no-longer-readable rows.
+      await _revalidateCachedRows();
       unawaited(_persistIndex());
       unawaited(_syncNewMessages());
       return;
@@ -337,6 +343,86 @@ class _SnackChatDiscoveryScreenState extends State<SnackChatDiscoveryScreen> {
     }
   }
 
+  Future<void> _revalidateCachedRows() async {
+    if (_refreshing ||
+        _loading ||
+        !mounted ||
+        _rows.isEmpty ||
+        FirebaseAuth.instance.currentUser?.uid != _owner) {
+      return;
+    }
+    final ids = _rows
+        .map((row) => (row['id'] ?? '').toString())
+        .where((id) => id.isNotEmpty)
+        .toSet()
+        .take(100)
+        .toList(growable: false);
+    if (ids.isEmpty) return;
+
+    _refreshing = true;
+    final generation = _generation;
+    try {
+      final page = await _service.query(widget.roomId, {
+        'fromMillis': _from.millisecondsSinceEpoch,
+        'toMillis': DateTime.now().millisecondsSinceEpoch,
+        'kind': _kind,
+        'refreshIds': ids,
+      });
+      if (!mounted ||
+          generation != _generation ||
+          FirebaseAuth.instance.currentUser?.uid != _owner) {
+        return;
+      }
+      final acknowledged = (page['refreshedIds'] as List?)
+          ?.map((value) => value.toString())
+          .toSet();
+      // Keep compatibility with an older Functions deployment that does not
+      // yet understand refreshIds instead of treating an empty page as delete.
+      if (acknowledged == null) return;
+      final refreshed = <String, Map<String, dynamic>>{
+        for (final row in SnackChatDiscoveryService.rows(page))
+          (row['id'] ?? '').toString(): row,
+      };
+      setState(() {
+        final next = <Map<String, dynamic>>[];
+        for (final row in _rows) {
+          final id = (row['id'] ?? '').toString();
+          if (!acknowledged.contains(id)) {
+            next.add(row);
+            continue;
+          }
+          final replacement = refreshed[id];
+          if (replacement != null) {
+            // The refresh response intentionally avoids a second profile
+            // lookup. Retain cached display-only sender data when absent.
+            next.add(<String, dynamic>{...row, ...replacement});
+          }
+        }
+        _rows
+          ..clear()
+          ..addAll(next);
+        _sortRows();
+        _knownSequence =
+            (page['latestSequence'] as num? ?? _knownSequence).toInt();
+      });
+      await _persistIndex();
+    } on FirebaseFunctionsException catch (error) {
+      if (error.code == 'permission-denied' && mounted) {
+        setState(() {
+          _rows.clear();
+          _historyComplete = false;
+          _error = error.code;
+        });
+        await _cache.clearRoom(widget.roomId);
+      }
+      // Other failures are transient. Keep the already-rendered offline copy.
+    } catch (_) {
+      // Cached media metadata stays available while offline.
+    } finally {
+      _refreshing = false;
+    }
+  }
+
   Future<void> _openPhoto(Map<String, dynamic> row) async {
     final photos = _rows.where(_hasPhotoSource).toList(growable: false);
     final index = photos.indexWhere((item) => item['id'] == row['id']);
@@ -422,6 +508,9 @@ class _SnackChatDiscoveryScreenState extends State<SnackChatDiscoveryScreen> {
         : t('참여자', 'Participant', '成员');
     final millis = (row['createdAt'] as num? ?? 0).toInt();
     final date = DateTime.fromMillisecondsSinceEpoch(millis);
+    final messageId = (row['id'] ?? '').toString();
+    final storagePath = (row['imagePath'] ?? '').toString().trim();
+    final imageUrl = (row['imageUrl'] ?? '').toString().trim();
     return Semantics(
       button: true,
       label: '$sender · ${DateFormat('yyyy.MM.dd HH:mm').format(date)}',
@@ -435,8 +524,11 @@ class _SnackChatDiscoveryScreenState extends State<SnackChatDiscoveryScreen> {
             fit: StackFit.expand,
             children: [
               _CachedPhotoThumbnail(
-                storagePath: row['imagePath'] as String?,
-                imageUrl: row['imageUrl'] as String?,
+                key: ValueKey<String>(
+                  '${widget.roomId}::$messageId::${storagePath.isNotEmpty ? storagePath : imageUrl}',
+                ),
+                storagePath: storagePath,
+                imageUrl: imageUrl,
               ),
               Positioned(
                 left: 0,
@@ -621,6 +713,7 @@ class _SnackChatDiscoveryScreenState extends State<SnackChatDiscoveryScreen> {
       color: AppColors.pointColor,
       onRefresh: () async {
         if (_historyComplete) {
+          await _revalidateCachedRows();
           await _syncNewMessages();
         } else {
           await _load(
@@ -698,7 +791,7 @@ class _SnackChatDiscoveryScreenState extends State<SnackChatDiscoveryScreen> {
 /// Uses the same authenticated Storage loader and account-scoped cache as the
 /// chat bubble, while retaining URL-only legacy image compatibility.
 class _CachedPhotoThumbnail extends StatelessWidget {
-  const _CachedPhotoThumbnail({this.storagePath, this.imageUrl});
+  const _CachedPhotoThumbnail({super.key, this.storagePath, this.imageUrl});
   final String? storagePath;
   final String? imageUrl;
 
@@ -734,13 +827,13 @@ class _CachedPhotoThumbnail extends StatelessWidget {
     if (uri == null || (uri.scheme != 'https' && uri.scheme != 'http')) {
       return _placeholder();
     }
-    return Image.network(
-      rawUrl,
+    return CachedNetworkImage(
+      imageUrl: rawUrl,
+      cacheManager: AppImageCacheManager.instance,
       fit: BoxFit.cover,
-      cacheWidth: 480,
-      frameBuilder: (context, child, frame, wasSynchronouslyLoaded) =>
-          wasSynchronouslyLoaded || frame != null ? child : _placeholder(),
-      errorBuilder: (_, __, ___) => _placeholder(),
+      memCacheWidth: 480,
+      placeholder: (_, __) => _placeholder(),
+      errorWidget: (_, __, ___) => _placeholder(),
     );
   }
 }
@@ -838,7 +931,8 @@ class _LinkLibraryRow extends StatelessWidget {
     final preview = row['linkPreview'] is Map
         ? Map<String, dynamic>.from(row['linkPreview'] as Map)
         : const <String, dynamic>{};
-    final title = (preview['title'] ?? '').toString().trim();
+    final parsedPreview =
+        preview.isEmpty ? null : SnackChatLinkPreview.fromMap(preview);
     if (links.isEmpty) return const SizedBox.shrink();
     return Column(
       children: [
@@ -861,16 +955,13 @@ class _LinkLibraryRow extends StatelessWidget {
                     child: Column(
                       crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
-                        if (title.isNotEmpty) ...[
-                          Text(
-                            title,
-                            maxLines: 1,
-                            overflow: TextOverflow.ellipsis,
-                            style: _discoveryTextStyle(context,
-                                size: 14, weight: FontWeight.w600),
+                        if (parsedPreview != null &&
+                            parsedPreview.url.trim() == link)
+                          SnackChatLinkPreviewCard(
+                            preview: parsedPreview,
+                            isOutgoing: false,
+                            onOpen: () => onOpen(link),
                           ),
-                          const SizedBox(height: 2),
-                        ],
                         Text(
                           link,
                           maxLines: 2,

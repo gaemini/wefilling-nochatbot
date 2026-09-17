@@ -56,7 +56,8 @@ class ReportService {
     final data = result.data;
     final success = data is Map && data['success'] == true;
     if (success) {
-      if (Logger.isVerboseEnabled) Logger.log('✅ Snack Chat 메시지 신고가 접수되었습니다: $targetId');
+      if (Logger.isVerboseEnabled)
+        Logger.log('✅ Snack Chat 메시지 신고가 접수되었습니다: $targetId');
     }
     return success;
   }
@@ -116,7 +117,8 @@ class ReportService {
       );
       PostService.instance.requestReemitWithCurrentFilters();
 
-      if (Logger.isVerboseEnabled) Logger.log('✅ 신고가 접수되었습니다: $targetType $targetId');
+      if (Logger.isVerboseEnabled)
+        Logger.log('✅ 신고가 접수되었습니다: $targetType $targetId');
       return true;
     } catch (e) {
       Logger.error('❌ 신고 접수 실패: $e');
@@ -143,14 +145,12 @@ class ReportService {
       );
 
       if (result.data['success'] == true) {
-        if (Logger.isVerboseEnabled) Logger.log('✅ 사용자를 차단했습니다: $blockedUserId');
+        if (Logger.isVerboseEnabled)
+          Logger.log('✅ 사용자를 차단했습니다: $blockedUserId');
         // ✅ 즉시 피드에서 제거되도록 in-memory 캐시 업데이트 + 재필터 emit
         ContentFilterService.addBlockedUserId(blockedUserId);
-        ContentHideService.hideReportedTarget(
-          targetType: 'user',
-          targetId: blockedUserId,
-          reportedUserId: blockedUserId,
-        );
+        // 차단 상태를 신고/수동 숨김 캐시에 중복 기록하지 않는다. 그래야
+        // 차단 해제 시 신고 상태는 보존하면서 차단 필터만 정상 복구된다.
         PostService.instance.requestReemitWithCurrentFilters();
         return true;
       } else {
@@ -182,7 +182,8 @@ class ReportService {
       );
 
       if (result.data['success'] == true) {
-        if (Logger.isVerboseEnabled) Logger.log('✅ 사용자 차단을 해제했습니다: $blockedUserId');
+        if (Logger.isVerboseEnabled)
+          Logger.log('✅ 사용자 차단을 해제했습니다: $blockedUserId');
         // ✅ 즉시 피드에서 복구되도록 in-memory 캐시 업데이트 + 재필터 emit
         ContentFilterService.removeBlockedUserId(blockedUserId);
         PostService.instance.requestReemitWithCurrentFilters();

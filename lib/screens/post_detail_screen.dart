@@ -36,6 +36,7 @@ import 'friend_profile_screen.dart';
 import '../services/relationship_service.dart';
 import '../models/relationship_status.dart';
 import '../services/content_hide_service.dart';
+import '../services/content_filter_service.dart';
 import '../services/report_service.dart';
 import '../ui/dialogs/block_dialog.dart';
 import '../ui/dialogs/report_dialog.dart';
@@ -119,6 +120,8 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
   final Set<String> _commentProfileAttemptedIds = <String>{};
   final Set<String> _commentProfileInFlightIds = <String>{};
   bool _initialCommentProfilesReady = false;
+  Set<String> _blockedCommentAuthorIds =
+      ContentFilterService.getExcludedUserIdsCached();
 
   static const List<Duration> _commentReadRetryDelays = <Duration>[
     Duration(milliseconds: 800),
@@ -167,6 +170,7 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
     // stable widget state와 번역 캐시가 그대로 유지된다.
     _commentsScope = commentTranslationScope(_currentPost.id);
     _commentsStream = _createResilientCommentsStream(_currentPost.id);
+    unawaited(_refreshBlockedCommentAuthors());
     _engagementSubscription = _postService
         .watchPostEngagement(_currentPost.id, seed: _currentPost)
         .listen(
@@ -185,6 +189,16 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
     WidgetsBinding.instance.addPostFrameCallback((_) {
       _prefetchPostImages(initial: true);
     });
+  }
+
+  Future<void> _refreshBlockedCommentAuthors() async {
+    try {
+      final ids = await ContentFilterService.getExcludedUserIds();
+      if (!mounted || setEquals(ids, _blockedCommentAuthorIds)) return;
+      setState(() => _blockedCommentAuthorIds = ids);
+    } catch (error) {
+      Logger.error('댓글 직접 상호작용용 차단 상태 확인 실패: $error');
+    }
   }
 
   void _handleUnavailablePost() {
@@ -405,7 +419,7 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
           .map((profile) => CachedNetworkImageProvider(
                 profile.photoURL.trim(),
                 cacheManager: AppImageCacheManager.instance,
-          ))
+              ))
           .toList(growable: false);
       const concurrency = 6;
       var nextImage = 0;
@@ -419,11 +433,10 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
       }
 
       await Future.wait<void>([
-        for (var i = 0;
-            i < concurrency && i < imageProviders.length;
-            i++)
+        for (var i = 0; i < concurrency && i < imageProviders.length; i++)
           preloadWorker(),
-      ], eagerError: false).timeout(const Duration(seconds: 7));
+      ], eagerError: false)
+          .timeout(const Duration(seconds: 7));
     } catch (error) {
       if (Logger.isVerboseEnabled) {
         Logger.warning('댓글 작성자 일괄 조회 실패(문서 정보 사용): $error');
@@ -3114,6 +3127,8 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
                                     },
                               parentTopLevelCommentId: parentTopId,
                               watchAuthorProfile: false,
+                              directInteractionBlocked: _blockedCommentAuthorIds
+                                  .contains(comment.userId),
                             );
                           }
 
@@ -3160,6 +3175,9 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
                                       },
                                 parentTopLevelCommentId: comment.id,
                                 watchAuthorProfile: false,
+                                directInteractionBlocked:
+                                    _blockedCommentAuthorIds
+                                        .contains(comment.userId),
                                 // 대댓글을 위한 빌더: 각 대댓글마다 개별 콜백 생성
                                 replyWidgetBuilder: (reply) =>
                                     buildCommentWidget(reply, comment.id),

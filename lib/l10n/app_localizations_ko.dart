@@ -2587,6 +2587,49 @@ class AppLocalizationsKo extends AppLocalizations {
   String get friendSelection => '친구 선택';
 
   @override
+  String get dmRecipientSelectionTitle => '새 메시지';
+
+  @override
+  String get dmRecipientFriendsTab => '친구';
+
+  @override
+  String get dmRecipientIdSearchTab => '아이디 검색';
+
+  @override
+  String get dmRecipientFriendSearchHint => '친구 아이디 검색';
+
+  @override
+  String get dmRecipientIdSearchHint => '사용자 아이디 검색';
+
+  @override
+  String get dmRecipientNoFriendsTitle => '아직 친구가 없어요';
+
+  @override
+  String get dmRecipientNoFriendsDescription => '아이디 검색에서 메시지를 보낼 사람을 찾아보세요.';
+
+  @override
+  String get dmRecipientSearchPromptTitle => '아이디로 찾아보세요';
+
+  @override
+  String get dmRecipientSearchPromptDescription =>
+      '아이디 일부만 입력해도 사용자를 찾을 수 있어요.';
+
+  @override
+  String get dmRecipientNoResultsDescription => '아이디 철자를 확인하거나 다른 검색어를 입력해보세요.';
+
+  @override
+  String get dmRecipientSearchFailedTitle => '검색하지 못했어요';
+
+  @override
+  String get dmRecipientSearchFailedDescription => '연결을 확인하고 다시 시도해주세요.';
+
+  @override
+  String get dmRecipientFriendsLoadFailedTitle => '친구 목록을 불러오지 못했어요';
+
+  @override
+  String get dmRecipientFriendsLoadFailedDescription => '잠시 후 다시 시도해주세요.';
+
+  @override
   String get noFriendsInCategory => '친구가 없습니다';
 
   @override

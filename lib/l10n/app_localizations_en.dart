@@ -2668,6 +2668,53 @@ class AppLocalizationsEn extends AppLocalizations {
   String get friendSelection => 'Friend Selection';
 
   @override
+  String get dmRecipientSelectionTitle => 'New message';
+
+  @override
+  String get dmRecipientFriendsTab => 'Friends';
+
+  @override
+  String get dmRecipientIdSearchTab => 'ID search';
+
+  @override
+  String get dmRecipientFriendSearchHint => 'Search friend IDs';
+
+  @override
+  String get dmRecipientIdSearchHint => 'Search user IDs';
+
+  @override
+  String get dmRecipientNoFriendsTitle => 'No friends yet';
+
+  @override
+  String get dmRecipientNoFriendsDescription =>
+      'Use ID search to find someone to message.';
+
+  @override
+  String get dmRecipientSearchPromptTitle => 'Find someone by ID';
+
+  @override
+  String get dmRecipientSearchPromptDescription =>
+      'Enter part of an ID to find a user.';
+
+  @override
+  String get dmRecipientNoResultsDescription =>
+      'Check the ID spelling or try another search.';
+
+  @override
+  String get dmRecipientSearchFailedTitle => 'Could not search';
+
+  @override
+  String get dmRecipientSearchFailedDescription =>
+      'Check your connection and try again.';
+
+  @override
+  String get dmRecipientFriendsLoadFailedTitle => 'Could not load friends';
+
+  @override
+  String get dmRecipientFriendsLoadFailedDescription =>
+      'Please try again in a moment.';
+
+  @override
   String get noFriendsInCategory => 'No friends yet';
 
   @override

@@ -2542,6 +2542,48 @@ class AppLocalizationsZh extends AppLocalizations {
   String get friendSelection => '选择好友';
 
   @override
+  String get dmRecipientSelectionTitle => '新消息';
+
+  @override
+  String get dmRecipientFriendsTab => '好友';
+
+  @override
+  String get dmRecipientIdSearchTab => '搜索ID';
+
+  @override
+  String get dmRecipientFriendSearchHint => '搜索好友ID';
+
+  @override
+  String get dmRecipientIdSearchHint => '搜索用户ID';
+
+  @override
+  String get dmRecipientNoFriendsTitle => '还没有好友';
+
+  @override
+  String get dmRecipientNoFriendsDescription => '可通过ID搜索查找想私信的人。';
+
+  @override
+  String get dmRecipientSearchPromptTitle => '通过ID查找';
+
+  @override
+  String get dmRecipientSearchPromptDescription => '输入部分ID即可查找用户。';
+
+  @override
+  String get dmRecipientNoResultsDescription => '请检查ID拼写或尝试其他关键词。';
+
+  @override
+  String get dmRecipientSearchFailedTitle => '搜索失败';
+
+  @override
+  String get dmRecipientSearchFailedDescription => '请检查网络后重试。';
+
+  @override
+  String get dmRecipientFriendsLoadFailedTitle => '无法加载好友列表';
+
+  @override
+  String get dmRecipientFriendsLoadFailedDescription => '请稍后重试。';
+
+  @override
   String get noFriendsInCategory => '暂无好友';
 
   @override

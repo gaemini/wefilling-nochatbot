@@ -12,6 +12,7 @@ import '../services/user_info_cache_service.dart';
 import '../utils/time_formatter.dart';
 import '../l10n/app_localizations.dart';
 import 'dm_chat_screen.dart';
+import 'dm_recipient_selection_screen.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import '../utils/logger.dart';
 import '../ui/widgets/user_avatar.dart';
@@ -234,7 +235,7 @@ class _DMListScreenState extends State<DMListScreen> {
   Widget? _buildFloatingActionButtons() {
     if (_filter == DMFilter.friends) {
       return FloatingActionButton(
-        onPressed: _showFriendSelectionSheet,
+        onPressed: _openRecipientSelection,
         backgroundColor: const Color(0xFF344054),
         foregroundColor: Colors.white,
         elevation: 3,
@@ -1136,235 +1137,30 @@ class _DMListScreenState extends State<DMListScreen> {
     });
   }
 
-  /// 친구 선택 바텀시트 표시
-  void _showFriendSelectionSheet() {
-    showModalBottomSheet(
-      context: context,
-      isScrollControlled: true,
-      backgroundColor: Colors.transparent,
-      builder: (context) => DraggableScrollableSheet(
-        initialChildSize: 0.7,
-        minChildSize: 0.5,
-        maxChildSize: 0.9,
-        builder: (context, scrollController) => Container(
-          decoration: const BoxDecoration(
-            color: Colors.white,
-            borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
-          ),
-          child: Column(
-            children: [
-              // 핸들 바
-              Container(
-                margin: const EdgeInsets.only(top: 12, bottom: 8),
-                width: 40,
-                height: 4,
-                decoration: BoxDecoration(
-                  color: const Color(0xFFD1D5DB),
-                  borderRadius: BorderRadius.circular(2),
-                ),
-              ),
+  /// 바텀시트 대신 독립된 전체 화면에서 DM 대상을 선택한다.
+  Future<void> _openRecipientSelection() async {
+    final currentUser = _currentUser;
+    if (currentUser == null) return;
 
-              // 헤더
-              Padding(
-                padding:
-                    const EdgeInsets.symmetric(horizontal: 20, vertical: 12),
-                child: Row(
-                  children: [
-                    Text(
-                      AppLocalizations.of(context)!.friendSelection,
-                      style: TextStyle(
-                        fontFamily: uiFontFamily(context, 'Inter'),
-                        fontFamilyFallback: const ['NotoSansKR'],
-                        fontSize: 18,
-                        fontWeight: FontWeight.w600,
-                        color: Color(0xFF111827),
-                      ),
-                    ),
-                    const Spacer(),
-                    IconButton(
-                      icon: const Icon(Icons.close, color: Color(0xFF6B7280)),
-                      onPressed: () => Navigator.pop(context),
-                      padding: EdgeInsets.zero,
-                      constraints: const BoxConstraints(),
-                    ),
-                  ],
-                ),
-              ),
-
-              const Divider(height: 1, color: Color(0xFFE5E7EB)),
-
-              // 친구 목록
-              Expanded(
-                child: StreamBuilder<List<UserProfile>>(
-                  stream: _relationshipService.getFriends(),
-                  builder: (context, snapshot) {
-                    if (snapshot.connectionState == ConnectionState.waiting) {
-                      return const Center(
-                        child: CircularProgressIndicator(
-                          color: Color(0xFF344054),
-                        ),
-                      );
-                    }
-
-                    if (snapshot.hasError) {
-                      return Center(
-                        child: Text(
-                          (isChineseUi(context) ? '好友列表加载失败' : Localizations.localeOf(context).languageCode == 'ko'
-                              ? '친구 목록을 불러올 수 없습니다'
-                              : 'Unable to load friend list'),
-                          style: TextStyle(
-                            fontFamily: uiFontFamily(context, 'Inter'),
-                            fontFamilyFallback: const ['NotoSansKR'],
-                            fontSize: 14,
-                            color: Color(0xFF6B7280),
-                          ),
-                        ),
-                      );
-                    }
-
-                    final friends = snapshot.data ?? [];
-
-                    if (friends.isEmpty) {
-                      return Center(
-                        child: Column(
-                          mainAxisAlignment: MainAxisAlignment.center,
-                          children: [
-                            const Icon(
-                              Icons.people_outline,
-                              size: 64,
-                              color: Color(0xFFD1D5DB),
-                            ),
-                            const SizedBox(height: 16),
-                            Text(
-                              (isChineseUi(context) ? '还没有好友' : Localizations.localeOf(context).languageCode ==
-                                      'ko'
-                                  ? '친구가 없습니다'
-                                  : 'No friends yet'),
-                              style: TextStyle(
-                                fontFamily: uiFontFamily(context, 'Inter'),
-                                fontFamilyFallback: const ['NotoSansKR'],
-                                fontSize: 16,
-                                fontWeight: FontWeight.w600,
-                                color: Color(0xFF6B7280),
-                              ),
-                            ),
-                          ],
-                        ),
-                      );
-                    }
-
-                    final bottomInset = MediaQuery.of(context).padding.bottom;
-
-                    return ListView.builder(
-                      controller: scrollController,
-                      padding: EdgeInsets.fromLTRB(
-                        0,
-                        8,
-                        0,
-                        8 + bottomInset + 12,
-                      ),
-                      itemCount: friends.length,
-                      itemBuilder: (context, index) {
-                        final friend = friends[index];
-                        return _buildFriendSelectionCard(friend);
-                      },
-                    );
-                  },
-                ),
-              ),
-            ],
-          ),
+    final recipient = await Navigator.of(context).push<UserProfile>(
+      MaterialPageRoute<UserProfile>(
+        builder: (_) => DmRecipientSelectionScreen(
+          cacheOwnerId: currentUser.uid,
+          friendsStream: _relationshipService.getFriends(),
+          searchUsers: (query) =>
+              _relationshipService.searchUsers(query, limit: 40),
         ),
       ),
     );
+    if (!mounted || recipient == null) return;
+    await _startConversationWithUser(recipient);
   }
 
-  /// 친구 선택 카드
-  Widget _buildFriendSelectionCard(UserProfile friend) {
-    return InkWell(
-      onTap: () {
-        Navigator.pop(context); // 바텀시트 닫기
-        _startConversationWithFriend(friend);
-      },
-      child: Container(
-        margin: const EdgeInsets.symmetric(horizontal: 16, vertical: 4),
-        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
-        decoration: BoxDecoration(
-          color: Colors.white,
-          borderRadius: BorderRadius.circular(12),
-          border: Border.all(color: const Color(0xFFE5E7EB), width: 1),
-        ),
-        child: Row(
-          children: [
-            // 프로필 이미지
-            Container(
-              width: 48,
-              height: 48,
-              decoration: const BoxDecoration(
-                shape: BoxShape.circle,
-                color: Color(0xFFE5E7EB),
-              ),
-              child: friend.hasProfileImage
-                  ? ClipOval(
-                      child: Image.network(
-                        friend.photoURL!,
-                        width: 48,
-                        height: 48,
-                        fit: BoxFit.cover,
-                        errorBuilder: (_, __, ___) => const Icon(
-                          Icons.person,
-                          size: 24,
-                          color: Color(0xFF6B7280),
-                        ),
-                      ),
-                    )
-                  : const Icon(
-                      Icons.person,
-                      size: 24,
-                      color: Color(0xFF6B7280),
-                    ),
-            ),
-
-            const SizedBox(width: 12),
-
-            // 사용자 정보
-            Expanded(
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Text(
-                    friend.displayNameOrNickname,
-                    style: TextStyle(
-                      fontFamily: uiFontFamily(context, 'Inter'),
-                      fontFamilyFallback: const ['NotoSansKR'],
-                      fontSize: 15,
-                      fontWeight: FontWeight.w600,
-                      color: Color(0xFF111827),
-                    ),
-                    maxLines: 1,
-                    overflow: TextOverflow.ellipsis,
-                  ),
-                ],
-              ),
-            ),
-
-            // 화살표 아이콘
-            const Icon(
-              Icons.chevron_right,
-              color: Color(0xFF9CA3AF),
-              size: 20,
-            ),
-          ],
-        ),
-      ),
-    );
-  }
-
-  /// 친구와 대화 시작
-  Future<void> _startConversationWithFriend(UserProfile friend) async {
+  /// 선택한 사용자와 대화 시작
+  Future<void> _startConversationWithUser(UserProfile friend) async {
     try {
       if (Logger.isVerboseEnabled) Logger.log(
-          '🚀 친구와 대화 시작: ${friend.displayNameOrNickname} (${friend.uid})');
+          '🚀 사용자와 대화 시작: ${friend.displayNameOrNickname} (${friend.uid})');
 
       final conversationId = await _dmService.getOrCreateConversation(
         friend.uid,

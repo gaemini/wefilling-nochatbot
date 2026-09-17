@@ -4966,6 +4966,90 @@ abstract class AppLocalizations {
   /// **'친구 선택'**
   String get friendSelection;
 
+  /// No description provided for @dmRecipientSelectionTitle.
+  ///
+  /// In ko, this message translates to:
+  /// **'새 메시지'**
+  String get dmRecipientSelectionTitle;
+
+  /// No description provided for @dmRecipientFriendsTab.
+  ///
+  /// In ko, this message translates to:
+  /// **'친구'**
+  String get dmRecipientFriendsTab;
+
+  /// No description provided for @dmRecipientIdSearchTab.
+  ///
+  /// In ko, this message translates to:
+  /// **'아이디 검색'**
+  String get dmRecipientIdSearchTab;
+
+  /// No description provided for @dmRecipientFriendSearchHint.
+  ///
+  /// In ko, this message translates to:
+  /// **'친구 아이디 검색'**
+  String get dmRecipientFriendSearchHint;
+
+  /// No description provided for @dmRecipientIdSearchHint.
+  ///
+  /// In ko, this message translates to:
+  /// **'사용자 아이디 검색'**
+  String get dmRecipientIdSearchHint;
+
+  /// No description provided for @dmRecipientNoFriendsTitle.
+  ///
+  /// In ko, this message translates to:
+  /// **'아직 친구가 없어요'**
+  String get dmRecipientNoFriendsTitle;
+
+  /// No description provided for @dmRecipientNoFriendsDescription.
+  ///
+  /// In ko, this message translates to:
+  /// **'아이디 검색에서 메시지를 보낼 사람을 찾아보세요.'**
+  String get dmRecipientNoFriendsDescription;
+
+  /// No description provided for @dmRecipientSearchPromptTitle.
+  ///
+  /// In ko, this message translates to:
+  /// **'아이디로 찾아보세요'**
+  String get dmRecipientSearchPromptTitle;
+
+  /// No description provided for @dmRecipientSearchPromptDescription.
+  ///
+  /// In ko, this message translates to:
+  /// **'아이디 일부만 입력해도 사용자를 찾을 수 있어요.'**
+  String get dmRecipientSearchPromptDescription;
+
+  /// No description provided for @dmRecipientNoResultsDescription.
+  ///
+  /// In ko, this message translates to:
+  /// **'아이디 철자를 확인하거나 다른 검색어를 입력해보세요.'**
+  String get dmRecipientNoResultsDescription;
+
+  /// No description provided for @dmRecipientSearchFailedTitle.
+  ///
+  /// In ko, this message translates to:
+  /// **'검색하지 못했어요'**
+  String get dmRecipientSearchFailedTitle;
+
+  /// No description provided for @dmRecipientSearchFailedDescription.
+  ///
+  /// In ko, this message translates to:
+  /// **'연결을 확인하고 다시 시도해주세요.'**
+  String get dmRecipientSearchFailedDescription;
+
+  /// No description provided for @dmRecipientFriendsLoadFailedTitle.
+  ///
+  /// In ko, this message translates to:
+  /// **'친구 목록을 불러오지 못했어요'**
+  String get dmRecipientFriendsLoadFailedTitle;
+
+  /// No description provided for @dmRecipientFriendsLoadFailedDescription.
+  ///
+  /// In ko, this message translates to:
+  /// **'잠시 후 다시 시도해주세요.'**
+  String get dmRecipientFriendsLoadFailedDescription;
+
   /// No description provided for @noFriendsInCategory.
   ///
   /// In ko, this message translates to:

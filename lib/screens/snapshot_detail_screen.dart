@@ -64,6 +64,7 @@ class _SnapshotDetailScreenState extends State<SnapshotDetailScreen>
   bool _isComposingComment = false;
   bool _reactionSlotAvailable = false;
   bool _showFeedPosition = false;
+  String? _deletingSnapshotId;
   String? _mediaReadyId;
   double _verticalDragDistance = 0;
 
@@ -191,6 +192,7 @@ class _SnapshotDetailScreenState extends State<SnapshotDetailScreen>
     // 더 합류한다. 서비스가 동일 요청을 단일 Future로 병합하므로 중복 쓰기는 없다.
     _recordCurrentView();
     _resumePlaybackIfAllowed();
+    _preloadNextVideo();
   }
 
   void _handleReactionAvailabilityChanged(
@@ -287,6 +289,25 @@ class _SnapshotDetailScreenState extends State<SnapshotDetailScreen>
     if (nextIndex < _items.length) {
       unawaited(_warmImage(_items[nextIndex]));
     }
+  }
+
+  void _preloadNextVideo() {
+    if (!mounted || _items.isEmpty || _isAppInactive || _isComposingComment) {
+      return;
+    }
+    final nextIndex = _index + 1;
+    if (nextIndex >= _items.length) return;
+    final next = _items[nextIndex];
+    if (!next.isVideo) return;
+
+    // 현재 미디어가 준비된 뒤 다음 영상 하나만 받아 초기 다운로드가
+    // 경쟁하지 않게 한다. 실제 화면 진입 시에는 같은 Future/파일을 재사용한다.
+    unawaited(
+      _service.loadVideoFile(next).then<void>(
+            (_) {},
+            onError: (Object _, StackTrace __) {},
+          ),
+    );
   }
 
   void _showTransientFeedPosition() {
@@ -446,7 +467,10 @@ class _SnapshotDetailScreenState extends State<SnapshotDetailScreen>
   }
 
   Future<void> _deleteCurrent() async {
+    if (_deletingSnapshotId != null || _items.isEmpty) return;
     final strings = SnapshotStrings.of(context);
+    final deletingId = _current.id;
+    final deletingIndex = _index;
     HapticFeedback.mediumImpact();
     final confirmed = await showDialog<bool>(
           context: context,
@@ -456,12 +480,38 @@ class _SnapshotDetailScreenState extends State<SnapshotDetailScreen>
           builder: (dialogContext) => _SnapshotDeleteDialog(strings: strings),
         ) ??
         false;
-    if (!confirmed) return;
+    if (!confirmed ||
+        !mounted ||
+        _items.every((item) => item.id != deletingId)) {
+      return;
+    }
+    setState(() => _deletingSnapshotId = deletingId);
+    _playbackController.stop();
     try {
-      await _service.deleteSnapshot(_current.id);
-      if (mounted) Navigator.of(context).pop();
+      await _service.deleteSnapshot(deletingId);
+      if (!mounted) return;
+
+      final remaining = _items
+          .where((snapshot) => snapshot.id != deletingId)
+          .toList(growable: false);
+      if (remaining.isEmpty) {
+        await Navigator.of(context).maybePop();
+        return;
+      }
+
+      setState(() {
+        _items = remaining;
+        _index = deletingIndex.clamp(0, remaining.length - 1);
+        _deletingSnapshotId = null;
+        _mediaReadyId = null;
+        _reactionSlotAvailable = false;
+      });
+      _recordCurrentView();
+      _restartPlayback();
+      _preloadCurrentAndNext();
     } catch (_) {
       if (mounted) {
+        setState(() => _deletingSnapshotId = null);
         AppSnackBar.show(
           context,
           message: (isChineseUi(context)
@@ -585,13 +635,27 @@ class _SnapshotDetailScreenState extends State<SnapshotDetailScreen>
               Expanded(
                 child: GestureDetector(
                   behavior: HitTestBehavior.opaque,
-                  onVerticalDragStart: _handleVerticalDragStart,
-                  onVerticalDragUpdate: _handleVerticalDragUpdate,
-                  onVerticalDragEnd: _handleVerticalDragEnd,
-                  onVerticalDragCancel: _resumePlaybackIfAllowed,
-                  onLongPressStart: (_) => _setHolding(true),
-                  onLongPressEnd: (_) => _setHolding(false),
-                  onLongPressCancel: () => _setHolding(false),
+                  onVerticalDragStart: _deletingSnapshotId == null
+                      ? _handleVerticalDragStart
+                      : null,
+                  onVerticalDragUpdate: _deletingSnapshotId == null
+                      ? _handleVerticalDragUpdate
+                      : null,
+                  onVerticalDragEnd: _deletingSnapshotId == null
+                      ? _handleVerticalDragEnd
+                      : null,
+                  onVerticalDragCancel: _deletingSnapshotId == null
+                      ? _resumePlaybackIfAllowed
+                      : null,
+                  onLongPressStart: _deletingSnapshotId == null
+                      ? (_) => _setHolding(true)
+                      : null,
+                  onLongPressEnd: _deletingSnapshotId == null
+                      ? (_) => _setHolding(false)
+                      : null,
+                  onLongPressCancel: _deletingSnapshotId == null
+                      ? () => _setHolding(false)
+                      : null,
                   child: Stack(
                     fit: StackFit.expand,
                     clipBehavior: Clip.hardEdge,
@@ -612,8 +676,10 @@ class _SnapshotDetailScreenState extends State<SnapshotDetailScreen>
                           child: _SnapshotDetailPage(
                             snapshot: _current,
                             service: _service,
+                            deleting: _deletingSnapshotId == _current.id,
                             onMediaReady: _handleMediaReady,
-                            playing: _playbackCanRun,
+                            playing:
+                                _playbackCanRun && _deletingSnapshotId == null,
                             onReactionAvailabilityChanged:
                                 _handleReactionAvailabilityChanged,
                           ),
@@ -625,15 +691,17 @@ class _SnapshotDetailScreenState extends State<SnapshotDetailScreen>
                         top: 0,
                         bottom: reactionExclusionHeight,
                         child: _SnapshotTapNavigation(
-                          canGoPrevious: _index > 0,
-                          canGoNext: _index < _items.length - 1,
+                          canGoPrevious:
+                              _deletingSnapshotId == null && _index > 0,
+                          canGoNext: _deletingSnapshotId == null &&
+                              _index < _items.length - 1,
                           previousLabel: strings.previousSnapshot,
                           nextLabel: strings.nextSnapshot,
                           onPrevious: _showPrevious,
                           onNext: _showNext,
                         ),
                       ),
-                      if (!isOwner)
+                      if (!isOwner && _deletingSnapshotId == null)
                         AnimatedPositioned(
                           duration: const Duration(milliseconds: 180),
                           curve: Curves.easeOutCubic,
@@ -651,7 +719,7 @@ class _SnapshotDetailScreenState extends State<SnapshotDetailScreen>
                             onFocusChanged: _setCommentComposerFocused,
                           ),
                         ),
-                      if (isOwner)
+                      if (isOwner && _deletingSnapshotId == null)
                         Positioned(
                           left: MediaQuery.sizeOf(context).width < 360
                               ? 10
@@ -670,7 +738,7 @@ class _SnapshotDetailScreenState extends State<SnapshotDetailScreen>
                             onTap: _openViewers,
                           ),
                         ),
-                      if (!_isComposingComment)
+                      if (!_isComposingComment && _deletingSnapshotId == null)
                         Positioned(
                           right: horizontalInset,
                           bottom: isOwner ? ownerViewerEntryHeight + 8 : 64,
@@ -716,12 +784,14 @@ class _SnapshotDetailPage extends StatefulWidget {
   const _SnapshotDetailPage({
     required this.snapshot,
     required this.service,
+    required this.deleting,
     required this.onMediaReady,
     required this.onReactionAvailabilityChanged,
     required this.playing,
   });
   final SnapshotItem snapshot;
   final SnapshotService service;
+  final bool deleting;
   final ValueChanged<String> onMediaReady;
   final void Function(String snapshotId, bool isAvailable)
       onReactionAvailabilityChanged;
@@ -752,7 +822,7 @@ class _SnapshotDetailPageState extends State<_SnapshotDetailPage>
       widget.snapshot.id,
       initial: widget.snapshot,
     );
-    _watchReactionStatus();
+    if (!widget.deleting) _watchReactionStatus();
   }
 
   @override
@@ -765,8 +835,18 @@ class _SnapshotDetailPageState extends State<_SnapshotDetailPage>
       );
       _submittingReaction = false;
       _reactedLocally = false;
-      _watchReactionStatus();
+      if (!widget.deleting) _watchReactionStatus();
       _heartBurstController.reset();
+    } else if (oldWidget.deleting != widget.deleting) {
+      if (widget.deleting) {
+        unawaited(_reactionSubscription?.cancel());
+        _reactionSubscription = null;
+        _reactionStatusResolved = false;
+        _hasReacted = true;
+        _reportReactionAvailability(widget.snapshot.id, false);
+      } else {
+        _watchReactionStatus();
+      }
     }
   }
 
@@ -814,7 +894,12 @@ class _SnapshotDetailPageState extends State<_SnapshotDetailPage>
   }
 
   Future<void> _submitReaction(String reaction) async {
-    if (_submittingReaction || _reactedLocally || _hasReacted) return;
+    if (widget.deleting ||
+        _submittingReaction ||
+        _reactedLocally ||
+        _hasReacted) {
+      return;
+    }
     final snapshotId = widget.snapshot.id;
     setState(() {
       _submittingReaction = true;
@@ -863,7 +948,7 @@ class _SnapshotDetailPageState extends State<_SnapshotDetailPage>
         final inaccessible = snapshot.hasError ||
             (snapshot.connectionState != ConnectionState.waiting &&
                 snapshot.data == null);
-        if (inaccessible) {
+        if (inaccessible && !widget.deleting) {
           WidgetsBinding.instance.addPostFrameCallback((_) {
             if (!context.mounted) return;
             Navigator.of(context).maybePop();
@@ -871,8 +956,9 @@ class _SnapshotDetailPageState extends State<_SnapshotDetailPage>
           });
           return const SizedBox.shrink();
         }
-        final current = snapshot.data;
-        if (current == null) return const SizedBox.shrink();
+        // 삭제 Callable이 canonical 문서를 먼저 제거해도 완료 응답을
+        // 받기 전까지는 기존 미디어 프레임을 유지해 검은 화면을 막는다.
+        final current = snapshot.data ?? widget.snapshot;
         final isOwner =
             FirebaseAuth.instance.currentUser?.uid == current.authorId;
         final keyboardInset = MediaQuery.viewInsetsOf(context).bottom;
@@ -889,7 +975,7 @@ class _SnapshotDetailPageState extends State<_SnapshotDetailPage>
               onReady: () => widget.onMediaReady(current.id),
             ),
             const IgnorePointer(child: _SnapshotStoryScrim()),
-            if (!isOwner)
+            if (!isOwner && !widget.deleting)
               Positioned(
                 left: horizontal,
                 width: context.rs(48).clamp(46, 52).toDouble(),
@@ -904,7 +990,7 @@ class _SnapshotDetailPageState extends State<_SnapshotDetailPage>
                   onReact: _submitReaction,
                 ),
               ),
-            if (!isOwner)
+            if (!isOwner && !widget.deleting)
               Positioned(
                 left: horizontal,
                 right: horizontal,
@@ -913,6 +999,23 @@ class _SnapshotDetailPageState extends State<_SnapshotDetailPage>
                 child: IgnorePointer(
                   child: _SnapshotHeartBurst(
                     animation: _heartBurstController,
+                  ),
+                ),
+              ),
+            if (widget.deleting)
+              Positioned.fill(
+                child: IgnorePointer(
+                  child: ColoredBox(
+                    color: Colors.black.withValues(alpha: .18),
+                    child: const Center(
+                      child: SizedBox.square(
+                        dimension: 24,
+                        child: CircularProgressIndicator(
+                          strokeWidth: 2.2,
+                          color: Colors.white,
+                        ),
+                      ),
+                    ),
                   ),
                 ),
               ),

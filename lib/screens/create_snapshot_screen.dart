@@ -776,6 +776,41 @@ class _CreateSnapshotScreenState extends State<CreateSnapshotScreen>
     return trimmed;
   }
 
+  Future<File?> _compressAndroidSnapshotVideo(File source) async {
+    if (!Platform.isAndroid) return null;
+    try {
+      await VideoCompress.deleteAllCache();
+      final info = await VideoCompress.compressVideo(
+        source.path,
+        quality: VideoQuality.Res1280x720Quality,
+        deleteOrigin: false,
+        includeAudio: true,
+        frameRate: 30,
+        // 구간 선택은 네이티브 muxer에서 이미 끝났다. 플러그인에
+        // trim 값을 다시 넘기지 않아 음수 구간 계산을 원천 차단한다.
+      ).timeout(
+        const Duration(minutes: 3),
+        onTimeout: () async {
+          await VideoCompress.cancelCompression();
+          throw TimeoutException('snapshot-video-optimization-timeout');
+        },
+      );
+      final optimized = info?.file;
+      if (optimized == null ||
+          optimized.path == source.path ||
+          !await optimized.exists() ||
+          await optimized.length() <= 0) {
+        return null;
+      }
+      return optimized;
+    } catch (error) {
+      // 기기 코덱이 재인코딩을 지원하지 않아도 이미 검증된
+      // 네이티브 trim 결과로 게시할 수 있게 최적화만 생략한다.
+      Logger.warning('Android 스낵 영상 최적화 생략: $error');
+      return null;
+    }
+  }
+
   Future<void> _disposeVideoControllers() async {
     final source = _sourceVideoController;
     final preview = _previewVideoController;
@@ -1234,7 +1269,7 @@ class _CreateSnapshotScreenState extends State<CreateSnapshotScreen>
         File? temporaryTrim;
         File? pendingOutput;
         File? pendingThumbnail;
-        late final File output;
+        late File output;
         try {
           if (Platform.isAndroid || Platform.isIOS) {
             // Android streams selected tracks into a normalized MP4 without
@@ -1247,6 +1282,10 @@ class _CreateSnapshotScreenState extends State<CreateSnapshotScreen>
               endMs: endMs,
             );
             temporaryTrim = output;
+            if (Platform.isAndroid) {
+              final optimized = await _compressAndroidSnapshotVideo(output);
+              if (optimized != null) output = optimized;
+            }
           } else {
             await VideoCompress.deleteAllCache();
             final trimWithPlugin = !usesWholeSource;
@@ -1296,6 +1335,11 @@ class _CreateSnapshotScreenState extends State<CreateSnapshotScreen>
             await previewController.dispose();
             return;
           }
+          final obsoleteTrim = temporaryTrim;
+          if (obsoleteTrim != null && obsoleteTrim.path != output.path) {
+            await obsoleteTrim.delete().catchError((_) => obsoleteTrim);
+            temporaryTrim = null;
+          }
           await _previewVideoController?.dispose();
           setState(() {
             _composedFile = output;
@@ -1311,9 +1355,14 @@ class _CreateSnapshotScreenState extends State<CreateSnapshotScreen>
           unawaited(previewController.play());
           return;
         } finally {
-          final staleOutput = pendingOutput ?? temporaryTrim;
-          if (staleOutput != null && await staleOutput.exists()) {
-            await staleOutput.delete().catchError((_) => staleOutput);
+          final staleOutputs = <String, File>{
+            if (pendingOutput != null) pendingOutput.path: pendingOutput,
+            if (temporaryTrim != null) temporaryTrim.path: temporaryTrim,
+          };
+          for (final staleOutput in staleOutputs.values) {
+            if (await staleOutput.exists()) {
+              await staleOutput.delete().catchError((_) => staleOutput);
+            }
           }
           final staleThumbnail = pendingThumbnail;
           if (staleThumbnail != null && await staleThumbnail.exists()) {

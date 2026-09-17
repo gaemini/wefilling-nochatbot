@@ -7,6 +7,7 @@ import 'package:video_player/video_player.dart';
 import '../models/snapshot.dart';
 import '../services/snapshot_service.dart';
 import '../utils/logger.dart';
+import 'snapshot_storage_image.dart';
 import 'snapshot_strings.dart';
 
 class SnapshotStorageVideo extends StatefulWidget {
@@ -28,7 +29,6 @@ class SnapshotStorageVideo extends StatefulWidget {
 class _SnapshotStorageVideoState extends State<SnapshotStorageVideo>
     with WidgetsBindingObserver {
   VideoPlayerController? _controller;
-  File? _file;
   Object? _error;
   bool _appActive = true;
   int _generation = 0;
@@ -58,23 +58,17 @@ class _SnapshotStorageVideoState extends State<SnapshotStorageVideo>
 
   Future<void> _load() async {
     final generation = ++_generation;
+    final snapshot = widget.snapshot;
     final previous = _controller;
-    final previousFile = _file;
     _controller = null;
-    _file = null;
     await previous?.dispose();
-    if (previousFile != null && await previousFile.exists()) {
-      await previousFile.delete().catchError((_) => previousFile);
-    }
-    if (mounted) setState(() => _error = null);
-    File? loadedFile;
+    if (!mounted || generation != _generation) return;
+    setState(() => _error = null);
     try {
       final File file = await SnapshotService.instance.loadVideoFile(
-        widget.snapshot,
+        snapshot,
       );
-      loadedFile = file;
       if (!mounted || generation != _generation) {
-        if (await file.exists()) await file.delete().catchError((_) => file);
         return;
       }
       final controller = VideoPlayerController.file(file);
@@ -85,16 +79,12 @@ class _SnapshotStorageVideoState extends State<SnapshotStorageVideo>
       }
       await controller.setLooping(false);
       _controller = controller;
-      _file = file;
       setState(() {});
       widget.onReady();
       _syncPlayback();
     } catch (error, stackTrace) {
-      if (loadedFile != null && await loadedFile.exists()) {
-        await loadedFile.delete().catchError((_) => loadedFile!);
-      }
       Logger.error(
-        '스낵 영상 재생 준비 실패 (snapshotId=${widget.snapshot.id})',
+        '스낵 영상 재생 준비 실패 (snapshotId=${snapshot.id})',
         error,
         stackTrace,
       );
@@ -124,41 +114,65 @@ class _SnapshotStorageVideoState extends State<SnapshotStorageVideo>
     WidgetsBinding.instance.removeObserver(this);
     _generation++;
     final controller = _controller;
-    final file = _file;
-    unawaited(() async {
-      await controller?.dispose();
-      if (file != null && await file.exists()) {
-        await file.delete().catchError((_) => file);
-      }
-    }());
+    unawaited(controller?.dispose());
     super.dispose();
   }
 
   @override
   Widget build(BuildContext context) {
     final controller = _controller;
+    final thumbnail = SnapshotStorageImage(
+      snapshot: widget.snapshot,
+      fit: BoxFit.cover,
+      placeholderColor: Colors.black,
+      errorBackgroundColor: Colors.black,
+      showLoadingIndicator: false,
+      fadeInDuration: const Duration(milliseconds: 120),
+    );
     if (_error != null) {
-      return Center(
-        child: TextButton.icon(
-          onPressed: _load,
-          icon: const Icon(Icons.refresh_rounded, color: Colors.white),
-          label: Text(
-            SnapshotStrings.of(context).videoPlaybackFailed,
-            textAlign: TextAlign.center,
-            style: const TextStyle(color: Colors.white),
+      return Stack(
+        fit: StackFit.expand,
+        children: [
+          thumbnail,
+          ColoredBox(color: Colors.black.withValues(alpha: .28)),
+          Center(
+            child: TextButton.icon(
+              onPressed: _load,
+              icon: const Icon(Icons.refresh_rounded, color: Colors.white),
+              label: Text(
+                SnapshotStrings.of(context).videoPlaybackFailed,
+                textAlign: TextAlign.center,
+                style: const TextStyle(color: Colors.white),
+              ),
+            ),
           ),
-        ),
+        ],
       );
     }
     if (controller == null || !controller.value.isInitialized) {
-      return const Center(
-        child: SizedBox.square(
-          dimension: 22,
-          child: CircularProgressIndicator(
-            strokeWidth: 2,
-            color: Colors.white,
+      return Stack(
+        fit: StackFit.expand,
+        children: [
+          thumbnail,
+          Center(
+            child: DecoratedBox(
+              decoration: BoxDecoration(
+                color: Colors.black.withValues(alpha: .34),
+                shape: BoxShape.circle,
+              ),
+              child: const Padding(
+                padding: EdgeInsets.all(10),
+                child: SizedBox.square(
+                  dimension: 20,
+                  child: CircularProgressIndicator(
+                    strokeWidth: 2,
+                    color: Colors.white,
+                  ),
+                ),
+              ),
+            ),
           ),
-        ),
+        ],
       );
     }
     return VideoPlayer(controller);

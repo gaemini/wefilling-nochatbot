@@ -119,6 +119,7 @@ class ChatReactionBar extends StatelessWidget {
     required this.addLabel,
     required this.removeLabel,
     required this.peopleLabel,
+    this.showCount = true,
   });
 
   final Map<String, int> counts;
@@ -129,6 +130,7 @@ class ChatReactionBar extends StatelessWidget {
   final String addLabel;
   final String removeLabel;
   final String peopleLabel;
+  final bool showCount;
 
   @override
   Widget build(BuildContext context) {
@@ -170,20 +172,22 @@ class ChatReactionBar extends StatelessWidget {
                       mainAxisSize: MainAxisSize.min,
                       children: [
                         ChatReactionIcon(emoji, size: 17),
-                        const SizedBox(width: 4),
-                        Text(
-                          '$count',
-                          style: TextStyle(
-                            fontFamily: uiFontFamily(context, 'Inter'),
-                            fontFamilyFallback: const ['NotoSansKR'],
-                            fontSize: 11.5,
-                            fontWeight:
-                                selected ? FontWeight.w700 : FontWeight.w600,
-                            color: isOutgoing
-                                ? Colors.white
-                                : const Color(0xFF344054),
+                        if (showCount) ...[
+                          const SizedBox(width: 4),
+                          Text(
+                            '$count',
+                            style: TextStyle(
+                              fontFamily: uiFontFamily(context, 'Inter'),
+                              fontFamilyFallback: const ['NotoSansKR'],
+                              fontSize: 11.5,
+                              fontWeight:
+                                  selected ? FontWeight.w700 : FontWeight.w600,
+                              color: isOutgoing
+                                  ? Colors.white
+                                  : const Color(0xFF344054),
+                            ),
                           ),
-                        ),
+                        ],
                       ],
                     ),
                   ),

@@ -3917,6 +3917,7 @@ class _DMChatScreenState extends State<DMChatScreen>
         addLabel: AppLocalizations.of(context)!.chatReactionAdd,
         removeLabel: AppLocalizations.of(context)!.chatReactionRemove,
         peopleLabel: AppLocalizations.of(context)!.chatReactionPeople,
+        showCount: false,
         onToggle: (emoji) => _toggleReaction(message, emoji),
         onShowUsers: (emoji) => _showReactionUsers(message, emoji),
       ),

@@ -208,6 +208,9 @@ class SnapshotService {
       if (!feedReady || !blockedReady || !blockedByReady) return;
       expiryTimer?.cancel();
       final now = serverNow;
+      // 재사용하는 영상 파일도 스낵의 24시간 접근 경계를 넘지 않게
+      // 피드 만료 타이머와 같은 시점에 계정별 임시 캐시에서 제거한다.
+      evictExpiredImages(feedItems);
       final byId = <String, SnapshotItem>{};
       for (final item in feedItems) {
         if (isLocallyVisible(item, now)) byId[item.id] = item;
@@ -1311,7 +1314,14 @@ class SnapshotService {
     ));
     await directory.create(recursive: true);
     final target = File(path.join(directory.path, '${item.id}.mp4'));
-    if (await target.exists() && await target.length() > 0) return target;
+    if (await target.exists() && await target.length() > 0) {
+      // 캐시 접근 시각 갱신은 최적화일 뿐, 유효한 재생 파일의
+      // 성공/실패를 결정하지 않는다.
+      try {
+        await target.setLastModified(DateTime.now());
+      } catch (_) {}
+      return target;
+    }
     final partial = File('${target.path}.part');
     if (await partial.exists()) await partial.delete();
 
@@ -1330,7 +1340,11 @@ class SnapshotService {
           throw StateError('snapshot-video-access-ended');
         }
         if (await target.exists()) await target.delete();
-        return partial.rename(target.path);
+        final completed = await partial.rename(target.path);
+        try {
+          await completed.setLastModified(DateTime.now());
+        } catch (_) {}
+        return completed;
       } catch (error, stackTrace) {
         lastError = error;
         lastStackTrace = stackTrace;

@@ -32,10 +32,10 @@ class SnapshotStrings {
           ? '포스트 만들기'
           : 'Create Post');
   String get snapshotDescription => (isChinese
-      ? '分享一张照片，24小时后消失。'
+      ? '分享照片或短视频，24小时后到期。'
       : isKorean
-          ? '사진 한 장을 24시간 동안 공유해요.'
-          : 'Share one photo for 24 hours.');
+          ? '사진이나 짧은 영상을 24시간 동안 공유해요.'
+          : 'Share a photo or short video for 24 hours.');
   String get postDescription => (isChinese
       ? '自由分享照片和文字。'
       : isKorean
@@ -46,21 +46,137 @@ class SnapshotStrings {
       : isKorean
           ? '내 스낵'
           : 'My Snack');
+  String get archive => (isChinese
+      ? '设备存档'
+      : isKorean
+          ? '기기 보관함'
+          : 'Device archive');
+  String get archiveReadOnly => (isChinese
+      ? '只读存档'
+      : isKorean
+          ? '읽기 전용 보관본'
+          : 'Read-only archive');
+  String get archiveEmpty => (isChinese
+      ? '此设备上还没有存档。'
+      : isKorean
+          ? '이 기기에 보관된 스낵이 없어요.'
+          : 'No snacks are archived on this device.');
+  String get archiveDeviceNotice => (isChinese
+      ? '存档只保存在当前账号的此设备中。删除应用或更换设备后可能会消失。'
+      : isKorean
+          ? '보관본은 현재 계정의 이 기기에만 저장돼요. 앱 삭제나 기기 변경 시 사라질 수 있어요.'
+          : 'Archives are stored only for this account on this device and may be lost if the app is removed or the device changes.');
+  String archiveStorage(String size) => (isChinese
+      ? '存档占用空间：$size'
+      : isKorean
+          ? '보관함 사용량: $size'
+          : 'Archive storage: $size');
+  String get deleteArchiveTitle => (isChinese
+      ? '删除设备存档？'
+      : isKorean
+          ? '기기 보관본을 삭제할까요?'
+          : 'Delete device archive?');
+  String get deleteArchiveBody => (isChinese
+      ? '只会删除此设备上的副本，无法恢复。'
+      : isKorean
+          ? '이 기기의 보관본만 삭제되며 복구할 수 없어요.'
+          : 'Only the copy on this device will be deleted and it cannot be restored.');
+  String get archiveDeleteFailed => (isChinese
+      ? '无法删除存档。'
+      : isKorean
+          ? '보관본을 삭제하지 못했어요.'
+          : 'Could not delete the archive.');
+  String archiveSyncStatus(String time, bool isFinal) => isFinal
+      ? (isChinese
+          ? '最终同步：$time'
+          : isKorean
+              ? '최종 동기화: $time'
+              : 'Final sync: $time')
+      : (isChinese
+          ? '最后同步：$time（可能不是最终数据）'
+          : isKorean
+              ? '마지막 동기화: $time (최종 수치가 아닐 수 있음)'
+              : 'Last sync: $time (may not be final)');
   String get emptyTitle => (isChinese
       ? '分享此刻'
       : isKorean
           ? '지금의 순간을 공유해 보세요'
           : 'Share this moment');
   String get emptyBody => (isChinese
-      ? '用一张照片与好友分享24小时。'
+      ? '用照片或短视频与好友分享24小时。'
       : isKorean
-          ? '사진 한 장으로 24시간 동안 친구들과 나눌 수 있어요.'
-          : 'Share one photo with friends for 24 hours.');
+          ? '사진이나 짧은 영상으로 24시간 동안 친구들과 나눌 수 있어요.'
+          : 'Share a photo or short video with friends for 24 hours.');
   String get choosePhoto => (isChinese
       ? '选择图片'
       : isKorean
           ? '이미지 선택'
           : 'Choose image');
+  String get chooseVideo => (isChinese
+      ? '选择视频'
+      : isKorean
+          ? '영상 선택'
+          : 'Choose video');
+  String get changeMedia => (isChinese
+      ? '更换媒体'
+      : isKorean
+          ? '미디어 변경'
+          : 'Change media');
+  String get takePhoto => (isChinese
+      ? '拍照'
+      : isKorean
+          ? '사진 촬영'
+          : 'Take photo');
+  String get recordVideo => (isChinese
+      ? '录制视频'
+      : isKorean
+          ? '영상 촬영'
+          : 'Record video');
+  String get videoMaxDuration => (isChinese
+      ? '最长12秒'
+      : isKorean
+          ? '최대 12초'
+          : 'Up to 12 seconds');
+  String get videoPreview => (isChinese
+      ? '预览视频'
+      : isKorean
+          ? '영상 미리보기'
+          : 'Preview video');
+  String get videoOutputRange => (isChinese
+      ? '发布片段'
+      : isKorean
+          ? '송출 구간'
+          : 'Published clip');
+  String get videoOutputHint => (isChinese
+      ? '移动两侧控制点，选择将要发布的片段。'
+      : isKorean
+          ? '양쪽 손잡이를 움직여 게시할 구간을 정해 주세요.'
+          : 'Move the handles to choose the clip to publish.');
+  String videoOutputDuration(double seconds) => (isChinese
+      ? '将发布 ${seconds.toStringAsFixed(1)}秒'
+      : isKorean
+          ? '${seconds.toStringAsFixed(1)}초 송출'
+          : '${seconds.toStringAsFixed(1)} sec selected');
+  String videoTrimRange(double start, double end) => (isChinese
+      ? '${start.toStringAsFixed(1)}–${end.toStringAsFixed(1)}秒'
+      : isKorean
+          ? '${start.toStringAsFixed(1)}–${end.toStringAsFixed(1)}초'
+          : '${start.toStringAsFixed(1)}–${end.toStringAsFixed(1)} sec');
+  String get videoUnsupported => (isChinese
+      ? '无法处理此视频格式。'
+      : isKorean
+          ? '이 영상 형식은 기기에서 처리할 수 없어요.'
+          : 'This video format cannot be processed on this device.');
+  String get videoProcessingFailed => (isChinese
+      ? '视频处理失败，编辑内容仍会保留。'
+      : isKorean
+          ? '영상을 처리하지 못했어요. 편집 내용은 그대로 유지돼요.'
+          : 'Could not process the video. Your edits are preserved.');
+  String get videoPlaybackFailed => (isChinese
+      ? '无法播放此视频。点击重试。'
+      : isKorean
+          ? '영상을 재생할 수 없어요. 눌러서 다시 시도해 주세요.'
+          : 'Could not play this video. Tap to retry.');
   String get addPhotos => (isChinese
       ? '添加照片'
       : isKorean
@@ -96,6 +212,11 @@ class SnapshotStrings {
       : isKorean
           ? '텍스트 추가'
           : 'Add text');
+  String get textLimit => (isChinese
+      ? '最多可添加5段文字。'
+      : isKorean
+          ? '텍스트는 최대 5개까지 추가할 수 있어요.'
+          : 'You can add up to 5 text items.');
   String get editText => (isChinese
       ? '编辑文字'
       : isKorean
@@ -106,11 +227,31 @@ class SnapshotStrings {
       : isKorean
           ? '텍스트 삭제'
           : 'Delete text');
-  String get textHint => (isChinese
-      ? '写在照片上的话'
+  String get selectText => (isChinese
+      ? '选择文字'
       : isKorean
-          ? '사진에 남길 문구'
-          : 'Write on the photo');
+          ? '텍스트 선택'
+          : 'Select text');
+  String get bringForward => (isChinese
+      ? '移到最前面'
+      : isKorean
+          ? '앞으로 가져오기'
+          : 'Bring to front');
+  String get darkText => (isChinese
+      ? '深色文字'
+      : isKorean
+          ? '어두운 텍스트'
+          : 'Dark text');
+  String get lightText => (isChinese
+      ? '浅色文字'
+      : isKorean
+          ? '밝은 텍스트'
+          : 'Light text');
+  String get textHint => (isChinese
+      ? '写在画面上的话'
+      : isKorean
+          ? '미디어에 남길 문구'
+          : 'Write on the media');
   String get next => (isChinese
       ? '下一步'
       : isKorean
@@ -252,10 +393,10 @@ class SnapshotStrings {
           ? '텍스트'
           : 'Text');
   String get tapPhotoToType => (isChinese
-      ? '点击照片输入文字'
+      ? '点击画面输入文字'
       : isKorean
-          ? '사진을 눌러 텍스트 입력'
-          : 'Tap the photo to type');
+          ? '화면을 눌러 텍스트 입력'
+          : 'Tap the media to type');
   String get dragAndResizeText => (isChinese
       ? '拖动可移动文字，双指缩放可调整大小。'
       : isKorean
@@ -267,10 +408,10 @@ class SnapshotStrings {
           ? '지금의 순간 공유하기'
           : 'Share this moment');
   String get snapshotLifetime => (isChinese
-      ? '一张照片，保留24小时。'
+      ? '照片或短视频，公开24小时。'
       : isKorean
-          ? '사진 한 장이 24시간 동안 보여요.'
-          : 'One photo, visible for 24 hours.');
+          ? '사진이나 짧은 영상이 24시간 동안 보여요.'
+          : 'A photo or short video, visible for 24 hours.');
   String get add => (isChinese
       ? '添加'
       : isKorean
@@ -287,20 +428,30 @@ class SnapshotStrings {
           ? '스낵을 올리는 중…'
           : 'Uploading snack…');
   String get uploadFailed => (isChinese
-      ? '照片上传失败，请检查网络后重试。'
+      ? '上传失败，请检查网络后重试。'
       : isKorean
-          ? '사진을 올리지 못했어요. 네트워크를 확인하고 다시 시도해 주세요.'
-          : 'Could not upload the photo. Check your network and try again.');
+          ? '스낵을 올리지 못했어요. 네트워크를 확인하고 다시 시도해 주세요.'
+          : 'Could not upload the snack. Check your network and try again.');
+  String get archiveFailedTitle => (isChinese
+      ? '未保存到此设备'
+      : isKorean
+          ? '이 기기에 보관하지 못했어요'
+          : 'Not saved on this device');
+  String get archiveFailedBody => (isChinese
+      ? '限时动态已发布，但设备存储空间不足或文件保存失败。'
+      : isKorean
+          ? '스낵은 게시됐지만 저장 공간 부족 또는 파일 오류로 이 기기에 보관하지 못했어요.'
+          : 'The snack was posted, but it could not be archived on this device because storage was unavailable.');
   String get uploadServiceUnavailable => (isChinese
       ? '限时动态上传服务暂不可用，请稍后重试。'
       : isKorean
           ? '스낵 업로드 서비스를 사용할 수 없어요. 잠시 후 다시 시도해 주세요.'
           : 'The snack upload service is unavailable. Please try again shortly.');
   String get photoRequired => (isChinese
-      ? '请先选择照片。'
+      ? '请先选择照片或视频。'
       : isKorean
-          ? '먼저 사진을 선택해 주세요.'
-          : 'Choose a photo first.');
+          ? '먼저 사진이나 영상을 선택해 주세요.'
+          : 'Choose a photo or video first.');
   String get photoFailed => (isChinese
       ? '照片加载失败，请重试。'
       : isKorean
@@ -316,6 +467,11 @@ class SnapshotStrings {
       : isKorean
           ? '이 스낵은 만료되었어요.'
           : 'This snack has expired.');
+  String get snapshotOpenFailed => (isChinese
+      ? '暂时无法打开此限时动态，请检查网络后重试。'
+      : isKorean
+          ? '스낵을 열지 못했어요. 네트워크를 확인하고 다시 시도해 주세요.'
+          : 'Could not open the Snack. Check your network and try again.');
   String get noAccess => (isChinese
       ? '无法再查看此限时动态。'
       : isKorean
@@ -391,6 +547,51 @@ class SnapshotStrings {
       : isKorean
           ? '코멘트를 보내지 못했어요. 다시 시도해 주세요.'
           : 'Could not send your comment. Please try again.');
+  String get comments => (isChinese
+      ? '评论'
+      : isKorean
+          ? '댓글'
+          : 'Comments');
+  String get authorArchiveNotice => (isChinese
+      ? '限时动态公开24小时；作者设备上可能会保留评论和互动记录。'
+      : isKorean
+          ? '스낵은 24시간 공개되며 작성자 기기에 댓글과 반응 기록이 남을 수 있어요.'
+          : 'Snacks are public for 24 hours; comments and reactions may remain on the author’s device.');
+  String get publicCommentHint => (isChinese
+      ? '添加评论…'
+      : isKorean
+          ? '댓글 추가…'
+          : 'Add a comment…');
+  String get noComments => (isChinese
+      ? '还没有评论。'
+      : isKorean
+          ? '아직 댓글이 없어요.'
+          : 'No comments yet.');
+  String get commentsLoadFailed => (isChinese
+      ? '无法加载评论。'
+      : isKorean
+          ? '댓글을 불러오지 못했어요.'
+          : 'Could not load comments.');
+  String get commentDeleteFailed => (isChinese
+      ? '无法删除评论。'
+      : isKorean
+          ? '댓글을 삭제하지 못했어요.'
+          : 'Could not delete the comment.');
+  String get deletedComment => (isChinese
+      ? '此评论已删除。'
+      : isKorean
+          ? '삭제된 댓글입니다.'
+          : 'This comment was deleted.');
+  String get reply => (isChinese
+      ? '回复'
+      : isKorean
+          ? '답글'
+          : 'Reply');
+  String replyingTo(String name) => (isChinese
+      ? '回复 $name'
+      : isKorean
+          ? '$name님에게 답글'
+          : 'Replying to $name');
   String get cancel => (isChinese
       ? '取消'
       : isKorean

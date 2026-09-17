@@ -3,6 +3,11 @@ package com.wefilling.app
 import android.app.Activity
 import android.content.ContentValues
 import android.content.Intent
+import android.media.MediaCodec
+import android.media.MediaExtractor
+import android.media.MediaFormat
+import android.media.MediaMetadataRetriever
+import android.media.MediaMuxer
 import android.net.Uri
 import android.os.Build
 import android.os.Bundle
@@ -17,6 +22,7 @@ import java.io.BufferedOutputStream
 import java.io.File
 import java.io.FileInputStream
 import java.io.FileOutputStream
+import java.nio.ByteBuffer
 import java.util.UUID
 import java.util.concurrent.atomic.AtomicBoolean
 
@@ -30,6 +36,8 @@ class MainActivity : FlutterActivity() {
     private val documentImportChannelName = "com.wefilling.app/document_import"
     private val organizationInviteChannelName =
         "com.wefilling.app/organization_invite"
+    private val snapshotVideoEditorChannelName =
+        "com.wefilling.app/snapshot_video_editor"
     private val maxDocumentBytes = 20L * 1024L * 1024L
     private val legacyPhotoSaveRequest = 7241
     private var pendingImageBytes: ByteArray? = null
@@ -87,6 +95,20 @@ class MainActivity : FlutterActivity() {
                 return@setMethodCallHandler
             }
             importDocument(uri, fileName, result)
+        }
+
+        MethodChannel(
+            flutterEngine.dartExecutor.binaryMessenger,
+            snapshotVideoEditorChannelName,
+        ).setMethodCallHandler { call, result ->
+            if (call.method != "trimVideo") {
+                result.notImplemented()
+                return@setMethodCallHandler
+            }
+            val path = call.argument<String>("path")?.trim().orEmpty()
+            val startMs = call.argument<Number>("startMs")?.toLong() ?: -1L
+            val endMs = call.argument<Number>("endMs")?.toLong() ?: -1L
+            trimSnapshotVideo(path, startMs, endMs, result)
         }
 
         organizationInviteChannel = MethodChannel(
@@ -225,6 +247,173 @@ class MainActivity : FlutterActivity() {
                 }
             }
         }.start()
+    }
+
+    private fun trimSnapshotVideo(
+        path: String,
+        startMs: Long,
+        endMs: Long,
+        result: MethodChannel.Result,
+    ) {
+        Thread {
+            var outputFile: File? = null
+            try {
+                val inputFile = File(path)
+                require(inputFile.isFile && inputFile.length() > 0L) {
+                    "The selected video is unavailable."
+                }
+                require(startMs >= 0L && endMs > startMs) {
+                    "The selected video range is invalid."
+                }
+                require(endMs - startMs <= 12_000L) {
+                    "The selected video range exceeds 12 seconds."
+                }
+
+                val outputDirectory = File(cacheDir, "snapshot_video_trims")
+                if (!outputDirectory.exists() && !outputDirectory.mkdirs()) {
+                    throw IllegalStateException("Could not create the video edit cache.")
+                }
+                outputDirectory.listFiles()?.forEach { candidate ->
+                    if (System.currentTimeMillis() - candidate.lastModified() > 86_400_000L) {
+                        candidate.delete()
+                    }
+                }
+                outputFile = File(
+                    outputDirectory,
+                    "snapshot_${UUID.randomUUID()}.mp4",
+                )
+                copySnapshotVideoRange(inputFile, outputFile, startMs, endMs)
+                if (!outputFile.isFile || outputFile.length() <= 0L) {
+                    throw IllegalStateException("The edited video is empty.")
+                }
+                runOnUiThread { result.success(outputFile.absolutePath) }
+            } catch (error: Throwable) {
+                outputFile?.delete()
+                runOnUiThread {
+                    result.error(
+                        "snapshot-video-trim-failed",
+                        error.localizedMessage ?: "Could not edit the selected video.",
+                        null,
+                    )
+                }
+            }
+        }.start()
+    }
+
+    private fun copySnapshotVideoRange(
+        inputFile: File,
+        outputFile: File,
+        startMs: Long,
+        endMs: Long,
+    ) {
+        val extractor = MediaExtractor()
+        var muxer: MediaMuxer? = null
+        var muxerStarted = false
+        var muxerStopped = false
+        try {
+            extractor.setDataSource(inputFile.absolutePath)
+            val activeMuxer = MediaMuxer(
+                outputFile.absolutePath,
+                MediaMuxer.OutputFormat.MUXER_OUTPUT_MPEG_4,
+            )
+            muxer = activeMuxer
+
+            val trackMap = mutableMapOf<Int, Int>()
+            var videoTrack = -1
+            var maximumInputSize = 1024 * 1024
+            for (trackIndex in 0 until extractor.trackCount) {
+                val format = extractor.getTrackFormat(trackIndex)
+                val mime = format.getString(MediaFormat.KEY_MIME).orEmpty()
+                if (!mime.startsWith("video/") && !mime.startsWith("audio/")) {
+                    continue
+                }
+                if (mime.startsWith("video/") && videoTrack < 0) {
+                    videoTrack = trackIndex
+                }
+                if (format.containsKey(MediaFormat.KEY_MAX_INPUT_SIZE)) {
+                    maximumInputSize = maxOf(
+                        maximumInputSize,
+                        format.getInteger(MediaFormat.KEY_MAX_INPUT_SIZE),
+                    )
+                }
+                trackMap[trackIndex] = activeMuxer.addTrack(format)
+                extractor.selectTrack(trackIndex)
+            }
+            if (videoTrack < 0 || trackMap.isEmpty()) {
+                throw IllegalArgumentException("The selected file has no supported video track.")
+            }
+
+            val retriever = MediaMetadataRetriever()
+            try {
+                retriever.setDataSource(inputFile.absolutePath)
+                val rotation = retriever.extractMetadata(
+                    MediaMetadataRetriever.METADATA_KEY_VIDEO_ROTATION,
+                )?.toIntOrNull()
+                if (rotation == 90 || rotation == 180 || rotation == 270) {
+                    activeMuxer.setOrientationHint(rotation)
+                }
+            } finally {
+                retriever.release()
+            }
+
+            activeMuxer.start()
+            muxerStarted = true
+
+            val requestedStartUs = startMs * 1000L
+            val requestedEndUs = endMs * 1000L
+            extractor.seekTo(requestedStartUs, MediaExtractor.SEEK_TO_NEXT_SYNC)
+            val firstSampleUs = extractor.sampleTime
+            if (firstSampleUs < 0L || firstSampleUs >= requestedEndUs) {
+                throw IllegalArgumentException(
+                    "No decodable video frame exists in the selected range.",
+                )
+            }
+            val clipBaseUs = maxOf(requestedStartUs, firstSampleUs)
+            val buffer = ByteBuffer.allocateDirect(
+                maximumInputSize.coerceIn(1024 * 1024, 32 * 1024 * 1024),
+            )
+            val bufferInfo = MediaCodec.BufferInfo()
+            var videoSamples = 0
+
+            while (true) {
+                val sourceTrack = extractor.sampleTrackIndex
+                val sampleTimeUs = extractor.sampleTime
+                if (sourceTrack < 0 || sampleTimeUs < 0L || sampleTimeUs >= requestedEndUs) {
+                    break
+                }
+                val destinationTrack = trackMap[sourceTrack]
+                if (destinationTrack == null || sampleTimeUs < clipBaseUs) {
+                    if (!extractor.advance()) break
+                    continue
+                }
+
+                buffer.clear()
+                val sampleSize = extractor.readSampleData(buffer, 0)
+                if (sampleSize < 0) break
+                bufferInfo.set(
+                    0,
+                    sampleSize,
+                    sampleTimeUs - clipBaseUs,
+                    extractor.sampleFlags,
+                )
+                activeMuxer.writeSampleData(destinationTrack, buffer, bufferInfo)
+                if (sourceTrack == videoTrack) videoSamples++
+                if (!extractor.advance()) break
+            }
+            if (videoSamples == 0) {
+                throw IllegalArgumentException(
+                    "No decodable video frame exists in the selected range.",
+                )
+            }
+            activeMuxer.stop()
+            muxerStopped = true
+        } finally {
+            if (muxerStarted && !muxerStopped) {
+                runCatching { muxer?.stop() }
+            }
+            runCatching { muxer?.release() }
+            extractor.release()
+        }
     }
 
     private fun chooseLegacyImageDestination(

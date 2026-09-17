@@ -105,6 +105,8 @@ export {
   getSnapshotCommentLetter,
   toggleSnapshotReaction,
   sendSnapshotComment,
+  createSnapshotFeedComment,
+  deleteSnapshotFeedComment,
   replySnapshotComment,
   deleteSnapshot,
   cleanupExpiredSnapshots,
@@ -7680,6 +7682,30 @@ function buildLocalizedNotificationText(params: {
           body: reply ? `${name}: ${reply}` : `${name} replied to your Snack comment.`,
         };
     }
+    case 'snapshot_feed_comment': {
+      const comment = safeStringLoose(data?.content, bodyFallback).trim();
+      return lang === 'ko'
+        ? {
+          title: '스낵에 새 댓글이 달렸어요',
+          body: comment ? `${name}님: ${comment}` : `${name}님이 댓글을 남겼어요.`,
+        }
+        : {
+          title: 'New comment on your Snack',
+          body: comment ? `${name}: ${comment}` : `${name} commented on your Snack.`,
+        };
+    }
+    case 'snapshot_feed_comment_reply': {
+      const comment = safeStringLoose(data?.content, bodyFallback).trim();
+      return lang === 'ko'
+        ? {
+          title: '스낵 댓글에 답글이 달렸어요',
+          body: comment ? `${name}님: ${comment}` : `${name}님이 답글을 남겼어요.`,
+        }
+        : {
+          title: 'New reply on a Snack',
+          body: comment ? `${name}: ${comment}` : `${name} replied to your comment.`,
+        };
+    }
     case 'comment_like': {
       const postIsAnonymous = toBool(data?.postIsAnonymous);
       if (postIsAnonymous) {
@@ -8052,6 +8078,43 @@ async function isVerifiedSnapshotCommentReplyRecipient(
       safeStringLoose(notification.reply || nested.reply);
 }
 
+async function isVerifiedSnapshotFeedCommentRecipient(
+  notification: Record<string, any>,
+): Promise<boolean> {
+  const type = safeStringLoose(notification.type);
+  if (type !== 'snapshot_feed_comment' &&
+      type !== 'snapshot_feed_comment_reply') return true;
+  const nested = notification.data && typeof notification.data === 'object'
+    ? notification.data as Record<string, any>
+    : {};
+  const snapshotId = safeStringLoose(notification.snapshotId ?? nested.snapshotId);
+  const commentId = safeStringLoose(notification.commentId ?? nested.commentId);
+  const recipientId = normalizeUidLoose(notification.userId);
+  const actorId = normalizeUidLoose(notification.actorId ?? nested.actorId);
+  if (!snapshotId || !commentId || !recipientId || !actorId || recipientId === actorId) {
+    return false;
+  }
+  const snapshotRef = db.collection('snapshots').doc(snapshotId);
+  const [snapshot, comment] = await Promise.all([
+    snapshotRef.get(),
+    snapshotRef.collection('feed_comments').doc(commentId).get(),
+  ]);
+  if (!snapshot.exists || !comment.exists || comment.get('isDeleted') === true ||
+      safeStringLoose(comment.get('userId')) !== actorId ||
+      safeStringLoose(snapshot.get('status')) !== 'active') return false;
+  const expiresAt = firestoreTimeToMillis(snapshot.get('expiresAt'));
+  if (expiresAt == null || expiresAt <= Date.now()) return false;
+
+  const ownerId = normalizeUidLoose(snapshot.get('ownerId') ?? snapshot.get('authorId'));
+  if (recipientId === ownerId) return true;
+  if (recipientId === normalizeUidLoose(comment.get('replyToUserId'))) return true;
+  const parentId = safeStringLoose(comment.get('parentCommentId'));
+  if (!parentId) return false;
+  const parent = await snapshotRef.collection('feed_comments').doc(parentId).get();
+  return parent.exists && parent.get('isDeleted') !== true &&
+    normalizeUidLoose(parent.get('userId')) === recipientId;
+}
+
 export const onNotificationCreated = functions
   .runWith({failurePolicy: true, timeoutSeconds: 120, memory: '512MB'})
   .firestore
@@ -8099,6 +8162,8 @@ export const onNotificationCreated = functions
         notificationData as Record<string, any>
       ) || !await isVerifiedSnapshotCommentReplyRecipient(
         notificationData as Record<string, any>
+      ) || !await isVerifiedSnapshotFeedCommentRecipient(
+        notificationData as Record<string, any>
       )) {
         console.warn(
           `⏭️ 알림 최종 수신자 검증 실패 - 삭제/푸시 스킵 (notification=${notificationId})`
@@ -8135,6 +8200,9 @@ export const onNotificationCreated = functions
             ? notificationSettingAllows(settingsDoc, 'friend_alerts', ['friend_request'])
             : type === 'friend_request_accepted'
               ? notificationSettingAllows(settingsDoc, 'friend_alerts', ['friend_request'])
+              : type === 'snapshot_feed_comment' ||
+                  type === 'snapshot_feed_comment_reply'
+                ? notificationSettingAllows(settingsDoc, 'new_comment', [])
             : true;
       if (!notificationAllowed) {
         await snapshot.ref.set({skipUnreadCounterSync: true}, {merge: true});
@@ -8410,6 +8478,7 @@ export const onNotificationCreated = functions
         postId: String(notificationData.postId || dataSafe?.postId || ''),
         meetupId: String(notificationData.meetupId || dataSafe?.meetupId || ''),
         snapshotId: String(notificationData.snapshotId || dataSafe?.snapshotId || ''),
+        commentId: String(notificationData.commentId || dataSafe?.commentId || ''),
         conversationId: String(notificationData.conversationId || dataSafe?.conversationId || ''),
         senderId: String(notificationData.senderId || dataSafe?.senderId || notificationData.actorId || ''),
         snackChatId: String(notificationData.snackChatId || dataSafe?.snackChatId || ''),

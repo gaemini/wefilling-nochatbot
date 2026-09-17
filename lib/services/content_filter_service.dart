@@ -17,13 +17,27 @@ class ContentFilterService {
   static Set<String>? _blockedUserIds;
   static Set<String>? _blockedByUserIds;
   static Set<String>? _blockedAnonymousPostIds;
+  static String? _cacheUid;
   static DateTime? _lastCacheUpdate;
   static const Duration _cacheExpiry = Duration(minutes: 5);
+
+  static String? get _currentUid => _auth.currentUser?.uid;
+
+  static void _prepareCacheForCurrentUser() {
+    final uid = _currentUid;
+    if (_cacheUid == uid) return;
+    _blockedUserIds = null;
+    _blockedByUserIds = null;
+    _blockedAnonymousPostIds = null;
+    _lastCacheUpdate = null;
+    _cacheUid = uid;
+  }
   
   /// PostService의 blocks 스트림 결과로 캐시를 즉시 채웁니다.
   /// - 네트워크/쿼리 지연으로 피드가 멈추는 것을 방지
   /// - 차단/차단해제 직후 즉시 필터링(Apple 요구사항)에도 유리
   static void setBlockedUserIds(Set<String> ids) {
+    _prepareCacheForCurrentUser();
     _blockedUserIds = ids;
     _lastCacheUpdate = DateTime.now();
   }
@@ -31,6 +45,7 @@ class ContentFilterService {
   /// 차단 직후 "즉시 제거"를 위해 in-memory 캐시에 추가합니다.
   /// - Firestore snapshot 반영을 기다리지 않아도 필터가 즉시 적용되게 함
   static void addBlockedUserId(String userId) {
+    _prepareCacheForCurrentUser();
     final uid = userId.trim();
     if (uid.isEmpty) return;
     final current = _blockedUserIds ?? <String>{};
@@ -40,6 +55,7 @@ class ContentFilterService {
 
   /// 차단 해제 직후 in-memory 캐시에서 제거합니다.
   static void removeBlockedUserId(String userId) {
+    _prepareCacheForCurrentUser();
     final uid = userId.trim();
     if (uid.isEmpty) return;
     if (_blockedUserIds == null) return;
@@ -50,6 +66,7 @@ class ContentFilterService {
 
   /// 네트워크 없이 현재 캐시값을 즉시 반환합니다 (optimistic UI 용도).
   static Set<String> getBlockedUserIdsCached() {
+    _prepareCacheForCurrentUser();
     final v = _blockedUserIds;
     if (v == null || v.isEmpty) return const <String>{};
     return Set<String>.unmodifiable(v);
@@ -57,17 +74,20 @@ class ContentFilterService {
 
   /// 네트워크 없이 현재 캐시값을 즉시 반환합니다 (optimistic UI 용도).
   static Set<String> getBlockedByUserIdsCached() {
+    _prepareCacheForCurrentUser();
     final v = _blockedByUserIds;
     if (v == null || v.isEmpty) return const <String>{};
     return Set<String>.unmodifiable(v);
   }
 
   static void setBlockedAnonymousPostIds(Set<String> postIds) {
+    _prepareCacheForCurrentUser();
     _blockedAnonymousPostIds = postIds;
     _lastCacheUpdate = DateTime.now();
   }
 
   static void addBlockedAnonymousPostId(String postId) {
+    _prepareCacheForCurrentUser();
     final id = postId.trim();
     if (id.isEmpty) return;
     final current = _blockedAnonymousPostIds ?? <String>{};
@@ -76,6 +96,7 @@ class ContentFilterService {
   }
 
   static void removeBlockedAnonymousPostId(String postId) {
+    _prepareCacheForCurrentUser();
     final id = postId.trim();
     if (id.isEmpty || _blockedAnonymousPostIds == null) return;
     final next = {..._blockedAnonymousPostIds!}..remove(id);
@@ -84,6 +105,7 @@ class ContentFilterService {
   }
 
   static Set<String> getBlockedAnonymousPostIdsCached() {
+    _prepareCacheForCurrentUser();
     final v = _blockedAnonymousPostIds;
     if (v == null || v.isEmpty) return const <String>{};
     return Set<String>.unmodifiable(v);
@@ -92,6 +114,7 @@ class ContentFilterService {
   static Future<Set<String>> _getBlockedAnonymousPostIds() async {
     final currentUser = _auth.currentUser;
     if (currentUser == null) return {};
+    _prepareCacheForCurrentUser();
 
     if (_blockedAnonymousPostIds != null &&
         _lastCacheUpdate != null &&
@@ -105,6 +128,7 @@ class ContentFilterService {
           .where('blockerUid', isEqualTo: currentUser.uid)
           .get()
           .timeout(_blockQueryTimeout);
+      if (_auth.currentUser?.uid != currentUser.uid) return <String>{};
 
       _blockedAnonymousPostIds = querySnapshot.docs
           .map((doc) => (doc.data()['postId'] ?? '').toString().trim())
@@ -120,12 +144,14 @@ class ContentFilterService {
 
   /// "나를 차단한 사용자" 캐시를 즉시 채웁니다.
   static void setBlockedByUserIds(Set<String> ids) {
+    _prepareCacheForCurrentUser();
     _blockedByUserIds = ids;
     _lastCacheUpdate = DateTime.now();
   }
 
   /// "나를 차단한 사용자"가 즉시 반영되도록 in-memory 캐시에 추가합니다.
   static void addBlockedByUserId(String userId) {
+    _prepareCacheForCurrentUser();
     final uid = userId.trim();
     if (uid.isEmpty) return;
     final current = _blockedByUserIds ?? <String>{};
@@ -135,6 +161,7 @@ class ContentFilterService {
 
   /// "나를 차단한 사용자" 캐시에서 즉시 제거합니다.
   static void removeBlockedByUserId(String userId) {
+    _prepareCacheForCurrentUser();
     final uid = userId.trim();
     if (uid.isEmpty) return;
     if (_blockedByUserIds == null) return;
@@ -147,6 +174,7 @@ class ContentFilterService {
   static Future<Set<String>> _getBlockedUserIds() async {
     final currentUser = _auth.currentUser;
     if (currentUser == null) return {};
+    _prepareCacheForCurrentUser();
 
     // 캐시가 유효한 경우 캐시된 데이터 사용
     if (_blockedUserIds != null && 
@@ -161,6 +189,7 @@ class ContentFilterService {
           .where('blocker', isEqualTo: currentUser.uid)
           .get()
           .timeout(_blockQueryTimeout);
+      if (_auth.currentUser?.uid != currentUser.uid) return <String>{};
 
       _blockedUserIds = querySnapshot.docs
           .map((doc) => doc.data()['blocked'] as String)
@@ -178,6 +207,7 @@ class ContentFilterService {
   static Future<Set<String>> _getBlockedByUserIds() async {
     final currentUser = _auth.currentUser;
     if (currentUser == null) return {};
+    _prepareCacheForCurrentUser();
 
     // 캐시가 유효한 경우 캐시된 데이터 사용
     if (_blockedByUserIds != null && 
@@ -192,6 +222,7 @@ class ContentFilterService {
           .where('blocked', isEqualTo: currentUser.uid)
           .get()
           .timeout(_blockQueryTimeout);
+      if (_auth.currentUser?.uid != currentUser.uid) return <String>{};
 
       _blockedByUserIds = querySnapshot.docs
           .map((doc) => (doc.data()['blocker'] ?? '').toString())
@@ -212,6 +243,7 @@ class ContentFilterService {
     _blockedUserIds = null;
     _blockedByUserIds = null;
     _blockedAnonymousPostIds = null;
+    _cacheUid = _currentUid;
     _lastCacheUpdate = null;
   }
 

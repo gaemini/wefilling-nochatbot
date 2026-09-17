@@ -1,6 +1,8 @@
 // lib/services/navigation_service.dart
 // 글로벌 네비게이션 및 푸시 데이터 기반 딥링크 라우팅
 
+import 'dart:async';
+
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/material.dart';
@@ -10,9 +12,11 @@ import '../services/post_service.dart';
 import '../services/meetup_service.dart';
 import '../models/post.dart';
 import '../models/meetup.dart';
+import '../models/snapshot.dart';
 import '../models/student_type.dart';
 import '../services/semester_todo_service.dart';
 import '../services/snapshot_service.dart';
+import '../services/snapshot_archive_service.dart';
 import '../services/review_service.dart';
 
 import '../screens/post_detail_screen.dart';
@@ -25,10 +29,12 @@ import '../screens/snack_chat_screen.dart';
 import '../screens/semester_todo_screen.dart';
 import '../screens/student_type_selection_screen.dart';
 import '../screens/snapshot_detail_screen.dart';
+import '../screens/snapshot_archive_screen.dart';
 import '../screens/snapshot_comment_letter_screen.dart';
 import '../screens/review_detail_screen.dart';
 import '../screens/review_approval_screen.dart';
 import '../screens/friend_profile_screen.dart';
+import '../snapshot/snapshot_strings.dart';
 
 class NavigationService {
   static final GlobalKey<NavigatorState> navigatorKey =
@@ -77,7 +83,9 @@ class NavigationService {
         : '$type|${_stringValue(data, 'postId')}|'
             '${_stringValue(data, 'meetupId')}|'
             '${_stringValue(data, 'conversationId')}|'
-            '${_stringValue(data, 'snackChatId')}';
+            '${_stringValue(data, 'snackChatId')}|'
+            '${_stringValue(data, 'snapshotId')}|'
+            '${_stringValue(data, 'commentId')}';
     final now = DateTime.now();
     if (_lastHandledPushKey == navigationKey &&
         _lastHandledPushAt != null &&
@@ -151,15 +159,24 @@ class NavigationService {
           {
             final snapshotId = _stringValue(data, 'snapshotId');
             if (snapshotId.isEmpty) break;
-            final snapshot =
-                await SnapshotService.instance.getSnapshot(snapshotId);
-            await nav.push(
-              MaterialPageRoute(
-                builder: (_) => SnapshotDetailScreen(
-                  snapshots: [snapshot],
-                  initialIndex: 0,
-                ),
-              ),
+            await _openSnapshotOrArchive(
+              nav,
+              snapshotId: snapshotId,
+              notificationId: notificationId,
+            );
+            return;
+          }
+        case 'snapshot_feed_comment':
+        case 'snapshot_feed_comment_reply':
+          {
+            final snapshotId = _stringValue(data, 'snapshotId');
+            if (snapshotId.isEmpty) break;
+            await _openSnapshotOrArchive(
+              nav,
+              snapshotId: snapshotId,
+              notificationId: notificationId,
+              openComments: true,
+              commentId: _stringValue(data, 'commentId'),
             );
             return;
           }
@@ -335,6 +352,68 @@ class NavigationService {
           .push(MaterialPageRoute(builder: (_) => const NotificationScreen()));
     }
   }
+
+  static Future<void> _openSnapshotOrArchive(
+    NavigatorState nav, {
+    required String snapshotId,
+    required String notificationId,
+    bool openComments = false,
+    String? commentId,
+  }) async {
+    if (notificationId.isNotEmpty) {
+      unawaited(
+        SnapshotArchiveService.instance
+            .rememberNotificationLink(
+              snapshotId: snapshotId,
+              notificationId: notificationId,
+            )
+            .catchError((_) {}),
+      );
+    }
+    try {
+      final snapshot = await SnapshotService.instance.getSnapshot(snapshotId);
+      await nav.push(
+        MaterialPageRoute(
+          builder: (_) => SnapshotDetailScreen(
+            snapshots: <SnapshotItem>[snapshot],
+            initialIndex: 0,
+            openCommentsInitially: openComments,
+            focusCommentId: commentId,
+          ),
+        ),
+      );
+      return;
+    } catch (error) {
+      final archive = await SnapshotArchiveService.instance.get(snapshotId);
+      if (archive != null) {
+        await nav.push(
+          MaterialPageRoute(
+            builder: (_) => SnapshotArchiveDetailScreen(record: archive),
+          ),
+        );
+        return;
+      }
+      if (!nav.mounted) return;
+      final strings = SnapshotStrings.of(nav.context);
+      final isTemporaryFailure = error is FirebaseException &&
+          <String>{'unavailable', 'deadline-exceeded', 'network-request-failed'}
+              .contains(error.code);
+      await showDialog<void>(
+        context: nav.context,
+        builder: (context) => AlertDialog(
+          content: Text(
+            isTemporaryFailure ? strings.snapshotOpenFailed : strings.expired,
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.pop(context),
+              child: Text(strings.confirm),
+            ),
+          ],
+        ),
+      );
+    }
+  }
 }
 
 /// 스낵챗 초대 알림 탭 시, 이미 나간(비참여자) 사용자에게 보여주는 안내 화면
@@ -379,7 +458,11 @@ class _SnackChatNotParticipantScreen extends StatelessWidget {
               ),
               const SizedBox(height: 20),
               Text(
-                isChineseUi(context) ? '无法加入此群聊' : isKo ? '참여할 수 없는 채팅방이에요' : 'You cannot join this room',
+                isChineseUi(context)
+                    ? '无法加入此群聊'
+                    : isKo
+                        ? '참여할 수 없는 채팅방이에요'
+                        : 'You cannot join this room',
                 style: TextStyle(
                   fontFamily: uiFontFamily(context, 'Inter'),
                   fontFamilyFallback: const ['NotoSansKR'],
@@ -394,8 +477,8 @@ class _SnackChatNotParticipantScreen extends StatelessWidget {
                 isChineseUi(context)
                     ? '你已退出此群聊，或邀请已取消。\n请联系群主重新邀请。'
                     : isKo
-                    ? '이미 나갔거나 초대가 취소된 채팅방입니다.\n방장에게 다시 초대를 요청해 보세요.'
-                    : 'You have already left or the invite was cancelled.\nAsk the host to invite you again.',
+                        ? '이미 나갔거나 초대가 취소된 채팅방입니다.\n방장에게 다시 초대를 요청해 보세요.'
+                        : 'You have already left or the invite was cancelled.\nAsk the host to invite you again.',
                 style: TextStyle(
                   fontFamily: uiFontFamily(context, 'Inter'),
                   fontFamilyFallback: const ['NotoSansKR'],
@@ -421,7 +504,11 @@ class _SnackChatNotParticipantScreen extends StatelessWidget {
                     ),
                   ),
                   child: Text(
-                    isChineseUi(context) ? '返回' : isKo ? '돌아가기' : 'Go back',
+                    isChineseUi(context)
+                        ? '返回'
+                        : isKo
+                            ? '돌아가기'
+                            : 'Go back',
                     style: TextStyle(
                       fontFamily: uiFontFamily(context, 'Inter'),
                       fontFamilyFallback: const ['NotoSansKR'],

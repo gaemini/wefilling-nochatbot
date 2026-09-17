@@ -324,6 +324,37 @@ service firebase.storage {
         && resource.metadata.snapshotId == snapshotId;
     }
 
+    match /snapshots/{snapshotId}/final.mp4 {
+      allow read: if canReadSnapshotImage(snapshotId);
+      allow create: if currentUserAccountAllowed()
+        && request.resource.size > 0
+        && request.resource.contentType == 'video/mp4'
+        && request.resource.metadata.ownerUid == request.auth.uid
+        && request.resource.metadata.snapshotId == snapshotId
+        && request.resource.metadata.mediaType == 'video';
+      allow update: if false;
+      allow delete: if isSignedIn()
+        && !snapshotExists(snapshotId)
+        && resource.metadata.ownerUid == request.auth.uid
+        && resource.metadata.snapshotId == snapshotId;
+    }
+
+    match /snapshots/{snapshotId}/thumbnail.jpg {
+      allow read: if canReadSnapshotImage(snapshotId);
+      allow create: if currentUserAccountAllowed()
+        && request.resource.size > 0
+        && request.resource.size <= 15 * 1024 * 1024
+        && request.resource.contentType == 'image/jpeg'
+        && request.resource.metadata.ownerUid == request.auth.uid
+        && request.resource.metadata.snapshotId == snapshotId
+        && request.resource.metadata.mediaType == 'video-thumbnail';
+      allow update: if false;
+      allow delete: if isSignedIn()
+        && !snapshotExists(snapshotId)
+        && resource.metadata.ownerUid == request.auth.uid
+        && resource.metadata.snapshotId == snapshotId;
+    }
+
     // DM 이미지: 대화 참여자만 읽기, 업로더(경로의 userId)만 쓰기
     match /dm_images/{userId}/{conversationId}/{fileName} {
       allow read: if isSignedIn() && isConversationParticipant(conversationId);

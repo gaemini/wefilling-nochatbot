@@ -166,6 +166,35 @@ class PostService {
   String? _blockListenUid;
   List<Post>? _lastParsedPosts;
   String? _lastParsedPostsUid;
+  List<Post>? _lastPublishedPosts;
+  String? _lastPublishedPostsUid;
+  Object? _lastPostsError;
+  StackTrace? _lastPostsErrorStackTrace;
+  String? _lastPostsErrorUid;
+  int _postFilterGeneration = 0;
+
+  void _publishPosts(List<Post> posts, {required String? expectedUid}) {
+    if (_auth.currentUser?.uid != expectedUid) return;
+    final published = List<Post>.unmodifiable(posts);
+    _lastPublishedPosts = published;
+    _lastPublishedPostsUid = expectedUid;
+    _lastPostsError = null;
+    _lastPostsErrorStackTrace = null;
+    _lastPostsErrorUid = null;
+    _postsStreamController?.add(published);
+  }
+
+  void _publishPostsError(
+    Object error, {
+    StackTrace? stackTrace,
+    required String? expectedUid,
+  }) {
+    if (_auth.currentUser?.uid != expectedUid) return;
+    _lastPostsError = error;
+    _lastPostsErrorStackTrace = stackTrace;
+    _lastPostsErrorUid = expectedUid;
+    _postsStreamController?.addError(error, stackTrace);
+  }
 
   /// Callable에는 실제 포스트 생성에 필요한 링크 필드만 전달한다.
   /// Instagram oEmbed의 HTML/시간 객체처럼 플랫폼별 부가 데이터가 섞이면
@@ -218,8 +247,16 @@ class PostService {
     final controller = _postsStreamController;
     if (controller == null) return;
 
-    final parsed = _lastParsedPosts ?? const <Post>[];
     final currentUser = _auth.currentUser;
+    final expectedUid = currentUser?.uid;
+    if (currentUser != null &&
+        (_lastParsedPostsUid != expectedUid || _lastParsedPosts == null)) {
+      return;
+    }
+    final parsed = _lastParsedPostsUid == expectedUid
+        ? (_lastParsedPosts ?? const <Post>[])
+        : const <Post>[];
+    final filterGeneration = ++_postFilterGeneration;
 
     // 0) visibility filter (sync)
     final List<Post> visibilityFiltered;
@@ -254,13 +291,15 @@ class PostService {
           .toList();
     }
 
-    controller.add(fastFiltered);
+    _publishPosts(fastFiltered, expectedUid: expectedUid);
 
     // 2) reconcile with async filter (network/get() fallback) – best effort, non-blocking
     unawaited(_reconcileBlockFilterAsync(
       controller: controller,
       visibilityFiltered: visibilityFiltered,
       alreadyEmittedLen: fastFiltered.length,
+      expectedUid: expectedUid,
+      filterGeneration: filterGeneration,
     ));
   }
 
@@ -268,23 +307,36 @@ class PostService {
     required StreamController<List<Post>> controller,
     required List<Post> visibilityFiltered,
     required int alreadyEmittedLen,
+    required String? expectedUid,
+    required int filterGeneration,
   }) async {
     // controller가 닫혔거나 교체된 경우를 최대한 안전하게 회피
     if (controller.isClosed) return;
     if (!identical(controller, _postsStreamController)) return;
 
     try {
-      final nonBlocked =
-          await ContentFilterService.filterPosts(visibilityFiltered).timeout(
-              const Duration(seconds: 2),
-              onTimeout: () => visibilityFiltered);
+      final nonBlocked = await ContentFilterService.filterPosts(
+        visibilityFiltered,
+      ).timeout(const Duration(seconds: 2));
       if (controller.isClosed) return;
       if (!identical(controller, _postsStreamController)) return;
+      if (_auth.currentUser?.uid != expectedUid ||
+          filterGeneration != _postFilterGeneration) {
+        return;
+      }
 
       // 길이만으로 중복 emit을 줄임(완전 일치 비교는 비용↑)
       final hiddenFiltered = ContentHideService.filterPostsSync(nonBlocked);
       if (hiddenFiltered.length != alreadyEmittedLen) {
-        controller.add(hiddenFiltered);
+        _publishPosts(hiddenFiltered, expectedUid: expectedUid);
+      }
+      if (expectedUid != null && CacheFeatureFlags.isPostCacheEnabled) {
+        unawaited(
+          _cache.savePosts(
+            hiddenFiltered,
+            visibility: _feedPostsCacheVisibility(expectedUid),
+          ),
+        );
       }
     } catch (_) {
       // best-effort: 실패해도 이미 fastFiltered를 emit 했으므로 무시
@@ -1477,6 +1529,39 @@ class PostService {
     }
   }
 
+  String _feedPostsCacheVisibility(String uid) => 'feed_$uid';
+
+  /// 현재 로그인 계정의 Today 피드 캐시만 반환합니다.
+  Future<List<Post>> getCachedFeedPosts() async {
+    final user = _auth.currentUser;
+    if (user == null || !CacheFeatureFlags.isPostCacheEnabled) {
+      return const <Post>[];
+    }
+    try {
+      final cached = await _cache.getPosts(
+        visibility: _feedPostsCacheVisibility(user.uid),
+        allowExpiredFallback: true,
+      );
+      if (_auth.currentUser?.uid != user.uid) return const <Post>[];
+      final visible = cached
+          .where((post) => _canUserReadPost(post, user))
+          .where(
+            (post) =>
+                !ContentHideService.isHiddenPost(post.id) &&
+                !ContentHideService.isHiddenUser(post.userId),
+          )
+          .toList(growable: false);
+      final filtered = await ContentFilterService.filterPosts(visible);
+      if (_auth.currentUser?.uid != user.uid) return const <Post>[];
+      return ContentHideService.filterPostsSync(filtered);
+    } catch (error) {
+      if (Logger.isVerboseEnabled) {
+        Logger.warning('계정별 Today 포스트 캐시 읽기 실패: $error');
+      }
+      return const <Post>[];
+    }
+  }
+
   String get _allPostsCacheVisibility =>
       'all_${_auth.currentUser?.uid ?? 'guest'}';
 
@@ -1524,6 +1609,7 @@ class PostService {
     final user = _auth.currentUser;
     if (user == null) {
       _lastParsedPosts = const <Post>[];
+      _lastParsedPostsUid = null;
       requestReemitWithCurrentFilters();
       return const <Post>[];
     }
@@ -1561,15 +1647,19 @@ class PostService {
         byId[post.id] = post;
       }
     }
+    if (_auth.currentUser?.uid != user.uid) return const <Post>[];
     final refreshed = byId.values.toList()
       ..sort((a, b) => b.createdAt.compareTo(a.createdAt));
     final limited = refreshed.length > _feedRealtimeLimit
         ? refreshed.take(_feedRealtimeLimit).toList(growable: false)
         : refreshed;
+    final nonBlocked = await ContentFilterService.filterPosts(limited);
+    if (_auth.currentUser?.uid != user.uid) return const <Post>[];
 
     _lastParsedPosts = limited;
+    _lastParsedPostsUid = user.uid;
     requestReemitWithCurrentFilters();
-    return ContentHideService.filterPostsSync(limited);
+    return ContentHideService.filterPostsSync(nonBlocked);
   }
 
   /// ALL 화면 전용 최신순 커서 페이지입니다.
@@ -1892,76 +1982,12 @@ class PostService {
         bool isCurrentLifecycle() =>
             lifecycleGeneration == _postsStreamLifecycleGeneration &&
             (_postsStreamController?.hasListener ?? false);
-        // ✅ 무조건 1회는 emit해서 StreamBuilder가 waiting에 고정되지 않게 한다.
-        // (Firestore snapshots가 지연/실패하더라도 UI는 로딩 뷰에서 빠져나오게 됨)
-        scheduleMicrotask(() {
-          if (!isCurrentLifecycle()) return;
-          try {
-            final user = _auth.currentUser;
-            final canReuse = _lastParsedPostsUid == user?.uid;
-            final cached = canReuse
-                ? (_lastParsedPosts ?? const <Post>[])
-                    .where((post) => _canUserReadPost(post, user))
-                    .toList(growable: false)
-                : const <Post>[];
-            _postsStreamController
-                ?.add(ContentHideService.filterPostsSync(cached));
-          } catch (_) {}
-        });
 
         Future<void> start() async {
           try {
             Future<void> emitFiltered() async {
               if (!isCurrentLifecycle()) return;
-              final parsed = _lastParsedPosts ?? const <Post>[];
-              final currentUser = _auth.currentUser;
-
-              // 0) visibility filter first (fast, synchronous)
-              final List<Post> visibilityFiltered;
-              if (currentUser != null) {
-                visibilityFiltered = parsed
-                    .where((p) => _canUserReadPost(p, currentUser))
-                    .toList();
-              } else {
-                visibilityFiltered = parsed
-                    .where(
-                        (p) => p.visibility == 'public' || p.visibility.isEmpty)
-                    .toList();
-              }
-
-              // 1) Immediately emit something so UI doesn't stick on "waiting".
-              _postsStreamController
-                  ?.add(ContentHideService.filterPostsSync(visibilityFiltered));
-
-              // 2) blocked filter (can be slow/network dependent)
-              List<Post> nonBlocked = visibilityFiltered;
-              try {
-                nonBlocked =
-                    await ContentFilterService.filterPosts(visibilityFiltered)
-                        .timeout(const Duration(seconds: 2), onTimeout: () {
-                  if (Logger.isVerboseEnabled)
-                    Logger.warning('차단 필터 timeout → 필터 없이 표시');
-                  return visibilityFiltered;
-                });
-              } catch (e) {
-                Logger.error('차단 필터 오류(폴백): $e');
-                nonBlocked = visibilityFiltered;
-              }
-              if (!isCurrentLifecycle()) return;
-
-              // 3) If changed after block-filtering, emit again.
-              if (nonBlocked.length != visibilityFiltered.length) {
-                _postsStreamController
-                    ?.add(ContentHideService.filterPostsSync(nonBlocked));
-              }
-
-              if (CacheFeatureFlags.isPostCacheEnabled) {
-                unawaited(
-                  _cache.savePosts(
-                      ContentHideService.filterPostsSync(nonBlocked),
-                      visibility: 'public'),
-                );
-              }
+              requestReemitWithCurrentFilters();
             }
 
             Future<void> ensureBlockSubscriptions() async {
@@ -2001,7 +2027,9 @@ class PostService {
                   .where('blocker', isEqualTo: uid)
                   .snapshots()
                   .listen((snap) async {
-                if (!isCurrentLifecycle()) return;
+                if (!isCurrentLifecycle() || _auth.currentUser?.uid != uid) {
+                  return;
+                }
                 // blocks snapshot으로 캐시를 즉시 채워, 다음 필터링이 get()에 의존하지 않게 한다.
                 final ids = snap.docs
                     .map((d) => (d.data()['blocked'] ?? '').toString().trim())
@@ -2010,9 +2038,11 @@ class PostService {
                 ContentFilterService.setBlockedUserIds(ids);
                 unawaited(emitFiltered());
               }, onError: (e) {
-                if (!isCurrentLifecycle()) return;
+                if (!isCurrentLifecycle() || _auth.currentUser?.uid != uid) {
+                  return;
+                }
                 Logger.error('blocks(byMe) 스트림 오류: $e');
-                _postsStreamController?.addError(e);
+                _publishPostsError(e, expectedUid: uid);
               });
 
               _blockedBySub ??= _firestore
@@ -2020,7 +2050,9 @@ class PostService {
                   .where('blocked', isEqualTo: uid)
                   .snapshots()
                   .listen((snap) async {
-                if (!isCurrentLifecycle()) return;
+                if (!isCurrentLifecycle() || _auth.currentUser?.uid != uid) {
+                  return;
+                }
                 final ids = snap.docs
                     .map((d) => (d.data()['blocker'] ?? '').toString().trim())
                     .where((v) => v.isNotEmpty)
@@ -2028,9 +2060,11 @@ class PostService {
                 ContentFilterService.setBlockedByUserIds(ids);
                 unawaited(emitFiltered());
               }, onError: (e) {
-                if (!isCurrentLifecycle()) return;
+                if (!isCurrentLifecycle() || _auth.currentUser?.uid != uid) {
+                  return;
+                }
                 Logger.error('blocks(blockedBy) 스트림 오류: $e');
-                _postsStreamController?.addError(e);
+                _publishPostsError(e, expectedUid: uid);
               });
             }
 
@@ -2048,10 +2082,21 @@ class PostService {
               // 같은 계정이 화면에 재구독하면 마지막 이벤트 결과를 즉시
               // 재사용한다. 계정이 바뀐 경우에만 이전 계정 데이터를 비운다.
               if (_lastParsedPostsUid != expectedUid) {
-                _lastParsedPosts = const <Post>[];
+                _lastParsedPosts = null;
                 _lastParsedPostsUid = expectedUid;
+                _lastPublishedPosts = null;
+                _lastPublishedPostsUid = expectedUid;
+                _lastPostsError = null;
+                _lastPostsErrorStackTrace = null;
+                _lastPostsErrorUid = null;
+                _postFilterGeneration++;
               }
-              await emitFiltered();
+              if (expectedUid == null) {
+                _lastParsedPosts = const <Post>[];
+                await emitFiltered();
+              } else if (_lastParsedPosts != null) {
+                await emitFiltered();
+              }
 
               if (!isCurrentLifecycle() ||
                   expectedUid == null ||
@@ -2080,7 +2125,7 @@ class PostService {
                   // 오류를 전달해 StreamBuilder가 waiting에 고정되지
                   // 않게 하되, 인증 변경으로 폐기된 구독의 오류는 무시한다.
                   Logger.error('포스트 스트림 오류: $e');
-                  _postsStreamController?.addError(e);
+                  _publishPostsError(e, expectedUid: expectedUid);
                 },
               );
             }
@@ -2094,9 +2139,12 @@ class PostService {
             // 수동 새로고침 전까지 빈 피드에 머무는 현상을 방지한다.
             _authSub ??= _auth.authStateChanges().listen((user) async {
               if (!isCurrentLifecycle()) return;
-              ContentFilterService.refreshCache();
-              final shouldRestartPosts = user?.uid != _postsListenUid ||
-                  (user != null && _postsSub == null);
+              final authChanged = user?.uid != _postsListenUid;
+              if (authChanged) {
+                ContentFilterService.refreshCache();
+              }
+              final shouldRestartPosts =
+                  authChanged || (user != null && _postsSub == null);
               if (shouldRestartPosts) {
                 await restartPostsSubscription();
               } else {
@@ -2107,7 +2155,10 @@ class PostService {
             }, onError: (e) {
               if (!isCurrentLifecycle()) return;
               Logger.error('Auth 스트림 오류: $e');
-              _postsStreamController?.addError(e);
+              _publishPostsError(
+                e,
+                expectedUid: _auth.currentUser?.uid,
+              );
             });
 
             // 현재 상태 기준 blocks 구독 설정
@@ -2116,7 +2167,11 @@ class PostService {
           } catch (e, st) {
             Logger.error('getPostsStream start() 실패: $e', e, st);
             try {
-              _postsStreamController?.addError(e);
+              _publishPostsError(
+                e,
+                stackTrace: st,
+                expectedUid: _auth.currentUser?.uid,
+              );
             } catch (_) {}
           }
         }
@@ -2149,7 +2204,28 @@ class PostService {
       },
     );
 
-    _postsStreamCached = _postsStreamController!.stream;
+    final sharedStream = _postsStreamController!.stream;
+    _postsStreamCached = Stream<List<Post>>.multi(
+      (listener) {
+        final uid = _auth.currentUser?.uid;
+        if (_lastPublishedPostsUid == uid && _lastPublishedPosts != null) {
+          listener.add(_lastPublishedPosts!);
+        }
+        if (_lastPostsErrorUid == uid && _lastPostsError != null) {
+          listener.addError(
+            _lastPostsError!,
+            _lastPostsErrorStackTrace,
+          );
+        }
+        final subscription = sharedStream.listen(
+          listener.add,
+          onError: listener.addError,
+          onDone: listener.close,
+        );
+        listener.onCancel = subscription.cancel;
+      },
+      isBroadcast: true,
+    );
     return _postsStreamCached!;
   }
 

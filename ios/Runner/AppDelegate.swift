@@ -1,4 +1,5 @@
 import Flutter
+import AVFoundation
 import FirebaseAuth
 import FirebaseCore
 import Photos
@@ -58,6 +59,7 @@ class OrganizationInviteSceneDelegate: FlutterSceneDelegate {
 @main
 @objc class AppDelegate: FlutterAppDelegate, FlutterImplicitEngineDelegate {
   private var mediaSaverChannel: FlutterMethodChannel?
+  private var snapshotVideoEditorChannel: FlutterMethodChannel?
   private var externalShareChannel: FlutterMethodChannel?
   private var sharedFirebaseAuthChannel: FlutterMethodChannel?
   private var organizationInviteChannel: FlutterMethodChannel?
@@ -148,6 +150,27 @@ class OrganizationInviteSceneDelegate: FlutterSceneDelegate {
       self?.saveImageToPhotos(call: call, result: result)
     }
     mediaSaverChannel = channel
+
+    let videoEditorChannel = FlutterMethodChannel(
+      name: "com.wefilling.app/snapshot_video_editor",
+      binaryMessenger: engineBridge.applicationRegistrar.messenger()
+    )
+    videoEditorChannel.setMethodCallHandler { [weak self] call, result in
+      guard call.method == "trimVideo" else {
+        result(FlutterMethodNotImplemented)
+        return
+      }
+      guard let self else {
+        result(FlutterError(
+          code: "snapshot-video-editor-unavailable",
+          message: "The video editor is unavailable.",
+          details: nil
+        ))
+        return
+      }
+      self.trimSnapshotVideo(call: call, result: result)
+    }
+    snapshotVideoEditorChannel = videoEditorChannel
 
     let shareChannel = FlutterMethodChannel(
       name: "com.wefilling.app/external_share",
@@ -440,6 +463,152 @@ class OrganizationInviteSceneDelegate: FlutterSceneDelegate {
       }
     } else {
       completion(status == .authorized)
+    }
+  }
+
+  private func trimSnapshotVideo(
+    call: FlutterMethodCall,
+    result: @escaping FlutterResult
+  ) {
+    guard let arguments = call.arguments as? [String: Any],
+          let rawPath = arguments["path"] as? String,
+          let startNumber = arguments["startMs"] as? NSNumber,
+          let endNumber = arguments["endMs"] as? NSNumber else {
+      result(FlutterError(
+        code: "snapshot-video-trim-invalid",
+        message: "The selected video range is invalid.",
+        details: nil
+      ))
+      return
+    }
+
+    let path = rawPath.trimmingCharacters(in: .whitespacesAndNewlines)
+    let startMs = startNumber.int64Value
+    let requestedEndMs = endNumber.int64Value
+    guard !path.isEmpty,
+          FileManager.default.fileExists(atPath: path),
+          startMs >= 0,
+          requestedEndMs > startMs,
+          requestedEndMs - startMs <= 12_000 else {
+      result(FlutterError(
+        code: "snapshot-video-trim-invalid",
+        message: "The selected video range is invalid.",
+        details: nil
+      ))
+      return
+    }
+
+    let inputURL = URL(fileURLWithPath: path)
+    let asset = AVURLAsset(url: inputURL)
+    let sourceSeconds = CMTimeGetSeconds(asset.duration)
+    guard sourceSeconds.isFinite, sourceSeconds > 0 else {
+      result(FlutterError(
+        code: "snapshot-video-trim-failed",
+        message: "The selected video has no valid duration.",
+        details: nil
+      ))
+      return
+    }
+    let sourceDurationMs = Int64((sourceSeconds * 1_000).rounded(.down))
+    let endMs = min(requestedEndMs, sourceDurationMs)
+    guard endMs > startMs else {
+      result(FlutterError(
+        code: "snapshot-video-trim-invalid",
+        message: "The selected video range is outside the source.",
+        details: nil
+      ))
+      return
+    }
+
+    let fileManager = FileManager.default
+    let outputDirectory = fileManager.temporaryDirectory
+      .appendingPathComponent("snapshot_video_trims", isDirectory: true)
+    do {
+      try fileManager.createDirectory(
+        at: outputDirectory,
+        withIntermediateDirectories: true,
+        attributes: nil
+      )
+      let expiry = Date().addingTimeInterval(-86_400)
+      if let files = try? fileManager.contentsOfDirectory(
+        at: outputDirectory,
+        includingPropertiesForKeys: [.contentModificationDateKey],
+        options: [.skipsHiddenFiles]
+      ) {
+        for file in files {
+          let modified = try? file.resourceValues(
+            forKeys: [.contentModificationDateKey]
+          ).contentModificationDate
+          if let modified, modified < expiry {
+            try? fileManager.removeItem(at: file)
+          }
+        }
+      }
+    } catch {
+      result(FlutterError(
+        code: "snapshot-video-trim-failed",
+        message: "Could not create the video edit cache.",
+        details: nil
+      ))
+      return
+    }
+
+    let outputURL = outputDirectory
+      .appendingPathComponent("snapshot_\(UUID().uuidString).mp4")
+    guard let exporter = AVAssetExportSession(
+      asset: asset,
+      presetName: AVAssetExportPresetMediumQuality
+    ), exporter.supportedFileTypes.contains(.mp4) else {
+      result(FlutterError(
+        code: "snapshot-video-format-unsupported",
+        message: "This video format cannot be exported as MP4.",
+        details: nil
+      ))
+      return
+    }
+
+    exporter.outputURL = outputURL
+    exporter.outputFileType = .mp4
+    exporter.shouldOptimizeForNetworkUse = true
+    exporter.timeRange = CMTimeRange(
+      start: CMTime(value: startMs, timescale: 1_000),
+      duration: CMTime(value: endMs - startMs, timescale: 1_000)
+    )
+    exporter.exportAsynchronously {
+      DispatchQueue.main.async {
+        switch exporter.status {
+        case .completed:
+          let attributes = try? fileManager.attributesOfItem(
+            atPath: outputURL.path
+          )
+          let byteCount = (attributes?[.size] as? NSNumber)?.int64Value ?? 0
+          if byteCount > 0 {
+            result(outputURL.path)
+          } else {
+            try? fileManager.removeItem(at: outputURL)
+            result(FlutterError(
+              code: "snapshot-video-trim-failed",
+              message: "The edited video is empty.",
+              details: nil
+            ))
+          }
+        case .cancelled:
+          try? fileManager.removeItem(at: outputURL)
+          result(FlutterError(
+            code: "snapshot-video-trim-cancelled",
+            message: "Video editing was cancelled.",
+            details: nil
+          ))
+        default:
+          try? fileManager.removeItem(at: outputURL)
+          result(FlutterError(
+            code: "snapshot-video-trim-failed",
+            message: exporter.error?.localizedDescription
+              ?? "Could not edit the selected video.",
+            details: nil
+          ))
+        }
+      }
     }
   }
 

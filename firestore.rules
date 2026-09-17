@@ -597,16 +597,19 @@ service cloud.firestore {
         // 현재 사용자는 자신의 반응 여부만 확인하고, 스낵 작성자는
         // 조회 목록에서 반응자를 함께 확인할 수 있다. 작성은 Callable만 수행한다.
         allow get: if request.auth != null
-          && ((request.auth.uid == userId
-              && canReadSnapshot(
-                get(/databases/$(database)/documents/snapshots/$(snapshotId)).data
-              ))
+          && canReadSnapshot(
+            get(/databases/$(database)/documents/snapshots/$(snapshotId)).data
+          )
+          && (request.auth.uid == userId
             || request.auth.uid == get(
               /databases/$(database)/documents/snapshots/$(snapshotId)
             ).data.get('ownerId', get(
               /databases/$(database)/documents/snapshots/$(snapshotId)
             ).data.get('authorId', '')));
         allow list: if request.auth != null
+          && canReadSnapshot(
+            get(/databases/$(database)/documents/snapshots/$(snapshotId)).data
+          )
           && request.auth.uid == get(
             /databases/$(database)/documents/snapshots/$(snapshotId)
           ).data.get('ownerId', get(
@@ -626,11 +629,23 @@ service cloud.firestore {
         allow list, create, update, delete: if false;
       }
 
+      match /feed_comments/{commentId} {
+        // 공개 댓글은 부모 스낵을 현재 읽을 수 있는 사용자만 조회한다.
+        // 작성·답글·삭제는 만료/차단/수신자 검증을 수행하는 Callable 전용이다.
+        allow read: if request.auth != null
+          && canReadSnapshot(
+            get(/databases/$(database)/documents/snapshots/$(snapshotId)).data
+          );
+        allow create, update, delete: if false;
+      }
+
       match /views/{viewerId} {
         // 조회 기록은 서버만 작성한다. 목록은 부모 스냅샷의 작성자에게만
-        // 허용하며, 만료/공개범위 판정과 결합해 list 쿼리가 거부되지 않게
-        // 소유권만 독립적으로 확인한다.
+        // 허용하며, 부모가 만료되거나 삭제 상태가 되면 즉시 차단한다.
         allow read: if request.auth != null
+          && canReadSnapshot(
+            get(/databases/$(database)/documents/snapshots/$(snapshotId)).data
+          )
           && request.auth.uid == get(
             /databases/$(database)/documents/snapshots/$(snapshotId)
           ).data.get('ownerId', get(

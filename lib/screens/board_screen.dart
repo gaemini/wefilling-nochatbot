@@ -508,7 +508,7 @@ class BoardScreenState extends State<BoardScreen> {
       await ContentFilterService.preloadBlockLists();
 
       final cachedResults = await Future.wait<List<Post>>(<Future<List<Post>>>[
-        _postService.getCachedPosts(),
+        _postService.getCachedFeedPosts(),
         _postService.getCachedAllPosts(),
       ]);
       if (!mounted) return false;
@@ -1934,9 +1934,9 @@ class BoardScreenState extends State<BoardScreen> {
           ),
           const SizedBox(height: 16),
           ElevatedButton(
-            onPressed: () {
-              setState(() {}); // 새로고침
-            },
+            onPressed: () => unawaited(
+              _refreshBoardFeed(_cachedTodayPosts ?? const <Post>[]),
+            ),
             child: const Text('다시 시도'),
           ),
         ],

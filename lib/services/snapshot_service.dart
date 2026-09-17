@@ -6,12 +6,16 @@ import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:cloud_functions/cloud_functions.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:firebase_storage/firebase_storage.dart';
+import 'package:path/path.dart' as path;
+import 'package:path_provider/path_provider.dart';
 import 'package:uuid/uuid.dart';
 
 import '../models/snapshot.dart';
 import '../models/snapshot_comment_letter.dart';
 import '../security/frozen_audience_policy.dart';
 import 'content_hide_service.dart';
+import 'content_filter_service.dart';
+import 'snapshot_archive_service.dart';
 import 'snapshot_media_cache_service.dart';
 import '../utils/logger.dart';
 
@@ -26,10 +30,12 @@ class SnapshotService {
   final Uuid _uuid = const Uuid();
   final SnapshotMediaCacheService _mediaCache =
       SnapshotMediaCacheService.instance;
+  final SnapshotArchiveService _archive = SnapshotArchiveService.instance;
 
   final Map<String, Uint8List> _imageBytes = <String, Uint8List>{};
   final Map<String, Future<Uint8List>> _imageLoads =
       <String, Future<Uint8List>>{};
+  final Map<String, Future<File>> _videoLoads = <String, Future<File>>{};
   final List<String> _imageLru = <String>[];
   final Set<String> _locallyHiddenSnapshotIds = <String>{};
   final Set<String> _recordedViewReceiptKeys = <String>{};
@@ -54,6 +60,10 @@ class SnapshotService {
   String? _feedSyncUserId;
 
   DateTime get serverNow => DateTime.now().toUtc().add(_serverOffset);
+
+  String createSnapshotId() => _uuid.v4();
+
+  String createCommentRequestId() => _uuid.v4();
 
   Future<void> refreshServerClock() {
     final pending = _serverClockRefresh;
@@ -250,11 +260,12 @@ class SnapshotService {
         }
         feedItems = parsed;
         feedReady = true;
-        if (Logger.isVerboseEnabled) Logger.log(
-          '스낵 개인 피드 조회 성공 '
-          '(currentUserId=$uid, documents=${snapshot.docs.length}, '
-          'parsed=${parsed.length})',
-        );
+        if (Logger.isVerboseEnabled)
+          Logger.log(
+            '스낵 개인 피드 조회 성공 '
+            '(currentUserId=$uid, documents=${snapshot.docs.length}, '
+            'parsed=${parsed.length})',
+          );
         emit();
       }, onError: (Object error, StackTrace stackTrace) {
         final code = error is FirebaseException ? error.code : 'unknown';
@@ -267,6 +278,9 @@ class SnapshotService {
         // 이전에 성공한 결과가 있다면 유지한다. 최초 실패만 빈 상태로 확정한다.
         feedReady = true;
         emit();
+        if (!disposed && !controller.isClosed) {
+          controller.addError(error, stackTrace);
+        }
       });
 
       unawaited(syncMyFeed());
@@ -292,6 +306,9 @@ class SnapshotService {
         blockReadFailed = true;
         blockedReady = true;
         emit();
+        if (!disposed && !controller.isClosed) {
+          controller.addError(error, stackTrace);
+        }
       });
 
       blockedBySub = _firestore
@@ -315,6 +332,9 @@ class SnapshotService {
         blockReadFailed = true;
         blockedByReady = true;
         emit();
+        if (!disposed && !controller.isClosed) {
+          controller.addError(error, stackTrace);
+        }
       });
 
       localFilterSub = _localFilterChanges.stream.listen((_) => emit());
@@ -335,32 +355,56 @@ class SnapshotService {
   }
 
   Future<SnapshotItem> createSnapshot({
+    String? snapshotId,
     required File composedImage,
+    SnapshotMediaType mediaType = SnapshotMediaType.photo,
+    File? videoThumbnail,
+    List<SnapshotOverlay> overlays = const <SnapshotOverlay>[],
     required SnapshotVisibility visibility,
     required List<String> visibleToCategoryIds,
     required SnapshotOverlay overlay,
     required double aspectRatio,
     required int sourceWidth,
     required int sourceHeight,
+    int durationMs = 0,
+    bool cleanupExistingUpload = false,
     void Function(double progress)? onProgress,
   }) async {
     final user = _auth.currentUser;
     if (user == null) throw StateError('sign-in-required');
 
-    final snapshotId = _uuid.v4();
-    final storagePath = 'snapshots/$snapshotId/final.jpg';
+    final resolvedSnapshotId = snapshotId ?? createSnapshotId();
+    final storagePath = mediaType == SnapshotMediaType.video
+        ? 'snapshots/$resolvedSnapshotId/final.mp4'
+        : 'snapshots/$resolvedSnapshotId/final.jpg';
     final ref = _storage.ref(storagePath);
+    final thumbnailPath = 'snapshots/$resolvedSnapshotId/thumbnail.jpg';
+    final thumbnailRef = _storage.ref(thumbnailPath);
     var uploaded = false;
-    var stage = 'storage-upload';
+    var thumbnailUploaded = false;
+    var stage = 'orphan-cleanup';
 
     try {
+      if (cleanupExistingUpload) {
+        // 같은 게시 요청의 이전 실패에서 canonical 문서 없이 객체만 남은
+        // 경우에만 정리한다. Storage Rules가 다른 사용자/게시 완료 객체 삭제를
+        // 막으며, object-not-found는 정상적인 재시도로 취급한다.
+        await ref.delete().catchError((_) {});
+        if (mediaType == SnapshotMediaType.video) {
+          await thumbnailRef.delete().catchError((_) {});
+        }
+      }
+
+      stage = 'storage-upload';
       final task = ref.putFile(
         composedImage,
         SettableMetadata(
-          contentType: 'image/jpeg',
+          contentType:
+              mediaType == SnapshotMediaType.video ? 'video/mp4' : 'image/jpeg',
           customMetadata: <String, String>{
             'ownerUid': user.uid,
-            'snapshotId': snapshotId,
+            'snapshotId': resolvedSnapshotId,
+            'mediaType': mediaType.value,
           },
         ),
       );
@@ -368,42 +412,128 @@ class SnapshotService {
         if (event.totalBytes <= 0) return;
         onProgress?.call(event.bytesTransferred / event.totalBytes);
       });
-      await task.timeout(const Duration(minutes: 3));
+      try {
+        await task.timeout(const Duration(minutes: 3));
+      } catch (_) {
+        await task.cancel().catchError((_) => false);
+        rethrow;
+      }
       uploaded = true;
 
+      if (mediaType == SnapshotMediaType.video) {
+        if (videoThumbnail == null) {
+          throw StateError('snapshot-video-thumbnail-missing');
+        }
+        stage = 'thumbnail-upload';
+        final thumbnailTask = thumbnailRef.putFile(
+          videoThumbnail,
+          SettableMetadata(
+            contentType: 'image/jpeg',
+            customMetadata: <String, String>{
+              'ownerUid': user.uid,
+              'snapshotId': resolvedSnapshotId,
+              'mediaType': 'video-thumbnail',
+            },
+          ),
+        );
+        try {
+          await thumbnailTask.timeout(const Duration(minutes: 1));
+        } catch (_) {
+          await thumbnailTask.cancel().catchError((_) => false);
+          rethrow;
+        }
+        thumbnailUploaded = true;
+      }
+
       stage = 'create-callable';
-      await _functions.httpsCallable('createSnapshot').call(<String, dynamic>{
-        'snapshotId': snapshotId,
+      final response = await _functions
+          .httpsCallable('createSnapshot')
+          .call(<String, dynamic>{
+        'snapshotId': resolvedSnapshotId,
         'storagePath': storagePath,
+        'mediaType': mediaType.value,
         'visibility': visibility.value,
         'visibleToCategoryIds': visibleToCategoryIds,
         'overlay': overlay.toMap(),
+        'overlays': overlays.take(5).map((item) => item.toMap()).toList(),
         'aspectRatio': aspectRatio,
         'sourceWidth': sourceWidth,
         'sourceHeight': sourceHeight,
-      }).timeout(const Duration(seconds: 30));
-
-      stage = 'document-read';
-      final document =
-          await _firestore.collection('snapshots').doc(snapshotId).get();
-      if (!document.exists) throw StateError('snapshot-document-missing');
-      return SnapshotItem.fromFirestore(document);
+      }).timeout(
+        Duration(seconds: mediaType == SnapshotMediaType.video ? 135 : 30),
+      );
+      final responseData = response.data is Map
+          ? Map<String, dynamic>.from(response.data as Map)
+          : const <String, dynamic>{};
+      final createdAtMillis =
+          (responseData['createdAtMillis'] as num?)?.toInt() ?? 0;
+      final expiresAtMillis =
+          (responseData['expiresAtMillis'] as num?)?.toInt() ?? 0;
+      if (createdAtMillis <= 0 || expiresAtMillis <= createdAtMillis) {
+        throw StateError('snapshot-create-response-invalid');
+      }
+      final confirmedOverlays = overlays
+          .where((item) => !item.isEmpty)
+          .take(5)
+          .toList(growable: false);
+      return SnapshotItem(
+        id: resolvedSnapshotId,
+        authorId: user.uid,
+        authorName: user.displayName?.trim().isNotEmpty == true
+            ? user.displayName!.trim()
+            : 'User',
+        authorPhotoUrl: user.photoURL ?? '',
+        authorNationality: '',
+        university: '',
+        storagePath: storagePath,
+        mediaType: mediaType,
+        thumbnailStoragePath:
+            mediaType == SnapshotMediaType.video ? thumbnailPath : '',
+        durationMs: durationMs.clamp(0, 12000).toInt(),
+        visibility: visibility,
+        createdAt: DateTime.fromMillisecondsSinceEpoch(
+          createdAtMillis,
+          isUtc: true,
+        ),
+        expiresAt: DateTime.fromMillisecondsSinceEpoch(
+          expiresAtMillis,
+          isUtc: true,
+        ),
+        aspectRatio: aspectRatio,
+        overlay: overlay,
+        overlays: confirmedOverlays,
+        visibleToCategoryIds: visibleToCategoryIds,
+        allowedUserIds: <String>[user.uid],
+        visibilityLockedAt: DateTime.fromMillisecondsSinceEpoch(
+          createdAtMillis,
+          isUtc: true,
+        ),
+        visibilitySchemaVersion: 2,
+      );
     } catch (error, stackTrace) {
       Logger.error('스낵 생성 실패 ($stage)', error, stackTrace);
-      if (uploaded) {
-        // Callable 응답만 유실된 경우 서버에는 이미 정상 생성되었을 수 있다.
-        // 이때 성공한 스낵을 실패로 오인하거나 고아 파일로 만들지 않는다.
-        try {
-          final document = await _firestore
-              .collection('snapshots')
-              .doc(snapshotId)
-              .get()
-              .timeout(const Duration(seconds: 5));
-          if (document.exists) return SnapshotItem.fromFirestore(document);
-        } catch (_) {}
-        try {
-          await ref.delete();
-        } catch (_) {}
+      // 재시도 중 이미 canonical 문서가 생성됐거나 Callable 응답만 유실된
+      // 경우에는 성공한 게시물을 다시 업로드하거나 지우지 않는다. 신규 UUID의
+      // 사전 get은 보안 규칙상 거부될 수 있으므로 오류 복구 단계에서만 읽는다.
+      try {
+        final document = await _firestore
+            .collection('snapshots')
+            .doc(resolvedSnapshotId)
+            .get()
+            .timeout(const Duration(seconds: 5));
+        if (document.exists) return SnapshotItem.fromFirestore(document);
+      } catch (_) {}
+      if (uploaded || thumbnailUploaded) {
+        if (uploaded) {
+          try {
+            await ref.delete();
+          } catch (_) {}
+        }
+        if (thumbnailUploaded) {
+          try {
+            await thumbnailRef.delete();
+          } catch (_) {}
+        }
       }
       rethrow;
     }
@@ -417,18 +547,19 @@ class SnapshotService {
       if (!doc.exists) throw StateError('snapshot-not-found');
       final item = SnapshotItem.fromFirestore(doc);
       if (item.isExpiredAt(serverNow)) throw StateError('snapshot-expired');
-      if (Logger.isVerboseEnabled) Logger.log(
-        '스낵 단건 조회 성공 '
-        '(contentId=$snapshotId, currentUserId=$currentUserId, '
-        'ownerId=${item.authorId}, visibilityMode=${item.visibility.value}, '
-        'isOwner=${item.authorId == currentUserId}, '
-        'isPublic=${item.visibility == SnapshotVisibility.public}, '
-        'audienceContainsCurrentUser=${item.allowedUserIds.contains(currentUserId)}, '
-        'visibilitySchemaVersion=${item.visibilitySchemaVersion}, '
-        'createdAt=${item.createdAt.toIso8601String()}, '
-        'expiresAt=${item.expiresAt.toIso8601String()}, '
-        'hasImageStoragePath=${item.imageStoragePath.isNotEmpty})',
-      );
+      if (Logger.isVerboseEnabled)
+        Logger.log(
+          '스낵 단건 조회 성공 '
+          '(contentId=$snapshotId, currentUserId=$currentUserId, '
+          'ownerId=${item.authorId}, visibilityMode=${item.visibility.value}, '
+          'isOwner=${item.authorId == currentUserId}, '
+          'isPublic=${item.visibility == SnapshotVisibility.public}, '
+          'audienceContainsCurrentUser=${item.allowedUserIds.contains(currentUserId)}, '
+          'visibilitySchemaVersion=${item.visibilitySchemaVersion}, '
+          'createdAt=${item.createdAt.toIso8601String()}, '
+          'expiresAt=${item.expiresAt.toIso8601String()}, '
+          'hasImageStoragePath=${item.imageStoragePath.isNotEmpty})',
+        );
       return item;
     } catch (error, stackTrace) {
       final code = error is FirebaseException ? error.code : 'unknown';
@@ -488,6 +619,14 @@ class SnapshotService {
           (viewerId == item.authorId || (!blocked && !blockedBy));
       controller.add(canSee ? item : null);
       if (canSee) {
+        if (item.authorId == viewerId) {
+          unawaited(_archive.updateActivity(
+            snapshotId: item.id,
+            commentCount: item.commentCount,
+            reactionCount: item.reactionCounts.values
+                .fold<int>(0, (total, value) => total + value),
+          ));
+        }
         final delay = item.expiresAt.difference(serverNow);
         expiryTimer = Timer(
           delay.isNegative
@@ -667,12 +806,9 @@ class SnapshotService {
         error,
         stackTrace,
       );
-      while (true) {
-        yield await _fetchViewersFromServer(snapshotId, ownerId);
-        // 실시간 Rules가 일시적으로 적용되지 않은 환경에서도 새 조회자를
-        // 오래 기다리지 않도록 짧은 보조 갱신 주기를 사용한다.
-        await Future<void>.delayed(const Duration(seconds: 2));
-      }
+      // 구버전 Rules 환경의 단발성 호환 조회다. 반복 폴링하지 않으며 화면을
+      // 다시 열면 새 스트림 소유자가 다시 한 번 조회한다.
+      yield await _fetchViewersFromServer(snapshotId, ownerId);
     }
   }
 
@@ -708,6 +844,11 @@ class SnapshotService {
       }
       merged.sort((a, b) => b.viewedAt.compareTo(a.viewedAt));
       controller.add(List<SnapshotViewer>.unmodifiable(merged));
+      unawaited(_archive.updateActivity(
+        snapshotId: snapshotId,
+        viewerCount: merged.length,
+        viewers: merged,
+      ));
     }
 
     Future<void> fail(Object error, StackTrace stackTrace) async {
@@ -858,10 +999,11 @@ class SnapshotService {
       // App Check/네트워크 등의 일시적인 Callable 실패가 반응 버튼을 다시
       // 노출시키지 않도록 canonical 반응 문서를 직접 확인한다. 반응 문서는
       // 사용자 UID를 문서 ID로 사용하므로 앱 재실행 후에도 상태가 유지된다.
-      if (Logger.isVerboseEnabled) Logger.warning(
-        '스낵 반응 상태 Callable 조회 실패, Firestore로 재확인 '
-        '(snapshotId=$snapshotId, error=$error)',
-      );
+      if (Logger.isVerboseEnabled)
+        Logger.warning(
+          '스낵 반응 상태 Callable 조회 실패, Firestore로 재확인 '
+          '(snapshotId=$snapshotId, error=$error)',
+        );
       final reaction = await _firestore
           .collection('snapshots')
           .doc(snapshotId)
@@ -910,10 +1052,11 @@ class SnapshotService {
       final data = result.data;
       return data is Map && data['commented'] == true;
     } catch (error) {
-      if (Logger.isVerboseEnabled) Logger.warning(
-        '스낵 코멘트 상태 Callable 조회 실패, Firestore로 재확인 '
-        '(snapshotId=$snapshotId, error=$error)',
-      );
+      if (Logger.isVerboseEnabled)
+        Logger.warning(
+          '스낵 코멘트 상태 Callable 조회 실패, Firestore로 재확인 '
+          '(snapshotId=$snapshotId, error=$error)',
+        );
       try {
         final comment = await _firestore
             .collection('snapshots')
@@ -978,6 +1121,237 @@ class SnapshotService {
         .doc(userId)
         .snapshots()
         .map((snapshot) => snapshot.exists);
+  }
+
+  Stream<List<SnapshotComment>> watchFeedComments(String snapshotId) {
+    final viewerId = _auth.currentUser?.uid;
+    if (viewerId == null || snapshotId.trim().isEmpty) {
+      return Stream<List<SnapshotComment>>.value(const <SnapshotComment>[]);
+    }
+    late final StreamController<List<SnapshotComment>> controller;
+    StreamSubscription<QuerySnapshot<Map<String, dynamic>>>? commentsSub;
+    StreamSubscription<QuerySnapshot<Map<String, dynamic>>>? blockedSub;
+    StreamSubscription<QuerySnapshot<Map<String, dynamic>>>? blockedBySub;
+    var comments = const <SnapshotComment>[];
+    var blocked = <String>{};
+    var blockedBy = <String>{};
+    var commentsReady = false;
+    var blockedReady = false;
+    var blockedByReady = false;
+    var disposed = false;
+
+    void emit() {
+      if (disposed ||
+          controller.isClosed ||
+          !commentsReady ||
+          !blockedReady ||
+          !blockedByReady) {
+        return;
+      }
+      final visible = comments.where((comment) {
+        return !blocked.contains(comment.userId) &&
+            !blockedBy.contains(comment.userId) &&
+            !ContentHideService.shouldHideComment(
+              commentId: comment.id,
+              userId: comment.userId,
+            );
+      }).toList(growable: false);
+      controller.add(List<SnapshotComment>.unmodifiable(visible));
+      unawaited(_archive.updateActivity(
+        snapshotId: snapshotId,
+        commentCount: visible.where((comment) => !comment.isDeleted).length,
+        comments: visible,
+      ));
+    }
+
+    void fail(Object error, StackTrace stackTrace) {
+      if (!disposed && !controller.isClosed) {
+        controller.addError(error, stackTrace);
+      }
+    }
+
+    void start() {
+      commentsSub = _firestore
+          .collection('snapshots')
+          .doc(snapshotId)
+          .collection('feed_comments')
+          .snapshots()
+          .listen((snapshot) {
+        final parsed = <SnapshotComment>[];
+        for (final document in snapshot.docs) {
+          try {
+            parsed.add(SnapshotComment.fromFirestore(snapshotId, document));
+          } catch (error, stackTrace) {
+            Logger.error(
+              '스낵 공개 댓글 파싱 실패 '
+              '(snapshotId=$snapshotId, commentId=${document.id})',
+              error,
+              stackTrace,
+            );
+          }
+        }
+        parsed.sort((left, right) {
+          final byCreatedAt = left.createdAt.compareTo(right.createdAt);
+          return byCreatedAt != 0 ? byCreatedAt : left.id.compareTo(right.id);
+        });
+        comments = parsed;
+        commentsReady = true;
+        emit();
+      }, onError: fail);
+      blockedSub = _firestore
+          .collection('blocks')
+          .where('blocker', isEqualTo: viewerId)
+          .snapshots()
+          .listen((snapshot) {
+        blocked = snapshot.docs
+            .map((doc) => (doc.data()['blocked'] ?? '').toString())
+            .where((id) => id.isNotEmpty)
+            .toSet();
+        ContentFilterService.setBlockedUserIds(blocked);
+        blockedReady = true;
+        emit();
+      }, onError: fail);
+      blockedBySub = _firestore
+          .collection('blocks')
+          .where('blocked', isEqualTo: viewerId)
+          .snapshots()
+          .listen((snapshot) {
+        blockedBy = snapshot.docs
+            .map((doc) => (doc.data()['blocker'] ?? '').toString())
+            .where((id) => id.isNotEmpty)
+            .toSet();
+        blockedByReady = true;
+        emit();
+      }, onError: fail);
+    }
+
+    controller = StreamController<List<SnapshotComment>>(
+      onListen: start,
+      onCancel: () async {
+        disposed = true;
+        await commentsSub?.cancel();
+        await blockedSub?.cancel();
+        await blockedBySub?.cancel();
+      },
+    );
+    return controller.stream;
+  }
+
+  Future<String> createFeedComment({
+    required String snapshotId,
+    required String content,
+    String? parentCommentId,
+    String? replyToCommentId,
+    String? requestId,
+  }) async {
+    final normalized = content.trim();
+    if (normalized.isEmpty) throw ArgumentError.value(content, 'content');
+    final resolvedRequestId = requestId ?? _uuid.v4();
+    final result = await _functions
+        .httpsCallable('createSnapshotFeedComment')
+        .call(<String, dynamic>{
+      'snapshotId': snapshotId,
+      'content': normalized,
+      'requestId': resolvedRequestId,
+      if (parentCommentId?.trim().isNotEmpty == true)
+        'parentCommentId': parentCommentId!.trim(),
+      if (replyToCommentId?.trim().isNotEmpty == true)
+        'replyToCommentId': replyToCommentId!.trim(),
+    }).timeout(const Duration(seconds: 20));
+    final data = result.data;
+    if (data is! Map || data['success'] != true) {
+      throw StateError('snapshot-feed-comment-not-confirmed');
+    }
+    return (data['commentId'] ?? resolvedRequestId).toString();
+  }
+
+  Future<void> deleteFeedComment({
+    required String snapshotId,
+    required String commentId,
+  }) async {
+    final result = await _functions
+        .httpsCallable('deleteSnapshotFeedComment')
+        .call(<String, dynamic>{
+      'snapshotId': snapshotId,
+      'commentId': commentId,
+    }).timeout(const Duration(seconds: 20));
+    if (result.data is! Map || (result.data as Map)['success'] != true) {
+      throw StateError('snapshot-feed-comment-delete-not-confirmed');
+    }
+  }
+
+  Future<File> loadVideoFile(SnapshotItem item) async {
+    if (!item.isVideo || item.videoStoragePath.trim().isEmpty) {
+      throw StateError('snapshot-video-reference-missing');
+    }
+    final uid = _auth.currentUser?.uid;
+    if (uid == null) throw StateError('sign-in-required');
+    final cacheKey = '$uid:${item.id}';
+    final pending = _videoLoads[cacheKey];
+    if (pending != null) return pending;
+
+    late final Future<File> request;
+    request = _downloadVideo(item, uid).whenComplete(() {
+      if (identical(_videoLoads[cacheKey], request)) {
+        _videoLoads.remove(cacheKey);
+      }
+    });
+    _videoLoads[cacheKey] = request;
+    return request;
+  }
+
+  Future<File> _downloadVideo(SnapshotItem item, String uid) async {
+    if (!_hasServerOffset) await refreshServerClock();
+    if (item.isExpiredAt(serverNow)) throw StateError('snapshot-expired');
+    final temporary = await getTemporaryDirectory();
+    final directory = Directory(path.join(
+      temporary.path,
+      'wefilling_snapshot_video_v1',
+      uid.replaceAll(RegExp(r'[^A-Za-z0-9_-]'), '_'),
+    ));
+    await directory.create(recursive: true);
+    final target = File(path.join(directory.path, '${item.id}.mp4'));
+    if (await target.exists() && await target.length() > 0) return target;
+    final partial = File('${target.path}.part');
+    if (await partial.exists()) await partial.delete();
+
+    Object? lastError;
+    StackTrace? lastStackTrace;
+    for (var attempt = 1; attempt <= 2; attempt++) {
+      try {
+        await _storage
+            .ref(item.videoStoragePath.trim())
+            .writeToFile(partial)
+            .timeout(const Duration(minutes: 3));
+        if (!await partial.exists() || await partial.length() <= 0) {
+          throw StateError('snapshot-video-empty');
+        }
+        if (_auth.currentUser?.uid != uid || item.isExpiredAt(serverNow)) {
+          throw StateError('snapshot-video-access-ended');
+        }
+        if (await target.exists()) await target.delete();
+        return partial.rename(target.path);
+      } catch (error, stackTrace) {
+        lastError = error;
+        lastStackTrace = stackTrace;
+        if (await partial.exists()) await partial.delete();
+        final code = error is FirebaseException ? error.code : 'unknown';
+        if (code == 'unauthorized' && attempt == 1) {
+          final currentUser = _auth.currentUser;
+          if (currentUser != null && currentUser.uid == uid) {
+            await currentUser
+                .getIdToken(true)
+                .timeout(const Duration(seconds: 10));
+            continue;
+          }
+        }
+        break;
+      }
+    }
+    Error.throwWithStackTrace(
+      lastError ?? StateError('snapshot-video-download-failed'),
+      lastStackTrace ?? StackTrace.current,
+    );
   }
 
   Future<Uint8List> loadImageBytes(SnapshotItem item) async {
@@ -1088,10 +1462,11 @@ class SnapshotService {
             await currentUser
                 .getIdToken(true)
                 .timeout(const Duration(seconds: 10));
-            if (Logger.isVerboseEnabled) Logger.log(
-              '스낵 이미지 인증 상태 갱신 완료 '
-              '(contentId=${item.id}, currentUserId=$currentUserId)',
-            );
+            if (Logger.isVerboseEnabled)
+              Logger.log(
+                '스낵 이미지 인증 상태 갱신 완료 '
+                '(contentId=${item.id}, currentUserId=$currentUserId)',
+              );
           } catch (refreshError, refreshStackTrace) {
             Logger.error(
               '스낵 이미지 인증 상태 갱신 실패 '
@@ -1117,11 +1492,12 @@ class SnapshotService {
         lastStackTrace ?? StackTrace.current,
       );
     }
-    if (Logger.isVerboseEnabled) Logger.log(
-      '스낵 이미지 다운로드 성공 '
-      '(contentId=${item.id}, currentUserId=$currentUserId, source=$source, '
-      'hasImageStoragePath=${item.imageStoragePath.isNotEmpty})',
-    );
+    if (Logger.isVerboseEnabled)
+      Logger.log(
+        '스낵 이미지 다운로드 성공 '
+        '(contentId=${item.id}, currentUserId=$currentUserId, source=$source, '
+        'hasImageStoragePath=${item.imageStoragePath.isNotEmpty})',
+      );
     _rememberImage(cacheKey, data);
     // Painting must not wait for filesystem flush/LRU cleanup. The cache
     // service already contains its own best-effort error boundary.
@@ -1162,6 +1538,16 @@ class SnapshotService {
     }
     final currentUserId = _auth.currentUser?.uid;
     if (currentUserId != null) {
+      _videoLoads.remove('$currentUserId:$snapshotId');
+      unawaited(getTemporaryDirectory().then((directory) async {
+        final file = File(path.join(
+          directory.path,
+          'wefilling_snapshot_video_v1',
+          currentUserId.replaceAll(RegExp(r'[^A-Za-z0-9_-]'), '_'),
+          '$snapshotId.mp4',
+        ));
+        if (await file.exists()) await file.delete();
+      }));
       unawaited(
         _mediaCache.evict(
           userId: currentUserId,

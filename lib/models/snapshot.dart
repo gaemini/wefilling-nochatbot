@@ -19,40 +19,59 @@ enum SnapshotVisibility {
   }
 }
 
+enum SnapshotMediaType {
+  photo('photo'),
+  video('video');
+
+  const SnapshotMediaType(this.value);
+  final String value;
+
+  static SnapshotMediaType fromValue(Object? value) =>
+      value?.toString() == video.value ? video : photo;
+}
+
 class SnapshotOverlay {
   const SnapshotOverlay({
+    this.id = '',
     required this.text,
     required this.x,
     required this.y,
     required this.lightText,
     this.fontScale = 1,
+    this.order = 0,
   });
 
+  final String id;
   final String text;
   final double x;
   final double y;
   final bool lightText;
   final double fontScale;
+  final int order;
 
   bool get isEmpty => text.trim().isEmpty;
 
   Map<String, dynamic> toMap() => <String, dynamic>{
+        'id': id,
         'text': text.trim(),
         'x': x.clamp(0.0, 1.0),
         'y': y.clamp(0.0, 1.0),
         'lightText': lightText,
-        'fontScale': fontScale.clamp(.65, 1.75),
+        'fontScale': fontScale.clamp(.25, 1.75),
+        'order': order,
       };
 
   factory SnapshotOverlay.fromMap(Object? raw) {
     final map =
         raw is Map ? Map<String, dynamic>.from(raw) : const <String, dynamic>{};
     return SnapshotOverlay(
+      id: (map['id'] ?? '').toString(),
       text: (map['text'] ?? '').toString(),
       x: _asDouble(map['x'], .5).clamp(0.0, 1.0),
       y: _asDouble(map['y'], .5).clamp(0.0, 1.0),
       lightText: map['lightText'] != false,
-      fontScale: _asDouble(map['fontScale'], 1).clamp(.65, 1.75),
+      fontScale: _asDouble(map['fontScale'], 1).clamp(.25, 1.75),
+      order: _asInt(map['order']),
     );
   }
 }
@@ -67,16 +86,21 @@ class SnapshotItem {
     required this.university,
     required this.storagePath,
     this.imageUrl = '',
+    this.mediaType = SnapshotMediaType.photo,
+    this.thumbnailStoragePath = '',
+    this.durationMs = 0,
     required this.visibility,
     required this.createdAt,
     required this.expiresAt,
     required this.aspectRatio,
     required this.overlay,
+    this.overlays = const <SnapshotOverlay>[],
     this.visibleToCategoryIds = const <String>[],
     this.allowedUserIds = const <String>[],
     this.visibilityLockedAt,
     this.visibilitySchemaVersion = 0,
     this.reactionCounts = const <String, int>{},
+    this.commentCount = 0,
   });
 
   final String id;
@@ -87,20 +111,29 @@ class SnapshotItem {
   final String university;
   final String storagePath;
   final String imageUrl;
+  final SnapshotMediaType mediaType;
+  final String thumbnailStoragePath;
+  final int durationMs;
   final SnapshotVisibility visibility;
   final DateTime createdAt;
   final DateTime expiresAt;
   final double aspectRatio;
   final SnapshotOverlay overlay;
+  final List<SnapshotOverlay> overlays;
   final List<String> visibleToCategoryIds;
   final List<String> allowedUserIds;
   final DateTime? visibilityLockedAt;
   final int visibilitySchemaVersion;
   final Map<String, int> reactionCounts;
+  final int commentCount;
 
   bool get hasFrozenAudience => visibilitySchemaVersion >= 2;
 
-  String get imageStoragePath => storagePath;
+  bool get isVideo => mediaType == SnapshotMediaType.video;
+
+  String get imageStoragePath => isVideo ? thumbnailStoragePath : storagePath;
+
+  String get videoStoragePath => isVideo ? storagePath : '';
 
   bool isExpiredAt(DateTime serverNow) => !serverNow.isBefore(expiresAt);
 
@@ -124,6 +157,22 @@ class SnapshotItem {
       }
     }
 
+    final mediaType = SnapshotMediaType.fromValue(map['mediaType']);
+    final primaryStoragePath = mediaType == SnapshotMediaType.video
+        ? (map['videoStoragePath'] ?? map['storagePath'] ?? '').toString()
+        : (map['imageStoragePath'] ?? map['storagePath'] ?? '').toString();
+    final legacyOverlay = SnapshotOverlay.fromMap(map['overlay']);
+    final overlays = <SnapshotOverlay>[];
+    final overlaysRaw = map['overlays'];
+    if (overlaysRaw is List) {
+      for (final raw in overlaysRaw.take(5)) {
+        final parsed = SnapshotOverlay.fromMap(raw);
+        if (!parsed.isEmpty) overlays.add(parsed);
+      }
+      overlays.sort((left, right) => left.order.compareTo(right.order));
+    }
+    if (overlays.isEmpty && !legacyOverlay.isEmpty) overlays.add(legacyOverlay);
+
     return SnapshotItem(
       id: id,
       authorId: (map['ownerId'] ?? map['authorId'] ?? '').toString(),
@@ -131,16 +180,19 @@ class SnapshotItem {
       authorPhotoUrl: (map['authorPhotoUrl'] ?? '').toString(),
       authorNationality: (map['authorNationality'] ?? '').toString(),
       university: (map['university'] ?? '').toString(),
-      storagePath:
-          (map['imageStoragePath'] ?? map['storagePath'] ?? '').toString(),
+      storagePath: primaryStoragePath,
       imageUrl: (map['imageUrl'] ?? '').toString(),
+      mediaType: mediaType,
+      thumbnailStoragePath: (map['thumbnailStoragePath'] ?? '').toString(),
+      durationMs: _asInt(map['durationMs']).clamp(0, 12000).toInt(),
       visibility: SnapshotVisibility.fromValue(
         map['visibilityMode'] ?? map['visibility'],
       ),
       createdAt: _asDateTime(map['createdAt'] ?? map['serverCreatedAt']),
       expiresAt: _asDateTime(map['expiresAt']),
       aspectRatio: _asDouble(map['aspectRatio'], .8).clamp(.4, 2.5),
-      overlay: SnapshotOverlay.fromMap(map['overlay']),
+      overlay: legacyOverlay,
+      overlays: List<SnapshotOverlay>.unmodifiable(overlays),
       visibleToCategoryIds: _asStringList(
         map['sourceGroupIds'] ?? map['visibleToCategoryIds'],
       ),
@@ -152,8 +204,93 @@ class SnapshotItem {
           : _asDateTime(map['visibilityLockedAt']),
       visibilitySchemaVersion: _asInt(map['visibilitySchemaVersion']),
       reactionCounts: reactionCounts,
+      commentCount: _asInt(map['commentCount']),
     );
   }
+}
+
+class SnapshotComment {
+  const SnapshotComment({
+    required this.id,
+    required this.snapshotId,
+    required this.userId,
+    required this.authorNickname,
+    required this.authorPhotoUrl,
+    required this.content,
+    required this.createdAt,
+    this.parentCommentId,
+    this.replyToCommentId,
+    this.replyToUserId,
+    this.replyToUserNickname,
+    this.isDeleted = false,
+  });
+
+  final String id;
+  final String snapshotId;
+  final String userId;
+  final String authorNickname;
+  final String authorPhotoUrl;
+  final String content;
+  final DateTime createdAt;
+  final String? parentCommentId;
+  final String? replyToCommentId;
+  final String? replyToUserId;
+  final String? replyToUserNickname;
+  final bool isDeleted;
+
+  bool get isReply => parentCommentId != null;
+
+  factory SnapshotComment.fromFirestore(
+    String snapshotId,
+    DocumentSnapshot<Map<String, dynamic>> document,
+  ) {
+    return SnapshotComment.fromMap(
+      snapshotId,
+      document.id,
+      document.data() ?? const <String, dynamic>{},
+    );
+  }
+
+  factory SnapshotComment.fromMap(
+    String snapshotId,
+    String id,
+    Map<String, dynamic> data,
+  ) {
+    String? optionalString(Object? value) {
+      final normalized = (value ?? '').toString().trim();
+      return normalized.isEmpty ? null : normalized;
+    }
+
+    return SnapshotComment(
+      id: id,
+      snapshotId: snapshotId,
+      userId: (data['userId'] ?? '').toString(),
+      authorNickname: (data['authorNickname'] ?? 'User').toString(),
+      authorPhotoUrl: (data['authorPhotoUrl'] ?? '').toString(),
+      content: (data['content'] ?? '').toString(),
+      createdAt: _asDateTime(data['createdAt'] ?? data['createdAtMs']),
+      parentCommentId: optionalString(data['parentCommentId']),
+      replyToCommentId: optionalString(data['replyToCommentId']),
+      replyToUserId: optionalString(data['replyToUserId']),
+      replyToUserNickname: optionalString(data['replyToUserNickname']),
+      isDeleted: data['isDeleted'] == true,
+    );
+  }
+
+  Map<String, dynamic> toArchiveMap() => <String, dynamic>{
+        'id': id,
+        'snapshotId': snapshotId,
+        'userId': userId,
+        'authorNickname': authorNickname,
+        'authorPhotoUrl': authorPhotoUrl,
+        'content': content,
+        'createdAtMs': createdAt.millisecondsSinceEpoch,
+        'parentCommentId': parentCommentId,
+        'replyToCommentId': replyToCommentId,
+        'replyToUserId': replyToUserId,
+        'replyToUserNickname': replyToUserNickname,
+        'isDeleted': isDeleted,
+      };
 }
 
 class SnapshotViewer {
@@ -226,6 +363,17 @@ class SnapshotViewer {
       reaction: (data['reaction'] ?? '').toString().trim(),
     );
   }
+
+  Map<String, dynamic> toArchiveMap() => <String, dynamic>{
+        'userId': userId,
+        'displayName': displayName,
+        'photoUrl': photoUrl,
+        'photoVersion': photoVersion,
+        'nationality': nationality,
+        'university': university,
+        'viewedAtMillis': viewedAt.millisecondsSinceEpoch,
+        'reaction': reaction,
+      };
 }
 
 DateTime _asDateTime(Object? value) {

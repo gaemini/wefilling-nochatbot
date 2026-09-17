@@ -126,7 +126,7 @@ class _SnapshotTodaySectionState extends State<SnapshotTodaySection>
           // The service is newest-first. The first pass keeps the newest snack
           // from each author at the front of the tray. Older snacks follow in
           // chronological order, so the initial viewport stays useful while a
-          // horizontal swipe continues naturally into the archive.
+          // horizontal swipe continues through older active snacks.
           final latestByAuthor = <String, SnapshotItem>{};
           for (final item in items) {
             latestByAuthor.putIfAbsent(item.authorId, () => item);

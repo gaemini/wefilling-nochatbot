@@ -1,5 +1,8 @@
 import * as functions from 'firebase-functions';
 import * as admin from 'firebase-admin';
+import * as fs from 'fs';
+import * as os from 'os';
+import * as path from 'path';
 import {COL} from './firestore_paths';
 import {runtimeInfo, runtimeLogsEnabled} from './runtime_logging';
 import {
@@ -10,12 +13,39 @@ import {
 
 const SNAPSHOT_FEED = 'snapshot_feed';
 const MAX_IMAGE_BYTES = 15 * 1024 * 1024;
+const MAX_VIDEO_DURATION_SECONDS = 12;
 const SNAPSHOT_LIFETIME_MS = 24 * 60 * 60 * 1000;
 const ORPHAN_UPLOAD_GRACE_MS = 2 * 60 * 60 * 1000;
 const ALLOWED_VISIBILITIES = new Set(['public', 'friends', 'category']);
 const ALLOWED_REACTIONS = new Set(['❤️']);
 
 type SnapshotVisibility = 'public' | 'friends' | 'category';
+type SnapshotMediaType = 'photo' | 'video';
+
+type Mp4TrackInfo = {
+  codec?: string;
+  track_width?: number;
+  track_height?: number;
+  video?: {width?: number; height?: number};
+};
+
+type Mp4ReadyInfo = {
+  duration?: number;
+  timescale?: number;
+  tracks?: Mp4TrackInfo[];
+  videoTracks?: Mp4TrackInfo[];
+};
+
+type Mp4Parser = {
+  onReady?: (info: Mp4ReadyInfo) => void;
+  onError?: (error: unknown) => void;
+  appendBuffer: (buffer: ArrayBuffer & {fileStart?: number}) => void;
+  flush: () => void;
+};
+
+// mp4box is used only to inspect the already client-transcoded MP4. Chunks are
+// streamed from disk; the function never creates a whole-file Buffer.
+const MP4Box = require('mp4box') as {createFile(): Mp4Parser};
 
 function snapshotReactionCopy(
   reaction: string,
@@ -120,6 +150,15 @@ function validSnapshotComment(value: unknown): string {
   return message;
 }
 
+function validSnapshotFeedComment(value: unknown): string {
+  const message = text(value);
+  const length = Array.from(message).length;
+  if (length < 1 || length > 500 || message.split('\n').length > 20) {
+    throw new functions.https.HttpsError('invalid-argument', 'Invalid comment.');
+  }
+  return message;
+}
+
 function validVisibility(value: unknown): SnapshotVisibility {
   const visibility = text(value);
   if (!ALLOWED_VISIBILITIES.has(visibility)) {
@@ -166,8 +205,145 @@ function parseOverlay(value: unknown) {
     x: finiteNumber(overlay.x ?? 0.5, 'overlay.x', 0, 1),
     y: finiteNumber(overlay.y ?? 0.5, 'overlay.y', 0, 1),
     lightText: overlay.lightText !== false,
-    fontScale: finiteNumber(overlay.fontScale ?? 1, 'overlay.fontScale', 0.65, 1.75),
+    fontScale: finiteNumber(overlay.fontScale ?? 1, 'overlay.fontScale', 0.25, 1.75),
   };
+}
+
+function parseOverlays(value: unknown) {
+  if (value == null) return [];
+  if (!Array.isArray(value) || value.length > 5) {
+    throw new functions.https.HttpsError('invalid-argument', 'Invalid text overlays.');
+  }
+  const parsed = value.map((raw, index) => {
+    const overlay = raw && typeof raw === 'object'
+      ? raw as Record<string, unknown>
+      : {};
+    const overlayText = text(overlay.text);
+    if (Array.from(overlayText).length > 240 || overlayText.split('\n').length > 12) {
+      throw new functions.https.HttpsError('invalid-argument', 'Overlay text is too long.');
+    }
+    const id = text(overlay.id);
+    if (!/^[A-Za-z0-9_-]{1,100}$/.test(id)) {
+      throw new functions.https.HttpsError('invalid-argument', 'Invalid overlay id.');
+    }
+    return {
+      id,
+      text: overlayText,
+      x: finiteNumber(overlay.x ?? 0.5, 'overlays.x', 0, 1),
+      y: finiteNumber(overlay.y ?? 0.5, 'overlays.y', 0, 1),
+      lightText: overlay.lightText !== false,
+      fontScale: finiteNumber(overlay.fontScale ?? 1, 'overlays.fontScale', 0.25, 1.75),
+      order: index,
+    };
+  }).filter((overlay) => overlay.text.length > 0);
+  if (new Set(parsed.map((overlay) => overlay.id)).size !== parsed.length) {
+    throw new functions.https.HttpsError('invalid-argument', 'Duplicate overlay id.');
+  }
+  return parsed;
+}
+
+function validMediaType(value: unknown): SnapshotMediaType {
+  const mediaType = text(value) || 'photo';
+  if (mediaType !== 'photo' && mediaType !== 'video') {
+    throw new functions.https.HttpsError('invalid-argument', 'Invalid media type.');
+  }
+  return mediaType;
+}
+
+async function inspectMp4File(localPath: string): Promise<{
+  durationMs: number;
+  width: number;
+  height: number;
+  codec: string;
+}> {
+  return new Promise((resolve, reject) => {
+    const parser = MP4Box.createFile();
+    const input = fs.createReadStream(localPath, {highWaterMark: 1024 * 1024});
+    let offset = 0;
+    let settled = false;
+
+    const fail = (error: unknown) => {
+      if (settled) return;
+      settled = true;
+      input.destroy();
+      reject(error instanceof Error ? error : new Error(String(error)));
+    };
+
+    parser.onError = fail;
+    parser.onReady = (info) => {
+      if (settled) return;
+      const timescale = Number(info.timescale ?? 0);
+      const duration = Number(info.duration ?? 0);
+      const tracks = Array.isArray(info.videoTracks) && info.videoTracks.length > 0
+        ? info.videoTracks
+        : (Array.isArray(info.tracks)
+          ? info.tracks.filter((track) => track.video != null)
+          : []);
+      const track = tracks[0];
+      const seconds = timescale > 0 ? duration / timescale : 0;
+      const width = Number(track?.video?.width ?? track?.track_width ?? 0);
+      const height = Number(track?.video?.height ?? track?.track_height ?? 0);
+      const codec = text(track?.codec).toLowerCase();
+      if (!track || !Number.isFinite(seconds) || seconds <= 0 ||
+          seconds > MAX_VIDEO_DURATION_SECONDS || width < 1 || height < 1 ||
+          !/^(avc1|avc3|hvc1|hev1)/.test(codec)) {
+        fail(new Error('invalid-video-stream'));
+        return;
+      }
+      settled = true;
+      input.destroy();
+      resolve({
+        durationMs: Math.round(seconds * 1000),
+        width: Math.round(width),
+        height: Math.round(height),
+        codec,
+      });
+    };
+
+    input.on('data', (chunk: string | Buffer) => {
+      if (settled) return;
+      try {
+        const source = typeof chunk === 'string' ? Buffer.from(chunk) : chunk;
+        const copy = new Uint8Array(source.byteLength);
+        copy.set(source);
+        const buffer = copy.buffer as ArrayBuffer & {fileStart?: number};
+        buffer.fileStart = offset;
+        offset += source.byteLength;
+        parser.appendBuffer(buffer);
+      } catch (error) {
+        fail(error);
+      }
+    });
+    input.on('error', fail);
+    input.on('end', () => {
+      if (settled) return;
+      try {
+        parser.flush();
+      } catch (error) {
+        fail(error);
+        return;
+      }
+      setImmediate(() => {
+        if (!settled) fail(new Error('video-metadata-missing'));
+      });
+    });
+  });
+}
+
+async function inspectSnapshotVideo(
+  snapshotId: string,
+  file: ReturnType<ReturnType<typeof snapshotBucket>['file']>,
+) {
+  const localPath = path.join(
+    os.tmpdir(),
+    `snapshot_${snapshotId}_${Date.now()}_${Math.random().toString(36).slice(2)}.mp4`,
+  );
+  try {
+    await file.download({destination: localPath});
+    return await inspectMp4File(localPath);
+  } finally {
+    await fs.promises.unlink(localPath).catch(() => undefined);
+  }
 }
 
 function profileUniversity(data: FirebaseFirestore.DocumentData): string {
@@ -247,6 +423,10 @@ function snapshotFeedData(
     university: text(data.university),
     storagePath: text(data.storagePath),
     imageStoragePath: text(data.imageStoragePath ?? data.storagePath),
+    videoStoragePath: text(data.videoStoragePath),
+    thumbnailStoragePath: text(data.thumbnailStoragePath),
+    mediaType: text(data.mediaType) || 'photo',
+    durationMs: Number(data.durationMs ?? 0),
     imageUrl: text(data.imageUrl),
     visibility: data.visibility,
     ownerId: text(data.ownerId ?? data.authorId),
@@ -266,8 +446,10 @@ function snapshotFeedData(
       ? data.allowedUserIds.map(text).filter(Boolean)
       : [],
     overlay: data.overlay ?? {text: '', x: 0.5, y: 0.5, lightText: true},
+    overlays: Array.isArray(data.overlays) ? data.overlays.slice(0, 5) : [],
     aspectRatio: Number(data.aspectRatio) || 0.8,
     reactionCounts: data.reactionCounts ?? {},
+    commentCount: Math.max(0, Number(data.commentCount ?? 0) || 0),
     createdAt: data.createdAt,
     expiresAt: data.expiresAt,
     status: data.status,
@@ -435,31 +617,67 @@ async function syncSnapshotFeedPair(uidA: string, uidB: string): Promise<void> {
   ]);
 }
 
+async function deleteSnapshotNotifications(snapshotId: string): Promise<void> {
+  const notifications = await db().collection(COL.notifications)
+    .where('snapshotId', '==', snapshotId)
+    .get();
+  const deletableTypes = new Set([
+    'snapshot_reaction',
+    'snapshot_feed_comment',
+    'snapshot_feed_comment_reply',
+  ]);
+  const writer = db().bulkWriter();
+  for (const notification of notifications.docs) {
+    // Legacy Snack letters are a separate user-visible feature and remain
+    // available under their existing retention policy.
+    if (deletableTypes.has(text(notification.get('type')))) {
+      writer.delete(notification.ref);
+    }
+  }
+  await writer.close();
+}
+
+async function deleteSnapshotStoragePrefix(snapshotId: string): Promise<void> {
+  const [files] = await snapshotBucket().getFiles({
+    prefix: `snapshots/${snapshotId}/`,
+  });
+  await Promise.all(files.map((file) => file.delete({ignoreNotFound: true})));
+}
+
 async function deleteSnapshotResources(
   snapshotId: string,
   data: FirebaseFirestore.DocumentData,
 ): Promise<void> {
   const snapshotRef = db().collection(COL.snapshots).doc(snapshotId);
+  // Access checks require status=active, so this immediately closes reads and
+  // writes while retaining a durable retry marker until every cleanup passes.
+  await snapshotRef.set({
+    status: 'deleting',
+    deletionRequestedAt: data.deletionRequestedAt ??
+      admin.firestore.FieldValue.serverTimestamp(),
+  }, {merge: true});
+
   const cleanupResults = await Promise.allSettled([
     removeSnapshotFromFeeds(snapshotId, data),
     deleteQuery(snapshotRef.collection('reactions')),
     deleteQuery(snapshotRef.collection('comments')),
+    deleteQuery(snapshotRef.collection('feed_comments')),
     deleteQuery(snapshotRef.collection('views')),
+    deleteSnapshotNotifications(snapshotId),
+    deleteSnapshotStoragePrefix(snapshotId),
   ]);
+  const failures = cleanupResults.filter((result) => result.status === 'rejected');
   for (const result of cleanupResults) {
     if (result.status === 'rejected') {
-      // 피드/하위 컬렉션 정리는 부수 작업이다. 정리 실패 때문에 사용자가
-      // 소유한 원본 스낵을 삭제하지 못하는 상태로 남겨 두지 않는다.
       console.warn(`snapshot ancillary cleanup failed id=${snapshotId}`, result.reason);
     }
   }
-  const storagePath = text(data.imageStoragePath ?? data.storagePath);
-  if (storagePath) {
-    try {
-      await snapshotBucket().file(storagePath).delete({ignoreNotFound: true});
-    } catch (error) {
-      console.warn(`snapshot storage delete failed id=${snapshotId}`, error);
-    }
+  if (failures.length > 0) {
+    await snapshotRef.set({
+      cleanupLastFailedAt: admin.firestore.FieldValue.serverTimestamp(),
+      cleanupFailureCount: admin.firestore.FieldValue.increment(1),
+    }, {merge: true});
+    throw new Error(`snapshot-cleanup-incomplete:${failures.length}`);
   }
   await snapshotRef.delete();
 }
@@ -476,12 +694,16 @@ export const createSnapshot = functions.runWith({timeoutSeconds: 120, memory: '5
     const snapshotId = validSnapshotId(data.snapshotId);
     const visibility = validVisibility(data.visibility);
     const selectedCategoryIds = categoryIds(data.visibleToCategoryIds);
+    const mediaType = validMediaType(data.mediaType);
     const storagePath = text(data.storagePath);
-    const expectedPath = `snapshots/${snapshotId}/final.jpg`;
+    const expectedPath = mediaType === 'video'
+      ? `snapshots/${snapshotId}/final.mp4`
+      : `snapshots/${snapshotId}/final.jpg`;
     if (storagePath !== expectedPath) {
       throw new functions.https.HttpsError('invalid-argument', 'Invalid storage path.');
     }
     const overlay = parseOverlay(data.overlay);
+    const overlays = parseOverlays(data.overlays);
     const aspectRatio = finiteNumber(data.aspectRatio, 'aspectRatio', 0.4, 2.5);
     const sourceWidth = positiveInteger(data.sourceWidth, 'sourceWidth');
     const sourceHeight = positiveInteger(data.sourceHeight, 'sourceHeight');
@@ -501,10 +723,50 @@ export const createSnapshot = functions.runWith({timeoutSeconds: 120, memory: '5
     if (!exists) throw new functions.https.HttpsError('failed-precondition', 'Image is missing.');
     const [metadata] = await file.getMetadata();
     const custom = metadata.metadata ?? {};
-    const imageSize = Number(metadata.size ?? 0);
+    const mediaSize = Number(metadata.size ?? 0);
+    const expectedContentType = mediaType === 'video' ? 'video/mp4' : 'image/jpeg';
     if (custom.ownerUid !== uid || custom.snapshotId !== snapshotId ||
-        metadata.contentType !== 'image/jpeg' || imageSize < 1 || imageSize > MAX_IMAGE_BYTES) {
-      throw new functions.https.HttpsError('permission-denied', 'Invalid image metadata.');
+        text(custom.mediaType || 'photo') !== mediaType ||
+        metadata.contentType !== expectedContentType ||
+        mediaSize < 1 || (mediaType === 'photo' && mediaSize > MAX_IMAGE_BYTES)) {
+      throw new functions.https.HttpsError('permission-denied', 'Invalid media metadata.');
+    }
+
+    let verifiedDurationMs = 0;
+    let verifiedWidth = sourceWidth;
+    let verifiedHeight = sourceHeight;
+    let verifiedCodec = '';
+    let thumbnailStoragePath = '';
+    if (mediaType === 'video') {
+      thumbnailStoragePath = `snapshots/${snapshotId}/thumbnail.jpg`;
+      const thumbnail = snapshotBucket().file(thumbnailStoragePath);
+      const [thumbnailExists] = await thumbnail.exists();
+      if (!thumbnailExists) {
+        throw new functions.https.HttpsError('failed-precondition', 'Video thumbnail is missing.');
+      }
+      const [thumbnailMetadata] = await thumbnail.getMetadata();
+      const thumbnailCustom = thumbnailMetadata.metadata ?? {};
+      const thumbnailSize = Number(thumbnailMetadata.size ?? 0);
+      if (thumbnailCustom.ownerUid !== uid ||
+          thumbnailCustom.snapshotId !== snapshotId ||
+          thumbnailCustom.mediaType !== 'video-thumbnail' ||
+          thumbnailMetadata.contentType !== 'image/jpeg' ||
+          thumbnailSize < 1 || thumbnailSize > MAX_IMAGE_BYTES) {
+        throw new functions.https.HttpsError('permission-denied', 'Invalid video thumbnail.');
+      }
+      try {
+        const inspected = await inspectSnapshotVideo(snapshotId, file);
+        verifiedDurationMs = inspected.durationMs;
+        verifiedWidth = inspected.width;
+        verifiedHeight = inspected.height;
+        verifiedCodec = inspected.codec;
+      } catch (error) {
+        console.warn(`snapshot video validation failed id=${snapshotId}`, error);
+        throw new functions.https.HttpsError(
+          'failed-precondition',
+          'The video format or duration is not supported.',
+        );
+      }
     }
 
     const ref = db().collection(COL.snapshots).doc(snapshotId);
@@ -526,7 +788,12 @@ export const createSnapshot = functions.runWith({timeoutSeconds: 120, memory: '5
       university,
       schoolId: university,
       storagePath,
-      imageStoragePath: storagePath,
+      imageStoragePath: mediaType === 'photo' ? storagePath : thumbnailStoragePath,
+      videoStoragePath: mediaType === 'video' ? storagePath : '',
+      thumbnailStoragePath,
+      mediaType,
+      durationMs: verifiedDurationMs,
+      videoCodec: verifiedCodec,
       visibility,
       visibleToCategoryIds: visibility === 'category' ? selectedCategoryIds : [],
       allowedUserIds,
@@ -537,6 +804,7 @@ export const createSnapshot = functions.runWith({timeoutSeconds: 120, memory: '5
       visibilityLockedAt: createdAt,
       visibilitySchemaVersion: VISIBILITY_SCHEMA_VERSION,
       overlay,
+      overlays,
       overlayText: overlay.text,
       overlayPosition: {x: overlay.x, y: overlay.y},
       overlayStyle: {
@@ -546,24 +814,42 @@ export const createSnapshot = functions.runWith({timeoutSeconds: 120, memory: '5
         backgroundType: 'shadow',
       },
       aspectRatio,
-      sourceWidth,
-      sourceHeight,
+      sourceWidth: verifiedWidth,
+      sourceHeight: verifiedHeight,
       reactionCounts: {},
+      commentCount: 0,
       createdAt,
       expiresAt,
       updatedAt: createdAt,
       status: 'active',
     };
 
+    let canonicalCreated = false;
     try {
       await ref.create(snapshotData);
+      canonicalCreated = true;
       await fanOutSnapshot(snapshotId, snapshotData);
     } catch (error) {
       console.error(`createSnapshot rollback id=${snapshotId}`, error);
+      if (!canonicalCreated) {
+        const concurrent = await ref.get().catch(() => null);
+        if (concurrent?.exists &&
+            text(concurrent.get('ownerId') ?? concurrent.get('authorId')) === uid &&
+            text(concurrent.get('storagePath')) === storagePath &&
+            text(concurrent.get('status')) === 'active') {
+          const concurrentCreatedAt = concurrent.get('createdAt');
+          const concurrentExpiresAt = concurrent.get('expiresAt');
+          return {
+            snapshotId,
+            createdAtMillis: timestampMillis(concurrentCreatedAt),
+            expiresAtMillis: timestampMillis(concurrentExpiresAt),
+          };
+        }
+      }
       try {
         await removeSnapshotFromFeeds(snapshotId, snapshotData);
         await ref.delete();
-        await file.delete({ignoreNotFound: true});
+        await deleteSnapshotStoragePrefix(snapshotId);
       } catch (rollbackError) {
         console.error(`createSnapshot rollback failed id=${snapshotId}`, rollbackError);
       }
@@ -699,45 +985,40 @@ export const recordSnapshotView = functions.https.onCall(async (raw, context) =>
 
   const profile = viewer.data() ?? {};
   const viewRef = snapshotRef.collection('views').doc(uid);
-  const viewedAt = admin.firestore.Timestamp.now();
-  let created = true;
-  try {
-    // UID 문서에 create를 사용하면 원자적 중복 방지는 유지하면서도
-    // transaction의 선행 read 왕복을 없애 새 조회자가 더 빨리 나타난다.
-    await viewRef.create({
+  const created = await store.runTransaction(async (transaction) => {
+    const transactionNow = admin.firestore.Timestamp.now();
+    const [currentSnapshot, previous] = await Promise.all([
+      transaction.get(snapshotRef),
+      transaction.get(viewRef),
+    ]);
+    const currentData = currentSnapshot.data() ?? {};
+    if (!currentSnapshot.exists ||
+        !hasSnapshotDocumentAccess(uid, currentData, transactionNow)) {
+      throw new functions.https.HttpsError(
+        'failed-precondition',
+        'Snapshot has expired.',
+      );
+    }
+    const common = {
       userId: uid,
       displayName: text(profile.nickname ?? profile.name) || 'User',
       photoUrl: text(profile.photoURL),
       photoVersion: Math.max(0, Number(profile.photoVersion ?? 0) || 0),
       nationality: text(profile.nationality),
       university: profileUniversity(profile),
-      viewedAt,
-      firstViewedAt: viewedAt,
-    });
-  } catch (error) {
-    const value = error && typeof error === 'object'
-      ? error as Record<string, unknown>
-      : {};
-    const code = Number(value.code);
-    const message = text(value.message).toUpperCase();
-    if (code === 6 || message.includes('ALREADY_EXISTS')) {
-      created = false;
-      // 예전 버전에서 생성된 조회 문서는 viewedAt/프로필 필드가 없을 수 있다.
-      // 재열람 시 최신 안전 프로필과 마지막 조회 시각을 보정하되 최초 조회
-      // 시각은 덮어쓰지 않는다. 친구 여부는 조회 기록 조건에 포함하지 않는다.
-      await viewRef.set({
-        userId: uid,
-        displayName: text(profile.nickname ?? profile.name) || 'User',
-        photoUrl: text(profile.photoURL),
-        photoVersion: Math.max(0, Number(profile.photoVersion ?? 0) || 0),
-        nationality: text(profile.nationality),
-        university: profileUniversity(profile),
-        viewedAt,
-      }, {merge: true});
-    } else {
-      throw error;
+      viewedAt: transactionNow,
+      expiresAt: currentData.expiresAt,
+    };
+    if (previous.exists) {
+      transaction.set(viewRef, common, {merge: true});
+      return false;
     }
-  }
+    transaction.create(viewRef, {
+      ...common,
+      firstViewedAt: transactionNow,
+    });
+    return true;
+  });
   return {success: true, recorded: true, created};
 });
 
@@ -757,6 +1038,16 @@ export const getSnapshotViewers = functions.https.onCall(async (raw, context) =>
     throw new functions.https.HttpsError(
       'permission-denied',
       'Only the snapshot owner can view this list.',
+    );
+  }
+  if (!hasSnapshotDocumentAccess(
+    uid,
+    snapshotData,
+    admin.firestore.Timestamp.now(),
+  )) {
+    throw new functions.https.HttpsError(
+      'failed-precondition',
+      'Snapshot has expired.',
     );
   }
 
@@ -871,12 +1162,19 @@ export const toggleSnapshotReaction = functions.https.onCall(async (raw, context
   const notificationRef = db().collection(COL.notifications)
     .doc(`snapshot_reaction_${snapshotId}_${uid}`);
   const result = await db().runTransaction(async (transaction) => {
+    const transactionNow = admin.firestore.Timestamp.now();
     const [snapshot, previous] = await Promise.all([
       transaction.get(ref),
       transaction.get(reactionRef),
     ]);
-    if (!snapshot.exists) throw new Error('snapshot-missing');
     const snapshotData = snapshot.data() ?? {};
+    if (!snapshot.exists ||
+        !hasSnapshotDocumentAccess(uid, snapshotData, transactionNow)) {
+      throw new functions.https.HttpsError(
+        'failed-precondition',
+        'Snapshot has expired.',
+      );
+    }
     const currentOwnerId = text(snapshotData.ownerId ?? snapshotData.authorId);
     if (!currentOwnerId || currentOwnerId !== ownerId || currentOwnerId === uid) {
       throw new functions.https.HttpsError(
@@ -908,11 +1206,12 @@ export const toggleSnapshotReaction = functions.https.onCall(async (raw, context
       photoVersion: Math.max(0, Number(actorData.photoVersion ?? 0) || 0),
       nationality: text(actorData.nationality),
       university: text(actorData.university),
-      createdAt: admin.firestore.FieldValue.serverTimestamp(),
+      createdAt: transactionNow,
+      expiresAt: snapshotData.expiresAt,
     });
     transaction.update(ref, {
       reactionCounts: counts,
-      updatedAt: admin.firestore.FieldValue.serverTimestamp(),
+      updatedAt: transactionNow,
     });
     // 반응과 알림을 한 트랜잭션으로 저장해 반응만 남거나
     // 재시도로 푸시가 중복 생성되는 상태를 방지한다.
@@ -926,7 +1225,8 @@ export const toggleSnapshotReaction = functions.https.onCall(async (raw, context
       actorId: uid,
       actorName,
       isRead: false,
-      createdAt: admin.firestore.FieldValue.serverTimestamp(),
+      createdAt: transactionNow,
+      expiresAt: snapshotData.expiresAt,
       data: {
         snapshotId,
         reaction,
@@ -1057,6 +1357,215 @@ export const sendSnapshotComment = functions.https.onCall(async (raw, context) =
     return {created: true};
   });
   return {success: true, created: result.created};
+});
+
+async function snapshotCommentNotificationAllowed(userId: string): Promise<boolean> {
+  const settings = await db().collection('user_settings').doc(userId).get();
+  const notifications = settings.exists &&
+      settings.data()?.notifications &&
+      typeof settings.data()?.notifications === 'object'
+    ? settings.data()?.notifications as Record<string, unknown>
+    : {};
+  return notifications.all_notifications !== false &&
+    notifications.new_comment !== false;
+}
+
+/**
+ * Public Snack feed comment/reply. This intentionally uses a separate callable
+ * and notification type from the existing one-to-one Snack letter feature.
+ */
+export const createSnapshotFeedComment = functions.https.onCall(async (raw, context) => {
+  const uid = requireUid(context);
+  const data = raw && typeof raw === 'object' ? raw as Record<string, unknown> : {};
+  const snapshotId = validSnapshotId(data.snapshotId);
+  const commentId = validRequestId(data.commentId ?? data.requestId);
+  const content = validSnapshotFeedComment(data.content ?? data.message);
+  const parentCommentId = text(data.parentCommentId);
+  const replyToCommentId = text(data.replyToCommentId);
+  if (parentCommentId) validRequestId(parentCommentId);
+  if (replyToCommentId) validRequestId(replyToCommentId);
+
+  const store = db();
+  const snapshotRef = store.collection(COL.snapshots).doc(snapshotId);
+  const initial = await snapshotRef.get();
+  const snapshotData = initial.data() ?? {};
+  const now = admin.firestore.Timestamp.now();
+  if (!initial.exists || !(await canAccessSnapshot(uid, snapshotData, now))) {
+    throw new functions.https.HttpsError('permission-denied', 'Snapshot is not accessible.');
+  }
+
+  const ownerId = text(snapshotData.ownerId ?? snapshotData.authorId);
+  const expiresAt = snapshotData.expiresAt;
+  if (!ownerId || !isTimestamp(expiresAt) || expiresAt.toMillis() <= now.toMillis()) {
+    throw new functions.https.HttpsError('failed-precondition', 'Snapshot has expired.');
+  }
+
+  const comments = snapshotRef.collection('feed_comments');
+  let parentData: FirebaseFirestore.DocumentData | null = null;
+  let replyTargetData: FirebaseFirestore.DocumentData | null = null;
+  if (parentCommentId) {
+    const parent = await comments.doc(parentCommentId).get();
+    if (!parent.exists || parent.get('isDeleted') === true ||
+        text(parent.get('parentCommentId'))) {
+      throw new functions.https.HttpsError('failed-precondition', 'Parent comment is unavailable.');
+    }
+    parentData = parent.data() ?? {};
+    const targetId = replyToCommentId || parentCommentId;
+    const target = targetId === parentCommentId
+      ? parent
+      : await comments.doc(targetId).get();
+    if (!target.exists || target.get('isDeleted') === true ||
+        (text(target.get('parentCommentId')) || target.id) !== parentCommentId) {
+      throw new functions.https.HttpsError('failed-precondition', 'Reply target is unavailable.');
+    }
+    replyTargetData = target.data() ?? {};
+    const relatedAuthors = new Set([
+      text(parentData.userId),
+      text(replyTargetData.userId),
+    ].filter(Boolean));
+    for (const relatedAuthor of relatedAuthors) {
+      if (await isBlocked(uid, relatedAuthor)) {
+        throw new functions.https.HttpsError(
+          'permission-denied',
+          'Reply target is not accessible.',
+        );
+      }
+    }
+  }
+
+  const author = await store.collection(COL.users).doc(uid).get();
+  if (!author.exists || !isActiveUserData(author.data() ?? {})) {
+    throw new functions.https.HttpsError('failed-precondition', 'User profile is missing.');
+  }
+  const authorData = author.data() ?? {};
+  const authorName = text(authorData.nickname ?? authorData.name) || 'User';
+  const authorPhotoUrl = text(authorData.photoURL);
+
+  const recipientTypes = new Map<string, 'snapshot_feed_comment' | 'snapshot_feed_comment_reply'>();
+  if (ownerId !== uid) recipientTypes.set(ownerId, 'snapshot_feed_comment');
+  if (parentData != null && replyTargetData != null) {
+    const targetUserId = text(replyTargetData.userId);
+    const parentUserId = text(parentData.userId);
+    if (targetUserId && targetUserId !== uid) {
+      recipientTypes.set(targetUserId, 'snapshot_feed_comment_reply');
+    }
+    if (parentUserId && parentUserId !== uid) {
+      recipientTypes.set(parentUserId, 'snapshot_feed_comment_reply');
+    }
+  }
+
+  const recipients: Array<{
+    userId: string;
+    type: 'snapshot_feed_comment' | 'snapshot_feed_comment_reply';
+  }> = [];
+  for (const [userId, type] of recipientTypes) {
+    if (await isBlocked(uid, userId)) continue;
+    if (!await snapshotCommentNotificationAllowed(userId)) continue;
+    recipients.push({userId, type});
+  }
+
+  const commentRef = comments.doc(commentId);
+  const result = await store.runTransaction(async (transaction) => {
+    const transactionNow = admin.firestore.Timestamp.now();
+    const [currentSnapshot, existing] = await Promise.all([
+      transaction.get(snapshotRef),
+      transaction.get(commentRef),
+    ]);
+    const currentData = currentSnapshot.data() ?? {};
+    if (!currentSnapshot.exists ||
+        !hasSnapshotDocumentAccess(uid, currentData, transactionNow)) {
+      throw new functions.https.HttpsError('failed-precondition', 'Snapshot has expired.');
+    }
+    if (existing.exists) return {created: false};
+
+    transaction.create(commentRef, {
+      snapshotId,
+      userId: uid,
+      authorNickname: authorName,
+      authorPhotoUrl,
+      content,
+      parentCommentId: parentCommentId || null,
+      replyToCommentId: replyToCommentId || null,
+      replyToUserId: replyTargetData == null ? null : text(replyTargetData.userId),
+      replyToUserNickname: replyTargetData == null
+        ? null
+        : text(replyTargetData.authorNickname),
+      isDeleted: false,
+      createdAt: transactionNow,
+      expiresAt,
+    });
+    transaction.update(snapshotRef, {
+      commentCount: admin.firestore.FieldValue.increment(1),
+      updatedAt: transactionNow,
+    });
+
+    for (const recipient of recipients) {
+      const notificationId = `${recipient.type}_${commentId}_${recipient.userId}`;
+      transaction.create(store.collection(COL.notifications).doc(notificationId), {
+        userId: recipient.userId,
+        type: recipient.type,
+        title: recipient.type === 'snapshot_feed_comment_reply'
+          ? 'New reply on a Snack'
+          : 'New comment on your Snack',
+        message: `${authorName}: ${content}`,
+        snapshotId,
+        commentId,
+        actorId: uid,
+        actorName: authorName,
+        isRead: false,
+        createdAt: transactionNow,
+        expiresAt,
+        data: {
+          snapshotId,
+          commentId,
+          parentCommentId: parentCommentId || '',
+          actorId: uid,
+          actorName: authorName,
+          content,
+        },
+      });
+    }
+    return {created: true};
+  });
+  return {success: true, created: result.created, commentId};
+});
+
+export const deleteSnapshotFeedComment = functions.https.onCall(async (raw, context) => {
+  const uid = requireUid(context);
+  const data = raw && typeof raw === 'object' ? raw as Record<string, unknown> : {};
+  const snapshotId = validSnapshotId(data.snapshotId);
+  const commentId = validRequestId(data.commentId);
+  const snapshotRef = db().collection(COL.snapshots).doc(snapshotId);
+  const commentRef = snapshotRef.collection('feed_comments').doc(commentId);
+
+  await db().runTransaction(async (transaction) => {
+    const transactionNow = admin.firestore.Timestamp.now();
+    const [snapshot, comment] = await Promise.all([
+      transaction.get(snapshotRef),
+      transaction.get(commentRef),
+    ]);
+    if (!snapshot.exists ||
+        !hasSnapshotDocumentAccess(uid, snapshot.data() ?? {}, transactionNow)) {
+      throw new functions.https.HttpsError('failed-precondition', 'Snapshot has expired.');
+    }
+    if (!comment.exists) return;
+    if (text(comment.get('userId')) !== uid) {
+      throw new functions.https.HttpsError('permission-denied', 'Only the author can delete it.');
+    }
+    if (comment.get('isDeleted') === true) return;
+    transaction.update(commentRef, {
+      isDeleted: true,
+      deletedAt: transactionNow,
+      content: '',
+      authorNickname: '',
+      authorPhotoUrl: '',
+    });
+    transaction.update(snapshotRef, {
+      commentCount: admin.firestore.FieldValue.increment(-1),
+      updatedAt: transactionNow,
+    });
+  });
+  return {success: true};
 });
 
 /**
@@ -1415,6 +1924,7 @@ export const cleanupExpiredSnapshots = functions.runWith({timeoutSeconds: 540, m
   .timeZone('UTC')
   .onRun(async () => {
     let deleted = 0;
+    let failed = 0;
     while (true) {
       const expired = await db().collection(COL.snapshots)
         .where('expiresAt', '<=', admin.firestore.Timestamp.now())
@@ -1422,15 +1932,41 @@ export const cleanupExpiredSnapshots = functions.runWith({timeoutSeconds: 540, m
         .limit(100)
         .get();
       if (expired.empty) break;
+      const failedBeforePage = failed;
       for (let offset = 0; offset < expired.docs.length; offset += 10) {
-        await Promise.all(expired.docs.slice(offset, offset + 10).map(async (doc) => {
+        const results = await Promise.allSettled(
+          expired.docs.slice(offset, offset + 10).map(async (doc) => {
+            await deleteSnapshotResources(doc.id, doc.data());
+            deleted += 1;
+          }),
+        );
+        for (const result of results) {
+          if (result.status === 'rejected') failed += 1;
+        }
+      }
+      if (expired.size < 100 || failed > failedBeforePage) break;
+    }
+    // 작성자가 만료 전에 삭제했지만 일부 하위 리소스 정리에 실패한 경우도
+    // TTL까지 기다리지 않고 durable `deleting` 표식을 기준으로 다시 정리한다.
+    const pending = await db().collection(COL.snapshots)
+      .where('status', '==', 'deleting')
+      .limit(100)
+      .get();
+    for (let offset = 0; offset < pending.docs.length; offset += 10) {
+      const results = await Promise.allSettled(
+        pending.docs.slice(offset, offset + 10).map(async (doc) => {
           await deleteSnapshotResources(doc.id, doc.data());
           deleted += 1;
-        }));
+        }),
+      );
+      for (const result of results) {
+        if (result.status === 'rejected') failed += 1;
       }
-      if (expired.size < 100) break;
     }
-    runtimeLogsEnabled && runtimeInfo(`cleanupExpiredSnapshots deleted=${deleted}`);
+    runtimeLogsEnabled && runtimeInfo(
+      `cleanupExpiredSnapshots deleted=${deleted} failed=${failed} ` +
+      `pendingRetried=${pending.size}`,
+    );
     return null;
   });
 
@@ -1454,7 +1990,8 @@ export const cleanupOrphanSnapshotUploads = functions.runWith({
 
     for (let offset = 0; offset < files.length; offset += 20) {
       await Promise.all(files.slice(offset, offset + 20).map(async (file) => {
-        const match = /^snapshots\/([0-9a-f-]{36})\/final\.jpg$/i.exec(file.name);
+        const match = /^snapshots\/([0-9a-f-]{36})\/(?:final\.(?:jpg|mp4)|thumbnail\.jpg)$/i
+          .exec(file.name);
         if (!match) return;
         inspected += 1;
         try {

@@ -51,6 +51,10 @@ dependencies:
   visibility_detector: 0.4.0+2
   uuid: ^4.5.1
   flutter_image_compress: ^2.1.0
+  # Snack videos are trimmed/transcoded on the native file path so large
+  # originals are never loaded into Dart memory.
+  video_compress: 3.1.4
+  video_player: 2.10.1
   path_provider: ^2.1.1
   path: ^1.8.3
   http: ^1.1.0

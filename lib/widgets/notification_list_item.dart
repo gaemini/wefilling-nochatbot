@@ -381,6 +381,10 @@ _BadgeSpec _badgeSpecForType(String type) {
     case 'snapshot_comment_reply':
       return const _BadgeSpec(
           icon: Icons.mark_email_read_rounded, color: AppColors.pointColor);
+    case 'snapshot_feed_comment':
+    case 'snapshot_feed_comment_reply':
+      return const _BadgeSpec(
+          icon: Icons.chat_bubble_outline_rounded, color: AppColors.pointColor);
     case 'new_comment':
     case 'comment_reply':
       // 게시글 댓글 알림: 댓글 아이콘은 파란색으로 강조

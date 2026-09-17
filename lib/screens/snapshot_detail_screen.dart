@@ -12,12 +12,14 @@ import '../services/report_service.dart';
 import '../services/snapshot_service.dart';
 import '../services/notification_service.dart';
 import '../snapshot/snapshot_storage_image.dart';
+import '../snapshot/snapshot_storage_video.dart';
 import '../snapshot/snapshot_strings.dart';
 import '../ui/snackbar/app_snackbar.dart';
 import '../utils/responsive_helper.dart';
 import 'dm_chat_screen.dart';
 import 'friend_profile_screen.dart';
 import 'snapshot_viewers_screen.dart';
+import 'snapshot_comments_sheet.dart';
 import '../l10n/ui_locale.dart';
 
 /// 상세 화면에서도 작성 화면에서 합성한 전체 프레임을 보존한다.
@@ -28,10 +30,14 @@ class SnapshotDetailScreen extends StatefulWidget {
     super.key,
     required this.snapshots,
     required this.initialIndex,
+    this.openCommentsInitially = false,
+    this.focusCommentId,
   });
 
   final List<SnapshotItem> snapshots;
   final int initialIndex;
+  final bool openCommentsInitially;
+  final String? focusCommentId;
 
   @override
   State<SnapshotDetailScreen> createState() => _SnapshotDetailScreenState();
@@ -59,7 +65,7 @@ class _SnapshotDetailScreenState extends State<SnapshotDetailScreen>
   bool _reactionSlotAvailable = false;
   bool _showFeedPosition = false;
   String? _mediaReadyId;
-  double _horizontalDragDistance = 0;
+  double _verticalDragDistance = 0;
 
   SnapshotItem get _current => _items[_index];
 
@@ -89,6 +95,9 @@ class _SnapshotDetailScreenState extends State<SnapshotDetailScreen>
       _recordCurrentView();
       _restartPlayback();
       _preloadCurrentAndNext();
+      if (widget.openCommentsInitially && _items.isNotEmpty) {
+        unawaited(_openComments(focusCommentId: widget.focusCommentId));
+      }
     });
   }
 
@@ -107,12 +116,12 @@ class _SnapshotDetailScreenState extends State<SnapshotDetailScreen>
   @override
   void didChangeAppLifecycleState(AppLifecycleState state) {
     if (state == AppLifecycleState.resumed) {
-      _isAppInactive = false;
+      setState(() => _isAppInactive = false);
       _resumePlaybackIfAllowed();
       unawaited(_service.refreshServerClock().then((_) => _recheckExpiry()));
       unawaited(_service.syncMyFeed());
     } else {
-      _isAppInactive = true;
+      setState(() => _isAppInactive = true);
       _playbackController.stop();
     }
   }
@@ -137,6 +146,11 @@ class _SnapshotDetailScreenState extends State<SnapshotDetailScreen>
 
   void _restartPlayback() {
     if (!mounted || _items.isEmpty) return;
+    _playbackController.duration = _current.isVideo
+        ? Duration(
+            milliseconds: _current.durationMs.clamp(500, 12000).toInt(),
+          )
+        : _playbackDuration;
     _playbackController.value = 0;
     if (_playbackCanRun) _playbackController.forward();
   }
@@ -152,7 +166,7 @@ class _SnapshotDetailScreenState extends State<SnapshotDetailScreen>
 
   void _setHolding(bool holding) {
     if (_isHolding == holding) return;
-    _isHolding = holding;
+    setState(() => _isHolding = holding);
     if (holding) {
       _playbackController.stop();
     } else {
@@ -162,7 +176,7 @@ class _SnapshotDetailScreenState extends State<SnapshotDetailScreen>
 
   void _setCommentComposerFocused(bool focused) {
     if (_isComposingComment == focused) return;
-    _isComposingComment = focused;
+    setState(() => _isComposingComment = focused);
     if (focused) {
       _playbackController.stop();
     } else {
@@ -172,7 +186,7 @@ class _SnapshotDetailScreenState extends State<SnapshotDetailScreen>
 
   void _handleMediaReady(String snapshotId) {
     if (!mounted || _current.id != snapshotId) return;
-    _mediaReadyId = snapshotId;
+    setState(() => _mediaReadyId = snapshotId);
     // 첫 프레임 기록이 네트워크 문제로 지연된 경우 이미지 준비 시점에 한 번
     // 더 합류한다. 서비스가 동일 요청을 단일 Future로 병합하므로 중복 쓰기는 없다.
     _recordCurrentView();
@@ -192,11 +206,34 @@ class _SnapshotDetailScreenState extends State<SnapshotDetailScreen>
     if (!mounted || _items.isEmpty) return;
     final item = _current;
     unawaited(NotificationService().markRelatedNotificationsAsRead(
-      types: const <String>{'snapshot_reaction', 'snapshot_comment'},
+      types: const <String>{
+        'snapshot_reaction',
+        'snapshot_comment',
+        'snapshot_feed_comment',
+        'snapshot_feed_comment_reply',
+      },
       targets: <String, String>{'snapshotId': item.id},
     ));
     if (FirebaseAuth.instance.currentUser?.uid == item.authorId) return;
     unawaited(_service.recordView(item.id));
+  }
+
+  Future<void> _openComments({String? focusCommentId}) async {
+    if (!mounted || _items.isEmpty || _isComposingComment) return;
+    setState(() => _isComposingComment = true);
+    _playbackController.stop();
+    try {
+      await SnapshotCommentsSheet.show(
+        context,
+        snapshot: _current,
+        focusCommentId: focusCommentId,
+      );
+    } finally {
+      if (mounted) {
+        setState(() => _isComposingComment = false);
+        _resumePlaybackIfAllowed();
+      }
+    }
   }
 
   Future<void> _openViewers() async {
@@ -321,20 +358,20 @@ class _SnapshotDetailScreenState extends State<SnapshotDetailScreen>
 
   void _showNext() => _moveTo(_index + 1);
 
-  void _handleHorizontalDragStart(DragStartDetails details) {
-    _horizontalDragDistance = 0;
+  void _handleVerticalDragStart(DragStartDetails details) {
+    _verticalDragDistance = 0;
     _playbackController.stop();
   }
 
-  void _handleHorizontalDragUpdate(DragUpdateDetails details) {
-    _horizontalDragDistance += details.primaryDelta ?? 0;
+  void _handleVerticalDragUpdate(DragUpdateDetails details) {
+    _verticalDragDistance += details.primaryDelta ?? 0;
   }
 
-  void _handleHorizontalDragEnd(DragEndDetails details) {
+  void _handleVerticalDragEnd(DragEndDetails details) {
     final velocity = details.primaryVelocity ?? 0;
-    final shouldGoNext = _horizontalDragDistance < -48 || velocity < -320;
-    final shouldGoPrevious = _horizontalDragDistance > 48 || velocity > 320;
-    _horizontalDragDistance = 0;
+    final shouldGoNext = _verticalDragDistance < -48 || velocity < -320;
+    final shouldGoPrevious = _verticalDragDistance > 48 || velocity > 320;
+    _verticalDragDistance = 0;
     if (shouldGoNext) {
       _showNext();
     } else if (shouldGoPrevious) {
@@ -427,7 +464,11 @@ class _SnapshotDetailScreenState extends State<SnapshotDetailScreen>
       if (mounted) {
         AppSnackBar.show(
           context,
-          message: (isChineseUi(context) ? '删除失败。' : strings.isKorean ? '삭제하지 못했어요.' : 'Could not delete it.'),
+          message: (isChineseUi(context)
+              ? '删除失败。'
+              : strings.isKorean
+                  ? '삭제하지 못했어요.'
+                  : 'Could not delete it.'),
           type: AppSnackBarType.error,
         );
       }
@@ -455,9 +496,11 @@ class _SnapshotDetailScreenState extends State<SnapshotDetailScreen>
       if (mounted) {
         AppSnackBar.show(
           context,
-          message: (isChineseUi(context) ? '无法发起私信。' : strings.isKorean
-              ? '메시지를 시작하지 못했어요.'
-              : 'Could not start a message.'),
+          message: (isChineseUi(context)
+              ? '无法发起私信。'
+              : strings.isKorean
+                  ? '메시지를 시작하지 못했어요.'
+                  : 'Could not start a message.'),
           type: AppSnackBarType.error,
         );
       }
@@ -542,10 +585,10 @@ class _SnapshotDetailScreenState extends State<SnapshotDetailScreen>
               Expanded(
                 child: GestureDetector(
                   behavior: HitTestBehavior.opaque,
-                  onHorizontalDragStart: _handleHorizontalDragStart,
-                  onHorizontalDragUpdate: _handleHorizontalDragUpdate,
-                  onHorizontalDragEnd: _handleHorizontalDragEnd,
-                  onHorizontalDragCancel: _resumePlaybackIfAllowed,
+                  onVerticalDragStart: _handleVerticalDragStart,
+                  onVerticalDragUpdate: _handleVerticalDragUpdate,
+                  onVerticalDragEnd: _handleVerticalDragEnd,
+                  onVerticalDragCancel: _resumePlaybackIfAllowed,
                   onLongPressStart: (_) => _setHolding(true),
                   onLongPressEnd: (_) => _setHolding(false),
                   onLongPressCancel: () => _setHolding(false),
@@ -570,6 +613,7 @@ class _SnapshotDetailScreenState extends State<SnapshotDetailScreen>
                             snapshot: _current,
                             service: _service,
                             onMediaReady: _handleMediaReady,
+                            playing: _playbackCanRun,
                             onReactionAvailabilityChanged:
                                 _handleReactionAvailabilityChanged,
                           ),
@@ -626,6 +670,17 @@ class _SnapshotDetailScreenState extends State<SnapshotDetailScreen>
                             onTap: _openViewers,
                           ),
                         ),
+                      if (!_isComposingComment)
+                        Positioned(
+                          right: horizontalInset,
+                          bottom: isOwner ? ownerViewerEntryHeight + 8 : 64,
+                          child: _SnapshotCommentsButton(
+                            snapshotId: _current.id,
+                            initialCount: _current.commentCount,
+                            label: strings.comments,
+                            onTap: () => _openComments(),
+                          ),
+                        ),
                       if (_items.length > 1)
                         Positioned(
                           left: 16,
@@ -663,12 +718,14 @@ class _SnapshotDetailPage extends StatefulWidget {
     required this.service,
     required this.onMediaReady,
     required this.onReactionAvailabilityChanged,
+    required this.playing,
   });
   final SnapshotItem snapshot;
   final SnapshotService service;
   final ValueChanged<String> onMediaReady;
   final void Function(String snapshotId, bool isAvailable)
       onReactionAvailabilityChanged;
+  final bool playing;
 
   @override
   State<_SnapshotDetailPage> createState() => _SnapshotDetailPageState();
@@ -796,6 +853,7 @@ class _SnapshotDetailPageState extends State<_SnapshotDetailPage>
     final strings = SnapshotStrings.of(context);
     return StreamBuilder<SnapshotItem?>(
       stream: _accessStream,
+      initialData: widget.snapshot,
       builder: (context, snapshot) {
         if (snapshot.connectionState == ConnectionState.waiting &&
             !snapshot.hasData &&
@@ -827,6 +885,7 @@ class _SnapshotDetailPageState extends State<_SnapshotDetailPage>
           children: [
             _SnapshotMediaCanvas(
               snapshot: current,
+              playing: widget.playing,
               onReady: () => widget.onMediaReady(current.id),
             ),
             const IgnorePointer(child: _SnapshotStoryScrim()),
@@ -864,6 +923,96 @@ class _SnapshotDetailPageState extends State<_SnapshotDetailPage>
   }
 }
 
+class _SnapshotCommentsButton extends StatefulWidget {
+  const _SnapshotCommentsButton({
+    required this.snapshotId,
+    required this.initialCount,
+    required this.label,
+    required this.onTap,
+  });
+
+  final String snapshotId;
+  final int initialCount;
+  final String label;
+  final VoidCallback onTap;
+
+  @override
+  State<_SnapshotCommentsButton> createState() =>
+      _SnapshotCommentsButtonState();
+}
+
+class _SnapshotCommentsButtonState extends State<_SnapshotCommentsButton> {
+  late Stream<List<SnapshotComment>> _comments;
+
+  @override
+  void initState() {
+    super.initState();
+    _comments = SnapshotService.instance.watchFeedComments(widget.snapshotId);
+  }
+
+  @override
+  void didUpdateWidget(covariant _SnapshotCommentsButton oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (oldWidget.snapshotId != widget.snapshotId) {
+      _comments = SnapshotService.instance.watchFeedComments(widget.snapshotId);
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return StreamBuilder<List<SnapshotComment>>(
+      stream: _comments,
+      initialData: const <SnapshotComment>[],
+      builder: (context, snapshot) {
+        final liveCount =
+            snapshot.data?.where((comment) => !comment.isDeleted).length;
+        final count = snapshot.connectionState == ConnectionState.waiting
+            ? widget.initialCount
+            : (liveCount ?? widget.initialCount);
+        return Semantics(
+          button: true,
+          label: '${widget.label} $count',
+          child: Material(
+            color: Colors.black.withValues(alpha: .36),
+            shape: const StadiumBorder(),
+            child: InkWell(
+              onTap: widget.onTap,
+              customBorder: const StadiumBorder(),
+              child: ConstrainedBox(
+                constraints: const BoxConstraints(minWidth: 48, minHeight: 48),
+                child: Padding(
+                  padding: const EdgeInsets.symmetric(horizontal: 11),
+                  child: Row(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      const Icon(
+                        Icons.chat_bubble_outline_rounded,
+                        color: Colors.white,
+                        size: 23,
+                      ),
+                      if (count > 0) ...[
+                        const SizedBox(width: 6),
+                        Text(
+                          '$count',
+                          style: const TextStyle(
+                            color: Colors.white,
+                            fontSize: 13,
+                            fontWeight: FontWeight.w700,
+                          ),
+                        ),
+                      ],
+                    ],
+                  ),
+                ),
+              ),
+            ),
+          ),
+        );
+      },
+    );
+  }
+}
+
 /// 상단 UI를 제외한 실제 미디어 영역 안에서 합성 캔버스 전체를 정중앙에 둔다.
 ///
 /// 현재 저장 이미지는 작성 화면에서 사진과 텍스트 오버레이를 하나의 프레임으로
@@ -872,10 +1021,12 @@ class _SnapshotDetailPageState extends State<_SnapshotDetailPage>
 class _SnapshotMediaCanvas extends StatelessWidget {
   const _SnapshotMediaCanvas({
     required this.snapshot,
+    required this.playing,
     required this.onReady,
   });
 
   final SnapshotItem snapshot;
+  final bool playing;
   final VoidCallback onReady;
 
   @override
@@ -897,15 +1048,27 @@ class _SnapshotMediaCanvas extends StatelessWidget {
               child: Stack(
                 fit: StackFit.expand,
                 children: [
-                  SnapshotStorageImage(
-                    snapshot: snapshot,
-                    fit: snapshotDetailImageFit,
-                    placeholderColor: Colors.black,
-                    errorBackgroundColor: Colors.black,
-                    showLoadingIndicator: false,
-                    fadeInDuration: Duration.zero,
-                    onImageReady: onReady,
-                  ),
+                  if (snapshot.isVideo) ...[
+                    SnapshotStorageVideo(
+                      snapshot: snapshot,
+                      playing: playing,
+                      onReady: onReady,
+                    ),
+                    IgnorePointer(
+                      child: SnapshotOverlayLayer(
+                        overlays: snapshot.overlays,
+                      ),
+                    ),
+                  ] else
+                    SnapshotStorageImage(
+                      snapshot: snapshot,
+                      fit: snapshotDetailImageFit,
+                      placeholderColor: Colors.black,
+                      errorBackgroundColor: Colors.black,
+                      showLoadingIndicator: false,
+                      fadeInDuration: Duration.zero,
+                      onImageReady: onReady,
+                    ),
                 ],
               ),
             ),
@@ -1947,9 +2110,11 @@ class _SnapshotDeleteDialog extends StatelessWidget {
                 ),
                 SizedBox(height: context.rs(4).clamp(3, 6).toDouble()),
                 Text(
-                  (isChineseUi(context) ? '删除后，此限时动态将无法恢复。' : strings.isKorean
-                      ? '삭제한 스낵은 다시 복구할 수 없어요.'
-                      : 'This snack cannot be restored after deletion.'),
+                  (isChineseUi(context)
+                      ? '删除后，此限时动态将无法恢复。'
+                      : strings.isKorean
+                          ? '삭제한 스낵은 다시 복구할 수 없어요.'
+                          : 'This snack cannot be restored after deletion.'),
                   style: TextStyle(
                     fontFamily: uiFontFamily(context, 'Inter'),
                     fontFamilyFallback: const ['NotoSansKR'],
@@ -2073,12 +2238,16 @@ String _snapshotRemainingLabel(
 ) {
   final duration = snapshot.remainingAt(service.serverNow);
   if (duration.inHours >= 1) {
-    return strings.isChinese ? '${duration.inHours}小时后到期' : strings.isKorean
-        ? '${duration.inHours}시간 ${strings.remaining}'
-        : '${duration.inHours}h ${strings.remaining}';
+    return strings.isChinese
+        ? '${duration.inHours}小时后到期'
+        : strings.isKorean
+            ? '${duration.inHours}시간 ${strings.remaining}'
+            : '${duration.inHours}h ${strings.remaining}';
   }
   final minutes = duration.inMinutes.clamp(1, 59);
-  return strings.isChinese ? '${minutes}分钟后到期' : strings.isKorean
-      ? '$minutes분 ${strings.remaining}'
-      : '${minutes}m ${strings.remaining}';
+  return strings.isChinese
+      ? '${minutes}分钟后到期'
+      : strings.isKorean
+          ? '$minutes분 ${strings.remaining}'
+          : '${minutes}m ${strings.remaining}';
 }

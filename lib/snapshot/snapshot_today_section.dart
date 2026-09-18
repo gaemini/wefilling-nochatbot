@@ -34,6 +34,8 @@ class SnapshotTodaySection extends StatefulWidget {
 
 class _SnapshotTodaySectionState extends State<SnapshotTodaySection>
     with WidgetsBindingObserver {
+  static const int _previewWarmupLimit = 5;
+  static const int _previewWarmupConcurrency = 2;
   final SnapshotService _service = SnapshotService.instance;
   final UserInfoCacheService _userInfoService = UserInfoCacheService();
   final ScrollController _trayController = ScrollController(
@@ -41,6 +43,15 @@ class _SnapshotTodaySectionState extends State<SnapshotTodaySection>
   );
   late Stream<List<SnapshotItem>> _stream;
   String? _positionedUid;
+  String? _previewUserId;
+  List<SnapshotItem> _latestPreviewItems = const <SnapshotItem>[];
+  final List<SnapshotItem> _previewQueue = <SnapshotItem>[];
+  final Set<String> _queuedPreviewKeys = <String>{};
+  final Set<String> _preparedPreviewKeys = <String>{};
+  int _activePreviewWarmups = 0;
+  int _previewGeneration = 0;
+  bool _appActive = true;
+  bool _sectionVisible = true;
 
   @override
   void initState() {
@@ -52,15 +63,97 @@ class _SnapshotTodaySectionState extends State<SnapshotTodaySection>
   @override
   void dispose() {
     WidgetsBinding.instance.removeObserver(this);
+    _previewGeneration++;
+    _previewQueue.clear();
+    _queuedPreviewKeys.clear();
     _trayController.dispose();
     super.dispose();
   }
 
   @override
   void didChangeAppLifecycleState(AppLifecycleState state) {
-    if (state != AppLifecycleState.resumed) return;
+    _appActive = state == AppLifecycleState.resumed;
+    if (!_appActive) {
+      _previewQueue.clear();
+      _queuedPreviewKeys.clear();
+      return;
+    }
+    _schedulePreviewWarmup(
+      _latestPreviewItems,
+      _previewUserId ?? '',
+      sectionVisible: _sectionVisible,
+    );
     unawaited(_service.refreshServerClock());
     unawaited(_service.syncMyFeed());
+  }
+
+  String _previewKey(String uid, SnapshotItem item) {
+    final source = item.imageStoragePath.trim().isNotEmpty
+        ? item.imageStoragePath.trim()
+        : item.imageUrl.trim();
+    return '$uid::${item.id}::$source';
+  }
+
+  void _schedulePreviewWarmup(
+    List<SnapshotItem> items,
+    String uid, {
+    required bool sectionVisible,
+  }) {
+    _latestPreviewItems = items;
+    if (_previewUserId != uid) {
+      _previewUserId = uid;
+      _previewGeneration++;
+      _activePreviewWarmups = 0;
+      _previewQueue.clear();
+      _queuedPreviewKeys.clear();
+      _preparedPreviewKeys.clear();
+    }
+    if (!_appActive || !sectionVisible || uid.isEmpty) {
+      _previewQueue.clear();
+      _queuedPreviewKeys.clear();
+      return;
+    }
+    unawaited(
+      _service
+          .preloadMyReactionStates(items.take(_previewWarmupLimit))
+          .then<void>(
+            (_) {},
+            onError: (Object _, StackTrace __) {},
+          ),
+    );
+    for (final item in items.take(_previewWarmupLimit)) {
+      final key = _previewKey(uid, item);
+      if (_preparedPreviewKeys.contains(key) || !_queuedPreviewKeys.add(key)) {
+        continue;
+      }
+      _previewQueue.add(item);
+    }
+    WidgetsBinding.instance.addPostFrameCallback((_) => _pumpPreviewWarmups());
+  }
+
+  void _pumpPreviewWarmups() {
+    if (!mounted || !_appActive) return;
+    while (_activePreviewWarmups < _previewWarmupConcurrency &&
+        _previewQueue.isNotEmpty) {
+      final item = _previewQueue.removeAt(0);
+      final uid = _previewUserId ?? '';
+      final key = _previewKey(uid, item);
+      final generation = _previewGeneration;
+      _activePreviewWarmups++;
+      unawaited(_service
+          .loadImageBytes(item)
+          .then<void>(
+            (_) {},
+            onError: (Object _, StackTrace __) {},
+          )
+          .whenComplete(() {
+        if (!mounted || generation != _previewGeneration) return;
+        _activePreviewWarmups--;
+        _queuedPreviewKeys.remove(key);
+        _preparedPreviewKeys.add(key);
+        _pumpPreviewWarmups();
+      }));
+    }
   }
 
   Future<void> _create() async {
@@ -115,6 +208,8 @@ class _SnapshotTodaySectionState extends State<SnapshotTodaySection>
     final pageTextDirection = Directionality.of(context);
     final horizontal = MediaQuery.sizeOf(context).width < 360 ? 12.0 : 16.0;
     final itemGap = context.rs(4).clamp(3, 6).toDouble();
+    final sectionVisible = TickerMode.valuesOf(context).enabled;
+    _sectionVisible = sectionVisible;
     _ensureInitialMySnackPosition(uid);
 
     return ColoredBox(
@@ -123,6 +218,11 @@ class _SnapshotTodaySectionState extends State<SnapshotTodaySection>
         stream: _stream,
         builder: (context, snapshot) {
           final items = snapshot.data ?? const <SnapshotItem>[];
+          _schedulePreviewWarmup(
+            items,
+            uid,
+            sectionVisible: sectionVisible,
+          );
           // The service is newest-first. The first pass keeps the newest snack
           // from each author at the front of the tray. Older snacks follow in
           // chronological order, so the initial viewport stays useful while a

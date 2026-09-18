@@ -6835,7 +6835,7 @@ async function isVerifiedSnapshotCommentReplyRecipient(notification) {
         safeStringLoose(originalData.reply || originalNested.reply) ===
             safeStringLoose(notification.reply || nested.reply);
 }
-async function isVerifiedSnapshotFeedCommentRecipient(notification) {
+async function isVerifiedSnapshotFeedCommentRecipient(notification, notificationId) {
     var _a, _b, _c, _d;
     const type = safeStringLoose(notification.type);
     if (type !== 'snapshot_feed_comment' &&
@@ -6851,6 +6851,8 @@ async function isVerifiedSnapshotFeedCommentRecipient(notification) {
     if (!snapshotId || !commentId || !recipientId || !actorId || recipientId === actorId) {
         return false;
     }
+    if (notificationId !== `${type}_${commentId}_${recipientId}`)
+        return false;
     const snapshotRef = db.collection('snapshots').doc(snapshotId);
     const [snapshot, comment] = await Promise.all([
         snapshotRef.get(),
@@ -6874,6 +6876,36 @@ async function isVerifiedSnapshotFeedCommentRecipient(notification) {
     const parent = await snapshotRef.collection('feed_comments').doc(parentId).get();
     return parent.exists && parent.get('isDeleted') !== true &&
         normalizeUidLoose(parent.get('userId')) === recipientId;
+}
+async function isVerifiedSnapshotReactionRecipient(notification, notificationId) {
+    var _a, _b, _c;
+    if (safeStringLoose(notification.type) !== 'snapshot_reaction')
+        return true;
+    const nested = notification.data && typeof notification.data === 'object'
+        ? notification.data
+        : {};
+    const snapshotId = safeStringLoose((_a = notification.snapshotId) !== null && _a !== void 0 ? _a : nested.snapshotId);
+    const recipientId = normalizeUidLoose(notification.userId);
+    const actorId = normalizeUidLoose((_b = notification.actorId) !== null && _b !== void 0 ? _b : nested.actorId);
+    if (!snapshotId || !recipientId || !actorId || recipientId === actorId) {
+        return false;
+    }
+    if (notificationId !== `snapshot_reaction_${snapshotId}_${actorId}`)
+        return false;
+    const snapshotRef = db.collection('snapshots').doc(snapshotId);
+    const [snapshot, reaction] = await Promise.all([
+        snapshotRef.get(),
+        snapshotRef.collection('reactions').doc(actorId).get(),
+    ]);
+    if (!snapshot.exists || !reaction.exists ||
+        safeStringLoose(snapshot.get('status')) !== 'active')
+        return false;
+    const expiresAt = firestoreTimeToMillis(snapshot.get('expiresAt'));
+    if (expiresAt == null || expiresAt <= Date.now())
+        return false;
+    const ownerId = normalizeUidLoose((_c = snapshot.get('ownerId')) !== null && _c !== void 0 ? _c : snapshot.get('authorId'));
+    return ownerId === recipientId &&
+        normalizeUidLoose(reaction.get('userId')) === actorId;
 }
 exports.onNotificationCreated = functions
     .runWith({ failurePolicy: true, timeoutSeconds: 120, memory: '512MB' })
@@ -6907,7 +6939,7 @@ exports.onNotificationCreated = functions
             await snapshot.ref.delete();
             return null;
         }
-        if (!await isVerifiedCreatedContentNotificationRecipient(notificationData) || !await isVerifiedFriendRequestNotificationRecipient(notificationData) || !await isVerifiedFriendRequestAcceptedNotificationRecipient(notificationData) || !await isVerifiedSnapshotCommentReplyRecipient(notificationData) || !await isVerifiedSnapshotFeedCommentRecipient(notificationData)) {
+        if (!await isVerifiedCreatedContentNotificationRecipient(notificationData) || !await isVerifiedFriendRequestNotificationRecipient(notificationData) || !await isVerifiedFriendRequestAcceptedNotificationRecipient(notificationData) || !await isVerifiedSnapshotCommentReplyRecipient(notificationData) || !await isVerifiedSnapshotReactionRecipient(notificationData, String(notificationId)) || !await isVerifiedSnapshotFeedCommentRecipient(notificationData, String(notificationId))) {
             console.warn(`⏭️ 알림 최종 수신자 검증 실패 - 삭제/푸시 스킵 (notification=${notificationId})`);
             await snapshot.ref.set({ skipUnreadCounterSync: true }, { merge: true });
             await snapshot.ref.delete();
@@ -6937,10 +6969,12 @@ exports.onNotificationCreated = functions
                     ? notificationSettingAllows(settingsDoc, 'friend_alerts', ['friend_request'])
                     : type === 'friend_request_accepted'
                         ? notificationSettingAllows(settingsDoc, 'friend_alerts', ['friend_request'])
-                        : type === 'snapshot_feed_comment' ||
-                            type === 'snapshot_feed_comment_reply'
-                            ? notificationSettingAllows(settingsDoc, 'new_comment', [])
-                            : true;
+                        : type === 'snapshot_reaction'
+                            ? notificationSettingAllows(settingsDoc, 'post_interactions', ['new_like'])
+                            : type === 'snapshot_feed_comment' ||
+                                type === 'snapshot_feed_comment_reply'
+                                ? notificationSettingAllows(settingsDoc, 'post_interactions', ['new_comment'])
+                                : true;
         if (!notificationAllowed) {
             await snapshot.ref.set({ skipUnreadCounterSync: true }, { merge: true });
             await snapshot.ref.delete();

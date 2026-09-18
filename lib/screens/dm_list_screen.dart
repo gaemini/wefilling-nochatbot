@@ -13,6 +13,7 @@ import '../utils/time_formatter.dart';
 import '../l10n/app_localizations.dart';
 import 'dm_chat_screen.dart';
 import 'dm_recipient_selection_screen.dart';
+import 'friend_profile_screen.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import '../utils/logger.dart';
 import '../ui/widgets/user_avatar.dart';
@@ -818,6 +819,15 @@ class _DMListScreenState extends State<DMListScreen> {
     bool isTitleLoading = false, // 최신 사용자 정보 로딩 중(플리커 방지)
     bool isLatestPreviewLoading = false, // 마지막 메시지/시간 등 최신 정보 로딩 중
   }) {
+    final deletedLabel =
+        AppLocalizations.of(context)!.deletedAccount ?? 'Deleted Account';
+    final canOpenProfile = !isAnonymous &&
+        !hideProfile &&
+        !isTitleLoading &&
+        otherUserId.trim().isNotEmpty &&
+        displayName.trim().isNotEmpty &&
+        displayName != 'DELETED_ACCOUNT' &&
+        displayName != deletedLabel;
     return Material(
       color: Colors.white,
       child: InkWell(
@@ -840,13 +850,29 @@ class _DMListScreenState extends State<DMListScreen> {
             children: [
               // 프로필 이미지 (hideProfile이 false일 때만 표시)
               if (!hideProfile) ...[
-                UserAvatar(
-                  uid: otherUserId,
-                  photoUrl: otherUserPhoto,
-                  photoVersion: otherUserPhotoVersion,
-                  isAnonymous: isAnonymous,
-                  size: 44,
-                  placeholderIconSize: 22,
+                Semantics(
+                  button: canOpenProfile,
+                  label: canOpenProfile
+                      ? AppLocalizations.of(context)!.viewProfile
+                      : null,
+                  child: GestureDetector(
+                    behavior: HitTestBehavior.opaque,
+                    onTap: canOpenProfile
+                        ? () => _openUserProfile(
+                              userId: otherUserId,
+                              nickname: displayName,
+                              photoURL: otherUserPhoto,
+                            )
+                        : null,
+                    child: UserAvatar(
+                      uid: otherUserId,
+                      photoUrl: otherUserPhoto,
+                      photoVersion: otherUserPhotoVersion,
+                      isAnonymous: isAnonymous,
+                      size: 44,
+                      placeholderIconSize: 22,
+                    ),
+                  ),
                 ),
                 const SizedBox(width: 12),
               ],
@@ -1109,6 +1135,24 @@ class _DMListScreenState extends State<DMListScreen> {
             ),
           ),
         ],
+      ),
+    );
+  }
+
+  void _openUserProfile({
+    required String userId,
+    required String nickname,
+    required String photoURL,
+  }) {
+    if (userId.trim().isEmpty) return;
+    Navigator.of(context).push<void>(
+      MaterialPageRoute(
+        builder: (_) => FriendProfileScreen(
+          userId: userId,
+          nickname: nickname,
+          photoURL: photoURL,
+          allowNonFriendsPreview: true,
+        ),
       ),
     );
   }

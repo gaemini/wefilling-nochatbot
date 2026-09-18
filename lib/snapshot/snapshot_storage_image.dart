@@ -50,7 +50,9 @@ class _SnapshotStorageImageState extends State<SnapshotStorageImage> {
   void didUpdateWidget(covariant SnapshotStorageImage oldWidget) {
     super.didUpdateWidget(oldWidget);
     if (oldWidget.snapshot.id != widget.snapshot.id ||
-        oldWidget.snapshot.storagePath != widget.snapshot.storagePath) {
+        oldWidget.snapshot.imageStoragePath !=
+            widget.snapshot.imageStoragePath ||
+        oldWidget.snapshot.imageUrl != widget.snapshot.imageUrl) {
       _retryTimer?.cancel();
       _retryTimer = null;
       _retryCount = 0;

@@ -1147,9 +1147,10 @@ export const toggleSnapshotReaction = functions.https.onCall(async (raw, context
     );
   }
 
-  const [actorDocument, ownerDocument] = await Promise.all([
+  const [actorDocument, ownerDocument, ownerSettingsDocument] = await Promise.all([
     db().collection(COL.users).doc(uid).get(),
     db().collection(COL.users).doc(ownerId).get(),
+    db().collection('user_settings').doc(ownerId).get(),
   ]);
   const actorData = actorDocument.data() ?? {};
   const actorName = text(actorData.nickname ?? actorData.name) || 'User';
@@ -1157,6 +1158,10 @@ export const toggleSnapshotReaction = functions.https.onCall(async (raw, context
     reaction,
     actorName,
     prefersKoreanNotification(ownerDocument.data() ?? {}),
+  );
+  const notifyOwner = snapshotNotificationSettingAllows(
+    ownerSettingsDocument,
+    'new_like',
   );
   const reactionRef = ref.collection('reactions').doc(uid);
   const notificationRef = db().collection(COL.notifications)
@@ -1215,25 +1220,27 @@ export const toggleSnapshotReaction = functions.https.onCall(async (raw, context
     });
     // 반응과 알림을 한 트랜잭션으로 저장해 반응만 남거나
     // 재시도로 푸시가 중복 생성되는 상태를 방지한다.
-    transaction.set(notificationRef, {
-      userId: ownerId,
-      type: 'snapshot_reaction',
-      title: copy.title,
-      message: copy.message,
-      snapshotId,
-      reaction,
-      actorId: uid,
-      actorName,
-      isRead: false,
-      createdAt: transactionNow,
-      expiresAt: snapshotData.expiresAt,
-      data: {
+    if (notifyOwner) {
+      transaction.set(notificationRef, {
+        userId: ownerId,
+        type: 'snapshot_reaction',
+        title: copy.title,
+        message: copy.message,
         snapshotId,
         reaction,
         actorId: uid,
         actorName,
-      },
-    });
+        isRead: false,
+        createdAt: transactionNow,
+        expiresAt: snapshotData.expiresAt,
+        data: {
+          snapshotId,
+          reaction,
+          actorId: uid,
+          actorName,
+        },
+      });
+    }
     return {created: true, reaction};
   });
   return {
@@ -1359,15 +1366,23 @@ export const sendSnapshotComment = functions.https.onCall(async (raw, context) =
   return {success: true, created: result.created};
 });
 
-async function snapshotCommentNotificationAllowed(userId: string): Promise<boolean> {
-  const settings = await db().collection('user_settings').doc(userId).get();
+function snapshotNotificationSettingAllows(
+  settings: FirebaseFirestore.DocumentSnapshot,
+  legacyKey: 'new_comment' | 'new_like',
+): boolean {
   const notifications = settings.exists &&
       settings.data()?.notifications &&
       typeof settings.data()?.notifications === 'object'
     ? settings.data()?.notifications as Record<string, unknown>
     : {};
   return notifications.all_notifications !== false &&
-    notifications.new_comment !== false;
+    notifications.post_interactions !== false &&
+    notifications[legacyKey] !== false;
+}
+
+async function snapshotCommentNotificationAllowed(userId: string): Promise<boolean> {
+  const settings = await db().collection('user_settings').doc(userId).get();
+  return snapshotNotificationSettingAllows(settings, 'new_comment');
 }
 
 /**
@@ -1454,15 +1469,19 @@ export const createSnapshotFeedComment = functions.https.onCall(async (raw, cont
     }
   }
 
-  const recipients: Array<{
+  type SnapshotCommentRecipient = {
     userId: string;
     type: 'snapshot_feed_comment' | 'snapshot_feed_comment_reply';
-  }> = [];
-  for (const [userId, type] of recipientTypes) {
-    if (await isBlocked(uid, userId)) continue;
-    if (!await snapshotCommentNotificationAllowed(userId)) continue;
-    recipients.push({userId, type});
-  }
+  };
+  const recipients = (await Promise.all(
+    Array.from(recipientTypes.entries()).map(async ([userId, type]) => {
+      const [blocked, notificationAllowed] = await Promise.all([
+        isBlocked(uid, userId),
+        snapshotCommentNotificationAllowed(userId),
+      ]);
+      return blocked || !notificationAllowed ? null : {userId, type};
+    }),
+  )).filter((recipient): recipient is SnapshotCommentRecipient => recipient != null);
 
   const commentRef = comments.doc(commentId);
   const result = await store.runTransaction(async (transaction) => {

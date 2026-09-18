@@ -43,6 +43,7 @@ import 'package:intl/intl.dart';
 import 'post_detail_screen.dart';
 import '../ui/widgets/fullscreen_image_viewer.dart';
 import 'dm_image_send_preview_screen.dart';
+import 'friend_profile_screen.dart';
 import '../ui/widgets/user_avatar.dart';
 import '../utils/logger.dart';
 import '../utils/chat_timing.dart';
@@ -1182,6 +1183,25 @@ class _DMChatScreenState extends State<DMChatScreen>
     return status == 'deleted' || name == 'DELETED_ACCOUNT';
   }
 
+  void _openOtherUserProfile({
+    String? nickname,
+    String? photoURL,
+  }) {
+    final userId = widget.otherUserId.trim();
+    if (_isAnonymous || _isPeerDeleted || userId.isEmpty) return;
+
+    Navigator.of(context).push<void>(
+      MaterialPageRoute(
+        builder: (_) => FriendProfileScreen(
+          userId: userId,
+          nickname: nickname,
+          photoURL: photoURL,
+          allowNonFriendsPreview: true,
+        ),
+      ),
+    );
+  }
+
   /// 현재 대화 상대와 관련된 두 문서만 구독해 전체 목록 재조회와
   /// 메시지별 차단 조회를 피한다.
   void _watchBlockStatus() {
@@ -2306,14 +2326,29 @@ class _DMChatScreenState extends State<DMChatScreen>
         title: Row(
           children: [
             // 대화방이 없어도 상대 프로필을 먼저 보여준다(오류 오해 방지)
-            UserAvatar(
-              uid: otherUserId,
-              photoUrl: resolvedPhotoUrl,
-              photoVersion: resolvedPhotoVersion,
-              isAnonymous: _isAnonymous,
-              size: 36,
-              placeholderColor: const Color(0xFFE5E7EB),
-              placeholderIconSize: 20,
+            Semantics(
+              button: !_isAnonymous && !_isPeerDeleted,
+              label: !_isAnonymous && !_isPeerDeleted
+                  ? AppLocalizations.of(context)!.viewProfile
+                  : null,
+              child: GestureDetector(
+                behavior: HitTestBehavior.opaque,
+                onTap: _isAnonymous || _isPeerDeleted
+                    ? null
+                    : () => _openOtherUserProfile(
+                          nickname: resolvedName,
+                          photoURL: resolvedPhotoUrl,
+                        ),
+                child: UserAvatar(
+                  uid: otherUserId,
+                  photoUrl: resolvedPhotoUrl,
+                  photoVersion: resolvedPhotoVersion,
+                  isAnonymous: _isAnonymous,
+                  size: 36,
+                  placeholderColor: const Color(0xFFE5E7EB),
+                  placeholderIconSize: 20,
+                ),
+              ),
             ),
             const SizedBox(width: 12),
             Expanded(
@@ -2552,14 +2587,29 @@ class _DMChatScreenState extends State<DMChatScreen>
             ),
             title: Row(
               children: [
-                UserAvatar(
-                  uid: otherUserId,
-                  photoUrl: otherUserPhoto,
-                  photoVersion: otherUserPhotoVersion,
-                  isAnonymous: _isAnonymous,
-                  size: 36,
-                  placeholderColor: const Color(0xFFE5E7EB),
-                  placeholderIconSize: 20,
+                Semantics(
+                  button: !_isAnonymous && !isCachedDeleted,
+                  label: !_isAnonymous && !isCachedDeleted
+                      ? AppLocalizations.of(context)!.viewProfile
+                      : null,
+                  child: GestureDetector(
+                    behavior: HitTestBehavior.opaque,
+                    onTap: _isAnonymous || isCachedDeleted
+                        ? null
+                        : () => _openOtherUserProfile(
+                              nickname: otherUserName,
+                              photoURL: otherUserPhoto,
+                            ),
+                    child: UserAvatar(
+                      uid: otherUserId,
+                      photoUrl: otherUserPhoto,
+                      photoVersion: otherUserPhotoVersion,
+                      isAnonymous: _isAnonymous,
+                      size: 36,
+                      placeholderColor: const Color(0xFFE5E7EB),
+                      placeholderIconSize: 20,
+                    ),
+                  ),
                 ),
                 const SizedBox(width: 12),
                 Expanded(

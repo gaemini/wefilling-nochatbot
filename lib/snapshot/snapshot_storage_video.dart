@@ -16,11 +16,13 @@ class SnapshotStorageVideo extends StatefulWidget {
     required this.snapshot,
     required this.playing,
     required this.onReady,
+    required this.onFirstFrame,
   });
 
   final SnapshotItem snapshot;
   final bool playing;
   final VoidCallback onReady;
+  final VoidCallback onFirstFrame;
 
   @override
   State<SnapshotStorageVideo> createState() => _SnapshotStorageVideoState();
@@ -29,9 +31,14 @@ class SnapshotStorageVideo extends StatefulWidget {
 class _SnapshotStorageVideoState extends State<SnapshotStorageVideo>
     with WidgetsBindingObserver {
   VideoPlayerController? _controller;
+  File? _retainedFile;
   Object? _error;
   bool _appActive = true;
+  bool _firstFrameVisible = false;
+  bool _wasBuffering = false;
+  bool _cacheHit = false;
   int _generation = 0;
+  Stopwatch? _loadStopwatch;
 
   @override
   void initState() {
@@ -44,6 +51,9 @@ class _SnapshotStorageVideoState extends State<SnapshotStorageVideo>
   void didUpdateWidget(covariant SnapshotStorageVideo oldWidget) {
     super.didUpdateWidget(oldWidget);
     if (oldWidget.snapshot.id != widget.snapshot.id) {
+      unawaited(
+        SnapshotService.instance.cancelVideoLoad(oldWidget.snapshot.id),
+      );
       unawaited(_load());
     } else if (oldWidget.playing != widget.playing) {
       _syncPlayback();
@@ -53,6 +63,9 @@ class _SnapshotStorageVideoState extends State<SnapshotStorageVideo>
   @override
   void didChangeAppLifecycleState(AppLifecycleState state) {
     _appActive = state == AppLifecycleState.resumed;
+    if (!_appActive) {
+      unawaited(SnapshotService.instance.cancelVideoPreloads());
+    }
     _syncPlayback();
   }
 
@@ -60,26 +73,86 @@ class _SnapshotStorageVideoState extends State<SnapshotStorageVideo>
     final generation = ++_generation;
     final snapshot = widget.snapshot;
     final previous = _controller;
+    final previousFile = _retainedFile;
     _controller = null;
+    _retainedFile = null;
+    previous?.removeListener(_handleControllerValue);
     await previous?.dispose();
+    if (previousFile != null) {
+      await SnapshotService.instance.releaseVideoFile(previousFile);
+    }
     if (!mounted || generation != _generation) return;
-    setState(() => _error = null);
+    _loadStopwatch = Stopwatch()..start();
+    setState(() {
+      _error = null;
+      _firstFrameVisible = false;
+      _wasBuffering = false;
+      _cacheHit = false;
+    });
     try {
-      final File file = await SnapshotService.instance.loadVideoFile(
-        snapshot,
-      );
+      if (Logger.isVerboseEnabled) {
+        Logger.log('스낵 영상 재생 요청 시작 (snapshotId=${snapshot.id})');
+      }
+      final source =
+          await SnapshotService.instance.prepareVideoPlayback(snapshot);
       if (!mounted || generation != _generation) {
         return;
       }
-      final controller = VideoPlayerController.file(file);
-      await controller.initialize().timeout(const Duration(seconds: 30));
+      _cacheHit = source.cacheHit;
+      var retainedFile = source.file;
+      var controller = _controllerForSource(source);
+      if (retainedFile != null) {
+        SnapshotService.instance.retainVideoFile(retainedFile);
+      }
+      try {
+        await controller.initialize().timeout(const Duration(seconds: 20));
+      } catch (_) {
+        await controller.dispose();
+        if (retainedFile != null) {
+          await SnapshotService.instance.releaseVideoFile(retainedFile);
+          retainedFile = null;
+        }
+        if (source.networkUri == null ||
+            !mounted ||
+            generation != _generation) {
+          rethrow;
+        }
+        // 일부 기기/코덱이 인증 헤더 기반 Range 재생을 지원하지 못할 때만
+        // 기존 Firebase Storage SDK 전체 파일 경로를 한 번 사용한다.
+        final file = await SnapshotService.instance.loadVideoFile(snapshot);
+        if (!mounted || generation != _generation) return;
+        retainedFile = file;
+        SnapshotService.instance.retainVideoFile(file);
+        controller = VideoPlayerController.file(file);
+        try {
+          await controller.initialize().timeout(const Duration(seconds: 30));
+        } catch (_) {
+          await controller.dispose();
+          await SnapshotService.instance.releaseVideoFile(file);
+          rethrow;
+        }
+        _cacheHit = true;
+      }
       if (!mounted || generation != _generation) {
         await controller.dispose();
+        if (retainedFile != null) {
+          await SnapshotService.instance.releaseVideoFile(retainedFile);
+        }
         return;
       }
       await controller.setLooping(false);
+      controller.addListener(_handleControllerValue);
       _controller = controller;
+      _retainedFile = retainedFile;
       setState(() {});
+      if (Logger.isVerboseEnabled) {
+        Logger.log(
+          '스낵 영상 플레이어 준비 '
+          '(snapshotId=${snapshot.id}, '
+          'elapsedMs=${_loadStopwatch?.elapsedMilliseconds ?? 0}, '
+          'cacheHit=$_cacheHit)',
+        );
+      }
       widget.onReady();
       _syncPlayback();
     } catch (error, stackTrace) {
@@ -92,6 +165,48 @@ class _SnapshotStorageVideoState extends State<SnapshotStorageVideo>
         setState(() => _error = error);
       }
     }
+  }
+
+  VideoPlayerController _controllerForSource(
+    SnapshotVideoPlaybackSource source,
+  ) {
+    final file = source.file;
+    if (file != null) return VideoPlayerController.file(file);
+    final uri = source.networkUri;
+    if (uri == null) throw StateError('snapshot-video-playback-source-missing');
+    return VideoPlayerController.networkUrl(
+      uri,
+      httpHeaders: source.httpHeaders,
+    );
+  }
+
+  void _handleControllerValue() {
+    final controller = _controller;
+    if (controller == null || !mounted) return;
+    final value = controller.value;
+    if (value.isBuffering != _wasBuffering) {
+      _wasBuffering = value.isBuffering;
+      if (_wasBuffering) {
+        unawaited(SnapshotService.instance.cancelVideoPreloads());
+      }
+    }
+    if (_firstFrameVisible ||
+        !value.isInitialized ||
+        value.isBuffering ||
+        value.position <= Duration.zero) {
+      return;
+    }
+    _firstFrameVisible = true;
+    if (Logger.isVerboseEnabled) {
+      Logger.log(
+        '스낵 영상 첫 프레임 '
+        '(snapshotId=${widget.snapshot.id}, '
+        'elapsedMs=${_loadStopwatch?.elapsedMilliseconds ?? 0}, '
+        'cacheHit=$_cacheHit)',
+      );
+    }
+    setState(() {});
+    widget.onFirstFrame();
   }
 
   void _syncPlayback() {
@@ -114,7 +229,15 @@ class _SnapshotStorageVideoState extends State<SnapshotStorageVideo>
     WidgetsBinding.instance.removeObserver(this);
     _generation++;
     final controller = _controller;
+    final retainedFile = _retainedFile;
+    controller?.removeListener(_handleControllerValue);
     unawaited(controller?.dispose());
+    if (retainedFile != null) {
+      unawaited(SnapshotService.instance.releaseVideoFile(retainedFile));
+    }
+    unawaited(
+      SnapshotService.instance.cancelVideoLoad(widget.snapshot.id),
+    );
     super.dispose();
   }
 
@@ -175,7 +298,36 @@ class _SnapshotStorageVideoState extends State<SnapshotStorageVideo>
         ],
       );
     }
-    return VideoPlayer(controller);
+    return Stack(
+      fit: StackFit.expand,
+      children: [
+        thumbnail,
+        AnimatedOpacity(
+          opacity: _firstFrameVisible ? 1 : 0,
+          duration: const Duration(milliseconds: 100),
+          child: VideoPlayer(controller),
+        ),
+        if (!_firstFrameVisible)
+          Center(
+            child: DecoratedBox(
+              decoration: BoxDecoration(
+                color: Colors.black.withValues(alpha: .34),
+                shape: BoxShape.circle,
+              ),
+              child: const Padding(
+                padding: EdgeInsets.all(10),
+                child: SizedBox.square(
+                  dimension: 20,
+                  child: CircularProgressIndicator(
+                    strokeWidth: 2,
+                    color: Colors.white,
+                  ),
+                ),
+              ),
+            ),
+          ),
+      ],
+    );
   }
 }
 

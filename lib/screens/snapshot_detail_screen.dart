@@ -62,7 +62,6 @@ class _SnapshotDetailScreenState extends State<SnapshotDetailScreen>
   bool _isHolding = false;
   bool _isAppInactive = false;
   bool _isComposingComment = false;
-  bool _reactionSlotAvailable = false;
   bool _showFeedPosition = false;
   String? _deletingSnapshotId;
   String? _mediaReadyId;
@@ -105,6 +104,7 @@ class _SnapshotDetailScreenState extends State<SnapshotDetailScreen>
   @override
   void dispose() {
     WidgetsBinding.instance.removeObserver(this);
+    unawaited(_service.cancelVideoPreloads());
     _ticker?.cancel();
     _switchTimer?.cancel();
     _positionTimer?.cancel();
@@ -124,6 +124,7 @@ class _SnapshotDetailScreenState extends State<SnapshotDetailScreen>
     } else {
       setState(() => _isAppInactive = true);
       _playbackController.stop();
+      unawaited(_service.cancelVideoPreloads());
     }
   }
 
@@ -175,16 +176,6 @@ class _SnapshotDetailScreenState extends State<SnapshotDetailScreen>
     }
   }
 
-  void _setCommentComposerFocused(bool focused) {
-    if (_isComposingComment == focused) return;
-    setState(() => _isComposingComment = focused);
-    if (focused) {
-      _playbackController.stop();
-    } else {
-      _resumePlaybackIfAllowed();
-    }
-  }
-
   void _handleMediaReady(String snapshotId) {
     if (!mounted || _current.id != snapshotId) return;
     setState(() => _mediaReadyId = snapshotId);
@@ -192,16 +183,21 @@ class _SnapshotDetailScreenState extends State<SnapshotDetailScreen>
     // 더 합류한다. 서비스가 동일 요청을 단일 Future로 병합하므로 중복 쓰기는 없다.
     _recordCurrentView();
     _resumePlaybackIfAllowed();
-    _preloadNextVideo();
   }
 
-  void _handleReactionAvailabilityChanged(
-    String snapshotId,
-    bool isAvailable,
-  ) {
+  void _handleSnapshotChanged(SnapshotItem latest) {
+    if (!mounted) return;
+    final itemIndex = _items.indexWhere((item) => item.id == latest.id);
+    if (itemIndex < 0 ||
+        _items[itemIndex].commentCount == latest.commentCount) {
+      return;
+    }
+    setState(() => _items[itemIndex] = latest);
+  }
+
+  void _handleVideoFirstFrame(String snapshotId) {
     if (!mounted || _current.id != snapshotId) return;
-    if (_reactionSlotAvailable == isAvailable) return;
-    setState(() => _reactionSlotAvailable = isAvailable);
+    _preloadNextVideo();
   }
 
   void _recordCurrentView() {
@@ -224,6 +220,7 @@ class _SnapshotDetailScreenState extends State<SnapshotDetailScreen>
     if (!mounted || _items.isEmpty || _isComposingComment) return;
     setState(() => _isComposingComment = true);
     _playbackController.stop();
+    unawaited(_service.cancelVideoPreloads());
     try {
       await SnapshotCommentsSheet.show(
         context,
@@ -234,6 +231,9 @@ class _SnapshotDetailScreenState extends State<SnapshotDetailScreen>
       if (mounted) {
         setState(() => _isComposingComment = false);
         _resumePlaybackIfAllowed();
+        if (_mediaReadyId == _current.id && _current.isVideo) {
+          _preloadNextVideo();
+        }
       }
     }
   }
@@ -284,6 +284,7 @@ class _SnapshotDetailScreenState extends State<SnapshotDetailScreen>
 
   void _preloadCurrentAndNext() {
     if (!mounted || _items.isEmpty) return;
+    unawaited(_service.cancelVideoPreloads());
     unawaited(_warmImage(_current));
     final nextIndex = _index + 1;
     if (nextIndex < _items.length) {
@@ -303,7 +304,7 @@ class _SnapshotDetailScreenState extends State<SnapshotDetailScreen>
     // 현재 미디어가 준비된 뒤 다음 영상 하나만 받아 초기 다운로드가
     // 경쟁하지 않게 한다. 실제 화면 진입 시에는 같은 Future/파일을 재사용한다.
     unawaited(
-      _service.loadVideoFile(next).then<void>(
+      _service.preloadVideoFile(next).then<void>(
             (_) {},
             onError: (Object _, StackTrace __) {},
           ),
@@ -340,11 +341,9 @@ class _SnapshotDetailScreenState extends State<SnapshotDetailScreen>
           (index) => filtered[index].id == _items[index].id,
         ).every((same) => same);
     if (!contentsChanged && resolvedIndex == _index) return;
-    final currentChanged = filtered[resolvedIndex].id != currentId;
     setState(() {
       _items = filtered;
       _index = resolvedIndex;
-      if (currentChanged) _reactionSlotAvailable = false;
     });
     _recordCurrentView();
     _restartPlayback();
@@ -362,8 +361,6 @@ class _SnapshotDetailScreenState extends State<SnapshotDetailScreen>
     setState(() {
       _index = targetIndex;
       _isSwitching = true;
-      // 새 스낵의 영구 반응 문서를 확인하기 전에는 하트를 노출하지 않는다.
-      _reactionSlotAvailable = false;
     });
     _recordCurrentView();
     _restartPlayback();
@@ -504,7 +501,6 @@ class _SnapshotDetailScreenState extends State<SnapshotDetailScreen>
         _index = deletingIndex.clamp(0, remaining.length - 1);
         _deletingSnapshotId = null;
         _mediaReadyId = null;
-        _reactionSlotAvailable = false;
       });
       _recordCurrentView();
       _restartPlayback();
@@ -595,18 +591,13 @@ class _SnapshotDetailScreenState extends State<SnapshotDetailScreen>
       return const Scaffold(backgroundColor: Colors.black);
     }
     final strings = SnapshotStrings.of(context);
-    final keyboardInset = MediaQuery.viewInsetsOf(context).bottom;
     final isOwner = FirebaseAuth.instance.currentUser?.uid == _current.authorId;
     final horizontalInset = MediaQuery.sizeOf(context).width < 360
         ? 12.0
         : context.rs(16).clamp(14, 20).toDouble();
-    final reactionSlotWidth = context.rs(48).clamp(46, 52).toDouble();
-    final reserveReactionSlot = _reactionSlotAvailable && keyboardInset <= 0;
     final ownerViewerEntryHeight = context.rh(66, min: 62, max: 72);
-    final reactionExclusionHeight = (isOwner
-            ? ownerViewerEntryHeight
-            : context.rh(112, min: 104, max: 124)) +
-        keyboardInset;
+    final reactionExclusionHeight =
+        isOwner ? ownerViewerEntryHeight : context.rh(118, min: 110, max: 128);
     return AnnotatedRegion<SystemUiOverlayStyle>(
       value: SystemUiOverlayStyle.light.copyWith(
         statusBarColor: Colors.transparent,
@@ -678,10 +669,10 @@ class _SnapshotDetailScreenState extends State<SnapshotDetailScreen>
                             service: _service,
                             deleting: _deletingSnapshotId == _current.id,
                             onMediaReady: _handleMediaReady,
+                            onVideoFirstFrame: _handleVideoFirstFrame,
+                            onSnapshotChanged: _handleSnapshotChanged,
                             playing:
                                 _playbackCanRun && _deletingSnapshotId == null,
-                            onReactionAvailabilityChanged:
-                                _handleReactionAvailabilityChanged,
                           ),
                         ),
                       ),
@@ -701,24 +692,6 @@ class _SnapshotDetailScreenState extends State<SnapshotDetailScreen>
                           onNext: _showNext,
                         ),
                       ),
-                      if (!isOwner && _deletingSnapshotId == null)
-                        AnimatedPositioned(
-                          duration: const Duration(milliseconds: 180),
-                          curve: Curves.easeOutCubic,
-                          left: horizontalInset +
-                              (reserveReactionSlot ? reactionSlotWidth + 6 : 0),
-                          right: horizontalInset,
-                          bottom: keyboardInset + 8,
-                          child: _SnapshotCommentLayer(
-                            key: ValueKey<String>(
-                              'snapshot-comment-${_current.id}',
-                            ),
-                            snapshotId: _current.id,
-                            service: _service,
-                            strings: strings,
-                            onFocusChanged: _setCommentComposerFocused,
-                          ),
-                        ),
                       if (isOwner && _deletingSnapshotId == null)
                         Positioned(
                           left: MediaQuery.sizeOf(context).width < 360
@@ -741,10 +714,9 @@ class _SnapshotDetailScreenState extends State<SnapshotDetailScreen>
                       if (!_isComposingComment && _deletingSnapshotId == null)
                         Positioned(
                           right: horizontalInset,
-                          bottom: isOwner ? ownerViewerEntryHeight + 8 : 64,
+                          bottom: isOwner ? ownerViewerEntryHeight + 8 : 8,
                           child: _SnapshotCommentsButton(
-                            snapshotId: _current.id,
-                            initialCount: _current.commentCount,
+                            count: _current.commentCount,
                             label: strings.comments,
                             onTap: () => _openComments(),
                           ),
@@ -753,8 +725,7 @@ class _SnapshotDetailScreenState extends State<SnapshotDetailScreen>
                         Positioned(
                           left: 16,
                           right: 16,
-                          bottom: keyboardInset +
-                              (isOwner ? ownerViewerEntryHeight + 6 : 112),
+                          bottom: isOwner ? ownerViewerEntryHeight + 6 : 118,
                           child: IgnorePointer(
                             child: AnimatedOpacity(
                               duration: const Duration(milliseconds: 180),
@@ -786,15 +757,16 @@ class _SnapshotDetailPage extends StatefulWidget {
     required this.service,
     required this.deleting,
     required this.onMediaReady,
-    required this.onReactionAvailabilityChanged,
+    required this.onVideoFirstFrame,
+    required this.onSnapshotChanged,
     required this.playing,
   });
   final SnapshotItem snapshot;
   final SnapshotService service;
   final bool deleting;
   final ValueChanged<String> onMediaReady;
-  final void Function(String snapshotId, bool isAvailable)
-      onReactionAvailabilityChanged;
+  final ValueChanged<String> onVideoFirstFrame;
+  final ValueChanged<SnapshotItem> onSnapshotChanged;
   final bool playing;
 
   @override
@@ -810,6 +782,9 @@ class _SnapshotDetailPageState extends State<_SnapshotDetailPage>
   bool _reactedLocally = false;
   bool _reactionStatusResolved = false;
   bool _hasReacted = true;
+  int? _lastReportedCommentCount;
+  int _reactionStatusGeneration = 0;
+  String? _confirmingReactionSnapshotId;
 
   @override
   void initState() {
@@ -822,6 +797,10 @@ class _SnapshotDetailPageState extends State<_SnapshotDetailPage>
       widget.snapshot.id,
       initial: widget.snapshot,
     );
+    _lastReportedCommentCount = widget.snapshot.commentCount;
+    final cachedReaction = widget.service.cachedMyReaction(widget.snapshot.id);
+    _reactionStatusResolved = cachedReaction != null;
+    _hasReacted = cachedReaction ?? true;
     if (!widget.deleting) _watchReactionStatus();
   }
 
@@ -835,6 +814,7 @@ class _SnapshotDetailPageState extends State<_SnapshotDetailPage>
       );
       _submittingReaction = false;
       _reactedLocally = false;
+      _lastReportedCommentCount = widget.snapshot.commentCount;
       if (!widget.deleting) _watchReactionStatus();
       _heartBurstController.reset();
     } else if (oldWidget.deleting != widget.deleting) {
@@ -843,51 +823,78 @@ class _SnapshotDetailPageState extends State<_SnapshotDetailPage>
         _reactionSubscription = null;
         _reactionStatusResolved = false;
         _hasReacted = true;
-        _reportReactionAvailability(widget.snapshot.id, false);
       } else {
         _watchReactionStatus();
       }
     }
   }
 
-  void _reportReactionAvailability(String snapshotId, bool isAvailable) {
-    WidgetsBinding.instance.addPostFrameCallback((_) {
-      if (!mounted || widget.snapshot.id != snapshotId) return;
-      widget.onReactionAvailabilityChanged(snapshotId, isAvailable);
-    });
-  }
-
   void _watchReactionStatus() {
     final snapshotId = widget.snapshot.id;
+    final generation = ++_reactionStatusGeneration;
     unawaited(_reactionSubscription?.cancel());
-    _reactionStatusResolved = false;
-    _hasReacted = true;
-    _reportReactionAvailability(snapshotId, false);
+    final cachedReaction = widget.service.cachedMyReaction(snapshotId);
+    _reactionStatusResolved = cachedReaction != null;
+    _hasReacted = cachedReaction ?? true;
     _reactionSubscription = widget.service.watchMyReaction(snapshotId).listen(
       (hasReacted) {
-        if (!mounted || widget.snapshot.id != snapshotId) return;
+        if (!mounted ||
+            generation != _reactionStatusGeneration ||
+            widget.snapshot.id != snapshotId) {
+          return;
+        }
         setState(() {
           _reactionStatusResolved = true;
           _hasReacted = hasReacted;
         });
-        _reportReactionAvailability(
-          snapshotId,
-          !hasReacted && !_reactedLocally,
-        );
       },
       onError: (_) {
-        if (!mounted || widget.snapshot.id != snapshotId) return;
+        if (!mounted ||
+            generation != _reactionStatusGeneration ||
+            widget.snapshot.id != snapshotId) {
+          return;
+        }
+        final cachedReaction = widget.service.cachedMyReaction(snapshotId);
         setState(() {
-          _reactionStatusResolved = false;
-          _hasReacted = true;
+          _reactionStatusResolved = cachedReaction != null;
+          _hasReacted = cachedReaction ?? true;
         });
-        _reportReactionAvailability(snapshotId, false);
+        unawaited(_confirmReactionStatus(snapshotId, generation));
       },
     );
+    unawaited(_confirmReactionStatus(snapshotId, generation));
+  }
+
+  Future<void> _confirmReactionStatus(
+    String snapshotId,
+    int generation,
+  ) async {
+    if (_confirmingReactionSnapshotId == snapshotId) return;
+    _confirmingReactionSnapshotId = snapshotId;
+    try {
+      final hasReacted = await widget.service.hasReacted(snapshotId);
+      if (!mounted ||
+          generation != _reactionStatusGeneration ||
+          widget.snapshot.id != snapshotId) {
+        return;
+      }
+      setState(() {
+        _reactionStatusResolved = true;
+        _hasReacted = hasReacted;
+      });
+    } catch (_) {
+      // 실시간 문서 구독이 살아 있으면 그 결과를 유지한다. 두 경로가 모두
+      // 실패한 경우에도 미확인 상태를 미반응으로 단정하지 않는다.
+    } finally {
+      if (_confirmingReactionSnapshotId == snapshotId) {
+        _confirmingReactionSnapshotId = null;
+      }
+    }
   }
 
   @override
   void dispose() {
+    _reactionStatusGeneration++;
     unawaited(_reactionSubscription?.cancel());
     _heartBurstController.dispose();
     super.dispose();
@@ -905,7 +912,6 @@ class _SnapshotDetailPageState extends State<_SnapshotDetailPage>
       _submittingReaction = true;
       _reactedLocally = true;
     });
-    _reportReactionAvailability(snapshotId, false);
     if (reaction == '❤️') {
       unawaited(HapticFeedback.mediumImpact());
       unawaited(_heartBurstController.forward(from: 0));
@@ -959,10 +965,15 @@ class _SnapshotDetailPageState extends State<_SnapshotDetailPage>
         // 삭제 Callable이 canonical 문서를 먼저 제거해도 완료 응답을
         // 받기 전까지는 기존 미디어 프레임을 유지해 검은 화면을 막는다.
         final current = snapshot.data ?? widget.snapshot;
+        if (_lastReportedCommentCount != current.commentCount) {
+          _lastReportedCommentCount = current.commentCount;
+          WidgetsBinding.instance.addPostFrameCallback((_) {
+            if (!mounted || widget.snapshot.id != current.id) return;
+            widget.onSnapshotChanged(current);
+          });
+        }
         final isOwner =
             FirebaseAuth.instance.currentUser?.uid == current.authorId;
-        final keyboardInset = MediaQuery.viewInsetsOf(context).bottom;
-        final keyboardOpen = keyboardInset > 0;
         final horizontal = MediaQuery.sizeOf(context).width < 360
             ? 12.0
             : context.rs(16).clamp(14, 20).toDouble();
@@ -973,15 +984,15 @@ class _SnapshotDetailPageState extends State<_SnapshotDetailPage>
               snapshot: current,
               playing: widget.playing,
               onReady: () => widget.onMediaReady(current.id),
+              onVideoFirstFrame: () => widget.onVideoFirstFrame(current.id),
             ),
             const IgnorePointer(child: _SnapshotStoryScrim()),
             if (!isOwner && !widget.deleting)
               Positioned(
-                left: horizontal,
+                right: horizontal,
                 width: context.rs(48).clamp(46, 52).toDouble(),
-                bottom: keyboardInset + 8,
+                bottom: context.rh(62, min: 58, max: 68),
                 child: _SnapshotInteractionArea(
-                  showReactions: !keyboardOpen,
                   reactionStatusResolved: _reactionStatusResolved,
                   hasReacted: _hasReacted,
                   reactedLocally: _reactedLocally,
@@ -994,7 +1005,7 @@ class _SnapshotDetailPageState extends State<_SnapshotDetailPage>
               Positioned(
                 left: horizontal,
                 right: horizontal,
-                bottom: keyboardInset + 54,
+                bottom: 58,
                 height: 190,
                 child: IgnorePointer(
                   child: _SnapshotHeartBurst(
@@ -1026,92 +1037,65 @@ class _SnapshotDetailPageState extends State<_SnapshotDetailPage>
   }
 }
 
-class _SnapshotCommentsButton extends StatefulWidget {
+class _SnapshotCommentsButton extends StatelessWidget {
   const _SnapshotCommentsButton({
-    required this.snapshotId,
-    required this.initialCount,
+    required this.count,
     required this.label,
     required this.onTap,
   });
 
-  final String snapshotId;
-  final int initialCount;
+  final int count;
   final String label;
   final VoidCallback onTap;
 
   @override
-  State<_SnapshotCommentsButton> createState() =>
-      _SnapshotCommentsButtonState();
-}
-
-class _SnapshotCommentsButtonState extends State<_SnapshotCommentsButton> {
-  late Stream<List<SnapshotComment>> _comments;
-
-  @override
-  void initState() {
-    super.initState();
-    _comments = SnapshotService.instance.watchFeedComments(widget.snapshotId);
-  }
-
-  @override
-  void didUpdateWidget(covariant _SnapshotCommentsButton oldWidget) {
-    super.didUpdateWidget(oldWidget);
-    if (oldWidget.snapshotId != widget.snapshotId) {
-      _comments = SnapshotService.instance.watchFeedComments(widget.snapshotId);
-    }
-  }
-
-  @override
   Widget build(BuildContext context) {
-    return StreamBuilder<List<SnapshotComment>>(
-      stream: _comments,
-      initialData: const <SnapshotComment>[],
-      builder: (context, snapshot) {
-        final liveCount =
-            snapshot.data?.where((comment) => !comment.isDeleted).length;
-        final count = snapshot.connectionState == ConnectionState.waiting
-            ? widget.initialCount
-            : (liveCount ?? widget.initialCount);
-        return Semantics(
-          button: true,
-          label: '${widget.label} $count',
-          child: Material(
-            color: Colors.black.withValues(alpha: .36),
-            shape: const StadiumBorder(),
-            child: InkWell(
-              onTap: widget.onTap,
-              customBorder: const StadiumBorder(),
-              child: ConstrainedBox(
-                constraints: const BoxConstraints(minWidth: 48, minHeight: 48),
-                child: Padding(
-                  padding: const EdgeInsets.symmetric(horizontal: 11),
-                  child: Row(
-                    mainAxisSize: MainAxisSize.min,
-                    children: [
-                      const Icon(
-                        Icons.chat_bubble_outline_rounded,
-                        color: Colors.white,
-                        size: 23,
-                      ),
-                      if (count > 0) ...[
-                        const SizedBox(width: 6),
-                        Text(
-                          '$count',
-                          style: const TextStyle(
-                            color: Colors.white,
-                            fontSize: 13,
-                            fontWeight: FontWeight.w700,
-                          ),
-                        ),
-                      ],
+    final safeCount = count < 0 ? 0 : count;
+    return Semantics(
+      button: true,
+      label: '$label $safeCount',
+      child: Material(
+        color: Colors.transparent,
+        child: InkResponse(
+          onTap: onTap,
+          radius: 26,
+          child: ConstrainedBox(
+            constraints: const BoxConstraints(minWidth: 48, minHeight: 48),
+            child: Padding(
+              padding: const EdgeInsets.symmetric(horizontal: 6),
+              child: Row(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  Icon(
+                    Icons.chat_bubble_outline_rounded,
+                    color: Colors.white,
+                    size: context.ri(27).clamp(25, 29).toDouble(),
+                    shadows: const [
+                      Shadow(color: Colors.black54, blurRadius: 7),
                     ],
                   ),
-                ),
+                  if (safeCount > 0) ...[
+                    const SizedBox(width: 4),
+                    Text(
+                      '$safeCount',
+                      style: TextStyle(
+                        fontFamily: uiFontFamily(context, 'Inter'),
+                        fontFamilyFallback: const ['NotoSansKR'],
+                        color: Colors.white,
+                        fontSize: context.rf(12).clamp(11.5, 13).toDouble(),
+                        fontWeight: FontWeight.w700,
+                        shadows: const [
+                          Shadow(color: Colors.black54, blurRadius: 6),
+                        ],
+                      ),
+                    ),
+                  ],
+                ],
               ),
             ),
           ),
-        );
-      },
+        ),
+      ),
     );
   }
 }
@@ -1126,11 +1110,13 @@ class _SnapshotMediaCanvas extends StatelessWidget {
     required this.snapshot,
     required this.playing,
     required this.onReady,
+    required this.onVideoFirstFrame,
   });
 
   final SnapshotItem snapshot;
   final bool playing;
   final VoidCallback onReady;
+  final VoidCallback onVideoFirstFrame;
 
   @override
   Widget build(BuildContext context) {
@@ -1156,6 +1142,7 @@ class _SnapshotMediaCanvas extends StatelessWidget {
                       snapshot: snapshot,
                       playing: playing,
                       onReady: onReady,
+                      onFirstFrame: onVideoFirstFrame,
                     ),
                     IgnorePointer(
                       child: SnapshotOverlayLayer(
@@ -1667,7 +1654,6 @@ class _SnapshotAuthorHeader extends StatelessWidget {
 
 class _SnapshotInteractionArea extends StatelessWidget {
   const _SnapshotInteractionArea({
-    required this.showReactions,
     required this.reactionStatusResolved,
     required this.hasReacted,
     required this.reactedLocally,
@@ -1676,7 +1662,6 @@ class _SnapshotInteractionArea extends StatelessWidget {
     required this.onReact,
   });
 
-  final bool showReactions;
   final bool reactionStatusResolved;
   final bool hasReacted;
   final bool reactedLocally;
@@ -1686,246 +1671,14 @@ class _SnapshotInteractionArea extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return Column(
-      mainAxisSize: MainAxisSize.min,
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        KeyedSubtree(
-          key: const ValueKey<String>('snapshot-reaction-area'),
-          child: !showReactions ||
-                  !reactionStatusResolved ||
-                  hasReacted ||
-                  reactedLocally
-              ? const SizedBox.shrink()
-              : Padding(
-                  padding: const EdgeInsets.only(bottom: 4),
-                  child: IgnorePointer(
-                    ignoring: submittingReaction,
-                    child: AnimatedOpacity(
-                      duration: const Duration(milliseconds: 120),
-                      opacity: submittingReaction ? 0 : 1,
-                      child: _SnapshotReactionBar(
-                        strings: strings,
-                        onReact: onReact,
-                      ),
-                    ),
-                  ),
-                ),
-        ),
-      ],
-    );
-  }
-}
-
-/// 코멘트 입력 수명주기를 이미지/반응 스트림과 분리한다.
-///
-/// 키보드가 열릴 때 MediaQuery와 스낵 접근 스트림이 다시 빌드되어도 이 State는
-/// 현재 스낵 ID가 바뀌기 전까지 유지되므로 TextField의 포커스와 조합 중인 문자가
-/// 취소되지 않는다.
-class _SnapshotCommentLayer extends StatefulWidget {
-  const _SnapshotCommentLayer({
-    super.key,
-    required this.snapshotId,
-    required this.service,
-    required this.strings,
-    required this.onFocusChanged,
-  });
-
-  final String snapshotId;
-  final SnapshotService service;
-  final SnapshotStrings strings;
-  final ValueChanged<bool> onFocusChanged;
-
-  @override
-  State<_SnapshotCommentLayer> createState() => _SnapshotCommentLayerState();
-}
-
-class _SnapshotCommentLayerState extends State<_SnapshotCommentLayer> {
-  final TextEditingController _controller = TextEditingController();
-  final FocusNode _focusNode = FocusNode(debugLabel: 'snapshot-comment');
-  bool _checkingStatus = true;
-  bool _hasCommented = true;
-  bool _sending = false;
-  bool _canSend = false;
-
-  @override
-  void initState() {
-    super.initState();
-    _controller.addListener(_handleTextChanged);
-    _focusNode.addListener(_handleFocusChanged);
-    unawaited(_loadStatus());
-  }
-
-  @override
-  void didUpdateWidget(covariant _SnapshotCommentLayer oldWidget) {
-    super.didUpdateWidget(oldWidget);
-    if (oldWidget.snapshotId == widget.snapshotId) return;
-    _controller.clear();
-    _focusNode.unfocus();
-    _checkingStatus = true;
-    _hasCommented = true;
-    _sending = false;
-    unawaited(_loadStatus());
-  }
-
-  @override
-  void dispose() {
-    _controller.removeListener(_handleTextChanged);
-    _focusNode.removeListener(_handleFocusChanged);
-    _controller.dispose();
-    _focusNode.dispose();
-    super.dispose();
-  }
-
-  void _handleFocusChanged() {
-    widget.onFocusChanged(_focusNode.hasFocus);
-  }
-
-  void _handleTextChanged() {
-    final canSend = _controller.text.trim().isNotEmpty;
-    if (canSend == _canSend || !mounted) return;
-    setState(() => _canSend = canSend);
-  }
-
-  Future<void> _loadStatus() async {
-    final requestedSnapshotId = widget.snapshotId;
-    final hasCommented = await widget.service.hasCommented(requestedSnapshotId);
-    if (!mounted || widget.snapshotId != requestedSnapshotId) return;
-    setState(() {
-      _hasCommented = hasCommented;
-      _checkingStatus = false;
-    });
-  }
-
-  Future<void> _send() async {
-    final message = _controller.text.trim();
-    if (_sending || _hasCommented || message.isEmpty) return;
-    setState(() => _sending = true);
-    try {
-      await widget.service.sendComment(widget.snapshotId, message);
-      if (!mounted) return;
-      setState(() {
-        _hasCommented = true;
-        _sending = false;
-        _canSend = false;
-      });
-      _controller.clear();
-      _focusNode.unfocus();
-      unawaited(HapticFeedback.lightImpact());
-      AppSnackBar.show(
-        context,
-        message: widget.strings.commentSent,
-        type: AppSnackBarType.success,
-      );
-    } catch (_) {
-      if (!mounted) return;
-      setState(() => _sending = false);
-      // 실패 시 본문과 포커스를 그대로 유지해 바로 다시 보낼 수 있게 한다.
-      if (!_focusNode.hasFocus) _focusNode.requestFocus();
-      AppSnackBar.show(
-        context,
-        message: widget.strings.commentFailed,
-        type: AppSnackBarType.error,
-      );
-    }
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    if (_checkingStatus || _hasCommented) return const SizedBox.shrink();
-    return _SnapshotCommentComposer(
-      controller: _controller,
-      focusNode: _focusNode,
-      hintText: widget.strings.commentHint,
-      sendLabel: widget.strings.sendComment,
-      sending: _sending,
-      canSend: _canSend,
-      onSend: _send,
-    );
-  }
-}
-
-class _SnapshotCommentComposer extends StatelessWidget {
-  const _SnapshotCommentComposer({
-    required this.controller,
-    required this.focusNode,
-    required this.hintText,
-    required this.sendLabel,
-    required this.sending,
-    required this.canSend,
-    required this.onSend,
-  });
-
-  final TextEditingController controller;
-  final FocusNode focusNode;
-  final String hintText;
-  final String sendLabel;
-  final bool sending;
-  final bool canSend;
-  final Future<void> Function() onSend;
-
-  @override
-  Widget build(BuildContext context) {
-    return MediaQuery.withClampedTextScaling(
-      maxScaleFactor: 1.2,
-      child: Material(
-        color: Colors.black.withValues(alpha: .48),
-        borderRadius: BorderRadius.circular(24),
-        clipBehavior: Clip.antiAlias,
-        child: SizedBox(
-          height: context.rh(48, min: 46, max: 52),
-          child: TextField(
-            controller: controller,
-            focusNode: focusNode,
-            maxLength: 120,
-            maxLines: 1,
-            textInputAction: TextInputAction.done,
-            keyboardAppearance: Brightness.dark,
-            style: TextStyle(
-              fontFamily: uiFontFamily(context, 'Inter'),
-              fontFamilyFallback: const ['NotoSansKR'],
-              fontSize: context.rf(15).clamp(14, 16).toDouble(),
-              fontWeight: FontWeight.w500,
-              color: Colors.white,
-            ),
-            decoration: InputDecoration(
-              counterText: '',
-              hintText: hintText,
-              hintStyle: TextStyle(
-                fontFamily: uiFontFamily(context, 'Inter'),
-                fontFamilyFallback: const ['NotoSansKR'],
-                fontSize: context.rf(15).clamp(14, 16).toDouble(),
-                color: Colors.white.withValues(alpha: .72),
-              ),
-              border: InputBorder.none,
-              isDense: true,
-              contentPadding: const EdgeInsets.only(left: 18, top: 13),
-              suffixIconConstraints:
-                  const BoxConstraints(minWidth: 48, minHeight: 46),
-              suffixIcon: Semantics(
-                button: true,
-                label: sendLabel,
-                child: IconButton(
-                  tooltip: sendLabel,
-                  onPressed: sending || !canSend ? null : onSend,
-                  icon: sending
-                      ? const SizedBox.square(
-                          dimension: 18,
-                          child: CircularProgressIndicator(
-                            strokeWidth: 2,
-                            color: Colors.white,
-                          ),
-                        )
-                      : const Icon(
-                          Icons.send_rounded,
-                          color: Colors.white,
-                          size: 22,
-                        ),
-                ),
-              ),
-            ),
-          ),
-        ),
+    final selected = reactedLocally || (reactionStatusResolved && hasReacted);
+    return KeyedSubtree(
+      key: const ValueKey<String>('snapshot-reaction-area'),
+      child: _SnapshotReactionBar(
+        strings: strings,
+        selected: selected,
+        enabled: reactionStatusResolved && !selected && !submittingReaction,
+        onReact: onReact,
       ),
     );
   }
@@ -2084,10 +1837,14 @@ class _SnapshotHeartBurst extends StatelessWidget {
 class _SnapshotReactionBar extends StatelessWidget {
   const _SnapshotReactionBar({
     required this.strings,
+    required this.selected,
+    required this.enabled,
     required this.onReact,
   });
 
   final SnapshotStrings strings;
+  final bool selected;
+  final bool enabled;
   final Future<void> Function(String) onReact;
 
   @override
@@ -2099,10 +1856,13 @@ class _SnapshotReactionBar extends StatelessWidget {
         child: Align(
           alignment: Alignment.centerLeft,
           child: _SnapshotReactionButton(
-            icon: Icons.favorite_rounded,
-            iconColor: AppColors.pointColor,
+            icon: selected
+                ? Icons.favorite_rounded
+                : Icons.favorite_border_rounded,
+            iconColor: selected ? AppColors.pointColor : Colors.white,
+            selected: selected,
             label: strings.likeReaction,
-            onTap: () => onReact('❤️'),
+            onTap: enabled ? () => onReact('❤️') : null,
           ),
         ),
       ),
@@ -2114,6 +1874,7 @@ class _SnapshotReactionButton extends StatelessWidget {
   const _SnapshotReactionButton({
     required this.icon,
     required this.label,
+    required this.selected,
     required this.onTap,
     this.iconColor = Colors.white,
   });
@@ -2121,24 +1882,27 @@ class _SnapshotReactionButton extends StatelessWidget {
   final IconData icon;
   final Color iconColor;
   final String label;
-  final VoidCallback onTap;
+  final bool selected;
+  final VoidCallback? onTap;
 
   @override
   Widget build(BuildContext context) {
     return Semantics(
       button: true,
+      enabled: onTap != null,
+      selected: selected,
       label: label,
       excludeSemantics: true,
       child: InkResponse(
         onTap: onTap,
-        radius: 24,
+        radius: 26,
         child: ConstrainedBox(
-          constraints: const BoxConstraints(minWidth: 44, minHeight: 44),
+          constraints: const BoxConstraints(minWidth: 48, minHeight: 48),
           child: Padding(
             padding: const EdgeInsets.symmetric(horizontal: 6),
             child: Icon(
               icon,
-              size: context.ri(21).clamp(20, 23).toDouble(),
+              size: context.ri(27).clamp(25, 29).toDouble(),
               color: iconColor,
               shadows: iconColor == Colors.black
                   ? const [Shadow(color: Colors.white, blurRadius: 5)]
@@ -2349,7 +2113,7 @@ String _snapshotRemainingLabel(
   }
   final minutes = duration.inMinutes.clamp(1, 59);
   return strings.isChinese
-      ? '${minutes}分钟后到期'
+      ? '$minutes分钟后到期'
       : strings.isKorean
           ? '$minutes분 ${strings.remaining}'
           : '${minutes}m ${strings.remaining}';

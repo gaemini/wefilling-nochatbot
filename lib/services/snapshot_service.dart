@@ -3,6 +3,7 @@ import 'dart:io';
 import 'dart:typed_data';
 
 import 'package:cloud_firestore/cloud_firestore.dart';
+import 'package:firebase_app_check/firebase_app_check.dart';
 import 'package:cloud_functions/cloud_functions.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:firebase_storage/firebase_storage.dart';
@@ -15,12 +16,64 @@ import '../models/snapshot_comment_letter.dart';
 import '../security/frozen_audience_policy.dart';
 import 'content_hide_service.dart';
 import 'content_filter_service.dart';
+import 'firebase_app_check_service.dart';
 import 'snapshot_archive_service.dart';
 import 'snapshot_media_cache_service.dart';
 import '../utils/logger.dart';
 
+class SnapshotVideoPlaybackSource {
+  const SnapshotVideoPlaybackSource.file({
+    required this.file,
+    required this.cacheKey,
+  })  : networkUri = null,
+        httpHeaders = const <String, String>{},
+        cacheHit = true;
+
+  const SnapshotVideoPlaybackSource.network({
+    required this.networkUri,
+    required this.httpHeaders,
+    required this.cacheKey,
+  })  : file = null,
+        cacheHit = false;
+
+  final File? file;
+  final Uri? networkUri;
+  final Map<String, String> httpHeaders;
+  final String cacheKey;
+  final bool cacheHit;
+}
+
+class _SnapshotVideoDownload {
+  _SnapshotVideoDownload({
+    required this.snapshotId,
+    required this.cacheKey,
+    required this.prefetch,
+    required this.requestId,
+  });
+
+  final String snapshotId;
+  final String cacheKey;
+  final bool prefetch;
+  final String requestId;
+  DownloadTask? task;
+  bool cancelled = false;
+  late Future<File> future;
+
+  Future<void> cancel() async {
+    cancelled = true;
+    final activeTask = task;
+    if (activeTask == null) return;
+    try {
+      await activeTask.cancel();
+    } catch (_) {}
+  }
+}
+
 class SnapshotService {
-  SnapshotService._();
+  SnapshotService._() {
+    _mediaUserId = _auth.currentUser?.uid;
+    _auth.authStateChanges().listen(_handleMediaAuthChanged);
+  }
   static final SnapshotService instance = SnapshotService._();
 
   final FirebaseFirestore _firestore = FirebaseFirestore.instance;
@@ -35,12 +88,17 @@ class SnapshotService {
   final Map<String, Uint8List> _imageBytes = <String, Uint8List>{};
   final Map<String, Future<Uint8List>> _imageLoads =
       <String, Future<Uint8List>>{};
-  final Map<String, Future<File>> _videoLoads = <String, Future<File>>{};
+  final Map<String, _SnapshotVideoDownload> _videoLoads =
+      <String, _SnapshotVideoDownload>{};
+  final Map<String, String> _latestVideoSourceKeys = <String, String>{};
   final List<String> _imageLru = <String>[];
   final Set<String> _locallyHiddenSnapshotIds = <String>{};
   final Set<String> _recordedViewReceiptKeys = <String>{};
   final Map<String, Future<void>> _recordingViewReceipts =
       <String, Future<void>>{};
+  final Map<String, bool> _myReactionStates = <String, bool>{};
+  final Map<String, Future<bool>> _reactionStateLoads =
+      <String, Future<bool>>{};
   final StreamController<void> _localFilterChanges =
       StreamController<void>.broadcast();
   static const int _maxCachedImages = 28;
@@ -58,12 +116,44 @@ class SnapshotService {
   DateTime? _lastFeedSyncAt;
   DateTime? _feedSyncRetryAfter;
   String? _feedSyncUserId;
+  String? _mediaUserId;
 
   DateTime get serverNow => DateTime.now().toUtc().add(_serverOffset);
 
   String createSnapshotId() => _uuid.v4();
 
   String createCommentRequestId() => _uuid.v4();
+
+  String _imageSourceKey(SnapshotItem item) =>
+      item.imageStoragePath.trim().isNotEmpty
+          ? 'path:${item.imageStoragePath.trim()}'
+          : 'url:${item.imageUrl.trim()}';
+
+  String _imageCacheKey(String userId, SnapshotItem item) =>
+      '$userId::${item.id}::${_imageSourceKey(item)}';
+
+  String _videoSourceKey(SnapshotItem item) =>
+      'path:${item.videoStoragePath.trim()}';
+
+  String _videoCacheKey(String userId, SnapshotItem item) =>
+      '$userId::${item.id}::${_videoSourceKey(item)}';
+
+  void _handleMediaAuthChanged(User? user) {
+    final nextUserId = user?.uid;
+    if (_mediaUserId == nextUserId) return;
+    _mediaUserId = nextUserId;
+    final downloads = _videoLoads.values.toList(growable: false);
+    _videoLoads.clear();
+    for (final download in downloads) {
+      unawaited(download.cancel());
+    }
+    _imageBytes.clear();
+    _imageLoads.clear();
+    _imageLru.clear();
+    _latestVideoSourceKeys.clear();
+    _myReactionStates.clear();
+    _reactionStateLoads.clear();
+  }
 
   Future<void> refreshServerClock() {
     final pending = _serverClockRefresh;
@@ -263,12 +353,13 @@ class SnapshotService {
         }
         feedItems = parsed;
         feedReady = true;
-        if (Logger.isVerboseEnabled)
+        if (Logger.isVerboseEnabled) {
           Logger.log(
             '스낵 개인 피드 조회 성공 '
             '(currentUserId=$uid, documents=${snapshot.docs.length}, '
             'parsed=${parsed.length})',
           );
+        }
         emit();
       }, onError: (Object error, StackTrace stackTrace) {
         final code = error is FirebaseException ? error.code : 'unknown';
@@ -297,6 +388,7 @@ class SnapshotService {
             .map((doc) => (doc.data()['blocked'] ?? '').toString())
             .where((id) => id.isNotEmpty)
             .toSet();
+        ContentFilterService.setBlockedUserIds(blocked);
         blockedReady = true;
         emit();
       }, onError: (Object error, StackTrace stackTrace) {
@@ -323,6 +415,7 @@ class SnapshotService {
             .map((doc) => (doc.data()['blocker'] ?? '').toString())
             .where((id) => id.isNotEmpty)
             .toSet();
+        ContentFilterService.setBlockedByUserIds(blockedBy);
         blockedByReady = true;
         emit();
       }, onError: (Object error, StackTrace stackTrace) {
@@ -550,7 +643,7 @@ class SnapshotService {
       if (!doc.exists) throw StateError('snapshot-not-found');
       final item = SnapshotItem.fromFirestore(doc);
       if (item.isExpiredAt(serverNow)) throw StateError('snapshot-expired');
-      if (Logger.isVerboseEnabled)
+      if (Logger.isVerboseEnabled) {
         Logger.log(
           '스낵 단건 조회 성공 '
           '(contentId=$snapshotId, currentUserId=$currentUserId, '
@@ -563,6 +656,7 @@ class SnapshotService {
           'expiresAt=${item.expiresAt.toIso8601String()}, '
           'hasImageStoragePath=${item.imageStoragePath.isNotEmpty})',
         );
+      }
       return item;
     } catch (error, stackTrace) {
       final code = error is FirebaseException ? error.code : 'unknown';
@@ -965,6 +1059,7 @@ class SnapshotService {
   }
 
   Future<void> reactOnce(String snapshotId, String reaction) async {
+    final userId = _auth.currentUser?.uid;
     try {
       final result = await _functions
           .httpsCallable('toggleSnapshotReaction')
@@ -975,6 +1070,9 @@ class SnapshotService {
       final data = result.data;
       if (data is! Map || data['success'] != true) {
         throw StateError('snapshot-reaction-not-confirmed');
+      }
+      if (userId != null && _auth.currentUser?.uid == userId) {
+        _myReactionStates['$userId::$snapshotId'] = true;
       }
     } catch (error, stackTrace) {
       Logger.error(
@@ -997,23 +1095,32 @@ class SnapshotService {
           .call(<String, dynamic>{'snapshotId': snapshotId}).timeout(
               const Duration(seconds: 12));
       final data = result.data;
-      return data is Map && data['reacted'] == true;
+      final reacted = data is Map && data['reacted'] == true;
+      if (_auth.currentUser?.uid == userId) {
+        _myReactionStates['$userId::$snapshotId'] = reacted;
+      }
+      return reacted;
     } catch (error) {
       // App Check/네트워크 등의 일시적인 Callable 실패가 반응 버튼을 다시
       // 노출시키지 않도록 canonical 반응 문서를 직접 확인한다. 반응 문서는
       // 사용자 UID를 문서 ID로 사용하므로 앱 재실행 후에도 상태가 유지된다.
-      if (Logger.isVerboseEnabled)
+      if (Logger.isVerboseEnabled) {
         Logger.warning(
           '스낵 반응 상태 Callable 조회 실패, Firestore로 재확인 '
           '(snapshotId=$snapshotId, error=$error)',
         );
+      }
       final reaction = await _firestore
           .collection('snapshots')
           .doc(snapshotId)
           .collection('reactions')
           .doc(userId)
           .get();
-      return reaction.exists;
+      final reacted = reaction.exists;
+      if (_auth.currentUser?.uid == userId) {
+        _myReactionStates['$userId::$snapshotId'] = reacted;
+      }
+      return reacted;
     }
   }
 
@@ -1055,11 +1162,12 @@ class SnapshotService {
       final data = result.data;
       return data is Map && data['commented'] == true;
     } catch (error) {
-      if (Logger.isVerboseEnabled)
+      if (Logger.isVerboseEnabled) {
         Logger.warning(
           '스낵 코멘트 상태 Callable 조회 실패, Firestore로 재확인 '
           '(snapshotId=$snapshotId, error=$error)',
         );
+      }
       try {
         final comment = await _firestore
             .collection('snapshots')
@@ -1117,13 +1225,74 @@ class SnapshotService {
   Stream<bool> watchMyReaction(String snapshotId) {
     final userId = _auth.currentUser?.uid;
     if (userId == null) return Stream<bool>.value(true);
+    final cacheKey = '$userId::$snapshotId';
     return _firestore
         .collection('snapshots')
         .doc(snapshotId)
         .collection('reactions')
         .doc(userId)
-        .snapshots()
-        .map((snapshot) => snapshot.exists);
+        .snapshots(includeMetadataChanges: true)
+        // A cache miss is not proof that the user has not reacted. Wait for
+        // the server unless this account already has a confirmed local state.
+        .where((snapshot) =>
+            snapshot.exists ||
+            !snapshot.metadata.isFromCache ||
+            _myReactionStates.containsKey(cacheKey))
+        .map((snapshot) {
+      if (!snapshot.exists && snapshot.metadata.isFromCache) {
+        final confirmed = _myReactionStates[cacheKey];
+        if (confirmed != null) return confirmed;
+      }
+      final reacted = snapshot.exists;
+      if (_auth.currentUser?.uid == userId) {
+        _myReactionStates[cacheKey] = reacted;
+      }
+      return reacted;
+    }).distinct();
+  }
+
+  bool? cachedMyReaction(String snapshotId) {
+    final userId = _auth.currentUser?.uid;
+    if (userId == null) return null;
+    return _myReactionStates['$userId::$snapshotId'];
+  }
+
+  Future<void> preloadMyReactionStates(Iterable<SnapshotItem> snapshots) async {
+    final userId = _auth.currentUser?.uid;
+    if (userId == null) return;
+    final loads = <Future<bool>>[];
+    for (final snapshot in snapshots.take(5)) {
+      if (snapshot.authorId == userId) continue;
+      final cacheKey = '$userId::${snapshot.id}';
+      if (_myReactionStates.containsKey(cacheKey)) continue;
+      final pending = _reactionStateLoads[cacheKey];
+      if (pending != null) {
+        loads.add(pending);
+        continue;
+      }
+      late final Future<bool> load;
+      load = _firestore
+          .collection('snapshots')
+          .doc(snapshot.id)
+          .collection('reactions')
+          .doc(userId)
+          .get()
+          .then((document) {
+        final reacted = document.exists;
+        if (_auth.currentUser?.uid == userId) {
+          _myReactionStates[cacheKey] = reacted;
+        }
+        return reacted;
+      }).whenComplete(() {
+        if (identical(_reactionStateLoads[cacheKey], load)) {
+          _reactionStateLoads.remove(cacheKey);
+        }
+      });
+      _reactionStateLoads[cacheKey] = load;
+      loads.add(load);
+    }
+    if (loads.isEmpty) return;
+    await Future.wait(loads);
   }
 
   Stream<List<SnapshotComment>> watchFeedComments(String snapshotId) {
@@ -1136,11 +1305,11 @@ class SnapshotService {
     StreamSubscription<QuerySnapshot<Map<String, dynamic>>>? blockedSub;
     StreamSubscription<QuerySnapshot<Map<String, dynamic>>>? blockedBySub;
     var comments = const <SnapshotComment>[];
-    var blocked = <String>{};
-    var blockedBy = <String>{};
+    var blocked = ContentFilterService.getBlockedUserIdsCached();
+    var blockedBy = ContentFilterService.getBlockedByUserIdsCached();
     var commentsReady = false;
-    var blockedReady = false;
-    var blockedByReady = false;
+    var blockedReady = ContentFilterService.hasBlockedUserIdsCache;
+    var blockedByReady = ContentFilterService.hasBlockedByUserIdsCache;
     var disposed = false;
 
     void emit() {
@@ -1223,6 +1392,7 @@ class SnapshotService {
             .map((doc) => (doc.data()['blocker'] ?? '').toString())
             .where((id) => id.isNotEmpty)
             .toSet();
+        ContentFilterService.setBlockedByUserIds(blockedBy);
         blockedByReady = true;
         emit();
       }, onError: fail);
@@ -1283,72 +1453,262 @@ class SnapshotService {
     }
   }
 
-  Future<File> loadVideoFile(SnapshotItem item) async {
+  Future<SnapshotVideoPlaybackSource> prepareVideoPlayback(
+    SnapshotItem item,
+  ) async {
+    if (!item.isVideo || item.videoStoragePath.trim().isEmpty) {
+      throw StateError('snapshot-video-reference-missing');
+    }
+    final user = _auth.currentUser;
+    if (user == null) throw StateError('sign-in-required');
+    if (!_hasServerOffset) await refreshServerClock();
+    if (item.isExpiredAt(serverNow)) throw StateError('snapshot-expired');
+    final uid = user.uid;
+    final sourceKey = _videoSourceKey(item);
+    final cacheKey = _videoCacheKey(uid, item);
+    _latestVideoSourceKeys['$uid::${item.id}'] = sourceKey;
+
+    if (item.authorId == uid) {
+      final archived = await _archive.get(item.id);
+      if (archived?.isVideo == true) {
+        final archiveFile = File(archived!.mediaPath);
+        if (await archiveFile.exists() && await archiveFile.length() > 0) {
+          if (Logger.isVerboseEnabled) {
+            Logger.log(
+              '스낵 영상 재생 준비 '
+              '(snapshotId=${item.id}, cacheHit=true, source=archive)',
+            );
+          }
+          return SnapshotVideoPlaybackSource.file(
+            file: archiveFile,
+            cacheKey: 'archive::$uid::${item.id}',
+          );
+        }
+      }
+    }
+
+    var cached = await _mediaCache.readVideo(
+      userId: uid,
+      snapshotId: item.id,
+      sourceKey: sourceKey,
+    );
+    if (cached != null && _auth.currentUser?.uid == uid) {
+      if (Logger.isVerboseEnabled) {
+        Logger.log('스낵 영상 재생 준비 (snapshotId=${item.id}, cacheHit=true)');
+      }
+      return SnapshotVideoPlaybackSource.file(
+        file: cached,
+        cacheKey: cacheKey,
+      );
+    }
+
+    // 다음 영상 사전 다운로드가 아직 끝나지 않았다면 먼저 중지한다.
+    // 플레이어는 불완전한 파일을 열지 않고 인증된 Range 요청을 사용한다.
+    final pending = _videoLoads[cacheKey];
+    if (pending?.prefetch == true) {
+      await pending!.cancel();
+      if (identical(_videoLoads[cacheKey], pending)) {
+        _videoLoads.remove(cacheKey);
+      }
+      cached = await _mediaCache.readVideo(
+        userId: uid,
+        snapshotId: item.id,
+        sourceKey: sourceKey,
+      );
+      if (cached != null && _auth.currentUser?.uid == uid) {
+        return SnapshotVideoPlaybackSource.file(
+          file: cached,
+          cacheKey: cacheKey,
+        );
+      }
+    }
+
+    final token =
+        await user.getIdToken(false).timeout(const Duration(seconds: 10));
+    if (token == null ||
+        token.trim().isEmpty ||
+        _auth.currentUser?.uid != uid) {
+      throw StateError('snapshot-video-auth-unavailable');
+    }
+    String? appCheckToken;
+    try {
+      if (FirebaseAppCheckService.instance.isReady) {
+        appCheckToken = await FirebaseAppCheck.instance
+            .getToken(false)
+            .timeout(const Duration(seconds: 8));
+      }
+    } catch (_) {
+      // App Check 미적용 프로젝트도 지원한다. 적용 프로젝트에서는 플레이어
+      // 초기화 실패 후 Firebase Storage SDK 다운로드 경로가 한 번 대체한다.
+    }
+    final bucket = _storage.ref().bucket;
+    final objectPath = Uri.encodeComponent(item.videoStoragePath.trim());
+    final uri = Uri.parse(
+      'https://firebasestorage.googleapis.com/v0/b/'
+      '${Uri.encodeComponent(bucket)}/o/$objectPath?alt=media',
+    );
+    final headers = <String, String>{
+      'Authorization': 'Firebase $token',
+      if (appCheckToken?.trim().isNotEmpty == true)
+        'X-Firebase-AppCheck': appCheckToken!.trim(),
+    };
+    if (Logger.isVerboseEnabled) {
+      Logger.log('스낵 영상 재생 준비 (snapshotId=${item.id}, cacheHit=false)');
+    }
+    return SnapshotVideoPlaybackSource.network(
+      networkUri: uri,
+      httpHeaders: Map<String, String>.unmodifiable(headers),
+      cacheKey: cacheKey,
+    );
+  }
+
+  Future<File> loadVideoFile(SnapshotItem item) =>
+      _loadVideoFile(item, prefetch: false);
+
+  Future<void> preloadVideoFile(SnapshotItem item) async {
+    await cancelVideoPreloads(exceptSnapshotId: item.id);
+    await _loadVideoFile(item, prefetch: true);
+  }
+
+  Future<void> cancelVideoPreloads({String? exceptSnapshotId}) async {
+    final cancellations = <Future<void>>[];
+    for (final operation in _videoLoads.values.toList(growable: false)) {
+      if (!operation.prefetch || operation.snapshotId == exceptSnapshotId) {
+        continue;
+      }
+      cancellations.add(operation.cancel());
+      if (identical(_videoLoads[operation.cacheKey], operation)) {
+        _videoLoads.remove(operation.cacheKey);
+      }
+    }
+    if (cancellations.isNotEmpty) await Future.wait(cancellations);
+  }
+
+  Future<void> cancelVideoLoad(String snapshotId) async {
+    final cancellations = <Future<void>>[];
+    for (final operation in _videoLoads.values.toList(growable: false)) {
+      if (operation.snapshotId != snapshotId) continue;
+      cancellations.add(operation.cancel());
+      if (identical(_videoLoads[operation.cacheKey], operation)) {
+        _videoLoads.remove(operation.cacheKey);
+      }
+    }
+    if (cancellations.isNotEmpty) await Future.wait(cancellations);
+  }
+
+  void retainVideoFile(File file) => _mediaCache.retainVideo(file);
+
+  Future<void> releaseVideoFile(File file) => _mediaCache.releaseVideo(file);
+
+  Future<File> _loadVideoFile(
+    SnapshotItem item, {
+    required bool prefetch,
+  }) async {
     if (!item.isVideo || item.videoStoragePath.trim().isEmpty) {
       throw StateError('snapshot-video-reference-missing');
     }
     final uid = _auth.currentUser?.uid;
     if (uid == null) throw StateError('sign-in-required');
-    final cacheKey = '$uid:${item.id}';
+    if (!_hasServerOffset) await refreshServerClock();
+    if (item.isExpiredAt(serverNow)) throw StateError('snapshot-expired');
+    final sourceKey = _videoSourceKey(item);
+    final cacheKey = _videoCacheKey(uid, item);
+    _latestVideoSourceKeys['$uid::${item.id}'] = sourceKey;
+    final cached = await _mediaCache.readVideo(
+      userId: uid,
+      snapshotId: item.id,
+      sourceKey: sourceKey,
+    );
+    if (cached != null) return cached;
+
     final pending = _videoLoads[cacheKey];
-    if (pending != null) return pending;
+    if (pending != null) return pending.future;
+
+    final operation = _SnapshotVideoDownload(
+      snapshotId: item.id,
+      cacheKey: cacheKey,
+      prefetch: prefetch,
+      requestId: _uuid.v4(),
+    );
 
     late final Future<File> request;
-    request = _downloadVideo(item, uid).whenComplete(() {
-      if (identical(_videoLoads[cacheKey], request)) {
+    request = _downloadVideo(item, uid, operation).whenComplete(() {
+      if (identical(_videoLoads[cacheKey], operation)) {
         _videoLoads.remove(cacheKey);
       }
     });
-    _videoLoads[cacheKey] = request;
+    operation.future = request;
+    _videoLoads[cacheKey] = operation;
     return request;
   }
 
-  Future<File> _downloadVideo(SnapshotItem item, String uid) async {
+  Future<File> _downloadVideo(
+    SnapshotItem item,
+    String uid,
+    _SnapshotVideoDownload operation,
+  ) async {
     if (!_hasServerOffset) await refreshServerClock();
     if (item.isExpiredAt(serverNow)) throw StateError('snapshot-expired');
-    final temporary = await getTemporaryDirectory();
-    final directory = Directory(path.join(
-      temporary.path,
-      'wefilling_snapshot_video_v1',
-      uid.replaceAll(RegExp(r'[^A-Za-z0-9_-]'), '_'),
-    ));
-    await directory.create(recursive: true);
-    final target = File(path.join(directory.path, '${item.id}.mp4'));
-    if (await target.exists() && await target.length() > 0) {
-      // 캐시 접근 시각 갱신은 최적화일 뿐, 유효한 재생 파일의
-      // 성공/실패를 결정하지 않는다.
-      try {
-        await target.setLastModified(DateTime.now());
-      } catch (_) {}
-      return target;
-    }
-    final partial = File('${target.path}.part');
-    if (await partial.exists()) await partial.delete();
+    final sourceKey = _videoSourceKey(item);
+    final partial = await _mediaCache.videoPartialFile(
+      userId: uid,
+      snapshotId: item.id,
+      requestId: operation.requestId,
+    );
+    final stopwatch = Stopwatch()..start();
 
     Object? lastError;
     StackTrace? lastStackTrace;
     for (var attempt = 1; attempt <= 2; attempt++) {
       try {
-        await _storage
-            .ref(item.videoStoragePath.trim())
-            .writeToFile(partial)
-            .timeout(const Duration(minutes: 3));
+        if (operation.cancelled) {
+          throw StateError('snapshot-video-download-cancelled');
+        }
+        if (attempt == 1 && Logger.isVerboseEnabled) {
+          Logger.log(
+            '스낵 영상 캐시 다운로드 시작 '
+            '(snapshotId=${item.id}, prefetch=${operation.prefetch})',
+          );
+        }
+        final task =
+            _storage.ref(item.videoStoragePath.trim()).writeToFile(partial);
+        operation.task = task;
+        if (operation.cancelled) await task.cancel();
+        try {
+          await task.timeout(const Duration(minutes: 3));
+        } on TimeoutException {
+          await operation.cancel();
+          rethrow;
+        }
         if (!await partial.exists() || await partial.length() <= 0) {
           throw StateError('snapshot-video-empty');
         }
-        if (_auth.currentUser?.uid != uid || item.isExpiredAt(serverNow)) {
+        if (operation.cancelled ||
+            _auth.currentUser?.uid != uid ||
+            _latestVideoSourceKeys['$uid::${item.id}'] != sourceKey ||
+            item.isExpiredAt(serverNow)) {
           throw StateError('snapshot-video-access-ended');
         }
-        if (await target.exists()) await target.delete();
-        final completed = await partial.rename(target.path);
-        try {
-          await completed.setLastModified(DateTime.now());
-        } catch (_) {}
+        final completed = await _mediaCache.commitVideo(
+          userId: uid,
+          snapshotId: item.id,
+          sourceKey: sourceKey,
+          partialFile: partial,
+        );
+        if (Logger.isVerboseEnabled) {
+          Logger.log(
+            '스낵 영상 캐시 완료 (snapshotId=${item.id}, '
+            'bytes=${await completed.length()}, '
+            'elapsedMs=${stopwatch.elapsedMilliseconds}, '
+            'prefetch=${operation.prefetch})',
+          );
+        }
         return completed;
       } catch (error, stackTrace) {
         lastError = error;
         lastStackTrace = stackTrace;
-        if (await partial.exists()) await partial.delete();
+        await _mediaCache.discardVideoPartial(partial);
+        if (operation.cancelled) break;
         final code = error is FirebaseException ? error.code : 'unknown';
         if (code == 'unauthorized' && attempt == 1) {
           final currentUser = _auth.currentUser;
@@ -1371,10 +1731,17 @@ class SnapshotService {
   Future<Uint8List> loadImageBytes(SnapshotItem item) async {
     final currentUserId = _auth.currentUser?.uid;
     if (currentUserId == null) throw StateError('sign-in-required');
-    final cacheKey = '$currentUserId:${item.id}';
+    if (item.isExpiredAt(serverNow)) throw StateError('snapshot-expired');
+    final cacheKey = _imageCacheKey(currentUserId, item);
     final cached = _imageBytes[cacheKey];
     if (cached != null) {
       _touchImage(cacheKey);
+      if (Logger.isVerboseEnabled) {
+        Logger.log(
+          '스낵 이미지 준비 '
+          '(contentId=${item.id}, cache=memory, bytes=${cached.length})',
+        );
+      }
       return cached;
     }
 
@@ -1400,16 +1767,26 @@ class SnapshotService {
     final currentUserId = _auth.currentUser?.uid;
     if (currentUserId == null) throw StateError('sign-in-required');
 
-    final sourceKey = item.imageStoragePath.trim().isNotEmpty
-        ? 'path:${item.imageStoragePath.trim()}'
-        : 'url:${item.imageUrl.trim()}';
+    final sourceKey = _imageSourceKey(item);
+    final stopwatch = Stopwatch()..start();
     final diskCached = await _mediaCache.read(
       userId: currentUserId,
       snapshotId: item.id,
       sourceKey: sourceKey,
     );
     if (diskCached != null) {
+      if (_auth.currentUser?.uid != currentUserId ||
+          item.isExpiredAt(serverNow)) {
+        throw StateError('snapshot-image-access-ended');
+      }
       _rememberImage(cacheKey, diskCached);
+      if (Logger.isVerboseEnabled) {
+        Logger.log(
+          '스낵 이미지 준비 '
+          '(contentId=${item.id}, cache=disk, bytes=${diskCached.length}, '
+          'elapsedMs=${stopwatch.elapsedMilliseconds})',
+        );
+      }
       return diskCached;
     }
 
@@ -1444,6 +1821,12 @@ class SnapshotService {
     Uint8List? data;
     Object? lastError;
     StackTrace? lastStackTrace;
+    if (Logger.isVerboseEnabled) {
+      Logger.log(
+        '스낵 이미지 다운로드 시작 '
+        '(contentId=${item.id}, cache=miss)',
+      );
+    }
     for (var attempt = 1; attempt <= 2; attempt++) {
       try {
         data = await reference
@@ -1476,11 +1859,12 @@ class SnapshotService {
             await currentUser
                 .getIdToken(true)
                 .timeout(const Duration(seconds: 10));
-            if (Logger.isVerboseEnabled)
+            if (Logger.isVerboseEnabled) {
               Logger.log(
                 '스낵 이미지 인증 상태 갱신 완료 '
                 '(contentId=${item.id}, currentUserId=$currentUserId)',
               );
+            }
           } catch (refreshError, refreshStackTrace) {
             Logger.error(
               '스낵 이미지 인증 상태 갱신 실패 '
@@ -1506,12 +1890,18 @@ class SnapshotService {
         lastStackTrace ?? StackTrace.current,
       );
     }
-    if (Logger.isVerboseEnabled)
+    if (_auth.currentUser?.uid != currentUserId ||
+        item.isExpiredAt(serverNow)) {
+      throw StateError('snapshot-image-access-ended');
+    }
+    if (Logger.isVerboseEnabled) {
       Logger.log(
         '스낵 이미지 다운로드 성공 '
         '(contentId=${item.id}, currentUserId=$currentUserId, source=$source, '
+        'bytes=${data.length}, elapsedMs=${stopwatch.elapsedMilliseconds}, '
         'hasImageStoragePath=${item.imageStoragePath.isNotEmpty})',
       );
+    }
     _rememberImage(cacheKey, data);
     // Painting must not wait for filesystem flush/LRU cleanup. The cache
     // service already contains its own best-effort error boundary.
@@ -1539,11 +1929,11 @@ class SnapshotService {
   }
 
   void evictImage(String snapshotId) {
-    final suffix = ':$snapshotId';
+    final marker = '::$snapshotId::';
     final keys = <String>{
-      ..._imageBytes.keys.where((key) => key.endsWith(suffix)),
-      ..._imageLoads.keys.where((key) => key.endsWith(suffix)),
-      ..._imageLru.where((key) => key.endsWith(suffix)),
+      ..._imageBytes.keys.where((key) => key.contains(marker)),
+      ..._imageLoads.keys.where((key) => key.contains(marker)),
+      ..._imageLru.where((key) => key.contains(marker)),
     };
     for (final key in keys) {
       _imageBytes.remove(key);
@@ -1552,7 +1942,14 @@ class SnapshotService {
     }
     final currentUserId = _auth.currentUser?.uid;
     if (currentUserId != null) {
-      _videoLoads.remove('$currentUserId:$snapshotId');
+      _latestVideoSourceKeys.remove('$currentUserId::$snapshotId');
+      for (final operation in _videoLoads.values.toList(growable: false)) {
+        if (operation.snapshotId != snapshotId) continue;
+        if (identical(_videoLoads[operation.cacheKey], operation)) {
+          _videoLoads.remove(operation.cacheKey);
+        }
+        unawaited(operation.cancel());
+      }
       unawaited(getTemporaryDirectory().then((directory) async {
         final file = File(path.join(
           directory.path,
@@ -1564,6 +1961,12 @@ class SnapshotService {
       }));
       unawaited(
         _mediaCache.evict(
+          userId: currentUserId,
+          snapshotId: snapshotId,
+        ),
+      );
+      unawaited(
+        _mediaCache.evictVideo(
           userId: currentUserId,
           snapshotId: snapshotId,
         ),

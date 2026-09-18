@@ -72,6 +72,11 @@ class ContentFilterService {
     return Set<String>.unmodifiable(v);
   }
 
+  static bool get hasBlockedUserIdsCache {
+    _prepareCacheForCurrentUser();
+    return _blockedUserIds != null && _blockCacheIsFresh;
+  }
+
   /// 네트워크 없이 현재 캐시값을 즉시 반환합니다 (optimistic UI 용도).
   static Set<String> getBlockedByUserIdsCached() {
     _prepareCacheForCurrentUser();
@@ -79,6 +84,15 @@ class ContentFilterService {
     if (v == null || v.isEmpty) return const <String>{};
     return Set<String>.unmodifiable(v);
   }
+
+  static bool get hasBlockedByUserIdsCache {
+    _prepareCacheForCurrentUser();
+    return _blockedByUserIds != null && _blockCacheIsFresh;
+  }
+
+  static bool get _blockCacheIsFresh =>
+      _lastCacheUpdate != null &&
+      DateTime.now().difference(_lastCacheUpdate!) < _cacheExpiry;
 
   static void setBlockedAnonymousPostIds(Set<String> postIds) {
     _prepareCacheForCurrentUser();

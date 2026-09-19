@@ -552,6 +552,21 @@ class SnapshotStrings {
       : isKorean
           ? '댓글'
           : 'Comments');
+  String get snackLetter => (isChinese
+      ? '限时留言'
+      : isKorean
+          ? '스낵 편지'
+          : 'Snack letter');
+  String get playVideo => (isChinese
+      ? '播放视频'
+      : isKorean
+          ? '영상 재생'
+          : 'Play video');
+  String get replayVideo => (isChinese
+      ? '重新播放'
+      : isKorean
+          ? '다시 보기'
+          : 'Replay video');
   String get authorArchiveNotice => (isChinese
       ? '限时动态公开24小时；作者设备上可能会保留评论和互动记录。'
       : isKorean

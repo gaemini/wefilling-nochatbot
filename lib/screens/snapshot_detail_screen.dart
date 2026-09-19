@@ -13,6 +13,7 @@ import '../services/snapshot_service.dart';
 import '../services/notification_service.dart';
 import '../snapshot/snapshot_storage_image.dart';
 import '../snapshot/snapshot_storage_video.dart';
+import '../snapshot/snapshot_author_profile_image.dart';
 import '../snapshot/snapshot_strings.dart';
 import '../ui/snackbar/app_snackbar.dart';
 import '../utils/responsive_helper.dart';
@@ -44,11 +45,8 @@ class SnapshotDetailScreen extends StatefulWidget {
 }
 
 class _SnapshotDetailScreenState extends State<SnapshotDetailScreen>
-    with WidgetsBindingObserver, SingleTickerProviderStateMixin {
+    with WidgetsBindingObserver {
   static const Duration _switchDuration = Duration(milliseconds: 240);
-  static const Duration _playbackDuration = Duration(seconds: 7);
-  static const Duration _positionVisibilityDuration =
-      Duration(milliseconds: 1400);
 
   final SnapshotService _service = SnapshotService.instance;
   final DMService _dmService = DMService();
@@ -56,16 +54,17 @@ class _SnapshotDetailScreenState extends State<SnapshotDetailScreen>
   late int _index;
   Timer? _ticker;
   Timer? _switchTimer;
-  Timer? _positionTimer;
-  late final AnimationController _playbackController;
   bool _isSwitching = false;
   bool _isHolding = false;
   bool _isAppInactive = false;
   bool _isComposingComment = false;
-  bool _showFeedPosition = false;
+  bool _isModalPaused = false;
   String? _deletingSnapshotId;
   String? _mediaReadyId;
-  double _verticalDragDistance = 0;
+  String? _manualResumeSnapshotId;
+  String? _unavailableSnapshotId;
+  double _horizontalDragDistance = 0;
+  int _displayedAgeMinutes = -1;
 
   SnapshotItem get _current => _items[_index];
 
@@ -73,31 +72,69 @@ class _SnapshotDetailScreenState extends State<SnapshotDetailScreen>
   void initState() {
     super.initState();
     WidgetsBinding.instance.addObserver(this);
-    _playbackController = AnimationController(
-      vsync: this,
-      duration: _playbackDuration,
-    )..addStatusListener(_handlePlaybackStatus);
-    _items = widget.snapshots
-        .where((item) => !item.isExpiredAt(_service.serverNow))
-        .toList();
+    _items = List<SnapshotItem>.of(widget.snapshots);
     final requestedId = widget.snapshots.isEmpty
         ? ''
         : widget
-            .snapshots[
-                widget.initialIndex.clamp(0, widget.snapshots.length - 1)]
-            .id;
+              .snapshots[widget.initialIndex.clamp(
+                0,
+                widget.snapshots.length - 1,
+              )]
+              .id;
     _index = _items.indexWhere((item) => item.id == requestedId);
     if (_index < 0) _index = 0;
-    _ticker =
-        Timer.periodic(const Duration(seconds: 20), (_) => _recheckExpiry());
+    if (_items.isNotEmpty) {
+      _displayedAgeMinutes = _snapshotAgeMinutes(_current, _service.serverNow);
+      if (_current.isExpiredAt(_service.serverNow)) {
+        _unavailableSnapshotId = _current.id;
+        _manualResumeSnapshotId = _current.id;
+      }
+    }
+    _ticker = Timer.periodic(
+      const Duration(seconds: 20),
+      (_) => _recheckExpiry(),
+    );
     WidgetsBinding.instance.addPostFrameCallback((_) {
       _recheckExpiry();
-      _recordCurrentView();
-      _restartPlayback();
-      _preloadCurrentAndNext();
+      if (_items.isNotEmpty && _unavailableSnapshotId != _current.id) {
+        _recordCurrentView();
+        _preloadCurrentAndNext();
+      }
       if (widget.openCommentsInitially && _items.isNotEmpty) {
         unawaited(_openComments(focusCommentId: widget.focusCommentId));
       }
+    });
+  }
+
+  @override
+  void didUpdateWidget(covariant SnapshotDetailScreen oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (_items.isEmpty || identical(oldWidget.snapshots, widget.snapshots)) {
+      return;
+    }
+    final current = _current;
+    final incoming = List<SnapshotItem>.of(widget.snapshots);
+    var nextIndex = incoming.indexWhere((item) => item.id == current.id);
+    if (nextIndex >= 0) {
+      // 상세 실시간 구독에서 받은 하트·댓글 상태를 목록 재정렬이 되돌리지
+      // 않도록 현재 항목은 유지한다.
+      incoming[nextIndex] = current;
+    } else {
+      nextIndex = _index.clamp(0, incoming.length);
+      incoming.insert(nextIndex, current);
+    }
+    final idsChanged =
+        incoming.length != _items.length ||
+        List<int>.generate(incoming.length, (index) => index).any(
+          (index) =>
+              index >= _items.length || incoming[index].id != _items[index].id,
+        );
+    if (!idsChanged) return;
+    _items = incoming;
+    _index = nextIndex;
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!mounted || _unavailableSnapshotId == _current.id) return;
+      _preloadCurrentAndNext();
     });
   }
 
@@ -107,10 +144,6 @@ class _SnapshotDetailScreenState extends State<SnapshotDetailScreen>
     unawaited(_service.cancelVideoPreloads());
     _ticker?.cancel();
     _switchTimer?.cancel();
-    _positionTimer?.cancel();
-    _playbackController
-      ..removeStatusListener(_handlePlaybackStatus)
-      ..dispose();
     super.dispose();
   }
 
@@ -118,62 +151,29 @@ class _SnapshotDetailScreenState extends State<SnapshotDetailScreen>
   void didChangeAppLifecycleState(AppLifecycleState state) {
     if (state == AppLifecycleState.resumed) {
       setState(() => _isAppInactive = false);
-      _resumePlaybackIfAllowed();
       unawaited(_service.refreshServerClock().then((_) => _recheckExpiry()));
       unawaited(_service.syncMyFeed());
     } else {
       setState(() => _isAppInactive = true);
-      _playbackController.stop();
       unawaited(_service.cancelVideoPreloads());
     }
   }
 
-  void _handlePlaybackStatus(AnimationStatus status) {
-    if (status != AnimationStatus.completed || !mounted || _items.isEmpty) {
-      return;
-    }
-    if (_index < _items.length - 1) {
-      _moveTo(_index + 1, haptic: false);
-    } else {
-      Navigator.of(context).maybePop();
-    }
-  }
-
-  bool get _playbackCanRun =>
+  bool get _currentVideoCanPlay =>
       mounted &&
+      _current.isVideo &&
       _mediaReadyId == _current.id &&
       !_isHolding &&
       !_isAppInactive &&
-      !_isComposingComment;
-
-  void _restartPlayback() {
-    if (!mounted || _items.isEmpty) return;
-    _playbackController.duration = _current.isVideo
-        ? Duration(
-            milliseconds: _current.durationMs.clamp(500, 12000).toInt(),
-          )
-        : _playbackDuration;
-    _playbackController.value = 0;
-    if (_playbackCanRun) _playbackController.forward();
-  }
-
-  void _resumePlaybackIfAllowed() {
-    if (!_playbackCanRun || _playbackController.isAnimating) return;
-    if (_playbackController.value >= 1) {
-      _restartPlayback();
-    } else {
-      _playbackController.forward();
-    }
-  }
+      !_isComposingComment &&
+      !_isModalPaused &&
+      _manualResumeSnapshotId != _current.id &&
+      _unavailableSnapshotId != _current.id &&
+      _deletingSnapshotId == null;
 
   void _setHolding(bool holding) {
     if (_isHolding == holding) return;
     setState(() => _isHolding = holding);
-    if (holding) {
-      _playbackController.stop();
-    } else {
-      _resumePlaybackIfAllowed();
-    }
   }
 
   void _handleMediaReady(String snapshotId) {
@@ -182,14 +182,18 @@ class _SnapshotDetailScreenState extends State<SnapshotDetailScreen>
     // 첫 프레임 기록이 네트워크 문제로 지연된 경우 이미지 준비 시점에 한 번
     // 더 합류한다. 서비스가 동일 요청을 단일 Future로 병합하므로 중복 쓰기는 없다.
     _recordCurrentView();
-    _resumePlaybackIfAllowed();
+    if (!_current.isVideo) _preloadNextVideo();
   }
 
   void _handleSnapshotChanged(SnapshotItem latest) {
     if (!mounted) return;
     final itemIndex = _items.indexWhere((item) => item.id == latest.id);
-    if (itemIndex < 0 ||
-        _items[itemIndex].commentCount == latest.commentCount) {
+    if (itemIndex < 0) {
+      return;
+    }
+    final previous = _items[itemIndex];
+    if (previous.commentCount == latest.commentCount &&
+        _sameReactionCounts(previous.reactionCounts, latest.reactionCounts)) {
       return;
     }
     setState(() => _items[itemIndex] = latest);
@@ -203,38 +207,74 @@ class _SnapshotDetailScreenState extends State<SnapshotDetailScreen>
   void _recordCurrentView() {
     if (!mounted || _items.isEmpty) return;
     final item = _current;
-    unawaited(NotificationService().markRelatedNotificationsAsRead(
-      types: const <String>{
-        'snapshot_reaction',
-        'snapshot_comment',
-        'snapshot_feed_comment',
-        'snapshot_feed_comment_reply',
-      },
-      targets: <String, String>{'snapshotId': item.id},
-    ));
+    unawaited(
+      NotificationService().markRelatedNotificationsAsRead(
+        types: const <String>{
+          'snapshot_reaction',
+          'snapshot_comment',
+          'snapshot_feed_comment',
+          'snapshot_feed_comment_reply',
+        },
+        targets: <String, String>{'snapshotId': item.id},
+      ),
+    );
     if (FirebaseAuth.instance.currentUser?.uid == item.authorId) return;
     unawaited(_service.recordView(item.id));
   }
 
   Future<void> _openComments({String? focusCommentId}) async {
-    if (!mounted || _items.isEmpty || _isComposingComment) return;
-    setState(() => _isComposingComment = true);
-    _playbackController.stop();
+    if (!mounted ||
+        _items.isEmpty ||
+        _isComposingComment ||
+        _unavailableSnapshotId == _current.id) {
+      return;
+    }
+    final snapshotId = _current.id;
+    final snapshot = _current;
+    setState(() {
+      _isComposingComment = true;
+      if (snapshot.isVideo) _manualResumeSnapshotId = snapshotId;
+    });
     unawaited(_service.cancelVideoPreloads());
     try {
       await SnapshotCommentsSheet.show(
         context,
-        snapshot: _current,
+        snapshot: snapshot,
         focusCommentId: focusCommentId,
       );
     } finally {
       if (mounted) {
         setState(() => _isComposingComment = false);
-        _resumePlaybackIfAllowed();
-        if (_mediaReadyId == _current.id && _current.isVideo) {
+        if (_current.id == snapshotId && _mediaReadyId == snapshotId) {
           _preloadNextVideo();
         }
       }
+    }
+  }
+
+  Future<void> _openLetterComposer() async {
+    if (!mounted ||
+        _items.isEmpty ||
+        _isModalPaused ||
+        _unavailableSnapshotId == _current.id ||
+        FirebaseAuth.instance.currentUser?.uid == _current.authorId) {
+      return;
+    }
+    final snapshotId = _current.id;
+    setState(() => _isModalPaused = true);
+    try {
+      await showModalBottomSheet<void>(
+        context: context,
+        isScrollControlled: true,
+        useSafeArea: true,
+        backgroundColor: Colors.transparent,
+        builder: (_) => _SnapshotLetterComposerSheet(
+          snapshotId: snapshotId,
+          service: _service,
+        ),
+      );
+    } finally {
+      if (mounted) setState(() => _isModalPaused = false);
     }
   }
 
@@ -244,13 +284,13 @@ class _SnapshotDetailScreenState extends State<SnapshotDetailScreen>
       return;
     }
     final snapshotId = _current.id;
-    _playbackController.stop();
+    setState(() => _isModalPaused = true);
     await Navigator.of(context).push<void>(
       MaterialPageRoute(
         builder: (_) => SnapshotViewersScreen(snapshotId: snapshotId),
       ),
     );
-    if (mounted) _resumePlaybackIfAllowed();
+    if (mounted) setState(() => _isModalPaused = false);
   }
 
   Future<void> _openAuthorProfile() async {
@@ -259,7 +299,7 @@ class _SnapshotDetailScreenState extends State<SnapshotDetailScreen>
     final userId = item.authorId.trim();
     if (userId.isEmpty || userId.toLowerCase() == 'deleted') return;
 
-    _playbackController.stop();
+    setState(() => _isModalPaused = true);
     await Navigator.of(context).push<void>(
       MaterialPageRoute(
         builder: (_) => FriendProfileScreen(
@@ -271,7 +311,7 @@ class _SnapshotDetailScreenState extends State<SnapshotDetailScreen>
         ),
       ),
     );
-    if (mounted) _resumePlaybackIfAllowed();
+    if (mounted) setState(() => _isModalPaused = false);
   }
 
   Future<void> _warmImage(SnapshotItem item) async {
@@ -284,9 +324,16 @@ class _SnapshotDetailScreenState extends State<SnapshotDetailScreen>
 
   void _preloadCurrentAndNext() {
     if (!mounted || _items.isEmpty) return;
-    unawaited(_service.cancelVideoPreloads());
-    unawaited(_warmImage(_current));
+    final retainedVideoIds = <String>{};
+    if (_current.isVideo) retainedVideoIds.add(_current.id);
     final nextIndex = _index + 1;
+    if (nextIndex < _items.length && _items[nextIndex].isVideo) {
+      retainedVideoIds.add(_items[nextIndex].id);
+    }
+    unawaited(
+      _service.cancelVideoPreloads(exceptSnapshotIds: retainedVideoIds),
+    );
+    unawaited(_warmImage(_current));
     if (nextIndex < _items.length) {
       unawaited(_warmImage(_items[nextIndex]));
     }
@@ -304,54 +351,32 @@ class _SnapshotDetailScreenState extends State<SnapshotDetailScreen>
     // 현재 미디어가 준비된 뒤 다음 영상 하나만 받아 초기 다운로드가
     // 경쟁하지 않게 한다. 실제 화면 진입 시에는 같은 Future/파일을 재사용한다.
     unawaited(
-      _service.preloadVideoFile(next).then<void>(
-            (_) {},
-            onError: (Object _, StackTrace __) {},
-          ),
+      _service
+          .preloadVideoFile(next)
+          .then<void>((_) {}, onError: (Object _, StackTrace __) {}),
     );
-  }
-
-  void _showTransientFeedPosition() {
-    _positionTimer?.cancel();
-    if (!_showFeedPosition) {
-      setState(() => _showFeedPosition = true);
-    }
-    _positionTimer = Timer(_positionVisibilityDuration, () {
-      if (!mounted) return;
-      setState(() => _showFeedPosition = false);
-    });
   }
 
   void _recheckExpiry() {
     if (!mounted || _items.isEmpty) return;
+    final now = _service.serverNow;
     final currentId = _current.id;
-    final filtered =
-        _items.where((item) => !item.isExpiredAt(_service.serverNow)).toList();
-    if (filtered.isEmpty) {
-      final strings = SnapshotStrings.of(context);
-      Navigator.of(context).pop();
-      AppSnackBar.show(context, message: strings.expired);
+    if (_current.isExpiredAt(now)) {
+      _markCurrentUnavailable(currentId);
       return;
     }
-    final newIndex = filtered.indexWhere((item) => item.id == currentId);
-    final resolvedIndex = newIndex >= 0 ? newIndex : 0;
-    final contentsChanged = filtered.length != _items.length ||
-        !List<bool>.generate(
-          filtered.length,
-          (index) => filtered[index].id == _items[index].id,
-        ).every((same) => same);
-    if (!contentsChanged && resolvedIndex == _index) return;
-    setState(() {
-      _items = filtered;
-      _index = resolvedIndex;
-    });
-    _recordCurrentView();
-    _restartPlayback();
-    _preloadCurrentAndNext();
+    final ageMinutes = _snapshotAgeMinutes(_current, now);
+    if (ageMinutes != _displayedAgeMinutes) {
+      setState(() => _displayedAgeMinutes = ageMinutes);
+    }
   }
 
   void _moveTo(int targetIndex, {bool haptic = true}) {
-    if (_isSwitching || targetIndex < 0 || targetIndex >= _items.length) {
+    if (_isSwitching ||
+        _isComposingComment ||
+        _isModalPaused ||
+        targetIndex < 0 ||
+        targetIndex >= _items.length) {
       return;
     }
     if (targetIndex == _index) return;
@@ -361,11 +386,17 @@ class _SnapshotDetailScreenState extends State<SnapshotDetailScreen>
     setState(() {
       _index = targetIndex;
       _isSwitching = true;
+      _mediaReadyId = null;
+      _manualResumeSnapshotId = null;
+      _unavailableSnapshotId = _current.isExpiredAt(_service.serverNow)
+          ? _current.id
+          : null;
+      _displayedAgeMinutes = _snapshotAgeMinutes(_current, _service.serverNow);
     });
-    _recordCurrentView();
-    _restartPlayback();
-    _preloadCurrentAndNext();
-    _showTransientFeedPosition();
+    if (_unavailableSnapshotId == null) {
+      _recordCurrentView();
+      _preloadCurrentAndNext();
+    }
     _switchTimer = Timer(_switchDuration, () {
       if (!mounted) return;
       setState(() => _isSwitching = false);
@@ -376,31 +407,48 @@ class _SnapshotDetailScreenState extends State<SnapshotDetailScreen>
 
   void _showNext() => _moveTo(_index + 1);
 
-  void _handleVerticalDragStart(DragStartDetails details) {
-    _verticalDragDistance = 0;
-    _playbackController.stop();
+  void _handleHorizontalDragStart(DragStartDetails details) {
+    _horizontalDragDistance = 0;
   }
 
-  void _handleVerticalDragUpdate(DragUpdateDetails details) {
-    _verticalDragDistance += details.primaryDelta ?? 0;
+  void _handleHorizontalDragUpdate(DragUpdateDetails details) {
+    _horizontalDragDistance += details.primaryDelta ?? 0;
   }
 
-  void _handleVerticalDragEnd(DragEndDetails details) {
+  void _handleHorizontalDragEnd(DragEndDetails details) {
     final velocity = details.primaryVelocity ?? 0;
-    final shouldGoNext = _verticalDragDistance < -48 || velocity < -320;
-    final shouldGoPrevious = _verticalDragDistance > 48 || velocity > 320;
-    _verticalDragDistance = 0;
+    final shouldGoNext = _horizontalDragDistance < -48 || velocity < -320;
+    final shouldGoPrevious = _horizontalDragDistance > 48 || velocity > 320;
+    _horizontalDragDistance = 0;
     if (shouldGoNext) {
       _showNext();
     } else if (shouldGoPrevious) {
       _showPrevious();
-    } else {
-      _resumePlaybackIfAllowed();
+    }
+  }
+
+  void _markCurrentUnavailable(String snapshotId) {
+    if (!mounted || _items.isEmpty || _current.id != snapshotId) return;
+    if (_unavailableSnapshotId == snapshotId) return;
+    setState(() {
+      _unavailableSnapshotId = snapshotId;
+      _manualResumeSnapshotId = snapshotId;
+      _mediaReadyId = null;
+    });
+    unawaited(_service.cancelVideoLoad(snapshotId));
+    unawaited(_service.cancelVideoPreloads());
+  }
+
+  void _handleVideoPlayRequested(String snapshotId) {
+    if (!mounted || _items.isEmpty || _current.id != snapshotId) return;
+    if (_manualResumeSnapshotId == snapshotId) {
+      setState(() => _manualResumeSnapshotId = null);
     }
   }
 
   Future<void> _showActions() async {
-    _playbackController.stop();
+    if (_unavailableSnapshotId == _current.id) return;
+    setState(() => _isModalPaused = true);
     final strings = SnapshotStrings.of(context);
     final item = _current;
     final isOwner = FirebaseAuth.instance.currentUser?.uid == item.authorId;
@@ -447,7 +495,7 @@ class _SnapshotDetailScreenState extends State<SnapshotDetailScreen>
     );
     if (!mounted) return;
     if (action == null) {
-      _resumePlaybackIfAllowed();
+      setState(() => _isModalPaused = false);
       return;
     }
     switch (action) {
@@ -460,16 +508,16 @@ class _SnapshotDetailScreenState extends State<SnapshotDetailScreen>
       case 'block':
         await _block();
     }
-    if (mounted) _resumePlaybackIfAllowed();
+    if (mounted) setState(() => _isModalPaused = false);
   }
 
   Future<void> _deleteCurrent() async {
     if (_deletingSnapshotId != null || _items.isEmpty) return;
     final strings = SnapshotStrings.of(context);
     final deletingId = _current.id;
-    final deletingIndex = _index;
     HapticFeedback.mediumImpact();
-    final confirmed = await showDialog<bool>(
+    final confirmed =
+        await showDialog<bool>(
           context: context,
           barrierDismissible: false,
           barrierColor: const Color(0x99000000),
@@ -483,28 +531,17 @@ class _SnapshotDetailScreenState extends State<SnapshotDetailScreen>
       return;
     }
     setState(() => _deletingSnapshotId = deletingId);
-    _playbackController.stop();
     try {
       await _service.deleteSnapshot(deletingId);
       if (!mounted) return;
-
-      final remaining = _items
-          .where((snapshot) => snapshot.id != deletingId)
-          .toList(growable: false);
-      if (remaining.isEmpty) {
-        await Navigator.of(context).maybePop();
-        return;
-      }
-
       setState(() {
-        _items = remaining;
-        _index = deletingIndex.clamp(0, remaining.length - 1);
         _deletingSnapshotId = null;
+        _unavailableSnapshotId = deletingId;
+        _manualResumeSnapshotId = deletingId;
         _mediaReadyId = null;
       });
-      _recordCurrentView();
-      _restartPlayback();
-      _preloadCurrentAndNext();
+      unawaited(_service.cancelVideoLoad(deletingId));
+      unawaited(_service.cancelVideoPreloads());
     } catch (_) {
       if (mounted) {
         setState(() => _deletingSnapshotId = null);
@@ -513,8 +550,8 @@ class _SnapshotDetailScreenState extends State<SnapshotDetailScreen>
           message: (isChineseUi(context)
               ? '删除失败。'
               : strings.isKorean
-                  ? '삭제하지 못했어요.'
-                  : 'Could not delete it.'),
+              ? '삭제하지 못했어요.'
+              : 'Could not delete it.'),
           type: AppSnackBarType.error,
         );
       }
@@ -545,8 +582,8 @@ class _SnapshotDetailScreenState extends State<SnapshotDetailScreen>
           message: (isChineseUi(context)
               ? '无法发起私信。'
               : strings.isKorean
-                  ? '메시지를 시작하지 못했어요.'
-                  : 'Could not start a message.'),
+              ? '메시지를 시작하지 못했어요.'
+              : 'Could not start a message.'),
           type: AppSnackBarType.error,
         );
       }
@@ -566,8 +603,11 @@ class _SnapshotDetailScreenState extends State<SnapshotDetailScreen>
     if (ok) {
       _service.hideSnapshotLocally(_current.id);
       Navigator.of(context).pop();
-      AppSnackBar.show(context,
-          message: strings.reportDone, type: AppSnackBarType.success);
+      AppSnackBar.show(
+        context,
+        message: strings.reportDone,
+        type: AppSnackBarType.success,
+      );
     }
   }
 
@@ -577,8 +617,11 @@ class _SnapshotDetailScreenState extends State<SnapshotDetailScreen>
     if (!mounted) return;
     if (ok) {
       Navigator.of(context).pop();
-      AppSnackBar.show(context,
-          message: strings.blockDone, type: AppSnackBarType.success);
+      AppSnackBar.show(
+        context,
+        message: strings.blockDone,
+        type: AppSnackBarType.success,
+      );
     }
   }
 
@@ -591,13 +634,10 @@ class _SnapshotDetailScreenState extends State<SnapshotDetailScreen>
       return const Scaffold(backgroundColor: Colors.black);
     }
     final strings = SnapshotStrings.of(context);
-    final isOwner = FirebaseAuth.instance.currentUser?.uid == _current.authorId;
-    final horizontalInset = MediaQuery.sizeOf(context).width < 360
-        ? 12.0
-        : context.rs(16).clamp(14, 20).toDouble();
-    final ownerViewerEntryHeight = context.rh(66, min: 62, max: 72);
-    final reactionExclusionHeight =
-        isOwner ? ownerViewerEntryHeight : context.rh(118, min: 110, max: 128);
+    final interactionsEnabled =
+        _unavailableSnapshotId != _current.id && _deletingSnapshotId == null;
+    final navigationEnabled =
+        _deletingSnapshotId == null && !_isComposingComment && !_isModalPaused;
     return AnnotatedRegion<SystemUiOverlayStyle>(
       value: SystemUiOverlayStyle.light.copyWith(
         statusBarColor: Colors.transparent,
@@ -612,134 +652,73 @@ class _SnapshotDetailScreenState extends State<SnapshotDetailScreen>
             children: [
               _SnapshotTopRegion(
                 snapshot: _current,
-                visibility: _visibilityLabel(strings, _current.visibility),
-                remaining: _snapshotRemainingLabel(
+                createdLabel: _snapshotCreatedLabel(
                   _current,
                   _service,
                   strings,
                 ),
-                playback: _playbackController,
                 onBack: () => Navigator.of(context).maybePop(),
-                onAuthorTap: _openAuthorProfile,
-                onMore: _showActions,
+                onAuthorTap: interactionsEnabled ? _openAuthorProfile : null,
+                onMore: interactionsEnabled ? _showActions : null,
               ),
               Expanded(
                 child: GestureDetector(
                   behavior: HitTestBehavior.opaque,
-                  onVerticalDragStart: _deletingSnapshotId == null
-                      ? _handleVerticalDragStart
+                  onTapUp: navigationEnabled
+                      ? (details) {
+                          final width = MediaQuery.sizeOf(context).width;
+                          if (details.localPosition.dx < width / 2) {
+                            _showPrevious();
+                          } else {
+                            _showNext();
+                          }
+                        }
                       : null,
-                  onVerticalDragUpdate: _deletingSnapshotId == null
-                      ? _handleVerticalDragUpdate
+                  onHorizontalDragStart: navigationEnabled
+                      ? _handleHorizontalDragStart
                       : null,
-                  onVerticalDragEnd: _deletingSnapshotId == null
-                      ? _handleVerticalDragEnd
+                  onHorizontalDragUpdate: navigationEnabled
+                      ? _handleHorizontalDragUpdate
                       : null,
-                  onVerticalDragCancel: _deletingSnapshotId == null
-                      ? _resumePlaybackIfAllowed
+                  onHorizontalDragEnd: navigationEnabled
+                      ? _handleHorizontalDragEnd
                       : null,
-                  onLongPressStart: _deletingSnapshotId == null
+                  onLongPressStart: interactionsEnabled
                       ? (_) => _setHolding(true)
                       : null,
-                  onLongPressEnd: _deletingSnapshotId == null
+                  onLongPressEnd: interactionsEnabled
                       ? (_) => _setHolding(false)
                       : null,
-                  onLongPressCancel: _deletingSnapshotId == null
+                  onLongPressCancel: interactionsEnabled
                       ? () => _setHolding(false)
                       : null,
-                  child: Stack(
-                    fit: StackFit.expand,
-                    clipBehavior: Clip.hardEdge,
-                    children: [
-                      ColoredBox(
-                        color: Colors.black,
-                        child: TweenAnimationBuilder<double>(
-                          key: ValueKey<String>(
-                            'snapshot-page-${_current.id}',
-                          ),
-                          tween: Tween<double>(begin: 0, end: 1),
-                          duration: _switchDuration,
-                          curve: Curves.easeOutCubic,
-                          builder: (context, opacity, child) => Opacity(
-                            opacity: opacity,
-                            child: child,
-                          ),
-                          child: _SnapshotDetailPage(
-                            snapshot: _current,
-                            service: _service,
-                            deleting: _deletingSnapshotId == _current.id,
-                            onMediaReady: _handleMediaReady,
-                            onVideoFirstFrame: _handleVideoFirstFrame,
-                            onSnapshotChanged: _handleSnapshotChanged,
-                            playing:
-                                _playbackCanRun && _deletingSnapshotId == null,
-                          ),
-                        ),
+                  child: ColoredBox(
+                    color: Colors.black,
+                    child: TweenAnimationBuilder<double>(
+                      key: ValueKey<String>('snapshot-page-${_current.id}'),
+                      tween: Tween<double>(begin: 0, end: 1),
+                      duration: _switchDuration,
+                      curve: Curves.easeOutCubic,
+                      builder: (context, opacity, child) =>
+                          Opacity(opacity: opacity, child: child),
+                      child: _SnapshotDetailPage(
+                        snapshot: _current,
+                        service: _service,
+                        deleting: _deletingSnapshotId == _current.id,
+                        unavailable: _unavailableSnapshotId == _current.id,
+                        manualResumeRequired:
+                            _manualResumeSnapshotId == _current.id,
+                        onMediaReady: _handleMediaReady,
+                        onVideoFirstFrame: _handleVideoFirstFrame,
+                        onSnapshotChanged: _handleSnapshotChanged,
+                        onUnavailable: _markCurrentUnavailable,
+                        onVideoPlayRequested: _handleVideoPlayRequested,
+                        onComments: () => _openComments(),
+                        onLetter: _openLetterComposer,
+                        onViewers: _openViewers,
+                        playing: _currentVideoCanPlay,
                       ),
-                      Positioned(
-                        left: 0,
-                        right: 0,
-                        top: 0,
-                        bottom: reactionExclusionHeight,
-                        child: _SnapshotTapNavigation(
-                          canGoPrevious:
-                              _deletingSnapshotId == null && _index > 0,
-                          canGoNext: _deletingSnapshotId == null &&
-                              _index < _items.length - 1,
-                          previousLabel: strings.previousSnapshot,
-                          nextLabel: strings.nextSnapshot,
-                          onPrevious: _showPrevious,
-                          onNext: _showNext,
-                        ),
-                      ),
-                      if (isOwner && _deletingSnapshotId == null)
-                        Positioned(
-                          left: MediaQuery.sizeOf(context).width < 360
-                              ? 10
-                              : context.rs(14).clamp(12, 18).toDouble(),
-                          right: MediaQuery.sizeOf(context).width < 360
-                              ? 10
-                              : context.rs(14).clamp(12, 18).toDouble(),
-                          bottom: 4,
-                          child: _SnapshotViewerEntry(
-                            key: ValueKey<String>(
-                              'snapshot-viewers-${_current.id}',
-                            ),
-                            snapshotId: _current.id,
-                            service: _service,
-                            strings: strings,
-                            onTap: _openViewers,
-                          ),
-                        ),
-                      if (!_isComposingComment && _deletingSnapshotId == null)
-                        Positioned(
-                          right: horizontalInset,
-                          bottom: isOwner ? ownerViewerEntryHeight + 8 : 8,
-                          child: _SnapshotCommentsButton(
-                            count: _current.commentCount,
-                            label: strings.comments,
-                            onTap: () => _openComments(),
-                          ),
-                        ),
-                      if (_items.length > 1)
-                        Positioned(
-                          left: 16,
-                          right: 16,
-                          bottom: isOwner ? ownerViewerEntryHeight + 6 : 118,
-                          child: IgnorePointer(
-                            child: AnimatedOpacity(
-                              duration: const Duration(milliseconds: 180),
-                              opacity: _showFeedPosition ? 1 : 0,
-                              child: _SnapshotFeedPositionToast(
-                                label: strings.feedPosition(
-                                  _index + 1,
-                                  _items.length,
-                                ),
-                              ),
-                            ),
-                          ),
-                        ),
-                    ],
+                    ),
                   ),
                 ),
               ),
@@ -756,17 +735,31 @@ class _SnapshotDetailPage extends StatefulWidget {
     required this.snapshot,
     required this.service,
     required this.deleting,
+    required this.unavailable,
+    required this.manualResumeRequired,
     required this.onMediaReady,
     required this.onVideoFirstFrame,
     required this.onSnapshotChanged,
+    required this.onUnavailable,
+    required this.onVideoPlayRequested,
+    required this.onComments,
+    required this.onLetter,
+    required this.onViewers,
     required this.playing,
   });
   final SnapshotItem snapshot;
   final SnapshotService service;
   final bool deleting;
+  final bool unavailable;
+  final bool manualResumeRequired;
   final ValueChanged<String> onMediaReady;
   final ValueChanged<String> onVideoFirstFrame;
   final ValueChanged<SnapshotItem> onSnapshotChanged;
+  final ValueChanged<String> onUnavailable;
+  final ValueChanged<String> onVideoPlayRequested;
+  final VoidCallback onComments;
+  final VoidCallback onLetter;
+  final VoidCallback onViewers;
   final bool playing;
 
   @override
@@ -783,6 +776,7 @@ class _SnapshotDetailPageState extends State<_SnapshotDetailPage>
   bool _reactionStatusResolved = false;
   bool _hasReacted = true;
   int? _lastReportedCommentCount;
+  late Map<String, int> _lastReportedReactionCounts;
   int _reactionStatusGeneration = 0;
   String? _confirmingReactionSnapshotId;
 
@@ -798,6 +792,9 @@ class _SnapshotDetailPageState extends State<_SnapshotDetailPage>
       initial: widget.snapshot,
     );
     _lastReportedCommentCount = widget.snapshot.commentCount;
+    _lastReportedReactionCounts = Map<String, int>.of(
+      widget.snapshot.reactionCounts,
+    );
     final cachedReaction = widget.service.cachedMyReaction(widget.snapshot.id);
     _reactionStatusResolved = cachedReaction != null;
     _hasReacted = cachedReaction ?? true;
@@ -815,6 +812,9 @@ class _SnapshotDetailPageState extends State<_SnapshotDetailPage>
       _submittingReaction = false;
       _reactedLocally = false;
       _lastReportedCommentCount = widget.snapshot.commentCount;
+      _lastReportedReactionCounts = Map<String, int>.of(
+        widget.snapshot.reactionCounts,
+      );
       if (!widget.deleting) _watchReactionStatus();
       _heartBurstController.reset();
     } else if (oldWidget.deleting != widget.deleting) {
@@ -836,39 +836,38 @@ class _SnapshotDetailPageState extends State<_SnapshotDetailPage>
     final cachedReaction = widget.service.cachedMyReaction(snapshotId);
     _reactionStatusResolved = cachedReaction != null;
     _hasReacted = cachedReaction ?? true;
-    _reactionSubscription = widget.service.watchMyReaction(snapshotId).listen(
-      (hasReacted) {
-        if (!mounted ||
-            generation != _reactionStatusGeneration ||
-            widget.snapshot.id != snapshotId) {
-          return;
-        }
-        setState(() {
-          _reactionStatusResolved = true;
-          _hasReacted = hasReacted;
-        });
-      },
-      onError: (_) {
-        if (!mounted ||
-            generation != _reactionStatusGeneration ||
-            widget.snapshot.id != snapshotId) {
-          return;
-        }
-        final cachedReaction = widget.service.cachedMyReaction(snapshotId);
-        setState(() {
-          _reactionStatusResolved = cachedReaction != null;
-          _hasReacted = cachedReaction ?? true;
-        });
-        unawaited(_confirmReactionStatus(snapshotId, generation));
-      },
-    );
+    _reactionSubscription = widget.service
+        .watchMyReaction(snapshotId)
+        .listen(
+          (hasReacted) {
+            if (!mounted ||
+                generation != _reactionStatusGeneration ||
+                widget.snapshot.id != snapshotId) {
+              return;
+            }
+            setState(() {
+              _reactionStatusResolved = true;
+              _hasReacted = hasReacted;
+            });
+          },
+          onError: (_) {
+            if (!mounted ||
+                generation != _reactionStatusGeneration ||
+                widget.snapshot.id != snapshotId) {
+              return;
+            }
+            final cachedReaction = widget.service.cachedMyReaction(snapshotId);
+            setState(() {
+              _reactionStatusResolved = cachedReaction != null;
+              _hasReacted = cachedReaction ?? true;
+            });
+            unawaited(_confirmReactionStatus(snapshotId, generation));
+          },
+        );
     unawaited(_confirmReactionStatus(snapshotId, generation));
   }
 
-  Future<void> _confirmReactionStatus(
-    String snapshotId,
-    int generation,
-  ) async {
+  Future<void> _confirmReactionStatus(String snapshotId, int generation) async {
     if (_confirmingReactionSnapshotId == snapshotId) return;
     _confirmingReactionSnapshotId = snapshotId;
     try {
@@ -946,27 +945,40 @@ class _SnapshotDetailPageState extends State<_SnapshotDetailPage>
       stream: _accessStream,
       initialData: widget.snapshot,
       builder: (context, snapshot) {
+        if (widget.unavailable) {
+          return _SnapshotUnavailableView(message: strings.noAccess);
+        }
         if (snapshot.connectionState == ConnectionState.waiting &&
             !snapshot.hasData &&
             !snapshot.hasError) {
           return const ColoredBox(color: Colors.black);
         }
-        final inaccessible = snapshot.hasError ||
+        final inaccessible =
+            snapshot.hasError ||
             (snapshot.connectionState != ConnectionState.waiting &&
                 snapshot.data == null);
         if (inaccessible && !widget.deleting) {
           WidgetsBinding.instance.addPostFrameCallback((_) {
-            if (!context.mounted) return;
-            Navigator.of(context).maybePop();
-            AppSnackBar.show(context, message: strings.noAccess);
+            if (!mounted || widget.snapshot.id.isEmpty) return;
+            widget.onUnavailable(widget.snapshot.id);
           });
-          return const SizedBox.shrink();
+          return _SnapshotUnavailableView(message: strings.noAccess);
         }
         // 삭제 Callable이 canonical 문서를 먼저 제거해도 완료 응답을
         // 받기 전까지는 기존 미디어 프레임을 유지해 검은 화면을 막는다.
         final current = snapshot.data ?? widget.snapshot;
-        if (_lastReportedCommentCount != current.commentCount) {
+        if (_lastReportedCommentCount != current.commentCount ||
+            !_sameReactionCounts(
+              _lastReportedReactionCounts,
+              current.reactionCounts,
+            ) ||
+            widget.snapshot.authorName != current.authorName ||
+            widget.snapshot.authorPhotoUrl != current.authorPhotoUrl ||
+            widget.snapshot.authorPhotoVersion != current.authorPhotoVersion) {
           _lastReportedCommentCount = current.commentCount;
+          _lastReportedReactionCounts = Map<String, int>.of(
+            current.reactionCounts,
+          );
           WidgetsBinding.instance.addPostFrameCallback((_) {
             if (!mounted || widget.snapshot.id != current.id) return;
             widget.onSnapshotChanged(current);
@@ -974,61 +986,74 @@ class _SnapshotDetailPageState extends State<_SnapshotDetailPage>
         }
         final isOwner =
             FirebaseAuth.instance.currentUser?.uid == current.authorId;
-        final horizontal = MediaQuery.sizeOf(context).width < 360
-            ? 12.0
-            : context.rs(16).clamp(14, 20).toDouble();
-        return Stack(
-          fit: StackFit.expand,
+        final reactionCount = current.reactionCounts.values.fold<int>(
+          0,
+          (total, count) => total + count.clamp(0, 1 << 30),
+        );
+        return Column(
           children: [
-            _SnapshotMediaCanvas(
-              snapshot: current,
-              playing: widget.playing,
-              onReady: () => widget.onMediaReady(current.id),
-              onVideoFirstFrame: () => widget.onVideoFirstFrame(current.id),
-            ),
-            const IgnorePointer(child: _SnapshotStoryScrim()),
-            if (!isOwner && !widget.deleting)
-              Positioned(
-                right: horizontal,
-                width: context.rs(48).clamp(46, 52).toDouble(),
-                bottom: context.rh(62, min: 58, max: 68),
-                child: _SnapshotInteractionArea(
-                  reactionStatusResolved: _reactionStatusResolved,
-                  hasReacted: _hasReacted,
-                  reactedLocally: _reactedLocally,
-                  submittingReaction: _submittingReaction,
-                  strings: strings,
-                  onReact: _submitReaction,
-                ),
-              ),
-            if (!isOwner && !widget.deleting)
-              Positioned(
-                left: horizontal,
-                right: horizontal,
-                bottom: 58,
-                height: 190,
-                child: IgnorePointer(
-                  child: _SnapshotHeartBurst(
-                    animation: _heartBurstController,
+            Expanded(
+              child: Stack(
+                fit: StackFit.expand,
+                children: [
+                  _SnapshotMediaCanvas(
+                    snapshot: current,
+                    playing: widget.playing,
+                    manualResumeRequired: widget.manualResumeRequired,
+                    onReady: () => widget.onMediaReady(current.id),
+                    onVideoFirstFrame: () =>
+                        widget.onVideoFirstFrame(current.id),
+                    onVideoPlayRequested: () =>
+                        widget.onVideoPlayRequested(current.id),
                   ),
-                ),
-              ),
-            if (widget.deleting)
-              Positioned.fill(
-                child: IgnorePointer(
-                  child: ColoredBox(
-                    color: Colors.black.withValues(alpha: .18),
-                    child: const Center(
-                      child: SizedBox.square(
-                        dimension: 24,
-                        child: CircularProgressIndicator(
-                          strokeWidth: 2.2,
-                          color: Colors.white,
+                  if (!isOwner && !widget.deleting)
+                    Positioned(
+                      left: 0,
+                      right: 0,
+                      bottom: 18,
+                      height: 190,
+                      child: IgnorePointer(
+                        child: _SnapshotHeartBurst(
+                          animation: _heartBurstController,
                         ),
                       ),
                     ),
-                  ),
-                ),
+                  if (widget.deleting)
+                    Positioned.fill(
+                      child: IgnorePointer(
+                        child: ColoredBox(
+                          color: Colors.black.withValues(alpha: .18),
+                          child: const Center(
+                            child: SizedBox.square(
+                              dimension: 24,
+                              child: CircularProgressIndicator(
+                                strokeWidth: 2.2,
+                                color: Colors.white,
+                              ),
+                            ),
+                          ),
+                        ),
+                      ),
+                    ),
+                ],
+              ),
+            ),
+            if (!widget.deleting)
+              _SnapshotBottomControls(
+                snapshotId: current.id,
+                service: widget.service,
+                strings: strings,
+                isOwner: isOwner,
+                reactionCount: reactionCount,
+                commentCount: current.commentCount,
+                reactionStatusResolved: _reactionStatusResolved,
+                hasReacted: _hasReacted,
+                reactedLocally: _reactedLocally,
+                submittingReaction: _submittingReaction,
+                onReact: _submitReaction,
+                onComments: widget.onComments,
+                onLetter: widget.onLetter,
+                onViewers: widget.onViewers,
               ),
           ],
         );
@@ -1037,61 +1062,430 @@ class _SnapshotDetailPageState extends State<_SnapshotDetailPage>
   }
 }
 
-class _SnapshotCommentsButton extends StatelessWidget {
-  const _SnapshotCommentsButton({
-    required this.count,
-    required this.label,
-    required this.onTap,
+class _SnapshotBottomControls extends StatelessWidget {
+  const _SnapshotBottomControls({
+    required this.snapshotId,
+    required this.service,
+    required this.strings,
+    required this.isOwner,
+    required this.reactionCount,
+    required this.commentCount,
+    required this.reactionStatusResolved,
+    required this.hasReacted,
+    required this.reactedLocally,
+    required this.submittingReaction,
+    required this.onReact,
+    required this.onComments,
+    required this.onLetter,
+    required this.onViewers,
   });
 
-  final int count;
-  final String label;
-  final VoidCallback onTap;
+  final String snapshotId;
+  final SnapshotService service;
+  final SnapshotStrings strings;
+  final bool isOwner;
+  final int reactionCount;
+  final int commentCount;
+  final bool reactionStatusResolved;
+  final bool hasReacted;
+  final bool reactedLocally;
+  final bool submittingReaction;
+  final Future<void> Function(String) onReact;
+  final VoidCallback onComments;
+  final VoidCallback onLetter;
+  final VoidCallback onViewers;
 
   @override
   Widget build(BuildContext context) {
-    final safeCount = count < 0 ? 0 : count;
+    final selected = reactedLocally || (reactionStatusResolved && hasReacted);
+    final canReact =
+        !isOwner && reactionStatusResolved && !selected && !submittingReaction;
+    return MediaQuery.withClampedTextScaling(
+      maxScaleFactor: 1.2,
+      child: SizedBox(
+        height: context.rh(62, min: 58, max: 68),
+        child: Row(
+          mainAxisAlignment: MainAxisAlignment.center,
+          children: [
+            _SnapshotBottomAction(
+              icon: selected
+                  ? Icons.favorite_rounded
+                  : Icons.favorite_border_rounded,
+              iconColor: selected ? AppColors.pointColor : Colors.white,
+              label: strings.likeReaction,
+              count: reactionCount,
+              selected: selected,
+              onTap: canReact ? () => onReact('❤️') : null,
+            ),
+            _SnapshotBottomAction(
+              icon: Icons.chat_bubble_outline_rounded,
+              label: strings.comments,
+              count: commentCount,
+              onTap: onComments,
+            ),
+            if (isOwner)
+              _SnapshotViewerCountAction(
+                key: ValueKey<String>('snapshot-viewers-$snapshotId'),
+                snapshotId: snapshotId,
+                service: service,
+                strings: strings,
+                onTap: onViewers,
+              )
+            else
+              _SnapshotBottomAction(
+                icon: Icons.mail_outline_rounded,
+                label: strings.snackLetter,
+                onTap: onLetter,
+              ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+class _SnapshotBottomAction extends StatelessWidget {
+  const _SnapshotBottomAction({
+    required this.icon,
+    required this.label,
+    required this.onTap,
+    this.iconColor = Colors.white,
+    this.count,
+    this.selected = false,
+  });
+
+  final IconData icon;
+  final Color iconColor;
+  final String label;
+  final int? count;
+  final bool selected;
+  final VoidCallback? onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    final safeCount = count?.clamp(0, 1 << 30);
+    final semanticsLabel = safeCount == null ? label : '$label $safeCount';
     return Semantics(
-      button: true,
-      label: '$label $safeCount',
+      button: onTap != null,
+      enabled: onTap != null,
+      selected: selected,
+      label: semanticsLabel,
+      excludeSemantics: true,
       child: Material(
         color: Colors.transparent,
         child: InkResponse(
           onTap: onTap,
           radius: 26,
           child: ConstrainedBox(
-            constraints: const BoxConstraints(minWidth: 48, minHeight: 48),
+            constraints: const BoxConstraints(minWidth: 52, minHeight: 48),
             child: Padding(
-              padding: const EdgeInsets.symmetric(horizontal: 6),
+              padding: const EdgeInsets.symmetric(horizontal: 7),
               child: Row(
                 mainAxisSize: MainAxisSize.min,
+                mainAxisAlignment: MainAxisAlignment.center,
                 children: [
                   Icon(
-                    Icons.chat_bubble_outline_rounded,
-                    color: Colors.white,
-                    size: context.ri(27).clamp(25, 29).toDouble(),
-                    shadows: const [
-                      Shadow(color: Colors.black54, blurRadius: 7),
-                    ],
+                    icon,
+                    color: iconColor,
+                    size: context.ri(25).clamp(23, 27).toDouble(),
                   ),
-                  if (safeCount > 0) ...[
+                  if (safeCount != null) ...[
                     const SizedBox(width: 4),
                     Text(
-                      '$safeCount',
+                      _compactCount(safeCount),
+                      maxLines: 1,
                       style: TextStyle(
                         fontFamily: uiFontFamily(context, 'Inter'),
                         fontFamilyFallback: const ['NotoSansKR'],
                         color: Colors.white,
                         fontSize: context.rf(12).clamp(11.5, 13).toDouble(),
                         fontWeight: FontWeight.w700,
-                        shadows: const [
-                          Shadow(color: Colors.black54, blurRadius: 6),
-                        ],
                       ),
                     ),
                   ],
                 ],
               ),
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+class _SnapshotViewerCountAction extends StatefulWidget {
+  const _SnapshotViewerCountAction({
+    super.key,
+    required this.snapshotId,
+    required this.service,
+    required this.strings,
+    required this.onTap,
+  });
+
+  final String snapshotId;
+  final SnapshotService service;
+  final SnapshotStrings strings;
+  final VoidCallback onTap;
+
+  @override
+  State<_SnapshotViewerCountAction> createState() =>
+      _SnapshotViewerCountActionState();
+}
+
+class _SnapshotViewerCountActionState
+    extends State<_SnapshotViewerCountAction> {
+  late Stream<List<SnapshotViewer>> _stream;
+
+  @override
+  void initState() {
+    super.initState();
+    _stream = widget.service.watchViewers(widget.snapshotId);
+  }
+
+  @override
+  void didUpdateWidget(covariant _SnapshotViewerCountAction oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (oldWidget.snapshotId != widget.snapshotId) {
+      _stream = widget.service.watchViewers(widget.snapshotId);
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return StreamBuilder<List<SnapshotViewer>>(
+      stream: _stream,
+      builder: (context, snapshot) => _SnapshotBottomAction(
+        icon: Icons.visibility_outlined,
+        label: widget.strings.viewers,
+        count: snapshot.data?.length ?? 0,
+        onTap: widget.onTap,
+      ),
+    );
+  }
+}
+
+class _SnapshotUnavailableView extends StatelessWidget {
+  const _SnapshotUnavailableView({required this.message});
+
+  final String message;
+
+  @override
+  Widget build(BuildContext context) {
+    return Center(
+      child: Padding(
+        padding: const EdgeInsets.all(24),
+        child: Text(
+          message,
+          textAlign: TextAlign.center,
+          style: TextStyle(
+            fontFamily: uiFontFamily(context, 'Inter'),
+            fontFamilyFallback: const ['NotoSansKR'],
+            color: const Color(0xFFB8C0CC),
+            fontSize: context.rf(14).clamp(13.5, 15).toDouble(),
+            height: 1.4,
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+class _SnapshotLetterComposerSheet extends StatefulWidget {
+  const _SnapshotLetterComposerSheet({
+    required this.snapshotId,
+    required this.service,
+  });
+
+  final String snapshotId;
+  final SnapshotService service;
+
+  @override
+  State<_SnapshotLetterComposerSheet> createState() =>
+      _SnapshotLetterComposerSheetState();
+}
+
+class _SnapshotLetterComposerSheetState
+    extends State<_SnapshotLetterComposerSheet> {
+  final TextEditingController _controller = TextEditingController();
+  final FocusNode _focusNode = FocusNode(debugLabel: 'snapshot-letter');
+  bool _checking = true;
+  bool _hasSent = true;
+  bool _sending = false;
+
+  @override
+  void initState() {
+    super.initState();
+    unawaited(_loadStatus());
+  }
+
+  @override
+  void dispose() {
+    _controller.dispose();
+    _focusNode.dispose();
+    super.dispose();
+  }
+
+  Future<void> _loadStatus() async {
+    final snapshotId = widget.snapshotId;
+    final hasSent = await widget.service.hasCommented(snapshotId);
+    if (!mounted || widget.snapshotId != snapshotId) return;
+    setState(() {
+      _hasSent = hasSent;
+      _checking = false;
+    });
+    if (!hasSent) _focusNode.requestFocus();
+  }
+
+  Future<void> _send() async {
+    if (_sending || _hasSent) return;
+    _focusNode.unfocus();
+    await WidgetsBinding.instance.endOfFrame;
+    if (!mounted) return;
+    final message = _controller.text.trim();
+    if (message.isEmpty) return;
+    setState(() => _sending = true);
+    try {
+      await widget.service.sendComment(widget.snapshotId, message);
+      if (!mounted) return;
+      setState(() {
+        _hasSent = true;
+        _sending = false;
+      });
+      _controller.clear();
+      AppSnackBar.show(
+        context,
+        message: SnapshotStrings.of(context).commentSent,
+        type: AppSnackBarType.success,
+      );
+    } catch (_) {
+      if (!mounted) return;
+      setState(() => _sending = false);
+      AppSnackBar.show(
+        context,
+        message: SnapshotStrings.of(context).commentFailed,
+        type: AppSnackBarType.error,
+      );
+      _focusNode.requestFocus();
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final strings = SnapshotStrings.of(context);
+    final bottomInset = MediaQuery.viewInsetsOf(context).bottom;
+    return AnimatedPadding(
+      duration: const Duration(milliseconds: 160),
+      curve: Curves.easeOut,
+      padding: EdgeInsets.only(bottom: bottomInset),
+      child: Material(
+        color: Colors.white,
+        borderRadius: const BorderRadius.vertical(top: Radius.circular(22)),
+        clipBehavior: Clip.antiAlias,
+        child: SafeArea(
+          top: false,
+          child: Padding(
+            padding: const EdgeInsets.fromLTRB(16, 8, 12, 12),
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Row(
+                  children: [
+                    Expanded(
+                      child: Text(
+                        strings.snackLetter,
+                        style: TextStyle(
+                          fontFamily: uiFontFamily(context, 'Inter'),
+                          fontFamilyFallback: const ['NotoSansKR'],
+                          fontSize: context.rf(17).clamp(16, 18).toDouble(),
+                          fontWeight: FontWeight.w700,
+                          color: const Color(0xFF101828),
+                        ),
+                      ),
+                    ),
+                    IconButton(
+                      onPressed: () => Navigator.of(context).pop(),
+                      tooltip: MaterialLocalizations.of(
+                        context,
+                      ).closeButtonTooltip,
+                      icon: const Icon(Icons.close_rounded),
+                    ),
+                  ],
+                ),
+                if (_checking)
+                  const Padding(
+                    padding: EdgeInsets.symmetric(vertical: 18),
+                    child: SizedBox.square(
+                      dimension: 22,
+                      child: CircularProgressIndicator(strokeWidth: 2),
+                    ),
+                  )
+                else if (_hasSent)
+                  Padding(
+                    padding: const EdgeInsets.symmetric(vertical: 18),
+                    child: Text(
+                      strings.commentSent,
+                      style: TextStyle(
+                        fontFamily: uiFontFamily(context, 'Inter'),
+                        fontFamilyFallback: const ['NotoSansKR'],
+                        fontSize: context.rf(14).clamp(13.5, 15).toDouble(),
+                        color: const Color(0xFF667085),
+                      ),
+                    ),
+                  )
+                else
+                  Row(
+                    crossAxisAlignment: CrossAxisAlignment.end,
+                    children: [
+                      Expanded(
+                        child: TextField(
+                          controller: _controller,
+                          focusNode: _focusNode,
+                          minLines: 1,
+                          maxLines: 4,
+                          textInputAction: TextInputAction.newline,
+                          style: TextStyle(
+                            fontFamily: uiFontFamily(context, 'Inter'),
+                            fontFamilyFallback: const ['NotoSansKR'],
+                            fontSize: context.rf(15).clamp(14, 16).toDouble(),
+                            color: const Color(0xFF101828),
+                          ),
+                          decoration: InputDecoration(
+                            hintText: strings.commentHint,
+                            hintStyle: const TextStyle(
+                              color: Color(0xFF98A2B3),
+                            ),
+                            filled: true,
+                            fillColor: const Color(0xFFF2F4F7),
+                            border: OutlineInputBorder(
+                              borderRadius: BorderRadius.circular(22),
+                              borderSide: BorderSide.none,
+                            ),
+                            contentPadding: const EdgeInsets.symmetric(
+                              horizontal: 16,
+                              vertical: 11,
+                            ),
+                          ),
+                        ),
+                      ),
+                      const SizedBox(width: 4),
+                      SizedBox.square(
+                        dimension: 48,
+                        child: IconButton(
+                          onPressed: _sending ? null : _send,
+                          tooltip: strings.sendComment,
+                          icon: _sending
+                              ? const SizedBox.square(
+                                  dimension: 20,
+                                  child: CircularProgressIndicator(
+                                    strokeWidth: 2,
+                                  ),
+                                )
+                              : const Icon(Icons.send_rounded),
+                        ),
+                      ),
+                    ],
+                  ),
+              ],
             ),
           ),
         ),
@@ -1109,19 +1503,23 @@ class _SnapshotMediaCanvas extends StatelessWidget {
   const _SnapshotMediaCanvas({
     required this.snapshot,
     required this.playing,
+    required this.manualResumeRequired,
     required this.onReady,
     required this.onVideoFirstFrame,
+    required this.onVideoPlayRequested,
   });
 
   final SnapshotItem snapshot;
   final bool playing;
+  final bool manualResumeRequired;
   final VoidCallback onReady;
   final VoidCallback onVideoFirstFrame;
+  final VoidCallback onVideoPlayRequested;
 
   @override
   Widget build(BuildContext context) {
     return ColoredBox(
-      color: Colors.black,
+      color: Colors.white,
       child: LayoutBuilder(
         builder: (context, constraints) {
           final viewport = Size(constraints.maxWidth, constraints.maxHeight);
@@ -1143,11 +1541,12 @@ class _SnapshotMediaCanvas extends StatelessWidget {
                       playing: playing,
                       onReady: onReady,
                       onFirstFrame: onVideoFirstFrame,
+                      onPlaybackStable: onVideoFirstFrame,
+                      showPlayButton: manualResumeRequired,
+                      onPlayRequested: onVideoPlayRequested,
                     ),
                     IgnorePointer(
-                      child: SnapshotOverlayLayer(
-                        overlays: snapshot.overlays,
-                      ),
+                      child: SnapshotOverlayLayer(overlays: snapshot.overlays),
                     ),
                   ] else
                     SnapshotStorageImage(
@@ -1157,6 +1556,11 @@ class _SnapshotMediaCanvas extends StatelessWidget {
                       errorBackgroundColor: Colors.black,
                       showLoadingIndicator: false,
                       fadeInDuration: Duration.zero,
+                      decodeWidth:
+                          (canvasSize.width *
+                                  MediaQuery.devicePixelRatioOf(context))
+                              .ceil()
+                              .clamp(320, 2160),
                       onImageReady: onReady,
                     ),
                 ],
@@ -1169,76 +1573,20 @@ class _SnapshotMediaCanvas extends StatelessWidget {
   }
 }
 
-class _SnapshotTapNavigation extends StatelessWidget {
-  const _SnapshotTapNavigation({
-    required this.canGoPrevious,
-    required this.canGoNext,
-    required this.previousLabel,
-    required this.nextLabel,
-    required this.onPrevious,
-    required this.onNext,
-  });
-
-  final bool canGoPrevious;
-  final bool canGoNext;
-  final String previousLabel;
-  final String nextLabel;
-  final VoidCallback onPrevious;
-  final VoidCallback onNext;
-
-  @override
-  Widget build(BuildContext context) {
-    return Row(
-      children: [
-        Expanded(
-          child: Semantics(
-            button: true,
-            enabled: canGoPrevious,
-            label: previousLabel,
-            excludeSemantics: true,
-            child: GestureDetector(
-              behavior: HitTestBehavior.translucent,
-              onTap: canGoPrevious ? onPrevious : null,
-              child: const SizedBox.expand(),
-            ),
-          ),
-        ),
-        Expanded(
-          child: Semantics(
-            button: true,
-            enabled: canGoNext,
-            label: nextLabel,
-            excludeSemantics: true,
-            child: GestureDetector(
-              behavior: HitTestBehavior.translucent,
-              onTap: canGoNext ? onNext : null,
-              child: const SizedBox.expand(),
-            ),
-          ),
-        ),
-      ],
-    );
-  }
-}
-
 class _SnapshotTopRegion extends StatelessWidget {
   const _SnapshotTopRegion({
     required this.snapshot,
-    required this.visibility,
-    required this.remaining,
-    required this.playback,
+    required this.createdLabel,
     required this.onBack,
     required this.onAuthorTap,
     required this.onMore,
   });
 
   final SnapshotItem snapshot;
-  final String visibility;
-  final String remaining;
-  final Animation<double> playback;
+  final String createdLabel;
   final VoidCallback onBack;
-  final VoidCallback onAuthorTap;
-  final VoidCallback onMore;
+  final VoidCallback? onAuthorTap;
+  final VoidCallback? onMore;
 
   @override
   Widget build(BuildContext context) {
@@ -1260,13 +1608,15 @@ class _SnapshotTopRegion extends StatelessWidget {
                       size: context.ri(22).clamp(21, 24).toDouble(),
                       color: Colors.white,
                     ),
-                    tooltip:
-                        MaterialLocalizations.of(context).backButtonTooltip,
+                    tooltip: MaterialLocalizations.of(
+                      context,
+                    ).backButtonTooltip,
                   ),
                 ),
                 Expanded(
                   child: Semantics(
                     button: true,
+                    enabled: onAuthorTap != null,
                     label: snapshot.authorName,
                     child: GestureDetector(
                       behavior: HitTestBehavior.opaque,
@@ -1275,8 +1625,7 @@ class _SnapshotTopRegion extends StatelessWidget {
                         padding: const EdgeInsets.symmetric(horizontal: 4),
                         child: _SnapshotAuthorHeader(
                           snapshot: snapshot,
-                          visibility: visibility,
-                          remaining: remaining,
+                          createdLabel: createdLabel,
                         ),
                       ),
                     ),
@@ -1297,241 +1646,8 @@ class _SnapshotTopRegion extends StatelessWidget {
               ],
             ),
           ),
-          Padding(
-            padding: const EdgeInsets.fromLTRB(12, 5, 12, 8),
-            child: ClipRRect(
-              borderRadius: BorderRadius.circular(99),
-              child: SizedBox(
-                height: 3,
-                child: AnimatedBuilder(
-                  animation: playback,
-                  builder: (context, child) => LinearProgressIndicator(
-                    value: playback.value,
-                    backgroundColor: Colors.white.withValues(alpha: .26),
-                    valueColor:
-                        const AlwaysStoppedAnimation<Color>(Colors.white),
-                  ),
-                ),
-              ),
-            ),
-          ),
+          const SizedBox(height: 4),
         ],
-      ),
-    );
-  }
-}
-
-class _SnapshotViewerEntry extends StatefulWidget {
-  const _SnapshotViewerEntry({
-    super.key,
-    required this.snapshotId,
-    required this.service,
-    required this.strings,
-    required this.onTap,
-  });
-
-  final String snapshotId;
-  final SnapshotService service;
-  final SnapshotStrings strings;
-  final VoidCallback onTap;
-
-  @override
-  State<_SnapshotViewerEntry> createState() => _SnapshotViewerEntryState();
-}
-
-class _SnapshotViewerEntryState extends State<_SnapshotViewerEntry> {
-  late Stream<List<SnapshotViewer>> _viewersStream;
-
-  @override
-  void initState() {
-    super.initState();
-    _viewersStream = widget.service.watchViewers(widget.snapshotId);
-  }
-
-  @override
-  void didUpdateWidget(covariant _SnapshotViewerEntry oldWidget) {
-    super.didUpdateWidget(oldWidget);
-    if (oldWidget.snapshotId != widget.snapshotId) {
-      _viewersStream = widget.service.watchViewers(widget.snapshotId);
-    }
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    return StreamBuilder<List<SnapshotViewer>>(
-      stream: _viewersStream,
-      builder: (context, snapshot) {
-        final count = snapshot.data?.length;
-        final supportingText = snapshot.hasError
-            ? widget.strings.viewersLoadFailed
-            : count == null
-                ? widget.strings.viewersLoading
-                : count == 0
-                    ? widget.strings.noViewers
-                    : widget.strings.viewersCount(count);
-        return MediaQuery.withClampedTextScaling(
-          maxScaleFactor: 1.2,
-          child: Semantics(
-            button: true,
-            label: supportingText,
-            excludeSemantics: true,
-            child: Material(
-              color: Colors.transparent,
-              child: InkWell(
-                onTap: widget.onTap,
-                borderRadius: BorderRadius.circular(10),
-                child: SizedBox(
-                  height: context.rh(58, min: 54, max: 64),
-                  child: Padding(
-                    padding: const EdgeInsets.symmetric(horizontal: 4),
-                    child: Row(
-                      children: [
-                        SizedBox.square(
-                          dimension: 40,
-                          child: Icon(
-                            Icons.visibility_outlined,
-                            size: context.ri(23).clamp(21, 25).toDouble(),
-                            color: Colors.white,
-                            shadows: const [
-                              Shadow(color: Colors.black54, blurRadius: 6),
-                            ],
-                          ),
-                        ),
-                        SizedBox(
-                          width: context.rs(8).clamp(6, 10).toDouble(),
-                        ),
-                        Expanded(
-                          child: Column(
-                            mainAxisSize: MainAxisSize.min,
-                            crossAxisAlignment: CrossAxisAlignment.start,
-                            children: [
-                              Text(
-                                widget.strings.viewers,
-                                maxLines: 1,
-                                overflow: TextOverflow.ellipsis,
-                                style: TextStyle(
-                                  fontFamily: uiFontFamily(context, 'Inter'),
-                                  fontFamilyFallback: const ['NotoSansKR'],
-                                  fontSize:
-                                      context.rf(14).clamp(13, 15).toDouble(),
-                                  fontWeight: FontWeight.w700,
-                                  color: Colors.white,
-                                  height: isChineseUi(context) ? 1.3 : 1.15,
-                                  shadows: const [
-                                    Shadow(
-                                      color: Colors.black54,
-                                      blurRadius: 6,
-                                    ),
-                                  ],
-                                ),
-                              ),
-                              const SizedBox(height: 3),
-                              Text(
-                                supportingText,
-                                maxLines: 1,
-                                overflow: TextOverflow.ellipsis,
-                                style: TextStyle(
-                                  fontFamily: uiFontFamily(context, 'Inter'),
-                                  fontFamilyFallback: const ['NotoSansKR'],
-                                  fontSize: context
-                                      .rf(11.5)
-                                      .clamp(11, 12.5)
-                                      .toDouble(),
-                                  fontWeight: FontWeight.w500,
-                                  color: Colors.white.withValues(alpha: .78),
-                                  height: isChineseUi(context) ? 1.3 : 1.15,
-                                  shadows: const [
-                                    Shadow(
-                                      color: Colors.black54,
-                                      blurRadius: 6,
-                                    ),
-                                  ],
-                                ),
-                              ),
-                            ],
-                          ),
-                        ),
-                        SizedBox.square(
-                          dimension: 40,
-                          child: Icon(
-                            Icons.chevron_right_rounded,
-                            size: context.ri(22).clamp(21, 24).toDouble(),
-                            color: Colors.white.withValues(alpha: .86),
-                            shadows: const [
-                              Shadow(color: Colors.black54, blurRadius: 6),
-                            ],
-                          ),
-                        ),
-                      ],
-                    ),
-                  ),
-                ),
-              ),
-            ),
-          ),
-        );
-      },
-    );
-  }
-}
-
-class _SnapshotFeedPositionToast extends StatelessWidget {
-  const _SnapshotFeedPositionToast({required this.label});
-
-  final String label;
-
-  @override
-  Widget build(BuildContext context) {
-    return MediaQuery.withClampedTextScaling(
-      maxScaleFactor: 1.2,
-      child: Center(
-        child: Semantics(
-          label: label,
-          child: DecoratedBox(
-            decoration: BoxDecoration(
-              color: Colors.black.withValues(alpha: .48),
-              borderRadius: BorderRadius.circular(99),
-            ),
-            child: Padding(
-              padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
-              child: Text(
-                label,
-                maxLines: 1,
-                style: TextStyle(
-                  fontFamily: uiFontFamily(context, 'Inter'),
-                  fontFamilyFallback: const ['NotoSansKR'],
-                  fontSize: context.rf(11).clamp(10.5, 12).toDouble(),
-                  fontWeight: FontWeight.w500,
-                  color: Colors.white.withValues(alpha: .72),
-                  height: isChineseUi(context) ? 1.3 : 1.1,
-                ),
-              ),
-            ),
-          ),
-        ),
-      ),
-    );
-  }
-}
-
-class _SnapshotStoryScrim extends StatelessWidget {
-  const _SnapshotStoryScrim();
-
-  @override
-  Widget build(BuildContext context) {
-    return DecoratedBox(
-      decoration: BoxDecoration(
-        gradient: LinearGradient(
-          begin: Alignment.topCenter,
-          end: Alignment.bottomCenter,
-          stops: const [0, .24, .68, 1],
-          colors: [
-            Colors.black.withValues(alpha: .64),
-            Colors.transparent,
-            Colors.transparent,
-            Colors.black.withValues(alpha: .62),
-          ],
-        ),
       ),
     );
   }
@@ -1540,17 +1656,20 @@ class _SnapshotStoryScrim extends StatelessWidget {
 class _SnapshotAuthorHeader extends StatelessWidget {
   const _SnapshotAuthorHeader({
     required this.snapshot,
-    required this.visibility,
-    required this.remaining,
+    required this.createdLabel,
   });
 
   final SnapshotItem snapshot;
-  final String visibility;
-  final String remaining;
+  final String createdLabel;
 
   @override
   Widget build(BuildContext context) {
     final avatarRadius = context.rs(18).clamp(17, 20).toDouble();
+    final avatarSize = avatarRadius * 2;
+    final decodeWidth = (avatarSize * MediaQuery.devicePixelRatioOf(context))
+        .ceil()
+        .clamp(64, 256);
+    final profile = SnapshotAuthorProfile.resolve(snapshot);
     return MediaQuery.withClampedTextScaling(
       maxScaleFactor: 1.2,
       child: Row(
@@ -1561,19 +1680,14 @@ class _SnapshotAuthorHeader extends StatelessWidget {
               shape: BoxShape.circle,
               color: Colors.white,
             ),
-            child: CircleAvatar(
-              radius: avatarRadius,
-              backgroundColor: const Color(0xFF475467),
-              backgroundImage: snapshot.authorPhotoUrl.isNotEmpty
-                  ? NetworkImage(snapshot.authorPhotoUrl)
-                  : null,
-              child: snapshot.authorPhotoUrl.isEmpty
-                  ? Icon(
-                      Icons.person_outline_rounded,
-                      size: context.ri(19).clamp(18, 21).toDouble(),
-                      color: Colors.white,
-                    )
-                  : null,
+            child: SnapshotAuthorProfileImage(
+              profile: profile,
+              size: avatarSize,
+              borderRadius: BorderRadius.circular(avatarSize / 2),
+              decodeWidth: decodeWidth,
+              placeholderColor: const Color(0xFF475467),
+              placeholderIconColor: Colors.white,
+              placeholderIconSize: context.ri(19).clamp(18, 21).toDouble(),
             ),
           ),
           SizedBox(width: context.rs(10).clamp(8, 12).toDouble()),
@@ -1599,86 +1713,23 @@ class _SnapshotAuthorHeader extends StatelessWidget {
                   ),
                 ),
                 const SizedBox(height: 3),
-                Row(
-                  children: [
-                    Flexible(
-                      child: Text(
-                        visibility,
-                        maxLines: 1,
-                        overflow: TextOverflow.ellipsis,
-                        style: TextStyle(
-                          fontFamily: uiFontFamily(context, 'Inter'),
-                          fontFamilyFallback: const ['NotoSansKR'],
-                          fontSize: context.rf(12).clamp(11.5, 13).toDouble(),
-                          fontWeight: FontWeight.w500,
-                          color: Colors.white.withValues(alpha: .9),
-                          height: isChineseUi(context) ? 1.3 : 1.2,
-                          shadows: const [
-                            Shadow(color: Colors.black54, blurRadius: 6),
-                          ],
-                        ),
-                      ),
-                    ),
-                    const Padding(
-                      padding: EdgeInsets.symmetric(horizontal: 6),
-                      child: Text(
-                        '·',
-                        style: TextStyle(color: Colors.white70),
-                      ),
-                    ),
-                    Text(
-                      remaining,
-                      maxLines: 1,
-                      style: TextStyle(
-                        fontFamily: uiFontFamily(context, 'Inter'),
-                        fontFamilyFallback: const ['NotoSansKR'],
-                        fontSize: context.rf(12).clamp(11.5, 13).toDouble(),
-                        fontWeight: FontWeight.w500,
-                        color: Colors.white.withValues(alpha: .9),
-                        height: isChineseUi(context) ? 1.3 : 1.2,
-                        shadows: const [
-                          Shadow(color: Colors.black54, blurRadius: 6),
-                        ],
-                      ),
-                    ),
-                  ],
+                Text(
+                  createdLabel,
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: TextStyle(
+                    fontFamily: uiFontFamily(context, 'Inter'),
+                    fontFamilyFallback: const ['NotoSansKR'],
+                    fontSize: context.rf(12).clamp(11.5, 13).toDouble(),
+                    fontWeight: FontWeight.w500,
+                    color: Colors.white.withValues(alpha: .78),
+                    height: isChineseUi(context) ? 1.3 : 1.2,
+                  ),
                 ),
               ],
             ),
           ),
         ],
-      ),
-    );
-  }
-}
-
-class _SnapshotInteractionArea extends StatelessWidget {
-  const _SnapshotInteractionArea({
-    required this.reactionStatusResolved,
-    required this.hasReacted,
-    required this.reactedLocally,
-    required this.submittingReaction,
-    required this.strings,
-    required this.onReact,
-  });
-
-  final bool reactionStatusResolved;
-  final bool hasReacted;
-  final bool reactedLocally;
-  final bool submittingReaction;
-  final SnapshotStrings strings;
-  final Future<void> Function(String) onReact;
-
-  @override
-  Widget build(BuildContext context) {
-    final selected = reactedLocally || (reactionStatusResolved && hasReacted);
-    return KeyedSubtree(
-      key: const ValueKey<String>('snapshot-reaction-area'),
-      child: _SnapshotReactionBar(
-        strings: strings,
-        selected: selected,
-        enabled: reactionStatusResolved && !selected && !submittingReaction,
-        onReact: onReact,
       ),
     );
   }
@@ -1803,8 +1854,10 @@ class _SnapshotHeartBurst extends StatelessWidget {
   }
 
   Widget _buildParticle(_HeartParticleSpec particle, double progress) {
-    final local =
-        ((progress - particle.delay) / (1 - particle.delay)).clamp(0.0, 1.0);
+    final local = ((progress - particle.delay) / (1 - particle.delay)).clamp(
+      0.0,
+      1.0,
+    );
     if (local <= 0) return const SizedBox.shrink();
 
     final travel = Curves.easeOutCubic.transform(local);
@@ -1824,90 +1877,7 @@ class _SnapshotHeartBurst extends StatelessWidget {
             Icons.favorite_rounded,
             size: particle.size * (.72 + (.28 * travel)),
             color: particle.color,
-            shadows: const [
-              Shadow(color: Colors.black54, blurRadius: 7),
-            ],
-          ),
-        ),
-      ),
-    );
-  }
-}
-
-class _SnapshotReactionBar extends StatelessWidget {
-  const _SnapshotReactionBar({
-    required this.strings,
-    required this.selected,
-    required this.enabled,
-    required this.onReact,
-  });
-
-  final SnapshotStrings strings;
-  final bool selected;
-  final bool enabled;
-  final Future<void> Function(String) onReact;
-
-  @override
-  Widget build(BuildContext context) {
-    return MediaQuery.withClampedTextScaling(
-      maxScaleFactor: 1.2,
-      child: SizedBox(
-        width: double.infinity,
-        child: Align(
-          alignment: Alignment.centerLeft,
-          child: _SnapshotReactionButton(
-            icon: selected
-                ? Icons.favorite_rounded
-                : Icons.favorite_border_rounded,
-            iconColor: selected ? AppColors.pointColor : Colors.white,
-            selected: selected,
-            label: strings.likeReaction,
-            onTap: enabled ? () => onReact('❤️') : null,
-          ),
-        ),
-      ),
-    );
-  }
-}
-
-class _SnapshotReactionButton extends StatelessWidget {
-  const _SnapshotReactionButton({
-    required this.icon,
-    required this.label,
-    required this.selected,
-    required this.onTap,
-    this.iconColor = Colors.white,
-  });
-
-  final IconData icon;
-  final Color iconColor;
-  final String label;
-  final bool selected;
-  final VoidCallback? onTap;
-
-  @override
-  Widget build(BuildContext context) {
-    return Semantics(
-      button: true,
-      enabled: onTap != null,
-      selected: selected,
-      label: label,
-      excludeSemantics: true,
-      child: InkResponse(
-        onTap: onTap,
-        radius: 26,
-        child: ConstrainedBox(
-          constraints: const BoxConstraints(minWidth: 48, minHeight: 48),
-          child: Padding(
-            padding: const EdgeInsets.symmetric(horizontal: 6),
-            child: Icon(
-              icon,
-              size: context.ri(27).clamp(25, 29).toDouble(),
-              color: iconColor,
-              shadows: iconColor == Colors.black
-                  ? const [Shadow(color: Colors.white, blurRadius: 5)]
-                  : const [Shadow(color: Colors.black54, blurRadius: 6)],
-            ),
+            shadows: const [Shadow(color: Colors.black54, blurRadius: 7)],
           ),
         ),
       ),
@@ -1980,8 +1950,8 @@ class _SnapshotDeleteDialog extends StatelessWidget {
                   (isChineseUi(context)
                       ? '删除后，此限时动态将无法恢复。'
                       : strings.isKorean
-                          ? '삭제한 스낵은 다시 복구할 수 없어요.'
-                          : 'This snack cannot be restored after deletion.'),
+                      ? '삭제한 스낵은 다시 복구할 수 없어요.'
+                      : 'This snack cannot be restored after deletion.'),
                   style: TextStyle(
                     fontFamily: uiFontFamily(context, 'Inter'),
                     fontFamilyFallback: const ['NotoSansKR'],
@@ -2087,34 +2057,42 @@ class _ActionRow extends StatelessWidget {
   }
 }
 
-String _visibilityLabel(
-  SnapshotStrings strings,
-  SnapshotVisibility visibility,
-) {
-  return switch (visibility) {
-    SnapshotVisibility.public => strings.public,
-    SnapshotVisibility.friends => strings.friends,
-    SnapshotVisibility.category => strings.selectedGroups,
-  };
+int _snapshotAgeMinutes(SnapshotItem snapshot, DateTime serverNow) {
+  final age = serverNow.difference(snapshot.createdAt);
+  if (age.isNegative) return 0;
+  return age.inMinutes;
 }
 
-String _snapshotRemainingLabel(
+String _snapshotCreatedLabel(
   SnapshotItem snapshot,
   SnapshotService service,
   SnapshotStrings strings,
 ) {
-  final duration = snapshot.remainingAt(service.serverNow);
-  if (duration.inHours >= 1) {
-    return strings.isChinese
-        ? '${duration.inHours}小时后到期'
-        : strings.isKorean
-            ? '${duration.inHours}시간 ${strings.remaining}'
-            : '${duration.inHours}h ${strings.remaining}';
+  final minutes = _snapshotAgeMinutes(snapshot, service.serverNow);
+  if (minutes < 1) return strings.viewedJustNow;
+  if (minutes < 60) return strings.viewedMinutesAgo(minutes);
+  return strings.viewedHoursAgo((minutes ~/ 60).clamp(1, 23));
+}
+
+bool _sameReactionCounts(Map<String, int> left, Map<String, int> right) {
+  if (identical(left, right)) return true;
+  if (left.length != right.length) return false;
+  for (final entry in left.entries) {
+    if (right[entry.key] != entry.value) return false;
   }
-  final minutes = duration.inMinutes.clamp(1, 59);
-  return strings.isChinese
-      ? '$minutes分钟后到期'
-      : strings.isKorean
-          ? '$minutes분 ${strings.remaining}'
-          : '${minutes}m ${strings.remaining}';
+  return true;
+}
+
+String _compactCount(int count) {
+  if (count < 1000) return '$count';
+  if (count < 1000000) {
+    final value = count / 1000;
+    return value >= 10
+        ? '${value.floor()}K'
+        : '${value.toStringAsFixed(1).replaceFirst('.0', '')}K';
+  }
+  final value = count / 1000000;
+  return value >= 10
+      ? '${value.floor()}M'
+      : '${value.toStringAsFixed(1).replaceFirst('.0', '')}M';
 }

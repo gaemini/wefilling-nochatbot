@@ -82,6 +82,7 @@ class SnapshotItem {
     required this.authorId,
     required this.authorName,
     required this.authorPhotoUrl,
+    this.authorPhotoVersion = 0,
     required this.authorNationality,
     required this.university,
     required this.storagePath,
@@ -107,6 +108,7 @@ class SnapshotItem {
   final String authorId;
   final String authorName;
   final String authorPhotoUrl;
+  final int authorPhotoVersion;
   final String authorNationality;
   final String university;
   final String storagePath;
@@ -178,6 +180,7 @@ class SnapshotItem {
       authorId: (map['ownerId'] ?? map['authorId'] ?? '').toString(),
       authorName: (map['authorName'] ?? 'User').toString(),
       authorPhotoUrl: (map['authorPhotoUrl'] ?? '').toString(),
+      authorPhotoVersion: _asInt(map['authorPhotoVersion']),
       authorNationality: (map['authorNationality'] ?? '').toString(),
       university: (map['university'] ?? '').toString(),
       storagePath: primaryStoragePath,

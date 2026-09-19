@@ -53,19 +53,35 @@ class _SnapshotVideoDownload {
 
   final String snapshotId;
   final String cacheKey;
-  final bool prefetch;
+  bool prefetch;
   final String requestId;
   DownloadTask? task;
+  StreamSubscription<TaskSnapshot>? progressSubscription;
+  int bytesTransferred = 0;
+  int totalBytes = 0;
   bool cancelled = false;
   late Future<File> future;
+
+  double get progress =>
+      totalBytes > 0 ? (bytesTransferred / totalBytes).clamp(0, 1) : 0;
+
+  int get remainingBytes =>
+      totalBytes > bytesTransferred ? totalBytes - bytesTransferred : 0;
+
+  void promote() {
+    prefetch = false;
+  }
 
   Future<void> cancel() async {
     cancelled = true;
     final activeTask = task;
-    if (activeTask == null) return;
-    try {
-      await activeTask.cancel();
-    } catch (_) {}
+    if (activeTask != null) {
+      try {
+        await activeTask.cancel();
+      } catch (_) {}
+    }
+    await progressSubscription?.cancel();
+    progressSubscription = null;
   }
 }
 
@@ -565,6 +581,8 @@ class SnapshotService {
           (responseData['createdAtMillis'] as num?)?.toInt() ?? 0;
       final expiresAtMillis =
           (responseData['expiresAtMillis'] as num?)?.toInt() ?? 0;
+      final authorPhotoVersion =
+          (responseData['authorPhotoVersion'] as num?)?.toInt() ?? 0;
       if (createdAtMillis <= 0 || expiresAtMillis <= createdAtMillis) {
         throw StateError('snapshot-create-response-invalid');
       }
@@ -579,6 +597,7 @@ class SnapshotService {
             ? user.displayName!.trim()
             : 'User',
         authorPhotoUrl: user.photoURL ?? '',
+        authorPhotoVersion: authorPhotoVersion,
         authorNationality: '',
         university: '',
         storagePath: storagePath,
@@ -1461,40 +1480,69 @@ class SnapshotService {
     }
     final user = _auth.currentUser;
     if (user == null) throw StateError('sign-in-required');
-    if (!_hasServerOffset) await refreshServerClock();
-    if (item.isExpiredAt(serverNow)) throw StateError('snapshot-expired');
     final uid = user.uid;
     final sourceKey = _videoSourceKey(item);
     final cacheKey = _videoCacheKey(uid, item);
     _latestVideoSourceKeys['$uid::${item.id}'] = sourceKey;
+    final totalStopwatch = Stopwatch()..start();
+    var clockMs = 0;
+    var archiveMs = 0;
+    var cacheMs = 0;
+    final clockFuture = () async {
+      final stopwatch = Stopwatch()..start();
+      if (!_hasServerOffset) await refreshServerClock();
+      clockMs = stopwatch.elapsedMilliseconds;
+    }();
+    final archiveFuture = () async {
+      final stopwatch = Stopwatch()..start();
+      final archived =
+          item.authorId == uid ? await _archive.get(item.id) : null;
+      archiveMs = stopwatch.elapsedMilliseconds;
+      return archived;
+    }();
+    final cacheFuture = () async {
+      final stopwatch = Stopwatch()..start();
+      final cached = await _mediaCache.readVideo(
+        userId: uid,
+        snapshotId: item.id,
+        sourceKey: sourceKey,
+      );
+      cacheMs = stopwatch.elapsedMilliseconds;
+      return cached;
+    }();
 
-    if (item.authorId == uid) {
-      final archived = await _archive.get(item.id);
-      if (archived?.isVideo == true) {
-        final archiveFile = File(archived!.mediaPath);
-        if (await archiveFile.exists() && await archiveFile.length() > 0) {
-          if (Logger.isVerboseEnabled) {
-            Logger.log(
-              '스낵 영상 재생 준비 '
-              '(snapshotId=${item.id}, cacheHit=true, source=archive)',
-            );
-          }
-          return SnapshotVideoPlaybackSource.file(
-            file: archiveFile,
-            cacheKey: 'archive::$uid::${item.id}',
+    await clockFuture;
+    if (_auth.currentUser?.uid != uid) throw StateError('account-changed');
+    if (item.isExpiredAt(serverNow)) throw StateError('snapshot-expired');
+
+    final archived = await archiveFuture;
+    if (archived?.isVideo == true) {
+      final archiveFile = File(archived!.mediaPath);
+      if (await archiveFile.exists() && await archiveFile.length() > 0) {
+        if (Logger.isVerboseEnabled) {
+          Logger.log(
+            '스낵 영상 재생 준비 단계 '
+            '(snapshotId=${item.id}, source=archive, cacheHit=true, '
+            'clockMs=$clockMs, archiveMs=$archiveMs, cacheMs=$cacheMs, '
+            'totalMs=${totalStopwatch.elapsedMilliseconds})',
           );
         }
+        return SnapshotVideoPlaybackSource.file(
+          file: archiveFile,
+          cacheKey: 'archive::$uid::${item.id}',
+        );
       }
     }
 
-    var cached = await _mediaCache.readVideo(
-      userId: uid,
-      snapshotId: item.id,
-      sourceKey: sourceKey,
-    );
+    final cached = await cacheFuture;
     if (cached != null && _auth.currentUser?.uid == uid) {
       if (Logger.isVerboseEnabled) {
-        Logger.log('스낵 영상 재생 준비 (snapshotId=${item.id}, cacheHit=true)');
+        Logger.log(
+          '스낵 영상 재생 준비 단계 '
+          '(snapshotId=${item.id}, source=media-cache, cacheHit=true, '
+          'clockMs=$clockMs, archiveMs=$archiveMs, cacheMs=$cacheMs, '
+          'totalMs=${totalStopwatch.elapsedMilliseconds})',
+        );
       }
       return SnapshotVideoPlaybackSource.file(
         file: cached,
@@ -1502,44 +1550,76 @@ class SnapshotService {
       );
     }
 
-    // 다음 영상 사전 다운로드가 아직 끝나지 않았다면 먼저 중지한다.
-    // 플레이어는 불완전한 파일을 열지 않고 인증된 Range 요청을 사용한다.
     final pending = _videoLoads[cacheKey];
     if (pending?.prefetch == true) {
-      await pending!.cancel();
+      pending!.promote();
+      final nearCompletion = pending.progress >= .75 ||
+          (pending.totalBytes > 0 && pending.remainingBytes <= 768 * 1024);
+      if (Logger.isVerboseEnabled) {
+        Logger.log(
+          '스낵 영상 사전 준비 전환 '
+          '(snapshotId=${item.id}, action=${nearCompletion ? 'reuse' : 'cancel'}, '
+          'bytes=${pending.bytesTransferred}, totalBytes=${pending.totalBytes}, '
+          'progress=${pending.progress.toStringAsFixed(3)})',
+        );
+      }
+      if (nearCompletion) {
+        try {
+          final completed = await pending.future.timeout(
+            const Duration(seconds: 4),
+          );
+          if (_auth.currentUser?.uid == uid && !item.isExpiredAt(serverNow)) {
+            return SnapshotVideoPlaybackSource.file(
+              file: completed,
+              cacheKey: cacheKey,
+            );
+          }
+        } catch (_) {
+          await pending.cancel();
+        }
+      } else {
+        await pending.cancel();
+      }
       if (identical(_videoLoads[cacheKey], pending)) {
         _videoLoads.remove(cacheKey);
       }
-      cached = await _mediaCache.readVideo(
-        userId: uid,
-        snapshotId: item.id,
-        sourceKey: sourceKey,
-      );
-      if (cached != null && _auth.currentUser?.uid == uid) {
-        return SnapshotVideoPlaybackSource.file(
-          file: cached,
-          cacheKey: cacheKey,
-        );
-      }
     }
 
-    final token =
-        await user.getIdToken(false).timeout(const Duration(seconds: 10));
+    var authTokenMs = 0;
+    var appCheckTokenMs = 0;
+    final authTokenFuture = () async {
+      final stopwatch = Stopwatch()..start();
+      final token =
+          await user.getIdToken(false).timeout(const Duration(seconds: 10));
+      authTokenMs = stopwatch.elapsedMilliseconds;
+      return token;
+    }();
+    final appCheckTokenFuture = () async {
+      final stopwatch = Stopwatch()..start();
+      String? token;
+      try {
+        if (FirebaseAppCheckService.instance.isReady) {
+          token = await FirebaseAppCheck.instance
+              .getToken(false)
+              .timeout(const Duration(seconds: 8));
+        }
+      } catch (error) {
+        if (Logger.isVerboseEnabled) {
+          Logger.warning(
+            '스낵 영상 App Check 토큰 준비 실패 '
+            '(snapshotId=${item.id}, errorType=${error.runtimeType})',
+          );
+        }
+      }
+      appCheckTokenMs = stopwatch.elapsedMilliseconds;
+      return token;
+    }();
+    final token = await authTokenFuture;
+    final appCheckToken = await appCheckTokenFuture;
     if (token == null ||
         token.trim().isEmpty ||
         _auth.currentUser?.uid != uid) {
       throw StateError('snapshot-video-auth-unavailable');
-    }
-    String? appCheckToken;
-    try {
-      if (FirebaseAppCheckService.instance.isReady) {
-        appCheckToken = await FirebaseAppCheck.instance
-            .getToken(false)
-            .timeout(const Duration(seconds: 8));
-      }
-    } catch (_) {
-      // App Check 미적용 프로젝트도 지원한다. 적용 프로젝트에서는 플레이어
-      // 초기화 실패 후 Firebase Storage SDK 다운로드 경로가 한 번 대체한다.
     }
     final bucket = _storage.ref().bucket;
     final objectPath = Uri.encodeComponent(item.videoStoragePath.trim());
@@ -1553,7 +1633,13 @@ class SnapshotService {
         'X-Firebase-AppCheck': appCheckToken!.trim(),
     };
     if (Logger.isVerboseEnabled) {
-      Logger.log('스낵 영상 재생 준비 (snapshotId=${item.id}, cacheHit=false)');
+      Logger.log(
+        '스낵 영상 재생 준비 단계 '
+        '(snapshotId=${item.id}, source=network, cacheHit=false, '
+        'clockMs=$clockMs, archiveMs=$archiveMs, cacheMs=$cacheMs, '
+        'authTokenMs=$authTokenMs, appCheckTokenMs=$appCheckTokenMs, '
+        'totalMs=${totalStopwatch.elapsedMilliseconds})',
+      );
     }
     return SnapshotVideoPlaybackSource.network(
       networkUri: uri,
@@ -1565,16 +1651,33 @@ class SnapshotService {
   Future<File> loadVideoFile(SnapshotItem item) =>
       _loadVideoFile(item, prefetch: false);
 
-  Future<void> preloadVideoFile(SnapshotItem item) async {
-    await cancelVideoPreloads(exceptSnapshotId: item.id);
+  Future<void> preloadVideoFile(
+    SnapshotItem item, {
+    bool cancelOtherPreloads = true,
+  }) async {
+    if (cancelOtherPreloads) {
+      await cancelVideoPreloads(exceptSnapshotIds: <String>{item.id});
+    }
     await _loadVideoFile(item, prefetch: true);
   }
 
-  Future<void> cancelVideoPreloads({String? exceptSnapshotId}) async {
+  Future<void> cancelVideoPreloads({
+    Set<String> exceptSnapshotIds = const <String>{},
+  }) async {
     final cancellations = <Future<void>>[];
     for (final operation in _videoLoads.values.toList(growable: false)) {
-      if (!operation.prefetch || operation.snapshotId == exceptSnapshotId) {
+      if (!operation.prefetch ||
+          exceptSnapshotIds.contains(operation.snapshotId)) {
         continue;
+      }
+      if (Logger.isVerboseEnabled) {
+        Logger.log(
+          '스낵 영상 사전 준비 취소 '
+          '(snapshotId=${operation.snapshotId}, '
+          'bytes=${operation.bytesTransferred}, '
+          'totalBytes=${operation.totalBytes}, '
+          'progress=${operation.progress.toStringAsFixed(3)})',
+        );
       }
       cancellations.add(operation.cancel());
       if (identical(_videoLoads[operation.cacheKey], operation)) {
@@ -1599,6 +1702,16 @@ class SnapshotService {
   void retainVideoFile(File file) => _mediaCache.retainVideo(file);
 
   Future<void> releaseVideoFile(File file) => _mediaCache.releaseVideo(file);
+
+  Future<void> evictVideoPlaybackCache(String snapshotId) async {
+    final uid = _auth.currentUser?.uid;
+    if (uid == null || snapshotId.trim().isEmpty) return;
+    await cancelVideoLoad(snapshotId);
+    await _mediaCache.evictVideo(
+      userId: uid,
+      snapshotId: snapshotId,
+    );
+  }
 
   Future<File> _loadVideoFile(
     SnapshotItem item, {
@@ -1673,6 +1786,11 @@ class SnapshotService {
         final task =
             _storage.ref(item.videoStoragePath.trim()).writeToFile(partial);
         operation.task = task;
+        await operation.progressSubscription?.cancel();
+        operation.progressSubscription = task.snapshotEvents.listen((event) {
+          operation.bytesTransferred = event.bytesTransferred;
+          operation.totalBytes = event.totalBytes;
+        });
         if (operation.cancelled) await task.cancel();
         try {
           await task.timeout(const Duration(minutes: 3));
@@ -1720,6 +1838,9 @@ class SnapshotService {
           }
         }
         break;
+      } finally {
+        await operation.progressSubscription?.cancel();
+        operation.progressSubscription = null;
       }
     }
     Error.throwWithStackTrace(

@@ -19,8 +19,8 @@ class AppImageCacheManager {
   static const Duration firebaseObjectFreshness = Duration(days: 90);
 
   static _WefillingImageCacheManager? _instance;
-  static final Map<String, Future<void>> _prefetchInFlight =
-      <String, Future<void>>{};
+  static final Map<String, Future<bool>> _prefetchInFlight =
+      <String, Future<bool>>{};
   static final LinkedHashSet<String> _recentlyPrefetched =
       LinkedHashSet<String>();
   static const int _maximumTrackedPrefetches = 240;
@@ -53,34 +53,54 @@ class AppImageCacheManager {
         start,
         (start + concurrency).clamp(0, selected.length),
       );
-      await Future.wait(batch.map(_prefetchUrl), eagerError: false);
+      await Future.wait(batch.map(prefetchUrl), eagerError: false);
     }
   }
 
-  static Future<void> _prefetchUrl(String url) {
-    final active = _prefetchInFlight[url];
+  /// Prepares one image and reports whether a usable cache file exists.
+  /// Callers that distinguish retryable warm-up failures from success should
+  /// use this method instead of treating [prefetchUrls] completion as success.
+  static Future<bool> prefetchUrl(String value, {String? cacheKey}) {
+    final url = value.trim();
+    if (url.isEmpty) return Future<bool>.value(false);
+    final key = cacheKey?.trim().isNotEmpty == true ? cacheKey!.trim() : url;
+    final active = _prefetchInFlight[key];
     if (active != null) return active;
 
-    late final Future<void> operation;
+    late final Future<bool> operation;
     operation = () async {
       try {
-        await instance.getSingleFile(url).timeout(_prefetchTimeout);
+        if (_recentlyPrefetched.contains(key)) {
+          final cached = await instance.getFileFromCache(key);
+          if (cached != null &&
+              await cached.file.exists() &&
+              await cached.file.length() > 0) {
+            return true;
+          }
+          _recentlyPrefetched.remove(key);
+        }
+        final file = await instance
+            .getSingleFile(url, key: key)
+            .timeout(_prefetchTimeout);
+        if (!await file.exists() || await file.length() <= 0) return false;
         _recentlyPrefetched
-          ..remove(url)
-          ..add(url);
+          ..remove(key)
+          ..add(key);
         while (_recentlyPrefetched.length > _maximumTrackedPrefetches) {
           _recentlyPrefetched.remove(_recentlyPrefetched.first);
         }
+        return true;
       } catch (_) {
         // 선조회 실패는 화면의 실제 이미지 요청이 재시도한다.
+        return false;
       }
     }()
         .whenComplete(() {
-      if (identical(_prefetchInFlight[url], operation)) {
-        _prefetchInFlight.remove(url);
+      if (identical(_prefetchInFlight[key], operation)) {
+        _prefetchInFlight.remove(key);
       }
     });
-    _prefetchInFlight[url] = operation;
+    _prefetchInFlight[key] = operation;
     return operation;
   }
 

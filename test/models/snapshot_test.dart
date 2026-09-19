@@ -47,9 +47,11 @@ void main() {
         item.isExpiredAt(createdAt.add(const Duration(hours: 24))),
         isTrue,
       );
+      expect(item.authorPhotoVersion, 0);
     });
 
-    test('uses the server timestamp when createdAt is not materialized yet', () {
+    test('uses the server timestamp when createdAt is not materialized yet',
+        () {
       final serverCreatedAt = DateTime.utc(2026, 8, 26, 3, 15);
       final item = SnapshotItem.fromMap('snapshot-id', {
         'ownerId': 'author',
@@ -69,6 +71,7 @@ void main() {
         'visibility': 'friends',
         'createdAt': DateTime.utc(2026, 7, 25),
         'expiresAt': DateTime.utc(2026, 7, 26),
+        'authorPhotoVersion': 7,
         'overlay': {
           'text': 'hello',
           'x': 2,
@@ -80,6 +83,7 @@ void main() {
       });
 
       expect(item.overlay.x, 1);
+      expect(item.authorPhotoVersion, 7);
       expect(item.overlay.y, 0);
       expect(item.overlay.lightText, isFalse);
       expect(item.overlay.fontScale, 1.75);

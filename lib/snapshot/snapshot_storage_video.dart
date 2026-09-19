@@ -2,6 +2,7 @@ import 'dart:async';
 import 'dart:io';
 
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:video_player/video_player.dart';
 
 import '../models/snapshot.dart';
@@ -17,12 +18,18 @@ class SnapshotStorageVideo extends StatefulWidget {
     required this.playing,
     required this.onReady,
     required this.onFirstFrame,
+    required this.onPlaybackStable,
+    required this.showPlayButton,
+    required this.onPlayRequested,
   });
 
   final SnapshotItem snapshot;
   final bool playing;
   final VoidCallback onReady;
   final VoidCallback onFirstFrame;
+  final VoidCallback onPlaybackStable;
+  final bool showPlayButton;
+  final VoidCallback onPlayRequested;
 
   @override
   State<SnapshotStorageVideo> createState() => _SnapshotStorageVideoState();
@@ -37,6 +44,7 @@ class _SnapshotStorageVideoState extends State<SnapshotStorageVideo>
   bool _firstFrameVisible = false;
   bool _wasBuffering = false;
   bool _cacheHit = false;
+  bool _playActionPending = false;
   int _generation = 0;
   Stopwatch? _loadStopwatch;
 
@@ -88,6 +96,7 @@ class _SnapshotStorageVideoState extends State<SnapshotStorageVideo>
       _firstFrameVisible = false;
       _wasBuffering = false;
       _cacheHit = false;
+      _playActionPending = false;
     });
     try {
       if (Logger.isVerboseEnabled) {
@@ -104,32 +113,74 @@ class _SnapshotStorageVideoState extends State<SnapshotStorageVideo>
       if (retainedFile != null) {
         SnapshotService.instance.retainVideoFile(retainedFile);
       }
+      final initializationStopwatch = Stopwatch()..start();
       try {
         await controller.initialize().timeout(const Duration(seconds: 20));
-      } catch (_) {
+      } catch (initializationError) {
+        final category = _initializationFailureCategory(initializationError);
+        final shouldUseFileFallback = source.networkUri != null &&
+            category == _VideoInitializationFailure.compatibility;
+        final shouldRefreshPlaybackCache = source.file != null &&
+            !source.cacheKey.startsWith('archive::') &&
+            category == _VideoInitializationFailure.compatibility;
+        if (Logger.isVerboseEnabled) {
+          Logger.warning(
+            '스낵 영상 초기화 실패 '
+            '(snapshotId=${snapshot.id}, category=${category.name}, '
+            'source=${source.networkUri != null ? 'network' : 'file'}, '
+            'errorType=${initializationError.runtimeType}, '
+            'platformCode=${initializationError is PlatformException ? initializationError.code : 'none'}, '
+            'fallback=${shouldUseFileFallback || shouldRefreshPlaybackCache}, '
+            'elapsedMs=${initializationStopwatch.elapsedMilliseconds})',
+          );
+        }
         await controller.dispose();
         if (retainedFile != null) {
           await SnapshotService.instance.releaseVideoFile(retainedFile);
           retainedFile = null;
         }
-        if (source.networkUri == null ||
+        if ((!shouldUseFileFallback && !shouldRefreshPlaybackCache) ||
             !mounted ||
             generation != _generation) {
           rethrow;
         }
+        if (shouldRefreshPlaybackCache) {
+          await SnapshotService.instance.evictVideoPlaybackCache(snapshot.id);
+          if (!mounted || generation != _generation) return;
+        }
         // 일부 기기/코덱이 인증 헤더 기반 Range 재생을 지원하지 못할 때만
-        // 기존 Firebase Storage SDK 전체 파일 경로를 한 번 사용한다.
+        // 또는 일반 시청 캐시가 손상됐을 때만 Firebase Storage SDK 전체
+        // 파일 경로를 한 번 사용한다. 작성자 영구 보관 파일은 지우지 않는다.
         final file = await SnapshotService.instance.loadVideoFile(snapshot);
         if (!mounted || generation != _generation) return;
         retainedFile = file;
         SnapshotService.instance.retainVideoFile(file);
         controller = VideoPlayerController.file(file);
+        final fallbackStopwatch = Stopwatch()..start();
         try {
           await controller.initialize().timeout(const Duration(seconds: 30));
-        } catch (_) {
+        } catch (fallbackError, fallbackStackTrace) {
+          final fallbackCategory =
+              _initializationFailureCategory(fallbackError);
+          Logger.error(
+            '스낵 영상 파일 대체 경로 초기화 실패 '
+            '(snapshotId=${snapshot.id}, category=${fallbackCategory.name}, '
+            'errorType=${fallbackError.runtimeType}, '
+            'platformCode=${fallbackError is PlatformException ? fallbackError.code : 'none'}, '
+            'elapsedMs=${fallbackStopwatch.elapsedMilliseconds})',
+            fallbackError,
+            fallbackStackTrace,
+          );
           await controller.dispose();
           await SnapshotService.instance.releaseVideoFile(file);
           rethrow;
+        }
+        if (Logger.isVerboseEnabled) {
+          Logger.log(
+            '스낵 영상 파일 대체 경로 준비 '
+            '(snapshotId=${snapshot.id}, '
+            'elapsedMs=${fallbackStopwatch.elapsedMilliseconds})',
+          );
         }
         _cacheHit = true;
       }
@@ -140,7 +191,7 @@ class _SnapshotStorageVideoState extends State<SnapshotStorageVideo>
         }
         return;
       }
-      await controller.setLooping(false);
+      await controller.setLooping(true);
       controller.addListener(_handleControllerValue);
       _controller = controller;
       _retainedFile = retainedFile;
@@ -150,6 +201,7 @@ class _SnapshotStorageVideoState extends State<SnapshotStorageVideo>
           '스낵 영상 플레이어 준비 '
           '(snapshotId=${snapshot.id}, '
           'elapsedMs=${_loadStopwatch?.elapsedMilliseconds ?? 0}, '
+          'initializeMs=${initializationStopwatch.elapsedMilliseconds}, '
           'cacheHit=$_cacheHit)',
         );
       }
@@ -185,9 +237,18 @@ class _SnapshotStorageVideoState extends State<SnapshotStorageVideo>
     if (controller == null || !mounted) return;
     final value = controller.value;
     if (value.isBuffering != _wasBuffering) {
+      final wasBuffering = _wasBuffering;
       _wasBuffering = value.isBuffering;
       if (_wasBuffering) {
         unawaited(SnapshotService.instance.cancelVideoPreloads());
+      } else if (wasBuffering && value.isInitialized) {
+        if (Logger.isVerboseEnabled) {
+          Logger.log(
+            '스낵 영상 버퍼링 회복 '
+            '(snapshotId=${widget.snapshot.id}, positionMs=${value.position.inMilliseconds})',
+          );
+        }
+        widget.onPlaybackStable();
       }
     }
     if (_firstFrameVisible ||
@@ -202,7 +263,7 @@ class _SnapshotStorageVideoState extends State<SnapshotStorageVideo>
         '스낵 영상 첫 프레임 '
         '(snapshotId=${widget.snapshot.id}, '
         'elapsedMs=${_loadStopwatch?.elapsedMilliseconds ?? 0}, '
-        'cacheHit=$_cacheHit)',
+        'cacheHit=$_cacheHit, signal=position-estimate)',
       );
     }
     setState(() {});
@@ -213,14 +274,32 @@ class _SnapshotStorageVideoState extends State<SnapshotStorageVideo>
     final controller = _controller;
     if (controller == null || !controller.value.isInitialized) return;
     if (widget.playing && _appActive) {
-      if (controller.value.position >= controller.value.duration) {
-        unawaited(
-            controller.seekTo(Duration.zero).then((_) => controller.play()));
-      } else {
-        unawaited(controller.play());
-      }
+      unawaited(controller.play());
     } else {
       unawaited(controller.pause());
+    }
+  }
+
+  Future<void> _handlePlayRequested() async {
+    final controller = _controller;
+    if (controller == null ||
+        !controller.value.isInitialized ||
+        _playActionPending) {
+      return;
+    }
+    _playActionPending = true;
+    widget.onPlayRequested();
+    try {
+      await controller.play();
+    } catch (error, stackTrace) {
+      Logger.error(
+        '스낵 영상 재생 재개 실패 (snapshotId=${widget.snapshot.id})',
+        error,
+        stackTrace,
+      );
+      if (mounted) setState(() => _error = error);
+    } finally {
+      _playActionPending = false;
     }
   }
 
@@ -244,6 +323,10 @@ class _SnapshotStorageVideoState extends State<SnapshotStorageVideo>
   @override
   Widget build(BuildContext context) {
     final controller = _controller;
+    final thumbnailDecodeWidth = (MediaQuery.sizeOf(context).width *
+            MediaQuery.devicePixelRatioOf(context))
+        .ceil()
+        .clamp(320, 2160);
     final thumbnail = SnapshotStorageImage(
       snapshot: widget.snapshot,
       fit: BoxFit.cover,
@@ -251,6 +334,7 @@ class _SnapshotStorageVideoState extends State<SnapshotStorageVideo>
       errorBackgroundColor: Colors.black,
       showLoadingIndicator: false,
       fadeInDuration: const Duration(milliseconds: 120),
+      decodeWidth: thumbnailDecodeWidth,
     );
     if (_error != null) {
       return Stack(
@@ -326,9 +410,74 @@ class _SnapshotStorageVideoState extends State<SnapshotStorageVideo>
               ),
             ),
           ),
+        if (widget.showPlayButton)
+          Center(
+            child: Semantics(
+              button: true,
+              label: SnapshotStrings.of(context).playVideo,
+              child: Material(
+                color: Colors.black.withValues(alpha: .52),
+                shape: const CircleBorder(),
+                child: InkResponse(
+                  onTap: _handlePlayRequested,
+                  radius: 32,
+                  child: const SizedBox.square(
+                    dimension: 56,
+                    child: Icon(
+                      Icons.play_arrow_rounded,
+                      color: Colors.white,
+                      size: 30,
+                    ),
+                  ),
+                ),
+              ),
+            ),
+          ),
       ],
     );
   }
+}
+
+enum _VideoInitializationFailure {
+  access,
+  expiredOrCancelled,
+  timeout,
+  network,
+  compatibility,
+}
+
+_VideoInitializationFailure _initializationFailureCategory(Object error) {
+  if (error is TimeoutException) {
+    return _VideoInitializationFailure.timeout;
+  }
+  final message = error is PlatformException
+      ? '${error.code} ${error.message ?? ''}'.toLowerCase()
+      : error.toString().toLowerCase();
+  if (message.contains('401') ||
+      message.contains('403') ||
+      message.contains('unauthorized') ||
+      message.contains('permission') ||
+      message.contains('forbidden') ||
+      message.contains('app check')) {
+    return _VideoInitializationFailure.access;
+  }
+  if (message.contains('expired') ||
+      message.contains('cancel') ||
+      message.contains('404') ||
+      message.contains('410') ||
+      message.contains('not found') ||
+      message.contains('account-changed')) {
+    return _VideoInitializationFailure.expiredOrCancelled;
+  }
+  if (message.contains('network') ||
+      message.contains('unknownhost') ||
+      message.contains('connection') ||
+      message.contains('socket') ||
+      message.contains('offline') ||
+      message.contains('internet')) {
+    return _VideoInitializationFailure.network;
+  }
+  return _VideoInitializationFailure.compatibility;
 }
 
 class SnapshotOverlayLayer extends StatelessWidget {

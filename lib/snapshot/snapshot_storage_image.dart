@@ -8,6 +8,18 @@ import '../models/snapshot.dart';
 import '../services/snapshot_service.dart';
 import '../utils/logger.dart';
 
+ImageProvider<Object> snapshotMemoryImageProvider(
+  Uint8List bytes, {
+  int? cacheWidth,
+  int? cacheHeight,
+}) {
+  return ResizeImage.resizeIfNeeded(
+    cacheWidth,
+    cacheHeight,
+    MemoryImage(bytes),
+  );
+}
+
 class SnapshotStorageImage extends StatefulWidget {
   const SnapshotStorageImage({
     super.key,
@@ -19,6 +31,8 @@ class SnapshotStorageImage extends StatefulWidget {
     this.showLoadingIndicator = true,
     this.fadeInDuration = Duration.zero,
     this.onImageReady,
+    this.decodeWidth,
+    this.decodeHeight,
   });
 
   final SnapshotItem snapshot;
@@ -29,6 +43,8 @@ class SnapshotStorageImage extends StatefulWidget {
   final bool showLoadingIndicator;
   final Duration fadeInDuration;
   final VoidCallback? onImageReady;
+  final int? decodeWidth;
+  final int? decodeHeight;
 
   @override
   State<SnapshotStorageImage> createState() => _SnapshotStorageImageState();
@@ -39,10 +55,12 @@ class _SnapshotStorageImageState extends State<SnapshotStorageImage> {
   Timer? _retryTimer;
   int _retryCount = 0;
   String? _readyNotificationId;
+  late Stopwatch _displayStopwatch;
 
   @override
   void initState() {
     super.initState();
+    _displayStopwatch = Stopwatch()..start();
     _future = SnapshotService.instance.loadImageBytes(widget.snapshot);
   }
 
@@ -57,6 +75,7 @@ class _SnapshotStorageImageState extends State<SnapshotStorageImage> {
       _retryTimer = null;
       _retryCount = 0;
       _readyNotificationId = null;
+      _displayStopwatch = Stopwatch()..start();
       _future = SnapshotService.instance.loadImageBytes(widget.snapshot);
     }
   }
@@ -84,10 +103,20 @@ class _SnapshotStorageImageState extends State<SnapshotStorageImage> {
   }
 
   void _notifyImageReady() {
-    final callback = widget.onImageReady;
     final snapshotId = widget.snapshot.id;
-    if (callback == null || _readyNotificationId == snapshotId) return;
+    if (_readyNotificationId == snapshotId) return;
     _readyNotificationId = snapshotId;
+    if (Logger.isVerboseEnabled) {
+      Logger.log(
+        '스낵 이미지 프레임 표시 '
+        '(snapshotId=$snapshotId, '
+        'kind=${widget.snapshot.isVideo ? 'video-thumbnail' : 'photo'}, '
+        'decodeWidth=${widget.decodeWidth ?? 0}, '
+        'elapsedMs=${_displayStopwatch.elapsedMilliseconds})',
+      );
+    }
+    final callback = widget.onImageReady;
+    if (callback == null) return;
     WidgetsBinding.instance.addPostFrameCallback((_) {
       if (!mounted || widget.snapshot.id != snapshotId) return;
       callback();
@@ -117,13 +146,22 @@ class _SnapshotStorageImageState extends State<SnapshotStorageImage> {
       builder: (context, snapshot) {
         late final Widget content;
         if (snapshot.hasData) {
-          _notifyImageReady();
-          content = Image.memory(
-            snapshot.data!,
+          content = Image(
             key: ValueKey<String>('snapshot-image-ready-${widget.snapshot.id}'),
+            image: snapshotMemoryImageProvider(
+              snapshot.data!,
+              cacheWidth: widget.decodeWidth,
+              cacheHeight: widget.decodeHeight,
+            ),
             fit: widget.fit,
             gaplessPlayback: true,
             filterQuality: FilterQuality.medium,
+            frameBuilder: (context, child, frame, wasSynchronouslyLoaded) {
+              if (frame != null || wasSynchronouslyLoaded) {
+                _notifyImageReady();
+              }
+              return child;
+            },
             errorBuilder: (_, error, stackTrace) {
               Logger.error(
                 '스낵 이미지 렌더링 실패 '

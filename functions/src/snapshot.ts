@@ -419,6 +419,7 @@ function snapshotFeedData(
     authorId: text(data.ownerId ?? data.authorId),
     authorName: text(data.authorName) || 'User',
     authorPhotoUrl: text(data.authorPhotoUrl),
+    authorPhotoVersion: Math.max(0, Number(data.authorPhotoVersion ?? 0) || 0),
     authorNationality: text(data.authorNationality),
     university: text(data.university),
     storagePath: text(data.storagePath),
@@ -784,6 +785,7 @@ export const createSnapshot = functions.runWith({timeoutSeconds: 120, memory: '5
       authorId: uid,
       authorName: text(profile.nickname) || 'User',
       authorPhotoUrl: text(profile.photoURL),
+      authorPhotoVersion: Math.max(0, Number(profile.photoVersion ?? 0) || 0),
       authorNationality: text(profile.nationality),
       university,
       schoolId: university,
@@ -843,6 +845,10 @@ export const createSnapshot = functions.runWith({timeoutSeconds: 120, memory: '5
             snapshotId,
             createdAtMillis: timestampMillis(concurrentCreatedAt),
             expiresAtMillis: timestampMillis(concurrentExpiresAt),
+            authorPhotoVersion: Math.max(
+              0,
+              Number(concurrent.get('authorPhotoVersion') ?? 0) || 0,
+            ),
           };
         }
       }
@@ -865,6 +871,7 @@ export const createSnapshot = functions.runWith({timeoutSeconds: 120, memory: '5
       snapshotId,
       createdAtMillis: createdAt.toMillis(),
       expiresAtMillis: expiresAt.toMillis(),
+      authorPhotoVersion: Math.max(0, Number(profile.photoVersion ?? 0) || 0),
     };
   });
 

@@ -334,145 +334,161 @@ class _SnapshotCommentsSheetState extends State<SnapshotCommentsSheet> {
                     },
                   ),
                 ),
-                if (_replyingTo != null)
-                  Padding(
-                    padding: EdgeInsets.fromLTRB(horizontal, 2, 4, 0),
-                    child: Row(
-                      children: [
-                        const Icon(
-                          Icons.subdirectory_arrow_right_rounded,
-                          size: 17,
-                          color: Color(0xFF667085),
-                        ),
-                        const SizedBox(width: 6),
-                        Expanded(
-                          child: Text(
-                            strings.replyingTo(_replyingTo!.authorNickname),
-                            maxLines: 1,
-                            overflow: TextOverflow.ellipsis,
-                            style: TextStyle(
-                              fontFamily: uiFontFamily(context, 'Inter'),
-                              fontFamilyFallback: const ['NotoSansKR'],
-                              color: const Color(0xFF667085),
-                              fontSize:
-                                  context.rf(12).clamp(11.5, 13).toDouble(),
-                              fontWeight: FontWeight.w600,
-                            ),
-                          ),
-                        ),
-                        IconButton(
-                          onPressed: () => setState(() => _replyingTo = null),
-                          tooltip: MaterialLocalizations.of(context)
-                              .cancelButtonLabel,
-                          icon: const Icon(Icons.close_rounded, size: 18),
-                        ),
-                      ],
-                    ),
-                  ),
+                const Divider(height: 1, color: Color(0xFFEAECF0)),
                 SafeArea(
                   top: false,
                   minimum: EdgeInsets.fromLTRB(
                     horizontal,
-                    8,
-                    horizontal,
-                    10,
+                    _replyingTo == null ? 6 : 2,
+                    horizontal - 2,
+                    screenHeight < 700 ? 6 : 8,
                   ),
-                  child: Row(
-                    crossAxisAlignment: CrossAxisAlignment.end,
+                  child: Column(
+                    mainAxisSize: MainAxisSize.min,
                     children: [
-                      Expanded(
-                        child: TextField(
-                          controller: _controller,
-                          focusNode: _focusNode,
-                          minLines: 1,
-                          maxLines: 4,
-                          maxLength: 500,
-                          textInputAction: TextInputAction.newline,
-                          style: TextStyle(
-                            fontFamily: uiFontFamily(context, 'Inter'),
-                            fontFamilyFallback: const ['NotoSansKR'],
-                            fontSize: context.rf(15).clamp(14, 16).toDouble(),
-                            color: const Color(0xFF111827),
-                            height: isChineseUi(context) ? 1.4 : 1.3,
-                          ),
-                          decoration: InputDecoration(
-                            hintText: strings.publicCommentHint,
-                            hintStyle: TextStyle(
-                              fontFamily: uiFontFamily(context, 'Inter'),
-                              fontFamilyFallback: const ['NotoSansKR'],
-                              fontSize: context.rf(15).clamp(14, 16).toDouble(),
-                              color: const Color(0xFF98A2B3),
-                            ),
-                            counterText: '',
-                            filled: true,
-                            fillColor: const Color(0xFFF4F5F7),
-                            border: OutlineInputBorder(
-                              borderSide: BorderSide.none,
-                              borderRadius: BorderRadius.circular(24),
-                            ),
-                            enabledBorder: OutlineInputBorder(
-                              borderSide: BorderSide.none,
-                              borderRadius: BorderRadius.circular(24),
-                            ),
-                            focusedBorder: OutlineInputBorder(
-                              borderSide: BorderSide.none,
-                              borderRadius: BorderRadius.circular(24),
-                            ),
-                            isDense: true,
-                            contentPadding: const EdgeInsets.symmetric(
-                              horizontal: 16,
-                              vertical: 12,
-                            ),
+                      if (_replyingTo != null)
+                        SizedBox(
+                          height: 34,
+                          child: Row(
+                            children: [
+                              const Icon(
+                                Icons.subdirectory_arrow_right_rounded,
+                                size: 17,
+                                color: Color(0xFF667085),
+                              ),
+                              const SizedBox(width: 6),
+                              Expanded(
+                                child: Text(
+                                  strings.replyingTo(
+                                    _replyingTo!.authorNickname,
+                                  ),
+                                  maxLines: 1,
+                                  overflow: TextOverflow.ellipsis,
+                                  style: TextStyle(
+                                    fontFamily: uiFontFamily(context, 'Inter'),
+                                    fontFamilyFallback: const ['NotoSansKR'],
+                                    color: const Color(0xFF475467),
+                                    fontSize: context
+                                        .rf(12)
+                                        .clamp(11.5, 13)
+                                        .toDouble(),
+                                    fontWeight: FontWeight.w600,
+                                  ),
+                                ),
+                              ),
+                              SizedBox.square(
+                                dimension: 34,
+                                child: IconButton(
+                                  onPressed: () =>
+                                      setState(() => _replyingTo = null),
+                                  tooltip: MaterialLocalizations.of(context)
+                                      .cancelButtonLabel,
+                                  padding: EdgeInsets.zero,
+                                  icon: const Icon(
+                                    Icons.close_rounded,
+                                    size: 18,
+                                    color: Color(0xFF667085),
+                                  ),
+                                ),
+                              ),
+                            ],
                           ),
                         ),
-                      ),
-                      const SizedBox(width: 8),
-                      ValueListenableBuilder<TextEditingValue>(
-                        valueListenable: _controller,
-                        builder: (context, value, _) {
-                          final canSend =
-                              !_sending && value.text.trim().isNotEmpty;
-                          return Semantics(
-                            button: true,
-                            enabled: canSend,
-                            label: strings.sendComment,
-                            child: Material(
-                              color: canSend
-                                  ? AppColors.pointColor
-                                  : const Color(0xFFE4E7EC),
-                              shape: const CircleBorder(),
-                              child: InkResponse(
-                                onTap: canSend ? _send : null,
-                                radius: 24,
-                                child: SizedBox.square(
-                                  dimension: context
-                                      .rh(44, min: 44, max: 48)
-                                      .toDouble(),
-                                  child: Center(
-                                    child: _sending
-                                        ? const SizedBox.square(
-                                            dimension: 18,
-                                            child: CircularProgressIndicator(
-                                              strokeWidth: 2,
-                                              color: Colors.white,
-                                            ),
-                                          )
-                                        : Icon(
-                                            Icons.arrow_upward_rounded,
-                                            size: context
-                                                .ri(22)
-                                                .clamp(21, 24)
-                                                .toDouble(),
-                                            color: canSend
-                                                ? Colors.white
-                                                : const Color(0xFF98A2B3),
-                                          ),
+                      Row(
+                        crossAxisAlignment: CrossAxisAlignment.end,
+                        children: [
+                          Expanded(
+                            child: ConstrainedBox(
+                              constraints: const BoxConstraints(minHeight: 48),
+                              child: TextField(
+                                controller: _controller,
+                                focusNode: _focusNode,
+                                minLines: 1,
+                                maxLines: screenHeight < 700 ? 3 : 4,
+                                maxLength: 500,
+                                textInputAction: TextInputAction.newline,
+                                cursorColor: AppColors.pointColor,
+                                style: TextStyle(
+                                  fontFamily: uiFontFamily(context, 'Inter'),
+                                  fontFamilyFallback: const ['NotoSansKR'],
+                                  fontSize:
+                                      context.rf(15).clamp(14, 16).toDouble(),
+                                  fontWeight: FontWeight.w500,
+                                  color: const Color(0xFF111827),
+                                  height: isChineseUi(context) ? 1.45 : 1.35,
+                                ),
+                                decoration: InputDecoration(
+                                  hintText: strings.publicCommentHint,
+                                  hintStyle: TextStyle(
+                                    fontFamily: uiFontFamily(context, 'Inter'),
+                                    fontFamilyFallback: const ['NotoSansKR'],
+                                    fontSize:
+                                        context.rf(15).clamp(14, 16).toDouble(),
+                                    fontWeight: FontWeight.w400,
+                                    color: const Color(0xFF98A2B3),
+                                  ),
+                                  counterText: '',
+                                  border: InputBorder.none,
+                                  enabledBorder: InputBorder.none,
+                                  focusedBorder: InputBorder.none,
+                                  isDense: true,
+                                  contentPadding: const EdgeInsets.symmetric(
+                                    vertical: 13,
                                   ),
                                 ),
                               ),
                             ),
-                          );
-                        },
+                          ),
+                          const SizedBox(width: 8),
+                          ValueListenableBuilder<TextEditingValue>(
+                            valueListenable: _controller,
+                            builder: (context, value, _) {
+                              final canSend =
+                                  !_sending && value.text.trim().isNotEmpty;
+                              final buttonSize =
+                                  context.rh(48, min: 48, max: 52).toDouble();
+                              return Semantics(
+                                button: true,
+                                enabled: canSend,
+                                label: strings.sendComment,
+                                child: Tooltip(
+                                  message: strings.sendComment,
+                                  child: Material(
+                                    color: Colors.transparent,
+                                    child: InkResponse(
+                                      onTap: canSend ? _send : null,
+                                      radius: buttonSize / 2,
+                                      child: SizedBox.square(
+                                        dimension: buttonSize,
+                                        child: Center(
+                                          child: _sending
+                                              ? const SizedBox.square(
+                                                  dimension: 19,
+                                                  child:
+                                                      CircularProgressIndicator(
+                                                    strokeWidth: 2,
+                                                    color: AppColors.pointColor,
+                                                  ),
+                                                )
+                                              : Icon(
+                                                  Icons.arrow_upward_rounded,
+                                                  size: context
+                                                      .ri(25)
+                                                      .clamp(24, 27)
+                                                      .toDouble(),
+                                                  color: canSend
+                                                      ? AppColors.pointColor
+                                                      : const Color(0xFFB8C0CC),
+                                                ),
+                                        ),
+                                      ),
+                                    ),
+                                  ),
+                                ),
+                              );
+                            },
+                          ),
+                        ],
                       ),
                     ],
                   ),

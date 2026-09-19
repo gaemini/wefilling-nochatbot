@@ -24,7 +24,14 @@ class SnapshotMediaCacheService {
   static const Duration _stalePeriod = Duration(days: 30);
   static const Duration _videoStalePeriod = Duration(hours: 25);
   static const String _cacheFolder = 'wefilling_snapshot_media_v1';
+  // AVPlayer uses the local file extension as part of its media type
+  // resolution. Keep the real MP4 extension on completed cache files; the
+  // previous `.video` suffix was accepted by Android's extractor but can be
+  // rejected by iOS with OSStatus -12847.
+  static const String _videoMediaSuffix = '.video.mp4';
+  static const String _legacyVideoMediaSuffix = '.video';
   final Map<String, int> _videoRetainCounts = <String, int>{};
+  final Map<String, Future<void>> _videoMigrations = <String, Future<void>>{};
   final Set<String> _pendingVideoEvictions = <String>{};
 
   Future<Uint8List?> read({
@@ -226,12 +233,86 @@ class SnapshotMediaCacheService {
   ) async {
     final directory = await _directory(userId);
     final safeId = _safeSegment(snapshotId);
-    final media = File(p.join(directory.path, '$safeId.video'));
+    final media = File(p.join(directory.path, '$safeId$_videoMediaSuffix'));
+    final source = File('${media.path}.source');
+    await _migrateLegacyVideoCache(
+      directory: directory,
+      safeId: safeId,
+      media: media,
+      source: source,
+    );
     return (
       media: media,
-      source: File(p.join(directory.path, '$safeId.video.source')),
+      source: source,
       partial: File('${media.path}.part'),
     );
+  }
+
+  Future<void> _migrateLegacyVideoCache({
+    required Directory directory,
+    required String safeId,
+    required File media,
+    required File source,
+  }) async {
+    final pending = _videoMigrations[media.path];
+    if (pending != null) {
+      await pending;
+      return;
+    }
+    late final Future<void> migration;
+    migration = _performLegacyVideoCacheMigration(
+      directory: directory,
+      safeId: safeId,
+      media: media,
+      source: source,
+    ).whenComplete(() {
+      if (identical(_videoMigrations[media.path], migration)) {
+        _videoMigrations.remove(media.path);
+      }
+    });
+    _videoMigrations[media.path] = migration;
+    await migration;
+  }
+
+  Future<void> _performLegacyVideoCacheMigration({
+    required Directory directory,
+    required String safeId,
+    required File media,
+    required File source,
+  }) async {
+    if (await media.exists()) return;
+    final legacyMedia =
+        File(p.join(directory.path, '$safeId$_legacyVideoMediaSuffix'));
+    if (!await legacyMedia.exists()) return;
+    final legacySource = File('${legacyMedia.path}.source');
+    if (!await legacySource.exists()) {
+      await _deleteVideoPairForMedia(legacyMedia);
+      return;
+    }
+
+    File? migratedMedia;
+    try {
+      // Renaming the media first is the migration lock. If another request
+      // wins the race, this rename fails without touching its source marker.
+      migratedMedia = await legacyMedia.rename(media.path);
+      try {
+        if (await source.exists()) await source.delete();
+        await legacySource.rename(source.path);
+      } catch (_) {
+        if (await migratedMedia.exists()) await migratedMedia.delete();
+        if (await source.exists()) await source.delete();
+        rethrow;
+      }
+      if (Logger.isVerboseEnabled) {
+        Logger.log('스낵 영상 캐시 MP4 파일명 이관 완료 (snapshotId=$safeId)');
+      }
+    } catch (error) {
+      // Migration failure only turns this entry into a cache miss. Playback
+      // can still redownload the source through the normal cache path.
+      if (Logger.isVerboseEnabled) {
+        Logger.warning('스낵 영상 캐시 MP4 파일명 이관 실패: $error');
+      }
+    }
   }
 
   Future<Directory> _directory(String userId) async {
@@ -292,7 +373,9 @@ class SnapshotMediaCacheService {
     await _cleanupStaleVideoTemps(directory);
     final videoFiles = <File>[];
     await for (final entity in directory.list()) {
-      if (entity is File && entity.path.endsWith('.video')) {
+      if (entity is File &&
+          (entity.path.endsWith(_videoMediaSuffix) ||
+              entity.path.endsWith(_legacyVideoMediaSuffix))) {
         videoFiles.add(entity);
       }
     }
@@ -375,8 +458,10 @@ class SnapshotMediaCacheService {
     final cutoff = DateTime.now().subtract(const Duration(minutes: 10));
     await for (final entity in directory.list()) {
       if (entity is! File ||
-          (!entity.path.contains('.video.part.') &&
-              !entity.path.endsWith('.video.source.tmp'))) {
+          (!entity.path.contains('$_videoMediaSuffix.part.') &&
+              !entity.path.contains('$_legacyVideoMediaSuffix.part.') &&
+              !entity.path.endsWith('$_videoMediaSuffix.source.tmp') &&
+              !entity.path.endsWith('$_legacyVideoMediaSuffix.source.tmp'))) {
         continue;
       }
       try {

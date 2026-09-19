@@ -1,19 +1,18 @@
 import 'dart:async';
 
-import 'package:cached_network_image/cached_network_image.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/material.dart';
 
 import '../models/snapshot.dart';
 import '../screens/create_snapshot_screen.dart';
 import '../screens/snapshot_detail_screen.dart';
-import '../services/cache/app_image_cache_manager.dart';
 import '../services/snapshot_service.dart';
 import '../services/user_info_cache_service.dart';
 import '../ui/widgets/audience_ring.dart';
 import '../ui/widgets/user_avatar.dart';
-import '../utils/profile_photo_policy.dart';
+import '../utils/logger.dart';
 import '../utils/responsive_helper.dart';
+import 'snapshot_author_profile_image.dart';
 import 'snapshot_storage_image.dart';
 import 'snapshot_strings.dart';
 import '../l10n/ui_locale.dart';
@@ -48,10 +47,22 @@ class _SnapshotTodaySectionState extends State<SnapshotTodaySection>
   final List<SnapshotItem> _previewQueue = <SnapshotItem>[];
   final Set<String> _queuedPreviewKeys = <String>{};
   final Set<String> _preparedPreviewKeys = <String>{};
+  final Map<String, DateTime> _previewRetryAfter = <String, DateTime>{};
+  final List<SnapshotAuthorProfile> _profileQueue = <SnapshotAuthorProfile>[];
+  final Set<String> _queuedProfileKeys = <String>{};
+  final Set<String> _preparedProfileKeys = <String>{};
+  final Map<String, DateTime> _profileRetryAfter = <String, DateTime>{};
+  final List<SnapshotItem> _videoCacheQueue = <SnapshotItem>[];
+  final Set<String> _queuedVideoCacheKeys = <String>{};
+  final Set<String> _preparedVideoCacheKeys = <String>{};
+  final Map<String, DateTime> _videoCacheRetryAfter = <String, DateTime>{};
   int _activePreviewWarmups = 0;
+  int _activeProfileWarmups = 0;
+  int _activeVideoCacheWarmups = 0;
   int _previewGeneration = 0;
   bool _appActive = true;
   bool _sectionVisible = true;
+  bool _detailOpen = false;
 
   @override
   void initState() {
@@ -66,6 +77,11 @@ class _SnapshotTodaySectionState extends State<SnapshotTodaySection>
     _previewGeneration++;
     _previewQueue.clear();
     _queuedPreviewKeys.clear();
+    _profileQueue.clear();
+    _queuedProfileKeys.clear();
+    _videoCacheQueue.clear();
+    _queuedVideoCacheKeys.clear();
+    unawaited(_service.cancelVideoPreloads());
     _trayController.dispose();
     super.dispose();
   }
@@ -76,6 +92,11 @@ class _SnapshotTodaySectionState extends State<SnapshotTodaySection>
     if (!_appActive) {
       _previewQueue.clear();
       _queuedPreviewKeys.clear();
+      _profileQueue.clear();
+      _queuedProfileKeys.clear();
+      _videoCacheQueue.clear();
+      _queuedVideoCacheKeys.clear();
+      unawaited(_service.cancelVideoPreloads());
       return;
     }
     _schedulePreviewWarmup(
@@ -94,6 +115,9 @@ class _SnapshotTodaySectionState extends State<SnapshotTodaySection>
     return '$uid::${item.id}::$source';
   }
 
+  String _videoCacheKey(String uid, SnapshotItem item) =>
+      '$uid::${item.id}::${item.videoStoragePath.trim()}';
+
   void _schedulePreviewWarmup(
     List<SnapshotItem> items,
     String uid, {
@@ -107,10 +131,25 @@ class _SnapshotTodaySectionState extends State<SnapshotTodaySection>
       _previewQueue.clear();
       _queuedPreviewKeys.clear();
       _preparedPreviewKeys.clear();
+      _previewRetryAfter.clear();
+      _activeProfileWarmups = 0;
+      _profileQueue.clear();
+      _queuedProfileKeys.clear();
+      _preparedProfileKeys.clear();
+      _profileRetryAfter.clear();
+      _activeVideoCacheWarmups = 0;
+      _videoCacheQueue.clear();
+      _queuedVideoCacheKeys.clear();
+      _preparedVideoCacheKeys.clear();
+      _videoCacheRetryAfter.clear();
     }
-    if (!_appActive || !sectionVisible || uid.isEmpty) {
+    if (!_appActive || !sectionVisible || uid.isEmpty || _detailOpen) {
       _previewQueue.clear();
       _queuedPreviewKeys.clear();
+      _profileQueue.clear();
+      _queuedProfileKeys.clear();
+      _videoCacheQueue.clear();
+      _queuedVideoCacheKeys.clear();
       return;
     }
     unawaited(
@@ -121,14 +160,58 @@ class _SnapshotTodaySectionState extends State<SnapshotTodaySection>
             onError: (Object _, StackTrace __) {},
           ),
     );
-    for (final item in items.take(_previewWarmupLimit)) {
+    final previewItems =
+        items.take(_previewWarmupLimit).toList(growable: false);
+    for (final item in previewItems) {
+      // The feed has already applied audience, block, and expiry filters.
+      // Warming restricted media only fills this account's private cache; the
+      // home tile continues to render the profile/ring instead of the media.
       final key = _previewKey(uid, item);
-      if (_preparedPreviewKeys.contains(key) || !_queuedPreviewKeys.add(key)) {
+      final retryAfter = _previewRetryAfter[key];
+      if (_preparedPreviewKeys.contains(key) ||
+          (retryAfter != null && DateTime.now().isBefore(retryAfter)) ||
+          !_queuedPreviewKeys.add(key)) {
         continue;
       }
       _previewQueue.add(item);
     }
-    WidgetsBinding.instance.addPostFrameCallback((_) => _pumpPreviewWarmups());
+    final newVideoItems = <SnapshotItem>[];
+    for (final item in previewItems) {
+      if (!item.isVideo || item.videoStoragePath.trim().isEmpty) continue;
+      final key = _videoCacheKey(uid, item);
+      final retryAfter = _videoCacheRetryAfter[key];
+      if (_preparedVideoCacheKeys.contains(key) ||
+          (retryAfter != null && DateTime.now().isBefore(retryAfter)) ||
+          !_queuedVideoCacheKeys.add(key)) {
+        continue;
+      }
+      newVideoItems.add(item);
+    }
+    // A newly arrived Snack is prepared before older queued work. An active
+    // download is left intact so already transferred bytes are not discarded.
+    _videoCacheQueue.insertAll(0, newVideoItems);
+    final uniqueProfiles = <String, SnapshotAuthorProfile>{};
+    for (final item in previewItems) {
+      final profile = SnapshotAuthorProfile.resolve(item);
+      // Items are newest-first. One author may own several of the five
+      // entries, so prepare only that author's newest resolved profile.
+      uniqueProfiles.putIfAbsent(profile.userId, () => profile);
+    }
+    for (final profile in uniqueProfiles.values) {
+      final key = '$uid::${profile.cacheKey}';
+      final retryAfter = _profileRetryAfter[key];
+      if (_preparedProfileKeys.contains(key) ||
+          (retryAfter != null && DateTime.now().isBefore(retryAfter)) ||
+          !_queuedProfileKeys.add(key)) {
+        continue;
+      }
+      _profileQueue.add(profile);
+    }
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      _pumpPreviewWarmups();
+      _pumpProfileWarmups();
+      _pumpVideoCacheWarmups();
+    });
   }
 
   void _pumpPreviewWarmups() {
@@ -140,18 +223,124 @@ class _SnapshotTodaySectionState extends State<SnapshotTodaySection>
       final key = _previewKey(uid, item);
       final generation = _previewGeneration;
       _activePreviewWarmups++;
-      unawaited(_service
-          .loadImageBytes(item)
-          .then<void>(
-            (_) {},
-            onError: (Object _, StackTrace __) {},
-          )
-          .whenComplete(() {
+      unawaited(_preparePreview(item).then<void>((success) {
         if (!mounted || generation != _previewGeneration) return;
         _activePreviewWarmups--;
         _queuedPreviewKeys.remove(key);
-        _preparedPreviewKeys.add(key);
+        if (success) {
+          _preparedPreviewKeys.add(key);
+          _previewRetryAfter.remove(key);
+        } else {
+          _previewRetryAfter[key] =
+              DateTime.now().add(const Duration(seconds: 15));
+        }
         _pumpPreviewWarmups();
+      }, onError: (Object _, StackTrace __) {
+        if (!mounted || generation != _previewGeneration) return;
+        _activePreviewWarmups--;
+        _queuedPreviewKeys.remove(key);
+        _previewRetryAfter[key] =
+            DateTime.now().add(const Duration(seconds: 15));
+        _pumpPreviewWarmups();
+      }));
+    }
+  }
+
+  Future<bool> _preparePreview(SnapshotItem item) async {
+    final stopwatch = Stopwatch()..start();
+    final bytes = await _service.loadImageBytes(item);
+    if (!mounted) return false;
+    final decodeWidth =
+        (_snackPreviewSize * MediaQuery.devicePixelRatioOf(context))
+            .ceil()
+            .clamp(72, 512);
+    var decodeFailed = false;
+    await precacheImage(
+      snapshotMemoryImageProvider(bytes, cacheWidth: decodeWidth),
+      context,
+      onError: (Object _, StackTrace? __) => decodeFailed = true,
+    );
+    if (Logger.isVerboseEnabled) {
+      Logger.log(
+        '스낵 목록 썸네일 준비 '
+        '(snapshotId=${item.id}, success=${!decodeFailed}, '
+        'decodeWidth=$decodeWidth, elapsedMs=${stopwatch.elapsedMilliseconds})',
+      );
+    }
+    return !decodeFailed;
+  }
+
+  void _pumpVideoCacheWarmups() {
+    if (!mounted || !_appActive || _detailOpen) return;
+    if (_activeVideoCacheWarmups > 0 || _videoCacheQueue.isEmpty) return;
+    final item = _videoCacheQueue.removeAt(0);
+    final uid = _previewUserId ?? '';
+    final key = _videoCacheKey(uid, item);
+    final generation = _previewGeneration;
+    final stopwatch = Stopwatch()..start();
+    _activeVideoCacheWarmups = 1;
+    unawaited(
+      _service.preloadVideoFile(item, cancelOtherPreloads: false).then<void>(
+          (_) {
+        if (!mounted || generation != _previewGeneration) return;
+        _activeVideoCacheWarmups = 0;
+        _queuedVideoCacheKeys.remove(key);
+        _preparedVideoCacheKeys.add(key);
+        _videoCacheRetryAfter.remove(key);
+        if (Logger.isVerboseEnabled) {
+          Logger.log(
+            '스낵 홈 영상 캐시 준비 '
+            '(snapshotId=${item.id}, success=true, '
+            'elapsedMs=${stopwatch.elapsedMilliseconds})',
+          );
+        }
+        _pumpVideoCacheWarmups();
+      }, onError: (Object error, StackTrace __) {
+        if (!mounted || generation != _previewGeneration) return;
+        _activeVideoCacheWarmups = 0;
+        _queuedVideoCacheKeys.remove(key);
+        _videoCacheRetryAfter[key] =
+            DateTime.now().add(const Duration(seconds: 30));
+        if (Logger.isVerboseEnabled) {
+          Logger.warning(
+            '스낵 홈 영상 캐시 준비 실패 '
+            '(snapshotId=${item.id}, errorType=${error.runtimeType}, '
+            'elapsedMs=${stopwatch.elapsedMilliseconds})',
+          );
+        }
+        _pumpVideoCacheWarmups();
+      }),
+    );
+  }
+
+  void _pumpProfileWarmups() {
+    if (!mounted || !_appActive) return;
+    while (_activeProfileWarmups < _previewWarmupConcurrency &&
+        _profileQueue.isNotEmpty) {
+      final profile = _profileQueue.removeAt(0);
+      final uid = _previewUserId ?? '';
+      final key = '$uid::${profile.cacheKey}';
+      final generation = _previewGeneration;
+      _activeProfileWarmups++;
+      unawaited(prefetchSnapshotAuthorProfile(profile).then<void>((success) {
+        if (!mounted || generation != _previewGeneration) return;
+        _activeProfileWarmups--;
+        _queuedProfileKeys.remove(key);
+        if (success) {
+          _preparedProfileKeys.add(key);
+          _profileRetryAfter.remove(key);
+        } else {
+          _profileRetryAfter[key] =
+              DateTime.now().add(const Duration(seconds: 15));
+        }
+        _pumpProfileWarmups();
+      }, onError: (Object _, StackTrace __) {
+        if (!mounted || generation != _previewGeneration) return;
+        _activeProfileWarmups--;
+        _queuedProfileKeys.remove(key);
+        _profileRetryAfter[key] =
+            DateTime.now().add(const Duration(seconds: 15));
+        _pumpProfileWarmups();
       }));
     }
   }
@@ -190,15 +379,37 @@ class _SnapshotTodaySectionState extends State<SnapshotTodaySection>
     unawaited(_service.syncMyFeed());
   }
 
-  void _open(List<SnapshotItem> snapshots, int index) {
-    Navigator.of(context).push<void>(
-      MaterialPageRoute(
-        builder: (_) => SnapshotDetailScreen(
-          snapshots: snapshots,
-          initialIndex: index,
-        ),
+  Future<void> _open(List<SnapshotItem> snapshots, int index) async {
+    final selectedId =
+        index >= 0 && index < snapshots.length ? snapshots[index].id : '';
+    _detailOpen = true;
+    _videoCacheQueue.clear();
+    _queuedVideoCacheKeys.clear();
+    unawaited(
+      _service.cancelVideoPreloads(
+        exceptSnapshotIds:
+            selectedId.isEmpty ? const <String>{} : <String>{selectedId},
       ),
     );
+    try {
+      await Navigator.of(context).push<void>(
+        MaterialPageRoute(
+          builder: (_) => SnapshotDetailScreen(
+            snapshots: snapshots,
+            initialIndex: index,
+          ),
+        ),
+      );
+    } finally {
+      if (mounted) {
+        _detailOpen = false;
+        _schedulePreviewWarmup(
+          _latestPreviewItems,
+          _previewUserId ?? '',
+          sectionVisible: _sectionVisible,
+        );
+      }
+    }
   }
 
   @override
@@ -365,6 +576,10 @@ class _SnapshotTile extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final isRestricted = snapshot.visibility != SnapshotVisibility.public;
+    final previewDecodeWidth =
+        (_snackPreviewSize * MediaQuery.devicePixelRatioOf(context))
+            .ceil()
+            .clamp(72, 512);
     return _SnackTileShell(
       label: label,
       onTap: onTap,
@@ -385,7 +600,7 @@ class _SnapshotTile extends StatelessWidget {
                       ? '공개 범위가 제한된 스낵'
                       : 'Limited audience snack'),
               child: _SnackAuthorProfilePreview(
-                photoUrl: snapshot.authorPhotoUrl,
+                profile: SnapshotAuthorProfile.resolve(snapshot),
               ),
             )
           : SizedBox.square(
@@ -393,6 +608,7 @@ class _SnapshotTile extends StatelessWidget {
               child: SnapshotStorageImage(
                 snapshot: snapshot,
                 borderRadius: _snackPreviewRadius,
+                decodeWidth: previewDecodeWidth,
               ),
             ),
     );
@@ -422,6 +638,10 @@ class _MySnackTile extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final story = snapshot;
+    final previewDecodeWidth =
+        (_snackPreviewSize * MediaQuery.devicePixelRatioOf(context))
+            .ceil()
+            .clamp(72, 512);
     return _SnackTileShell(
       label: label,
       onTap: onTap,
@@ -454,14 +674,19 @@ class _MySnackTile extends StatelessWidget {
                                   ? '공개 범위가 제한된 스낵'
                                   : 'Limited audience snack'),
                           child: _SnackAuthorProfilePreview(
-                            photoUrl: profilePhotoUrl.trim().isNotEmpty
-                                ? profilePhotoUrl
-                                : story.authorPhotoUrl,
+                            profile: profilePhotoUrl.trim().isNotEmpty
+                                ? SnapshotAuthorProfile(
+                                    userId: uid,
+                                    photoUrl: profilePhotoUrl,
+                                    photoVersion: profilePhotoVersion,
+                                  )
+                                : SnapshotAuthorProfile.resolve(story),
                           ),
                         )
                       : SnapshotStorageImage(
                           snapshot: story,
                           borderRadius: _snackPreviewRadius,
+                          decodeWidth: previewDecodeWidth,
                         ),
             ),
             Positioned(
@@ -500,46 +725,21 @@ class _MySnackTile extends StatelessWidget {
 }
 
 class _SnackAuthorProfilePreview extends StatelessWidget {
-  const _SnackAuthorProfilePreview({required this.photoUrl});
+  const _SnackAuthorProfilePreview({required this.profile});
 
-  final String photoUrl;
-
-  @override
-  Widget build(BuildContext context) {
-    final normalizedUrl = photoUrl.trim();
-    final canShowPhoto = normalizedUrl.isNotEmpty &&
-        ProfilePhotoPolicy.isAllowedProfilePhotoUrl(normalizedUrl);
-    return ColoredBox(
-      color: const Color(0xFFF3F4F6),
-      child: canShowPhoto
-          ? CachedNetworkImage(
-              imageUrl: normalizedUrl,
-              cacheManager: AppImageCacheManager.instance,
-              fit: BoxFit.cover,
-              fadeInDuration: const Duration(milliseconds: 120),
-              fadeOutDuration: const Duration(milliseconds: 120),
-              placeholder: (_, __) => const _SnackProfilePlaceholder(),
-              errorWidget: (_, __, ___) => const _SnackProfilePlaceholder(),
-            )
-          : const _SnackProfilePlaceholder(),
-    );
-  }
-}
-
-class _SnackProfilePlaceholder extends StatelessWidget {
-  const _SnackProfilePlaceholder();
+  final SnapshotAuthorProfile profile;
 
   @override
   Widget build(BuildContext context) {
-    return const ColoredBox(
-      color: Color(0xFFF3F4F6),
-      child: Center(
-        child: Icon(
-          Icons.person_outline_rounded,
-          size: 30,
-          color: Color(0xFF98A2B3),
-        ),
-      ),
+    final decodeWidth =
+        (_snackPreviewSize * MediaQuery.devicePixelRatioOf(context))
+            .ceil()
+            .clamp(72, 512);
+    return SnapshotAuthorProfileImage(
+      profile: profile,
+      size: _snackPreviewSize,
+      borderRadius: _snackPreviewRadius,
+      decodeWidth: decodeWidth,
     );
   }
 }

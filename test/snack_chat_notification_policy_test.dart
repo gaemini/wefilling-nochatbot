@@ -24,6 +24,30 @@ void main() {
       expect(first, greaterThanOrEqualTo(0));
     });
 
+    test('late read cleanup preserves a newer room notification', () {
+      expect(
+        canCancelSnackChatNotificationThrough(
+          latestNotificationSequence: 42,
+          readThroughSequence: 41,
+        ),
+        isFalse,
+      );
+      expect(
+        canCancelSnackChatNotificationThrough(
+          latestNotificationSequence: 42,
+          readThroughSequence: 42,
+        ),
+        isTrue,
+      );
+      expect(
+        canCancelSnackChatNotificationThrough(
+          latestNotificationSequence: 0,
+          readThroughSequence: 42,
+        ),
+        isFalse,
+      );
+    });
+
     test('same-room burst updates once without repeated alert', () {
       final gate = SnackChatNotificationBurstGate();
       final start = DateTime(2026, 9, 5, 12);

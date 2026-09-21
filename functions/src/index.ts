@@ -10011,6 +10011,8 @@ export const onDMMessageCreated = functions
           type: 'dm_received',
           recipientUserId: recipientId,
           conversationId: conversationId,
+          messageId: messageId,
+          sentAtMillis: String(snapshot.createTime.toMillis()),
           senderId: senderId,
           senderName: senderName,
           notificationThreadKey: dmNotificationTag,

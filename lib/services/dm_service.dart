@@ -1303,6 +1303,7 @@ class DMService {
           newDmUnreadTotal: readInt(data['newDmUnreadTotal']),
           receiptsUpdated: readInt(data['receiptsUpdated']),
           cleanupComplete: data['cleanupComplete'] != false,
+          readThroughAtMillis: readInt(data['readThroughAtMillis']),
         );
         _secureReadCallableUnavailableUntil = null;
         if (Logger.isVerboseEnabled)
@@ -1505,10 +1506,12 @@ class DMReadResult {
     this.newDmUnreadTotal = 0,
     this.receiptsUpdated = 0,
     this.cleanupComplete = true,
+    this.readThroughAtMillis = 0,
   });
 
   final int clearedCount;
   final int newDmUnreadTotal;
   final int receiptsUpdated;
   final bool cleanupComplete;
+  final int readThroughAtMillis;
 }

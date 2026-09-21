@@ -28,6 +28,18 @@ int stableSnackChatNotificationId(String value) {
   return hash;
 }
 
+/// A delayed read completion may remove only a notification represented by
+/// the same or an older canonical message sequence.
+bool canCancelSnackChatNotificationThrough({
+  required int latestNotificationSequence,
+  required int readThroughSequence,
+}) {
+  if (readThroughSequence <= 0 || latestNotificationSequence <= 0) {
+    return false;
+  }
+  return latestNotificationSequence <= readThroughSequence;
+}
+
 class SnackChatNotificationDecision {
   const SnackChatNotificationDecision({
     required this.shouldDisplay,

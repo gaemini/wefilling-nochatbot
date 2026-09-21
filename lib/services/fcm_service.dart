@@ -10,6 +10,7 @@ import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:cloud_functions/cloud_functions.dart';
 import 'package:flutter/foundation.dart';
 import 'package:flutter_local_notifications/flutter_local_notifications.dart';
+import 'package:flutter/services.dart';
 import 'package:flutter/widgets.dart';
 import 'package:app_badge_plus/app_badge_plus.dart';
 import 'package:permission_handler/permission_handler.dart';
@@ -29,6 +30,9 @@ import 'dart:io';
 const String _pushSessionUserIdPreferenceKey = 'active_push_session_user_id';
 const String _snackNotificationGroupPreferencePrefix =
     'snack_notification_group_key:';
+const String _snackNotificationSequencePreferencePrefix =
+    'snack_notification_sequence:';
+const String _dmNotificationSentAtPreferencePrefix = 'dm_notification_sent_at:';
 
 @pragma('vm:entry-point')
 Future<void> firebaseMessagingBackgroundHandler(RemoteMessage message) async {
@@ -55,6 +59,31 @@ Future<void> firebaseMessagingBackgroundHandler(RemoteMessage message) async {
         '$_snackNotificationGroupPreferencePrefix$snackChatId',
         notificationGroupKey,
       );
+      final sequence = int.tryParse(
+            (message.data['messageSequence'] ?? '').toString(),
+          ) ??
+          0;
+      final sequenceKey =
+          '$_snackNotificationSequencePreferencePrefix$recipientUserId::$snackChatId';
+      final previousSequence = preferences.getInt(sequenceKey) ?? 0;
+      if (sequence > previousSequence) {
+        await preferences.setInt(sequenceKey, sequence);
+      }
+    }
+    final conversationId =
+        (message.data['conversationId'] ?? '').toString().trim();
+    if ((message.data['type'] ?? '').toString() == 'dm_received' &&
+        conversationId.isNotEmpty) {
+      final sentAtMillis = int.tryParse(
+            (message.data['sentAtMillis'] ?? '').toString(),
+          ) ??
+          0;
+      final sentAtKey =
+          '$_dmNotificationSentAtPreferencePrefix$recipientUserId::$conversationId';
+      final previousSentAt = preferences.getInt(sentAtKey) ?? 0;
+      if (sentAtMillis > previousSentAt) {
+        await preferences.setInt(sentAtKey, sentAtMillis);
+      }
     }
 
     final badgeStr = message.data['badge'];
@@ -88,6 +117,8 @@ class FCMService {
   static final _notificationWrites = ChatWorkQueue();
   static final SnackChatNotificationBurstGate _snackChatNotificationGate =
       SnackChatNotificationBurstGate();
+  static const MethodChannel _notificationCenterChannel =
+      MethodChannel('com.wefilling.app/notification_center');
 
   static const String _channelHighImportanceId = 'high_importance_channel';
   static const String _channelHighImportanceName =
@@ -464,25 +495,9 @@ class FCMService {
                           SnackChatActiveConversation.isActive(snackChatId));
 
               if (isActiveConversation) {
-                if (isSnackChat) {
-                  unawaited(cancelSnackChatNotification(
-                    snackChatId,
-                    notificationGroupKey:
-                        (message.data['notificationThreadKey'] ??
-                                message.data['notificationGroupKey'] ??
-                                '')
-                            .toString(),
-                  ));
-                } else if (isDm) {
-                  unawaited(cancelDmNotification(
-                    conversationId,
-                    notificationGroupKey:
-                        (message.data['notificationThreadKey'] ??
-                                message.data['notificationGroupKey'] ??
-                                '')
-                            .toString(),
-                  ));
-                }
+                // Foreground delivery is suppressed here. The OS card is
+                // removed only after the room's server read call returns its
+                // authoritative boundary, so a newer push cannot be erased.
                 return;
               }
 
@@ -825,14 +840,42 @@ class FCMService {
       );
 
       if (isGroupedSnackChat) {
-        unawaited(SharedPreferences.getInstance()
-            .then((preferences) => preferences.setString(
-                '$_snackNotificationGroupPreferencePrefix$snackChatId',
-                effectiveGroupKey))
-            .catchError((Object error) {
+        try {
+          final preferences = await SharedPreferences.getInstance();
+          await preferences.setString(
+            '$_snackNotificationGroupPreferencePrefix$snackChatId',
+            effectiveGroupKey,
+          );
+          final sequence = int.tryParse(
+                (message.data['messageSequence'] ?? '').toString(),
+              ) ??
+              0;
+          final sequenceKey =
+              '$_snackNotificationSequencePreferencePrefix$owner::$snackChatId';
+          final previousSequence = preferences.getInt(sequenceKey) ?? 0;
+          if (sequence > previousSequence) {
+            await preferences.setInt(sequenceKey, sequence);
+          }
+        } catch (error) {
           Logger.error('Notification grouping metadata save failed: $error');
-          return false;
-        }));
+        }
+      }
+      if (presentation != null && !presentation.isGroup) {
+        final conversationId =
+            (message.data['conversationId'] ?? '').toString().trim();
+        if (conversationId.isNotEmpty && presentation.sentAtMillis > 0) {
+          try {
+            final preferences = await SharedPreferences.getInstance();
+            final sentAtKey =
+                '$_dmNotificationSentAtPreferencePrefix$owner::$conversationId';
+            final previousSentAt = preferences.getInt(sentAtKey) ?? 0;
+            if (presentation.sentAtMillis > previousSentAt) {
+              await preferences.setInt(sentAtKey, presentation.sentAtMillis);
+            }
+          } catch (error) {
+            Logger.error('DM notification metadata save failed: $error');
+          }
+        }
       }
       if (_isStaleEpoch(epoch) ||
           FirebaseAuth.instance.currentUser?.uid != owner) return;
@@ -869,6 +912,40 @@ class FCMService {
     }
   }
 
+  Future<int> _removeDeliveredNotifications({
+    required String ownerUserId,
+    required String kind,
+    String notificationId = '',
+    String roomId = '',
+    int throughSequence = 0,
+    int throughSentAtMillis = 0,
+    bool removeAllInRoom = false,
+  }) async {
+    if (kIsWeb || (!Platform.isAndroid && !Platform.isIOS)) return 0;
+    try {
+      final removed = await _notificationCenterChannel.invokeMethod<int>(
+        'removeDeliveredNotifications',
+        <String, Object>{
+          'ownerUserId': ownerUserId,
+          'kind': kind,
+          if (notificationId.isNotEmpty) 'notificationId': notificationId,
+          if (roomId.isNotEmpty) 'roomId': roomId,
+          if (throughSequence > 0) 'throughSequence': throughSequence,
+          if (throughSentAtMillis > 0)
+            'throughSentAtMillis': throughSentAtMillis,
+          if (removeAllInRoom) 'removeAllInRoom': true,
+        },
+      );
+      return removed ?? 0;
+    } on MissingPluginException {
+      // Older native builds keep the existing tag/id fallback below.
+      return 0;
+    } catch (error) {
+      Logger.error('OS 알림 선택 제거 실패', error);
+      return 0;
+    }
+  }
+
   /// Removes only the local notification slot associated with [snackChatId].
   /// Android uses FCM's id 0 plus the server-issued stable room tag. iOS uses a
   /// deterministic local id; APNs keeps remote deliveries grouped/collapsed by
@@ -876,6 +953,7 @@ class FCMService {
   Future<void> cancelSnackChatNotification(
     String snackChatId, {
     String? notificationGroupKey,
+    int? throughSequence,
   }) async {
     final normalized = snackChatId.trim();
     final owner = FirebaseAuth.instance.currentUser?.uid.trim() ?? '';
@@ -884,7 +962,8 @@ class FCMService {
     await _notificationWrites.run(
         '$owner:snack_chat_message:$normalized',
         () => _cancelSnackChatNotification(normalized, owner, epoch,
-            notificationGroupKey: notificationGroupKey));
+            notificationGroupKey: notificationGroupKey,
+            throughSequence: throughSequence));
   }
 
   Future<void> _cancelSnackChatNotification(
@@ -892,6 +971,7 @@ class FCMService {
     String owner,
     int epoch, {
     String? notificationGroupKey,
+    int? throughSequence,
   }) async {
     bool current() =>
         !_isStaleEpoch(epoch) &&
@@ -900,6 +980,24 @@ class FCMService {
     try {
       final preferences = await SharedPreferences.getInstance();
       if (!current()) return;
+      final sequenceKey =
+          '$_snackNotificationSequencePreferencePrefix$owner::$normalized';
+      final latestNotificationSequence = preferences.getInt(sequenceKey) ?? 0;
+      if (!current()) return;
+      await _removeDeliveredNotifications(
+        ownerUserId: owner,
+        kind: 'snack_chat',
+        roomId: normalized,
+        throughSequence: throughSequence ?? 0,
+        removeAllInRoom: throughSequence == null,
+      );
+      if (!current()) return;
+      final canCancelGroupedSlot = throughSequence == null ||
+          canCancelSnackChatNotificationThrough(
+            latestNotificationSequence: latestNotificationSequence,
+            readThroughSequence: throughSequence,
+          );
+      if (!canCancelGroupedSlot) return;
       final preferenceKey =
           '$_snackNotificationGroupPreferencePrefix$normalized';
       final explicitTag = notificationGroupKey?.trim() ?? '';
@@ -957,7 +1055,10 @@ class FCMService {
           tag: tag,
         );
       }
-      if (current()) await preferences.remove(preferenceKey);
+      if (current()) {
+        await preferences.remove(preferenceKey);
+        await preferences.remove(sequenceKey);
+      }
     } catch (error) {
       Logger.error('Snack Chat 방별 알림 정리 실패', error);
     }
@@ -968,12 +1069,23 @@ class FCMService {
   /// unrelated notification cards remain untouched.
   Future<void> cancelAppNotification(String notificationId) async {
     final normalized = notificationId.trim();
-    if (normalized.isEmpty || kIsWeb || !Platform.isAndroid) return;
+    final owner = FirebaseAuth.instance.currentUser?.uid.trim() ?? '';
+    final epoch = _activeEpoch;
+    if (normalized.isEmpty || owner.isEmpty || kIsWeb) return;
     try {
-      await _localNotifications.cancel(
-        androidRemoteNotificationId,
-        tag: appNotificationAndroidTag(normalized),
+      await _removeDeliveredNotifications(
+        ownerUserId: owner,
+        kind: 'app',
+        notificationId: normalized,
       );
+      if (_isStaleEpoch(epoch) ||
+          FirebaseAuth.instance.currentUser?.uid != owner) return;
+      if (Platform.isAndroid) {
+        await _localNotifications.cancel(
+          androidRemoteNotificationId,
+          tag: appNotificationAndroidTag(normalized),
+        );
+      }
     } catch (error) {
       Logger.error('개별 앱 알림 정리 실패', error);
     }
@@ -983,6 +1095,7 @@ class FCMService {
   Future<void> cancelDmNotification(
     String conversationId, {
     String? notificationGroupKey,
+    int? throughSentAtMillis,
   }) async {
     final normalized = conversationId.trim();
     final owner = FirebaseAuth.instance.currentUser?.uid.trim() ?? '';
@@ -993,16 +1106,39 @@ class FCMService {
           FirebaseAuth.instance.currentUser?.uid != owner) return;
       final tag = dmNotificationAndroidTag(
           recipientUserId: owner, conversationId: normalized);
-      // Always derive from the captured account, not persisted old-account data.
-      _snackChatNotificationGate.clearRoom(tag);
-      _chatPreviewHistory.clearRoom(tag);
       try {
+        await _removeDeliveredNotifications(
+          ownerUserId: owner,
+          kind: 'dm',
+          roomId: normalized,
+          throughSentAtMillis: throughSentAtMillis ?? 0,
+        );
+        if (_isStaleEpoch(epoch) ||
+            FirebaseAuth.instance.currentUser?.uid != owner) return;
+        final preferences = await SharedPreferences.getInstance();
+        final sentAtKey =
+            '$_dmNotificationSentAtPreferencePrefix$owner::$normalized';
+        final latestNotificationSentAtMillis =
+            preferences.getInt(sentAtKey) ?? 0;
+        final canCancelGroupedSlot = throughSentAtMillis != null &&
+            canCancelDmNotificationThrough(
+              latestNotificationSentAtMillis: latestNotificationSentAtMillis,
+              readThroughAtMillis: throughSentAtMillis,
+            );
+        if (!canCancelGroupedSlot) return;
+        _snackChatNotificationGate.clearRoom(tag);
+        _chatPreviewHistory.clearRoom(tag);
+        // Always derive from the captured account, not persisted old-account data.
         await _localNotifications.cancel(
           Platform.isAndroid
               ? androidRemoteNotificationId
               : dmLocalNotificationId(tag),
           tag: Platform.isAndroid ? tag : null,
         );
+        if (!_isStaleEpoch(epoch) &&
+            FirebaseAuth.instance.currentUser?.uid == owner) {
+          await preferences.remove(sentAtKey);
+        }
       } catch (error) {
         Logger.error('DM 방별 알림 정리 실패', error);
       }

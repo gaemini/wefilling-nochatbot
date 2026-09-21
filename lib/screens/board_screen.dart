@@ -35,7 +35,6 @@ import '../utils/responsive_helper.dart';
 import '../ui/widgets/post_translation_feed.dart';
 import '../l10n/ui_locale.dart';
 
-
 class BoardScreen extends StatefulWidget {
   final VoidCallback onOpenMeetups;
   final ValueChanged<bool>? onChromeVisibilityChanged;
@@ -186,7 +185,6 @@ class BoardScreenState extends State<BoardScreen> {
       child: child,
     );
   }
-
 
   void _captureVisiblePostAnchor() {
     if (!_controllersInitialized || !_todayScrollController.hasClients) return;
@@ -657,9 +655,11 @@ class BoardScreenState extends State<BoardScreen> {
       final isKo = Localizations.localeOf(context).languageCode == 'ko';
       AppSnackBar.show(
         context,
-        message: (isChineseUi(context) ? '刷新失败，请稍后重试。' : isKo
-            ? '새로고침에 실패했습니다. 잠시 후 다시 시도해 주세요.'
-            : 'Refresh failed. Please try again shortly.'),
+        message: (isChineseUi(context)
+            ? '刷新失败，请稍后重试。'
+            : isKo
+                ? '새로고침에 실패했습니다. 잠시 후 다시 시도해 주세요.'
+                : 'Refresh failed. Please try again shortly.'),
         type: AppSnackBarType.error,
       );
     }
@@ -886,7 +886,10 @@ class BoardScreenState extends State<BoardScreen> {
     }
 
     return PostTranslationFeed(
-      posts: <Post>[..._mergeVisibleTodayPosts(todayPosts), ..._historicalPosts],
+      posts: <Post>[
+        ..._mergeVisibleTodayPosts(todayPosts),
+        ..._historicalPosts
+      ],
       child: _buildTodayUnifiedList(
         todayPosts: todayPosts,
         isPostsLoading: isPostsLoading,
@@ -1188,8 +1191,12 @@ class BoardScreenState extends State<BoardScreen> {
 
                 final meetup = todayMeetups[i];
                 return Padding(
+                  key: ValueKey<String>('today_meetup_${meetup.id}'),
                   padding: _boardPostCardMargin,
                   child: StreamBuilder<int>(
+                    key: ValueKey<String>(
+                      'today_meetup_participants_${meetup.id}',
+                    ),
                     stream: _meetupService.participantCountStream(
                       meetup.id,
                       fallback: meetup.currentParticipants,
@@ -1414,7 +1421,11 @@ class BoardScreenState extends State<BoardScreen> {
                 unawaited(_loadMoreHistoricalPosts());
               }
             },
-            child: Text((isChineseUi(context) ? '重新加载更早的动态' : isKo ? '이전 포스트 다시 불러오기' : 'Retry earlier posts')),
+            child: Text((isChineseUi(context)
+                ? '重新加载更早的动态'
+                : isKo
+                    ? '이전 포스트 다시 불러오기'
+                    : 'Retry earlier posts')),
           ),
         ),
       );
@@ -1523,8 +1534,9 @@ class BoardScreenState extends State<BoardScreen> {
                   icon: Icons.event_available_rounded,
                   title: todayMeetupsTitle,
                   isLoading: isMeetupsLoading,
-                  actionLabel:
-                      (isChineseUi(context) ? '全部' : Localizations.localeOf(context).languageCode == 'ko'
+                  actionLabel: (isChineseUi(context)
+                      ? '全部'
+                      : Localizations.localeOf(context).languageCode == 'ko'
                           ? '모두 보기'
                           : 'ALL'),
                   onAction: widget.onOpenMeetups,
@@ -1662,10 +1674,14 @@ class BoardScreenState extends State<BoardScreen> {
         itemBuilder: (context, index) {
           final meetup = meetups[index];
           return Semantics(
+            key: ValueKey<String>('meetup_carousel_${meetup.id}'),
             label: '${index + 1} / ${meetups.length}',
             child: Padding(
               padding: _boardPostCardMargin,
               child: StreamBuilder<int>(
+                key: ValueKey<String>(
+                  'meetup_carousel_participants_${meetup.id}',
+                ),
                 stream: _meetupService.participantCountStream(
                   meetup.id,
                   fallback: meetup.currentParticipants,

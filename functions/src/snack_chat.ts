@@ -7804,6 +7804,7 @@ async function sendSnackChatPush(args: {
             recipientUserId: args.recipientId,
             snackChatId: args.roomRef.id,
             messageId: args.messageId,
+            messageSequence: String(messageSequence),
             senderId: args.senderId,
             senderName: args.senderName,
             roomTitle,

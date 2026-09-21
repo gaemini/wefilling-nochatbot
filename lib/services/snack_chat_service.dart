@@ -59,6 +59,13 @@ class SnackChatReadResult {
   final int readThroughSequence;
 }
 
+class _SnackChatReadSyncState {
+  int pendingSequence = 0;
+  int confirmedSequence = 0;
+  Future<SnackChatReadResult>? inFlight;
+  Future<void> persistence = Future<void>.value();
+}
+
 enum SnackChatSummarySectionType {
   mustKnow,
   responseRequired,
@@ -219,7 +226,9 @@ class SnackChatUnreadSummarySection {
                   Map<String, dynamic>.from(raw),
                 ))
             .where((item) =>
-                item.content.isNotEmpty && (item.sourceSequences.isNotEmpty || item.sourceMessageIds.isNotEmpty))
+                item.content.isNotEmpty &&
+                (item.sourceSequences.isNotEmpty ||
+                    item.sourceMessageIds.isNotEmpty))
             .take(3)
             .toList(growable: false)
         : const <SnackChatUnreadSummaryItem>[];
@@ -302,7 +311,9 @@ class SnackChatUnreadSummaryResult {
                   Map<String, dynamic>.from(raw),
                 ))
             .where((item) =>
-                item.content.isNotEmpty && (item.sourceSequences.isNotEmpty || item.sourceMessageIds.isNotEmpty))
+                item.content.isNotEmpty &&
+                (item.sourceSequences.isNotEmpty ||
+                    item.sourceMessageIds.isNotEmpty))
             .take(12)
             .toList(growable: false)
         : const <SnackChatUnreadSummaryItem>[];
@@ -541,6 +552,7 @@ class SnackChatService {
       _unreadSummaryInFlight = {};
   final Map<String, _SnackChatSummaryMemoryCacheRecord>
       _unreadSummaryMemoryCache = {};
+  final Map<String, _SnackChatReadSyncState> _readSyncStates = {};
   String? _entryCacheOwnerUid;
 
   static const Duration _entryContextCacheLifetime = Duration(seconds: 30);
@@ -725,6 +737,7 @@ class SnackChatService {
     _participantIntegrityRetryAfter.clear();
     _unreadSummaryInFlight.clear();
     _unreadSummaryMemoryCache.clear();
+    _readSyncStates.removeWhere((key, _) => !key.startsWith('$uid::'));
   }
 
   SnackChat? _latestRoom(String snackChatId) {
@@ -1832,6 +1845,7 @@ class SnackChatService {
     String snackChatId,
     String text, {
     List<SnackChatMention> mentions = const [],
+    Future<List<String>?>? mentionTargetsPreparation,
     String? messageId,
     ReplyMessagePreview? replyPreview,
     bool suppressLinkPreview = false,
@@ -1841,6 +1855,7 @@ class SnackChatService {
     return _sendMessageInternal(
       snackChatId: snackChatId,
       mentions: mentions,
+      mentionTargetsPreparation: mentionTargetsPreparation,
       messageId: messageId,
       type: SnackChatMessageType.text,
       text: trimmed,
@@ -1891,6 +1906,7 @@ class SnackChatService {
 
   Future<bool> _sendMessageInternal({
     List<SnackChatMention> mentions = const [],
+    Future<List<String>?>? mentionTargetsPreparation,
     required String snackChatId,
     String? messageId,
     required SnackChatMessageType type,
@@ -1912,16 +1928,23 @@ class SnackChatService {
     try {
       final roomRef = _collection.doc(snackChatId);
       final resolvedMessageId = messageId ?? createMessageId(snackChatId);
-      _definitiveSendRejections.remove('$uid::$snackChatId::$resolvedMessageId');
+      if (mentionTargetsPreparation == null) {
+        _definitiveSendRejections
+            .remove('$uid::$snackChatId::$resolvedMessageId');
+      }
       final messageRef = roomRef.collection('messages').doc(resolvedMessageId);
       List<String> mentionTargets = [];
       if (mentions.isNotEmpty) {
-        final proof = await _functions.httpsCallable('validateSnackChatMentions').call({
-          'snackChatId': snackChatId, 'messageId': resolvedMessageId, 'text': text,
-          'mentions': mentions.map((m) => m.toMap()).toList(),
-        }).timeout(const Duration(seconds: 20));
-        if (_uid != uid || proof.data is! Map || proof.data['success'] != true) return false;
-        mentionTargets = List<String>.from(proof.data['targetIds'] ?? []);
+        final prepared = mentionTargetsPreparation ??
+            prepareMentionTargets(
+              snackChatId: snackChatId,
+              messageId: resolvedMessageId,
+              text: text,
+              mentions: mentions,
+            );
+        final targets = await prepared;
+        if (_uid != uid || targets == null) return false;
+        mentionTargets = targets;
       }
       final firestoreWriteStopwatch = Stopwatch()..start();
       var transactionAttempt = 0;
@@ -2050,14 +2073,67 @@ class SnackChatService {
       }
       return true;
     } catch (e) {
-      if (messageId != null && e is FirebaseException &&
-          const {'permission-denied', 'invalid-argument', 'not-found', 'failed-precondition', 'unauthenticated'}.contains(e.code)) {
-        if (_definitiveSendRejections.length >= 200) _definitiveSendRejections.remove(_definitiveSendRejections.first);
-        _definitiveSendRejections.add('$uid::$snackChatId::$messageId');
+      if (messageId != null &&
+          e is FirebaseException &&
+          const {
+            'permission-denied',
+            'invalid-argument',
+            'not-found',
+            'failed-precondition',
+            'unauthenticated'
+          }.contains(e.code)) {
+        _rememberDefinitiveSendRejection('$uid::$snackChatId::$messageId');
       }
       Logger.error('Snack Chat 메시지 전송 실패: $e');
       return false;
     }
+  }
+
+  /// Starts mention authorization before the ordered Firestore commit reaches
+  /// the head of the room queue. The commit still awaits this exact result, so
+  /// consecutive text messages keep tap order while independent preparation
+  /// can overlap.
+  Future<List<String>?> prepareMentionTargets({
+    required String snackChatId,
+    required String messageId,
+    required String text,
+    required List<SnackChatMention> mentions,
+  }) async {
+    if (mentions.isEmpty) return const <String>[];
+    final owner = _uid;
+    if (owner == null) return null;
+    final rejectionKey = '$owner::$snackChatId::$messageId';
+    _definitiveSendRejections.remove(rejectionKey);
+    try {
+      final proof = await _functions
+          .httpsCallable('validateSnackChatMentions')
+          .call(<String, dynamic>{
+        'snackChatId': snackChatId,
+        'messageId': messageId,
+        'text': text,
+        'mentions': mentions.map((mention) => mention.toMap()).toList(),
+      }).timeout(const Duration(seconds: 20));
+      if (_uid != owner ||
+          proof.data is! Map ||
+          proof.data['success'] != true) {
+        _rememberDefinitiveSendRejection(rejectionKey);
+        return null;
+      }
+      return List<String>.from(proof.data['targetIds'] ?? const <String>[]);
+    } catch (error) {
+      // No message write has started, so the current attempt is definitively
+      // failed (and can be retried explicitly) rather than an uncertain commit.
+      _rememberDefinitiveSendRejection(rejectionKey);
+      Logger.error('Snack Chat 멘션 검증 실패: $error');
+      return null;
+    }
+  }
+
+  void _rememberDefinitiveSendRejection(String key) {
+    if (_definitiveSendRejections.length >= 200) {
+      _definitiveSendRejections.remove(_definitiveSendRejections.first);
+    }
+    _definitiveSendRejections.add(key);
   }
 
   String? _firstHttpUrl(String text) {
@@ -2158,29 +2234,119 @@ class SnackChatService {
     return operation;
   }
 
-  /// 화면을 나갈 때 UI에 로드되어 있던 [throughSequence]까지만 읽는다.
+  /// 화면이 활성 상태일 때 확보한 서버 확정 [throughSequence]까지만 읽는다.
   ///
   /// 최신 방 sequence를 클라이언트에서 다시 조회하지 않고 서버에 경계를
   /// 전달하므로 화면 종료와 동시에 도착한 새 메시지는 읽음 처리되지 않는다.
   Future<SnackChatReadResult> markAsRead(
     String snackChatId, {
     required int throughSequence,
-  }) async {
+  }) {
     final uid = _uid;
     if (uid == null || throughSequence <= 0) {
-      return const SnackChatReadResult(
-        clearedCount: 0,
-        unreadCount: 0,
-        readThroughSequence: 0,
+      return Future<SnackChatReadResult>.value(
+        const SnackChatReadResult(
+          clearedCount: 0,
+          unreadCount: 0,
+          readThroughSequence: 0,
+        ),
       );
     }
 
+    _ensureEntryCacheOwner(uid);
+    final key = '$uid::$snackChatId';
+    final state = _readSyncStates.putIfAbsent(
+      key,
+      _SnackChatReadSyncState.new,
+    );
+    if (throughSequence > state.pendingSequence) {
+      state.pendingSequence = throughSequence;
+      state.persistence = state.persistence.then(
+        (_) => _localCache.savePendingReadSequence(
+          uid,
+          snackChatId,
+          throughSequence,
+        ),
+      );
+    }
+    final active = state.inFlight;
+    if (active != null) return active;
+
+    late final Future<SnackChatReadResult> operation;
+    operation = _drainReadSync(
+      ownerUid: uid,
+      snackChatId: snackChatId,
+      state: state,
+    ).whenComplete(() {
+      if (identical(state.inFlight, operation)) state.inFlight = null;
+    });
+    state.inFlight = operation;
+    return operation;
+  }
+
+  Future<SnackChatReadResult> _drainReadSync({
+    required String ownerUid,
+    required String snackChatId,
+    required _SnackChatReadSyncState state,
+  }) async {
+    await state.persistence;
+    final saved = await _localCache.getPendingReadSequence(
+      ownerUid,
+      snackChatId,
+    );
+    if (saved > state.pendingSequence) state.pendingSequence = saved;
+
+    var totalCleared = 0;
+    var unreadCount = 0;
+    while (state.pendingSequence > state.confirmedSequence) {
+      if (_uid != ownerUid) {
+        throw StateError('Snack Chat read sync account changed.');
+      }
+      final target = state.pendingSequence;
+      final result = await _markAsReadOnce(
+        ownerUid: ownerUid,
+        snackChatId: snackChatId,
+        throughSequence: target,
+      );
+      totalCleared += result.clearedCount;
+      unreadCount = result.unreadCount;
+      if (result.readThroughSequence > state.confirmedSequence) {
+        state.confirmedSequence = result.readThroughSequence;
+      }
+      state.persistence = state.persistence.then(
+        (_) => _localCache.clearPendingReadSequenceThrough(
+          ownerUid,
+          snackChatId,
+          state.confirmedSequence,
+        ),
+      );
+      await state.persistence;
+
+      // A server-side clamp means the requested sequence was not canonical
+      // yet. Preserve it for the next existing recovery trigger without
+      // spinning or repeatedly querying the room.
+      if (state.confirmedSequence < target) break;
+    }
+
+    return SnackChatReadResult(
+      clearedCount: totalCleared,
+      unreadCount: unreadCount,
+      readThroughSequence: state.confirmedSequence,
+    );
+  }
+
+  Future<SnackChatReadResult> _markAsReadOnce({
+    required String ownerUid,
+    required String snackChatId,
+    required int throughSequence,
+  }) async {
     try {
-      if (Logger.isVerboseEnabled)
+      if (Logger.isVerboseEnabled) {
         Logger.log(
           '📖 [SnackChat] markAsRead: room=$snackChatId, '
-          'uid=$uid, through=$throughSequence',
+          'uid=$ownerUid, through=$throughSequence',
         );
+      }
       final result = await _functions
           .httpsCallable('markSnackChatReadSecure')
           .call(<String, dynamic>{
@@ -2198,17 +2364,25 @@ class SnackChatService {
       final unreadCount =
           unreadRaw is num ? unreadRaw.toInt().clamp(0, 1 << 31) : 0;
       final readThroughRaw = data['readThroughSequence'];
-      final readThroughSequence = readThroughRaw is num
-          ? readThroughRaw.toInt().clamp(0, 1 << 31)
-          : throughSequence;
+      if (readThroughRaw is! num) {
+        throw const FormatException(
+          'Snack Chat read response has no confirmed sequence.',
+        );
+      }
+      final readThroughSequence =
+          readThroughRaw.toInt().clamp(0, 1 << 31).toInt();
+
+      if (_uid != ownerUid) {
+        throw StateError('Snack Chat read sync account changed.');
+      }
 
       // The room list will publish the new unread aggregate shortly. Until
       // then, never reuse the entry boundary captured before this read.
-      _entryContextCache.remove('$uid::$snackChatId');
+      _entryContextCache.remove('$ownerUid::$snackChatId');
       unawaited(_localCache.clearEntryState(snackChatId));
       _applyReadProjectionToCachedRooms(
         snackChatId: snackChatId,
-        userId: uid,
+        userId: ownerUid,
         unreadCount: unreadCount,
         readThroughSequence: readThroughSequence,
       );

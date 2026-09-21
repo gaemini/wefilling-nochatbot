@@ -45,7 +45,15 @@ class BoardMeetupCard extends StatelessWidget {
   String _weekdayLabel(BuildContext context) {
     final localDate = meetup.date.toLocal();
     if (isChineseUi(context)) {
-      return const ['周一', '周二', '周三', '周四', '周五', '周六', '周日'][localDate.weekday - 1];
+      return const [
+        '周一',
+        '周二',
+        '周三',
+        '周四',
+        '周五',
+        '周六',
+        '周日'
+      ][localDate.weekday - 1];
     }
     if (_isKorean(context)) {
       const weekdays = ['월', '화', '수', '목', '금', '토', '일'];
@@ -109,9 +117,11 @@ class BoardMeetupCard extends StatelessWidget {
                       borderRadius: BorderRadius.circular(
                         context.rs(16).clamp(14.0, 18.0).toDouble(),
                       ),
-                      semanticLabel: (isChineseUi(context) ? '部分人可见的聚会' : _isKorean(context)
-                          ? '공개 범위가 제한된 모임'
-                          : 'Limited audience meetup'),
+                      semanticLabel: (isChineseUi(context)
+                          ? '部分人可见的聚会'
+                          : _isKorean(context)
+                              ? '공개 범위가 제한된 모임'
+                              : 'Limited audience meetup'),
                       child: ColoredBox(
                         color: Colors.white,
                         child: Column(
@@ -292,10 +302,15 @@ class BoardMeetupCard extends StatelessWidget {
     }
     final cache = UserInfoCacheService();
     return StreamBuilder<DMUserInfo?>(
+      key: ValueKey<String>('meetup_host_$userId'),
       stream: cache.watchUserInfo(userId),
       initialData: cache.getCachedUserInfo(userId),
       builder: (context, snapshot) {
-        final latest = snapshot.data;
+        // A StreamBuilder element can be reused while a filtered/reordered
+        // list swaps rows. Never paint a response belonging to the previous
+        // meetup host while the new UID's stream is attaching.
+        final candidate = snapshot.data;
+        final latest = candidate?.uid == userId ? candidate : null;
         final isDeleted = latest?.isDeletedAccount == true;
         return _hostIdentityContent(
           context,

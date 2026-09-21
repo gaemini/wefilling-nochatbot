@@ -390,6 +390,7 @@ export const markDMConversationReadSecure = functions
         newDmUnreadTotal: counterResult.newDmUnreadTotal,
         receiptsUpdated: 0,
         cleanupComplete: true,
+        readThroughAtMillis: 0,
       };
     }
 
@@ -398,10 +399,12 @@ export const markDMConversationReadSecure = functions
     if (raw?.deferReceipts === true) {
       return {success: true, clearedCount: counterResult.clearedCount,
         newDmUnreadTotal: counterResult.newDmUnreadTotal,
-        receiptsUpdated: 0, cleanupComplete: false};
+        receiptsUpdated: 0, cleanupComplete: false,
+        readThroughAtMillis: readThroughAt.toMillis()};
     }
     const receipts = await materializeDMReceipts(conversationRef, userId,
       readThroughAt, counterResult.receiptCursor);
     return {success: true, clearedCount: counterResult.clearedCount,
-      newDmUnreadTotal: counterResult.newDmUnreadTotal, ...receipts};
+      newDmUnreadTotal: counterResult.newDmUnreadTotal,
+      readThroughAtMillis: readThroughAt.toMillis(), ...receipts};
   });

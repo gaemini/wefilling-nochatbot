@@ -224,8 +224,9 @@ class _SnackChatScreenState extends State<SnackChatScreen>
   bool _readSyncScanScheduled = false;
   int _pendingReadSequence = 0;
   int _confirmedReadSequence = 0;
-  int _highestVisibleReadSequence = 0;
+  int _highestConfirmedReadSequence = 0;
   int _readSyncGeneration = 0;
+  final Map<String, int> _postProcessedReadSequences = <String, int>{};
   final Map<String, String> _senderNameCache = {};
   final Map<String, Future<String>> _senderNameFutures = {};
   final Set<String> _senderProfileRefreshStarted = <String>{};
@@ -398,12 +399,14 @@ class _SnackChatScreenState extends State<SnackChatScreen>
         WidgetsBinding.instance.lifecycleState ?? AppLifecycleState.detached;
     if (_appLifecycleState == AppLifecycleState.resumed) {
       SnackChatActiveConversation.setActive(widget.snackChatId);
-      // Entering a room removes only that room's OS card. Read state still
-      // advances later from actually rendered/visible messages.
-      unawaited(FCMService().cancelSnackChatNotification(widget.snackChatId));
     }
     _lastRoom = widget.initialRoom;
     _seedEntryContext(widget.initialEntryContext);
+    if (widget.initialEntryContext?.canAdvanceReadCursor == true) {
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (mounted) _scheduleActiveReadSync();
+      });
+    }
     _roomStream = _snackChatService.watchSnackChat(widget.snackChatId);
     _scrollController.addListener(_onScroll);
     _messageController.addListener(_onDraftChanged);
@@ -1468,14 +1471,19 @@ class _SnackChatScreenState extends State<SnackChatScreen>
     if (SnackChatActiveConversation.isActive(oldWidget.snackChatId)) {
       SnackChatActiveConversation.setActive(null);
     }
-    final oldReadBoundary = _latestVisibleSequence();
+    final oldReadBoundary = _latestConfirmedSequence();
     if (oldReadBoundary > _confirmedReadSequence &&
         _entryReadSyncAllowed &&
-        _entryPositionSettled) {
+        _entryContextResolved) {
       unawaited(
         _flushReadBoundary(
           roomId: oldWidget.snackChatId,
           throughSequence: oldReadBoundary,
+        ).then<void>(
+          (_) {},
+          onError: (Object error, StackTrace _) {
+            Logger.error('Snack Chat 이전 방 읽음 동기화 실패', error);
+          },
         ),
       );
     }
@@ -1557,7 +1565,7 @@ class _SnackChatScreenState extends State<SnackChatScreen>
     _readSyncScanScheduled = false;
     _pendingReadSequence = 0;
     _confirmedReadSequence = 0;
-    _highestVisibleReadSequence = 0;
+    _highestConfirmedReadSequence = 0;
     _readSyncGeneration++;
     _isNearLatest = true;
     _outboxRetryAttempt = 0;
@@ -1586,7 +1594,6 @@ class _SnackChatScreenState extends State<SnackChatScreen>
     _roomStream = _snackChatService.watchSnackChat(widget.snackChatId);
     if (_appLifecycleState == AppLifecycleState.resumed) {
       SnackChatActiveConversation.setActive(widget.snackChatId);
-      unawaited(FCMService().cancelSnackChatNotification(widget.snackChatId));
     }
     unawaited(
       _hydrateLocalState(
@@ -2031,9 +2038,15 @@ class _SnackChatScreenState extends State<SnackChatScreen>
     if (entry == null) return;
     _entryContextResolved = true;
     _entryReadSyncAllowed = entry.canAdvanceReadCursor;
-    _confirmedReadSequence = entry.lastReadSequence;
-    _pendingReadSequence = entry.lastReadSequence;
-    _highestVisibleReadSequence = entry.lastReadSequence;
+    if (entry.lastReadSequence > _confirmedReadSequence) {
+      _confirmedReadSequence = entry.lastReadSequence;
+    }
+    if (entry.roomLastSequence > _pendingReadSequence) {
+      _pendingReadSequence = entry.roomLastSequence;
+    }
+    if (entry.roomLastSequence > _highestConfirmedReadSequence) {
+      _highestConfirmedReadSequence = entry.roomLastSequence;
+    }
     _firstUnreadMessageId = entry.firstUnreadMessageId;
     _firstUnreadSequence = entry.firstUnreadSequence;
     _entryUnreadCount = entry.roomUnreadCount;
@@ -2159,6 +2172,7 @@ class _SnackChatScreenState extends State<SnackChatScreen>
     final roomId = widget.snackChatId;
     final generation = ++_entryBootstrapGeneration;
     var membershipPrepared = false;
+    SnackChatEntryContext? resolvedEntry;
     try {
       await _ensureMyMembershipReady();
       membershipPrepared = true;
@@ -2170,6 +2184,31 @@ class _SnackChatScreenState extends State<SnackChatScreen>
           roomId != widget.snackChatId) {
         return;
       }
+      resolvedEntry = entry;
+
+      // Reading and unread-anchor positioning are independent. As soon as the
+      // server entry boundary is known, queue exactly that confirmed boundary;
+      // an anchor fetch or scroll failure must not leave the room unread.
+      setState(() {
+        _entryContextResolved = true;
+        _entryReadSyncAllowed = entry.canAdvanceReadCursor;
+        if (entry.lastReadSequence > _confirmedReadSequence) {
+          _confirmedReadSequence = entry.lastReadSequence;
+        }
+        if (entry.roomLastSequence > _pendingReadSequence) {
+          _pendingReadSequence = entry.roomLastSequence;
+        }
+        if (entry.roomLastSequence > _highestConfirmedReadSequence) {
+          _highestConfirmedReadSequence = entry.roomLastSequence;
+        }
+        _firstUnreadMessageId = entry.firstUnreadMessageId;
+        _firstUnreadSequence = entry.firstUnreadSequence;
+        _entryUnreadCount = entry.roomUnreadCount;
+        _entryLatestSequence = entry.roomLastSequence;
+        _isNearLatest = !entry.hasUnreadAnchor;
+        _entryPositionSettled = !entry.hasUnreadAnchor;
+      });
+      if (_entryReadSyncAllowed) _scheduleActiveReadSync();
 
       List<SnackChatMessage> anchorWindow = const <SnackChatMessage>[];
       if (entry.hasUnreadAnchor) {
@@ -2214,17 +2253,6 @@ class _SnackChatScreenState extends State<SnackChatScreen>
         _entryRetryTimer?.cancel();
         _entryRetryTimer = null;
         _entryRetryAttempt = 0;
-        _entryContextResolved = true;
-        _entryReadSyncAllowed = entry.canAdvanceReadCursor;
-        _confirmedReadSequence = entry.lastReadSequence;
-        _pendingReadSequence = entry.lastReadSequence;
-        if (entry.lastReadSequence > _highestVisibleReadSequence) {
-          _highestVisibleReadSequence = entry.lastReadSequence;
-        }
-        _firstUnreadMessageId = entry.firstUnreadMessageId;
-        _firstUnreadSequence = entry.firstUnreadSequence;
-        _entryUnreadCount = entry.roomUnreadCount;
-        _entryLatestSequence = entry.roomLastSequence;
         for (final message in anchorWindow) {
           if (_messageIds.add(message.id)) _messages.add(message);
         }
@@ -2239,8 +2267,6 @@ class _SnackChatScreenState extends State<SnackChatScreen>
       _scheduleSenderProfileHydration(anchorWindow);
       if (entry.hasUnreadAnchor) {
         _scheduleEntryAnchorPosition(generation: generation);
-      } else if (_entryReadSyncAllowed) {
-        _scheduleActiveReadSync();
       }
     } catch (error, stackTrace) {
       _membershipPreparationPending = false;
@@ -2257,24 +2283,34 @@ class _SnackChatScreenState extends State<SnackChatScreen>
       if (!membershipPrepared && _isTerminalRoomError(_messageStreamError)) {
         _scheduleRoomAccessTermination();
       }
-      // 연결 실패 시에는 최신 화면만 보여 주고 읽음 커서를 추측해서
-      // 진행하지 않는다. 다음 진입/재연결에서 서버 경계를 다시 구한다.
-      setState(() {
-        _entryContextResolved = true;
-        _entryPositionSettled = true;
-        _entryReadSyncAllowed = false;
-        _firstUnreadMessageId = null;
-        _firstUnreadSequence = null;
-        _entryUnreadCount = 0;
-        _entryLatestSequence = 0;
-        _unreadSummaryLoading = false;
-        _unreadSummaryRequestGeneration++;
-        _summaryRun?.dispose();
-        _summaryRun = null;
-        _todaySummaryLoading = false;
-        _todaySummaryRequestGeneration++;
-        _isNearLatest = true;
-      });
+      if (resolvedEntry != null) {
+        // Only anchor preparation failed. Keep the frozen unread divider and
+        // the already queued server boundary, and stop fighting user scroll.
+        setState(() {
+          _entryPositionInFlight = false;
+          _entryPositionSettled = true;
+        });
+        _scheduleActiveReadSync();
+      } else {
+        // No authoritative entry context was obtained. Do not guess a cursor
+        // from cached/local messages; retry only on the existing entry path.
+        setState(() {
+          _entryContextResolved = true;
+          _entryPositionSettled = true;
+          _entryReadSyncAllowed = false;
+          _firstUnreadMessageId = null;
+          _firstUnreadSequence = null;
+          _entryUnreadCount = 0;
+          _entryLatestSequence = 0;
+          _unreadSummaryLoading = false;
+          _unreadSummaryRequestGeneration++;
+          _summaryRun?.dispose();
+          _summaryRun = null;
+          _todaySummaryLoading = false;
+          _todaySummaryRequestGeneration++;
+          _isNearLatest = true;
+        });
+      }
       if (_entryRetryAttempt < 3 && _entryRetryTimer == null) {
         _entryRetryAttempt++;
         final retryGeneration = generation;
@@ -2353,12 +2389,11 @@ class _SnackChatScreenState extends State<SnackChatScreen>
         return;
       }
 
-      // The context was valid but its widget could not be laid out. Keep the
-      // cursor frozen rather than clearing unread messages from a guessed spot.
+      // The context was valid but its widget could not be laid out. Stop the
+      // automatic positioning without changing the independently queued read.
       setState(() {
         _entryPositionInFlight = false;
         _entryPositionSettled = true;
-        _entryReadSyncAllowed = false;
       });
     });
   }
@@ -2368,7 +2403,6 @@ class _SnackChatScreenState extends State<SnackChatScreen>
     _appLifecycleState = state;
     if (state == AppLifecycleState.resumed) {
       SnackChatActiveConversation.setActive(widget.snackChatId);
-      unawaited(FCMService().cancelSnackChatNotification(widget.snackChatId));
       _toolbarScrollTracker.resetGesture();
       if (_isUserScrolling) {
         _isUserScrolling = false;
@@ -2437,61 +2471,37 @@ class _SnackChatScreenState extends State<SnackChatScreen>
     });
   }
 
-  int _latestVisibleSequence() {
-    final viewportRenderObject =
-        _messageViewportKey.currentContext?.findRenderObject();
-    if (viewportRenderObject is! RenderBox ||
-        !viewportRenderObject.attached ||
-        !viewportRenderObject.hasSize) {
-      return _highestVisibleReadSequence;
-    }
-    final viewportTop = viewportRenderObject.localToGlobal(Offset.zero).dy;
-    final viewportBottom = viewportTop + viewportRenderObject.size.height;
-    var latest = _highestVisibleReadSequence;
+  int _latestConfirmedSequence() {
+    var latest = _highestConfirmedReadSequence;
+    final roomSequence = _lastRoom?.lastMessageSequence ?? 0;
+    if (roomSequence > latest) latest = roomSequence;
+    if (_entryLatestSequence > latest) latest = _entryLatestSequence;
     for (final message in _messages) {
       final sequence = message.sequence;
-      if (sequence == null || sequence <= latest) continue;
-      final renderObject =
-          _messageKeys[message.id]?.currentContext?.findRenderObject();
-      if (renderObject is! RenderBox ||
-          !renderObject.attached ||
-          !renderObject.hasSize) {
-        continue;
-      }
-      final top = renderObject.localToGlobal(Offset.zero).dy;
-      if (isSnackChatMessageMeaningfullyVisible(
-        itemTop: top,
-        itemHeight: renderObject.size.height,
-        viewportTop: viewportTop,
-        viewportBottom: viewportBottom,
-      )) {
+      if (sequence != null &&
+          message.sendStatus == MessageSendStatus.sent &&
+          sequence > latest) {
         latest = sequence;
       }
     }
     return latest;
   }
 
-  Future<void> _flushReadBoundary({
+  Future<SnackChatReadResult> _flushReadBoundary({
     required String roomId,
     required int throughSequence,
   }) async {
-    if (throughSequence <= _confirmedReadSequence) return;
     Object? lastError;
     for (var attempt = 0; attempt < 2; attempt++) {
       try {
-        if (roomId == widget.snackChatId) {
-          await _ensureMyMembershipReady();
-        } else {
-          await _snackChatService.ensureMyMembership(roomId);
-        }
         final readResult = await _snackChatService
             .markAsRead(roomId, throughSequence: throughSequence)
             .timeout(const Duration(seconds: 16));
-        if (readResult.clearedCount > 0) await BadgeService.refreshNow();
-        await FCMService().cancelSnackChatNotification(roomId);
-        return;
+        _scheduleReadPostProcessing(roomId, readResult);
+        return readResult;
       } catch (error) {
         lastError = error;
+        if (_isTerminalRoomError(error)) break;
         if (attempt == 0) {
           await Future<void>.delayed(const Duration(milliseconds: 450));
         }
@@ -2500,14 +2510,43 @@ class _SnackChatScreenState extends State<SnackChatScreen>
     throw lastError ?? StateError('Snack Chat 읽음 동기화 실패');
   }
 
-  /// 실제 viewport에 충분히 노출된 가장 높은 sequence만 읽음 경계로 쓴다.
-  /// 프레임 단위로 스캔을 합치고 서버 호출은 직렬화하여 빠른 스크롤이나
-  /// 연속 수신에서도 읽음 callable이 중복 실행되지 않게 한다.
+  void _scheduleReadPostProcessing(
+    String roomId,
+    SnackChatReadResult result,
+  ) {
+    final owner = FirebaseAuth.instance.currentUser?.uid ?? '';
+    if (owner.isEmpty) return;
+    final key = '$owner::$roomId';
+    final previous = _postProcessedReadSequences[key] ?? 0;
+    if (result.readThroughSequence <= previous) return;
+    _postProcessedReadSequences[key] = result.readThroughSequence;
+    if (result.clearedCount > 0) {
+      unawaited(
+        BadgeService.refreshNow().catchError((Object error) {
+          Logger.error('Snack Chat 읽음 배지 갱신 실패', error);
+        }),
+      );
+    }
+    if (result.readThroughSequence > 0) {
+      unawaited(
+        FCMService()
+            .cancelSnackChatNotification(
+          roomId,
+          throughSequence: result.readThroughSequence,
+        )
+            .catchError((Object error) {
+          Logger.error('Snack Chat 읽음 알림 정리 실패', error);
+        }),
+      );
+    }
+  }
+
+  /// 현재 화면과 활성 lifecycle에서 확보한 서버 확정 sequence를 합친다.
+  /// 프레임 단위로 요청을 합치고 서비스의 계정·방 큐가 중복 호출을 막는다.
   void _scheduleActiveReadSync() {
     if (!mounted ||
         ModalRoute.of(context)?.isCurrent != true ||
         !_entryContextResolved ||
-        !_entryPositionSettled ||
         !_entryReadSyncAllowed ||
         _isLeavingRoom ||
         _roomWasLeft ||
@@ -2527,15 +2566,14 @@ class _SnackChatScreenState extends State<SnackChatScreen>
         return;
       }
       _readSyncScanScheduled = false;
-      _scanVisibleReadBoundary();
+      _scanConfirmedReadBoundary();
     });
   }
 
-  void _scanVisibleReadBoundary() {
+  void _scanConfirmedReadBoundary() {
     if (!mounted ||
         ModalRoute.of(context)?.isCurrent != true ||
         !_entryContextResolved ||
-        !_entryPositionSettled ||
         !_entryReadSyncAllowed ||
         _isLeavingRoom ||
         _roomWasLeft ||
@@ -2544,10 +2582,10 @@ class _SnackChatScreenState extends State<SnackChatScreen>
         !SnackChatActiveConversation.isActive(widget.snackChatId)) {
       return;
     }
-    final latest = _latestVisibleSequence();
+    final latest = _latestConfirmedSequence();
     if (latest <= _confirmedReadSequence) return;
-    if (latest > _highestVisibleReadSequence) {
-      _highestVisibleReadSequence = latest;
+    if (latest > _highestConfirmedReadSequence) {
+      _highestConfirmedReadSequence = latest;
     }
     if (latest > _pendingReadSequence) _pendingReadSequence = latest;
     if (_activeReadSyncInFlight) return;
@@ -2559,32 +2597,38 @@ class _SnackChatScreenState extends State<SnackChatScreen>
   }
 
   Future<void> _drainActiveReadSync(String roomId, int generation) async {
+    var retryDeferred = false;
     try {
       while (mounted &&
           generation == _readSyncGeneration &&
           roomId == widget.snackChatId &&
+          ModalRoute.of(context)?.isCurrent == true &&
+          SnackChatActiveConversation.isActive(roomId) &&
           _appLifecycleState == AppLifecycleState.resumed &&
           _pendingReadSequence > _confirmedReadSequence) {
         final target = _pendingReadSequence;
         try {
-          await _flushReadBoundary(
+          final result = await _flushReadBoundary(
             roomId: roomId,
             throughSequence: target,
           );
           if (generation != _readSyncGeneration) return;
-          _confirmedReadSequence = target;
+          if (result.readThroughSequence > _confirmedReadSequence) {
+            _confirmedReadSequence = result.readThroughSequence;
+          }
         } catch (error) {
+          retryDeferred = true;
           Logger.error('Snack Chat 실시간 읽음 동기화 실패', error);
           // 다음 stream event 또는 resume에서 다시 시도하되, 네트워크가
           // 끊긴 동안 즉시 재귀 호출이 반복되지는 않게 한다.
-          _pendingReadSequence = _confirmedReadSequence;
           return;
         }
       }
     } finally {
       if (generation == _readSyncGeneration) {
         _activeReadSyncInFlight = false;
-        if (_pendingReadSequence > _confirmedReadSequence &&
+        if (!retryDeferred &&
+            _pendingReadSequence > _confirmedReadSequence &&
             _appLifecycleState == AppLifecycleState.resumed) {
           _scheduleActiveReadSync();
         }
@@ -2594,7 +2638,6 @@ class _SnackChatScreenState extends State<SnackChatScreen>
 
   void _startBackgroundReadFlush() {
     if (!_entryContextResolved ||
-        !_entryPositionSettled ||
         !_entryReadSyncAllowed ||
         _roomWasLeft ||
         _roomAccessTerminated ||
@@ -2603,19 +2646,25 @@ class _SnackChatScreenState extends State<SnackChatScreen>
     }
     _exitReadFlushStarted = true;
     final roomId = widget.snackChatId;
-    final throughSequence = _latestVisibleSequence();
-    if (throughSequence > _highestVisibleReadSequence) {
-      _highestVisibleReadSequence = throughSequence;
+    final throughSequence = _latestConfirmedSequence();
+    if (throughSequence > _highestConfirmedReadSequence) {
+      _highestConfirmedReadSequence = throughSequence;
     }
     if (throughSequence <= 0) return;
+    if (throughSequence > _pendingReadSequence) {
+      _pendingReadSequence = throughSequence;
+    }
 
     unawaited(
       _flushReadBoundary(
         roomId: roomId,
         throughSequence: throughSequence,
-      ).catchError((Object error) {
-        Logger.error('Snack Chat 화면 종료 읽음 동기화 실패', error);
-      }),
+      ).then<void>(
+        (_) {},
+        onError: (Object error, StackTrace _) {
+          Logger.error('Snack Chat 화면 종료 읽음 동기화 실패', error);
+        },
+      ),
     );
   }
 
@@ -3101,11 +3150,10 @@ class _SnackChatScreenState extends State<SnackChatScreen>
       _isUserScrolling = true;
       if (_entryPositionInFlight && !_entryPositionSettled) {
         // A real gesture always wins over the initial unread-anchor jump.
-        // Freeze read advancement because the automated boundary was not
-        // reached, but release pagination and never fight the user's drag.
+        // Release pagination and never fight the user's drag. Read advancement
+        // is based on the independent server-confirmed room boundary.
         _entryPositionInFlight = false;
         _entryPositionSettled = true;
-        _entryReadSyncAllowed = false;
       }
       _cancelPendingTranslationRestore();
     }
@@ -3500,6 +3548,14 @@ class _SnackChatScreenState extends State<SnackChatScreen>
     if (uid == null) return;
     final messageId = _snackChatService.createMessageId(roomId);
     if (!_sendingTextMessageIds.add(messageId)) return;
+    final mentionTargetsPreparation = mentions.isEmpty
+        ? null
+        : _snackChatService.prepareMentionTargets(
+            snackChatId: roomId,
+            messageId: messageId,
+            text: text,
+            mentions: mentions,
+          );
     if (ChatTiming.enabled) {
       ChatTiming.record(
         '[SnackChatTiming] stage=sendTappedAt at=$sendTappedAt '
@@ -3554,6 +3610,7 @@ class _SnackChatScreenState extends State<SnackChatScreen>
           text,
           messageId: messageId,
           mentions: mentions,
+          mentionTargetsPreparation: mentionTargetsPreparation,
           replyPreview: reply,
         ),
       );
@@ -3860,6 +3917,10 @@ class _SnackChatScreenState extends State<SnackChatScreen>
           clearErrorMessage: true,
         ),
       );
+      return;
+    }
+    if (_snackChatService.wasSendRejected(owner, targetRoomId, messageId)) {
+      _markMessageFailed(messageId, '전송 요청이 거절되었습니다. 다시 확인해 주세요.');
       return;
     }
     final resolutionWatch = Stopwatch()..start();
@@ -5271,13 +5332,25 @@ class _SnackChatScreenState extends State<SnackChatScreen>
 
   Future<void> _openRoomInfo(SnackChat room) async {
     if (_isLeavingRoom) return;
+    _startBackgroundReadFlush();
+    if (SnackChatActiveConversation.isActive(widget.snackChatId)) {
+      SnackChatActiveConversation.setActive(null);
+    }
     final infoRoute = MaterialPageRoute<bool>(
       builder: (_) => SnackChatInfoScreen(
         snackChatId: room.id,
       ),
     );
     final didLeave = await Navigator.of(context).push<bool>(infoRoute);
-    if (!mounted || didLeave != true) return;
+    if (!mounted) return;
+    if (didLeave != true) {
+      _exitReadFlushStarted = false;
+      if (_appLifecycleState == AppLifecycleState.resumed) {
+        SnackChatActiveConversation.setActive(widget.snackChatId);
+        _scheduleActiveReadSync();
+      }
+      return;
+    }
 
     // push()의 Future는 reverse transition이 끝나기 전에 완료될 수 있다.
     // 정보 화면의 overlay가 완전히 제거된 뒤 채팅 화면을 닫아 연속 pop으로

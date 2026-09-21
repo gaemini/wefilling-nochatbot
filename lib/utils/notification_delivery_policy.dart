@@ -18,3 +18,16 @@ String dmNotificationAndroidTag({
   );
   return 'dm_${digest.toString().substring(0, 40)}';
 }
+
+/// A completed DM read may clear only a grouped card whose latest server
+/// commit is not newer than the server read watermark returned by the
+/// callable. A missing watermark is deliberately not treated as safe.
+bool canCancelDmNotificationThrough({
+  required int latestNotificationSentAtMillis,
+  required int readThroughAtMillis,
+}) {
+  if (latestNotificationSentAtMillis <= 0 || readThroughAtMillis <= 0) {
+    return false;
+  }
+  return latestNotificationSentAtMillis <= readThroughAtMillis;
+}

@@ -780,13 +780,17 @@ class MeetupHomePageState extends State<MeetupHomePage> with PreloadMixin {
       }
       Logger.error('모임 나가기 오류: $e');
 
-      var errorMessage = (isChineseUi(context) ? '退出聚会失败' : Localizations.localeOf(context).languageCode == 'ko'
-          ? '모임 나가기에 실패했습니다'
-          : 'Failed to leave the meetup');
+      var errorMessage = (isChineseUi(context)
+          ? '退出聚会失败'
+          : Localizations.localeOf(context).languageCode == 'ko'
+              ? '모임 나가기에 실패했습니다'
+              : 'Failed to leave the meetup');
       if (e.toString().contains('permission-denied')) {
-        errorMessage = (isChineseUi(context) ? '暂无权限，请重试。' : Localizations.localeOf(context).languageCode == 'ko'
-            ? '권한이 없습니다. 다시 시도해주세요'
-            : 'You don’t have permission. Please try again.');
+        errorMessage = (isChineseUi(context)
+            ? '暂无权限，请重试。'
+            : Localizations.localeOf(context).languageCode == 'ko'
+                ? '권한이 없습니다. 다시 시도해주세요'
+                : 'You don’t have permission. Please try again.');
       }
 
       if (mounted) {
@@ -956,14 +960,16 @@ class MeetupHomePageState extends State<MeetupHomePage> with PreloadMixin {
                                       maxLines: 1,
                                       overflow: TextOverflow.ellipsis,
                                       style: TextStyle(
-                                        fontFamily: uiFontFamily(context, 'Inter'),
+                                        fontFamily:
+                                            uiFontFamily(context, 'Inter'),
                                         fontFamilyFallback: const [
                                           'NotoSansKR'
                                         ],
                                         fontSize: labelSize,
                                         fontWeight: FontWeight.w800,
                                         color: const Color(0xFF111827),
-                                        height: isChineseUi(context) ? 1.3 : 1.15,
+                                        height:
+                                            isChineseUi(context) ? 1.3 : 1.15,
                                         letterSpacing: -0.15,
                                       ),
                                     ),
@@ -1076,7 +1082,11 @@ class MeetupHomePageState extends State<MeetupHomePage> with PreloadMixin {
                           firstDay: DateTime.utc(2020, 1, 1),
                           lastDay: DateTime.utc(2035, 12, 31),
                           focusedDay: _focusedMonth,
-                          locale: lang == 'zh' ? 'zh_CN' : lang == 'ko' ? 'ko_KR' : 'en_US',
+                          locale: lang == 'zh'
+                              ? 'zh_CN'
+                              : lang == 'ko'
+                                  ? 'ko_KR'
+                                  : 'en_US',
                           calendarFormat: CalendarFormat.month,
                           rowHeight:
                               MediaQuery.sizeOf(context).width < 360 ? 40 : 44,
@@ -1676,6 +1686,7 @@ class _AllMeetupsScreenState extends State<_AllMeetupsScreen> {
               itemBuilder: (context, index) {
                 final meetup = meetups[index];
                 return Padding(
+                  key: ValueKey<String>('all_meetup_${meetup.id}'),
                   padding: const EdgeInsets.only(bottom: 4),
                   child: widget.meetupCardBuilder(meetup),
                 );
@@ -1942,11 +1953,17 @@ class _CalendarDayCell extends StatelessWidget {
       size: 38,
       strokeWidth: 2.5,
       semanticLabel: markerStyle == MeetupCalendarMarkerStyle.friendGradient
-          ? ((isChineseUi(context) ? '好友创建聚会的日期' : isKo
-              ? '친구가 만든 모임이 있는 날짜'
-              : 'Date with a meetup created by a friend'))
+          ? ((isChineseUi(context)
+              ? '好友创建聚会的日期'
+              : isKo
+                  ? '친구가 만든 모임이 있는 날짜'
+                  : 'Date with a meetup created by a friend'))
           : markerStyle == MeetupCalendarMarkerStyle.solidBlue
-              ? ((isChineseUi(context) ? '有可见聚会的日期' : isKo ? '볼 수 있는 모임이 있는 날짜' : 'Date with a visible meetup'))
+              ? ((isChineseUi(context)
+                  ? '有可见聚会的日期'
+                  : isKo
+                      ? '볼 수 있는 모임이 있는 날짜'
+                      : 'Date with a visible meetup'))
               : null,
       child: dateContent,
     );

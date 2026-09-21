@@ -8489,7 +8489,7 @@ exports.onDMMessageCreated = functions
                 title: `From '${senderName}'`,
                 body: messagePreview,
             },
-            data: Object.assign({ type: 'dm_received', recipientUserId: recipientId, conversationId: conversationId, senderId: senderId, senderName: senderName, notificationThreadKey: dmNotificationTag }, (hasBadge && { badge: String(finalBadge) })),
+            data: Object.assign({ type: 'dm_received', recipientUserId: recipientId, conversationId: conversationId, messageId: messageId, sentAtMillis: String(snapshot.createTime.toMillis()), senderId: senderId, senderName: senderName, notificationThreadKey: dmNotificationTag }, (hasBadge && { badge: String(finalBadge) })),
             apns: {
                 headers: {
                     'apns-push-type': 'alert',

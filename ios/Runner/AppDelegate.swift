@@ -63,6 +63,7 @@ class OrganizationInviteSceneDelegate: FlutterSceneDelegate {
   private var externalShareChannel: FlutterMethodChannel?
   private var sharedFirebaseAuthChannel: FlutterMethodChannel?
   private var organizationInviteChannel: FlutterMethodChannel?
+  private var notificationCenterChannel: FlutterMethodChannel?
   private var organizationInviteObserver: NSObjectProtocol?
   private var isSavingMedia = false
   private let externalShareStore = ExternalShareStore()
@@ -137,6 +138,28 @@ class OrganizationInviteSceneDelegate: FlutterSceneDelegate {
     ) { [weak inviteChannel] _ in
       inviteChannel?.invokeMethod("inviteReceived", arguments: nil)
     }
+
+    let deliveredNotificationChannel = FlutterMethodChannel(
+      name: "com.wefilling.app/notification_center",
+      binaryMessenger: engineBridge.applicationRegistrar.messenger()
+    )
+    deliveredNotificationChannel.setMethodCallHandler { [weak self] call, result in
+      guard call.method == "removeDeliveredNotifications",
+            let arguments = call.arguments as? [String: Any] else {
+        result(FlutterMethodNotImplemented)
+        return
+      }
+      guard let self else {
+        result(FlutterError(
+          code: "notification-center-unavailable",
+          message: "Notification Center is unavailable.",
+          details: nil
+        ))
+        return
+      }
+      self.removeDeliveredNotifications(arguments: arguments, result: result)
+    }
+    notificationCenterChannel = deliveredNotificationChannel
 
     let channel = FlutterMethodChannel(
       name: "com.wefilling.app/media_saver",
@@ -690,6 +713,117 @@ class OrganizationInviteSceneDelegate: FlutterSceneDelegate {
       didReceive: response,
       withCompletionHandler: completionHandler
     )
+  }
+
+  private func deliveredNotificationPayload(
+    _ notification: UNNotification
+  ) -> [String: Any] {
+    let userInfo = notification.request.content.userInfo
+    var payload: [String: Any] = [:]
+    for (key, value) in userInfo {
+      payload[String(describing: key)] = value
+    }
+    // flutter_local_notifications stores the application payload as JSON,
+    // while an APNs/FCM remote delivery exposes data keys at the top level.
+    if let encoded = userInfo["payload"] as? String,
+       let data = encoded.data(using: .utf8),
+       let decoded = try? JSONSerialization.jsonObject(with: data),
+       let object = decoded as? [String: Any] {
+      for (key, value) in object {
+        payload[key] = value
+      }
+    }
+    return payload
+  }
+
+  private func notificationString(
+    _ payload: [String: Any],
+    _ key: String
+  ) -> String {
+    guard let value = payload[key] else { return "" }
+    if let text = value as? String {
+      return text.trimmingCharacters(in: .whitespacesAndNewlines)
+    }
+    if let number = value as? NSNumber { return number.stringValue }
+    return String(describing: value)
+      .trimmingCharacters(in: .whitespacesAndNewlines)
+  }
+
+  private func notificationInt64(
+    _ payload: [String: Any],
+    _ key: String
+  ) -> Int64 {
+    Int64(notificationString(payload, key)) ?? 0
+  }
+
+  private func removeDeliveredNotifications(
+    arguments: [String: Any],
+    result: @escaping FlutterResult
+  ) {
+    let ownerUserId = (arguments["ownerUserId"] as? String ?? "")
+      .trimmingCharacters(in: .whitespacesAndNewlines)
+    let kind = (arguments["kind"] as? String ?? "")
+      .trimmingCharacters(in: .whitespacesAndNewlines)
+    let notificationId = (arguments["notificationId"] as? String ?? "")
+      .trimmingCharacters(in: .whitespacesAndNewlines)
+    let roomId = (arguments["roomId"] as? String ?? "")
+      .trimmingCharacters(in: .whitespacesAndNewlines)
+    let throughSequence = (arguments["throughSequence"] as? NSNumber)?.int64Value ?? 0
+    let throughSentAtMillis =
+      (arguments["throughSentAtMillis"] as? NSNumber)?.int64Value ?? 0
+    let removeAllInRoom = arguments["removeAllInRoom"] as? Bool ?? false
+    guard !ownerUserId.isEmpty else {
+      result(FlutterError(
+        code: "invalid-notification-owner",
+        message: "A notification owner is required.",
+        details: nil
+      ))
+      return
+    }
+
+    UNUserNotificationCenter.current().getDeliveredNotifications { notifications in
+      let identifiers = notifications.compactMap { notification -> String? in
+        let payload = self.deliveredNotificationPayload(notification)
+        guard self.notificationString(payload, "recipientUserId") == ownerUserId else {
+          return nil
+        }
+        let type = self.notificationString(payload, "type")
+        switch kind {
+        case "app":
+          guard !notificationId.isEmpty,
+                self.notificationString(payload, "notificationId") == notificationId else {
+            return nil
+          }
+        case "snack_chat":
+          let sequence = self.notificationInt64(payload, "messageSequence")
+          guard type == "snack_chat_message",
+                !roomId.isEmpty,
+                self.notificationString(payload, "snackChatId") == roomId,
+                removeAllInRoom ||
+                  (throughSequence > 0 && sequence > 0 && sequence <= throughSequence) else {
+            return nil
+          }
+        case "dm":
+          let sentAtMillis = self.notificationInt64(payload, "sentAtMillis")
+          guard type == "dm_received",
+                !roomId.isEmpty,
+                self.notificationString(payload, "conversationId") == roomId,
+                throughSentAtMillis > 0,
+                sentAtMillis > 0,
+                sentAtMillis <= throughSentAtMillis else {
+            return nil
+          }
+        default:
+          return nil
+        }
+        return notification.request.identifier
+      }
+      if !identifiers.isEmpty {
+        UNUserNotificationCenter.current()
+          .removeDeliveredNotifications(withIdentifiers: identifiers)
+      }
+      DispatchQueue.main.async { result(identifiers.count) }
+    }
   }
 
   private static func externalShareLog(_ message: String) {

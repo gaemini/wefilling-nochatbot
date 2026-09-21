@@ -29,5 +29,30 @@ void main() {
         )),
       );
     });
+
+    test('DM cleanup preserves a notification newer than the read watermark',
+        () {
+      expect(
+        canCancelDmNotificationThrough(
+          latestNotificationSentAtMillis: 101,
+          readThroughAtMillis: 100,
+        ),
+        isFalse,
+      );
+      expect(
+        canCancelDmNotificationThrough(
+          latestNotificationSentAtMillis: 100,
+          readThroughAtMillis: 100,
+        ),
+        isTrue,
+      );
+      expect(
+        canCancelDmNotificationThrough(
+          latestNotificationSentAtMillis: 0,
+          readThroughAtMillis: 100,
+        ),
+        isFalse,
+      );
+    });
   });
 }

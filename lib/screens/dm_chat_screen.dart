@@ -284,7 +284,6 @@ class _DMChatScreenState extends State<DMChatScreen>
     // 포그라운드 DM 배너 억제를 위해 현재 화면의 실제 대화방 ID를 항상 동기화한다.
     if (_appLifecycleState == AppLifecycleState.resumed) {
       DMActiveConversation.setActive(conversationId);
-      unawaited(FCMService().cancelDmNotification(conversationId));
     }
     _watchConversationUnreadCounter(conversationId);
   }
@@ -433,7 +432,6 @@ class _DMChatScreenState extends State<DMChatScreen>
         }
       }
       DMActiveConversation.setActive(_activeConversationId);
-      unawaited(FCMService().cancelDmNotification(_activeConversationId));
       _scheduleAutoMarkAsRead(_messages, forceCounterReconcile: true);
       _scheduleVisibleTranslations();
     } else if (DMActiveConversation.isActive(_activeConversationId)) {
@@ -1685,8 +1683,7 @@ class _DMChatScreenState extends State<DMChatScreen>
     final conversationId = _activeConversationId;
     final operation = () async {
       final result = await _dmService.markAsRead(conversationId);
-      await BadgeService.syncAfterDmRead(result.newDmUnreadTotal);
-      await FCMService().cancelDmNotification(conversationId);
+      _scheduleDmReadPostProcessing(conversationId, result);
     }();
     _autoMarkReadOperation = operation;
     try {
@@ -1722,6 +1719,29 @@ class _DMChatScreenState extends State<DMChatScreen>
       }
       if (Logger.isVerboseEnabled)
         Logger.log('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━');
+    }
+  }
+
+  void _scheduleDmReadPostProcessing(
+    String conversationId,
+    DMReadResult result,
+  ) {
+    unawaited(
+      BadgeService.syncAfterDmRead(result.newDmUnreadTotal).catchError(
+        (Object error) => Logger.error('DM 읽음 배지 갱신 실패', error),
+      ),
+    );
+    if (result.readThroughAtMillis > 0) {
+      unawaited(
+        FCMService()
+            .cancelDmNotification(
+              conversationId,
+              throughSentAtMillis: result.readThroughAtMillis,
+            )
+            .catchError(
+              (Object error) => Logger.error('DM 읽음 알림 정리 실패', error),
+            ),
+      );
     }
   }
 
@@ -2043,8 +2063,7 @@ class _DMChatScreenState extends State<DMChatScreen>
         final result = await _dmService
             .markAsRead(conversationId)
             .timeout(const Duration(seconds: 12));
-        await BadgeService.syncAfterDmRead(result.newDmUnreadTotal);
-        await FCMService().cancelDmNotification(conversationId);
+        _scheduleDmReadPostProcessing(conversationId, result);
       })()
           .catchError((Object error) {
         Logger.error('❌ [DM 읽음] 화면 종료 동기화 실패: $error');

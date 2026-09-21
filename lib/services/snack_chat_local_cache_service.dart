@@ -396,6 +396,65 @@ class SnackChatLocalCacheService {
     }
   }
 
+  /// Keeps only the highest server-confirmed read boundary that still needs
+  /// to be acknowledged. The key is explicitly account-scoped so a response
+  /// completing after logout cannot mutate the next account's recovery state.
+  Future<int> getPendingReadSequence(
+    String ownerUid,
+    String roomId,
+  ) async {
+    if (ownerUid.isEmpty || roomId.isEmpty) return 0;
+    final box = await _ensureBox();
+    if (box == null) return 0;
+    try {
+      final raw = box.get('${_baseKey(ownerUid, roomId)}::pending_read');
+      return raw is num ? raw.toInt().clamp(0, 1 << 31).toInt() : 0;
+    } catch (error) {
+      Logger.error('SnackChatLocalCacheService: pending read failed: $error');
+      return 0;
+    }
+  }
+
+  Future<void> savePendingReadSequence(
+    String ownerUid,
+    String roomId,
+    int sequence,
+  ) async {
+    if (ownerUid.isEmpty || roomId.isEmpty || sequence <= 0) return;
+    final box = await _ensureBox();
+    if (box == null) return;
+    final key = '${_baseKey(ownerUid, roomId)}::pending_read';
+    try {
+      final raw = box.get(key);
+      final previous = raw is num ? raw.toInt() : 0;
+      if (sequence > previous) await box.put(key, sequence);
+    } catch (error) {
+      Logger.error(
+        'SnackChatLocalCacheService: pending read save failed: $error',
+      );
+    }
+  }
+
+  Future<void> clearPendingReadSequenceThrough(
+    String ownerUid,
+    String roomId,
+    int sequence,
+  ) async {
+    if (ownerUid.isEmpty || roomId.isEmpty || sequence <= 0) return;
+    final box = await _ensureBox();
+    if (box == null) return;
+    final key = '${_baseKey(ownerUid, roomId)}::pending_read';
+    try {
+      final raw = box.get(key);
+      final pending = raw is num ? raw.toInt() : 0;
+      if (pending > 0 && pending <= sequence) await box.delete(key);
+    } catch (error) {
+      Logger.error(
+        'SnackChatLocalCacheService: pending read clear failed: $error',
+      );
+    }
+  }
+
   Future<void> clearRoom(String roomId) async {
     final ownerUid = _ownerUid;
     if (ownerUid == null) return;
@@ -410,6 +469,7 @@ class SnackChatLocalCacheService {
         '$base::draft',
         '$base::room',
         '$base::entry',
+        '$base::pending_read',
       ]);
       await SnackChatDiscoveryCacheService.instance.clearRoom(roomId);
     } catch (error) {

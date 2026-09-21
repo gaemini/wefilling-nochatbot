@@ -1,6 +1,8 @@
 package com.wefilling.app
 
 import android.app.Activity
+import android.app.NotificationManager
+import android.content.Context
 import android.content.ContentValues
 import android.content.Intent
 import android.media.MediaCodec
@@ -25,6 +27,7 @@ import java.io.FileOutputStream
 import java.nio.ByteBuffer
 import java.util.UUID
 import java.util.concurrent.atomic.AtomicBoolean
+import org.json.JSONObject
 
 class MainActivity : FlutterActivity() {
     companion object {
@@ -38,6 +41,8 @@ class MainActivity : FlutterActivity() {
         "com.wefilling.app/organization_invite"
     private val snapshotVideoEditorChannelName =
         "com.wefilling.app/snapshot_video_editor"
+    private val notificationCenterChannelName =
+        "com.wefilling.app/notification_center"
     private val maxDocumentBytes = 20L * 1024L * 1024L
     private val legacyPhotoSaveRequest = 7241
     private var pendingImageBytes: ByteArray? = null
@@ -111,6 +116,17 @@ class MainActivity : FlutterActivity() {
             trimSnapshotVideo(path, startMs, endMs, result)
         }
 
+        MethodChannel(
+            flutterEngine.dartExecutor.binaryMessenger,
+            notificationCenterChannelName,
+        ).setMethodCallHandler { call, result ->
+            if (call.method != "removeDeliveredNotifications") {
+                result.notImplemented()
+                return@setMethodCallHandler
+            }
+            removeDeliveredNotifications(call.arguments as? Map<*, *>, result)
+        }
+
         organizationInviteChannel = MethodChannel(
             flutterEngine.dartExecutor.binaryMessenger,
             organizationInviteChannelName,
@@ -162,6 +178,91 @@ class MainActivity : FlutterActivity() {
             externalShareChannel?.invokeMethod(
                 "shareReceived",
                 mapOf("id" to intent.getStringExtra(externalShareIdExtra)),
+            )
+        }
+    }
+
+    private fun removeDeliveredNotifications(
+        rawArguments: Map<*, *>?,
+        result: MethodChannel.Result,
+    ) {
+        val arguments = rawArguments ?: emptyMap<Any, Any>()
+        val ownerUserId = arguments["ownerUserId"]?.toString()?.trim().orEmpty()
+        val kind = arguments["kind"]?.toString()?.trim().orEmpty()
+        val notificationId = arguments["notificationId"]?.toString()?.trim().orEmpty()
+        val roomId = arguments["roomId"]?.toString()?.trim().orEmpty()
+        val throughSequence = arguments["throughSequence"]?.toString()?.toLongOrNull() ?: 0L
+        val throughSentAtMillis =
+            arguments["throughSentAtMillis"]?.toString()?.toLongOrNull() ?: 0L
+        val removeAllInRoom = arguments["removeAllInRoom"] == true
+        if (ownerUserId.isEmpty()) {
+            result.error(
+                "invalid-notification-owner",
+                "A notification owner is required.",
+                null,
+            )
+            return
+        }
+        if (Build.VERSION.SDK_INT < Build.VERSION_CODES.M) {
+            result.success(0)
+            return
+        }
+        try {
+            val manager = getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
+            var removed = 0
+            manager.activeNotifications.forEach activeLoop@{ active ->
+                val payload = mutableMapOf<String, String>()
+                val extras = active.notification.extras
+                extras.keySet().forEach extrasLoop@{ key ->
+                    val value = extras.get(key) ?: return@extrasLoop
+                    payload[key] = value.toString().trim()
+                }
+                extras.getString("payload")?.let { encoded ->
+                    runCatching {
+                        val json = JSONObject(encoded)
+                        val keys = json.keys()
+                        while (keys.hasNext()) {
+                            val key = keys.next()
+                            payload[key] = json.opt(key)?.toString()?.trim().orEmpty()
+                        }
+                    }
+                }
+                if (payload["recipientUserId"] != ownerUserId) return@activeLoop
+                val matches = when (kind) {
+                    "app" -> notificationId.isNotEmpty() &&
+                        payload["notificationId"] == notificationId
+                    "snack_chat" -> {
+                        val sequence = payload["messageSequence"]?.toLongOrNull() ?: 0L
+                        payload["type"] == "snack_chat_message" &&
+                            roomId.isNotEmpty() &&
+                            payload["snackChatId"] == roomId &&
+                            (removeAllInRoom ||
+                                (throughSequence > 0L && sequence in 1..throughSequence))
+                    }
+                    "dm" -> {
+                        val sentAtMillis = payload["sentAtMillis"]?.toLongOrNull() ?: 0L
+                        payload["type"] == "dm_received" &&
+                            roomId.isNotEmpty() &&
+                            payload["conversationId"] == roomId &&
+                            throughSentAtMillis > 0L &&
+                            sentAtMillis in 1..throughSentAtMillis
+                    }
+                    else -> false
+                }
+                if (!matches) return@activeLoop
+                if (active.tag == null) {
+                    manager.cancel(active.id)
+                } else {
+                    manager.cancel(active.tag, active.id)
+                }
+                removed++
+            }
+            result.success(removed)
+        } catch (error: Throwable) {
+            result.error(
+                "notification-removal-failed",
+                error.localizedMessage,
+                null,
             )
         }
     }

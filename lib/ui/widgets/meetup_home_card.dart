@@ -117,6 +117,7 @@ class _MeetupHomeCardState extends State<MeetupHomeCard> {
   Widget build(BuildContext context) {
     final locationIsUrl = _isUrl(widget.meetup.location);
     return StreamBuilder<int>(
+      key: ValueKey<String>('meetup_participants_${widget.meetup.id}'),
       stream: _participantCountStream,
       builder: (context, snapshot) {
         final participants = snapshot.data ?? widget.meetup.currentParticipants;
@@ -124,6 +125,7 @@ class _MeetupHomeCardState extends State<MeetupHomeCard> {
           opacity: widget.isParticipationStatusLoading ? 0.72 : 1,
           duration: const Duration(milliseconds: 160),
           child: BoardMeetupCard(
+            key: ValueKey<String>('meetup_card_${widget.meetup.id}'),
             meetup: widget.meetup,
             currentParticipants: participants,
             onTap: widget.onTap,

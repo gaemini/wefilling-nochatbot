@@ -1,0 +1,2629 @@
+{
+  "projectId": "flutterproject3-af322",
+  "semesterId": "2026_fall",
+  "createdAt": "2026-09-21T06:54:48.416Z",
+  "documents": [
+    {
+      "path": "semesters/2026_fall/weeks/week_01/tasks/campus_welcome_meetup_exchange",
+      "previous": {
+        "title": {
+          "zh_Hans": {
+            "exists": false,
+            "value": null
+          },
+          "zh": {
+            "exists": false,
+            "value": null
+          },
+          "zh_Hans_CN": {
+            "exists": false,
+            "value": null
+          }
+        },
+        "description": {
+          "zh_Hans": {
+            "exists": false,
+            "value": null
+          },
+          "zh": {
+            "exists": false,
+            "value": null
+          },
+          "zh_Hans_CN": {
+            "exists": false,
+            "value": null
+          }
+        }
+      },
+      "applied": {
+        "weekNumber": 1,
+        "title": "浏览新学期迎新聚会",
+        "description": "参加轻松的聚会，认识兴趣相近的同学。"
+      }
+    },
+    {
+      "path": "semesters/2026_fall/weeks/week_01/tasks/campus_welcome_meetup_korean",
+      "previous": {
+        "title": {
+          "zh_Hans": {
+            "exists": false,
+            "value": null
+          },
+          "zh": {
+            "exists": false,
+            "value": null
+          },
+          "zh_Hans_CN": {
+            "exists": false,
+            "value": null
+          }
+        },
+        "description": {
+          "zh_Hans": {
+            "exists": false,
+            "value": null
+          },
+          "zh": {
+            "exists": false,
+            "value": null
+          },
+          "zh_Hans_CN": {
+            "exists": false,
+            "value": null
+          }
+        }
+      },
+      "applied": {
+        "weekNumber": 1,
+        "title": "浏览新学期迎新聚会",
+        "description": "参加轻松的聚会，认识兴趣相近的同学。"
+      }
+    },
+    {
+      "path": "semesters/2026_fall/weeks/week_01/tasks/check_enrollment_exchange",
+      "previous": {
+        "title": {
+          "zh_Hans": {
+            "exists": false,
+            "value": null
+          },
+          "zh": {
+            "exists": false,
+            "value": null
+          },
+          "zh_Hans_CN": {
+            "exists": false,
+            "value": null
+          }
+        },
+        "description": {
+          "zh_Hans": {
+            "exists": false,
+            "value": null
+          },
+          "zh": {
+            "exists": false,
+            "value": null
+          },
+          "zh_Hans_CN": {
+            "exists": false,
+            "value": null
+          }
+        }
+      },
+      "applied": {
+        "weekNumber": 1,
+        "title": "确认选课结果",
+        "description": "请在学校门户重新确认课程时间和教室。"
+      }
+    },
+    {
+      "path": "semesters/2026_fall/weeks/week_01/tasks/check_enrollment_korean",
+      "previous": {
+        "title": {
+          "zh_Hans": {
+            "exists": false,
+            "value": null
+          },
+          "zh": {
+            "exists": false,
+            "value": null
+          },
+          "zh_Hans_CN": {
+            "exists": false,
+            "value": null
+          }
+        },
+        "description": {
+          "zh_Hans": {
+            "exists": false,
+            "value": null
+          },
+          "zh": {
+            "exists": false,
+            "value": null
+          },
+          "zh_Hans_CN": {
+            "exists": false,
+            "value": null
+          }
+        }
+      },
+      "applied": {
+        "weekNumber": 1,
+        "title": "确认选课结果",
+        "description": "请在学校门户重新确认课程时间和教室。"
+      }
+    },
+    {
+      "path": "semesters/2026_fall/weeks/week_01/tasks/exchange_orientation_exchange",
+      "previous": {
+        "title": {
+          "zh_Hans": {
+            "exists": false,
+            "value": null
+          },
+          "zh": {
+            "exists": false,
+            "value": null
+          },
+          "zh_Hans_CN": {
+            "exists": false,
+            "value": null
+          }
+        },
+        "description": {
+          "zh_Hans": {
+            "exists": false,
+            "value": null
+          },
+          "zh": {
+            "exists": false,
+            "value": null
+          },
+          "zh_Hans_CN": {
+            "exists": false,
+            "value": null
+          }
+        }
+      },
+      "applied": {
+        "weekNumber": 1,
+        "title": "查看交换生入学说明会安排",
+        "description": "查看国际处的日程和所需携带物品。"
+      }
+    },
+    {
+      "path": "semesters/2026_fall/weeks/week_02/tasks/check_syllabus_exchange",
+      "previous": {
+        "title": {
+          "zh_Hans": {
+            "exists": false,
+            "value": null
+          },
+          "zh": {
+            "exists": false,
+            "value": null
+          },
+          "zh_Hans_CN": {
+            "exists": false,
+            "value": null
+          }
+        },
+        "description": {
+          "zh_Hans": {
+            "exists": false,
+            "value": null
+          },
+          "zh": {
+            "exists": false,
+            "value": null
+          },
+          "zh_Hans_CN": {
+            "exists": false,
+            "value": null
+          }
+        }
+      },
+      "applied": {
+        "weekNumber": 2,
+        "title": "查看教学大纲和考核方式",
+        "description": "将作业、考试和出勤要求整理到日程中。"
+      }
+    },
+    {
+      "path": "semesters/2026_fall/weeks/week_02/tasks/check_syllabus_korean",
+      "previous": {
+        "title": {
+          "zh_Hans": {
+            "exists": false,
+            "value": null
+          },
+          "zh": {
+            "exists": false,
+            "value": null
+          },
+          "zh_Hans_CN": {
+            "exists": false,
+            "value": null
+          }
+        },
+        "description": {
+          "zh_Hans": {
+            "exists": false,
+            "value": null
+          },
+          "zh": {
+            "exists": false,
+            "value": null
+          },
+          "zh_Hans_CN": {
+            "exists": false,
+            "value": null
+          }
+        }
+      },
+      "applied": {
+        "weekNumber": 2,
+        "title": "查看教学大纲和考核方式",
+        "description": "将作业、考试和出勤要求整理到日程中。"
+      }
+    },
+    {
+      "path": "semesters/2026_fall/weeks/week_02/tasks/club_fair_exchange",
+      "previous": {
+        "title": {
+          "zh_Hans": {
+            "exists": false,
+            "value": null
+          },
+          "zh": {
+            "exists": false,
+            "value": null
+          },
+          "zh_Hans_CN": {
+            "exists": false,
+            "value": null
+          }
+        },
+        "description": {
+          "zh_Hans": {
+            "exists": false,
+            "value": null
+          },
+          "zh": {
+            "exists": false,
+            "value": null
+          },
+          "zh_Hans_CN": {
+            "exists": false,
+            "value": null
+          }
+        }
+      },
+      "applied": {
+        "weekNumber": 2,
+        "title": "了解社团和学生活动",
+        "description": "找一项本学期想参加的活动。"
+      }
+    },
+    {
+      "path": "semesters/2026_fall/weeks/week_02/tasks/club_fair_korean",
+      "previous": {
+        "title": {
+          "zh_Hans": {
+            "exists": false,
+            "value": null
+          },
+          "zh": {
+            "exists": false,
+            "value": null
+          },
+          "zh_Hans_CN": {
+            "exists": false,
+            "value": null
+          }
+        },
+        "description": {
+          "zh_Hans": {
+            "exists": false,
+            "value": null
+          },
+          "zh": {
+            "exists": false,
+            "value": null
+          },
+          "zh_Hans_CN": {
+            "exists": false,
+            "value": null
+          }
+        }
+      },
+      "applied": {
+        "weekNumber": 2,
+        "title": "了解社团和学生活动",
+        "description": "找一项本学期想参加的活动。"
+      }
+    },
+    {
+      "path": "semesters/2026_fall/weeks/week_02/tasks/course_change_period_exchange",
+      "previous": {
+        "title": {
+          "zh_Hans": {
+            "exists": false,
+            "value": null
+          },
+          "zh": {
+            "exists": false,
+            "value": null
+          },
+          "zh_Hans_CN": {
+            "exists": false,
+            "value": null
+          }
+        },
+        "description": {
+          "zh_Hans": {
+            "exists": false,
+            "value": null
+          },
+          "zh": {
+            "exists": false,
+            "value": null
+          },
+          "zh_Hans_CN": {
+            "exists": false,
+            "value": null
+          }
+        }
+      },
+      "applied": {
+        "weekNumber": 2,
+        "title": "确认选课调整时间",
+        "description": "如需调整，请在截止时间前完成。"
+      }
+    },
+    {
+      "path": "semesters/2026_fall/weeks/week_02/tasks/course_change_period_korean",
+      "previous": {
+        "title": {
+          "zh_Hans": {
+            "exists": false,
+            "value": null
+          },
+          "zh": {
+            "exists": false,
+            "value": null
+          },
+          "zh_Hans_CN": {
+            "exists": false,
+            "value": null
+          }
+        },
+        "description": {
+          "zh_Hans": {
+            "exists": false,
+            "value": null
+          },
+          "zh": {
+            "exists": false,
+            "value": null
+          },
+          "zh_Hans_CN": {
+            "exists": false,
+            "value": null
+          }
+        }
+      },
+      "applied": {
+        "weekNumber": 2,
+        "title": "确认选课调整时间",
+        "description": "如需调整，请在截止时间前完成。"
+      }
+    },
+    {
+      "path": "semesters/2026_fall/weeks/week_03/tasks/academic_calendar_exchange",
+      "previous": {
+        "title": {
+          "zh_Hans": {
+            "exists": false,
+            "value": null
+          },
+          "zh": {
+            "exists": false,
+            "value": null
+          },
+          "zh_Hans_CN": {
+            "exists": false,
+            "value": null
+          }
+        },
+        "description": {
+          "zh_Hans": {
+            "exists": false,
+            "value": null
+          },
+          "zh": {
+            "exists": false,
+            "value": null
+          },
+          "zh_Hans_CN": {
+            "exists": false,
+            "value": null
+          }
+        }
+      },
+      "applied": {
+        "weekNumber": 3,
+        "title": "保存重要校历日期",
+        "description": "将考试、节假日和退课截止日期记录到日历中。"
+      }
+    },
+    {
+      "path": "semesters/2026_fall/weeks/week_03/tasks/academic_calendar_korean",
+      "previous": {
+        "title": {
+          "zh_Hans": {
+            "exists": false,
+            "value": null
+          },
+          "zh": {
+            "exists": false,
+            "value": null
+          },
+          "zh_Hans_CN": {
+            "exists": false,
+            "value": null
+          }
+        },
+        "description": {
+          "zh_Hans": {
+            "exists": false,
+            "value": null
+          },
+          "zh": {
+            "exists": false,
+            "value": null
+          },
+          "zh_Hans_CN": {
+            "exists": false,
+            "value": null
+          }
+        }
+      },
+      "applied": {
+        "weekNumber": 3,
+        "title": "保存重要校历日期",
+        "description": "将考试、节假日和退课截止日期记录到日历中。"
+      }
+    },
+    {
+      "path": "semesters/2026_fall/weeks/week_03/tasks/arc_documents_exchange",
+      "previous": {
+        "title": {
+          "zh_Hans": {
+            "exists": false,
+            "value": null
+          },
+          "zh": {
+            "exists": false,
+            "value": null
+          },
+          "zh_Hans_CN": {
+            "exists": false,
+            "value": null
+          }
+        },
+        "description": {
+          "zh_Hans": {
+            "exists": false,
+            "value": null
+          },
+          "zh": {
+            "exists": false,
+            "value": null
+          },
+          "zh_Hans_CN": {
+            "exists": false,
+            "value": null
+          }
+        }
+      },
+      "applied": {
+        "weekNumber": 3,
+        "title": "确认外国人登记相关材料",
+        "description": "如适用，请查看国际处指南及所需材料。"
+      }
+    },
+    {
+      "path": "semesters/2026_fall/weeks/week_03/tasks/language_exchange_exchange",
+      "previous": {
+        "title": {
+          "zh_Hans": {
+            "exists": false,
+            "value": null
+          },
+          "zh": {
+            "exists": false,
+            "value": null
+          },
+          "zh_Hans_CN": {
+            "exists": false,
+            "value": null
+          }
+        },
+        "description": {
+          "zh_Hans": {
+            "exists": false,
+            "value": null
+          },
+          "zh": {
+            "exists": false,
+            "value": null
+          },
+          "zh_Hans_CN": {
+            "exists": false,
+            "value": null
+          }
+        }
+      },
+      "applied": {
+        "weekNumber": 3,
+        "title": "参加语言交换活动",
+        "description": "认识可以互相分享语言和文化的朋友。"
+      }
+    },
+    {
+      "path": "semesters/2026_fall/weeks/week_03/tasks/language_exchange_korean",
+      "previous": {
+        "title": {
+          "zh_Hans": {
+            "exists": false,
+            "value": null
+          },
+          "zh": {
+            "exists": false,
+            "value": null
+          },
+          "zh_Hans_CN": {
+            "exists": false,
+            "value": null
+          }
+        },
+        "description": {
+          "zh_Hans": {
+            "exists": false,
+            "value": null
+          },
+          "zh": {
+            "exists": false,
+            "value": null
+          },
+          "zh_Hans_CN": {
+            "exists": false,
+            "value": null
+          }
+        }
+      },
+      "applied": {
+        "weekNumber": 3,
+        "title": "参加语言交换活动",
+        "description": "认识可以互相分享语言和文化的朋友。"
+      }
+    },
+    {
+      "path": "semesters/2026_fall/weeks/week_04/tasks/buddy_program_exchange",
+      "previous": {
+        "title": {
+          "zh_Hans": {
+            "exists": false,
+            "value": null
+          },
+          "zh": {
+            "exists": false,
+            "value": null
+          },
+          "zh_Hans_CN": {
+            "exists": false,
+            "value": null
+          }
+        },
+        "description": {
+          "zh_Hans": {
+            "exists": false,
+            "value": null
+          },
+          "zh": {
+            "exists": false,
+            "value": null
+          },
+          "zh_Hans_CN": {
+            "exists": false,
+            "value": null
+          }
+        }
+      },
+      "applied": {
+        "weekNumber": 4,
+        "title": "了解伙伴计划",
+        "description": "查看连接交换生和韩国学生的交流项目。"
+      }
+    },
+    {
+      "path": "semesters/2026_fall/weeks/week_04/tasks/buddy_program_korean",
+      "previous": {
+        "title": {
+          "zh_Hans": {
+            "exists": false,
+            "value": null
+          },
+          "zh": {
+            "exists": false,
+            "value": null
+          },
+          "zh_Hans_CN": {
+            "exists": false,
+            "value": null
+          }
+        },
+        "description": {
+          "zh_Hans": {
+            "exists": false,
+            "value": null
+          },
+          "zh": {
+            "exists": false,
+            "value": null
+          },
+          "zh_Hans_CN": {
+            "exists": false,
+            "value": null
+          }
+        }
+      },
+      "applied": {
+        "weekNumber": 4,
+        "title": "了解伙伴计划",
+        "description": "查看连接交换生和韩国学生的交流项目。"
+      }
+    },
+    {
+      "path": "semesters/2026_fall/weeks/week_04/tasks/campus_services_exchange",
+      "previous": {
+        "title": {
+          "zh_Hans": {
+            "exists": false,
+            "value": null
+          },
+          "zh": {
+            "exists": false,
+            "value": null
+          },
+          "zh_Hans_CN": {
+            "exists": false,
+            "value": null
+          }
+        },
+        "description": {
+          "zh_Hans": {
+            "exists": false,
+            "value": null
+          },
+          "zh": {
+            "exists": false,
+            "value": null
+          },
+          "zh_Hans_CN": {
+            "exists": false,
+            "value": null
+          }
+        }
+      },
+      "applied": {
+        "weekNumber": 4,
+        "title": "了解校内支持服务",
+        "description": "查看保健、咨询和学习支持中心的位置及使用方式。"
+      }
+    },
+    {
+      "path": "semesters/2026_fall/weeks/week_04/tasks/campus_services_korean",
+      "previous": {
+        "title": {
+          "zh_Hans": {
+            "exists": false,
+            "value": null
+          },
+          "zh": {
+            "exists": false,
+            "value": null
+          },
+          "zh_Hans_CN": {
+            "exists": false,
+            "value": null
+          }
+        },
+        "description": {
+          "zh_Hans": {
+            "exists": false,
+            "value": null
+          },
+          "zh": {
+            "exists": false,
+            "value": null
+          },
+          "zh_Hans_CN": {
+            "exists": false,
+            "value": null
+          }
+        }
+      },
+      "applied": {
+        "weekNumber": 4,
+        "title": "了解校内支持服务",
+        "description": "查看保健、咨询和学习支持中心的位置及使用方式。"
+      }
+    },
+    {
+      "path": "semesters/2026_fall/weeks/week_04/tasks/dorm_rules_exchange",
+      "previous": {
+        "title": {
+          "zh_Hans": {
+            "exists": false,
+            "value": null
+          },
+          "zh": {
+            "exists": false,
+            "value": null
+          },
+          "zh_Hans_CN": {
+            "exists": false,
+            "value": null
+          }
+        },
+        "description": {
+          "zh_Hans": {
+            "exists": false,
+            "value": null
+          },
+          "zh": {
+            "exists": false,
+            "value": null
+          },
+          "zh_Hans_CN": {
+            "exists": false,
+            "value": null
+          }
+        }
+      },
+      "applied": {
+        "weekNumber": 4,
+        "title": "查看宿舍生活规定",
+        "description": "如住在校内，请查看出入、垃圾分类和设施使用规定。"
+      }
+    },
+    {
+      "path": "semesters/2026_fall/weeks/week_05/tasks/assignment_check_exchange",
+      "previous": {
+        "title": {
+          "zh_Hans": {
+            "exists": false,
+            "value": null
+          },
+          "zh": {
+            "exists": false,
+            "value": null
+          },
+          "zh_Hans_CN": {
+            "exists": false,
+            "value": null
+          }
+        },
+        "description": {
+          "zh_Hans": {
+            "exists": false,
+            "value": null
+          },
+          "zh": {
+            "exists": false,
+            "value": null
+          },
+          "zh_Hans_CN": {
+            "exists": false,
+            "value": null
+          }
+        }
+      },
+      "applied": {
+        "weekNumber": 5,
+        "title": "检查未完成的作业和出勤情况",
+        "description": "检查各门课程是否有遗漏事项。"
+      }
+    },
+    {
+      "path": "semesters/2026_fall/weeks/week_05/tasks/assignment_check_korean",
+      "previous": {
+        "title": {
+          "zh_Hans": {
+            "exists": false,
+            "value": null
+          },
+          "zh": {
+            "exists": false,
+            "value": null
+          },
+          "zh_Hans_CN": {
+            "exists": false,
+            "value": null
+          }
+        },
+        "description": {
+          "zh_Hans": {
+            "exists": false,
+            "value": null
+          },
+          "zh": {
+            "exists": false,
+            "value": null
+          },
+          "zh_Hans_CN": {
+            "exists": false,
+            "value": null
+          }
+        }
+      },
+      "applied": {
+        "weekNumber": 5,
+        "title": "检查未完成的作业和出勤情况",
+        "description": "检查各门课程是否有遗漏事项。"
+      }
+    },
+    {
+      "path": "semesters/2026_fall/weeks/week_05/tasks/study_meetup_exchange",
+      "previous": {
+        "title": {
+          "zh_Hans": {
+            "exists": false,
+            "value": null
+          },
+          "zh": {
+            "exists": false,
+            "value": null
+          },
+          "zh_Hans_CN": {
+            "exists": false,
+            "value": null
+          }
+        },
+        "description": {
+          "zh_Hans": {
+            "exists": false,
+            "value": null
+          },
+          "zh": {
+            "exists": false,
+            "value": null
+          },
+          "zh_Hans_CN": {
+            "exists": false,
+            "value": null
+          }
+        }
+      },
+      "applied": {
+        "weekNumber": 5,
+        "title": "寻找专业课或考试学习小组",
+        "description": "对于难以独自准备的课程，可以和同学一起学习。"
+      }
+    },
+    {
+      "path": "semesters/2026_fall/weeks/week_05/tasks/study_meetup_korean",
+      "previous": {
+        "title": {
+          "zh_Hans": {
+            "exists": false,
+            "value": null
+          },
+          "zh": {
+            "exists": false,
+            "value": null
+          },
+          "zh_Hans_CN": {
+            "exists": false,
+            "value": null
+          }
+        },
+        "description": {
+          "zh_Hans": {
+            "exists": false,
+            "value": null
+          },
+          "zh": {
+            "exists": false,
+            "value": null
+          },
+          "zh_Hans_CN": {
+            "exists": false,
+            "value": null
+          }
+        }
+      },
+      "applied": {
+        "weekNumber": 5,
+        "title": "寻找专业课或考试学习小组",
+        "description": "对于难以独自准备的课程，可以和同学一起学习。"
+      }
+    },
+    {
+      "path": "semesters/2026_fall/weeks/week_06/tasks/library_space_exchange",
+      "previous": {
+        "title": {
+          "zh_Hans": {
+            "exists": false,
+            "value": null
+          },
+          "zh": {
+            "exists": false,
+            "value": null
+          },
+          "zh_Hans_CN": {
+            "exists": false,
+            "value": null
+          }
+        },
+        "description": {
+          "zh_Hans": {
+            "exists": false,
+            "value": null
+          },
+          "zh": {
+            "exists": false,
+            "value": null
+          },
+          "zh_Hans_CN": {
+            "exists": false,
+            "value": null
+          }
+        }
+      },
+      "applied": {
+        "weekNumber": 6,
+        "title": "寻找适合专心学习的地方",
+        "description": "可以使用图书馆或校内其他学习空间。"
+      }
+    },
+    {
+      "path": "semesters/2026_fall/weeks/week_06/tasks/library_space_korean",
+      "previous": {
+        "title": {
+          "zh_Hans": {
+            "exists": false,
+            "value": null
+          },
+          "zh": {
+            "exists": false,
+            "value": null
+          },
+          "zh_Hans_CN": {
+            "exists": false,
+            "value": null
+          }
+        },
+        "description": {
+          "zh_Hans": {
+            "exists": false,
+            "value": null
+          },
+          "zh": {
+            "exists": false,
+            "value": null
+          },
+          "zh_Hans_CN": {
+            "exists": false,
+            "value": null
+          }
+        }
+      },
+      "applied": {
+        "weekNumber": 6,
+        "title": "寻找适合专心学习的地方",
+        "description": "可以使用图书馆或校内其他学习空间。"
+      }
+    },
+    {
+      "path": "semesters/2026_fall/weeks/week_06/tasks/midterm_schedule_exchange",
+      "previous": {
+        "title": {
+          "zh_Hans": {
+            "exists": false,
+            "value": null
+          },
+          "zh": {
+            "exists": false,
+            "value": null
+          },
+          "zh_Hans_CN": {
+            "exists": false,
+            "value": null
+          }
+        },
+        "description": {
+          "zh_Hans": {
+            "exists": false,
+            "value": null
+          },
+          "zh": {
+            "exists": false,
+            "value": null
+          },
+          "zh_Hans_CN": {
+            "exists": false,
+            "value": null
+          }
+        }
+      },
+      "applied": {
+        "weekNumber": 6,
+        "title": "整理期中考试安排",
+        "description": "将考试日期、范围和作业截止日期整理在一起。"
+      }
+    },
+    {
+      "path": "semesters/2026_fall/weeks/week_06/tasks/midterm_schedule_korean",
+      "previous": {
+        "title": {
+          "zh_Hans": {
+            "exists": false,
+            "value": null
+          },
+          "zh": {
+            "exists": false,
+            "value": null
+          },
+          "zh_Hans_CN": {
+            "exists": false,
+            "value": null
+          }
+        },
+        "description": {
+          "zh_Hans": {
+            "exists": false,
+            "value": null
+          },
+          "zh": {
+            "exists": false,
+            "value": null
+          },
+          "zh_Hans_CN": {
+            "exists": false,
+            "value": null
+          }
+        }
+      },
+      "applied": {
+        "weekNumber": 6,
+        "title": "整理期中考试安排",
+        "description": "将考试日期、范围和作业截止日期整理在一起。"
+      }
+    },
+    {
+      "path": "semesters/2026_fall/weeks/week_07/tasks/midterm_readiness_exchange",
+      "previous": {
+        "title": {
+          "zh_Hans": {
+            "exists": false,
+            "value": null
+          },
+          "zh": {
+            "exists": false,
+            "value": null
+          },
+          "zh_Hans_CN": {
+            "exists": false,
+            "value": null
+          }
+        },
+        "description": {
+          "zh_Hans": {
+            "exists": false,
+            "value": null
+          },
+          "zh": {
+            "exists": false,
+            "value": null
+          },
+          "zh_Hans_CN": {
+            "exists": false,
+            "value": null
+          }
+        }
+      },
+      "applied": {
+        "weekNumber": 7,
+        "title": "检查期中考试准备情况",
+        "description": "查看各门课程剩余的学习内容和准备时间。"
+      }
+    },
+    {
+      "path": "semesters/2026_fall/weeks/week_07/tasks/midterm_readiness_korean",
+      "previous": {
+        "title": {
+          "zh_Hans": {
+            "exists": false,
+            "value": null
+          },
+          "zh": {
+            "exists": false,
+            "value": null
+          },
+          "zh_Hans_CN": {
+            "exists": false,
+            "value": null
+          }
+        },
+        "description": {
+          "zh_Hans": {
+            "exists": false,
+            "value": null
+          },
+          "zh": {
+            "exists": false,
+            "value": null
+          },
+          "zh_Hans_CN": {
+            "exists": false,
+            "value": null
+          }
+        }
+      },
+      "applied": {
+        "weekNumber": 7,
+        "title": "检查期中考试准备情况",
+        "description": "查看各门课程剩余的学习内容和准备时间。"
+      }
+    },
+    {
+      "path": "semesters/2026_fall/weeks/week_07/tasks/study_break_exchange",
+      "previous": {
+        "title": {
+          "zh_Hans": {
+            "exists": false,
+            "value": null
+          },
+          "zh": {
+            "exists": false,
+            "value": null
+          },
+          "zh_Hans_CN": {
+            "exists": false,
+            "value": null
+          }
+        },
+        "description": {
+          "zh_Hans": {
+            "exists": false,
+            "value": null
+          },
+          "zh": {
+            "exists": false,
+            "value": null
+          },
+          "zh_Hans_CN": {
+            "exists": false,
+            "value": null
+          }
+        }
+      },
+      "applied": {
+        "weekNumber": 7,
+        "title": "参加轻松的休息聚会",
+        "description": "在备考间隙通过用餐或散步恢复精力。"
+      }
+    },
+    {
+      "path": "semesters/2026_fall/weeks/week_07/tasks/study_break_korean",
+      "previous": {
+        "title": {
+          "zh_Hans": {
+            "exists": false,
+            "value": null
+          },
+          "zh": {
+            "exists": false,
+            "value": null
+          },
+          "zh_Hans_CN": {
+            "exists": false,
+            "value": null
+          }
+        },
+        "description": {
+          "zh_Hans": {
+            "exists": false,
+            "value": null
+          },
+          "zh": {
+            "exists": false,
+            "value": null
+          },
+          "zh_Hans_CN": {
+            "exists": false,
+            "value": null
+          }
+        }
+      },
+      "applied": {
+        "weekNumber": 7,
+        "title": "参加轻松的休息聚会",
+        "description": "在备考间隙通过用餐或散步恢复精力。"
+      }
+    },
+    {
+      "path": "semesters/2026_fall/weeks/week_08/tasks/midterm_followup_exchange",
+      "previous": {
+        "title": {
+          "zh_Hans": {
+            "exists": false,
+            "value": null
+          },
+          "zh": {
+            "exists": false,
+            "value": null
+          },
+          "zh_Hans_CN": {
+            "exists": false,
+            "value": null
+          }
+        },
+        "description": {
+          "zh_Hans": {
+            "exists": false,
+            "value": null
+          },
+          "zh": {
+            "exists": false,
+            "value": null
+          },
+          "zh_Hans_CN": {
+            "exists": false,
+            "value": null
+          }
+        }
+      },
+      "applied": {
+        "weekNumber": 8,
+        "title": "期中考试后重新调整课程计划",
+        "description": "根据反馈和剩余考核安排调整计划。"
+      }
+    },
+    {
+      "path": "semesters/2026_fall/weeks/week_08/tasks/midterm_followup_korean",
+      "previous": {
+        "title": {
+          "zh_Hans": {
+            "exists": false,
+            "value": null
+          },
+          "zh": {
+            "exists": false,
+            "value": null
+          },
+          "zh_Hans_CN": {
+            "exists": false,
+            "value": null
+          }
+        },
+        "description": {
+          "zh_Hans": {
+            "exists": false,
+            "value": null
+          },
+          "zh": {
+            "exists": false,
+            "value": null
+          },
+          "zh_Hans_CN": {
+            "exists": false,
+            "value": null
+          }
+        }
+      },
+      "applied": {
+        "weekNumber": 8,
+        "title": "期中考试后重新调整课程计划",
+        "description": "根据反馈和剩余考核安排调整计划。"
+      }
+    },
+    {
+      "path": "semesters/2026_fall/weeks/week_08/tasks/wellbeing_check_exchange",
+      "previous": {
+        "title": {
+          "zh_Hans": {
+            "exists": false,
+            "value": null
+          },
+          "zh": {
+            "exists": false,
+            "value": null
+          },
+          "zh_Hans_CN": {
+            "exists": false,
+            "value": null
+          }
+        },
+        "description": {
+          "zh_Hans": {
+            "exists": false,
+            "value": null
+          },
+          "zh": {
+            "exists": false,
+            "value": null
+          },
+          "zh_Hans_CN": {
+            "exists": false,
+            "value": null
+          }
+        }
+      },
+      "applied": {
+        "weekNumber": 8,
+        "title": "关注本学期的身心状态",
+        "description": "检查睡眠、饮食和压力状态，并在需要时寻求帮助。"
+      }
+    },
+    {
+      "path": "semesters/2026_fall/weeks/week_08/tasks/wellbeing_check_korean",
+      "previous": {
+        "title": {
+          "zh_Hans": {
+            "exists": false,
+            "value": null
+          },
+          "zh": {
+            "exists": false,
+            "value": null
+          },
+          "zh_Hans_CN": {
+            "exists": false,
+            "value": null
+          }
+        },
+        "description": {
+          "zh_Hans": {
+            "exists": false,
+            "value": null
+          },
+          "zh": {
+            "exists": false,
+            "value": null
+          },
+          "zh_Hans_CN": {
+            "exists": false,
+            "value": null
+          }
+        }
+      },
+      "applied": {
+        "weekNumber": 8,
+        "title": "关注本学期的身心状态",
+        "description": "检查睡眠、饮食和压力状态，并在需要时寻求帮助。"
+      }
+    },
+    {
+      "path": "semesters/2026_fall/weeks/week_09/tasks/exchange_culture_event_exchange",
+      "previous": {
+        "title": {
+          "zh_Hans": {
+            "exists": false,
+            "value": null
+          },
+          "zh": {
+            "exists": false,
+            "value": null
+          },
+          "zh_Hans_CN": {
+            "exists": false,
+            "value": null
+          }
+        },
+        "description": {
+          "zh_Hans": {
+            "exists": false,
+            "value": null
+          },
+          "zh": {
+            "exists": false,
+            "value": null
+          },
+          "zh_Hans_CN": {
+            "exists": false,
+            "value": null
+          }
+        }
+      },
+      "applied": {
+        "weekNumber": 9,
+        "title": "参加文化交流活动",
+        "description": "与不同背景的同学自然交流。"
+      }
+    },
+    {
+      "path": "semesters/2026_fall/weeks/week_09/tasks/exchange_culture_event_korean",
+      "previous": {
+        "title": {
+          "zh_Hans": {
+            "exists": false,
+            "value": null
+          },
+          "zh": {
+            "exists": false,
+            "value": null
+          },
+          "zh_Hans_CN": {
+            "exists": false,
+            "value": null
+          }
+        },
+        "description": {
+          "zh_Hans": {
+            "exists": false,
+            "value": null
+          },
+          "zh": {
+            "exists": false,
+            "value": null
+          },
+          "zh_Hans_CN": {
+            "exists": false,
+            "value": null
+          }
+        }
+      },
+      "applied": {
+        "weekNumber": 9,
+        "title": "参加文化交流活动",
+        "description": "与不同背景的同学自然交流。"
+      }
+    },
+    {
+      "path": "semesters/2026_fall/weeks/week_09/tasks/festival_events_exchange",
+      "previous": {
+        "title": {
+          "zh_Hans": {
+            "exists": false,
+            "value": null
+          },
+          "zh": {
+            "exists": false,
+            "value": null
+          },
+          "zh_Hans_CN": {
+            "exists": false,
+            "value": null
+          }
+        },
+        "description": {
+          "zh_Hans": {
+            "exists": false,
+            "value": null
+          },
+          "zh": {
+            "exists": false,
+            "value": null
+          },
+          "zh_Hans_CN": {
+            "exists": false,
+            "value": null
+          }
+        }
+      },
+      "applied": {
+        "weekNumber": 9,
+        "title": "查看即将举行的校内活动",
+        "description": "保存你感兴趣的庆典、演出或展览。"
+      }
+    },
+    {
+      "path": "semesters/2026_fall/weeks/week_09/tasks/festival_events_korean",
+      "previous": {
+        "title": {
+          "zh_Hans": {
+            "exists": false,
+            "value": null
+          },
+          "zh": {
+            "exists": false,
+            "value": null
+          },
+          "zh_Hans_CN": {
+            "exists": false,
+            "value": null
+          }
+        },
+        "description": {
+          "zh_Hans": {
+            "exists": false,
+            "value": null
+          },
+          "zh": {
+            "exists": false,
+            "value": null
+          },
+          "zh_Hans_CN": {
+            "exists": false,
+            "value": null
+          }
+        }
+      },
+      "applied": {
+        "weekNumber": 9,
+        "title": "查看即将举行的校内活动",
+        "description": "保存你感兴趣的庆典、演出或展览。"
+      }
+    },
+    {
+      "path": "semesters/2026_fall/weeks/week_10/tasks/academic_advising_exchange",
+      "previous": {
+        "title": {
+          "zh_Hans": {
+            "exists": false,
+            "value": null
+          },
+          "zh": {
+            "exists": false,
+            "value": null
+          },
+          "zh_Hans_CN": {
+            "exists": false,
+            "value": null
+          }
+        },
+        "description": {
+          "zh_Hans": {
+            "exists": false,
+            "value": null
+          },
+          "zh": {
+            "exists": false,
+            "value": null
+          },
+          "zh_Hans_CN": {
+            "exists": false,
+            "value": null
+          }
+        }
+      },
+      "applied": {
+        "weekNumber": 10,
+        "title": "如有需要，预约学业咨询",
+        "description": "如对课程或学分有疑问，请联系相关部门。"
+      }
+    },
+    {
+      "path": "semesters/2026_fall/weeks/week_10/tasks/academic_advising_korean",
+      "previous": {
+        "title": {
+          "zh_Hans": {
+            "exists": false,
+            "value": null
+          },
+          "zh": {
+            "exists": false,
+            "value": null
+          },
+          "zh_Hans_CN": {
+            "exists": false,
+            "value": null
+          }
+        },
+        "description": {
+          "zh_Hans": {
+            "exists": false,
+            "value": null
+          },
+          "zh": {
+            "exists": false,
+            "value": null
+          },
+          "zh_Hans_CN": {
+            "exists": false,
+            "value": null
+          }
+        }
+      },
+      "applied": {
+        "weekNumber": 10,
+        "title": "如有需要，预约学业咨询",
+        "description": "如对课程或学分有疑问，请联系相关部门。"
+      }
+    },
+    {
+      "path": "semesters/2026_fall/weeks/week_10/tasks/grade_progress_exchange",
+      "previous": {
+        "title": {
+          "zh_Hans": {
+            "exists": false,
+            "value": null
+          },
+          "zh": {
+            "exists": false,
+            "value": null
+          },
+          "zh_Hans_CN": {
+            "exists": false,
+            "value": null
+          }
+        },
+        "description": {
+          "zh_Hans": {
+            "exists": false,
+            "value": null
+          },
+          "zh": {
+            "exists": false,
+            "value": null
+          },
+          "zh_Hans_CN": {
+            "exists": false,
+            "value": null
+          }
+        }
+      },
+      "applied": {
+        "weekNumber": 10,
+        "title": "查看各门课程的学习进度",
+        "description": "查看当前成绩和剩余考核所占比例。"
+      }
+    },
+    {
+      "path": "semesters/2026_fall/weeks/week_10/tasks/grade_progress_korean",
+      "previous": {
+        "title": {
+          "zh_Hans": {
+            "exists": false,
+            "value": null
+          },
+          "zh": {
+            "exists": false,
+            "value": null
+          },
+          "zh_Hans_CN": {
+            "exists": false,
+            "value": null
+          }
+        },
+        "description": {
+          "zh_Hans": {
+            "exists": false,
+            "value": null
+          },
+          "zh": {
+            "exists": false,
+            "value": null
+          },
+          "zh_Hans_CN": {
+            "exists": false,
+            "value": null
+          }
+        }
+      },
+      "applied": {
+        "weekNumber": 10,
+        "title": "查看各门课程的学习进度",
+        "description": "查看当前成绩和剩余考核所占比例。"
+      }
+    },
+    {
+      "path": "semesters/2026_fall/weeks/week_11/tasks/career_program_korean",
+      "previous": {
+        "title": {
+          "zh_Hans": {
+            "exists": false,
+            "value": null
+          },
+          "zh": {
+            "exists": false,
+            "value": null
+          },
+          "zh_Hans_CN": {
+            "exists": false,
+            "value": null
+          }
+        },
+        "description": {
+          "zh_Hans": {
+            "exists": false,
+            "value": null
+          },
+          "zh": {
+            "exists": false,
+            "value": null
+          },
+          "zh_Hans_CN": {
+            "exists": false,
+            "value": null
+          }
+        }
+      },
+      "applied": {
+        "weekNumber": 11,
+        "title": "了解职业发展与就业项目",
+        "description": "查看与你相关的职业咨询、讲座或招聘活动。"
+      }
+    },
+    {
+      "path": "semesters/2026_fall/weeks/week_11/tasks/final_projects_exchange",
+      "previous": {
+        "title": {
+          "zh_Hans": {
+            "exists": false,
+            "value": null
+          },
+          "zh": {
+            "exists": false,
+            "value": null
+          },
+          "zh_Hans_CN": {
+            "exists": false,
+            "value": null
+          }
+        },
+        "description": {
+          "zh_Hans": {
+            "exists": false,
+            "value": null
+          },
+          "zh": {
+            "exists": false,
+            "value": null
+          },
+          "zh_Hans_CN": {
+            "exists": false,
+            "value": null
+          }
+        }
+      },
+      "applied": {
+        "weekNumber": 11,
+        "title": "查看期末作业和团队项目安排",
+        "description": "提前确认分工、阶段截止日期和提交格式。"
+      }
+    },
+    {
+      "path": "semesters/2026_fall/weeks/week_11/tasks/final_projects_korean",
+      "previous": {
+        "title": {
+          "zh_Hans": {
+            "exists": false,
+            "value": null
+          },
+          "zh": {
+            "exists": false,
+            "value": null
+          },
+          "zh_Hans_CN": {
+            "exists": false,
+            "value": null
+          }
+        },
+        "description": {
+          "zh_Hans": {
+            "exists": false,
+            "value": null
+          },
+          "zh": {
+            "exists": false,
+            "value": null
+          },
+          "zh_Hans_CN": {
+            "exists": false,
+            "value": null
+          }
+        }
+      },
+      "applied": {
+        "weekNumber": 11,
+        "title": "查看期末作业和团队项目安排",
+        "description": "提前确认分工、阶段截止日期和提交格式。"
+      }
+    },
+    {
+      "path": "semesters/2026_fall/weeks/week_12/tasks/exchange_departure_plan_exchange",
+      "previous": {
+        "title": {
+          "zh_Hans": {
+            "exists": false,
+            "value": null
+          },
+          "zh": {
+            "exists": false,
+            "value": null
+          },
+          "zh_Hans_CN": {
+            "exists": false,
+            "value": null
+          }
+        },
+        "description": {
+          "zh_Hans": {
+            "exists": false,
+            "value": null
+          },
+          "zh": {
+            "exists": false,
+            "value": null
+          },
+          "zh_Hans_CN": {
+            "exists": false,
+            "value": null
+          }
+        }
+      },
+      "applied": {
+        "weekNumber": 12,
+        "title": "确认回国前的行政手续",
+        "description": "查看成绩单、宿舍退房和出入境相关指南。"
+      }
+    },
+    {
+      "path": "semesters/2026_fall/weeks/week_12/tasks/next_term_notice_exchange",
+      "previous": {
+        "title": {
+          "zh_Hans": {
+            "exists": false,
+            "value": null
+          },
+          "zh": {
+            "exists": false,
+            "value": null
+          },
+          "zh_Hans_CN": {
+            "exists": false,
+            "value": null
+          }
+        },
+        "description": {
+          "zh_Hans": {
+            "exists": false,
+            "value": null
+          },
+          "zh": {
+            "exists": false,
+            "value": null
+          },
+          "zh_Hans_CN": {
+            "exists": false,
+            "value": null
+          }
+        }
+      },
+      "applied": {
+        "weekNumber": 12,
+        "title": "查看下学期的重要日期",
+        "description": "查看休学、复学、宿舍和选课相关日期。"
+      }
+    },
+    {
+      "path": "semesters/2026_fall/weeks/week_12/tasks/next_term_notice_korean",
+      "previous": {
+        "title": {
+          "zh_Hans": {
+            "exists": false,
+            "value": null
+          },
+          "zh": {
+            "exists": false,
+            "value": null
+          },
+          "zh_Hans_CN": {
+            "exists": false,
+            "value": null
+          }
+        },
+        "description": {
+          "zh_Hans": {
+            "exists": false,
+            "value": null
+          },
+          "zh": {
+            "exists": false,
+            "value": null
+          },
+          "zh_Hans_CN": {
+            "exists": false,
+            "value": null
+          }
+        }
+      },
+      "applied": {
+        "weekNumber": 12,
+        "title": "查看下学期的重要日期",
+        "description": "查看休学、复学、宿舍和选课相关日期。"
+      }
+    },
+    {
+      "path": "semesters/2026_fall/weeks/week_13/tasks/final_schedule_exchange",
+      "previous": {
+        "title": {
+          "zh_Hans": {
+            "exists": false,
+            "value": null
+          },
+          "zh": {
+            "exists": false,
+            "value": null
+          },
+          "zh_Hans_CN": {
+            "exists": false,
+            "value": null
+          }
+        },
+        "description": {
+          "zh_Hans": {
+            "exists": false,
+            "value": null
+          },
+          "zh": {
+            "exists": false,
+            "value": null
+          },
+          "zh_Hans_CN": {
+            "exists": false,
+            "value": null
+          }
+        }
+      },
+      "applied": {
+        "weekNumber": 13,
+        "title": "确认期末考试安排",
+        "description": "最后确认考试日期、地点、范围和提交截止时间。"
+      }
+    },
+    {
+      "path": "semesters/2026_fall/weeks/week_13/tasks/final_schedule_korean",
+      "previous": {
+        "title": {
+          "zh_Hans": {
+            "exists": false,
+            "value": null
+          },
+          "zh": {
+            "exists": false,
+            "value": null
+          },
+          "zh_Hans_CN": {
+            "exists": false,
+            "value": null
+          }
+        },
+        "description": {
+          "zh_Hans": {
+            "exists": false,
+            "value": null
+          },
+          "zh": {
+            "exists": false,
+            "value": null
+          },
+          "zh_Hans_CN": {
+            "exists": false,
+            "value": null
+          }
+        }
+      },
+      "applied": {
+        "weekNumber": 13,
+        "title": "确认期末考试安排",
+        "description": "最后确认考试日期、地点、范围和提交截止时间。"
+      }
+    },
+    {
+      "path": "semesters/2026_fall/weeks/week_13/tasks/semester_memory_exchange",
+      "previous": {
+        "title": {
+          "zh_Hans": {
+            "exists": false,
+            "value": null
+          },
+          "zh": {
+            "exists": false,
+            "value": null
+          },
+          "zh_Hans_CN": {
+            "exists": false,
+            "value": null
+          }
+        },
+        "description": {
+          "zh_Hans": {
+            "exists": false,
+            "value": null
+          },
+          "zh": {
+            "exists": false,
+            "value": null
+          },
+          "zh_Hans_CN": {
+            "exists": false,
+            "value": null
+          }
+        }
+      },
+      "applied": {
+        "weekNumber": 13,
+        "title": "计划学期结束聚会",
+        "description": "与这学期认识的朋友轻松地为本学期画上句号。"
+      }
+    },
+    {
+      "path": "semesters/2026_fall/weeks/week_13/tasks/semester_memory_korean",
+      "previous": {
+        "title": {
+          "zh_Hans": {
+            "exists": false,
+            "value": null
+          },
+          "zh": {
+            "exists": false,
+            "value": null
+          },
+          "zh_Hans_CN": {
+            "exists": false,
+            "value": null
+          }
+        },
+        "description": {
+          "zh_Hans": {
+            "exists": false,
+            "value": null
+          },
+          "zh": {
+            "exists": false,
+            "value": null
+          },
+          "zh_Hans_CN": {
+            "exists": false,
+            "value": null
+          }
+        }
+      },
+      "applied": {
+        "weekNumber": 13,
+        "title": "计划学期结束聚会",
+        "description": "与这学期认识的朋友轻松地为本学期画上句号。"
+      }
+    },
+    {
+      "path": "semesters/2026_fall/weeks/week_14/tasks/final_readiness_exchange",
+      "previous": {
+        "title": {
+          "zh_Hans": {
+            "exists": false,
+            "value": null
+          },
+          "zh": {
+            "exists": false,
+            "value": null
+          },
+          "zh_Hans_CN": {
+            "exists": false,
+            "value": null
+          }
+        },
+        "description": {
+          "zh_Hans": {
+            "exists": false,
+            "value": null
+          },
+          "zh": {
+            "exists": false,
+            "value": null
+          },
+          "zh_Hans_CN": {
+            "exists": false,
+            "value": null
+          }
+        }
+      },
+      "applied": {
+        "weekNumber": 14,
+        "title": "检查期末考试准备情况",
+        "description": "按课程查看剩余学习内容和待提交材料。"
+      }
+    },
+    {
+      "path": "semesters/2026_fall/weeks/week_14/tasks/final_readiness_korean",
+      "previous": {
+        "title": {
+          "zh_Hans": {
+            "exists": false,
+            "value": null
+          },
+          "zh": {
+            "exists": false,
+            "value": null
+          },
+          "zh_Hans_CN": {
+            "exists": false,
+            "value": null
+          }
+        },
+        "description": {
+          "zh_Hans": {
+            "exists": false,
+            "value": null
+          },
+          "zh": {
+            "exists": false,
+            "value": null
+          },
+          "zh_Hans_CN": {
+            "exists": false,
+            "value": null
+          }
+        }
+      },
+      "applied": {
+        "weekNumber": 14,
+        "title": "检查期末考试准备情况",
+        "description": "按课程查看剩余学习内容和待提交材料。"
+      }
+    },
+    {
+      "path": "semesters/2026_fall/weeks/week_14/tasks/return_items_exchange",
+      "previous": {
+        "title": {
+          "zh_Hans": {
+            "exists": false,
+            "value": null
+          },
+          "zh": {
+            "exists": false,
+            "value": null
+          },
+          "zh_Hans_CN": {
+            "exists": false,
+            "value": null
+          }
+        },
+        "description": {
+          "zh_Hans": {
+            "exists": false,
+            "value": null
+          },
+          "zh": {
+            "exists": false,
+            "value": null
+          },
+          "zh_Hans_CN": {
+            "exists": false,
+            "value": null
+          }
+        }
+      },
+      "applied": {
+        "weekNumber": 14,
+        "title": "确认借用物品和图书的归还日期",
+        "description": "查看图书馆图书及校内借用物品的归还日期。"
+      }
+    },
+    {
+      "path": "semesters/2026_fall/weeks/week_14/tasks/return_items_korean",
+      "previous": {
+        "title": {
+          "zh_Hans": {
+            "exists": false,
+            "value": null
+          },
+          "zh": {
+            "exists": false,
+            "value": null
+          },
+          "zh_Hans_CN": {
+            "exists": false,
+            "value": null
+          }
+        },
+        "description": {
+          "zh_Hans": {
+            "exists": false,
+            "value": null
+          },
+          "zh": {
+            "exists": false,
+            "value": null
+          },
+          "zh_Hans_CN": {
+            "exists": false,
+            "value": null
+          }
+        }
+      },
+      "applied": {
+        "weekNumber": 14,
+        "title": "确认借用物品和图书的归还日期",
+        "description": "查看图书馆图书及校内借用物品的归还日期。"
+      }
+    },
+    {
+      "path": "semesters/2026_fall/weeks/week_15/tasks/final_submissions_exchange",
+      "previous": {
+        "title": {
+          "zh_Hans": {
+            "exists": false,
+            "value": null
+          },
+          "zh": {
+            "exists": false,
+            "value": null
+          },
+          "zh_Hans_CN": {
+            "exists": false,
+            "value": null
+          }
+        },
+        "description": {
+          "zh_Hans": {
+            "exists": false,
+            "value": null
+          },
+          "zh": {
+            "exists": false,
+            "value": null
+          },
+          "zh_Hans_CN": {
+            "exists": false,
+            "value": null
+          }
+        }
+      },
+      "applied": {
+        "weekNumber": 15,
+        "title": "确认所有最终提交内容",
+        "description": "最后检查所有材料是否提交成功以及文件状态是否正常。"
+      }
+    },
+    {
+      "path": "semesters/2026_fall/weeks/week_15/tasks/final_submissions_korean",
+      "previous": {
+        "title": {
+          "zh_Hans": {
+            "exists": false,
+            "value": null
+          },
+          "zh": {
+            "exists": false,
+            "value": null
+          },
+          "zh_Hans_CN": {
+            "exists": false,
+            "value": null
+          }
+        },
+        "description": {
+          "zh_Hans": {
+            "exists": false,
+            "value": null
+          },
+          "zh": {
+            "exists": false,
+            "value": null
+          },
+          "zh_Hans_CN": {
+            "exists": false,
+            "value": null
+          }
+        }
+      },
+      "applied": {
+        "weekNumber": 15,
+        "title": "确认所有最终提交内容",
+        "description": "最后检查所有材料是否提交成功以及文件状态是否正常。"
+      }
+    },
+    {
+      "path": "semesters/2026_fall/weeks/week_15/tasks/semester_reflection_exchange",
+      "previous": {
+        "title": {
+          "zh_Hans": {
+            "exists": false,
+            "value": null
+          },
+          "zh": {
+            "exists": false,
+            "value": null
+          },
+          "zh_Hans_CN": {
+            "exists": false,
+            "value": null
+          }
+        },
+        "description": {
+          "zh_Hans": {
+            "exists": false,
+            "value": null
+          },
+          "zh": {
+            "exists": false,
+            "value": null
+          },
+          "zh_Hans_CN": {
+            "exists": false,
+            "value": null
+          }
+        }
+      },
+      "applied": {
+        "weekNumber": 15,
+        "title": "回顾本学期的经历",
+        "description": "记录本学期做得好的事情以及下学期想继续的目标。"
+      }
+    },
+    {
+      "path": "semesters/2026_fall/weeks/week_15/tasks/semester_reflection_korean",
+      "previous": {
+        "title": {
+          "zh_Hans": {
+            "exists": false,
+            "value": null
+          },
+          "zh": {
+            "exists": false,
+            "value": null
+          },
+          "zh_Hans_CN": {
+            "exists": false,
+            "value": null
+          }
+        },
+        "description": {
+          "zh_Hans": {
+            "exists": false,
+            "value": null
+          },
+          "zh": {
+            "exists": false,
+            "value": null
+          },
+          "zh_Hans_CN": {
+            "exists": false,
+            "value": null
+          }
+        }
+      },
+      "applied": {
+        "weekNumber": 15,
+        "title": "回顾本学期的经历",
+        "description": "记录本学期做得好的事情以及下学期想继续的目标。"
+      }
+    },
+    {
+      "path": "semesters/2026_fall/weeks/week_15/tasks/stay_connected_exchange",
+      "previous": {
+        "title": {
+          "zh_Hans": {
+            "exists": false,
+            "value": null
+          },
+          "zh": {
+            "exists": false,
+            "value": null
+          },
+          "zh_Hans_CN": {
+            "exists": false,
+            "value": null
+          }
+        },
+        "description": {
+          "zh_Hans": {
+            "exists": false,
+            "value": null
+          },
+          "zh": {
+            "exists": false,
+            "value": null
+          },
+          "zh_Hans_CN": {
+            "exists": false,
+            "value": null
+          }
+        }
+      },
+      "applied": {
+        "weekNumber": 15,
+        "title": "与认识的朋友保持联系",
+        "description": "和本学期认识的人约好下次见面或保持联系。"
+      }
+    },
+    {
+      "path": "semesters/2026_fall/weeks/week_15/tasks/stay_connected_korean",
+      "previous": {
+        "title": {
+          "zh_Hans": {
+            "exists": false,
+            "value": null
+          },
+          "zh": {
+            "exists": false,
+            "value": null
+          },
+          "zh_Hans_CN": {
+            "exists": false,
+            "value": null
+          }
+        },
+        "description": {
+          "zh_Hans": {
+            "exists": false,
+            "value": null
+          },
+          "zh": {
+            "exists": false,
+            "value": null
+          },
+          "zh_Hans_CN": {
+            "exists": false,
+            "value": null
+          }
+        }
+      },
+      "applied": {
+        "weekNumber": 15,
+        "title": "与认识的朋友保持联系",
+        "description": "和本学期认识的人约好下次见面或保持联系。"
+      }
+    },
+    {
+      "path": "semesters/2026_fall/weeks/week_16/tasks/next_semester_plan_exchange",
+      "previous": {
+        "title": {
+          "zh_Hans": {
+            "exists": false,
+            "value": null
+          },
+          "zh": {
+            "exists": false,
+            "value": null
+          },
+          "zh_Hans_CN": {
+            "exists": false,
+            "value": null
+          }
+        },
+        "description": {
+          "zh_Hans": {
+            "exists": false,
+            "value": null
+          },
+          "zh": {
+            "exists": false,
+            "value": null
+          },
+          "zh_Hans_CN": {
+            "exists": false,
+            "value": null
+          }
+        }
+      },
+      "applied": {
+        "weekNumber": 16,
+        "title": "制定下学期计划",
+        "description": "回顾本学期并整理下学期想继续推进的目标。"
+      }
+    },
+    {
+      "path": "semesters/2026_fall/weeks/week_16/tasks/next_semester_plan_korean",
+      "previous": {
+        "title": {
+          "zh_Hans": {
+            "exists": false,
+            "value": null
+          },
+          "zh": {
+            "exists": false,
+            "value": null
+          },
+          "zh_Hans_CN": {
+            "exists": false,
+            "value": null
+          }
+        },
+        "description": {
+          "zh_Hans": {
+            "exists": false,
+            "value": null
+          },
+          "zh": {
+            "exists": false,
+            "value": null
+          },
+          "zh_Hans_CN": {
+            "exists": false,
+            "value": null
+          }
+        }
+      },
+      "applied": {
+        "weekNumber": 16,
+        "title": "制定下学期计划",
+        "description": "回顾本学期并整理下学期想继续推进的目标。"
+      }
+    },
+    {
+      "path": "semesters/2026_fall/weeks/week_16/tasks/semester_wrap_up_exchange",
+      "previous": {
+        "title": {
+          "zh_Hans": {
+            "exists": false,
+            "value": null
+          },
+          "zh": {
+            "exists": false,
+            "value": null
+          },
+          "zh_Hans_CN": {
+            "exists": false,
+            "value": null
+          }
+        },
+        "description": {
+          "zh_Hans": {
+            "exists": false,
+            "value": null
+          },
+          "zh": {
+            "exists": false,
+            "value": null
+          },
+          "zh_Hans_CN": {
+            "exists": false,
+            "value": null
+          }
+        }
+      },
+      "applied": {
+        "weekNumber": 16,
+        "title": "完成学期收尾检查",
+        "description": "检查成绩公布日期、需归还物品和剩余行政手续。"
+      }
+    },
+    {
+      "path": "semesters/2026_fall/weeks/week_16/tasks/semester_wrap_up_korean",
+      "previous": {
+        "title": {
+          "zh_Hans": {
+            "exists": false,
+            "value": null
+          },
+          "zh": {
+            "exists": false,
+            "value": null
+          },
+          "zh_Hans_CN": {
+            "exists": false,
+            "value": null
+          }
+        },
+        "description": {
+          "zh_Hans": {
+            "exists": false,
+            "value": null
+          },
+          "zh": {
+            "exists": false,
+            "value": null
+          },
+          "zh_Hans_CN": {
+            "exists": false,
+            "value": null
+          }
+        }
+      },
+      "applied": {
+        "weekNumber": 16,
+        "title": "完成学期收尾检查",
+        "description": "检查成绩公布日期、需归还物品和剩余行政手续。"
+      }
+    }
+  ]
+}

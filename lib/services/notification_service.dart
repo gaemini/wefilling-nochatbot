@@ -407,32 +407,54 @@ class NotificationService {
     if (user == null || (types.isEmpty && normalizedTargets.isEmpty)) return 0;
 
     try {
-      final snapshot = await _firestore
-          .collection('notifications')
-          .where('userId', isEqualTo: user.uid)
-          .where('isRead', isEqualTo: false)
-          .limit(450)
-          .get();
-      final matches = snapshot.docs.where((document) {
-        final data = document.data();
-        final type = (data['type'] ?? '').toString();
-        if (types.isNotEmpty && !types.contains(type)) return false;
-        final nested = data['data'] is Map
-            ? Map<String, dynamic>.from(data['data'] as Map)
-            : const <String, dynamic>{};
-        return normalizedTargets.entries.every((target) {
-          final topLevel = (data[target.key] ?? '').toString().trim();
-          final nestedValue = (nested[target.key] ?? '').toString().trim();
-          return topLevel == target.value || nestedValue == target.value;
-        });
-      }).toList(growable: false);
-      if (matches.isEmpty) return 0;
-
-      final batch = _firestore.batch();
-      for (final document in matches) {
-        batch.update(document.reference, {'isRead': true});
+      const pageSize = 200;
+      const maxPagesPerType = 3;
+      final matchesById =
+          <String, QueryDocumentSnapshot<Map<String, dynamic>>>{};
+      final Iterable<String?> requestedTypes =
+          types.isEmpty ? const <String?>[null] : types;
+      for (final requestedType in requestedTypes) {
+        DocumentSnapshot<Map<String, dynamic>>? cursor;
+        for (var pageIndex = 0; pageIndex < maxPagesPerType; pageIndex++) {
+          Query<Map<String, dynamic>> query = _firestore
+              .collection('notifications')
+              .where('userId', isEqualTo: user.uid)
+              .where('isRead', isEqualTo: false);
+          if (requestedType != null) {
+            query = query.where('type', isEqualTo: requestedType);
+          }
+          query = query.orderBy(FieldPath.documentId).limit(pageSize);
+          if (cursor != null) query = query.startAfterDocument(cursor);
+          final page = await query.get();
+          for (final document in page.docs) {
+            final data = document.data();
+            final nested = data['data'] is Map
+                ? Map<String, dynamic>.from(data['data'] as Map)
+                : const <String, dynamic>{};
+            final targetMatches = normalizedTargets.entries.every((target) {
+              final topLevel = (data[target.key] ?? '').toString().trim();
+              final nestedValue = (nested[target.key] ?? '').toString().trim();
+              return topLevel == target.value || nestedValue == target.value;
+            });
+            if (targetMatches) matchesById[document.id] = document;
+          }
+          if (page.docs.length < pageSize) break;
+          cursor = page.docs.last;
+        }
       }
-      await batch.commit();
+      final matches = matchesById.values.toList(growable: false);
+      if (matches.isEmpty) return 0;
+      if (_auth.currentUser?.uid != user.uid) return 0;
+
+      for (var offset = 0; offset < matches.length; offset += 450) {
+        if (_auth.currentUser?.uid != user.uid) return 0;
+        final batch = _firestore.batch();
+        final end = (offset + 450).clamp(0, matches.length).toInt();
+        for (final document in matches.sublist(offset, end)) {
+          batch.update(document.reference, {'isRead': true});
+        }
+        await batch.commit();
+      }
       for (final document in matches) {
         unawaited(FCMService().cancelAppNotification(document.id));
       }

@@ -1,0 +1,140 @@
+{
+  "projectId": "flutterproject3-af322",
+  "semesterId": "2026_fall",
+  "language": "zh_Hans",
+  "weeks": [
+    {
+      "id": "week_01",
+      "weekNumber": 1,
+      "tasks": [
+        {"id": "check_enrollment", "title": "确认选课结果", "description": "请在学校门户重新确认课程时间和教室。"},
+        {"id": "exchange_orientation", "title": "查看交换生入学说明会安排", "description": "查看国际处的日程和所需携带物品。"},
+        {"id": "campus_welcome_meetup", "title": "浏览新学期迎新聚会", "description": "参加轻松的聚会，认识兴趣相近的同学。"}
+      ]
+    },
+    {
+      "id": "week_02",
+      "weekNumber": 2,
+      "tasks": [
+        {"id": "check_syllabus", "title": "查看教学大纲和考核方式", "description": "将作业、考试和出勤要求整理到日程中。"},
+        {"id": "course_change_period", "title": "确认选课调整时间", "description": "如需调整，请在截止时间前完成。"},
+        {"id": "club_fair", "title": "了解社团和学生活动", "description": "找一项本学期想参加的活动。"}
+      ]
+    },
+    {
+      "id": "week_03",
+      "weekNumber": 3,
+      "tasks": [
+        {"id": "academic_calendar", "title": "保存重要校历日期", "description": "将考试、节假日和退课截止日期记录到日历中。"},
+        {"id": "arc_documents", "title": "确认外国人登记相关材料", "description": "如适用，请查看国际处指南及所需材料。"},
+        {"id": "language_exchange", "title": "参加语言交换活动", "description": "认识可以互相分享语言和文化的朋友。"}
+      ]
+    },
+    {
+      "id": "week_04",
+      "weekNumber": 4,
+      "tasks": [
+        {"id": "campus_services", "title": "了解校内支持服务", "description": "查看保健、咨询和学习支持中心的位置及使用方式。"},
+        {"id": "dorm_rules", "title": "查看宿舍生活规定", "description": "如住在校内，请查看出入、垃圾分类和设施使用规定。"},
+        {"id": "buddy_program", "title": "了解伙伴计划", "description": "查看连接交换生和韩国学生的交流项目。"}
+      ]
+    },
+    {
+      "id": "week_05",
+      "weekNumber": 5,
+      "tasks": [
+        {"id": "assignment_check", "title": "检查未完成的作业和出勤情况", "description": "检查各门课程是否有遗漏事项。"},
+        {"id": "study_meetup", "title": "寻找专业课或考试学习小组", "description": "对于难以独自准备的课程，可以和同学一起学习。"}
+      ]
+    },
+    {
+      "id": "week_06",
+      "weekNumber": 6,
+      "tasks": [
+        {"id": "midterm_schedule", "title": "整理期中考试安排", "description": "将考试日期、范围和作业截止日期整理在一起。"},
+        {"id": "library_space", "title": "寻找适合专心学习的地方", "description": "可以使用图书馆或校内其他学习空间。"}
+      ]
+    },
+    {
+      "id": "week_07",
+      "weekNumber": 7,
+      "tasks": [
+        {"id": "midterm_readiness", "title": "检查期中考试准备情况", "description": "查看各门课程剩余的学习内容和准备时间。"},
+        {"id": "study_break", "title": "参加轻松的休息聚会", "description": "在备考间隙通过用餐或散步恢复精力。"}
+      ]
+    },
+    {
+      "id": "week_08",
+      "weekNumber": 8,
+      "tasks": [
+        {"id": "midterm_followup", "title": "期中考试后重新调整课程计划", "description": "根据反馈和剩余考核安排调整计划。"},
+        {"id": "wellbeing_check", "title": "关注本学期的身心状态", "description": "检查睡眠、饮食和压力状态，并在需要时寻求帮助。"}
+      ]
+    },
+    {
+      "id": "week_09",
+      "weekNumber": 9,
+      "tasks": [
+        {"id": "festival_events", "title": "查看即将举行的校内活动", "description": "保存你感兴趣的庆典、演出或展览。"},
+        {"id": "exchange_culture_event", "title": "参加文化交流活动", "description": "与不同背景的同学自然交流。"}
+      ]
+    },
+    {
+      "id": "week_10",
+      "weekNumber": 10,
+      "tasks": [
+        {"id": "grade_progress", "title": "查看各门课程的学习进度", "description": "查看当前成绩和剩余考核所占比例。"},
+        {"id": "academic_advising", "title": "如有需要，预约学业咨询", "description": "如对课程或学分有疑问，请联系相关部门。"}
+      ]
+    },
+    {
+      "id": "week_11",
+      "weekNumber": 11,
+      "tasks": [
+        {"id": "final_projects", "title": "查看期末作业和团队项目安排", "description": "提前确认分工、阶段截止日期和提交格式。"},
+        {"id": "career_program", "title": "了解职业发展与就业项目", "description": "查看与你相关的职业咨询、讲座或招聘活动。"}
+      ]
+    },
+    {
+      "id": "week_12",
+      "weekNumber": 12,
+      "tasks": [
+        {"id": "next_term_notice", "title": "查看下学期的重要日期", "description": "查看休学、复学、宿舍和选课相关日期。"},
+        {"id": "exchange_departure_plan", "title": "确认回国前的行政手续", "description": "查看成绩单、宿舍退房和出入境相关指南。"}
+      ]
+    },
+    {
+      "id": "week_13",
+      "weekNumber": 13,
+      "tasks": [
+        {"id": "final_schedule", "title": "确认期末考试安排", "description": "最后确认考试日期、地点、范围和提交截止时间。"},
+        {"id": "semester_memory", "title": "计划学期结束聚会", "description": "与这学期认识的朋友轻松地为本学期画上句号。"}
+      ]
+    },
+    {
+      "id": "week_14",
+      "weekNumber": 14,
+      "tasks": [
+        {"id": "final_readiness", "title": "检查期末考试准备情况", "description": "按课程查看剩余学习内容和待提交材料。"},
+        {"id": "return_items", "title": "确认借用物品和图书的归还日期", "description": "查看图书馆图书及校内借用物品的归还日期。"}
+      ]
+    },
+    {
+      "id": "week_15",
+      "weekNumber": 15,
+      "tasks": [
+        {"id": "final_submissions", "title": "确认所有最终提交内容", "description": "最后检查所有材料是否提交成功以及文件状态是否正常。"},
+        {"id": "semester_reflection", "title": "回顾本学期的经历", "description": "记录本学期做得好的事情以及下学期想继续的目标。"},
+        {"id": "stay_connected", "title": "与认识的朋友保持联系", "description": "和本学期认识的人约好下次见面或保持联系。"}
+      ]
+    },
+    {
+      "id": "week_16",
+      "weekNumber": 16,
+      "tasks": [
+        {"id": "semester_wrap_up", "title": "完成学期收尾检查", "description": "检查成绩公布日期、需归还物品和剩余行政手续。"},
+        {"id": "next_semester_plan", "title": "制定下学期计划", "description": "回顾本学期并整理下学期想继续推进的目标。"}
+      ]
+    }
+  ]
+}

@@ -11,6 +11,7 @@ import '../ui/widgets/glassmorphism_container.dart';
 import '../services/meetup_service.dart';
 import '../ui/snackbar/app_snackbar.dart';
 import '../utils/category_label_utils.dart';
+import '../l10n/ui_locale.dart';
 
 class MeetupCard extends StatelessWidget {
   final Meetup meetup;
@@ -136,7 +137,7 @@ class MeetupCard extends StatelessWidget {
               if (kicked) {
                 AppSnackBar.show(
                   context,
-                  message: '죄송합니다. 모임에 참여할 수 없습니다',
+                  message: kickedMeetupAccessMessage(context),
                   type: AppSnackBarType.error,
                 );
                 return;
@@ -169,7 +170,7 @@ class MeetupCard extends StatelessWidget {
           if (kicked) {
             AppSnackBar.show(
               context,
-              message: '죄송합니다. 모임에 참여할 수 없습니다',
+              message: kickedMeetupAccessMessage(context),
               type: AppSnackBarType.error,
             );
             return;
@@ -360,7 +361,7 @@ class MeetupCard extends StatelessWidget {
                       if (kicked) {
                         AppSnackBar.show(
                           context,
-                          message: '죄송합니다. 모임에 참여할 수 없습니다',
+                          message: kickedMeetupAccessMessage(context),
                           type: AppSnackBarType.error,
                         );
                         return;

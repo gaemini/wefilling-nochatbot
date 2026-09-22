@@ -4,6 +4,17 @@ import 'package:flutter/widgets.dart';
 bool isChineseUi(BuildContext context) =>
     Localizations.localeOf(context).languageCode == 'zh';
 
+/// Message shown when a removed user tries to open or rejoin a meetup.
+/// Keep this scoped to the access guard so ordinary join failures continue
+/// using their existing localized copy.
+String kickedMeetupAccessMessage(BuildContext context) {
+  if (isChineseUi(context)) return '抱歉，你无法参加该聚会。';
+  if (Localizations.localeOf(context).languageCode == 'ko') {
+    return '죄송합니다. 모임에 참여할 수 없습니다';
+  }
+  return "Sorry, you can't join this meetup.";
+}
+
 Locale uiLocale(String code) => code == 'zh' || code.startsWith('zh_')
     ? const Locale.fromSubtags(languageCode: 'zh', scriptCode: 'Hans')
     : Locale(code);

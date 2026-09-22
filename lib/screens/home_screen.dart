@@ -365,7 +365,7 @@ class MeetupHomePageState extends State<MeetupHomePage> with PreloadMixin {
           if (kicked) {
             AppSnackBar.show(
               context,
-              message: '죄송합니다. 모임에 참여할 수 없습니다',
+              message: kickedMeetupAccessMessage(context),
               type: AppSnackBarType.error,
             );
             return;
@@ -457,7 +457,7 @@ class MeetupHomePageState extends State<MeetupHomePage> with PreloadMixin {
       if (kicked) {
         AppSnackBar.show(
           context,
-          message: '죄송합니다. 모임에 참여할 수 없습니다',
+          message: kickedMeetupAccessMessage(context),
           type: AppSnackBarType.error,
         );
         return;
@@ -677,7 +677,7 @@ class MeetupHomePageState extends State<MeetupHomePage> with PreloadMixin {
         if (kicked) {
           AppSnackBar.show(
             context,
-            message: '죄송합니다. 모임에 참여할 수 없습니다',
+            message: kickedMeetupAccessMessage(context),
             type: AppSnackBarType.error,
           );
           return;

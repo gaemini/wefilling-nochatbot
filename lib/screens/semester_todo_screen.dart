@@ -5,6 +5,7 @@ import 'package:flutter/cupertino.dart';
 import 'package:flutter/material.dart';
 import 'package:intl/intl.dart';
 import 'package:provider/provider.dart';
+import 'package:table_calendar/table_calendar.dart';
 import 'package:url_launcher/url_launcher.dart';
 
 import '../constants/app_constants.dart';
@@ -1545,12 +1546,7 @@ class _SemesterTodoScreenState extends State<SemesterTodoScreen>
                 ? controller.semester!.endDate
                 : controller.weeks.last.endDate,
             initialWeekNumber: initialWeekNumber,
-            notificationsEnabled: controller.personalTodoNotificationsEnabled,
-            reminderHour: controller.personalTodoReminderHour,
-            reminderMinute: controller.personalTodoReminderMinute,
             isKorean: _isKorean,
-            onEnableGlobalReminders: () =>
-                _askToEnableGlobalReminders(controller),
           ),
         ),
       ),
@@ -1579,14 +1575,14 @@ class _SemesterTodoScreenState extends State<SemesterTodoScreen>
       await controller.savePersonalTodo(
         existing: existing,
         title: result.title,
-        memo: result.memo,
+        memo: existing?.memo,
         dueAt: result.dueAt,
-        reminderEnabled: result.reminderEnabled,
-        carryOver: result.carryOver,
-        weekNumber: result.weekNumber,
-        timeMinutes: result.timeMinutes,
-        category: result.category,
-        priority: result.priority,
+        reminderEnabled: existing?.reminderEnabled ?? true,
+        carryOver: existing?.carryOver ?? true,
+        weekNumber: initialWeekNumber,
+        timeMinutes: existing?.timeMinutes,
+        category: existing?.category ?? PersonalTodoCategory.personal,
+        priority: existing?.priority ?? PersonalTodoPriority.normal,
       );
     } catch (_) {
       if (mounted) _showSaveError();
@@ -1597,37 +1593,16 @@ class _SemesterTodoScreenState extends State<SemesterTodoScreen>
 class _PersonalTodoEditorResult {
   const _PersonalTodoEditorResult({
     required this.title,
-    required this.memo,
-    required this.weekNumber,
     required this.dueAt,
-    required this.reminderEnabled,
-    required this.carryOver,
-    required this.timeMinutes,
-    required this.category,
-    required this.priority,
   }) : deleteRequested = false;
 
   const _PersonalTodoEditorResult.delete()
       : title = '',
-        memo = '',
-        weekNumber = 1,
         dueAt = null,
-        reminderEnabled = false,
-        carryOver = false,
-        timeMinutes = null,
-        category = PersonalTodoCategory.personal,
-        priority = PersonalTodoPriority.normal,
         deleteRequested = true;
 
   final String title;
-  final String memo;
-  final int weekNumber;
   final DateTime? dueAt;
-  final bool reminderEnabled;
-  final bool carryOver;
-  final int? timeMinutes;
-  final PersonalTodoCategory category;
-  final PersonalTodoPriority priority;
   final bool deleteRequested;
 }
 
@@ -1638,11 +1613,7 @@ class _PersonalTodoEditorPage extends StatefulWidget {
     required this.semesterStart,
     required this.semesterEnd,
     required this.initialWeekNumber,
-    required this.notificationsEnabled,
-    required this.reminderHour,
-    required this.reminderMinute,
     required this.isKorean,
-    required this.onEnableGlobalReminders,
   });
 
   final PersonalTodo? existing;
@@ -1650,11 +1621,7 @@ class _PersonalTodoEditorPage extends StatefulWidget {
   final DateTime semesterStart;
   final DateTime semesterEnd;
   final int initialWeekNumber;
-  final bool notificationsEnabled;
-  final int reminderHour;
-  final int reminderMinute;
   final bool isKorean;
-  final Future<bool> Function() onEnableGlobalReminders;
 
   @override
   State<_PersonalTodoEditorPage> createState() =>
@@ -1663,44 +1630,28 @@ class _PersonalTodoEditorPage extends StatefulWidget {
 
 class _PersonalTodoEditorPageState extends State<_PersonalTodoEditorPage> {
   late final TextEditingController _titleController;
-  late final TextEditingController _memoController;
-  late int _weekNumber;
-  late bool _reminderEnabled;
-  late bool _carryOver;
   DateTime? _dueAt;
-  int? _timeMinutes;
-  late PersonalTodoCategory _category;
-  late PersonalTodoPriority _priority;
-  late bool _showOptions;
+  late DateTime _focusedDay;
 
   @override
   void initState() {
     super.initState();
     _titleController = TextEditingController(text: widget.existing?.title);
-    _memoController = TextEditingController(text: widget.existing?.memo);
-    final requestedWeek =
-        widget.existing?.weekNumber ?? widget.initialWeekNumber;
-    _weekNumber = widget.weeks.any((week) => week.weekNumber == requestedWeek)
-        ? requestedWeek
-        : (widget.weeks.isEmpty ? 1 : widget.weeks.first.weekNumber);
-    _reminderEnabled = widget.existing?.reminderEnabled ?? false;
-    _carryOver = widget.existing?.carryOver ?? true;
     _dueAt = widget.existing?.dueAt;
-    _timeMinutes = widget.existing?.timeMinutes;
-    _category = widget.existing?.category ?? PersonalTodoCategory.personal;
-    _priority = widget.existing?.priority ?? PersonalTodoPriority.normal;
-    _showOptions = widget.existing != null &&
-        ((_memoController.text.trim().isNotEmpty) ||
-            _timeMinutes != null ||
-            _category != PersonalTodoCategory.personal ||
-            _priority != PersonalTodoPriority.normal ||
-            widget.existing!.reminderEnabled);
+    SemesterWeek? initialWeek;
+    for (final week in widget.weeks) {
+      if (week.weekNumber == widget.initialWeekNumber) {
+        initialWeek = week;
+        break;
+      }
+    }
+    final requestedFocus = _dueAt ?? initialWeek?.startDate ?? DateTime.now();
+    _focusedDay = _clampToCalendarRange(_calendarDate(requestedFocus));
   }
 
   @override
   void dispose() {
     _titleController.dispose();
-    _memoController.dispose();
     super.dispose();
   }
 
@@ -1709,125 +1660,91 @@ class _PersonalTodoEditorPageState extends State<_PersonalTodoEditorPage> {
     return DateTime(kst.year, kst.month, kst.day);
   }
 
-  String _dateLabel(DateTime value) {
+  DateTime get _firstCalendarDay => widget.weeks.isEmpty
+      ? _calendarDate(widget.semesterStart)
+      : _calendarDate(widget.weeks.first.startDate);
+
+  DateTime get _lastCalendarDay => widget.weeks.isEmpty
+      ? _calendarDate(widget.semesterEnd)
+      : _calendarDate(widget.weeks.last.endDate);
+
+  DateTime _clampToCalendarRange(DateTime value) {
     final date = _calendarDate(value);
-    return isChineseUi(context)
-        ? '${date.month}月${date.day}日'
-        : widget.isKorean
-            ? '${date.month}월 ${date.day}일'
-            : DateFormat('MMM d', 'en').format(date);
+    if (date.isBefore(_firstCalendarDay)) return _firstCalendarDay;
+    if (date.isAfter(_lastCalendarDay)) return _lastCalendarDay;
+    return date;
   }
 
-  String _weekRange(SemesterWeek week) {
-    final start = _calendarDate(week.startDate);
-    final end = _calendarDate(week.endDate);
-    return isChineseUi(context)
-        ? '${start.month}月${start.day}日－${end.month}月${end.day}日'
-        : widget.isKorean
-            ? '${start.month}/${start.day}–${end.month}/${end.day}'
-            : '${DateFormat('MMM d', 'en').format(start)}–${DateFormat('MMM d', 'en').format(end)}';
-  }
-
-  String _categoryLabel(PersonalTodoCategory category) {
-    switch (category) {
-      case PersonalTodoCategory.academics:
-        return isChineseUi(context)
-            ? '学习'
-            : widget.isKorean
-                ? '학업'
-                : 'Study';
-      case PersonalTodoCategory.school:
-        return isChineseUi(context)
-            ? '学校'
-            : widget.isKorean
-                ? '학교'
-                : 'School';
-      case PersonalTodoCategory.meetup:
-        return isChineseUi(context)
-            ? '聚会'
-            : widget.isKorean
-                ? '모임'
-                : 'Meetup';
-      case PersonalTodoCategory.project:
-        return isChineseUi(context)
-            ? '项目'
-            : widget.isKorean
-                ? '프로젝트'
-                : 'Project';
-      case PersonalTodoCategory.personal:
-        return isChineseUi(context)
-            ? '个人'
-            : widget.isKorean
-                ? '개인'
-                : 'Personal';
+  bool _isAvailableDate(DateTime value) {
+    final date = _calendarDate(value);
+    if (date.isBefore(_firstCalendarDay) || date.isAfter(_lastCalendarDay)) {
+      return false;
     }
-  }
-
-  Future<void> _pickDueDate() async {
-    final first = _calendarDate(widget.semesterStart);
-    final last = _calendarDate(widget.semesterEnd);
-    var initial =
-        _dueAt == null ? _calendarDate(DateTime.now()) : _calendarDate(_dueAt!);
-    if (initial.isBefore(first)) initial = first;
-    if (initial.isAfter(last)) initial = last;
-    final picked = await showDatePicker(
-      context: context,
-      initialDate: initial,
-      firstDate: first,
-      lastDate: last,
-    );
-    if (!mounted || picked == null) return;
-    setState(() {
-      _dueAt = DateTime.utc(picked.year, picked.month, picked.day)
-          .subtract(const Duration(hours: 9));
-      for (final week in widget.weeks) {
-        final start = _calendarDate(week.startDate);
-        final end = _calendarDate(week.endDate);
-        if (!picked.isBefore(start) && !picked.isAfter(end)) {
-          _weekNumber = week.weekNumber;
-          break;
-        }
-      }
+    if (widget.weeks.isEmpty) return true;
+    return widget.weeks.any((week) {
+      final start = _calendarDate(week.startDate);
+      final end = _calendarDate(week.endDate);
+      return !date.isBefore(start) && !date.isAfter(end);
     });
   }
 
-  Future<void> _pickTime() async {
-    final initial = _timeMinutes == null
-        ? TimeOfDay.now()
-        : TimeOfDay(
-            hour: _timeMinutes! ~/ 60,
-            minute: _timeMinutes! % 60,
-          );
-    final picked = await showTimePicker(context: context, initialTime: initial);
-    if (!mounted || picked == null) return;
-    setState(() => _timeMinutes = picked.hour * 60 + picked.minute);
+  String _monthLabel(DateTime value) {
+    if (isChineseUi(context)) return '${value.year}年${value.month}月';
+    if (widget.isKorean) return '${value.year}년 ${value.month}월';
+    return DateFormat('MMMM yyyy', 'en').format(value);
+  }
+
+  String _calendarDaySemantics(DateTime value) {
+    if (isChineseUi(context)) {
+      return '${value.year}年${value.month}月${value.day}日';
+    }
+    if (widget.isKorean) {
+      return '${value.year}년 ${value.month}월 ${value.day}일';
+    }
+    return DateFormat('MMMM d, yyyy', 'en').format(value);
+  }
+
+  void _selectDueDate(DateTime selectedDay, DateTime focusedDay) {
+    if (!_isAvailableDate(selectedDay)) return;
+    setState(() {
+      _focusedDay = _clampToCalendarRange(focusedDay);
+      _dueAt = DateTime.utc(
+        selectedDay.year,
+        selectedDay.month,
+        selectedDay.day,
+      ).subtract(const Duration(hours: 9));
+    });
+  }
+
+  void _moveFocusedMonth(int offset) {
+    final target = DateTime(_focusedDay.year, _focusedDay.month + offset, 1);
+    setState(() => _focusedDay = _clampToCalendarRange(target));
+  }
+
+  bool _canMoveFocusedMonth(int offset) {
+    final target = DateTime(_focusedDay.year, _focusedDay.month + offset, 1);
+    final firstMonth =
+        DateTime(_firstCalendarDay.year, _firstCalendarDay.month, 1);
+    final lastMonth =
+        DateTime(_lastCalendarDay.year, _lastCalendarDay.month, 1);
+    return !target.isBefore(firstMonth) && !target.isAfter(lastMonth);
   }
 
   void _save() {
     final title = _titleController.text.trim();
-    if (title.isEmpty) return;
+    if (title.isEmpty || _dueAt == null) return;
     Navigator.pop(
       context,
       _PersonalTodoEditorResult(
         title: title,
-        memo: _memoController.text.trim(),
-        weekNumber: _weekNumber,
         dueAt: _dueAt,
-        reminderEnabled: _reminderEnabled,
-        carryOver: _carryOver,
-        timeMinutes: _timeMinutes,
-        category: _category,
-        priority: _priority,
       ),
     );
   }
 
   @override
   Widget build(BuildContext context) {
-    final canSave = _titleController.text.trim().isNotEmpty;
-    final reminderTime = MaterialLocalizations.of(context).formatTimeOfDay(
-      TimeOfDay(hour: widget.reminderHour, minute: widget.reminderMinute),
-    );
+    final canSave = _titleController.text.trim().isNotEmpty && _dueAt != null;
     return Scaffold(
       backgroundColor: Colors.white,
       resizeToAvoidBottomInset: true,
@@ -1838,12 +1755,13 @@ class _PersonalTodoEditorPageState extends State<_PersonalTodoEditorPage> {
         surfaceTintColor: Colors.white,
         elevation: 0,
         centerTitle: true,
+        leadingWidth: 48,
         leading: IconButton(
           tooltip: MaterialLocalizations.of(context).backButtonTooltip,
           onPressed: () => Navigator.maybePop(context),
           icon: const Icon(
             Icons.arrow_back_rounded,
-            color: Color(0xFF0F172A),
+            color: const Color(0xFF0F172A),
           ),
         ),
         title: Text(
@@ -1858,6 +1776,8 @@ class _PersonalTodoEditorPageState extends State<_PersonalTodoEditorPage> {
                   : widget.isKorean
                       ? '할 일 수정'
                       : 'Edit task')),
+          maxLines: 1,
+          overflow: TextOverflow.ellipsis,
           style: TextStyle(
             fontFamily: uiFontFamily(context, 'Inter'),
             fontFamilyFallback: const ['NotoSansKR', 'NotoSansSC'],
@@ -1867,6 +1787,26 @@ class _PersonalTodoEditorPageState extends State<_PersonalTodoEditorPage> {
           ),
         ),
         actions: [
+          if (widget.existing != null)
+            SizedBox.square(
+              dimension: 48,
+              child: IconButton(
+                tooltip: isChineseUi(context)
+                    ? '删除待办'
+                    : widget.isKorean
+                        ? '할 일 삭제'
+                        : 'Delete task',
+                onPressed: () => Navigator.pop(
+                  context,
+                  const _PersonalTodoEditorResult.delete(),
+                ),
+                icon: const Icon(
+                  Icons.delete_outline_rounded,
+                  size: 22,
+                  color: Color(0xFF64748B),
+                ),
+              ),
+            ),
           TextButton(
             onPressed: canSave ? _save : null,
             style: TextButton.styleFrom(
@@ -1899,10 +1839,15 @@ class _PersonalTodoEditorPageState extends State<_PersonalTodoEditorPage> {
           children: [
             TextField(
               controller: _titleController,
-              autofocus: widget.existing == null,
+              autofocus: false,
               maxLength: 80,
-              textInputAction: TextInputAction.next,
+              minLines: 1,
+              maxLines: 3,
+              textInputAction: TextInputAction.done,
               onChanged: (_) => setState(() {}),
+              onSubmitted: (_) {
+                if (canSave) _save();
+              },
               decoration: InputDecoration(
                 hintText: (isChineseUi(context)
                     ? '待办事项'
@@ -1912,274 +1857,248 @@ class _PersonalTodoEditorPageState extends State<_PersonalTodoEditorPage> {
                 border: const UnderlineInputBorder(),
               ),
             ),
-            Align(
-              alignment: Alignment.centerLeft,
-              child: TextButton.icon(
-                onPressed: () => setState(() => _showOptions = !_showOptions),
-                style: TextButton.styleFrom(
-                  foregroundColor: const Color(0xFF475569),
-                  padding: const EdgeInsets.symmetric(vertical: 10),
-                ),
-                icon: Icon(
-                  _showOptions ? Icons.expand_less_rounded : Icons.tune_rounded,
-                  size: 20,
-                ),
-                label: Text(
-                  isChineseUi(context)
-                      ? '更多选项'
-                      : widget.isKorean
-                          ? '추가 옵션'
-                          : 'More options',
-                  style: const TextStyle(fontWeight: FontWeight.w700),
-                ),
-              ),
-            ),
-            if (_showOptions) ...[
-              if (widget.weeks.isNotEmpty)
-                DropdownButtonFormField<int>(
-                  initialValue: _weekNumber,
-                  isExpanded: true,
-                  decoration: InputDecoration(
-                    labelText: (isChineseUi(context)
-                        ? '周'
+            const SizedBox(height: 16),
+            Row(
+              children: [
+                SizedBox.square(
+                  dimension: 44,
+                  child: IconButton(
+                    key: const ValueKey('todo-calendar-previous-month'),
+                    tooltip: isChineseUi(context)
+                        ? '上个月'
                         : widget.isKorean
-                            ? '주차'
-                            : 'Week'),
-                    border: const UnderlineInputBorder(),
+                            ? '이전 달'
+                            : 'Previous month',
+                    onPressed: _canMoveFocusedMonth(-1)
+                        ? () => _moveFocusedMonth(-1)
+                        : null,
+                    icon: const Icon(Icons.chevron_left_rounded, size: 22),
+                    color: const Color(0xFF334155),
+                    disabledColor: const Color(0xFFD1D5DB),
                   ),
-                  items: widget.weeks
-                      .map(
-                        (week) => DropdownMenuItem<int>(
-                          value: week.weekNumber,
-                          child: Text(
-                            (isChineseUi(context)
-                                ? '第${week.weekNumber}周 · ${_weekRange(week)}'
-                                : widget.isKorean
-                                    ? '${week.weekNumber}주차 · ${_weekRange(week)}'
-                                    : 'Week ${week.weekNumber} · ${_weekRange(week)}'),
-                            overflow: TextOverflow.ellipsis,
-                          ),
-                        ),
-                      )
-                      .toList(growable: false),
-                  onChanged: (value) {
-                    if (value != null) {
-                      setState(() {
-                        _weekNumber = value;
-                      });
-                    }
-                  },
                 ),
-              ListTile(
-                contentPadding: EdgeInsets.zero,
-                leading: const Icon(
-                  Icons.event_outlined,
-                  color: Color(0xFF64748B),
-                ),
-                title: Text(
-                  _dueAt == null
-                      ? ((isChineseUi(context)
-                          ? '选择日期'
-                          : widget.isKorean
-                              ? '날짜 선택'
-                              : 'Choose date'))
-                      : _dateLabel(_dueAt!),
-                ),
-                subtitle: Text(
-                  isChineseUi(context)
-                      ? '选填'
-                      : widget.isKorean
-                          ? '선택'
-                          : 'Optional',
-                ),
-                trailing: _dueAt == null
-                    ? const Icon(Icons.chevron_right_rounded)
-                    : IconButton(
-                        tooltip: isChineseUi(context)
-                            ? '清除日期'
-                            : widget.isKorean
-                                ? '날짜 지우기'
-                                : 'Clear date',
-                        onPressed: () => setState(() => _dueAt = null),
-                        icon: const Icon(Icons.close_rounded, size: 20)),
-                onTap: _pickDueDate,
-              ),
-              TextField(
-                controller: _memoController,
-                maxLength: 200,
-                minLines: 1,
-                maxLines: 3,
-                decoration: InputDecoration(
-                  hintText: isChineseUi(context)
-                      ? '备注（选填）'
-                      : widget.isKorean
-                          ? '메모 (선택)'
-                          : 'Note (optional)',
-                  border: const UnderlineInputBorder(),
-                ),
-              ),
-              ListTile(
-                contentPadding: EdgeInsets.zero,
-                leading: const Icon(Icons.schedule_rounded),
-                title: Text(
-                  _timeMinutes == null
-                      ? (isChineseUi(context)
-                          ? '添加时间'
-                          : widget.isKorean
-                              ? '시간 추가'
-                              : 'Add time')
-                      : MaterialLocalizations.of(context).formatTimeOfDay(
-                          TimeOfDay(
-                            hour: _timeMinutes! ~/ 60,
-                            minute: _timeMinutes! % 60,
-                          ),
-                        ),
-                ),
-                trailing: _timeMinutes == null
-                    ? const Icon(Icons.chevron_right_rounded)
-                    : IconButton(
-                        onPressed: () => setState(() => _timeMinutes = null),
-                        icon: const Icon(Icons.close_rounded),
-                      ),
-                onTap: _pickTime,
-              ),
-              DropdownButtonFormField<PersonalTodoCategory>(
-                initialValue: _category,
-                isExpanded: true,
-                decoration: InputDecoration(
-                  labelText: isChineseUi(context)
-                      ? '类别'
-                      : widget.isKorean
-                          ? '카테고리'
-                          : 'Category',
-                  border: const UnderlineInputBorder(),
-                ),
-                items: PersonalTodoCategory.values
-                    .map((category) => DropdownMenuItem(
-                          value: category,
-                          child: Text(_categoryLabel(category)),
-                        ))
-                    .toList(growable: false),
-                onChanged: (value) {
-                  if (value != null) setState(() => _category = value);
-                },
-              ),
-              const SizedBox(height: 14),
-              Wrap(
-                spacing: 8,
-                runSpacing: 4,
-                crossAxisAlignment: WrapCrossAlignment.center,
-                children: [
-                  Text(
-                    isChineseUi(context)
-                        ? '重要度'
-                        : widget.isKorean
-                            ? '중요도'
-                            : 'Priority',
-                    style: const TextStyle(
-                      fontSize: 15,
-                      fontWeight: FontWeight.w600,
-                      color: Color(0xFF334155),
-                    ),
-                  ),
-                  ChoiceChip(
-                    selected: _priority == PersonalTodoPriority.normal,
-                    showCheckmark: false,
-                    label: Text(isChineseUi(context)
-                        ? '普通'
-                        : widget.isKorean
-                            ? '보통'
-                            : 'Normal'),
-                    onSelected: (_) => setState(
-                      () => _priority = PersonalTodoPriority.normal,
-                    ),
-                  ),
-                  const SizedBox(width: 6),
-                  ChoiceChip(
-                    selected: _priority == PersonalTodoPriority.high,
-                    showCheckmark: false,
-                    label: Text(isChineseUi(context)
-                        ? '重要'
-                        : widget.isKorean
-                            ? '중요'
-                            : 'High'),
-                    onSelected: (_) => setState(
-                      () => _priority = PersonalTodoPriority.high,
-                    ),
-                  ),
-                ],
-              ),
-              SwitchListTile.adaptive(
-                contentPadding: EdgeInsets.zero,
-                value: _reminderEnabled,
-                activeThumbColor: AppColors.pointColor,
-                secondary: const Icon(Icons.notifications_none_rounded),
-                title: Text(
-                  isChineseUi(context)
-                      ? '每天${reminderTime}提醒'
-                      : widget.isKorean
-                          ? '매일 $reminderTime 알림'
-                          : 'Daily reminder at $reminderTime',
-                ),
-                subtitle: Text(
-                  isChineseUi(context)
-                      ? '沿用当前提醒政策，完成后停止。'
-                      : widget.isKorean
-                          ? '기존 알림 시간에 알려드리고, 완료하면 멈춰요.'
-                          : 'Uses the current reminder time and stops when completed.',
-                ),
-                onChanged: (value) async {
-                  if (value && !widget.notificationsEnabled) {
-                    final enabled = await widget.onEnableGlobalReminders();
-                    if (!enabled || !mounted) return;
-                  }
-                  setState(() => _reminderEnabled = value);
-                },
-              ),
-              SwitchListTile.adaptive(
-                contentPadding: EdgeInsets.zero,
-                value: _carryOver,
-                activeThumbColor: AppColors.pointColor,
-                title: Text(
-                  isChineseUi(context)
-                      ? '未完成时顺延'
-                      : widget.isKorean
-                          ? '미완료 시 다음 주로 이어가기'
-                          : 'Carry over when incomplete',
-                ),
-                onChanged: (value) => setState(() => _carryOver = value),
-              ),
-            ],
-            if (widget.existing != null) ...[
-              const SizedBox(height: 24),
-              Align(
-                alignment: Alignment.centerLeft,
-                child: TextButton.icon(
-                  onPressed: () => Navigator.pop(
-                    context,
-                    const _PersonalTodoEditorResult.delete(),
-                  ),
-                  style: TextButton.styleFrom(
-                    foregroundColor: const Color(0xFFDC2626),
-                    padding: EdgeInsets.zero,
-                  ),
-                  icon: const Icon(Icons.delete_outline_rounded),
-                  label: Text(
-                    (isChineseUi(context)
-                        ? '删除待办'
-                        : widget.isKorean
-                            ? '할 일 삭제'
-                            : 'Delete task'),
+                Expanded(
+                  child: Text(
+                    _monthLabel(_focusedDay),
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    textAlign: TextAlign.center,
                     style: TextStyle(
                       fontFamily: uiFontFamily(context, 'Inter'),
                       fontFamilyFallback: const ['NotoSansKR', 'NotoSansSC'],
-                      fontWeight: FontWeight.w700,
+                      fontSize: _todoFont(context, 17),
+                      fontWeight: FontWeight.w800,
+                      color: const Color(0xFF0F172A),
                     ),
                   ),
                 ),
+                SizedBox.square(
+                  dimension: 44,
+                  child: IconButton(
+                    key: const ValueKey('todo-calendar-next-month'),
+                    tooltip: isChineseUi(context)
+                        ? '下个月'
+                        : widget.isKorean
+                            ? '다음 달'
+                            : 'Next month',
+                    onPressed: _canMoveFocusedMonth(1)
+                        ? () => _moveFocusedMonth(1)
+                        : null,
+                    icon: const Icon(Icons.chevron_right_rounded, size: 22),
+                    color: const Color(0xFF334155),
+                    disabledColor: const Color(0xFFD1D5DB),
+                  ),
+                ),
+              ],
+            ),
+            const SizedBox(height: 2),
+            TableCalendar<void>(
+              key: const ValueKey('todo-inline-calendar'),
+              firstDay: _firstCalendarDay,
+              lastDay: _lastCalendarDay,
+              focusedDay: _focusedDay,
+              locale: isChineseUi(context)
+                  ? 'zh_CN'
+                  : widget.isKorean
+                      ? 'ko_KR'
+                      : 'en_US',
+              calendarFormat: CalendarFormat.month,
+              headerVisible: false,
+              startingDayOfWeek: StartingDayOfWeek.sunday,
+              availableGestures: AvailableGestures.horizontalSwipe,
+              rowHeight: MediaQuery.sizeOf(context).width < 360 ? 40 : 44,
+              daysOfWeekHeight: 28,
+              sixWeekMonthsEnforced: false,
+              selectedDayPredicate: (day) =>
+                  _dueAt != null && isSameDay(_calendarDate(_dueAt!), day),
+              enabledDayPredicate: _isAvailableDate,
+              onDaySelected: _selectDueDate,
+              onPageChanged: (focusedDay) {
+                setState(() => _focusedDay = _clampToCalendarRange(focusedDay));
+              },
+              eventLoader: (_) => const <void>[],
+              calendarBuilders: CalendarBuilders<void>(
+                markerBuilder: (_, __, ___) => const SizedBox.shrink(),
+                dowBuilder: (context, day) {
+                  final labels = isChineseUi(context)
+                      ? const ['日', '一', '二', '三', '四', '五', '六']
+                      : widget.isKorean
+                          ? const ['일', '월', '화', '수', '목', '금', '토']
+                          : const ['S', 'M', 'T', 'W', 'T', 'F', 'S'];
+                  return Center(
+                    child: FittedBox(
+                      fit: BoxFit.scaleDown,
+                      child: Text(
+                        labels[day.weekday % 7],
+                        style: TextStyle(
+                          fontFamily: uiFontFamily(context, 'Inter'),
+                          fontFamilyFallback: const [
+                            'NotoSansKR',
+                            'NotoSansSC'
+                          ],
+                          fontSize: _todoFont(context, 12),
+                          fontWeight: FontWeight.w700,
+                          color: const Color(0xFF64748B),
+                        ),
+                      ),
+                    ),
+                  );
+                },
+                defaultBuilder: (context, day, focusedDay) =>
+                    _TodoCalendarDayCell(
+                  key: ValueKey(
+                    'todo-calendar-day-${day.year}-${day.month}-${day.day}',
+                  ),
+                  day: day,
+                  semanticsLabel: _calendarDaySemantics(day),
+                  isSelected: false,
+                  isToday: isSameDay(day, DateTime.now()),
+                  enabled: true,
+                ),
+                todayBuilder: (context, day, focusedDay) =>
+                    _TodoCalendarDayCell(
+                  key: ValueKey(
+                    'todo-calendar-day-${day.year}-${day.month}-${day.day}',
+                  ),
+                  day: day,
+                  semanticsLabel: _calendarDaySemantics(day),
+                  isSelected:
+                      _dueAt != null && isSameDay(_calendarDate(_dueAt!), day),
+                  isToday: true,
+                  enabled: _isAvailableDate(day),
+                ),
+                selectedBuilder: (context, day, focusedDay) =>
+                    _TodoCalendarDayCell(
+                  key: ValueKey(
+                    'todo-calendar-day-${day.year}-${day.month}-${day.day}',
+                  ),
+                  day: day,
+                  semanticsLabel: _calendarDaySemantics(day),
+                  isSelected: true,
+                  isToday: isSameDay(day, DateTime.now()),
+                  enabled: true,
+                ),
+                disabledBuilder: (context, day, focusedDay) =>
+                    _TodoCalendarDayCell(
+                  day: day,
+                  semanticsLabel: _calendarDaySemantics(day),
+                  isSelected: false,
+                  isToday: isSameDay(day, DateTime.now()),
+                  enabled: false,
+                ),
               ),
-            ],
+              calendarStyle: const CalendarStyle(
+                outsideDaysVisible: false,
+                cellMargin: EdgeInsets.zero,
+                todayDecoration: BoxDecoration(color: Colors.transparent),
+                selectedDecoration: BoxDecoration(color: Colors.transparent),
+                disabledDecoration: BoxDecoration(color: Colors.transparent),
+              ),
+            ),
+            const SizedBox(height: 12),
           ],
+        ),
+      ),
+    );
+  }
+}
+
+class _TodoCalendarDayCell extends StatelessWidget {
+  const _TodoCalendarDayCell({
+    super.key,
+    required this.day,
+    required this.semanticsLabel,
+    required this.isSelected,
+    required this.isToday,
+    required this.enabled,
+  });
+
+  final DateTime day;
+  final String semanticsLabel;
+  final bool isSelected;
+  final bool isToday;
+  final bool enabled;
+
+  @override
+  Widget build(BuildContext context) {
+    final foreground = !enabled
+        ? const Color(0xFFD1D5DB)
+        : isSelected
+            ? Colors.white
+            : isToday
+                ? AppColors.pointColor
+                : const Color(0xFF111827);
+    return Semantics(
+      button: enabled,
+      enabled: enabled,
+      selected: isSelected,
+      label: semanticsLabel,
+      excludeSemantics: true,
+      child: Center(
+        child: SizedBox.square(
+          dimension: 38,
+          child: DecoratedBox(
+            decoration: BoxDecoration(
+              color: isSelected ? AppColors.pointColor : Colors.transparent,
+              shape: BoxShape.circle,
+            ),
+            child: Stack(
+              alignment: Alignment.center,
+              children: [
+                Padding(
+                  padding: const EdgeInsets.all(6),
+                  child: FittedBox(
+                    fit: BoxFit.scaleDown,
+                    child: Text(
+                      '${day.day}',
+                      style: TextStyle(
+                        fontFamily: uiFontFamily(context, 'Inter'),
+                        fontFamilyFallback: const ['NotoSansKR', 'NotoSansSC'],
+                        fontSize: _todoFont(context, 14),
+                        fontWeight: isSelected || isToday
+                            ? FontWeight.w800
+                            : FontWeight.w600,
+                        color: foreground,
+                      ),
+                    ),
+                  ),
+                ),
+                if (isToday && !isSelected && enabled)
+                  const Positioned(
+                    bottom: 3,
+                    child: SizedBox.square(
+                      dimension: 3,
+                      child: DecoratedBox(
+                        decoration: BoxDecoration(
+                          color: AppColors.pointColor,
+                          shape: BoxShape.circle,
+                        ),
+                      ),
+                    ),
+                  ),
+              ],
+            ),
+          ),
         ),
       ),
     );

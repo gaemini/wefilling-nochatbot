@@ -539,10 +539,7 @@ class _MeetupAppState extends State<MeetupApp> {
             });
 
             if (authProvider.isLoading) {
-              return const Scaffold(
-                backgroundColor: Color(0xFFDEEFFF),
-                body: Center(child: CircularProgressIndicator()),
-              );
+              return const _BootLogoLoadingScreen();
             }
 
             // 로그인되어 있으면
@@ -586,6 +583,33 @@ class _MeetupAppState extends State<MeetupApp> {
         ),
       ),
       debugShowCheckedModeBanner: false,
+    );
+  }
+}
+
+class _BootLogoLoadingScreen extends StatelessWidget {
+  const _BootLogoLoadingScreen();
+
+  @override
+  Widget build(BuildContext context) {
+    return Scaffold(
+      backgroundColor: Colors.white,
+      body: Center(
+        child: Semantics(
+          label: 'Wefilling',
+          image: true,
+          child: Image.asset(
+            'assets/images/wefilling_boot_logo.png',
+            width: 130,
+            height: 130,
+            cacheWidth: 390,
+            cacheHeight: 390,
+            fit: BoxFit.contain,
+            filterQuality: FilterQuality.high,
+            excludeFromSemantics: true,
+          ),
+        ),
+      ),
     );
   }
 }

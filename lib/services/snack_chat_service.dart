@@ -59,6 +59,19 @@ class SnackChatReadResult {
   final int readThroughSequence;
 }
 
+/// Acknowledges only the atomic server commit and canonical room sequence.
+/// Delivery, read state, and the server timestamp still arrive through the
+/// existing live message stream.
+class SnackChatCommitAck {
+  const SnackChatCommitAck({
+    required this.messageId,
+    required this.sequence,
+  });
+
+  final String messageId;
+  final int sequence;
+}
+
 class _SnackChatReadSyncState {
   int pendingSequence = 0;
   int confirmedSequence = 0;
@@ -1145,7 +1158,9 @@ class SnackChatService {
         .collection('messages')
         .orderBy('createdAt', descending: true)
         .orderBy(FieldPath.documentId, descending: true);
-    if (throughMessage != null) {
+    final hasConfirmedThroughMessage =
+        throughMessage != null && throughMessage.hasConfirmedServerTimestamp;
+    if (hasConfirmedThroughMessage) {
       query = query.endAt(<Object>[
         Timestamp.fromDate(throughMessage.createdAt),
         throughMessage.id,
@@ -1154,12 +1169,37 @@ class SnackChatService {
     // Keep live updates bounded. Pages older than this window remain in the
     // screen's static, already-fetched list instead of making one listener grow
     // without limit during a long chat session.
-    query = query.limit(throughMessage == null ? 30 : 200);
+    query = query.limit(hasConfirmedThroughMessage ? 200 : 30);
+    final messagesById = <String, SnackChatMessage>{};
     return _withFirstEventDeadline(
       query.snapshots(),
       operation: 'Snack Chat messages',
-    ).map((snap) =>
-        snap.docs.map((doc) => SnackChatMessage.fromFirestore(doc)).toList());
+    ).map((snapshot) {
+      // Firestore includes every document in snapshot.docs on each event, but
+      // only docChanges need reparsing. Reusing unchanged model instances lets
+      // the screen skip redundant merges and ordering work.
+      for (final change in snapshot.docChanges) {
+        switch (change.type) {
+          case DocumentChangeType.added:
+          case DocumentChangeType.modified:
+            messagesById[change.doc.id] =
+                SnackChatMessage.fromFirestore(change.doc);
+            break;
+          case DocumentChangeType.removed:
+            // A bounded query can evict its oldest document when a new one is
+            // added. The screen intentionally retains its already-loaded page;
+            // this cache only stops retaining the unused model instance.
+            messagesById.remove(change.doc.id);
+            break;
+        }
+      }
+      return snapshot.docs
+          .map((document) => messagesById.putIfAbsent(
+                document.id,
+                () => SnackChatMessage.fromFirestore(document),
+              ))
+          .toList(growable: false);
+    });
   }
 
   /// 목록에 보이는 소수의 방만 선조회한다. 최근 메시지는 기존 계정/방별
@@ -1681,7 +1721,9 @@ class SnackChatService {
         .collection('messages')
         .orderBy('createdAt', descending: true)
         .orderBy(FieldPath.documentId, descending: true);
-    final cursorMessage = beforeMessage;
+    final cursorMessage = beforeMessage?.hasConfirmedServerTimestamp == true
+        ? beforeMessage
+        : null;
     if (cursorMessage != null) {
       query = query.startAfter(<Object>[
         Timestamp.fromDate(cursorMessage.createdAt),
@@ -1849,6 +1891,7 @@ class SnackChatService {
     String? messageId,
     ReplyMessagePreview? replyPreview,
     bool suppressLinkPreview = false,
+    void Function(SnackChatCommitAck ack)? onCommitted,
   }) async {
     final trimmed = text.trim();
     if (trimmed.isEmpty) return false;
@@ -1862,6 +1905,7 @@ class SnackChatService {
       imageUrl: null,
       replyPreview: replyPreview,
       suppressLinkPreview: suppressLinkPreview,
+      onCommitted: onCommitted,
     );
   }
 
@@ -1872,6 +1916,9 @@ class SnackChatService {
     String text = '',
     String? messageId,
     ReplyMessagePreview? replyPreview,
+    int? imageWidth,
+    int? imageHeight,
+    void Function(SnackChatCommitAck ack)? onCommitted,
   }) async {
     final normalizedUrl = imageUrl?.trim() ?? '';
     final normalizedPath = imagePath?.trim() ?? '';
@@ -1883,7 +1930,10 @@ class SnackChatService {
       text: text.trim(),
       imageUrl: normalizedUrl.isEmpty ? null : normalizedUrl,
       imagePath: normalizedPath.isEmpty ? null : normalizedPath,
+      imageWidth: imageWidth,
+      imageHeight: imageHeight,
       replyPreview: replyPreview,
+      onCommitted: onCommitted,
     );
   }
 
@@ -1891,6 +1941,7 @@ class SnackChatService {
     String snackChatId, {
     required SnackChatPoll poll,
     String? messageId,
+    void Function(SnackChatCommitAck ack)? onCommitted,
   }) async {
     if (poll.question.trim().isEmpty || poll.options.length < 2) return false;
     return _sendMessageInternal(
@@ -1901,6 +1952,7 @@ class SnackChatService {
       imageUrl: null,
       imagePath: null,
       poll: poll,
+      onCommitted: onCommitted,
     );
   }
 
@@ -1913,14 +1965,21 @@ class SnackChatService {
     required String text,
     required String? imageUrl,
     String? imagePath,
+    int? imageWidth,
+    int? imageHeight,
     ReplyMessagePreview? replyPreview,
     SnackChatPoll? poll,
     bool suppressLinkPreview = false,
+    void Function(SnackChatCommitAck ack)? onCommitted,
   }) async {
     final uid = _uid;
     if (uid == null) return false;
     final hasImage =
         (imageUrl?.isNotEmpty ?? false) || (imagePath?.isNotEmpty ?? false);
+    final hasImageDimensions = imageWidth != null &&
+        imageWidth > 0 &&
+        imageHeight != null &&
+        imageHeight > 0;
     if (type != SnackChatMessageType.poll && text.isEmpty && !hasImage) {
       return false;
     }
@@ -2019,6 +2078,10 @@ class SnackChatService {
             // Storage path. The upload URL remains local preview state only, so
             if (imagePath != null && imagePath.isNotEmpty)
               'imagePath': imagePath,
+            if (hasImageDimensions) ...<String, dynamic>{
+              'imageWidth': imageWidth,
+              'imageHeight': imageHeight,
+            },
             'createdAt': FieldValue.serverTimestamp(),
             'sequence': sequence,
             'recipientIds': recipients,
@@ -2061,6 +2124,23 @@ class SnackChatService {
       }
 
       if (!committed) return false;
+      if (_uid == uid && committedSequence > 0 && onCommitted != null) {
+        final ack = SnackChatCommitAck(
+          messageId: resolvedMessageId,
+          sequence: committedSequence,
+        );
+        try {
+          onCommitted(ack);
+        } catch (error, stackTrace) {
+          // UI acknowledgement is best-effort. The message is already stored
+          // and must not be reported as a failed send.
+          Logger.error(
+            'Snack Chat 저장 완료 화면 반영 실패',
+            error,
+            stackTrace,
+          );
+        }
+      }
       if (type == SnackChatMessageType.text && !suppressLinkPreview) {
         final firstUrl = _firstHttpUrl(text);
         if (firstUrl != null) {

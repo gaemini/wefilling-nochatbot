@@ -396,4 +396,46 @@ void main() {
     expect(controller.addedGuide(guide('one', 3), 3)!.reminderEnabled, isFalse);
     controller.dispose();
   });
+
+  test('personal task date selects its week and uses the global reminder time',
+      () async {
+    final controller = SemesterTodoController(
+        studentType: StudentType.korean, service: service);
+    controller.semester = Semester(
+      id: semesterId,
+      title: const LocalizedTodoText(ko: '학기', en: 'Term'),
+      startDate: DateTime.utc(2026, 8, 31, 15),
+      endDate: DateTime.utc(2026, 12, 20),
+      totalWeeks: 15,
+      status: 'active',
+    );
+    controller.weeks = List.generate(
+      4,
+      (index) => SemesterWeek(
+        id: 'week_${index + 1}',
+        weekNumber: index + 1,
+        startDate: controller.semester!.weekStartDate(index + 1),
+        endDate: controller.semester!.weekEndDate(index + 1),
+        isPublished: true,
+      ),
+    );
+    controller.personalTodoReminderHour = 9;
+    controller.personalTodoReminderMinute = 19;
+    final dueAt = controller.weeks[2].startDate.add(const Duration(days: 2));
+
+    await controller.savePersonalTodo(
+      title: 'Date based task',
+      dueAt: dueAt,
+      weekNumber: 1,
+    );
+
+    final todo = controller.personalTodos.single;
+    expect(todo.weekNumber, 3);
+    expect(todo.dueAt, dueAt);
+    expect(todo.reminderEnabled, isTrue);
+    expect(todo.reminderStartAt?.hour, 9);
+    expect(todo.reminderStartAt?.minute, 19);
+    expect(notifications.scheduled, contains('owner:${todo.id}'));
+    controller.dispose();
+  });
 }

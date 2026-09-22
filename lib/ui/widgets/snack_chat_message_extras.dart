@@ -251,6 +251,7 @@ class SnackChatAdaptiveImage extends StatefulWidget {
     required this.imageProvider,
     required this.maxWidth,
     required this.maxHeight,
+    this.aspectRatio,
     this.cacheKey,
     this.error,
   });
@@ -258,6 +259,7 @@ class SnackChatAdaptiveImage extends StatefulWidget {
   final ImageProvider imageProvider;
   final double maxWidth;
   final double maxHeight;
+  final double? aspectRatio;
   final String? cacheKey;
   final Widget? error;
 
@@ -291,12 +293,14 @@ class SnackChatAdaptiveImage extends StatefulWidget {
     required double maxHeight,
     double? aspectRatio,
   }) {
-    final ratio = aspectRatio ?? 4 / 3;
-    final boundsRatio = maxWidth / maxHeight;
-    if (ratio >= boundsRatio) {
-      return Size(maxWidth, maxWidth / ratio);
-    }
-    return Size(maxHeight * ratio, maxHeight);
+    final ratio = aspectRatio != null && aspectRatio.isFinite && aspectRatio > 0
+        ? aspectRatio
+        : 4 / 3;
+    return applyBoxFit(
+      BoxFit.contain,
+      Size(ratio, 1),
+      Size(maxWidth, maxHeight),
+    ).destination;
   }
 
   @override
@@ -311,7 +315,13 @@ class _SnackChatAdaptiveImageState extends State<SnackChatAdaptiveImage> {
   @override
   void initState() {
     super.initState();
-    _aspectRatio = SnackChatAdaptiveImage.cachedAspectRatioFor(widget.cacheKey);
+    _aspectRatio = _initialAspectRatio();
+  }
+
+  double? _initialAspectRatio() {
+    final provided = widget.aspectRatio;
+    if (provided != null && provided.isFinite && provided > 0) return provided;
+    return SnackChatAdaptiveImage.cachedAspectRatioFor(widget.cacheKey);
   }
 
   @override
@@ -324,9 +334,9 @@ class _SnackChatAdaptiveImageState extends State<SnackChatAdaptiveImage> {
   void didUpdateWidget(covariant SnackChatAdaptiveImage oldWidget) {
     super.didUpdateWidget(oldWidget);
     if (oldWidget.imageProvider != widget.imageProvider ||
+        oldWidget.aspectRatio != widget.aspectRatio ||
         oldWidget.cacheKey != widget.cacheKey) {
-      _aspectRatio =
-          SnackChatAdaptiveImage.cachedAspectRatioFor(widget.cacheKey);
+      _aspectRatio = _initialAspectRatio();
       _resolveImage();
     }
   }

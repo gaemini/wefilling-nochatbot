@@ -189,7 +189,7 @@ void main() {
   });
 
   testWidgets(
-      'unified list retains week and scroll; title-only save, undo and load error',
+      'unified list retains week and scroll; dated save, undo and load error',
       (tester) async {
     tester.view.physicalSize = const Size(360, 740);
     tester.view.devicePixelRatio = 1;
@@ -261,11 +261,21 @@ void main() {
     expect(find.byType(DropdownButtonFormField<int>), findsNothing);
     await tester.enterText(find.byType(TextField).first, '제목만 입력');
     await tester.pump();
+    expect(
+        tester
+            .widget<TextButton>(find.widgetWithText(TextButton, '저장'))
+            .onPressed,
+        isNull);
+    expect(find.byKey(const ValueKey('todo-inline-calendar')), findsOneWidget);
+    await tester.tap(
+      find.byKey(const ValueKey('todo-calendar-day-2026-9-14')),
+    );
+    await tester.pump();
     await tester.tap(find.text('저장'));
     await tester.pumpAndSettle();
     expect(controller.savedTitle, '제목만 입력');
-    expect(controller.savedDue, isNull);
-    expect(controller.savedReminder, isFalse);
+    expect(controller.savedDue, isNotNull);
+    expect(controller.savedReminder, isTrue);
     // Complete via the isolated check target, then restore through Snackbar Undo.
     await tester.drag(find.byType(CustomScrollView).hitTestable().first,
         const Offset(0, 2000));
@@ -546,38 +556,30 @@ void main() {
           await tester.pumpAndSettle();
           await tester.enterText(
               find.byType(TextField).first, '과제 · Assignment · 作业');
-          await tester.tap(find.text(language == 'ko'
+          final moreOptions = language == 'ko'
               ? '추가 옵션'
               : language == 'zh'
                   ? '更多选项'
-                  : 'More options'));
-          await tester.pumpAndSettle();
+                  : 'More options';
+          final chooseDate = language == 'ko'
+              ? '날짜 선택'
+              : language == 'zh'
+                  ? '选择日期'
+                  : 'Choose date';
+          expect(find.text(moreOptions), findsNothing);
+          expect(find.text(chooseDate), findsNothing);
+          expect(find.byKey(const ValueKey('todo-inline-calendar')),
+              findsOneWidget);
+          final calendarDay =
+              find.byKey(const ValueKey('todo-calendar-day-2026-9-14'));
+          expect(calendarDay, findsOneWidget);
+          expect(find.byType(DropdownButtonFormField<int>), findsNothing);
+          expect(find.byType(ChoiceChip), findsNothing);
           tester.view.viewInsets = const FakeViewPadding(bottom: 220);
-          await tester.pumpAndSettle();
-          final editorScroll = find
-              .descendant(
-                  of: find.byType(ListView).last,
-                  matching: find.byType(Scrollable))
-              .first;
-          final highPriority = find.widgetWithText(
-              ChoiceChip,
-              language == 'ko'
-                  ? '중요'
-                  : language == 'zh'
-                      ? '重要'
-                      : 'High');
-          await tester.scrollUntilVisible(highPriority, 180,
-              scrollable: editorScroll, maxScrolls: 30);
+          await tester.ensureVisible(calendarDay);
           await tester.pumpAndSettle();
           expect(tester.takeException(), isNull);
-          for (final chip
-              in tester.widgetList<ChoiceChip>(find.byType(ChoiceChip))) {
-            expect(
-                Theme.of(tester.element(find.byWidget(chip)))
-                    .chipTheme
-                    .selectedColor,
-                const Color(0xFFF3F4F6));
-          }
+          expect(tester.getRect(calendarDay).bottom, lessThanOrEqualTo(520));
           await tester.pumpWidget(const SizedBox.shrink());
         });
       }

@@ -8,6 +8,8 @@ import 'dart:io';
 import 'package:flutter/material.dart';
 import 'package:flutter/rendering.dart';
 import 'package:flutter/services.dart';
+import 'package:flutter_linkify/flutter_linkify.dart';
+import 'package:linkify/linkify.dart' as linkify;
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:image_picker/image_picker.dart';
@@ -15,6 +17,7 @@ import 'package:file_picker/file_picker.dart';
 import 'package:cached_network_image/cached_network_image.dart';
 import 'package:open_filex/open_filex.dart';
 import 'package:shared_preferences/shared_preferences.dart';
+import 'package:url_launcher/url_launcher.dart';
 import '../models/conversation.dart';
 import '../models/dm_message.dart';
 import '../models/content_translation.dart';
@@ -647,9 +650,9 @@ class _DMChatScreenState extends State<DMChatScreen>
       translationFailed: failed,
       onRetry: failed ? () => _retryFailedDmTranslation(message) : null,
       statusColor: DMColors.textSecondary,
-      child: Text(
+      child: _buildDmLinkifiedText(
         canShowTranslation ? translatedText : message.text,
-        style: TextStyle(
+        TextStyle(
           color: DMColors.otherMessageText,
           fontFamily: uiFontFamily(context, 'Inter'),
           fontFamilyFallback: const ['NotoSansKR'],
@@ -659,6 +662,42 @@ class _DMChatScreenState extends State<DMChatScreen>
         ),
       ),
     );
+  }
+
+  Widget _buildDmLinkifiedText(String text, TextStyle style) => Linkify(
+        text: text,
+        options: const linkify.LinkifyOptions(humanize: false),
+        linkifiers: const [linkify.UrlLinkifier()],
+        onOpen: (link) => _openDmUrl(link.url),
+        style: style,
+        linkStyle: style.copyWith(
+          decoration: TextDecoration.underline,
+          decorationColor: style.color,
+        ),
+      );
+
+  Future<void> _openDmUrl(String rawUrl) async {
+    final value = rawUrl.trim();
+    final normalized = value.startsWith('www.') ? 'https://$value' : value;
+    final uri = Uri.tryParse(normalized);
+    if (uri == null || (uri.scheme != 'http' && uri.scheme != 'https')) return;
+    try {
+      var opened = await launchUrl(uri, mode: LaunchMode.externalApplication);
+      if (!opened) {
+        opened = await launchUrl(uri, mode: LaunchMode.platformDefault);
+      }
+      if (!opened) throw StateError('URL launch was rejected.');
+    } catch (_) {
+      if (!mounted) return;
+      AppSnackBar.show(
+        context,
+        message: isChineseUi(context)
+            ? '无法打开链接。'
+            : Localizations.localeOf(context).languageCode == 'ko'
+                ? '링크를 열 수 없어요.'
+                : 'Could not open the link.',
+      );
+    }
   }
 
   void _scheduleVisibleTranslations() {
@@ -4072,9 +4111,9 @@ class _DMChatScreenState extends State<DMChatScreen>
                   ],
                   if (hasFile) _buildFileBubble(message, isMine: true),
                   if (hasText)
-                    Text(
+                    _buildDmLinkifiedText(
                       message.text,
-                      style: TextStyle(
+                      TextStyle(
                         color: DMColors.myMessageText,
                         fontFamily: uiFontFamily(context, 'Inter'),
                         fontFamilyFallback: const ['NotoSansKR'],

@@ -598,6 +598,8 @@ class SnackChatLocalCacheService {
       'text': message.text,
       if (message.imageUrl != null) 'imageUrl': message.imageUrl,
       if (message.imagePath != null) 'imagePath': message.imagePath,
+      if (message.imageWidth != null) 'imageWidth': message.imageWidth,
+      if (message.imageHeight != null) 'imageHeight': message.imageHeight,
       if (message.originalFileName != null)
         'originalFileName': message.originalFileName,
       if (message.fileExtension != null) 'fileExtension': message.fileExtension,
@@ -611,6 +613,7 @@ class SnackChatLocalCacheService {
         'deleteAtMs': message.deleteAt!.millisecondsSinceEpoch,
       if (message.uploadId != null) 'uploadId': message.uploadId,
       'createdAtUs': message.createdAt.microsecondsSinceEpoch,
+      'hasConfirmedServerTimestamp': message.hasConfirmedServerTimestamp,
       if (message.sequence != null) 'sequence': message.sequence,
       'recipientIds': message.recipientIds,
       if (message.deliveryRecipientIds != null)
@@ -687,6 +690,14 @@ class SnackChatLocalCacheService {
         imagePath: (map['imagePath'] ?? '').toString().trim().isEmpty
             ? null
             : map['imagePath'].toString(),
+        imageWidth:
+            map['imageWidth'] is num && (map['imageWidth'] as num).toInt() > 0
+                ? (map['imageWidth'] as num).toInt()
+                : null,
+        imageHeight:
+            map['imageHeight'] is num && (map['imageHeight'] as num).toInt() > 0
+                ? (map['imageHeight'] as num).toInt()
+                : null,
         originalFileName:
             (map['originalFileName'] ?? '').toString().trim().isEmpty
                 ? null
@@ -721,6 +732,12 @@ class SnackChatLocalCacheService {
         createdAt: map['createdAtUs'] is num
             ? DateTime.fromMicrosecondsSinceEpoch(createdAtRaw.toInt())
             : DateTime.fromMillisecondsSinceEpoch(createdAtRaw.toInt()),
+        hasConfirmedServerTimestamp:
+            map['hasConfirmedServerTimestamp'] == true ||
+                (!map.containsKey('hasConfirmedServerTimestamp') &&
+                    map['sequence'] is num &&
+                    map['deliveryUncertain'] != true &&
+                    (map['sendStatus'] ?? 'sent').toString() == 'sent'),
         sequence:
             map['sequence'] is num ? (map['sequence'] as num).toInt() : null,
         recipientIds: _stringList(map['recipientIds']),

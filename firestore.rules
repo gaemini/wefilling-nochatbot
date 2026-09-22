@@ -1858,6 +1858,18 @@ service cloud.firestore {
             && data.imagePath.matches(
               'snack_chat_images/' + request.auth.uid + '/' + chatId + '/[^/]+'
             )
+            && (
+              !data.keys().hasAny(['imageWidth', 'imageHeight'])
+              || (
+                data.keys().hasAll(['imageWidth', 'imageHeight'])
+                && data.imageWidth is int
+                && data.imageHeight is int
+                && data.imageWidth > 0
+                && data.imageWidth <= 20000
+                && data.imageHeight > 0
+                && data.imageHeight <= 20000
+              )
+            )
           );
         }
 
@@ -1866,7 +1878,9 @@ service cloud.firestore {
           let type = data.type;
           return (
               type == 'text'
-              && !data.keys().hasAny(['poll', 'imageUrl', 'imagePath'])
+              && !data.keys().hasAny([
+                'poll', 'imageUrl', 'imagePath', 'imageWidth', 'imageHeight'
+              ])
             )
             || (
               type == 'image'
@@ -1876,7 +1890,8 @@ service cloud.firestore {
             || (
               type == 'poll'
               && !data.keys().hasAny([
-                'imageUrl', 'imagePath', 'replyToMessageId', 'replyPreview'
+                'imageUrl', 'imagePath', 'imageWidth', 'imageHeight',
+                'replyToMessageId', 'replyPreview'
               ])
               && validPoll(data)
             );
@@ -1905,7 +1920,8 @@ service cloud.firestore {
           return data.keys().hasOnly([
               'senderId', 'senderName', 'messageScope', 'chatId',
               'type', 'text', 'imageUrl',
-              'imagePath', 'createdAt', 'sequence', 'recipientIds', 'readBy',
+              'imagePath', 'imageWidth', 'imageHeight',
+              'createdAt', 'sequence', 'recipientIds', 'readBy',
               'replyToMessageId', 'replyPreview', 'isDeleted',
               'linkPreviewRemoved', 'poll', 'reactionCounts', 'mentions', 'mentionTargetIds'
             ])

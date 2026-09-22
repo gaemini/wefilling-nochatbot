@@ -472,6 +472,34 @@ class SemesterTodoController extends ChangeNotifier {
     );
   }
 
+  DateTime _calendarDate(DateTime value) {
+    final kst = value.toUtc().add(const Duration(hours: 9));
+    return DateTime(kst.year, kst.month, kst.day);
+  }
+
+  int? weekNumberForDate(DateTime value) {
+    final date = _calendarDate(value);
+    for (final week in weeks) {
+      final start = _calendarDate(week.startDate);
+      final end = _calendarDate(week.endDate);
+      if (!date.isBefore(start) && !date.isAfter(end)) {
+        return week.weekNumber;
+      }
+    }
+    return null;
+  }
+
+  DateTime reminderStartForDate(DateTime value) {
+    final date = _calendarDate(value);
+    return DateTime(
+      date.year,
+      date.month,
+      date.day,
+      personalTodoReminderHour,
+      personalTodoReminderMinute,
+    );
+  }
+
   Future<void> savePersonalTodo({
     PersonalTodo? existing,
     required String title,
@@ -485,17 +513,24 @@ class SemesterTodoController extends ChangeNotifier {
     PersonalTodoPriority priority = PersonalTodoPriority.normal,
   }) async {
     if (semester == null) return;
+    final fallbackWeekNumber =
+        weekNumber ?? existing?.weekNumber ?? selectedWeekNumber;
+    final resolvedWeekNumber =
+        dueAt == null ? fallbackWeekNumber : weekNumberForDate(dueAt);
+    if (resolvedWeekNumber == null) {
+      throw ArgumentError('The selected date is outside the semester weeks.');
+    }
     await _service.savePersonalTodo(
       id: existing?.id,
       semesterId: semester!.id,
-      weekNumber: weekNumber ?? existing?.weekNumber ?? selectedWeekNumber,
+      weekNumber: resolvedWeekNumber,
       title: title,
       memo: memo,
       dueAt: dueAt,
-      reminderStartAt: reminderStartForWeek(
-        weekNumber ?? existing?.weekNumber ?? selectedWeekNumber,
-      ),
-      reminderEnabled: reminderEnabled ?? existing?.reminderEnabled ?? false,
+      reminderStartAt: dueAt == null
+          ? reminderStartForWeek(resolvedWeekNumber)
+          : reminderStartForDate(dueAt),
+      reminderEnabled: reminderEnabled ?? existing?.reminderEnabled ?? true,
       carryOver: carryOver,
       completed: existing?.completed ?? false,
       archived: existing?.archived ?? false,

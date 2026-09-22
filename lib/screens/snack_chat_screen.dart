@@ -2734,12 +2734,14 @@ class _SnackChatScreenState extends State<SnackChatScreen>
             for (var index = 0; index < _messages.length; index++)
               _messages[index].id: index,
           };
+          var orderChanged = false;
           for (final serverMessage in incoming) {
             final index = messageIndexes[serverMessage.id];
             if (index == null) {
               _messageIds.add(serverMessage.id);
               messageIndexes[serverMessage.id] = _messages.length;
               _messages.add(serverMessage);
+              orderChanged = true;
               if (hadLiveBatch && wasNearLatest) {
                 liveTranslationCandidates.add(serverMessage);
               }
@@ -2748,6 +2750,12 @@ class _SnackChatScreenState extends State<SnackChatScreen>
               }
             } else {
               final local = _messages[index];
+              if (local.sequence != serverMessage.sequence ||
+                  local.createdAt != serverMessage.createdAt ||
+                  local.hasConfirmedServerTimestamp !=
+                      serverMessage.hasConfirmedServerTimestamp) {
+                orderChanged = true;
+              }
               if (hadLiveBatch &&
                   wasNearLatest &&
                   (local.text != serverMessage.text ||
@@ -2762,26 +2770,35 @@ class _SnackChatScreenState extends State<SnackChatScreen>
               final keepOptimisticPoll =
                   _voteMutationsInFlight.contains(serverMessage.id) ||
                       _pendingVoteTargets.containsKey(serverMessage.id);
-              _messages[index] = serverMessage.copyWith(
-                localImagePath: local.localImagePath,
-                localFilePath: local.localFilePath,
-                fileTransferStatus:
-                    serverMessage.type == SnackChatMessageType.file
-                        ? SnackChatFileTransferStatus.ready
-                        : local.fileTransferStatus,
-                transferProgress:
-                    serverMessage.type == SnackChatMessageType.file
-                        ? 1
-                        : local.transferProgress,
-                reactionCounts: keepOptimisticReaction
-                    ? local.reactionCounts
-                    : serverMessage.reactionCounts,
-                poll: keepOptimisticPoll ? local.poll : serverMessage.poll,
-                clearErrorMessage: true,
-              );
+              if (!identical(local, serverMessage) ||
+                  keepOptimisticReaction ||
+                  keepOptimisticPoll ||
+                  local.localImagePath != null ||
+                  local.localFilePath != null ||
+                  local.fileTransferStatus != null ||
+                  local.transferProgress != null ||
+                  local.errorMessage != null) {
+                _messages[index] = serverMessage.copyWith(
+                  localImagePath: local.localImagePath,
+                  localFilePath: local.localFilePath,
+                  fileTransferStatus:
+                      serverMessage.type == SnackChatMessageType.file
+                          ? SnackChatFileTransferStatus.ready
+                          : local.fileTransferStatus,
+                  transferProgress:
+                      serverMessage.type == SnackChatMessageType.file
+                          ? 1
+                          : local.transferProgress,
+                  reactionCounts: keepOptimisticReaction
+                      ? local.reactionCounts
+                      : serverMessage.reactionCounts,
+                  poll: keepOptimisticPoll ? local.poll : serverMessage.poll,
+                  clearErrorMessage: true,
+                );
+              }
             }
           }
-          _sortMessages();
+          if (orderChanged) _sortMessages();
           _hasReceivedFirstLiveBatch = true;
           if (addedRemoteMessages > 0 && !wasNearLatest) {
             _newMessageCount += addedRemoteMessages;
@@ -3067,10 +3084,55 @@ class _SnackChatScreenState extends State<SnackChatScreen>
 
   void _sortMessages() => _messages.sort(SnackChatMessage.compareDescending);
 
+  void _applyCommitAck(
+    SnackChatCommitAck ack, {
+    required String ownerUid,
+    required String roomId,
+  }) {
+    if (!mounted ||
+        _uid != ownerUid ||
+        widget.snackChatId != roomId ||
+        _isLeavingRoom ||
+        _roomAccessTerminated ||
+        ack.sequence <= 0) {
+      return;
+    }
+
+    final index =
+        _messages.indexWhere((message) => message.id == ack.messageId);
+    if (index < 0) return;
+    final current = _messages[index];
+    if (current.senderId != ownerUid || current.isDeleted) return;
+
+    if (current.sequence != null && current.sequence != ack.sequence) {
+      Logger.error('Snack Chat 확정 순번 불일치: ${ack.messageId}');
+      // The live server snapshot remains authoritative. Do not hide a real
+      // mismatch by taking max or overwriting newer message contents.
+      return;
+    }
+    if (current.sequence == ack.sequence &&
+        current.sendStatus == MessageSendStatus.sent) {
+      return;
+    }
+
+    setState(() {
+      _messages[index] = current.copyWith(
+        sequence: ack.sequence,
+        sendStatus: MessageSendStatus.sent,
+        clearErrorMessage: true,
+      );
+      _sortMessages();
+    });
+    _scheduleMessageCacheWrite();
+  }
+
   void _updateOldestMessageCursor(Iterable<SnackChatMessage> candidates) {
     var oldest = _oldestMessage;
     for (final candidate in candidates) {
-      if (candidate.id.isEmpty || candidate.isPending || candidate.hasFailed) {
+      if (candidate.id.isEmpty ||
+          candidate.isPending ||
+          candidate.hasFailed ||
+          !candidate.hasConfirmedServerTimestamp) {
         continue;
       }
       if (oldest == null ||
@@ -3612,6 +3674,11 @@ class _SnackChatScreenState extends State<SnackChatScreen>
           mentions: mentions,
           mentionTargetsPreparation: mentionTargetsPreparation,
           replyPreview: reply,
+          onCommitted: (ack) => _applyCommitAck(
+            ack,
+            ownerUid: uid,
+            roomId: roomId,
+          ),
         ),
       );
     } finally {
@@ -3769,6 +3836,8 @@ class _SnackChatScreenState extends State<SnackChatScreen>
             (message) => message.copyWith(
               imageUrl: imageUrl,
               imagePath: imagePath,
+              imageWidth: upload.imageWidth,
+              imageHeight: upload.imageHeight,
             ),
           );
         }
@@ -3777,8 +3846,15 @@ class _SnackChatScreenState extends State<SnackChatScreen>
           roomId,
           imageUrl: imageUrl,
           imagePath: imagePath,
+          imageWidth: upload.imageWidth,
+          imageHeight: upload.imageHeight,
           messageId: messageId,
           replyPreview: reply,
+          onCommitted: (ack) => _applyCommitAck(
+            ack,
+            ownerUid: uid,
+            roomId: roomId,
+          ),
         );
       });
     } catch (_) {
@@ -4012,6 +4088,8 @@ class _SnackChatScreenState extends State<SnackChatScreen>
       );
       var imageUrl = message.imageUrl;
       var imagePath = message.imagePath;
+      var imageWidth = message.imageWidth;
+      var imageHeight = message.imageHeight;
       if (message.type == SnackChatMessageType.image &&
           (imageUrl?.isNotEmpty != true) &&
           (imagePath?.isNotEmpty != true) &&
@@ -4027,8 +4105,17 @@ class _SnackChatScreenState extends State<SnackChatScreen>
         if (upload != null) {
           imageUrl = upload.imageUrl;
           imagePath = upload.storagePath;
-          _updateLocalMessage(message.id,
-              (m) => m.copyWith(imageUrl: imageUrl, imagePath: imagePath));
+          imageWidth = upload.imageWidth;
+          imageHeight = upload.imageHeight;
+          _updateLocalMessage(
+            message.id,
+            (m) => m.copyWith(
+              imageUrl: imageUrl,
+              imagePath: imagePath,
+              imageWidth: imageWidth,
+              imageHeight: imageHeight,
+            ),
+          );
         }
       }
       if (_uid != owner) return;
@@ -4042,8 +4129,15 @@ class _SnackChatScreenState extends State<SnackChatScreen>
               messageId: message.id,
               imageUrl: imageUrl,
               imagePath: imagePath,
+              imageWidth: imageWidth,
+              imageHeight: imageHeight,
               text: message.text,
               replyPreview: message.replyPreview,
+              onCommitted: (ack) => _applyCommitAck(
+                ack,
+                ownerUid: owner,
+                roomId: roomId,
+              ),
             );
           }
         } else if (message.type == SnackChatMessageType.poll &&
@@ -4052,6 +4146,11 @@ class _SnackChatScreenState extends State<SnackChatScreen>
             roomId,
             poll: message.poll!,
             messageId: message.id,
+            onCommitted: (ack) => _applyCommitAck(
+              ack,
+              ownerUid: owner,
+              roomId: roomId,
+            ),
           );
         } else {
           ok = await _snackChatService.sendMessage(
@@ -4060,6 +4159,11 @@ class _SnackChatScreenState extends State<SnackChatScreen>
             messageId: message.id,
             mentions: message.mentions,
             replyPreview: message.replyPreview,
+            onCommitted: (ack) => _applyCommitAck(
+              ack,
+              ownerUid: owner,
+              roomId: roomId,
+            ),
           );
         }
         return ok;
@@ -4180,19 +4284,21 @@ class _SnackChatScreenState extends State<SnackChatScreen>
   Future<void> _createPoll() async {
     if (_isCreatingPoll) return;
     final roomId = widget.snackChatId;
+    final owner = _uid;
+    if (owner == null) return;
     setState(() => _isCreatingPoll = true);
     try {
       final poll = await showSnackChatPollDialog(context);
       if (!mounted ||
           poll == null ||
-          _uid == null ||
+          _uid != owner ||
           roomId != widget.snackChatId) {
         return;
       }
       final messageId = _snackChatService.createMessageId(roomId);
       final local = SnackChatMessage(
         id: messageId,
-        senderId: _uid!,
+        senderId: owner,
         senderName: FirebaseAuth.instance.currentUser?.displayName,
         type: SnackChatMessageType.poll,
         text: poll.question,
@@ -4209,6 +4315,11 @@ class _SnackChatScreenState extends State<SnackChatScreen>
           roomId,
           poll: poll,
           messageId: messageId,
+          onCommitted: (ack) => _applyCommitAck(
+            ack,
+            ownerUid: owner,
+            roomId: roomId,
+          ),
         ),
       );
     } finally {
@@ -6001,8 +6112,11 @@ class _SnackChatScreenState extends State<SnackChatScreen>
                 child: _buildMessageBubble(
                   message: message,
                   isMe: isMe,
-                  timeText: _formatTime(message.createdAt),
-                  showTimeText: !groupedWithNewer,
+                  timeText: message.hasConfirmedServerTimestamp
+                      ? _formatTime(message.createdAt)
+                      : '',
+                  showTimeText:
+                      !groupedWithNewer && message.hasConfirmedServerTimestamp,
                   showSenderName: startsSenderIdentityGroup,
                   groupedWithNewer: groupedWithNewer,
                   groupedWithOlder: groupedWithOlder,
@@ -7338,23 +7452,32 @@ class _SnackChatScreenState extends State<SnackChatScreen>
         (mediaSize.width * 0.7).clamp(180.0, 380.0).toDouble();
     final maxImageHeight =
         (mediaSize.height * 0.38).clamp(240.0, 360.0).toDouble();
+    final imageAspectRatio = message.imageWidth != null &&
+            message.imageWidth! > 0 &&
+            message.imageHeight != null &&
+            message.imageHeight! > 0
+        ? message.imageWidth! / message.imageHeight!
+        : null;
 
     Widget adaptiveImage(ImageProvider imageProvider) => SnackChatAdaptiveImage(
           imageProvider: imageProvider,
           maxWidth: maxImageWidth,
           maxHeight: maxImageHeight,
+          aspectRatio: imageAspectRatio,
           cacheKey: heroTag,
           error: _imageError(isMe),
         );
     Widget loadingFrame() => _imageLoading(
           maxWidth: maxImageWidth,
           maxHeight: maxImageHeight,
+          aspectRatio: imageAspectRatio,
           cacheKey: heroTag,
         );
     Widget errorFrame({VoidCallback? onRetry}) => _imageError(
           isMe,
           maxWidth: maxImageWidth,
           maxHeight: maxImageHeight,
+          aspectRatio: imageAspectRatio,
           cacheKey: heroTag,
           onRetry: onRetry,
         );
@@ -7415,12 +7538,14 @@ class _SnackChatScreenState extends State<SnackChatScreen>
   Widget _imageLoading({
     required double maxWidth,
     required double maxHeight,
+    double? aspectRatio,
     required String cacheKey,
   }) {
     final size = SnackChatAdaptiveImage.displaySizeFor(
       maxWidth: maxWidth,
       maxHeight: maxHeight,
-      aspectRatio: SnackChatAdaptiveImage.cachedAspectRatioFor(cacheKey),
+      aspectRatio:
+          aspectRatio ?? SnackChatAdaptiveImage.cachedAspectRatioFor(cacheKey),
     );
     return SizedBox(
       width: size.width,
@@ -7438,6 +7563,7 @@ class _SnackChatScreenState extends State<SnackChatScreen>
     bool isMe, {
     double? maxWidth,
     double? maxHeight,
+    double? aspectRatio,
     String? cacheKey,
     VoidCallback? onRetry,
   }) {
@@ -7464,7 +7590,8 @@ class _SnackChatScreenState extends State<SnackChatScreen>
     final size = SnackChatAdaptiveImage.displaySizeFor(
       maxWidth: maxWidth,
       maxHeight: maxHeight,
-      aspectRatio: SnackChatAdaptiveImage.cachedAspectRatioFor(cacheKey),
+      aspectRatio:
+          aspectRatio ?? SnackChatAdaptiveImage.cachedAspectRatioFor(cacheKey),
     );
     return SizedBox(
       width: size.width,

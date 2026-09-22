@@ -449,6 +449,8 @@ class SnackChatMessage {
   final String text;
   final String? imageUrl;
   final String? imagePath;
+  final int? imageWidth;
+  final int? imageHeight;
   final String? originalFileName;
   final String? fileExtension;
   final String? mimeType;
@@ -459,6 +461,10 @@ class SnackChatMessage {
   final DateTime? deleteAt;
   final String? uploadId;
   final DateTime createdAt;
+
+  /// True only after [createdAt] came from a server document snapshot.
+  /// Commit ACKs confirm sequence assignment, not the server timestamp.
+  final bool hasConfirmedServerTimestamp;
   final int? sequence;
   final List<String> recipientIds;
   final List<String>? deliveryRecipientIds;
@@ -487,6 +493,8 @@ class SnackChatMessage {
     required this.text,
     this.imageUrl,
     this.imagePath,
+    this.imageWidth,
+    this.imageHeight,
     this.originalFileName,
     this.fileExtension,
     this.mimeType,
@@ -497,6 +505,7 @@ class SnackChatMessage {
     this.deleteAt,
     this.uploadId,
     required this.createdAt,
+    this.hasConfirmedServerTimestamp = false,
     this.sequence,
     this.recipientIds = const <String>[],
     this.deliveryRecipientIds,
@@ -541,6 +550,8 @@ class SnackChatMessage {
     final rawSenderName = data['senderName'];
     final imageUrl = (data['imageUrl'] ?? '').toString().trim();
     final imagePath = (data['imagePath'] ?? '').toString().trim();
+    final rawImageWidth = data['imageWidth'];
+    final rawImageHeight = data['imageHeight'];
     final originalFileName = (data['originalFileName'] ?? '').toString().trim();
     final fileExtension = (data['fileExtension'] ?? '').toString().trim();
     final mimeType = (data['mimeType'] ?? '').toString().trim();
@@ -563,6 +574,12 @@ class SnackChatMessage {
       text: (data['text'] ?? '').toString(),
       imageUrl: imageUrl.isEmpty ? null : imageUrl,
       imagePath: imagePath.isEmpty ? null : imagePath,
+      imageWidth: rawImageWidth is num && rawImageWidth.toInt() > 0
+          ? rawImageWidth.toInt()
+          : null,
+      imageHeight: rawImageHeight is num && rawImageHeight.toInt() > 0
+          ? rawImageHeight.toInt()
+          : null,
       originalFileName: originalFileName.isEmpty ? null : originalFileName,
       fileExtension: fileExtension.isEmpty ? null : fileExtension,
       mimeType: mimeType.isEmpty ? null : mimeType,
@@ -578,6 +595,7 @@ class SnackChatMessage {
       createdAt: created is Timestamp
           ? created.toDate()
           : DateTime.fromMillisecondsSinceEpoch(0, isUtc: true),
+      hasConfirmedServerTimestamp: created is Timestamp,
       sequence: rawSequence is num && rawSequence.toInt() > 0
           ? rawSequence.toInt().clamp(1, 1 << 30).toInt()
           : null,
@@ -607,7 +625,8 @@ class SnackChatMessage {
           : null,
       linkPreviewRemoved: data['linkPreviewRemoved'] == true,
       poll: data['poll'] is Map ? SnackChatPoll.fromMap(data['poll']) : null,
-      mentions: SnackChatMention.parse(data['mentions'], (data['text'] ?? '').toString()),
+      mentions: SnackChatMention.parse(
+          data['mentions'], (data['text'] ?? '').toString()),
       reactionCounts: (data['reactionCounts'] is Map
               ? Map<String, dynamic>.from(data['reactionCounts'] as Map)
               : const <String, dynamic>{})
@@ -625,9 +644,12 @@ class SnackChatMessage {
         'senderName': senderName!.trim(),
       'type': snackChatMessageTypeWireName(type),
       'text': text,
-      if (mentions.isNotEmpty) 'mentions': mentions.map((m) => m.toMap()).toList(),
+      if (mentions.isNotEmpty)
+        'mentions': mentions.map((m) => m.toMap()).toList(),
       if (imageUrl != null && imageUrl!.isNotEmpty) 'imageUrl': imageUrl,
       if (imagePath != null && imagePath!.isNotEmpty) 'imagePath': imagePath,
+      if (imageWidth != null && imageWidth! > 0) 'imageWidth': imageWidth,
+      if (imageHeight != null && imageHeight! > 0) 'imageHeight': imageHeight,
       if (originalFileName != null && originalFileName!.isNotEmpty)
         'originalFileName': originalFileName,
       if (fileExtension != null && fileExtension!.isNotEmpty)
@@ -665,6 +687,8 @@ class SnackChatMessage {
     String? text,
     String? imageUrl,
     String? imagePath,
+    int? imageWidth,
+    int? imageHeight,
     String? originalFileName,
     String? fileExtension,
     String? mimeType,
@@ -675,6 +699,7 @@ class SnackChatMessage {
     DateTime? deleteAt,
     String? uploadId,
     DateTime? createdAt,
+    bool? hasConfirmedServerTimestamp,
     int? sequence,
     List<String>? recipientIds,
     List<String>? deliveryRecipientIds,
@@ -711,11 +736,15 @@ class SnackChatMessage {
       id: id,
       senderId: senderId,
       senderName: senderName ?? this.senderName,
-      mentions: SnackChatMention.parse((mentions ?? this.mentions).map((m) => m.toMap()).toList(), text ?? this.text),
+      mentions: SnackChatMention.parse(
+          (mentions ?? this.mentions).map((m) => m.toMap()).toList(),
+          text ?? this.text),
       type: type ?? this.type,
       text: text ?? this.text,
       imageUrl: clearImageUrl ? null : imageUrl ?? this.imageUrl,
       imagePath: clearImagePath ? null : imagePath ?? this.imagePath,
+      imageWidth: imageWidth ?? this.imageWidth,
+      imageHeight: imageHeight ?? this.imageHeight,
       originalFileName: originalFileName ?? this.originalFileName,
       fileExtension: fileExtension ?? this.fileExtension,
       mimeType: mimeType ?? this.mimeType,
@@ -726,6 +755,8 @@ class SnackChatMessage {
       deleteAt: deleteAt ?? this.deleteAt,
       uploadId: uploadId ?? this.uploadId,
       createdAt: createdAt ?? this.createdAt,
+      hasConfirmedServerTimestamp:
+          hasConfirmedServerTimestamp ?? this.hasConfirmedServerTimestamp,
       sequence: clearSequence ? null : sequence ?? this.sequence,
       recipientIds: recipientIds ?? this.recipientIds,
       deliveryRecipientIds: deliveryRecipientIds ?? this.deliveryRecipientIds,

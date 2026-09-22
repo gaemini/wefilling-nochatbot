@@ -1,19 +1,38 @@
 import 'dart:io';
 import 'dart:async';
+import 'dart:typed_data';
+import 'dart:ui' as ui;
 import 'package:firebase_storage/firebase_storage.dart';
 import 'package:uuid/uuid.dart';
 import 'package:flutter_image_compress/flutter_image_compress.dart';
 import 'package:path_provider/path_provider.dart';
 import 'package:path/path.dart' as path;
 import '../utils/logger.dart';
+import 'snack_chat_media_cache_service.dart';
 
 /// 프로필 이미지 업로드 결과
 /// - downloadUrl: 액세스 토큰 포함 URL
 /// - path: Storage object path (profile_images/{uid}/{file}.jpg)
 typedef ProfileUploadResult = ({String downloadUrl, String path});
-typedef SnackChatImageUploadResult = ({String storagePath, String? imageUrl});
+typedef SnackChatImageUploadResult = ({
+  String storagePath,
+  String? imageUrl,
+  int? imageWidth,
+  int? imageHeight,
+});
 typedef DmFileUploadResult = ({String storagePath});
-typedef _ChatImageUploadResult = ({String storagePath, String? downloadUrl});
+typedef _ChatImageUploadResult = ({
+  String storagePath,
+  String? downloadUrl,
+  int? imageWidth,
+  int? imageHeight,
+});
+
+typedef _EncodedImageInfo = ({
+  Uint8List bytes,
+  int width,
+  int height,
+});
 
 class StorageService {
   // 일반 이미지(posts/dm)는 기본 Storage 설정을 사용
@@ -458,6 +477,8 @@ class StorageService {
     return (
       storagePath: result.storagePath,
       imageUrl: result.downloadUrl,
+      imageWidth: result.imageWidth,
+      imageHeight: result.imageHeight,
     );
   }
 
@@ -528,6 +549,10 @@ class StorageService {
       final String fileName = '${_uuid.v4()}.jpg';
       final String folderPath = '$folderName/$userId/$entityId';
       final String fullPath = '$folderPath/$fileName';
+      final encodedImageFuture =
+          !createDownloadUrl && folderName == 'snack_chat_images'
+              ? _readEncodedImageInfo(compressedFile)
+              : Future<_EncodedImageInfo?>.value(null);
 
       if (Logger.isVerboseEnabled)
         Logger.log('$logLabel 이미지 업로드 시작: $fullPath');
@@ -583,7 +608,26 @@ class StorageService {
       if (downloadUrl != null) if (Logger.isVerboseEnabled)
         Logger.log('$logLabel 이미지 다운로드 URL 획득');
 
-      return (storagePath: fullPath, downloadUrl: downloadUrl);
+      final encodedImage = await encodedImageFuture;
+      if (!createDownloadUrl &&
+          folderName == 'snack_chat_images' &&
+          encodedImage != null) {
+        // The sender can render the finalized upload from the same
+        // account/path-scoped cache as receivers. Cache persistence remains
+        // best-effort and never changes a successful upload into a failure.
+        await SnackChatMediaCacheService.instance.write(
+          userId: userId,
+          storagePath: fullPath,
+          bytes: encodedImage.bytes,
+        );
+      }
+
+      return (
+        storagePath: fullPath,
+        downloadUrl: downloadUrl,
+        imageWidth: encodedImage?.width,
+        imageHeight: encodedImage?.height,
+      );
     } on TimeoutException catch (e) {
       Logger.error('$logLabel 이미지 업로드 타임아웃', e);
       return null;
@@ -605,6 +649,28 @@ class StorageService {
           Logger.error('$logLabel 임시 파일 삭제 실패: $e');
         }
       }
+    }
+  }
+
+  Future<_EncodedImageInfo?> _readEncodedImageInfo(File file) async {
+    ui.Codec? codec;
+    ui.Image? image;
+    try {
+      final bytes = await file.readAsBytes();
+      if (bytes.isEmpty) return null;
+      codec = await ui.instantiateImageCodec(bytes);
+      final frame = await codec.getNextFrame();
+      image = frame.image;
+      if (image.width <= 0 || image.height <= 0) return null;
+      return (bytes: bytes, width: image.width, height: image.height);
+    } catch (error) {
+      if (Logger.isVerboseEnabled) {
+        Logger.warning('최종 채팅 이미지 크기 확인 실패: $error');
+      }
+      return null;
+    } finally {
+      image?.dispose();
+      codec?.dispose();
     }
   }
 

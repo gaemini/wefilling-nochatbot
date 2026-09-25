@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'dart:collection';
 import 'dart:io';
 import 'dart:typed_data';
 
@@ -23,13 +24,29 @@ class SnackChatMediaCacheService {
   static const int _maxImageBytes = 15 * 1024 * 1024;
   static const int _maxFiles = 600;
   static const int _maxCacheBytes = 512 * 1024 * 1024;
+  static const int _maxMemoryEntries = 20;
+  static const int _maxMemoryBytes = 32 * 1024 * 1024;
   static const String _cacheFolder = 'private_snack_chat_images_v1';
+
+  final LinkedHashMap<String, Uint8List> _memory =
+      LinkedHashMap<String, Uint8List>();
+  final Map<String, int> _userGenerations = <String, int>{};
+  final Map<String, Future<void>> _trimTasks = <String, Future<void>>{};
+  int _memoryBytes = 0;
 
   Future<Uint8List?> read({
     required String userId,
     required String storagePath,
   }) async {
     if (userId.trim().isEmpty || storagePath.trim().isEmpty) return null;
+    final normalizedUserId = userId.trim();
+    final generation = _userGenerations[normalizedUserId] ?? 0;
+    final memoryKey = _memoryKey(normalizedUserId, storagePath);
+    final memory = _memory.remove(memoryKey);
+    if (memory != null) {
+      _memory[memoryKey] = memory;
+      return memory;
+    }
     try {
       final files = await _files(userId, storagePath);
       final mediaExists = await files.media.exists();
@@ -53,6 +70,10 @@ class SnackChatMediaCacheService {
         await _deletePair(files);
         return null;
       }
+      if ((_userGenerations[normalizedUserId] ?? 0) != generation) {
+        return null;
+      }
+      _remember(memoryKey, bytes);
       // Returning cached bytes should not wait on a metadata write. The touch
       // is only used by the bounded LRU and is safe as best-effort work.
       unawaited(
@@ -80,17 +101,26 @@ class SnackChatMediaCacheService {
         bytes.length > _maxImageBytes) {
       return;
     }
+    final normalizedUserId = userId.trim();
+    final normalizedStoragePath = storagePath.trim();
+    final generation = _userGenerations[normalizedUserId] ?? 0;
+    _remember(_memoryKey(normalizedUserId, normalizedStoragePath), bytes);
     try {
-      final files = await _files(userId, storagePath);
+      final files = await _files(normalizedUserId, normalizedStoragePath);
+      if ((_userGenerations[normalizedUserId] ?? 0) != generation) return;
       final mediaTemp = File('${files.media.path}.tmp');
       final sourceTemp = File('${files.source.path}.tmp');
       await mediaTemp.writeAsBytes(bytes, flush: true);
-      await sourceTemp.writeAsString(storagePath.trim(), flush: true);
+      await sourceTemp.writeAsString(normalizedStoragePath, flush: true);
+      if ((_userGenerations[normalizedUserId] ?? 0) != generation) {
+        await _deleteTemps(mediaTemp, sourceTemp);
+        return;
+      }
       if (await files.media.exists()) await files.media.delete();
       if (await files.source.exists()) await files.source.delete();
       await mediaTemp.rename(files.media.path);
       await sourceTemp.rename(files.source.path);
-      await _trim(userId);
+      _scheduleTrim(normalizedUserId, generation);
     } catch (error) {
       // Cache failure must never make a valid chat image fail to display.
       if (Logger.isVerboseEnabled) {
@@ -106,6 +136,9 @@ class SnackChatMediaCacheService {
     required String storagePath,
   }) async {
     if (userId.trim().isEmpty || storagePath.trim().isEmpty) return;
+    final memoryKey = _memoryKey(userId, storagePath);
+    final removed = _memory.remove(memoryKey);
+    if (removed != null) _memoryBytes -= removed.lengthInBytes;
     try {
       await _deletePair(await _files(userId, storagePath));
     } catch (error) {
@@ -117,10 +150,21 @@ class SnackChatMediaCacheService {
 
   Future<void> clearUser(String userId) async {
     if (userId.trim().isEmpty) return;
+    final normalizedUserId = userId.trim();
+    _userGenerations[normalizedUserId] =
+        (_userGenerations[normalizedUserId] ?? 0) + 1;
+    final prefix = '$normalizedUserId::';
+    final memoryKeys = _memory.keys
+        .where((key) => key.startsWith(prefix))
+        .toList(growable: false);
+    for (final key in memoryKeys) {
+      final removed = _memory.remove(key);
+      if (removed != null) _memoryBytes -= removed.lengthInBytes;
+    }
     try {
       final root = await getApplicationSupportDirectory();
       final directory = Directory(
-        p.join(root.path, _cacheFolder, _safeSegment(userId)),
+        p.join(root.path, _cacheFolder, _safeSegment(normalizedUserId)),
       );
       if (await directory.exists()) await directory.delete(recursive: true);
     } catch (error) {
@@ -151,7 +195,8 @@ class SnackChatMediaCacheService {
     return directory;
   }
 
-  Future<void> _trim(String userId) async {
+  Future<void> _trim(String userId, int generation) async {
+    if ((_userGenerations[userId] ?? 0) != generation) return;
     final directory = await _directory(userId);
     final records = <({File file, DateTime modified, int size})>[];
     var totalBytes = 0;
@@ -165,10 +210,52 @@ class SnackChatMediaCacheService {
     }
     records.sort((a, b) => a.modified.compareTo(b.modified));
     while (records.length > _maxFiles || totalBytes > _maxCacheBytes) {
+      if ((_userGenerations[userId] ?? 0) != generation) return;
       final oldest = records.removeAt(0);
       totalBytes -= oldest.size;
       await _deletePair(_pairForMedia(oldest.file));
     }
+  }
+
+  void _scheduleTrim(String userId, int generation) {
+    if ((_userGenerations[userId] ?? 0) != generation ||
+        _trimTasks.containsKey(userId)) {
+      return;
+    }
+    late final Future<void> operation;
+    operation =
+        _trim(userId, generation).catchError((Object error, StackTrace _) {
+      if (Logger.isVerboseEnabled) {
+        Logger.warning('Snack Chat 이미지 캐시 정리 실패: $error');
+      }
+    }).whenComplete(() {
+      if (identical(_trimTasks[userId], operation)) {
+        _trimTasks.remove(userId);
+      }
+    });
+    _trimTasks[userId] = operation;
+    unawaited(operation);
+  }
+
+  String _memoryKey(String userId, String storagePath) =>
+      '${userId.trim()}::${storagePath.trim()}';
+
+  void _remember(String key, Uint8List bytes) {
+    final previous = _memory.remove(key);
+    if (previous != null) _memoryBytes -= previous.lengthInBytes;
+    _memory[key] = bytes;
+    _memoryBytes += bytes.lengthInBytes;
+    while (
+        _memory.length > _maxMemoryEntries || _memoryBytes > _maxMemoryBytes) {
+      final oldestKey = _memory.keys.first;
+      final removed = _memory.remove(oldestKey);
+      if (removed != null) _memoryBytes -= removed.lengthInBytes;
+    }
+  }
+
+  Future<void> _deleteTemps(File mediaTemp, File sourceTemp) async {
+    if (await mediaTemp.exists()) await mediaTemp.delete();
+    if (await sourceTemp.exists()) await sourceTemp.delete();
   }
 
   ({File media, File source}) _pairForMedia(File media) {

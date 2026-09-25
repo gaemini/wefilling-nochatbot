@@ -6483,6 +6483,213 @@ export const createSnackChatAnnouncementSecure = functions
     };
   });
 
+/**
+ * Commits a small ordered list of plain-text messages. Each item keeps its
+ * own Firestore transaction so the existing room +1 sequence contract and
+ * onCreate unread/push trigger remain unchanged.
+ */
+export const sendSnackChatTextMessagesSecure = functions
+  .runWith({
+    timeoutSeconds: 30,
+    memory: '256MB',
+    enforceAppCheck: true,
+  })
+  .https.onCall(async (raw, context) => {
+    const senderId = requireUid(context);
+    await requireActiveUser(senderId);
+    const request = objectValue(raw);
+    const snackChatId = firestoreId(
+      request.snackChatId ?? request.roomId ?? request.chatId,
+      'Snack Chat id',
+    );
+    const rawMessages = request.messages;
+    if (!Array.isArray(rawMessages) ||
+        rawMessages.length < 1 || rawMessages.length > 5 ||
+        Buffer.byteLength(JSON.stringify(request), 'utf8') > 16 * 1024) {
+      throw new functions.https.HttpsError(
+        'invalid-argument',
+        'One to five bounded text messages are required.',
+      );
+    }
+
+    const parsed: Array<{
+      messageId: string;
+      text: string;
+      suppressLinkPreview: boolean;
+    }> = [];
+    for (const rawMessage of rawMessages) {
+      const item = objectValue(rawMessage);
+      const allowedKeys = new Set([
+        'messageId',
+        'text',
+        'suppressLinkPreview',
+      ]);
+      if (Object.keys(item).some((key) => !allowedKeys.has(key)) ||
+          typeof item.text !== 'string' ||
+          (item.suppressLinkPreview != null &&
+            typeof item.suppressLinkPreview !== 'boolean')) {
+        throw new functions.https.HttpsError(
+          'invalid-argument',
+          'Only plain text message fields are supported.',
+        );
+      }
+      const messageId = firestoreId(item.messageId, 'message id');
+      const text = item.text.trim();
+      if (!text || Array.from(text).length > 500) {
+        throw new functions.https.HttpsError(
+          'invalid-argument',
+          'Message text must contain 1 to 500 characters.',
+        );
+      }
+      parsed.push({
+        messageId,
+        text,
+        suppressLinkPreview: item.suppressLinkPreview === true,
+      });
+    }
+    if (new Set(parsed.map((item) => item.messageId)).size !== parsed.length) {
+      throw new functions.https.HttpsError(
+        'invalid-argument',
+        'Message ids must be unique within a request.',
+      );
+    }
+
+    const roomRef = db().collection(SNACK_CHATS).doc(snackChatId);
+    const senderRef = db().collection(USERS).doc(senderId);
+    const results: Array<Record<string, unknown>> = [];
+    let stopped = false;
+    for (const item of parsed) {
+      if (stopped) {
+        results.push({
+          messageId: item.messageId,
+          status: 'notAttempted',
+        });
+        continue;
+      }
+      const transactionStartedAt = Date.now();
+      let transactionAttempts = 0;
+      try {
+        const committed = await db().runTransaction(async (transaction) => {
+          transactionAttempts += 1;
+          const messageRef = roomRef.collection('messages').doc(item.messageId);
+          const [room, sender, existing] = await transaction.getAll(
+            roomRef,
+            senderRef,
+            messageRef,
+          );
+          assertActiveUserSnapshot(sender);
+          if (!room.exists) {
+            throw new functions.https.HttpsError(
+              'not-found',
+              'Snack Chat not found.',
+            );
+          }
+          const participants = uniqueStrings(room.get('participantIds'));
+          if (!participants.includes(senderId)) {
+            throw new functions.https.HttpsError(
+              'permission-denied',
+              'Only current room participants can send messages.',
+            );
+          }
+          if (existing.exists) {
+            const existingData = existing.data() ?? {};
+            const sameImmutableContent =
+              stringValue(existingData.senderId) === senderId &&
+              stringValue(existingData.messageScope) === 'snack_chat' &&
+              stringValue(existingData.chatId) === snackChatId &&
+              stringValue(existingData.type) === 'text' &&
+              stringValue(existingData.text) === item.text &&
+              !Object.prototype.hasOwnProperty.call(existingData, 'imageUrl') &&
+              !Object.prototype.hasOwnProperty.call(existingData, 'imagePath') &&
+              !Object.prototype.hasOwnProperty.call(existingData, 'poll') &&
+              !Object.prototype.hasOwnProperty.call(existingData, 'mentions') &&
+              !Object.prototype.hasOwnProperty.call(
+                existingData,
+                'mentionTargetIds',
+              ) &&
+              !Object.prototype.hasOwnProperty.call(
+                existingData,
+                'replyToMessageId',
+              ) &&
+              !Object.prototype.hasOwnProperty.call(
+                existingData,
+                'replyPreview',
+              );
+            const sequence = nonNegativeInteger(existingData.sequence);
+            if (!sameImmutableContent || sequence <= 0) {
+              throw new functions.https.HttpsError(
+                'already-exists',
+                'The message id is already in use.',
+              );
+            }
+            return {sequence, created: false};
+          }
+
+          const sequence =
+            nonNegativeInteger(room.get('lastMessageSequence')) + 1;
+          const createdAt = nextRoomMessageTimestamp(room);
+          const recipientIds = participants.filter(
+            (participantId) => participantId !== senderId,
+          );
+          transaction.create(messageRef, {
+            senderId,
+            messageScope: 'snack_chat',
+            chatId: snackChatId,
+            type: 'text',
+            text: item.text,
+            createdAt,
+            sequence,
+            recipientIds,
+            readBy: [senderId],
+            isDeleted: false,
+            linkPreviewRemoved: item.suppressLinkPreview,
+            reactionCounts: {},
+          });
+          transaction.update(roomRef, {
+            lastMessage: item.text,
+            lastMessageId: item.messageId,
+            lastMessageTime: createdAt,
+            lastMessageSenderId: senderId,
+            lastMessageType: 'text',
+            lastMessageExpiresAt: FieldValue.delete(),
+            lastMessageSequence: sequence,
+            updatedAt: createdAt,
+          });
+          return {sequence, created: true};
+        });
+        results.push({
+          messageId: item.messageId,
+          status: 'committed',
+          sequence: committed.sequence,
+          created: committed.created,
+          transactionAttempts,
+          serverDurationMs: Date.now() - transactionStartedAt,
+        });
+      } catch (error) {
+        if (error instanceof functions.https.HttpsError) {
+          results.push({
+            messageId: item.messageId,
+            status: 'rejected',
+            code: error.code,
+            transactionAttempts,
+            serverDurationMs: Date.now() - transactionStartedAt,
+          });
+        } else {
+          results.push({
+            messageId: item.messageId,
+            status: 'uncertain',
+            transactionAttempts,
+            serverDurationMs: Date.now() - transactionStartedAt,
+          });
+        }
+        // Do not let a later item overtake a rejected or uncertain earlier
+        // item. The client resolves/retries the original stable id first.
+        stopped = true;
+      }
+    }
+    return {success: true, snackChatId, results};
+  });
+
 export const fetchSnackChatLinkPreview = functions
   .runWith({timeoutSeconds: 20, memory: '256MB'})
   .https.onCall(async (raw, context) => {
@@ -7703,6 +7910,7 @@ async function sendSnackChatPush(args: {
   senderId: string;
   senderName: string;
   message: Data;
+  commitTime: FirebaseFirestore.Timestamp;
 }): Promise<void> {
   try {
     const [room, member, recipient, settings, blocked] = await Promise.all([
@@ -7805,6 +8013,8 @@ async function sendSnackChatPush(args: {
             snackChatId: args.roomRef.id,
             messageId: args.messageId,
             messageSequence: String(messageSequence),
+            notificationMetadataVersion: '2',
+            notificationCommitMillis: String(Math.floor(args.commitTime.toMillis())),
             senderId: args.senderId,
             senderName: args.senderName,
             roomTitle,
@@ -7842,6 +8052,7 @@ async function sendSnackChatPush(args: {
               ...(shouldAlert ? {sound: 'default'} : {}),
               channelId: 'high_importance_channel',
               tag: notificationGroupKey,
+              eventTimestamp: args.commitTime.toDate(),
               notificationCount: roomUnreadCount,
             },
           },
@@ -7993,6 +8204,7 @@ export const onSnackChatMessageCreatedSecure = functions
         senderId,
         senderName,
         message,
+        commitTime: snapshot.createTime,
       }));
     runtimeLogsEnabled && runtimeInfo(
       `[SnackChatTiming] stage=pushSendCompletedAt at=${Date.now()} ` +

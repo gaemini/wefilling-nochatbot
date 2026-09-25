@@ -13,6 +13,7 @@ class AdBanner {
   final int order; // 표시 순서
   final DateTime? createdAt;
   final DateTime? updatedAt;
+  final String? notificationVersion;
 
   const AdBanner({
     required this.id,
@@ -24,6 +25,7 @@ class AdBanner {
     this.order = 0,
     this.createdAt,
     this.updatedAt,
+    this.notificationVersion,
   });
 
   // Firestore로 변환
@@ -38,6 +40,7 @@ class AdBanner {
       'order': order,
       'createdAt': createdAt?.toIso8601String(),
       'updatedAt': updatedAt?.toIso8601String(),
+      'notificationVersion': notificationVersion,
     };
   }
 
@@ -45,6 +48,10 @@ class AdBanner {
   factory AdBanner.fromJson(Map<String, dynamic> json) {
     return AdBanner(
       id: json['id'] as String,
+      notificationVersion: json['notificationVersion'] as String? ??
+          (json['updatedAt'] is Timestamp
+              ? '${(json['updatedAt'] as Timestamp).seconds}:${(json['updatedAt'] as Timestamp).nanoseconds}'
+              : null),
       title: json['title'] as String,
       description: json['description'] as String,
       url: json['url'] as String,

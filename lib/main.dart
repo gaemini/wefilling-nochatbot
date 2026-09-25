@@ -52,6 +52,14 @@ import 'screens/organization_home_screen.dart';
 import 'screens/organization_invite_screen.dart';
 import 'services/organization_account_service.dart';
 
+void _ignoreCrashlyticsReport(Future<void> report) {
+  unawaited(report.catchError((Object error, StackTrace stackTrace) {
+    // 오류 보고 실패를 Logger/Crashlytics로 다시 보내면 전역 오류 처리기가
+    // 같은 실패를 반복 수집할 수 있으므로 디버그 출력으로만 종료한다.
+    if (kDebugMode) debugPrint('Crashlytics report failed: $error');
+  }));
+}
+
 void main() {
   runZonedGuarded(
     () async {
@@ -156,14 +164,18 @@ void main() {
 
         FlutterError.onError = (FlutterErrorDetails details) {
           try {
-            FirebaseCrashlytics.instance.recordFlutterError(details);
+            _ignoreCrashlyticsReport(
+              FirebaseCrashlytics.instance.recordFlutterError(details),
+            );
           } catch (_) {}
         };
 
         PlatformDispatcher.instance.onError = (error, stack) {
           try {
-            FirebaseCrashlytics.instance
-                .recordError(error, stack, fatal: false);
+            _ignoreCrashlyticsReport(
+              FirebaseCrashlytics.instance
+                  .recordError(error, stack, fatal: false),
+            );
           } catch (_) {}
           return true;
         };
@@ -280,7 +292,9 @@ void main() {
       }
 
       try {
-        FirebaseCrashlytics.instance.recordError(error, stack, fatal: true);
+        _ignoreCrashlyticsReport(
+          FirebaseCrashlytics.instance.recordError(error, stack, fatal: true),
+        );
       } catch (crashlyticsError) {
         // Crashlytics 리포트 실패해도 앱 실행은 계속
         if (kDebugMode) {

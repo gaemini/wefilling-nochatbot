@@ -53,6 +53,7 @@ class _FriendsPageState extends State<FriendsPage> {
   void initState() {
     super.initState();
     WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!mounted) return;
       // AuthProvider 연결
       final authProvider = context.read<AuthProvider>();
       final relationshipProvider = context.read<RelationshipProvider>();
@@ -86,10 +87,11 @@ class _FriendsPageState extends State<FriendsPage> {
 
   /// 데이터 초기화
   Future<void> _initializeData() async {
-    if (_isInitialized) return;
+    if (!mounted || _isInitialized) return;
 
     final provider = context.read<RelationshipProvider>();
     await provider.initialize();
+    if (!mounted) return;
 
     // 친구 카테고리 로드
     _loadFriendCategories();
@@ -102,6 +104,7 @@ class _FriendsPageState extends State<FriendsPage> {
 
   /// 친구 카테고리 로드
   void _loadFriendCategories() {
+    if (!mounted) return;
     _categoriesSubscription?.cancel();
     _categoriesSubscription =
         _categoryService.getCategoriesStream().listen((categories) {
@@ -402,57 +405,57 @@ class _FriendsPageState extends State<FriendsPage> {
 
   /// 친구 삭제
   Future<void> _unfriend(UserProfile friend) async {
+    final l10n = AppLocalizations.of(context)!;
     final confirmed = await _showConfirmDialog(
-      AppLocalizations.of(context)!.removeFriend,
-      AppLocalizations.of(context)!
-          .unfriendConfirm(friend.displayNameOrNickname),
+      l10n.removeFriend,
+      l10n.unfriendConfirm(friend.displayNameOrNickname),
     );
+    if (!mounted || !confirmed) return;
 
-    if (confirmed) {
-      final provider = context.read<RelationshipProvider>();
-      final success = await provider.unfriend(friend.uid);
+    final provider = context.read<RelationshipProvider>();
+    final success = await provider.unfriend(friend.uid);
+    if (!mounted) return;
 
-      if (success) {
-        _showSnackBar(
-            AppLocalizations.of(context)!.unfriendSuccess, Colors.red);
-        // 필터링된 목록에서도 제거
-        setState(() {
-          _filteredFriends.removeWhere((f) => f.uid == friend.uid);
-        });
-      } else {
-        _showSnackBar(AppLocalizations.of(context)!.unfriendFailed, Colors.red);
-      }
+    final currentL10n = AppLocalizations.of(context)!;
+    if (success) {
+      _showSnackBar(currentL10n.unfriendSuccess, Colors.red);
+      // 필터링된 목록에서도 제거
+      setState(() {
+        _filteredFriends.removeWhere((f) => f.uid == friend.uid);
+      });
+    } else {
+      _showSnackBar(currentL10n.unfriendFailed, Colors.red);
     }
   }
 
   /// 사용자 차단
   Future<void> _blockUser(UserProfile user) async {
+    final l10n = AppLocalizations.of(context)!;
     final confirmed = await _showConfirmDialog(
-      AppLocalizations.of(context)!.blockUser,
-      AppLocalizations.of(context)!
-          .blockUserConfirm(user.displayNameOrNickname),
+      l10n.blockUser,
+      l10n.blockUserConfirm(user.displayNameOrNickname),
     );
+    if (!mounted || !confirmed) return;
 
-    if (confirmed) {
-      final provider = context.read<RelationshipProvider>();
-      final success = await provider.blockUser(user.uid);
+    final provider = context.read<RelationshipProvider>();
+    final success = await provider.blockUser(user.uid);
+    if (!mounted) return;
 
-      if (success) {
-        _showSnackBar(
-            AppLocalizations.of(context)!.userBlockedSuccess, Colors.red);
-        // 필터링된 목록에서도 제거
-        setState(() {
-          _filteredFriends.removeWhere((f) => f.uid == user.uid);
-        });
-      } else {
-        _showSnackBar(
-            AppLocalizations.of(context)!.userBlockFailed, Colors.red);
-      }
+    final currentL10n = AppLocalizations.of(context)!;
+    if (success) {
+      _showSnackBar(currentL10n.userBlockedSuccess, Colors.red);
+      // 필터링된 목록에서도 제거
+      setState(() {
+        _filteredFriends.removeWhere((f) => f.uid == user.uid);
+      });
+    } else {
+      _showSnackBar(currentL10n.userBlockFailed, Colors.red);
     }
   }
 
   /// 스낵바 표시
   void _showSnackBar(String message, Color color) {
+    if (!mounted) return;
     ScaffoldMessenger.of(context).showSnackBar(
       SnackBar(
         content: Text(message),

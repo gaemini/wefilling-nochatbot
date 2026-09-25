@@ -117,17 +117,6 @@ class _MeetupDetailScreenState extends State<MeetupDetailScreen>
   void initState() {
     super.initState();
     _currentMeetup = widget.meetup;
-    unawaited(NotificationService().markRelatedNotificationsAsRead(
-      types: const <String>{
-        'meetup_full',
-        'meetup_cancelled',
-        'meetup_created',
-        'NEW_MEETUP',
-        'meetup_participant_joined',
-        'meetup_participant_left',
-      },
-      targets: <String, String>{'meetupId': widget.meetupId},
-    ));
     // 목록에서 이미 확정 상태를 받은 경우에는 즉시 안전하게 확정 상태로 취급한다.
     // 미확정 값은 오래된 캐시일 수 있으므로 서버 문서를 확인하기 전까지
     // 참여/나가기 액션을 노출하지 않는다.
@@ -147,6 +136,7 @@ class _MeetupDetailScreenState extends State<MeetupDetailScreen>
   }
 
   Future<void> _resolveCanonicalMeetup() async {
+    final readContext = NotificationService.captureReadContext();
     try {
       final snapshot = await FirebaseFirestore.instance
           .collection('meetups')
@@ -163,6 +153,17 @@ class _MeetupDetailScreenState extends State<MeetupDetailScreen>
         _hasResolvedCanonicalMeetup = true;
       });
       _ensureAudienceFuture();
+      final owner = FirebaseAuth.instance.currentUser?.uid;
+      if (owner != null && !await _meetupService.isUserKickedFromMeetup(
+          meetupId: widget.meetupId, userId: owner) && mounted &&
+          FirebaseAuth.instance.currentUser?.uid == owner) {
+        unawaited(NotificationService().markRelatedNotificationsAsRead(
+          types: const {'meetup_full', 'meetup_cancelled', 'meetup_created',
+            'meetup_participant_joined', 'meetup_participant_left'},
+          targets: {'meetupId': widget.meetupId},
+          readContext: readContext,
+        ));
+      }
     } catch (error) {
       // 확정 여부를 검증하지 못한 상태에서는 나가기 같은 되돌리기 어려운
       // 액션을 표시하지 않는다. 실시간 스트림은 계속 화면 데이터를 갱신한다.

@@ -110,11 +110,8 @@ class _NotificationScreenState extends State<NotificationScreen> {
 
   // 알림 클릭 처리
   Future<void> _handleNotificationTap(AppNotification notification) async {
-    // 읽지 않은 알림인 경우 읽음 처리
-    if (!notification.isRead) {
-      await _notificationService.markNotificationAsRead(notification.id);
-    }
-
+    // Loading failures and access denials must not confirm a content read.
+    // Destination-specific confirmation is shared with icon/search/deep links.
     // 알림 타입별로 해당 화면으로 이동
     switch (notification.type) {
       case 'meetup_full':

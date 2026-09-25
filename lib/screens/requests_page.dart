@@ -2,9 +2,9 @@
 // 친구요청 관리 화면
 // 받은 요청과 보낸 요청을 탭으로 구분하여 표시
 
-import 'dart:async';
 
 import 'package:flutter/material.dart';
+import 'dart:async';
 import 'package:provider/provider.dart';
 import '../providers/relationship_provider.dart';
 import '../providers/auth_provider.dart';
@@ -13,7 +13,7 @@ import '../models/user_profile.dart';
 import '../design/tokens.dart';
 import '../l10n/app_localizations.dart';
 import '../utils/responsive_helper.dart';
-import '../services/notification_service.dart';
+import '../widgets/notification_read_observer.dart';
 import '../widgets/relationship_action_button.dart';
 import '../l10n/ui_locale.dart';
 
@@ -32,9 +32,6 @@ class _RequestsPageState extends State<RequestsPage>
   @override
   void initState() {
     super.initState();
-    unawaited(NotificationService().markRelatedNotificationsAsRead(
-      types: const <String>{'friend_request', 'friend_request_accepted'},
-    ));
     _tabController = TabController(length: 2, vsync: this);
     WidgetsBinding.instance.addPostFrameCallback((_) {
       // AuthProvider 연결
@@ -380,7 +377,13 @@ class _RequestsPageState extends State<RequestsPage>
 
   /// 받은 요청 타일
   Widget _buildIncomingRequestTile(FriendRequest request, UserProfile user) {
-    return _buildRequestTile(
+    return NotificationReadObserver(
+      key: ValueKey('read-request:${request.id}:${request.notificationGeneration}'),
+      types: const {'friend_request'},
+      targets: {'actorId': request.fromUid, 'friendRequestId': request.id,
+        if (request.notificationGeneration?.isNotEmpty == true)
+          'notificationGeneration': request.notificationGeneration!},
+      child: _buildRequestTile(
       user: user,
       timestamp: _getTimeAgo(request.createdAt),
       actions: [
@@ -394,6 +397,7 @@ class _RequestsPageState extends State<RequestsPage>
           onPressed: () => _acceptRequest(request.fromUid),
         ),
       ],
+      ),
     );
   }
 

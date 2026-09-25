@@ -766,6 +766,7 @@ class OrganizationInviteSceneDelegate: FlutterSceneDelegate {
       .trimmingCharacters(in: .whitespacesAndNewlines)
     let notificationId = (arguments["notificationId"] as? String ?? "")
       .trimmingCharacters(in: .whitespacesAndNewlines)
+    let notificationIds = Set((arguments["notificationIds"] as? [String] ?? []) + [notificationId])
     let roomId = (arguments["roomId"] as? String ?? "")
       .trimmingCharacters(in: .whitespacesAndNewlines)
     let throughSequence = (arguments["throughSequence"] as? NSNumber)?.int64Value ?? 0
@@ -782,16 +783,34 @@ class OrganizationInviteSceneDelegate: FlutterSceneDelegate {
     }
 
     UNUserNotificationCenter.current().getDeliveredNotifications { notifications in
+      var metadataMissing = false
       let identifiers = notifications.compactMap { notification -> String? in
         let payload = self.deliveredNotificationPayload(notification)
-        guard self.notificationString(payload, "recipientUserId") == ownerUserId else {
+        let publicAd = kind == "ad" && self.notificationString(payload, "type") == "ad_updates" &&
+          self.notificationString(payload, "audience") == "public"
+        guard self.notificationString(payload, "recipientUserId") == ownerUserId || publicAd else {
+          if self.notificationString(payload, "recipientUserId").isEmpty &&
+              (notificationIds.contains(self.notificationString(payload, "notificationId")) ||
+               (!roomId.isEmpty && (self.notificationString(payload, "conversationId") == roomId ||
+                self.notificationString(payload, "snackChatId") == roomId))) {
+            metadataMissing = true
+          }
           return nil
         }
         let type = self.notificationString(payload, "type")
         switch kind {
+        case "todo_local":
+          let boundary = (arguments["throughDeliveredAtMillis"] as? NSNumber)?.doubleValue ?? 0
+          guard type == "personalTodoReminder",
+                self.notificationString(payload, "todoId") == (arguments["todoId"] as? String),
+                notification.date.timeIntervalSince1970 * 1000 < boundary else { return nil }
+        case "ad":
+          guard publicAd,
+                self.notificationString(payload, "bannerId") == (arguments["bannerId"] as? String),
+                self.notificationString(payload, "notificationVersion") == (arguments["version"] as? String) else { return nil }
         case "app":
-          guard !notificationId.isEmpty,
-                self.notificationString(payload, "notificationId") == notificationId else {
+          let deliveredId = self.notificationString(payload, "notificationId")
+          guard !deliveredId.isEmpty, notificationIds.contains(deliveredId) else {
             return nil
           }
         case "snack_chat":
@@ -805,12 +824,19 @@ class OrganizationInviteSceneDelegate: FlutterSceneDelegate {
           }
         case "dm":
           let sentAtMillis = self.notificationInt64(payload, "sentAtMillis")
+          let seconds = self.notificationInt64(payload, "sentAtSeconds")
+          let nanos = self.notificationInt64(payload, "sentAtNanos")
+          let throughSeconds = (arguments["throughSeconds"] as? NSNumber)?.int64Value ?? 0
+          let throughNanos = (arguments["throughNanos"] as? NSNumber)?.int64Value ?? 0
+          let exactRead = seconds > 0 && throughSeconds > 0 && payload["sentAtNanos"] != nil &&
+            arguments["throughNanos"] != nil && nanos >= 0 && nanos < 1000000000 &&
+            throughNanos >= 0 && throughNanos < 1000000000 &&
+            (seconds < throughSeconds || (seconds == throughSeconds && nanos <= throughNanos))
           guard type == "dm_received",
                 !roomId.isEmpty,
                 self.notificationString(payload, "conversationId") == roomId,
-                throughSentAtMillis > 0,
-                sentAtMillis > 0,
-                sentAtMillis <= throughSentAtMillis else {
+                exactRead || (throughSentAtMillis > 0 && sentAtMillis > 0 &&
+                sentAtMillis <= throughSentAtMillis) else {
             return nil
           }
         default:
@@ -818,11 +844,21 @@ class OrganizationInviteSceneDelegate: FlutterSceneDelegate {
         }
         return notification.request.identifier
       }
-      if !identifiers.isEmpty {
-        UNUserNotificationCenter.current()
-          .removeDeliveredNotifications(withIdentifiers: identifiers)
+      let originalDates = Dictionary(uniqueKeysWithValues: notifications.map {
+        ($0.request.identifier, $0.date)
+      })
+      let hadMissingMetadata = metadataMissing
+      let center = UNUserNotificationCenter.current()
+      center.getDeliveredNotifications { current in
+        let unchanged = current.filter {
+          identifiers.contains($0.request.identifier) &&
+            originalDates[$0.request.identifier] == $0.date
+        }.map { $0.request.identifier }
+        if !unchanged.isEmpty {
+          center.removeDeliveredNotifications(withIdentifiers: unchanged)
+        }
+        DispatchQueue.main.async { result(unchanged.isEmpty && hadMissingMetadata ? -1 : unchanged.count) }
       }
-      DispatchQueue.main.async { result(identifiers.count) }
     }
   }
 

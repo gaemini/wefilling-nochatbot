@@ -72,6 +72,45 @@ class SnackChatCommitAck {
   final int sequence;
 }
 
+enum SnackChatTextSendStatus {
+  committed,
+  rejected,
+  uncertain,
+  notAttempted,
+}
+
+class SnackChatTextSendRequest {
+  const SnackChatTextSendRequest({
+    required this.messageId,
+    required this.text,
+    this.suppressLinkPreview = false,
+    this.onCommitted,
+  });
+
+  final String messageId;
+  final String text;
+  final bool suppressLinkPreview;
+  final void Function(SnackChatCommitAck ack)? onCommitted;
+}
+
+class SnackChatTextSendResult {
+  const SnackChatTextSendResult({
+    required this.messageId,
+    required this.status,
+    this.sequence,
+    this.code,
+    this.transactionAttempts,
+    this.serverDurationMs,
+  });
+
+  final String messageId;
+  final SnackChatTextSendStatus status;
+  final int? sequence;
+  final String? code;
+  final int? transactionAttempts;
+  final int? serverDurationMs;
+}
+
 class _SnackChatReadSyncState {
   int pendingSequence = 0;
   int confirmedSequence = 0;
@@ -531,6 +570,10 @@ class _SnackChatSummaryMemoryCacheRecord {
 }
 
 class SnackChatService {
+  static const bool secureTextSendEnabled = bool.fromEnvironment(
+    'SNACK_CHAT_SECURE_TEXT_SEND',
+    defaultValue: false,
+  );
   static final SnackChatService _instance = SnackChatService._internal();
 
   factory SnackChatService() => _instance;
@@ -1637,6 +1680,33 @@ class SnackChatService {
     return window;
   }
 
+  /// Fetches only the missing canonical sequence interval between a local
+  /// cache and the bounded live window. The caller owns pagination and must
+  /// stop when this bounded page is empty or shorter than [pageSize].
+  Future<List<SnackChatMessage>> fetchMessagesSequenceRange(
+    String snackChatId, {
+    required int afterSequence,
+    required int beforeSequence,
+    int pageSize = 100,
+  }) async {
+    if (afterSequence < 0 || beforeSequence <= afterSequence + 1) {
+      return const <SnackChatMessage>[];
+    }
+    final boundedPageSize = pageSize.clamp(1, 100).toInt();
+    final snapshot = await _collection
+        .doc(snackChatId)
+        .collection('messages')
+        .where('sequence', isGreaterThan: afterSequence)
+        .where('sequence', isLessThan: beforeSequence)
+        .orderBy('sequence')
+        .limit(boundedPageSize)
+        .get(const GetOptions(source: Source.server))
+        .timeout(const Duration(seconds: 12));
+    return snapshot.docs
+        .map(SnackChatMessage.fromFirestore)
+        .toList(growable: false);
+  }
+
   Future<SnackChatMessage?> getMessage(
     String snackChatId,
     String messageId,
@@ -1895,6 +1965,25 @@ class SnackChatService {
   }) async {
     final trimmed = text.trim();
     if (trimmed.isEmpty) return false;
+    if (secureTextSendEnabled &&
+        mentions.isEmpty &&
+        mentionTargetsPreparation == null &&
+        replyPreview == null &&
+        messageId != null) {
+      final results = await sendTextMessagesSecure(
+        snackChatId,
+        <SnackChatTextSendRequest>[
+          SnackChatTextSendRequest(
+            messageId: messageId,
+            text: trimmed,
+            suppressLinkPreview: suppressLinkPreview,
+            onCommitted: onCommitted,
+          ),
+        ],
+      );
+      return results.length == 1 &&
+          results.first.status == SnackChatTextSendStatus.committed;
+    }
     return _sendMessageInternal(
       snackChatId: snackChatId,
       mentions: mentions,
@@ -1907,6 +1996,144 @@ class SnackChatService {
       suppressLinkPreview: suppressLinkPreview,
       onCommitted: onCommitted,
     );
+  }
+
+  /// Calls the optional server-owned plain-text dispatcher. The endpoint
+  /// accepts up to five items, but this method does not wait to collect a
+  /// first message; callers may submit one immediately and batch only work
+  /// that accumulated while a previous request was in flight.
+  Future<List<SnackChatTextSendResult>> sendTextMessagesSecure(
+    String snackChatId,
+    List<SnackChatTextSendRequest> messages,
+  ) async {
+    final uid = _uid;
+    if (uid == null || messages.isEmpty || messages.length > 5) {
+      return const <SnackChatTextSendResult>[];
+    }
+    final normalized = messages
+        .map((message) => SnackChatTextSendRequest(
+              messageId: message.messageId.trim(),
+              text: message.text.trim(),
+              suppressLinkPreview: message.suppressLinkPreview,
+              onCommitted: message.onCommitted,
+            ))
+        .toList(growable: false);
+    if (normalized.any((message) =>
+        message.messageId.isEmpty ||
+        message.text.isEmpty ||
+        message.text.runes.length > 500)) {
+      return const <SnackChatTextSendResult>[];
+    }
+    final requestStopwatch = Stopwatch()..start();
+    try {
+      final response = await _functions
+          .httpsCallable('sendSnackChatTextMessagesSecure')
+          .call<Map<String, dynamic>>(<String, dynamic>{
+        'snackChatId': snackChatId,
+        'messages': normalized
+            .map((message) => <String, dynamic>{
+                  'messageId': message.messageId,
+                  'text': message.text,
+                  'suppressLinkPreview': message.suppressLinkPreview,
+                })
+            .toList(growable: false),
+      }).timeout(const Duration(seconds: 25));
+      if (_uid != uid) return const <SnackChatTextSendResult>[];
+      final rawResults = response.data['results'];
+      if (rawResults is! List) return const <SnackChatTextSendResult>[];
+      final requestsById = <String, SnackChatTextSendRequest>{
+        for (final message in normalized) message.messageId: message,
+      };
+      final results = <SnackChatTextSendResult>[];
+      for (final raw in rawResults) {
+        if (raw is! Map) continue;
+        final data = Map<String, dynamic>.from(raw);
+        final messageId = (data['messageId'] ?? '').toString();
+        final request = requestsById[messageId];
+        if (request == null) continue;
+        final status = switch ((data['status'] ?? '').toString()) {
+          'committed' => SnackChatTextSendStatus.committed,
+          'rejected' => SnackChatTextSendStatus.rejected,
+          'notAttempted' => SnackChatTextSendStatus.notAttempted,
+          _ => SnackChatTextSendStatus.uncertain,
+        };
+        final sequence =
+            data['sequence'] is num ? (data['sequence'] as num).toInt() : null;
+        final result = SnackChatTextSendResult(
+          messageId: messageId,
+          status: status,
+          sequence: sequence,
+          code: data['code']?.toString(),
+          transactionAttempts: data['transactionAttempts'] is num
+              ? (data['transactionAttempts'] as num).toInt()
+              : null,
+          serverDurationMs: data['serverDurationMs'] is num
+              ? (data['serverDurationMs'] as num).toInt()
+              : null,
+        );
+        results.add(result);
+        if (ChatTiming.enabled) {
+          ChatTiming.record(
+            '[SnackChatTiming] stage=secureTransactionResult '
+            'roomId=$snackChatId messageId=$messageId '
+            'status=${status.name} sequence=${sequence ?? 0} '
+            'attempts=${result.transactionAttempts ?? 0} '
+            'serverDurationMs=${result.serverDurationMs ?? -1} '
+            'requestDurationMs=${requestStopwatch.elapsedMilliseconds} '
+            'batchSize=${normalized.length}',
+          );
+        }
+        if (status == SnackChatTextSendStatus.rejected) {
+          _rememberDefinitiveSendRejection('$uid::$snackChatId::$messageId');
+        }
+        if (status == SnackChatTextSendStatus.committed &&
+            sequence != null &&
+            sequence > 0) {
+          try {
+            request.onCommitted?.call(SnackChatCommitAck(
+              messageId: messageId,
+              sequence: sequence,
+            ));
+          } catch (error, stackTrace) {
+            Logger.error(
+              'Snack Chat 서버 전송 ACK 화면 반영 실패',
+              error,
+              stackTrace,
+            );
+          }
+          if (!request.suppressLinkPreview) {
+            final firstUrl = _firstHttpUrl(request.text);
+            if (firstUrl != null) {
+              unawaited(_requestLinkPreview(
+                snackChatId: snackChatId,
+                messageId: messageId,
+                url: firstUrl,
+              ));
+            }
+          }
+        }
+      }
+      return results;
+    } on FirebaseFunctionsException catch (error) {
+      if (const <String>{
+        'permission-denied',
+        'invalid-argument',
+        'not-found',
+        'failed-precondition',
+        'unauthenticated',
+        'already-exists',
+      }.contains(error.code)) {
+        for (final message in normalized) {
+          _rememberDefinitiveSendRejection(
+            '$uid::$snackChatId::${message.messageId}',
+          );
+        }
+      }
+      return const <SnackChatTextSendResult>[];
+    } catch (error, stackTrace) {
+      Logger.error('Snack Chat 서버 텍스트 전송 실패', error, stackTrace);
+      return const <SnackChatTextSendResult>[];
+    }
   }
 
   Future<bool> sendImageMessage(
@@ -2008,6 +2235,7 @@ class SnackChatService {
       final firestoreWriteStopwatch = Stopwatch()..start();
       var transactionAttempt = 0;
       var committedSequence = 0;
+      var immutableMessageMismatch = false;
       if (ChatTiming.enabled) {
         ChatTiming.record(
           '[SnackChatTiming] stage=firestoreWriteStartedAt '
@@ -2026,6 +2254,7 @@ class SnackChatService {
       final committed = await _firestore.runTransaction<bool>(
         (transaction) async {
           transactionAttempt++;
+          immutableMessageMismatch = false;
           if (ChatTiming.enabled) {
             ChatTiming.record(
               '[SnackChatTiming] stage=transactionStartedAt '
@@ -2050,11 +2279,24 @@ class SnackChatService {
 
           final existingMessage = documents[1];
           if (existingMessage.exists) {
-            final existingSender =
-                (existingMessage.data()?['senderId'] ?? '').toString();
-            committedSequence =
-                (existingMessage.data()?['sequence'] as num?)?.toInt() ?? 0;
-            return existingSender == uid;
+            final existing = existingMessage.data() ?? <String, dynamic>{};
+            final existingSender = (existing['senderId'] ?? '').toString();
+            committedSequence = (existing['sequence'] as num?)?.toInt() ?? 0;
+            final samePlainText = type != SnackChatMessageType.text ||
+                mentions.isNotEmpty ||
+                replyPreview != null ||
+                (existing['type'] == 'text' &&
+                    existing['text'] == text &&
+                    existing['messageScope'] == 'snack_chat' &&
+                    existing['chatId'] == snackChatId &&
+                    existing['linkPreviewRemoved'] == suppressLinkPreview &&
+                    !existing.containsKey('imageUrl') &&
+                    !existing.containsKey('imagePath') &&
+                    !existing.containsKey('poll'));
+            final matches =
+                existingSender == uid && committedSequence > 0 && samePlainText;
+            immutableMessageMismatch = !matches;
+            return matches;
           }
 
           final sequence =
@@ -2123,7 +2365,14 @@ class SnackChatService {
         );
       }
 
-      if (!committed) return false;
+      if (!committed) {
+        if (immutableMessageMismatch) {
+          _rememberDefinitiveSendRejection(
+            '$uid::$snackChatId::$resolvedMessageId',
+          );
+        }
+        return false;
+      }
       if (_uid == uid && committedSequence > 0 && onCommitted != null) {
         final ack = SnackChatCommitAck(
           messageId: resolvedMessageId,

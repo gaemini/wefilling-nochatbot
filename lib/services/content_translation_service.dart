@@ -203,6 +203,9 @@ class ContentTranslationService extends ChangeNotifier {
 
   Box<dynamic>? _box;
   Future<Box<dynamic>?>? _openingBox;
+  bool _persistentCacheDisabledForSession = false;
+  bool _persistentCacheRecoveryAttempted = false;
+  final Set<String> _persistentCacheFailureStages = <String>{};
   Future<String>? _targetLanguageFuture;
   Timer? _flushTimer;
   String? _lastUid;
@@ -659,6 +662,7 @@ class ContentTranslationService extends ChangeNotifier {
   }
 
   Future<Box<dynamic>?> _ensureBox() async {
+    if (_persistentCacheDisabledForSession) return null;
     if (_box?.isOpen == true) return _box;
     if (Hive.isBoxOpen(_boxName)) {
       _box = Hive.box<dynamic>(_boxName);
@@ -666,18 +670,84 @@ class ContentTranslationService extends ChangeNotifier {
     }
     final existing = _openingBox;
     if (existing != null) return existing;
-    _openingBox = (() async {
-      try {
-        final box = await Hive.openBox<dynamic>(_boxName);
-        _box = box;
-        return box;
-      } catch (_) {
-        return null;
-      } finally {
+    final opening = _openPersistentCacheWithRecovery();
+    _openingBox = opening;
+    try {
+      return await opening;
+    } finally {
+      if (identical(_openingBox, opening)) {
         _openingBox = null;
       }
-    })();
-    return _openingBox;
+    }
+  }
+
+  Future<Box<dynamic>?> _openPersistentCacheWithRecovery() async {
+    try {
+      final box = await Hive.openBox<dynamic>(_boxName);
+      _box = box;
+      return box;
+    } catch (error, stackTrace) {
+      _reportPersistentCacheFailure('open', error, stackTrace);
+      if (!_isRecoverableTranslationCacheError(error) ||
+          _persistentCacheRecoveryAttempted) {
+        _persistentCacheDisabledForSession = true;
+        return null;
+      }
+    }
+
+    // 이 박스는 서버 결과로 다시 만들 수 있는 번역 전용 캐시다. 과거에
+    // 등록됐던 어댑터(typeId 109) 값이 남은 경우에만 이 박스 하나를 한 번
+    // 재생성하며, 로그인/초안/전송 대기 등 다른 Hive 데이터는 건드리지 않는다.
+    _persistentCacheRecoveryAttempted = true;
+    try {
+      if (Hive.isBoxOpen(_boxName)) {
+        await Hive.box<dynamic>(_boxName).close();
+      }
+      await Hive.deleteBoxFromDisk(_boxName);
+      final box = await Hive.openBox<dynamic>(_boxName);
+      _box = box;
+      return box;
+    } catch (error, stackTrace) {
+      _reportPersistentCacheFailure('recover', error, stackTrace);
+      _persistentCacheDisabledForSession = true;
+      _box = null;
+      return null;
+    }
+  }
+
+  bool _isRecoverableTranslationCacheError(Object error) {
+    if (error is! HiveError) return false;
+    final message = error.message.toLowerCase();
+    return message.contains('unknown typeid') ||
+        message.contains('unknown type id');
+  }
+
+  void _reportPersistentCacheFailure(
+    String stage,
+    Object error,
+    StackTrace stackTrace,
+  ) {
+    if (!_persistentCacheFailureStages.add(stage)) return;
+    Logger.error(
+      '번역 전용 디스크 캐시 실패 (box=$_boxName, stage=$stage)',
+      error,
+      stackTrace,
+    );
+  }
+
+  void _runPersistentCacheWrite(
+    Future<void> Function() operation,
+    String stage,
+  ) {
+    if (_persistentCacheDisabledForSession) return;
+    unawaited(() async {
+      try {
+        await operation();
+      } catch (error, stackTrace) {
+        _persistentCacheDisabledForSession = true;
+        _reportPersistentCacheFailure(stage, error, stackTrace);
+      }
+    }());
   }
 
   Future<String> targetLanguage({String? uiLanguageCode}) {
@@ -1029,7 +1099,9 @@ class ContentTranslationService extends ChangeNotifier {
             result = decoded;
             _putMemory(key, decoded);
           } else {
-            unawaited(box?.delete(key));
+            if (box != null) {
+              _runPersistentCacheWrite(() => box.delete(key), 'delete-stale');
+            }
           }
         }
       }
@@ -1349,17 +1421,32 @@ class ContentTranslationService extends ChangeNotifier {
         _debugTranslationState('cacheHitHive', request, hash, target);
         final touched = Map<dynamic, dynamic>.from(stored)
           ..['lastAccessAt'] = DateTime.now().millisecondsSinceEpoch;
-        unawaited(box?.put(key, touched));
+        if (box != null) {
+          _runPersistentCacheWrite(
+            () => box.put(key, touched),
+            'touch-entry',
+          );
+        }
         _putMemory(key, result);
         _publishLatest(request, hash, result);
         return result;
       }
-      unawaited(box?.delete(key));
+      if (box != null) {
+        _runPersistentCacheWrite(() => box.delete(key), 'delete-invalid');
+      }
     }
     // Only migrate the viewed item. Old-version entries elsewhere are left
     // untouched until accessed and remain ineligible for reads.
-    unawaited(box?.delete(_legacyV5CacheKey(request, target, hash)));
-    unawaited(box?.delete(_legacyV4CacheKey(request, target, hash)));
+    if (box != null) {
+      _runPersistentCacheWrite(
+        () => box.delete(_legacyV5CacheKey(request, target, hash)),
+        'delete-legacy-v5',
+      );
+      _runPersistentCacheWrite(
+        () => box.delete(_legacyV4CacheKey(request, target, hash)),
+        'delete-legacy-v4',
+      );
+    }
 
     // 확실한 same-language만 로컬에서 종결한다. 원문은 그대로 사용하고
     // 동일한 버전 메타데이터로 캐시하여 다음 화면에서는 언어 판정조차 생략한다.
@@ -1652,7 +1739,10 @@ class ContentTranslationService extends ChangeNotifier {
       final box = await _ensureBox();
       await box?.put(key, result.toMap());
       await _prunePersistentCacheIfNeeded(box);
-    } catch (_) {}
+    } catch (error, stackTrace) {
+      _persistentCacheDisabledForSession = true;
+      _reportPersistentCacheFailure('persist-result', error, stackTrace);
+    }
   }
 
   Future<void> _flushQueue() async {

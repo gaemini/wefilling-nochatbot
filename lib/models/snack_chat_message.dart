@@ -531,6 +531,17 @@ class SnackChatMessage {
   bool get isPending => sendStatus == MessageSendStatus.sending || isUncertain;
   bool get needsRetry => hasFailed || isUncertain;
   bool get hasFailed => sendStatus == MessageSendStatus.failed;
+  bool get isServerCommitted =>
+      sequence != null && sequence! > 0 && sendStatus == MessageSendStatus.sent;
+
+  SnackChatMessage withFailedSendStatus(String reason) {
+    if (isServerCommitted || isDeleted) return this;
+    return copyWith(
+      sendStatus: MessageSendStatus.failed,
+      errorMessage: reason,
+    );
+  }
+
   bool get isTemporaryFile =>
       retentionMode == 'temporary24h' || retentionMode == 'temporary30d';
   bool get isFileExpired {

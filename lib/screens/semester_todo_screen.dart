@@ -3,6 +3,7 @@ import 'dart:async';
 import 'package:cached_network_image/cached_network_image.dart';
 import 'package:flutter/cupertino.dart';
 import 'package:flutter/material.dart';
+import '../widgets/notification_read_observer.dart';
 import 'package:intl/intl.dart';
 import 'package:provider/provider.dart';
 import 'package:table_calendar/table_calendar.dart';
@@ -865,7 +866,7 @@ class _SemesterTodoScreenState extends State<SemesterTodoScreen>
         alert: false,
       ));
     }
-    return Padding(
+    final row = Padding(
       key: ValueKey('todo-entry-${entry.weekNumber}-${entry.identity}'),
       padding: const EdgeInsets.symmetric(vertical: 1),
       child: Row(crossAxisAlignment: CrossAxisAlignment.start, children: [
@@ -1001,6 +1002,12 @@ class _SemesterTodoScreenState extends State<SemesterTodoScreen>
                       : const Color(0xFF94A3B8))),
         if (todo == null) const SizedBox(width: 48),
       ]),
+    );
+    if (todo == null) return row;
+    return NotificationReadObserver(
+      key: ValueKey('todo-read:${todo.id}'),
+      types: const {'personalTodoReminder'}, targets: {'todoId': todo.id},
+      child: row,
     );
   }
 

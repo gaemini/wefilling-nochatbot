@@ -80,10 +80,6 @@ class _FriendProfileScreenState extends State<FriendProfileScreen>
   @override
   void initState() {
     super.initState();
-    unawaited(NotificationService().markRelatedNotificationsAsRead(
-      types: const <String>{'friend_request_accepted'},
-      targets: <String, String>{'actorId': widget.userId},
-    ));
     WidgetsBinding.instance.addObserver(this);
     _loadUserData();
     _loadRelationshipStatus();
@@ -205,6 +201,7 @@ class _FriendProfileScreenState extends State<FriendProfileScreen>
   }
 
   Future<void> _loadUserData() async {
+    final readContext = NotificationService.captureReadContext();
     final token = ++_profileLoadToken;
     try {
       final targetFuture = FirebaseFirestore.instance
@@ -219,6 +216,11 @@ class _FriendProfileScreenState extends State<FriendProfileScreen>
 
       if (!mounted || token != _profileLoadToken) return;
       if (!targetIsDeleted) {
+        unawaited(NotificationService().markRelatedNotificationsAsRead(
+          types: const {'friend_request_accepted'},
+          readContext: readContext,
+          targets: {'actorId': widget.userId},
+        ));
         setState(() {
           _userData = targetData;
           _isDeletedAccount = false;

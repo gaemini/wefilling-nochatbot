@@ -73,20 +73,62 @@ async function main() {
     missingTokens += expected.filter((value) => !currentSet.has(value)).length;
     repairs.push({
       ref: document.ref,
-      tokens: expected,
       uidFingerprint: uidHash(document.id),
     });
   }
 
+  let appliedRepairs = 0;
+  let skippedChangedUsers = 0;
+  let alreadyCurrentAtApply = 0;
+  let missingAtApply = 0;
   if (apply) {
-    for (let offset = 0; offset < repairs.length; offset += 300) {
-      const batch = db.batch();
-      repairs.slice(offset, offset + 300).forEach((repair) => {
-        // A normal array value replaces the field. FieldValue.arrayUnion is
-        // intentionally never used here.
-        batch.update(repair.ref, {nicknameSearchTokens: repair.tokens});
+    // Each write re-reads and re-evaluates the latest profile in a transaction.
+    // A nickname/privacy change after the dry-run scan can therefore never be
+    // overwritten with tokens calculated from the stale snapshot.
+    for (let offset = 0; offset < repairs.length; offset += 20) {
+      const outcomes = await Promise.all(
+        repairs.slice(offset, offset + 20).map((repair) =>
+          db.runTransaction(async (transaction) => {
+            const latestSnapshot = await transaction.get(repair.ref);
+            if (!latestSnapshot.exists) return 'missing';
+            const latestData = latestSnapshot.data() || {};
+            if (!evaluateSearchableUser(
+              latestSnapshot.id,
+              latestData,
+            ).searchable) {
+              return 'changed';
+            }
+
+            let latestNickname;
+            try {
+              latestNickname = normalizeLegacyStoredNickname(
+                latestData.nickname,
+              ).nickname;
+            } catch (_) {
+              return 'changed';
+            }
+            const latestExpected = buildUserSearchTokens(latestNickname);
+            const latestCurrent = Array.isArray(
+              latestData.nicknameSearchTokens,
+            ) ? latestData.nicknameSearchTokens.filter(
+                (value) => typeof value === 'string',
+              ) : [];
+            if (sameStrings(latestCurrent, latestExpected)) return 'current';
+
+            // A normal array replaces only the derived token field.
+            transaction.update(repair.ref, {
+              nicknameSearchTokens: latestExpected,
+            });
+            return 'updated';
+          }),
+        ),
+      );
+      outcomes.forEach((outcome) => {
+        if (outcome === 'updated') appliedRepairs++;
+        if (outcome === 'changed') skippedChangedUsers++;
+        if (outcome === 'current') alreadyCurrentAtApply++;
+        if (outcome === 'missing') missingAtApply++;
       });
-      await batch.commit();
     }
   }
 
@@ -95,8 +137,11 @@ async function main() {
     projectId,
     scannedUsers: snapshot.size,
     searchableUsers,
-    repairedUsers: apply ? repairs.length : 0,
+    repairedUsers: appliedRepairs,
     pendingRepairs: apply ? 0 : repairs.length,
+    skippedChangedUsers,
+    alreadyCurrentAtApply,
+    missingAtApply,
     obsoleteTokens,
     missingTokens,
     uidFingerprints: repairs.map((repair) => repair.uidFingerprint),

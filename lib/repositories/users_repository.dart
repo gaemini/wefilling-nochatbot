@@ -39,6 +39,35 @@ class InterestUserSearchPage {
   final bool hasMore;
 }
 
+/// The server deliberately caps broad substring candidates. Keep any exact
+/// and high-relevance matches returned by the server, but do not present the
+/// page as an exhaustive empty/complete result.
+class IncompleteUserSearchException implements Exception {
+  const IncompleteUserSearchException(this.partialResults);
+
+  final List<UserProfile> partialResults;
+
+  @override
+  String toString() => 'IncompleteUserSearchException';
+}
+
+/// Runs the canonical server search only after the shared App Check work is
+/// ready. A readiness failure never invokes an unprotected/partial fallback.
+@visibleForTesting
+Future<T> runProtectedUserSearch<T>({
+  required Future<void> readiness,
+  required Future<T> Function() serverSearch,
+  // Startup token acquisition (8s) and its shared recovery attempt (12s)
+  // may run sequentially. Do not abandon a recovery that is still in flight.
+  Duration readinessTimeout = const Duration(seconds: 30),
+}) async {
+  await readiness.timeout(
+    readinessTimeout,
+    onTimeout: () => throw const AppCheckUnavailableException(),
+  );
+  return serverSearch();
+}
+
 /// Applies Snack Chat room exclusions before computing a result page.
 ///
 /// Keeping this ordering explicit prevents existing room participants from
@@ -73,17 +102,6 @@ SnackChatUserSearchPage paginateSnackChatInviteCandidates(
     users: eligible.sublist(offset, end),
     nextCursor: end < eligible.length ? '$end' : null,
   );
-}
-
-@visibleForTesting
-bool canUseLegacyUserSearchFallback({
-  required String errorCode,
-  required bool isReleaseMode,
-}) {
-  if (isReleaseMode) return false;
-  return errorCode == 'not-found' ||
-      errorCode == 'unimplemented' ||
-      errorCode == 'unauthenticated';
 }
 
 /// Firestore `whereIn` 조회에 넣을 UID를 안전한 크기로 나눈다.
@@ -531,70 +549,59 @@ class UsersRepository {
     if (trimmedQuery.isEmpty || currentUid == null) return [];
 
     try {
-      final appCheck = FirebaseAppCheckService.instance;
-      if (!appCheck.isReady) {
-        unawaited(appCheck.ensureReady().catchError((Object _) {}));
-        return _searchUsersLegacy(trimmedQuery, limit: limit);
-      }
-      await appCheck.ensureReady();
-      final response = await _functions.httpsCallable('searchSocialUsers').call(
-        <String, dynamic>{
+      // Protected name searches always use the same server normalization and
+      // visibility policy. Reuse the shared App Check preparation instead of
+      // falling back to a partial client scan while startup attestation is in
+      // progress. The wait is bounded so the UI can expose a retry state.
+      final response = await runProtectedUserSearch(
+        readiness: FirebaseAppCheckService.instance.ensureReady(),
+        serverSearch: () => _functions
+            .httpsCallable('searchSocialUsers')
+            .call(<String, dynamic>{
           'query': trimmedQuery,
           'limit': limit.clamp(1, 100),
-        },
-      ).timeout(const Duration(seconds: 15));
+        // The callable has a 20s server deadline, including cold starts.
+        }).timeout(const Duration(seconds: 25)),
+      );
       final data = response.data;
       final rawUsers = data is Map ? data['users'] : null;
-      final exhaustive = data is Map ? data['exhaustive'] : null;
       if (rawUsers is! List) {
         throw const FormatException('Invalid user search response');
       }
-      if (exhaustive != true) {
-        throw const FormatException('Incomplete user search response');
-      }
       final now = DateTime.now();
-      return rawUsers
-          .whereType<Map>()
-          .map((raw) {
-            String? optional(String key) {
-              final value = (raw[key] ?? '').toString().trim();
-              return value.isEmpty ? null : value;
-            }
+      final usersById = <String, UserProfile>{};
+      for (final raw in rawUsers.whereType<Map>()) {
+        String? optional(String key) {
+          final value = (raw[key] ?? '').toString().trim();
+          return value.isEmpty ? null : value;
+        }
 
-            return UserProfile(
-              uid: (raw['uid'] ?? '').toString().trim(),
-              nickname: optional('nickname'),
-              photoURL: optional('photoURL'),
-              nationality: optional('nationality'),
-              university: optional('university'),
-              createdAt: now,
-              updatedAt: now,
-            );
-          })
-          .where((profile) {
-            return profile.uid.isNotEmpty && profile.uid != currentUid;
-          })
-          .take(limit.clamp(1, 100))
-          .toList(growable: false);
-    } on AppCheckUnavailableException catch (error) {
-      // App Check can be temporarily unavailable before the callable request
-      // is sent (for example immediately after install or network recovery).
-      // Keep the existing authenticated Firestore search usable instead of
-      // replacing the whole search screen with an error state.
-      Logger.error('App Check 준비 전 사용자 검색 호환 경로 사용: $error');
-      return _searchUsersLegacy(trimmedQuery, limit: limit);
-    } on FirebaseFunctionsException catch (error) {
-      // 릴리스에서는 함수 미배포나 잘못된 Firebase 프로젝트를
-      // 과거의 100명 스캔으로 숨기지 않는다. 부분 가입자만 보이는 결과보다
-      // 명확한 재시도 오류가 안전하다. 호환 경로는 개발/프로파일에서만 사용한다.
-      final canUseLegacyFallback = canUseLegacyUserSearchFallback(
-        errorCode: error.code,
-        isReleaseMode: kReleaseMode,
-      );
-      Logger.error('서버 사용자 검색 오류: ${error.code}');
-      if (canUseLegacyFallback) {
-        return _searchUsersLegacy(trimmedQuery, limit: limit);
+        final profile = UserProfile(
+          uid: (raw['uid'] ?? '').toString().trim(),
+          nickname: optional('nickname'),
+          photoURL: optional('photoURL'),
+          nationality: optional('nationality'),
+          university: optional('university'),
+          createdAt: now,
+          updatedAt: now,
+        );
+        if (profile.uid.isEmpty || profile.uid == currentUid) continue;
+        usersById.putIfAbsent(profile.uid, () => profile);
       }
+      final users =
+          usersById.values.take(limit.clamp(1, 100)).toList(growable: false);
+      // Older callable responses can omit this optional completeness flag.
+      // A valid users list is not an error just because that field is absent.
+      // Keep explicitly truncated results distinguishable from complete ones.
+      if (data is Map && data['exhaustive'] == false) {
+        throw IncompleteUserSearchException(users);
+      }
+      return users;
+    } on AppCheckUnavailableException catch (error) {
+      Logger.error('App Check 준비 실패로 사용자 검색 재시도 필요: $error');
+      rethrow;
+    } on FirebaseFunctionsException catch (error) {
+      Logger.error('서버 사용자 검색 오류: ${error.code}');
       rethrow;
     } catch (error) {
       Logger.error('서버 사용자 검색 오류: $error');
@@ -790,75 +797,6 @@ class UsersRepository {
       nextCursor: hasMore ? nextCursor : null,
       hasMore: hasMore && nextCursor != null,
     );
-  }
-
-  Future<List<UserProfile>> _searchUsersLegacy(
-    String query, {
-    required int limit,
-  }) async {
-    try {
-      final currentUid = currentUserId;
-      if (currentUid == null) return [];
-
-      // 검색어 전처리 - 대소문자 구분 없이 검색
-      final normalizedQuery = query.trim().toLowerCase();
-
-      // 더 넓은 범위로 사용자 데이터 가져오기
-      final allUsersQuery = await _firestore
-          .collection(_usersCollection)
-          .limit(100) // 검색 대상을 늘려서 더 정확한 매칭
-          .get(const GetOptions(source: Source.server));
-
-      final matchedProfiles = <UserProfile>[];
-
-      for (final doc in allUsersQuery.docs) {
-        // 현재 사용자 제외
-        if (doc.id == currentUid) continue;
-        if (!isSearchableUserAccountData(doc.data(), uid: doc.id)) continue;
-
-        try {
-          final profile = UserProfile.fromFirestore(doc);
-
-          // 닉네임을 소문자로 변환하여 검색
-          final nickname = (profile.nickname ?? '').toLowerCase();
-
-          // 부분 문자열 매칭 (한국어 포함)
-          if (nickname.contains(normalizedQuery) ||
-              _isKoreanMatch(nickname, normalizedQuery)) {
-            matchedProfiles.add(profile);
-          }
-        } catch (e) {
-          Logger.error('사용자 데이터 파싱 오류: $e');
-          continue;
-        }
-      }
-
-      // 결과를 관련도 순으로 정렬 (정확한 매칭이 먼저 오도록)
-      matchedProfiles.sort((a, b) {
-        final aScore = _getRelevanceScore(a, normalizedQuery);
-        final bScore = _getRelevanceScore(b, normalizedQuery);
-        return bScore.compareTo(aScore); // 내림차순 정렬
-      });
-
-      // 개발 빌드의 호환 경로도 운영 함수와 동일하게 양방향 차단을
-      // fail-closed로 적용한다. 운영 빌드는 이 100명 제한 경로를 사용하지
-      // 않는다.
-      final blocked = await Future.wait(
-        matchedProfiles.map(
-          (profile) => _hasBlockRelationshipFailClosed(currentUid, profile.uid),
-        ),
-      );
-      final visibleProfiles = <UserProfile>[];
-      for (var index = 0; index < matchedProfiles.length; index++) {
-        if (!blocked[index]) visibleProfiles.add(matchedProfiles[index]);
-      }
-
-      // 제한된 개수만 반환
-      return visibleProfiles.take(limit).toList();
-    } catch (e) {
-      Logger.error('사용자 검색 오류: $e');
-      return [];
-    }
   }
 
   /// Snack Chat 초대용 사용자 ID(고유 닉네임) 정확 검색.
@@ -1144,94 +1082,6 @@ class UsersRepository {
     }
   }
 
-  /// 한국어 매칭 검사 (초성, 중성, 종성 고려)
-  bool _isKoreanMatch(String text, String query) {
-    if (text.isEmpty || query.isEmpty) return false;
-
-    // 한국어 초성 추출 및 매칭
-    try {
-      final textChoseong = _extractChoseong(text);
-      final queryChoseong = _extractChoseong(query);
-
-      return textChoseong.contains(queryChoseong);
-    } catch (e) {
-      return false;
-    }
-  }
-
-  /// 한국어 초성 추출
-  String _extractChoseong(String text) {
-    const choseong = [
-      'ㄱ',
-      'ㄲ',
-      'ㄴ',
-      'ㄷ',
-      'ㄸ',
-      'ㄹ',
-      'ㅁ',
-      'ㅂ',
-      'ㅃ',
-      'ㅅ',
-      'ㅆ',
-      'ㅇ',
-      'ㅈ',
-      'ㅉ',
-      'ㅊ',
-      'ㅋ',
-      'ㅌ',
-      'ㅍ',
-      'ㅎ'
-    ];
-
-    String result = '';
-    for (int i = 0; i < text.length; i++) {
-      final char = text[i];
-      final code = char.codeUnitAt(0);
-
-      // 한글 완성형인지 확인 (가-힣: 44032-55203)
-      if (code >= 0xAC00 && code <= 0xD7A3) {
-        final choseongIndex = (code - 0xAC00) ~/ (21 * 28);
-        if (choseongIndex < choseong.length) {
-          result += choseong[choseongIndex];
-        }
-      } else {
-        // 한글이 아닌 경우 그대로 추가
-        result += char;
-      }
-    }
-
-    return result;
-  }
-
-  /// 검색 관련도 점수 계산
-  int _getRelevanceScore(UserProfile profile, String query) {
-    final nickname = (profile.nickname ?? '').toLowerCase();
-
-    int score = 0;
-
-    // 정확한 매칭에 높은 점수
-    if (nickname == query) {
-      score += 100;
-    }
-
-    // 시작 부분 매칭에 중간 점수
-    if (nickname.startsWith(query)) {
-      score += 50;
-    }
-
-    // 부분 매칭에 낮은 점수
-    if (nickname.contains(query)) {
-      score += 25;
-    }
-
-    // 한국어 초성 매칭
-    if (_isKoreanMatch(nickname, query)) {
-      score += 10;
-    }
-
-    return score;
-  }
-
   /// 사용자 간 관계 상태 조회
   Future<RelationshipStatus> getRelationshipStatus(String otherUserId) async {
     try {
@@ -1260,19 +1110,6 @@ class UsersRepository {
     } catch (e) {
       Logger.error('관계 상태 조회 오류: $e');
       return RelationshipStatus.none;
-    }
-  }
-
-  /// 사용자가 상대방을 차단했는지 확인
-  Future<bool> _isUserBlocked(String blockerId, String blockedId) async {
-    try {
-      final blockId = '${blockerId}_$blockedId';
-      final doc =
-          await _firestore.collection(_blocksCollection).doc(blockId).get();
-      return doc.exists;
-    } catch (e) {
-      Logger.error('차단 상태 확인 오류: $e');
-      return false;
     }
   }
 

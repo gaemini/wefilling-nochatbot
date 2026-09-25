@@ -194,12 +194,11 @@ packages:
     source: hosted
     version: "6.1.2"
   cloud_firestore_platform_interface:
-    dependency: transitive
+    dependency: "direct overridden"
     description:
-      name: cloud_firestore_platform_interface
-      sha256: dfaa8b2c0d0a824af289d4159816a5c78417feec264c2194081d645687195158
-      url: "https://pub.dev"
-    source: hosted
+      path: "third_party/cloud_firestore_platform_interface"
+      relative: true
+    source: path
     version: "7.0.6"
   cloud_firestore_web:
     dependency: transitive

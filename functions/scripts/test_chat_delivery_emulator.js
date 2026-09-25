@@ -169,6 +169,11 @@ async function main() {
     lastMessage: '', lastMessageTime: admin.firestore.Timestamp.now(),
     unreadCount: {[alice]: 0, [bob]: 0}, archivedBy: []});
   await Promise.all(Array.from({length: 4}, () => send('same-id', 'immutable')));
+  const forged = writes('forged-clock', 'invalid');
+  forged[0].updateTransforms = [timestamp('createdAt')];
+  forged[0].update.fields.receiptCreatedAt = {timestampValue: '2000-01-01T00:00:00Z'};
+  await assert.rejects(request(`${base}:commit`, {writes: forged}),
+    (error) => error.code === 'PERMISSION_DENIED');
   assert.equal((await ref.collection('messages').get()).size, 1);
   await ref.collection('messages').doc('same-id').update({isRead: true});
   await send('same-id', 'MUST NOT OVERWRITE');

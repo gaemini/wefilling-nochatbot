@@ -9,6 +9,7 @@ import '../models/friend_request.dart';
 import '../models/relationship_status.dart';
 import '../services/relationship_service.dart';
 import '../services/friend_category_service.dart';
+import '../repositories/users_repository.dart';
 import '../utils/logger.dart';
 import '../utils/latest_request_guard.dart';
 import 'auth_provider.dart';
@@ -100,6 +101,7 @@ class RelationshipProvider with ChangeNotifier {
 
   /// 사용자 검색
   Future<void> searchUsers(String query) async {
+    final ownerUid = currentUserId;
     final requestToken = _searchRequestGuard.begin();
     try {
       _activeInterestId = null;
@@ -110,26 +112,43 @@ class RelationshipProvider with ChangeNotifier {
       _setSearchLoading(true);
       clearError();
 
-      if (query.trim().isEmpty) {
+      if (query.trim().isEmpty || ownerUid == null) {
         _searchResults = [];
         return;
       }
 
       final results = await _relationshipService.searchUsers(query);
-      if (!_searchRequestGuard.isCurrent(requestToken)) return;
+      if (!_searchRequestGuard.isCurrent(requestToken) ||
+          currentUserId != ownerUid) {
+        return;
+      }
 
       // searchSocialUsers가 현재 호출자 기준 양방향 차단을 서버에서 이미
       // 검증한다. UID 구분이 없는 프로세스 캐시로 다시 거르면 계정 전환
       // 직후 이전 사용자의 차단 목록 때문에 정상 결과가 사라질 수 있다.
-      _searchResults = results.toList(growable: true);
+      _searchResults = <String, UserProfile>{
+        for (final user in results) user.uid: user,
+      }.values.toList(growable: true);
       _refreshSearchRelationshipStatuses();
       notifyListeners();
+    } on IncompleteUserSearchException catch (error) {
+      if (_searchRequestGuard.isCurrent(requestToken) &&
+          currentUserId == ownerUid) {
+        _searchResults = <String, UserProfile>{
+          for (final user in error.partialResults) user.uid: user,
+        }.values.toList(growable: true);
+        _refreshSearchRelationshipStatuses();
+        _errorMessage = '사용자 검색 후보 상한으로 일부 결과만 확인되었습니다.';
+        notifyListeners();
+      }
     } catch (e) {
-      if (_searchRequestGuard.isCurrent(requestToken)) {
+      if (_searchRequestGuard.isCurrent(requestToken) &&
+          currentUserId == ownerUid) {
         _setError('사용자 검색 중 오류가 발생했습니다: $e');
       }
     } finally {
-      if (_searchRequestGuard.isCurrent(requestToken)) {
+      if (_searchRequestGuard.isCurrent(requestToken) &&
+          currentUserId == ownerUid) {
         _setSearchLoading(false);
       }
     }
@@ -301,19 +320,19 @@ class RelationshipProvider with ChangeNotifier {
 
   /// 친구요청 취소
   Future<bool> cancelFriendRequest(String toUid) async {
+    final ownerUid = currentUserId;
+    if (ownerUid == null) return false;
     try {
       _setLoading(true);
       clearActionError();
 
       final success = await _relationshipService.cancelFriendRequest(toUid);
+      if (currentUserId != ownerUid) return success;
       if (success) {
-        // 관계 상태 업데이트
+        // 현재 결과에 이미 있는 사용자의 버튼 상태만 갱신한다. 검색어와
+        // 공개 정책을 확인하지 않은 프로필을 결과에 새로 추가하지 않는다.
         await updateRelationshipStatus(toUid);
-        // 검색 결과에 해당 사용자 다시 추가
-        final userProfile = await _relationshipService.getUserProfile(toUid);
-        if (userProfile != null && !_searchResults.any((u) => u.uid == toUid)) {
-          _searchResults.add(userProfile);
-        }
+        if (currentUserId != ownerUid) return success;
         notifyListeners();
       }
       return success;
@@ -398,6 +417,8 @@ class RelationshipProvider with ChangeNotifier {
 
   /// 친구 삭제
   Future<bool> unfriend(String otherUid) async {
+    final ownerUid = currentUserId;
+    if (ownerUid == null) return false;
     try {
       if (Logger.isVerboseEnabled)
         Logger.log('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━');
@@ -412,6 +433,7 @@ class RelationshipProvider with ChangeNotifier {
       final success = await _relationshipService.unfriend(otherUid);
       Logger.error('   friendships 컬렉션 삭제: ${success ? "✅ 성공" : "❌ 실패"}');
 
+      if (currentUserId != ownerUid) return success;
       if (success) {
         // 🔥 iOS 크래시 방지: 즉시 UI 업데이트 후 백그라운드에서 상태 동기화
         // 친구 목록에서 즉시 제거 (UI 빠른 반응)
@@ -422,8 +444,10 @@ class RelationshipProvider with ChangeNotifier {
         // 백그라운드에서 상태 업데이트 (앱 블로킹 방지)
         unawaited(Future(() async {
           try {
+            if (currentUserId != ownerUid) return;
             // 관계 상태 업데이트
             await updateRelationshipStatus(otherUid);
+            if (currentUserId != ownerUid) return;
             if (Logger.isVerboseEnabled) Logger.log('   관계 상태 업데이트: ✅ 완료');
 
             // 모든 친구 카테고리에서 제거
@@ -437,15 +461,9 @@ class RelationshipProvider with ChangeNotifier {
               Logger.error('   ⚠️ 카테고리에서 제거 실패 (계속 진행): $categoryError');
             }
 
-            // 검색 결과에 해당 사용자 다시 추가
-            final userProfile =
-                await _relationshipService.getUserProfile(otherUid);
-            if (userProfile != null &&
-                !_searchResults.any((u) => u.uid == otherUid)) {
-              _searchResults.add(userProfile);
-              notifyListeners();
-            }
-            if (Logger.isVerboseEnabled) Logger.log('   검색 결과 업데이트: ✅ 완료');
+            // 검색 결과의 항목 구성은 마지막 서버 검색만 소유한다. 관계
+            // 변경은 기존 항목의 버튼 상태만 바꾸며 사용자를 삽입하지 않는다.
+            if (Logger.isVerboseEnabled) Logger.log('   검색 관계 상태 업데이트: ✅ 완료');
           } catch (e) {
             Logger.error('친구 삭제 후 상태 동기화 실패(무시): $e');
           }
@@ -507,27 +525,19 @@ class RelationshipProvider with ChangeNotifier {
 
   /// 사용자 차단 해제
   Future<bool> unblockUser(String targetUid) async {
+    final ownerUid = currentUserId;
+    if (ownerUid == null) return false;
     try {
       _setLoading(true);
       clearActionError();
 
       final success = await _relationshipService.unblockUser(targetUid);
+      if (currentUserId != ownerUid) return success;
       if (success) {
-        // 관계 상태 업데이트
+        // 기존 결과에 항목이 있으면 관계 버튼만 갱신한다. 차단으로 제거된
+        // 항목의 복원은 화면이 현재 검색어를 다시 서버에 질의해 결정한다.
         await updateRelationshipStatus(targetUid);
-        final relationship = getRelationshipStatus(targetUid);
-        // 상대방의 독립적인 차단이 남아 있으면 검색/직접 접근은 계속
-        // 제한한다. 양쪽 차단이 모두 사라진 경우에만 후보를 복구한다.
-        if (relationship != RelationshipStatus.blocked &&
-            relationship != RelationshipStatus.blockedBy) {
-          final userProfile = await _relationshipService.getUserProfile(
-            targetUid,
-          );
-          if (userProfile != null &&
-              !_searchResults.any((u) => u.uid == targetUid)) {
-            _searchResults.add(userProfile);
-          }
-        }
+        if (currentUserId != ownerUid) return success;
         notifyListeners();
       }
       return success;

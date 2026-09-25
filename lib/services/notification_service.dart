@@ -13,8 +13,15 @@ import 'content_filter_service.dart';
 import 'badge_service.dart';
 import 'fcm_service.dart';
 import '../utils/logger.dart';
+import '../utils/notification_read_policy.dart';
+
+typedef NotificationReadContext = ({String? owner, int session});
 
 class NotificationService {
+  static NotificationReadContext captureReadContext() => (
+        owner: FirebaseAuth.instance.currentUser?.uid,
+        session: FCMService().notificationSession,
+      );
   final FirebaseFirestore _firestore = FirebaseFirestore.instance;
   final FirebaseAuth _auth = FirebaseAuth.instance;
   final NotificationSettingsService _settingsService =
@@ -379,13 +386,28 @@ class NotificationService {
   }
 
   // 알림 읽음 상태로 변경
-  Future<bool> markNotificationAsRead(String notificationId) async {
+  Future<bool> markNotificationAsRead(
+    String notificationId, {
+    NotificationReadContext? readContext,
+  }) async {
+    final owner =
+        readContext == null ? _auth.currentUser?.uid : readContext.owner;
+    final session = readContext?.session ?? FCMService().notificationSession;
+    if (owner == null) return false;
     try {
-      await _firestore.collection('notifications').doc(notificationId).update({
-        'isRead': true,
+      final reference =
+          _firestore.collection('notifications').doc(notificationId);
+      await _firestore.runTransaction((transaction) async {
+        final snapshot = await transaction.get(reference);
+        if (!FCMService().isNotificationSession(owner, session) ||
+            snapshot.data()?['userId'] != owner) {
+          throw StateError('Notification owner changed');
+        }
+        if (snapshot.data()?['isRead'] != true) {
+          transaction.update(reference, {'isRead': true});
+        }
       });
-      unawaited(FCMService().cancelAppNotification(notificationId));
-      unawaited(_refreshBadgeAfterRead());
+      _afterConfirmedRead([notificationId], owner, session);
       return true;
     } catch (e) {
       Logger.error('알림 읽음 처리 오류: $e');
@@ -395,117 +417,212 @@ class NotificationService {
 
   /// Marks notifications as read when their destination is opened directly
   /// from inside the app instead of through the push card.
+  static final List<
+      ({
+        Set<String> types,
+        Map<String, String> targets,
+        String owner,
+        int session,
+        Completer<int> result
+      })> _visibleReads = [];
+  static bool _visibleReadScheduled = false;
+
   Future<int> markRelatedNotificationsAsRead({
-    Set<String> types = const <String>{},
-    Map<String, String> targets = const <String, String>{},
-  }) async {
-    final user = _auth.currentUser;
-    final normalizedTargets = <String, String>{
+    Set<String> types = const {},
+    Map<String, String> targets = const {},
+    String? expectedOwner,
+    int? expectedSession,
+    NotificationReadContext? readContext,
+  }) {
+    final owner = readContext == null
+        ? expectedOwner ?? _auth.currentUser?.uid
+        : readContext.owner;
+    final session = readContext?.session ??
+        expectedSession ??
+        FCMService().notificationSession;
+    final normalized = <String, String>{
       for (final entry in targets.entries)
         if (entry.value.trim().isNotEmpty) entry.key: entry.value.trim(),
     };
-    if (user == null || (types.isEmpty && normalizedTargets.isEmpty)) return 0;
-
-    try {
-      const pageSize = 200;
-      const maxPagesPerType = 3;
-      final matchesById =
-          <String, QueryDocumentSnapshot<Map<String, dynamic>>>{};
-      final Iterable<String?> requestedTypes =
-          types.isEmpty ? const <String?>[null] : types;
-      for (final requestedType in requestedTypes) {
-        DocumentSnapshot<Map<String, dynamic>>? cursor;
-        for (var pageIndex = 0; pageIndex < maxPagesPerType; pageIndex++) {
-          Query<Map<String, dynamic>> query = _firestore
-              .collection('notifications')
-              .where('userId', isEqualTo: user.uid)
-              .where('isRead', isEqualTo: false);
-          if (requestedType != null) {
-            query = query.where('type', isEqualTo: requestedType);
+    if (owner == null ||
+        !FCMService().isNotificationSession(owner, session) ||
+        (types.isEmpty && normalized.isEmpty)) return Future.value(0);
+    final result = Completer<int>();
+    _visibleReads.add((
+      types: types,
+      targets: normalized,
+      owner: owner,
+      session: session,
+      result: result
+    ));
+    if (!_visibleReadScheduled) {
+      _visibleReadScheduled = true;
+      // Visibility callbacks from one frame share one existing unread query,
+      // not one database request per comment.
+      unawaited(Future<void>(() async {
+        _visibleReadScheduled = false;
+        final scopes = List.of(_visibleReads);
+        _visibleReads.clear();
+        final current = scopes
+            .where((scope) =>
+                FCMService().isNotificationSession(scope.owner, scope.session))
+            .toList();
+        var count = 0;
+        try {
+          if (current.isNotEmpty) {
+            final owner = current.first.owner;
+            final session = current.first.session;
+            final ordinary = current
+                .where((scope) => !scope.types.contains('personalTodoReminder'))
+                .toList();
+            if (ordinary.isNotEmpty) {
+              final queries =
+                  <String, Future<QuerySnapshot<Map<String, dynamic>>>>{};
+              for (final scope in ordinary) {
+                if (scope.targets.isEmpty) continue;
+                final target = scope.targets.entries.first;
+                for (final field in [target.key, 'data.${target.key}']) {
+                  queries.putIfAbsent(
+                      '$field:${target.value}',
+                      () => _firestore
+                          .collection('notifications')
+                          .where('userId', isEqualTo: owner)
+                          .where(field, isEqualTo: target.value)
+                          .get(const GetOptions(source: Source.server)));
+                }
+              }
+              final snapshots = await Future.wait(queries.values);
+              final documents = {
+                for (final snapshot in snapshots)
+                  for (final doc in snapshot.docs) doc.id: doc
+              };
+              final matches = documents.values.where((document) {
+                return ordinary.any((scope) => matchesNotificationReadScope(
+                    document.data(),
+                    owner: owner,
+                    types: scope.types,
+                    targets: scope.targets));
+              }).toList();
+              for (var offset = 0; offset < matches.length; offset += 450) {
+                if (!FCMService().isNotificationSession(owner, session)) break;
+                final portion = matches.sublist(
+                    offset, (offset + 450).clamp(0, matches.length).toInt());
+                final batch = _firestore.batch();
+                for (final document in portion) {
+                  if (document.data()['isRead'] != true) {
+                    batch.update(document.reference, {'isRead': true});
+                  }
+                }
+                if (portion.any((doc) => doc.data()['isRead'] != true)) {
+                  await batch.commit();
+                }
+                count += portion.length;
+                _afterConfirmedRead(
+                    portion.map((doc) => doc.id), owner, session);
+              }
+            }
+            final todoIds = current
+                .where((scope) => scope.types.contains('personalTodoReminder'))
+                .map((scope) => scope.targets['todoId'])
+                .whereType<String>()
+                .toSet();
+            if (todoIds.isNotEmpty) {
+              count += await _markVisibleTodoReminders(owner, session, todoIds);
+            }
           }
-          query = query.orderBy(FieldPath.documentId).limit(pageSize);
-          if (cursor != null) query = query.startAfterDocument(cursor);
-          final page = await query.get();
-          for (final document in page.docs) {
-            final data = document.data();
-            final nested = data['data'] is Map
-                ? Map<String, dynamic>.from(data['data'] as Map)
-                : const <String, dynamic>{};
-            final targetMatches = normalizedTargets.entries.every((target) {
-              final topLevel = (data[target.key] ?? '').toString().trim();
-              final nestedValue = (nested[target.key] ?? '').toString().trim();
-              return topLevel == target.value || nestedValue == target.value;
-            });
-            if (targetMatches) matchesById[document.id] = document;
+        } catch (error, stack) {
+          Logger.error('확인한 대상 알림 읽음 실패', error, stack);
+        } finally {
+          for (final scope in scopes) {
+            scope.result.complete(count);
           }
-          if (page.docs.length < pageSize) break;
-          cursor = page.docs.last;
         }
-      }
-      final matches = matchesById.values.toList(growable: false);
-      if (matches.isEmpty) return 0;
-      if (_auth.currentUser?.uid != user.uid) return 0;
-
-      for (var offset = 0; offset < matches.length; offset += 450) {
-        if (_auth.currentUser?.uid != user.uid) return 0;
-        final batch = _firestore.batch();
-        final end = (offset + 450).clamp(0, matches.length).toInt();
-        for (final document in matches.sublist(offset, end)) {
-          batch.update(document.reference, {'isRead': true});
-        }
-        await batch.commit();
-      }
-      for (final document in matches) {
-        unawaited(FCMService().cancelAppNotification(document.id));
-      }
-      unawaited(_refreshBadgeAfterRead());
-      return matches.length;
-    } catch (error, stackTrace) {
-      Logger.error('관련 알림 읽음 처리 실패', error, stackTrace);
-      return 0;
+      }));
     }
+    return result.future;
   }
 
-  Future<void> _refreshBadgeAfterRead() async {
+  static final Map<String, Set<String>> _visibleTodoIds = {};
+  Future<int> _markVisibleTodoReminders(
+      String owner, int session, Set<String> ids) async {
+    for (final id in ids) {
+      unawaited(FCMService().cancelPersonalTodoNotification(id,
+          expectedOwner: owner, expectedSession: session));
+    }
+    final deliveries = await _firestore
+        .collection('todoNotificationDeliveries')
+        .where('userId', isEqualTo: owner)
+        .where('isRead', isEqualTo: false)
+        .get(const GetOptions(source: Source.server));
+    var count = 0;
+    for (final doc in deliveries.docs) {
+      if (!FCMService().isNotificationSession(owner, session)) break;
+      final seen =
+          _visibleTodoIds.putIfAbsent('$owner:$session:${doc.id}', () => {});
+      seen.addAll(ids);
+      final targets =
+          (doc.data()['todoIds'] as List?)?.whereType<String>().toSet() ?? {};
+      if (!reminderTargetsWereSeen(targets, seen)) continue;
+      await doc.reference.update({'isRead': true});
+      // Reminders never enter the ordinary notification/DM badge counters.
+      if (FCMService().isNotificationSession(owner, session)) {
+        unawaited(FCMService().cancelAppNotification(doc.id,
+            expectedOwner: owner, expectedSession: session));
+      }
+      count++;
+    }
+    return count;
+  }
+
+  void _afterConfirmedRead(Iterable<String> ids, String owner, int session) {
+    if (!FCMService().isNotificationSession(owner, session)) return;
+    unawaited(FCMService().cancelAppNotifications(ids,
+        expectedOwner: owner, expectedSession: session));
+    unawaited(_refreshBadgeAfterRead(owner: owner, session: session)
+        .catchError((Object error) => Logger.error('읽음 배지 후처리 실패', error)));
+  }
+
+  Future<void> _refreshBadgeAfterRead({String? owner, int? session}) async {
+    owner ??= _auth.currentUser?.uid;
+    session ??= FCMService().notificationSession;
+    if (owner == null || !FCMService().isNotificationSession(owner, session))
+      return;
     await BadgeService.refreshNow();
     // The notification aggregate is maintained by a Firestore trigger. A
     // second bounded refresh closes the short trigger/listener ordering gap.
     await Future<void>.delayed(const Duration(milliseconds: 900));
-    await BadgeService.refreshNow();
+    if (FCMService().isNotificationSession(owner, session)) {
+      await BadgeService.refreshNow();
+    }
   }
 
   // 모든 알림 읽음 상태로 변경
   Future<bool> markAllNotificationsAsRead() async {
     final user = _auth.currentUser;
+    final session = FCMService().notificationSession;
     if (user == null) return false;
 
     try {
-      final notificationIds = <String>[];
-      // Firestore write batch 한도를 넘는 계정도 페이지 단위로 끝까지 처리한다.
-      while (true) {
-        final querySnapshot = await _firestore
-            .collection('notifications')
-            .where('userId', isEqualTo: user.uid)
-            .where('isRead', isEqualTo: false)
-            .limit(450)
-            .get();
-        if (querySnapshot.docs.isEmpty) break;
-
+      // Freeze one server snapshot. Re-querying unread after each commit also
+      // consumed notifications that arrived during "mark all".
+      final querySnapshot = await _firestore
+          .collection('notifications')
+          .where('userId', isEqualTo: user.uid)
+          .where('isRead', isEqualTo: false)
+          .get(const GetOptions(source: Source.server));
+      final documents = querySnapshot.docs;
+      for (var offset = 0; offset < documents.length; offset += 450) {
+        if (!FCMService().isNotificationSession(user.uid, session))
+          return false;
+        final end = (offset + 450).clamp(0, documents.length).toInt();
+        final portion = documents.sublist(offset, end);
         final batch = _firestore.batch();
-        for (final doc in querySnapshot.docs) {
+        for (final doc in portion) {
           batch.update(doc.reference, {'isRead': true});
-          notificationIds.add(doc.id);
         }
         await batch.commit();
-        if (querySnapshot.docs.length < 450) break;
+        _afterConfirmedRead(portion.map((doc) => doc.id), user.uid, session);
       }
-
-      // 알림 센터를 앱 안에서 열어 모두 읽은 경우에도 Android 알림 카드와
-      // 런처 배지를 즉시 정리한다. 푸시 카드를 눌렀는지 여부에 의존하지 않는다.
-      for (final notificationId in notificationIds) {
-        unawaited(FCMService().cancelAppNotification(notificationId));
-      }
-      unawaited(_refreshBadgeAfterRead());
       return true;
     } catch (e) {
       Logger.error('모든 알림 읽음 처리 오류: $e');
@@ -515,10 +632,12 @@ class NotificationService {
 
   // 알림 삭제
   Future<bool> deleteNotification(String notificationId) async {
+    final readContext = captureReadContext();
+    final owner = readContext.owner;
+    if (owner == null) return false;
     try {
       await _firestore.collection('notifications').doc(notificationId).delete();
-      unawaited(FCMService().cancelAppNotification(notificationId));
-      unawaited(_refreshBadgeAfterRead());
+      _afterConfirmedRead([notificationId], owner, readContext.session);
       return true;
     } catch (e) {
       Logger.error('알림 삭제 오류: $e');

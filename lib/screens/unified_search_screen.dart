@@ -518,6 +518,14 @@ class _UnifiedSearchScreenState extends State<UnifiedSearchScreen>
         duration: const Duration(seconds: 2),
       ),
     );
+    if (success && _tabController.index == 0) {
+      final currentQuery = _searchController.text.trim();
+      if (currentQuery.isNotEmpty) {
+        // 차단으로 제거됐던 사용자를 임의로 삽입하지 않고, 현재 입력에
+        // 여전히 일치하고 공개 가능한지 서버 정책으로 다시 확인한다.
+        unawaited(provider.searchUsers(currentQuery));
+      }
+    }
   }
 
   void _handleUserAction(UserProfile user, RelationshipStatus status) {
@@ -906,28 +914,29 @@ class _UnifiedSearchScreenState extends State<UnifiedSearchScreen>
 
         final bottomPadding = MediaQuery.of(context).padding.bottom;
         if (!organizationsEnabled) {
-          return ListView.builder(
+          return ListView(
             controller: _userResultsController,
             padding: EdgeInsets.only(
               top: 8,
               bottom: bottomPadding > 0 ? bottomPadding + 8 : 8,
             ),
-            itemCount: provider.searchResults.length,
-            itemBuilder: (context, index) {
-              final user = provider.searchResults[index];
-              final status = provider.getRelationshipStatus(user.uid);
-              return UserTile(
-                user: user,
-                relationshipStatus: status,
-                onActionPressed: () => _handleUserAction(user, status),
-                onRejectPressed: status == RelationshipStatus.pendingIn
-                    ? () => _rejectFriendRequest(user.uid)
-                    : null,
-                onTilePressed: () => _openUserProfile(user),
-                isLoading: provider.isLoading,
-                minimal: true,
-              );
-            },
+            children: [
+              if (provider.errorMessage != null) _buildInlineUserSearchError(q),
+              ...provider.searchResults.map((user) {
+                final status = provider.getRelationshipStatus(user.uid);
+                return UserTile(
+                  user: user,
+                  relationshipStatus: status,
+                  onActionPressed: () => _handleUserAction(user, status),
+                  onRejectPressed: status == RelationshipStatus.pendingIn
+                      ? () => _rejectFriendRequest(user.uid)
+                      : null,
+                  onTilePressed: () => _openUserProfile(user),
+                  isLoading: provider.isLoading,
+                  minimal: true,
+                );
+              }),
+            ],
           );
         }
         return ListView(
@@ -937,6 +946,7 @@ class _UnifiedSearchScreenState extends State<UnifiedSearchScreen>
             bottom: bottomPadding > 0 ? bottomPadding + 8 : 8,
           ),
           children: [
+            if (provider.errorMessage != null) _buildInlineUserSearchError(q),
             if (_organizationResults.isNotEmpty) ...[
               Padding(
                 padding: const EdgeInsets.fromLTRB(20, 10, 20, 5),
@@ -975,6 +985,42 @@ class _UnifiedSearchScreenState extends State<UnifiedSearchScreen>
           ],
         );
       },
+    );
+  }
+
+  Widget _buildInlineUserSearchError(String query) {
+    final l10n = AppLocalizations.of(context)!;
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(20, 10, 12, 8),
+      child: Row(
+        children: [
+          const Icon(
+            Icons.error_outline_rounded,
+            size: 20,
+            color: Color(0xFF667085),
+          ),
+          const SizedBox(width: 10),
+          Expanded(
+            child: Text(
+              l10n.errorOccurred,
+              maxLines: 2,
+              overflow: TextOverflow.ellipsis,
+              style: TextStyle(
+                fontFamily: uiFontFamily(context, 'Inter'),
+                fontFamilyFallback: const ['NotoSansKR'],
+                fontSize: 13,
+                fontWeight: FontWeight.w500,
+                color: const Color(0xFF475467),
+              ),
+            ),
+          ),
+          TextButton.icon(
+            onPressed: () => _searchUsers(query),
+            icon: const Icon(Icons.refresh_rounded, size: 17),
+            label: Text(l10n.retryAction),
+          ),
+        ],
+      ),
     );
   }
 

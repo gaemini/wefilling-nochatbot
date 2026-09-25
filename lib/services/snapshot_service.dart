@@ -123,6 +123,45 @@ class SnapshotService {
   static const Duration _feedSyncCacheDuration = Duration(seconds: 30);
   static const Duration _feedSyncFailureCooldown = Duration(minutes: 1);
 
+  String _sanitizedStorageTarget(String storagePath) {
+    final segments = storagePath
+        .split('?')
+        .first
+        .split('/')
+        .where((segment) => segment.trim().isNotEmpty)
+        .toList(growable: false);
+    if (segments.isEmpty) return 'unknown';
+    final extension = path.extension(segments.last).toLowerCase();
+    return '${segments.first}/<redacted>/*$extension '
+        '(${segments.length} segments)';
+  }
+
+  void _logStorageFailure({
+    required String operation,
+    required String storagePath,
+    required Object error,
+    required StackTrace stackTrace,
+    String? ownerUid,
+  }) {
+    final currentUid = _auth.currentUser?.uid;
+    final code =
+        error is FirebaseException ? error.code : error.runtimeType.toString();
+    final access = currentUid == null
+        ? 'signed-out'
+        : ownerUid == null
+            ? 'signed-in'
+            : ownerUid == currentUid
+                ? 'owner'
+                : 'viewer';
+    Logger.error(
+      '스낵 Storage 작업 실패 '
+      '(operation=$operation, target=${_sanitizedStorageTarget(storagePath)}, '
+      'access=$access, code=$code)',
+      error,
+      stackTrace,
+    );
+  }
+
   Duration _serverOffset = Duration.zero;
   bool _hasServerOffset = false;
   Future<void>? _serverClockRefresh;
@@ -626,7 +665,20 @@ class SnapshotService {
         visibilitySchemaVersion: 2,
       );
     } catch (error, stackTrace) {
-      Logger.error('스낵 생성 실패 ($stage)', error, stackTrace);
+      if (error is FirebaseException &&
+          (stage == 'storage-upload' || stage == 'thumbnail-upload')) {
+        _logStorageFailure(
+          operation:
+              stage == 'thumbnail-upload' ? 'upload-thumbnail' : 'upload-media',
+          storagePath:
+              stage == 'thumbnail-upload' ? thumbnailPath : storagePath,
+          error: error,
+          stackTrace: stackTrace,
+          ownerUid: user.uid,
+        );
+      } else {
+        Logger.error('스낵 생성 실패 ($stage)', error, stackTrace);
+      }
       // 재시도 중 이미 canonical 문서가 생성됐거나 Callable 응답만 유실된
       // 경우에는 성공한 게시물을 다시 업로드하거나 지우지 않는다. 신규 UUID의
       // 사전 get은 보안 규칙상 거부될 수 있으므로 오류 복구 단계에서만 읽는다.
@@ -1837,6 +1889,13 @@ class SnapshotService {
             continue;
           }
         }
+        _logStorageFailure(
+          operation: operation.prefetch ? 'prefetch-video' : 'download-video',
+          storagePath: item.videoStoragePath,
+          error: error,
+          stackTrace: stackTrace,
+          ownerUid: item.authorId,
+        );
         break;
       } finally {
         await operation.progressSubscription?.cancel();
@@ -1961,12 +2020,13 @@ class SnapshotService {
         lastError = error;
         lastStackTrace = stackTrace;
         final code = error is FirebaseException ? error.code : 'unknown';
-        Logger.error(
-          '스낵 이미지 다운로드 실패 '
-          '(contentId=${item.id}, currentUserId=$currentUserId, '
-          'source=$source, attempt=$attempt, storageCode=$code)',
-          error,
-          stackTrace,
+        final targetPath = reference.fullPath;
+        _logStorageFailure(
+          operation: 'download-image-attempt-$attempt',
+          storagePath: targetPath,
+          error: error,
+          stackTrace: stackTrace,
+          ownerUid: item.authorId,
         );
         if (code == 'unauthorized' && attempt == 1) {
           // iOS에서 로그인 직후 Storage가 이전 인증 토큰을 잠시 재사용하는 경우가

@@ -109,13 +109,15 @@ class PersonalTodoLocalNotificationService {
   }) async {
     await initialize();
     final id = notificationId(userId, todo.id);
-    await _notifications.cancel(id);
     if (!globalEnabled ||
         !todo.reminderEnabled ||
         todo.completed ||
         todo.archived) {
+      await _notifications.cancel(id);
       return;
     }
+    // Same-ID zonedSchedule replaces the pending alarm/request. Calling cancel
+    // here also erased unseen delivered cards during ordinary app-start sync.
 
     final now = tz.TZDateTime.now(tz.local);
     final source = todo.reminderStartAt ?? DateTime.now();
@@ -140,6 +142,7 @@ class PersonalTodoLocalNotificationService {
         : todo.title.trim();
     final payload = jsonEncode(<String, dynamic>{
       'type': 'personalTodoReminder',
+      'recipientUserId': userId,
       'todoId': todo.id,
       'semesterId': todo.semesterId,
     });

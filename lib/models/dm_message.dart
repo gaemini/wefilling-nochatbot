@@ -70,6 +70,8 @@ class DMMessage {
   final bool isRead;
   final DateTime? readAt;
   final Timestamp? serverCreatedAt;
+  /// Admin-stamped Firestore createTime, never device time or serverTimestamp.
+  final Timestamp? receiptCreatedAt;
   final DMDeliveryState deliveryState;
   final String? localImagePath;
   final String? localFilePath;
@@ -97,6 +99,7 @@ class DMMessage {
     required this.isRead,
     this.readAt,
     this.serverCreatedAt,
+    this.receiptCreatedAt,
     this.deliveryState = DMDeliveryState.sent,
     this.localImagePath,
     this.localFilePath,
@@ -152,6 +155,10 @@ class DMMessage {
           : pendingAt ?? DateTime.now(),
       serverCreatedAt: data['createdAt'] is Timestamp
           ? data['createdAt'] as Timestamp
+          : null,
+      receiptCreatedAt: !doc.metadata.hasPendingWrites &&
+              data['receiptCreatedAt'] is Timestamp
+          ? data['receiptCreatedAt'] as Timestamp
           : null,
       deliveryState: doc.metadata.hasPendingWrites
           ? DMDeliveryState.sending
@@ -226,6 +233,7 @@ class DMMessage {
     bool? isRead,
     DateTime? readAt,
     Timestamp? serverCreatedAt,
+    Timestamp? receiptCreatedAt,
     DMDeliveryState? deliveryState,
     String? localImagePath,
     String? localFilePath,
@@ -253,10 +261,28 @@ class DMMessage {
       isRead: isRead ?? this.isRead,
       readAt: readAt ?? this.readAt,
       serverCreatedAt: serverCreatedAt ?? this.serverCreatedAt,
+      receiptCreatedAt: receiptCreatedAt ?? this.receiptCreatedAt,
       deliveryState: deliveryState ?? this.deliveryState,
       localImagePath: localImagePath ?? this.localImagePath,
       localFilePath: localFilePath ?? this.localFilePath,
     );
+  }
+
+  bool isReadThrough(Timestamp? watermark) => isRead ||
+      (deliveryState == DMDeliveryState.sent && receiptCreatedAt != null &&
+          watermark != null && receiptCreatedAt!.compareTo(watermark) <= 0);
+
+  DMMessage preserveConfirmedReceipt(DMMessage? previous) {
+    if (previous == null ||
+        ((!previous.isRead || isRead) &&
+         (previous.receiptCreatedAt == null || receiptCreatedAt != null))) {
+      return this;
+    }
+    return copyWith(
+        isRead: isRead || previous.isRead,
+        readAt: readAt ?? previous.readAt,
+        receiptCreatedAt: receiptCreatedAt ?? previous.receiptCreatedAt,
+      );
   }
 
   static int compareDescending(DMMessage a, DMMessage b) {
@@ -280,6 +306,8 @@ class DMMessage {
         if (serverCreatedAt != null) 'serverSeconds': serverCreatedAt!.seconds,
         if (serverCreatedAt != null)
           'serverNanos': serverCreatedAt!.nanoseconds,
+        if (receiptCreatedAt != null) 'receiptSeconds': receiptCreatedAt!.seconds,
+        if (receiptCreatedAt != null) 'receiptNanos': receiptCreatedAt!.nanoseconds,
         if (readAt != null) 'readAtMs': readAt!.millisecondsSinceEpoch,
         'deliveryState': deliveryState.name,
         if (localImagePath != null) 'localImagePath': localImagePath,
@@ -313,6 +341,9 @@ class DMMessage {
             ? Timestamp(raw['serverSeconds'] as int, raw['serverNanos'] as int)
             : null,
         isRead: raw['isRead'] == true,
+        receiptCreatedAt: raw['receiptSeconds'] is int
+            ? Timestamp(raw['receiptSeconds'] as int, raw['receiptNanos'] as int)
+            : null,
         readAt: raw['readAtMs'] is int
             ? DateTime.fromMillisecondsSinceEpoch(raw['readAtMs'] as int)
             : null,

@@ -9,6 +9,7 @@ import 'package:firebase_auth/firebase_auth.dart';
 import 'package:url_launcher/url_launcher.dart';
 import 'package:linkify/linkify.dart' as linkify;
 import '../../models/comment.dart';
+import '../../widgets/notification_read_observer.dart';
 import '../../constants/app_constants.dart';
 import '../../services/comment_service.dart';
 import '../../services/content_hide_service.dart';
@@ -1162,7 +1163,11 @@ class _EnhancedCommentWidgetState extends State<EnhancedCommentWidget> {
 
                   // 댓글 내용 영역
                   Expanded(
-                    child: Column(
+                    child: NotificationReadObserver(
+                      key: ValueKey('read:${widget.comment.id}'),
+                      types: const {'new_comment', 'comment_reply', 'comment_like'},
+                      targets: {'postId': widget.postId, 'commentId': widget.comment.id},
+                      child: Column(
                       crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
                         Row(
@@ -1266,6 +1271,7 @@ class _EnhancedCommentWidgetState extends State<EnhancedCommentWidget> {
 
                         const SizedBox(height: 4),
                       ],
+                    ),
                     ),
                   ),
 

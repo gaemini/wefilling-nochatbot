@@ -54,31 +54,17 @@ class NavigationService {
     return null;
   }
 
-  static Future<void> _markOpenedNotificationRead(
-    Map<String, dynamic> data,
-  ) async {
-    final notificationId = _stringValue(data, 'notificationId');
-    if (notificationId.isEmpty || FirebaseAuth.instance.currentUser == null) {
-      return;
-    }
-    try {
-      await FirebaseFirestore.instance
-          .collection('notifications')
-          .doc(notificationId)
-          .update({'isRead': true}).timeout(const Duration(seconds: 3));
-    } catch (_) {
-      // 삭제되었거나 이미 처리된 알림은 탐색을 막지 않는다.
-    }
-  }
-
   // 푸시 데이터 기반 화면 이동
   static Future<void> handlePushNavigation(Map<String, dynamic> data) async {
+    final owner = FirebaseAuth.instance.currentUser?.uid;
     final nav = await _waitForNavigator();
-    if (nav == null) return;
+    if (nav == null || owner != FirebaseAuth.instance.currentUser?.uid) return;
+    final recipient = _stringValue(data, 'recipientUserId');
+    if (recipient.isNotEmpty && recipient != owner) return;
 
     final type = _stringValue(data, 'type');
     final notificationId = _stringValue(data, 'notificationId');
-    final navigationKey = notificationId.isNotEmpty
+    final targetKey = notificationId.isNotEmpty
         ? notificationId
         : '$type|${_stringValue(data, 'postId')}|'
             '${_stringValue(data, 'meetupId')}|'
@@ -86,6 +72,7 @@ class NavigationService {
             '${_stringValue(data, 'snackChatId')}|'
             '${_stringValue(data, 'snapshotId')}|'
             '${_stringValue(data, 'commentId')}';
+    final navigationKey = '$owner:$targetKey';
     final now = DateTime.now();
     if (_lastHandledPushKey == navigationKey &&
         _lastHandledPushAt != null &&
@@ -94,7 +81,7 @@ class NavigationService {
     }
     _lastHandledPushKey = navigationKey;
     _lastHandledPushAt = now;
-    await _markOpenedNotificationRead(data);
+    // Destination success/visibility owns the read, not the navigation attempt.
 
     try {
       switch (type) {

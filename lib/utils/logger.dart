@@ -1,6 +1,8 @@
 // lib/utils/logger.dart
 // 로깅 유틸리티 - 디버그 모드에서만 로그 출력, 프로덕션에서는 Crashlytics로 전송
 
+import 'dart:async';
+
 import 'package:flutter/foundation.dart';
 import 'package:firebase_crashlytics/firebase_crashlytics.dart';
 
@@ -55,7 +57,7 @@ class Logger {
 
     // 프로덕션에서는 Crashlytics로 전송
     if (!kDebugMode && error != null) {
-      FirebaseCrashlytics.instance.recordError(
+      _recordErrorSafely(
         error,
         stackTrace,
         reason: message,
@@ -77,11 +79,39 @@ class Logger {
     }
 
     // Crashlytics로 치명적 에러 전송
-    FirebaseCrashlytics.instance.recordError(
+    _recordErrorSafely(
       error,
       stackTrace ?? StackTrace.current,
       reason: message,
       fatal: true,
     );
+  }
+
+  /// Crashlytics 전송 실패가 사용자 작업이나 전역 오류 처리기로 다시 전파돼
+  /// 같은 오류를 재귀적으로 보고하지 않게 한다. 이 경로에서는 Logger를 다시
+  /// 호출하지 않으며, 디버그 빌드에서만 로컬 진단을 남긴다.
+  static void _recordErrorSafely(
+    Object error,
+    StackTrace? stackTrace, {
+    required String reason,
+    required bool fatal,
+  }) {
+    try {
+      final report = FirebaseCrashlytics.instance.recordError(
+        error,
+        stackTrace,
+        reason: reason,
+        fatal: fatal,
+      );
+      unawaited(report.catchError((Object reportError, StackTrace reportStack) {
+        if (kDebugMode) {
+          debugPrint('Crashlytics report failed: $reportError');
+        }
+      }));
+    } catch (reportError) {
+      if (kDebugMode) {
+        debugPrint('Crashlytics report failed: $reportError');
+      }
+    }
   }
 }

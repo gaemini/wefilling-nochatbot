@@ -8,6 +8,7 @@ import {decorateChatPush} from './chat_push_presentation';
 export {querySnackChatMessages, getSnackChatMessageContext, getSnackChatMentionCandidates, validateSnackChatMentions} from './snack_chat_discovery';
 import * as nodemailer from 'nodemailer';
 import * as crypto from 'crypto';
+import {isDeepStrictEqual} from 'util';
 import { COL } from './firestore_paths';
 import {runtimeInfo, runtimeLogsEnabled} from './runtime_logging';
 import {resolveFriendNotificationAudience} from './frozen_audience';
@@ -31,6 +32,7 @@ import {
 import {
   buildUserSearchTokens,
   matchesUserSearch,
+  mergeUserSearchCandidates,
   normalizeSocialInterestId,
   normalizeUserSearchText,
   userSearchRelevance,
@@ -39,7 +41,6 @@ import {
   resolvePendingSignupLanguageRequest,
 } from './registration_progress';
 import {
-  evaluateSearchableUser,
   isSearchableUser,
 } from './searchable_user_policy';
 
@@ -73,8 +74,10 @@ export {
   searchPostsSecure,
   searchMeetupsSecure,
 } from './content_search';
+import {dmCovered} from './dm_read_policy';
 export {
   markDMConversationReadSecure,
+  markDMConversationReadBoundedSecure,
   onDMReceiptCleanupRequested,
   onDMReactionWritten,
   reconcileDMUnreadTotalSecure,
@@ -135,6 +138,7 @@ export {
   onSnackChatRoomDeletedCascade,
   updateSnackChatTitleSecure,
   createSnackChatAnnouncementSecure,
+  sendSnackChatTextMessagesSecure,
   fetchSnackChatLinkPreview,
   reportSnackChatMessage,
   prepareSnackChatFileUpload,
@@ -3095,8 +3099,34 @@ export const onAdBannerChanged = functions.firestore
   .onWrite(async (change, context) => {
     try {
       const after = change.after.exists ? change.after.data() : null;
+      const withoutRevision = (value: FirebaseFirestore.DocumentData | undefined) => {
+        const result = {...value};
+        delete result.notificationVersion;
+        return result;
+      };
+      if (change.before.exists && after && isDeepStrictEqual(
+        withoutRevision(change.before.data()), withoutRevision(after))) return null;
       const title = after?.title || 'New Ad';
       const body = after?.subtitle || 'Check out the latest update!';
+      // Console edits need not update the application's updatedAt field.
+      // Only the Firestore commit can identify this exact banner version.
+      const committedAt = after ? change.after.updateTime : null;
+      const version = committedAt
+        ? `${committedAt.seconds}:${committedAt.nanoseconds}` : '';
+      const deliveryId = version ? `ad:${context.params.bannerId}:${version}` : '';
+      if (committedAt) {
+        try {
+          await db.runTransaction(async (transaction) => {
+            const current = await transaction.get(change.after.ref);
+            if (current.exists && current.updateTime?.isEqual(committedAt)) {
+              transaction.update(current.ref, {notificationVersion: version});
+            }
+          });
+        } catch (error) {
+          // A metadata failure must not suppress delivery.
+          console.warn('Ad notification revision write failed', error);
+        }
+      }
 
       const message: admin.messaging.Message = {
         topic: 'ads',
@@ -3107,10 +3137,14 @@ export const onAdBannerChanged = functions.firestore
         data: {
           type: 'ad_updates',
           bannerId: context.params.bannerId,
+          audience: 'public',
+          ...(version ? {notificationVersion: version, notificationId: deliveryId} : {}),
         },
         android: {
           priority: 'high',
-          notification: { channelId: 'high_importance_channel', sound: 'default' },
+          notification: { channelId: 'high_importance_channel', sound: 'default',
+            ...(deliveryId ? {tag: 'notification_' + crypto.createHash('sha256')
+              .update(deliveryId).digest('hex').slice(0, 40)} : {}) },
         },
         // ⚠️ topic 브로드캐스트는 사용자별 "정확한 배지 수"를 계산할 수 없으므로 badge는 포함하지 않음
         apns: {
@@ -5127,76 +5161,6 @@ function isActiveCompletedUserProfile(data: any, uid: string): boolean {
     (registrationStatus === 'complete' || data.emailVerified === true);
 }
 
-async function repairSearchableProfileMetadata(
-  documents: admin.firestore.QueryDocumentSnapshot[],
-): Promise<void> {
-  const repairs: Array<{
-    ref: admin.firestore.DocumentReference;
-    data: Record<string, unknown>;
-  }> = [];
-  for (const document of documents) {
-    const data = document.data() as Record<string, unknown>;
-    const decision = evaluateSearchableUser(document.id, data);
-    if (decision.searchable &&
-        (decision.needsNicknameKeyRepair || decision.needsSearchableRepair)) {
-      const dataToRepair: Record<string, unknown> = {
-        searchIndexRepairedAt: admin.firestore.FieldValue.serverTimestamp(),
-      };
-      if (decision.needsNicknameKeyRepair) {
-        dataToRepair.nicknameKey = decision.nicknameKey;
-      }
-      if (decision.needsSearchableRepair) {
-        dataToRepair.searchable = true;
-      }
-      repairs.push({
-        ref: document.ref,
-        data: dataToRepair,
-      });
-      continue;
-    }
-    const shouldQuarantine = [
-      'deleted_or_disabled',
-      'missing_nickname',
-      'sentinel_nickname',
-      'invalid_nickname',
-      'nickname_key_mismatch',
-    ].includes(decision.reason);
-    if (!decision.searchable && shouldQuarantine &&
-        (Array.isArray(data.nicknameSearchTokens) ||
-          Array.isArray(data.interests))) {
-      repairs.push({
-        ref: document.ref,
-        data: {
-          searchable: false,
-          nicknameSearchTokens: [],
-          interests: [],
-          searchIndexQuarantinedAt:
-            admin.firestore.FieldValue.serverTimestamp(),
-        },
-      });
-    }
-  }
-  if (repairs.length === 0) return;
-  try {
-    for (let offset = 0; offset < repairs.length; offset += 400) {
-      const batch = db.batch();
-      repairs.slice(offset, offset + 400)
-        .forEach((repair) => batch.update(repair.ref, repair.data));
-      await batch.commit();
-    }
-    runtimeLogsEnabled && runtimeInfo('user search metadata repaired', {
-      writes: repairs.length,
-    });
-  } catch (error) {
-    // Search results remain fail-closed even when the optional repair write
-    // loses a race with profile completion or temporarily fails.
-    console.warn('user search metadata repair failed', {
-      writes: repairs.length,
-      code: (error as any)?.code || 'unknown',
-    });
-  }
-}
-
 /**
  * 가입 제공자와 무관하게 활성 사용자를 닉네임으로 검색한다.
  *
@@ -5240,15 +5204,26 @@ export const searchSocialUsers = functions
     // after this query. A wider candidate window prevents a cluster of blocked
     // users from hiding otherwise valid results for common short searches.
     const candidateLimit = Math.min(1_000, Math.max(300, limit * 10));
-    const snapshot = await db.collection(COL.users)
-      .where('nicknameSearchTokens', 'array-contains', query)
-      // One extra row makes the completeness flag unambiguous when the
-      // result count lands exactly on the safety ceiling.
-      .limit(candidateLimit + 1)
-      .get();
-    const scannedDocuments = snapshot.docs.slice(0, candidateLimit);
-    await repairSearchableProfileMetadata(scannedDocuments);
-    const candidates = scannedDocuments.filter((document) => {
+    const [snapshot, exactSnapshot] = await Promise.all([
+      db.collection(COL.users)
+        .where('nicknameSearchTokens', 'array-contains', query)
+        // One extra row makes the completeness flag unambiguous when the
+        // result count lands exactly on the safety ceiling.
+        .limit(candidateLimit + 1)
+        .get(),
+      // A broad one-character search can hit the safety ceiling. Query the
+      // canonical nickname key separately so an exact nickname is never
+      // omitted merely because Firestore returned other candidates first.
+      db.collection(COL.users)
+        .where('nicknameKey', '==', query)
+        .limit(3)
+        .get(),
+    ]);
+    const candidates = mergeUserSearchCandidates(
+      exactSnapshot.docs,
+      snapshot.docs,
+      candidateLimit,
+    ).filter((document) => {
       const profile = document.data();
       const nickname = String(profile.nickname || '').trim();
       return document.id !== requesterId &&
@@ -5362,7 +5337,6 @@ export const searchSocialUsersByInterest = functions
         break;
       }
 
-      await repairSearchableProfileMetadata(snapshot.docs);
       const candidates = snapshot.docs.filter((document) => {
         const profile = document.data();
         return document.id !== requesterId &&
@@ -8513,6 +8487,7 @@ export const onNotificationCreated = functions
         type: String(type || ''),
         recipientUserId: String(userId || ''),
         notificationId: String(notificationId || ''),
+        sentAtMillis: String(snapshot.createTime.toMillis()),
         postId: String(notificationData.postId || dataSafe?.postId || ''),
         meetupId: String(notificationData.meetupId || dataSafe?.meetupId || ''),
         snapshotId: String(notificationData.snapshotId || dataSafe?.snapshotId || ''),
@@ -8546,6 +8521,10 @@ export const onNotificationCreated = functions
         .slice(0, 40);
 
       const sendForLang = async (lang: SupportedLang, tokens: string[]) => {
+        const current = await snapshot.ref.get();
+        if (!current.exists || current.get('isRead') === true) {
+          return {successCount: 0, failureCount: 0, responses: []} as admin.messaging.BatchResponse;
+        }
         const localized = buildLocalizedNotificationText({
           lang,
           type: String(type || ''),
@@ -9801,6 +9780,9 @@ export const onDMMessageCreated = functions
           // increment would resurrect the Kakao-style "1" after it vanished.
           if (!convSnap.exists || !currentMessageSnap.exists ||
               currentMessageSnap.get('isRead') === true) {
+            if (currentMessageSnap.exists) tx.update(snapshot.ref, {
+              receiptCreatedAt: currentMessageSnap.createTime,
+            });
             tx.create(dmCreateEventRef, {
               type: 'dm_message_created',
               conversationId,
@@ -9820,16 +9802,14 @@ export const onDMMessageCreated = functions
           // The client-authored createdAt can be ahead/behind the server
           // clock. Firestore createTime is server-owned and comparable with
           // the callable's server read-through watermark.
-          const messageCreatedAtMs = currentMessageSnap.createTime!.toMillis();
+          const messageCreatedAt = currentMessageSnap.createTime!;
           const lastReadAtBy = data?.lastReadAtBy &&
             typeof data.lastReadAtBy === 'object' ? data.lastReadAtBy : {};
           const alreadyReadThrough = recipients.length > 0 &&
-            messageCreatedAtMs > 0 && recipients.every((rid) => {
-              const watermark = firestoreTimeToMillis(lastReadAtBy[rid]);
-              return watermark != null && watermark >= messageCreatedAtMs;
-            });
+            recipients.every((rid) => dmCovered(messageCreatedAt, lastReadAtBy[rid]));
           if (alreadyReadThrough) {
             tx.update(snapshot.ref, {
+              receiptCreatedAt: messageCreatedAt,
               isRead: true,
               readAt: admin.firestore.FieldValue.serverTimestamp(),
             });
@@ -9854,6 +9834,7 @@ export const onDMMessageCreated = functions
 
           let archivedChanged = false;
           const validRecipients = recipients.filter(Boolean);
+          const lastUnreadCreatedAtBy = {...(data.lastUnreadCreatedAtBy ?? {})};
           for (let i = 0; i < validRecipients.length; i++) {
             const rid = validRecipients[i];
 
@@ -9866,6 +9847,13 @@ export const onDMMessageCreated = functions
             const cur = typeof unreadCount[rid] === 'number' ? unreadCount[rid] : 0;
             const safeCount = Math.max(0, cur);
             unreadCount[rid] = safeCount + 1;
+            // Missing watermark with a nonzero legacy counter means the
+            // newest counted message is unknown. Do not invent an upper bound
+            // from one delayed create event during a rolling deployment.
+            if ((safeCount === 0 || lastUnreadCreatedAtBy[rid] instanceof admin.firestore.Timestamp) &&
+                !dmCovered(messageCreatedAt, lastUnreadCreatedAtBy[rid])) {
+              lastUnreadCreatedAtBy[rid] = messageCreatedAt;
+            }
             runtimeLogsEnabled && runtimeInfo(`  📈 [unreadCount] ${rid}: ${cur} → ${unreadCount[rid]} (safe: ${safeCount})`);
 
             // dmUnreadTotal: 음수면 0으로 보정 후 +1 (FieldValue.increment는 음수를 복구 못함)
@@ -9884,12 +9872,17 @@ export const onDMMessageCreated = functions
 
           const update: Record<string, any> = {
             unreadCount,
+            lastUnreadCreatedAtBy,
             updatedAt: admin.firestore.FieldValue.serverTimestamp(),
           };
           if (archivedChanged) {
             update.archivedBy = archivedBy;
           }
           tx.set(convRef, update, { merge: true });
+          tx.update(snapshot.ref, {
+            receiptCreatedAt: messageCreatedAt,
+            unreadCountedFor: validRecipients,
+          });
 
           // 배지 계산용
           let nextDmUnreadTotal = 0;
@@ -10013,6 +10006,10 @@ export const onDMMessageCreated = functions
           conversationId: conversationId,
           messageId: messageId,
           sentAtMillis: String(snapshot.createTime.toMillis()),
+          sentAtSeconds: String(snapshot.createTime.seconds),
+          sentAtNanos: String(snapshot.createTime.nanoseconds),
+          notificationMetadataVersion: '2',
+          notificationCommitMillis: String(Math.floor(snapshot.createTime.toMillis())),
           senderId: senderId,
           senderName: senderName,
           notificationThreadKey: dmNotificationTag,
@@ -10036,6 +10033,7 @@ export const onDMMessageCreated = functions
               sound: 'default',
               channelId: 'high_importance_channel',
               tag: dmNotificationTag,
+              eventTimestamp: snapshot.createTime.toDate(),
             },
         },
       };
@@ -10047,6 +10045,12 @@ export const onDMMessageCreated = functions
       }
 
       // 푸시 전송
+      const latestDmRoom = await convRef.get();
+      const latestDmMessage = await snapshot.ref.get();
+      if (!latestDmMessage.exists || latestDmMessage.get('isRead') === true ||
+          dmCovered(snapshot.createTime, latestDmRoom.get('lastReadAtBy')?.[recipientId])) {
+        return null;
+      }
       const response = await admin.messaging().sendEachForMulticast(decorateChatPush(pushMessage, {
         kind: 'dm', title: senderName, sender: senderName, message: messageData,
         language: recipientSettingsDoc.data()?.locale ?? recipientData?.preferredLanguage ??
@@ -10134,19 +10138,29 @@ export const onDMMessageRead = functions
               typeof id === 'string' && id.length > 0)
         ));
         const recipientIds = participants.filter((id) => id !== senderId);
-        const messageCreatedAtMs = change.after.createTime!.toMillis();
-        const lastReadAtBy = data.lastReadAtBy &&
-          typeof data.lastReadAtBy === 'object' ? data.lastReadAtBy : {};
+        const currentMessage = await tx.get(change.after.ref);
+        const countedFor = currentMessage.get('unreadCountedFor');
+        // Old deployments recorded create-event application but did not stamp
+        // messages. Consult only this message's event, never the room history.
+        let legacyCounted = false;
+        if (!Array.isArray(countedFor) && currentMessage.get('receiptCreatedAt') == null) {
+          const events = await tx.get(db.collection('_dm_function_events')
+            .where('messageId', '==', messageId));
+          legacyCounted = events.docs.some((event) =>
+            event.get('conversationId') === conversationId &&
+            event.get('type') === 'dm_message_created' && event.get('applied') === true);
+        }
+        const clearedAtBy = data.unreadClearedAtBy ?? data.lastReadAtBy ?? {};
         // The room-level callable may already have cleared this exact
         // message. Its later per-message receipt trigger must not subtract a
         // newly arrived message that incremented the room in the meantime.
         const alreadyClearedRecipientIds = recipientIds.filter((id) => {
-          const watermark = firestoreTimeToMillis(lastReadAtBy[id]);
-          return messageCreatedAtMs > 0 && watermark != null &&
-            watermark >= messageCreatedAtMs;
+          return dmCovered(change.after.createTime, clearedAtBy[id]);
         });
         const recipientsToDecrement = recipientIds.filter(
-          (id) => !alreadyClearedRecipientIds.includes(id)
+          (id) => !alreadyClearedRecipientIds.includes(id) &&
+            (Array.isArray(countedFor) ? countedFor.includes(id) :
+              legacyCounted)
         );
         const userRefs = recipientsToDecrement.map((id) =>
           db.collection('users').doc(id));
@@ -10181,6 +10195,9 @@ export const onDMMessageRead = functions
           unreadCount,
           updatedAt: admin.firestore.FieldValue.serverTimestamp(),
         }, {merge: true});
+        if (currentMessage.exists && Array.isArray(countedFor)) {
+          tx.update(change.after.ref, {unreadCountedFor: []});
+        }
         tx.create(markerRef, {
           type: 'dm_message_read',
           conversationId,

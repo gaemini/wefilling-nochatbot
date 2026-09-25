@@ -1238,6 +1238,7 @@ class DMService {
       // - archivedBy + userLeftAt 기록
       // - 읽음 카운터/총합은 trusted callable에서 먼저 원자적으로 리셋
       await markAsRead(conversationId);
+      if (_auth.currentUser?.uid != currentUser.uid) return;
       await convRef.update({
         'archivedBy': FieldValue.arrayUnion([currentUser.uid]),
         'userLeftAt.${currentUser.uid}': Timestamp.fromDate(now),
@@ -1270,9 +1271,15 @@ class DMService {
   /// 방/사용자 카운터는 서버 트랜잭션으로 즉시 정합화하고, 개별 메시지
   /// 영수증은 서버가 bounded batch로 처리한다. 대화 길이에 비례하는
   /// 클라이언트 N+1 읽기/쓰기를 만들지 않는다.
-  Future<DMReadResult> markAsRead(String conversationId) async {
+  Future<DMReadResult> markAsRead(String conversationId, {
+    String? throughMessageId,
+    String? expectedUserId,
+  }) async {
     try {
       final currentUser = _auth.currentUser;
+      if (expectedUserId != null && currentUser?.uid != expectedUserId) {
+        throw StateError('DM read account changed');
+      }
       if (currentUser == null || conversationId.trim().isEmpty) {
         return const DMReadResult();
       }
@@ -1280,6 +1287,7 @@ class DMService {
       final unavailableUntil = _secureReadCallableUnavailableUntil;
       if (unavailableUntil != null &&
           unavailableUntil.isAfter(DateTime.now())) {
+        if (throughMessageId != null) throw StateError('Bounded DM read unavailable');
         return _markAsReadWithFirestoreFallback(
           conversationId,
           currentUser.uid,
@@ -1288,14 +1296,22 @@ class DMService {
 
       try {
         final response = await _functions
-            .httpsCallable('markDMConversationReadSecure')
+            .httpsCallable(throughMessageId == null
+                ? 'markDMConversationReadSecure'
+                : 'markDMConversationReadBoundedSecure')
             .call(<String, dynamic>{
           'conversationId': conversationId,
+          'readerId': currentUser.uid,
+          if (throughMessageId != null) 'throughMessageId': throughMessageId,
           'deferReceipts': true
         }).timeout(const Duration(seconds: 120));
         final data = response.data;
         if (data is! Map || data['success'] != true) {
           throw StateError('DM 읽음 상태를 동기화하지 못했습니다.');
+        }
+        if (_auth.currentUser?.uid != currentUser.uid ||
+            (throughMessageId != null && data['boundedRead'] != true)) {
+          throw StateError('DM read session or server protocol changed');
         }
         int readInt(Object? value) => value is num ? value.toInt() : 0;
         final result = DMReadResult(
@@ -1304,6 +1320,8 @@ class DMService {
           receiptsUpdated: readInt(data['receiptsUpdated']),
           cleanupComplete: data['cleanupComplete'] != false,
           readThroughAtMillis: readInt(data['readThroughAtMillis']),
+          readThroughAtSeconds: readInt(data['readThroughAtSeconds']),
+          readThroughAtNanos: readInt(data['readThroughAtNanos']),
         );
         _secureReadCallableUnavailableUntil = null;
         if (Logger.isVerboseEnabled)
@@ -1317,6 +1335,7 @@ class DMService {
         return result;
       } on FirebaseFunctionsException catch (error) {
         if (error.code != 'not-found') rethrow;
+        if (throughMessageId != null) rethrow;
 
         // 새 callable이 아직 배포되지 않은 앱/서버 조합에서도 읽음이 완전히
         // 멈추지 않게 기존 Firestore Rules + onDMMessageRead 경로로 수렴한다.
@@ -1507,6 +1526,8 @@ class DMReadResult {
     this.receiptsUpdated = 0,
     this.cleanupComplete = true,
     this.readThroughAtMillis = 0,
+    this.readThroughAtSeconds = 0,
+    this.readThroughAtNanos = 0,
   });
 
   final int clearedCount;
@@ -1514,4 +1535,6 @@ class DMReadResult {
   final int receiptsUpdated;
   final bool cleanupComplete;
   final int readThroughAtMillis;
+  final int readThroughAtSeconds;
+  final int readThroughAtNanos;
 }

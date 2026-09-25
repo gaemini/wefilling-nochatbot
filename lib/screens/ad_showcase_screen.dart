@@ -2,7 +2,6 @@
 // 광고 배너 상세 페이지 - Firebase Firestore 연동
 // 모든 광고 배너를 순서대로 나열하여 보여줌
 
-import 'dart:async';
 
 import 'package:flutter/material.dart';
 import 'package:url_launcher/url_launcher.dart';
@@ -10,7 +9,8 @@ import 'package:cached_network_image/cached_network_image.dart';
 import '../models/ad_banner.dart';
 import '../services/ad_banner_service.dart';
 import '../utils/logger.dart';
-import '../services/notification_service.dart';
+import '../services/fcm_service.dart';
+import '../widgets/notification_read_observer.dart';
 import '../l10n/app_localizations.dart';
 
 class AdShowcaseScreen extends StatefulWidget {
@@ -34,14 +34,6 @@ class _AdShowcaseScreenState extends State<AdShowcaseScreen> {
   AdBannerService? _adBannerService;
   final Map<String, GlobalKey> _bannerKeys = <String, GlobalKey>{};
   bool _didRevealInitialBanner = false;
-
-  @override
-  void initState() {
-    super.initState();
-    unawaited(NotificationService().markRelatedNotificationsAsRead(
-      types: const <String>{'ad_updates'},
-    ));
-  }
 
   GlobalKey _keyForBanner(String bannerId, int index) {
     final anchorId = '$index::$bannerId';
@@ -272,7 +264,7 @@ class _AdShowcaseScreenState extends State<AdShowcaseScreen> {
   }
 
   Widget _buildAdCard(BuildContext context, AdBanner banner, int index) {
-    return Container(
+    final card = Container(
       margin: const EdgeInsets.only(bottom: 16),
       decoration: BoxDecoration(
         color: Colors.white,
@@ -383,6 +375,13 @@ class _AdShowcaseScreenState extends State<AdShowcaseScreen> {
           ),
         ),
       ),
+    );
+    final version = banner.notificationVersion;
+    if (version == null || widget.bannersStream != null) return card;
+    return NotificationReadObserver(
+      key: ValueKey('ad-read:${banner.id}:$version'),
+      onVisible: () => FCMService().cancelAdNotification(banner.id, version),
+      child: card,
     );
   }
 }

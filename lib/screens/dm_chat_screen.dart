@@ -20,6 +20,8 @@ import 'package:shared_preferences/shared_preferences.dart';
 import 'package:url_launcher/url_launcher.dart';
 import '../models/conversation.dart';
 import '../models/dm_message.dart';
+import 'package:flutter/foundation.dart' show mapEquals;
+import '../services/dm_message_cache_service.dart';
 import '../models/content_translation.dart';
 import '../services/dm_service.dart';
 import '../services/chat_outbox_store.dart';
@@ -181,9 +183,15 @@ class _DMChatScreenState extends State<DMChatScreen>
   bool _isOtherAccountDeleted = false;
   Timer? _autoMarkReadDebounce;
   bool _autoMarkReadInFlight = false;
-  bool _autoMarkReadQueued = false;
+  int _readGeneration = 0;
+  Timestamp? _peerReadThrough;
+  Timestamp? _confirmedReadThrough;
+  DMMessage? _pendingReadTarget;
+  final Set<String> _confirmedLegacyReadIds = {};
   int _autoMarkReadRetryAttempt = 0;
   Future<void>? _autoMarkReadOperation;
+  String? _inFlightReadTargetId;
+  Future<void>? _exitReadOperation;
   bool _exitReadFlushStarted = false;
   StreamSubscription<DocumentSnapshot<Map<String, dynamic>>>?
       _conversationReadSub;
@@ -273,6 +281,17 @@ class _DMChatScreenState extends State<DMChatScreen>
         previousConversationId != conversationId;
     _activeConversationId = conversationId;
     if (translationConversationChanged) {
+      _readGeneration++;
+      _peerReadThrough = null;
+      _confirmedReadThrough = null;
+      _confirmedLegacyReadIds.clear();
+      _pendingReadTarget = null;
+      _autoMarkReadInFlight = false;
+      _autoMarkReadOperation = null;
+      _inFlightReadTargetId = null;
+      _autoMarkReadDebounce?.cancel();
+      _autoMarkReadRetryAttempt = 0;
+      _exitReadFlushStarted = false;
       _myReactions.clear();
       _confirmedReactions.clear();
       _pendingReactionTargets.clear();
@@ -288,7 +307,7 @@ class _DMChatScreenState extends State<DMChatScreen>
     if (_appLifecycleState == AppLifecycleState.resumed) {
       DMActiveConversation.setActive(conversationId);
     }
-    _watchConversationUnreadCounter(conversationId);
+    _watchConversationReadState(conversationId);
   }
 
   void _subscribeToReactions(String conversationId) {
@@ -328,26 +347,48 @@ class _DMChatScreenState extends State<DMChatScreen>
     );
   }
 
-  void _watchConversationUnreadCounter(String conversationId) {
+  void _watchConversationReadState(String conversationId) {
     unawaited(_conversationReadSub?.cancel() ?? Future<void>.value());
     final me = _currentUser;
     if (me == null) return;
+    final generation = _readGeneration;
+    unawaited(DMMessageCacheService()
+        .peerReadThrough(me.uid, conversationId, widget.otherUserId)
+        .then<void>((peer) {
+      if (!mounted || generation != _readGeneration ||
+          !_canSendFor(me.uid, conversationId)) return;
+      if (peer != null && (_peerReadThrough == null ||
+          peer.compareTo(_peerReadThrough!) > 0)) {
+        setState(() => _peerReadThrough = peer);
+      }
+    }).catchError((Object error) => Logger.error('DM read cache failed', error)));
     _conversationReadSub = FirebaseFirestore.instance
         .collection('conversations')
         .doc(conversationId)
         .snapshots(includeMetadataChanges: true)
         .listen((snapshot) {
-      if (!mounted || conversationId != _activeConversationId) return;
+      if (!mounted || generation != _readGeneration ||
+          !_canSendFor(me.uid, conversationId)) return;
+      if (!snapshot.metadata.hasPendingWrites) {
+        final reads = snapshot.data()?['lastReadAtBy'];
+        final peer = reads is Map ? reads[widget.otherUserId] : null;
+        if (peer is Timestamp &&
+            (_peerReadThrough == null || peer.compareTo(_peerReadThrough!) > 0)) {
+          setState(() => _peerReadThrough = peer);
+          unawaited(DMMessageCacheService().peerReadThrough(
+              me.uid, conversationId, widget.otherUserId, confirmed: peer)
+              .then<void>((_) {}).catchError((Object error) =>
+                  Logger.error('DM read cache write failed', error)));
+        }
+      }
       final raw = snapshot.data()?['unreadCount'];
       final value = raw is Map ? raw[me.uid] : null;
       final myUnread = value is num ? value.toInt() : 0;
       if (myUnread > 0) {
-        // The server's message-created trigger can finish after the message
-        // itself was already marked read. Watching the room counter closes
-        // that race and immediately reconciles a late increment back to zero.
+        // Retry an observed boundary when the room changes, but never expand
+        // it to unseen messages just because the room counter is nonzero.
         _scheduleAutoMarkAsRead(
           _messages,
-          forceCounterReconcile: true,
         );
       }
     }, onError: (Object error) {
@@ -362,6 +403,9 @@ class _DMChatScreenState extends State<DMChatScreen>
         FirebaseAuth.instance.authStateChanges().listen((user) {
       if (user?.uid != _currentUser?.uid) {
         _accountInvalidated = true;
+        _readGeneration++;
+        _autoMarkReadDebounce?.cancel();
+        unawaited(_conversationReadSub?.cancel());
         _messageGeneration++;
         _messageReconnect?.cancel();
         _outboxRetry?.cancel();
@@ -435,7 +479,7 @@ class _DMChatScreenState extends State<DMChatScreen>
         }
       }
       DMActiveConversation.setActive(_activeConversationId);
-      _scheduleAutoMarkAsRead(_messages, forceCounterReconcile: true);
+      _scheduleAutoMarkAsRead(_messages);
       _scheduleVisibleTranslations();
     } else if (DMActiveConversation.isActive(_activeConversationId)) {
       DMActiveConversation.setActive(null);
@@ -1458,6 +1502,11 @@ class _DMChatScreenState extends State<DMChatScreen>
   }
 
   Future<void> _initConversationState() async {
+    final room = _activeConversationId;
+    final owner = _currentUser?.uid;
+    final generation = _readGeneration;
+    bool current() => mounted && generation == _readGeneration &&
+        owner != null && _canSendFor(owner, room);
     try {
       if (mounted) {
         setState(() {
@@ -1519,6 +1568,7 @@ class _DMChatScreenState extends State<DMChatScreen>
       } catch (_) {
         cachedConv = null;
       }
+      if (!current()) return;
 
       if (cachedConv != null && cachedConv.exists) {
         _conversationExists = true;
@@ -1534,12 +1584,12 @@ class _DMChatScreenState extends State<DMChatScreen>
         unawaited(_loadConversation());
         _scheduleAutoMarkAsRead(
           _messages,
-          forceCounterReconcile: true,
         );
       }
 
       // 1) 서버로 최종 확인 (권한/참여자 검증 포함)
       final conv = await convRef.get(const GetOptions(source: Source.server));
+      if (!current()) return;
 
       _conversationExists = conv.exists;
       if (mounted) setState(() {});
@@ -1625,11 +1675,11 @@ class _DMChatScreenState extends State<DMChatScreen>
         unawaited(_loadConversation());
         _scheduleAutoMarkAsRead(
           _messages,
-          forceCounterReconcile: true,
         );
       }
     } catch (e) {
       Logger.error('대화 초기화 오류: $e');
+      if (!current()) return;
       Logger.error('오류 상세: ${e.runtimeType} - ${e.toString()}');
       // 권한 오류인 경우 뒤로가기
       if (e.toString().contains('permission-denied')) {
@@ -1645,7 +1695,7 @@ class _DMChatScreenState extends State<DMChatScreen>
         }
       }
     } finally {
-      if (mounted) {
+      if (current()) {
         setState(() {
           _isConversationInitializing = false;
         });
@@ -1658,12 +1708,20 @@ class _DMChatScreenState extends State<DMChatScreen>
     _messageGeneration++;
     _messageReconnect?.cancel();
     _outboxRetry?.cancel();
-    unawaited(_accountSubscription?.cancel());
     unawaited(_directBlockSubscription?.cancel());
     unawaited(_reverseBlockSubscription?.cancel());
     // PopScope를 거치지 않고 라우트가 제거되는 경우에도 백그라운드 읽음
     // 동기화를 시작한다. 이 Future는 화면 생명주기와 독립적으로 완료된다.
     _startBackgroundReadFlush();
+    // Keep the existing account guard alive only until the frozen exit request
+    // finishes, including logout/relogin while its response is delayed.
+    final exitRead = _exitReadOperation;
+    if (exitRead == null) {
+      unawaited(_accountSubscription?.cancel());
+    } else {
+      unawaited(exitRead.whenComplete(() => _accountSubscription?.cancel()));
+    }
+    _readGeneration++;
     // ✅ 현재 화면이 활성 대화방이면 해제
     if (DMActiveConversation.isActive(_activeConversationId)) {
       DMActiveConversation.setActive(null);
@@ -1685,9 +1743,8 @@ class _DMChatScreenState extends State<DMChatScreen>
   }
 
   void _scheduleAutoMarkAsRead(
-    List<DMMessage> messages, {
-    bool forceCounterReconcile = false,
-  }) {
+    List<DMMessage> messages,
+  ) {
     if (!mounted) return;
     if (_appLifecycleState != AppLifecycleState.resumed ||
         !(ModalRoute.of(context)?.isCurrent ?? false)) {
@@ -1695,42 +1752,59 @@ class _DMChatScreenState extends State<DMChatScreen>
     }
     final me = _currentUser;
     if (me == null) return;
-    if (_isLeaving) return;
-    if (_autoMarkReadInFlight) {
-      _autoMarkReadQueued = true;
-      return;
+    if (_isLeaving || _accountInvalidated || _exitReadFlushStarted ||
+        !_canSendFor(me.uid, _activeConversationId)) return;
+    DMMessage? target;
+    for (final message in messages) {
+      if (message.senderId == me.uid || message.deliveryState != DMDeliveryState.sent ||
+          message.isReadThrough(_confirmedReadThrough) ||
+          _confirmedLegacyReadIds.contains(message.id)) continue;
+      final at = message.receiptCreatedAt;
+      if (target == null || (at != null &&
+          (target.receiptCreatedAt == null || at.compareTo(target.receiptCreatedAt!) > 0))) {
+        target = message;
+      }
     }
-
-    // 상대방이 보낸 "안 읽음" 메시지가 있으면, 채팅 화면이 열려 있는 동안 즉시 읽음 처리
-    final hasUnreadIncoming =
-        messages.any((m) => m.senderId != me.uid && !m.isRead);
-
-    if (!hasUnreadIncoming && !forceCounterReconcile) {
-      return;
-    }
-
+    if (target == null) return;
+    _pendingReadTarget = target;
+    if (_autoMarkReadInFlight) return;
     _autoMarkReadDebounce?.cancel();
     unawaited(_performAutoMarkAsRead());
   }
 
   Future<void> _performAutoMarkAsRead() async {
     if (!mounted || _autoMarkReadInFlight || _isLeaving) return;
+    final target = _pendingReadTarget;
+    final owner = _currentUser?.uid;
+    if (target == null || owner == null) return;
+    final generation = _readGeneration;
     _autoMarkReadInFlight = true;
+    _inFlightReadTargetId = target.id;
     if (Logger.isVerboseEnabled)
       Logger.log(
           '📖 [markAsRead] 실행 - conversationId: $_activeConversationId (즉시 트리거)');
     final conversationId = _activeConversationId;
     final operation = () async {
-      final result = await _dmService.markAsRead(conversationId);
-      _scheduleDmReadPostProcessing(conversationId, result);
+      final result = await _dmService.markAsRead(conversationId,
+          throughMessageId: target.id, expectedUserId: owner);
+      _scheduleDmReadPostProcessing(conversationId, result, owner);
+      if (generation != _readGeneration || !mounted ||
+          !_canSendFor(owner, conversationId)) return;
+      final at = target.receiptCreatedAt;
+      if (at != null && (_confirmedReadThrough == null ||
+          at.compareTo(_confirmedReadThrough!) > 0)) _confirmedReadThrough = at;
+      _confirmedLegacyReadIds.add(target.id);
+      if (_pendingReadTarget?.id == target.id) _pendingReadTarget = null;
     }();
     _autoMarkReadOperation = operation;
     try {
       await operation;
+      if (generation != _readGeneration) return;
       _autoMarkReadRetryAttempt = 0;
       if (Logger.isVerboseEnabled)
         Logger.log('✅ [markAsRead] 완료 - conversationId: $conversationId');
     } catch (e) {
+      if (generation != _readGeneration || !mounted) return;
       Logger.error('❌ [markAsRead] 실패: $e');
       _autoMarkReadRetryAttempt =
           (_autoMarkReadRetryAttempt + 1).clamp(1, 5).toInt();
@@ -1741,32 +1815,30 @@ class _DMChatScreenState extends State<DMChatScreen>
         Duration(seconds: retrySeconds),
         () => _scheduleAutoMarkAsRead(
           _messages,
-          forceCounterReconcile: true,
         ),
       );
     } finally {
-      if (identical(_autoMarkReadOperation, operation)) {
-        _autoMarkReadOperation = null;
+      if (generation == _readGeneration) {
+        if (identical(_autoMarkReadOperation, operation)) {
+          _autoMarkReadOperation = null;
+          _inFlightReadTargetId = null;
+        }
+        _autoMarkReadInFlight = false;
+        if (_autoMarkReadRetryAttempt == 0) {
+          _scheduleAutoMarkAsRead(_messages);
+        }
       }
-      _autoMarkReadInFlight = false;
-      if (_autoMarkReadQueued) {
-        _autoMarkReadQueued = false;
-        _scheduleAutoMarkAsRead(
-          _messages,
-          forceCounterReconcile: true,
-        );
-      }
-      if (Logger.isVerboseEnabled)
-        Logger.log('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━');
     }
   }
 
   void _scheduleDmReadPostProcessing(
     String conversationId,
     DMReadResult result,
+    String owner,
   ) {
+    if (_accountInvalidated || FirebaseAuth.instance.currentUser?.uid != owner) return;
     unawaited(
-      BadgeService.syncAfterDmRead(result.newDmUnreadTotal).catchError(
+      BadgeService.refreshNow().catchError(
         (Object error) => Logger.error('DM 읽음 배지 갱신 실패', error),
       ),
     );
@@ -1776,6 +1848,9 @@ class _DMChatScreenState extends State<DMChatScreen>
             .cancelDmNotification(
               conversationId,
               throughSentAtMillis: result.readThroughAtMillis,
+              throughSeconds: result.readThroughAtSeconds,
+              throughNanos: result.readThroughAtNanos,
+              expectedOwner: owner,
             )
             .catchError(
               (Object error) => Logger.error('DM 읽음 알림 정리 실패', error),
@@ -1786,13 +1861,17 @@ class _DMChatScreenState extends State<DMChatScreen>
 
   /// 대화방 정보 로드
   Future<void> _loadConversation() async {
+    final room = _activeConversationId;
+    final generation = _readGeneration;
+    final owner = _currentUser?.uid;
     try {
       final doc = await FirebaseFirestore.instance
           .collection('conversations')
-          .doc(_activeConversationId)
+          .doc(room)
           .get();
 
-      if (doc.exists && mounted) {
+      if (doc.exists && mounted && generation == _readGeneration &&
+          owner != null && _canSendFor(owner, room)) {
         setState(() {
           _conversation = Conversation.fromFirestore(doc);
         });
@@ -1890,6 +1969,14 @@ class _DMChatScreenState extends State<DMChatScreen>
         final incoming = _receivedInitialMessageSnapshot
             ? recent.where((m) => !known.contains(m.id)).toList()
             : <DMMessage>[];
+        final previousById = {for (final message in _messages) message.id: message};
+        final layoutChanged = !_receivedInitialMessageSnapshot || recent.any((m) {
+          final old = previousById[m.id];
+          return old == null || old.createdAt != m.createdAt ||
+              old.deliveryState != m.deliveryState || old.text != m.text ||
+              old.imageUrl != m.imageUrl ||
+              !mapEquals(old.reactionCounts, m.reactionCounts);
+        });
         for (final message in recent) {
           if (message.deliveryState == DMDeliveryState.sent &&
               _outgoing.remove(message.id) != null) {
@@ -1908,6 +1995,7 @@ class _DMChatScreenState extends State<DMChatScreen>
         });
         WidgetsBinding.instance.addPostFrameCallback((_) {
           if (!current()) return;
+          if (!layoutChanged) return;
           if (follow) {
             _followLatest(wasNearLatest: true);
           } else {
@@ -1917,8 +2005,10 @@ class _DMChatScreenState extends State<DMChatScreen>
             ChatTiming.record(
                 '[DMChatTiming] stage=receiverFrame roomId=$room durationMs=${watch.elapsedMilliseconds}');
         });
-        _markNewIncomingMessagesForTranslation(incoming);
-        _scheduleVisibleTranslations();
+        if (layoutChanged) {
+          _markNewIncomingMessagesForTranslation(incoming);
+          _scheduleVisibleTranslations();
+        }
         _scheduleAutoMarkAsRead(_messages);
       }, onError: (Object error) => retry(error), onDone: () => retry(null));
     } catch (error) {
@@ -1952,6 +2042,8 @@ class _DMChatScreenState extends State<DMChatScreen>
               )
             : message,
     }.values.toList()
+      .map((message) => message.preserveConfirmedReceipt(existingById[message.id]))
+      .toList()
       ..sort(_compareMessagesDesc);
     final ids = incoming.map((m) => m.id).toSet();
     final retained = existingAll.where((m) => !ids.contains(m.id)).toList();
@@ -2017,9 +2109,9 @@ class _DMChatScreenState extends State<DMChatScreen>
       _isLoadingMore = true;
     });
 
+    final room = _activeConversationId;
+    final generation = _messageGeneration;
     try {
-      final room = _activeConversationId;
-      final generation = _messageGeneration;
       final cursor = _messages.last;
       final before = cursor.createdAt; // 가장 오래된 메시지보다 더 과거를 로드
       final older = await _dmService.fetchOlderMessages(
@@ -2053,9 +2145,11 @@ class _DMChatScreenState extends State<DMChatScreen>
         }
       });
       _scheduleVisibleTranslations();
+      _scheduleAutoMarkAsRead(_messages);
     } catch (e) {
       Logger.error('이전 메시지 로드 실패(무시): $e');
-      if (!mounted) return;
+      if (!mounted || room != _activeConversationId ||
+          generation != _messageGeneration || _accountInvalidated) return;
       setState(() {
         _isLoadingMore = false;
       });
@@ -2086,28 +2180,35 @@ class _DMChatScreenState extends State<DMChatScreen>
     _exitReadFlushStarted = true;
     _autoMarkReadDebounce?.cancel();
     final conversationId = _activeConversationId;
+    final owner = _currentUser?.uid;
+    final target = _pendingReadTarget;
+    if (owner == null || target == null || _accountInvalidated) return;
     final pending = _autoMarkReadOperation;
+    final inFlightTargetId = _inFlightReadTargetId;
 
-    unawaited(
-      (() async {
+    _exitReadOperation = (() async {
         if (pending != null) {
           try {
-            await pending.timeout(const Duration(seconds: 3));
+            await pending;
+            if (inFlightTargetId == target.id) return;
           } catch (_) {
-            // 진행 중 요청이 실패하거나 지연돼도 아래 최종 요청은 시도한다.
+            // Only a failed request needs another attempt at the same boundary.
           }
         }
 
-        // 화면은 즉시 닫고, 이 최종 요청만 백그라운드에서 계속한다.
+        if (_accountInvalidated || FirebaseAuth.instance.currentUser?.uid != owner ||
+            _confirmedLegacyReadIds.contains(target.id)) return;
+        // Freeze the observed boundary before route disposal, never server now.
         final result = await _dmService
-            .markAsRead(conversationId)
+            .markAsRead(conversationId,
+                throughMessageId: target.id, expectedUserId: owner)
             .timeout(const Duration(seconds: 12));
-        _scheduleDmReadPostProcessing(conversationId, result);
+        _scheduleDmReadPostProcessing(conversationId, result, owner);
       })()
           .catchError((Object error) {
         Logger.error('❌ [DM 읽음] 화면 종료 동기화 실패: $error');
-      }),
-    );
+      });
+    unawaited(_exitReadOperation);
   }
 
   Widget _readAwareRoute({required Widget child}) {
@@ -3124,8 +3225,6 @@ class _DMChatScreenState extends State<DMChatScreen>
       return _buildStartConversationPlaceholder(isConversationCreated: true);
     }
 
-    // ✅ 실시간 채팅 중에도 읽음 상태를 서버에 반영
-    _scheduleAutoMarkAsRead(messages);
     _scheduleVisibleTranslations();
 
     // ✅ 읽음/안읽음 표시는 "최신 안읽음 1개 + 최신 읽음 1개"만 노출
@@ -3135,9 +3234,10 @@ class _DMChatScreenState extends State<DMChatScreen>
     for (final m in messages) {
       if (m.senderId != myUid || m.deliveryState != DMDeliveryState.sent)
         continue;
-      if (!m.isRead && latestMyUnreadMessageId == null) {
+      final isRead = m.isReadThrough(_peerReadThrough);
+      if (!isRead && latestMyUnreadMessageId == null) {
         latestMyUnreadMessageId = m.id;
-      } else if (m.isRead && latestMyReadMessageId == null) {
+      } else if (isRead && latestMyReadMessageId == null) {
         latestMyReadMessageId = m.id;
       }
       if (latestMyUnreadMessageId != null && latestMyReadMessageId != null)

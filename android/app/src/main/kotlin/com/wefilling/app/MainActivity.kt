@@ -190,11 +190,14 @@ class MainActivity : FlutterActivity() {
         val ownerUserId = arguments["ownerUserId"]?.toString()?.trim().orEmpty()
         val kind = arguments["kind"]?.toString()?.trim().orEmpty()
         val notificationId = arguments["notificationId"]?.toString()?.trim().orEmpty()
+        val notificationIds = (arguments["notificationIds"] as? List<*>)?.map { it.toString() }?.toSet().orEmpty() + notificationId
+        val expectedTags = (arguments["androidTags"] as? List<*>)?.map { it.toString() }?.toSet().orEmpty()
         val roomId = arguments["roomId"]?.toString()?.trim().orEmpty()
         val throughSequence = arguments["throughSequence"]?.toString()?.toLongOrNull() ?: 0L
         val throughSentAtMillis =
             arguments["throughSentAtMillis"]?.toString()?.toLongOrNull() ?: 0L
         val removeAllInRoom = arguments["removeAllInRoom"] == true
+        val expectedTag = arguments["androidTag"]?.toString().orEmpty()
         if (ownerUserId.isEmpty()) {
             result.error(
                 "invalid-notification-owner",
@@ -204,12 +207,13 @@ class MainActivity : FlutterActivity() {
             return
         }
         if (Build.VERSION.SDK_INT < Build.VERSION_CODES.M) {
-            result.success(0)
+            result.error("notification-removal-unsupported", "Android 6 or newer required", null)
             return
         }
         try {
             val manager = getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
             var removed = 0
+            var missingMetadata = false
             manager.activeNotifications.forEach activeLoop@{ active ->
                 val payload = mutableMapOf<String, String>()
                 val extras = active.notification.extras
@@ -227,29 +231,64 @@ class MainActivity : FlutterActivity() {
                         }
                     }
                 }
-                if (payload["recipientUserId"] != ownerUserId) return@activeLoop
+                val metadataProof = if (payload["type"].isNullOrEmpty()) {
+                    NotificationDeliveryMetadataReceiver.read(this, active.tag, active.notification.`when`)
+                } else null
+                metadataProof?.let { encoded ->
+                    val json = JSONObject(encoded)
+                    json.keys().forEach { key -> payload[key] = json.optString(key) }
+                }
+                // FCM's automatic renderer does not copy data into extras.
+                // Exact app-event tags are immutable. Chat requires the payload
+                // captured by the metadata-only receiver, never a tag alone.
+                val exactTag = (expectedTag.isNotEmpty() && active.tag == expectedTag) || active.tag in expectedTags
+                val payloadOwner = payload["recipientUserId"]
+                if (payloadOwner.isNullOrEmpty() && (kind == "dm" || kind == "snack_chat") &&
+                    active.tag == expectedTag) missingMetadata = true
+                val publicAd = kind == "ad" && payload["type"] == "ad_updates" && payload["audience"] == "public"
+                if (payloadOwner != ownerUserId && !exactTag && !publicAd) return@activeLoop
+                if (!payloadOwner.isNullOrEmpty() && payloadOwner != ownerUserId) return@activeLoop
                 val matches = when (kind) {
-                    "app" -> notificationId.isNotEmpty() &&
-                        payload["notificationId"] == notificationId
+                    "todo_local" -> payload["type"] == "personalTodoReminder" &&
+                        payload["todoId"] == arguments["todoId"]?.toString() &&
+                        active.postTime < (arguments["throughDeliveredAtMillis"]?.toString()?.toLongOrNull() ?: 0L)
+                    "ad" -> exactTag || (publicAd &&
+                        payload["bannerId"] == arguments["bannerId"]?.toString() &&
+                        payload["notificationVersion"] == arguments["version"]?.toString())
+                    "app" -> (payload["notificationId"]?.let { it.isNotEmpty() && it in notificationIds } == true) || exactTag
                     "snack_chat" -> {
                         val sequence = payload["messageSequence"]?.toLongOrNull() ?: 0L
-                        payload["type"] == "snack_chat_message" &&
+                        (removeAllInRoom && exactTag && roomId.isNotEmpty()) ||
+                        (payload["type"] == "snack_chat_message" &&
                             roomId.isNotEmpty() &&
                             payload["snackChatId"] == roomId &&
                             (removeAllInRoom ||
-                                (throughSequence > 0L && sequence in 1..throughSequence))
+                                (throughSequence > 0L && sequence in 1..throughSequence)))
                     }
                     "dm" -> {
                         val sentAtMillis = payload["sentAtMillis"]?.toLongOrNull() ?: 0L
-                        payload["type"] == "dm_received" &&
+                        val seconds = payload["sentAtSeconds"]?.toLongOrNull() ?: 0L
+                        val nanos = payload["sentAtNanos"]?.toLongOrNull() ?: -1L
+                        val throughSeconds = arguments["throughSeconds"]?.toString()?.toLongOrNull() ?: 0L
+                        val throughNanos = arguments["throughNanos"]?.toString()?.toLongOrNull() ?: -1L
+                        val exactRead = seconds > 0L && nanos in 0..999999999L &&
+                            throughSeconds > 0L && throughNanos in 0..999999999L &&
+                            (seconds < throughSeconds || (seconds == throughSeconds && nanos <= throughNanos))
+                        (payload["type"] == "dm_received" &&
                             roomId.isNotEmpty() &&
                             payload["conversationId"] == roomId &&
-                            throughSentAtMillis > 0L &&
-                            sentAtMillis in 1..throughSentAtMillis
+                            (exactRead || (throughSentAtMillis > 0L &&
+                            sentAtMillis in 1..throughSentAtMillis)))
                     }
                     else -> false
                 }
                 if (!matches) return@activeLoop
+                if (metadataProof != null && metadataProof !=
+                    NotificationDeliveryMetadataReceiver.read(this, active.tag, active.notification.`when`)) return@activeLoop
+                // Do not remove a slot replaced while this enumeration ran.
+                val latest = manager.activeNotifications.firstOrNull { it.key == active.key }
+                if (latest == null || latest.postTime != active.postTime ||
+                    latest.notification.`when` != active.notification.`when`) return@activeLoop
                 if (active.tag == null) {
                     manager.cancel(active.id)
                 } else {
@@ -257,7 +296,7 @@ class MainActivity : FlutterActivity() {
                 }
                 removed++
             }
-            result.success(removed)
+            result.success(if (removed == 0 && missingMetadata) -1 else removed)
         } catch (error: Throwable) {
             result.error(
                 "notification-removal-failed",

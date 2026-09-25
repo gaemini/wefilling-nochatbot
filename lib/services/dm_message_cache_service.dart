@@ -11,6 +11,7 @@
 //   안정적으로 만들기 위해 별도의 로컬 스토리지를 둔다.
 
 import 'package:firebase_auth/firebase_auth.dart';
+import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:hive/hive.dart';
 
 import '../models/dm_message.dart';
@@ -25,6 +26,7 @@ class DMMessageCacheService {
   final ChatLatestWriter _writer = ChatLatestWriter();
   final Map<String, Map<String, DMMessage>> _memory = {};
   final Set<String> _loaded = {};
+  final Map<String, Timestamp> _peerReads = {};
   static const _maxMessages = 400;
   final FirebaseAuth _auth = FirebaseAuth.instance;
 
@@ -50,7 +52,9 @@ class DMMessageCacheService {
         } catch (_) {} // Legacy malformed cache cannot prevent live delivery.
       }
     }
-    messages.addAll(_memory[key] ?? {});
+    for (final message in (_memory[key] ?? <String, DMMessage>{}).values) {
+      messages[message.id] = message.preserveConfirmedReceipt(messages[message.id]);
+    }
     _memory[key] = messages;
   }
 
@@ -110,9 +114,7 @@ class DMMessageCacheService {
     final current = _memory.putIfAbsent(key, () => {});
     for (final message in messages) {
       final previous = current[message.id];
-      current[message.id] = previous?.isRead == true && !message.isRead
-          ? message.copyWith(isRead: true, readAt: previous!.readAt)
-          : message;
+      current[message.id] = message.preserveConfirmedReceipt(previous);
     }
     // Coalesces bursts *before* waiting for Hive. No snapshot waits on this.
     return _writer.schedule(key, () async {
@@ -139,5 +141,28 @@ class DMMessageCacheService {
       final box = await _box();
       await box?.delete(key);
     });
+  }
+
+  Future<Timestamp?> peerReadThrough(String owner, String room, String peer,
+      {Timestamp? confirmed}) async {
+    final key = '$owner::dm::$room::read::$peer';
+    void retain(Timestamp value) {
+      if (_peerReads[key] == null || value.compareTo(_peerReads[key]!) > 0) {
+        _peerReads[key] = value;
+      }
+    }
+    if (confirmed != null) retain(confirmed);
+    final box = await _box();
+    final raw = box?.get(key);
+    if (raw is List && raw.length == 2 && raw[0] is int && raw[1] is int) {
+      retain(Timestamp(raw[0] as int, raw[1] as int));
+    }
+    if (confirmed != null && box != null) {
+      await _writer.schedule(key, () async {
+        final value = _peerReads[key]!;
+        await box.put(key, [value.seconds, value.nanoseconds]);
+      });
+    }
+    return _peerReads[key];
   }
 }

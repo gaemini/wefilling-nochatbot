@@ -2,6 +2,7 @@ import 'dart:io';
 import 'dart:async';
 import 'dart:typed_data';
 import 'dart:ui' as ui;
+import 'package:firebase_auth/firebase_auth.dart';
 import 'package:firebase_storage/firebase_storage.dart';
 import 'package:uuid/uuid.dart';
 import 'package:flutter_image_compress/flutter_image_compress.dart';
@@ -48,11 +49,52 @@ class StorageService {
   final Uuid _uuid = const Uuid();
   final Map<String, UploadTask> _dmFileUploads = <String, UploadTask>{};
 
+  String _sanitizedStorageTarget(String storagePath) {
+    final normalized = storagePath.split('?').first.trim();
+    final segments = normalized
+        .split('/')
+        .where((segment) => segment.trim().isNotEmpty)
+        .toList(growable: false);
+    if (segments.isEmpty) return 'unknown';
+    final root = segments.first.replaceAll(RegExp(r'[^a-zA-Z0-9_-]'), '');
+    final extension = path.extension(segments.last).toLowerCase();
+    return segments.length == 1
+        ? '$root/*$extension'
+        : '$root/<redacted>/*$extension (${segments.length} segments)';
+  }
+
+  void _logStorageFailure({
+    required String operation,
+    required String storagePath,
+    required Object error,
+    required StackTrace stackTrace,
+    String? expectedOwnerUid,
+  }) {
+    final authUid = FirebaseAuth.instance.currentUser?.uid;
+    final code =
+        error is FirebaseException ? error.code : error.runtimeType.toString();
+    final accessState = authUid == null
+        ? 'signed-out'
+        : expectedOwnerUid == null
+            ? 'signed-in'
+            : authUid == expectedOwnerUid
+                ? 'owner-match'
+                : 'owner-mismatch';
+    Logger.error(
+      'Firebase Storage 작업 실패 '
+      '(operation=$operation, target=${_sanitizedStorageTarget(storagePath)}, '
+      'access=$accessState, code=$code)',
+      error,
+      stackTrace,
+    );
+  }
+
   // 이미지 파일을 Firebase Storage에 업로드하고 다운로드 URL을 반환
   Future<String?> uploadImage(
     File imageFile, {
     bool forceJpeg = false,
   }) async {
+    String storagePath = 'posts/<pending>';
     try {
       // 이미지 압축
       final compressedFile = await _compressImage(
@@ -68,6 +110,7 @@ class StorageService {
       final String fileName = '${_uuid.v4()}.jpg';
       const String folderPath = 'posts';
       final String fullPath = '$folderPath/$fileName';
+      storagePath = fullPath;
 
       if (Logger.isVerboseEnabled) Logger.log('이미지 업로드 시작: $fullPath');
       if (Logger.isVerboseEnabled)
@@ -114,7 +157,7 @@ class StorageService {
 
       // 이미지 URL 반환 - Firebase가 자동으로 생성하는 다운로드 URL 사용
       final String downloadUrl = await taskSnapshot.ref.getDownloadURL();
-      if (Logger.isVerboseEnabled) Logger.log('다운로드 URL 획득: $downloadUrl');
+      if (Logger.isVerboseEnabled) Logger.log('다운로드 URL 획득 완료');
 
       // 임시 파일 삭제
       if (compressedFile.path != imageFile.path) {
@@ -126,16 +169,13 @@ class StorageService {
       }
 
       return downloadUrl;
-    } catch (e) {
-      Logger.error('이미지 업로드 오류: $e');
-
-      // 오류 상세 정보 수집
-      String errorDetails = '';
-      if (e is FirebaseException) {
-        errorDetails = '코드: ${e.code}, 메시지: ${e.message}';
-      }
-      Logger.error('Firebase 오류 상세: $errorDetails');
-
+    } catch (e, stackTrace) {
+      _logStorageFailure(
+        operation: 'upload-post-image',
+        storagePath: storagePath,
+        error: e,
+        stackTrace: stackTrace,
+      );
       return null;
     }
   }
@@ -192,21 +232,23 @@ class StorageService {
       if (Logger.isVerboseEnabled) Logger.log('프로필 이미지 업로드 완료: $fullPath');
 
       final String downloadUrl = await taskSnapshot.ref.getDownloadURL();
-      if (Logger.isVerboseEnabled)
-        Logger.log('프로필 이미지 다운로드 URL 획득: $downloadUrl');
+      if (Logger.isVerboseEnabled) Logger.log('프로필 이미지 다운로드 URL 획득 완료');
       return (downloadUrl: downloadUrl, path: fullPath);
     } on TimeoutException catch (e) {
       Logger.error('프로필 이미지 업로드 타임아웃', e);
       return null;
-    } catch (e) {
-      Logger.error('프로필 이미지 업로드 오류: $e');
-      String errorDetails = '';
+    } catch (e, stackTrace) {
+      _logStorageFailure(
+        operation: 'upload-profile-image',
+        storagePath: fullPath ?? 'profile_images/<pending>',
+        error: e,
+        stackTrace: stackTrace,
+        expectedOwnerUid: userId,
+      );
       String message = '';
       if (e is FirebaseException) {
-        errorDetails = '코드: ${e.code}, 메시지: ${e.message}';
         message = (e.message ?? '');
       }
-      Logger.error('Firebase 오류 상세: $errorDetails');
 
       // ✅ iOS 간헐 이슈 방어:
       // - 업로드가 서버에서 이미 finalize 된 후, SDK 내부 cancelFetcher가 뒤늦게 실행되며
@@ -360,7 +402,13 @@ class StorageService {
         final recovered = await recoverExisting();
         if (recovered != null) return recovered;
       } catch (_) {}
-      Logger.error('DM 파일 업로드 실패', error, stackTrace);
+      _logStorageFailure(
+        operation: 'upload-dm-file',
+        storagePath: storagePath,
+        error: error,
+        stackTrace: stackTrace,
+        expectedOwnerUid: userId,
+      );
       return null;
     }
   }
@@ -426,9 +474,16 @@ class StorageService {
       await temp.rename(target.path);
       onProgress?.call(1);
       return target;
-    } catch (_) {
+    } catch (error, stackTrace) {
       if (await temp.exists()) await temp.delete();
-      rethrow;
+      _logStorageFailure(
+        operation: 'download-dm-file',
+        storagePath: storagePath,
+        error: error,
+        stackTrace: stackTrace,
+        expectedOwnerUid: ownerUid,
+      );
+      Error.throwWithStackTrace(error, stackTrace);
     } finally {
       await subscription.cancel();
     }
@@ -507,8 +562,17 @@ class StorageService {
           .ref(normalized)
           .delete()
           .timeout(const Duration(seconds: 10));
-    } on FirebaseException catch (error) {
-      if (error.code != 'object-not-found') rethrow;
+    } on FirebaseException catch (error, stackTrace) {
+      if (error.code != 'object-not-found') {
+        _logStorageFailure(
+          operation: 'delete-snack-chat-image',
+          storagePath: normalized,
+          error: error,
+          stackTrace: stackTrace,
+          expectedOwnerUid: userId,
+        );
+        rethrow;
+      }
     }
   }
 
@@ -539,6 +603,7 @@ class StorageService {
     required bool createDownloadUrl,
   }) async {
     File? compressedFile;
+    String storagePath = '$folderName/<pending>';
     try {
       compressedFile = await _compressImage(imageFile, forceJpeg: true);
       if (compressedFile == null) {
@@ -549,6 +614,7 @@ class StorageService {
       final String fileName = '${_uuid.v4()}.jpg';
       final String folderPath = '$folderName/$userId/$entityId';
       final String fullPath = '$folderPath/$fileName';
+      storagePath = fullPath;
       final encodedImageFuture =
           !createDownloadUrl && folderName == 'snack_chat_images'
               ? _readEncodedImageInfo(compressedFile)
@@ -615,11 +681,11 @@ class StorageService {
         // The sender can render the finalized upload from the same
         // account/path-scoped cache as receivers. Cache persistence remains
         // best-effort and never changes a successful upload into a failure.
-        await SnackChatMediaCacheService.instance.write(
+        unawaited(_cacheSnackChatImage(
           userId: userId,
           storagePath: fullPath,
           bytes: encodedImage.bytes,
-        );
+        ));
       }
 
       return (
@@ -631,15 +697,14 @@ class StorageService {
     } on TimeoutException catch (e) {
       Logger.error('$logLabel 이미지 업로드 타임아웃', e);
       return null;
-    } catch (e) {
-      Logger.error('$logLabel 이미지 업로드 오류: $e');
-
-      String errorDetails = '';
-      if (e is FirebaseException) {
-        errorDetails = '코드: ${e.code}, 메시지: ${e.message}';
-      }
-      Logger.error('Firebase 오류 상세: $errorDetails');
-
+    } catch (e, stackTrace) {
+      _logStorageFailure(
+        operation: 'upload-${folderName.replaceAll('_', '-')}',
+        storagePath: storagePath,
+        error: e,
+        stackTrace: stackTrace,
+        expectedOwnerUid: userId,
+      );
       return null;
     } finally {
       if (compressedFile != null && compressedFile.path != imageFile.path) {
@@ -649,6 +714,28 @@ class StorageService {
           Logger.error('$logLabel 임시 파일 삭제 실패: $e');
         }
       }
+    }
+  }
+
+  Future<void> _cacheSnackChatImage({
+    required String userId,
+    required String storagePath,
+    required Uint8List bytes,
+  }) async {
+    try {
+      await SnackChatMediaCacheService.instance.write(
+        userId: userId,
+        storagePath: storagePath,
+        bytes: bytes,
+      );
+    } catch (error, stackTrace) {
+      // The Storage upload already succeeded. A device-cache failure must not
+      // turn that successful upload into a failed or duplicate chat message.
+      Logger.error(
+        'Snack Chat 발신 이미지 캐시 저장 실패',
+        error,
+        stackTrace,
+      );
     }
   }
 
@@ -735,13 +822,13 @@ class StorageService {
 
   // Firebase Storage URL 형식을 올바르게 수정하는 정적 메서드
   static String correctFirebaseStorageUrl(String imageUrl) {
-    if (Logger.isVerboseEnabled) Logger.log('🔧 URL 수정 시작: $imageUrl');
+    if (Logger.isVerboseEnabled) Logger.log('Storage URL 형식 확인 시작');
 
     // 이미 올바른 Firebase Storage URL이면 그대로 반환
     if (imageUrl.contains('firebasestorage.googleapis.com') &&
         imageUrl.contains('alt=media') &&
         imageUrl.contains('token=')) {
-      if (Logger.isVerboseEnabled) Logger.log('✅ 이미 올바른 URL 형식, 변경 없음');
+      if (Logger.isVerboseEnabled) Logger.log('Storage URL 형식 변경 없음');
       return imageUrl;
     }
 
@@ -753,8 +840,7 @@ class StorageService {
         'storage.googleapis.com/firebasestorage/',
         'firebasestorage.googleapis.com/',
       );
-      if (Logger.isVerboseEnabled)
-        Logger.log('🔧 URL 형식 수정됨 (storage->firebasestorage): $correctedUrl');
+      if (Logger.isVerboseEnabled) Logger.log('Storage URL 호스트 형식 수정됨');
     }
 
     // 잘못된 .firebase.app을 올바른 .firebasestorage.app으로 변경
@@ -764,10 +850,7 @@ class StorageService {
         '.firebase.app',
         '.firebasestorage.app',
       );
-      if (Logger.isVerboseEnabled)
-        Logger.log(
-          '🔧 URL 도메인 수정됨 (.firebase.app -> .firebasestorage.app): $correctedUrl',
-        );
+      if (Logger.isVerboseEnabled) Logger.log('Storage URL 버킷 도메인 형식 수정됨');
     }
 
     // alt=media가 없으면 추가
@@ -777,16 +860,16 @@ class StorageService {
       } else {
         correctedUrl = '$correctedUrl?alt=media';
       }
-      if (Logger.isVerboseEnabled)
-        Logger.log('🔧 alt=media 파라미터 추가: $correctedUrl');
+      if (Logger.isVerboseEnabled) Logger.log('Storage URL media 파라미터 추가됨');
     }
 
-    if (Logger.isVerboseEnabled) Logger.log('✅ URL 수정 완료: $correctedUrl');
+    if (Logger.isVerboseEnabled) Logger.log('Storage URL 형식 확인 완료');
     return correctedUrl;
   }
 
   // URL로 이미지 삭제
   Future<bool> deleteImage(String imageUrl) async {
+    Reference? targetReference;
     try {
       // download URL에서 query(alt=media 등)를 정리하되,
       // token 파라미터는 유지하여 URL 형식이 깨지지 않게 한다.
@@ -799,22 +882,32 @@ class StorageService {
             uri.replace(queryParameters: qp.isEmpty ? null : qp).toString();
       }
 
-      if (Logger.isVerboseEnabled) Logger.log('이미지 삭제 - 정제된 URL: $cleanUrl');
       final Reference ref = _storage.refFromURL(cleanUrl);
+      targetReference = ref;
 
       // 이미지 삭제
       await ref.delete();
       return true;
-    } on FirebaseException catch (e) {
+    } on FirebaseException catch (e, stackTrace) {
       // 업로드 도중 취소/실패 등으로 객체가 존재하지 않을 수 있음 → 정상 케이스로 취급
       if (e.code == 'object-not-found' || e.code == 'not-found') {
         if (Logger.isVerboseEnabled) Logger.log('이미지 삭제 스킵(이미 없음): ${e.code}');
         return true;
       }
-      Logger.error('이미지 삭제 Firebase 오류: code=${e.code}, message=${e.message}');
+      _logStorageFailure(
+        operation: 'delete-image',
+        storagePath: targetReference?.fullPath ?? 'unknown',
+        error: e,
+        stackTrace: stackTrace,
+      );
       return false;
-    } catch (e) {
-      Logger.error('이미지 삭제 오류: $e');
+    } catch (e, stackTrace) {
+      _logStorageFailure(
+        operation: 'delete-image',
+        storagePath: targetReference?.fullPath ?? 'unknown',
+        error: e,
+        stackTrace: stackTrace,
+      );
       return false;
     }
   }

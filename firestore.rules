@@ -1275,6 +1275,15 @@ service cloud.firestore {
         request.auth.uid == resource.data.userId;
     }
     
+    // Existing personal reminder delivery records: only the recipient can
+    // acknowledge viewing; task completion and delivery state are immutable.
+    match /todoNotificationDeliveries/{deliveryId} {
+      allow read: if request.auth != null && request.auth.uid == resource.data.userId;
+      allow update: if request.auth != null && request.auth.uid == resource.data.userId &&
+        request.resource.data.diff(resource.data).affectedKeys().hasOnly(['isRead']) &&
+        request.resource.data.isRead == true;
+    }
+
     // ===== 광고 배너 컬렉션 =====
     match /ad_banners/{bannerId} {
       // 모든 사용자가 광고를 읽을 수 있음
@@ -2224,6 +2233,10 @@ service cloud.firestore {
       // (나가기는 update 규칙에서 처리)
       allow create: if request.auth != null &&
         isMyConversationId() &&
+        !request.resource.data.keys().hasAny([
+          'lastReadAtBy', 'unreadClearedAtBy', 'lastUnreadCreatedAtBy',
+          'receiptCleanupRequestedAtBy', 'readReceiptCursorBy'
+        ]) &&
         request.resource.data.participants is list &&
         request.resource.data.participants.size() == 2 &&
         bothParticipantsActive(request.resource.data) &&
@@ -2425,7 +2438,8 @@ service cloud.firestore {
           ) &&
           !request.resource.data.keys().hasAny([
             'poll', 'pollCloseNotifiedAt', 'reactionCounts',
-            'recipientIds', 'sequence', 'eventId'
+            'recipientIds', 'sequence', 'eventId', 'unreadCountedFor',
+            'receiptCreatedAt'
           ]) &&
           // 레거시 텍스트/이미지 또는 검증된 파일 중 하나는 있어야 함.
           request.resource.data.text is string &&

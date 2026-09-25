@@ -53,9 +53,6 @@ class _SnapshotCommentLetterScreenState
   @override
   void initState() {
     super.initState();
-    unawaited(NotificationService().markNotificationAsRead(
-      widget.notificationId,
-    ));
     _loadLetter();
   }
 
@@ -67,6 +64,8 @@ class _SnapshotCommentLetterScreenState
   }
 
   Future<void> _loadLetter() async {
+    final readContext = widget.letterLoader == null
+        ? NotificationService.captureReadContext() : null;
     if (mounted) {
       setState(() {
         _isLoading = true;
@@ -82,6 +81,10 @@ class _SnapshotCommentLetterScreenState
         _letter = letter;
         _isLoading = false;
       });
+      if (widget.letterLoader == null) {
+        unawaited(NotificationService().markNotificationAsRead(widget.notificationId,
+          readContext: readContext));
+      }
     } catch (error) {
       if (!mounted) return;
       setState(() {

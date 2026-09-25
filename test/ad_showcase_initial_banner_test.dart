@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:wefilling/l10n/app_localizations.dart';
 import 'package:wefilling/models/ad_banner.dart';
 import 'package:wefilling/screens/ad_showcase_screen.dart';
 
@@ -23,6 +24,8 @@ void main() {
 
     await tester.pumpWidget(
       MaterialApp(
+        localizationsDelegates: AppLocalizations.localizationsDelegates,
+        supportedLocales: AppLocalizations.supportedLocales,
         home: AdShowcaseScreen(
           initialBannerId: 'ad-5',
           bannersStream: Stream<List<AdBanner>>.value(banners),
@@ -57,6 +60,8 @@ void main() {
 
     await tester.pumpWidget(
       MaterialApp(
+        localizationsDelegates: AppLocalizations.localizationsDelegates,
+        supportedLocales: AppLocalizations.supportedLocales,
         home: AdShowcaseScreen(
           bannersStream: Stream<List<AdBanner>>.value(banners),
         ),

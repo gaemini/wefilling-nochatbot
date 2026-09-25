@@ -107,3 +107,21 @@ export function userSearchRelevance(rawName: unknown, rawQuery: unknown): number
   if (extractKoreanInitials(name).includes(query)) score += 10;
   return score;
 }
+
+/**
+ * Keeps exact-key hits ahead of the bounded substring window and de-duplicates
+ * by document ID. This lets callers enforce a hard candidate ceiling without
+ * losing an exact nickname that Firestore happened to return after the cap.
+ */
+export function mergeUserSearchCandidates<T extends {id: string}>(
+  exactCandidates: readonly T[],
+  tokenCandidates: readonly T[],
+  tokenLimit: number,
+): T[] {
+  const byId = new Map<string, T>();
+  exactCandidates.forEach((candidate) => byId.set(candidate.id, candidate));
+  tokenCandidates.slice(0, Math.max(0, tokenLimit)).forEach((candidate) => {
+    if (!byId.has(candidate.id)) byId.set(candidate.id, candidate);
+  });
+  return Array.from(byId.values());
+}

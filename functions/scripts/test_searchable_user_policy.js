@@ -2,6 +2,12 @@
 
 const assert = require('assert');
 const {evaluateSearchableUser} = require('../lib/searchable_user_policy');
+const {
+  buildUserSearchTokens,
+  matchesUserSearch,
+  mergeUserSearchCandidates,
+  normalizeUserSearchText,
+} = require('../lib/user_search_index');
 
 const valid = {
   uid: 'uid-valid',
@@ -56,4 +62,24 @@ assert.strictEqual(decision('uid-valid', { // 26
   nicknameKey: 'legacy.user',
 }).searchable, true);
 
-process.stdout.write('searchable user policy: 26 scenarios passed\n');
+// Completed Hangul must remain a literal substring search. Only an explicitly
+// typed initial-consonant query may use the choseong index.
+assert.strictEqual(matchesUserSearch('이준', '이준'), true); // 27
+assert.strictEqual(matchesUserSearch('한예지', '이준'), false); // 28
+assert.strictEqual(matchesUserSearch('한예지', 'ㅇㅈ'), true); // 29
+assert.strictEqual(buildUserSearchTokens('한예지').includes('이준'), false); // 30
+assert.strictEqual(buildUserSearchTokens('한예지').includes('ㅇㅈ'), true); // 31
+assert.strictEqual(normalizeUserSearchText('  Lee  Jun  '), 'lee jun'); // 32
+const cappedCandidates = Array.from({length: 1001}, (_, index) => ({
+  id: `candidate-${index}`,
+}));
+const exactCandidate = {id: 'exact-outside-token-window'};
+const mergedCandidates = mergeUserSearchCandidates(
+  [exactCandidate],
+  cappedCandidates,
+  1000,
+);
+assert.strictEqual(mergedCandidates[0], exactCandidate); // 33
+assert.strictEqual(mergedCandidates.length, 1001); // 34
+
+process.stdout.write('searchable user policy/search normalization: 34 scenarios passed\n');

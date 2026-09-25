@@ -49,10 +49,6 @@ class _ReviewApprovalScreenState extends State<ReviewApprovalScreen> {
   @override
   void initState() {
     super.initState();
-    unawaited(NotificationService().markRelatedNotificationsAsRead(
-      types: const <String>{'review_approval_request'},
-      targets: <String, String>{'requestId': widget.requestId},
-    ));
     // 이미지 URL 목록 초기화 (여러 이미지 또는 단일 이미지)
     _imageUrls = widget.imageUrls ?? [widget.imageUrl];
     _pageController = PageController();
@@ -67,11 +63,19 @@ class _ReviewApprovalScreenState extends State<ReviewApprovalScreen> {
 
   /// 요청의 현재 상태 확인
   Future<void> _checkRequestStatus() async {
+    final readContext = NotificationService.captureReadContext();
     try {
       final requestDoc =
           await _meetupService.getReviewRequestStatus(widget.requestId);
 
       if (mounted) {
+        if (requestDoc != null) {
+          unawaited(NotificationService().markRelatedNotificationsAsRead(
+            types: const {'review_approval_request'},
+            targets: {'requestId': widget.requestId},
+            readContext: readContext,
+          ));
+        }
         setState(() {
           _currentStatus = requestDoc?['status'] as String?;
           _isLoading = false;

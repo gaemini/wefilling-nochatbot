@@ -22,6 +22,7 @@ import 'snack_chat_active_conversation.dart';
 import 'language_service.dart';
 import '../utils/logger.dart';
 import '../utils/notification_delivery_policy.dart';
+import '../utils/notification_read_policy.dart';
 import '../utils/snack_chat_notification_policy.dart';
 import '../utils/chat_notification_presentation.dart';
 import '../utils/chat_work_queue.dart';
@@ -147,6 +148,7 @@ class FCMService {
         if (!(_appActiveCompleter?.isCompleted ?? true)) {
           _appActiveCompleter?.complete();
         }
+        unawaited(_replayConfirmedNotificationReads());
       },
     );
 
@@ -270,6 +272,8 @@ class FCMService {
     _onMessageOpenedAppSub = null;
     _snackChatNotificationGate.clear();
     _chatPreviewHistory.clear();
+    _confirmedNotificationReads.clear();
+    _cleanupFailures.clear();
     _initializingFuture = null;
     _initializedUserId = null;
     try {
@@ -433,6 +437,12 @@ class FCMService {
       // 아래 재시도 루프에서 독립적으로 APNs 준비를 기다린다.
       _initializedUserId = userId;
       _startTokenSync(userId, epoch);
+      _appLifecycleListener ??= AppLifecycleListener(onResume: () {
+        if (!(_appActiveCompleter?.isCompleted ?? true))
+          _appActiveCompleter?.complete();
+        unawaited(_replayConfirmedNotificationReads());
+      });
+      unawaited(_replayConfirmedNotificationReads());
 
       // 토큰 갱신 리스너 등록
       try {
@@ -502,6 +512,11 @@ class FCMService {
               }
 
               final badgeStr = (message.data['badge'] ?? '').toString();
+              if (_wasAlreadyConfirmedRead(message.data, userId)) {
+                unawaited(_reconcileReceivedNotification(
+                    message.data, userId, epoch));
+                return;
+              }
               final badge = int.tryParse(badgeStr);
               if (badge != null && badge >= 0 && recipientUserId.isNotEmpty) {
                 unawaited(BadgeService.applyBadgeFromPush(
@@ -727,6 +742,10 @@ class FCMService {
         FirebaseAuth.instance.currentUser?.uid != owner) return;
     final recipient = (message.data['recipientUserId'] ?? '').toString().trim();
     if (recipient.isNotEmpty && recipient != owner) return;
+    if (_wasAlreadyConfirmedRead(message.data, owner)) {
+      unawaited(_reconcileReceivedNotification(message.data, owner, epoch));
+      return;
+    }
     try {
       final notification = message.notification;
       var title =
@@ -907,44 +926,82 @@ class FCMService {
       );
 
       if (Logger.isVerboseEnabled) Logger.log('✅ 로컬 알림 표시 완료');
+      unawaited(_reconcileReceivedNotification(message.data, owner, epoch));
     } catch (e) {
       Logger.error('❌ 로컬 알림 표시 실패: $e');
     }
   }
 
-  Future<int> _removeDeliveredNotifications({
-    required String ownerUserId,
-    required String kind,
-    String notificationId = '',
-    String roomId = '',
-    int throughSequence = 0,
-    int throughSentAtMillis = 0,
-    bool removeAllInRoom = false,
-  }) async {
-    if (kIsWeb || (!Platform.isAndroid && !Platform.isIOS)) return 0;
+  /// Capture before starting a read, not after its network response.
+  bool _wasAlreadyConfirmedRead(Map<String, dynamic> data, String owner) {
+    final type = data['type'];
+    final kind = type == 'snack_chat_message'
+        ? 'snack_chat'
+        : type == 'dm_received'
+            ? 'dm'
+            : type == 'ad_updates'
+                ? 'ad'
+                : 'app';
+    final target = kind == 'snack_chat'
+        ? data['snackChatId']
+        : kind == 'dm'
+            ? data['conversationId']
+            : data['notificationId'];
+    final receipt = _confirmedNotificationReads['$owner:$kind:$target'];
+    return receipt != null &&
+        notificationPayloadWasConfirmedRead(data, receipt, owner);
+  }
+
+  Future<void> _reconcileReceivedNotification(
+      Map<String, dynamic> data, String owner, int epoch) async {
     try {
-      final removed = await _notificationCenterChannel.invokeMethod<int>(
-        'removeDeliveredNotifications',
-        <String, Object>{
-          'ownerUserId': ownerUserId,
-          'kind': kind,
-          if (notificationId.isNotEmpty) 'notificationId': notificationId,
-          if (roomId.isNotEmpty) 'roomId': roomId,
-          if (throughSequence > 0) 'throughSequence': throughSequence,
-          if (throughSentAtMillis > 0)
-            'throughSentAtMillis': throughSentAtMillis,
-          if (removeAllInRoom) 'removeAllInRoom': true,
-        },
-      );
-      return removed ?? 0;
-    } on MissingPluginException {
-      // Older native builds keep the existing tag/id fallback below.
-      return 0;
+      if (!isNotificationSession(owner, epoch)) return;
+      final type = data['type']?.toString();
+      final id = data['notificationId']?.toString() ?? '';
+      if (id.isNotEmpty && type != 'ad_updates') {
+        final collection = type == 'personalTodoReminder'
+            ? 'todoNotificationDeliveries'
+            : 'notifications';
+        final doc = await FirebaseFirestore.instance
+            .collection(collection)
+            .doc(id)
+            .get(const GetOptions(source: Source.server));
+        if (doc.data()?['userId'] == owner && doc.data()?['isRead'] == true) {
+          await cancelAppNotification(id,
+              expectedOwner: owner, expectedSession: epoch);
+          if (isNotificationSession(owner, epoch))
+            unawaited(BadgeService.refreshNow());
+        }
+      } else {
+        final kind = type == 'ad_updates'
+            ? 'ad'
+            : type == 'snack_chat_message'
+                ? 'snack_chat'
+                : 'dm';
+        final target = id.isNotEmpty
+            ? id
+            : data[kind == 'snack_chat' ? 'snackChatId' : 'conversationId'];
+        final request = _confirmedNotificationReads['$owner:$kind:$target'];
+        if (request != null) {
+          await _runNotificationCleanup(owner, epoch, Map.of(request),
+              remember: false);
+          if (_wasAlreadyConfirmedRead(data, owner) &&
+              isNotificationSession(owner, epoch)) {
+            unawaited(BadgeService.refreshNow());
+          }
+        }
+      }
     } catch (error) {
-      Logger.error('OS 알림 선택 제거 실패', error);
-      return 0;
+      // Delivery and sound never depend on this best-effort read check.
+      Logger.error('지연 푸시 읽음 대조 실패', error);
     }
   }
+
+  int get notificationSession => _activeEpoch;
+
+  bool isNotificationSession(String owner, int session) =>
+      !_isStaleEpoch(session) &&
+      FirebaseAuth.instance.currentUser?.uid == owner;
 
   /// Removes only the local notification slot associated with [snackChatId].
   /// Android uses FCM's id 0 plus the server-issued stable room tag. iOS uses a
@@ -954,11 +1011,15 @@ class FCMService {
     String snackChatId, {
     String? notificationGroupKey,
     int? throughSequence,
+    String? expectedOwner,
+    int? expectedSession,
   }) async {
     final normalized = snackChatId.trim();
     final owner = FirebaseAuth.instance.currentUser?.uid.trim() ?? '';
     final epoch = _activeEpoch;
     if (normalized.isEmpty || owner.isEmpty || kIsWeb) return;
+    if ((expectedOwner != null && expectedOwner != owner) ||
+        (expectedSession != null && expectedSession != epoch)) return;
     await _notificationWrites.run(
         '$owner:snack_chat_message:$normalized',
         () => _cancelSnackChatNotification(normalized, owner, epoch,
@@ -967,182 +1028,304 @@ class FCMService {
   }
 
   Future<void> _cancelSnackChatNotification(
-    String normalized,
+    String room,
     String owner,
     int epoch, {
     String? notificationGroupKey,
     int? throughSequence,
   }) async {
-    bool current() =>
-        !_isStaleEpoch(epoch) &&
-        FirebaseAuth.instance.currentUser?.uid == owner;
-    if (!current()) return;
-    try {
-      final preferences = await SharedPreferences.getInstance();
-      if (!current()) return;
-      final sequenceKey =
-          '$_snackNotificationSequencePreferencePrefix$owner::$normalized';
-      final latestNotificationSequence = preferences.getInt(sequenceKey) ?? 0;
-      if (!current()) return;
-      await _removeDeliveredNotifications(
-        ownerUserId: owner,
-        kind: 'snack_chat',
-        roomId: normalized,
-        throughSequence: throughSequence ?? 0,
-        removeAllInRoom: throughSequence == null,
-      );
-      if (!current()) return;
-      final canCancelGroupedSlot = throughSequence == null ||
-          canCancelSnackChatNotificationThrough(
-            latestNotificationSequence: latestNotificationSequence,
-            readThroughSequence: throughSequence,
-          );
-      if (!canCancelGroupedSlot) return;
-      final preferenceKey =
-          '$_snackNotificationGroupPreferencePrefix$normalized';
-      final explicitTag = notificationGroupKey?.trim() ?? '';
-      final storedTag = preferences.getString(preferenceKey)?.trim() ?? '';
-      final currentUserId = owner;
-      final derivedTag = currentUserId.isEmpty
-          ? ''
-          : snackChatNotificationGroupKey(
-              recipientUserId: currentUserId,
-              snackChatId: normalized,
-            );
-      final tags = <String>{
-        // Stored metadata can outlive a login session; never cancel a tag
-        // belonging to a different account.
-        if (explicitTag == derivedTag) explicitTag,
-        if (storedTag == derivedTag) storedTag,
-        if (derivedTag.isNotEmpty) derivedTag,
-      };
-      final effectiveGroupKey =
-          tags.isNotEmpty ? tags.first : 'snack_$normalized';
-      for (final tag in tags) {
-        if (!current()) return;
-        _snackChatNotificationGate.clearRoom(tag);
-        _chatPreviewHistory.clearRoom(tag);
-        // FirebaseMessaging's automatic Android renderer posts tagged remote
-        // notifications using id 0. Cancel every safe candidate because an
-        // app killed by the OS may not have persisted the server tag locally.
-        await _localNotifications.cancel(
-          snackChatAndroidFcmNotificationId,
-          tag: tag,
-        );
-      }
-      if (tags.isEmpty) {
-        _snackChatNotificationGate.clearRoom(effectiveGroupKey);
-        _chatPreviewHistory.clearRoom(effectiveGroupKey);
-      }
-      // One-version compatibility for foreground notifications created with a
-      // stable non-zero id before Android and FCM automatic delivery shared id 0.
-      final cancellationTags =
-          tags.isEmpty ? <String?>[null] : tags.map<String?>((tag) => tag);
-      for (final tag in cancellationTags) {
-        if (!current()) return;
-        await _localNotifications.cancel(
-          stableSnackChatNotificationId(
-              'snack_chat:${tag ?? effectiveGroupKey}'),
-          tag: tag,
-        );
-      }
-      // One-version compatibility for foreground notifications created by
-      // the previous room-id-only stable-id implementation.
-      for (final tag in cancellationTags) {
-        if (!current()) return;
-        await _localNotifications.cancel(
-          stableSnackChatNotificationId('snack_chat:$normalized'),
-          tag: tag,
-        );
-      }
-      if (current()) {
-        await preferences.remove(preferenceKey);
-        await preferences.remove(sequenceKey);
-      }
-    } catch (error) {
-      Logger.error('Snack Chat 방별 알림 정리 실패', error);
-    }
+    if (!isNotificationSession(owner, epoch)) return;
+    await _runNotificationCleanup(
+        owner,
+        epoch,
+        {
+          'kind': 'snack_chat',
+          'roomId': room,
+          'throughSequence': throughSequence ?? 0,
+          'removeAllInRoom': throughSequence == null,
+          'androidTag': snackChatNotificationGroupKey(
+              recipientUserId: owner, snackChatId: room),
+        },
+        remember: throughSequence != null);
   }
 
-  /// Removes one ordinary notification after the same content was opened from
-  /// inside the app. Future Android pushes use the deterministic server tag;
-  /// unrelated notification cards remain untouched.
-  Future<void> cancelAppNotification(String notificationId) async {
-    final normalized = notificationId.trim();
-    final owner = FirebaseAuth.instance.currentUser?.uid.trim() ?? '';
+  Future<void> cancelAdNotification(String bannerId, String version) async {
+    final owner = FirebaseAuth.instance.currentUser?.uid ?? '';
     final epoch = _activeEpoch;
-    if (normalized.isEmpty || owner.isEmpty || kIsWeb) return;
-    try {
-      await _removeDeliveredNotifications(
-        ownerUserId: owner,
-        kind: 'app',
-        notificationId: normalized,
-      );
-      if (_isStaleEpoch(epoch) ||
-          FirebaseAuth.instance.currentUser?.uid != owner) return;
-      if (Platform.isAndroid) {
-        await _localNotifications.cancel(
-          androidRemoteNotificationId,
-          tag: appNotificationAndroidTag(normalized),
-        );
-      }
-    } catch (error) {
-      Logger.error('개별 앱 알림 정리 실패', error);
-    }
+    if (owner.isEmpty || bannerId.isEmpty || version.isEmpty) return;
+    await _runNotificationCleanup(owner, epoch, {
+      'kind': 'ad',
+      'bannerId': bannerId,
+      'version': version,
+      'notificationId': 'ad:$bannerId:$version',
+      'androidTag': appNotificationAndroidTag('ad:$bannerId:$version'),
+    });
   }
 
-  /// Removes only this account's conversation slot, never all notifications.
+  Future<void> cancelPersonalTodoNotification(
+    String todoId, {
+    required String expectedOwner,
+    required int expectedSession,
+  }) async {
+    // Local scheduled deliveries use the device's OS delivery clock, not a
+    // chat/server read watermark. Never persist this recurring-slot request.
+    final boundary = DateTime.now().millisecondsSinceEpoch;
+    await _runNotificationCleanup(
+        expectedOwner,
+        expectedSession,
+        {
+          'kind': 'todo_local',
+          'todoId': todoId,
+          'roomId': todoId,
+          'throughDeliveredAtMillis': boundary,
+        },
+        remember: false);
+  }
+
+  Future<void> cancelAppNotification(
+    String notificationId, {
+    String? expectedOwner,
+    int? expectedSession,
+  }) async {
+    final owner = expectedOwner ?? FirebaseAuth.instance.currentUser?.uid ?? '';
+    final epoch = expectedSession ?? _activeEpoch;
+    if (notificationId.trim().isEmpty || !isNotificationSession(owner, epoch))
+      return;
+    await _runNotificationCleanup(owner, epoch, {
+      'kind': 'app',
+      'notificationId': notificationId.trim(),
+      'androidTag': appNotificationAndroidTag(notificationId),
+    });
+  }
+
+  Future<void> cancelAppNotifications(
+    Iterable<String> notificationIds, {
+    required String expectedOwner,
+    required int expectedSession,
+    bool remember = true,
+  }) async {
+    final ids = notificationIds.where((id) => id.isNotEmpty).toSet().toList()
+      ..sort();
+    if (ids.isEmpty || !isNotificationSession(expectedOwner, expectedSession))
+      return;
+    await _notificationWrites.run('$expectedOwner:app:cleanup', () async {
+      if (!isNotificationSession(expectedOwner, expectedSession)) return;
+      if (remember) {
+        for (final id in ids) {
+          _confirmedNotificationReads['$expectedOwner:app:$id'] = {
+            'kind': 'app',
+            'notificationId': id,
+            'androidTag': appNotificationAndroidTag(id),
+            'ownerUserId': expectedOwner,
+            'confirmedAt': DateTime.now().millisecondsSinceEpoch,
+          };
+        }
+        try {
+          final prefs = await SharedPreferences.getInstance();
+          if (!isNotificationSession(expectedOwner, expectedSession)) return;
+          await prefs.setString(
+              'confirmed_push_reads::$expectedOwner',
+              jsonEncode(_confirmedNotificationReads.values
+                  .where((item) => item['ownerUserId'] == expectedOwner)
+                  .toList()));
+        } catch (error) {
+          Logger.error('읽음 알림 복구 메타데이터 저장 실패', error);
+        }
+      }
+      for (var offset = 0; offset < ids.length; offset += 450) {
+        final portion =
+            ids.sublist(offset, (offset + 450).clamp(0, ids.length));
+        await _runNotificationCleanup(
+            expectedOwner,
+            expectedSession,
+            {
+              'kind': 'app',
+              'notificationIds': portion,
+              'notificationId':
+                  'batch:${appNotificationAndroidTag(portion.join(','))}',
+              'androidTags': portion.map(appNotificationAndroidTag).toList(),
+            },
+            remember: false);
+      }
+    });
+  }
+
   Future<void> cancelDmNotification(
     String conversationId, {
     String? notificationGroupKey,
     int? throughSentAtMillis,
+    int throughSeconds = 0,
+    int throughNanos = 0,
+    String? expectedOwner,
+    int? expectedSession,
   }) async {
-    final normalized = conversationId.trim();
-    final owner = FirebaseAuth.instance.currentUser?.uid.trim() ?? '';
-    final epoch = _activeEpoch;
-    if (normalized.isEmpty || owner.isEmpty || kIsWeb) return;
-    await _notificationWrites.run('$owner:dm_received:$normalized', () async {
-      if (_isStaleEpoch(epoch) ||
-          FirebaseAuth.instance.currentUser?.uid != owner) return;
-      final tag = dmNotificationAndroidTag(
-          recipientUserId: owner, conversationId: normalized);
-      try {
-        await _removeDeliveredNotifications(
-          ownerUserId: owner,
-          kind: 'dm',
-          roomId: normalized,
-          throughSentAtMillis: throughSentAtMillis ?? 0,
-        );
-        if (_isStaleEpoch(epoch) ||
-            FirebaseAuth.instance.currentUser?.uid != owner) return;
-        final preferences = await SharedPreferences.getInstance();
-        final sentAtKey =
-            '$_dmNotificationSentAtPreferencePrefix$owner::$normalized';
-        final latestNotificationSentAtMillis =
-            preferences.getInt(sentAtKey) ?? 0;
-        final canCancelGroupedSlot = throughSentAtMillis != null &&
-            canCancelDmNotificationThrough(
-              latestNotificationSentAtMillis: latestNotificationSentAtMillis,
-              readThroughAtMillis: throughSentAtMillis,
-            );
-        if (!canCancelGroupedSlot) return;
-        _snackChatNotificationGate.clearRoom(tag);
-        _chatPreviewHistory.clearRoom(tag);
-        // Always derive from the captured account, not persisted old-account data.
-        await _localNotifications.cancel(
-          Platform.isAndroid
-              ? androidRemoteNotificationId
-              : dmLocalNotificationId(tag),
-          tag: Platform.isAndroid ? tag : null,
-        );
-        if (!_isStaleEpoch(epoch) &&
-            FirebaseAuth.instance.currentUser?.uid == owner) {
-          await preferences.remove(sentAtKey);
+    final owner = expectedOwner ?? FirebaseAuth.instance.currentUser?.uid ?? '';
+    final epoch = expectedSession ?? _activeEpoch;
+    if (conversationId.isEmpty ||
+        (throughSentAtMillis ?? 0) <= 0 ||
+        !isNotificationSession(owner, epoch)) return;
+    await _notificationWrites.run(
+        '$owner:dm_received:$conversationId',
+        () => _runNotificationCleanup(owner, epoch, {
+              'kind': 'dm',
+              'roomId': conversationId,
+              'throughSentAtMillis': throughSentAtMillis!,
+              'throughSeconds': throughSeconds,
+              'throughNanos': throughNanos,
+              'androidTag': dmNotificationAndroidTag(
+                  recipientUserId: owner, conversationId: conversationId),
+            }));
+  }
+
+  // Confirmed reads are not cleanup successes. Keep the immutable requests so
+  // a delayed remote delivery can be checked again on the next lifecycle event.
+  final Map<String, Map<String, dynamic>> _confirmedNotificationReads = {};
+  final Map<String, int> _cleanupFailures = {};
+  int? _cleanupReplaySession;
+
+  Future<void> _runNotificationCleanup(
+      String owner, int epoch, Map<String, dynamic> request,
+      {bool remember = true}) async {
+    if (!isNotificationSession(owner, epoch) || kIsWeb) return;
+    final key =
+        '$owner:${request['kind']}:${request['notificationId'] ?? request['roomId']}';
+    if (!remember && (_cleanupFailures[key] ?? 0) >= 3) return;
+    if (remember) {
+      final previous = _confirmedNotificationReads[key];
+      if (previous != null) {
+        final oldSeconds = (previous['throughSeconds'] as num?)?.toInt() ?? 0;
+        final newSeconds = (request['throughSeconds'] as num?)?.toInt() ?? 0;
+        final oldNanos = (previous['throughNanos'] as num?)?.toInt() ?? 0;
+        final newNanos = (request['throughNanos'] as num?)?.toInt() ?? 0;
+        if (oldSeconds > newSeconds ||
+            (oldSeconds == newSeconds && oldNanos > newNanos)) {
+          request['throughSeconds'] = oldSeconds;
+          request['throughNanos'] = oldNanos;
         }
-      } catch (error) {
-        Logger.error('DM 방별 알림 정리 실패', error);
+        for (final field in ['throughSequence', 'throughSentAtMillis']) {
+          final old = (previous[field] as num?)?.toInt() ?? 0;
+          if (old > ((request[field] as num?)?.toInt() ?? 0))
+            request[field] = old;
+        }
       }
-    });
+      _confirmedNotificationReads[key] = {
+        ...request,
+        'ownerUserId': owner,
+        'confirmedAt': DateTime.now().millisecondsSinceEpoch,
+      };
+      final oldest = DateTime.now()
+          .subtract(const Duration(days: 30))
+          .millisecondsSinceEpoch;
+      _confirmedNotificationReads.removeWhere((_, entry) =>
+          ((entry['confirmedAt'] as num?)?.toInt() ?? 0) < oldest);
+      try {
+        final prefs = await SharedPreferences.getInstance();
+        if (!isNotificationSession(owner, epoch)) return;
+        final room = request['roomId']?.toString() ?? '';
+        final kind = request['kind'];
+        final coveredPreview = kind == 'snack_chat'
+            ? canCancelSnackChatNotificationThrough(
+                latestNotificationSequence: prefs.getInt(
+                        '$_snackNotificationSequencePreferencePrefix$owner::$room') ??
+                    0,
+                readThroughSequence:
+                    (request['throughSequence'] as num?)?.toInt() ?? 0)
+            : kind == 'dm' &&
+                canCancelDmNotificationThrough(
+                    latestNotificationSentAtMillis: prefs.getInt(
+                            '$_dmNotificationSentAtPreferencePrefix$owner::$room') ??
+                        0,
+                    readThroughAtMillis:
+                        (request['throughSentAtMillis'] as num?)?.toInt() ?? 0);
+        if (coveredPreview) {
+          final tag = request['androidTag'] as String;
+          // Confirmed read projection, not an OS-cleanup completion flag.
+          _snackChatNotificationGate.clearRoom(tag);
+          _chatPreviewHistory.clearRoom(tag);
+        }
+        await prefs.setString(
+            'confirmed_push_reads::$owner',
+            jsonEncode(_confirmedNotificationReads.values
+                .where((entry) => entry['ownerUserId'] == owner)
+                .toList()));
+      } catch (error) {
+        Logger.error('읽음 알림 복구 메타데이터 저장 실패', error);
+      }
+    }
+    if (!isNotificationSession(owner, epoch)) return;
+    try {
+      final removed = await _notificationCenterChannel.invokeMethod<int>(
+          'removeDeliveredNotifications', {'ownerUserId': owner, ...request});
+      if (!isNotificationSession(owner, epoch)) return;
+      if (removed == null) throw StateError('Missing native cleanup result');
+      _cleanupFailures.remove(key);
+      if (removed < 0) Logger.log('OS 알림 메타데이터 부족: ${request['kind']}');
+      if (removed == 0 && Logger.isVerboseEnabled)
+        Logger.log('OS 알림 선택 제거: 대상 없음');
+    } on MissingPluginException {
+      _cleanupFailures[key] = 3;
+      Logger.log('OS 선택 제거 미지원: 새 네이티브 빌드 필요');
+    } on PlatformException catch (error) {
+      if (!isNotificationSession(owner, epoch)) return;
+      if (error.code == 'notification-removal-unsupported') {
+        _cleanupFailures[key] = 3;
+        Logger.log('OS 알림 선택 제거 미지원');
+        return;
+      }
+      _cleanupFailures[key] = (_cleanupFailures[key] ?? 0) + 1;
+      // No tag/id fallback: a grouped slot may have been replaced by a newer push.
+      Logger.error('OS 알림 제거 실패 (다음 앱 이벤트에서 재확인)', error);
+    } catch (error) {
+      _cleanupFailures[key] = (_cleanupFailures[key] ?? 0) + 1;
+      Logger.error('OS 알림 제거 실패', error);
+    }
+  }
+
+  Future<void> _replayConfirmedNotificationReads() async {
+    if (kIsWeb) return;
+    final owner = FirebaseAuth.instance.currentUser?.uid ?? '';
+    final epoch = _activeEpoch;
+    if (owner.isEmpty || _cleanupReplaySession == epoch) return;
+    _cleanupReplaySession = epoch;
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      if (!isNotificationSession(owner, epoch)) return;
+      final encoded = prefs.getString('confirmed_push_reads::$owner');
+      if (encoded != null) {
+        final entries = jsonDecode(encoded) as List;
+        final oldest = DateTime.now()
+            .subtract(const Duration(days: 30))
+            .millisecondsSinceEpoch;
+        for (final value in entries) {
+          final entry = Map<String, dynamic>.from(value as Map);
+          if (entry['ownerUserId'] != owner ||
+              ((entry['confirmedAt'] as num?)?.toInt() ?? 0) < oldest) continue;
+          final key =
+              '$owner:${entry['kind']}:${entry['notificationId'] ?? entry['roomId']}';
+          _confirmedNotificationReads.putIfAbsent(key, () => entry);
+        }
+      }
+      final entries = _confirmedNotificationReads.values.toList();
+      await cancelAppNotifications(
+          entries
+              .where((entry) =>
+                  entry['ownerUserId'] == owner && entry['kind'] == 'app')
+              .map((entry) => entry['notificationId'] as String),
+          expectedOwner: owner,
+          expectedSession: epoch,
+          remember: false);
+      for (final entry in entries) {
+        if (!isNotificationSession(owner, epoch)) return;
+        if (entry['ownerUserId'] != owner) continue;
+        if (entry['kind'] == 'app') continue;
+        await _runNotificationCleanup(owner, epoch, Map.of(entry),
+            remember: false);
+      }
+    } catch (error) {
+      Logger.error('읽음 푸시 재확인 실패', error);
+    } finally {
+      if (_cleanupReplaySession == epoch) _cleanupReplaySession = null;
+    }
   }
 
   bool _isMeetupType(String type) {

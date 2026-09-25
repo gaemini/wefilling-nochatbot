@@ -182,7 +182,10 @@ class _SnapshotDetailScreenState extends State<SnapshotDetailScreen>
     // 첫 프레임 기록이 네트워크 문제로 지연된 경우 이미지 준비 시점에 한 번
     // 더 합류한다. 서비스가 동일 요청을 단일 Future로 병합하므로 중복 쓰기는 없다.
     _recordCurrentView();
-    if (!_current.isVideo) _preloadNextVideo();
+    if (!_current.isVideo) {
+      _confirmCurrentNotification();
+      _preloadNextVideo();
+    }
   }
 
   void _handleSnapshotChanged(SnapshotItem latest) {
@@ -201,25 +204,28 @@ class _SnapshotDetailScreenState extends State<SnapshotDetailScreen>
 
   void _handleVideoFirstFrame(String snapshotId) {
     if (!mounted || _current.id != snapshotId) return;
+    _confirmCurrentNotification();
     _preloadNextVideo();
   }
 
   void _recordCurrentView() {
     if (!mounted || _items.isEmpty) return;
+    if (FirebaseAuth.instance.currentUser?.uid == _current.authorId) return;
+    unawaited(_service.recordView(_current.id));
+  }
+
+  void _confirmCurrentNotification() {
+    if (!mounted || _items.isEmpty || _unavailableSnapshotId == _current.id ||
+        _isAppInactive || _isModalPaused) return;
     final item = _current;
     unawaited(
       NotificationService().markRelatedNotificationsAsRead(
         types: const <String>{
           'snapshot_reaction',
-          'snapshot_comment',
-          'snapshot_feed_comment',
-          'snapshot_feed_comment_reply',
         },
         targets: <String, String>{'snapshotId': item.id},
       ),
     );
-    if (FirebaseAuth.instance.currentUser?.uid == item.authorId) return;
-    unawaited(_service.recordView(item.id));
   }
 
   Future<void> _openComments({String? focusCommentId}) async {

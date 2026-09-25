@@ -511,43 +511,80 @@ class AuthProvider with ChangeNotifier implements WidgetsBindingObserver {
 
     final uid = currentUser.uid;
     final generation = ++_hanyangRequestGeneration;
-    final wasVerified = isHanyangEmailVerified;
+    final previousStatus = _hanyangVerificationStatus;
     _hanyangVerificationStatus = HanyangVerificationStatus.checking;
     _hanyangVerificationError = null;
     notifyListeners();
 
     late final Future<bool> request;
     request = (() async {
+      String failureCode(Object error) {
+        if (error is FirebaseFunctionsException) return error.code;
+        if (error is FirebaseException) return error.code;
+        if (error is TimeoutException) return 'timeout';
+        if (error is SocketException) return 'socket';
+        return error.runtimeType.toString();
+      }
+
+      HttpsCallableResult<dynamic> response;
       try {
-        final response = await _functions
+        response = await _functions
             .httpsCallable('reconcileMyHanyangVerificationStatus')
             .call()
             .timeout(const Duration(seconds: 15));
+      } catch (error, stackTrace) {
         if (_user?.uid != uid || generation != _hanyangRequestGeneration) {
           return false;
         }
-        final raw = response.data;
-        final data =
-            raw is Map ? Map<String, dynamic>.from(raw) : <String, dynamic>{};
-        final statusName = (data['status'] ?? '').toString();
-        _hanyangVerificationStatus = switch (statusName) {
-          'verified' => HanyangVerificationStatus.verified,
-          'unverified' => HanyangVerificationStatus.unverified,
-          'conflict' => HanyangVerificationStatus.conflict,
+        final code = failureCode(error);
+        _hanyangVerificationError = 'function:$code';
+        _hanyangVerificationStatus = switch (previousStatus) {
+          HanyangVerificationStatus.verified =>
+            HanyangVerificationStatus.verified,
+          HanyangVerificationStatus.unverified =>
+            HanyangVerificationStatus.unverified,
+          HanyangVerificationStatus.conflict =>
+            HanyangVerificationStatus.conflict,
           _ => HanyangVerificationStatus.unavailable,
         };
-        _maskedHanyangEmail = (data['maskedHanyangEmail'] ?? '').toString();
-        _hanyangVerificationSource = (data['source'] ?? '').toString();
-        final checkedAtMillis = data['checkedAtMillis'];
-        _hanyangVerificationCheckedAt = checkedAtMillis is num
-            ? DateTime.fromMillisecondsSinceEpoch(checkedAtMillis.toInt())
-            : DateTime.now();
-        final schemaVersion = data['schemaVersion'];
-        if (schemaVersion != 3) {
-          Logger.error('[HanyangVerification][AuthProvider] schema mismatch '
-              'instance=${identityHashCode(this)} uid=${uid.substring(0, uid.length < 8 ? uid.length : 8)} '
-              'server=$schemaVersion client=3');
-        }
+        Logger.error(
+          '[HanyangVerification][AuthProvider] refresh failed '
+          '(stage=function, code=$code, generation=$generation)',
+          error,
+          stackTrace,
+        );
+        notifyListeners();
+        return isHanyangEmailVerified;
+      }
+
+      if (_user?.uid != uid || generation != _hanyangRequestGeneration) {
+        return false;
+      }
+      final raw = response.data;
+      final data =
+          raw is Map ? Map<String, dynamic>.from(raw) : <String, dynamic>{};
+      final statusName = (data['status'] ?? '').toString();
+      _hanyangVerificationStatus = switch (statusName) {
+        'verified' => HanyangVerificationStatus.verified,
+        'unverified' => HanyangVerificationStatus.unverified,
+        'conflict' => HanyangVerificationStatus.conflict,
+        _ => HanyangVerificationStatus.unavailable,
+      };
+      _maskedHanyangEmail = (data['maskedHanyangEmail'] ?? '').toString();
+      _hanyangVerificationSource = (data['source'] ?? '').toString();
+      final checkedAtMillis = data['checkedAtMillis'];
+      _hanyangVerificationCheckedAt = checkedAtMillis is num
+          ? DateTime.fromMillisecondsSinceEpoch(checkedAtMillis.toInt())
+          : DateTime.now();
+      final schemaVersion = data['schemaVersion'];
+      if (schemaVersion != 3) {
+        Logger.error('[HanyangVerification][AuthProvider] schema mismatch '
+            'instance=${identityHashCode(this)} uid=${uid.substring(0, uid.length < 8 ? uid.length : 8)} '
+            'server=$schemaVersion client=3');
+      }
+      notifyListeners();
+
+      try {
         final snapshot = await _firestore
             .collection('users')
             .doc(uid)
@@ -559,35 +596,34 @@ class AuthProvider with ChangeNotifier implements WidgetsBindingObserver {
           _userData = snapshot.data();
           _observeCurrentUserDocument(currentUser);
         }
-        if (Logger.isVerboseEnabled)
-          Logger.log('[HanyangVerification][AuthProvider] '
-              'instance=${identityHashCode(this)} uid=${uid.substring(0, uid.length < 8 ? uid.length : 8)} '
-              'generation=$generation status=$statusName '
-              'source=$_hanyangVerificationSource repaired=${data['repaired'] == true}');
-        notifyListeners();
-        return isHanyangEmailVerified;
-      } catch (error) {
+      } catch (error, stackTrace) {
         if (_user?.uid != uid || generation != _hanyangRequestGeneration) {
           return false;
         }
-        _hanyangVerificationError = error.runtimeType.toString();
-        _hanyangVerificationSource = 'network_error';
-        _hanyangVerificationCheckedAt = DateTime.now();
-        _hanyangVerificationStatus = wasVerified
-            ? HanyangVerificationStatus.verified
-            : HanyangVerificationStatus.unavailable;
+        final code = failureCode(error);
+        _hanyangVerificationError = 'user_document:$code';
         Logger.error(
-            '[HanyangVerification][AuthProvider] reconcile failed '
-            'instance=${identityHashCode(this)} generation=$generation',
-            error);
+          '[HanyangVerification][AuthProvider] refresh follow-up failed '
+          '(stage=user-document, code=$code, generation=$generation)',
+          error,
+          stackTrace,
+        );
         notifyListeners();
-        return isHanyangEmailVerified;
-      } finally {
-        if (identical(_hanyangRefreshInFlight, request)) {
-          _hanyangRefreshInFlight = null;
-        }
       }
-    })();
+
+      if (Logger.isVerboseEnabled) {
+        Logger.log('[HanyangVerification][AuthProvider] '
+            'instance=${identityHashCode(this)} uid=${uid.substring(0, uid.length < 8 ? uid.length : 8)} '
+            'generation=$generation status=$statusName '
+            'source=$_hanyangVerificationSource repaired=${data['repaired'] == true}');
+      }
+      return isHanyangEmailVerified;
+    })()
+        .whenComplete(() {
+      if (identical(_hanyangRefreshInFlight, request)) {
+        _hanyangRefreshInFlight = null;
+      }
+    });
     _hanyangRefreshInFlight = request;
     return request;
   }
@@ -2338,15 +2374,6 @@ class AuthProvider with ChangeNotifier implements WidgetsBindingObserver {
           failedBatches.add('배치 ${i + 1}');
           Logger.error(
               "   ❌ 배치 ${i + 1}/${batches.length} 커밋 실패", e, stackTrace);
-
-          // Crashlytics에 에러 기록
-          await FirebaseCrashlytics.instance.recordError(
-            e,
-            stackTrace,
-            reason:
-                'Profile update batch commit failed (batch ${i + 1}/${batches.length})',
-            fatal: false,
-          );
         }
       }
 

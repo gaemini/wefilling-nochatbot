@@ -135,17 +135,6 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
   void initState() {
     super.initState();
     _currentPost = widget.post;
-    unawaited(NotificationService().markRelatedNotificationsAsRead(
-      types: const <String>{
-        'post_created',
-        'post_private',
-        'new_comment',
-        'comment_reply',
-        'new_like',
-        'comment_like',
-      },
-      targets: <String, String>{'postId': widget.post.id},
-    ));
 
     // 작성자 여부/좋아요 상태는 로컬 데이터로 즉시 결정 (초기 렌더 품질/깜빡임 방지)
     final user = FirebaseAuth.instance.currentUser;
@@ -214,6 +203,7 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
   }
 
   Future<void> _validateAccessAndRefreshPost() async {
+    final readContext = NotificationService.captureReadContext();
     try {
       // 네트워크/Firestore 작업이 드물게 완료되지 않아 상세 재진입 화면이
       // 영구 로딩 상태에 머무는 것을 방지한다. 실패는 기존 접근 거부 경로로
@@ -247,6 +237,12 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
         _audienceUsersFuture =
             _audienceExpanded ? _loadAudienceUsers(refreshed) : null;
       });
+
+      unawaited(NotificationService().markRelatedNotificationsAsRead(
+        types: const {'post_created', 'post_private', 'new_like'},
+        readContext: readContext,
+        targets: {'postId': refreshed.id},
+      ));
 
       // 작성자 글에는 북마크 UI가 없으므로 저장 상태 조회 불필요
       if (!_isAuthor) {

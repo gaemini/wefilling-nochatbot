@@ -11,6 +11,7 @@ import '../services/snapshot_service.dart';
 import '../snapshot/snapshot_strings.dart';
 import '../ui/snackbar/app_snackbar.dart';
 import '../utils/responsive_helper.dart';
+import '../widgets/notification_read_observer.dart';
 
 class SnapshotCommentsSheet extends StatefulWidget {
   const SnapshotCommentsSheet({
@@ -315,7 +316,7 @@ class _SnapshotCommentsSheetState extends State<SnapshotCommentsSheet> {
                         itemCount: comments.length,
                         itemBuilder: (context, index) {
                           final comment = comments[index];
-                          return _CommentRow(
+                          final row = _CommentRow(
                             key: ValueKey(comment.id),
                             comment: comment,
                             highlighted: widget.focusCommentId == comment.id,
@@ -328,6 +329,19 @@ class _SnapshotCommentsSheetState extends State<SnapshotCommentsSheet> {
                             onMore: () => _showActions(comment),
                             replyLabel: strings.reply,
                             deletedLabel: strings.deletedComment,
+                          );
+                          if (comment.isDeleted) return row;
+                          return NotificationReadObserver(
+                            key: ValueKey('read:${comment.id}'),
+                            types: const {
+                              'snapshot_feed_comment',
+                              'snapshot_feed_comment_reply'
+                            },
+                            targets: {
+                              'snapshotId': widget.snapshot.id,
+                              'commentId': comment.id
+                            },
+                            child: row,
                           );
                         },
                       );

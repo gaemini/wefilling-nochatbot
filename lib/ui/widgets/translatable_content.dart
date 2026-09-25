@@ -5,6 +5,7 @@ import 'package:flutter/material.dart';
 import '../../models/content_translation.dart';
 import '../../services/content_translation_service.dart';
 import '../../l10n/ui_locale.dart';
+import '../../utils/logger.dart';
 
 typedef TranslatedContentBuilder = Widget Function(
   BuildContext context,
@@ -303,6 +304,17 @@ class _TranslatableContentState extends State<TranslatableContent> {
       setState(() => _result = result);
       _service.resolveScopeTranslation(scope, _scopeLoaderToken, result);
       return result?.isReady == true;
+    } catch (error, stackTrace) {
+      if (mounted && _isCurrentRequest(request, scope, revision)) {
+        setState(() => _result = null);
+        _service.resolveScopeTranslation(scope, _scopeLoaderToken, null);
+      }
+      Logger.error(
+        '번역 화면 요청 실패 (contentType=${request.contentType})',
+        error,
+        stackTrace,
+      );
+      return false;
     } finally {
       _service.endScopeLoading(scope, loadingToken);
     }

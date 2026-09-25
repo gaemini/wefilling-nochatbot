@@ -354,7 +354,7 @@ class SnackChatFileTransferService {
       ));
       final result = await OpenFilex.open(destination.path);
       if (result.type != ResultType.done) throw StateError(result.message);
-    } catch (error) {
+    } catch (error, stackTrace) {
       if (await partial.exists()) await partial.delete();
       _events.add(SnackChatFileTransferEvent(
         roomId: roomId,
@@ -364,7 +364,18 @@ class SnackChatFileTransferService {
           errorMessage: '다운로드하지 못했습니다.',
         ),
       ));
-      rethrow;
+      final code = error is FirebaseException
+          ? error.code
+          : error.runtimeType.toString();
+      final targetRoot = storagePath.split('/').first;
+      Logger.error(
+        'Snack Chat Storage 작업 실패 '
+        '(operation=download-file, target=$targetRoot/<redacted>, '
+        'access=participant-verified, auth=signed-in, code=$code)',
+        error,
+        stackTrace,
+      );
+      Error.throwWithStackTrace(error, stackTrace);
     } finally {
       await subscription.cancel();
       _activeDownloadTasks.remove(message.id);
@@ -505,7 +516,22 @@ class SnackChatFileTransferService {
       await _commit(record);
       await _finishCommitted(record);
     } catch (error, stackTrace) {
-      Logger.error('Snack Chat 파일 전송 실패', error, stackTrace);
+      if (error is FirebaseException && error.plugin == 'firebase_storage') {
+        final storagePath = record.storagePath ?? 'unknown';
+        final targetRoot = storagePath.split('/').first;
+        final authUid = _auth.currentUser?.uid;
+        Logger.error(
+          'Snack Chat Storage 작업 실패 '
+          '(operation=upload-file, target=$targetRoot/<redacted>, '
+          'access=${authUid == record.ownerUid ? 'owner-match' : 'owner-mismatch'}, '
+          'auth=${authUid == null ? 'signed-out' : 'signed-in'}, '
+          'code=${error.code})',
+          error,
+          stackTrace,
+        );
+      } else {
+        Logger.error('Snack Chat 파일 전송 실패', error, stackTrace);
+      }
       if (_records.containsKey(record.messageId)) {
         record
           ..status = SnackChatFileTransferStatus.failed

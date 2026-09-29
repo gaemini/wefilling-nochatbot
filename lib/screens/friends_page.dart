@@ -296,6 +296,7 @@ class _FriendsPageState extends State<FriendsPage> {
         final user = provider.searchResults[index];
         final status = provider.getRelationshipStatus(user.uid);
         return UserTile(
+          key: ValueKey(user.uid),
           user: user,
           relationshipStatus: status,
           onActionPressed: () => _handleUserAction(user, status),

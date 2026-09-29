@@ -109,6 +109,9 @@ class RelationshipProvider with ChangeNotifier {
       _interestHasMore = false;
       _interestPaginationError = null;
       _isInterestLoadingMore = false;
+      // A new query must not display the previous query's users while the
+      // server request (or App Check preparation) is still in flight.
+      _searchResults = [];
       _setSearchLoading(true);
       clearError();
 

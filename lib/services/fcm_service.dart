@@ -116,6 +116,7 @@ class FCMService {
   static StreamSubscription<RemoteMessage>? _onMessageOpenedAppSub;
   static final _chatPreviewHistory = ChatNotificationPreviewHistory();
   static final _notificationWrites = ChatWorkQueue();
+  static final _confirmedReadWrites = ChatWorkQueue();
   static final SnackChatNotificationBurstGate _snackChatNotificationGate =
       SnackChatNotificationBurstGate();
   static const MethodChannel _notificationCenterChannel =
@@ -904,26 +905,53 @@ class FCMService {
               : DMActiveConversation.isActive(
                   (message.data['conversationId'] ?? '').toString()))) return;
 
-      await _localNotifications.show(
-        isGroupedChat
+      final localId = isGroupedChat
             ? (!kIsWeb && Platform.isAndroid
-                // FirebaseMessaging's Android automatic renderer always posts
-                // a tagged remote notification with id 0. Matching that exact
-                // (tag, id) pair prevents a foreground-created card and a later
-                // background-created card from coexisting for the same room.
-                ? snackChatAndroidFcmNotificationId
+                // The plugin keys click PendingIntents by id, not tag.
+                ? (isGroupedSnackChat
+                    ? stableSnackChatNotificationId(
+                        'snack_chat:$effectiveGroupKey')
+                    : dmLocalNotificationId(effectiveGroupKey))
                 : isGroupedSnackChat
                     ? stableSnackChatNotificationId(
                         'snack_chat:$effectiveGroupKey')
                     : dmLocalNotificationId(effectiveGroupKey))
             : (!kIsWeb && Platform.isAndroid && notificationId.isNotEmpty)
-                ? androidRemoteNotificationId
-                : message.hashCode,
+                ? stableSnackChatNotificationId('app:$notificationId')
+                : message.hashCode;
+      await _localNotifications.show(
+        localId,
         title,
         body,
         details,
         payload: jsonEncode(message.data),
       );
+      if (!kIsWeb && Platform.isAndroid) {
+        final tag = isGroupedChat
+            ? effectiveGroupKey
+            : notificationId.isNotEmpty
+                ? appNotificationAndroidTag(notificationId)
+                : '';
+        if (tag.isNotEmpty) {
+          // flutter_local_notifications puts payload on the click Intent,
+          // not Notification.extras. Register the posted slot explicitly for
+          // native read-through comparisons; never block delivery on failure.
+          unawaited(_notificationCenterChannel.invokeMethod<bool>(
+            'recordLocalNotificationMetadata', {
+              'tag': tag,
+              'id': localId,
+              'payload': <String, String>{
+                for (final entry in message.data.entries)
+                  entry.key: entry.value.toString(),
+                'recipientUserId': owner,
+              },
+            },
+          ).catchError((Object error) {
+            Logger.error('로컬 알림 제거 메타데이터 등록 실패', error);
+            return false;
+          }));
+        }
+      }
 
       if (Logger.isVerboseEnabled) Logger.log('✅ 로컬 알림 표시 완료');
       unawaited(_reconcileReceivedNotification(message.data, owner, epoch));
@@ -1112,25 +1140,15 @@ class FCMService {
       if (!isNotificationSession(expectedOwner, expectedSession)) return;
       if (remember) {
         for (final id in ids) {
-          _confirmedNotificationReads['$expectedOwner:app:$id'] = {
+          _mergeConfirmedRead({
             'kind': 'app',
             'notificationId': id,
             'androidTag': appNotificationAndroidTag(id),
             'ownerUserId': expectedOwner,
             'confirmedAt': DateTime.now().millisecondsSinceEpoch,
-          };
+          });
         }
-        try {
-          final prefs = await SharedPreferences.getInstance();
-          if (!isNotificationSession(expectedOwner, expectedSession)) return;
-          await prefs.setString(
-              'confirmed_push_reads::$expectedOwner',
-              jsonEncode(_confirmedNotificationReads.values
-                  .where((item) => item['ownerUserId'] == expectedOwner)
-                  .toList()));
-        } catch (error) {
-          Logger.error('읽음 알림 복구 메타데이터 저장 실패', error);
-        }
+        await _persistConfirmedReads(expectedOwner, expectedSession);
       }
       for (var offset = 0; offset < ids.length; offset += 450) {
         final portion =
@@ -1179,9 +1197,64 @@ class FCMService {
 
   // Confirmed reads are not cleanup successes. Keep the immutable requests so
   // a delayed remote delivery can be checked again on the next lifecycle event.
-  final Map<String, Map<String, dynamic>> _confirmedNotificationReads = {};
-  final Map<String, int> _cleanupFailures = {};
-  int? _cleanupReplaySession;
+  static final Map<String, Map<String, dynamic>> _confirmedNotificationReads = {};
+  static final Map<String, int> _cleanupFailures = {};
+  static int? _cleanupReplaySession;
+
+  Map<String, dynamic> _mergeConfirmedRead(Map<String, dynamic> incoming) {
+    final owner = incoming['ownerUserId']?.toString() ?? '';
+    final key = '$owner:${incoming['kind']}:${incoming['notificationId'] ?? incoming['roomId']}';
+    final previous = _confirmedNotificationReads[key];
+    final merged = <String, dynamic>{...?previous, ...incoming};
+    if (previous != null) {
+      final oldSeconds = (previous['throughSeconds'] as num?)?.toInt() ?? 0;
+      final newSeconds = (incoming['throughSeconds'] as num?)?.toInt() ?? 0;
+      final oldNanos = (previous['throughNanos'] as num?)?.toInt() ?? 0;
+      final newNanos = (incoming['throughNanos'] as num?)?.toInt() ?? 0;
+      if (oldSeconds > newSeconds ||
+          (oldSeconds == newSeconds && oldNanos > newNanos)) {
+        merged['throughSeconds'] = oldSeconds;
+        merged['throughNanos'] = oldNanos;
+      }
+      for (final field in ['throughSequence', 'throughSentAtMillis']) {
+        final old = (previous[field] as num?)?.toInt() ?? 0;
+        if (old > ((incoming[field] as num?)?.toInt() ?? 0)) {
+          merged[field] = old;
+        }
+      }
+      final oldConfirmed = (previous['confirmedAt'] as num?)?.toInt() ?? 0;
+      final newConfirmed = (incoming['confirmedAt'] as num?)?.toInt() ?? 0;
+      if (oldConfirmed > newConfirmed) merged['confirmedAt'] = oldConfirmed;
+    }
+    _confirmedNotificationReads[key] = merged;
+    return merged;
+  }
+
+  Future<void> _persistConfirmedReads(String owner, int epoch) async {
+    await _confirmedReadWrites.run(owner, () async {
+      try {
+        final prefs = await SharedPreferences.getInstance();
+        if (!isNotificationSession(owner, epoch)) return;
+        final encoded = prefs.getString('confirmed_push_reads::$owner');
+        if (encoded != null) {
+          for (final value in jsonDecode(encoded) as List) {
+            final entry = Map<String, dynamic>.from(value as Map);
+            if (entry['ownerUserId'] == owner) _mergeConfirmedRead(entry);
+          }
+        }
+        final oldest = DateTime.now()
+            .subtract(const Duration(days: 30)).millisecondsSinceEpoch;
+        _confirmedNotificationReads.removeWhere((_, entry) =>
+            ((entry['confirmedAt'] as num?)?.toInt() ?? 0) < oldest);
+        if (!isNotificationSession(owner, epoch)) return;
+        await prefs.setString('confirmed_push_reads::$owner', jsonEncode(
+            _confirmedNotificationReads.values
+                .where((entry) => entry['ownerUserId'] == owner).toList()));
+      } catch (error) {
+        Logger.error('읽음 알림 복구 메타데이터 저장 실패', error);
+      }
+    });
+  }
 
   Future<void> _runNotificationCleanup(
       String owner, int epoch, Map<String, dynamic> request,
@@ -1191,33 +1264,11 @@ class FCMService {
         '$owner:${request['kind']}:${request['notificationId'] ?? request['roomId']}';
     if (!remember && (_cleanupFailures[key] ?? 0) >= 3) return;
     if (remember) {
-      final previous = _confirmedNotificationReads[key];
-      if (previous != null) {
-        final oldSeconds = (previous['throughSeconds'] as num?)?.toInt() ?? 0;
-        final newSeconds = (request['throughSeconds'] as num?)?.toInt() ?? 0;
-        final oldNanos = (previous['throughNanos'] as num?)?.toInt() ?? 0;
-        final newNanos = (request['throughNanos'] as num?)?.toInt() ?? 0;
-        if (oldSeconds > newSeconds ||
-            (oldSeconds == newSeconds && oldNanos > newNanos)) {
-          request['throughSeconds'] = oldSeconds;
-          request['throughNanos'] = oldNanos;
-        }
-        for (final field in ['throughSequence', 'throughSentAtMillis']) {
-          final old = (previous[field] as num?)?.toInt() ?? 0;
-          if (old > ((request[field] as num?)?.toInt() ?? 0))
-            request[field] = old;
-        }
-      }
-      _confirmedNotificationReads[key] = {
+      request = _mergeConfirmedRead({
         ...request,
         'ownerUserId': owner,
         'confirmedAt': DateTime.now().millisecondsSinceEpoch,
-      };
-      final oldest = DateTime.now()
-          .subtract(const Duration(days: 30))
-          .millisecondsSinceEpoch;
-      _confirmedNotificationReads.removeWhere((_, entry) =>
-          ((entry['confirmedAt'] as num?)?.toInt() ?? 0) < oldest);
+      });
       try {
         final prefs = await SharedPreferences.getInstance();
         if (!isNotificationSession(owner, epoch)) return;
@@ -1243,14 +1294,10 @@ class FCMService {
           _snackChatNotificationGate.clearRoom(tag);
           _chatPreviewHistory.clearRoom(tag);
         }
-        await prefs.setString(
-            'confirmed_push_reads::$owner',
-            jsonEncode(_confirmedNotificationReads.values
-                .where((entry) => entry['ownerUserId'] == owner)
-                .toList()));
       } catch (error) {
         Logger.error('읽음 알림 복구 메타데이터 저장 실패', error);
       }
+      await _persistConfirmedReads(owner, epoch);
     }
     if (!isNotificationSession(owner, epoch)) return;
     try {
@@ -1300,9 +1347,7 @@ class FCMService {
           final entry = Map<String, dynamic>.from(value as Map);
           if (entry['ownerUserId'] != owner ||
               ((entry['confirmedAt'] as num?)?.toInt() ?? 0) < oldest) continue;
-          final key =
-              '$owner:${entry['kind']}:${entry['notificationId'] ?? entry['roomId']}';
-          _confirmedNotificationReads.putIfAbsent(key, () => entry);
+          _mergeConfirmedRead(entry);
         }
       }
       final entries = _confirmedNotificationReads.values.toList();

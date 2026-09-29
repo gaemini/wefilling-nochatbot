@@ -377,17 +377,18 @@ async function markDMConversationRead(
         typeof data.readReceiptCursorBy === 'object' &&
         !Array.isArray(data.readReceiptCursorBy) ?
         data.readReceiptCursorBy as Record<string, unknown> : {};
-      const receiptCursor = typeof readReceiptCursorBy[userId] === 'string' ?
-        readReceiptCursorBy[userId].toString() : '';
+      // A prior bounded scan belongs to its old read range. A new read must
+      // start from the beginning even on the legacy synchronous path.
+      const receiptCursor = '';
 
       const newDmUnreadTotal = Math.max(0, previousTotal - clearedCount);
       transaction.update(conversationRef, {
         unreadCount,
         lastReadAtBy,
         unreadClearedAtBy,
+        readReceiptCursorBy: {...readReceiptCursorBy, [userId]: null},
         updatedAt: FieldValue.serverTimestamp(),
         ...(raw?.deferReceipts === true ? {
-          readReceiptCursorBy: {...readReceiptCursorBy, [userId]: null},
           receiptCleanupRequestedAtBy: {
             ...(data.receiptCleanupRequestedAtBy ?? {}),
             [userId]: nextDMReceiptToken(data.receiptCleanupRequestedAtBy?.[userId]),

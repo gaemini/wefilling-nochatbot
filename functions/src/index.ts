@@ -8487,6 +8487,8 @@ export const onNotificationCreated = functions
         type: String(type || ''),
         recipientUserId: String(userId || ''),
         notificationId: String(notificationId || ''),
+        notificationMetadataVersion: '2',
+        notificationCommitMillis: String(Math.floor(snapshot.createTime.toMillis())),
         sentAtMillis: String(snapshot.createTime.toMillis()),
         postId: String(notificationData.postId || dataSafe?.postId || ''),
         meetupId: String(notificationData.meetupId || dataSafe?.meetupId || ''),
@@ -8559,6 +8561,7 @@ export const onNotificationCreated = functions
               sound: 'default',
               channelId: 'high_importance_channel',
               tag: androidNotificationTag,
+              eventTimestamp: snapshot.createTime.toDate(),
             },
           },
         };
@@ -8752,10 +8755,10 @@ export const onNotificationDeletedSyncUnreadCounter = functions
     const userId = (data as any).userId;
     const type = (data as any).type;
     const isRead = (data as any).isRead === true;
-    const skipUnreadCounterSync =
-      (data as any).skipUnreadCounterSync === true;
-    if (!userId || type === 'dm_received' || isRead ||
-        skipUnreadCounterSync) return null;
+    // A validation failure may delete a document after its create trigger or
+    // reconciliation already counted it. The marker below, rather than this
+    // legacy hint, is the authority for whether one decrement is owed.
+    if (!userId || type === 'dm_received' || isRead) return null;
 
     const userRef = db.collection('users').doc(String(userId));
     const notificationId = String(context.params.notificationId);

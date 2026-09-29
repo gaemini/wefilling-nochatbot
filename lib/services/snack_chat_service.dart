@@ -18,6 +18,16 @@ import '../utils/snack_chat_list_policy.dart';
 
 const Duration _snackChatFirstEventDeadline = Duration(seconds: 12);
 
+/// Only codes that identify a rejected regular Firestore message commit.
+/// failed-precondition can also mean a transaction conflict, so a server
+/// lookup and the existing bounded recovery must resolve that case.
+bool isDefinitiveSnackChatCommitErrorCode(String code) => const {
+      'permission-denied',
+      'invalid-argument',
+      'not-found',
+      'unauthenticated',
+    }.contains(code);
+
 /// Immutable server entry boundary captured before the room advances its read
 /// cursor. Keeping this separate from the live unread aggregate prevents a
 /// newly arrived message from moving the divider while the screen is open.
@@ -2236,6 +2246,7 @@ class SnackChatService {
       var transactionAttempt = 0;
       var committedSequence = 0;
       var immutableMessageMismatch = false;
+      var definitiveValidationRejected = false;
       if (ChatTiming.enabled) {
         ChatTiming.record(
           '[SnackChatTiming] stage=firestoreWriteStartedAt '
@@ -2255,6 +2266,7 @@ class SnackChatService {
         (transaction) async {
           transactionAttempt++;
           immutableMessageMismatch = false;
+          definitiveValidationRejected = false;
           if (ChatTiming.enabled) {
             ChatTiming.record(
               '[SnackChatTiming] stage=transactionStartedAt '
@@ -2271,11 +2283,17 @@ class SnackChatService {
           ]);
           if (_uid != uid) return false;
           final roomDoc = documents[0];
-          if (!roomDoc.exists) return false;
+          if (!roomDoc.exists) {
+            definitiveValidationRejected = true;
+            return false;
+          }
           final roomData = roomDoc.data()!;
           final participants =
               List<String>.from(roomData['participantIds'] ?? []);
-          if (!participants.contains(uid)) return false;
+          if (!participants.contains(uid)) {
+            definitiveValidationRejected = true;
+            return false;
+          }
 
           final existingMessage = documents[1];
           if (existingMessage.exists) {
@@ -2352,7 +2370,7 @@ class SnackChatService {
           return true;
         },
         maxAttempts: 8,
-      ).timeout(const Duration(seconds: 25));
+      );
 
       if (ChatTiming.enabled) {
         ChatTiming.record(
@@ -2366,7 +2384,7 @@ class SnackChatService {
       }
 
       if (!committed) {
-        if (immutableMessageMismatch) {
+        if (immutableMessageMismatch || definitiveValidationRejected) {
           _rememberDefinitiveSendRejection(
             '$uid::$snackChatId::$resolvedMessageId',
           );
@@ -2404,13 +2422,7 @@ class SnackChatService {
     } catch (e) {
       if (messageId != null &&
           e is FirebaseException &&
-          const {
-            'permission-denied',
-            'invalid-argument',
-            'not-found',
-            'failed-precondition',
-            'unauthenticated'
-          }.contains(e.code)) {
+          isDefinitiveSnackChatCommitErrorCode(e.code)) {
         _rememberDefinitiveSendRejection('$uid::$snackChatId::$messageId');
       }
       Logger.error('Snack Chat 메시지 전송 실패: $e');

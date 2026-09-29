@@ -925,6 +925,7 @@ class _UnifiedSearchScreenState extends State<UnifiedSearchScreen>
               ...provider.searchResults.map((user) {
                 final status = provider.getRelationshipStatus(user.uid);
                 return UserTile(
+                  key: ValueKey(user.uid),
                   user: user,
                   relationshipStatus: status,
                   onActionPressed: () => _handleUserAction(user, status),
@@ -971,6 +972,7 @@ class _UnifiedSearchScreenState extends State<UnifiedSearchScreen>
             ...provider.searchResults.map((user) {
               final status = provider.getRelationshipStatus(user.uid);
               return UserTile(
+                key: ValueKey(user.uid),
                 user: user,
                 relationshipStatus: status,
                 onActionPressed: () => _handleUserAction(user, status),
@@ -1298,6 +1300,7 @@ class _UnifiedSearchScreenState extends State<UnifiedSearchScreen>
             final user = provider.searchResults[index];
             final status = provider.getRelationshipStatus(user.uid);
             return UserTile(
+              key: ValueKey(user.uid),
               user: user,
               relationshipStatus: status,
               onActionPressed: () => _handleUserAction(user, status),

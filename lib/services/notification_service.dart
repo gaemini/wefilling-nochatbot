@@ -532,6 +532,7 @@ class NotificationService {
           }
         } catch (error, stack) {
           Logger.error('확인한 대상 알림 읽음 실패', error, stack);
+          count = -1;
         } finally {
           for (final scope in scopes) {
             scope.result.complete(count);
@@ -542,36 +543,15 @@ class NotificationService {
     return result.future;
   }
 
-  static final Map<String, Set<String>> _visibleTodoIds = {};
   Future<int> _markVisibleTodoReminders(
       String owner, int session, Set<String> ids) async {
     for (final id in ids) {
       unawaited(FCMService().cancelPersonalTodoNotification(id,
           expectedOwner: owner, expectedSession: session));
     }
-    final deliveries = await _firestore
-        .collection('todoNotificationDeliveries')
-        .where('userId', isEqualTo: owner)
-        .where('isRead', isEqualTo: false)
-        .get(const GetOptions(source: Source.server));
-    var count = 0;
-    for (final doc in deliveries.docs) {
-      if (!FCMService().isNotificationSession(owner, session)) break;
-      final seen =
-          _visibleTodoIds.putIfAbsent('$owner:$session:${doc.id}', () => {});
-      seen.addAll(ids);
-      final targets =
-          (doc.data()['todoIds'] as List?)?.whereType<String>().toSet() ?? {};
-      if (!reminderTargetsWereSeen(targets, seen)) continue;
-      await doc.reference.update({'isRead': true});
-      // Reminders never enter the ordinary notification/DM badge counters.
-      if (FCMService().isNotificationSession(owner, session)) {
-        unawaited(FCMService().cancelAppNotification(doc.id,
-            expectedOwner: owner, expectedSession: session));
-      }
-      count++;
-    }
-    return count;
+    // These reminders are scheduled locally. Viewing a task only removes its
+    // already-delivered OS card; it does not alter any server badge counter.
+    return 0;
   }
 
   void _afterConfirmedRead(Iterable<String> ids, String owner, int session) {

@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'dart:math' as math;
 
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/material.dart';
@@ -8,21 +9,80 @@ import '../screens/create_snapshot_screen.dart';
 import '../screens/snapshot_detail_screen.dart';
 import '../services/snapshot_service.dart';
 import '../services/user_info_cache_service.dart';
-import '../ui/widgets/audience_ring.dart';
 import '../ui/widgets/user_avatar.dart';
 import '../utils/logger.dart';
-import '../utils/responsive_helper.dart';
 import 'snapshot_author_profile_image.dart';
 import 'snapshot_storage_image.dart';
 import 'snapshot_strings.dart';
 import '../l10n/ui_locale.dart';
 
-const double _snackPreviewSize = 72;
-const double _snackTileWidth = 74;
-const double _snackBannerHeight = 108;
-const BorderRadius _snackPreviewRadius = BorderRadius.all(
-  Radius.circular(18),
-);
+const BorderRadius _snackCardRadius = BorderRadius.all(Radius.circular(12));
+const Color _snackNeutralBackground = Color(0xFFF3F4F6);
+const Color _snackTrayBackground = Color(0xFF344054);
+const double _snackCardSpacing = 8;
+const double _snackVerticalPadding = 12;
+
+/// The tray width comes from its parent, not the device's full screen width.
+/// The information area grows with the measured, locale-aware My Snack label.
+class SnackPreviewLayout {
+  const SnackPreviewLayout({
+    required this.cardWidth,
+    required this.cardHeight,
+    required this.myInfoHeight,
+  });
+
+  final double cardWidth;
+  final double cardHeight;
+  final double myInfoHeight;
+  double get myImageHeight => cardHeight - myInfoHeight;
+  double get sectionHeight => cardHeight + _snackVerticalPadding * 2;
+
+  static double widthFor(double availableWidth, double horizontalPadding) {
+    final preferred = (availableWidth * .265).clamp(92.0, 120.0).toDouble();
+    return math.min(
+        preferred, math.max(1.0, availableWidth - 2 * horizontalPadding));
+  }
+
+  static SnackPreviewLayout resolve({
+    required double cardWidth,
+    required double viewportHeight,
+    required double myLabelHeight,
+    required bool landscape,
+  }) {
+    final compact = landscape || viewportHeight < 620;
+    final aspectHeight = cardWidth * 16 / 9;
+    final targetHeight = compact ? math.min(aspectHeight, 150.0) : aspectHeight;
+    final infoHeight = math.max(targetHeight * .30, myLabelHeight + 38);
+    final minimumImageHeight =
+        compact ? (myLabelHeight > 40 ? 90.0 : 70.0) : cardWidth * .9;
+    return SnackPreviewLayout(
+      cardWidth: cardWidth,
+      cardHeight: math.max(targetHeight, infoHeight + minimumImageHeight),
+      myInfoHeight: infoHeight,
+    );
+  }
+}
+
+TextStyle _snackLabelStyle(BuildContext context, Color color) => TextStyle(
+      fontFamily: uiFontFamily(context, 'Inter'),
+      fontFamilyFallback: const ['NotoSansKR'],
+      fontSize: 14,
+      height: 1.28,
+      fontWeight: FontWeight.w600,
+      color: color,
+    );
+
+String _restrictedSnackDescription(BuildContext context) => isChineseUi(context)
+    ? '部分人可见的限时动态'
+    : Localizations.localeOf(context).languageCode == 'ko'
+        ? '공개 범위가 제한된 스낵'
+        : 'Limited audience snack';
+
+String _restrictedSnackBadgeLabel(BuildContext context) => isChineseUi(context)
+    ? '部分可见'
+    : Localizations.localeOf(context).languageCode == 'ko'
+        ? '제한 공개'
+        : 'Limited';
 
 class SnapshotTodaySection extends StatefulWidget {
   const SnapshotTodaySection({super.key});
@@ -60,6 +120,7 @@ class _SnapshotTodaySectionState extends State<SnapshotTodaySection>
   int _activeProfileWarmups = 0;
   int _activeVideoCacheWarmups = 0;
   int _previewGeneration = 0;
+  int _previewDecodeWidth = 256;
   bool _appActive = true;
   bool _sectionVisible = true;
   bool _detailOpen = false;
@@ -250,10 +311,7 @@ class _SnapshotTodaySectionState extends State<SnapshotTodaySection>
     final stopwatch = Stopwatch()..start();
     final bytes = await _service.loadImageBytes(item);
     if (!mounted) return false;
-    final decodeWidth =
-        (_snackPreviewSize * MediaQuery.devicePixelRatioOf(context))
-            .ceil()
-            .clamp(72, 512);
+    final decodeWidth = _previewDecodeWidth;
     var decodeFailed = false;
     await precacheImage(
       snapshotMemoryImageProvider(bytes, cacheWidth: decodeWidth),
@@ -417,79 +475,139 @@ class _SnapshotTodaySectionState extends State<SnapshotTodaySection>
     final strings = SnapshotStrings.of(context);
     final uid = FirebaseAuth.instance.currentUser?.uid ?? '';
     final pageTextDirection = Directionality.of(context);
-    final horizontal = MediaQuery.sizeOf(context).width < 360 ? 12.0 : 16.0;
-    final itemGap = context.rs(4).clamp(3, 6).toDouble();
     final sectionVisible = TickerMode.valuesOf(context).enabled;
     _sectionVisible = sectionVisible;
     _ensureInitialMySnackPosition(uid);
 
-    return ColoredBox(
-      color: Colors.white,
-      child: StreamBuilder<List<SnapshotItem>>(
-        stream: _stream,
-        builder: (context, snapshot) {
-          final items = snapshot.data ?? const <SnapshotItem>[];
-          _schedulePreviewWarmup(
-            items,
-            uid,
-            sectionVisible: sectionVisible,
+    return LayoutBuilder(
+      builder: (context, constraints) {
+        final viewport = MediaQuery.sizeOf(context);
+        final availableWidth = constraints.maxWidth.isFinite
+            ? constraints.maxWidth
+            : viewport.width;
+        const horizontal = _snackCardSpacing;
+        var cardWidth = SnackPreviewLayout.widthFor(availableWidth, horizontal);
+        final labelStyle = _snackLabelStyle(context, const Color(0xFF111827));
+        final textScaler = MediaQuery.textScalerOf(context);
+        final fullLabelPainter = TextPainter(
+          text: TextSpan(text: strings.mySnapshot, style: labelStyle),
+          textDirection: pageTextDirection,
+          textScaler: textScaler,
+          maxLines: 1,
+        )..layout();
+        if (fullLabelPainter.width > cardWidth - 16) {
+          cardWidth = math.min(
+            math.min(180.0, math.max(1.0, availableWidth - 2 * horizontal)),
+            math.max(cardWidth, fullLabelPainter.width / 2 + 22),
           );
-          // The service is newest-first. The first pass keeps the newest snack
-          // from each author at the front of the tray. Older snacks follow in
-          // chronological order, so the initial viewport stays useful while a
-          // horizontal swipe continues through older active snacks.
-          final latestByAuthor = <String, SnapshotItem>{};
-          for (final item in items) {
-            latestByAuthor.putIfAbsent(item.authorId, () => item);
-          }
-          final trayItems = latestByAuthor.values.toList(growable: false);
-          final own = latestByAuthor[uid];
-          final latestVisibleItems = trayItems
-              .where((item) => item.authorId != uid)
-              .toList(growable: false);
-          final latestVisibleIds =
-              latestVisibleItems.map((item) => item.id).toSet();
-          final olderVisibleItems = items
-              .where(
-                (item) =>
-                    item.authorId != uid && !latestVisibleIds.contains(item.id),
-              )
-              .toList(growable: false);
-          final visibleItems = <SnapshotItem>[
-            ...latestVisibleItems,
-            ...olderVisibleItems,
-          ];
+        }
+        fullLabelPainter.dispose();
+        var labelPainter = TextPainter(
+          text: TextSpan(
+            text: strings.mySnapshot,
+            style: labelStyle,
+          ),
+          textDirection: pageTextDirection,
+          textScaler: textScaler,
+          maxLines: 2,
+        )..layout(maxWidth: math.max(1.0, cardWidth - 16));
+        final maximumReadableWidth =
+            math.min(180.0, math.max(1.0, availableWidth - 2 * horizontal));
+        if (labelPainter.didExceedMaxLines &&
+            cardWidth < maximumReadableWidth) {
+          labelPainter.dispose();
+          cardWidth = maximumReadableWidth;
+          labelPainter = TextPainter(
+            text: TextSpan(text: strings.mySnapshot, style: labelStyle),
+            textDirection: pageTextDirection,
+            textScaler: textScaler,
+            maxLines: 2,
+          )..layout(maxWidth: math.max(1.0, cardWidth - 16));
+        }
+        final layout = SnackPreviewLayout.resolve(
+          cardWidth: cardWidth,
+          viewportHeight: viewport.height,
+          myLabelHeight: labelPainter.height,
+          landscape: viewport.width > viewport.height,
+        );
+        labelPainter.dispose();
+        final devicePixelRatio = MediaQuery.devicePixelRatioOf(context);
+        _previewDecodeWidth =
+            (layout.cardWidth * devicePixelRatio).ceil().clamp(72, 512);
+        final profileSize = layout.cardWidth < 96 ? 32.0 : 36.0;
+        final profileDecodeWidth =
+            (profileSize * devicePixelRatio).ceil().clamp(48, 256);
 
-          // The viewer always starts with My Snack when it exists, then walks
-          // through every remaining snack newest-first. This list is also used
-          // for tile taps so the tray and left/right navigation never disagree.
-          final viewerItems = <SnapshotItem>[
-            if (own != null) own,
-            ...items.where((item) => item.id != own?.id),
-          ];
-          final ownIndex = own == null ? -1 : 0;
-          final loading = snapshot.connectionState == ConnectionState.waiting &&
-              !snapshot.hasData;
-          final failed = snapshot.hasError && items.isEmpty;
+        return ColoredBox(
+          color: _snackTrayBackground,
+          child: StreamBuilder<List<SnapshotItem>>(
+            stream: _stream,
+            builder: (context, snapshot) {
+              final items = snapshot.data ?? const <SnapshotItem>[];
+              _schedulePreviewWarmup(
+                items,
+                uid,
+                sectionVisible: sectionVisible,
+              );
+              // The service is newest-first. The first pass keeps the newest snack
+              // from each author at the front of the tray. Older snacks follow in
+              // chronological order, so the initial viewport stays useful while a
+              // horizontal swipe continues through older active snacks.
+              final latestByAuthor = <String, SnapshotItem>{};
+              for (final item in items) {
+                latestByAuthor.putIfAbsent(item.authorId, () => item);
+              }
+              final trayItems = latestByAuthor.values.toList(growable: false);
+              final own = latestByAuthor[uid];
+              final latestVisibleItems = trayItems
+                  .where((item) => item.authorId != uid)
+                  .toList(growable: false);
+              final latestVisibleIds =
+                  latestVisibleItems.map((item) => item.id).toSet();
+              final olderVisibleItems = items
+                  .where(
+                    (item) =>
+                        item.authorId != uid &&
+                        !latestVisibleIds.contains(item.id),
+                  )
+                  .toList(growable: false);
+              final visibleItems = <SnapshotItem>[
+                ...latestVisibleItems,
+                ...olderVisibleItems,
+              ];
 
-          return Column(
-            children: [
-              SizedBox(
-                height: _snackBannerHeight,
+              // The viewer always starts with My Snack when it exists, then walks
+              // through every remaining snack newest-first. This list is also used
+              // for tile taps so the tray and left/right navigation never disagree.
+              final viewerItems = <SnapshotItem>[
+                if (own != null) own,
+                ...items.where((item) => item.id != own?.id),
+              ];
+              final ownIndex = own == null ? -1 : 0;
+              final loading =
+                  snapshot.connectionState == ConnectionState.waiting &&
+                      !snapshot.hasData;
+              final failed = snapshot.hasError && items.isEmpty;
+
+              return SizedBox(
+                height: layout.sectionHeight,
                 child: Directionality(
                   textDirection: TextDirection.ltr,
                   child: ListView.separated(
                     controller: _trayController,
                     scrollDirection: Axis.horizontal,
                     physics: const BouncingScrollPhysics(),
-                    padding: EdgeInsets.symmetric(
-                      horizontal: horizontal,
-                      vertical: 4,
+                    padding: const EdgeInsets.fromLTRB(
+                      horizontal,
+                      _snackVerticalPadding,
+                      horizontal,
+                      _snackVerticalPadding,
                     ),
                     itemCount: 1 +
                         (loading ? 3 : visibleItems.length) +
                         (failed ? 1 : 0),
-                    separatorBuilder: (_, __) => SizedBox(width: itemGap),
+                    separatorBuilder: (_, __) =>
+                        const SizedBox(width: _snackCardSpacing),
                     itemBuilder: (context, index) {
                       if (index == 0) {
                         return Directionality(
@@ -506,6 +624,8 @@ class _SnapshotTodaySectionState extends State<SnapshotTodaySection>
                                 'my-snack-${own?.id ?? 'empty'}',
                               ),
                               snapshot: own,
+                              layout: layout,
+                              previewDecodeWidth: _previewDecodeWidth,
                               label: strings.mySnapshot,
                               uid: uid,
                               profilePhotoUrl: profileSnapshot.data?.photoURL ??
@@ -524,13 +644,14 @@ class _SnapshotTodaySectionState extends State<SnapshotTodaySection>
                       if (loading) {
                         return Directionality(
                           textDirection: pageTextDirection,
-                          child: const _SnackSkeleton(),
+                          child: _SnackSkeleton(layout: layout),
                         );
                       }
                       if (failed) {
                         return Directionality(
                           textDirection: pageTextDirection,
                           child: _SnackActionTile(
+                            layout: layout,
                             icon: Icons.refresh_rounded,
                             label: strings.retry,
                             onTap: _retry,
@@ -544,6 +665,9 @@ class _SnapshotTodaySectionState extends State<SnapshotTodaySection>
                         key: ValueKey<String>('snack-tile-${item.id}'),
                         textDirection: pageTextDirection,
                         child: _SnapshotTile(
+                          layout: layout,
+                          previewDecodeWidth: _previewDecodeWidth,
+                          profileDecodeWidth: profileDecodeWidth,
                           snapshot: item,
                           label: item.authorName,
                           onTap: () => _open(viewerItems, sourceIndex),
@@ -552,23 +676,28 @@ class _SnapshotTodaySectionState extends State<SnapshotTodaySection>
                     },
                   ),
                 ),
-              ),
-              const Divider(height: 1, color: Color(0xFFEAECF0)),
-            ],
-          );
-        },
-      ),
+              );
+            },
+          ),
+        );
+      },
     );
   }
 }
 
 class _SnapshotTile extends StatelessWidget {
   const _SnapshotTile({
+    required this.layout,
+    required this.previewDecodeWidth,
+    required this.profileDecodeWidth,
     required this.snapshot,
     required this.label,
     required this.onTap,
   });
 
+  final SnackPreviewLayout layout;
+  final int previewDecodeWidth;
+  final int profileDecodeWidth;
   final SnapshotItem snapshot;
   final String label;
   final VoidCallback onTap;
@@ -576,41 +705,170 @@ class _SnapshotTile extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final isRestricted = snapshot.visibility != SnapshotVisibility.public;
-    final previewDecodeWidth =
-        (_snackPreviewSize * MediaQuery.devicePixelRatioOf(context))
-            .ceil()
-            .clamp(72, 512);
+    final profile = SnapshotAuthorProfile.resolve(snapshot);
+    final profileSize = layout.cardWidth < 96 ? 32.0 : 36.0;
+    final nameStyle = _snackLabelStyle(
+      context,
+      isRestricted ? const Color(0xFF111827) : Colors.white,
+    );
     return _SnackTileShell(
-      label: label,
+      layout: layout,
+      semanticLabel: isRestricted
+          ? '$label, ${_restrictedSnackDescription(context)}'
+          : label,
       onTap: onTap,
-      preview: isRestricted
-          ? AudienceRing(
-              restricted: true,
-              size: _snackPreviewSize,
-              borderRadius: _snackPreviewRadius,
-              ringWidth: 4,
-              innerGap: 1,
-              // 전체 타일 크기는 그대로 유지하고 제한 공개 링의 바깥선이
-              // 스낵 썸네일의 가장 바깥 경계에 정확히 닿도록 한다.
-              ringInset: 0,
-              emphasized: true,
-              semanticLabel: (isChineseUi(context)
-                  ? '部分人可见的限时动态'
-                  : Localizations.localeOf(context).languageCode == 'ko'
-                      ? '공개 범위가 제한된 스낵'
-                      : 'Limited audience snack'),
-              child: _SnackAuthorProfilePreview(
-                profile: SnapshotAuthorProfile.resolve(snapshot),
+      child: Stack(
+        children: [
+          Positioned.fill(
+            child: isRestricted
+                ? _RestrictedSnackArtwork(
+                    profile: profile,
+                    width: layout.cardWidth,
+                    height: layout.cardHeight,
+                    reserveBottomName: true,
+                  )
+                : SnapshotStorageImage(
+                    snapshot: snapshot,
+                    decodeWidth: previewDecodeWidth,
+                  ),
+          ),
+          if (!isRestricted)
+            Positioned(
+              left: 0,
+              right: 0,
+              bottom: 0,
+              height: math.min(
+                layout.cardHeight,
+                math.max(
+                  layout.cardHeight * .40,
+                  MediaQuery.textScalerOf(context).scale(14) * 2.56 + 20,
+                ),
               ),
-            )
-          : SizedBox.square(
-              dimension: _snackPreviewSize,
-              child: SnapshotStorageImage(
-                snapshot: snapshot,
-                borderRadius: _snackPreviewRadius,
-                decodeWidth: previewDecodeWidth,
+              child: const DecoratedBox(
+                decoration: BoxDecoration(
+                  gradient: LinearGradient(
+                    begin: Alignment.topCenter,
+                    end: Alignment.bottomCenter,
+                    colors: [Colors.transparent, Color(0xB3000000)],
+                  ),
+                ),
               ),
             ),
+          if (!isRestricted)
+            Positioned(
+              top: 8,
+              left: 8,
+              child: Container(
+                width: profileSize + 2,
+                height: profileSize + 2,
+                padding: const EdgeInsets.all(1),
+                decoration: const BoxDecoration(
+                  color: Colors.white,
+                  shape: BoxShape.circle,
+                ),
+                child: _SnackAuthorProfilePreview(
+                  profile: profile,
+                  size: profileSize,
+                  decodeWidth: profileDecodeWidth,
+                ),
+              ),
+            ),
+          if (!isRestricted && snapshot.isVideo)
+            const Align(
+              alignment: Alignment.center,
+              child: Icon(
+                Icons.play_circle_outline_rounded,
+                size: 28,
+                color: Colors.white,
+              ),
+            ),
+          Positioned(
+            left: 8,
+            right: 8,
+            bottom: 10,
+            child: ExcludeSemantics(
+              child: Text(
+                label,
+                maxLines: 2,
+                overflow: TextOverflow.ellipsis,
+                textAlign: TextAlign.start,
+                style: nameStyle,
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _RestrictedSnackArtwork extends StatelessWidget {
+  const _RestrictedSnackArtwork({
+    required this.profile,
+    required this.width,
+    required this.height,
+    required this.reserveBottomName,
+  });
+
+  final SnapshotAuthorProfile profile;
+  final double width;
+  final double height;
+  final bool reserveBottomName;
+
+  @override
+  Widget build(BuildContext context) {
+    final scaler = MediaQuery.textScalerOf(context);
+    final topReserve = math.max(32.0, scaler.scale(11) * 1.25 + 16);
+    final bottomReserve = reserveBottomName
+        ? math.min(height * .52, scaler.scale(14) * 2.56 + 10)
+        : 0.0;
+    final avatarSpace = math.max(12.0, height - topReserve - bottomReserve);
+    final avatarSize = math.min(68.0, math.min(width * .62, avatarSpace));
+    final avatarTop = topReserve + math.max(0, (avatarSpace - avatarSize) / 2);
+    final decodeWidth = (avatarSize * MediaQuery.devicePixelRatioOf(context))
+        .ceil()
+        .clamp(48, 256);
+    return ColoredBox(
+      color: _snackNeutralBackground,
+      child: Stack(
+        children: [
+          Positioned(
+            top: 8,
+            left: 8,
+            right: 8,
+            child: Row(
+              children: [
+                const Icon(Icons.people_outline_rounded,
+                    size: 14, color: Color(0xFF475467)),
+                const SizedBox(width: 3),
+                Expanded(
+                  child: Text(
+                    _restrictedSnackBadgeLabel(context),
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    style: TextStyle(
+                      fontFamily: uiFontFamily(context, 'Inter'),
+                      fontFamilyFallback: const ['NotoSansKR'],
+                      fontSize: 11,
+                      fontWeight: FontWeight.w600,
+                      color: const Color(0xFF475467),
+                    ),
+                  ),
+                ),
+              ],
+            ),
+          ),
+          Positioned(
+            top: avatarTop,
+            left: (width - avatarSize) / 2,
+            child: _SnackAuthorProfilePreview(
+              profile: profile,
+              size: avatarSize,
+              decodeWidth: decodeWidth,
+            ),
+          ),
+        ],
+      ),
     );
   }
 }
@@ -618,6 +876,8 @@ class _SnapshotTile extends StatelessWidget {
 class _MySnackTile extends StatelessWidget {
   const _MySnackTile({
     super.key,
+    required this.layout,
+    required this.previewDecodeWidth,
     required this.snapshot,
     required this.label,
     required this.uid,
@@ -627,6 +887,8 @@ class _MySnackTile extends StatelessWidget {
     required this.onAdd,
   });
 
+  final SnackPreviewLayout layout;
+  final int previewDecodeWidth;
   final SnapshotItem? snapshot;
   final String label;
   final String uid;
@@ -638,78 +900,95 @@ class _MySnackTile extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final story = snapshot;
-    final previewDecodeWidth =
-        (_snackPreviewSize * MediaQuery.devicePixelRatioOf(context))
-            .ceil()
-            .clamp(72, 512);
+    final ownProfile = story == null
+        ? SnapshotAuthorProfile(
+            userId: uid,
+            photoUrl: profilePhotoUrl,
+            photoVersion: profilePhotoVersion,
+          )
+        : profilePhotoUrl.trim().isNotEmpty
+            ? SnapshotAuthorProfile(
+                userId: uid,
+                photoUrl: profilePhotoUrl,
+                photoVersion: profilePhotoVersion,
+              )
+            : SnapshotAuthorProfile.resolve(story);
     return _SnackTileShell(
-      label: label,
+      layout: layout,
+      semanticLabel:
+          story != null && story.visibility != SnapshotVisibility.public
+              ? '$label, ${_restrictedSnackDescription(context)}'
+              : label,
       onTap: onTap,
-      expandToFitLabel: true,
-      preview: SizedBox.square(
-        dimension: _snackPreviewSize,
-        child: Stack(
-          clipBehavior: Clip.hardEdge,
-          children: [
-            Positioned.fill(
-              child: story == null
-                  ? _EmptySnackPreview(
-                      uid: uid,
-                      photoUrl: profilePhotoUrl,
-                      photoVersion: profilePhotoVersion,
-                    )
-                  : story.visibility != SnapshotVisibility.public
-                      ? AudienceRing(
-                          restricted: true,
-                          size: _snackPreviewSize,
-                          borderRadius: _snackPreviewRadius,
-                          ringWidth: 4,
-                          innerGap: 1,
-                          ringInset: 0,
-                          emphasized: true,
-                          semanticLabel: (isChineseUi(context)
-                              ? '部分人可见的限时动态'
-                              : Localizations.localeOf(context).languageCode ==
-                                      'ko'
-                                  ? '공개 범위가 제한된 스낵'
-                                  : 'Limited audience snack'),
-                          child: _SnackAuthorProfilePreview(
-                            profile: profilePhotoUrl.trim().isNotEmpty
-                                ? SnapshotAuthorProfile(
-                                    userId: uid,
-                                    photoUrl: profilePhotoUrl,
-                                    photoVersion: profilePhotoVersion,
-                                  )
-                                : SnapshotAuthorProfile.resolve(story),
-                          ),
-                        )
-                      : SnapshotStorageImage(
-                          snapshot: story,
-                          borderRadius: _snackPreviewRadius,
-                          decodeWidth: previewDecodeWidth,
-                        ),
+      child: Stack(
+        children: [
+          Positioned(
+            top: 0,
+            left: 0,
+            right: 0,
+            height: layout.myImageHeight,
+            child: story == null
+                ? _EmptySnackPreview(
+                    uid: uid,
+                    photoUrl: profilePhotoUrl,
+                    photoVersion: profilePhotoVersion,
+                    width: layout.cardWidth,
+                    height: layout.myImageHeight,
+                  )
+                : story.visibility != SnapshotVisibility.public
+                    ? _RestrictedSnackArtwork(
+                        profile: ownProfile,
+                        width: layout.cardWidth,
+                        height: layout.myImageHeight,
+                        reserveBottomName: false,
+                      )
+                    : SnapshotStorageImage(
+                        snapshot: story,
+                        decodeWidth: previewDecodeWidth,
+                      ),
+          ),
+          Positioned(
+            top: layout.myImageHeight,
+            left: 0,
+            right: 0,
+            bottom: 0,
+            child: const ColoredBox(color: Colors.white),
+          ),
+          Positioned(
+            left: 8,
+            right: 8,
+            bottom: 10,
+            child: ExcludeSemantics(
+              child: Text(
+                label,
+                maxLines: 2,
+                overflow: TextOverflow.ellipsis,
+                style: _snackLabelStyle(context, const Color(0xFF111827)),
+              ),
             ),
-            Positioned(
-              right: 0,
-              bottom: 0,
+          ),
+          Positioned(
+            top: layout.myImageHeight - 24,
+            left: 8,
+            child: Semantics(
+              button: true,
+              label: SnapshotStrings.of(context).createSnapshot,
               child: GestureDetector(
                 behavior: HitTestBehavior.opaque,
                 onTap: onAdd,
                 child: SizedBox.square(
-                  dimension: 36,
-                  child: Align(
-                    alignment: Alignment.bottomRight,
+                  dimension: 48,
+                  child: Center(
                     child: Container(
-                      width: 24,
-                      height: 24,
-                      decoration: BoxDecoration(
-                        color: const Color(0xFF2D9CDB),
+                      width: 34,
+                      height: 34,
+                      decoration: const BoxDecoration(
+                        color: Color(0xFF344054),
                         shape: BoxShape.circle,
-                        border: Border.all(color: Colors.white, width: 2),
                       ),
                       child: const Icon(
                         Icons.add_rounded,
-                        size: 17,
+                        size: 22,
                         color: Colors.white,
                       ),
                     ),
@@ -717,28 +996,30 @@ class _MySnackTile extends StatelessWidget {
                 ),
               ),
             ),
-          ],
-        ),
+          ),
+        ],
       ),
     );
   }
 }
 
 class _SnackAuthorProfilePreview extends StatelessWidget {
-  const _SnackAuthorProfilePreview({required this.profile});
+  const _SnackAuthorProfilePreview({
+    required this.profile,
+    required this.size,
+    required this.decodeWidth,
+  });
 
   final SnapshotAuthorProfile profile;
+  final double size;
+  final int decodeWidth;
 
   @override
   Widget build(BuildContext context) {
-    final decodeWidth =
-        (_snackPreviewSize * MediaQuery.devicePixelRatioOf(context))
-            .ceil()
-            .clamp(72, 512);
     return SnapshotAuthorProfileImage(
       profile: profile,
-      size: _snackPreviewSize,
-      borderRadius: _snackPreviewRadius,
+      size: size,
+      borderRadius: BorderRadius.circular(size / 2),
       decodeWidth: decodeWidth,
     );
   }
@@ -749,31 +1030,35 @@ class _EmptySnackPreview extends StatelessWidget {
     required this.uid,
     required this.photoUrl,
     required this.photoVersion,
+    required this.width,
+    required this.height,
   });
 
   final String uid;
   final String photoUrl;
   final int photoVersion;
+  final double width;
+  final double height;
 
   @override
   Widget build(BuildContext context) {
-    return Container(
-      width: _snackPreviewSize,
-      height: _snackPreviewSize,
-      alignment: Alignment.center,
-      decoration: const BoxDecoration(
-        color: Color(0xFFF3F4F6),
-        borderRadius: _snackPreviewRadius,
-      ),
-      child: UserAvatar(
-        uid: uid,
-        photoUrl: photoUrl,
-        photoVersion: photoVersion,
-        isAnonymous: false,
-        size: 58,
-        placeholderColor: const Color(0xFFF3F4F6),
-        placeholderIcon: Icons.camera_alt_outlined,
-        placeholderIconSize: 29,
+    return SizedBox(
+      width: width,
+      height: height,
+      child: ColoredBox(
+        color: _snackNeutralBackground,
+        child: Center(
+          child: UserAvatar(
+            uid: uid,
+            photoUrl: photoUrl,
+            photoVersion: photoVersion,
+            isAnonymous: false,
+            size: math.min(68, math.min(width * .66, height * .70)),
+            placeholderColor: _snackNeutralBackground,
+            placeholderIcon: Icons.camera_alt_outlined,
+            placeholderIconSize: 29,
+          ),
+        ),
       ),
     );
   }
@@ -781,77 +1066,35 @@ class _EmptySnackPreview extends StatelessWidget {
 
 class _SnackTileShell extends StatelessWidget {
   const _SnackTileShell({
-    required this.label,
+    required this.layout,
+    required this.semanticLabel,
     required this.onTap,
-    required this.preview,
-    this.expandToFitLabel = false,
+    required this.child,
   });
 
-  final String label;
+  final SnackPreviewLayout layout;
+  final String semanticLabel;
   final VoidCallback onTap;
-  final Widget preview;
-  final bool expandToFitLabel;
+  final Widget child;
 
   @override
   Widget build(BuildContext context) {
-    final textScaler = MediaQuery.textScalerOf(context).clamp(
-      maxScaleFactor: 1.15,
-    );
-    final labelStyle = TextStyle(
-      // Preserve every existing snack label exactly; only My Snack opts into
-      // the locale-aware family needed to measure/render its Chinese label.
-      fontFamily: expandToFitLabel ? uiFontFamily(context, 'Inter') : 'Inter',
-      fontFamilyFallback: const ['NotoSansKR'],
-      fontSize: 13,
-      height: 1.25,
-      fontWeight: FontWeight.w600,
-      color: const Color(0xFF111827),
-    );
-    var tileWidth = _snackTileWidth;
-    if (expandToFitLabel) {
-      final painter = TextPainter(
-        text: TextSpan(text: label, style: labelStyle),
-        maxLines: 1,
-        textDirection: Directionality.of(context),
-        textScaler: textScaler,
-      )..layout();
-      tileWidth = (painter.width + 4).clamp(_snackTileWidth, 140.0).toDouble();
-      painter.dispose();
-    }
     return Semantics(
       button: true,
-      label: label,
-      child: Material(
-        color: Colors.transparent,
-        child: InkWell(
-          borderRadius: BorderRadius.circular(18),
-          onTap: onTap,
-          child: SizedBox(
-            width: tileWidth,
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              mainAxisAlignment: MainAxisAlignment.center,
-              children: [
-                SizedBox(
-                  width: _snackTileWidth,
-                  child: Center(child: preview),
-                ),
-                const SizedBox(height: 3),
-                SizedBox(
-                  width: tileWidth,
-                  child: Text(
-                    label,
-                    maxLines: 1,
-                    overflow: expandToFitLabel
-                        ? TextOverflow.clip
-                        : TextOverflow.ellipsis,
-                    textAlign: TextAlign.center,
-                    textScaler: textScaler,
-                    style: labelStyle,
-                  ),
-                ),
-              ],
-            ),
+      label: semanticLabel,
+      explicitChildNodes: true,
+      onTap: onTap,
+      child: SizedBox(
+        width: layout.cardWidth,
+        height: layout.cardHeight,
+        child: Material(
+          color: _snackNeutralBackground,
+          borderRadius: _snackCardRadius,
+          clipBehavior: Clip.antiAlias,
+          child: InkWell(
+            onTap: onTap,
+            excludeFromSemantics: true,
+            child: child,
           ),
         ),
       ),
@@ -861,11 +1104,13 @@ class _SnackTileShell extends StatelessWidget {
 
 class _SnackActionTile extends StatelessWidget {
   const _SnackActionTile({
+    required this.layout,
     required this.icon,
     required this.label,
     required this.onTap,
   });
 
+  final SnackPreviewLayout layout;
   final IconData icon;
   final String label;
   final VoidCallback onTap;
@@ -873,53 +1118,64 @@ class _SnackActionTile extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return _SnackTileShell(
-      label: label,
+      layout: layout,
+      semanticLabel: label,
       onTap: onTap,
-      preview: Container(
-        width: _snackPreviewSize,
-        height: _snackPreviewSize,
-        decoration: const BoxDecoration(
-          color: Color(0xFFF1F3F5),
-          borderRadius: _snackPreviewRadius,
-        ),
-        child: Icon(icon, size: 26, color: const Color(0xFF667085)),
+      child: Stack(
+        children: [
+          Center(child: Icon(icon, size: 28, color: const Color(0xFF667085))),
+          Positioned(
+            left: 8,
+            right: 8,
+            bottom: 10,
+            child: ExcludeSemantics(
+              child: Text(
+                label,
+                maxLines: 2,
+                overflow: TextOverflow.ellipsis,
+                style: _snackLabelStyle(context, const Color(0xFF111827)),
+              ),
+            ),
+          ),
+        ],
       ),
     );
   }
 }
 
 class _SnackSkeleton extends StatelessWidget {
-  const _SnackSkeleton();
+  const _SnackSkeleton({required this.layout});
+
+  final SnackPreviewLayout layout;
 
   @override
   Widget build(BuildContext context) {
     return SizedBox(
-      width: _snackTileWidth,
-      child: Column(
-        mainAxisAlignment: MainAxisAlignment.center,
-        children: [
-          const SizedBox(
-            width: _snackPreviewSize,
-            height: _snackPreviewSize,
-            child: DecoratedBox(
-              decoration: BoxDecoration(
-                color: Color(0xFFF1F3F5),
-                borderRadius: _snackPreviewRadius,
+      width: layout.cardWidth,
+      height: layout.cardHeight,
+      child: ClipRRect(
+        borderRadius: _snackCardRadius,
+        child: ColoredBox(
+          color: const Color(0xFFF1F3F5),
+          child: Stack(
+            children: [
+              Positioned(
+                left: 8,
+                right: 24,
+                bottom: 13,
+                child: SizedBox(
+                  height: 10,
+                  child: DecoratedBox(
+                    decoration: BoxDecoration(
+                      color: const Color(0xFFE5E7EB),
+                      borderRadius: BorderRadius.circular(5),
+                    ),
+                  ),
+                ),
               ),
-            ),
+            ],
           ),
-          const SizedBox(height: 3),
-          Center(
-            child: Container(
-              width: 48,
-              height: 10,
-              decoration: BoxDecoration(
-                color: const Color(0xFFF1F3F5),
-                borderRadius: BorderRadius.circular(5),
-              ),
-            ),
-          ),
-        ],
+        ),
       ),
     );
   }

@@ -14,6 +14,10 @@ import {
 const SNAPSHOT_FEED = 'snapshot_feed';
 const MAX_IMAGE_BYTES = 15 * 1024 * 1024;
 const MAX_VIDEO_DURATION_SECONDS = 12;
+// MP4 muxers may include one trailing video frame and a short audio tail
+// beyond the editor's exact 12-second selection.
+const MAX_VIDEO_FRAME_OVERHANG_SECONDS = 0.1;
+const MAX_VIDEO_CONTAINER_OVERHANG_SECONDS = 0.25;
 const SNAPSHOT_LIFETIME_MS = 24 * 60 * 60 * 1000;
 const ORPHAN_UPLOAD_GRACE_MS = 2 * 60 * 60 * 1000;
 const ALLOWED_VISIBILITIES = new Set(['public', 'friends', 'category']);
@@ -26,6 +30,10 @@ type Mp4TrackInfo = {
   codec?: string;
   track_width?: number;
   track_height?: number;
+  duration?: number;
+  timescale?: number;
+  movie_duration?: number;
+  movie_timescale?: number;
   video?: {width?: number; height?: number};
 };
 
@@ -45,7 +53,57 @@ type Mp4Parser = {
 
 // mp4box is used only to inspect the already client-transcoded MP4. Chunks are
 // streamed from disk; the function never creates a whole-file Buffer.
+// eslint-disable-next-line @typescript-eslint/no-var-requires
 const MP4Box = require('mp4box') as {createFile(): Mp4Parser};
+
+function mp4DurationSeconds(duration: unknown, timescale: unknown): number {
+  const units = Number(duration);
+  const rate = Number(timescale);
+  return Number.isFinite(units) && Number.isFinite(rate) &&
+    units > 0 && rate > 0 ? units / rate : 0;
+}
+
+// The movie duration can include an audio tail after the last video frame.
+// Validate the actual video track, while still bounding the whole container.
+export function validatedSnapshotVideoInfo(info: Mp4ReadyInfo): {
+  durationMs: number;
+  width: number;
+  height: number;
+  codec: string;
+} {
+  const tracks = Array.isArray(info.videoTracks) && info.videoTracks.length > 0
+    ? info.videoTracks
+    : (Array.isArray(info.tracks)
+      ? info.tracks.filter((track) => track.video != null)
+      : []);
+  const track = tracks[0];
+  const movieSeconds = mp4DurationSeconds(info.duration, info.timescale);
+  const trackSeconds = track == null ? 0 :
+    mp4DurationSeconds(track.duration, track.timescale) ||
+    mp4DurationSeconds(track.movie_duration, track.movie_timescale);
+  const seconds = trackSeconds || movieSeconds;
+  const width = Number(track?.video?.width ?? track?.track_width ?? 0);
+  const height = Number(track?.video?.height ?? track?.track_height ?? 0);
+  const codec = text(track?.codec).toLowerCase();
+  if (!track || !Number.isFinite(movieSeconds) || movieSeconds <= 0 ||
+      !Number.isFinite(seconds) || seconds <= 0 ||
+      seconds > MAX_VIDEO_DURATION_SECONDS + MAX_VIDEO_FRAME_OVERHANG_SECONDS ||
+      movieSeconds > MAX_VIDEO_DURATION_SECONDS + MAX_VIDEO_CONTAINER_OVERHANG_SECONDS ||
+      !Number.isFinite(width) || !Number.isFinite(height) ||
+      width < 1 || height < 1 ||
+      !/^(avc1|avc3|hvc1|hev1)/.test(codec)) {
+    throw new Error(
+      `invalid-video-stream videoSeconds=${seconds} movieSeconds=${movieSeconds} ` +
+      `width=${width} height=${height} codec=${codec || 'missing'}`,
+    );
+  }
+  return {
+    durationMs: Math.min(MAX_VIDEO_DURATION_SECONDS * 1000, Math.round(seconds * 1000)),
+    width: Math.round(width),
+    height: Math.round(height),
+    codec,
+  };
+}
 
 function snapshotReactionCopy(
   reaction: string,
@@ -272,32 +330,16 @@ async function inspectMp4File(localPath: string): Promise<{
     parser.onError = fail;
     parser.onReady = (info) => {
       if (settled) return;
-      const timescale = Number(info.timescale ?? 0);
-      const duration = Number(info.duration ?? 0);
-      const tracks = Array.isArray(info.videoTracks) && info.videoTracks.length > 0
-        ? info.videoTracks
-        : (Array.isArray(info.tracks)
-          ? info.tracks.filter((track) => track.video != null)
-          : []);
-      const track = tracks[0];
-      const seconds = timescale > 0 ? duration / timescale : 0;
-      const width = Number(track?.video?.width ?? track?.track_width ?? 0);
-      const height = Number(track?.video?.height ?? track?.track_height ?? 0);
-      const codec = text(track?.codec).toLowerCase();
-      if (!track || !Number.isFinite(seconds) || seconds <= 0 ||
-          seconds > MAX_VIDEO_DURATION_SECONDS || width < 1 || height < 1 ||
-          !/^(avc1|avc3|hvc1|hev1)/.test(codec)) {
-        fail(new Error('invalid-video-stream'));
+      let videoInfo: ReturnType<typeof validatedSnapshotVideoInfo>;
+      try {
+        videoInfo = validatedSnapshotVideoInfo(info);
+      } catch (error) {
+        fail(error);
         return;
       }
       settled = true;
       input.destroy();
-      resolve({
-        durationMs: Math.round(seconds * 1000),
-        width: Math.round(width),
-        height: Math.round(height),
-        codec,
-      });
+      resolve(videoInfo);
     };
 
     input.on('data', (chunk: string | Buffer) => {

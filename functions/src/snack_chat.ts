@@ -1708,7 +1708,6 @@ export const commitSnackChatFileUpload = functions
         lastMessageSequence: sequence,
         lastMessageType: 'file',
         lastMessageExpiresAt: expiresAt,
-        ['unreadCount.' + uid]: 0,
         updatedAt: createdAt,
       });
       transaction.update(jobRef, {
@@ -2398,9 +2397,14 @@ export const joinMeetupSnackChatSecure = functions
         unreadCount[id] = previousUnread[id] ?? 0;
       });
       unreadCount[userId] = 0;
+      const unreadStartSequenceBy = {
+        ...objectValue(room.get('unreadStartSequenceBy')),
+        [userId]: nonNegativeInteger(room.get('lastMessageSequence')),
+      };
       transaction.update(roomRef, {
         participantIds: nextParticipants,
         unreadCount,
+        unreadStartSequenceBy,
         ...(participants.length === 0 ? {creatorId: userId} : {}),
         updatedAt: FieldValue.serverTimestamp(),
       });
@@ -6470,6 +6474,8 @@ export const createSnackChatAnnouncementSecure = functions
         lastMessageTime: now,
         lastMessageSenderId: creatorId,
         lastMessageSequence: sequence,
+        lastMessageType: 'system',
+        lastMessageExpiresAt: FieldValue.delete(),
         updatedAt: now,
       });
       return {created: true, sequence};
@@ -7683,11 +7689,16 @@ async function applySnackChatUnreadOnce(args: {
         blockedPushRecipients.add(userId);
       }
       const memberData = member?.data() ?? {};
+      const reentryStart = nonNegativeInteger(
+        objectValue(room.get('unreadStartSequenceBy'))[userId],
+      );
+      if (reentryStart > 0 && sequence <= reentryStart) return;
       // Canonical recipientIds are the immutable send-time audience. A user
       // who leaves before this trigger runs still counts in the historical
       // read-receipt denominator, but no longer receives unread/push updates.
       if (!hasCanonicalRecipientSnapshot &&
-          !sequenceIsInMembership(memberData, sequence)) {
+          !sequenceIsInMembership(memberData, sequence) &&
+          !(reentryStart > 0 && sequence > reentryStart)) {
         return;
       }
       deliveryRecipients.push(userId);

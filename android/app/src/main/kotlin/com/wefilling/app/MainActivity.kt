@@ -120,11 +120,15 @@ class MainActivity : FlutterActivity() {
             flutterEngine.dartExecutor.binaryMessenger,
             notificationCenterChannelName,
         ).setMethodCallHandler { call, result ->
-            if (call.method != "removeDeliveredNotifications") {
-                result.notImplemented()
-                return@setMethodCallHandler
+            when (call.method) {
+                "removeDeliveredNotifications" ->
+                    removeDeliveredNotifications(call.arguments as? Map<*, *>, result)
+                "recordLocalNotificationMetadata" ->
+                    recordLocalNotificationMetadata(call.arguments as? Map<*, *>, result)
+                "registerTodoNotificationMetadata" ->
+                    registerTodoNotificationMetadata(call.arguments as? Map<*, *>, result)
+                else -> result.notImplemented()
             }
-            removeDeliveredNotifications(call.arguments as? Map<*, *>, result)
         }
 
         organizationInviteChannel = MethodChannel(
@@ -179,6 +183,57 @@ class MainActivity : FlutterActivity() {
                 "shareReceived",
                 mapOf("id" to intent.getStringExtra(externalShareIdExtra)),
             )
+        }
+    }
+
+    private fun registerTodoNotificationMetadata(
+        rawArguments: Map<*, *>?, result: MethodChannel.Result,
+    ) {
+        val args = rawArguments ?: emptyMap<Any, Any>()
+        val id = (args["id"] as? Number)?.toInt()
+        val owner = args["ownerUserId"]?.toString().orEmpty()
+        val todo = args["todoId"]?.toString().orEmpty()
+        if (id == null || owner.isEmpty() || todo.isEmpty()) {
+            result.success(false)
+            return
+        }
+        getSharedPreferences("personal_todo_notification_identity_v1", Context.MODE_PRIVATE)
+            .edit().putString(id.toString(), "$owner:$todo").apply()
+        result.success(true)
+    }
+
+    private fun recordLocalNotificationMetadata(
+        rawArguments: Map<*, *>?, result: MethodChannel.Result,
+    ) {
+        if (Build.VERSION.SDK_INT < Build.VERSION_CODES.M) {
+            result.success(false)
+            return
+        }
+        val args = rawArguments ?: emptyMap<Any, Any>()
+        val tag = args["tag"]?.toString().orEmpty()
+        val id = (args["id"] as? Number)?.toInt()
+        val values = args["payload"] as? Map<*, *>
+        if (tag.isEmpty() || id == null || values == null) {
+            result.success(false)
+            return
+        }
+        try {
+            val manager = getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
+            val active = manager.activeNotifications.firstOrNull { it.tag == tag && it.id == id }
+            if (active == null) {
+                result.success(false)
+                return
+            }
+            val data = JSONObject()
+            values.forEach { (key, value) ->
+                if (key is String && value is String) data.put(key, value)
+            }
+            NotificationDeliveryMetadataReceiver.recordLocal(
+                this, tag, active.notification.`when`, data,
+            )
+            result.success(true)
+        } catch (_: Exception) {
+            result.success(false)
         }
     }
 
@@ -243,14 +298,20 @@ class MainActivity : FlutterActivity() {
                 // captured by the metadata-only receiver, never a tag alone.
                 val exactTag = (expectedTag.isNotEmpty() && active.tag == expectedTag) || active.tag in expectedTags
                 val payloadOwner = payload["recipientUserId"]
+                val todoIdentityMatches = kind == "todo_local" &&
+                    getSharedPreferences("personal_todo_notification_identity_v1", Context.MODE_PRIVATE)
+                        .getString(active.id.toString(), null) ==
+                        "$ownerUserId:${arguments["todoId"]?.toString()}"
                 if (payloadOwner.isNullOrEmpty() && (kind == "dm" || kind == "snack_chat") &&
                     active.tag == expectedTag) missingMetadata = true
                 val publicAd = kind == "ad" && payload["type"] == "ad_updates" && payload["audience"] == "public"
-                if (payloadOwner != ownerUserId && !exactTag && !publicAd) return@activeLoop
+                if (payloadOwner != ownerUserId && !exactTag && !publicAd &&
+                    !todoIdentityMatches) return@activeLoop
                 if (!payloadOwner.isNullOrEmpty() && payloadOwner != ownerUserId) return@activeLoop
                 val matches = when (kind) {
-                    "todo_local" -> payload["type"] == "personalTodoReminder" &&
-                        payload["todoId"] == arguments["todoId"]?.toString() &&
+                    "todo_local" -> (todoIdentityMatches ||
+                        (payload["type"] == "personalTodoReminder" &&
+                            payload["todoId"] == arguments["todoId"]?.toString())) &&
                         active.postTime < (arguments["throughDeliveredAtMillis"]?.toString()?.toLongOrNull() ?: 0L)
                     "ad" -> exactTag || (publicAd &&
                         payload["bannerId"] == arguments["bannerId"]?.toString() &&

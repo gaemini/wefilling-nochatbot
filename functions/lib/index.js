@@ -7175,7 +7175,7 @@ exports.onNotificationCreated = functions
         const hasBadge = badgeCount !== null;
         const finalBadge = hasBadge ? Math.max(0, badgeCount) : 0;
         runtime_logging_1.runtimeLogsEnabled && (0, runtime_logging_1.runtimeInfo)(`📊 최종 badge = ${finalBadge} (raw badgeCount = ${badgeCount})`);
-        const commonData = Object.assign({ type: String(type || ''), recipientUserId: String(userId || ''), notificationId: String(notificationId || ''), sentAtMillis: String(snapshot.createTime.toMillis()), postId: String(notificationData.postId || (dataSafe === null || dataSafe === void 0 ? void 0 : dataSafe.postId) || ''), meetupId: String(notificationData.meetupId || (dataSafe === null || dataSafe === void 0 ? void 0 : dataSafe.meetupId) || ''), snapshotId: String(notificationData.snapshotId || (dataSafe === null || dataSafe === void 0 ? void 0 : dataSafe.snapshotId) || ''), commentId: String(notificationData.commentId || (dataSafe === null || dataSafe === void 0 ? void 0 : dataSafe.commentId) || ''), conversationId: String(notificationData.conversationId || (dataSafe === null || dataSafe === void 0 ? void 0 : dataSafe.conversationId) || ''), senderId: String(notificationData.senderId || (dataSafe === null || dataSafe === void 0 ? void 0 : dataSafe.senderId) || notificationData.actorId || ''), snackChatId: String(notificationData.snackChatId || (dataSafe === null || dataSafe === void 0 ? void 0 : dataSafe.snackChatId) || ''), reviewId: String(notificationData.reviewId || (dataSafe === null || dataSafe === void 0 ? void 0 : dataSafe.reviewId) || ''), requestId: String(notificationData.requestId ||
+        const commonData = Object.assign({ type: String(type || ''), recipientUserId: String(userId || ''), notificationId: String(notificationId || ''), notificationMetadataVersion: '2', notificationCommitMillis: String(Math.floor(snapshot.createTime.toMillis())), sentAtMillis: String(snapshot.createTime.toMillis()), postId: String(notificationData.postId || (dataSafe === null || dataSafe === void 0 ? void 0 : dataSafe.postId) || ''), meetupId: String(notificationData.meetupId || (dataSafe === null || dataSafe === void 0 ? void 0 : dataSafe.meetupId) || ''), snapshotId: String(notificationData.snapshotId || (dataSafe === null || dataSafe === void 0 ? void 0 : dataSafe.snapshotId) || ''), commentId: String(notificationData.commentId || (dataSafe === null || dataSafe === void 0 ? void 0 : dataSafe.commentId) || ''), conversationId: String(notificationData.conversationId || (dataSafe === null || dataSafe === void 0 ? void 0 : dataSafe.conversationId) || ''), senderId: String(notificationData.senderId || (dataSafe === null || dataSafe === void 0 ? void 0 : dataSafe.senderId) || notificationData.actorId || ''), snackChatId: String(notificationData.snackChatId || (dataSafe === null || dataSafe === void 0 ? void 0 : dataSafe.snackChatId) || ''), reviewId: String(notificationData.reviewId || (dataSafe === null || dataSafe === void 0 ? void 0 : dataSafe.reviewId) || ''), requestId: String(notificationData.requestId ||
                 (dataSafe === null || dataSafe === void 0 ? void 0 : dataSafe.requestId) ||
                 (dataSafe === null || dataSafe === void 0 ? void 0 : dataSafe.friendRequestId) ||
                 ''), userId: String((dataSafe === null || dataSafe === void 0 ? void 0 : dataSafe.userId) || ''), meetupTitle: safeStringLoose(dataSafe === null || dataSafe === void 0 ? void 0 : dataSafe.meetupTitle).slice(0, 200), imageUrl: safeStringLoose(dataSafe === null || dataSafe === void 0 ? void 0 : dataSafe.imageUrl).slice(0, 1000), content: safeStringLoose(dataSafe === null || dataSafe === void 0 ? void 0 : dataSafe.content).slice(0, 500), reaction: String(notificationData.reaction || (dataSafe === null || dataSafe === void 0 ? void 0 : dataSafe.reaction) || ''), comment: String(notificationData.comment || (dataSafe === null || dataSafe === void 0 ? void 0 : dataSafe.comment) || ''), reply: String(notificationData.reply || (dataSafe === null || dataSafe === void 0 ? void 0 : dataSafe.reply) || ''), originalNotificationId: String((dataSafe === null || dataSafe === void 0 ? void 0 : dataSafe.originalNotificationId) || ''), actorId: String(notificationData.actorId || actorId || ''), actorName: String(notificationData.actorName || (dataSafe === null || dataSafe === void 0 ? void 0 : dataSafe.actorName) || '') }, (hasBadge ? { badge: String(finalBadge) } : {}));
@@ -7219,6 +7219,7 @@ exports.onNotificationCreated = functions
                         sound: 'default',
                         channelId: 'high_importance_channel',
                         tag: androidNotificationTag,
+                        eventTimestamp: snapshot.createTime.toDate(),
                     },
                 },
             };
@@ -7404,9 +7405,10 @@ exports.onNotificationDeletedSyncUnreadCounter = functions
     const userId = data.userId;
     const type = data.type;
     const isRead = data.isRead === true;
-    const skipUnreadCounterSync = data.skipUnreadCounterSync === true;
-    if (!userId || type === 'dm_received' || isRead ||
-        skipUnreadCounterSync)
+    // A validation failure may delete a document after its create trigger or
+    // reconciliation already counted it. The marker below, rather than this
+    // legacy hint, is the authority for whether one decrement is owed.
+    if (!userId || type === 'dm_received' || isRead)
         return null;
     const userRef = db.collection('users').doc(String(userId));
     const notificationId = String(context.params.notificationId);

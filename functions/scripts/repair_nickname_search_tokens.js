@@ -26,6 +26,7 @@ function argument(name) {
 const projectId = argument('--project');
 const confirmedProjectId = argument('--confirm-project');
 const apply = process.argv.includes('--apply');
+const after = argument('--after');
 if (!projectId || projectId.includes('/') || projectId.length > 100) {
   throw new Error('--project with an exact Firebase project ID is required');
 }
@@ -44,13 +45,27 @@ function sameStrings(left, right) {
 }
 
 async function main() {
-  const snapshot = await db.collection('users').get();
-  const repairs = [];
+  const repairFingerprints = [];
+  let cursor = after;
+  let scannedUsers = 0;
   let searchableUsers = 0;
   let obsoleteTokens = 0;
   let missingTokens = 0;
 
-  for (const document of snapshot.docs) {
+  let appliedRepairs = 0;
+  let skippedChangedUsers = 0;
+  let alreadyCurrentAtApply = 0;
+  let missingAtApply = 0;
+  let pendingRepairs = 0;
+  while (true) {
+    let query = db.collection('users')
+      .orderBy(admin.firestore.FieldPath.documentId()).limit(100);
+    if (cursor) query = query.startAfter(cursor);
+    const snapshot = await query.get();
+    if (snapshot.empty) break;
+    scannedUsers += snapshot.size;
+    const repairs = [];
+    for (const document of snapshot.docs) {
     const data = document.data();
     if (!evaluateSearchableUser(document.id, data).searchable) continue;
     searchableUsers++;
@@ -75,13 +90,10 @@ async function main() {
       ref: document.ref,
       uidFingerprint: uidHash(document.id),
     });
-  }
-
-  let appliedRepairs = 0;
-  let skippedChangedUsers = 0;
-  let alreadyCurrentAtApply = 0;
-  let missingAtApply = 0;
-  if (apply) {
+    repairFingerprints.push(uidHash(document.id));
+    }
+    pendingRepairs += repairs.length;
+    if (apply) {
     // Each write re-reads and re-evaluates the latest profile in a transaction.
     // A nickname/privacy change after the dry-run scan can therefore never be
     // overwritten with tokens calculated from the stale snapshot.
@@ -130,21 +142,28 @@ async function main() {
         if (outcome === 'missing') missingAtApply++;
       });
     }
+    }
+    cursor = snapshot.docs[snapshot.docs.length - 1].id;
+    process.stderr.write(`${JSON.stringify({mode: apply ? 'apply' : 'dry-run',
+      scannedUsers, appliedRepairs, resumeAfter: cursor})}\n`);
+    if (snapshot.size < 100) break;
   }
 
   process.stdout.write(`${JSON.stringify({
     mode: apply ? 'apply' : 'dry-run',
     projectId,
-    scannedUsers: snapshot.size,
+    scannedUsers,
+    startedAfter: after || null,
+    lastCursor: cursor || null,
     searchableUsers,
     repairedUsers: appliedRepairs,
-    pendingRepairs: apply ? 0 : repairs.length,
+    pendingRepairs: apply ? 0 : pendingRepairs,
     skippedChangedUsers,
     alreadyCurrentAtApply,
     missingAtApply,
     obsoleteTokens,
     missingTokens,
-    uidFingerprints: repairs.map((repair) => repair.uidFingerprint),
+    uidFingerprints: repairFingerprints,
   }, null, 2)}\n`);
 }
 

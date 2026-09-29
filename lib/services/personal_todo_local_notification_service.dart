@@ -1,6 +1,7 @@
 import 'dart:convert';
 
 import 'package:flutter/foundation.dart';
+import 'package:flutter/services.dart';
 import 'package:flutter_local_notifications/flutter_local_notifications.dart';
 import 'package:timezone/data/latest.dart' as tz_data;
 import 'package:timezone/timezone.dart' as tz;
@@ -177,6 +178,18 @@ class PersonalTodoLocalNotificationService {
       // null로 예약하면 첫 알림 후 반복이 끊기므로 항상 시간 반복을 지정한다.
       matchDateTimeComponents: DateTimeComponents.time,
     );
+    if (!kIsWeb && defaultTargetPlatform == TargetPlatform.android) {
+      try {
+        await const MethodChannel('com.wefilling.app/notification_center')
+            .invokeMethod<bool>('registerTodoNotificationMetadata', {
+          'id': id,
+          'ownerUserId': userId,
+          'todoId': todo.id,
+        });
+      } catch (_) {
+        // Metadata is only for selective cleanup; scheduling already worked.
+      }
+    }
   }
 
   Future<void> cancel(String userId, String todoId) async {

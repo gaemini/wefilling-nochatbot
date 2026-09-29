@@ -1,6 +1,7 @@
 import 'package:flutter_test/flutter_test.dart';
 import 'package:wefilling/models/snack_chat_message.dart';
 import 'package:wefilling/screens/snack_chat_screen.dart';
+import 'package:wefilling/services/snack_chat_service.dart';
 
 SnackChatMessage message({
   required String id,
@@ -18,6 +19,25 @@ SnackChatMessage message({
     );
 
 void main() {
+  test('regular commit does not call uncertain failures definitive', () {
+    for (final code in <String>[
+      'failed-precondition',
+      'aborted',
+      'deadline-exceeded',
+      'unavailable',
+    ]) {
+      expect(isDefinitiveSnackChatCommitErrorCode(code), isFalse, reason: code);
+    }
+    for (final code in <String>[
+      'permission-denied',
+      'invalid-argument',
+      'not-found',
+      'unauthenticated',
+    ]) {
+      expect(isDefinitiveSnackChatCommitErrorCode(code), isTrue, reason: code);
+    }
+  });
+
   test('late failure cannot roll a committed message back', () {
     final committed = message(
       id: 'committed',

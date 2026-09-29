@@ -50,6 +50,9 @@ class BoardScreen extends StatefulWidget {
 }
 
 class BoardScreenState extends State<BoardScreen> {
+  // Keep the existing sections available for a later display-only re-enable.
+  static const bool _showTodayAdBanner = false;
+  static const bool _showTodayMeetupsSection = false;
   final PostService _postService = PostService();
   final PostMediaPrefetchService _postMediaPrefetch =
       PostMediaPrefetchService.instance;
@@ -1442,7 +1445,7 @@ class BoardScreenState extends State<BoardScreen> {
     required bool isPostsError,
   }) {
     return StreamBuilder<List<Meetup>>(
-      stream: _todayMeetupsStream,
+      stream: _showTodayMeetupsSection ? _todayMeetupsStream : null,
       builder: (context, meetupSnapshot) {
         final todayMeetupsTitle = _safeL10n(
           (l) => l.todayMeetupsSectionTitle,
@@ -1490,9 +1493,8 @@ class BoardScreenState extends State<BoardScreen> {
                 : (todayCombined.isNotEmpty ? todayCombined.length : 1));
 
         final itemCount = 1 + // snapshots
-            1 + // banner
-            1 + // meetups header
-            meetupsCount +
+            (_showTodayAdBanner ? 1 : 0) +
+            (_showTodayMeetupsSection ? 1 + meetupsCount : 0) +
             1 + // posts header
             1 + // horizontally scrollable post categories
             postsCount +
@@ -1519,48 +1521,47 @@ class BoardScreenState extends State<BoardScreen> {
               }
               i -= 1;
 
-              // 1) banner
-              if (i == 0) {
-                return AdBannerWidget(
-                  key: const ValueKey('board_banner_today'),
-                  widgetId: 'board_banner_today',
-                );
-              }
-              i -= 1;
-
-              // 1) meetups header
-              if (i == 0) {
-                return _buildTodaySectionHeader(
-                  icon: Icons.event_available_rounded,
-                  title: todayMeetupsTitle,
-                  isLoading: isMeetupsLoading,
-                  actionLabel: (isChineseUi(context)
-                      ? '全部'
-                      : Localizations.localeOf(context).languageCode == 'ko'
-                          ? '모두 보기'
-                          : 'ALL'),
-                  onAction: widget.onOpenMeetups,
-                );
-              }
-              i -= 1;
-
-              // 2) meetups list/skeleton/empty
-              if (i < meetupsCount) {
-                if (isMeetupsLoading) {
-                  return Padding(
-                    padding: _boardPostCardMargin,
-                    child: _buildMeetupSkeletonCard(),
+              if (_showTodayAdBanner) {
+                if (i == 0) {
+                  return AdBannerWidget(
+                    key: const ValueKey('board_banner_today'),
+                    widgetId: 'board_banner_today',
                   );
                 }
-                if (todayMeetups.isEmpty) {
-                  return _buildTodaySectionMessage(noTodayMeetupsText);
-                }
-
-                return _buildTodayMeetupCarousel(todayMeetups);
+                i -= 1;
               }
-              i -= meetupsCount;
 
-              // 3) posts header
+              if (_showTodayMeetupsSection) {
+                if (i == 0) {
+                  return _buildTodaySectionHeader(
+                    icon: Icons.event_available_rounded,
+                    title: todayMeetupsTitle,
+                    isLoading: isMeetupsLoading,
+                    actionLabel: (isChineseUi(context)
+                        ? '全部'
+                        : Localizations.localeOf(context).languageCode == 'ko'
+                            ? '모두 보기'
+                            : 'ALL'),
+                    onAction: widget.onOpenMeetups,
+                  );
+                }
+                i -= 1;
+                if (i < meetupsCount) {
+                  if (isMeetupsLoading) {
+                    return Padding(
+                      padding: _boardPostCardMargin,
+                      child: _buildMeetupSkeletonCard(),
+                    );
+                  }
+                  if (todayMeetups.isEmpty) {
+                    return _buildTodaySectionMessage(noTodayMeetupsText);
+                  }
+                  return _buildTodayMeetupCarousel(todayMeetups);
+                }
+                i -= meetupsCount;
+              }
+
+              // Posts header and everything below retain their original order.
               if (i == 0) {
                 return _buildTodaySectionHeader(
                   icon: Icons.article_rounded,

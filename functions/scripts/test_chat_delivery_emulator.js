@@ -156,6 +156,26 @@ async function snackChecks() {
   const late = await roomRef.collection('messages').doc('late-read').get();
   await created(late, {eventId: late.id, params: {snackChatId: snackId, messageId: late.id}});
   assert.equal((await roomRef.get()).get(`unreadCount.${bob}`), 0);
+  // A re-entry barrier must reject an old delayed create while allowing the
+  // next message before the member projection reopens its period.
+  const reentryBoundary = (await roomRef.get()).get('lastMessageSequence');
+  await roomRef.update({unreadStartSequenceBy: {[alice]: reentryBoundary}});
+  await roomRef.collection('members').doc(alice).update({
+    leftAfterSequence: reentryBoundary - 1,
+  });
+  const delayedRef = roomRef.collection('messages').doc('pre-reentry-delayed');
+  await delayedRef.set({senderId: bob, messageScope: 'snack_chat',
+    chatId: snackId, type: 'text', text: 'old',
+    sequence: reentryBoundary - 1, recipientIds: [alice], readBy: [bob],
+    createdAt: admin.firestore.Timestamp.now()});
+  await created(await delayedRef.get(), {eventId: delayedRef.id,
+    params: {snackChatId: snackId, messageId: delayedRef.id}});
+  const beforeFresh = (await roomRef.get()).get(`unreadCount.${alice}`);
+  await snackSend('after-reentry', bob);
+  const fresh = await roomRef.collection('messages').doc('after-reentry').get();
+  await created(fresh, {eventId: fresh.id,
+    params: {snackChatId: snackId, messageId: fresh.id}});
+  assert.equal((await roomRef.get()).get(`unreadCount.${alice}`), beforeFresh + 1);
   console.log('PASS: Snack concurrent Rules commits preserve sequence/audience; duplicate and late unread delivery is idempotent');
 }
 

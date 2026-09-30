@@ -14,6 +14,7 @@ import 'package:video_compress/video_compress.dart';
 import 'package:video_player/video_player.dart';
 import 'package:wechat_assets_picker/wechat_assets_picker.dart';
 
+import '../constants/app_constants.dart';
 import '../models/friend_category.dart';
 import '../models/snapshot.dart';
 import '../models/user_profile.dart';
@@ -28,6 +29,19 @@ import '../ui/widgets/group_audience_preview.dart';
 import '../utils/logger.dart';
 import '../utils/responsive_helper.dart';
 import '../l10n/ui_locale.dart';
+
+// Short AVC/AAC clips can be uploaded as muxed. Keep the existing encoder for
+// HEVC, large clips, and other formats, but run it only after Publish is tapped.
+bool shouldCompressAndroidSnapshotVideo({
+  required String? videoMime,
+  required String? audioMime,
+  required int fileSizeBytes,
+}) {
+  const directUploadLimitBytes = 32 * 1024 * 1024;
+  return fileSizeBytes > directUploadLimitBytes ||
+      videoMime != 'video/avc' ||
+      (audioMime != null && audioMime != 'audio/mp4a-latm');
+}
 
 class CreateSnapshotScreen extends StatefulWidget {
   const CreateSnapshotScreen({super.key, this.onCreated});
@@ -90,6 +104,8 @@ class _CreateSnapshotScreenState extends State<CreateSnapshotScreen>
   File? _sourceFile;
   File? _composedFile;
   File? _videoThumbnail;
+  File? _optimizedVideoForUpload;
+  bool _videoNeedsCompression = false;
   SnapshotMediaType _mediaType = SnapshotMediaType.photo;
   VideoPlayerController? _sourceVideoController;
   VideoPlayerController? _previewVideoController;
@@ -402,10 +418,7 @@ class _CreateSnapshotScreenState extends State<CreateSnapshotScreen>
       layer.dispose();
     }
     unawaited(_disposeVideoControllers());
-    unawaited(
-      VideoCompress.cancelCompression()
-          .then((_) => VideoCompress.deleteAllCache()),
-    );
+    unawaited(VideoCompress.cancelCompression());
     _deleteTemporaryComposition();
     super.dispose();
   }
@@ -498,9 +511,12 @@ class _CreateSnapshotScreenState extends State<CreateSnapshotScreen>
     WidgetsBinding.instance.addPostFrameCallback((_) {
       if (!mounted || _editingTextLayerId != layerId) return;
       layer.focusNode.requestFocus();
-      layer.controller.selection = TextSelection.collapsed(
-        offset: layer.controller.text.length,
-      );
+      final selection = layer.controller.selection;
+      if (!selection.isValid || selection.end > layer.controller.text.length) {
+        layer.controller.selection = TextSelection.collapsed(
+          offset: layer.controller.text.length,
+        );
+      }
     });
   }
 
@@ -525,6 +541,20 @@ class _CreateSnapshotScreenState extends State<CreateSnapshotScreen>
         final layer = _textLayerById(layerId);
         if (!mounted || layer == null || layer.focusNode.hasFocus) return;
         final text = layer.controller.text;
+        if (text.trim().isEmpty) {
+          setState(() {
+            _textLayers.remove(layer);
+            if (_selectedTextLayerId == layerId) {
+              _selectedTextLayerId = null;
+            }
+            if (_editingTextLayerId == layerId) _editingTextLayerId = null;
+            if (_transformingTextLayerId == layerId) {
+              _transformingTextLayerId = null;
+            }
+          });
+          WidgetsBinding.instance.addPostFrameCallback((_) => layer.dispose());
+          return;
+        }
         var nextScale = layer.fontScale;
         var nextPosition = layer.position;
         final renderObject = _compositionKey.currentContext?.findRenderObject();
@@ -759,12 +789,13 @@ class _CreateSnapshotScreenState extends State<CreateSnapshotScreen>
     }
   }
 
-  Future<File> _trimSnapshotVideo(
+  Future<({File file, String? videoMime, String? audioMime})>
+      _trimSnapshotVideo(
     File source, {
     required int startMs,
     required int endMs,
   }) async {
-    final trimmedPath = await _snapshotVideoEditorChannel.invokeMethod<String>(
+    final result = await _snapshotVideoEditorChannel.invokeMethod<Object?>(
       'trimVideo',
       <String, Object>{
         'path': source.path,
@@ -772,6 +803,15 @@ class _CreateSnapshotScreenState extends State<CreateSnapshotScreen>
         'endMs': endMs,
       },
     ).timeout(const Duration(minutes: 2));
+    // iOS and older Android builds return a path; current Android also
+    // returns the track MIME so only a compatible clip can bypass encoding.
+    final trimmedPath = result is String
+        ? result
+        : result is Map
+            ? result['path'] as String?
+            : null;
+    final videoMime = result is Map ? result['videoMime'] as String? : null;
+    final audioMime = result is Map ? result['audioMime'] as String? : null;
     if (trimmedPath == null || trimmedPath.trim().isEmpty) {
       throw StateError('snapshot-video-trim-empty');
     }
@@ -779,13 +819,12 @@ class _CreateSnapshotScreenState extends State<CreateSnapshotScreen>
     if (!await trimmed.exists() || await trimmed.length() <= 0) {
       throw StateError('snapshot-video-trim-missing');
     }
-    return trimmed;
+    return (file: trimmed, videoMime: videoMime, audioMime: audioMime);
   }
 
   Future<File?> _compressAndroidSnapshotVideo(File source) async {
     if (!Platform.isAndroid) return null;
     try {
-      await VideoCompress.deleteAllCache();
       final info = await VideoCompress.compressVideo(
         source.path,
         quality: VideoQuality.Res1280x720Quality,
@@ -953,6 +992,35 @@ class _CreateSnapshotScreenState extends State<CreateSnapshotScreen>
     }
     if (layer.focusNode.hasFocus) layer.focusNode.unfocus();
     return _scheduleOverlayCommit(layerId);
+  }
+
+  void _setTextLayerFontScale(String layerId, double requestedScale) {
+    final layer = _textLayerById(layerId);
+    if (layer == null || _composing || _uploading) return;
+    final renderObject = _compositionKey.currentContext?.findRenderObject();
+    if (renderObject is! RenderBox ||
+        !renderObject.attached ||
+        !renderObject.hasSize) {
+      return;
+    }
+    final scale = _fitOverlayFontScale(
+      layer,
+      requestedScale,
+      renderObject.size.width,
+      renderObject.size.height,
+    );
+    final position = _boundedOverlayPosition(
+      layer,
+      layer.position,
+      renderObject.size.width,
+      renderObject.size.height,
+      fontScale: scale,
+    );
+    setState(() {
+      layer
+        ..fontScale = scale
+        ..position = position;
+    });
   }
 
   Future<bool> _waitForNextPaintedFrame() {
@@ -1300,6 +1368,7 @@ class _CreateSnapshotScreenState extends State<CreateSnapshotScreen>
         File? temporaryTrim;
         File? pendingOutput;
         File? pendingThumbnail;
+        var needsCompression = false;
         late File output;
         try {
           if (Platform.isAndroid || Platform.isIOS) {
@@ -1307,16 +1376,19 @@ class _CreateSnapshotScreenState extends State<CreateSnapshotScreen>
             // re-opening the AAC decoder. iOS exports the exact millisecond
             // time range with AVFoundation, avoiding the plugin's end-of-file
             // duration calculation. Neither path loads the source into memory.
-            output = await _trimSnapshotVideo(
+            final trimmed = await _trimSnapshotVideo(
               source,
               startMs: startMs,
               endMs: endMs,
             );
+            output = trimmed.file;
             temporaryTrim = output;
-            if (Platform.isAndroid) {
-              final optimized = await _compressAndroidSnapshotVideo(output);
-              if (optimized != null) output = optimized;
-            }
+            needsCompression = Platform.isAndroid &&
+                shouldCompressAndroidSnapshotVideo(
+                  videoMime: trimmed.videoMime,
+                  audioMime: trimmed.audioMime,
+                  fileSizeBytes: await output.length(),
+                );
           } else {
             await VideoCompress.deleteAllCache();
             final trimWithPlugin = !usesWholeSource;
@@ -1375,6 +1447,7 @@ class _CreateSnapshotScreenState extends State<CreateSnapshotScreen>
           setState(() {
             _composedFile = output;
             _videoThumbnail = thumbnail;
+            _videoNeedsCompression = needsCompression;
             _previewVideoController = previewController;
             _sourceWidth = previewController.value.size.width.round();
             _sourceHeight = previewController.value.size.height.round();
@@ -1455,8 +1528,8 @@ class _CreateSnapshotScreenState extends State<CreateSnapshotScreen>
   Future<void> _upload() async {
     if (_uploading) return;
     final strings = SnapshotStrings.of(context);
-    final file = _composedFile;
-    if (file == null) return;
+    final composedFile = _composedFile;
+    if (composedFile == null) return;
     if (_visibility == SnapshotVisibility.category &&
         _selectedCategoryIds.isEmpty) {
       setState(() => _showCategoryRequired = true);
@@ -1475,9 +1548,31 @@ class _CreateSnapshotScreenState extends State<CreateSnapshotScreen>
     final snapshotId = _pendingUploadSnapshotId ??= _service.createSnapshotId();
     try {
       await _previewVideoController?.pause();
+      var uploadFile = composedFile;
+      if (_mediaType == SnapshotMediaType.video && _videoNeedsCompression) {
+        final cached = _optimizedVideoForUpload;
+        if (cached != null &&
+            await cached.exists() &&
+            await cached.length() > 0) {
+          uploadFile = cached;
+        } else {
+          final optimized = await _compressAndroidSnapshotVideo(composedFile);
+          if (!mounted) {
+            if (optimized != null) {
+              await optimized.delete().catchError((_) => optimized);
+            }
+            return;
+          }
+          if (optimized != null) {
+            _optimizedVideoForUpload = optimized;
+            uploadFile = optimized;
+          }
+        }
+      }
+      if (!mounted) return;
       final created = await _service.createSnapshot(
         snapshotId: snapshotId,
-        composedImage: file,
+        composedImage: uploadFile,
         mediaType: _mediaType,
         videoThumbnail: _videoThumbnail,
         overlays: _snapshotOverlays(),
@@ -1504,7 +1599,7 @@ class _CreateSnapshotScreenState extends State<CreateSnapshotScreen>
       try {
         await SnapshotArchiveService.instance.savePublished(
           snapshot: created,
-          media: file,
+          media: uploadFile,
           thumbnail: _videoThumbnail,
         );
       } catch (archiveError, archiveStackTrace) {
@@ -1550,8 +1645,11 @@ class _CreateSnapshotScreenState extends State<CreateSnapshotScreen>
   Future<void> _deleteTemporaryComposition() async {
     final file = _composedFile;
     final thumbnail = _videoThumbnail;
+    final optimized = _optimizedVideoForUpload;
     _composedFile = null;
     _videoThumbnail = null;
+    _optimizedVideoForUpload = null;
+    _videoNeedsCompression = false;
     _pendingUploadSnapshotId = null;
     if (file != null && await file.exists()) {
       try {
@@ -1561,6 +1659,13 @@ class _CreateSnapshotScreenState extends State<CreateSnapshotScreen>
     if (thumbnail != null && await thumbnail.exists()) {
       try {
         await thumbnail.delete();
+      } catch (_) {}
+    }
+    if (optimized != null &&
+        optimized.path != file?.path &&
+        await optimized.exists()) {
+      try {
+        await optimized.delete();
       } catch (_) {}
     }
   }
@@ -1630,6 +1735,10 @@ class _CreateSnapshotScreenState extends State<CreateSnapshotScreen>
       canPop: _sourceFile == null && !_uploading,
       onPopInvokedWithResult: (didPop, _) async {
         if (didPop || _uploading) return;
+        if (_step == 0 && _editingTextLayerId != null) {
+          await _finishOverlayEditing();
+          return;
+        }
         if (_step == 1) {
           setState(() => _step = 0);
           return;
@@ -1657,6 +1766,10 @@ class _CreateSnapshotScreenState extends State<CreateSnapshotScreen>
             onPressed: _uploading
                 ? null
                 : () async {
+                    if (_step == 0 && _editingTextLayerId != null) {
+                      await _finishOverlayEditing();
+                      return;
+                    }
                     if (_step == 1) {
                       setState(() => _step = 0);
                     } else if (_sourceFile != null) {
@@ -1678,28 +1791,7 @@ class _CreateSnapshotScreenState extends State<CreateSnapshotScreen>
           ),
           flexibleSpace: _buildCenteredSnapshotTitle(strings.createSnapshot),
           actions: [
-            if (_step == 0)
-              SizedBox.square(
-                dimension: 48,
-                child: IconButton(
-                  onPressed: _sourceFile == null || _composing
-                      ? null
-                      : _continueFromEditor,
-                  icon: _composing
-                      ? const SizedBox.square(
-                          dimension: 18,
-                          child: CircularProgressIndicator(strokeWidth: 2),
-                        )
-                      : Icon(
-                          Icons.arrow_forward_rounded,
-                          size: context.ri(23).clamp(21, 25).toDouble(),
-                        ),
-                  color: const Color(0xFF111827),
-                  disabledColor: const Color(0xFFD1D5DB),
-                  tooltip: MaterialLocalizations.of(context).nextPageTooltip,
-                ),
-              )
-            else if (compactUploadAction)
+            if (_step == 1 && compactUploadAction)
               SizedBox.square(
                 dimension: 48,
                 child: IconButton(
@@ -1716,7 +1808,7 @@ class _CreateSnapshotScreenState extends State<CreateSnapshotScreen>
                         ),
                 ),
               )
-            else
+            else if (_step == 1)
               MediaQuery.withClampedTextScaling(
                 maxScaleFactor: 1.15,
                 child: TextButton.icon(
@@ -1883,7 +1975,7 @@ class _CreateSnapshotScreenState extends State<CreateSnapshotScreen>
               child: DecoratedBox(
                 decoration: BoxDecoration(
                   border: Border.all(
-                    color: Colors.white.withValues(alpha: .9),
+                    color: AppColors.pointColor,
                     width: 1.2,
                   ),
                   borderRadius: BorderRadius.circular(6),
@@ -1904,8 +1996,7 @@ class _CreateSnapshotScreenState extends State<CreateSnapshotScreen>
           label: layer.text.trim().isEmpty ? strings.textHint : layer.text,
           child: GestureDetector(
             behavior: HitTestBehavior.translucent,
-            onTap: editing ? null : () => unawaited(_selectTextLayer(layer.id)),
-            onDoubleTap: editing
+            onTap: editing
                 ? null
                 : () => unawaited(_beginTextLayerEditing(layer.id)),
             onScaleStart: editing
@@ -1951,9 +2042,9 @@ class _CreateSnapshotScreenState extends State<CreateSnapshotScreen>
                           icon: const Icon(
                             Icons.close_rounded,
                             size: 19,
-                            color: Colors.white,
+                            color: Color(0xFF111827),
                             shadows: [
-                              Shadow(color: Colors.black87, blurRadius: 6),
+                              Shadow(color: Colors.white, blurRadius: 6),
                             ],
                           ),
                         ),
@@ -2238,34 +2329,36 @@ class _CreateSnapshotScreenState extends State<CreateSnapshotScreen>
     final selectedIsFront = selectedLayer != null &&
         _textLayers.isNotEmpty &&
         identical(selectedLayer, _textLayers.last);
-    const iconColor = Colors.white;
-    const iconShadows = <Shadow>[
-      Shadow(color: Colors.black87, blurRadius: 8),
-    ];
+    const iconColor = Color(0xFF111827);
+    Widget iconSurface(Widget child) => SizedBox.square(
+          dimension: 48,
+          child: Material(
+            color: Colors.white.withValues(alpha: .94),
+            shape: const CircleBorder(),
+            child: child,
+          ),
+        );
     Widget action({
       required IconData icon,
       required String tooltip,
       required VoidCallback? onPressed,
     }) {
-      return SizedBox.square(
-        dimension: 44,
-        child: IconButton(
+      return iconSurface(
+        IconButton(
           tooltip: tooltip,
           padding: EdgeInsets.zero,
           onPressed: onPressed,
           icon: Icon(
             icon,
             size: iconSize,
-            color: onPressed == null ? Colors.white54 : iconColor,
-            shadows: iconShadows,
+            color: onPressed == null ? const Color(0xFF98A2B3) : iconColor,
           ),
         ),
       );
     }
 
-    return Wrap(
-      alignment: WrapAlignment.end,
-      runAlignment: WrapAlignment.end,
+    return Column(
+      mainAxisSize: MainAxisSize.min,
       children: [
         if (selectedLayer != null)
           action(
@@ -2275,28 +2368,9 @@ class _CreateSnapshotScreenState extends State<CreateSnapshotScreen>
               _beginTextLayerEditing(selectedLayer.id),
             ),
           ),
-        if (selectedLayer != null && !selectedIsFront)
-          action(
-            icon: Icons.flip_to_front_outlined,
-            tooltip: strings.bringForward,
-            onPressed: _bringSelectedTextLayerForward,
-          ),
-        if (selectedLayer != null)
-          action(
-            icon: selectedLayer.lightText
-                ? Icons.light_mode_outlined
-                : Icons.dark_mode_outlined,
-            tooltip:
-                selectedLayer.lightText ? strings.darkText : strings.lightText,
-            onPressed: () => setState(() {
-              final layer = _selectedTextLayer;
-              if (layer != null) layer.lightText = !layer.lightText;
-            }),
-          ),
         if (_textLayers.length > 1)
-          SizedBox.square(
-            dimension: 44,
-            child: PopupMenuButton<String>(
+          iconSurface(
+            PopupMenuButton<String>(
               tooltip: strings.selectText,
               color: Colors.white,
               padding: EdgeInsets.zero,
@@ -2304,7 +2378,6 @@ class _CreateSnapshotScreenState extends State<CreateSnapshotScreen>
                 Icons.layers_outlined,
                 size: iconSize,
                 color: iconColor,
-                shadows: iconShadows,
               ),
               onSelected: (layerId) => unawaited(_selectTextLayer(layerId)),
               itemBuilder: (context) => _textLayers
@@ -2326,11 +2399,42 @@ class _CreateSnapshotScreenState extends State<CreateSnapshotScreen>
                   .toList(growable: false),
             ),
           ),
-        action(
-          icon: Icons.text_fields_rounded,
-          tooltip: '${strings.addText} (${_textLayers.length}/5)',
-          onPressed: _addTextLayer,
-        ),
+        if (selectedLayer != null)
+          iconSurface(
+            PopupMenuButton<String>(
+              tooltip: MaterialLocalizations.of(context).showMenuTooltip,
+              color: Colors.white,
+              padding: EdgeInsets.zero,
+              icon: Icon(
+                Icons.more_horiz_rounded,
+                size: iconSize,
+                color: iconColor,
+              ),
+              onSelected: (value) {
+                if (value == 'front') {
+                  _bringSelectedTextLayerForward();
+                } else if (value == 'color') {
+                  setState(() {
+                    final layer = _selectedTextLayer;
+                    if (layer != null) layer.lightText = !layer.lightText;
+                  });
+                }
+              },
+              itemBuilder: (context) => [
+                PopupMenuItem<String>(
+                  value: 'color',
+                  child: Text(selectedLayer.lightText
+                      ? strings.darkText
+                      : strings.lightText),
+                ),
+                if (!selectedIsFront)
+                  PopupMenuItem<String>(
+                    value: 'front',
+                    child: Text(strings.bringForward),
+                  ),
+              ],
+            ),
+          ),
       ],
     );
   }
@@ -2346,130 +2450,303 @@ class _CreateSnapshotScreenState extends State<CreateSnapshotScreen>
     );
   }
 
+  Widget _buildTextEditingToolbar(
+    SnapshotStrings strings,
+    _SnapshotTextLayer layer,
+  ) {
+    return TextFieldTapRegion(
+      child: Material(
+        color: Colors.white,
+        elevation: 2,
+        borderRadius: BorderRadius.circular(12),
+        child: SizedBox(
+          height: 56,
+          child: Row(
+            children: [
+              SizedBox.square(
+                dimension: 48,
+                child: IconButton(
+                  tooltip:
+                      layer.lightText ? strings.darkText : strings.lightText,
+                  onPressed: () => setState(
+                    () => layer.lightText = !layer.lightText,
+                  ),
+                  icon: const Icon(
+                    Icons.contrast_rounded,
+                    color: Color(0xFF111827),
+                  ),
+                ),
+              ),
+              Expanded(
+                child: Semantics(
+                  label: strings.textSize,
+                  child: Slider(
+                    min: .25,
+                    max: 1.75,
+                    divisions: 30,
+                    value: layer.fontScale.clamp(.25, 1.75).toDouble(),
+                    activeColor: AppColors.pointColor,
+                    semanticFormatterCallback: (value) =>
+                        '${(value * 100).round()}%',
+                    onChanged: (value) =>
+                        _setTextLayerFontScale(layer.id, value),
+                  ),
+                ),
+              ),
+              SizedBox.square(
+                dimension: 48,
+                child: IconButton(
+                  tooltip: MaterialLocalizations.of(context).okButtonLabel,
+                  onPressed: () => unawaited(_finishOverlayEditing()),
+                  icon: const Icon(
+                    Icons.check_rounded,
+                    color: Color(0xFF111827),
+                  ),
+                ),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+
   Widget _buildEditor(SnapshotStrings strings) {
     return LayoutBuilder(
       key: const ValueKey('snapshot_editor'),
       builder: (context, constraints) {
         final horizontal = constraints.maxWidth < 360 ? 12.0 : 16.0;
+        final keyboardOpen = MediaQuery.viewInsetsOf(context).bottom > 0;
+        final compactActions = constraints.maxWidth < 340 ||
+            MediaQuery.textScalerOf(context).scale(14) > 21;
+        final editingLayer = _textLayerById(_editingTextLayerId);
         final keyboardInset = MediaQuery.viewInsetsOf(context).bottom;
-        final keyboardOpen = keyboardInset > 0;
-        return Padding(
-          padding: EdgeInsets.fromLTRB(horizontal, 8, horizontal, 8),
-          child: Column(
-            children: [
-              Expanded(
-                child: _sourceFile == null
-                    ? _RecentPhotoGallery(
-                        loading: _loadingGallery,
-                        selecting: _loadingPhoto,
-                        permissionDenied: _galleryPermissionDenied,
-                        permissionLimited: _galleryPermissionLimited,
-                        loadFailed: _galleryLoadFailed,
-                        photos: _recentPhotos,
-                        hasMore: _recentPhotos.length < _galleryTotalCount,
-                        loadingMore: _loadingMoreGallery,
-                        cameraLabel: strings.camera,
-                        galleryLabel: strings.choosePhoto,
-                        videoLabel: strings.chooseVideo,
-                        addPhotosLabel: strings.addPhotos,
-                        settingsLabel: strings.settings,
-                        permissionMessage: strings.galleryPermissionRequired,
-                        loadFailedMessage: strings.photoFailed,
-                        retryLabel: strings.retry,
-                        onCamera: _chooseCameraMedia,
-                        onGallery: () => _pickImage(ImageSource.gallery),
-                        onVideo: () => _pickVideo(ImageSource.gallery),
-                        onAddPhotos: _selectMorePhotos,
-                        onRetry: _loadRecentPhotos,
-                        onOpenSettings: PhotoManager.openSetting,
-                        onLoadMore: _loadMoreRecentPhotos,
-                        onPhotoTap: _selectRecentPhoto,
-                      )
-                    : Align(
-                        alignment: Alignment.topCenter,
-                        child: ConstrainedBox(
-                          constraints: const BoxConstraints(maxWidth: 640),
-                          child: AspectRatio(
-                            aspectRatio: _aspectRatio,
-                            child: ClipRRect(
-                              borderRadius: BorderRadius.circular(16),
-                              child: RepaintBoundary(
-                                key: _compositionKey,
-                                child: LayoutBuilder(
-                                  builder: (context, imageConstraints) {
-                                    final width = imageConstraints.maxWidth;
-                                    final height = imageConstraints.maxHeight;
-                                    return Stack(
-                                      fit: StackFit.expand,
-                                      children: [
-                                        GestureDetector(
-                                          behavior: HitTestBehavior.opaque,
-                                          onTap: _handlePhotoTap,
-                                          child: Stack(
+        final safeBottom = MediaQuery.paddingOf(context).bottom;
+        final toolbarBottom = (keyboardInset - safeBottom + 8)
+            .clamp(
+                8.0, (constraints.maxHeight - 64).clamp(8.0, double.infinity))
+            .toDouble();
+        return Stack(
+          fit: StackFit.expand,
+          children: [
+            Column(
+              children: [
+                Expanded(
+                  child: _sourceFile == null
+                      ? Padding(
+                          padding: EdgeInsets.symmetric(horizontal: horizontal),
+                          child: _RecentPhotoGallery(
+                            loading: _loadingGallery,
+                            selecting: _loadingPhoto,
+                            permissionDenied: _galleryPermissionDenied,
+                            permissionLimited: _galleryPermissionLimited,
+                            loadFailed: _galleryLoadFailed,
+                            photos: _recentPhotos,
+                            hasMore: _recentPhotos.length < _galleryTotalCount,
+                            loadingMore: _loadingMoreGallery,
+                            cameraLabel: strings.camera,
+                            galleryLabel: strings.choosePhoto,
+                            videoLabel: strings.chooseVideo,
+                            addPhotosLabel: strings.addPhotos,
+                            settingsLabel: strings.settings,
+                            permissionMessage:
+                                strings.galleryPermissionRequired,
+                            loadFailedMessage: strings.photoFailed,
+                            retryLabel: strings.retry,
+                            onCamera: _chooseCameraMedia,
+                            onGallery: () => _pickImage(ImageSource.gallery),
+                            onVideo: () => _pickVideo(ImageSource.gallery),
+                            onAddPhotos: _selectMorePhotos,
+                            onRetry: _loadRecentPhotos,
+                            onOpenSettings: PhotoManager.openSetting,
+                            onLoadMore: _loadMoreRecentPhotos,
+                            onPhotoTap: _selectRecentPhoto,
+                          ),
+                        )
+                      : ColoredBox(
+                          color: Colors.white,
+                          child: Stack(
+                            fit: StackFit.expand,
+                            children: [
+                              Center(
+                                child: ConstrainedBox(
+                                  constraints:
+                                      const BoxConstraints(maxWidth: 640),
+                                  child: AspectRatio(
+                                    aspectRatio: _aspectRatio,
+                                    child: RepaintBoundary(
+                                      key: _compositionKey,
+                                      child: LayoutBuilder(
+                                        builder: (context, mediaConstraints) {
+                                          final width =
+                                              mediaConstraints.maxWidth;
+                                          final height =
+                                              mediaConstraints.maxHeight;
+                                          return Stack(
                                             fit: StackFit.expand,
                                             children: [
-                                              if (_mediaType ==
-                                                  SnapshotMediaType.photo)
-                                                Image.file(
-                                                  _sourceFile!,
-                                                  fit: BoxFit.contain,
-                                                )
-                                              else if (_sourceVideoController !=
-                                                      null &&
-                                                  _sourceVideoController!
-                                                      .value.isInitialized)
-                                                FittedBox(
-                                                  fit: BoxFit.contain,
-                                                  child: SizedBox(
-                                                    width:
-                                                        _sourceVideoController!
-                                                            .value.size.width,
-                                                    height:
-                                                        _sourceVideoController!
-                                                            .value.size.height,
-                                                    child: VideoPlayer(
-                                                      _sourceVideoController!,
-                                                    ),
-                                                  ),
+                                              GestureDetector(
+                                                behavior:
+                                                    HitTestBehavior.opaque,
+                                                onTap: _handlePhotoTap,
+                                                child: _mediaType ==
+                                                        SnapshotMediaType.photo
+                                                    ? Image.file(
+                                                        _sourceFile!,
+                                                        fit: BoxFit.contain,
+                                                      )
+                                                    : _sourceVideoController !=
+                                                                null &&
+                                                            _sourceVideoController!
+                                                                .value
+                                                                .isInitialized
+                                                        ? FittedBox(
+                                                            fit: BoxFit.contain,
+                                                            child: SizedBox(
+                                                              width:
+                                                                  _sourceVideoController!
+                                                                      .value
+                                                                      .size
+                                                                      .width,
+                                                              height:
+                                                                  _sourceVideoController!
+                                                                      .value
+                                                                      .size
+                                                                      .height,
+                                                              child:
+                                                                  VideoPlayer(
+                                                                _sourceVideoController!,
+                                                              ),
+                                                            ),
+                                                          )
+                                                        : const SizedBox
+                                                            .expand(),
+                                              ),
+                                              for (final layer in _textLayers)
+                                                _buildTextLayer(
+                                                  layer,
+                                                  width,
+                                                  height,
+                                                  strings,
                                                 ),
                                             ],
-                                          ),
-                                        ),
-                                        for (final layer in _textLayers)
-                                          _buildTextLayer(
-                                            layer,
-                                            width,
-                                            height,
-                                            strings,
-                                          ),
-                                        if (!_composing)
-                                          Positioned(
-                                            top: 4,
-                                            right: 4,
-                                            child: _buildMediaTextActions(
-                                              strings,
-                                            ),
-                                          ),
-                                      ],
-                                    );
-                                  },
+                                          );
+                                        },
+                                      ),
+                                    ),
+                                  ),
                                 ),
                               ),
-                            ),
+                              if (_textLayers.isNotEmpty &&
+                                  _editingTextLayerId == null &&
+                                  !_composing)
+                                Positioned(
+                                  top: 12,
+                                  right: horizontal,
+                                  bottom: 12,
+                                  child: SingleChildScrollView(
+                                    child: _buildMediaTextActions(strings),
+                                  ),
+                                ),
+                            ],
                           ),
                         ),
-                      ),
-              ),
-              if (_sourceFile != null && _mediaType == SnapshotMediaType.video)
-                Visibility(
-                  visible: !keyboardOpen,
-                  maintainAnimation: true,
-                  maintainSize: true,
-                  maintainState: true,
-                  child: _buildEditorControls(strings),
                 ),
-            ],
-          ),
+                if (_sourceFile != null &&
+                    _mediaType == SnapshotMediaType.video)
+                  Padding(
+                    padding: EdgeInsets.symmetric(horizontal: horizontal),
+                    child: Visibility(
+                      visible: !keyboardOpen,
+                      maintainAnimation: true,
+                      maintainSize: true,
+                      maintainState: true,
+                      child: _buildEditorControls(strings),
+                    ),
+                  ),
+                if (_sourceFile != null)
+                  Visibility(
+                    visible: !keyboardOpen,
+                    maintainAnimation: true,
+                    maintainSize: true,
+                    maintainState: true,
+                    child: Padding(
+                      padding:
+                          EdgeInsets.fromLTRB(horizontal, 8, horizontal, 8),
+                      child: SizedBox(
+                        height: 52,
+                        child: Row(
+                          children: [
+                            if (compactActions)
+                              IconButton(
+                                onPressed: _textLayers.length < 5 && !_composing
+                                    ? _addTextLayer
+                                    : null,
+                                tooltip:
+                                    '${strings.addText} (${_textLayers.length}/5)',
+                                icon: const Icon(Icons.text_fields_rounded),
+                              )
+                            else
+                              TextButton.icon(
+                                onPressed: _textLayers.length < 5 && !_composing
+                                    ? _addTextLayer
+                                    : null,
+                                icon: const Icon(Icons.text_fields_rounded),
+                                label: Text(strings.addText),
+                                style: TextButton.styleFrom(
+                                  foregroundColor: const Color(0xFF111827),
+                                  minimumSize: const Size(48, 48),
+                                  textStyle: TextStyle(
+                                    fontFamily: uiFontFamily(context, 'Inter'),
+                                    fontFamilyFallback: const ['NotoSansKR'],
+                                    fontSize:
+                                        context.rf(14).clamp(13, 15).toDouble(),
+                                    fontWeight: FontWeight.w700,
+                                  ),
+                                ),
+                              ),
+                            const SizedBox(width: 12),
+                            Expanded(
+                              child: FilledButton(
+                                onPressed:
+                                    _composing ? null : _continueFromEditor,
+                                style: FilledButton.styleFrom(
+                                  backgroundColor: AppColors.pointColor,
+                                  foregroundColor: Colors.white,
+                                  textStyle: TextStyle(
+                                    fontFamily: uiFontFamily(context, 'Inter'),
+                                    fontFamilyFallback: const ['NotoSansKR'],
+                                    fontSize:
+                                        context.rf(15).clamp(14, 16).toDouble(),
+                                    fontWeight: FontWeight.w700,
+                                  ),
+                                ),
+                                child: _composing
+                                    ? const SizedBox.square(
+                                        dimension: 18,
+                                        child: CircularProgressIndicator(
+                                          strokeWidth: 2,
+                                          color: Colors.white,
+                                        ),
+                                      )
+                                    : Text(strings.next),
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
+                    ),
+                  ),
+              ],
+            ),
+            if (editingLayer != null && keyboardOpen)
+              Positioned(
+                left: horizontal,
+                right: horizontal,
+                bottom: toolbarBottom,
+                child: _buildTextEditingToolbar(strings, editingLayer),
+              ),
+          ],
         );
       },
     );
@@ -2503,7 +2780,7 @@ class _CreateSnapshotScreenState extends State<CreateSnapshotScreen>
                     child: ClipRRect(
                       borderRadius: BorderRadius.circular(16),
                       child: ColoredBox(
-                        color: Colors.black,
+                        color: Colors.white,
                         child: Stack(
                           fit: StackFit.expand,
                           children: [

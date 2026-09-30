@@ -266,6 +266,46 @@ service firebase.storage {
       allow write: if isSignedIn();
     }
 
+    // 키보드 GIF 댓글은 본문 문서가 생기기 전 업로드한다. 읽기는 실제
+    // 댓글/포스트 접근 권한과 삭제 상태를 확인하고, 덮어쓰기는 막는다.
+    match /post_comment_gifs/{postId}/{fileName} {
+      function postVisible() {
+        let post = firestore.get(/databases/(default)/documents/posts/$(postId));
+        return firestore.exists(/databases/(default)/documents/posts/$(postId))
+          && (request.auth.uid == post.data.get('userId', '')
+            || request.auth.uid == post.data.get('ownerId', '')
+            || post.data.get('visibilityMode', post.data.get('visibility', '')) == 'public'
+            || request.auth.uid in post.data.get('audienceUserIdsFrozen', post.data.get('allowedUserIds', [])));
+      }
+      function commentActive(commentId) {
+        let commentPath = /databases/(default)/documents/comments/$(commentId);
+        return firestore.exists(commentPath)
+          && firestore.get(commentPath).data.postId == postId
+          && firestore.get(commentPath).data.get('isDeleted', false) != true
+          && firestore.get(commentPath).data.get('gifStoragePath', '')
+            == 'post_comment_gifs/' + postId + '/' + fileName;
+      }
+      allow read: if isSignedIn() && postVisible()
+        && resource.metadata.commentId + '.gif' == fileName
+        && (resource.metadata.ownerUid == request.auth.uid
+          || commentActive(resource.metadata.commentId));
+      allow create: if currentUserAccountAllowed()
+        && postVisible()
+        && fileName.matches('^[A-Za-z0-9]{20}\\.gif$')
+        && request.resource.size >= 10
+        && request.resource.size <= 5 * 1024 * 1024
+        && request.resource.contentType == 'image/gif'
+        && request.resource.metadata.ownerUid == request.auth.uid
+        && request.resource.metadata.postId == postId
+        && request.resource.metadata.commentId + '.gif' == fileName;
+      allow update: if false;
+      allow delete: if isSignedIn()
+        && resource.metadata.ownerUid == request.auth.uid
+        && resource.metadata.postId == postId
+        && firestore.exists(/databases/(default)/documents/comments/$(resource.metadata.commentId))
+        && firestore.get(/databases/(default)/documents/comments/$(resource.metadata.commentId)).data.get('isDeleted', false) == true;
+    }
+
     // Instagram 링크 미리보기는 일반 첨부 이미지와 분리해 postId별 한
     // 객체로 보관한다. 포스트 문서 생성 전에 업로드되므로 경로 소유권과
     // immutable metadata를 기준으로 쓰기를 검증한다.
@@ -337,6 +377,19 @@ service firebase.storage {
         && !snapshotExists(snapshotId)
         && resource.metadata.ownerUid == request.auth.uid
         && resource.metadata.snapshotId == snapshotId;
+    }
+
+    match /snapshots/{snapshotId}/comment_gifs/{fileName} {
+      allow read: if canReadSnapshotImage(snapshotId);
+      allow create: if canReadSnapshotImage(snapshotId)
+        && request.resource.size >= 10
+        && request.resource.size <= 5 * 1024 * 1024
+        && request.resource.contentType == 'image/gif'
+        && request.resource.metadata.ownerUid == request.auth.uid
+        && request.resource.metadata.snapshotId == snapshotId
+        && request.resource.metadata.commentId is string
+        && request.resource.metadata.commentId + '.gif' == fileName;
+      allow update, delete: if false;
     }
 
     match /snapshots/{snapshotId}/thumbnail.jpg {

@@ -52,6 +52,44 @@ async function main() {
   const user = await db.collection('users').doc(owner).get();
   assert.equal(user.get('notificationUnreadTotal'), 0);
   assert.equal(user.get('dmUnreadTotal'), 7);
+  const goodToken = `notification-good-${run}`;
+  const retryToken = `notification-retry-${run}`;
+  await db.collection('users').doc(owner).update({fcmTokens: [goodToken, retryToken]});
+  await db.collection('fcm_tokens').doc(goodToken).set({userId: owner});
+  await db.collection('fcm_tokens').doc(retryToken).set({userId: owner});
+  const retryNotification = notifications.doc(`retry-${run}`);
+  await retryNotification.set(value);
+  const retrySnapshot = await retryNotification.get();
+  const retryContext = {eventId: `retry-push-${run}`,
+    params: {notificationId: retryNotification.id}};
+  const retryMessaging = admin.messaging();
+  const originalMulticast = retryMessaging.sendEachForMulticast;
+  const batches = [];
+  retryMessaging.sendEachForMulticast = async payload => {
+    batches.push([...payload.tokens]);
+    return batches.length === 1 ? {
+      successCount: 1, failureCount: 1,
+      responses: payload.tokens.map(token => token === goodToken ?
+        {success: true} :
+        {success: false, error: {code: 'messaging/server-unavailable'}}),
+    } : {
+      successCount: payload.tokens.length, failureCount: 0,
+      responses: payload.tokens.map(() => ({success: true})),
+    };
+  };
+  try {
+    await assert.rejects(create(retrySnapshot, retryContext));
+    assert.equal((await db.collection('users').doc(owner).get())
+      .get('notificationUnreadTotal'), 1);
+    await create(retrySnapshot, retryContext);
+    assert.equal((await db.collection('users').doc(owner).get())
+      .get('notificationUnreadTotal'), 1);
+    assert.deepEqual(batches, [[goodToken, retryToken], [retryToken]]);
+    await create(retrySnapshot, retryContext);
+    assert.equal(batches.length, 2);
+  } finally {
+    retryMessaging.sendEachForMulticast = originalMulticast;
+  }
   const reminder = db.collection('todoNotificationDeliveries').doc(`reminder-${run}`);
   await reminder.set({userId: owner, todoIds: ['a', 'b'], isRead: false, status: 'sent'});
   assert.equal(await writeAs(other, reminder.parent.id, reminder.id, {isRead: {booleanValue: true}}), 403);

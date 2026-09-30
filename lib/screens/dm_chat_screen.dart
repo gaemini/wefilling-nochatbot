@@ -31,6 +31,7 @@ import '../ui/widgets/chat_reaction_widgets.dart';
 import '../ui/widgets/soft_translate_reveal.dart';
 import '../ui/widgets/retryable_chat_network_image.dart';
 import '../services/dm_active_conversation.dart';
+import '../services/navigation_service.dart';
 import '../services/badge_service.dart';
 import '../services/fcm_service.dart';
 import '../services/post_service.dart';
@@ -129,7 +130,7 @@ class DMChatScreen extends StatefulWidget {
 }
 
 class _DMChatScreenState extends State<DMChatScreen>
-    with WidgetsBindingObserver {
+    with WidgetsBindingObserver, RouteAware {
   final DMService _dmService = DMService();
   final StorageService _storageService = StorageService();
   final SnackChatDocumentImportService _documentImporter =
@@ -403,6 +404,9 @@ class _DMChatScreenState extends State<DMChatScreen>
         FirebaseAuth.instance.authStateChanges().listen((user) {
       if (user?.uid != _currentUser?.uid) {
         _accountInvalidated = true;
+        if (DMActiveConversation.isActive(_activeConversationId)) {
+          DMActiveConversation.setActive(null);
+        }
         _readGeneration++;
         _autoMarkReadDebounce?.cancel();
         unawaited(_conversationReadSub?.cancel());
@@ -459,6 +463,28 @@ class _DMChatScreenState extends State<DMChatScreen>
   }
 
   @override
+  void didChangeDependencies() {
+    super.didChangeDependencies();
+    final route = ModalRoute.of(context);
+    if (route != null) NavigationService.routeObserver.subscribe(this, route);
+  }
+
+  @override
+  void didPushNext() {
+    if (DMActiveConversation.isActive(_activeConversationId)) {
+      DMActiveConversation.setActive(null);
+    }
+  }
+
+  @override
+  void didPopNext() {
+    if (!mounted || _appLifecycleState != AppLifecycleState.resumed ||
+        _accountInvalidated || _isLeaving) return;
+    DMActiveConversation.setActive(_activeConversationId);
+    _scheduleAutoMarkAsRead(_messages);
+  }
+
+  @override
   void didChangeAppLifecycleState(AppLifecycleState state) {
     _appLifecycleState = state;
     if (state != AppLifecycleState.resumed) {
@@ -478,7 +504,9 @@ class _DMChatScreenState extends State<DMChatScreen>
           _queueOutgoing(_activeConversationId, message);
         }
       }
-      DMActiveConversation.setActive(_activeConversationId);
+      if (ModalRoute.of(context)?.isCurrent == true) {
+        DMActiveConversation.setActive(_activeConversationId);
+      }
       _scheduleAutoMarkAsRead(_messages);
       _scheduleVisibleTranslations();
     } else if (DMActiveConversation.isActive(_activeConversationId)) {
@@ -1705,6 +1733,7 @@ class _DMChatScreenState extends State<DMChatScreen>
 
   @override
   void dispose() {
+    NavigationService.routeObserver.unsubscribe(this);
     _messageGeneration++;
     _messageReconnect?.cancel();
     _outboxRetry?.cancel();
@@ -3103,7 +3132,11 @@ class _DMChatScreenState extends State<DMChatScreen>
         });
       }
 
-      await _dmService.leaveConversation(_activeConversationId);
+      final owner = _currentUser?.uid;
+      final result = await _dmService.leaveConversation(_activeConversationId);
+      if (owner != null) {
+        _scheduleDmReadPostProcessing(_activeConversationId, result, owner);
+      }
       if (!mounted) return;
       Navigator.pop(context);
       ScaffoldMessenger.of(context).showSnackBar(
@@ -3120,20 +3153,20 @@ class _DMChatScreenState extends State<DMChatScreen>
       );
     } catch (e) {
       Logger.error('대화방 나가기 오류: $e');
-
-      // 오류가 발생해도 사용자에게는 성공적으로 나간 것처럼 처리 (인스타그램 방식)
-      Logger.error('오류 발생했지만 사용자 경험을 위해 성공 처리');
-
       if (!mounted) return;
-      Navigator.pop(context);
+      setState(() {
+        _isLeaving = false;
+        _isMessagesLoading = true;
+      });
+      unawaited(_initializeMessagesStream(conversationId: _activeConversationId));
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
           content: Text(
             (isChineseUi(context)
-                ? '已退出聊天'
+                ? '退出聊天失败，请重试。'
                 : Localizations.localeOf(context).languageCode == 'ko'
-                    ? '채팅방에서 나갔습니다'
-                    : 'You left the chat'),
+                    ? '채팅방 나가기에 실패했습니다. 다시 시도해 주세요.'
+                    : 'Could not leave the chat. Please try again.'),
           ),
         ),
       );

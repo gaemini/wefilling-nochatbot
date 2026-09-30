@@ -8,6 +8,7 @@ import 'dart:collection';
 import 'dart:math' as math;
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:provider/provider.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
@@ -53,6 +54,8 @@ import '../services/user_info_cache_service.dart';
 import '../services/cache/app_image_cache_manager.dart';
 import '../services/notification_service.dart';
 import '../l10n/ui_locale.dart';
+import '../snapshot/snapshot_strings.dart';
+import '../utils/comment_gif_input.dart';
 
 class PostDetailScreen extends StatefulWidget {
   final Post post;
@@ -73,6 +76,31 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
   final TextEditingController _commentController = TextEditingController();
   final ScrollController _scrollController = ScrollController();
   final FocusNode _commentFocusNode = FocusNode();
+  Uint8List? _commentGif;
+  String? _commentGifId;
+  int _commentGifInputGeneration = 0;
+
+  Future<void> _onKeyboardCommentContent(KeyboardInsertedContent content) async {
+    if (_isSubmittingComment || FirebaseAuth.instance.currentUser == null) return;
+    final uid = FirebaseAuth.instance.currentUser!.uid;
+    final generation = ++_commentGifInputGeneration;
+    final bytes = await readKeyboardGif(content);
+    if (!mounted || _isSubmittingComment ||
+        generation != _commentGifInputGeneration ||
+        FirebaseAuth.instance.currentUser?.uid != uid) {
+      return;
+    }
+    if (bytes == null) {
+      ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+        content: Text(SnapshotStrings.of(context).invalidCommentGif),
+      ));
+      return;
+    }
+    setState(() {
+      _commentGif = bytes;
+      _commentGifId = _firestore.collection('comments').doc().id;
+    });
+  }
 
   bool _isAuthor = false;
   bool _isDeleting = false;
@@ -2086,7 +2114,9 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
   // 댓글 등록 (일반 댓글 + 대댓글 모드 지원)
   Future<void> _submitComment() async {
     final content = _commentController.text.trim();
-    if (content.isEmpty) return;
+    final gifBytes = _commentGif;
+    final gifCommentId = _commentGifId;
+    if (content.isEmpty && gifBytes == null) return;
 
     // 댓글 작성 전 상태 로깅
     final authUser = FirebaseAuth.instance.currentUser;
@@ -2115,13 +2145,16 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
           replyToCommentId: _replyTargetCommentId,
           replyToUserId: _replyToUserId,
           replyToUserNickname: _replyToUserName,
+          gifBytes: gifBytes,
+          gifCommentId: gifCommentId,
         );
         if (Logger.isVerboseEnabled)
           Logger.log(
               '💬 대댓글 작성 완료 (parent: $_replyParentTopLevelId, replyTo: $_replyToUserId)');
       } else {
         // 일반 댓글 작성
-        success = await _commentService.addComment(widget.post.id, content);
+        success = await _commentService.addComment(widget.post.id, content,
+            gifBytes: gifBytes, gifCommentId: gifCommentId);
         if (Logger.isVerboseEnabled) Logger.log('💬 일반 댓글 작성 완료');
       }
 
@@ -2138,6 +2171,10 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
 
       if (success && mounted) {
         _commentController.clear();
+        setState(() {
+          _commentGif = null;
+          _commentGifId = null;
+        });
 
         // 대댓글 모드 종료
         if (_isReplyMode) {
@@ -3251,6 +3288,27 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
                       ),
 
                     // 입력창
+                    if (_commentGif != null)
+                      Padding(
+                        padding: const EdgeInsets.only(left: 16, top: 6),
+                        child: Align(
+                          alignment: Alignment.centerLeft,
+                          child: Stack(children: [
+                            Image.memory(_commentGif!, width: 76,
+                                height: MediaQuery.viewInsetsOf(context).bottom > 0 ? 44 : 76,
+                                fit: BoxFit.contain, cacheWidth: 228),
+                            Positioned(right: 0, top: 0, child: IconButton(
+                              tooltip: MaterialLocalizations.of(context).deleteButtonTooltip,
+                              onPressed: _isSubmittingComment ? null : () => setState(() {
+                                _commentGif = null;
+                                _commentGifId = null;
+                                _commentGifInputGeneration++;
+                              }),
+                              icon: const Icon(Icons.close_rounded),
+                            )),
+                          ]),
+                        ),
+                      ),
                     Padding(
                       padding: EdgeInsets.only(
                         left: 16.0,
@@ -3267,6 +3325,24 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
                             child: TextField(
                               controller: _commentController,
                               focusNode: _commentFocusNode,
+                              contentInsertionConfiguration:
+                                  ContentInsertionConfiguration(
+                                allowedMimeTypes: const ['image/gif'],
+                                onContentInserted: _onKeyboardCommentContent,
+                              ),
+                              contextMenuBuilder: (context, state) =>
+                                  commentGifContextMenu(context, state, (bytes) {
+                                if (!mounted || _isSubmittingComment ||
+                                    FirebaseAuth.instance.currentUser == null) {
+                                  return;
+                                }
+                                setState(() {
+                                  _commentGif = bytes;
+                                  _commentGifId = _firestore
+                                      .collection('comments').doc().id;
+                                  _commentGifInputGeneration++;
+                                });
+                              }),
                               enabled: isLoggedIn,
                               decoration: InputDecoration(
                                 hintText: isLoggedIn

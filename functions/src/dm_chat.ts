@@ -451,3 +451,65 @@ export const markDMConversationReadBoundedSecure = functions
     firestoreId(raw?.throughMessageId);
     return markDMConversationRead(raw, context);
   });
+
+/** A leave is one server-owned read boundary, archive, and unread adjustment. */
+export const leaveDMConversationSecure = functions
+  .runWith({timeoutSeconds: 60, memory: '256MB'})
+  .https.onCall(async (raw, context) => {
+    const userId = requireUid(context);
+    const conversationId = firestoreId(raw?.conversationId);
+    const firestore = admin.firestore();
+    const roomRef = firestore.collection('conversations').doc(conversationId);
+    const userRef = firestore.collection('users').doc(userId);
+    const result = await firestore.runTransaction(async (tx) => {
+      const [room, user] = await Promise.all([tx.get(roomRef), tx.get(userRef)]);
+      if (!room.exists || !user.exists) {
+        throw new functions.https.HttpsError('not-found', 'Conversation or account not found.');
+      }
+      const data = room.data() ?? {};
+      if (!Array.isArray(data.participants) || !data.participants.includes(userId)) {
+        throw new functions.https.HttpsError('permission-denied',
+          'Only a conversation participant can leave.');
+      }
+      const clearedCount = nonNegativeInteger(data.unreadCount?.[userId]);
+      const total = nonNegativeInteger(user.get('dmUnreadTotal'));
+      const archivedBy = Array.isArray(data.archivedBy) ? data.archivedBy : [];
+      const token = nextDMReceiptToken(data.receiptCleanupRequestedAtBy?.[userId]);
+      tx.update(roomRef, {
+        archivedBy: Array.from(new Set([...archivedBy, userId])),
+        userLeftAt: {...(data.userLeftAt ?? {}),
+          [userId]: FieldValue.serverTimestamp()},
+        unreadCount: {...(data.unreadCount ?? {}), [userId]: 0},
+        lastReadAtBy: {...(data.lastReadAtBy ?? {}),
+          [userId]: FieldValue.serverTimestamp()},
+        unreadClearedAtBy: {...(data.unreadClearedAtBy ?? {}),
+          [userId]: FieldValue.serverTimestamp()},
+        readReceiptCursorBy: {...(data.readReceiptCursorBy ?? {}), [userId]: null},
+        receiptCleanupRequestedAtBy: {
+          ...(data.receiptCleanupRequestedAtBy ?? {}), [userId]: token,
+        },
+      });
+      tx.update(userRef, {
+        dmUnreadTotal: Math.max(0, total - clearedCount),
+        dmUnreadCounterVersion: DM_UNREAD_COUNTER_VERSION,
+      });
+      return {clearedCount};
+    });
+    // Firestore commit time is the boundary. The function host's wall clock
+    // and a legacy device-authored userLeftAt are not authoritative.
+    const confirmed = await roomRef.get();
+    const leftAt = confirmed.get('userLeftAt')?.[userId];
+    const readThrough = confirmed.get('lastReadAtBy')?.[userId];
+    if (!(leftAt instanceof Timestamp) || !(readThrough instanceof Timestamp)) {
+      throw new functions.https.HttpsError('internal', 'Leave boundary was not confirmed.');
+    }
+    return {
+      success: true,
+      leftAtSeconds: leftAt.seconds,
+      leftAtNanos: leftAt.nanoseconds,
+      readThroughAtSeconds: readThrough.seconds,
+      readThroughAtNanos: readThrough.nanoseconds,
+      readThroughAtMillis: dmNotificationBoundary(readThrough),
+      clearedCount: result.clearedCount,
+    };
+  });

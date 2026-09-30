@@ -2221,6 +2221,26 @@ service cloud.firestore {
           && activeUserAccount(data.participants[0])
           && activeUserAccount(data.participants[1]);
       }
+
+      function initialDmUnreadIsEmpty(data) {
+        return !data.keys().hasAny(['unreadCount']) ||
+          (data.unreadCount is map &&
+           data.unreadCount.keys().hasOnly(data.participants) &&
+           data.unreadCount.get(data.participants[0], 0) == 0 &&
+           data.unreadCount.get(data.participants[1], 0) == 0);
+      }
+
+      function onlyOwnDmPersonalStateChanged() {
+        let beforeArchive = resource.data.get('archivedBy', []);
+        let afterArchive = request.resource.data.get('archivedBy', []);
+        let beforeLeft = resource.data.get('userLeftAt', {});
+        let afterLeft = request.resource.data.get('userLeftAt', {});
+        return beforeArchive is list && afterArchive is list &&
+          beforeArchive.removeAll([request.auth.uid]) ==
+            afterArchive.removeAll([request.auth.uid]) &&
+          beforeLeft is map && afterLeft is map &&
+          afterLeft.diff(beforeLeft).affectedKeys().hasOnly([request.auth.uid]);
+      }
       
       // 읽기: 대화방 참여자만 (conversationId 기반 최소 방어 포함)
       allow read: if request.auth != null &&
@@ -2239,6 +2259,7 @@ service cloud.firestore {
         ]) &&
         request.resource.data.participants is list &&
         request.resource.data.participants.size() == 2 &&
+        initialDmUnreadIsEmpty(request.resource.data) &&
         bothParticipantsActive(request.resource.data) &&
         blockRelationshipFree(
           request.resource.data.participants[0],
@@ -2253,6 +2274,7 @@ service cloud.firestore {
           (
             // 일반 메시지 관련 변경 + 보관 + 나가기 기록
             request.resource.data.participants == resource.data.participants &&
+            onlyOwnDmPersonalStateChanged() &&
             request.resource.data.diff(resource.data).affectedKeys()
               .hasOnly(['lastMessage', 'lastMessageTime', 'lastMessageSenderId', 'lastMessageId', 'updatedAt', 'archivedBy', 'userLeftAt']) &&
             // New clients atomically reference the just-created message. Legacy

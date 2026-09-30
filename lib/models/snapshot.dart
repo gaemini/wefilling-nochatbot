@@ -212,6 +212,15 @@ class SnapshotItem {
   }
 }
 
+bool isValidSnapshotCommentGifHeader(List<int> header) {
+  if (header.length < 10) return false;
+  final signature = String.fromCharCodes(header.take(6));
+  final width = header[6] | header[7] << 8;
+  final height = header[8] | header[9] << 8;
+  return (signature == 'GIF87a' || signature == 'GIF89a') &&
+      width >= 1 && width <= 2048 && height >= 1 && height <= 2048;
+}
+
 class SnapshotComment {
   const SnapshotComment({
     required this.id,
@@ -221,6 +230,7 @@ class SnapshotComment {
     required this.authorPhotoUrl,
     required this.content,
     required this.createdAt,
+    this.gifStoragePath = '',
     this.parentCommentId,
     this.replyToCommentId,
     this.replyToUserId,
@@ -234,6 +244,7 @@ class SnapshotComment {
   final String authorNickname;
   final String authorPhotoUrl;
   final String content;
+  final String gifStoragePath;
   final DateTime createdAt;
   final String? parentCommentId;
   final String? replyToCommentId;
@@ -271,6 +282,7 @@ class SnapshotComment {
       authorNickname: (data['authorNickname'] ?? 'User').toString(),
       authorPhotoUrl: (data['authorPhotoUrl'] ?? '').toString(),
       content: (data['content'] ?? '').toString(),
+      gifStoragePath: (data['gifStoragePath'] ?? '').toString(),
       createdAt: _asDateTime(data['createdAt'] ?? data['createdAtMs']),
       parentCommentId: optionalString(data['parentCommentId']),
       replyToCommentId: optionalString(data['replyToCommentId']),
@@ -287,6 +299,7 @@ class SnapshotComment {
         'authorNickname': authorNickname,
         'authorPhotoUrl': authorPhotoUrl,
         'content': content,
+        'gifStoragePath': gifStoragePath,
         'createdAtMs': createdAt.millisecondsSinceEpoch,
         'parentCommentId': parentCommentId,
         'replyToCommentId': replyToCommentId,

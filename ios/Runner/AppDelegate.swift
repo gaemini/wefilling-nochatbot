@@ -59,6 +59,7 @@ class OrganizationInviteSceneDelegate: FlutterSceneDelegate {
 @main
 @objc class AppDelegate: FlutterAppDelegate, FlutterImplicitEngineDelegate {
   private var mediaSaverChannel: FlutterMethodChannel?
+  private var keyboardGifChannel: FlutterMethodChannel?
   private var snapshotVideoEditorChannel: FlutterMethodChannel?
   private var externalShareChannel: FlutterMethodChannel?
   private var sharedFirebaseAuthChannel: FlutterMethodChannel?
@@ -101,6 +102,24 @@ class OrganizationInviteSceneDelegate: FlutterSceneDelegate {
 
   func didInitializeImplicitFlutterEngine(_ engineBridge: FlutterImplicitEngineBridge) {
     GeneratedPluginRegistrant.register(with: engineBridge.pluginRegistry)
+
+    let keyboardGifBridge = FlutterMethodChannel(
+      name: "com.wefilling.app/keyboard_gif",
+      binaryMessenger: engineBridge.applicationRegistrar.messenger()
+    )
+    keyboardGifBridge.setMethodCallHandler { call, result in
+      guard call.method == "readPasteboardGif" else {
+        result(FlutterMethodNotImplemented)
+        return
+      }
+      guard let data = UIPasteboard.general.data(forPasteboardType: "com.compuserve.gif"),
+            data.count >= 10, data.count <= 5 * 1024 * 1024 else {
+        result(nil)
+        return
+      }
+      result(FlutterStandardTypedData(bytes: data))
+    }
+    keyboardGifChannel = keyboardGifBridge
 
     let authChannel = FlutterMethodChannel(
       name: "com.wefilling.app/shared_firebase_auth",

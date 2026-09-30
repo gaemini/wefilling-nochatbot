@@ -20,6 +20,7 @@ import {
 } from './content_translation';
 import {runtimeInfo, runtimeLogsEnabled} from './runtime_logging';
 import {isSearchableUser} from './searchable_user_policy';
+import {snackChatUnreadReadFloor} from './snack_chat_unread_boundary';
 
 const SNACK_CHATS = 'snack_chats';
 const USERS = 'users';
@@ -2117,9 +2118,14 @@ export const createMeetupSnackChatSecure = functions
               unreadCount[id] = previousUnread[id] ?? 0;
             });
             unreadCount[creatorId] = 0;
+            const unreadStartSequenceBy = {
+              ...objectValue(existingRoom.get('unreadStartSequenceBy')),
+              [creatorId]: nonNegativeInteger(existingRoom.get('lastMessageSequence')),
+            };
             transaction.update(existingRoom.ref, {
               participantIds: nextParticipants,
               unreadCount,
+              unreadStartSequenceBy,
               updatedAt: FieldValue.serverTimestamp(),
             });
           }
@@ -2243,9 +2249,16 @@ export const inviteSnackChatParticipants = functions
       toAdd.forEach((id) => {
         unreadCount[id] = 0;
       });
+      const unreadStartSequenceBy = {
+        ...objectValue(room.get('unreadStartSequenceBy')),
+      };
+      toAdd.forEach((id) => {
+        unreadStartSequenceBy[id] = nonNegativeInteger(room.get('lastMessageSequence'));
+      });
       transaction.update(roomRef, {
         participantIds: nextParticipants,
         unreadCount,
+        unreadStartSequenceBy,
         updatedAt: FieldValue.serverTimestamp(),
       });
       // Invitation records are authored in the same trusted transaction as
@@ -2516,6 +2529,9 @@ export const getSnackChatEntryContext = functions
     const lastReadSequence = nonNegativeInteger(
       member.get('lastReadSequence'),
     );
+    const unreadStartSequence = nonNegativeInteger(
+      objectValue(room.get('unreadStartSequenceBy'))[userId],
+    );
     const unreadMap = normalizedCountMap(room.get('unreadCount'));
     const roomUnreadCount = unreadMap[userId] ?? 0;
     if (roomUnreadCount === 0 || lastReadSequence >= roomLastSequence) {
@@ -2530,7 +2546,7 @@ export const getSnackChatEntryContext = functions
       };
     }
 
-    let cursor = lastReadSequence;
+    let cursor = snackChatUnreadReadFloor(lastReadSequence, unreadStartSequence);
     for (let page = 0; page < 10 && cursor < roomLastSequence; page += 1) {
       const messages = await roomRef.collection('messages')
         .where('sequence', '>', cursor)
@@ -2542,7 +2558,8 @@ export const getSnackChatEntryContext = functions
         const message = document.data();
         const sequence = nonNegativeInteger(message.sequence);
         cursor = Math.max(cursor, sequence);
-        if (sequence <= lastReadSequence || sequence > roomLastSequence ||
+        if (sequence <= snackChatUnreadReadFloor(lastReadSequence, unreadStartSequence) ||
+            sequence > roomLastSequence ||
             stringValue(message.senderId) === userId ||
             stringValue(message.type) === 'system' ||
             !sequenceIsInMembership(member.data() ?? {}, sequence)) {
@@ -5709,6 +5726,9 @@ export const markSnackChatReadSecure = functions
       const previousSequence = nonNegativeInteger(
         member.get('lastReadSequence'),
       );
+      const unreadStartSequence = nonNegativeInteger(
+        objectValue(room.get('unreadStartSequenceBy'))[userId],
+      );
       const readThroughSequence = Math.max(
         previousSequence,
         Math.min(requestedThrough, roomLastSequence),
@@ -5717,12 +5737,12 @@ export const markSnackChatReadSecure = functions
       const currentUnread = unreadBefore[userId] ?? 0;
 
       let canonicalReadCount = 0;
-      if (readThroughSequence > previousSequence &&
+      if (readThroughSequence > snackChatUnreadReadFloor(previousSequence, unreadStartSequence) &&
           readThroughSequence < roomLastSequence &&
           currentUnread > 0) {
         const readMessages = await transaction.get(
           roomRef.collection('messages')
-            .where('sequence', '>', previousSequence)
+            .where('sequence', '>', snackChatUnreadReadFloor(previousSequence, unreadStartSequence))
             .where('sequence', '<=', readThroughSequence),
         );
         canonicalReadCount = readMessages.docs.reduce((count, document) => {
@@ -7771,7 +7791,15 @@ async function pushTokensOwnedByUser(
   fallbackLanguage: SupportedLang,
 ): Promise<PushTokenGroups> {
   const emptyGroups = (): PushTokenGroups => ({ko: [], en: []});
-  const candidates = Array.from(new Set(rawCandidates
+  let registryCandidates: string[] = [];
+  try {
+    const registered = await db().collection('fcm_tokens')
+      .where('userId', '==', userId).limit(MAX_PUSH_TOKENS_PER_USER).get();
+    registryCandidates = registered.docs.map((document) => document.id);
+  } catch (error) {
+    console.warn('Snack Chat token registry lookup failed; retaining legacy tokens.', error);
+  }
+  const candidates = Array.from(new Set([...rawCandidates, ...registryCandidates]
     .map(stringValue)
     .filter((token) => token.length > 0 && token.length <= 4096)))
     .slice(0, MAX_PUSH_TOKENS_PER_USER);
@@ -7833,19 +7861,40 @@ async function hasBlockBetween(userA: string, userB: string): Promise<boolean> {
 async function claimPushAttempt(
   eventRef: FirebaseFirestore.DocumentReference,
   recipientId: string,
-): Promise<boolean> {
+): Promise<Data | null> {
   return db().runTransaction(async (transaction) => {
     const event = await transaction.get(eventRef);
-    if (!event.exists) return false;
+    if (!event.exists) return null;
     const attempted = uniqueStrings(event.get('pushAttemptedRecipientIds'));
-    if (attempted.includes(recipientId)) return false;
+    const previous = objectValue(objectValue(event.get('pushDeliveryBy'))[recipientId]);
+    if (attempted.includes(recipientId) &&
+        (previous.status !== 'pending' ||
+          nonNegativeInteger(previous.attempts) >= 3)) return null;
+    const next = {
+      status: 'pending',
+      attempts: nonNegativeInteger(previous.attempts) + 1,
+      succeededTokens: uniqueStrings(previous.succeededTokens),
+      terminalTokens: uniqueStrings(previous.terminalTokens),
+    };
     transaction.update(eventRef, {
-      pushAttemptedRecipientIds:
-        FieldValue.arrayUnion(recipientId),
+      pushDeliveryBy: {
+        ...objectValue(event.get('pushDeliveryBy')),
+        [recipientId]: next,
+      },
+      pushAttemptedRecipientIds: FieldValue.arrayUnion(recipientId),
       lastPushAttemptAt: FieldValue.serverTimestamp(),
     });
-    return true;
+    return next;
   });
+}
+
+async function savePushDelivery(
+  eventRef: FirebaseFirestore.DocumentReference,
+  recipientId: string,
+  state: Data,
+): Promise<void> {
+  await eventRef.update(
+    new admin.firestore.FieldPath('pushDeliveryBy', recipientId), state);
 }
 
 function snackChatVisibleForUser(room: Data, userId: string): boolean {
@@ -7873,24 +7922,35 @@ async function snackChatUnreadTotal(userId: string): Promise<number> {
 
 async function cleanInvalidPushTokens(
   userId: string,
-  user: Data,
-  tokens: string[],
+  _user: Data,
+  rawTokens: string[],
 ): Promise<void> {
+  const tokens = uniqueStrings(rawTokens);
   if (tokens.length === 0) return;
-  const userUpdate: Data = {
-    fcmTokens: FieldValue.arrayRemove(...tokens),
-  };
-  if (tokens.includes(stringValue(user.fcmToken))) {
-    userUpdate.fcmToken = FieldValue.delete();
-  }
-  await db().collection(USERS).doc(userId).update(userUpdate).catch((error) => {
-    if ((error as any)?.code !== 5 &&
-        (error as any)?.code !== 'not-found') throw error;
+  const userRef = db().collection(USERS).doc(userId);
+  const tokenRefs = tokens.map((token) => db().collection('fcm_tokens').doc(token));
+  await db().runTransaction(async (transaction) => {
+    const [user, ...registrations] = await Promise.all([
+      transaction.get(userRef),
+      ...tokenRefs.map((ref) => transaction.get(ref)),
+    ]);
+    if (user.exists) {
+      const latest = user.data() ?? {};
+      const remaining = uniqueStrings(latest.fcmTokens)
+        .filter((token) => !tokens.includes(token));
+      transaction.update(userRef, {
+        fcmTokens: FieldValue.arrayRemove(...tokens),
+        ...(tokens.includes(stringValue(latest.fcmToken)) ? {
+          fcmToken: remaining.length > 0 ? remaining[0] : FieldValue.delete(),
+        } : {}),
+      });
+    }
+    registrations.forEach((registration, index) => {
+      if (registration.exists && stringValue(registration.get('userId')) === userId) {
+        transaction.delete(tokenRefs[index]);
+      }
+    });
   });
-  const batch = db().batch();
-  tokens.forEach((token) =>
-    batch.delete(db().collection('fcm_tokens').doc(token)));
-  await batch.commit();
 }
 
 function shouldAlertSnackChatPush(notificationGroupKey: string): boolean {
@@ -7970,9 +8030,13 @@ async function sendSnackChatPush(args: {
     ], fallbackLanguage);
     const tokenCount = tokenGroups.ko.length + tokenGroups.en.length;
     if (tokenCount === 0) return;
-    // Claim immediately before FCM. Retried Firestore events cannot send a
-    // duplicate notification; a process crash favors at-most-once delivery.
-    if (!await claimPushAttempt(args.eventRef, args.recipientId)) return;
+    // The existing event marker owns both the one-time unread update and a
+    // separate bounded delivery state. Legacy attempted markers stay final.
+    const delivery = await claimPushAttempt(args.eventRef, args.recipientId);
+    if (!delivery) return;
+    const succeeded = new Set(uniqueStrings(delivery.succeededTokens));
+    const terminal = new Set(uniqueStrings(delivery.terminalTokens));
+    let transientFailure = false;
 
     const messageType = stringValue(args.message.type);
     const rawText = boundedString(args.message.text, 100);
@@ -7998,7 +8062,8 @@ async function sendSnackChatPush(args: {
 
     const invalid: string[] = [];
     for (const language of ['ko', 'en'] as const) {
-      const tokens = tokenGroups[language];
+      const tokens = tokenGroups[language].filter((token) =>
+        !succeeded.has(token) && !terminal.has(token));
       const isKorean = language === 'ko';
       const preview = messageType === 'image'
         ? (rawText || (isKorean ? '📷 사진' : '📷 Photo'))
@@ -8015,7 +8080,9 @@ async function sendSnackChatPush(args: {
 
       for (let offset = 0; offset < tokens.length; offset += 500) {
         const chunk = tokens.slice(offset, offset + 500);
-        const result = await admin.messaging().sendEachForMulticast(decorateChatPush({
+        let result: admin.messaging.BatchResponse;
+        try {
+          result = await admin.messaging().sendEachForMulticast(decorateChatPush({
           tokens: chunk,
           notification: {title: groupedTitle, body},
           data: {
@@ -8072,23 +8139,51 @@ async function sendSnackChatPush(args: {
           message: args.message, language, unreadCount: roomUnreadCount,
           threadKey: notificationGroupKey, messageId: args.messageId,
           sentAtMillis: timestampMillis(args.message.createdAt) || Date.now(),
-        }));
+          }));
+        } catch (error) {
+          // A batch-level error has an uncertain acceptance outcome.
+          delivery.status = 'uncertain';
+          await savePushDelivery(args.eventRef, args.recipientId, delivery);
+          console.error('Snack Chat FCM batch outcome uncertain; replay suppressed.', error);
+          return;
+        }
         result.responses.forEach((response, index) => {
-          if (response.success) return;
+          if (response.success) {
+            succeeded.add(chunk[index]);
+            return;
+          }
           const code = response.error?.code ?? '';
           if (code === 'messaging/registration-token-not-registered' ||
               code === 'messaging/invalid-registration-token') {
             invalid.push(chunk[index]);
+            terminal.add(chunk[index]);
+          } else if (code === 'messaging/server-unavailable' ||
+              code === 'messaging/internal-error' ||
+              code === 'messaging/quota-exceeded') {
+            transientFailure = true;
+          } else {
+            terminal.add(chunk[index]);
           }
         });
+        delivery.succeededTokens = [...succeeded];
+        delivery.terminalTokens = [...terminal];
+        await savePushDelivery(args.eventRef, args.recipientId, delivery);
       }
     }
-    await cleanInvalidPushTokens(args.recipientId, userData, invalid);
+    await cleanInvalidPushTokens(args.recipientId, userData, invalid)
+      .catch((error) => console.warn('Snack Chat invalid token cleanup failed.', error));
+    delivery.status = transientFailure && nonNegativeInteger(delivery.attempts) < 3 ?
+      'pending' : transientFailure ? 'exhausted' : 'settled';
+    await savePushDelivery(args.eventRef, args.recipientId, delivery);
+    if (delivery.status === 'pending') {
+      throw new Error('Snack Chat FCM transient token failure; retry pending tokens.');
+    }
   } catch (error) {
     console.error(
       'Snack Chat push failed for recipient=' + args.recipientId,
       error,
     );
+    throw error;
   }
 }
 

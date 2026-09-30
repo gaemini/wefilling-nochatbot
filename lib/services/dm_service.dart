@@ -7,7 +7,6 @@ import 'dart:async';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:cloud_functions/cloud_functions.dart';
 import 'package:firebase_auth/firebase_auth.dart';
-import 'package:shared_preferences/shared_preferences.dart';
 import '../models/conversation.dart';
 import '../models/dm_message.dart';
 import 'content_filter_service.dart';
@@ -43,9 +42,6 @@ class DMService {
     '😢',
     '🙏',
   };
-
-  static String _visibilityPrefsKey(String myUid, String conversationId) =>
-      'dm_visibility_start__${myUid}__${conversationId}';
 
   // 캐시 관리
   final Map<String, Conversation> _conversationCache = {};
@@ -990,35 +986,12 @@ class DMService {
     }
 
     try {
-      // 0) 로컬(SharedPreferences) 우선: 재진입 시 서버/네트워크 대기를 줄이기 위함
-      // - 같은 디바이스에서 leave를 수행한 경우 즉시 필터 적용 가능
-      try {
-        final prefs = await SharedPreferences.getInstance();
-        final ms =
-            prefs.getInt(_visibilityPrefsKey(currentUser.uid, conversationId));
-        if (ms != null && ms > 0) {
-          final leftTime = DateTime.fromMillisecondsSinceEpoch(ms);
-          return leftTime;
-        }
-      } catch (_) {
-        // best-effort
-      }
-
       final docRef = _firestore.collection('conversations').doc(conversationId);
-
-      // 1) Firestore 로컬 캐시 우선 (오프라인 퍼시스턴스/최근 접근 시 빠름)
-      DocumentSnapshot<Map<String, dynamic>>? convSnapshot;
-      try {
-        convSnapshot = await docRef.get(const GetOptions(source: Source.cache));
-      } catch (_) {
-        convSnapshot = null;
-      }
-
-      // 2) 캐시에 없거나 정보가 없으면 서버로 폴백
-      if (convSnapshot == null || !convSnapshot.exists) {
-        convSnapshot =
-            await docRef.get(const GetOptions(source: Source.server));
-      }
+      // A local leave hint or stale Firestore cache cannot override the
+      // server-owned boundary from another device or a corrected leave.
+      final convSnapshot =
+          await docRef.get(const GetOptions(source: Source.server));
+      if (_auth.currentUser?.uid != currentUser.uid) return null;
 
       if (!convSnapshot.exists) {
         if (Logger.isVerboseEnabled) Logger.log('  - 결과: null (대화방 없음)');
@@ -1034,15 +1007,6 @@ class DMService {
         final leftTimestamp = userLeftAtData[currentUser.uid] as Timestamp?;
         if (leftTimestamp != null) {
           final leftTime = leftTimestamp.toDate();
-          // 로컬에 저장하여 다음 진입을 가속 (best-effort)
-          try {
-            final prefs = await SharedPreferences.getInstance();
-            await prefs.setInt(
-              _visibilityPrefsKey(currentUser.uid, conversationId),
-              leftTime.millisecondsSinceEpoch,
-            );
-          } catch (_) {}
-
           return leftTime;
         }
       }
@@ -1050,7 +1014,7 @@ class DMService {
       return null;
     } catch (e) {
       Logger.error('❌ 가시성 시간 계산 실패: $e');
-      return null;
+      rethrow;
     }
   }
 
@@ -1208,57 +1172,32 @@ class DMService {
     }
   }
 
-  /// 대화방 나가기 - 인스타그램 DM 방식 (타임스탬프 기록)
-  Future<void> leaveConversation(String conversationId) async {
+  /// Leave and unread reconciliation share one server-owned boundary.
+  Future<DMReadResult> leaveConversation(String conversationId) async {
     final currentUser = _auth.currentUser;
-    if (currentUser == null) return;
-
-    final convRef = _firestore.collection('conversations').doc(conversationId);
+    if (currentUser == null) throw StateError('User not logged in');
     try {
-      final snap = await convRef.get();
-      if (!snap.exists) {
-        return;
+      final response = await _functions.httpsCallable('leaveDMConversationSecure')
+          .call(<String, dynamic>{'conversationId': conversationId})
+          .timeout(const Duration(seconds: 60));
+      final data = response.data;
+      if (data is! Map || data['success'] != true ||
+          _auth.currentUser?.uid != currentUser.uid) {
+        throw StateError('DM leave was not confirmed for this account');
       }
-
-      final data = snap.data() as Map<String, dynamic>;
-      final participants = List<String>.from(data['participants'] ?? []);
-      if (!participants.contains(currentUser.uid)) {
-        return;
-      }
-
-      final lastMessageTime = (data['lastMessageTime'] as Timestamp?)?.toDate();
-      final now = DateTime.now();
-      if (lastMessageTime != null) {
-        if (Logger.isVerboseEnabled)
-          Logger.log(
-              '  - 마지막 메시지로부터 ${now.difference(lastMessageTime).inSeconds}초 경과');
-      }
-
-      // ✅ 나가기 시 정책:
-      // - archivedBy + userLeftAt 기록
-      // - 읽음 카운터/총합은 trusted callable에서 먼저 원자적으로 리셋
-      await markAsRead(conversationId);
-      if (_auth.currentUser?.uid != currentUser.uid) return;
-      await convRef.update({
-        'archivedBy': FieldValue.arrayUnion([currentUser.uid]),
-        'userLeftAt.${currentUser.uid}': Timestamp.fromDate(now),
-        'updatedAt': Timestamp.fromDate(now),
-      });
-
-      // 로컬에 leave 시점을 저장하여 재진입 시 즉시 필터링되도록 한다 (best-effort)
-      try {
-        final prefs = await SharedPreferences.getInstance();
-        await prefs.setInt(
-          _visibilityPrefsKey(currentUser.uid, conversationId),
-          now.millisecondsSinceEpoch,
-        );
-      } catch (_) {
-        // best-effort
-      }
-
-      if (Logger.isVerboseEnabled) Logger.log('✅ 대화방 나가기 완료');
-      if (Logger.isVerboseEnabled)
-        Logger.log('  - archivedBy에 추가: ${currentUser.uid}');
+      int readInt(Object? value) => value is num ? value.toInt() : 0;
+      _conversationCache.remove(conversationId);
+      _messageCache.remove('${currentUser.uid}::$conversationId');
+      unawaited(_localMessageCache.clearConversation(conversationId,
+          expectedOwner: currentUser.uid).catchError((Object error) {
+        Logger.error('DM leave local cache cleanup failed: $error');
+      }));
+      return DMReadResult(
+        clearedCount: readInt(data['clearedCount']),
+        readThroughAtMillis: readInt(data['readThroughAtMillis']),
+        readThroughAtSeconds: readInt(data['readThroughAtSeconds']),
+        readThroughAtNanos: readInt(data['readThroughAtNanos']),
+      );
     } on FirebaseException catch (e) {
       Logger.error('대화방 나가기 실패', e);
       rethrow;

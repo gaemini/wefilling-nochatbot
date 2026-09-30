@@ -78,6 +78,7 @@ import {dmCovered} from './dm_read_policy';
 export {
   markDMConversationReadSecure,
   markDMConversationReadBoundedSecure,
+  leaveDMConversationSecure,
   onDMReceiptCleanupRequested,
   onDMReactionWritten,
   reconcileDMUnreadTotalSecure,
@@ -369,7 +370,7 @@ async function filterPushTokensOwnedByUser(
 
 async function cleanInvalidPushTokensForUser(
   userId: string,
-  userData: Record<string, any>,
+  _userData: Record<string, any>,
   rawTokens: string[],
 ): Promise<void> {
   const tokens = Array.from(new Set(rawTokens
@@ -378,33 +379,34 @@ async function cleanInvalidPushTokensForUser(
   if (tokens.length === 0) return;
 
   const userRef = db.collection('users').doc(userId);
-  const remaining = Array.isArray(userData.fcmTokens) ?
-    userData.fcmTokens
-      .map((token: unknown) => normalizeUidLoose(token))
-      .filter((token: string) => token.length > 0 && !tokens.includes(token)) :
-    [];
-  const updates: Record<string, any> = {
-    fcmTokens: admin.firestore.FieldValue.arrayRemove(...tokens),
-    fcmTokenUpdatedAt: admin.firestore.FieldValue.serverTimestamp(),
-  };
-  if (tokens.includes(normalizeUidLoose(userData.fcmToken))) {
-    updates.fcmToken = remaining.length > 0 ?
-      remaining[0] : admin.firestore.FieldValue.delete();
-  }
-  await userRef.update(updates).catch((error) => {
-    if ((error as any)?.code !== 5 &&
-        (error as any)?.code !== 'not-found') throw error;
+  const tokenRefs = tokens.map((token) => db.collection('fcm_tokens').doc(token));
+  await db.runTransaction(async (tx) => {
+    const [user, ...registrations] = await Promise.all([
+      tx.get(userRef), ...tokenRefs.map((ref) => tx.get(ref)),
+    ]);
+    if (user.exists) {
+      const latest = user.data() as Record<string, any>;
+      const remaining = Array.isArray(latest.fcmTokens) ?
+        latest.fcmTokens.filter((token: unknown) =>
+          typeof token === 'string' && !tokens.includes(token)) : [];
+      const updates: Record<string, any> = {
+        fcmTokens: admin.firestore.FieldValue.arrayRemove(...tokens),
+        fcmTokenUpdatedAt: admin.firestore.FieldValue.serverTimestamp(),
+      };
+      if (tokens.includes(normalizeUidLoose(latest.fcmToken))) {
+        updates.fcmToken = remaining.length > 0 ?
+          remaining[0] : admin.firestore.FieldValue.delete();
+      }
+      tx.update(userRef, updates);
+    }
+    registrations.forEach((registration, index) => {
+      if (registration.exists && registration.get('userId') === userId) {
+        tx.delete(tokenRefs[index]);
+      }
+      const deviceId = crypto.createHash('sha256').update(tokens[index]).digest('hex');
+      tx.delete(userRef.collection('devices').doc(deviceId));
+    });
   });
-
-  const cleanup = db.batch();
-  tokens.forEach((token) => {
-    // FCM has confirmed this installation token itself is invalid, so remove
-    // both canonical and compatibility references immediately.
-    cleanup.delete(db.collection('fcm_tokens').doc(token));
-    const deviceId = crypto.createHash('sha256').update(token).digest('hex');
-    cleanup.delete(userRef.collection('devices').doc(deviceId));
-  });
-  await cleanup.commit();
 }
 
 function normalizeUidLoose(v: unknown): string {
@@ -8316,10 +8318,17 @@ export const onNotificationCreated = functions
             const curDm = toNonNegativeInt((d as any).dmUnreadTotal);
 
             if (marker.exists) {
+              const attempts = toNonNegativeInt(marker.get('pushAttemptCount'));
+              const retryPush = marker.get('pushStatus') === 'pending' &&
+                attempts < 3 && currentNotification.exists &&
+                currentNotification.get('isRead') !== true;
+              if (retryPush) tx.update(counterMarkerRef, {
+                pushAttemptCount: attempts + 1,
+              });
               return {
                 notiUnreadTotal: curNoti,
                 dmUnreadTotal: curDm,
-                shouldSend: false,
+                shouldSend: retryPush,
               };
             }
 
@@ -8355,6 +8364,10 @@ export const onNotificationCreated = functions
               userId,
               applied: type !== 'dm_received' && isCurrentUnread,
               counterSettled: type === 'dm_received' || !isCurrentUnread,
+              pushStatus: isCurrentUnread ? 'pending' : 'read',
+              pushAttemptCount: isCurrentUnread ? 1 : 0,
+              pushSucceededTokens: [],
+              pushTerminalTokens: [],
               createdAt: admin.firestore.FieldValue.serverTimestamp(),
             });
             return {
@@ -8474,6 +8487,7 @@ export const onNotificationCreated = functions
 
       if (totalTokens === 0) {
         runtimeLogsEnabled && runtimeInfo('FCM 토큰이 없어 카운터만 반영하고 푸시는 전송하지 않습니다.');
+        await counterMarkerRef.update({pushStatus: 'no-tokens'});
         return null;
       }
 
@@ -8525,7 +8539,8 @@ export const onNotificationCreated = functions
       const sendForLang = async (lang: SupportedLang, tokens: string[]) => {
         const current = await snapshot.ref.get();
         if (!current.exists || current.get('isRead') === true) {
-          return {successCount: 0, failureCount: 0, responses: []} as admin.messaging.BatchResponse;
+          await counterMarkerRef.update({pushStatus: 'read'});
+          return null;
         }
         const localized = buildLocalizedNotificationText({
           lang,
@@ -8566,17 +8581,59 @@ export const onNotificationCreated = functions
           },
         };
 
-        const res = await admin.messaging().sendEachForMulticast(pushMessage);
+        let res: admin.messaging.BatchResponse;
+        try {
+          res = await admin.messaging().sendEachForMulticast(pushMessage);
+        } catch (error) {
+          // A batch-level error may have an unknown delivery outcome.
+          await counterMarkerRef.update({pushStatus: 'uncertain'});
+          console.error('Notification FCM batch outcome uncertain; replay suppressed.', error);
+          return null;
+        }
         runtimeLogsEnabled && runtimeInfo(`✅ 알림 전송(${lang}) 결과: ${res.successCount}/${tokens.length} (userId=${userId})`);
         return res;
       };
 
       const responses: Array<{ lang: SupportedLang; tokens: string[]; res: admin.messaging.BatchResponse }> = [];
-      if (tokenGroups.ko.length > 0) {
-        responses.push({ lang: 'ko', tokens: tokenGroups.ko, res: await sendForLang('ko', tokenGroups.ko) });
-      }
-      if (tokenGroups.en.length > 0) {
-        responses.push({ lang: 'en', tokens: tokenGroups.en, res: await sendForLang('en', tokenGroups.en) });
+      let transientFailures = false;
+      for (const lang of ['ko', 'en'] as const) {
+        const marker = await counterMarkerRef.get();
+        const completed = new Set<string>([
+          ...(Array.isArray(marker.get('pushSucceededTokens')) ?
+            marker.get('pushSucceededTokens') : []),
+          ...(Array.isArray(marker.get('pushTerminalTokens')) ?
+            marker.get('pushTerminalTokens') : []),
+        ]);
+        const pending = tokenGroups[lang].filter((token) => !completed.has(token));
+        if (pending.length === 0) continue;
+        const res = await sendForLang(lang, pending);
+        if (res == null) return null;
+        responses.push({lang, tokens: pending, res});
+        const successful: string[] = [];
+        const terminal: string[] = [];
+        res.responses.forEach((item, index) => {
+          if (item.success) {
+            successful.push(pending[index]);
+            return;
+          }
+          const code = (item.error as any)?.code as string | undefined;
+          if (code === 'messaging/server-unavailable' ||
+              code === 'messaging/internal-error' ||
+              code === 'messaging/quota-exceeded') {
+            transientFailures = true;
+          } else {
+            terminal.push(pending[index]);
+          }
+        });
+        await counterMarkerRef.update({
+          ...(successful.length > 0 ? {
+            pushSucceededTokens: admin.firestore.FieldValue.arrayUnion(...successful),
+          } : {}),
+          ...(terminal.length > 0 ? {
+            pushTerminalTokens: admin.firestore.FieldValue.arrayUnion(...terminal),
+          } : {}),
+          pushLastAttemptAt: admin.firestore.FieldValue.serverTimestamp(),
+        });
       }
 
       // 실패 토큰 자동 정리 (iOS/Android 공통)
@@ -8594,38 +8651,21 @@ export const onNotificationCreated = functions
       }
 
       if (invalidTokens.length > 0) {
-        const userRef = db.collection('users').doc(userId);
-        const allTokens = [...tokenGroups.ko, ...tokenGroups.en];
-        const remaining = allTokens.filter((t) => !invalidTokens.includes(t));
-
-        // fcm_tokens 레지스트리에서도 제거
-        const delBatch = db.batch();
-        invalidTokens.forEach((t) => delBatch.delete(db.collection('fcm_tokens').doc(t)));
-        await delBatch.commit().catch((e) => console.warn('⚠️ fcm_tokens 정리 실패(무시):', e));
-
-        // users.fcmTokens 배열에서 제거 (chunk로 안전하게 처리)
-        const chunkSize = 10;
-        for (let i = 0; i < invalidTokens.length; i += chunkSize) {
-          const chunk = invalidTokens.slice(i, i + chunkSize);
-          await userRef.update({
-            fcmTokens: admin.firestore.FieldValue.arrayRemove(...chunk),
-          }).catch(() => {});
-        }
-
-        // 레거시 단일 토큰이 무효면 대체/삭제
-        const legacyToken = userData?.fcmToken;
-        if (typeof legacyToken === 'string' && legacyToken.length > 0 &&
-            invalidTokens.includes(legacyToken)) {
-          await userRef.update({
-            fcmToken: remaining.length > 0
-              ? remaining[0]
-              : admin.firestore.FieldValue.delete(),
-          }).catch(() => {});
-        }
-
+        await cleanInvalidPushTokensForUser(
+          String(userId), userData as Record<string, any>, invalidTokens,
+        ).catch((error) => console.warn('Invalid notification token cleanup failed.', error));
         runtimeLogsEnabled && runtimeInfo(`🧹 무효 FCM 토큰 정리: ${invalidTokens.length}개 (userId=${userId})`);
       }
 
+      const finalMarker = await counterMarkerRef.get();
+      const attempts = toNonNegativeInt(finalMarker.get('pushAttemptCount'));
+      await counterMarkerRef.update({
+        pushStatus: transientFailures && attempts < 3 ? 'pending' :
+          transientFailures ? 'exhausted' : 'settled',
+      });
+      if (transientFailures && attempts < 3) {
+        throw new Error('Notification FCM transient token failure; retry pending tokens.');
+      }
       return null;
     } catch (error) {
       console.error('알림 전송 오류:', error);
@@ -9706,6 +9746,16 @@ export const onDMMessageCreated = functions
         });
       }
 
+      if (dmPushEnabled) {
+        try {
+          const registered = await db.collection('fcm_tokens')
+            .where('userId', '==', recipientId).limit(500).get();
+          registered.docs.forEach((document) => tokenSet.add(document.id));
+        } catch (error) {
+          console.warn('DM token registry lookup failed; retaining legacy tokens.', error);
+        }
+      }
+
       const tokens = await filterPushTokensOwnedByUser(
         recipientId,
         Array.from(tokenSet)
@@ -9747,7 +9797,17 @@ export const onDMMessageCreated = functions
           // 트랜잭션 규칙: 모든 get()을 set()/update() 전에 수행해야 함
           const eventSnap = await tx.get(dmCreateEventRef);
           if (eventSnap.exists) {
-            return {shouldSend: false, dmUnreadTotal: 0};
+            const attemptCount = toNonNegativeInt(eventSnap.get('pushAttemptCount'));
+            const retryPush = eventSnap.get('pushStatus') === 'pending' &&
+              attemptCount < 3;
+            if (retryPush) tx.update(dmCreateEventRef, {
+              pushAttemptCount: attemptCount + 1,
+            });
+            return {
+              shouldSend: retryPush,
+              dmUnreadTotal: toNonNegativeInt(eventSnap.get('dmUnreadTotal')),
+              displayRoomUnread: toNonNegativeInt(eventSnap.get('roomUnread')),
+            };
           }
 
           const currentMessageSnap = await tx.get(snapshot.ref);
@@ -9901,6 +9961,12 @@ export const onDMMessageCreated = functions
             conversationId,
             messageId,
             applied: true,
+            dmUnreadTotal: nextDmUnreadTotal,
+            roomUnread: toNonNegativeInt(unreadCount[recipientId]),
+            pushStatus: 'pending',
+            pushAttemptCount: 1,
+            pushSucceededTokens: [],
+            pushTerminalTokens: [],
             createdAt: admin.firestore.FieldValue.serverTimestamp(),
           });
           return {
@@ -9937,6 +10003,7 @@ export const onDMMessageCreated = functions
       // FCM 토큰이 없으면 push는 스킵하고 종료 (unreadCount는 이미 증가됨)
       if (!hasTokens) {
         runtimeLogsEnabled && runtimeInfo('  ⏭️ FCM 토큰 없음 - push 스킵 (unreadCount는 정상 처리됨)');
+        await dmCreateEventRef.update({pushStatus: 'no-tokens'});
         return null;
       }
 
@@ -10044,6 +10111,7 @@ export const onDMMessageCreated = functions
       // 큐 처리 도중 새 차단이 생긴 경우 실제 FCM 전송 직전에도 억제한다.
       if (await hasBlockRelationship(senderId, recipientId)) {
         runtimeLogsEnabled && runtimeInfo('⏭️ 차단 관계(dm_received) - 최종 푸시 스킵');
+        await dmCreateEventRef.update({pushStatus: 'blocked'});
         return null;
       }
 
@@ -10052,27 +10120,64 @@ export const onDMMessageCreated = functions
       const latestDmMessage = await snapshot.ref.get();
       if (!latestDmMessage.exists || latestDmMessage.get('isRead') === true ||
           dmCovered(snapshot.createTime, latestDmRoom.get('lastReadAtBy')?.[recipientId])) {
+        await dmCreateEventRef.update({pushStatus: 'read'});
         return null;
       }
-      const response = await admin.messaging().sendEachForMulticast(decorateChatPush(pushMessage, {
+      const pushMarker = await dmCreateEventRef.get();
+      const sentTokens = new Set<string>(
+        Array.isArray(pushMarker.get('pushSucceededTokens')) ?
+          pushMarker.get('pushSucceededTokens') : []);
+      const terminalTokens = new Set<string>(
+        Array.isArray(pushMarker.get('pushTerminalTokens')) ?
+          pushMarker.get('pushTerminalTokens') : []);
+      const pendingTokens = tokens.filter((token) =>
+        !sentTokens.has(token) && !terminalTokens.has(token));
+      if (pendingTokens.length === 0) {
+        await dmCreateEventRef.update({pushStatus: 'sent'});
+        return null;
+      }
+      pushMessage.tokens = pendingTokens;
+      let response: admin.messaging.BatchResponse;
+      try {
+        response = await admin.messaging().sendEachForMulticast(decorateChatPush(pushMessage, {
         kind: 'dm', title: senderName, sender: senderName, message: messageData,
         language: recipientSettingsDoc.data()?.locale ?? recipientData?.preferredLanguage ??
           recipientData?.language ?? 'ko', unreadCount: displayRoomUnread,
         threadKey: dmNotificationTag, messageId,
         // Commit time is server-owned; legacy client createdAt may be skewed.
         sentAtMillis: snapshot.createTime.toMillis(),
-      }));
-      runtimeLogsEnabled && runtimeInfo(`✅ DM 푸시 전송 완료: ${response.successCount}/${tokens.length}`);
+        }));
+      } catch (error) {
+        // A batch-level exception does not prove FCM accepted zero tokens.
+        // Do not blindly resend an uncertain batch on trigger replay.
+        await dmCreateEventRef.update({pushStatus: 'uncertain'});
+        console.error('DM FCM batch outcome uncertain; automatic replay suppressed.', error);
+        return null;
+      }
+      runtimeLogsEnabled && runtimeInfo(`✅ DM 푸시 전송 완료: ${response.successCount}/${pendingTokens.length}`);
 
       // 실패 토큰 정리
+      const successfulTokens: string[] = [];
+      const transientFailures: string[] = [];
+      const newTerminalTokens: string[] = [];
       if (response.failureCount > 0) {
         const invalidTokens: string[] = [];
         response.responses.forEach((resp, idx) => {
-          if (resp.success) return;
+          if (resp.success) {
+            successfulTokens.push(pendingTokens[idx]);
+            return;
+          }
           const code = (resp.error as any)?.code as string | undefined;
           if (code === 'messaging/registration-token-not-registered' ||
               code === 'messaging/invalid-registration-token') {
-            invalidTokens.push(tokens[idx]);
+            invalidTokens.push(pendingTokens[idx]);
+            newTerminalTokens.push(pendingTokens[idx]);
+          } else if (code === 'messaging/server-unavailable' ||
+              code === 'messaging/internal-error' ||
+              code === 'messaging/quota-exceeded') {
+            transientFailures.push(pendingTokens[idx]);
+          } else {
+            newTerminalTokens.push(pendingTokens[idx]);
           }
         });
 
@@ -10081,9 +10186,27 @@ export const onDMMessageCreated = functions
             recipientId,
             recipientData as Record<string, any>,
             invalidTokens,
-          );
+          ).catch((error) => console.warn('DM invalid token cleanup failed.', error));
           runtimeLogsEnabled && runtimeInfo(`  🧹 무효 FCM 토큰 정리: ${invalidTokens.length}개`);
         }
+      } else {
+        successfulTokens.push(...pendingTokens);
+      }
+
+      const attempts = toNonNegativeInt(pushMarker.get('pushAttemptCount'));
+      await dmCreateEventRef.update({
+        pushStatus: transientFailures.length > 0 && attempts < 3 ? 'pending' :
+          transientFailures.length > 0 ? 'exhausted' : 'settled',
+        ...(successfulTokens.length > 0 ? {
+          pushSucceededTokens: admin.firestore.FieldValue.arrayUnion(...successfulTokens),
+        } : {}),
+        ...(newTerminalTokens.length > 0 ? {
+          pushTerminalTokens: admin.firestore.FieldValue.arrayUnion(...newTerminalTokens),
+        } : {}),
+        pushLastAttemptAt: admin.firestore.FieldValue.serverTimestamp(),
+      });
+      if (transientFailures.length > 0 && attempts < 3) {
+        throw new Error('DM FCM transient token failure; retry pending tokens.');
       }
 
       return null;

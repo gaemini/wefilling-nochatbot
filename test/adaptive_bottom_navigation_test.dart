@@ -9,35 +9,32 @@ List<BottomNavigationItem> _items({
 }) {
   return [
     const BottomNavigationItem(
-      icon: Icons.menu,
-      selectedIcon: Icons.menu,
+      glyph: BottomNavGlyph.posts,
       label: 'Posts',
       iconSizeMultiplier: 1.2,
     ),
     const BottomNavigationItem(
-      icon: Icons.groups_outlined,
-      selectedIcon: Icons.groups,
+      glyph: BottomNavGlyph.meetup,
       label: 'Meetup',
-      iconSizeMultiplier: 1.35,
+      iconSizeMultiplier: 1.2,
     ),
     BottomNavigationItem(
-      icon: Icons.forum_outlined,
-      selectedIcon: Icons.forum_rounded,
+      glyph: BottomNavGlyph.snackChat,
       label: snackChatLabel,
       semanticLabel: snackChatSemanticLabel,
       badgeCount: 3,
       iconSizeMultiplier: 1.2,
     ),
     const BottomNavigationItem(
-      icon: Icons.person_outline,
-      selectedIcon: Icons.person,
+      glyph: BottomNavGlyph.myPage,
       label: 'My Page',
       iconSizeMultiplier: 1.2,
     ),
     const BottomNavigationItem(
-      icon: Icons.send_outlined,
-      selectedIcon: Icons.send_rounded,
+      glyph: BottomNavGlyph.dm,
       label: 'DM',
+      badgeCount: 2,
+      iconSizeMultiplier: 1.2,
     ),
   ];
 }
@@ -129,39 +126,59 @@ void main() {
     await _pumpNavigation(tester, width: 430, selectedIndex: 0);
     final mobileFontSize =
         tester.widget<Text>(find.text('Posts')).style!.fontSize;
-    final mobileIconSize = tester.widget<Icon>(find.byIcon(Icons.menu)).size;
+    final mobileIconSize = tester
+        .widget<CustomPaint>(
+          find
+              .descendant(
+                of: find.byType(AdaptiveBottomNavigation),
+                matching: find.byType(CustomPaint),
+              )
+              .first,
+        )
+        .size
+        .width;
 
     await _pumpNavigation(tester, width: 1024, selectedIndex: 0);
     final largeFontSize =
         tester.widget<Text>(find.text('Posts')).style!.fontSize;
-    final largeIconSize = tester.widget<Icon>(find.byIcon(Icons.menu)).size;
+    final largeIconSize = tester
+        .widget<CustomPaint>(
+          find
+              .descendant(
+                of: find.byType(AdaptiveBottomNavigation),
+                matching: find.byType(CustomPaint),
+              )
+              .first,
+        )
+        .size
+        .width;
 
     expect(largeFontSize, mobileFontSize);
     expect(largeIconSize, mobileIconSize);
   });
 
-  testWidgets('third item uses filled icon and black selected color',
+  testWidgets('five destinations share outlined glyphs and selected color',
       (tester) async {
     await _pumpNavigation(
       tester,
       width: 390,
       selectedIndex: 0,
     );
-    expect(find.byIcon(Icons.forum_outlined), findsOneWidget);
-    expect(find.byIcon(Icons.forum_rounded), findsNothing);
-    expect(find.byIcon(Icons.change_history_outlined), findsNothing);
+    final glyphs = find.descendant(
+      of: find.byType(AdaptiveBottomNavigation),
+      matching: find.byType(CustomPaint),
+    );
+    expect(glyphs, findsNWidgets(5));
+    expect(find.byIcon(Icons.forum_outlined), findsNothing);
+    expect(find.text('3'), findsOneWidget);
+    expect(find.text('2'), findsOneWidget);
 
     await _pumpNavigation(
       tester,
       width: 390,
       selectedIndex: 2,
     );
-    expect(find.byIcon(Icons.forum_outlined), findsNothing);
-    expect(find.byIcon(Icons.forum_rounded), findsOneWidget);
-    expect(
-      tester.widget<Icon>(find.byIcon(Icons.forum_rounded)).color,
-      const Color(0xFF000000),
-    );
+    expect(glyphs, findsNWidgets(5));
     expect(
       tester.widget<Text>(find.text('Snack Chat')).style?.color,
       const Color(0xFF000000),
@@ -181,5 +198,27 @@ void main() {
     expect(find.bySemanticsLabel('Snack Chat tab'), findsOneWidget);
     await tester.tap(find.bySemanticsLabel('Snack Chat tab'));
     expect(tappedIndex, 2);
+  });
+
+  testWidgets('new outlines retain all five tab destinations', (tester) async {
+    int? tappedIndex;
+    await _pumpNavigation(
+      tester,
+      width: 390,
+      selectedIndex: 0,
+      onTap: (index) => tappedIndex = index,
+    );
+
+    const semantics = [
+      'Posts tab',
+      'Meetup tab',
+      'Snack Chat tab',
+      'My Page tab',
+      'DM tab',
+    ];
+    for (var index = 0; index < semantics.length; index++) {
+      await tester.tap(find.bySemanticsLabel(semantics[index]));
+      expect(tappedIndex, index);
+    }
   });
 }

@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:flutter_test/flutter_test.dart';
 import 'package:wefilling/models/snack_chat_message.dart';
 import 'package:wefilling/screens/snack_chat_screen.dart';
@@ -95,6 +97,42 @@ void main() {
     expect(
       snackChatSecureTextBatchPrefixLength(List<bool>.filled(8, true)),
       5,
+    );
+  });
+
+  test('ACK during outcome resolution prevents a stale queue hold', () async {
+    final resolution = Completer<bool>();
+    var acknowledged = false;
+    final decision =
+        resolution.future.then((resolved) => shouldParkSnackChatOutbound(
+              sessionValid: true,
+              resolved: resolved,
+              acknowledged: acknowledged,
+            ));
+    acknowledged = true;
+    resolution.complete(false);
+    expect(await decision, isFalse);
+  });
+
+  test('screen exit during outcome resolution cannot park its queue', () async {
+    final resolution = Completer<bool>();
+    var sessionValid = true;
+    final decision =
+        resolution.future.then((resolved) => shouldParkSnackChatOutbound(
+              sessionValid: sessionValid,
+              resolved: resolved,
+              acknowledged: false,
+            ));
+    sessionValid = false;
+    resolution.complete(false);
+    expect(await decision, isFalse);
+    expect(
+      shouldParkSnackChatOutbound(
+        sessionValid: true,
+        resolved: false,
+        acknowledged: false,
+      ),
+      isTrue,
     );
   });
 }

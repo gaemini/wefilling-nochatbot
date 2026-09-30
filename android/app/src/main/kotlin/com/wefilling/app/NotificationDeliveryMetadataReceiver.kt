@@ -31,13 +31,20 @@ class NotificationDeliveryMetadataReceiver : BroadcastReceiver() {
                 data.optString("notificationId").isEmpty()) return
             if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) {
                 val manager = context.getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
-                manager.activeNotifications.filter { active ->
-                    active.tag == tag && active.id != 0 &&
-                        read(context, tag, active.notification.`when`)?.let {
-                            JSONObject(it).optBoolean("_localRendered")
-                        } == true
+                manager.activeNotifications.forEach { active ->
+                    if (active.tag != tag || active.id == 0) return@forEach
+                    val proof = read(context, tag, active.notification.`when`) ?: return@forEach
+                    val local = JSONObject(proof)
+                    if (!local.optBoolean("_localRendered") ||
+                        !coversLocal(data, local)) return@forEach
+                    // A newer post may have replaced the same tag/id while
+                    // the receiver was comparing its read boundary.
+                    val latest = manager.activeNotifications.firstOrNull { it.key == active.key }
+                    if (latest?.postTime != active.postTime ||
+                        latest.notification.`when` != active.notification.`when` ||
+                        read(context, tag, active.notification.`when`) != proof) return@forEach
+                    manager.cancel(active.tag, active.id)
                 }
-                    .forEach { manager.cancel(it.tag, it.id) }
             }
             synchronized(lock) {
                 val prefs = context.getSharedPreferences(PREFERENCES, Context.MODE_PRIVATE)
@@ -46,14 +53,7 @@ class NotificationDeliveryMetadataReceiver : BroadcastReceiver() {
                 val previous = buckets.optJSONObject(bucket)
                 // A single OS millisecond can contain multiple pushes. Store
                 // the maximum receipt, never infer which tied card is visible.
-                val newer = previous == null || if (type == "snack_chat_message") {
-                    data.optLong("messageSequence") > previous.optLong("messageSequence")
-                } else {
-                    val seconds = data.optLong("sentAtSeconds")
-                    val oldSeconds = previous.optLong("sentAtSeconds")
-                    seconds > oldSeconds || (seconds == oldSeconds &&
-                        data.optLong("sentAtNanos") > previous.optLong("sentAtNanos"))
-                }
+                val newer = previous == null || coversLocal(data, previous)
                 if (newer) buckets.put(bucket, data)
                 val keys = buckets.keys().asSequence().toList().sortedByDescending { it.toLongOrNull() ?: 0 }
                 keys.drop(8).forEach { buckets.remove(it) }
@@ -68,12 +68,44 @@ class NotificationDeliveryMetadataReceiver : BroadcastReceiver() {
         private const val PREFERENCES = "delivered_push_receipt_metadata_v2"
         private val lock = Any()
 
+        internal fun coversLocal(incoming: JSONObject, local: JSONObject): Boolean {
+            if (incoming.optString("recipientUserId").isEmpty() ||
+                incoming.optString("recipientUserId") != local.optString("recipientUserId") ||
+                incoming.optString("type") != local.optString("type")) return false
+            return when (incoming.optString("type")) {
+                "snack_chat_message" -> {
+                    val room = incoming.optString("snackChatId")
+                    val sequence = incoming.optLong("messageSequence")
+                    room.isNotEmpty() && room == local.optString("snackChatId") &&
+                        sequence > 0 && local.optLong("messageSequence") > 0 &&
+                        sequence >= local.optLong("messageSequence")
+                }
+                "dm_received" -> {
+                    val room = incoming.optString("conversationId")
+                    val seconds = incoming.optLong("sentAtSeconds")
+                    val nanos = incoming.optLong("sentAtNanos", -1)
+                    val oldSeconds = local.optLong("sentAtSeconds")
+                    val oldNanos = local.optLong("sentAtNanos", -1)
+                    room.isNotEmpty() && room == local.optString("conversationId") &&
+                        seconds > 0 && oldSeconds > 0 &&
+                        nanos in 0..999999999 && oldNanos in 0..999999999 &&
+                        (seconds > oldSeconds || (seconds == oldSeconds && nanos >= oldNanos))
+                }
+                else -> {
+                    val id = incoming.optString("notificationId")
+                    id.isNotEmpty() && id == local.optString("notificationId")
+                }
+            }
+        }
+
         fun recordLocal(context: Context, tag: String, millis: Long, data: JSONObject) {
             if (tag.isEmpty() || millis <= 0 || data.optString("recipientUserId").isEmpty()) return
             synchronized(lock) {
                 data.put("_localRendered", true)
                 val prefs = context.getSharedPreferences(PREFERENCES, Context.MODE_PRIVATE)
                 val buckets = JSONObject(prefs.getString(tag, "{}") ?: "{}")
+                val previous = buckets.optJSONObject(millis.toString())
+                if (previous != null && !coversLocal(data, previous)) return
                 buckets.put(millis.toString(), data)
                 val keys = buckets.keys().asSequence().toList()
                     .sortedByDescending { it.toLongOrNull() ?: 0 }

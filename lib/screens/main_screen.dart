@@ -429,36 +429,32 @@ class _MainScreenState extends State<MainScreen>
               onItemTapped: _onItemTapped,
               items: [
                 BottomNavigationItem(
-                  icon: Icons.menu,
-                  selectedIcon: Icons.menu,
+                  glyph: BottomNavGlyph.posts,
                   label: l10n.board,
                   iconSizeMultiplier: 1.2,
                 ),
                 BottomNavigationItem(
-                  icon: Icons.groups_outlined,
-                  selectedIcon: Icons.groups,
+                  glyph: BottomNavGlyph.meetup,
                   label: l10n.meetupTabLabel,
-                  iconSizeMultiplier: 1.35,
+                  iconSizeMultiplier: 1.2,
                 ),
                 BottomNavigationItem(
-                  icon: Icons.forum_outlined,
-                  selectedIcon: Icons.forum_rounded,
+                  glyph: BottomNavGlyph.snackChat,
                   label: l10n.snackChat,
                   semanticLabel: l10n.snackChatTabSemantic,
                   badgeCount: unreadSCCount,
                   iconSizeMultiplier: 1.2,
                 ),
                 BottomNavigationItem(
-                  icon: Icons.person_outline,
-                  selectedIcon: Icons.person,
+                  glyph: BottomNavGlyph.myPage,
                   label: l10n.myPage,
                   iconSizeMultiplier: 1.2,
                 ),
                 BottomNavigationItem(
-                  icon: Icons.send_outlined,
-                  selectedIcon: Icons.send_rounded,
+                  glyph: BottomNavGlyph.dm,
                   label: l10n.dm,
                   badgeCount: unreadDMCount,
+                  iconSizeMultiplier: 1.2,
                 ),
               ],
             );

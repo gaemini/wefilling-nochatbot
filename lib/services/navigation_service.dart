@@ -34,16 +34,58 @@ import '../screens/snapshot_comment_letter_screen.dart';
 import '../screens/review_detail_screen.dart';
 import '../screens/review_approval_screen.dart';
 import '../screens/friend_profile_screen.dart';
+import 'dm_active_conversation.dart';
+import 'snack_chat_active_conversation.dart';
 import '../snapshot/snapshot_strings.dart';
 
 class NavigationService {
   static final GlobalKey<NavigatorState> navigatorKey =
       GlobalKey<NavigatorState>();
-  static String? _lastHandledPushKey;
-  static DateTime? _lastHandledPushAt;
+  static final RouteObserver<ModalRoute<dynamic>> routeObserver =
+      RouteObserver<ModalRoute<dynamic>>();
+  static final Set<String> _openPushDestinations = <String>{};
+  static final Map<String, Map<String, dynamic>> _pendingPushes = {};
+  static StreamSubscription<User?>? _pendingAuthSubscription;
+  static String? _pendingAuthenticatedOwner;
+  static bool _flushingPendingPushes = false;
+  static bool _routingReady = false;
+  static String? _routingOwner;
+
+  static void setRoutingReady(bool ready, String? owner) {
+    _routingReady = ready && owner != null;
+    _routingOwner = _routingReady ? owner : null;
+    if (_routingReady) unawaited(flushPendingPushes());
+  }
 
   static String _stringValue(Map<String, dynamic> data, String key) =>
       (data[key] ?? '').toString().trim();
+
+  static String destinationKey(Map<String, dynamic> data) {
+    final type = _stringValue(data, 'type');
+    final dmRoom = _stringValue(data, 'conversationId');
+    final snackRoom = _stringValue(data, 'snackChatId');
+    if (type == 'dm_received' && dmRoom.isNotEmpty) return 'dm:$dmRoom';
+    if ((type == 'snack_chat_message' || type == 'snack_chat_invite') &&
+        snackRoom.isNotEmpty) return 'snack:$snackRoom';
+    final postId = _stringValue(data, 'postId');
+    if (postId.isNotEmpty && const {
+      'post_private', 'post_created', 'new_comment', 'comment_reply',
+      'new_like', 'comment_like',
+    }.contains(type)) return 'post:$postId';
+    final meetupId = _stringValue(data, 'meetupId');
+    if (meetupId.isNotEmpty && const {
+      'meetup_full', 'meetup_cancelled', 'meetup_created', 'NEW_MEETUP',
+      'meetup_participant_joined', 'meetup_participant_left',
+    }.contains(type)) return 'meetup:$meetupId';
+    if (type == 'friend_request') return 'friend-requests';
+    if (type == 'friend_request_accepted') {
+      return 'profile:${_stringValue(data, 'actorId')}';
+    }
+    final notificationId = _stringValue(data, 'notificationId');
+    return notificationId.isNotEmpty ? 'notification:$notificationId' :
+        '$type|$postId|$meetupId|$dmRoom|$snackRoom|'
+        '${_stringValue(data, 'snapshotId')}|${_stringValue(data, 'commentId')}';
+  }
 
   static Future<NavigatorState?> _waitForNavigator() async {
     for (var attempt = 0; attempt < 50; attempt++) {
@@ -54,33 +96,89 @@ class NavigationService {
     return null;
   }
 
+  static void _holdPushUntilReady(Map<String, dynamic> data) {
+    final recipient = _stringValue(data, 'recipientUserId');
+    // Old payloads without an account must not be replayed after a new login.
+    if (recipient.isEmpty) return;
+    final key = '$recipient:${destinationKey(data)}';
+    if (_pendingPushes.length >= 20 && !_pendingPushes.containsKey(key)) {
+      _pendingPushes.remove(_pendingPushes.keys.first);
+    }
+    _pendingPushes[key] = Map<String, dynamic>.from(data);
+    _pendingAuthSubscription ??=
+        FirebaseAuth.instance.authStateChanges().listen((user) {
+      final uid = user?.uid;
+      if (uid == null) {
+        if (_pendingAuthenticatedOwner != null) _pendingPushes.clear();
+      } else {
+        if (_pendingAuthenticatedOwner != null &&
+            _pendingAuthenticatedOwner != uid) _pendingPushes.clear();
+        _pendingPushes.removeWhere((_, payload) =>
+            _stringValue(payload, 'recipientUserId') != uid);
+      }
+      _pendingAuthenticatedOwner = uid;
+      unawaited(flushPendingPushes());
+    });
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      unawaited(flushPendingPushes());
+    });
+    WidgetsBinding.instance.scheduleFrame();
+  }
+
+  static Future<void> flushPendingPushes() async {
+    if (_flushingPendingPushes || _pendingPushes.isEmpty) return;
+    final owner = FirebaseAuth.instance.currentUser?.uid;
+    if (owner == null || !_routingReady || _routingOwner != owner ||
+        navigatorKey.currentState?.mounted != true) return;
+    _flushingPendingPushes = true;
+    try {
+      while (_pendingPushes.isNotEmpty &&
+          FirebaseAuth.instance.currentUser?.uid == owner &&
+          _routingReady && _routingOwner == owner &&
+          navigatorKey.currentState?.mounted == true) {
+        final entry = _pendingPushes.entries.where((item) =>
+            _stringValue(item.value, 'recipientUserId') == owner).firstOrNull;
+        if (entry == null) break;
+        _pendingPushes.remove(entry.key);
+        await handlePushNavigation(entry.value);
+      }
+    } finally {
+      _flushingPendingPushes = false;
+    }
+  }
+
   // 푸시 데이터 기반 화면 이동
   static Future<void> handlePushNavigation(Map<String, dynamic> data) async {
     final owner = FirebaseAuth.instance.currentUser?.uid;
+    if (owner == null) {
+      _holdPushUntilReady(data);
+      return;
+    }
+    if (!_routingReady || _routingOwner != owner) {
+      _holdPushUntilReady(data);
+      return;
+    }
     final nav = await _waitForNavigator();
-    if (nav == null || owner != FirebaseAuth.instance.currentUser?.uid) return;
+    if (owner != FirebaseAuth.instance.currentUser?.uid) return;
+    if (nav == null) {
+      _holdPushUntilReady(data);
+      return;
+    }
     final recipient = _stringValue(data, 'recipientUserId');
     if (recipient.isNotEmpty && recipient != owner) return;
 
     final type = _stringValue(data, 'type');
     final notificationId = _stringValue(data, 'notificationId');
-    final targetKey = notificationId.isNotEmpty
-        ? notificationId
-        : '$type|${_stringValue(data, 'postId')}|'
-            '${_stringValue(data, 'meetupId')}|'
-            '${_stringValue(data, 'conversationId')}|'
-            '${_stringValue(data, 'snackChatId')}|'
-            '${_stringValue(data, 'snapshotId')}|'
-            '${_stringValue(data, 'commentId')}';
-    final navigationKey = '$owner:$targetKey';
-    final now = DateTime.now();
-    if (_lastHandledPushKey == navigationKey &&
-        _lastHandledPushAt != null &&
-        now.difference(_lastHandledPushAt!) < const Duration(seconds: 2)) {
+    final dmRoom = _stringValue(data, 'conversationId');
+    final snackRoom = _stringValue(data, 'snackChatId');
+    final navigationKey = '$owner:${destinationKey(data)}';
+    if (_openPushDestinations.contains(navigationKey) ||
+        (type == 'dm_received' && DMActiveConversation.isActive(dmRoom)) ||
+        ((type == 'snack_chat_message' || type == 'snack_chat_invite') &&
+            SnackChatActiveConversation.isActive(snackRoom))) {
       return;
     }
-    _lastHandledPushKey = navigationKey;
-    _lastHandledPushAt = now;
+    _openPushDestinations.add(navigationKey);
     // Destination success/visibility owns the read, not the navigation attempt.
 
     try {
@@ -337,6 +435,8 @@ class NavigationService {
       // 실패 시에도 앱이 죽지 않도록 안전 처리
       await nav
           .push(MaterialPageRoute(builder: (_) => const NotificationScreen()));
+    } finally {
+      _openPushDestinations.remove(navigationKey);
     }
   }
 

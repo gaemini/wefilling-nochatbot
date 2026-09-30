@@ -17,6 +17,7 @@ import '../security/frozen_audience_policy.dart';
 import 'content_hide_service.dart';
 import 'content_filter_service.dart';
 import 'firebase_app_check_service.dart';
+import 'comment_gif_upload.dart';
 import 'snapshot_archive_service.dart';
 import 'snapshot_media_cache_service.dart';
 import '../utils/logger.dart';
@@ -1333,7 +1334,6 @@ class SnapshotService {
     if (userId == null) return;
     final loads = <Future<bool>>[];
     for (final snapshot in snapshots.take(5)) {
-      if (snapshot.authorId == userId) continue;
       final cacheKey = '$userId::${snapshot.id}';
       if (_myReactionStates.containsKey(cacheKey)) continue;
       final pending = _reactionStateLoads[cacheKey];
@@ -1484,18 +1484,70 @@ class SnapshotService {
   Future<String> createFeedComment({
     required String snapshotId,
     required String content,
+    Uint8List? gifBytes,
     String? parentCommentId,
     String? replyToCommentId,
     String? requestId,
   }) async {
     final normalized = content.trim();
-    if (normalized.isEmpty) throw ArgumentError.value(content, 'content');
+    if (normalized.isEmpty && gifBytes == null) {
+      throw ArgumentError.value(content, 'content');
+    }
     final resolvedRequestId = requestId ?? _uuid.v4();
+    final uid = _auth.currentUser?.uid;
+    if (uid == null) throw StateError('sign-in-required');
+    String? gifStoragePath;
+    if (gifBytes != null) {
+      const maxGifBytes = 5 * 1024 * 1024;
+      final fileSize = gifBytes.length;
+      if (fileSize < 10 || fileSize > maxGifBytes) {
+        throw StateError('snapshot-comment-gif-size-invalid');
+      }
+      if (!isValidSnapshotCommentGifHeader(gifBytes)) {
+        throw StateError('snapshot-comment-gif-format-invalid');
+      }
+      gifStoragePath =
+          'snapshots/$snapshotId/comment_gifs/$resolvedRequestId.gif';
+      final reference = _storage.ref(gifStoragePath);
+      await FirebaseAppCheckService.instance.ensureReady();
+      Future<bool> matchesExistingGif() async {
+        final metadata = await reference.getMetadata();
+        final custom = metadata.customMetadata ?? const <String, String>{};
+        return metadata.contentType == 'image/gif' &&
+            custom['ownerUid'] == uid &&
+            custom['snapshotId'] == snapshotId &&
+            custom['commentId'] == resolvedRequestId;
+      }
+      final upload = reference.putData(
+        gifBytes,
+        SettableMetadata(
+          contentType: 'image/gif',
+          customMetadata: <String, String>{
+            'ownerUid': uid,
+            'snapshotId': snapshotId,
+            'commentId': resolvedRequestId,
+          },
+        ),
+      );
+      try {
+        await uploadImmutableCommentGif(
+          upload: () async => upload.timeout(const Duration(minutes: 2)),
+          existingMatches: matchesExistingGif,
+        );
+      } catch (_) {
+        await upload.cancel().catchError((_) => false);
+        rethrow;
+      }
+      if (_auth.currentUser?.uid != uid) {
+        throw StateError('snapshot-comment-account-changed');
+      }
+    }
     final result = await _functions
         .httpsCallable('createSnapshotFeedComment')
         .call(<String, dynamic>{
       'snapshotId': snapshotId,
       'content': normalized,
+      if (gifStoragePath != null) 'gifStoragePath': gifStoragePath,
       'requestId': resolvedRequestId,
       if (parentCommentId?.trim().isNotEmpty == true)
         'parentCommentId': parentCommentId!.trim(),
@@ -1522,6 +1574,23 @@ class SnapshotService {
     if (result.data is! Map || (result.data as Map)['success'] != true) {
       throw StateError('snapshot-feed-comment-delete-not-confirmed');
     }
+  }
+
+  Future<Uint8List> loadFeedCommentGif(SnapshotComment comment) async {
+    final uid = _auth.currentUser?.uid;
+    final expectedPath =
+        'snapshots/${comment.snapshotId}/comment_gifs/${comment.id}.gif';
+    if (uid == null || comment.isDeleted ||
+        comment.gifStoragePath != expectedPath) {
+      throw StateError('snapshot-comment-gif-unavailable');
+    }
+    final bytes = await _storage.ref(expectedPath)
+        .getData(5 * 1024 * 1024)
+        .timeout(const Duration(seconds: 20));
+    if (bytes == null || bytes.isEmpty || _auth.currentUser?.uid != uid) {
+      throw StateError('snapshot-comment-gif-unavailable');
+    }
+    return bytes;
   }
 
   Future<SnapshotVideoPlaybackSource> prepareVideoPlayback(

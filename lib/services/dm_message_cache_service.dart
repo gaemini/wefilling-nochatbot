@@ -131,9 +131,12 @@ class DMMessageCacheService {
     });
   }
 
-  Future<void> clearConversation(String conversationId) {
+  Future<void> clearConversation(String conversationId, {String? expectedOwner}) {
     final owner = _auth.currentUser?.uid;
-    if (owner == null) return Future<void>.value();
+    if (owner == null ||
+        (expectedOwner != null && owner != expectedOwner)) {
+      return Future<void>.value();
+    }
     final key = '$owner::$conversationId';
     _memory[key] = {};
     _loaded.add(key);

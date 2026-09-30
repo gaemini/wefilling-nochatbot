@@ -21,6 +21,7 @@ import io.flutter.embedding.engine.FlutterEngine
 import io.flutter.plugin.common.MethodChannel
 import java.io.BufferedInputStream
 import java.io.BufferedOutputStream
+import java.io.ByteArrayOutputStream
 import java.io.File
 import java.io.FileInputStream
 import java.io.FileOutputStream
@@ -43,6 +44,7 @@ class MainActivity : FlutterActivity() {
         "com.wefilling.app/snapshot_video_editor"
     private val notificationCenterChannelName =
         "com.wefilling.app/notification_center"
+    private val keyboardGifChannelName = "com.wefilling.app/keyboard_gif"
     private val maxDocumentBytes = 20L * 1024L * 1024L
     private val legacyPhotoSaveRequest = 7241
     private var pendingImageBytes: ByteArray? = null
@@ -59,6 +61,43 @@ class MainActivity : FlutterActivity() {
 
     override fun configureFlutterEngine(@NonNull flutterEngine: FlutterEngine) {
         super.configureFlutterEngine(flutterEngine)
+        MethodChannel(
+            flutterEngine.dartExecutor.binaryMessenger,
+            keyboardGifChannelName,
+        ).setMethodCallHandler { call, result ->
+            if (call.method != "readGif") {
+                result.notImplemented()
+                return@setMethodCallHandler
+            }
+            val rawUri = call.argument<String>("uri").orEmpty()
+            if (!rawUri.startsWith("content://")) {
+                result.error("invalid-uri", "Keyboard content URI required.", null)
+                return@setMethodCallHandler
+            }
+            Thread {
+                try {
+                    val output = ByteArrayOutputStream()
+                    contentResolver.openInputStream(Uri.parse(rawUri)).use { input ->
+                        requireNotNull(input)
+                        val buffer = ByteArray(8192)
+                        while (true) {
+                            val count = input.read(buffer)
+                            if (count < 0) break
+                            if (output.size() + count > 5 * 1024 * 1024) {
+                                throw IllegalArgumentException("GIF exceeds size limit")
+                            }
+                            output.write(buffer, 0, count)
+                        }
+                    }
+                    val bytes = output.toByteArray()
+                    runOnUiThread { result.success(bytes) }
+                } catch (error: Exception) {
+                    runOnUiThread {
+                        result.error("gif-unavailable", error.message, null)
+                    }
+                }
+            }.start()
+        }
         MethodChannel(
             flutterEngine.dartExecutor.binaryMessenger,
             mediaSaverChannelName,
@@ -212,14 +251,17 @@ class MainActivity : FlutterActivity() {
         val args = rawArguments ?: emptyMap<Any, Any>()
         val tag = args["tag"]?.toString().orEmpty()
         val id = (args["id"] as? Number)?.toInt()
+        val expectedWhen = (args["when"] as? Number)?.toLong()
         val values = args["payload"] as? Map<*, *>
-        if (tag.isEmpty() || id == null || values == null) {
+        if (tag.isEmpty() || id == null || expectedWhen == null || values == null) {
             result.success(false)
             return
         }
         try {
             val manager = getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
-            val active = manager.activeNotifications.firstOrNull { it.tag == tag && it.id == id }
+            val active = manager.activeNotifications.firstOrNull {
+                it.tag == tag && it.id == id && it.notification.`when` == expectedWhen
+            }
             if (active == null) {
                 result.success(false)
                 return
@@ -483,11 +525,19 @@ class MainActivity : FlutterActivity() {
                     outputDirectory,
                     "snapshot_${UUID.randomUUID()}.mp4",
                 )
-                copySnapshotVideoRange(inputFile, outputFile, startMs, endMs)
+                val trackMimes = copySnapshotVideoRange(inputFile, outputFile, startMs, endMs)
                 if (!outputFile.isFile || outputFile.length() <= 0L) {
                     throw IllegalStateException("The edited video is empty.")
                 }
-                runOnUiThread { result.success(outputFile.absolutePath) }
+                runOnUiThread {
+                    result.success(
+                        mapOf(
+                            "path" to outputFile.absolutePath,
+                            "videoMime" to trackMimes.first,
+                            "audioMime" to trackMimes.second,
+                        ),
+                    )
+                }
             } catch (error: Throwable) {
                 outputFile?.delete()
                 runOnUiThread {
@@ -506,7 +556,7 @@ class MainActivity : FlutterActivity() {
         outputFile: File,
         startMs: Long,
         endMs: Long,
-    ) {
+    ): Pair<String, String?> {
         val extractor = MediaExtractor()
         var muxer: MediaMuxer? = null
         var muxerStarted = false
@@ -521,6 +571,8 @@ class MainActivity : FlutterActivity() {
 
             val trackMap = mutableMapOf<Int, Int>()
             var videoTrack = -1
+            var videoMime = ""
+            var audioMime: String? = null
             var maximumInputSize = 1024 * 1024
             for (trackIndex in 0 until extractor.trackCount) {
                 val format = extractor.getTrackFormat(trackIndex)
@@ -530,6 +582,10 @@ class MainActivity : FlutterActivity() {
                 }
                 if (mime.startsWith("video/") && videoTrack < 0) {
                     videoTrack = trackIndex
+                    videoMime = mime
+                }
+                if (mime.startsWith("audio/") && audioMime == null) {
+                    audioMime = mime
                 }
                 if (format.containsKey(MediaFormat.KEY_MAX_INPUT_SIZE)) {
                     maximumInputSize = maxOf(
@@ -608,6 +664,7 @@ class MainActivity : FlutterActivity() {
             }
             activeMuxer.stop()
             muxerStopped = true
+            return Pair(videoMime, audioMime)
         } finally {
             if (muxerStarted && !muxerStopped) {
                 runCatching { muxer?.stop() }

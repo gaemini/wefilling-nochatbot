@@ -4,18 +4,24 @@
 // 댓글 수 관리
 
 import 'dart:async';
+import 'dart:typed_data';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
+import 'package:firebase_storage/firebase_storage.dart';
 import '../models/comment.dart';
+import '../models/snapshot.dart' show isValidSnapshotCommentGifHeader;
 import 'notification_service.dart';
 import 'content_filter_service.dart';
 import 'content_hide_service.dart';
 import 'report_service.dart';
 import 'cache/comment_cache_manager.dart';
 import 'cache/cache_feature_flags.dart';
+import 'firebase_app_check_service.dart';
+import 'comment_gif_upload.dart';
 import 'meetup_service.dart';
 import '../utils/logger.dart';
 import '../utils/profile_photo_policy.dart';
+import '../utils/comment_gif_input.dart';
 
 class CommentService {
   final FirebaseFirestore _firestore = FirebaseFirestore.instance;
@@ -93,11 +99,23 @@ class CommentService {
     // 리뷰 댓글 지원을 위한 선택 파라미터
     String? reviewOwnerUserId, // users/{userId}/posts/{postId} 경로의 ownerId
     String? reviewTitle, // 알림용 제목 (예: meetupTitle)
+    Uint8List? gifBytes,
+    String? gifCommentId,
   }) async {
     try {
       final user = _auth.currentUser;
       if (user == null) {
         Logger.error('댓글 작성 실패: 로그인이 필요합니다.');
+        return false;
+      }
+      if (content.trim().isEmpty && gifBytes == null) return false;
+      if (gifBytes != null &&
+          (gifCommentId == null ||
+              gifCommentId.isEmpty ||
+              gifCommentId.contains('/') ||
+              gifBytes.length > maxCommentGifBytes ||
+              gifBytes.length < 10 ||
+              !isValidSnapshotCommentGifHeader(gifBytes))) {
         return false;
       }
 
@@ -162,6 +180,8 @@ class CommentService {
         'authorNickname': nickname,
         'authorPhotoUrl': photoUrl,
         'content': content,
+        if (gifBytes != null)
+          'gifStoragePath': 'post_comment_gifs/$postId/$gifCommentId.gif',
         'createdAt': FieldValue.serverTimestamp(),
         'parentCommentId': parentCommentId,
         'depth': parentCommentId != null ? 1 : 0,
@@ -174,10 +194,54 @@ class CommentService {
       };
 
       // Firestore에 저장
-      await _firestore
-          .collection('comments')
-          .add(commentData)
-          .timeout(const Duration(seconds: 10));
+      if (gifBytes == null) {
+        await _firestore
+            .collection('comments')
+            .add(commentData)
+            .timeout(const Duration(seconds: 10));
+      } else {
+        await FirebaseAppCheckService.instance.ensureReady();
+        final gifPath = commentData['gifStoragePath']! as String;
+        final gifRef = FirebaseStorage.instance.ref(gifPath);
+        Future<bool> matchesExistingGif() async {
+          final metadata = await gifRef.getMetadata();
+          final custom = metadata.customMetadata ?? const <String, String>{};
+          return custom['ownerUid'] == user.uid &&
+              custom['postId'] == postId &&
+              custom['commentId'] == gifCommentId &&
+              metadata.contentType == 'image/gif';
+        }
+        final upload = gifRef.putData(gifBytes, SettableMetadata(
+          contentType: 'image/gif',
+          customMetadata: {
+            'ownerUid': user.uid,
+            'postId': postId,
+            'commentId': gifCommentId!,
+          },
+        ));
+        try {
+          await uploadImmutableCommentGif(
+            upload: () async => upload.timeout(const Duration(minutes: 2)),
+            existingMatches: matchesExistingGif,
+          );
+        } catch (_) {
+          await upload.cancel().catchError((_) => false);
+          rethrow;
+        }
+        if (_auth.currentUser?.uid != user.uid) return false;
+        final commentRef = _firestore.collection('comments').doc(gifCommentId);
+        await _firestore.runTransaction((transaction) async {
+          final existing = await transaction.get(commentRef);
+          if (existing.exists) {
+            if (existing.data()?['userId'] != user.uid ||
+                existing.data()?['gifStoragePath'] != gifPath) {
+              throw StateError('comment-gif-id-conflict');
+            }
+            return;
+          }
+          transaction.set(commentRef, commentData);
+        }).timeout(const Duration(seconds: 10));
+      }
 
       // 캐시 무효화 (새 댓글이 추가되었으므로 해당 게시글의 댓글 캐시 삭제)
       if (CacheFeatureFlags.isCommentCacheEnabled) {
@@ -474,6 +538,7 @@ class CommentService {
       }
 
       await _softDeleteComment(commentDoc.reference, user.uid);
+      unawaited(_deleteOwnCommentGif(data, postId, commentId, user.uid));
 
       // 댓글 수 정합성 보정 (리뷰 프로필용)
       unawaited(_updateCommentCount(postId));
@@ -648,6 +713,23 @@ class CommentService {
     }).timeout(const Duration(seconds: 10));
   }
 
+  Future<void> _deleteOwnCommentGif(
+    Map<String, dynamic> data, String postId, String commentId, String uid,
+  ) async {
+    final path = data['gifStoragePath'];
+    if (path != 'post_comment_gifs/$postId/$commentId.gif' ||
+        _auth.currentUser?.uid != uid) return;
+    try {
+      await FirebaseStorage.instance.ref(path as String).delete();
+    } on FirebaseException catch (error) {
+      if (error.code != 'object-not-found') {
+        Logger.warning('댓글 GIF 정리 실패: ${error.code}');
+      }
+    } catch (error) {
+      Logger.warning('댓글 GIF 정리 실패: $error');
+    }
+  }
+
   // 스레드 보존형 댓글 삭제. 기존 메서드명은 호출부 호환을 위해 유지한다.
   Future<bool> deleteCommentWithReplies(String commentId, String postId) async {
     try {
@@ -666,6 +748,7 @@ class CommentService {
       if (commentUserId != user.uid) return false;
 
       await _softDeleteComment(commentDoc.reference, user.uid);
+      unawaited(_deleteOwnCommentGif(commentData, postId, commentId, user.uid));
 
       // 댓글 수 정합성 보정 (리뷰 프로필용)
       unawaited(_updateCommentCount(postId));

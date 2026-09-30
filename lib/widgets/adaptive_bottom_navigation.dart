@@ -6,8 +6,12 @@ import 'notification_badge.dart';
 import '../utils/responsive_helper.dart';
 import '../l10n/ui_locale.dart';
 
+/// A single rounded-outline style for the five main destinations.
+enum BottomNavGlyph { posts, meetup, snackChat, myPage, dm }
+
 /// 하단 네비게이션 아이템 데이터 클래스
 class BottomNavigationItem {
+  final BottomNavGlyph? glyph;
   final IconData? icon;
   final IconData? selectedIcon;
   final String? iconImagePath; // 이미지 경로 추가
@@ -19,6 +23,7 @@ class BottomNavigationItem {
   final double iconSizeMultiplier;
 
   const BottomNavigationItem({
+    this.glyph,
     this.icon,
     this.selectedIcon,
     this.iconImagePath,
@@ -75,7 +80,9 @@ class AdaptiveBottomNavigation extends StatelessWidget {
         final effectiveTextScale = textScale.clamp(1.0, 1.3);
         final requiredNavHeight = largestIconSize +
             3 +
-            (fontSize * (isChineseUi(context) ? 1.3 : 1.1) * effectiveTextScale) +
+            (fontSize *
+                (isChineseUi(context) ? 1.3 : 1.1) *
+                effectiveTextScale) +
             8 +
             (verticalPadding * 2) +
             2;
@@ -205,29 +212,38 @@ class AdaptiveBottomNavigation extends StatelessWidget {
                     fontSize: 8,
                     top: -5, // 더 위로 이동
                     right: -8, // 더 오른쪽으로 이동 (아이콘을 덜 가림)
-                    child: item.iconImagePath != null
-                        ? Image.asset(
-                            isSelected
-                                ? (item.selectedIconImagePath ??
-                                    item.iconImagePath!)
-                                : item.iconImagePath!,
-                            width: iconSize,
-                            height: iconSize,
-                            color: iconColor,
-                            errorBuilder: (context, error, stackTrace) {
-                              return Icon(
-                                Icons.person,
+                    child: item.glyph != null
+                        ? CustomPaint(
+                            size: Size.square(iconSize),
+                            painter: _BottomNavGlyphPainter(
+                              glyph: item.glyph!,
+                              color: iconColor,
+                              selected: isSelected,
+                            ),
+                          )
+                        : item.iconImagePath != null
+                            ? Image.asset(
+                                isSelected
+                                    ? (item.selectedIconImagePath ??
+                                        item.iconImagePath!)
+                                    : item.iconImagePath!,
+                                width: iconSize,
+                                height: iconSize,
+                                color: iconColor,
+                                errorBuilder: (context, error, stackTrace) {
+                                  return Icon(
+                                    Icons.person,
+                                    size: iconSize,
+                                    color: iconColor,
+                                  );
+                                },
+                              )
+                            : Icon(
+                                isSelected ? item.selectedIcon : item.icon,
                                 size: iconSize,
                                 color: iconColor,
-                              );
-                            },
-                          )
-                        : Icon(
-                            isSelected ? item.selectedIcon : item.icon,
-                            size: iconSize,
-                            color: iconColor,
-                            weight: 300, // 아이콘 두께 더 얇게 (인스타그램 스타일)
-                          ),
+                                weight: 300, // 아이콘 두께 더 얇게 (인스타그램 스타일)
+                              ),
                   ),
                 ),
               ),
@@ -258,4 +274,107 @@ class AdaptiveBottomNavigation extends StatelessWidget {
       ),
     );
   }
+}
+
+class _BottomNavGlyphPainter extends CustomPainter {
+  const _BottomNavGlyphPainter({
+    required this.glyph,
+    required this.color,
+    required this.selected,
+  });
+
+  final BottomNavGlyph glyph;
+  final Color color;
+  final bool selected;
+
+  @override
+  void paint(Canvas canvas, Size size) {
+    canvas.save();
+    canvas.scale(size.width / 24, size.height / 24);
+    final stroke = Paint()
+      ..color = color
+      ..style = PaintingStyle.stroke
+      ..strokeWidth = selected ? 1.9 : 1.75
+      ..strokeCap = StrokeCap.round
+      ..strokeJoin = StrokeJoin.round;
+
+    switch (glyph) {
+      case BottomNavGlyph.posts:
+        canvas.drawRRect(
+          RRect.fromRectAndRadius(
+            const Rect.fromLTWH(4, 2.5, 16, 19),
+            const Radius.circular(2.4),
+          ),
+          stroke,
+        );
+        canvas.drawLine(const Offset(8, 8), const Offset(16, 8), stroke);
+        canvas.drawLine(const Offset(8, 12), const Offset(16, 12), stroke);
+        canvas.drawLine(const Offset(8, 16), const Offset(13, 16), stroke);
+      case BottomNavGlyph.meetup:
+        canvas.drawCircle(const Offset(12, 7), 2.6, stroke);
+        canvas.drawCircle(const Offset(4.8, 9.5), 2.1, stroke);
+        canvas.drawCircle(const Offset(19.2, 9.5), 2.1, stroke);
+        final people = Path()
+          ..moveTo(6.5, 20)
+          ..cubicTo(6.5, 16, 8.5, 13.7, 12, 13.7)
+          ..cubicTo(15.5, 13.7, 17.5, 16, 17.5, 20)
+          ..moveTo(5.5, 14.3)
+          ..cubicTo(2.8, 14.3, 1.5, 16.4, 1.5, 19)
+          ..lineTo(4.3, 19)
+          ..moveTo(18.5, 14.3)
+          ..cubicTo(21.2, 14.3, 22.5, 16.4, 22.5, 19)
+          ..lineTo(19.7, 19);
+        canvas.drawPath(people, stroke);
+      case BottomNavGlyph.snackChat:
+        final front = Path()
+          ..moveTo(17, 13)
+          ..lineTo(12, 13)
+          ..lineTo(7, 18)
+          ..lineTo(7, 13)
+          ..lineTo(5.3, 13)
+          ..cubicTo(3.8, 13, 3, 12.1, 3, 10.7)
+          ..lineTo(3, 5.5)
+          ..cubicTo(3, 4, 4, 3, 5.5, 3)
+          ..lineTo(16.5, 3)
+          ..cubicTo(18, 3, 19, 4, 19, 5.5)
+          ..lineTo(19, 10.7)
+          ..cubicTo(19, 12.1, 18.3, 13, 17, 13);
+        canvas.drawPath(front, stroke);
+        final back = Path()
+          ..moveTo(19, 8.5)
+          ..cubicTo(20.5, 8.5, 21.5, 9.5, 21.5, 11)
+          ..lineTo(21.5, 16)
+          ..cubicTo(21.5, 17.5, 20.5, 18.5, 19, 18.5)
+          ..lineTo(18, 18.5)
+          ..lineTo(18, 21)
+          ..lineTo(15.5, 18.5)
+          ..lineTo(12.5, 18.5);
+        canvas.drawPath(back, stroke);
+      case BottomNavGlyph.myPage:
+        canvas.drawCircle(const Offset(12, 12), 10, stroke);
+        canvas.drawCircle(const Offset(12, 9), 3, stroke);
+        final shoulders = Path()
+          ..moveTo(5.8, 19.1)
+          ..cubicTo(6.3, 15.8, 8.5, 14, 12, 14)
+          ..cubicTo(15.5, 14, 17.7, 15.8, 18.2, 19.1);
+        canvas.drawPath(shoulders, stroke);
+      case BottomNavGlyph.dm:
+        final plane = Path()
+          ..moveTo(2.5, 10.8)
+          ..lineTo(21.5, 3)
+          ..lineTo(16, 21)
+          ..lineTo(11.6, 14.2)
+          ..close()
+          ..moveTo(11.6, 14.2)
+          ..lineTo(21.5, 3);
+        canvas.drawPath(plane, stroke);
+    }
+    canvas.restore();
+  }
+
+  @override
+  bool shouldRepaint(covariant _BottomNavGlyphPainter oldDelegate) =>
+      oldDelegate.glyph != glyph ||
+      oldDelegate.color != color ||
+      oldDelegate.selected != selected;
 }

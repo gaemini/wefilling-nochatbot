@@ -208,13 +208,35 @@ function validSnapshotComment(value: unknown): string {
   return message;
 }
 
-function validSnapshotFeedComment(value: unknown): string {
+export function validSnapshotFeedComment(value: unknown, allowEmpty = false): string {
   const message = text(value);
   const length = Array.from(message).length;
-  if (length < 1 || length > 500 || message.split('\n').length > 20) {
+  if ((!allowEmpty && length < 1) || length > 500 || message.split('\n').length > 20) {
     throw new functions.https.HttpsError('invalid-argument', 'Invalid comment.');
   }
   return message;
+}
+
+export function validatedSnapshotCommentGifPath(
+  snapshotId: string,
+  commentId: string,
+  value: unknown,
+): string {
+  const gifStoragePath = text(value);
+  if (gifStoragePath && gifStoragePath !==
+      `snapshots/${snapshotId}/comment_gifs/${commentId}.gif`) {
+    throw new functions.https.HttpsError('invalid-argument', 'Invalid GIF path.');
+  }
+  return gifStoragePath;
+}
+
+export function validSnapshotGifHeader(header: Buffer): boolean {
+  if (header.length < 10) return false;
+  const signature = header.toString('ascii', 0, 6);
+  const width = header.readUInt16LE(6);
+  const height = header.readUInt16LE(8);
+  return (signature === 'GIF87a' || signature === 'GIF89a') &&
+    width >= 1 && width <= 2048 && height >= 1 && height <= 2048;
 }
 
 function validVisibility(value: unknown): SnapshotVisibility {
@@ -1142,8 +1164,6 @@ export const getSnapshotReactionStatus = functions.https.onCall(async (raw, cont
   if (!snapshot.exists || !(await canAccessSnapshot(uid, snapshot.data() ?? {}))) {
     throw new functions.https.HttpsError('permission-denied', 'Snapshot is not accessible.');
   }
-  const ownerId = text(snapshot.get('ownerId') ?? snapshot.get('authorId'));
-  if (ownerId === uid) return {reacted: true, reaction: ''};
   const reaction = await ref.collection('reactions').doc(uid).get();
   return {
     reacted: reaction.exists,
@@ -1189,11 +1209,8 @@ export const toggleSnapshotReaction = functions.https.onCall(async (raw, context
   }
   const initialData = initial.data() ?? {};
   const ownerId = text(initialData.ownerId ?? initialData.authorId);
-  if (!ownerId || ownerId === uid) {
-    throw new functions.https.HttpsError(
-      'failed-precondition',
-      'You cannot react to your own Snapshot.',
-    );
+  if (!ownerId) {
+    throw new functions.https.HttpsError('failed-precondition', 'Snapshot owner is missing.');
   }
 
   const [actorDocument, ownerDocument, ownerSettingsDocument] = await Promise.all([
@@ -1208,7 +1225,7 @@ export const toggleSnapshotReaction = functions.https.onCall(async (raw, context
     actorName,
     prefersKoreanNotification(ownerDocument.data() ?? {}),
   );
-  const notifyOwner = snapshotNotificationSettingAllows(
+  const notifyOwner = ownerId !== uid && snapshotNotificationSettingAllows(
     ownerSettingsDocument,
     'new_like',
   );
@@ -1230,10 +1247,10 @@ export const toggleSnapshotReaction = functions.https.onCall(async (raw, context
       );
     }
     const currentOwnerId = text(snapshotData.ownerId ?? snapshotData.authorId);
-    if (!currentOwnerId || currentOwnerId !== ownerId || currentOwnerId === uid) {
+    if (!currentOwnerId || currentOwnerId !== ownerId) {
       throw new functions.https.HttpsError(
         'failed-precondition',
-        'You cannot react to your own Snapshot.',
+        'Snapshot owner changed.',
       );
     }
     if (previous.exists) {
@@ -1443,7 +1460,14 @@ export const createSnapshotFeedComment = functions.https.onCall(async (raw, cont
   const data = raw && typeof raw === 'object' ? raw as Record<string, unknown> : {};
   const snapshotId = validSnapshotId(data.snapshotId);
   const commentId = validRequestId(data.commentId ?? data.requestId);
-  const content = validSnapshotFeedComment(data.content ?? data.message);
+  const gifStoragePath = validatedSnapshotCommentGifPath(
+    snapshotId, commentId, data.gifStoragePath,
+  );
+  const expectedGifPath = `snapshots/${snapshotId}/comment_gifs/${commentId}.gif`;
+  const content = validSnapshotFeedComment(data.content ?? data.message, !!gifStoragePath);
+  if (!content && !gifStoragePath) {
+    throw new functions.https.HttpsError('invalid-argument', 'Empty comment.');
+  }
   const parentCommentId = text(data.parentCommentId);
   const replyToCommentId = text(data.replyToCommentId);
   if (parentCommentId) validRequestId(parentCommentId);
@@ -1462,6 +1486,26 @@ export const createSnapshotFeedComment = functions.https.onCall(async (raw, cont
   const expiresAt = snapshotData.expiresAt;
   if (!ownerId || !isTimestamp(expiresAt) || expiresAt.toMillis() <= now.toMillis()) {
     throw new functions.https.HttpsError('failed-precondition', 'Snapshot has expired.');
+  }
+
+  if (gifStoragePath) {
+    const gif = snapshotBucket().file(expectedGifPath);
+    const [exists] = await gif.exists();
+    if (!exists) {
+      throw new functions.https.HttpsError('failed-precondition', 'GIF is missing.');
+    }
+    const [metadata] = await gif.getMetadata();
+    const custom = metadata.metadata ?? {};
+    const size = Number(metadata.size ?? 0);
+    if (metadata.contentType !== 'image/gif' || size < 10 ||
+        size > 5 * 1024 * 1024 || custom.ownerUid !== uid ||
+        custom.snapshotId !== snapshotId || custom.commentId !== commentId) {
+      throw new functions.https.HttpsError('permission-denied', 'Invalid GIF metadata.');
+    }
+    const [header] = await gif.download({start: 0, end: 9});
+    if (!validSnapshotGifHeader(header)) {
+      throw new functions.https.HttpsError('invalid-argument', 'Invalid GIF file.');
+    }
   }
 
   const comments = snapshotRef.collection('feed_comments');
@@ -1552,6 +1596,7 @@ export const createSnapshotFeedComment = functions.https.onCall(async (raw, cont
       authorNickname: authorName,
       authorPhotoUrl,
       content,
+      gifStoragePath,
       parentCommentId: parentCommentId || null,
       replyToCommentId: replyToCommentId || null,
       replyToUserId: replyTargetData == null ? null : text(replyTargetData.userId),
@@ -1575,7 +1620,7 @@ export const createSnapshotFeedComment = functions.https.onCall(async (raw, cont
         title: recipient.type === 'snapshot_feed_comment_reply'
           ? 'New reply on a Snack'
           : 'New comment on your Snack',
-        message: `${authorName}: ${content}`,
+        message: `${authorName}: ${content || 'GIF'}`,
         snapshotId,
         commentId,
         actorId: uid,
@@ -1589,7 +1634,7 @@ export const createSnapshotFeedComment = functions.https.onCall(async (raw, cont
           parentCommentId: parentCommentId || '',
           actorId: uid,
           actorName: authorName,
-          content,
+          content: content || 'GIF',
         },
       });
     }
@@ -1606,7 +1651,7 @@ export const deleteSnapshotFeedComment = functions.https.onCall(async (raw, cont
   const snapshotRef = db().collection(COL.snapshots).doc(snapshotId);
   const commentRef = snapshotRef.collection('feed_comments').doc(commentId);
 
-  await db().runTransaction(async (transaction) => {
+  const gifStoragePath = await db().runTransaction(async (transaction) => {
     const transactionNow = admin.firestore.Timestamp.now();
     const [snapshot, comment] = await Promise.all([
       transaction.get(snapshotRef),
@@ -1616,11 +1661,14 @@ export const deleteSnapshotFeedComment = functions.https.onCall(async (raw, cont
         !hasSnapshotDocumentAccess(uid, snapshot.data() ?? {}, transactionNow)) {
       throw new functions.https.HttpsError('failed-precondition', 'Snapshot has expired.');
     }
-    if (!comment.exists) return;
+    if (!comment.exists) return '';
     if (text(comment.get('userId')) !== uid) {
       throw new functions.https.HttpsError('permission-denied', 'Only the author can delete it.');
     }
-    if (comment.get('isDeleted') === true) return;
+    const gifPath = validatedSnapshotCommentGifPath(
+      snapshotId, commentId, comment.get('gifStoragePath'),
+    );
+    if (comment.get('isDeleted') === true) return gifPath;
     transaction.update(commentRef, {
       isDeleted: true,
       deletedAt: transactionNow,
@@ -1632,7 +1680,11 @@ export const deleteSnapshotFeedComment = functions.https.onCall(async (raw, cont
       commentCount: admin.firestore.FieldValue.increment(-1),
       updatedAt: transactionNow,
     });
+    return gifPath;
   });
+  if (gifStoragePath) {
+    await snapshotBucket().file(gifStoragePath).delete({ignoreNotFound: true});
+  }
   return {success: true};
 });
 

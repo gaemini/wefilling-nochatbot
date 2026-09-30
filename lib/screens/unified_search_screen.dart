@@ -888,8 +888,9 @@ class _UnifiedSearchScreenState extends State<UnifiedSearchScreen>
           return const Center(child: CircularProgressIndicator());
         }
 
-        if (provider.errorMessage != null &&
-            (!organizationsEnabled || _organizationsError != null) &&
+        if ((provider.errorMessage != null ||
+                (organizationsEnabled && _organizationsError != null)) &&
+            provider.searchResults.isEmpty &&
             _organizationResults.isEmpty) {
           return _buildEmptyPrompt(
             icon: Icons.error_outline,

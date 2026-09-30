@@ -247,6 +247,11 @@ class SnapshotStrings {
       : isKorean
           ? '밝은 텍스트'
           : 'Light text');
+  String get textSize => (isChinese
+      ? '文字大小'
+      : isKorean
+          ? '글자 크기'
+          : 'Text size');
   String get textHint => (isChinese
       ? '写在画面上的话'
       : isKorean
@@ -547,6 +552,21 @@ class SnapshotStrings {
       : isKorean
           ? '코멘트를 보내지 못했어요. 다시 시도해 주세요.'
           : 'Could not send your comment. Please try again.');
+  String get addCommentGif => (isChinese
+      ? '添加 GIF'
+      : isKorean
+          ? 'GIF 추가'
+          : 'Add GIF');
+  String get invalidCommentGif => (isChinese
+      ? '请选择 5 MB 以下的 GIF 文件。'
+      : isKorean
+          ? '5MB 이하의 GIF 파일을 선택해 주세요.'
+          : 'Choose a GIF file under 5 MB.');
+  String get commentGifUnavailable => (isChinese
+      ? '无法显示 GIF。'
+      : isKorean
+          ? 'GIF를 표시할 수 없어요.'
+          : 'GIF unavailable.');
   String get comments => (isChinese
       ? '评论'
       : isKorean

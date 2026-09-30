@@ -508,6 +508,9 @@ class _MeetupAppState extends State<MeetupApp> {
       ],
       // 전역 탭-투-디스미스: 빈 공간 탭 시 키보드 닫힘 + SnackBar 닫힘
       builder: (context, child) {
+        WidgetsBinding.instance.addPostFrameCallback((_) {
+          unawaited(NavigationService.flushPendingPushes());
+        });
         return GestureDetector(
           behavior: HitTestBehavior.translucent,
           onTap: () {
@@ -534,6 +537,7 @@ class _MeetupAppState extends State<MeetupApp> {
           '/release-diagnostics': (context) => const ReleaseDiagnosticsScreen(),
       },
       navigatorKey: NavigationService.navigatorKey,
+      navigatorObservers: [NavigationService.routeObserver],
       home: AnimatedBuilder(
         animation: OrganizationAccountService.instance,
         builder: (context, _) => Consumer<app_auth.AuthProvider>(
@@ -541,15 +545,23 @@ class _MeetupAppState extends State<MeetupApp> {
             final organizationService = OrganizationAccountService.instance;
             if (organizationService.hasInvitation) {
               ExternalShareService.instance.setRoutingReady(false);
+              NavigationService.setRoutingReady(false, null);
               return const OrganizationInviteScreen();
             }
             final canRouteExternalShare = !authProvider.isLoading &&
                 authProvider.isLoggedIn &&
                 authProvider.isRegistrationComplete &&
                 !authProvider.isOrganizationOnlyAccount;
+            if (!canRouteExternalShare) {
+              NavigationService.setRoutingReady(false, null);
+            }
             WidgetsBinding.instance.addPostFrameCallback((_) {
               ExternalShareService.instance
                   .setRoutingReady(canRouteExternalShare);
+              NavigationService.setRoutingReady(
+                canRouteExternalShare,
+                canRouteExternalShare ? authProvider.user?.uid : null,
+              );
             });
 
             if (authProvider.isLoading) {

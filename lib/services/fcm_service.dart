@@ -98,6 +98,23 @@ Future<void> firebaseMessagingBackgroundHandler(RemoteMessage message) async {
 }
 
 class FCMService {
+  static final Map<String, int> _localNotificationWhenBySlot = <String, int>{};
+
+  static int _nextLocalNotificationWhen(
+      String owner, String slot, int serverMillis) {
+    final key = '$owner::$slot';
+    final now = DateTime.now().millisecondsSinceEpoch;
+    final base = serverMillis > 0 ? serverMillis : now;
+    final previous = _localNotificationWhenBySlot[key] ?? 0;
+    final next = base > previous ? base : previous + 1;
+    _localNotificationWhenBySlot[key] = next;
+    if (_localNotificationWhenBySlot.length > 256) {
+      _localNotificationWhenBySlot
+          .remove(_localNotificationWhenBySlot.keys.first);
+    }
+    return next;
+  }
+
   final FirebaseMessaging _messaging = FirebaseMessaging.instance;
   final FirebaseFirestore _firestore = FirebaseFirestore.instance;
   final FirebaseFunctions _functions = FirebaseFunctions.instance;
@@ -821,6 +838,21 @@ class FCMService {
           Logger.error('Chat notification presentation fallback: $error');
         }
       }
+      final localSlot = isGroupedChat
+          ? effectiveGroupKey
+          : notificationId.isNotEmpty
+              ? appNotificationAndroidTag(notificationId)
+              : message.messageId ?? '';
+      final localWhen = !kIsWeb && Platform.isAndroid
+          ? _nextLocalNotificationWhen(
+              owner,
+              localSlot,
+              int.tryParse(
+                    (message.data['notificationCommitMillis'] ?? '').toString(),
+                  ) ??
+                  0,
+            )
+          : null;
       final AndroidNotificationDetails androidDetails =
           AndroidNotificationDetails(
         androidChannelId,
@@ -829,6 +861,9 @@ class FCMService {
         importance: Importance.high,
         priority: Priority.high,
         showWhen: true,
+        // Bind the later native metadata registration to this exact post.
+        // FCM's event timestamp uses the same committed server millisecond.
+        when: localWhen,
         enableVibration: shouldAlert,
         playSound: shouldAlert,
         silent: isGroupedChat && !shouldAlert,
@@ -940,6 +975,7 @@ class FCMService {
             'recordLocalNotificationMetadata', {
               'tag': tag,
               'id': localId,
+              'when': androidDetails.when,
               'payload': <String, String>{
                 for (final entry in message.data.entries)
                   entry.key: entry.value.toString(),

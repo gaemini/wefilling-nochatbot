@@ -176,6 +176,42 @@ async function snackChecks() {
   await created(fresh, {eventId: fresh.id,
     params: {snackChatId: snackId, messageId: fresh.id}});
   assert.equal((await roomRef.get()).get(`unreadCount.${alice}`), beforeFresh + 1);
+  const goodToken = 'snack-good-token';
+  const retryToken = 'snack-retry-token';
+  await db.collection('users').doc(alice).update({fcmTokens: [goodToken, retryToken]});
+  await db.collection('fcm_tokens').doc(goodToken).set({userId: alice});
+  await db.collection('fcm_tokens').doc(retryToken).set({userId: alice});
+  await snackSend('push-retry', bob);
+  const retryMessage = await roomRef.collection('messages').doc('push-retry').get();
+  const beforePush = (await roomRef.get()).get(`unreadCount.${alice}`);
+  const messaging = admin.messaging();
+  const originalSend = messaging.sendEachForMulticast;
+  const sentBatches = [];
+  messaging.sendEachForMulticast = async (payload) => {
+    sentBatches.push([...payload.tokens]);
+    return sentBatches.length === 1 ? {
+      successCount: 1, failureCount: 1,
+      responses: payload.tokens.map((token) => token === goodToken ?
+        {success: true} :
+        {success: false, error: {code: 'messaging/server-unavailable'}}),
+    } : {
+      successCount: payload.tokens.length, failureCount: 0,
+      responses: payload.tokens.map(() => ({success: true})),
+    };
+  };
+  try {
+    const retryContext = {eventId: retryMessage.id,
+      params: {snackChatId: snackId, messageId: retryMessage.id}};
+    await assert.rejects(created(retryMessage, retryContext));
+    assert.equal((await roomRef.get()).get(`unreadCount.${alice}`), beforePush + 1);
+    await created(retryMessage, retryContext);
+    assert.equal((await roomRef.get()).get(`unreadCount.${alice}`), beforePush + 1);
+    assert.deepEqual(sentBatches, [[goodToken, retryToken], [retryToken]]);
+    await created(retryMessage, retryContext);
+    assert.equal(sentBatches.length, 2);
+  } finally {
+    messaging.sendEachForMulticast = originalSend;
+  }
   console.log('PASS: Snack concurrent Rules commits preserve sequence/audience; duplicate and late unread delivery is idempotent');
 }
 
@@ -299,6 +335,36 @@ async function main() {
   const latest = (await ref.get()).get(`lastReadAtBy.${bob}`);
   await cleanup({before, after});
   assert.equal((await ref.get()).get(`lastReadAtBy.${bob}`).toMillis(), latest.toMillis());
+  const securityRoom = `${room}_security`;
+  const createRoom = (aliceUnread) => ({writes: [{
+    update: {name: `${root}/conversations/${securityRoom}`, fields: {
+      participants: {arrayValue: {values: [alice, bob].map(stringValue => ({stringValue}))}},
+      unreadCount: {mapValue: {fields: {
+        [alice]: {integerValue: String(aliceUnread)}, [bob]: {integerValue: '0'},
+      }}},
+      archivedBy: {arrayValue: {values: []}},
+      lastMessage: {stringValue: ''},
+    }}, currentDocument: {exists: false},
+  }]});
+  await assert.rejects(request(`${base}:commit`, createRoom(7)),
+    {code: 'PERMISSION_DENIED'});
+  await request(`${base}:commit`, createRoom(0));
+  const personalUpdate = (fieldPath, fields) => ({writes: [{
+    update: {name: `${root}/conversations/${room}`,
+      fields: {[fieldPath]: fields}},
+    updateMask: {fieldPaths: [fieldPath]},
+  }]});
+  const leftAt = {timestampValue: new Date().toISOString()};
+  await assert.rejects(request(`${base}:commit`, personalUpdate(
+    'userLeftAt', {mapValue: {fields: {[bob]: leftAt}}})),
+  {code: 'PERMISSION_DENIED'});
+  await request(`${base}:commit`, personalUpdate(
+    'userLeftAt', {mapValue: {fields: {[alice]: leftAt}}}));
+  await assert.rejects(request(`${base}:commit`, personalUpdate(
+    'archivedBy', {arrayValue: {values: [{stringValue: bob}]}})),
+  {code: 'PERMISSION_DENIED'});
+  await request(`${base}:commit`, personalUpdate(
+    'archivedBy', {arrayValue: {values: [{stringValue: alice}]}}));
   console.log('PASS: concurrent stable IDs, rapid ordered sends, lost-response retry, atomic rollback, Rules/blocks, same-time pagination, deferred receipts, duplicate/delayed events');
   await snackChecks();
   ft.cleanup();

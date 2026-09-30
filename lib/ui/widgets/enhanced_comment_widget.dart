@@ -6,6 +6,7 @@ import 'package:flutter/gestures.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:firebase_auth/firebase_auth.dart';
+import 'package:firebase_storage/firebase_storage.dart';
 import 'package:url_launcher/url_launcher.dart';
 import 'package:linkify/linkify.dart' as linkify;
 import '../../models/comment.dart';
@@ -24,6 +25,8 @@ import '../dialogs/block_dialog.dart';
 import '../snackbar/app_snackbar.dart';
 import 'translatable_content.dart';
 import '../../l10n/ui_locale.dart';
+import '../../snapshot/snapshot_strings.dart';
+import '../../utils/comment_gif_input.dart';
 
 class EnhancedCommentWidget extends StatefulWidget {
   final Comment comment;
@@ -1241,7 +1244,7 @@ class _EnhancedCommentWidgetState extends State<EnhancedCommentWidget> {
                               ],
                             ),
                           )
-                        else
+                        else if (widget.comment.content.isNotEmpty || isReply)
                           TranslatableContent(
                             request: commentTranslationRequest(
                               widget.comment,
@@ -1266,6 +1269,16 @@ class _EnhancedCommentWidgetState extends State<EnhancedCommentWidget> {
                                   ),
                                 ],
                               ),
+                            ),
+                          ),
+
+                        if (widget.comment.gifStoragePath ==
+                            'post_comment_gifs/${widget.postId}/${widget.comment.id}.gif')
+                          Padding(
+                            padding: const EdgeInsets.only(top: 6),
+                            child: _PostCommentGif(
+                              key: ValueKey('post-gif:${widget.comment.id}'),
+                              storagePath: widget.comment.gifStoragePath,
                             ),
                           ),
 
@@ -1449,5 +1462,68 @@ class _ActionDivider extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return const Divider(height: 1, thickness: 1, color: Color(0x1FFFFFFF));
+  }
+}
+
+class _PostCommentGif extends StatefulWidget {
+  const _PostCommentGif({super.key, required this.storagePath});
+  final String storagePath;
+
+  @override
+  State<_PostCommentGif> createState() => _PostCommentGifState();
+}
+
+class _PostCommentGifState extends State<_PostCommentGif> {
+  late Future<Uint8List> _bytes;
+  String? _viewerId;
+
+  @override
+  void initState() {
+    super.initState();
+    _load();
+  }
+
+  @override
+  void didUpdateWidget(covariant _PostCommentGif oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (oldWidget.storagePath != widget.storagePath) _load();
+  }
+
+  void _load() {
+    _viewerId = FirebaseAuth.instance.currentUser?.uid;
+    _bytes = FirebaseStorage.instance.ref(widget.storagePath)
+        .getData(maxCommentGifBytes)
+        .then((data) {
+      if (data == null || FirebaseAuth.instance.currentUser?.uid != _viewerId) {
+        throw StateError('post-comment-gif-unavailable');
+      }
+      return data;
+    });
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    if (_viewerId != FirebaseAuth.instance.currentUser?.uid) _load();
+    return FutureBuilder<Uint8List>(
+      future: _bytes,
+      builder: (context, snapshot) {
+        if (snapshot.hasError) {
+          return TextButton.icon(
+            onPressed: () => setState(_load),
+            icon: const Icon(Icons.refresh_rounded),
+            label: Text(SnapshotStrings.of(context).commentGifUnavailable),
+          );
+        }
+        if (!snapshot.hasData) {
+          return const SizedBox(width: 120, height: 90,
+              child: Center(child: CircularProgressIndicator(strokeWidth: 2)));
+        }
+        return ClipRRect(
+          borderRadius: BorderRadius.circular(8),
+          child: Image.memory(snapshot.data!, width: 180, height: 180,
+              fit: BoxFit.contain, cacheWidth: 480),
+        );
+      },
+    );
   }
 }

@@ -2,6 +2,7 @@ import 'dart:async';
 
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 
 import '../constants/app_constants.dart';
 import '../l10n/ui_locale.dart';
@@ -10,6 +11,7 @@ import '../services/report_service.dart';
 import '../services/snapshot_service.dart';
 import '../snapshot/snapshot_strings.dart';
 import '../ui/snackbar/app_snackbar.dart';
+import '../utils/comment_gif_input.dart';
 import '../utils/responsive_helper.dart';
 import '../widgets/notification_read_observer.dart';
 
@@ -18,15 +20,18 @@ class SnapshotCommentsSheet extends StatefulWidget {
     super.key,
     required this.snapshot,
     this.focusCommentId,
+    this.focusInput = false,
   });
 
   final SnapshotItem snapshot;
   final String? focusCommentId;
+  final bool focusInput;
 
   static Future<void> show(
     BuildContext context, {
     required SnapshotItem snapshot,
     String? focusCommentId,
+    bool focusInput = false,
   }) {
     return showModalBottomSheet<void>(
       context: context,
@@ -36,6 +41,7 @@ class SnapshotCommentsSheet extends StatefulWidget {
       builder: (_) => SnapshotCommentsSheet(
         snapshot: snapshot,
         focusCommentId: focusCommentId,
+        focusInput: focusInput,
       ),
     );
   }
@@ -48,6 +54,8 @@ class _SnapshotCommentsSheetState extends State<SnapshotCommentsSheet> {
   final SnapshotService _service = SnapshotService.instance;
   final TextEditingController _controller = TextEditingController();
   final FocusNode _focusNode = FocusNode();
+  Uint8List? _selectedGif;
+  int _gifInputGeneration = 0;
   late Stream<List<SnapshotComment>> _stream;
   SnapshotComment? _replyingTo;
   String? _pendingRequestId;
@@ -74,7 +82,8 @@ class _SnapshotCommentsSheetState extends State<SnapshotCommentsSheet> {
     await WidgetsBinding.instance.endOfFrame;
     if (!mounted) return;
     final content = _controller.text.trim();
-    if (content.isEmpty) return;
+    final gif = _selectedGif;
+    if (content.isEmpty && gif == null) return;
     final reply = _replyingTo;
     final requestId = _pendingRequestId ??= _service.createCommentRequestId();
     setState(() => _sending = true);
@@ -82,6 +91,7 @@ class _SnapshotCommentsSheetState extends State<SnapshotCommentsSheet> {
       await _service.createFeedComment(
         snapshotId: widget.snapshot.id,
         content: content,
+        gifBytes: gif,
         parentCommentId:
             reply == null ? null : (reply.parentCommentId ?? reply.id),
         replyToCommentId: reply?.id,
@@ -90,6 +100,7 @@ class _SnapshotCommentsSheetState extends State<SnapshotCommentsSheet> {
       if (!mounted) return;
       _controller.clear();
       setState(() {
+        _selectedGif = null;
         _replyingTo = null;
         _pendingRequestId = null;
       });
@@ -105,6 +116,27 @@ class _SnapshotCommentsSheetState extends State<SnapshotCommentsSheet> {
     } finally {
       if (mounted) setState(() => _sending = false);
     }
+  }
+
+  Future<void> _onKeyboardContent(KeyboardInsertedContent content) async {
+    if (_sending || FirebaseAuth.instance.currentUser == null) return;
+    final uid = FirebaseAuth.instance.currentUser!.uid;
+    final generation = ++_gifInputGeneration;
+    final bytes = await readKeyboardGif(content);
+    if (!mounted || _sending || generation != _gifInputGeneration ||
+        FirebaseAuth.instance.currentUser?.uid != uid) {
+      return;
+    }
+    if (bytes == null) {
+      AppSnackBar.show(context,
+          message: SnapshotStrings.of(context).invalidCommentGif,
+          type: AppSnackBarType.error);
+      return;
+    }
+    setState(() {
+      _selectedGif = bytes;
+      _pendingRequestId = null;
+    });
   }
 
   Future<void> _showActions(SnapshotComment comment) async {
@@ -199,8 +231,8 @@ class _SnapshotCommentsSheetState extends State<SnapshotCommentsSheet> {
     return Padding(
       padding: EdgeInsets.only(bottom: bottomInset),
       child: DraggableScrollableSheet(
-        initialChildSize: screenHeight < 700 ? .84 : .74,
-        minChildSize: screenHeight < 700 ? .58 : .46,
+        initialChildSize: bottomInset > 0 ? .94 : screenHeight < 700 ? .84 : .74,
+        minChildSize: bottomInset > 0 ? .8 : screenHeight < 700 ? .58 : .46,
         maxChildSize: .94,
         expand: false,
         builder: (context, scrollController) =>
@@ -253,7 +285,7 @@ class _SnapshotCommentsSheetState extends State<SnapshotCommentsSheet> {
                     ],
                   ),
                 ),
-                Padding(
+                if (bottomInset == 0) Padding(
                   padding: EdgeInsets.fromLTRB(horizontal, 2, horizontal, 10),
                   child: Row(
                     crossAxisAlignment: CrossAxisAlignment.start,
@@ -360,6 +392,41 @@ class _SnapshotCommentsSheetState extends State<SnapshotCommentsSheet> {
                   child: Column(
                     mainAxisSize: MainAxisSize.min,
                     children: [
+                      if (_selectedGif != null)
+                        Align(
+                          alignment: Alignment.centerLeft,
+                          child: Padding(
+                            padding: const EdgeInsets.only(bottom: 6),
+                            child: Stack(
+                              children: [
+                                ClipRRect(
+                                  borderRadius: BorderRadius.circular(8),
+                                  child: Image.memory(
+                                    _selectedGif!,
+                                    width: 76,
+                                    height: bottomInset > 0 ? 44 : 76,
+                                    fit: BoxFit.cover,
+                                    cacheWidth: 228,
+                                  ),
+                                ),
+                                Positioned(
+                                  top: 0,
+                                  right: 0,
+                                  child: IconButton.filledTonal(
+                                    tooltip: MaterialLocalizations.of(context)
+                                        .deleteButtonTooltip,
+                                    onPressed: _sending ? null : () => setState(() {
+                                    _selectedGif = null;
+                                    _pendingRequestId = null;
+                                    _gifInputGeneration++;
+                                    }),
+                                    icon: const Icon(Icons.close_rounded, size: 16),
+                                  ),
+                                ),
+                              ],
+                            ),
+                          ),
+                        ),
                       if (_replyingTo != null)
                         SizedBox(
                           height: 34,
@@ -417,6 +484,24 @@ class _SnapshotCommentsSheetState extends State<SnapshotCommentsSheet> {
                               child: TextField(
                                 controller: _controller,
                                 focusNode: _focusNode,
+                                contentInsertionConfiguration:
+                                    ContentInsertionConfiguration(
+                                  allowedMimeTypes: const ['image/gif'],
+                                  onContentInserted: _onKeyboardContent,
+                                ),
+                                contextMenuBuilder: (context, state) =>
+                                    commentGifContextMenu(context, state, (bytes) {
+                                  if (!mounted || _sending ||
+                                      FirebaseAuth.instance.currentUser == null) {
+                                    return;
+                                  }
+                                  setState(() {
+                                    _selectedGif = bytes;
+                                    _pendingRequestId = null;
+                                    _gifInputGeneration++;
+                                  });
+                                }),
+                                autofocus: widget.focusInput,
                                 minLines: 1,
                                 maxLines: screenHeight < 700 ? 3 : 4,
                                 maxLength: 500,
@@ -458,7 +543,9 @@ class _SnapshotCommentsSheetState extends State<SnapshotCommentsSheet> {
                             valueListenable: _controller,
                             builder: (context, value, _) {
                               final canSend =
-                                  !_sending && value.text.trim().isNotEmpty;
+                                  !_sending &&
+                                  (value.text.trim().isNotEmpty ||
+                                      _selectedGif != null);
                               final buttonSize =
                                   context.rh(48, min: 48, max: 52).toDouble();
                               return Semantics(
@@ -599,6 +686,7 @@ class _CommentRow extends StatelessWidget {
                     ),
                   ),
                   const SizedBox(height: 3),
+                  if (comment.isDeleted || comment.content.isNotEmpty)
                   Text(
                     comment.isDeleted ? deletedLabel : comment.content,
                     style: TextStyle(
@@ -611,6 +699,14 @@ class _CommentRow extends StatelessWidget {
                           : const Color(0xFF111827),
                     ),
                   ),
+                  if (!comment.isDeleted && comment.gifStoragePath.isNotEmpty)
+                    Padding(
+                      padding: const EdgeInsets.only(top: 6),
+                      child: _CommentGif(
+                        key: ValueKey<String>('gif:${comment.id}'),
+                        comment: comment,
+                      ),
+                    ),
                   if (onReply != null)
                     TextButton(
                       onPressed: onReply,
@@ -640,6 +736,77 @@ class _CommentRow extends StatelessWidget {
           ],
         ),
       ),
+    );
+  }
+}
+
+class _CommentGif extends StatefulWidget {
+  const _CommentGif({super.key, required this.comment});
+
+  final SnapshotComment comment;
+
+  @override
+  State<_CommentGif> createState() => _CommentGifState();
+}
+
+class _CommentGifState extends State<_CommentGif> {
+  late Future<Uint8List> _bytes;
+  String? _viewerId;
+
+  @override
+  void initState() {
+    super.initState();
+    _load();
+  }
+
+  @override
+  void didUpdateWidget(covariant _CommentGif oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (oldWidget.comment.id != widget.comment.id ||
+        oldWidget.comment.gifStoragePath != widget.comment.gifStoragePath) {
+      _load();
+    }
+  }
+
+  void _load() {
+    _viewerId = FirebaseAuth.instance.currentUser?.uid;
+    _bytes = SnapshotService.instance.loadFeedCommentGif(widget.comment);
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final currentViewerId = FirebaseAuth.instance.currentUser?.uid;
+    if (_viewerId != currentViewerId) _load();
+    return FutureBuilder<Uint8List>(
+      key: ValueKey<String>('${currentViewerId ?? ''}:${widget.comment.gifStoragePath}'),
+      future: _bytes,
+      builder: (context, snapshot) {
+        if (snapshot.hasError) {
+          return TextButton.icon(
+            onPressed: () => setState(_load),
+            icon: const Icon(Icons.refresh_rounded),
+            label: Text(SnapshotStrings.of(context).commentGifUnavailable),
+          );
+        }
+        if (!snapshot.hasData) {
+          return const SizedBox(
+            width: 120,
+            height: 90,
+            child: Center(child: CircularProgressIndicator(strokeWidth: 2)),
+          );
+        }
+        return ClipRRect(
+          borderRadius: BorderRadius.circular(8),
+          child: Image.memory(
+            snapshot.data!,
+            width: 180,
+            height: 180,
+            fit: BoxFit.contain,
+            cacheWidth: 480,
+            gaplessPlayback: false,
+          ),
+        );
+      },
     );
   }
 }

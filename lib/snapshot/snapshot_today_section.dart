@@ -18,7 +18,7 @@ import '../l10n/ui_locale.dart';
 
 const BorderRadius _snackCardRadius = BorderRadius.all(Radius.circular(12));
 const Color _snackNeutralBackground = Color(0xFFF3F4F6);
-const Color _snackTrayBackground = Color(0xFF344054);
+const Color _snackTrayBackground = Colors.white;
 const double _snackCardSpacing = 8;
 const double _snackVerticalPadding = 12;
 

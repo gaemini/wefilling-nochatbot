@@ -239,11 +239,6 @@ class SnapshotArchiveDetailScreen extends StatelessWidget {
                   label: strings.comments,
                 ),
                 _ArchiveMetric(
-                  icon: Icons.favorite_border_rounded,
-                  value: record.reactionCount,
-                  label: strings.likeReaction,
-                ),
-                _ArchiveMetric(
                   icon: Icons.visibility_outlined,
                   value: record.viewerCount,
                   label: strings.viewers,
@@ -280,7 +275,10 @@ class SnapshotArchiveDetailScreen extends StatelessWidget {
                         TextSpan(
                           text: comment.isDeleted
                               ? strings.deletedComment
-                              : comment.content,
+                              : comment.content.isEmpty &&
+                                      comment.gifStoragePath.isNotEmpty
+                                  ? 'GIF'
+                                  : comment.content,
                           style: TextStyle(
                             color: comment.isDeleted
                                 ? const Color(0xFF98A2B3)
@@ -374,7 +372,8 @@ class _ArchiveTile extends StatelessWidget {
       title:
           Text(DateFormat.yMMMd().add_Hm().format(record.createdAt.toLocal())),
       subtitle: Text(
-        '${record.commentCount} · ${record.reactionCount} · ${record.viewerCount}',
+        '${SnapshotStrings.of(context).comments} ${record.commentCount} · '
+        '${SnapshotStrings.of(context).viewers} ${record.viewerCount}',
       ),
       trailing: IconButton(
         onPressed: onDelete,

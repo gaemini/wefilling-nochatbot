@@ -16,6 +16,7 @@ class Comment {
   final String authorNickname;
   final String authorPhotoUrl;
   final String content;
+  final String gifStoragePath;
   final DateTime createdAt;
   final bool isDeleted;
   final DateTime? deletedAt;
@@ -41,6 +42,7 @@ class Comment {
     required this.authorNickname,
     required this.authorPhotoUrl,
     required this.content,
+    this.gifStoragePath = '',
     required this.createdAt,
     this.isDeleted = false,
     this.deletedAt,
@@ -64,6 +66,7 @@ class Comment {
       authorNickname: data['authorNickname'] ?? '익명',
       authorPhotoUrl: data['authorPhotoUrl'] ?? '',
       content: data['content'] ?? '',
+      gifStoragePath: (data['gifStoragePath'] ?? '').toString(),
       createdAt: data['createdAt'] != null
           ? (data['createdAt'] as Timestamp).toDate()
           : DateTime.now(),
@@ -108,6 +111,7 @@ class Comment {
       'authorNickname': authorNickname,
       'authorPhotoUrl': authorPhotoUrl,
       'content': content,
+      'gifStoragePath': gifStoragePath,
       'createdAt': createdAt.millisecondsSinceEpoch,
       'isDeleted': isDeleted,
       'deletedAt': deletedAt?.millisecondsSinceEpoch,
@@ -130,6 +134,7 @@ class Comment {
       authorNickname: map['authorNickname'] ?? '익명',
       authorPhotoUrl: map['authorPhotoUrl'] ?? '',
       content: map['content'] ?? '',
+      gifStoragePath: (map['gifStoragePath'] ?? '').toString(),
       createdAt: map['createdAt'] is int
           ? DateTime.fromMillisecondsSinceEpoch(map['createdAt'])
           : DateTime.now(),
@@ -164,6 +169,7 @@ class Comment {
     String? authorNickname,
     String? authorPhotoUrl,
     String? content,
+    String? gifStoragePath,
     DateTime? createdAt,
     bool? isDeleted,
     DateTime? deletedAt,
@@ -182,6 +188,7 @@ class Comment {
       authorNickname: authorNickname ?? this.authorNickname,
       authorPhotoUrl: authorPhotoUrl ?? this.authorPhotoUrl,
       content: content ?? this.content,
+      gifStoragePath: gifStoragePath ?? this.gifStoragePath,
       createdAt: createdAt ?? this.createdAt,
       isDeleted: isDeleted ?? this.isDeleted,
       deletedAt: deletedAt ?? this.deletedAt,

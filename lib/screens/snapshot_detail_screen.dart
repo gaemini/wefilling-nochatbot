@@ -76,11 +76,11 @@ class _SnapshotDetailScreenState extends State<SnapshotDetailScreen>
     final requestedId = widget.snapshots.isEmpty
         ? ''
         : widget
-              .snapshots[widget.initialIndex.clamp(
-                0,
-                widget.snapshots.length - 1,
-              )]
-              .id;
+            .snapshots[widget.initialIndex.clamp(
+            0,
+            widget.snapshots.length - 1,
+          )]
+            .id;
     _index = _items.indexWhere((item) => item.id == requestedId);
     if (_index < 0) _index = 0;
     if (_items.isNotEmpty) {
@@ -123,8 +123,7 @@ class _SnapshotDetailScreenState extends State<SnapshotDetailScreen>
       nextIndex = _index.clamp(0, incoming.length);
       incoming.insert(nextIndex, current);
     }
-    final idsChanged =
-        incoming.length != _items.length ||
+    final idsChanged = incoming.length != _items.length ||
         List<int>.generate(incoming.length, (index) => index).any(
           (index) =>
               index >= _items.length || incoming[index].id != _items[index].id,
@@ -215,8 +214,11 @@ class _SnapshotDetailScreenState extends State<SnapshotDetailScreen>
   }
 
   void _confirmCurrentNotification() {
-    if (!mounted || _items.isEmpty || _unavailableSnapshotId == _current.id ||
-        _isAppInactive || _isModalPaused) return;
+    if (!mounted ||
+        _items.isEmpty ||
+        _unavailableSnapshotId == _current.id ||
+        _isAppInactive ||
+        _isModalPaused) return;
     final item = _current;
     unawaited(
       NotificationService().markRelatedNotificationsAsRead(
@@ -228,7 +230,7 @@ class _SnapshotDetailScreenState extends State<SnapshotDetailScreen>
     );
   }
 
-  Future<void> _openComments({String? focusCommentId}) async {
+  Future<void> _openComments({String? focusCommentId, bool focusInput = false}) async {
     if (!mounted ||
         _items.isEmpty ||
         _isComposingComment ||
@@ -247,6 +249,7 @@ class _SnapshotDetailScreenState extends State<SnapshotDetailScreen>
         context,
         snapshot: snapshot,
         focusCommentId: focusCommentId,
+        focusInput: focusInput,
       );
     } finally {
       if (mounted) {
@@ -394,9 +397,8 @@ class _SnapshotDetailScreenState extends State<SnapshotDetailScreen>
       _isSwitching = true;
       _mediaReadyId = null;
       _manualResumeSnapshotId = null;
-      _unavailableSnapshotId = _current.isExpiredAt(_service.serverNow)
-          ? _current.id
-          : null;
+      _unavailableSnapshotId =
+          _current.isExpiredAt(_service.serverNow) ? _current.id : null;
       _displayedAgeMinutes = _snapshotAgeMinutes(_current, _service.serverNow);
     });
     if (_unavailableSnapshotId == null) {
@@ -522,8 +524,7 @@ class _SnapshotDetailScreenState extends State<SnapshotDetailScreen>
     final strings = SnapshotStrings.of(context);
     final deletingId = _current.id;
     HapticFeedback.mediumImpact();
-    final confirmed =
-        await showDialog<bool>(
+    final confirmed = await showDialog<bool>(
           context: context,
           barrierDismissible: false,
           barrierColor: const Color(0x99000000),
@@ -556,8 +557,8 @@ class _SnapshotDetailScreenState extends State<SnapshotDetailScreen>
           message: (isChineseUi(context)
               ? '删除失败。'
               : strings.isKorean
-              ? '삭제하지 못했어요.'
-              : 'Could not delete it.'),
+                  ? '삭제하지 못했어요.'
+                  : 'Could not delete it.'),
           type: AppSnackBarType.error,
         );
       }
@@ -588,8 +589,8 @@ class _SnapshotDetailScreenState extends State<SnapshotDetailScreen>
           message: (isChineseUi(context)
               ? '无法发起私信。'
               : strings.isKorean
-              ? '메시지를 시작하지 못했어요.'
-              : 'Could not start a message.'),
+                  ? '메시지를 시작하지 못했어요.'
+                  : 'Could not start a message.'),
           type: AppSnackBarType.error,
         );
       }
@@ -637,7 +638,7 @@ class _SnapshotDetailScreenState extends State<SnapshotDetailScreen>
       WidgetsBinding.instance.addPostFrameCallback((_) {
         if (mounted) Navigator.of(context).pop();
       });
-      return const Scaffold(backgroundColor: Colors.black);
+      return const Scaffold(backgroundColor: Colors.white);
     }
     final strings = SnapshotStrings.of(context);
     final interactionsEnabled =
@@ -645,13 +646,13 @@ class _SnapshotDetailScreenState extends State<SnapshotDetailScreen>
     final navigationEnabled =
         _deletingSnapshotId == null && !_isComposingComment && !_isModalPaused;
     return AnnotatedRegion<SystemUiOverlayStyle>(
-      value: SystemUiOverlayStyle.light.copyWith(
+      value: SystemUiOverlayStyle.dark.copyWith(
         statusBarColor: Colors.transparent,
-        systemNavigationBarColor: Colors.black,
-        systemNavigationBarIconBrightness: Brightness.light,
+        systemNavigationBarColor: Colors.white,
+        systemNavigationBarIconBrightness: Brightness.dark,
       ),
       child: Scaffold(
-        backgroundColor: Colors.black,
+        backgroundColor: Colors.white,
         resizeToAvoidBottomInset: false,
         body: SafeArea(
           child: Column(
@@ -680,26 +681,20 @@ class _SnapshotDetailScreenState extends State<SnapshotDetailScreen>
                           }
                         }
                       : null,
-                  onHorizontalDragStart: navigationEnabled
-                      ? _handleHorizontalDragStart
-                      : null,
-                  onHorizontalDragUpdate: navigationEnabled
-                      ? _handleHorizontalDragUpdate
-                      : null,
-                  onHorizontalDragEnd: navigationEnabled
-                      ? _handleHorizontalDragEnd
-                      : null,
-                  onLongPressStart: interactionsEnabled
-                      ? (_) => _setHolding(true)
-                      : null,
-                  onLongPressEnd: interactionsEnabled
-                      ? (_) => _setHolding(false)
-                      : null,
-                  onLongPressCancel: interactionsEnabled
-                      ? () => _setHolding(false)
-                      : null,
+                  onHorizontalDragStart:
+                      navigationEnabled ? _handleHorizontalDragStart : null,
+                  onHorizontalDragUpdate:
+                      navigationEnabled ? _handleHorizontalDragUpdate : null,
+                  onHorizontalDragEnd:
+                      navigationEnabled ? _handleHorizontalDragEnd : null,
+                  onLongPressStart:
+                      interactionsEnabled ? (_) => _setHolding(true) : null,
+                  onLongPressEnd:
+                      interactionsEnabled ? (_) => _setHolding(false) : null,
+                  onLongPressCancel:
+                      interactionsEnabled ? () => _setHolding(false) : null,
                   child: ColoredBox(
-                    color: Colors.black,
+                    color: Colors.white,
                     child: TweenAnimationBuilder<double>(
                       key: ValueKey<String>('snapshot-page-${_current.id}'),
                       tween: Tween<double>(begin: 0, end: 1),
@@ -719,7 +714,7 @@ class _SnapshotDetailScreenState extends State<SnapshotDetailScreen>
                         onSnapshotChanged: _handleSnapshotChanged,
                         onUnavailable: _markCurrentUnavailable,
                         onVideoPlayRequested: _handleVideoPlayRequested,
-                        onComments: () => _openComments(),
+                        onComments: () => _openComments(focusInput: true),
                         onLetter: _openLetterComposer,
                         onViewers: _openViewers,
                         playing: _currentVideoCanPlay,
@@ -842,34 +837,32 @@ class _SnapshotDetailPageState extends State<_SnapshotDetailPage>
     final cachedReaction = widget.service.cachedMyReaction(snapshotId);
     _reactionStatusResolved = cachedReaction != null;
     _hasReacted = cachedReaction ?? true;
-    _reactionSubscription = widget.service
-        .watchMyReaction(snapshotId)
-        .listen(
-          (hasReacted) {
-            if (!mounted ||
-                generation != _reactionStatusGeneration ||
-                widget.snapshot.id != snapshotId) {
-              return;
-            }
-            setState(() {
-              _reactionStatusResolved = true;
-              _hasReacted = hasReacted;
-            });
-          },
-          onError: (_) {
-            if (!mounted ||
-                generation != _reactionStatusGeneration ||
-                widget.snapshot.id != snapshotId) {
-              return;
-            }
-            final cachedReaction = widget.service.cachedMyReaction(snapshotId);
-            setState(() {
-              _reactionStatusResolved = cachedReaction != null;
-              _hasReacted = cachedReaction ?? true;
-            });
-            unawaited(_confirmReactionStatus(snapshotId, generation));
-          },
-        );
+    _reactionSubscription = widget.service.watchMyReaction(snapshotId).listen(
+      (hasReacted) {
+        if (!mounted ||
+            generation != _reactionStatusGeneration ||
+            widget.snapshot.id != snapshotId) {
+          return;
+        }
+        setState(() {
+          _reactionStatusResolved = true;
+          _hasReacted = hasReacted;
+        });
+      },
+      onError: (_) {
+        if (!mounted ||
+            generation != _reactionStatusGeneration ||
+            widget.snapshot.id != snapshotId) {
+          return;
+        }
+        final cachedReaction = widget.service.cachedMyReaction(snapshotId);
+        setState(() {
+          _reactionStatusResolved = cachedReaction != null;
+          _hasReacted = cachedReaction ?? true;
+        });
+        unawaited(_confirmReactionStatus(snapshotId, generation));
+      },
+    );
     unawaited(_confirmReactionStatus(snapshotId, generation));
   }
 
@@ -957,10 +950,9 @@ class _SnapshotDetailPageState extends State<_SnapshotDetailPage>
         if (snapshot.connectionState == ConnectionState.waiting &&
             !snapshot.hasData &&
             !snapshot.hasError) {
-          return const ColoredBox(color: Colors.black);
+          return const ColoredBox(color: Colors.white);
         }
-        final inaccessible =
-            snapshot.hasError ||
+        final inaccessible = snapshot.hasError ||
             (snapshot.connectionState != ConnectionState.waiting &&
                 snapshot.data == null);
         if (inaccessible && !widget.deleting) {
@@ -992,10 +984,6 @@ class _SnapshotDetailPageState extends State<_SnapshotDetailPage>
         }
         final isOwner =
             FirebaseAuth.instance.currentUser?.uid == current.authorId;
-        final reactionCount = current.reactionCounts.values.fold<int>(
-          0,
-          (total, count) => total + count.clamp(0, 1 << 30),
-        );
         return Column(
           children: [
             Expanded(
@@ -1012,7 +1000,7 @@ class _SnapshotDetailPageState extends State<_SnapshotDetailPage>
                     onVideoPlayRequested: () =>
                         widget.onVideoPlayRequested(current.id),
                   ),
-                  if (!isOwner && !widget.deleting)
+                  if (!widget.deleting)
                     Positioned(
                       left: 0,
                       right: 0,
@@ -1050,7 +1038,6 @@ class _SnapshotDetailPageState extends State<_SnapshotDetailPage>
                 service: widget.service,
                 strings: strings,
                 isOwner: isOwner,
-                reactionCount: reactionCount,
                 commentCount: current.commentCount,
                 reactionStatusResolved: _reactionStatusResolved,
                 hasReacted: _hasReacted,
@@ -1074,7 +1061,6 @@ class _SnapshotBottomControls extends StatelessWidget {
     required this.service,
     required this.strings,
     required this.isOwner,
-    required this.reactionCount,
     required this.commentCount,
     required this.reactionStatusResolved,
     required this.hasReacted,
@@ -1090,7 +1076,6 @@ class _SnapshotBottomControls extends StatelessWidget {
   final SnapshotService service;
   final SnapshotStrings strings;
   final bool isOwner;
-  final int reactionCount;
   final int commentCount;
   final bool reactionStatusResolved;
   final bool hasReacted;
@@ -1105,45 +1090,128 @@ class _SnapshotBottomControls extends StatelessWidget {
   Widget build(BuildContext context) {
     final selected = reactedLocally || (reactionStatusResolved && hasReacted);
     final canReact =
-        !isOwner && reactionStatusResolved && !selected && !submittingReaction;
+        reactionStatusResolved && !selected && !submittingReaction;
     return MediaQuery.withClampedTextScaling(
       maxScaleFactor: 1.2,
       child: SizedBox(
         height: context.rh(62, min: 58, max: 68),
-        child: Row(
-          mainAxisAlignment: MainAxisAlignment.center,
-          children: [
-            _SnapshotBottomAction(
-              icon: selected
-                  ? Icons.favorite_rounded
-                  : Icons.favorite_border_rounded,
-              iconColor: selected ? AppColors.pointColor : Colors.white,
-              label: strings.likeReaction,
-              count: reactionCount,
-              selected: selected,
-              onTap: canReact ? () => onReact('❤️') : null,
+        child: SingleChildScrollView(
+          scrollDirection: Axis.horizontal,
+          child: ConstrainedBox(
+            constraints:
+                BoxConstraints(minWidth: MediaQuery.sizeOf(context).width),
+            child: Row(
+              mainAxisAlignment: MainAxisAlignment.center,
+              children: [
+                _SnapshotCommentEntry(
+                  width: (MediaQuery.sizeOf(context).width - 164)
+                      .clamp(128.0, 240.0)
+                      .toDouble(),
+                  strings: strings,
+                  count: commentCount,
+                  onTap: onComments,
+                ),
+                _SnapshotBottomAction(
+                  icon: selected
+                      ? Icons.favorite_rounded
+                      : Icons.favorite_border_rounded,
+                  iconColor:
+                      selected ? AppColors.pointColor : const Color(0xFF111827),
+                  label: strings.likeReaction,
+                  selected: selected,
+                  onTap: canReact ? () => onReact('❤️') : null,
+                ),
+                if (isOwner)
+                  _SnapshotViewerCountAction(
+                    key: ValueKey<String>('snapshot-viewers-$snapshotId'),
+                    snapshotId: snapshotId,
+                    service: service,
+                    strings: strings,
+                    onTap: onViewers,
+                  )
+                else
+                  _SnapshotBottomAction(
+                    icon: Icons.mail_outline_rounded,
+                    label: strings.snackLetter,
+                    onTap: onLetter,
+                  ),
+              ],
             ),
-            _SnapshotBottomAction(
-              icon: Icons.chat_bubble_outline_rounded,
-              label: strings.comments,
-              count: commentCount,
-              onTap: onComments,
-            ),
-            if (isOwner)
-              _SnapshotViewerCountAction(
-                key: ValueKey<String>('snapshot-viewers-$snapshotId'),
-                snapshotId: snapshotId,
-                service: service,
-                strings: strings,
-                onTap: onViewers,
-              )
-            else
-              _SnapshotBottomAction(
-                icon: Icons.mail_outline_rounded,
-                label: strings.snackLetter,
-                onTap: onLetter,
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+class _SnapshotCommentEntry extends StatelessWidget {
+  const _SnapshotCommentEntry({
+    required this.width,
+    required this.strings,
+    required this.count,
+    required this.onTap,
+  });
+
+  final double width;
+  final SnapshotStrings strings;
+  final int count;
+  final VoidCallback onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    final safeCount = count.clamp(0, 1 << 30);
+    return Semantics(
+      button: true,
+      label: '${strings.comments} $safeCount',
+      excludeSemantics: true,
+      child: Material(
+        color: const Color(0xFFF2F4F7),
+        borderRadius: BorderRadius.circular(24),
+        clipBehavior: Clip.antiAlias,
+        child: InkWell(
+          onTap: onTap,
+          child: SizedBox(
+            width: width,
+            height: 48,
+            child: Padding(
+              padding: const EdgeInsets.symmetric(horizontal: 12),
+              child: Row(
+                children: [
+                  const Icon(
+                    Icons.chat_bubble_outline_rounded,
+                    size: 21,
+                    color: Color(0xFF475467),
+                  ),
+                  const SizedBox(width: 8),
+                  Expanded(
+                    child: Text(
+                      strings.publicCommentHint,
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      style: TextStyle(
+                        fontFamily: uiFontFamily(context, 'Inter'),
+                        fontFamilyFallback: const ['NotoSansKR'],
+                        fontSize: context.rf(13).clamp(12, 14).toDouble(),
+                        fontWeight: FontWeight.w500,
+                        color: const Color(0xFF667085),
+                      ),
+                    ),
+                  ),
+                  const SizedBox(width: 4),
+                  Text(
+                    _compactCount(safeCount),
+                    style: TextStyle(
+                      fontFamily: uiFontFamily(context, 'Inter'),
+                      fontFamilyFallback: const ['NotoSansKR'],
+                      fontSize: context.rf(12).clamp(11, 13).toDouble(),
+                      fontWeight: FontWeight.w700,
+                      color: const Color(0xFF475467),
+                    ),
+                  ),
+                ],
               ),
-          ],
+            ),
+          ),
         ),
       ),
     );
@@ -1155,7 +1223,7 @@ class _SnapshotBottomAction extends StatelessWidget {
     required this.icon,
     required this.label,
     required this.onTap,
-    this.iconColor = Colors.white,
+    this.iconColor = const Color(0xFF111827),
     this.count,
     this.selected = false,
   });
@@ -1203,7 +1271,7 @@ class _SnapshotBottomAction extends StatelessWidget {
                       style: TextStyle(
                         fontFamily: uiFontFamily(context, 'Inter'),
                         fontFamilyFallback: const ['NotoSansKR'],
-                        color: Colors.white,
+                        color: const Color(0xFF475467),
                         fontSize: context.rf(12).clamp(11.5, 13).toDouble(),
                         fontWeight: FontWeight.w700,
                       ),
@@ -1286,7 +1354,7 @@ class _SnapshotUnavailableView extends StatelessWidget {
           style: TextStyle(
             fontFamily: uiFontFamily(context, 'Inter'),
             fontFamilyFallback: const ['NotoSansKR'],
-            color: const Color(0xFFB8C0CC),
+            color: const Color(0xFF667085),
             fontSize: context.rf(14).clamp(13.5, 15).toDouble(),
             height: 1.4,
           ),
@@ -1558,15 +1626,14 @@ class _SnapshotMediaCanvas extends StatelessWidget {
                     SnapshotStorageImage(
                       snapshot: snapshot,
                       fit: snapshotDetailImageFit,
-                      placeholderColor: Colors.black,
-                      errorBackgroundColor: Colors.black,
+                      placeholderColor: Colors.white,
+                      errorBackgroundColor: Colors.white,
                       showLoadingIndicator: false,
                       fadeInDuration: Duration.zero,
-                      decodeWidth:
-                          (canvasSize.width *
-                                  MediaQuery.devicePixelRatioOf(context))
-                              .ceil()
-                              .clamp(320, 2160),
+                      decodeWidth: (canvasSize.width *
+                              MediaQuery.devicePixelRatioOf(context))
+                          .ceil()
+                          .clamp(320, 2160),
                       onImageReady: onReady,
                     ),
                 ],
@@ -1597,7 +1664,7 @@ class _SnapshotTopRegion extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return ColoredBox(
-      color: Colors.black,
+      color: Colors.white,
       child: Column(
         mainAxisSize: MainAxisSize.min,
         children: [
@@ -1612,7 +1679,7 @@ class _SnapshotTopRegion extends StatelessWidget {
                     icon: Icon(
                       Icons.arrow_back_rounded,
                       size: context.ri(22).clamp(21, 24).toDouble(),
-                      color: Colors.white,
+                      color: const Color(0xFF111827),
                     ),
                     tooltip: MaterialLocalizations.of(
                       context,
@@ -1644,7 +1711,7 @@ class _SnapshotTopRegion extends StatelessWidget {
                     icon: Icon(
                       Icons.more_horiz_rounded,
                       size: context.ri(23).clamp(21, 25).toDouble(),
-                      color: Colors.white,
+                      color: const Color(0xFF111827),
                     ),
                     tooltip: MaterialLocalizations.of(context).showMenuTooltip,
                   ),
@@ -1684,7 +1751,7 @@ class _SnapshotAuthorHeader extends StatelessWidget {
             padding: const EdgeInsets.all(1.5),
             decoration: const BoxDecoration(
               shape: BoxShape.circle,
-              color: Colors.white,
+              color: Color(0xFFF3F4F6),
             ),
             child: SnapshotAuthorProfileImage(
               profile: profile,
@@ -1711,11 +1778,8 @@ class _SnapshotAuthorHeader extends StatelessWidget {
                     fontFamilyFallback: const ['NotoSansKR'],
                     fontSize: context.rf(15).clamp(14, 16).toDouble(),
                     fontWeight: FontWeight.w700,
-                    color: Colors.white,
+                    color: const Color(0xFF111827),
                     height: isChineseUi(context) ? 1.3 : 1.18,
-                    shadows: const [
-                      Shadow(color: Colors.black54, blurRadius: 6),
-                    ],
                   ),
                 ),
                 const SizedBox(height: 3),
@@ -1728,7 +1792,7 @@ class _SnapshotAuthorHeader extends StatelessWidget {
                     fontFamilyFallback: const ['NotoSansKR'],
                     fontSize: context.rf(12).clamp(11.5, 13).toDouble(),
                     fontWeight: FontWeight.w500,
-                    color: Colors.white.withValues(alpha: .78),
+                    color: const Color(0xFF667085),
                     height: isChineseUi(context) ? 1.3 : 1.2,
                   ),
                 ),
@@ -1956,8 +2020,8 @@ class _SnapshotDeleteDialog extends StatelessWidget {
                   (isChineseUi(context)
                       ? '删除后，此限时动态将无法恢复。'
                       : strings.isKorean
-                      ? '삭제한 스낵은 다시 복구할 수 없어요.'
-                      : 'This snack cannot be restored after deletion.'),
+                          ? '삭제한 스낵은 다시 복구할 수 없어요.'
+                          : 'This snack cannot be restored after deletion.'),
                   style: TextStyle(
                     fontFamily: uiFontFamily(context, 'Inter'),
                     fontFamilyFallback: const ['NotoSansKR'],

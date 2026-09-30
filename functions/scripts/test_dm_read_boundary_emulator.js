@@ -20,6 +20,7 @@ const user = db.collection('users').doc(bob);
 const create = ft.wrap(index.onDMMessageCreated);
 const read = ft.wrap(index.onDMMessageRead);
 const mark = ft.wrap(dm.markDMConversationReadBoundedSecure);
+const leave = ft.wrap(dm.leaveDMConversationSecure);
 const cleanup = ft.wrap(dm.onDMReceiptCleanupRequested);
 const context = (id, kind) => ({eventId: `boundary-${run}-${id}-${kind}`,
   params: {conversationId: room.id, messageId: id}});
@@ -103,13 +104,80 @@ async function main() {
     context('after-exit', 'legacy-read'));
   await counts(1, 8);
   assert.equal((await rollingNew.ref.get()).get('isRead'), false);
+  const beforeLeave = await room.get();
+  const lateBeforeLeave = await send('late-before-leave', false);
+  // A legacy device clock can be years ahead; a new leave must replace it
+  // with the Firestore commit boundary rather than keeping its maximum.
+  const skewedDeviceTime = admin.firestore.Timestamp.fromMillis(9999999999999);
+  await room.update({userLeftAt: {[bob]: skewedDeviceTime}});
+  const left = await leave({conversationId: room.id},
+    {auth: {uid: bob, token: {}}});
+  const afterLeave = await room.get();
+  assert.equal(left.success, true);
+  assert.equal(left.clearedCount, 1);
+  assert.equal(afterLeave.get(`unreadCount.${bob}`), 0);
+  assert.equal((await user.get()).get('dmUnreadTotal'), 7);
+  assert.equal((await other.get()).get(`unreadCount.${bob}`), 7);
+  assert(afterLeave.get(`archivedBy`).includes(bob));
+  assert.equal(afterLeave.get(`userLeftAt.${bob}`).seconds, left.leftAtSeconds);
+  assert.equal(afterLeave.get(`userLeftAt.${bob}`).nanoseconds, left.leftAtNanos);
+  assert(afterLeave.get(`userLeftAt.${bob}`).toMillis() < skewedDeviceTime.toMillis());
+  assert(afterLeave.get(`lastReadAtBy.${bob}`).isEqual(
+    afterLeave.get(`userLeftAt.${bob}`)));
+  assert.deepEqual(afterLeave.get('updatedAt'), beforeLeave.get('updatedAt'));
+  await create(lateBeforeLeave, context('late-before-leave', 'create'));
+  await counts(0, 7);
+  const afterLeaveMessage = await send('after-leave-message');
+  assert(afterLeaveMessage.createTime.toMillis() >=
+    afterLeave.get(`userLeftAt.${bob}`).toMillis());
+  await counts(1, 8);
+  await assert.rejects(leave({conversationId: room.id},
+    {auth: {uid: 'outsider', token: {}}}));
+  // A transient per-token FCM failure retries only that token. The unread
+  // transaction and successful token are never replayed.
+  const goodToken = `good-${run}`;
+  const retryToken = `retry-${run}`;
+  await user.update({fcmTokens: [goodToken, retryToken]});
+  await db.collection('fcm_tokens').doc(goodToken).set({userId: bob});
+  await db.collection('fcm_tokens').doc(retryToken).set({userId: bob});
+  const pushRef = room.collection('messages').doc('push-retry');
+  await pushRef.set({senderId: alice, text: 'retry', isRead: false,
+    createdAt: admin.firestore.FieldValue.serverTimestamp()});
+  const pushSnap = await pushRef.get();
+  const messaging = admin.messaging();
+  const originalSend = messaging.sendEachForMulticast;
+  const sentBatches = [];
+  messaging.sendEachForMulticast = async (payload) => {
+    sentBatches.push([...payload.tokens]);
+    return sentBatches.length === 1 ? {
+      successCount: 1, failureCount: 1,
+      responses: payload.tokens.map((token) => token === goodToken ?
+        {success: true} :
+        {success: false, error: {code: 'messaging/server-unavailable'}}),
+    } : {
+      successCount: payload.tokens.length, failureCount: 0,
+      responses: payload.tokens.map(() => ({success: true})),
+    };
+  };
+  try {
+    const pushContext = context('push-retry', 'create');
+    await assert.rejects(create(pushSnap, pushContext));
+    await counts(2, 9);
+    await create(pushSnap, pushContext);
+    await counts(2, 9);
+    assert.deepEqual(sentBatches, [[goodToken, retryToken], [retryToken]]);
+    await create(pushSnap, pushContext);
+    assert.equal(sentBatches.length, 2);
+  } finally {
+    messaging.sendEachForMulticast = originalSend;
+  }
   const t = new admin.firestore.Timestamp(100, 123456000);
   assert(policy.dmCovered(t, t));
   assert(!policy.dmCovered(new admin.firestore.Timestamp(100, 123457000), t));
   assert(policy.dmNotificationBoundary(t) < Math.floor(t.toMillis()));
   const futureToken = new admin.firestore.Timestamp(9999999999, 999999999);
   assert(policy.dmTimeCompare(policy.nextDMReceiptToken(futureToken), futureToken) > 0);
-  console.log('PASS: bounded read, delayed worker/create, exact precision, two rooms, duplicate receipts, exit and stale requests');
+  console.log('PASS: bounded read, delayed worker/create, exact precision, two rooms, atomic server leave, duplicate receipts, exit and stale requests');
 }
 main().then(() => {ft.cleanup(); process.exit(0);}).catch(e => {
   console.error(e); process.exit(1);

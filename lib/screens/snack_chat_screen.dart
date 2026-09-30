@@ -25,6 +25,7 @@ import '../services/cache/app_image_cache_manager.dart';
 import '../services/badge_service.dart';
 import '../services/fcm_service.dart';
 import '../services/notification_service.dart';
+import '../services/navigation_service.dart';
 import '../services/snack_chat_active_conversation.dart';
 import '../services/snack_chat_document_import_service.dart';
 import '../services/snack_chat_local_cache_service.dart';
@@ -95,6 +96,14 @@ int snackChatSecureTextBatchPrefixLength(
   }
   return count;
 }
+
+@visibleForTesting
+bool shouldParkSnackChatOutbound({
+  required bool sessionValid,
+  required bool resolved,
+  required bool acknowledged,
+}) =>
+    sessionValid && !resolved && !acknowledged;
 
 class SnackChatScreen extends StatefulWidget {
   final String snackChatId;
@@ -194,6 +203,7 @@ class _SnackChatOutboundTask {
   final SnackChatTextSendRequest? secureTextRequest;
   final bool holdUncertain;
   final Future<bool> Function(bool reportedSuccess) resolve;
+  bool forceSingle = false;
   final Stopwatch waiting = Stopwatch()..start();
   final Completer<bool?> completion = Completer<bool?>();
 }
@@ -204,13 +214,13 @@ class _SnackChatOutboundLane {
   _SnackChatOutboundTask? activeTask;
   String? sendingMessageId;
   String? unresolvedMessageId;
-  Completer<void>? unresolvedGate;
+  String? acknowledgedMessageId;
   Future<bool?>? recovery;
   bool releaseAfterRecovery = false;
 }
 
 class _SnackChatScreenState extends State<SnackChatScreen>
-    with WidgetsBindingObserver {
+    with WidgetsBindingObserver, RouteAware {
   static const Color _chatBackground = SnackChatBackdrop.backgroundColor;
   static const Color _outgoingBubble = Color(0xFF344054);
   static const Color _incomingBubble = Color(0xFFFFFFFF);
@@ -347,6 +357,8 @@ class _SnackChatScreenState extends State<SnackChatScreen>
   final Set<String> _attemptedSequenceGaps = <String>{};
   Future<void>? _sequenceGapRecovery;
   int _sequenceGapRecoveryGeneration = 0;
+  Timer? _sequenceGapRetryTimer;
+  int _sequenceGapRetryAttempt = 0;
   int? _liveWindowMinimumSequence;
   final Map<String, SnackChatMember> _members = <String, SnackChatMember>{};
   String _verifiedParticipantSignature = '';
@@ -373,10 +385,9 @@ class _SnackChatScreenState extends State<SnackChatScreen>
   int _entryBootstrapGeneration = 0;
   String? _firstUnreadMessageId;
   int? _firstUnreadSequence;
+  bool _entryUnreadHapticPlayed = false;
   int _entryUnreadCount = 0;
   int _entryLatestSequence = 0;
-  bool _unreadSummaryLoading = false;
-  int _unreadSummaryRequestGeneration = 0;
   SnackChatSummaryRun? _summaryRun;
   bool _summaryResultOpen = false;
   bool _todaySummaryLoading = false;
@@ -436,20 +447,27 @@ class _SnackChatScreenState extends State<SnackChatScreen>
         FirebaseAuth.instance.authStateChanges().listen((user) {
       if (user?.uid == _screenOwnerUid) return;
       _accountInvalidated = true;
+      if (SnackChatActiveConversation.isActive(widget.snackChatId)) {
+        SnackChatActiveConversation.setActive(null);
+      }
       final oldOwner = _screenOwnerUid;
       if (oldOwner != null) {
+        final emptyLanes = <String>[];
         for (final entry in _outboundLanes.entries) {
           if (!entry.key.startsWith('$oldOwner::')) continue;
           final lane = entry.value;
-          final gate = lane.unresolvedGate;
-          if (gate == null || gate.isCompleted) continue;
-          if (lane.recovery != null) {
-            lane.releaseAfterRecovery = true;
-            continue;
+          while (lane.pending.isNotEmpty) {
+            final task = lane.pending.removeFirst();
+            if (!task.completion.isCompleted) task.completion.complete(null);
           }
           lane.unresolvedMessageId = null;
-          lane.unresolvedGate = null;
-          gate.complete();
+          lane.acknowledgedMessageId = null;
+          if (!lane.draining &&
+              lane.activeTask == null &&
+              lane.recovery == null) emptyLanes.add(entry.key);
+        }
+        for (final key in emptyLanes) {
+          _outboundLanes.remove(key);
         }
       }
       _summaryRun?.dispose();
@@ -499,6 +517,8 @@ class _SnackChatScreenState extends State<SnackChatScreen>
   @override
   void didChangeDependencies() {
     super.didChangeDependencies();
+    final route = ModalRoute.of(context);
+    if (route != null) NavigationService.routeObserver.subscribe(this, route);
     if (_initialLocalHydrationStarted) return;
     _initialLocalHydrationStarted = true;
 
@@ -511,6 +531,21 @@ class _SnackChatScreenState extends State<SnackChatScreen>
         uiLanguageCode: Localizations.localeOf(context).languageCode,
       ),
     );
+  }
+
+  @override
+  void didPushNext() {
+    if (SnackChatActiveConversation.isActive(widget.snackChatId)) {
+      SnackChatActiveConversation.setActive(null);
+    }
+  }
+
+  @override
+  void didPopNext() {
+    if (!mounted || _appLifecycleState != AppLifecycleState.resumed ||
+        _isLeavingRoom || _roomWasLeft || _roomAccessTerminated) return;
+    SnackChatActiveConversation.setActive(widget.snackChatId);
+    _scheduleActiveReadSync();
   }
 
   void _resetTranslationStateForRoom() {
@@ -1599,6 +1634,9 @@ class _SnackChatScreenState extends State<SnackChatScreen>
     _attemptedSequenceGaps.clear();
     _sequenceGapRecovery = null;
     _sequenceGapRecoveryGeneration++;
+    _sequenceGapRetryTimer?.cancel();
+    _sequenceGapRetryTimer = null;
+    _sequenceGapRetryAttempt = 0;
     _liveWindowMinimumSequence = null;
     _messageKeys.clear();
     _members.clear();
@@ -1660,8 +1698,7 @@ class _SnackChatScreenState extends State<SnackChatScreen>
     _entryBootstrapGeneration++;
     _firstUnreadMessageId = null;
     _firstUnreadSequence = null;
-    _unreadSummaryLoading = false;
-    _unreadSummaryRequestGeneration++;
+    _entryUnreadHapticPlayed = false;
     _summaryRun?.dispose();
     _summaryRun = null;
     _todaySummaryLoading = false;
@@ -2393,8 +2430,6 @@ class _SnackChatScreenState extends State<SnackChatScreen>
           _firstUnreadSequence = null;
           _entryUnreadCount = 0;
           _entryLatestSequence = 0;
-          _unreadSummaryLoading = false;
-          _unreadSummaryRequestGeneration++;
           _summaryRun?.dispose();
           _summaryRun = null;
           _todaySummaryLoading = false;
@@ -2441,9 +2476,14 @@ class _SnackChatScreenState extends State<SnackChatScreen>
       final anchorContext =
           anchorId == null ? null : _messageKeys[anchorId]?.currentContext;
       if (anchorContext != null) {
+        final viewportHeight = _messageViewportKey.currentContext?.size?.height ??
+            MediaQuery.sizeOf(context).height;
+        final controlInset = context.rs(48).clamp(44, 52).toDouble() + 8;
         await Scrollable.ensureVisible(
           anchorContext,
-          alignment: .18,
+          // Keep the first unread bubble just below the floating list control.
+          // reverse:true uses 1.0 for the visual top of the viewport.
+          alignment: (1 - controlInset / viewportHeight).clamp(.7, .92),
           duration:
               attempt == 0 ? Duration.zero : const Duration(milliseconds: 140),
           curve: Curves.easeOutCubic,
@@ -2455,6 +2495,7 @@ class _SnackChatScreenState extends State<SnackChatScreen>
           _isNearLatest = _scrollController.hasClients &&
               _scrollController.position.pixels <= 72;
         });
+        _hapticOnFirstUnreadIfVisible(anchorId!);
         _scheduleActiveReadSync();
         return;
       }
@@ -2489,11 +2530,43 @@ class _SnackChatScreenState extends State<SnackChatScreen>
     });
   }
 
+  void _hapticOnFirstUnreadIfVisible(String messageId) {
+    if (_entryUnreadHapticPlayed || !mounted || _uid == null ||
+        _appLifecycleState != AppLifecycleState.resumed ||
+        ModalRoute.of(context)?.isCurrent != true ||
+        _isUserScrolling || _firstUnreadMessageId != messageId) {
+      return;
+    }
+    final messageBox =
+        _messageKeys[messageId]?.currentContext?.findRenderObject();
+    final viewportBox = _messageViewportKey.currentContext?.findRenderObject();
+    if (messageBox is! RenderBox || viewportBox is! RenderBox ||
+        !messageBox.hasSize || !viewportBox.hasSize) {
+      return;
+    }
+    final top = messageBox.localToGlobal(Offset.zero).dy;
+    final viewportTop = viewportBox.localToGlobal(Offset.zero).dy;
+    if (top + messageBox.size.height <= viewportTop ||
+        top >= viewportTop + viewportBox.size.height) {
+      return;
+    }
+    _entryUnreadHapticPlayed = true;
+    unawaited(HapticFeedback.mediumImpact());
+  }
+
   @override
   void didChangeAppLifecycleState(AppLifecycleState state) {
     _appLifecycleState = state;
     if (state == AppLifecycleState.resumed) {
-      SnackChatActiveConversation.setActive(widget.snackChatId);
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        final anchorId = _firstUnreadMessageId;
+        if (mounted && _entryPositionSettled && anchorId != null) {
+          _hapticOnFirstUnreadIfVisible(anchorId);
+        }
+      });
+      if (!_accountInvalidated && ModalRoute.of(context)?.isCurrent == true) {
+        SnackChatActiveConversation.setActive(widget.snackChatId);
+      }
       _toolbarScrollTracker.resetGesture();
       if (_isUserScrolling) {
         _isUserScrolling = false;
@@ -3373,52 +3446,68 @@ class _SnackChatScreenState extends State<SnackChatScreen>
     required int beforeSequence,
   }) async {
     var cursor = afterSequence;
-    final recovered = <SnackChatMessage>[];
     try {
       // The interval is frozen at detection time and each request is capped
       // by the service at 100. Keep its cursor until the entire finite gap is
       // exhausted; stopping after five pages silently lost longer gaps.
       for (var page = 0; cursor + 1 < beforeSequence; page++) {
+        if (!_canApplySequenceGapPage(roomId, ownerUid, generation)) return;
         final messages = await _snackChatService.fetchMessagesSequenceRange(
           roomId,
           afterSequence: cursor,
           beforeSequence: beforeSequence,
         );
+        if (!_canApplySequenceGapPage(roomId, ownerUid, generation)) return;
         if (messages.isEmpty) break;
-        recovered.addAll(messages);
         var nextCursor = cursor;
         for (final message in messages) {
           final sequence = message.sequence ?? 0;
           if (sequence > nextCursor) nextCursor = sequence;
         }
         if (nextCursor <= cursor) break;
+        _mergeRecoveredSequencePage(messages);
         cursor = nextCursor;
         if (messages.length < 100) break;
         if (page % 5 == 4) await Future<void>.delayed(Duration.zero);
       }
+      _sequenceGapRetryAttempt = 0;
     } catch (error, stackTrace) {
+      if (!_canApplySequenceGapPage(roomId, ownerUid, generation)) return;
       _attemptedSequenceGaps.remove('$afterSequence:$beforeSequence');
       Logger.error('Snack Chat 재접속 메시지 구간 복구 실패', error, stackTrace);
+      if (!_isTerminalRoomError(error) &&
+          _sequenceGapRetryTimer == null &&
+          _sequenceGapRetryAttempt < 3) {
+        final seconds = 1 << _sequenceGapRetryAttempt++;
+        _sequenceGapRetryTimer = Timer(Duration(seconds: seconds), () {
+          _sequenceGapRetryTimer = null;
+          _scheduleSequenceGapRecovery();
+        });
+      }
       return;
     }
-    if (recovered.isEmpty ||
-        !mounted ||
-        generation != _sequenceGapRecoveryGeneration ||
-        ownerUid != _uid ||
-        roomId != widget.snackChatId ||
-        _isLeavingRoom ||
-        _roomAccessTerminated) {
-      return;
-    }
+  }
 
+  bool _canApplySequenceGapPage(
+          String roomId, String ownerUid, int generation) =>
+      mounted &&
+      generation == _sequenceGapRecoveryGeneration &&
+      ownerUid == _uid &&
+      roomId == widget.snackChatId &&
+      !_isLeavingRoom &&
+      !_roomAccessTerminated;
+
+  void _mergeRecoveredSequencePage(List<SnackChatMessage> recovered) {
     final anchor = _isNearLatest ? null : _captureScrollAnchor();
     final added = <SnackChatMessage>[];
     final replacements = <String, SnackChatMessage>{};
+    final localIndexes = <String, int>{
+      for (var index = 0; index < _messages.length; index++)
+        _messages[index].id: index,
+    };
     for (final serverMessage in recovered) {
-      final index = _messages.indexWhere(
-        (message) => message.id == serverMessage.id,
-      );
-      if (index < 0) {
+      final index = localIndexes[serverMessage.id];
+      if (index == null) {
         added.add(serverMessage);
         continue;
       }
@@ -3759,14 +3848,27 @@ class _SnackChatScreenState extends State<SnackChatScreen>
 
   @override
   void dispose() {
+    NavigationService.routeObserver.unsubscribe(this);
     _summaryRun?.dispose();
     unawaited(_accountSubscription?.cancel());
     // 화면 이동은 막지 않고, 읽음 동기화 Future만 백그라운드에서 완료한다.
     _startBackgroundReadFlush();
     _readSyncGeneration++;
-    _unreadSummaryRequestGeneration++;
     _todaySummaryRequestGeneration++;
     _isLeavingRoom = true;
+    final outboundOwner = _uid;
+    if (outboundOwner != null) {
+      final lane = _outboundLanes['$outboundOwner::${widget.snackChatId}'];
+      if (lane != null) {
+        lane.pending.removeWhere((task) {
+          if (task.isValid()) return false;
+          if (!task.completion.isCompleted) {
+            task.completion.complete(null);
+          }
+          return true;
+        });
+      }
+    }
     _cacheHydrationGeneration++;
     _senderProfileGeneration++;
     for (final notifier in _senderProfileNotifiers.values) {
@@ -3781,6 +3883,7 @@ class _SnackChatScreenState extends State<SnackChatScreen>
     _outboxRetryTimer?.cancel();
     _messageRetryTimer?.cancel();
     _messageWindowExpansionTimer?.cancel();
+    _sequenceGapRetryTimer?.cancel();
     _fileExpiryTimer?.cancel();
     _roomRetryTimer?.cancel();
     _entryRetryTimer?.cancel();
@@ -4081,7 +4184,7 @@ class _SnackChatScreenState extends State<SnackChatScreen>
     _SnackChatOutboundLane lane,
   ) async {
     try {
-      while (lane.pending.isNotEmpty) {
+      while (lane.pending.isNotEmpty && lane.unresolvedMessageId == null) {
         while (lane.pending.isNotEmpty && !lane.pending.first.isValid()) {
           final skipped = lane.pending.removeFirst();
           if (!skipped.completion.isCompleted) {
@@ -4093,6 +4196,7 @@ class _SnackChatScreenState extends State<SnackChatScreen>
         final first = lane.pending.first;
         final canBatch = SnackChatService.secureTextSendEnabled &&
             _secureTextBatchEnabled &&
+            !first.forceSingle &&
             first.secureTextRequest != null;
         if (!canBatch) {
           lane.pending.removeFirst();
@@ -4102,7 +4206,10 @@ class _SnackChatScreenState extends State<SnackChatScreen>
 
         final prefixLength = snackChatSecureTextBatchPrefixLength(
           lane.pending.map(
-            (task) => task.isValid() && task.secureTextRequest != null,
+            (task) =>
+                task.isValid() &&
+                !task.forceSingle &&
+                task.secureTextRequest != null,
           ),
         );
         final batch = <_SnackChatOutboundTask>[];
@@ -4115,16 +4222,17 @@ class _SnackChatScreenState extends State<SnackChatScreen>
         if (batch.length == 1) {
           await _runSingleOutboundTask(lane, batch.single);
         } else {
-          await _runSecureTextBatch(batch);
+          await _runSecureTextBatch(lane, batch);
         }
       }
     } finally {
       lane.draining = false;
-      if (lane.pending.isEmpty) {
+      if (lane.pending.isEmpty && lane.unresolvedMessageId == null) {
         if (identical(_outboundLanes[queueKey], lane)) {
           _outboundLanes.remove(queueKey);
         }
-      } else if (identical(_outboundLanes[queueKey], lane)) {
+      } else if (lane.unresolvedMessageId == null &&
+          identical(_outboundLanes[queueKey], lane)) {
         lane.draining = true;
         unawaited(_drainOutboundLane(queueKey, lane));
       }
@@ -4144,6 +4252,7 @@ class _SnackChatScreenState extends State<SnackChatScreen>
     }
     lane.activeTask = task;
     lane.sendingMessageId = task.messageId;
+    lane.acknowledgedMessageId = null;
     try {
       final result = await task.send();
       lane.sendingMessageId = null;
@@ -4153,11 +4262,17 @@ class _SnackChatScreenState extends State<SnackChatScreen>
       }
       if (task.holdUncertain) {
         final resolved = await task.resolve(result);
-        if (!resolved) {
-          lane.unresolvedMessageId = task.messageId;
-          lane.unresolvedGate = Completer<void>();
+        if (!task.isValid()) {
           if (!task.completion.isCompleted) task.completion.complete(result);
-          await lane.unresolvedGate!.future;
+          return;
+        }
+        if (shouldParkSnackChatOutbound(
+          sessionValid: task.isValid(),
+          resolved: resolved,
+          acknowledged: lane.acknowledgedMessageId == task.messageId,
+        )) {
+          lane.unresolvedMessageId = task.messageId;
+          if (!task.completion.isCompleted) task.completion.complete(result);
           return;
         }
       }
@@ -4179,14 +4294,16 @@ class _SnackChatScreenState extends State<SnackChatScreen>
             resolutionStack,
           );
         }
-        if (resolved) {
+        if (!shouldParkSnackChatOutbound(
+          sessionValid: task.isValid(),
+          resolved: resolved,
+          acknowledged: lane.acknowledgedMessageId == task.messageId,
+        )) {
           if (!task.completion.isCompleted) task.completion.complete(false);
           return;
         }
         lane.unresolvedMessageId = task.messageId;
-        lane.unresolvedGate ??= Completer<void>();
         if (!task.completion.isCompleted) task.completion.complete(false);
-        await lane.unresolvedGate!.future;
       } else if (!task.completion.isCompleted) {
         task.completion.completeError(error, stackTrace);
       }
@@ -4206,6 +4323,7 @@ class _SnackChatScreenState extends State<SnackChatScreen>
       lane.sendingMessageId = task.messageId;
       final result = await task.send();
       lane.sendingMessageId = null;
+      if (!task.isValid()) return result;
       final resolved = await task.resolve(result);
       if (resolved) _releaseHeldOutbound(owner, task.roomId, task.messageId);
       return result;
@@ -4239,15 +4357,28 @@ class _SnackChatScreenState extends State<SnackChatScreen>
   void _releaseHeldOutbound(String? owner, String roomId, String messageId) {
     if (owner == null) return;
     final lane = _outboundLanes['$owner::$roomId'];
-    if (lane?.unresolvedMessageId != messageId) return;
-    if (lane!.recovery != null) {
+    if (lane == null) return;
+    if (lane.activeTask?.messageId == messageId ||
+        lane.sendingMessageId == messageId) {
+      lane.acknowledgedMessageId = messageId;
+    }
+    if (lane.unresolvedMessageId != messageId) return;
+    if (lane.recovery != null) {
       lane.releaseAfterRecovery = true;
       return;
     }
     lane.unresolvedMessageId = null;
-    final gate = lane.unresolvedGate;
-    lane.unresolvedGate = null;
-    if (gate != null && !gate.isCompleted) gate.complete();
+    lane.acknowledgedMessageId = null;
+    final queueKey = '$owner::$roomId';
+    if (lane.pending.isNotEmpty && !lane.draining) {
+      lane.draining = true;
+      unawaited(_drainOutboundLane(queueKey, lane));
+    } else if (lane.pending.isEmpty &&
+        !lane.draining &&
+        lane.activeTask == null &&
+        identical(_outboundLanes[queueKey], lane)) {
+      _outboundLanes.remove(queueKey);
+    }
   }
 
   bool _isOutboundOriginalRunning(
@@ -4263,6 +4394,7 @@ class _SnackChatScreenState extends State<SnackChatScreen>
   }
 
   Future<void> _runSecureTextBatch(
+    _SnackChatOutboundLane lane,
     List<_SnackChatOutboundTask> tasks,
   ) async {
     final requests =
@@ -4282,18 +4414,80 @@ class _SnackChatScreenState extends State<SnackChatScreen>
       final byId = <String, SnackChatTextSendResult>{
         for (final result in results) result.messageId: result,
       };
+      var held = false;
+      final retrySingle = <_SnackChatOutboundTask>[];
       for (final task in tasks) {
+        if (!task.isValid()) {
+          if (!task.completion.isCompleted) task.completion.complete(null);
+          continue;
+        }
         final result = byId[task.messageId];
         final committed = result?.status == SnackChatTextSendStatus.committed;
-        if (!task.completion.isCompleted) {
-          task.completion.complete(committed);
+        if (committed) {
+          if (!task.completion.isCompleted) task.completion.complete(true);
+          continue;
         }
+        if (result?.status == SnackChatTextSendStatus.rejected) {
+          try {
+            await task.resolve(false);
+          } catch (error, stackTrace) {
+            Logger.error('Snack Chat 거절된 묶음 메시지 반영 실패', error, stackTrace);
+          }
+          if (!task.completion.isCompleted) task.completion.complete(false);
+          continue;
+        }
+        if (held || result?.status == SnackChatTextSendStatus.notAttempted) {
+          task.forceSingle = true;
+          retrySingle.add(task);
+          continue;
+        }
+        var resolved = false;
+        try {
+          resolved = await task.resolve(false);
+        } catch (error, stackTrace) {
+          Logger.error('Snack Chat 묶음 메시지 결과 확인 실패', error, stackTrace);
+        }
+        if (shouldParkSnackChatOutbound(
+          sessionValid: task.isValid(),
+          resolved: resolved,
+          acknowledged: lane.acknowledgedMessageId == task.messageId,
+        )) {
+          lane.unresolvedMessageId = task.messageId;
+          held = true;
+        }
+        if (!task.completion.isCompleted) task.completion.complete(false);
+      }
+      for (final task in retrySingle.reversed) {
+        lane.pending.addFirst(task);
       }
     } catch (error, stackTrace) {
-      for (final task in tasks) {
-        if (!task.completion.isCompleted) {
-          task.completion.completeError(error, stackTrace);
+      Logger.error('Snack Chat 묶음 전송 결과 확인 실패', error, stackTrace);
+      if (tasks.isEmpty) return;
+      final first = tasks.first;
+      var resolved = false;
+      if (first.isValid()) {
+        try {
+          resolved = await first.resolve(false);
+        } catch (resolutionError, resolutionStack) {
+          Logger.error(
+              'Snack Chat 묶음 첫 메시지 확인 실패', resolutionError, resolutionStack);
         }
+      }
+      if (shouldParkSnackChatOutbound(
+        sessionValid: first.isValid(),
+        resolved: resolved,
+        acknowledged: lane.acknowledgedMessageId == first.messageId,
+      )) {
+        lane.unresolvedMessageId = first.messageId;
+      }
+      if (!first.completion.isCompleted) first.completion.complete(false);
+      for (final task in tasks.skip(1).toList().reversed) {
+        if (!task.isValid()) {
+          if (!task.completion.isCompleted) task.completion.complete(null);
+          continue;
+        }
+        task.forceSingle = true;
+        lane.pending.addFirst(task);
       }
     }
   }
@@ -4308,7 +4502,7 @@ class _SnackChatScreenState extends State<SnackChatScreen>
       messageId,
       send,
       secureTextRequest: secureTextRequest,
-      holdUncertain: protectUncertainCommit && secureTextRequest == null,
+      holdUncertain: protectUncertainCommit,
     );
     var uiTimedOut = false;
     final reportedSuccess = await completion.timeout(
@@ -4324,7 +4518,7 @@ class _SnackChatScreenState extends State<SnackChatScreen>
                   ?.pending
                   .any((task) => task.messageId == messageId) ??
               false);
-      if (!protectUncertainCommit || secureTextRequest != null) {
+      if (!protectUncertainCommit) {
         unawaited(() async {
           try {
             final lateResult = await completion;
@@ -4356,7 +4550,7 @@ class _SnackChatScreenState extends State<SnackChatScreen>
       return;
     }
     if (reportedSuccess == null) return;
-    if (protectUncertainCommit && secureTextRequest == null) return;
+    if (protectUncertainCommit) return;
     await _resolveSendOutcome(
       messageId,
       reportedSuccess,
@@ -6805,8 +6999,6 @@ class _SnackChatScreenState extends State<SnackChatScreen>
                   date: message.createdAt,
                   languageCode: Localizations.localeOf(context).languageCode,
                 ),
-              if (message.id == _firstUnreadMessageId)
-                _buildUnreadDivider(isKo: isKo),
               SnackChatOutgoingEntrance(
                 key: ValueKey<String>('snack-outgoing-${message.id}'),
                 animateOnMount:
@@ -8456,103 +8648,6 @@ class _SnackChatScreenState extends State<SnackChatScreen>
         .toList(growable: false);
   }
 
-  Future<void> _openUnreadSummary(SnackChatUnreadSummaryPlan plan) async {
-    if (_unreadSummaryLoading || !plan.shouldShowButton) return;
-    final firstUnreadSequence = _firstUnreadSequence;
-    final latestSequence = _currentUnreadSummaryLatestSequence();
-    if (firstUnreadSequence == null || latestSequence < firstUnreadSequence) {
-      return;
-    }
-
-    final roomId = widget.snackChatId;
-    final isKo = Localizations.localeOf(context).languageCode == 'ko';
-    final uiLanguageCode = Localizations.localeOf(context).languageCode;
-    final targetLanguage = uiLanguageCode == 'zh'
-        ? 'zh'
-        : uiLanguageCode == 'en'
-            ? 'en'
-            : 'ko';
-    final requestGeneration = ++_unreadSummaryRequestGeneration;
-    setState(() => _unreadSummaryLoading = true);
-    try {
-      late final List<SnackChatUnreadSummaryItem> items;
-      late final int messageCount;
-      var sections = const <SnackChatUnreadSummarySection>[];
-      DateTime? sourceStartedAt;
-      DateTime? sourceEndedAt;
-      var overview = '';
-      var otherConversationSummary = '';
-      if (plan.useLocalSummary) {
-        items = _localUnreadSummaryItems(
-          plan,
-          isKo: isKo,
-          targetLanguage: targetLanguage,
-          maximumItems: maximumLocalSummaryMessages,
-        );
-        messageCount = plan.declaredUnreadCount;
-      } else {
-        final result = await _snackChatService.summarizeUnreadRange(
-          snackChatId: roomId,
-          firstUnreadSequence: firstUnreadSequence,
-          latestSequence: latestSequence,
-          targetLanguage: targetLanguage,
-        );
-        items = result.items;
-        sections = result.sections;
-        messageCount = result.messageCount;
-        sourceStartedAt = result.sourceStartedAt;
-        sourceEndedAt = result.sourceEndedAt;
-        overview = result.isFallback ? '' : result.overview;
-        otherConversationSummary = result.otherConversationSummary;
-      }
-      if (!mounted ||
-          requestGeneration != _unreadSummaryRequestGeneration ||
-          roomId != widget.snackChatId ||
-          items.isEmpty) {
-        return;
-      }
-      setState(() => _unreadSummaryLoading = false);
-      await showSnackChatUnreadSummarySheet(
-        context,
-        items: items,
-        messageCount: messageCount,
-        sections: sections,
-        sourceStartedAt: sourceStartedAt,
-        sourceEndedAt: sourceEndedAt,
-        overview: overview,
-        otherConversationSummary: otherConversationSummary,
-        onOpenSource: _openSummarySource,
-      );
-    } on SnackChatSummaryNotEnoughContentException {
-      if (mounted && requestGeneration == _unreadSummaryRequestGeneration) {
-        _showNotice(
-          (isChineseUi(context)
-              ? '关键信息不足，暂无法总结。'
-              : isKo
-                  ? '요약할 핵심 내용이 충분하지 않아요. 새 메시지를 확인해 주세요.'
-                  : 'There is not enough key information to summarize.'),
-        );
-      }
-    } catch (error, stackTrace) {
-      Logger.error('스낵챗 안 읽은 대화 요약 실패', error, stackTrace);
-      if (mounted && requestGeneration == _unreadSummaryRequestGeneration) {
-        _showNotice(
-          (isChineseUi(context)
-              ? '总结加载失败，请重试。'
-              : isKo
-                  ? '요약을 불러오지 못했어요. 다시 시도해 주세요.'
-                  : 'Could not load the summary. Please try again.'),
-        );
-      }
-    } finally {
-      if (mounted &&
-          requestGeneration == _unreadSummaryRequestGeneration &&
-          _unreadSummaryLoading) {
-        setState(() => _unreadSummaryLoading = false);
-      }
-    }
-  }
-
   Future<void> _openSummarySource(String messageId) async {
     if (!mounted || messageId.isEmpty) return;
     await _jumpToMessage(messageId);
@@ -9238,73 +9333,6 @@ class _SnackChatScreenState extends State<SnackChatScreen>
         setState(() => _todaySummaryLoading = false);
       }
     }
-  }
-
-  Widget _buildUnreadDivider({required bool isKo}) {
-    final summaryPlan = _currentUnreadSummaryPlan();
-    return Padding(
-      padding: EdgeInsets.symmetric(
-        vertical: context.rs(10).clamp(8, 13).toDouble(),
-        horizontal: context.rs(6).clamp(4, 8).toDouble(),
-      ),
-      child: MediaQuery.withClampedTextScaling(
-        maxScaleFactor: 1.2,
-        child: Row(
-          children: [
-            const Spacer(),
-            if (summaryPlan.shouldShowButton)
-              Tooltip(
-                message: (isChineseUi(context)
-                    ? '查看错过的消息'
-                    : isKo
-                        ? '놓친 대화 정리 보기'
-                        : 'View what you missed'),
-                child: TextButton.icon(
-                  key: const ValueKey('snack_unread_summary_button'),
-                  onPressed: _unreadSummaryLoading
-                      ? null
-                      : () => _openUnreadSummary(summaryPlan),
-                  style: TextButton.styleFrom(
-                    foregroundColor: const Color(0xFF087BB5),
-                    disabledForegroundColor: const Color(0xFF76AFCB),
-                    minimumSize: const Size(0, 28),
-                    maximumSize: const Size(double.infinity, 28),
-                    padding: const EdgeInsets.symmetric(horizontal: 5),
-                    tapTargetSize: MaterialTapTargetSize.shrinkWrap,
-                    visualDensity: VisualDensity.compact,
-                  ),
-                  icon: _unreadSummaryLoading
-                      ? const SizedBox.square(
-                          dimension: 13,
-                          child: CircularProgressIndicator(
-                            strokeWidth: 1.7,
-                            color: Color(0xFF76AFCB),
-                          ),
-                        )
-                      : const Icon(Icons.notes_rounded, size: 14),
-                  label: Text(
-                    (isChineseUi(context)
-                        ? '总结'
-                        : isKo
-                            ? '정리보기'
-                            : 'Recap'),
-                    maxLines: 1,
-                    softWrap: false,
-                    style: TextStyle(
-                      fontFamily: uiFontFamily(context, 'Inter'),
-                      fontFamilyFallback: const ['NotoSansKR'],
-                      fontSize: context.rf(11).clamp(10.5, 12).toDouble(),
-                      fontWeight: FontWeight.w700,
-                      height: 1,
-                    ),
-                  ),
-                ),
-              ),
-            const Spacer(),
-          ],
-        ),
-      ),
-    );
   }
 
   void _handleRoutePop(SnackChat room) {

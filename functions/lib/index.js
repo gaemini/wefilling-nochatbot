@@ -3,10 +3,10 @@
 // Cloud Functions 메인 진입점
 // 친구요청 관련 함수들을 export
 Object.defineProperty(exports, "__esModule", { value: true });
-exports.deleteSnapshot = exports.replySnapshotComment = exports.deleteSnapshotFeedComment = exports.createSnapshotFeedComment = exports.sendSnapshotComment = exports.toggleSnapshotReaction = exports.getSnapshotCommentLetter = exports.getSnapshotCommentStatus = exports.getSnapshotReactionStatus = exports.getSnapshotViewers = exports.recordSnapshotView = exports.updateSnapshotVisibility = exports.syncMySnapshotFeed = exports.createSnapshot = exports.getSnapshotServerTime = exports.translateContentBatch = exports.backfillHanyangVerificationStates = exports.reconcileMyHanyangVerificationStatus = exports.backfillInstagramPreviewThumbnails = exports.persistInstagramPreviewThumbnail = exports.resolveSharedLink = exports.reconcileDMUnreadTotalSecure = exports.onDMReactionWritten = exports.onDMReceiptCleanupRequested = exports.markDMConversationReadBoundedSecure = exports.markDMConversationReadSecure = exports.searchMeetupsSecure = exports.searchPostsSecure = exports.onMeetupSearchSourceWritten = exports.onPostSearchSourceWritten = exports.expireTimedMeetups = exports.confirmMeetupSecure = exports.createMeetupSecure = exports.getExternalShareComposerContext = exports.createExternalSharePost = exports.createPostSecure = exports.updateMyOrganizationProfile = exports.searchOrganizationsSecure = exports.previewOrganizationInvite = exports.prepareOrganizationPasswordInvite = exports.onOrganizationManagerAuthDeleted = exports.getMyOrganizationAccess = exports.acceptOrganizationInvite = exports.updateMyNicknameSecure = exports.onDeletedAuthUserNicknameCleanup = exports.checkNicknameAvailability = exports.validateSnackChatMentions = exports.getSnackChatMentionCandidates = exports.getSnackChatMessageContext = exports.querySnackChatMessages = void 0;
-exports.onUserRegistrationCompleted = exports.onUserCreated = exports.backfillEmailClaims = exports.cancelPendingEmailSignup = exports.discardIncompleteRegistration = exports.finalizeEnglishSocialSignup = exports.completeHanyangProfileVerification = exports.finalizeHanyangEmailVerification = exports.finalizePendingRegistration = exports.ensureRegistrationProgress = exports.onUserProfileUpdatedPropagateAuthorInfo = exports.reconcileNotificationUnreadTotalSecure = exports.getUserProfileStats = exports.onSnackChatVoteWritten = exports.onSnackChatReactionWritten = exports.notifyClosedSnackChatPolls = exports.onSnackChatMessageCreated = exports.onSnackChatRoomWritten = exports.cleanupExpiredSnackChatFiles = exports.onSnackChatFileUploadJobDeleted = exports.onSnackChatFileMessageDeleted = exports.cancelSnackChatFileUpload = exports.commitSnackChatFileUpload = exports.prepareSnackChatFileUpload = exports.reportSnackChatMessage = exports.fetchSnackChatLinkPreview = exports.sendSnackChatTextMessagesSecure = exports.createSnackChatAnnouncementSecure = exports.updateSnackChatTitleSecure = exports.onSnackChatRoomDeletedCascade = exports.onMeetupParticipantDeletedSnackChatCleanup = exports.onDeletedUserDocumentSnackChatCleanup = exports.onDeletedAuthUserSnackChatCleanup = exports.reconcileSnackChatParticipantsSecure = exports.leaveSnackChatSecure = exports.markSnackChatReadSecure = exports.summarizeSnackChatUnread = exports.getSnackChatEntryContext = exports.ensureSnackChatMembershipSecure = exports.leaveMeetupParticipationSecure = exports.kickMeetupParticipantSecure = exports.joinMeetupSnackChatSecure = exports.inviteSnackChatParticipants = exports.createMeetupSnackChatSecure = exports.createSnackChatSecure = exports.searchSnackChatInviteUsers = exports.searchSnackChatInviteUserById = exports.onSnapshotBlockChanged = exports.cleanupOrphanSnapshotUploads = exports.cleanupExpiredSnapshots = void 0;
-exports.onReviewRequestUpdated = exports.onReviewRequestCreated = exports.onMeetupReviewProfilePostDeletedRestore = exports.onMeetupReviewCreatedEnsureProfile = exports.reconcileMyAcceptedReviewProfiles = exports.onMeetupCreated = exports.onMeetupParticipantJoined = exports.onNotificationDeletedSyncUnreadCounter = exports.onNotificationUpdatedSyncUnreadCounter = exports.onNotificationCreated = exports.unregisterFcmToken = exports.registerFcmToken = exports.deleteAccountImmediately = exports.onReportCreated = exports.reportUser = exports.unhideAnonymousComment = exports.hideAnonymousComment = exports.unblockAnonymousPost = exports.blockAnonymousPost = exports.unblockUser = exports.blockUser = exports.unfriend = exports.rejectFriendRequest = exports.acceptFriendRequest = exports.cancelFriendRequest = exports.sendFriendRequest = exports.onDeletedAuthUserFriendshipCleanup = exports.onFriendshipWrittenReconcileCounts = exports.getPublicProfileReviewPreview = exports.getProfileFriendNetwork = exports.searchSocialUsersByInterest = exports.searchSocialUsers = exports.cleanupExpiredEmailVerifications = exports.createGeneralEmailSignup = exports.verifyEmailCode = exports.sendEmailVerificationCode = exports.resetPasswordWithCode = exports.requestPasswordResetCode = exports.onPostLiked = exports.onCommentLiked = exports.onCommentSoftDeleted = exports.onCommentDeleted = exports.onCommentCreated = exports.onMeetupDeleted = exports.onMeetupUpdated = exports.onAdBannerChanged = exports.onFriendRequestCreated = exports.joinMeetupSecure = exports.resolveMyReadableJoinedMeetupIds = exports.onPrivatePostCreated = void 0;
-exports.onDMMessageRead = exports.onDMMessageCreated = exports.onMeetupReviewCreatedDeleteMeetupChat = exports.onMeetupReviewDeleted = exports.onMeetupReviewUpdated = void 0;
+exports.replySnapshotComment = exports.deleteSnapshotFeedComment = exports.createSnapshotFeedComment = exports.sendSnapshotComment = exports.toggleSnapshotReaction = exports.getSnapshotCommentLetter = exports.getSnapshotCommentStatus = exports.getSnapshotReactionStatus = exports.getSnapshotViewers = exports.recordSnapshotView = exports.updateSnapshotVisibility = exports.syncMySnapshotFeed = exports.createSnapshot = exports.getSnapshotServerTime = exports.translateContentBatch = exports.backfillHanyangVerificationStates = exports.reconcileMyHanyangVerificationStatus = exports.backfillInstagramPreviewThumbnails = exports.persistInstagramPreviewThumbnail = exports.resolveSharedLink = exports.reconcileDMUnreadTotalSecure = exports.onDMReactionWritten = exports.onDMReceiptCleanupRequested = exports.leaveDMConversationSecure = exports.markDMConversationReadBoundedSecure = exports.markDMConversationReadSecure = exports.searchMeetupsSecure = exports.searchPostsSecure = exports.onMeetupSearchSourceWritten = exports.onPostSearchSourceWritten = exports.expireTimedMeetups = exports.confirmMeetupSecure = exports.createMeetupSecure = exports.getExternalShareComposerContext = exports.createExternalSharePost = exports.createPostSecure = exports.updateMyOrganizationProfile = exports.searchOrganizationsSecure = exports.previewOrganizationInvite = exports.prepareOrganizationPasswordInvite = exports.onOrganizationManagerAuthDeleted = exports.getMyOrganizationAccess = exports.acceptOrganizationInvite = exports.updateMyNicknameSecure = exports.onDeletedAuthUserNicknameCleanup = exports.checkNicknameAvailability = exports.validateSnackChatMentions = exports.getSnackChatMentionCandidates = exports.getSnackChatMessageContext = exports.querySnackChatMessages = void 0;
+exports.onUserCreated = exports.backfillEmailClaims = exports.cancelPendingEmailSignup = exports.discardIncompleteRegistration = exports.finalizeEnglishSocialSignup = exports.completeHanyangProfileVerification = exports.finalizeHanyangEmailVerification = exports.finalizePendingRegistration = exports.ensureRegistrationProgress = exports.onUserProfileUpdatedPropagateAuthorInfo = exports.reconcileNotificationUnreadTotalSecure = exports.getUserProfileStats = exports.onSnackChatVoteWritten = exports.onSnackChatReactionWritten = exports.notifyClosedSnackChatPolls = exports.onSnackChatMessageCreated = exports.onSnackChatRoomWritten = exports.cleanupExpiredSnackChatFiles = exports.onSnackChatFileUploadJobDeleted = exports.onSnackChatFileMessageDeleted = exports.cancelSnackChatFileUpload = exports.commitSnackChatFileUpload = exports.prepareSnackChatFileUpload = exports.reportSnackChatMessage = exports.fetchSnackChatLinkPreview = exports.sendSnackChatTextMessagesSecure = exports.createSnackChatAnnouncementSecure = exports.updateSnackChatTitleSecure = exports.onSnackChatRoomDeletedCascade = exports.onMeetupParticipantDeletedSnackChatCleanup = exports.onDeletedUserDocumentSnackChatCleanup = exports.onDeletedAuthUserSnackChatCleanup = exports.reconcileSnackChatParticipantsSecure = exports.leaveSnackChatSecure = exports.markSnackChatReadSecure = exports.summarizeSnackChatUnread = exports.getSnackChatEntryContext = exports.ensureSnackChatMembershipSecure = exports.leaveMeetupParticipationSecure = exports.kickMeetupParticipantSecure = exports.joinMeetupSnackChatSecure = exports.inviteSnackChatParticipants = exports.createMeetupSnackChatSecure = exports.createSnackChatSecure = exports.searchSnackChatInviteUsers = exports.searchSnackChatInviteUserById = exports.onSnapshotBlockChanged = exports.cleanupOrphanSnapshotUploads = exports.cleanupExpiredSnapshots = exports.deleteSnapshot = void 0;
+exports.onReviewRequestCreated = exports.onMeetupReviewProfilePostDeletedRestore = exports.onMeetupReviewCreatedEnsureProfile = exports.reconcileMyAcceptedReviewProfiles = exports.onMeetupCreated = exports.onMeetupParticipantJoined = exports.onNotificationDeletedSyncUnreadCounter = exports.onNotificationUpdatedSyncUnreadCounter = exports.onNotificationCreated = exports.unregisterFcmToken = exports.registerFcmToken = exports.deleteAccountImmediately = exports.onReportCreated = exports.reportUser = exports.unhideAnonymousComment = exports.hideAnonymousComment = exports.unblockAnonymousPost = exports.blockAnonymousPost = exports.unblockUser = exports.blockUser = exports.unfriend = exports.rejectFriendRequest = exports.acceptFriendRequest = exports.cancelFriendRequest = exports.sendFriendRequest = exports.onDeletedAuthUserFriendshipCleanup = exports.onFriendshipWrittenReconcileCounts = exports.getPublicProfileReviewPreview = exports.getProfileFriendNetwork = exports.searchSocialUsersByInterest = exports.searchSocialUsers = exports.cleanupExpiredEmailVerifications = exports.createGeneralEmailSignup = exports.verifyEmailCode = exports.sendEmailVerificationCode = exports.resetPasswordWithCode = exports.requestPasswordResetCode = exports.onPostLiked = exports.onCommentLiked = exports.onCommentSoftDeleted = exports.onCommentDeleted = exports.onCommentCreated = exports.onMeetupDeleted = exports.onMeetupUpdated = exports.onAdBannerChanged = exports.onFriendRequestCreated = exports.joinMeetupSecure = exports.resolveMyReadableJoinedMeetupIds = exports.onPrivatePostCreated = exports.onUserRegistrationCompleted = void 0;
+exports.onDMMessageRead = exports.onDMMessageCreated = exports.onMeetupReviewCreatedDeleteMeetupChat = exports.onMeetupReviewDeleted = exports.onMeetupReviewUpdated = exports.onReviewRequestUpdated = void 0;
 const functions = require("firebase-functions");
 const admin = require("firebase-admin");
 const chat_push_presentation_1 = require("./chat_push_presentation");
@@ -55,6 +55,7 @@ const dm_read_policy_1 = require("./dm_read_policy");
 var dm_chat_1 = require("./dm_chat");
 Object.defineProperty(exports, "markDMConversationReadSecure", { enumerable: true, get: function () { return dm_chat_1.markDMConversationReadSecure; } });
 Object.defineProperty(exports, "markDMConversationReadBoundedSecure", { enumerable: true, get: function () { return dm_chat_1.markDMConversationReadBoundedSecure; } });
+Object.defineProperty(exports, "leaveDMConversationSecure", { enumerable: true, get: function () { return dm_chat_1.leaveDMConversationSecure; } });
 Object.defineProperty(exports, "onDMReceiptCleanupRequested", { enumerable: true, get: function () { return dm_chat_1.onDMReceiptCleanupRequested; } });
 Object.defineProperty(exports, "onDMReactionWritten", { enumerable: true, get: function () { return dm_chat_1.onDMReactionWritten; } });
 Object.defineProperty(exports, "reconcileDMUnreadTotalSecure", { enumerable: true, get: function () { return dm_chat_1.reconcileDMUnreadTotalSecure; } });
@@ -303,40 +304,40 @@ async function filterPushTokensOwnedByUser(userId, candidateTokens) {
         return [];
     }
 }
-async function cleanInvalidPushTokensForUser(userId, userData, rawTokens) {
+async function cleanInvalidPushTokensForUser(userId, _userData, rawTokens) {
     const tokens = Array.from(new Set(rawTokens
         .map((token) => normalizeUidLoose(token))
         .filter((token) => token.length > 0)));
     if (tokens.length === 0)
         return;
     const userRef = db.collection('users').doc(userId);
-    const remaining = Array.isArray(userData.fcmTokens) ?
-        userData.fcmTokens
-            .map((token) => normalizeUidLoose(token))
-            .filter((token) => token.length > 0 && !tokens.includes(token)) :
-        [];
-    const updates = {
-        fcmTokens: admin.firestore.FieldValue.arrayRemove(...tokens),
-        fcmTokenUpdatedAt: admin.firestore.FieldValue.serverTimestamp(),
-    };
-    if (tokens.includes(normalizeUidLoose(userData.fcmToken))) {
-        updates.fcmToken = remaining.length > 0 ?
-            remaining[0] : admin.firestore.FieldValue.delete();
-    }
-    await userRef.update(updates).catch((error) => {
-        if ((error === null || error === void 0 ? void 0 : error.code) !== 5 &&
-            (error === null || error === void 0 ? void 0 : error.code) !== 'not-found')
-            throw error;
+    const tokenRefs = tokens.map((token) => db.collection('fcm_tokens').doc(token));
+    await db.runTransaction(async (tx) => {
+        const [user, ...registrations] = await Promise.all([
+            tx.get(userRef), ...tokenRefs.map((ref) => tx.get(ref)),
+        ]);
+        if (user.exists) {
+            const latest = user.data();
+            const remaining = Array.isArray(latest.fcmTokens) ?
+                latest.fcmTokens.filter((token) => typeof token === 'string' && !tokens.includes(token)) : [];
+            const updates = {
+                fcmTokens: admin.firestore.FieldValue.arrayRemove(...tokens),
+                fcmTokenUpdatedAt: admin.firestore.FieldValue.serverTimestamp(),
+            };
+            if (tokens.includes(normalizeUidLoose(latest.fcmToken))) {
+                updates.fcmToken = remaining.length > 0 ?
+                    remaining[0] : admin.firestore.FieldValue.delete();
+            }
+            tx.update(userRef, updates);
+        }
+        registrations.forEach((registration, index) => {
+            if (registration.exists && registration.get('userId') === userId) {
+                tx.delete(tokenRefs[index]);
+            }
+            const deviceId = crypto.createHash('sha256').update(tokens[index]).digest('hex');
+            tx.delete(userRef.collection('devices').doc(deviceId));
+        });
     });
-    const cleanup = db.batch();
-    tokens.forEach((token) => {
-        // FCM has confirmed this installation token itself is invalid, so remove
-        // both canonical and compatibility references immediately.
-        cleanup.delete(db.collection('fcm_tokens').doc(token));
-        const deviceId = crypto.createHash('sha256').update(token).digest('hex');
-        cleanup.delete(userRef.collection('devices').doc(deviceId));
-    });
-    await cleanup.commit();
 }
 function normalizeUidLoose(v) {
     return (v !== null && v !== void 0 ? v : '').toString().trim();
@@ -7036,10 +7037,18 @@ exports.onNotificationCreated = functions
                     const curNoti = toNonNegativeInt(d.notificationUnreadTotal);
                     const curDm = toNonNegativeInt(d.dmUnreadTotal);
                     if (marker.exists) {
+                        const attempts = toNonNegativeInt(marker.get('pushAttemptCount'));
+                        const retryPush = marker.get('pushStatus') === 'pending' &&
+                            attempts < 3 && currentNotification.exists &&
+                            currentNotification.get('isRead') !== true;
+                        if (retryPush)
+                            tx.update(counterMarkerRef, {
+                                pushAttemptCount: attempts + 1,
+                            });
                         return {
                             notiUnreadTotal: curNoti,
                             dmUnreadTotal: curDm,
-                            shouldSend: false,
+                            shouldSend: retryPush,
                         };
                     }
                     // 새 알림 문서 생성 트리거이므로 기본 정책상 isRead=false.
@@ -7068,6 +7077,10 @@ exports.onNotificationCreated = functions
                         userId,
                         applied: type !== 'dm_received' && isCurrentUnread,
                         counterSettled: type === 'dm_received' || !isCurrentUnread,
+                        pushStatus: isCurrentUnread ? 'pending' : 'read',
+                        pushAttemptCount: isCurrentUnread ? 1 : 0,
+                        pushSucceededTokens: [],
+                        pushTerminalTokens: [],
                         createdAt: admin.firestore.FieldValue.serverTimestamp(),
                     });
                     return {
@@ -7168,6 +7181,7 @@ exports.onNotificationCreated = functions
         }
         if (totalTokens === 0) {
             runtime_logging_1.runtimeLogsEnabled && (0, runtime_logging_1.runtimeInfo)('FCM 토큰이 없어 카운터만 반영하고 푸시는 전송하지 않습니다.');
+            await counterMarkerRef.update({ pushStatus: 'no-tokens' });
             return null;
         }
         // badge 값: 계산된 실제 값 사용 (0이면 0으로, null이면 badge 필드 생략)
@@ -7187,7 +7201,8 @@ exports.onNotificationCreated = functions
         const sendForLang = async (lang, tokens) => {
             const current = await snapshot.ref.get();
             if (!current.exists || current.get('isRead') === true) {
-                return { successCount: 0, failureCount: 0, responses: [] };
+                await counterMarkerRef.update({ pushStatus: 'read' });
+                return null;
             }
             const localized = buildLocalizedNotificationText({
                 lang,
@@ -7223,16 +7238,59 @@ exports.onNotificationCreated = functions
                     },
                 },
             };
-            const res = await admin.messaging().sendEachForMulticast(pushMessage);
+            let res;
+            try {
+                res = await admin.messaging().sendEachForMulticast(pushMessage);
+            }
+            catch (error) {
+                // A batch-level error may have an unknown delivery outcome.
+                await counterMarkerRef.update({ pushStatus: 'uncertain' });
+                console.error('Notification FCM batch outcome uncertain; replay suppressed.', error);
+                return null;
+            }
             runtime_logging_1.runtimeLogsEnabled && (0, runtime_logging_1.runtimeInfo)(`✅ 알림 전송(${lang}) 결과: ${res.successCount}/${tokens.length} (userId=${userId})`);
             return res;
         };
         const responses = [];
-        if (tokenGroups.ko.length > 0) {
-            responses.push({ lang: 'ko', tokens: tokenGroups.ko, res: await sendForLang('ko', tokenGroups.ko) });
-        }
-        if (tokenGroups.en.length > 0) {
-            responses.push({ lang: 'en', tokens: tokenGroups.en, res: await sendForLang('en', tokenGroups.en) });
+        let transientFailures = false;
+        for (const lang of ['ko', 'en']) {
+            const marker = await counterMarkerRef.get();
+            const completed = new Set([
+                ...(Array.isArray(marker.get('pushSucceededTokens')) ?
+                    marker.get('pushSucceededTokens') : []),
+                ...(Array.isArray(marker.get('pushTerminalTokens')) ?
+                    marker.get('pushTerminalTokens') : []),
+            ]);
+            const pending = tokenGroups[lang].filter((token) => !completed.has(token));
+            if (pending.length === 0)
+                continue;
+            const res = await sendForLang(lang, pending);
+            if (res == null)
+                return null;
+            responses.push({ lang, tokens: pending, res });
+            const successful = [];
+            const terminal = [];
+            res.responses.forEach((item, index) => {
+                var _a;
+                if (item.success) {
+                    successful.push(pending[index]);
+                    return;
+                }
+                const code = (_a = item.error) === null || _a === void 0 ? void 0 : _a.code;
+                if (code === 'messaging/server-unavailable' ||
+                    code === 'messaging/internal-error' ||
+                    code === 'messaging/quota-exceeded') {
+                    transientFailures = true;
+                }
+                else {
+                    terminal.push(pending[index]);
+                }
+            });
+            await counterMarkerRef.update(Object.assign(Object.assign(Object.assign({}, (successful.length > 0 ? {
+                pushSucceededTokens: admin.firestore.FieldValue.arrayUnion(...successful),
+            } : {})), (terminal.length > 0 ? {
+                pushTerminalTokens: admin.firestore.FieldValue.arrayUnion(...terminal),
+            } : {})), { pushLastAttemptAt: admin.firestore.FieldValue.serverTimestamp() }));
         }
         // 실패 토큰 자동 정리 (iOS/Android 공통)
         const invalidTokens = [];
@@ -7251,32 +7309,17 @@ exports.onNotificationCreated = functions
             });
         }
         if (invalidTokens.length > 0) {
-            const userRef = db.collection('users').doc(userId);
-            const allTokens = [...tokenGroups.ko, ...tokenGroups.en];
-            const remaining = allTokens.filter((t) => !invalidTokens.includes(t));
-            // fcm_tokens 레지스트리에서도 제거
-            const delBatch = db.batch();
-            invalidTokens.forEach((t) => delBatch.delete(db.collection('fcm_tokens').doc(t)));
-            await delBatch.commit().catch((e) => console.warn('⚠️ fcm_tokens 정리 실패(무시):', e));
-            // users.fcmTokens 배열에서 제거 (chunk로 안전하게 처리)
-            const chunkSize = 10;
-            for (let i = 0; i < invalidTokens.length; i += chunkSize) {
-                const chunk = invalidTokens.slice(i, i + chunkSize);
-                await userRef.update({
-                    fcmTokens: admin.firestore.FieldValue.arrayRemove(...chunk),
-                }).catch(() => { });
-            }
-            // 레거시 단일 토큰이 무효면 대체/삭제
-            const legacyToken = userData === null || userData === void 0 ? void 0 : userData.fcmToken;
-            if (typeof legacyToken === 'string' && legacyToken.length > 0 &&
-                invalidTokens.includes(legacyToken)) {
-                await userRef.update({
-                    fcmToken: remaining.length > 0
-                        ? remaining[0]
-                        : admin.firestore.FieldValue.delete(),
-                }).catch(() => { });
-            }
+            await cleanInvalidPushTokensForUser(String(userId), userData, invalidTokens).catch((error) => console.warn('Invalid notification token cleanup failed.', error));
             runtime_logging_1.runtimeLogsEnabled && (0, runtime_logging_1.runtimeInfo)(`🧹 무효 FCM 토큰 정리: ${invalidTokens.length}개 (userId=${userId})`);
+        }
+        const finalMarker = await counterMarkerRef.get();
+        const attempts = toNonNegativeInt(finalMarker.get('pushAttemptCount'));
+        await counterMarkerRef.update({
+            pushStatus: transientFailures && attempts < 3 ? 'pending' :
+                transientFailures ? 'exhausted' : 'settled',
+        });
+        if (transientFailures && attempts < 3) {
+            throw new Error('Notification FCM transient token failure; retry pending tokens.');
         }
         return null;
     }
@@ -8211,6 +8254,16 @@ exports.onDMMessageCreated = functions
                 }
             });
         }
+        if (dmPushEnabled) {
+            try {
+                const registered = await db.collection('fcm_tokens')
+                    .where('userId', '==', recipientId).limit(500).get();
+                registered.docs.forEach((document) => tokenSet.add(document.id));
+            }
+            catch (error) {
+                console.warn('DM token registry lookup failed; retaining legacy tokens.', error);
+            }
+        }
         const tokens = await filterPushTokensOwnedByUser(recipientId, Array.from(tokenSet));
         const hasTokens = tokens.length > 0;
         if (!dmPushEnabled) {
@@ -8246,7 +8299,18 @@ exports.onDMMessageCreated = functions
                 // 트랜잭션 규칙: 모든 get()을 set()/update() 전에 수행해야 함
                 const eventSnap = await tx.get(dmCreateEventRef);
                 if (eventSnap.exists) {
-                    return { shouldSend: false, dmUnreadTotal: 0 };
+                    const attemptCount = toNonNegativeInt(eventSnap.get('pushAttemptCount'));
+                    const retryPush = eventSnap.get('pushStatus') === 'pending' &&
+                        attemptCount < 3;
+                    if (retryPush)
+                        tx.update(dmCreateEventRef, {
+                            pushAttemptCount: attemptCount + 1,
+                        });
+                    return {
+                        shouldSend: retryPush,
+                        dmUnreadTotal: toNonNegativeInt(eventSnap.get('dmUnreadTotal')),
+                        displayRoomUnread: toNonNegativeInt(eventSnap.get('roomUnread')),
+                    };
                 }
                 const currentMessageSnap = await tx.get(snapshot.ref);
                 const convSnap = await tx.get(convRef);
@@ -8387,6 +8451,12 @@ exports.onDMMessageCreated = functions
                     conversationId,
                     messageId,
                     applied: true,
+                    dmUnreadTotal: nextDmUnreadTotal,
+                    roomUnread: toNonNegativeInt(unreadCount[recipientId]),
+                    pushStatus: 'pending',
+                    pushAttemptCount: 1,
+                    pushSucceededTokens: [],
+                    pushTerminalTokens: [],
                     createdAt: admin.firestore.FieldValue.serverTimestamp(),
                 });
                 return {
@@ -8421,6 +8491,7 @@ exports.onDMMessageCreated = functions
         // FCM 토큰이 없으면 push는 스킵하고 종료 (unreadCount는 이미 증가됨)
         if (!hasTokens) {
             runtime_logging_1.runtimeLogsEnabled && (0, runtime_logging_1.runtimeInfo)('  ⏭️ FCM 토큰 없음 - push 스킵 (unreadCount는 정상 처리됨)');
+            await dmCreateEventRef.update({ pushStatus: 'no-tokens' });
             return null;
         }
         // 배지 계산: 일반 알림 + DM + 현재 화면에 표시되는 Snack Chat
@@ -8504,6 +8575,7 @@ exports.onDMMessageCreated = functions
         // 큐 처리 도중 새 차단이 생긴 경우 실제 FCM 전송 직전에도 억제한다.
         if (await hasBlockRelationship(senderId, recipientId)) {
             runtime_logging_1.runtimeLogsEnabled && (0, runtime_logging_1.runtimeInfo)('⏭️ 차단 관계(dm_received) - 최종 푸시 스킵');
+            await dmCreateEventRef.update({ pushStatus: 'blocked' });
             return null;
         }
         // 푸시 전송
@@ -8511,33 +8583,82 @@ exports.onDMMessageCreated = functions
         const latestDmMessage = await snapshot.ref.get();
         if (!latestDmMessage.exists || latestDmMessage.get('isRead') === true ||
             (0, dm_read_policy_1.dmCovered)(snapshot.createTime, (_c = latestDmRoom.get('lastReadAtBy')) === null || _c === void 0 ? void 0 : _c[recipientId])) {
+            await dmCreateEventRef.update({ pushStatus: 'read' });
             return null;
         }
-        const response = await admin.messaging().sendEachForMulticast((0, chat_push_presentation_1.decorateChatPush)(pushMessage, {
-            kind: 'dm', title: senderName, sender: senderName, message: messageData,
-            language: (_g = (_f = (_e = (_d = recipientSettingsDoc.data()) === null || _d === void 0 ? void 0 : _d.locale) !== null && _e !== void 0 ? _e : recipientData === null || recipientData === void 0 ? void 0 : recipientData.preferredLanguage) !== null && _f !== void 0 ? _f : recipientData === null || recipientData === void 0 ? void 0 : recipientData.language) !== null && _g !== void 0 ? _g : 'ko', unreadCount: displayRoomUnread,
-            threadKey: dmNotificationTag, messageId,
-            // Commit time is server-owned; legacy client createdAt may be skewed.
-            sentAtMillis: snapshot.createTime.toMillis(),
-        }));
-        runtime_logging_1.runtimeLogsEnabled && (0, runtime_logging_1.runtimeInfo)(`✅ DM 푸시 전송 완료: ${response.successCount}/${tokens.length}`);
+        const pushMarker = await dmCreateEventRef.get();
+        const sentTokens = new Set(Array.isArray(pushMarker.get('pushSucceededTokens')) ?
+            pushMarker.get('pushSucceededTokens') : []);
+        const terminalTokens = new Set(Array.isArray(pushMarker.get('pushTerminalTokens')) ?
+            pushMarker.get('pushTerminalTokens') : []);
+        const pendingTokens = tokens.filter((token) => !sentTokens.has(token) && !terminalTokens.has(token));
+        if (pendingTokens.length === 0) {
+            await dmCreateEventRef.update({ pushStatus: 'sent' });
+            return null;
+        }
+        pushMessage.tokens = pendingTokens;
+        let response;
+        try {
+            response = await admin.messaging().sendEachForMulticast((0, chat_push_presentation_1.decorateChatPush)(pushMessage, {
+                kind: 'dm', title: senderName, sender: senderName, message: messageData,
+                language: (_g = (_f = (_e = (_d = recipientSettingsDoc.data()) === null || _d === void 0 ? void 0 : _d.locale) !== null && _e !== void 0 ? _e : recipientData === null || recipientData === void 0 ? void 0 : recipientData.preferredLanguage) !== null && _f !== void 0 ? _f : recipientData === null || recipientData === void 0 ? void 0 : recipientData.language) !== null && _g !== void 0 ? _g : 'ko', unreadCount: displayRoomUnread,
+                threadKey: dmNotificationTag, messageId,
+                // Commit time is server-owned; legacy client createdAt may be skewed.
+                sentAtMillis: snapshot.createTime.toMillis(),
+            }));
+        }
+        catch (error) {
+            // A batch-level exception does not prove FCM accepted zero tokens.
+            // Do not blindly resend an uncertain batch on trigger replay.
+            await dmCreateEventRef.update({ pushStatus: 'uncertain' });
+            console.error('DM FCM batch outcome uncertain; automatic replay suppressed.', error);
+            return null;
+        }
+        runtime_logging_1.runtimeLogsEnabled && (0, runtime_logging_1.runtimeInfo)(`✅ DM 푸시 전송 완료: ${response.successCount}/${pendingTokens.length}`);
         // 실패 토큰 정리
+        const successfulTokens = [];
+        const transientFailures = [];
+        const newTerminalTokens = [];
         if (response.failureCount > 0) {
             const invalidTokens = [];
             response.responses.forEach((resp, idx) => {
                 var _a;
-                if (resp.success)
+                if (resp.success) {
+                    successfulTokens.push(pendingTokens[idx]);
                     return;
+                }
                 const code = (_a = resp.error) === null || _a === void 0 ? void 0 : _a.code;
                 if (code === 'messaging/registration-token-not-registered' ||
                     code === 'messaging/invalid-registration-token') {
-                    invalidTokens.push(tokens[idx]);
+                    invalidTokens.push(pendingTokens[idx]);
+                    newTerminalTokens.push(pendingTokens[idx]);
+                }
+                else if (code === 'messaging/server-unavailable' ||
+                    code === 'messaging/internal-error' ||
+                    code === 'messaging/quota-exceeded') {
+                    transientFailures.push(pendingTokens[idx]);
+                }
+                else {
+                    newTerminalTokens.push(pendingTokens[idx]);
                 }
             });
             if (invalidTokens.length > 0) {
-                await cleanInvalidPushTokensForUser(recipientId, recipientData, invalidTokens);
+                await cleanInvalidPushTokensForUser(recipientId, recipientData, invalidTokens).catch((error) => console.warn('DM invalid token cleanup failed.', error));
                 runtime_logging_1.runtimeLogsEnabled && (0, runtime_logging_1.runtimeInfo)(`  🧹 무효 FCM 토큰 정리: ${invalidTokens.length}개`);
             }
+        }
+        else {
+            successfulTokens.push(...pendingTokens);
+        }
+        const attempts = toNonNegativeInt(pushMarker.get('pushAttemptCount'));
+        await dmCreateEventRef.update(Object.assign(Object.assign(Object.assign({ pushStatus: transientFailures.length > 0 && attempts < 3 ? 'pending' :
+                transientFailures.length > 0 ? 'exhausted' : 'settled' }, (successfulTokens.length > 0 ? {
+            pushSucceededTokens: admin.firestore.FieldValue.arrayUnion(...successfulTokens),
+        } : {})), (newTerminalTokens.length > 0 ? {
+            pushTerminalTokens: admin.firestore.FieldValue.arrayUnion(...newTerminalTokens),
+        } : {})), { pushLastAttemptAt: admin.firestore.FieldValue.serverTimestamp() }));
+        if (transientFailures.length > 0 && attempts < 3) {
+            throw new Error('DM FCM transient token failure; retry pending tokens.');
         }
         return null;
     }

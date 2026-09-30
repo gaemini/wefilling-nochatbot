@@ -6,6 +6,7 @@ import 'package:flutter/services.dart';
 import 'package:video_player/video_player.dart';
 
 import '../models/snapshot.dart';
+import '../l10n/ui_locale.dart';
 import '../services/snapshot_service.dart';
 import '../utils/logger.dart';
 import 'snapshot_storage_image.dart';
@@ -330,8 +331,8 @@ class _SnapshotStorageVideoState extends State<SnapshotStorageVideo>
     final thumbnail = SnapshotStorageImage(
       snapshot: widget.snapshot,
       fit: BoxFit.cover,
-      placeholderColor: Colors.black,
-      errorBackgroundColor: Colors.black,
+      placeholderColor: Colors.white,
+      errorBackgroundColor: Colors.white,
       showLoadingIndicator: false,
       fadeInDuration: const Duration(milliseconds: 120),
       decodeWidth: thumbnailDecodeWidth,
@@ -505,35 +506,38 @@ class SnapshotOverlayLayer extends StatelessWidget {
                   translation: const Offset(-.5, -.5),
                   child: ConstrainedBox(
                     constraints: BoxConstraints(maxWidth: width * .82),
-                    child: Text(
-                      overlay.text,
-                      textAlign: TextAlign.center,
-                      softWrap: true,
-                      style: TextStyle(
-                        fontFamily: 'Inter',
-                        fontFamilyFallback: const <String>['NotoSansKR'],
-                        fontSize:
-                            (width * .066).clamp(19, 34) * overlay.fontScale,
-                        fontWeight: FontWeight.w800,
-                        height: 1.2,
-                        color: overlay.lightText
-                            ? Colors.white
-                            : const Color(0xFF111111),
-                        shadows: overlay.lightText
-                            ? const <Shadow>[
-                                Shadow(
-                                  color: Color(0x99000000),
-                                  blurRadius: 8,
-                                  offset: Offset(0, 1),
-                                ),
-                              ]
-                            : const <Shadow>[
-                                Shadow(
-                                  color: Color(0x77FFFFFF),
-                                  blurRadius: 8,
-                                  offset: Offset(0, 1),
-                                ),
-                              ],
+                    child: MediaQuery.withClampedTextScaling(
+                      maxScaleFactor: 1.3,
+                      child: Text(
+                        overlay.text,
+                        textAlign: TextAlign.center,
+                        softWrap: true,
+                        style: TextStyle(
+                          fontFamily: uiFontFamily(context, 'Inter'),
+                          fontFamilyFallback: const <String>['NotoSansKR'],
+                          fontSize:
+                              (width * .066).clamp(19, 34) * overlay.fontScale,
+                          fontWeight: FontWeight.w800,
+                          height: isChineseUi(context) ? 1.3 : 1.18,
+                          color: overlay.lightText
+                              ? Colors.white
+                              : const Color(0xFF111111),
+                          shadows: overlay.lightText
+                              ? const <Shadow>[
+                                  Shadow(
+                                    color: Color(0x99000000),
+                                    blurRadius: 8,
+                                    offset: Offset(0, 1),
+                                  ),
+                                ]
+                              : const <Shadow>[
+                                  Shadow(
+                                    color: Color(0x77FFFFFF),
+                                    blurRadius: 8,
+                                    offset: Offset(0, 1),
+                                  ),
+                                ],
+                        ),
                       ),
                     ),
                   ),

@@ -25,6 +25,7 @@ import 'main_screen.dart';
 import '../l10n/app_localizations.dart';
 import '../utils/country_flag_helper.dart';
 import '../utils/logger.dart';
+import '../utils/nickname_policy.dart';
 import '../utils/responsive_helper.dart';
 import '../ui/widgets/shape_icon.dart';
 import 'requests_page.dart';
@@ -182,7 +183,7 @@ class _FriendsPageState extends State<FriendsPage> {
     final filtered = allFriends.where((friend) {
       final name = friend.displayNameOrNickname.toLowerCase();
       final nickname = friend.nickname?.toLowerCase() ?? '';
-      final searchQuery = query.toLowerCase();
+      final searchQuery = NicknamePolicy.searchQuery(query);
 
       return name.contains(searchQuery) || nickname.contains(searchQuery);
     }).toList();

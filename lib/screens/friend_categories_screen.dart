@@ -11,7 +11,6 @@ import '../services/friend_category_service.dart';
 import '../ui/widgets/shape_icon.dart';
 import '../constants/app_constants.dart';
 import '../design/tokens.dart';
-import '../ui/widgets/app_fab.dart';
 import '../ui/widgets/category_shapes_illustration.dart';
 import '../providers/auth_provider.dart';
 import 'category_detail_screen.dart';
@@ -196,11 +195,6 @@ class _FriendCategoriesScreenState extends State<FriendCategoriesScreen>
           ),
         ),
       ),
-      floatingActionButton: _tabController.index == groupsTabIndex &&
-              !_categoriesLoading &&
-              _categories.isNotEmpty
-          ? _buildCategoryFab()
-          : null,
     );
   }
 
@@ -208,16 +202,6 @@ class _FriendCategoriesScreenState extends State<FriendCategoriesScreen>
     Navigator.push(
       context,
       MaterialPageRoute(builder: (_) => const CreateSnackChatScreen()),
-    );
-  }
-
-  Widget _buildCategoryFab() {
-    return AppFab(
-      icon: IconStyles.add,
-      onPressed: _handleCreateCategory,
-      semanticLabel: AppLocalizations.of(context)!.newCategoryCreate,
-      tooltip: AppLocalizations.of(context)!.addCategory,
-      heroTag: 'add_category_fab',
     );
   }
 
@@ -239,8 +223,6 @@ class _FriendCategoriesScreenState extends State<FriendCategoriesScreen>
       return _buildGroupsEmptyState();
     }
 
-    // 안드로이드 하단 네비게이션 바 높이 감지
-    final bottomPadding = MediaQuery.of(context).padding.bottom;
     final isKo = Localizations.localeOf(context).languageCode == 'ko';
     final horizontalPadding = _responsiveHorizontalPadding(context);
 
@@ -268,16 +250,79 @@ class _FriendCategoriesScreenState extends State<FriendCategoriesScreen>
           ),
           Expanded(
             child: ListView.builder(
-              padding: EdgeInsets.only(
-                bottom: bottomPadding > 0 ? bottomPadding + 72 : 72,
-              ),
-              itemCount: _categories.length,
+              padding: const EdgeInsets.only(bottom: 16),
+              itemCount: _categories.length + 1,
               itemBuilder: (context, index) {
-                return _buildCategoryCard(_categories[index]);
+                return index == _categories.length
+                    ? _buildCreateCategoryRow()
+                    : _buildCategoryCard(_categories[index]);
               },
             ),
           ),
         ],
+      ),
+    );
+  }
+
+  Widget _buildCreateCategoryRow() {
+    final isKo = Localizations.localeOf(context).languageCode == 'ko';
+    final title = isChineseUi(context)
+        ? '创建新分组'
+        : isKo
+            ? '새 그룹 만들기'
+            : 'Create a new group';
+    final subtitle = isChineseUi(context)
+        ? '选择好友并为分组命名'
+        : isKo
+            ? '친구를 골라 이름을 붙여요'
+            : 'Choose friends and give it a name';
+    final isCompact = MediaQuery.sizeOf(context).width < 360;
+
+    return Material(
+      key: const ValueKey('groups_create_row'),
+      color: BrandColors.surface,
+      child: InkWell(
+        onTap: _handleCreateCategory,
+        child: ListTile(
+          minTileHeight: 76,
+          minLeadingWidth: 40,
+          horizontalTitleGap: isCompact ? 8 : 10,
+          contentPadding: EdgeInsets.symmetric(
+            horizontal: _responsiveHorizontalPadding(context),
+            vertical: 4,
+          ),
+          leading: CustomPaint(
+            painter: _DashedGroupBorderPainter(),
+            child: const SizedBox(
+              width: 40,
+              height: 40,
+              child: Icon(Icons.person_add_outlined, size: 24),
+            ),
+          ),
+          title: Text(
+            title,
+            maxLines: 1,
+            overflow: TextOverflow.ellipsis,
+            style: TextStyle(
+              fontFamily: uiFontFamily(context, 'Inter'),
+              fontFamilyFallback: const ['NotoSansKR'],
+              fontSize: 15,
+              fontWeight: FontWeight.w700,
+              color: const Color(0xFF111827),
+            ),
+          ),
+          subtitle: Text(
+            subtitle,
+            maxLines: 2,
+            overflow: TextOverflow.ellipsis,
+            style: TextStyle(
+              fontFamily: uiFontFamily(context, 'Inter'),
+              fontFamilyFallback: const ['NotoSansKR'],
+              fontSize: 13,
+              color: const Color(0xFF6B7280),
+            ),
+          ),
+        ),
       ),
     );
   }
@@ -1007,6 +1052,32 @@ class _FriendCategoriesScreenState extends State<FriendCategoriesScreen>
         return Icons.group;
     }
   }
+}
+
+class _DashedGroupBorderPainter extends CustomPainter {
+  @override
+  void paint(Canvas canvas, Size size) {
+    final path = Path()
+      ..addRRect(RRect.fromRectAndRadius(
+        Rect.fromLTWH(0.5, 0.5, size.width - 1, size.height - 1),
+        const Radius.circular(12),
+      ));
+    final paint = Paint()
+      ..color = const Color(0xFF8A8A8A)
+      ..strokeWidth = 1
+      ..style = PaintingStyle.stroke;
+    for (final metric in path.computeMetrics()) {
+      for (var distance = 0.0; distance < metric.length; distance += 7) {
+        canvas.drawPath(
+          metric.extractPath(distance, (distance + 4).clamp(0, metric.length)),
+          paint,
+        );
+      }
+    }
+  }
+
+  @override
+  bool shouldRepaint(covariant CustomPainter oldDelegate) => false;
 }
 
 class _GroupFeatureRow extends StatelessWidget {

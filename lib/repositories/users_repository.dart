@@ -14,6 +14,7 @@ import '../models/friend_request.dart';
 import '../services/content_filter_service.dart';
 import '../services/firebase_app_check_service.dart';
 import '../utils/logger.dart';
+import '../utils/nickname_policy.dart';
 import '../utils/account_status_helper.dart';
 import '../utils/friend_request_visibility_policy.dart';
 
@@ -544,7 +545,7 @@ class UsersRepository {
 
   /// 사용자 검색 (닉네임으로만)
   Future<List<UserProfile>> searchUsers(String query, {int limit = 20}) async {
-    final trimmedQuery = query.trim();
+    final trimmedQuery = NicknamePolicy.searchQuery(query);
     final currentUid = currentUserId;
     if (trimmedQuery.isEmpty || currentUid == null) return [];
 

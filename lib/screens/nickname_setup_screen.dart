@@ -298,9 +298,9 @@ class _NicknameSetupScreenState extends State<NicknameSetupScreen>
       _isCheckingNickname = true;
       _nicknameAvailabilityError = null;
     });
+    final authProvider = context.read<AuthProvider>();
+    final requestUid = authProvider.user?.uid;
     try {
-      final authProvider = context.read<AuthProvider>();
-      final requestUid = authProvider.user?.uid;
       final result = await authProvider.checkNicknameAvailability(input);
       if (!mounted ||
           context.read<AuthProvider>().user?.uid != requestUid ||
@@ -315,8 +315,9 @@ class _NicknameSetupScreenState extends State<NicknameSetupScreen>
         _nicknameCheckedKey = result.nicknameKey;
       });
       return result.available;
-    } on NicknameAvailabilityException catch (_) {
+    } catch (error) {
       if (mounted &&
+          context.read<AuthProvider>().user?.uid == requestUid &&
           generation == _nicknameCheckGeneration &&
           inputIdentity.nicknameKey ==
               NicknamePolicy.canonicalKey(_nicknameController.text)) {
@@ -324,26 +325,45 @@ class _NicknameSetupScreenState extends State<NicknameSetupScreen>
           _isCheckingNickname = false;
           _isNicknameAvailable = null;
           _nicknameCheckedKey = null;
-          _nicknameAvailabilityError =
-              AppLocalizations.of(context)!.nicknameCheckNetworkError;
-        });
-      }
-      return false;
-    } catch (_) {
-      if (mounted &&
-          generation == _nicknameCheckGeneration &&
-          inputIdentity.nicknameKey ==
-              NicknamePolicy.canonicalKey(_nicknameController.text)) {
-        setState(() {
-          _isCheckingNickname = false;
-          _isNicknameAvailable = null;
-          _nicknameCheckedKey = null;
-          _nicknameAvailabilityError =
-              AppLocalizations.of(context)!.nicknameCheckNetworkError;
+          _nicknameAvailabilityError = _nicknameFailureMessage(
+            error is NicknameAvailabilityException
+                ? error.kind
+                : NicknameAvailabilityFailureKind.function,
+          );
         });
       }
       return false;
     }
+  }
+
+  String _nicknameFailureMessage(NicknameAvailabilityFailureKind kind) {
+    final zh = isChineseUi(context);
+    return switch (kind) {
+      NicknameAvailabilityFailureKind.network => zh
+          ? '无法连接。请检查网络后重试。'
+          : _isKorean ? '연결할 수 없습니다. 네트워크를 확인하고 다시 시도해 주세요.'
+          : 'Could not connect. Check your connection and try again.',
+      NicknameAvailabilityFailureKind.timeout => zh
+          ? '检查时间过长。请重试。'
+          : _isKorean ? '확인 시간이 초과됐습니다. 다시 시도해 주세요.'
+          : 'The check timed out. Please try again.',
+      NicknameAvailabilityFailureKind.appCheck => zh
+          ? '无法验证此应用。请确认使用官方最新版本后重试。'
+          : _isKorean ? '앱 인증에 실패했습니다. 공식 최신 버전인지 확인하고 다시 시도해 주세요.'
+          : 'App verification failed. Check that you use the latest official app and retry.',
+      NicknameAvailabilityFailureKind.unauthenticated => zh
+          ? '登录状态已失效。请重新登录。'
+          : _isKorean ? '로그인 상태를 확인할 수 없습니다. 다시 로그인해 주세요.'
+          : 'Your sign-in session could not be verified. Please sign in again.',
+      NicknameAvailabilityFailureKind.permissionDenied => zh
+          ? '目前无法执行此检查。请稍后重试或联系支持。'
+          : _isKorean ? '확인 요청이 허용되지 않았습니다. 잠시 후 재시도하거나 문의해 주세요.'
+          : 'This check was not permitted. Retry later or contact support.',
+      _ => zh
+          ? '昵称检查服务暂时不可用。请稍后重试。'
+          : _isKorean ? '닉네임 확인 서비스를 사용할 수 없습니다. 잠시 후 다시 시도해 주세요.'
+          : 'Nickname checking is temporarily unavailable. Please retry later.',
+    };
   }
 
   Future<void> _submit() async {
@@ -362,6 +382,7 @@ class _NicknameSetupScreenState extends State<NicknameSetupScreen>
     final navigator = Navigator.of(context);
     final l10n = AppLocalizations.of(context)!;
     final authProvider = context.read<AuthProvider>();
+    final submitUid = authProvider.user?.uid;
     if (nicknameIdentity == null) return;
     if (_isNicknameAvailable == false &&
         _nicknameAvailabilityError == null &&
@@ -380,7 +401,12 @@ class _NicknameSetupScreenState extends State<NicknameSetupScreen>
       );
       if (!available || !mounted) return;
     }
-    if (_isLoading) return;
+    if (!mounted || _isLoading || _isComposingNickname ||
+        context.read<AuthProvider>().user?.uid != submitUid ||
+        NicknamePolicy.canonicalKey(_nicknameController.text) !=
+            nicknameIdentity.nicknameKey) {
+      return;
+    }
     final nickname = nicknameIdentity.nickname;
     final languageCode =
         Localizations.localeOf(context).languageCode == 'ko' ? 'ko' : 'en';
@@ -574,7 +600,6 @@ class _NicknameSetupScreenState extends State<NicknameSetupScreen>
 
   @override
   Widget build(BuildContext context) {
-    final bottomInset = MediaQuery.viewInsetsOf(context).bottom;
     final screenWidth = MediaQuery.sizeOf(context).width;
     final horizontalPadding = screenWidth < 360
         ? 14.0
@@ -674,62 +699,58 @@ class _NicknameSetupScreenState extends State<NicknameSetupScreen>
             ),
           ],
         ),
-        bottomNavigationBar: AnimatedPadding(
-          duration: const Duration(milliseconds: 160),
-          padding: EdgeInsets.only(bottom: bottomInset),
-          child: SafeArea(
-            top: false,
-            // 시스템 내비게이션 영역 위에 여유를 한 번 더 확보해 Android의
-            // 3-button/gesture bar와 다음 버튼이 붙어 보이지 않게 한다.
-            minimum: EdgeInsets.fromLTRB(
-              horizontalPadding,
-              6,
-              horizontalPadding,
-              14,
-            ),
-            child: Column(
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                SizedBox(
-                  height: context.rh(50, min: 48, max: 54),
-                  width: double.infinity,
-                  child: ElevatedButton(
-                    onPressed: _isLoading ? null : _primaryAction,
-                    style: ElevatedButton.styleFrom(
-                      elevation: 0,
-                      backgroundColor: AppColors.pointColor,
-                      foregroundColor: Colors.white,
-                      disabledBackgroundColor: const Color(0xFFE2E8F0),
-                      shape: RoundedRectangleBorder(
-                        borderRadius: BorderRadius.circular(10),
-                      ),
+        bottomNavigationBar: SafeArea(
+          top: false,
+          // 시스템 내비게이션 영역 위에 여유를 한 번 더 확보해 Android의
+          // 3-button/gesture bar와 다음 버튼이 붙어 보이지 않게 한다.
+          minimum: EdgeInsets.fromLTRB(
+            horizontalPadding,
+            6,
+            horizontalPadding,
+            14,
+          ),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              SizedBox(
+                height: context.rh(50, min: 48, max: 54),
+                width: double.infinity,
+                child: ElevatedButton(
+                  onPressed: _isLoading ? null : _primaryAction,
+                  style: ElevatedButton.styleFrom(
+                    elevation: 0,
+                    backgroundColor: AppColors.pointColor,
+                    foregroundColor: Colors.white,
+                    disabledBackgroundColor: const Color(0xFFE2E8F0),
+                    shape: RoundedRectangleBorder(
+                      borderRadius: BorderRadius.circular(10),
                     ),
-                    child: _isLoading
-                        ? const SizedBox(
-                            width: 20,
-                            height: 20,
-                            child: CircularProgressIndicator(
-                              strokeWidth: 2,
-                              color: Colors.white,
-                            ),
-                          )
-                        : Text(
-                            _currentStep == 1
-                                ? ((isChineseUi(context) ? '完成注册' : _isKorean ? '가입 완료' : 'Complete signup'))
-                                : ((isChineseUi(context) ? '下一步' : _isKorean ? '다음' : 'Next')),
-                            maxLines: 1,
-                            overflow: TextOverflow.ellipsis,
-                            style: TextStyle(
-                              fontFamily: uiFontFamily(context, 'Inter'),
-                              fontFamilyFallback: const <String>['NotoSansKR'],
-                              fontSize: context.rf(15).clamp(14, 16).toDouble(),
-                              fontWeight: FontWeight.w700,
-                            ),
-                          ),
                   ),
+                  child: _isLoading
+                      ? const SizedBox(
+                          width: 20,
+                          height: 20,
+                          child: CircularProgressIndicator(
+                            strokeWidth: 2,
+                            color: Colors.white,
+                          ),
+                        )
+                      : Text(
+                          _currentStep == 1
+                              ? ((isChineseUi(context) ? '完成注册' : _isKorean ? '가입 완료' : 'Complete signup'))
+                              : ((isChineseUi(context) ? '下一步' : _isKorean ? '다음' : 'Next')),
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                          style: TextStyle(
+                            fontFamily: uiFontFamily(context, 'Inter'),
+                            fontFamilyFallback: const <String>['NotoSansKR'],
+                            fontSize: context.rf(15).clamp(14, 16).toDouble(),
+                            fontWeight: FontWeight.w700,
+                          ),
+                        ),
                 ),
-              ],
-            ),
+              ),
+            ],
           ),
         ),
       ),
@@ -780,9 +801,6 @@ class _NicknameSetupScreenState extends State<NicknameSetupScreen>
     return _stepScroll([
       ProfileSectionHeading(
         title: (isChineseUi(context) ? '先填写基本信息' : _isKorean ? '가입에 필요한 정보만 알려주세요' : 'Just the essentials'),
-        description: (isChineseUi(context) ? '照片可以稍后添加，先设置昵称和国籍。' : _isKorean
-            ? '사진은 선택 사항이에요. 닉네임과 국적만 설정하면 다음 단계로 넘어갈 수 있어요.'
-            : 'A photo is optional. Set a nickname and nationality, then move on.'),
       ),
       SizedBox(height: context.rs(20).clamp(16, 24).toDouble()),
       _profilePhotoPicker(),
@@ -808,56 +826,217 @@ class _NicknameSetupScreenState extends State<NicknameSetupScreen>
                   color: const Color(0xFF667085),
                 ),
                 helperText: _nicknameHelperText(),
-              ),
+              ).copyWith(helperMaxLines: 4),
               validator: _nicknameValidationMessage,
             ),
+            if (_nicknameAvailabilityError != null)
+              Align(
+                alignment: AlignmentDirectional.centerEnd,
+                child: TextButton(
+                  onPressed: _isCheckingNickname || _isLoading || _isComposingNickname
+                      ? null
+                      : () {
+                          _nicknameDebounce?.cancel();
+                          unawaited(_checkNickname(
+                            _nicknameController.text,
+                            generation: ++_nicknameCheckGeneration,
+                          ));
+                        },
+                  child: Text(isChineseUi(context) ? '重试' : _isKorean ? '다시 확인' : 'Retry check'),
+                ),
+              ),
             SizedBox(height: context.rs(20).clamp(16, 24).toDouble()),
             _fieldLabel((isChineseUi(context) ? '国籍' : _isKorean ? '국적' : 'Nationality')),
-            SizedBox(height: context.rs(4).clamp(2, 6).toDouble()),
-            DropdownButtonFormField<String>(
+            SizedBox(height: context.rs(8).clamp(6, 10).toDouble()),
+            FormField<String>(
               key: ValueKey<String>(
                 'signup_nationality_$_selectedNationality',
               ),
               initialValue: CountryFlagHelper.normalizeForDropdown(
                 _selectedNationality,
               ),
-              isExpanded: true,
-              menuMaxHeight: MediaQuery.sizeOf(context).height * 0.5,
-              decoration: socialProfileInputDecoration(context: context,
-                hintText: (isChineseUi(context) ? '选择国籍' : _isKorean ? '국적 선택' : 'Choose nationality'),
-                prefixIcon: Icon(
-                  Icons.public_rounded,
-                  size: context.ri(20).clamp(19, 22).toDouble(),
-                  color: const Color(0xFF667085),
-                ),
-              ),
-              items: CountryFlagHelper.dropdownCountries.map((country) {
-                return DropdownMenuItem(
-                  value: country.korean,
-                  child: Text(
-                    country.getLocalizedName(
-                        Localizations.localeOf(context).languageCode),
-                    maxLines: 1,
-                    overflow: TextOverflow.ellipsis,
-                  ),
-                );
-              }).toList(growable: false),
               validator: (value) => value == null
                   ? ((isChineseUi(context) ? '请选择国籍。' : _isKorean
                       ? '국적을 선택해 주세요.'
                       : 'Please choose your nationality.'))
                   : null,
-              onChanged: (value) {
-                if (value != null) {
-                  setState(() => _selectedNationality = value);
-                  _scheduleDraftSave();
-                }
+              builder: (field) {
+                final selectedName = CountryFlagHelper.getLocalizedCountryName(
+                  field.value ?? _selectedNationality,
+                  Localizations.localeOf(context).languageCode,
+                );
+                return Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Material(
+                      color: Colors.transparent,
+                      child: InkWell(
+                        onTap: () async {
+                          FocusScope.of(context).unfocus();
+                          final selected = await _showNationalityPicker();
+                          if (!mounted || selected == null) return;
+                          field.didChange(selected);
+                          setState(() => _selectedNationality = selected);
+                          _scheduleDraftSave();
+                        },
+                        child: Padding(
+                          padding: EdgeInsets.symmetric(
+                            vertical: context.rs(12).clamp(10, 14).toDouble(),
+                          ),
+                          child: Row(
+                            children: [
+                              Expanded(
+                                child: Text(
+                                  selectedName,
+                                  maxLines: 1,
+                                  overflow: TextOverflow.ellipsis,
+                                  style: TextStyle(
+                                    fontFamily: uiFontFamily(context, 'Inter'),
+                                    fontFamilyFallback: const <String>['NotoSansKR'],
+                                    fontSize: context.rf(15).clamp(14, 16).toDouble(),
+                                    fontWeight: FontWeight.w500,
+                                    color: const Color(0xFF111827),
+                                  ),
+                                ),
+                              ),
+                              Icon(
+                                Icons.keyboard_arrow_down_rounded,
+                                size: context.ri(22).clamp(20, 24).toDouble(),
+                                color: const Color(0xFF667085),
+                              ),
+                            ],
+                          ),
+                        ),
+                      ),
+                    ),
+                    Divider(
+                      height: 1,
+                      color: field.hasError
+                          ? const Color(0xFFDC2626)
+                          : const Color(0xFFE5E7EB),
+                    ),
+                    if (field.errorText != null)
+                      Padding(
+                        padding: const EdgeInsets.only(top: 6),
+                        child: Text(
+                          field.errorText!,
+                          style: const TextStyle(
+                            fontSize: 12,
+                            color: Color(0xFFDC2626),
+                          ),
+                        ),
+                      ),
+                  ],
+                );
               },
             ),
           ],
         ),
       ),
     ]);
+  }
+
+  Future<String?> _showNationalityPicker() {
+    final selected = _selectedNationality;
+    final countries = <CountryInfo>[
+      for (final country in CountryFlagHelper.dropdownCountries)
+        if (country.korean == selected) country,
+      for (final country in CountryFlagHelper.dropdownCountries)
+        if (country.korean != selected) country,
+    ];
+    final languageCode = Localizations.localeOf(context).languageCode;
+    final title = isChineseUi(context)
+        ? '国籍'
+        : _isKorean ? '국적' : 'Nationality';
+    return showModalBottomSheet<String>(
+      context: context,
+      isScrollControlled: true,
+      useSafeArea: true,
+      showDragHandle: true,
+      backgroundColor: Colors.white,
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
+      ),
+      builder: (sheetContext) => SafeArea(
+        top: false,
+        child: SizedBox(
+          height: MediaQuery.sizeOf(sheetContext).height * 0.72,
+          child: Center(
+            child: ConstrainedBox(
+              constraints: const BoxConstraints(maxWidth: 640),
+              child: Column(
+                children: [
+                  Padding(
+                    padding: const EdgeInsets.fromLTRB(20, 4, 20, 12),
+                    child: Align(
+                      alignment: AlignmentDirectional.centerStart,
+                      child: Text(
+                        title,
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                        style: TextStyle(
+                          fontFamily: uiFontFamily(sheetContext, 'Inter'),
+                          fontFamilyFallback: const <String>['NotoSansKR'],
+                          fontSize: sheetContext.rf(18).clamp(16, 20).toDouble(),
+                          fontWeight: FontWeight.w800,
+                          color: const Color(0xFF111827),
+                        ),
+                      ),
+                    ),
+                  ),
+                  Expanded(
+                    child: ListView.builder(
+                      itemCount: countries.length,
+                      itemExtent: (MediaQuery.textScalerOf(sheetContext).scale(17) * 1.4 + 16)
+                          .clamp(56.0, 96.0)
+                          .toDouble(),
+                      itemBuilder: (context, index) {
+                        final country = countries[index];
+                        final isSelected = country.korean == selected;
+                        return Semantics(
+                          button: true,
+                          selected: isSelected,
+                          child: InkWell(
+                            onTap: () => Navigator.pop(sheetContext, country.korean),
+                            child: Padding(
+                              padding: const EdgeInsets.symmetric(horizontal: 20),
+                              child: Row(
+                                children: [
+                                  Expanded(
+                                    child: Text(
+                                      country.getLocalizedName(languageCode),
+                                      maxLines: 1,
+                                      overflow: TextOverflow.ellipsis,
+                                      style: TextStyle(
+                                        fontFamily: uiFontFamily(sheetContext, 'Inter'),
+                                        fontFamilyFallback: const <String>['NotoSansKR'],
+                                        fontSize: sheetContext.rf(15).clamp(14, 17).toDouble(),
+                                        fontWeight: isSelected ? FontWeight.w700 : FontWeight.w500,
+                                        color: const Color(0xFF111827),
+                                      ),
+                                    ),
+                                  ),
+                                  if (isSelected)
+                                    const Icon(
+                                      Icons.check_rounded,
+                                      size: 21,
+                                      color: AppColors.pointColor,
+                                    ),
+                                ],
+                              ),
+                            ),
+                          ),
+                        );
+                      },
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ),
+        ),
+      ),
+    );
   }
 
   Widget _profilePhotoPicker() {
@@ -965,7 +1144,7 @@ class _NicknameSetupScreenState extends State<NicknameSetupScreen>
       style: TextStyle(
         fontFamily: uiFontFamily(context, 'Inter'),
         fontFamilyFallback: const <String>['NotoSansKR'],
-        fontSize: context.rf(14).clamp(13, 15).toDouble(),
+        fontSize: context.rf(15).clamp(14, 16).toDouble(),
         fontWeight: FontWeight.w800,
         color: const Color(0xFF111827),
       ),

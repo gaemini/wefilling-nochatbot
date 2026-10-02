@@ -78,7 +78,7 @@ class PostCategorySelector extends StatelessWidget {
               runSpacing: context.rs(7).clamp(6, 9).toDouble(),
               children: PostCategory.ordered
                   .map(
-                    (tag) => _PostTagChoice(
+                    (tag) => PostCategoryTagChip(
                       label: tag.label(l10n),
                       selected: selected.contains(tag),
                       enabled: enabled,
@@ -108,13 +108,15 @@ class PostCategorySelector extends StatelessWidget {
   }
 }
 
-class _PostTagChoice extends StatelessWidget {
-  const _PostTagChoice({
+class PostCategoryTagChip extends StatelessWidget {
+  const PostCategoryTagChip({
+    super.key,
     required this.label,
     required this.selected,
     required this.enabled,
     required this.maxWidth,
     required this.onTap,
+    this.showHash = false,
   });
 
   final String label;
@@ -122,6 +124,7 @@ class _PostTagChoice extends StatelessWidget {
   final bool enabled;
   final double maxWidth;
   final VoidCallback onTap;
+  final bool showHash;
 
   @override
   Widget build(BuildContext context) {
@@ -149,15 +152,17 @@ class _PostTagChoice extends StatelessWidget {
               child: Row(
                 mainAxisSize: MainAxisSize.min,
                 children: [
-                  Icon(
-                    selected ? Icons.check_circle_rounded : Icons.tag_rounded,
-                    size: context.ri(17).clamp(16, 18).toDouble(),
-                    color: foreground,
-                  ),
-                  const SizedBox(width: 6),
+                  if (!showHash || selected) ...[
+                    Icon(
+                      selected ? Icons.check_circle_rounded : Icons.tag_rounded,
+                      size: context.ri(17).clamp(16, 18).toDouble(),
+                      color: foreground,
+                    ),
+                    const SizedBox(width: 6),
+                  ],
                   Flexible(
                     child: Text(
-                      label,
+                      showHash ? '#$label' : label,
                       maxLines: 1,
                       overflow: TextOverflow.ellipsis,
                       style: TextStyle(

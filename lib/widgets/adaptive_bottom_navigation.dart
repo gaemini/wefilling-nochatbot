@@ -3,6 +3,8 @@
 
 import 'package:flutter/material.dart';
 import 'notification_badge.dart';
+import '../design/tokens.dart';
+import '../ui/widgets/motion_press.dart';
 import '../utils/responsive_helper.dart';
 import '../l10n/ui_locale.dart';
 
@@ -189,86 +191,118 @@ class AdaptiveBottomNavigation extends StatelessWidget {
       button: true,
       selected: isSelected,
       excludeSemantics: true,
-      child: InkWell(
-        onTap: onTap,
-        borderRadius: BorderRadius.circular(12),
-        splashColor: colorScheme.primary.withValues(alpha: 0.1),
-        highlightColor: colorScheme.primary.withValues(alpha: 0.05),
-        child: Container(
-          constraints: const BoxConstraints(minHeight: 48),
-          padding: const EdgeInsets.symmetric(vertical: 4, horizontal: 4),
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            mainAxisAlignment: MainAxisAlignment.center,
-            children: [
-              // 아이콘을 고정 크기 컨테이너로 감싸서 정렬 유지
-              SizedBox(
-                height: iconSize,
-                width: iconSize,
-                child: Center(
-                  child: NotificationBadge(
-                    count: item.badgeCount ?? 0,
-                    size: 13, // 더 작은 크기
-                    fontSize: 8,
-                    top: -5, // 더 위로 이동
-                    right: -8, // 더 오른쪽으로 이동 (아이콘을 덜 가림)
-                    child: item.glyph != null
-                        ? CustomPaint(
-                            size: Size.square(iconSize),
-                            painter: _BottomNavGlyphPainter(
-                              glyph: item.glyph!,
-                              color: iconColor,
-                              selected: isSelected,
-                            ),
-                          )
-                        : item.iconImagePath != null
-                            ? Image.asset(
-                                isSelected
-                                    ? (item.selectedIconImagePath ??
-                                        item.iconImagePath!)
-                                    : item.iconImagePath!,
-                                width: iconSize,
-                                height: iconSize,
-                                color: iconColor,
-                                errorBuilder: (context, error, stackTrace) {
-                                  return Icon(
-                                    Icons.person,
-                                    size: iconSize,
+      child: MotionPress(
+        child: InkWell(
+          onTap: onTap,
+          borderRadius: BorderRadius.circular(12),
+          splashColor: colorScheme.primary.withValues(alpha: 0.1),
+          highlightColor: colorScheme.primary.withValues(alpha: 0.05),
+          child: Container(
+            constraints: const BoxConstraints(minHeight: 48),
+            padding: const EdgeInsets.symmetric(vertical: 4, horizontal: 4),
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              mainAxisAlignment: MainAxisAlignment.center,
+              children: [
+                // 아이콘을 고정 크기 컨테이너로 감싸서 정렬 유지
+                SizedBox(
+                  height: iconSize,
+                  width: iconSize,
+                  child: Center(
+                    child: NotificationBadge(
+                      count: item.badgeCount ?? 0,
+                      size: 13, // 더 작은 크기
+                      fontSize: 8,
+                      top: -5, // 더 위로 이동
+                      right: -8, // 더 오른쪽으로 이동 (아이콘을 덜 가림)
+                      child: AnimatedSwitcher(
+                        duration: MotionTokens.reduceMotion(context)
+                            ? Duration.zero
+                            : MotionTokens.state,
+                        switchInCurve: MotionTokens.curve,
+                        switchOutCurve: MotionTokens.curve,
+                        transitionBuilder: (child, animation) => FadeTransition(
+                          opacity: animation,
+                          child: ScaleTransition(
+                            scale: Tween<double>(begin: .90, end: 1)
+                                .animate(animation),
+                            child: child,
+                          ),
+                        ),
+                        child: KeyedSubtree(
+                          key: ValueKey<bool>(isSelected),
+                          child: item.glyph != null
+                              ? CustomPaint(
+                                  size: Size.square(iconSize),
+                                  painter: _BottomNavGlyphPainter(
+                                    glyph: item.glyph!,
                                     color: iconColor,
-                                  );
-                                },
-                              )
-                            : Icon(
-                                isSelected ? item.selectedIcon : item.icon,
-                                size: iconSize,
-                                color: iconColor,
-                                weight: 300, // 아이콘 두께 더 얇게 (인스타그램 스타일)
-                              ),
-                  ),
-                ),
-              ),
-              const SizedBox(height: 3),
-              SizedBox(
-                width: double.infinity,
-                child: MediaQuery.withClampedTextScaling(
-                  maxScaleFactor: 1.3,
-                  child: Text(
-                    item.label,
-                    style: TextStyle(
-                      fontSize: fontSize,
-                      fontWeight:
-                          isSelected ? FontWeight.w600 : FontWeight.w400,
-                      color: isSelected ? activeColor : unselectedColor,
-                      height: isChineseUi(context) ? 1.3 : 1.1,
+                                    selected: isSelected,
+                                  ),
+                                )
+                              : item.iconImagePath != null
+                                  ? Image.asset(
+                                      isSelected
+                                          ? (item.selectedIconImagePath ??
+                                              item.iconImagePath!)
+                                          : item.iconImagePath!,
+                                      width: iconSize,
+                                      height: iconSize,
+                                      color: iconColor,
+                                      errorBuilder:
+                                          (context, error, stackTrace) {
+                                        return Icon(
+                                          Icons.person,
+                                          size: iconSize,
+                                          color: iconColor,
+                                        );
+                                      },
+                                    )
+                                  : Icon(
+                                      isSelected
+                                          ? item.selectedIcon
+                                          : item.icon,
+                                      size: iconSize,
+                                      color: iconColor,
+                                      weight: 300, // 아이콘 두께 더 얇게 (인스타그램 스타일)
+                                    ),
+                        ),
+                      ),
                     ),
-                    maxLines: 1,
-                    softWrap: false,
-                    overflow: TextOverflow.fade,
-                    textAlign: TextAlign.center,
                   ),
                 ),
-              ),
-            ],
+                const SizedBox(height: 3),
+                SizedBox(
+                  width: double.infinity,
+                  child: MediaQuery.withClampedTextScaling(
+                    maxScaleFactor: 1.3,
+                    child: TweenAnimationBuilder<TextStyle>(
+                      duration: MotionTokens.reduceMotion(context)
+                          ? Duration.zero
+                          : MotionTokens.state,
+                      curve: MotionTokens.curve,
+                      tween: TextStyleTween(
+                        end: TextStyle(
+                          fontSize: fontSize,
+                          fontWeight:
+                              isSelected ? FontWeight.w600 : FontWeight.w400,
+                          color: isSelected ? activeColor : unselectedColor,
+                          height: isChineseUi(context) ? 1.3 : 1.1,
+                        ),
+                      ),
+                      builder: (context, style, child) => Text(
+                        item.label,
+                        style: style,
+                        maxLines: 1,
+                        softWrap: false,
+                        overflow: TextOverflow.fade,
+                        textAlign: TextAlign.center,
+                      ),
+                    ),
+                  ),
+                ),
+              ],
+            ),
           ),
         ),
       ),

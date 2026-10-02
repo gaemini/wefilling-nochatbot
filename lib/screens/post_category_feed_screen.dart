@@ -12,6 +12,7 @@ import '../models/post_category.dart';
 import '../services/post_media_prefetch_service.dart';
 import '../services/post_service.dart';
 import '../ui/widgets/optimized_post_card.dart';
+import '../ui/widgets/post_loading_transition.dart';
 import '../ui/widgets/post_translation_feed.dart';
 import '../ui/widgets/skeletons.dart';
 import '../utils/responsive_helper.dart';
@@ -187,7 +188,7 @@ class _PostCategoryFeedScreenState extends State<PostCategoryFeedScreen> {
         _scrollController.hasClients ? _scrollController.offset : null;
     final wasDeleted = await Navigator.push<bool>(
       context,
-      MaterialPageRoute(builder: (_) => PostDetailScreen(post: post)),
+      PostDetailMotionRoute(post: post),
     );
     if (!mounted) return;
 
@@ -314,12 +315,15 @@ class _PostCategoryFeedScreenState extends State<PostCategoryFeedScreen> {
             if (_isLoading)
               SliverList.builder(
                 itemCount: 4,
-                itemBuilder: (_, __) => const Padding(
-                  padding: EdgeInsets.fromLTRB(20, 10, 20, 18),
-                  child: AppSkeleton(
-                    width: double.infinity,
-                    height: 220,
-                    borderRadius: BorderRadius.all(Radius.circular(12)),
+                itemBuilder: (_, __) => const PostLoadingTransition(
+                  loading: true,
+                  child: Padding(
+                    padding: EdgeInsets.fromLTRB(20, 10, 20, 18),
+                    child: AppSkeleton(
+                      width: double.infinity,
+                      height: 220,
+                      borderRadius: BorderRadius.all(Radius.circular(12)),
+                    ),
                   ),
                 ),
               )
@@ -375,7 +379,7 @@ class _PostCategoryFeedScreenState extends State<PostCategoryFeedScreen> {
                 itemCount: _posts.length,
                 itemBuilder: (context, index) {
                   final post = _posts[index];
-                  return Center(
+                  final card = Center(
                     child: ConstrainedBox(
                       constraints: const BoxConstraints(maxWidth: 600),
                       child: OptimizedPostCard(
@@ -388,6 +392,9 @@ class _PostCategoryFeedScreenState extends State<PostCategoryFeedScreen> {
                       ),
                     ),
                   );
+                  return index < 4
+                      ? PostLoadingTransition(loading: false, child: card)
+                      : card;
                 },
               ),
             if (_isLoadingMore)

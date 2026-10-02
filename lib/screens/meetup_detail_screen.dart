@@ -36,6 +36,7 @@ import '../utils/logger.dart';
 import '../utils/responsive_helper.dart';
 import '../ui/widgets/translatable_content.dart';
 import '../ui/snackbar/app_snackbar.dart';
+import '../ui/widgets/motion_press.dart';
 import 'snack_chat_screen.dart';
 import '../ui/widgets/hanyang_verification_gate.dart';
 import '../services/notification_service.dart';
@@ -2277,7 +2278,9 @@ class _MeetupDetailScreenState extends State<MeetupDetailScreen>
   }) {
     final foreground = destructive ? const Color(0xFFB42318) : Colors.white;
     final busy = _isLoading || loading;
-    return SizedBox(
+    return MotionPress(
+      enabled: !busy && enabled,
+      child: SizedBox(
       width: double.infinity,
       height: context.rh(52, min: 48, max: 56),
       child: destructive
@@ -2313,6 +2316,7 @@ class _MeetupDetailScreenState extends State<MeetupDetailScreen>
                 loading: busy,
               ),
             ),
+      ),
     );
   }
 

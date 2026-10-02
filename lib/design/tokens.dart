@@ -116,6 +116,28 @@ class DesignTokens {
   static const double desktopBreakpoint = 1440.0;
 }
 
+/// 짧은 입력·선택 피드백에만 사용하는 공통 시간 기준.
+class MotionTokens {
+  const MotionTokens._();
+
+  static const Duration instant = Duration(milliseconds: 80);
+  static const Duration press = Duration(milliseconds: 90);
+  static const Duration fast = Duration(milliseconds: 140);
+  static const Duration release = Duration(milliseconds: 160);
+  static const Duration state = Duration(milliseconds: 200);
+  static const Duration medium = Duration(milliseconds: 280);
+  static const Duration page = Duration(milliseconds: 320);
+  static const Duration delight = Duration(milliseconds: 600);
+  static const Curve curve = Curves.easeOutCubic;
+  static const Curve decelerate = Curves.easeOut;
+
+  static bool reduceMotion(BuildContext context) {
+    final media = MediaQuery.maybeOf(context);
+    return media?.disableAnimations == true ||
+        media?.accessibleNavigation == true;
+  }
+}
+
 /// 반응형 토큰 유틸: 고정 토큰값을 화면/글꼴에 맞춰 보정한다.
 extension ResponsiveDesignTokens on BuildContext {
   double spacingToken(double base) => rs(base);

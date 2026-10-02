@@ -43,6 +43,8 @@ import '../ui/dialogs/block_dialog.dart';
 import '../ui/dialogs/report_dialog.dart';
 import '../ui/snackbar/app_snackbar.dart';
 import '../ui/widgets/post_action_group.dart';
+import '../ui/widgets/post_friend_request_button.dart';
+import '../ui/widgets/motion_press.dart';
 import '../ui/widgets/adaptive_post_image_frame.dart';
 import '../ui/widgets/instagram_embed_preview.dart';
 import '../ui/widgets/translatable_content.dart';
@@ -56,6 +58,42 @@ import '../services/notification_service.dart';
 import '../l10n/ui_locale.dart';
 import '../snapshot/snapshot_strings.dart';
 import '../utils/comment_gif_input.dart';
+
+/// Keeps Material route behavior (including back navigation) while making the
+/// feed-to-detail change perceptible without waiting for an animation.
+class PostDetailMotionRoute extends MaterialPageRoute<bool> {
+  PostDetailMotionRoute({required Post post})
+      : super(builder: (_) => PostDetailScreen(post: post));
+
+  @override
+  Duration get transitionDuration => MotionTokens.medium;
+
+  @override
+  Duration get reverseTransitionDuration => MotionTokens.state;
+
+  @override
+  Widget buildTransitions(
+    BuildContext context,
+    Animation<double> animation,
+    Animation<double> secondaryAnimation,
+    Widget child,
+  ) {
+    final opacity = animation.drive(CurveTween(curve: MotionTokens.decelerate));
+    if (MotionTokens.reduceMotion(context)) {
+      return FadeTransition(opacity: opacity, child: child);
+    }
+    return FadeTransition(
+      opacity: opacity,
+      child: SlideTransition(
+        position: animation.drive(
+          Tween<Offset>(begin: const Offset(0, .015), end: Offset.zero)
+              .chain(CurveTween(curve: MotionTokens.decelerate)),
+        ),
+        child: child,
+      ),
+    );
+  }
+}
 
 class PostDetailScreen extends StatefulWidget {
   final Post post;
@@ -750,7 +788,9 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
                 ),
                 // 활성 점 (이동)
                 AnimatedPositioned(
-                  duration: const Duration(milliseconds: 180),
+                  duration: MotionTokens.reduceMotion(context)
+                      ? Duration.zero
+                      : MotionTokens.state,
                   curve: Curves.easeOutCubic,
                   left: clampedIndex * (dotSize + dotGap),
                   top: (trackHeight - dotSize) / 2,
@@ -833,6 +873,7 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
       hideEmptyMetrics: false,
       trailingActionsAtEnd: true,
       prioritizeComments: false,
+      animateLike: true,
     );
   }
 
@@ -2666,7 +2707,9 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
                                           'ko'
                                       ? '게시글 이미지 확대'
                                       : 'Open post image'),
-                              child: GestureDetector(
+                              child: MotionPress(
+                                pressedScale: .985,
+                                child: GestureDetector(
                                 behavior: HitTestBehavior.opaque,
                                 onTap: () {
                                   showFullscreenImageViewer(
@@ -2693,6 +2736,7 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
                                     ),
                                   ),
                                 ),
+                              ),
                               ),
                             );
                           },
@@ -2898,23 +2942,30 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
                     ),
                   ),
                   const SizedBox(width: DesignTokens.s4),
-                  Text(
-                    _currentPost.getFormattedTime(context),
-                    maxLines: 1,
-                    overflow: TextOverflow.ellipsis,
-                    style: TextStyle(
-                      fontFamily: uiFontFamily(context, 'Inter'),
-                      fontFamilyFallback: const ['NotoSansKR'],
-                      fontSize: context.rf(14).clamp(12.5, 14.0).toDouble(),
-                      fontWeight: FontWeight.w400,
-                      color: BrandColors.textTertiary,
-                      height: isChineseUi(context) ? 1.3 : 1.2,
-                      letterSpacing: -0.15,
+                  Flexible(
+                    child: Text(
+                      _currentPost.getFormattedTime(context),
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      style: TextStyle(
+                        fontFamily: uiFontFamily(context, 'Inter'),
+                        fontFamilyFallback: const ['NotoSansKR'],
+                        fontSize: context.rf(14).clamp(12.5, 14.0).toDouble(),
+                        fontWeight: FontWeight.w400,
+                        color: BrandColors.textTertiary,
+                        height: isChineseUi(context) ? 1.3 : 1.2,
+                        letterSpacing: -0.15,
+                      ),
                     ),
                   ),
                 ],
               ),
             ),
+            if (canOpenProfile &&
+                _currentPost.userId != FirebaseAuth.instance.currentUser?.uid) ...[
+              const SizedBox(width: 6),
+              PostFriendRequestButton(authorId: _currentPost.userId),
+            ],
           ],
         ),
         if (content.trim().isNotEmpty) ...[

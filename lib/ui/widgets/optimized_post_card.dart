@@ -37,6 +37,7 @@ import 'user_avatar.dart';
 import 'hanyang_verification_gate.dart';
 import 'translatable_content.dart';
 import 'post_translation_feed.dart';
+import 'post_friend_request_button.dart';
 import '../sheets/translation_language_sheet.dart';
 import '../../l10n/ui_locale.dart';
 
@@ -1103,18 +1104,21 @@ class _OptimizedPostCardState extends State<OptimizedPostCard> {
                           style: TextStyle(color: BrandColors.textTertiary),
                         ),
                         const SizedBox(width: 4),
-                        Text(
-                          _formatTimeAgo(post.createdAt),
-                          maxLines: 1,
-                          style: theme.textTheme.bodySmall?.copyWith(
-                            color: BrandColors.textTertiary,
-                            fontFamily: uiFontFamily(context, 'Inter'),
-                            fontFamilyFallback: const ['NotoSansKR'],
-                            fontSize:
-                                context.rf(14).clamp(13.0, 14.5).toDouble(),
-                            fontWeight: FontWeight.w400,
-                            height: 1.22,
-                            letterSpacing: -0.15,
+                        Flexible(
+                          child: Text(
+                            _formatTimeAgo(post.createdAt),
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis,
+                            style: theme.textTheme.bodySmall?.copyWith(
+                              color: BrandColors.textTertiary,
+                              fontFamily: uiFontFamily(context, 'Inter'),
+                              fontFamilyFallback: const ['NotoSansKR'],
+                              fontSize:
+                                  context.rf(14).clamp(13.0, 14.5).toDouble(),
+                              fontWeight: FontWeight.w400,
+                              height: 1.22,
+                              letterSpacing: -0.15,
+                            ),
                           ),
                         ),
                         if (isFriendsOnly) ...[
@@ -1132,6 +1136,11 @@ class _OptimizedPostCardState extends State<OptimizedPostCard> {
                                   'ko',
                             ),
                           ),
+                        ],
+                        if (canOpenProfile &&
+                            post.userId != FirebaseAuth.instance.currentUser?.uid) ...[
+                          const SizedBox(width: 6),
+                          PostFriendRequestButton(authorId: post.userId),
                         ],
                       ],
                     ),
@@ -1299,6 +1308,7 @@ class _OptimizedPostCardState extends State<OptimizedPostCard> {
       hideEmptyMetrics: false,
       prioritizeComments: false,
       spreadMetrics: false,
+      animateLike: true,
     );
   }
 
@@ -1978,12 +1988,16 @@ class _ImageSliderState extends State<_ImageSlider> {
                 mainAxisAlignment: MainAxisAlignment.center,
                 children: List.generate(
                   widget.imageUrls.length,
-                  (index) => Container(
+                  (index) => AnimatedContainer(
+                    duration: MotionTokens.reduceMotion(context)
+                        ? Duration.zero
+                        : MotionTokens.state,
+                    curve: MotionTokens.curve,
                     margin: const EdgeInsets.symmetric(horizontal: 3),
-                    width: 6,
+                    width: _currentPage == index ? 10 : 6,
                     height: 6,
                     decoration: BoxDecoration(
-                      shape: BoxShape.circle,
+                      borderRadius: BorderRadius.circular(3),
                       color: _currentPage == index
                           ? Colors.white
                           : Colors.white.withOpacity(0.4),

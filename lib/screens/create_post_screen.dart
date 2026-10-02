@@ -24,6 +24,7 @@ import '../services/shared_link_preview_service.dart';
 import '../ui/widgets/fullscreen_file_image_viewer.dart';
 import '../ui/widgets/group_audience_preview.dart';
 import '../ui/widgets/instagram_embed_preview.dart';
+import '../ui/widgets/motion_press.dart';
 import '../ui/widgets/post_category_selector.dart';
 import '../ui/widgets/shared_link_preview_card.dart';
 import '../utils/logger.dart';
@@ -1182,7 +1183,9 @@ class _CreatePostScreenState extends State<CreatePostScreen> {
       flexibleSpace: _buildCenteredComposerTitle(l10n.writeStory),
       actions: [
         if (useCompactShareAction)
-          SizedBox.square(
+          MotionPress(
+            enabled: !_isSubmitting,
+            child: SizedBox.square(
             dimension: 48,
             child: IconButton(
               onPressed: _isSubmitting ? null : _submitPost,
@@ -1197,9 +1200,12 @@ class _CreatePostScreenState extends State<CreatePostScreen> {
                       size: context.ri(21).clamp(20, 23).toDouble(),
                     ),
             ),
+            ),
           )
         else
-          TextButton.icon(
+          MotionPress(
+            enabled: !_isSubmitting,
+            child: TextButton.icon(
             onPressed: _isSubmitting ? null : _submitPost,
             icon: _isSubmitting
                 ? const SizedBox.square(
@@ -1225,6 +1231,7 @@ class _CreatePostScreenState extends State<CreatePostScreen> {
               padding: const EdgeInsets.symmetric(horizontal: 8),
               minimumSize: const Size(44, 44),
             ),
+          ),
           ),
         const SizedBox(width: 4),
       ],

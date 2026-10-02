@@ -5,8 +5,8 @@
 import 'dart:async';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/material.dart';
-import 'package:flutter/scheduler.dart';
 import 'package:flutter/rendering.dart';
+import 'package:flutter/services.dart';
 import '../models/post.dart';
 import '../models/post_category.dart';
 import '../models/meetup.dart';
@@ -16,12 +16,12 @@ import '../services/post_media_prefetch_service.dart';
 import '../services/comment_service.dart';
 import '../services/meetup_service.dart';
 import '../services/content_filter_service.dart';
-import '../ui/widgets/app_fab.dart';
 import '../ui/widgets/empty_state.dart';
+import '../ui/widgets/post_loading_transition.dart';
 import '../ui/widgets/skeletons.dart';
 import '../ui/widgets/optimized_post_card.dart';
 import '../ui/widgets/board_meetup_card.dart';
-import '../ui/widgets/post_category_explorer.dart';
+import '../ui/widgets/post_category_selector.dart';
 import '../ui/snackbar/app_snackbar.dart';
 import '../snapshot/snapshot_today_section.dart';
 import 'create_post_screen.dart';
@@ -52,7 +52,7 @@ class BoardScreen extends StatefulWidget {
 class BoardScreenState extends State<BoardScreen> {
   // Keep the existing sections available for a later display-only re-enable.
   static const bool _showTodayAdBanner = false;
-  static const bool _showTodayMeetupsSection = false;
+  static const bool _showTodayMeetupsSection = true;
   final PostService _postService = PostService();
   final PostMediaPrefetchService _postMediaPrefetch =
       PostMediaPrefetchService.instance;
@@ -60,7 +60,7 @@ class BoardScreenState extends State<BoardScreen> {
   final MeetupService _meetupService = MeetupService();
   Timer? _midnightTimer;
   late final Stream<List<Post>> _postsStream;
-  late final Stream<List<Meetup>> _todayMeetupsStream;
+  late Stream<List<Meetup>> _todayMeetupsStream;
 
   List<Meetup>? _cachedTodayMeetups;
 
@@ -695,7 +695,13 @@ class BoardScreenState extends State<BoardScreen> {
     final delay = startOfTomorrow.difference(now) + const Duration(seconds: 1);
     _midnightTimer = Timer(delay, () async {
       if (!mounted) return;
-      // 날짜가 넘어가면 Today/All 분리가 바뀌므로 캐시를 갱신하고 화면을 리빌드
+      // 날짜에 고정된 밋업 쿼리도 새 날짜로 교체한다. 지난 날짜의 캐시를
+      // 오늘 결과가 도착하기 전까지 다시 표시하지 않는다.
+      setState(() {
+        _cachedTodayMeetups = null;
+        _todayMeetupsStream = _meetupService.getTodayTabMeetups();
+      });
+      // Today/All 포스트 분리와 기록 페이지도 기존 방식으로 갱신한다.
       await _loadCachedData();
       if (!mounted) return;
       _scheduleMidnightRefresh();
@@ -841,8 +847,24 @@ class BoardScreenState extends State<BoardScreen> {
         minimum: const EdgeInsets.only(bottom: 8),
         child: _ScrollAwareCreateButton(
           visible: _showCreateButton,
-          child: AppFab.write(
-            onPressed: _openCreatePost,
+          child: FloatingActionButton.extended(
+            onPressed: () {
+              HapticFeedback.lightImpact();
+              _openCreatePost();
+            },
+            label: Text(
+              isChineseUi(context)
+                  ? '分享'
+                  : Localizations.localeOf(context).languageCode == 'ko'
+                      ? '공유하기'
+                      : 'Share',
+              style: const TextStyle(fontSize: 15, fontWeight: FontWeight.w700),
+            ),
+            tooltip: AppLocalizations.of(context)!.createPost,
+            backgroundColor: AppColors.pointColor,
+            foregroundColor: Colors.white,
+            elevation: 3,
+            shape: const StadiumBorder(),
             heroTag: 'board_write_fab',
           ),
         ),
@@ -1336,30 +1358,35 @@ class BoardScreenState extends State<BoardScreen> {
   }
 
   Widget _buildPostCategoryRail() {
-    return LayoutBuilder(
-      builder: (context, constraints) {
-        final isCompact = constraints.maxWidth < 360;
-        final isExpanded = constraints.maxWidth >= 600;
-        final cardWidth = isCompact ? 158.0 : (isExpanded ? 210.0 : 176.0);
-        final cardHeight = isCompact ? 140.0 : (isExpanded ? 148.0 : 144.0);
-        final contentPadding = isCompact ? 12.0 : (isExpanded ? 16.0 : 14.0);
-        final iconSize = isCompact ? 21.0 : (isExpanded ? 24.0 : 22.0);
-        final titleSize = isCompact ? 14.0 : (isExpanded ? 16.0 : 15.0);
-        final descriptionSize = isCompact ? 11.0 : (isExpanded ? 12.0 : 11.5);
-
-        return _AutoScrollingPostCategoryRail(
-          key: const ValueKey('board_post_category_rail'),
-          height: cardHeight + 14,
-          cardWidth: cardWidth,
-          cardHeight: cardHeight,
-          horizontalPadding: _sectionHorizontalPadding,
-          contentPadding: contentPadding,
-          iconSize: iconSize,
-          titleSize: titleSize,
-          descriptionSize: descriptionSize,
-          onSelected: _openPostCategory,
-        );
-      },
+    final l10n = AppLocalizations.of(context)!;
+    return MediaQuery.withClampedTextScaling(
+      maxScaleFactor: 1.25,
+      child: SizedBox(
+        height: 56,
+        child: ListView.separated(
+          key: const PageStorageKey('board_post_category_rail'),
+          scrollDirection: Axis.horizontal,
+          physics: const BouncingScrollPhysics(),
+          padding: EdgeInsets.symmetric(horizontal: _sectionHorizontalPadding),
+          itemCount: PostCategory.ordered.length,
+          separatorBuilder: (_, __) => const SizedBox(width: 7),
+          itemBuilder: (context, index) {
+            final category = PostCategory.ordered[index];
+            return Center(
+              child: PostCategoryTagChip(
+                key: ValueKey('board_post_category_${category.key}'),
+                label: category.label(l10n),
+                selected: false,
+                enabled: true,
+                showHash: true,
+                maxWidth: MediaQuery.sizeOf(context).width -
+                    2 * _sectionHorizontalPadding,
+                onTap: () => _openPostCategory(category),
+              ),
+            );
+          },
+        ),
+      ),
     );
   }
 
@@ -1445,6 +1472,7 @@ class BoardScreenState extends State<BoardScreen> {
     required bool isPostsError,
   }) {
     return StreamBuilder<List<Meetup>>(
+      key: ObjectKey(_todayMeetupsStream),
       stream: _showTodayMeetupsSection ? _todayMeetupsStream : null,
       builder: (context, meetupSnapshot) {
         final todayMeetupsTitle = _safeL10n(
@@ -1579,12 +1607,15 @@ class BoardScreenState extends State<BoardScreen> {
               // 5) posts list/skeleton/error/empty
               if (i < postsCount) {
                 if (isPostsLoading) {
-                  return Padding(
-                    padding: EdgeInsets.symmetric(
-                      horizontal: _sectionHorizontalPadding,
-                      vertical: 8,
+                  return PostLoadingTransition(
+                    loading: true,
+                    child: Padding(
+                      padding: EdgeInsets.symmetric(
+                        horizontal: _sectionHorizontalPadding,
+                        vertical: 8,
+                      ),
+                      child: _buildPostSkeleton(),
                     ),
-                    child: _buildPostSkeleton(),
                   );
                 }
 
@@ -1596,16 +1627,19 @@ class BoardScreenState extends State<BoardScreen> {
                 }
 
                 if (todayCombined.isEmpty) {
-                  return _buildTodaySectionMessage(
-                    noTodayPostsText,
-                    bottom: 10,
+                  return PostLoadingTransition(
+                    loading: false,
+                    child: _buildTodaySectionMessage(
+                      noTodayPostsText,
+                      bottom: 10,
+                    ),
                   );
                 }
 
                 final itemIndex = i;
                 final item = todayCombined[itemIndex];
                 if (item is Post) {
-                  return _withPostAnchor(
+                  final card = _withPostAnchor(
                     item,
                     OptimizedPostCard(
                       key: ValueKey(item.id),
@@ -1622,6 +1656,9 @@ class BoardScreenState extends State<BoardScreen> {
                       contentPadding: _boardPostCardContentPadding,
                     ),
                   );
+                  return itemIndex < 3
+                      ? PostLoadingTransition(loading: false, child: card)
+                      : card;
                 }
                 return const SizedBox.shrink();
               }
@@ -1879,7 +1916,7 @@ class BoardScreenState extends State<BoardScreen> {
 
     final wasDeleted = await Navigator.push<bool>(
       context,
-      MaterialPageRoute(builder: (context) => PostDetailScreen(post: post)),
+      PostDetailMotionRoute(post: post),
     );
 
     if (!mounted) return;
@@ -2175,169 +2212,6 @@ class _ScrollAwareCreateButton extends StatelessWidget {
           duration: const Duration(milliseconds: 180),
           curve: Curves.easeOutCubic,
           child: child,
-        ),
-      ),
-    );
-  }
-}
-
-class _AutoScrollingPostCategoryRail extends StatefulWidget {
-  const _AutoScrollingPostCategoryRail({
-    super.key,
-    required this.height,
-    required this.cardWidth,
-    required this.cardHeight,
-    required this.horizontalPadding,
-    required this.contentPadding,
-    required this.iconSize,
-    required this.titleSize,
-    required this.descriptionSize,
-    required this.onSelected,
-  });
-
-  final double height;
-  final double cardWidth;
-  final double cardHeight;
-  final double horizontalPadding;
-  final double contentPadding;
-  final double iconSize;
-  final double titleSize;
-  final double descriptionSize;
-  final ValueChanged<PostCategory> onSelected;
-
-  @override
-  State<_AutoScrollingPostCategoryRail> createState() =>
-      _AutoScrollingPostCategoryRailState();
-}
-
-class _AutoScrollingPostCategoryRailState
-    extends State<_AutoScrollingPostCategoryRail>
-    with SingleTickerProviderStateMixin {
-  static const double _gap = 8;
-  static const double _pixelsPerSecond = 26;
-  static const int _repeatedCycles = 1000;
-  static const int _initialCycle = _repeatedCycles ~/ 2;
-
-  late final ScrollController _scrollController;
-  late final Ticker _ticker;
-  Duration? _lastElapsed;
-  bool _isUserScrolling = false;
-  bool _disableAnimations = false;
-
-  double get _itemExtent => widget.cardWidth + _gap;
-  double get _cycleExtent => _itemExtent * PostCategory.ordered.length;
-  double get _loopStartOffset => _cycleExtent * _initialCycle;
-
-  @override
-  void initState() {
-    super.initState();
-    _scrollController = ScrollController(initialScrollOffset: _loopStartOffset);
-    _ticker = createTicker(_onTick)..start();
-  }
-
-  @override
-  void didChangeDependencies() {
-    super.didChangeDependencies();
-    _disableAnimations = MediaQuery.of(context).disableAnimations;
-  }
-
-  @override
-  void didUpdateWidget(covariant _AutoScrollingPostCategoryRail oldWidget) {
-    super.didUpdateWidget(oldWidget);
-    if (oldWidget.cardWidth != widget.cardWidth &&
-        _scrollController.hasClients) {
-      WidgetsBinding.instance.addPostFrameCallback((_) {
-        if (!mounted || !_scrollController.hasClients) return;
-        _scrollController.jumpTo(_loopStartOffset);
-      });
-    }
-  }
-
-  void _onTick(Duration elapsed) {
-    final previous = _lastElapsed;
-    _lastElapsed = elapsed;
-    if (previous == null ||
-        _isUserScrolling ||
-        !_scrollController.hasClients ||
-        _disableAnimations) {
-      return;
-    }
-
-    final elapsedMicros =
-        (elapsed - previous).inMicroseconds.clamp(0, 50000).toDouble();
-    var target = _scrollController.offset +
-        (_pixelsPerSecond * elapsedMicros / Duration.microsecondsPerSecond);
-
-    final loopEnd = _loopStartOffset + _cycleExtent;
-    if (target < _loopStartOffset || target >= loopEnd) {
-      final unwrapped = (target - _loopStartOffset) % _cycleExtent;
-      final relative = (unwrapped + _cycleExtent) % _cycleExtent;
-      target = _loopStartOffset + relative;
-    }
-
-    final position = _scrollController.position;
-    _scrollController.jumpTo(
-      target.clamp(position.minScrollExtent, position.maxScrollExtent),
-    );
-  }
-
-  bool _handleScrollNotification(ScrollNotification notification) {
-    if (notification is ScrollStartNotification &&
-        notification.dragDetails != null) {
-      _isUserScrolling = true;
-    } else if (notification is ScrollEndNotification) {
-      _isUserScrolling = false;
-    }
-    return false;
-  }
-
-  @override
-  void dispose() {
-    _ticker.dispose();
-    _scrollController.dispose();
-    super.dispose();
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    final categoryCount = PostCategory.ordered.length;
-    return SizedBox(
-      height: widget.height,
-      child: Padding(
-        padding: EdgeInsets.fromLTRB(
-          widget.horizontalPadding,
-          5,
-          widget.horizontalPadding,
-          9,
-        ),
-        child: NotificationListener<ScrollNotification>(
-          onNotification: _handleScrollNotification,
-          child: ListView.builder(
-            controller: _scrollController,
-            scrollDirection: Axis.horizontal,
-            physics: const BouncingScrollPhysics(
-              parent: AlwaysScrollableScrollPhysics(),
-            ),
-            itemExtent: _itemExtent,
-            itemCount: categoryCount * _repeatedCycles,
-            itemBuilder: (context, index) {
-              final category = PostCategory.ordered[index % categoryCount];
-              return Padding(
-                padding: const EdgeInsets.only(right: _gap),
-                child: SizedBox(
-                  height: widget.cardHeight,
-                  child: PostCategoryTile(
-                    category: category,
-                    contentPadding: widget.contentPadding,
-                    iconSize: widget.iconSize,
-                    titleSize: widget.titleSize,
-                    descriptionSize: widget.descriptionSize,
-                    onTap: () => widget.onSelected(category),
-                  ),
-                ),
-              );
-            },
-          ),
         ),
       ),
     );

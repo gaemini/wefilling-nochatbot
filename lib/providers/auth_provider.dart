@@ -1558,24 +1558,37 @@ class AuthProvider with ChangeNotifier implements WidgetsBindingObserver {
     required String cacheKey,
   }) async {
     final totalWatch = Stopwatch()..start();
+    var stage = 'app_check';
     try {
       final appCheckWatch = Stopwatch()..start();
       await FirebaseAppCheckService.instance.ensureReady();
       appCheckWatch.stop();
+      stage = 'callable';
       await _logNicknameCheckAuthState();
       final callableWatch = Stopwatch()..start();
       final response = await _functions
           .httpsCallable('checkNicknameAvailability')
           .call(<String, dynamic>{'nickname': input}).timeout(
-              const Duration(seconds: 10));
+              // Allow the server's 15s deadline plus transport/cold-start time.
+              const Duration(seconds: 25));
       callableWatch.stop();
+      stage = 'response';
       final raw = response.data;
       final data =
           raw is Map ? Map<String, dynamic>.from(raw) : <String, dynamic>{};
+      final returnedIdentity = data['nickname'] is String
+          ? NicknamePolicy.identityOrNull(data['nickname'] as String)
+          : null;
+      if (data['available'] is! bool ||
+          returnedIdentity == null ||
+          returnedIdentity.nicknameKey != _nicknameAvailabilityRequestKey(input) ||
+          data['nicknameKey'] != returnedIdentity.nicknameKey) {
+        throw const FormatException('Invalid nickname availability response');
+      }
       final result = NicknameAvailabilityResult(
         available: data['available'] == true,
-        nickname: (data['nickname'] ?? input).toString(),
-        nicknameKey: (data['nicknameKey'] ?? '').toString(),
+        nickname: returnedIdentity.nickname,
+        nicknameKey: returnedIdentity.nicknameKey,
       );
       _nicknameAvailabilityCache[cacheKey] = _NicknameAvailabilityCacheEntry(
         result: result,
@@ -1592,17 +1605,22 @@ class AuthProvider with ChangeNotifier implements WidgetsBindingObserver {
         );
       }
       return result;
-    } catch (error) {
-      final appCheckFailed = error is FirebaseFunctionsException &&
-              error.code == 'unauthenticated' ||
-          error is AppCheckUnavailableException ||
-          FirebaseAppCheckService.instance.readiness ==
-              FirebaseAppCheckReadiness.unavailable;
+    } catch (error, stackTrace) {
+      final appCheckFailed = error is AppCheckUnavailableException;
       final failure = NicknameAvailabilityException.from(
         error,
         appCheckFailed: appCheckFailed,
       );
-      if (Logger.isVerboseEnabled) Logger.warning(failure.logMessage);
+      // No nickname, UID, token or raw server details in production diagnostics.
+      final appCheck = FirebaseAppCheckService.instance;
+      Logger.error(
+        '${failure.logMessage}: stage=$stage '
+        'code=${error is FirebaseFunctionsException ? error.code : failure.kind.name} '
+        'provider=${appCheck.providerName} readiness=${appCheck.readiness.name} '
+        'appCheckCode=${appCheck.lastErrorCode}',
+        failure,
+        stackTrace,
+      );
       throw failure;
     }
   }
@@ -3557,6 +3575,8 @@ enum NicknameAvailabilityFailureKind {
   appCheck,
   unauthenticated,
   permissionDenied,
+  invalidData,
+  precondition,
   function,
 }
 
@@ -3567,6 +3587,11 @@ class NicknameAvailabilityException implements Exception {
     Object error, {
     bool appCheckFailed = false,
   }) {
+    if (error is FormatException) {
+      return const NicknameAvailabilityException(
+        NicknameAvailabilityFailureKind.invalidData,
+      );
+    }
     if (error is TimeoutException) {
       return const NicknameAvailabilityException(
         NicknameAvailabilityFailureKind.timeout,
@@ -3613,6 +3638,11 @@ class NicknameAvailabilityException implements Exception {
           NicknameAvailabilityFailureKind.permissionDenied,
         );
       }
+      if (error.code == 'failed-precondition') {
+        return const NicknameAvailabilityException(
+          NicknameAvailabilityFailureKind.precondition,
+        );
+      }
       if (error.code == 'not-found') {
         return const NicknameAvailabilityException(
           NicknameAvailabilityFailureKind.function,
@@ -3643,6 +3673,10 @@ class NicknameAvailabilityException implements Exception {
           'nickname check unauthenticated',
         NicknameAvailabilityFailureKind.permissionDenied =>
           'nickname check permission denied',
+        NicknameAvailabilityFailureKind.invalidData =>
+          'nickname check invalid response',
+        NicknameAvailabilityFailureKind.precondition =>
+          'nickname check failed precondition',
         NicknameAvailabilityFailureKind.function =>
           'nickname check function error',
       };

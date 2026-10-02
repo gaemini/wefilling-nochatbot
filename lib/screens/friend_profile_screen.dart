@@ -27,6 +27,7 @@ import 'social_tag_people_screen.dart';
 import '../utils/account_status_helper.dart';
 import '../services/notification_service.dart';
 import '../l10n/ui_locale.dart';
+import '../ui/widgets/motion_press.dart';
 
 class FriendProfileScreen extends StatefulWidget {
   final String userId;
@@ -838,7 +839,9 @@ class _FriendProfileScreenState extends State<FriendProfileScreen>
 
           // 보드/댓글 진입(비친구 프리뷰)에서는 DM 대신 "친구요청" 버튼을 DM 자리로 노출
           if (isNonFriendPreview)
-            SizedBox(
+            MotionPress(
+              enabled: canRequest && !_isRequestingFriend,
+              child: SizedBox(
               width: double.infinity,
               height: 48,
               child: ElevatedButton.icon(
@@ -879,10 +882,12 @@ class _FriendProfileScreenState extends State<FriendProfileScreen>
                   ),
                 ),
               ),
+              ),
             )
           else
             // 친구(또는 본인) 화면은 기존 DM 버튼 유지
-            SizedBox(
+            MotionPress(
+              child: SizedBox(
               width: double.infinity,
               height: 48,
               child: ElevatedButton.icon(
@@ -907,6 +912,7 @@ class _FriendProfileScreenState extends State<FriendProfileScreen>
                     borderRadius: BorderRadius.circular(12),
                   ),
                 ),
+              ),
               ),
             ),
         ],

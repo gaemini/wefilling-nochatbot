@@ -17,6 +17,7 @@ class SnackChatCard extends StatelessWidget {
   final VoidCallback? onLongPress;
   final String? currentUserId;
   final bool isMuted;
+  final bool isPast;
 
   const SnackChatCard({
     super.key,
@@ -26,6 +27,7 @@ class SnackChatCard extends StatelessWidget {
     this.onLongPress,
     this.currentUserId,
     this.isMuted = false,
+    this.isPast = false,
   });
 
   String _formattedListTime(BuildContext context) {
@@ -43,8 +45,17 @@ class SnackChatCard extends StatelessWidget {
     }
 
     final isKo = Localizations.localeOf(context).languageCode == 'ko';
-    final period =
-        timestamp.hour < 12 ? ((isChineseUi(context) ? '上午' : isKo ? '오전' : 'AM')) : ((isChineseUi(context) ? '下午' : isKo ? '오후' : 'PM'));
+    final period = timestamp.hour < 12
+        ? ((isChineseUi(context)
+            ? '上午'
+            : isKo
+                ? '오전'
+                : 'AM'))
+        : ((isChineseUi(context)
+            ? '下午'
+            : isKo
+                ? '오후'
+                : 'PM'));
     final hour = timestamp.hour % 12 == 0 ? 12 : timestamp.hour % 12;
     final minute = timestamp.minute.toString().padLeft(2, '0');
     if (isChineseUi(context)) return '$period $hour:$minute';
@@ -54,31 +65,58 @@ class SnackChatCard extends StatelessWidget {
   String? _remainingTimeLabel(BuildContext context, {required bool isKo}) {
     if (snackChat.activeDurationHours != 24) return null;
     final remaining = snackChat.expiresAt.difference(DateTime.now());
-    if (remaining <= Duration.zero) return (isChineseUi(context) ? '已过期' : isKo ? '만료됨' : 'Expired');
-    if (remaining.inSeconds < 60) return (isChineseUi(context) ? '即将结束' : isKo ? '곧 만료' : 'Ending soon');
+    if (remaining <= Duration.zero)
+      return (isChineseUi(context)
+          ? '已过期'
+          : isKo
+              ? '만료됨'
+              : 'Expired');
+    if (remaining.inSeconds < 60)
+      return (isChineseUi(context)
+          ? '即将结束'
+          : isKo
+              ? '곧 만료'
+              : 'Ending soon');
 
     final minutes = (remaining.inSeconds / 60).ceil();
     if (minutes < 60) {
-      return (isChineseUi(context) ? '剩余${minutes}分钟' : isKo ? '$minutes분 남음' : '$minutes min left');
+      return (isChineseUi(context)
+          ? '剩余${minutes}分钟'
+          : isKo
+              ? '$minutes분 남음'
+              : '$minutes min left');
     }
     final hours = (minutes / 60).ceil();
-    return (isChineseUi(context) ? '剩余${hours}小时' : isKo ? '$hours시간 남음' : '$hours h left');
+    return (isChineseUi(context)
+        ? '剩余${hours}小时'
+        : isKo
+            ? '$hours시간 남음'
+            : '$hours h left');
   }
 
-  String _localizedSystemPreview(BuildContext context, String raw, {required bool isKo}) {
+  String _localizedSystemPreview(BuildContext context, String raw,
+      {required bool isKo}) {
     RegExpMatch? match =
         RegExp(r'^(.+) joined the Snack Chat\.$').firstMatch(raw);
     match ??= RegExp(r'^(.+)님이 스낵챗에 참여했어요\.$').firstMatch(raw);
     if (match != null) {
       final name = match.group(1)!.trim();
-      return (isChineseUi(context) ? '${name}加入了群聊。' : isKo ? '$name님이 스낵챗에 참여했어요.' : '$name joined the Snack Chat.');
+      return (isChineseUi(context)
+          ? '${name}加入了群聊。'
+          : isKo
+              ? '$name님이 스낵챗에 참여했어요.'
+              : '$name joined the Snack Chat.');
     }
 
     match = RegExp(r'^(.+) left the Snack Chat\.$').firstMatch(raw);
     match ??= RegExp(r'^(.+)님이 스낵챗에서 나갔어요\.$').firstMatch(raw);
     if (match != null) {
       final name = match.group(1)!.trim();
-      return (isChineseUi(context) ? '${name}退出了群聊。' : isKo ? '$name님이 스낵챗에서 나갔어요.' : '$name left the Snack Chat.');
+      return (isChineseUi(context)
+          ? '${name}退出了群聊。'
+          : isKo
+              ? '$name님이 스낵챗에서 나갔어요.'
+              : '$name left the Snack Chat.');
     }
 
     match =
@@ -86,9 +124,11 @@ class SnackChatCard extends StatelessWidget {
     match ??= RegExp(r'^스낵챗 이름이 "(.+)"로 변경됐어요\.$').firstMatch(raw);
     if (match != null) {
       final title = match.group(1)!.trim();
-      return (isChineseUi(context) ? '群聊名称已改为“${title}”。' : isKo
-          ? '스낵챗 이름이 "$title"로 변경됐어요.'
-          : 'The Snack Chat name changed to "$title".');
+      return (isChineseUi(context)
+          ? '群聊名称已改为“${title}”。'
+          : isKo
+              ? '스낵챗 이름이 "$title"로 변경됐어요.'
+              : 'The Snack Chat name changed to "$title".');
     }
 
     match = RegExp(r'^(.+) created a poll: (.+)$').firstMatch(raw);
@@ -96,16 +136,22 @@ class SnackChatCard extends StatelessWidget {
     if (match != null) {
       final name = match.group(1)!.trim();
       final question = match.group(2)!.trim();
-      return (isChineseUi(context) ? '${name}创建了投票：${question}' : isKo
-          ? '$name님이 투표를 만들었어요: $question'
-          : '$name created a poll: $question');
+      return (isChineseUi(context)
+          ? '${name}创建了投票：${question}'
+          : isKo
+              ? '$name님이 투표를 만들었어요: $question'
+              : '$name created a poll: $question');
     }
 
     match = RegExp(r'^Poll ended: (.+)$').firstMatch(raw);
     match ??= RegExp(r'^투표가 종료됐어요: (.+)$').firstMatch(raw);
     if (match != null) {
       final question = match.group(1)!.trim();
-      return (isChineseUi(context) ? '投票已结束：${question}' : isKo ? '투표가 종료됐어요: $question' : 'Poll ended: $question');
+      return (isChineseUi(context)
+          ? '投票已结束：${question}'
+          : isKo
+              ? '투표가 종료됐어요: $question'
+              : 'Poll ended: $question');
     }
 
     return raw;
@@ -114,6 +160,7 @@ class SnackChatCard extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final isKo = Localizations.localeOf(context).languageCode == 'ko';
+    if (isPast) return _buildPastCard(context, isKo: isKo);
     final screenWidth = MediaQuery.sizeOf(context).width;
     final horizontalPadding =
         (screenWidth * 0.045).clamp(14.0, 20.0).toDouble();
@@ -129,13 +176,25 @@ class SnackChatCard extends StatelessWidget {
         snackChat.lastMessageExpiresAt != null &&
         !DateTime.now().isBefore(snackChat.lastMessageExpiresAt!);
     final lastMessage = fileSummaryExpired
-        ? ((isChineseUi(context) ? '文件已过期' : isKo ? '만료된 파일입니다' : 'File expired'))
+        ? ((isChineseUi(context)
+            ? '文件已过期'
+            : isKo
+                ? '만료된 파일입니다'
+                : 'File expired'))
         : snackChat.lastMessageType == 'system'
             ? _localizedSystemPreview(context, rawLastMessage, isKo: isKo)
             : rawLastMessage == '[이미지]'
-                ? ((isChineseUi(context) ? '[图片]' : isKo ? '[이미지]' : '[Image]'))
+                ? ((isChineseUi(context)
+                    ? '[图片]'
+                    : isKo
+                        ? '[이미지]'
+                        : '[Image]'))
                 : rawLastMessage.isEmpty
-                    ? ((isChineseUi(context) ? '暂无消息' : isKo ? '아직 메시지가 없습니다' : 'No messages yet'))
+                    ? ((isChineseUi(context)
+                        ? '暂无消息'
+                        : isKo
+                            ? '아직 메시지가 없습니다'
+                            : 'No messages yet'))
                     : rawLastMessage;
 
     return Material(
@@ -146,17 +205,12 @@ class SnackChatCard extends StatelessWidget {
         child: MediaQuery.withClampedTextScaling(
           maxScaleFactor: 1.3,
           child: Container(
-            constraints: const BoxConstraints(minHeight: 68),
+            constraints: const BoxConstraints(minHeight: 82),
             padding: EdgeInsets.fromLTRB(
               horizontalPadding,
-              7,
+              10,
               isCompact ? 10 : 12,
-              7,
-            ),
-            decoration: const BoxDecoration(
-              border: Border(
-                bottom: BorderSide(color: BrandColors.divider),
-              ),
+              10,
             ),
             child: Row(
               crossAxisAlignment: CrossAxisAlignment.start,
@@ -168,7 +222,11 @@ class SnackChatCard extends StatelessWidget {
                     ringWidth: 3,
                     innerGap: 1.5,
                     borderRadius: BorderRadius.circular(11),
-                    semanticLabel: (isChineseUi(context) ? '24小时群聊' : isKo ? '24시간 스낵챗' : '24-hour Snack Chat'),
+                    semanticLabel: (isChineseUi(context)
+                        ? '24小时群聊'
+                        : isKo
+                            ? '24시간 스낵챗'
+                            : '24-hour Snack Chat'),
                     child: _ParticipantAvatarMosaic(
                       participantIds: snackChat.participantIds,
                       currentUserId: currentUserId,
@@ -280,41 +338,45 @@ class SnackChatCard extends StatelessWidget {
                         mainAxisAlignment: MainAxisAlignment.end,
                         children: [
                           if (hasUnread) ...[
-                            Container(
-                              constraints: const BoxConstraints(minWidth: 19),
-                              padding: const EdgeInsets.symmetric(
-                                horizontal: 5,
-                                vertical: 2,
-                              ),
-                              decoration: BoxDecoration(
-                                color: BrandColors.info,
-                                borderRadius: BorderRadius.circular(999),
-                              ),
-                              child: Text(
-                                unreadCount > 99 ? '99+' : '$unreadCount',
-                                textAlign: TextAlign.center,
-                                style: TextStyle(
-                                  fontFamily: uiFontFamily(context, 'Inter'),
-                                  fontFamilyFallback: ['NotoSansKR'],
-                                  fontSize: 9.5,
-                                  height: isChineseUi(context) ? 1.3 : 1.2,
-                                  fontWeight: FontWeight.w700,
-                                  color: Colors.white,
-                                ),
+                            Semantics(
+                              label: (isChineseUi(context)
+                                  ? '$unreadCount条未读消息'
+                                  : isKo
+                                      ? '읽지 않은 메시지 $unreadCount개'
+                                      : '$unreadCount unread messages'),
+                              child: const CircleAvatar(
+                                radius: 4,
+                                backgroundColor: BrandColors.info,
                               ),
                             ),
-                            const SizedBox(width: 3),
+                            const SizedBox(width: 4),
                           ],
                           Semantics(
                             button: true,
                             selected: isFavorited,
                             label: isFavorited
-                                ? ((isChineseUi(context) ? '取消收藏' : isKo ? '즐겨찾기 해제' : 'Remove from favorites'))
-                                : ((isChineseUi(context) ? '加入收藏' : isKo ? '즐겨찾기 추가' : 'Add to favorites')),
+                                ? ((isChineseUi(context)
+                                    ? '取消收藏'
+                                    : isKo
+                                        ? '즐겨찾기 해제'
+                                        : 'Remove from favorites'))
+                                : ((isChineseUi(context)
+                                    ? '加入收藏'
+                                    : isKo
+                                        ? '즐겨찾기 추가'
+                                        : 'Add to favorites')),
                             child: Tooltip(
                               message: isFavorited
-                                  ? ((isChineseUi(context) ? '取消收藏' : isKo ? '즐겨찾기 해제' : 'Remove from favorites'))
-                                  : ((isChineseUi(context) ? '加入收藏' : isKo ? '즐겨찾기 추가' : 'Add to favorites')),
+                                  ? ((isChineseUi(context)
+                                      ? '取消收藏'
+                                      : isKo
+                                          ? '즐겨찾기 해제'
+                                          : 'Remove from favorites'))
+                                  : ((isChineseUi(context)
+                                      ? '加入收藏'
+                                      : isKo
+                                          ? '즐겨찾기 추가'
+                                          : 'Add to favorites')),
                               child: SizedBox.square(
                                 dimension: 44,
                                 child: InkResponse(
@@ -342,7 +404,7 @@ class SnackChatCard extends StatelessWidget {
                                         key: ValueKey<bool>(isFavorited),
                                         size: 18,
                                         color: isFavorited
-                                            ? BrandColors.warning
+                                            ? BrandColors.textPrimary
                                             : BrandColors.neutral400,
                                       ),
                                     ),
@@ -358,6 +420,105 @@ class SnackChatCard extends StatelessWidget {
                 ),
               ],
             ),
+          ),
+        ),
+      ),
+    );
+  }
+
+  Widget _buildPastCard(BuildContext context, {required bool isKo}) {
+    final width = MediaQuery.sizeOf(context).width;
+    final horizontalPadding = (width * 0.045).clamp(14.0, 20.0).toDouble();
+    final createdAt = snackChat.createdAt.toLocal();
+    final dateLabel = '${createdAt.month}/${createdAt.day}';
+    final memberLabel = isChineseUi(context)
+        ? '${snackChat.participantCount}人'
+        : isKo
+            ? '${snackChat.participantCount}명'
+            : '${snackChat.participantCount} members';
+    final reopenLabel = isChineseUi(context)
+        ? '再次打开'
+        : isKo
+            ? '다시 열기'
+            : 'Open again';
+
+    return Material(
+      color: BrandColors.surface,
+      child: InkWell(
+        onTap: onTap,
+        child: Padding(
+          padding:
+              EdgeInsets.symmetric(horizontal: horizontalPadding, vertical: 8),
+          child: Row(
+            children: [
+              _ParticipantAvatarMosaic(
+                participantIds: snackChat.participantIds,
+                currentUserId: currentUserId,
+                size: 40,
+              ),
+              const SizedBox(width: 10),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      snackChat.title,
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      style: TextStyle(
+                        fontFamily: uiFontFamily(context, 'Inter'),
+                        fontFamilyFallback: const ['NotoSansKR'],
+                        fontSize: 14,
+                        fontWeight: FontWeight.w700,
+                        color: BrandColors.neutral500,
+                      ),
+                    ),
+                    const SizedBox(height: 3),
+                    Text(
+                      '$dateLabel · $memberLabel',
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      style: TextStyle(
+                        fontFamily: uiFontFamily(context, 'Inter'),
+                        fontFamilyFallback: const ['NotoSansKR'],
+                        fontSize: 11,
+                        color: BrandColors.neutral500,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+              IconButton(
+                onPressed: onToggleFavorite,
+                tooltip: (isChineseUi(context)
+                    ? '取消收藏'
+                    : isKo
+                        ? '즐겨찾기 해제'
+                        : 'Remove from favorites'),
+                icon: const Icon(Icons.star_rounded, size: 18),
+                color: BrandColors.neutral500,
+                constraints: const BoxConstraints(minWidth: 40, minHeight: 40),
+              ),
+              OutlinedButton(
+                onPressed: onTap,
+                style: OutlinedButton.styleFrom(
+                  foregroundColor: BrandColors.textPrimary,
+                  side: const BorderSide(color: BrandColors.divider),
+                  padding: const EdgeInsets.symmetric(horizontal: 10),
+                  minimumSize: const Size(0, 36),
+                  shape: const StadiumBorder(),
+                ),
+                child: Text(
+                  reopenLabel,
+                  style: TextStyle(
+                    fontFamily: uiFontFamily(context, 'Inter'),
+                    fontFamilyFallback: const ['NotoSansKR'],
+                    fontSize: 12,
+                    fontWeight: FontWeight.w700,
+                  ),
+                ),
+              ),
+            ],
           ),
         ),
       ),
@@ -411,10 +572,12 @@ class SnackChatDurationStatus extends StatelessWidget {
 class _ParticipantAvatarMosaic extends StatefulWidget {
   final List<String> participantIds;
   final String? currentUserId;
+  final double size;
 
   const _ParticipantAvatarMosaic({
     required this.participantIds,
     required this.currentUserId,
+    this.size = 52,
   });
 
   @override
@@ -478,13 +641,15 @@ class _ParticipantAvatarMosaicState extends State<_ParticipantAvatarMosaic> {
     final ids = _displayIds;
 
     return Semantics(
-      label: (isChineseUi(context) ? '参与者资料' : Localizations.localeOf(context).languageCode == 'ko'
-          ? '참여자 프로필'
-          : 'Participant profiles'),
+      label: (isChineseUi(context)
+          ? '参与者资料'
+          : Localizations.localeOf(context).languageCode == 'ko'
+              ? '참여자 프로필'
+              : 'Participant profiles'),
       child: ExcludeSemantics(
         child: SizedBox(
-          width: 52,
-          height: 52,
+          width: widget.size,
+          height: widget.size,
           child: LayoutBuilder(
             builder: (context, constraints) {
               final availableSize = constraints.biggest.shortestSide;

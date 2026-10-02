@@ -44,6 +44,8 @@ Future<void> _pumpNavigation(
   required double width,
   required int selectedIndex,
   double textScale = 1,
+  double bottomInset = 0,
+  bool disableAnimations = false,
   ValueChanged<int>? onTap,
   String snackChatLabel = 'Snack Chat',
   String snackChatSemanticLabel = 'Snack Chat tab',
@@ -59,6 +61,8 @@ Future<void> _pumpNavigation(
         data: MediaQueryData(
           size: Size(width, 800),
           textScaler: TextScaler.linear(textScale),
+          padding: EdgeInsets.only(bottom: bottomInset),
+          disableAnimations: disableAnimations,
         ),
         child: Scaffold(
           bottomNavigationBar: AdaptiveBottomNavigation(
@@ -73,6 +77,7 @@ Future<void> _pumpNavigation(
       ),
     ),
   );
+  await tester.pumpAndSettle();
 }
 
 void main() {
@@ -220,5 +225,34 @@ void main() {
       await tester.tap(find.bySemanticsLabel(semantics[index]));
       expect(tappedIndex, index);
     }
+  });
+
+  testWidgets('small Android viewport keeps the system-bar inset and tap',
+      (tester) async {
+    int? tappedIndex;
+    await _pumpNavigation(
+      tester,
+      width: 320,
+      selectedIndex: 0,
+      textScale: 2,
+      bottomInset: 34,
+      disableAnimations: true,
+      onTap: (index) => tappedIndex = index,
+    );
+
+    expect(tester.takeException(), isNull);
+    expect(tester.getSize(find.byType(AdaptiveBottomNavigation)).height,
+        greaterThan(80));
+    expect(
+      tester
+          .widgetList<AnimatedSwitcher>(find.descendant(
+            of: find.byType(AdaptiveBottomNavigation),
+            matching: find.byType(AnimatedSwitcher),
+          ))
+          .every((animation) => animation.duration == Duration.zero),
+      isTrue,
+    );
+    await tester.tap(find.bySemanticsLabel('DM tab'));
+    expect(tappedIndex, 4);
   });
 }

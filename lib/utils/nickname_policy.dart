@@ -51,6 +51,13 @@ class NicknamePolicy {
   static String canonicalKey(String? raw) =>
       normalizePreview(raw).toLowerCase();
 
+  /// Search-only handle notation. Never use this to validate/reserve a name.
+  static String searchQuery(String raw) {
+    final query = normalizePreview(raw);
+    return (query.startsWith('@') ? query.substring(1).trim() : query)
+        .toLowerCase();
+  }
+
   static NicknameValidationIssue? validate(String? raw) {
     final nickname = normalizePreview(raw);
     if (nickname.isEmpty) return NicknameValidationIssue.empty;

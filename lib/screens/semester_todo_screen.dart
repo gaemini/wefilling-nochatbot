@@ -10,6 +10,7 @@ import 'package:table_calendar/table_calendar.dart';
 import 'package:url_launcher/url_launcher.dart';
 
 import '../constants/app_constants.dart';
+import '../design/tokens.dart';
 import '../l10n/app_localizations.dart';
 import '../l10n/ui_locale.dart';
 import '../models/semester_todo.dart';
@@ -17,6 +18,7 @@ import '../models/student_type.dart';
 import '../providers/semester_todo_controller.dart';
 import '../services/cache/app_image_cache_manager.dart';
 import '../ui/widgets/post_linkified_text.dart';
+import '../ui/widgets/motion_press.dart';
 import '../utils/responsive_helper.dart';
 import 'student_type_selection_screen.dart';
 
@@ -877,7 +879,9 @@ class _SemesterTodoScreenState extends State<SemesterTodoScreen>
               label: entry.completed
                   ? _copy('완료 취소', 'Mark incomplete', '标为未完成')
                   : _copy('완료', 'Mark complete', '标为已完成'),
-              child: InkResponse(
+              child: MotionPress(
+                  enabled: !busy,
+                  child: InkResponse(
                   onTap: busy
                       ? null
                       : () => todo != null
@@ -890,7 +894,7 @@ class _SemesterTodoScreenState extends State<SemesterTodoScreen>
                       child: Align(
                           alignment: Alignment.centerLeft,
                           child:
-                              _CompletionCircle(completed: entry.completed))))),
+                              _CompletionCircle(completed: entry.completed)))))),
         if (!entry.actionable)
           SizedBox(
               width: 48,
@@ -2289,7 +2293,9 @@ class _CompletionCircle extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) => AnimatedContainer(
-        duration: const Duration(milliseconds: 160),
+        duration: MotionTokens.reduceMotion(context)
+            ? Duration.zero
+            : MotionTokens.release,
         width: 20,
         height: 20,
         decoration: BoxDecoration(

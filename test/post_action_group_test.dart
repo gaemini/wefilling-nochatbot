@@ -6,6 +6,115 @@ import 'package:wefilling/ui/widgets/post_action_group.dart';
 void main() {
   const widths = <double>[320, 360, 390, 430, 800];
 
+  testWidgets('feed heart and count animate the state supplied by the feed',
+      (tester) async {
+    Widget actions({required bool liked, required int likes}) => MaterialApp(
+          home: Scaffold(
+            body: PostActionGroup(
+              likes: likes,
+              comments: 2,
+              views: 7,
+              isLiked: liked,
+              likeLabel: 'Like',
+              commentLabel: 'Comment',
+              viewsLabel: 'Views',
+              onLikeTapUp: (_) {},
+              animateLike: true,
+              compact: true,
+            ),
+          ),
+        );
+
+    await tester.pumpWidget(actions(liked: false, likes: 24));
+    final switcherBefore = tester.state<State<AnimatedSwitcher>>(
+      find.byType(AnimatedSwitcher).first,
+    );
+    await tester.pumpWidget(actions(liked: true, likes: 25));
+    expect(find.byKey(const ValueKey('post_selection_pulse')), findsWidgets);
+    expect(
+      tester.state<State<AnimatedSwitcher>>(
+        find.byType(AnimatedSwitcher).first,
+      ),
+      same(switcherBefore),
+    );
+    expect(find.byKey(const ValueKey(25)), findsOneWidget);
+    await tester.pump(const Duration(milliseconds: 48));
+    final scale = tester
+        .widget<Transform>(
+          find
+              .descendant(
+                of: find.byKey(const ValueKey('post_selection_pulse')).first,
+                matching: find.byType(Transform),
+              )
+              .first,
+        )
+        .transform
+        .storage[0];
+    expect(scale, greaterThan(1.1));
+    await tester.pumpAndSettle();
+    expect(find.byIcon(Icons.favorite_rounded), findsOneWidget);
+    expect(find.text('25'), findsOneWidget);
+    expect(tester.takeException(), isNull);
+  });
+
+  testWidgets('first like count appears without changing the icon state',
+      (tester) async {
+    Widget actions(int likes) => MaterialApp(
+          home: Scaffold(
+            body: PostActionGroup(
+              likes: likes,
+              comments: 0,
+              views: 0,
+              isLiked: likes > 0,
+              likeLabel: 'Like',
+              commentLabel: 'Comment',
+              viewsLabel: 'Views',
+              onLikeTapUp: (_) {},
+              animateLike: true,
+              compact: true,
+            ),
+          ),
+        );
+
+    await tester.pumpWidget(actions(0));
+    expect(find.byKey(const ValueKey('count_0')), findsWidgets);
+    await tester.pumpWidget(actions(1));
+    expect(find.byKey(const ValueKey('count_1')), findsOneWidget);
+    await tester.pumpAndSettle();
+    expect(find.byIcon(Icons.favorite_rounded), findsOneWidget);
+    expect(find.text('1'), findsOneWidget);
+    expect(tester.takeException(), isNull);
+  });
+
+  testWidgets('bookmark pulse survives its loading indicator', (tester) async {
+    Widget actions({required bool saved, required bool saving}) => MaterialApp(
+          home: Scaffold(
+            body: PostActionGroup(
+              likes: 1,
+              comments: 0,
+              views: 1,
+              isLiked: false,
+              likeLabel: 'Like',
+              commentLabel: 'Comment',
+              viewsLabel: 'Views',
+              showSave: true,
+              isSaved: saved,
+              isSaving: saving,
+              saveLabel: 'Save',
+              onSaveTap: () {},
+            ),
+          ),
+        );
+
+    await tester.pumpWidget(actions(saved: false, saving: false));
+    await tester.pumpWidget(actions(saved: false, saving: true));
+    await tester.pumpWidget(actions(saved: true, saving: false));
+    expect(find.byKey(const ValueKey('post_selection_pulse')), findsWidgets);
+    await tester.pumpAndSettle();
+    expect(find.byIcon(Icons.bookmark_rounded), findsOneWidget);
+    expect(tester.takeException(), isNull);
+  });
+
   for (final width in widths) {
     for (final textScale in <double>[1, 3]) {
       for (final compact in <bool>[false, true]) {

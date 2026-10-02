@@ -4,6 +4,7 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:wefilling/l10n/app_localizations.dart';
 import 'package:wefilling/models/post_category.dart';
 import 'package:wefilling/ui/widgets/post_category_explorer.dart';
+import 'package:wefilling/ui/widgets/motion_press.dart';
 
 Widget _app({
   required ValueChanged<PostCategory> onSelected,
@@ -35,6 +36,33 @@ Widget _app({
 }
 
 void main() {
+  testWidgets('the visible category tile responds before navigation',
+      (tester) async {
+    PostCategory? selected;
+    await tester.pumpWidget(_app(onSelected: (value) => selected = value));
+    final tile = find.ancestor(
+      of: find.text('스타일'),
+      matching: find.byType(MotionPress),
+    );
+    expect(tile, findsOneWidget);
+
+    final gesture =
+        await tester.startGesture(tester.getCenter(find.text('스타일')));
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 95));
+    final scale = tester
+        .widget<Transform>(
+          find.descendant(of: tile, matching: find.byType(Transform)).first,
+        )
+        .transform
+        .storage[0];
+    expect(scale, closeTo(.975, .005));
+    await gesture.up();
+    expect(selected, PostCategory.style);
+    await tester.pumpAndSettle();
+    expect(tester.takeException(), isNull);
+  });
+
   testWidgets('shows all nine categories in fixed order', (tester) async {
     await tester.pumpWidget(_app(onSelected: (_) {}));
 

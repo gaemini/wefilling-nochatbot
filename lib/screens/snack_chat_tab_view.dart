@@ -3,13 +3,13 @@ import 'dart:async';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/rendering.dart' show ScrollCacheExtent;
+import 'package:flutter/services.dart';
 
 import '../design/tokens.dart';
 import '../models/snack_chat.dart';
 import '../services/snack_chat_service.dart';
 import '../constants/app_constants.dart';
 import '../ui/sheets/snack_chat_unfavorite_sheet.dart';
-import '../ui/widgets/app_fab.dart';
 import '../ui/widgets/snack_chat_card.dart';
 import '../utils/responsive_helper.dart';
 import 'snack_chat_screen.dart';
@@ -238,7 +238,11 @@ class _SnackChatTabViewState extends State<SnackChatTabView> {
           ScaffoldMessenger.of(context).showSnackBar(
             SnackBar(
               content: Text(
-                (isChineseUi(context) ? '更新收藏失败。' : isKo ? '즐겨찾기를 변경하지 못했어요.' : 'Couldn’t update favorites.'),
+                (isChineseUi(context)
+                    ? '更新收藏失败。'
+                    : isKo
+                        ? '즐겨찾기를 변경하지 못했어요.'
+                        : 'Couldn’t update favorites.'),
               ),
             ),
           );
@@ -276,10 +280,17 @@ class _SnackChatTabViewState extends State<SnackChatTabView> {
             }
 
             _service.prefetchRoomEntryData(items);
+            final activeItems =
+                items.where((chat) => !chat.isExpired()).toList();
+            final pastItems = items.where((chat) => chat.isExpired()).toList();
+            final hasPastSection = pastItems.isNotEmpty;
             final errorOffset = snapshot.hasError ? 1 : 0;
             final itemIndexByRoomId = <String, int>{
-              for (var index = 0; index < items.length; index++)
-                items[index].id: index + errorOffset,
+              for (var index = 0; index < activeItems.length; index++)
+                activeItems[index].id: index + errorOffset,
+              for (var index = 0; index < pastItems.length; index++)
+                pastItems[index].id:
+                    index + activeItems.length + errorOffset + 1,
             };
             final bottomInset = MediaQuery.paddingOf(context).bottom;
             return Stack(
@@ -290,7 +301,8 @@ class _SnackChatTabViewState extends State<SnackChatTabView> {
                     physics: const AlwaysScrollableScrollPhysics(),
                     scrollCacheExtent: const ScrollCacheExtent.viewport(0.75),
                     padding: EdgeInsets.fromLTRB(0, 4, 0, 88 + bottomInset),
-                    itemCount: items.length + errorOffset,
+                    itemCount:
+                        items.length + errorOffset + (hasPastSection ? 1 : 0),
                     findChildIndexCallback: (key) {
                       if (key is! ValueKey<String>) return null;
                       return itemIndexByRoomId[key.value];
@@ -302,10 +314,18 @@ class _SnackChatTabViewState extends State<SnackChatTabView> {
                           compact: true,
                         );
                       }
-                      final chat = items[index - errorOffset];
+                      final roomIndex = index - errorOffset;
+                      if (hasPastSection && roomIndex == activeItems.length) {
+                        return _PastSnackChatsHeader(isKo: isKo);
+                      }
+                      final isPast = roomIndex >= activeItems.length;
+                      final chat = isPast
+                          ? pastItems[roomIndex - activeItems.length - 1]
+                          : activeItems[roomIndex];
                       return SnackChatCard(
                         key: ValueKey<String>(chat.id),
                         snackChat: chat,
+                        isPast: isPast,
                         currentUserId: currentUserId,
                         isMuted: mutedIds.contains(chat.id),
                         onTap: () {
@@ -332,11 +352,33 @@ class _SnackChatTabViewState extends State<SnackChatTabView> {
                   PositionedDirectional(
                     end: 16,
                     bottom: 16 + bottomInset,
-                    child: AppFab(
-                      icon: IconStyles.add,
-                      onPressed: widget.onCreateSnackChat,
-                      semanticLabel: (isChineseUi(context) ? '创建群聊' : isKo ? '새 스낵챗 만들기' : 'Create a Snack Chat'),
-                      tooltip: (isChineseUi(context) ? '创建群聊' : isKo ? '스낵챗 만들기' : 'Create Snack Chat'),
+                    child: FloatingActionButton.extended(
+                      onPressed: () {
+                        HapticFeedback.lightImpact();
+                        widget.onCreateSnackChat?.call();
+                      },
+                      icon: const Icon(Icons.add_rounded, size: 22),
+                      label: Text(
+                        (isChineseUi(context)
+                            ? '创建群聊'
+                            : isKo
+                                ? '스낵챗 열기'
+                                : 'Open Snack Chat'),
+                        style: TextStyle(
+                          fontFamily: uiFontFamily(context, 'Inter'),
+                          fontFamilyFallback: const ['NotoSansKR'],
+                          fontSize: 14,
+                          fontWeight: FontWeight.w700,
+                        ),
+                      ),
+                      tooltip: (isChineseUi(context)
+                          ? '创建群聊'
+                          : isKo
+                              ? '스낵챗 만들기'
+                              : 'Create Snack Chat'),
+                      backgroundColor: AppColors.pointColor,
+                      foregroundColor: Colors.white,
+                      shape: const StadiumBorder(),
                       heroTag: 'create_snack_chat_fab',
                     ),
                   ),
@@ -345,6 +387,51 @@ class _SnackChatTabViewState extends State<SnackChatTabView> {
           },
         );
       },
+    );
+  }
+}
+
+class _PastSnackChatsHeader extends StatelessWidget {
+  const _PastSnackChatsHeader({required this.isKo});
+
+  final bool isKo;
+
+  @override
+  Widget build(BuildContext context) {
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(16, 18, 16, 7),
+      child: Row(
+        children: [
+          Text(
+            (isChineseUi(context)
+                ? '过去的群聊'
+                : isKo
+                    ? '지난 스낵챗'
+                    : 'Past Snack Chats'),
+            style: TextStyle(
+              fontFamily: uiFontFamily(context, 'Inter'),
+              fontFamilyFallback: const ['NotoSansKR'],
+              fontSize: 12,
+              fontWeight: FontWeight.w700,
+              color: BrandColors.neutral500,
+            ),
+          ),
+          const Spacer(),
+          Text(
+            (isChineseUi(context)
+                ? '已收藏的聊天'
+                : isKo
+                    ? '즐겨찾기한 대화'
+                    : 'Favorited chats'),
+            style: TextStyle(
+              fontFamily: uiFontFamily(context, 'Inter'),
+              fontFamilyFallback: const ['NotoSansKR'],
+              fontSize: 11,
+              color: BrandColors.neutral500,
+            ),
+          ),
+        ],
+      ),
     );
   }
 }
@@ -407,9 +494,11 @@ class SnackChatEmptyState extends StatelessWidget {
                     crossAxisAlignment: CrossAxisAlignment.stretch,
                     children: [
                       Text(
-                        (isChineseUi(context) ? '跨语言交流，时长由你定' : isKo
-                            ? '필요한 시간만 열어 두는 번역 채팅'
-                            : 'A translated chat for exactly as long as you need'),
+                        (isChineseUi(context)
+                            ? '跨语言交流，时长由你定'
+                            : isKo
+                                ? '필요한 시간만 열어 두는 번역 채팅'
+                                : 'A translated chat for exactly as long as you need'),
                         textAlign: TextAlign.center,
                         style: TextStyle(
                           fontFamily: uiFontFamily(context, 'Inter'),
@@ -423,9 +512,11 @@ class SnackChatEmptyState extends StatelessWidget {
                       ),
                       SizedBox(height: context.rs(7).clamp(6, 9).toDouble()),
                       Text(
-                        (isChineseUi(context) ? '与好友畅聊24小时，或选择不限时，\n轻松看懂不同语言的消息。' : isKo
-                            ? '친구들과 24시간 또는 종료 없이 대화하고,\n서로 다른 언어의 메시지도 바로 이해할 수 있어요.'
-                            : 'Chat with friends for 24 hours or without an end time,\nand understand messages across languages.'),
+                        (isChineseUi(context)
+                            ? '与好友畅聊24小时，或选择不限时，\n轻松看懂不同语言的消息。'
+                            : isKo
+                                ? '친구들과 24시간 또는 종료 없이 대화하고,\n서로 다른 언어의 메시지도 바로 이해할 수 있어요.'
+                                : 'Chat with friends for 24 hours or without an end time,\nand understand messages across languages.'),
                         textAlign: TextAlign.center,
                         style: TextStyle(
                           fontFamily: uiFontFamily(context, 'Inter'),
@@ -450,7 +541,11 @@ class SnackChatEmptyState extends StatelessWidget {
                             .toDouble(),
                       ),
                       Text(
-                        (isChineseUi(context) ? '群聊功能' : isKo ? '스낵챗에서 할 수 있어요' : 'What Snack Chat offers'),
+                        (isChineseUi(context)
+                            ? '群聊功能'
+                            : isKo
+                                ? '스낵챗에서 할 수 있어요'
+                                : 'What Snack Chat offers'),
                         style: TextStyle(
                           fontFamily: uiFontFamily(context, 'Inter'),
                           fontFamilyFallback: const ['NotoSansKR'],
@@ -463,29 +558,44 @@ class SnackChatEmptyState extends StatelessWidget {
                       SizedBox(height: context.rs(10).clamp(8, 12).toDouble()),
                       _FeatureRow(
                         icon: Icons.schedule_rounded,
-                        title:
-                            (isChineseUi(context) ? '自由选择群聊时长' : isKo ? '대화 시간을 직접 선택' : 'Choose the room duration'),
-                        description: (isChineseUi(context) ? '短聊可选24小时，重要群聊可长期保留。' : isKo
-                            ? '가벼운 대화는 24시간, 계속할 대화는 종료 없이 열어요.'
-                            : 'Use 24 hours for quick chats or keep important rooms open.'),
+                        title: (isChineseUi(context)
+                            ? '自由选择群聊时长'
+                            : isKo
+                                ? '대화 시간을 직접 선택'
+                                : 'Choose the room duration'),
+                        description: (isChineseUi(context)
+                            ? '短聊可选24小时，重要群聊可长期保留。'
+                            : isKo
+                                ? '가벼운 대화는 24시간, 계속할 대화는 종료 없이 열어요.'
+                                : 'Use 24 hours for quick chats or keep important rooms open.'),
                       ),
                       SizedBox(height: context.rs(12).clamp(10, 14).toDouble()),
                       _FeatureRow(
                         icon: Icons.translate_rounded,
-                        title: (isChineseUi(context) ? '实时多语言翻译' : isKo
-                            ? '실시간 다국어 번역'
-                            : 'Live multilingual translation'),
-                        description: (isChineseUi(context) ? '将消息即时翻译成你选择的语言。' : isKo
-                            ? '상대방 메시지를 내가 설정한 언어로 바로 번역해요.'
-                            : 'Translate messages instantly into your chosen language.'),
+                        title: (isChineseUi(context)
+                            ? '实时多语言翻译'
+                            : isKo
+                                ? '실시간 다국어 번역'
+                                : 'Live multilingual translation'),
+                        description: (isChineseUi(context)
+                            ? '将消息即时翻译成你选择的语言。'
+                            : isKo
+                                ? '상대방 메시지를 내가 설정한 언어로 바로 번역해요.'
+                                : 'Translate messages instantly into your chosen language.'),
                       ),
                       SizedBox(height: context.rs(12).clamp(10, 14).toDouble()),
                       _FeatureRow(
                         icon: Icons.notes_rounded,
-                        title: (isChineseUi(context) ? '快速了解聊天内容' : isKo ? '놓친 대화도 빠르게 정리' : 'Catch up quickly'),
-                        description: (isChineseUi(context) ? '快速掌握未读消息和今日聊天要点。' : isKo
-                            ? '안 읽은 메시지와 오늘 대화의 중요한 내용을 정리해요.'
-                            : 'Review the key points from unread messages and today’s chat.'),
+                        title: (isChineseUi(context)
+                            ? '快速了解聊天内容'
+                            : isKo
+                                ? '놓친 대화도 빠르게 정리'
+                                : 'Catch up quickly'),
+                        description: (isChineseUi(context)
+                            ? '快速掌握未读消息和今日聊天要点。'
+                            : isKo
+                                ? '안 읽은 메시지와 오늘 대화의 중요한 내용을 정리해요.'
+                                : 'Review the key points from unread messages and today’s chat.'),
                       ),
                       if (onCreate != null) ...[
                         SizedBox(
@@ -504,9 +614,11 @@ class SnackChatEmptyState extends StatelessWidget {
                               size: context.ri(19).clamp(18, 21).toDouble(),
                             ),
                             label: Text(
-                              (isChineseUi(context) ? '创建第一个群聊' : isKo
-                                  ? '첫 스낵챗 만들기'
-                                  : 'Create your first Snack Chat'),
+                              (isChineseUi(context)
+                                  ? '创建第一个群聊'
+                                  : isKo
+                                      ? '첫 스낵챗 만들기'
+                                      : 'Create your first Snack Chat'),
                               maxLines: 1,
                               overflow: TextOverflow.ellipsis,
                               style: TextStyle(
@@ -708,7 +820,11 @@ class _SectionError extends StatelessWidget {
         onPressed: onRetry,
         icon: const Icon(Icons.refresh_rounded, size: 18),
         label: Text(
-          (isChineseUi(context) ? '加载失败，点击重试' : isKo ? 'Snack Chat을 불러오지 못했습니다. 다시 시도' : 'Could not load. Retry'),
+          (isChineseUi(context)
+              ? '加载失败，点击重试'
+              : isKo
+                  ? 'Snack Chat을 불러오지 못했습니다. 다시 시도'
+                  : 'Could not load. Retry'),
         ),
       ),
     );

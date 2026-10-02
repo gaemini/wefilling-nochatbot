@@ -6,6 +6,7 @@ import '../../l10n/app_localizations.dart';
 import '../../models/post_category.dart';
 import '../../widgets/ad_banner_widget.dart';
 import '../../l10n/ui_locale.dart';
+import 'motion_press.dart';
 
 class PostCategoryExplorer extends StatelessWidget {
   const PostCategoryExplorer({
@@ -205,25 +206,29 @@ class PostCategoryTile extends StatelessWidget {
       child: standardContent,
     );
 
-    return Semantics(
-      button: true,
-      label: label,
-      excludeSemantics: true,
-      child: Material(
-        color: BrandColors.surface,
-        shape: RoundedRectangleBorder(
-          borderRadius: BorderRadius.circular(DesignTokens.r12),
-          side: const BorderSide(color: BrandColors.divider),
+    return MotionPress(
+      pressedScale: .975,
+      pressedOpacity: .97,
+      child: Semantics(
+        button: true,
+        label: label,
+        excludeSemantics: true,
+        child: Material(
+          color: BrandColors.surface,
+          shape: RoundedRectangleBorder(
+            borderRadius: BorderRadius.circular(DesignTokens.r12),
+            side: const BorderSide(color: BrandColors.divider),
+          ),
+          clipBehavior: Clip.antiAlias,
+          child: backgroundAsset == null
+              ? inkWell
+              : Ink.image(
+                  key: ValueKey('post_category_background_${category.key}'),
+                  image: AssetImage(backgroundAsset),
+                  fit: BoxFit.cover,
+                  child: inkWell,
+                ),
         ),
-        clipBehavior: Clip.antiAlias,
-        child: backgroundAsset == null
-            ? inkWell
-            : Ink.image(
-                key: ValueKey('post_category_background_${category.key}'),
-                image: AssetImage(backgroundAsset),
-                fit: BoxFit.cover,
-                child: inkWell,
-              ),
       ),
     );
   }

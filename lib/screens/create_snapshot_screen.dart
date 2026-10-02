@@ -25,6 +25,7 @@ import '../services/snapshot_service.dart';
 import '../snapshot/snapshot_storage_video.dart';
 import '../snapshot/snapshot_strings.dart';
 import '../ui/snackbar/app_snackbar.dart';
+import '../ui/widgets/motion_press.dart';
 import '../ui/widgets/group_audience_preview.dart';
 import '../utils/logger.dart';
 import '../utils/responsive_helper.dart';
@@ -2707,6 +2708,8 @@ class _CreateSnapshotScreenState extends State<CreateSnapshotScreen>
                               ),
                             const SizedBox(width: 12),
                             Expanded(
+                              child: MotionPress(
+                              enabled: !_composing,
                               child: FilledButton(
                                 onPressed:
                                     _composing ? null : _continueFromEditor,
@@ -2730,6 +2733,7 @@ class _CreateSnapshotScreenState extends State<CreateSnapshotScreen>
                                         ),
                                       )
                                     : Text(strings.next),
+                              ),
                               ),
                             ),
                           ],

@@ -1,5 +1,4 @@
 import 'dart:async';
-import 'dart:math' as math;
 
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/material.dart';
@@ -16,6 +15,8 @@ import '../snapshot/snapshot_storage_video.dart';
 import '../snapshot/snapshot_author_profile_image.dart';
 import '../snapshot/snapshot_strings.dart';
 import '../ui/snackbar/app_snackbar.dart';
+import '../ui/widgets/motion_press.dart';
+import '../ui/widgets/motion_state_icon.dart';
 import '../utils/responsive_helper.dart';
 import 'dm_chat_screen.dart';
 import 'friend_profile_screen.dart';
@@ -767,11 +768,9 @@ class _SnapshotDetailPage extends StatefulWidget {
   State<_SnapshotDetailPage> createState() => _SnapshotDetailPageState();
 }
 
-class _SnapshotDetailPageState extends State<_SnapshotDetailPage>
-    with SingleTickerProviderStateMixin {
+class _SnapshotDetailPageState extends State<_SnapshotDetailPage> {
   late Stream<SnapshotItem?> _accessStream;
   StreamSubscription<bool>? _reactionSubscription;
-  late final AnimationController _heartBurstController;
   bool _submittingReaction = false;
   bool _reactedLocally = false;
   bool _reactionStatusResolved = false;
@@ -784,10 +783,6 @@ class _SnapshotDetailPageState extends State<_SnapshotDetailPage>
   @override
   void initState() {
     super.initState();
-    _heartBurstController = AnimationController(
-      vsync: this,
-      duration: const Duration(milliseconds: 920),
-    );
     _accessStream = widget.service.watchSnapshot(
       widget.snapshot.id,
       initial: widget.snapshot,
@@ -817,7 +812,6 @@ class _SnapshotDetailPageState extends State<_SnapshotDetailPage>
         widget.snapshot.reactionCounts,
       );
       if (!widget.deleting) _watchReactionStatus();
-      _heartBurstController.reset();
     } else if (oldWidget.deleting != widget.deleting) {
       if (widget.deleting) {
         unawaited(_reactionSubscription?.cancel());
@@ -894,7 +888,6 @@ class _SnapshotDetailPageState extends State<_SnapshotDetailPage>
   void dispose() {
     _reactionStatusGeneration++;
     unawaited(_reactionSubscription?.cancel());
-    _heartBurstController.dispose();
     super.dispose();
   }
 
@@ -911,8 +904,7 @@ class _SnapshotDetailPageState extends State<_SnapshotDetailPage>
       _reactedLocally = true;
     });
     if (reaction == '❤️') {
-      unawaited(HapticFeedback.mediumImpact());
-      unawaited(_heartBurstController.forward(from: 0));
+      unawaited(HapticFeedback.selectionClick());
     } else {
       unawaited(HapticFeedback.selectionClick());
     }
@@ -924,7 +916,6 @@ class _SnapshotDetailPageState extends State<_SnapshotDetailPage>
         _reactedLocally = false;
       });
       _watchReactionStatus();
-      _heartBurstController.reset();
       AppSnackBar.show(
         context,
         message: SnapshotStrings.of(context).reactionFailed,
@@ -1000,18 +991,6 @@ class _SnapshotDetailPageState extends State<_SnapshotDetailPage>
                     onVideoPlayRequested: () =>
                         widget.onVideoPlayRequested(current.id),
                   ),
-                  if (!widget.deleting)
-                    Positioned(
-                      left: 0,
-                      right: 0,
-                      bottom: 18,
-                      height: 190,
-                      child: IgnorePointer(
-                        child: _SnapshotHeartBurst(
-                          animation: _heartBurstController,
-                        ),
-                      ),
-                    ),
                   if (widget.deleting)
                     Positioned.fill(
                       child: IgnorePointer(
@@ -1119,6 +1098,7 @@ class _SnapshotBottomControls extends StatelessWidget {
                       selected ? AppColors.pointColor : const Color(0xFF111827),
                   label: strings.likeReaction,
                   selected: selected,
+                  animateSelection: true,
                   onTap: canReact ? () => onReact('❤️') : null,
                 ),
                 if (isOwner)
@@ -1160,55 +1140,57 @@ class _SnapshotCommentEntry extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final safeCount = count.clamp(0, 1 << 30);
-    return Semantics(
-      button: true,
-      label: '${strings.comments} $safeCount',
-      excludeSemantics: true,
-      child: Material(
-        color: const Color(0xFFF2F4F7),
-        borderRadius: BorderRadius.circular(24),
-        clipBehavior: Clip.antiAlias,
-        child: InkWell(
-          onTap: onTap,
-          child: SizedBox(
-            width: width,
-            height: 48,
-            child: Padding(
-              padding: const EdgeInsets.symmetric(horizontal: 12),
-              child: Row(
-                children: [
-                  const Icon(
-                    Icons.chat_bubble_outline_rounded,
-                    size: 21,
-                    color: Color(0xFF475467),
-                  ),
-                  const SizedBox(width: 8),
-                  Expanded(
-                    child: Text(
-                      strings.publicCommentHint,
-                      maxLines: 1,
-                      overflow: TextOverflow.ellipsis,
+    return MotionPress(
+      child: Semantics(
+        button: true,
+        label: '${strings.comments} $safeCount',
+        excludeSemantics: true,
+        child: Material(
+          color: const Color(0xFFF2F4F7),
+          borderRadius: BorderRadius.circular(24),
+          clipBehavior: Clip.antiAlias,
+          child: InkWell(
+            onTap: onTap,
+            child: SizedBox(
+              width: width,
+              height: 48,
+              child: Padding(
+                padding: const EdgeInsets.symmetric(horizontal: 12),
+                child: Row(
+                  children: [
+                    const Icon(
+                      Icons.chat_bubble_outline_rounded,
+                      size: 21,
+                      color: Color(0xFF475467),
+                    ),
+                    const SizedBox(width: 8),
+                    Expanded(
+                      child: Text(
+                        strings.publicCommentHint,
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                        style: TextStyle(
+                          fontFamily: uiFontFamily(context, 'Inter'),
+                          fontFamilyFallback: const ['NotoSansKR'],
+                          fontSize: context.rf(13).clamp(12, 14).toDouble(),
+                          fontWeight: FontWeight.w500,
+                          color: const Color(0xFF667085),
+                        ),
+                      ),
+                    ),
+                    const SizedBox(width: 4),
+                    Text(
+                      _compactCount(safeCount),
                       style: TextStyle(
                         fontFamily: uiFontFamily(context, 'Inter'),
                         fontFamilyFallback: const ['NotoSansKR'],
-                        fontSize: context.rf(13).clamp(12, 14).toDouble(),
-                        fontWeight: FontWeight.w500,
-                        color: const Color(0xFF667085),
+                        fontSize: context.rf(12).clamp(11, 13).toDouble(),
+                        fontWeight: FontWeight.w700,
+                        color: const Color(0xFF475467),
                       ),
                     ),
-                  ),
-                  const SizedBox(width: 4),
-                  Text(
-                    _compactCount(safeCount),
-                    style: TextStyle(
-                      fontFamily: uiFontFamily(context, 'Inter'),
-                      fontFamilyFallback: const ['NotoSansKR'],
-                      fontSize: context.rf(12).clamp(11, 13).toDouble(),
-                      fontWeight: FontWeight.w700,
-                      color: const Color(0xFF475467),
-                    ),
-                  ),
-                ],
+                  ],
+                ),
               ),
             ),
           ),
@@ -1226,6 +1208,7 @@ class _SnapshotBottomAction extends StatelessWidget {
     this.iconColor = const Color(0xFF111827),
     this.count,
     this.selected = false,
+    this.animateSelection = false,
   });
 
   final IconData icon;
@@ -1233,51 +1216,64 @@ class _SnapshotBottomAction extends StatelessWidget {
   final String label;
   final int? count;
   final bool selected;
+  final bool animateSelection;
   final VoidCallback? onTap;
 
   @override
   Widget build(BuildContext context) {
     final safeCount = count?.clamp(0, 1 << 30);
     final semanticsLabel = safeCount == null ? label : '$label $safeCount';
-    return Semantics(
-      button: onTap != null,
+    return MotionPress(
       enabled: onTap != null,
-      selected: selected,
-      label: semanticsLabel,
-      excludeSemantics: true,
-      child: Material(
-        color: Colors.transparent,
-        child: InkResponse(
-          onTap: onTap,
-          radius: 26,
-          child: ConstrainedBox(
-            constraints: const BoxConstraints(minWidth: 52, minHeight: 48),
-            child: Padding(
-              padding: const EdgeInsets.symmetric(horizontal: 7),
-              child: Row(
-                mainAxisSize: MainAxisSize.min,
-                mainAxisAlignment: MainAxisAlignment.center,
-                children: [
-                  Icon(
-                    icon,
-                    color: iconColor,
-                    size: context.ri(25).clamp(23, 27).toDouble(),
-                  ),
-                  if (safeCount != null) ...[
-                    const SizedBox(width: 4),
-                    Text(
-                      _compactCount(safeCount),
-                      maxLines: 1,
-                      style: TextStyle(
-                        fontFamily: uiFontFamily(context, 'Inter'),
-                        fontFamilyFallback: const ['NotoSansKR'],
-                        color: const Color(0xFF475467),
-                        fontSize: context.rf(12).clamp(11.5, 13).toDouble(),
-                        fontWeight: FontWeight.w700,
+      child: Semantics(
+        button: onTap != null,
+        enabled: onTap != null,
+        selected: selected,
+        label: semanticsLabel,
+        excludeSemantics: true,
+        child: Material(
+          color: Colors.transparent,
+          child: InkResponse(
+            onTap: onTap,
+            radius: 26,
+            child: ConstrainedBox(
+              constraints: const BoxConstraints(minWidth: 52, minHeight: 48),
+              child: Padding(
+                padding: const EdgeInsets.symmetric(horizontal: 7),
+                child: Row(
+                  mainAxisSize: MainAxisSize.min,
+                  mainAxisAlignment: MainAxisAlignment.center,
+                  children: [
+                    if (animateSelection)
+                      MotionStateIcon(
+                        selected: selected,
+                        inactiveIcon: Icons.favorite_border_rounded,
+                        activeIcon: Icons.favorite_rounded,
+                        color: iconColor,
+                        size: context.ri(25).clamp(23, 27).toDouble(),
+                      )
+                    else
+                      Icon(
+                        icon,
+                        color: iconColor,
+                        size: context.ri(25).clamp(23, 27).toDouble(),
                       ),
-                    ),
+                    if (safeCount != null) ...[
+                      const SizedBox(width: 4),
+                      Text(
+                        _compactCount(safeCount),
+                        maxLines: 1,
+                        style: TextStyle(
+                          fontFamily: uiFontFamily(context, 'Inter'),
+                          fontFamilyFallback: const ['NotoSansKR'],
+                          color: const Color(0xFF475467),
+                          fontSize: context.rf(12).clamp(11.5, 13).toDouble(),
+                          fontWeight: FontWeight.w700,
+                        ),
+                      ),
+                    ],
                   ],
-                ],
+                ),
               ),
             ),
           ),
@@ -1800,156 +1796,6 @@ class _SnapshotAuthorHeader extends StatelessWidget {
             ),
           ),
         ],
-      ),
-    );
-  }
-}
-
-class _HeartParticleSpec {
-  const _HeartParticleSpec({
-    required this.dx,
-    required this.rise,
-    required this.size,
-    required this.delay,
-    required this.rotation,
-    required this.color,
-  });
-
-  final double dx;
-  final double rise;
-  final double size;
-  final double delay;
-  final double rotation;
-  final Color color;
-}
-
-class _SnapshotHeartBurst extends StatelessWidget {
-  const _SnapshotHeartBurst({required this.animation});
-
-  final Animation<double> animation;
-
-  static const List<_HeartParticleSpec> _particles = [
-    _HeartParticleSpec(
-      dx: -72,
-      rise: 132,
-      size: 22,
-      delay: .02,
-      rotation: -.24,
-      color: AppColors.pointColor,
-    ),
-    _HeartParticleSpec(
-      dx: -42,
-      rise: 164,
-      size: 17,
-      delay: .10,
-      rotation: .18,
-      color: Color(0xFF8CC4FF),
-    ),
-    _HeartParticleSpec(
-      dx: -15,
-      rise: 112,
-      size: 19,
-      delay: .04,
-      rotation: -.08,
-      color: AppColors.pointColor,
-    ),
-    _HeartParticleSpec(
-      dx: 18,
-      rise: 174,
-      size: 21,
-      delay: .12,
-      rotation: .16,
-      color: Color(0xFF8CC4FF),
-    ),
-    _HeartParticleSpec(
-      dx: 48,
-      rise: 122,
-      size: 16,
-      delay: .06,
-      rotation: -.18,
-      color: AppColors.pointColor,
-    ),
-    _HeartParticleSpec(
-      dx: 74,
-      rise: 152,
-      size: 23,
-      delay: .14,
-      rotation: .24,
-      color: Color(0xFF8CC4FF),
-    ),
-  ];
-
-  @override
-  Widget build(BuildContext context) {
-    return AnimatedBuilder(
-      animation: animation,
-      builder: (context, child) {
-        final progress = animation.value;
-        if (progress <= 0 || progress >= 1) {
-          return const SizedBox.shrink();
-        }
-
-        final centerProgress = Curves.easeOutBack.transform(
-          (progress / .42).clamp(0.0, 1.0),
-        );
-        final centerOpacity = progress < .58
-            ? 1.0
-            : (1 - ((progress - .58) / .42)).clamp(0.0, 1.0);
-
-        return Stack(
-          clipBehavior: Clip.none,
-          alignment: Alignment.bottomCenter,
-          children: [
-            Transform.scale(
-              scale: centerProgress,
-              child: Opacity(
-                opacity: centerOpacity,
-                child: const Icon(
-                  Icons.favorite_rounded,
-                  size: 52,
-                  color: AppColors.pointColor,
-                  shadows: [
-                    Shadow(color: Colors.white70, blurRadius: 10),
-                    Shadow(color: Colors.black45, blurRadius: 14),
-                  ],
-                ),
-              ),
-            ),
-            for (final particle in _particles)
-              _buildParticle(particle, progress),
-          ],
-        );
-      },
-    );
-  }
-
-  Widget _buildParticle(_HeartParticleSpec particle, double progress) {
-    final local = ((progress - particle.delay) / (1 - particle.delay)).clamp(
-      0.0,
-      1.0,
-    );
-    if (local <= 0) return const SizedBox.shrink();
-
-    final travel = Curves.easeOutCubic.transform(local);
-    final opacity = local < .58
-        ? (local / .18).clamp(0.0, 1.0)
-        : (1 - ((local - .58) / .42)).clamp(0.0, 1.0);
-    final horizontalDrift =
-        particle.dx * travel + math.sin(local * math.pi) * particle.dx.sign * 8;
-
-    return Transform.translate(
-      offset: Offset(horizontalDrift, -particle.rise * travel),
-      child: Transform.rotate(
-        angle: particle.rotation * travel,
-        child: Opacity(
-          opacity: opacity,
-          child: Icon(
-            Icons.favorite_rounded,
-            size: particle.size * (.72 + (.28 * travel)),
-            color: particle.color,
-            shadows: const [Shadow(color: Colors.black54, blurRadius: 7)],
-          ),
-        ),
       ),
     );
   }

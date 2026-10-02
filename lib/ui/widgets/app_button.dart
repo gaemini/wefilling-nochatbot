@@ -2,8 +2,10 @@ import 'package:flutter/material.dart';
 
 import '../../utils/responsive_helper.dart';
 import '../../l10n/ui_locale.dart';
+import 'motion_press.dart';
 
 enum AppButtonVariant { primary, outline, text }
+
 enum AppButtonSize { m, l }
 
 class AppButton extends StatelessWidget {
@@ -31,7 +33,8 @@ class AppButton extends StatelessWidget {
     final minHeight = size == AppButtonSize.l
         ? context.rh(46, min: 42)
         : context.rh(40, min: 38, max: 42);
-    final verticalPadding = size == AppButtonSize.l ? context.rs(6) : context.rs(3);
+    final verticalPadding =
+        size == AppButtonSize.l ? context.rs(6) : context.rs(3);
     final textStyle = TextStyle(
       fontFamily: uiFontFamily(context, 'Inter'),
       fontFamilyFallback: const ['NotoSansKR'],
@@ -84,9 +87,10 @@ class AppButton extends StatelessWidget {
       minimumSize: WidgetStatePropertyAll(Size(0, minHeight)),
       visualDensity: VisualDensity.compact,
     );
+    final Widget button;
     switch (variant) {
       case AppButtonVariant.primary:
-        return SizedBox(
+        button = SizedBox(
           width: fullWidth ? double.infinity : null,
           child: ElevatedButton(
             onPressed: callback,
@@ -94,8 +98,9 @@ class AppButton extends StatelessWidget {
             child: content,
           ),
         );
+        break;
       case AppButtonVariant.outline:
-        return SizedBox(
+        button = SizedBox(
           width: fullWidth ? double.infinity : null,
           child: OutlinedButton(
             onPressed: callback,
@@ -103,8 +108,9 @@ class AppButton extends StatelessWidget {
             child: content,
           ),
         );
+        break;
       case AppButtonVariant.text:
-        return SizedBox(
+        button = SizedBox(
           width: fullWidth ? double.infinity : null,
           child: TextButton(
             onPressed: callback,
@@ -112,6 +118,8 @@ class AppButton extends StatelessWidget {
             child: content,
           ),
         );
+        break;
     }
+    return MotionPress(enabled: !isDisabled, child: button);
   }
 }

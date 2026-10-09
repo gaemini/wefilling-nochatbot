@@ -20,6 +20,7 @@ class SnapshotCommentLetter {
     this.sourceText = '',
     this.sourceCreatedAt,
     this.sourceImageStoragePath = '',
+    this.sourceImageStorageBucket = '',
     this.sourceImageUrl = '',
     this.sourceAspectRatio = .8,
     this.sourceExpiresAt,
@@ -45,6 +46,7 @@ class SnapshotCommentLetter {
   final String sourceText;
   final DateTime? sourceCreatedAt;
   final String sourceImageStoragePath;
+  final String sourceImageStorageBucket;
   final String sourceImageUrl;
   final double sourceAspectRatio;
   final DateTime? sourceExpiresAt;
@@ -87,6 +89,7 @@ class SnapshotCommentLetter {
       sourceText: stringValue('sourceText'),
       sourceCreatedAt: dateFromMillis(data['sourceCreatedAtMillis']),
       sourceImageStoragePath: stringValue('sourceImageStoragePath'),
+      sourceImageStorageBucket: stringValue('sourceImageStorageBucket'),
       sourceImageUrl: stringValue('sourceImageUrl'),
       sourceAspectRatio: ((data['sourceAspectRatio'] as num?)?.toDouble() ?? .8)
           .clamp(.4, 2.5),

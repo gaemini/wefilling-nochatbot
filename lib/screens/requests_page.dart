@@ -16,6 +16,8 @@ import '../utils/responsive_helper.dart';
 import '../widgets/notification_read_observer.dart';
 import '../widgets/relationship_action_button.dart';
 import '../l10n/ui_locale.dart';
+import '../ui/widgets/motion_press.dart';
+import '../ui/widgets/motion_selectable.dart';
 
 class RequestsPage extends StatefulWidget {
   const RequestsPage({super.key});
@@ -245,9 +247,21 @@ class _RequestsPageState extends State<RequestsPage>
                       ),
                       tabs: [
                         Tab(
-                            text:
-                                AppLocalizations.of(context)!.receivedRequests),
-                        Tab(text: AppLocalizations.of(context)!.sentRequests),
+                          child: MotionPress(
+                            pressedScale: MotionSelectable.segmentScale,
+                            child: Text(
+                              AppLocalizations.of(context)!.receivedRequests,
+                            ),
+                          ),
+                        ),
+                        Tab(
+                          child: MotionPress(
+                            pressedScale: MotionSelectable.segmentScale,
+                            child: Text(
+                              AppLocalizations.of(context)!.sentRequests,
+                            ),
+                          ),
+                        ),
                       ],
                     ),
                   ),

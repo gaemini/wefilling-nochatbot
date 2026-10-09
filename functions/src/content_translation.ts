@@ -1,6 +1,7 @@
 import * as admin from 'firebase-admin';
 import * as crypto from 'crypto';
 import * as functions from 'firebase-functions';
+import {callables} from './backend';
 import * as https from 'https';
 import {COL} from './firestore_paths';
 import {hasActiveHanyangClaim} from './hanyang_verification';
@@ -101,6 +102,15 @@ const PROVIDER_FAILED_RETRY_TTL_MS = 12_000;
 // already waited for a visible failure. Very recent locks remain protected so
 // a double tap cannot start duplicate Gemini work.
 const MANUAL_PENDING_RETRY_AGE_MS = 5_000;
+// 사용자별 제공자(Gemini) 호출 상한. 캐시 적중·동일 언어·pending 대기 항목은
+// 세지 않고, 잠금을 잡아 실제로 모델을 호출하는 항목만 센다. 사람이 읽는
+// 속도보다 훨씬 높게 잡아 정상 사용은 막지 않고 스크립트 남용 비용만 묶는다.
+const TRANSLATION_USAGE_COLLECTION = 'content_translation_usage';
+const TRANSLATION_SHORT_WINDOW_MS = 10 * 60 * 1000;
+const TRANSLATION_MAX_PROVIDER_ITEMS_PER_SHORT_WINDOW = 600;
+const TRANSLATION_MAX_REGENERATE_ITEMS_PER_SHORT_WINDOW = 60;
+const TRANSLATION_DAY_WINDOW_MS = 24 * 60 * 60 * 1000;
+const TRANSLATION_MAX_PROVIDER_ITEMS_PER_DAY = 5000;
 const MAX_SOURCE_CHARS = 12_000;
 const MAX_CONTEXT_FIELD_CHARS = 1_500;
 const MAX_CONTEXT_CHARS = 6_000;
@@ -1990,7 +2000,73 @@ async function callGemini(
   };
 }
 
-export const translateContentBatch = functions
+function nonNegativeInt(value: unknown): number {
+  const n = Number(value);
+  return Number.isFinite(n) && n > 0 ? Math.trunc(n) : 0;
+}
+
+type ProviderQuotaDecision = {allowed: true} | {allowed: false; reason: string};
+
+/**
+ * Consumes the per-user provider quota for the items about to be sent to
+ * Gemini. A quota-store failure never blocks translation.
+ */
+async function consumeTranslationProviderQuota(
+  uid: string,
+  items: ResolvedContent[],
+): Promise<ProviderQuotaDecision> {
+  const providerItems = items.length;
+  if (providerItems === 0) return {allowed: true};
+  const regenerateItems = items.filter((item) => item.forceRegenerate).length;
+  const ref = admin.firestore().collection(TRANSLATION_USAGE_COLLECTION).doc(uid);
+  try {
+    return await admin.firestore().runTransaction(async (transaction) => {
+      const snap = await transaction.get(ref);
+      const data = snap.data() ?? {};
+      const now = Date.now();
+      const shortStart = timestampMillis(data.shortWindowStartedAt) ?? 0;
+      const sameShort = shortStart > 0 &&
+        now - shortStart < TRANSLATION_SHORT_WINDOW_MS;
+      const shortCount = sameShort ? nonNegativeInt(data.shortProviderItems) : 0;
+      const shortRegenerate = sameShort ?
+        nonNegativeInt(data.shortRegenerateItems) : 0;
+      const dayStart = timestampMillis(data.dayWindowStartedAt) ?? 0;
+      const sameDay = dayStart > 0 && now - dayStart < TRANSLATION_DAY_WINDOW_MS;
+      const dayCount = sameDay ? nonNegativeInt(data.dayProviderItems) : 0;
+      if (shortCount + providerItems > TRANSLATION_MAX_PROVIDER_ITEMS_PER_SHORT_WINDOW) {
+        return {allowed: false, reason: 'short_window'} as ProviderQuotaDecision;
+      }
+      if (shortRegenerate + regenerateItems >
+          TRANSLATION_MAX_REGENERATE_ITEMS_PER_SHORT_WINDOW) {
+        return {allowed: false, reason: 'regenerate_window'} as ProviderQuotaDecision;
+      }
+      if (dayCount + providerItems > TRANSLATION_MAX_PROVIDER_ITEMS_PER_DAY) {
+        return {allowed: false, reason: 'day_window'} as ProviderQuotaDecision;
+      }
+      transaction.set(ref, {
+        shortWindowStartedAt: admin.firestore.Timestamp.fromMillis(
+          sameShort ? shortStart : now,
+        ),
+        shortProviderItems: shortCount + providerItems,
+        shortRegenerateItems: shortRegenerate + regenerateItems,
+        dayWindowStartedAt: admin.firestore.Timestamp.fromMillis(
+          sameDay ? dayStart : now,
+        ),
+        dayProviderItems: dayCount + providerItems,
+        updatedAt: admin.firestore.FieldValue.serverTimestamp(),
+      }, {merge: true});
+      return {allowed: true} as ProviderQuotaDecision;
+    });
+  } catch (error) {
+    console.warn('content_translation_quota_unavailable', {
+      uidHash: sha256(uid).slice(0, 16),
+      message: error instanceof Error ? error.message : String(error),
+    });
+    return {allowed: true};
+  }
+}
+
+export const translateContentBatch = callables()
   .runWith({secrets: ['GEMINI_API_KEY'], timeoutSeconds: 60, memory: '512MB'})
   .https.onCall(async (raw, context) => {
     const uid = context.auth?.uid;
@@ -2052,6 +2128,8 @@ export const translateContentBatch = functions
       (item): item is ResolvedContent => item != null,
     );
     const acquired: ResolvedContent[] = [];
+    // 잠금 직전 캐시 상태. 할당량 초과로 호출을 포기할 때 되돌리는 데 쓴다.
+    const preLockCache = new Map<string, Record<string, unknown> | null>();
     let cacheHits = 0;
     let pendingBlocked = 0;
 
@@ -2164,10 +2242,37 @@ export const translateContentBatch = functions
           pendingAt: admin.firestore.FieldValue.serverTimestamp(),
           updatedAt: admin.firestore.FieldValue.serverTimestamp(),
         }, {merge: true});
+        preLockCache.set(key, cached ? {...cached} : null);
         return true;
       });
       if (acquiredLock) acquired.push(item);
     }));
+
+    if (acquired.length > 0) {
+      const quota = await consumeTranslationProviderQuota(uid, acquired);
+      if (!quota.allowed) {
+        console.warn('content_translation_quota_exceeded', {
+          uidHash: sha256(uid).slice(0, 16),
+          providerItems: acquired.length,
+          reason: quota.reason,
+        });
+        await Promise.all(acquired.map(async (item) => {
+          const key = requestKey(item);
+          const ref = db.collection(COL.contentTranslations)
+            .doc(cacheId(item, targetLanguage));
+          const previousCache = preLockCache.get(key);
+          // 방금 잡은 pending 잠금을 되돌려 할당량이 풀리면 자동 재시도가 다시 동작한다.
+          if (previousCache) await ref.set(previousCache);
+          else await ref.delete();
+          responses.set(key, {
+            id: key,
+            status: 'failed',
+            errorCode: 'resource-exhausted',
+          });
+        }));
+        acquired.splice(0, acquired.length);
+      }
+    }
 
     if (acquired.length > 0) {
       try {

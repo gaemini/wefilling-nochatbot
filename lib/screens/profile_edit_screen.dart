@@ -6,6 +6,7 @@ import 'dart:async';
 import 'dart:io';
 import 'dart:convert';
 import 'package:flutter/material.dart';
+import '../ui/widgets/motion_press.dart';
 import 'package:provider/provider.dart';
 import 'package:image_picker/image_picker.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
@@ -883,16 +884,19 @@ class _ProfileEditScreenState extends State<ProfileEditScreen> {
                         ),
                       ),
                     )
-                  : TextButton(
-                      onPressed: _updateProfile,
-                      child: Text(
-                        AppLocalizations.of(context)!.save,
-                        style: TextStyle(
-                          fontFamily: uiFontFamily(context, 'Inter'),
-                          fontFamilyFallback: const ['NotoSansKR'],
-                          fontSize: 16,
-                          fontWeight: FontWeight.w600,
-                          color: AppColors.pointColor,
+                  : MotionPress(
+                      pressedScale: .975,
+                      child: TextButton(
+                        onPressed: _updateProfile,
+                        child: Text(
+                          AppLocalizations.of(context)!.save,
+                          style: TextStyle(
+                            fontFamily: uiFontFamily(context, 'Inter'),
+                            fontFamilyFallback: const ['NotoSansKR'],
+                            fontSize: 16,
+                            fontWeight: FontWeight.w600,
+                            color: AppColors.pointColor,
+                          ),
                         ),
                       ),
                     ),
@@ -925,115 +929,98 @@ class _ProfileEditScreenState extends State<ProfileEditScreen> {
                           ),
                         ),
                         const SizedBox(height: 16),
-                        GestureDetector(
-                          onTap: _showImagePickerOptions,
-                          child: Stack(
-                            children: [
-                              Container(
-                                width: 120,
-                                height: 120,
-                                decoration: BoxDecoration(
-                                  shape: BoxShape.circle,
-                                  color: const Color(0xFFF1F5F9),
-                                ),
-                                child: ClipOval(
-                                  child: _useDefaultImage
-                                      ? Container(
-                                          color: Colors.grey[200],
-                                          child: Icon(
-                                            Icons.person,
-                                            size: 40,
-                                            color: AppColors
-                                                .pointColor, // Wefilling 브랜드 색상
-                                          ),
-                                        )
-                                      : _selectedImage != null
-                                          ? Image.file(
-                                              _selectedImage!,
-                                              fit: BoxFit.cover,
-                                            )
-                                          : Consumer<AuthProvider>(
-                                              builder: (context, authProvider,
-                                                  child) {
-                                                final raw =
-                                                    (authProvider.userData?[
-                                                                'photoURL'] ??
-                                                            '')
-                                                        .toString();
-                                                final url = ProfilePhotoPolicy
-                                                        .isAllowedProfilePhotoUrl(
-                                                            raw)
-                                                    ? raw
-                                                    : '';
-                                                return url.isNotEmpty
-                                                    ? Image.network(
-                                                        url,
-                                                        fit: BoxFit.cover,
-                                                        errorBuilder: (context,
-                                                            error, stackTrace) {
-                                                          return Container(
-                                                            color: Colors
-                                                                .grey[200],
-                                                            child: Icon(
-                                                              Icons.person,
-                                                              size: 40,
-                                                              color: AppColors
-                                                                  .pointColor, // Wefilling 브랜드 색상
-                                                            ),
-                                                          );
-                                                        },
-                                                      )
-                                                    : Container(
-                                                        color: Colors.grey[200],
-                                                        child: Icon(
-                                                          Icons.person,
-                                                          size: 40,
-                                                          color: AppColors
-                                                              .pointColor, // Wefilling 브랜드 색상
-                                                        ),
-                                                      );
-                                              },
+                        MotionPress(
+                          pressedScale: .985,
+                          child: GestureDetector(
+                            onTap: _showImagePickerOptions,
+                            child: Stack(
+                              children: [
+                                Container(
+                                  width: 120,
+                                  height: 120,
+                                  decoration: BoxDecoration(
+                                    shape: BoxShape.circle,
+                                    color: const Color(0xFFF1F5F9),
+                                  ),
+                                  child: ClipOval(
+                                    child: _useDefaultImage
+                                        ? Container(
+                                            color: Colors.grey[200],
+                                            child: Icon(
+                                              Icons.person,
+                                              size: 40,
+                                              color: AppColors.pointColor, // Wefilling 브랜드 색상
                                             ),
+                                          )
+                                        : _selectedImage != null
+                                        ? Image.file(_selectedImage!, fit: BoxFit.cover)
+                                        : Consumer<AuthProvider>(
+                                            builder: (context, authProvider, child) {
+                                              final raw = (authProvider.userData?['photoURL'] ?? '')
+                                                  .toString();
+                                              final url =
+                                                  ProfilePhotoPolicy.isAllowedProfilePhotoUrl(raw)
+                                                  ? raw
+                                                  : '';
+                                              return url.isNotEmpty
+                                                  ? Image.network(
+                                                      url,
+                                                      fit: BoxFit.cover,
+                                                      errorBuilder: (context, error, stackTrace) {
+                                                        return Container(
+                                                          color: Colors.grey[200],
+                                                          child: Icon(
+                                                            Icons.person,
+                                                            size: 40,
+                                                            color: AppColors
+                                                                .pointColor, // Wefilling 브랜드 색상
+                                                          ),
+                                                        );
+                                                      },
+                                                    )
+                                                  : Container(
+                                                      color: Colors.grey[200],
+                                                      child: Icon(
+                                                        Icons.person,
+                                                        size: 40,
+                                                        color:
+                                                            AppColors.pointColor, // Wefilling 브랜드 색상
+                                                      ),
+                                                    );
+                                            },
+                                          ),
+                                  ),
                                 ),
-                              ),
-                              if (_isUploadingImage)
-                                Positioned.fill(
-                                  child: Container(
-                                    decoration: BoxDecoration(
-                                      shape: BoxShape.circle,
-                                      color: Colors.black54,
-                                    ),
-                                    child: Center(
-                                      child: CircularProgressIndicator(
-                                        valueColor:
-                                            AlwaysStoppedAnimation<Color>(
-                                                Colors.white),
+                                if (_isUploadingImage)
+                                  Positioned.fill(
+                                    child: Container(
+                                      decoration: BoxDecoration(
+                                        shape: BoxShape.circle,
+                                        color: Colors.black54,
+                                      ),
+                                      child: Center(
+                                        child: CircularProgressIndicator(
+                                          valueColor: AlwaysStoppedAnimation<Color>(Colors.white),
+                                        ),
                                       ),
                                     ),
                                   ),
-                                ),
-                              Positioned(
-                                bottom: 0,
-                                right: 0,
-                                child: Container(
-                                  width: 36,
-                                  height: 36,
-                                  decoration: BoxDecoration(
-                                    color: AppColors.pointColor,
-                                    shape: BoxShape.circle,
-                                    border: Border.all(
-                                      color: Colors.white,
-                                      width: 2,
+                                Positioned(
+                                  bottom: 0,
+                                  right: 0,
+                                  child: Container(
+                                    width: 36,
+                                    height: 36,
+                                    decoration: BoxDecoration(
+                                      color: AppColors.pointColor,
+                                      shape: BoxShape.circle,
+                                      border: Border.all(color: Colors.white, width: 2),
                                     ),
-                                  ),
-                                  child: Icon(
-                                    Icons.camera_alt,
-                                    color: Colors.white,
-                                    size: 18,
+                                    child: Icon(Icons.camera_alt, color: Colors.white, size: 18),
                                   ),
                                 ),
-                              ),
-                            ],
+                              ],
+                            ),
                           ),
                         ),
                         const SizedBox(height: 8),

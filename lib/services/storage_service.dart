@@ -7,8 +7,11 @@ import 'package:firebase_storage/firebase_storage.dart';
 import 'package:uuid/uuid.dart';
 import 'package:flutter_image_compress/flutter_image_compress.dart';
 import 'package:path_provider/path_provider.dart';
+import '../config/app_backend.dart';
 import 'package:path/path.dart' as path;
 import '../utils/logger.dart';
+import 'media/video_upload_policy.dart';
+import 'media/video_prepare_service.dart';
 import 'snack_chat_media_cache_service.dart';
 
 /// 프로필 이미지 업로드 결과
@@ -17,11 +20,42 @@ import 'snack_chat_media_cache_service.dart';
 typedef ProfileUploadResult = ({String downloadUrl, String path});
 typedef SnackChatImageUploadResult = ({
   String storagePath,
+  String storageBucket,
   String? imageUrl,
   int? imageWidth,
   int? imageHeight,
 });
-typedef DmFileUploadResult = ({String storagePath});
+typedef DmFileUploadResult = ({String storagePath, String storageBucket});
+
+/// A chat image that is already compressed and measured, so the upload step
+/// only has to push bytes. Built with [StorageService.prepareChatImage] while
+/// the user is still looking at the confirmation sheet.
+class PreparedChatImage {
+  const PreparedChatImage({
+    required this.bytes,
+    required this.sourcePath,
+    this.tempPath,
+    this.width,
+    this.height,
+  });
+
+  /// Final JPEG bytes to upload.
+  final Uint8List bytes;
+  /// Path the user picked (kept for retries / local preview).
+  final String sourcePath;
+  /// Compressed temp file to delete after use, if compression produced one.
+  final String? tempPath;
+  final int? width;
+  final int? height;
+
+  Future<void> dispose() async {
+    final temp = tempPath;
+    if (temp == null || temp == sourcePath) return;
+    try {
+      await File(temp).delete();
+    } catch (_) {}
+  }
+}
 typedef _ChatImageUploadResult = ({
   String storagePath,
   String? downloadUrl,
@@ -29,23 +63,12 @@ typedef _ChatImageUploadResult = ({
   int? imageHeight,
 });
 
-typedef _EncodedImageInfo = ({
-  Uint8List bytes,
-  int width,
-  int height,
-});
-
 class StorageService {
-  // 일반 이미지(posts/dm)는 기본 Storage 설정을 사용
-  final FirebaseStorage _storage = FirebaseStorage.instance;
-
-  // ✅ 프로필 사진은 지정 버킷에만 저장/사용
-  // - Firebase 옵션(storageBucket)과 동일한 "버킷 이름"을 사용한다. (gs:// prefix 불필요)
+  // 모든 신규 업로드는 설정된 업로드 버킷(AppStorage.uploads)으로 간다.
+  // 기존 객체는 문서에 기록된 storageBucket으로 열고, 없으면 레거시 버킷이다.
+  // - 버킷은 "버킷 이름"으로 지정한다. (gs:// prefix 불필요)
   // - iOS에서 gs:// prefix 사용 시 resumable 업로드가 불안정한 케이스가 있어 통일한다.
-  static const String _profileBucket =
-      'flutterproject3-af322.firebasestorage.app';
-  final FirebaseStorage _profileStorage =
-      FirebaseStorage.instanceFor(bucket: _profileBucket);
+  FirebaseStorage get _uploads => AppStorage.uploads;
   final Uuid _uuid = const Uuid();
   final Map<String, UploadTask> _dmFileUploads = <String, UploadTask>{};
 
@@ -90,6 +113,66 @@ class StorageService {
   }
 
   // 이미지 파일을 Firebase Storage에 업로드하고 다운로드 URL을 반환
+  /// 게시글 영상과 썸네일을 post_videos/{uid}/{postId}/ 아래에 올린다.
+  /// 길이·크기 검증과 다운로드 URL 발급은 createPostSecure가 한다. 게시글
+  /// 생성이 실패하면 [deletePostVideo]로 업로더가 직접 지울 수 있다(문서가
+  /// 없을 때만 규칙이 허용).
+  Future<PostVideoUpload> uploadPostVideo(
+    PreparedVideo prepared, {
+    required String ownerUid,
+    required String postId,
+    void Function(double progress)? onProgress,
+  }) async {
+    final folder = 'post_videos/$ownerUid/$postId';
+    final videoRef = _uploads.ref().child('$folder/video.mp4');
+    final thumbnailRef = _uploads.ref().child('$folder/thumbnail.jpg');
+    final metadata = <String, String>{'ownerUid': ownerUid, 'postId': postId};
+    final videoTask = videoRef.putFile(
+      prepared.file,
+      SettableMetadata(
+        contentType: VideoUploadPolicy.contentType,
+        cacheControl: 'public,max-age=31536000,immutable',
+        customMetadata: metadata,
+      ),
+    );
+    if (onProgress != null) {
+      videoTask.snapshotEvents.listen((snapshot) {
+        if (snapshot.totalBytes > 0) {
+          onProgress(snapshot.bytesTransferred / snapshot.totalBytes);
+        }
+      }, onError: (_) {});
+    }
+    await videoTask.timeout(const Duration(minutes: 6));
+    await thumbnailRef
+        .putFile(
+          prepared.thumbnail,
+          SettableMetadata(
+            contentType: VideoUploadPolicy.thumbnailContentType,
+            cacheControl: 'public,max-age=31536000,immutable',
+            customMetadata: metadata,
+          ),
+        )
+        .timeout(const Duration(seconds: 90));
+    return PostVideoUpload(
+      storagePath: videoRef.fullPath,
+      thumbnailPath: thumbnailRef.fullPath,
+      storageBucket: AppStorage.uploadBucketName,
+    );
+  }
+
+  /// 생성 실패 롤백. 게시글 문서가 없을 때만 규칙이 허용한다.
+  Future<void> deletePostVideo(PostVideoUpload upload) async {
+    for (final path in [upload.storagePath, upload.thumbnailPath]) {
+      try {
+        await AppStorage.ref(path, storageBucket: upload.storageBucket)
+            .delete()
+            .timeout(const Duration(seconds: 15));
+      } catch (error) {
+        if (Logger.isVerboseEnabled) Logger.warning('포스트 영상 롤백 삭제 실패: $error');
+      }
+    }
+  }
+
   Future<String?> uploadImage(
     File imageFile, {
     bool forceJpeg = false,
@@ -114,10 +197,10 @@ class StorageService {
 
       if (Logger.isVerboseEnabled) Logger.log('이미지 업로드 시작: $fullPath');
       if (Logger.isVerboseEnabled)
-        Logger.log('Firebase Storage 버킷: ${_storage.bucket}');
+        Logger.log('Firebase Storage 버킷: ${_uploads.bucket}');
 
       // 이미지 파일 경로 설정 (posts 폴더 아래에 저장)
-      final Reference ref = _storage.ref().child(folderPath).child(fileName);
+      final Reference ref = _uploads.ref().child(folderPath).child(fileName);
 
       // 이미지 파일 업로드 및 진행 상태 모니터링
       final UploadTask uploadTask = ref.putFile(
@@ -205,9 +288,9 @@ class StorageService {
 
       if (Logger.isVerboseEnabled) Logger.log('프로필 이미지 업로드 시작: $fullPath');
       if (Logger.isVerboseEnabled)
-        Logger.log('Firebase Storage 버킷(프로필): ${_profileStorage.bucket}');
+        Logger.log('Firebase Storage 버킷(프로필): ${_uploads.bucket}');
 
-      ref = _profileStorage.ref().child(folderPath).child(fileName);
+      ref = _uploads.ref().child(folderPath).child(fileName);
 
       final UploadTask uploadTask = ref.putFile(
         compressedFile,
@@ -293,6 +376,7 @@ class StorageService {
     required String userId,
     required String conversationId,
     void Function(double progress)? onProgress, // 0.0 ~ 1.0
+    PreparedChatImage? prepared,
   }) async {
     final result = await _uploadChatImage(
       imageFile,
@@ -303,6 +387,7 @@ class StorageService {
       logLabel: 'DM',
       onProgress: onProgress,
       createDownloadUrl: true,
+      prepared: prepared,
     );
     return result?.downloadUrl;
   }
@@ -324,7 +409,8 @@ class StorageService {
     final normalizedExtension = fileExtension.toLowerCase().trim();
     final storagePath =
         'dm_files/$userId/$conversationId/$messageId/file.$normalizedExtension';
-    final reference = _storage.ref(storagePath);
+    final storageBucket = AppStorage.uploadBucketName;
+    final reference = _uploads.ref(storagePath);
 
     bool isExpected(FullMetadata metadata) {
       final custom = metadata.customMetadata ?? const <String, String>{};
@@ -340,7 +426,9 @@ class StorageService {
     Future<DmFileUploadResult?> recoverExisting() async {
       try {
         final metadata = await reference.getMetadata();
-        return isExpected(metadata) ? (storagePath: storagePath) : null;
+        return isExpected(metadata)
+            ? (storagePath: storagePath, storageBucket: storageBucket)
+            : null;
       } on FirebaseException catch (error) {
         if (error.code == 'object-not-found') return null;
         rethrow;
@@ -394,7 +482,7 @@ class StorageService {
         await subscription.cancel();
       }
       onProgress?.call(1);
-      return (storagePath: storagePath);
+      return (storagePath: storagePath, storageBucket: storageBucket);
     } catch (error, stackTrace) {
       // The upload may have committed before a timeout/disconnect. Confirm the
       // immutable object before reporting failure and keep the local outbox.
@@ -436,6 +524,7 @@ class StorageService {
     required String conversationId,
     required String messageId,
     required String storagePath,
+    String? storageBucket,
     required String fileName,
     required int fileSize,
     void Function(double progress)? onProgress,
@@ -461,7 +550,8 @@ class StorageService {
 
     final temp = File('${target.path}.part');
     if (await temp.exists()) await temp.delete();
-    final download = _storage.ref(storagePath).writeToFile(temp);
+    final download = AppStorage.ref(storagePath, storageBucket: storageBucket)
+        .writeToFile(temp);
     final subscription = download.snapshotEvents.listen((snapshot) {
       if (snapshot.totalBytes <= 0) return;
       onProgress?.call(
@@ -517,6 +607,7 @@ class StorageService {
     required String userId,
     required String snackChatId,
     void Function(double progress)? onProgress,
+    PreparedChatImage? prepared,
   }) async {
     final result = await _uploadChatImage(
       imageFile,
@@ -527,10 +618,12 @@ class StorageService {
       logLabel: 'Snack Chat',
       onProgress: onProgress,
       createDownloadUrl: false,
+      prepared: prepared,
     );
     if (result == null) return null;
     return (
       storagePath: result.storagePath,
+      storageBucket: AppStorage.uploadBucketName,
       imageUrl: result.downloadUrl,
       imageWidth: result.imageWidth,
       imageHeight: result.imageHeight,
@@ -545,6 +638,7 @@ class StorageService {
     String storagePath, {
     required String userId,
     required String snackChatId,
+    String? storageBucket,
   }) async {
     final normalized = storagePath.trim();
     final expectedPrefix = 'snack_chat_images/$userId/$snackChatId/';
@@ -558,8 +652,7 @@ class StorageService {
       );
     }
     try {
-      await _storage
-          .ref(normalized)
+      await AppStorage.ref(normalized, storageBucket: storageBucket)
           .delete()
           .timeout(const Duration(seconds: 10));
     } on FirebaseException catch (error, stackTrace) {
@@ -583,7 +676,7 @@ class StorageService {
     final normalized = downloadUrl.trim();
     if (normalized.isEmpty) return null;
     try {
-      final path = _storage.refFromURL(normalized).fullPath.trim();
+      final path = AppStorage.refFromUrl(normalized).fullPath.trim();
       return path.isEmpty ? null : path;
     } catch (error) {
       if (Logger.isVerboseEnabled)
@@ -592,6 +685,66 @@ class StorageService {
     }
   }
 
+  /// Compresses (only when worthwhile) and measures a picked chat image.
+  ///
+  /// The gallery picker already re-encodes to JPEG at ~88 quality and at most
+  /// 1800 px, so re-compressing every image cost 300–800 ms of CPU and a second
+  /// decode without saving bandwidth. Files that are already small JPEGs are
+  /// uploaded as-is; larger or non-JPEG inputs go through [_compressImage].
+  /// Dimensions come from the encoded header, not a full pixel decode.
+  Future<PreparedChatImage?> prepareChatImage(File imageFile) async {
+    try {
+      final sourceExt = path.extension(imageFile.path).toLowerCase();
+      final sourceSize = await imageFile.length();
+      final alreadySmallJpeg = (sourceExt == '.jpg' || sourceExt == '.jpeg') &&
+          sourceSize > 0 &&
+          sourceSize <= _directUploadMaxBytes;
+      File encoded = imageFile;
+      if (!alreadySmallJpeg) {
+        final compressed = await _compressImage(imageFile, forceJpeg: true);
+        if (compressed == null) return null;
+        encoded = compressed;
+      }
+      final bytes = await encoded.readAsBytes();
+      if (bytes.isEmpty) return null;
+      final size = await _encodedImageSize(bytes);
+      return PreparedChatImage(
+        bytes: bytes,
+        sourcePath: imageFile.path,
+        tempPath: encoded.path == imageFile.path ? null : encoded.path,
+        width: size?.width,
+        height: size?.height,
+      );
+    } catch (error) {
+      Logger.error('채팅 이미지 준비 실패: $error');
+      return null;
+    }
+  }
+
+  /// Picker output above this size still goes through compression.
+  static const int _directUploadMaxBytes = 600 * 1024;
+
+  Future<({int width, int height})?> _encodedImageSize(Uint8List bytes) async {
+    ui.ImmutableBuffer? buffer;
+    ui.ImageDescriptor? descriptor;
+    try {
+      buffer = await ui.ImmutableBuffer.fromUint8List(bytes);
+      descriptor = await ui.ImageDescriptor.encoded(buffer);
+      if (descriptor.width <= 0 || descriptor.height <= 0) return null;
+      return (width: descriptor.width, height: descriptor.height);
+    } catch (error) {
+      if (Logger.isVerboseEnabled) {
+        Logger.warning('채팅 이미지 크기 확인 실패: $error');
+      }
+      return null;
+    } finally {
+      descriptor?.dispose();
+      buffer?.dispose();
+    }
+  }
+
+  /// DM 이미지 파일을 Firebase Storage에 업로드하고 다운로드 URL을 반환
+  /// - 경로: dm_images/{userId}/{conversationId}/{uuid}.jpg
   Future<_ChatImageUploadResult?> _uploadChatImage(
     File imageFile, {
     required String userId,
@@ -601,12 +754,14 @@ class StorageService {
     required String logLabel,
     void Function(double progress)? onProgress,
     required bool createDownloadUrl,
+    PreparedChatImage? prepared,
   }) async {
-    File? compressedFile;
+    PreparedChatImage? image = prepared;
+    final ownsPrepared = prepared == null;
     String storagePath = '$folderName/<pending>';
     try {
-      compressedFile = await _compressImage(imageFile, forceJpeg: true);
-      if (compressedFile == null) {
+      image ??= await prepareChatImage(imageFile);
+      if (image == null) {
         Logger.error('$logLabel 이미지 압축 실패');
         return null;
       }
@@ -615,20 +770,19 @@ class StorageService {
       final String folderPath = '$folderName/$userId/$entityId';
       final String fullPath = '$folderPath/$fileName';
       storagePath = fullPath;
-      final encodedImageFuture =
-          !createDownloadUrl && folderName == 'snack_chat_images'
-              ? _readEncodedImageInfo(compressedFile)
-              : Future<_EncodedImageInfo?>.value(null);
 
       if (Logger.isVerboseEnabled)
-        Logger.log('$logLabel 이미지 업로드 시작: $fullPath');
+        Logger.log('$logLabel 이미지 업로드 시작: $fullPath '
+            '(${(image.bytes.length / 1024).round()}KB)');
       if (Logger.isVerboseEnabled)
-        Logger.log('Firebase Storage 버킷: ${_storage.bucket}');
+        Logger.log('Firebase Storage 버킷: ${_uploads.bucket}');
 
-      final Reference ref = _storage.ref().child(folderPath).child(fileName);
+      final Reference ref = _uploads.ref().child(folderPath).child(fileName);
 
-      final UploadTask uploadTask = ref.putFile(
-        compressedFile,
+      // Bytes are already in memory from preparation; uploading them directly
+      // avoids a second file read and lets the SDK pick the fastest transport.
+      final UploadTask uploadTask = ref.putData(
+        image.bytes,
         SettableMetadata(
           contentType: 'image/jpeg',
           customMetadata: {
@@ -674,25 +828,22 @@ class StorageService {
       if (downloadUrl != null) if (Logger.isVerboseEnabled)
         Logger.log('$logLabel 이미지 다운로드 URL 획득');
 
-      final encodedImage = await encodedImageFuture;
-      if (!createDownloadUrl &&
-          folderName == 'snack_chat_images' &&
-          encodedImage != null) {
+      if (!createDownloadUrl && folderName == 'snack_chat_images') {
         // The sender can render the finalized upload from the same
         // account/path-scoped cache as receivers. Cache persistence remains
         // best-effort and never changes a successful upload into a failure.
         unawaited(_cacheSnackChatImage(
           userId: userId,
           storagePath: fullPath,
-          bytes: encodedImage.bytes,
+          bytes: image.bytes,
         ));
       }
 
       return (
         storagePath: fullPath,
         downloadUrl: downloadUrl,
-        imageWidth: encodedImage?.width,
-        imageHeight: encodedImage?.height,
+        imageWidth: image.width,
+        imageHeight: image.height,
       );
     } on TimeoutException catch (e) {
       Logger.error('$logLabel 이미지 업로드 타임아웃', e);
@@ -707,13 +858,7 @@ class StorageService {
       );
       return null;
     } finally {
-      if (compressedFile != null && compressedFile.path != imageFile.path) {
-        try {
-          await compressedFile.delete();
-        } catch (e) {
-          Logger.error('$logLabel 임시 파일 삭제 실패: $e');
-        }
-      }
+      if (ownsPrepared) await image?.dispose();
     }
   }
 
@@ -736,28 +881,6 @@ class StorageService {
         error,
         stackTrace,
       );
-    }
-  }
-
-  Future<_EncodedImageInfo?> _readEncodedImageInfo(File file) async {
-    ui.Codec? codec;
-    ui.Image? image;
-    try {
-      final bytes = await file.readAsBytes();
-      if (bytes.isEmpty) return null;
-      codec = await ui.instantiateImageCodec(bytes);
-      final frame = await codec.getNextFrame();
-      image = frame.image;
-      if (image.width <= 0 || image.height <= 0) return null;
-      return (bytes: bytes, width: image.width, height: image.height);
-    } catch (error) {
-      if (Logger.isVerboseEnabled) {
-        Logger.warning('최종 채팅 이미지 크기 확인 실패: $error');
-      }
-      return null;
-    } finally {
-      image?.dispose();
-      codec?.dispose();
     }
   }
 
@@ -882,7 +1005,7 @@ class StorageService {
             uri.replace(queryParameters: qp.isEmpty ? null : qp).toString();
       }
 
-      final Reference ref = _storage.refFromURL(cleanUrl);
+      final Reference ref = AppStorage.refFromUrl(cleanUrl);
       targetReference = ref;
 
       // 이미지 삭제
@@ -911,4 +1034,22 @@ class StorageService {
       return false;
     }
   }
+}
+
+class PostVideoUpload {
+  const PostVideoUpload({
+    required this.storagePath,
+    required this.thumbnailPath,
+    required this.storageBucket,
+  });
+
+  final String storagePath;
+  final String thumbnailPath;
+  final String storageBucket;
+
+  Map<String, dynamic> toPayload() => <String, dynamic>{
+        'storagePath': storagePath,
+        'thumbnailPath': thumbnailPath,
+        'storageBucket': storageBucket,
+      };
 }

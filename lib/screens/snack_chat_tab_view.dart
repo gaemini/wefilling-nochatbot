@@ -3,7 +3,6 @@ import 'dart:async';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/rendering.dart' show ScrollCacheExtent;
-import 'package:flutter/services.dart';
 
 import '../design/tokens.dart';
 import '../models/snack_chat.dart';
@@ -11,9 +10,11 @@ import '../services/snack_chat_service.dart';
 import '../constants/app_constants.dart';
 import '../ui/sheets/snack_chat_unfavorite_sheet.dart';
 import '../ui/widgets/snack_chat_card.dart';
+import '../ui/widgets/app_fab.dart';
 import '../utils/responsive_helper.dart';
 import 'snack_chat_screen.dart';
 import '../l10n/ui_locale.dart';
+import '../ui/widgets/motion_press.dart';
 
 class SnackChatTabView extends StatefulWidget {
   const SnackChatTabView({
@@ -352,33 +353,24 @@ class _SnackChatTabViewState extends State<SnackChatTabView> {
                   PositionedDirectional(
                     end: 16,
                     bottom: 16 + bottomInset,
-                    child: FloatingActionButton.extended(
-                      onPressed: () {
-                        HapticFeedback.lightImpact();
-                        widget.onCreateSnackChat?.call();
-                      },
-                      icon: const Icon(Icons.add_rounded, size: 22),
-                      label: Text(
-                        (isChineseUi(context)
-                            ? '创建群聊'
-                            : isKo
-                                ? '스낵챗 열기'
-                                : 'Open Snack Chat'),
-                        style: TextStyle(
-                          fontFamily: uiFontFamily(context, 'Inter'),
-                          fontFamilyFallback: const ['NotoSansKR'],
-                          fontSize: 14,
-                          fontWeight: FontWeight.w700,
-                        ),
-                      ),
+                    child: AppFab.extended(
+                      onPressed: widget.onCreateSnackChat!,
+                      icon: Icons.add_rounded,
+                      label: isChineseUi(context)
+                          ? '创建群聊'
+                          : isKo
+                              ? '스낵챗 열기'
+                              : 'Open Snack Chat',
+                      semanticLabel: (isChineseUi(context)
+                          ? '创建群聊'
+                          : isKo
+                              ? '스낵챗 만들기'
+                              : 'Create Snack Chat'),
                       tooltip: (isChineseUi(context)
                           ? '创建群聊'
                           : isKo
                               ? '스낵챗 만들기'
                               : 'Create Snack Chat'),
-                      backgroundColor: AppColors.pointColor,
-                      foregroundColor: Colors.white,
-                      shape: const StadiumBorder(),
                       heroTag: 'create_snack_chat_fab',
                     ),
                   ),
@@ -606,7 +598,8 @@ class SnackChatEmptyState extends StatelessWidget {
                         ),
                         SizedBox(
                           height: context.rh(48, min: 46, max: 52),
-                          child: FilledButton.icon(
+                          child: MotionPress(
+pressedScale: .975, child: FilledButton.icon(
                             key: const Key('snack_chat_empty_create_button'),
                             onPressed: onCreate,
                             icon: Icon(
@@ -639,7 +632,7 @@ class SnackChatEmptyState extends StatelessWidget {
                                 borderRadius: BorderRadius.circular(10),
                               ),
                             ),
-                          ),
+                          )),
                         ),
                       ],
                     ],
@@ -816,7 +809,8 @@ class _SectionError extends StatelessWidget {
     final isKo = Localizations.localeOf(context).languageCode == 'ko';
     return Padding(
       padding: EdgeInsets.symmetric(vertical: compact ? 2 : 10),
-      child: TextButton.icon(
+      child: MotionPress(
+pressedScale: .985, child: TextButton.icon(
         onPressed: onRetry,
         icon: const Icon(Icons.refresh_rounded, size: 18),
         label: Text(
@@ -826,7 +820,7 @@ class _SectionError extends StatelessWidget {
                   ? 'Snack Chat을 불러오지 못했습니다. 다시 시도'
                   : 'Could not load. Retry'),
         ),
-      ),
+      )),
     );
   }
 }

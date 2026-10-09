@@ -1,7 +1,11 @@
+import 'dart:async';
+
+import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 
+import '../../firestore/firestore_paths.dart';
 import '../../l10n/app_localizations.dart';
 import '../../models/relationship_status.dart';
 import '../../providers/relationship_provider.dart';
@@ -22,6 +26,7 @@ class _PostFriendRequestButtonState extends State<PostFriendRequestButton> {
   static final Map<String, (DateTime, Future<bool>)> _recentChecks = {};
   final RelationshipService _relationshipService = RelationshipService();
   Future<bool>? _canRequest;
+  Stream<bool>? _isFriend;
   String? _viewerId;
   bool _sending = false;
   bool _sent = false;
@@ -37,6 +42,7 @@ class _PostFriendRequestButtonState extends State<PostFriendRequestButton> {
     super.didUpdateWidget(oldWidget);
     if (oldWidget.authorId != widget.authorId) {
       _canRequest = null;
+      _isFriend = null;
       _sent = false;
       _sending = false;
       _refreshForAccount();
@@ -47,6 +53,7 @@ class _PostFriendRequestButtonState extends State<PostFriendRequestButton> {
     final viewerId = FirebaseAuth.instance.currentUser?.uid;
     if (_viewerId == viewerId && _canRequest != null) return;
     _viewerId = viewerId;
+    _isFriend = null;
     _sent = false;
     _sending = false;
     _canRequest = viewerId == null ||
@@ -70,6 +77,18 @@ class _PostFriendRequestButtonState extends State<PostFriendRequestButton> {
     return check;
   }
 
+  /// 상대가 수락하거나 다른 화면에서 친구가 되면 버튼을 바로 숨기도록
+  /// 두 사용자의 친구 관계 문서를 구독한다. 같은 작성자의 카드가 여러 개여도
+  /// Firestore SDK가 동일 문서 구독을 하나로 합친다.
+  Stream<bool> _watchFriendship(String viewerId, String authorId) {
+    return FirebaseFirestore.instance
+        .collection(FirestoreCollections.friendships)
+        .doc(FirestoreDocIds.friendshipPairId(viewerId, authorId))
+        .snapshots()
+        .map((snapshot) => snapshot.exists)
+        .handleError((_) {});
+  }
+
   Future<void> _sendRequest() async {
     if (_sending || _sent) return;
     final viewerId = _viewerId;
@@ -89,6 +108,9 @@ class _PostFriendRequestButtonState extends State<PostFriendRequestButton> {
       _sent = success;
     });
     _recentChecks.remove('$viewerId:$authorId');
+    // 이미 친구이거나 요청이 오간 상태라 실패한 경우에도 실제 관계를 다시
+    // 확인해 버튼이 남지 않게 한다.
+    if (!success) unawaited(provider.updateRelationshipStatus(authorId));
     final l10n = AppLocalizations.of(context)!;
     ScaffoldMessenger.of(context).showSnackBar(SnackBar(
       content: Text(success
@@ -112,9 +134,17 @@ class _PostFriendRequestButtonState extends State<PostFriendRequestButton> {
           future: request,
           builder: (context, snapshot) {
             if (snapshot.data != true) return const SizedBox.shrink();
-            return RelationshipActionButton(
-              label: AppLocalizations.of(context)!.friendRequest,
-              onPressed: _sending ? null : _sendRequest,
+            final viewerId = _viewerId;
+            if (viewerId == null) return const SizedBox.shrink();
+            return StreamBuilder<bool>(
+              stream: _isFriend ??= _watchFriendship(viewerId, widget.authorId),
+              builder: (context, friendship) {
+                if (friendship.data == true) return const SizedBox.shrink();
+                return RelationshipActionButton(
+                  label: AppLocalizations.of(context)!.friendRequest,
+                  onPressed: _sending ? null : _sendRequest,
+                );
+              },
             );
           },
         );

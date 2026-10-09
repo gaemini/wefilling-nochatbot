@@ -8,6 +8,8 @@ import 'dart:convert';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:cloud_functions/cloud_functions.dart';
+
+import '../config/app_backend.dart';
 import 'package:flutter/foundation.dart';
 import 'package:flutter_local_notifications/flutter_local_notifications.dart';
 import 'package:flutter/services.dart';
@@ -17,8 +19,11 @@ import 'package:permission_handler/permission_handler.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'badge_service.dart';
 import 'navigation_service.dart';
+import 'active_content_registry.dart';
 import 'dm_active_conversation.dart';
+import 'notification_service.dart';
 import 'snack_chat_active_conversation.dart';
+import 'unread_notification_feed.dart';
 import 'language_service.dart';
 import '../utils/logger.dart';
 import '../utils/notification_delivery_policy.dart';
@@ -117,7 +122,7 @@ class FCMService {
 
   final FirebaseMessaging _messaging = FirebaseMessaging.instance;
   final FirebaseFirestore _firestore = FirebaseFirestore.instance;
-  final FirebaseFunctions _functions = FirebaseFunctions.instance;
+  final FirebaseFunctions _functions = AppFunctions.instance;
   final FlutterLocalNotificationsPlugin _localNotifications =
       FlutterLocalNotificationsPlugin();
   final LanguageService _languageService = LanguageService();
@@ -213,7 +218,7 @@ class FCMService {
 
     // 초기화 설정
     const AndroidInitializationSettings initializationSettingsAndroid =
-        AndroidInitializationSettings('@mipmap/ic_launcher');
+        AndroidInitializationSettings('@drawable/ic_notification');
 
     final DarwinInitializationSettings initializationSettingsDarwin =
         DarwinInitializationSettings(
@@ -246,6 +251,33 @@ class FCMService {
         }
       },
     );
+    await _routeLocalNotificationLaunch();
+  }
+
+  static bool _localLaunchConsumed = false;
+
+  /// A tap on a *local* notification (foreground-rendered chat card, To-do
+  /// reminder) that cold-starts the app is not reported through
+  /// onDidReceiveNotificationResponse. Route it once from the launch details;
+  /// NavigationService holds it until auth and the navigator are ready.
+  Future<void> _routeLocalNotificationLaunch() async {
+    if (_localLaunchConsumed || kIsWeb) return;
+    _localLaunchConsumed = true;
+    try {
+      final details = await _localNotifications.getNotificationAppLaunchDetails();
+      final payload = details?.notificationResponse?.payload;
+      if (details?.didNotificationLaunchApp != true ||
+          payload == null ||
+          payload.isEmpty) {
+        return;
+      }
+      final data = jsonDecode(payload);
+      if (data is Map<String, dynamic>) {
+        await NavigationService.handlePushNavigation(data);
+      }
+    } catch (e) {
+      Logger.error('⚠️ 로컬 알림 launch payload 처리 실패: $e');
+    }
   }
 
   Future<bool> _ensureAndroidPostNotificationsPermission() async {
@@ -480,6 +512,9 @@ class FCMService {
         Logger.error('토큰 갱신 리스너 등록 실패 - 계속 진행', e);
       }
 
+      // Active-content auto-read feed (no-op unless ACTIVE_CONTENT_AUTO_READ).
+      UnreadNotificationFeed.ensureStarted();
+
       // 포어그라운드 메시지 리스너 등록
       try {
         await _onMessageSub?.cancel();
@@ -526,6 +561,32 @@ class FCMService {
                 // Foreground delivery is suppressed here. The OS card is
                 // removed only after the room's server read call returns its
                 // authoritative boundary, so a newer push cannot be erased.
+                return;
+              }
+
+              // Non-chat push whose destination (post, comment, meetup, snap,
+              // request ...) is on screen right now: no banner, and the
+              // notification is confirmed read the same way the destination
+              // itself would confirm it. Scopes are target-bound.
+              final activeNotificationId =
+                  (message.data['notificationId'] ?? '').toString();
+              if (!isDm &&
+                  !isSnackChat &&
+                  type != 'ad_updates' &&
+                  type != 'personalTodoReminder' &&
+                  activeNotificationId.isNotEmpty &&
+                  ActiveContentRegistry.matches(
+                    ActiveContentRegistry.payloadAsNotification(message.data),
+                    owner: userId,
+                  )) {
+                unawaited(NotificationService()
+                    .markNotificationAsRead(
+                      activeNotificationId,
+                      readContext: (owner: userId, session: epoch),
+                    )
+                    .then<void>((_) {}, onError: (Object error) {
+                  Logger.error('활성 콘텐츠 푸시 읽음 처리 실패', error);
+                }));
                 return;
               }
 
@@ -731,6 +792,38 @@ class FCMService {
     }
 
     if (Logger.isVerboseEnabled) Logger.log('❌ FCM 토큰 동기화 최종 실패 - 다음 실행에서 재시도');
+  }
+
+  Timer? _registryRetryTimer;
+  int _registryRetryAttempt = 0;
+
+  void _scheduleRegistryRetry(String userId, String token) {
+    if (_registryRetryAttempt >= 4) return;
+    final delay = Duration(seconds: 30 * (1 << _registryRetryAttempt));
+    _registryRetryAttempt++;
+    _registryRetryTimer?.cancel();
+    _registryRetryTimer = Timer(delay, () async {
+      _registryRetryTimer = null;
+      if (FirebaseAuth.instance.currentUser?.uid != userId) return;
+      try {
+        final localeTag = await _languageService.getLanguage();
+        final String? platform = defaultTargetPlatform == TargetPlatform.iOS
+            ? 'ios'
+            : defaultTargetPlatform == TargetPlatform.android
+                ? 'android'
+                : null;
+        await _functions.httpsCallable('registerFcmToken').call(<String, dynamic>{
+          'token': token,
+          'locale': localeTag,
+          if (platform != null) 'platform': platform,
+        }).timeout(const Duration(seconds: 15));
+        _registryRetryAttempt = 0;
+        if (Logger.isVerboseEnabled) Logger.log('✅ FCM 토큰 registry 재등록 완료');
+      } catch (e) {
+        Logger.error('⚠️ FCM 토큰 registry 재등록 실패: $e');
+        _scheduleRegistryRetry(userId, token);
+      }
+    });
   }
 
   // 포그라운드 로컬 알림 표시
@@ -951,9 +1044,20 @@ class FCMService {
                     ? stableSnackChatNotificationId(
                         'snack_chat:$effectiveGroupKey')
                     : dmLocalNotificationId(effectiveGroupKey))
-            : (!kIsWeb && Platform.isAndroid && notificationId.isNotEmpty)
+            // One stable slot per notification document on every platform, so
+            // a redelivered push updates the card instead of adding a second.
+            : notificationId.isNotEmpty
                 ? stableSnackChatNotificationId('app:$notificationId')
                 : message.hashCode;
+      if (!kIsWeb && Platform.isAndroid && isGroupedChat) {
+        // FCM renders background pushes for this room in slot (tag, id 0); the
+        // local card uses (tag, localId). Drop the remote one first so the
+        // room never shows two cards.
+        unawaited(_notificationCenterChannel.invokeMethod<bool>(
+          'cancelNotificationSlot',
+          {'tag': effectiveGroupKey, 'id': 0},
+        ).catchError((_) => false));
+      }
       await _localNotifications.show(
         localId,
         title,
@@ -1071,10 +1175,14 @@ class FCMService {
   /// Android uses FCM's id 0 plus the server-issued stable room tag. iOS uses a
   /// deterministic local id; APNs keeps remote deliveries grouped/collapsed by
   /// the same room key.
+  /// [coversLatestVisible]: the caller has the room's newest message on
+  /// screen, so every card for this room is covered and may be removed even
+  /// when the OS card carries no readable metadata (FCM-rendered on Android).
   Future<void> cancelSnackChatNotification(
     String snackChatId, {
     String? notificationGroupKey,
     int? throughSequence,
+    bool coversLatestVisible = false,
     String? expectedOwner,
     int? expectedSession,
   }) async {
@@ -1088,7 +1196,8 @@ class FCMService {
         '$owner:snack_chat_message:$normalized',
         () => _cancelSnackChatNotification(normalized, owner, epoch,
             notificationGroupKey: notificationGroupKey,
-            throughSequence: throughSequence));
+            throughSequence: throughSequence,
+            coversLatestVisible: coversLatestVisible));
   }
 
   Future<void> _cancelSnackChatNotification(
@@ -1097,6 +1206,7 @@ class FCMService {
     int epoch, {
     String? notificationGroupKey,
     int? throughSequence,
+    bool coversLatestVisible = false,
   }) async {
     if (!isNotificationSession(owner, epoch)) return;
     await _runNotificationCleanup(
@@ -1106,7 +1216,7 @@ class FCMService {
           'kind': 'snack_chat',
           'roomId': room,
           'throughSequence': throughSequence ?? 0,
-          'removeAllInRoom': throughSequence == null,
+          'removeAllInRoom': throughSequence == null || coversLatestVisible,
           'androidTag': snackChatNotificationGroupKey(
               recipientUserId: owner, snackChatId: room),
         },
@@ -1210,6 +1320,7 @@ class FCMService {
     int? throughSentAtMillis,
     int throughSeconds = 0,
     int throughNanos = 0,
+    bool coversLatestVisible = false,
     String? expectedOwner,
     int? expectedSession,
   }) async {
@@ -1226,6 +1337,7 @@ class FCMService {
               'throughSentAtMillis': throughSentAtMillis!,
               'throughSeconds': throughSeconds,
               'throughNanos': throughNanos,
+              'removeAllInRoom': coversLatestVisible,
               'androidTag': dmNotificationAndroidTag(
                   recipientUserId: owner, conversationId: conversationId),
             }));
@@ -1345,6 +1457,7 @@ class FCMService {
       if (removed < 0) Logger.log('OS 알림 메타데이터 부족: ${request['kind']}');
       if (removed == 0 && Logger.isVerboseEnabled)
         Logger.log('OS 알림 선택 제거: 대상 없음');
+      await _cancelCoveredRoomSlots(owner, epoch, request, removed);
     } on MissingPluginException {
       _cleanupFailures[key] = 3;
       Logger.log('OS 선택 제거 미지원: 새 네이티브 빌드 필요');
@@ -1361,6 +1474,37 @@ class FCMService {
     } catch (error) {
       _cleanupFailures[key] = (_cleanupFailures[key] ?? 0) + 1;
       Logger.error('OS 알림 제거 실패', error);
+    }
+  }
+
+  /// Android belt-and-braces for chat rooms whose newest message is on
+  /// screen: the FCM-rendered card (tag, id 0) and the local card for the
+  /// same tag are removed by slot, so a card without readable metadata can
+  /// never outlive the read. Only runs when the caller asserted coverage.
+  Future<void> _cancelCoveredRoomSlots(
+    String owner,
+    int epoch,
+    Map<String, dynamic> request,
+    int removed,
+  ) async {
+    if (kIsWeb || !Platform.isAndroid) return;
+    if (request['removeAllInRoom'] != true) return;
+    final kind = request['kind'];
+    if (kind != 'snack_chat' && kind != 'dm') return;
+    final tag = (request['androidTag'] ?? '').toString();
+    if (tag.isEmpty || !isNotificationSession(owner, epoch)) return;
+    final localId = kind == 'snack_chat'
+        ? stableSnackChatNotificationId('snack_chat:$tag')
+        : dmLocalNotificationId(tag);
+    try {
+      await _notificationCenterChannel.invokeMethod<bool>(
+          'cancelNotificationSlot', {'tag': tag, 'id': 0});
+      await _localNotifications.cancel(localId, tag: tag);
+      if (removed <= 0 && Logger.isVerboseEnabled) {
+        Logger.log('OS 알림 슬롯 정리(tag fallback): $kind');
+      }
+    } catch (error) {
+      Logger.error('OS 알림 슬롯 정리 실패', error);
     }
   }
 
@@ -1486,6 +1630,11 @@ class FCMService {
         'fcmTokens': FieldValue.arrayUnion([token]),
         'fcmTokenUpdatedAt': FieldValue.serverTimestamp(),
       });
+      // The registry (fcm_tokens/{token}) still names the previous owner until
+      // registerFcmToken succeeds, so pushes for that account could keep
+      // reaching this device. Retry the callable instead of waiting for the
+      // next app start.
+      _scheduleRegistryRetry(userId, token);
       if (Logger.isVerboseEnabled) Logger.log('✅ FCM 토큰 저장 완료 (레거시 fallback)');
       if (Logger.isVerboseEnabled)
         Logger.log('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━');

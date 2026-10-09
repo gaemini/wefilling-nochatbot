@@ -21,6 +21,7 @@ import '../widgets/social_profile_fields.dart';
 import '../widgets/signup_flow_widgets.dart';
 import 'main_screen.dart';
 import '../l10n/ui_locale.dart';
+import '../ui/widgets/motion_processing_button.dart';
 
 class NicknameSetupScreen extends StatefulWidget {
   const NicknameSetupScreen({super.key, this.pendingSignup});
@@ -715,39 +716,44 @@ class _NicknameSetupScreenState extends State<NicknameSetupScreen>
               SizedBox(
                 height: context.rh(50, min: 48, max: 54),
                 width: double.infinity,
-                child: ElevatedButton(
-                  onPressed: _isLoading ? null : _primaryAction,
-                  style: ElevatedButton.styleFrom(
-                    elevation: 0,
-                    backgroundColor: AppColors.pointColor,
-                    foregroundColor: Colors.white,
-                    disabledBackgroundColor: const Color(0xFFE2E8F0),
-                    shape: RoundedRectangleBorder(
-                      borderRadius: BorderRadius.circular(10),
+                child: MotionProcessingButton(
+                  busy: _isLoading,
+                  onPressed: _primaryAction,
+                  foreground: Colors.white,
+                  spinner: const SizedBox(
+                    width: 20,
+                    height: 20,
+                    child: CircularProgressIndicator(
+                      strokeWidth: 2,
+                      color: Colors.white,
                     ),
                   ),
-                  child: _isLoading
-                      ? const SizedBox(
-                          width: 20,
-                          height: 20,
-                          child: CircularProgressIndicator(
-                            strokeWidth: 2,
-                            color: Colors.white,
-                          ),
-                        )
-                      : Text(
-                          _currentStep == 1
-                              ? ((isChineseUi(context) ? '完成注册' : _isKorean ? '가입 완료' : 'Complete signup'))
-                              : ((isChineseUi(context) ? '下一步' : _isKorean ? '다음' : 'Next')),
-                          maxLines: 1,
-                          overflow: TextOverflow.ellipsis,
-                          style: TextStyle(
-                            fontFamily: uiFontFamily(context, 'Inter'),
-                            fontFamilyFallback: const <String>['NotoSansKR'],
-                            fontSize: context.rf(15).clamp(14, 16).toDouble(),
-                            fontWeight: FontWeight.w700,
-                          ),
-                        ),
+                  label: Text(
+                    _currentStep == 1
+                        ? ((isChineseUi(context) ? '完成注册' : _isKorean ? '가입 완료' : 'Complete signup'))
+                        : ((isChineseUi(context) ? '下一步' : _isKorean ? '다음' : 'Next')),
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    style: TextStyle(
+                      fontFamily: uiFontFamily(context, 'Inter'),
+                      fontFamilyFallback: const <String>['NotoSansKR'],
+                      fontSize: context.rf(15).clamp(14, 16).toDouble(),
+                      fontWeight: FontWeight.w700,
+                    ),
+                  ),
+                  builder: (context, onPressed, child) => ElevatedButton(
+                    onPressed: onPressed,
+                    style: ElevatedButton.styleFrom(
+                      elevation: 0,
+                      backgroundColor: AppColors.pointColor,
+                      foregroundColor: Colors.white,
+                      disabledBackgroundColor: const Color(0xFFE2E8F0),
+                      shape: RoundedRectangleBorder(
+                        borderRadius: BorderRadius.circular(10),
+                      ),
+                    ),
+                    child: child,
+                  ),
                 ),
               ),
             ],

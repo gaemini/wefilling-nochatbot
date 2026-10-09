@@ -22,6 +22,8 @@ import '../config/app_config.dart';
 import '../services/content_translation_service.dart';
 import '../ui/sheets/translation_language_sheet.dart';
 import 'release_diagnostics_screen.dart';
+import 'button_lab_screen.dart';
+import '../ui/widgets/motion_press.dart';
 import '../l10n/ui_locale.dart';
 
 class AccountSettingsScreen extends StatefulWidget {
@@ -236,6 +238,21 @@ class _AccountSettingsScreenState extends State<AccountSettingsScreen> {
                         ),
                       ),
                     ),
+                    _buildDivider(),
+                    _buildListItem(
+                      (isChineseUi(context)
+                          ? '按钮实验室'
+                          : Localizations.localeOf(context).languageCode == 'ko'
+                              ? '버튼 랩'
+                              : 'Button lab'),
+                      Icons.touch_app_outlined,
+                      () => Navigator.push(
+                        context,
+                        MaterialPageRoute(
+                          builder: (_) => const ButtonLabScreen(),
+                        ),
+                      ),
+                    ),
                   ],
 
                   const SizedBox(height: 32),
@@ -271,7 +288,9 @@ class _AccountSettingsScreenState extends State<AccountSettingsScreen> {
     Color? color,
     String? subtitle,
   }) {
-    return InkWell(
+    return MotionPress(
+      pressedScale: .99,
+      child: InkWell(
       onTap: onTap,
       child: Container(
         padding: const EdgeInsets.symmetric(horizontal: 16.0, vertical: 16.0),
@@ -320,6 +339,7 @@ class _AccountSettingsScreenState extends State<AccountSettingsScreen> {
               ),
           ],
         ),
+      ),
       ),
     );
   }

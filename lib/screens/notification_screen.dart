@@ -300,9 +300,11 @@ class _NotificationScreenState extends State<NotificationScreen> {
         builder: (context) => const Center(child: CircularProgressIndicator()),
       );
 
-      // 게시글 정보 가져오기
+      // 게시글 정보 가져오기 (bounded so the modal spinner can never stick)
       final postService = PostService();
-      final post = await postService.getPostById(postId);
+      final post = await postService
+          .getPostById(postId)
+          .timeout(const Duration(seconds: 12), onTimeout: () => null);
 
       // 로딩 다이얼로그 닫기
       if (mounted) {

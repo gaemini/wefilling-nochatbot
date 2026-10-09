@@ -80,6 +80,44 @@ def properties(path: Path) -> dict[str, str]:
     return result
 
 
+BACKEND_REGION = re.compile(r"^[a-z]+-[a-z]+[0-9]$")
+BACKEND_BUCKET = re.compile(r"^[a-z0-9][a-z0-9._-]{1,220}[a-z0-9]$")
+LEGACY_BUCKET = "flutterproject3-af322.firebasestorage.app"
+
+
+def validate_backend(meta: dict) -> None:
+    """The artifact carries its Cloud Functions region and Storage buckets.
+
+    Store builds cannot receive --dart-define, so lib/config/app_backend.dart
+    reads this block at runtime and falls back to compile-time defaults that
+    must stay identical to it.
+    """
+    backend = meta.get("backend")
+    require(isinstance(backend, dict), "release metadata backend block is missing")
+    region = str(backend.get("functionsRegion", ""))
+    upload = str(backend.get("uploadStorageBucket", ""))
+    legacy = str(backend.get("legacyStorageBucket", ""))
+    require(bool(BACKEND_REGION.fullmatch(region)), "backend.functionsRegion is invalid")
+    require(bool(BACKEND_BUCKET.fullmatch(upload)), "backend.uploadStorageBucket is invalid")
+    require(legacy == LEGACY_BUCKET, "backend.legacyStorageBucket must stay the US bucket")
+
+    source = read_text(ROOT / "lib/config/app_backend.dart")
+    default_region = re.search(
+        r"'WEFILLING_FUNCTIONS_REGION',\s*defaultValue:\s*'([^']+)'", source)
+    default_bucket = re.search(
+        r"'WEFILLING_UPLOAD_BUCKET',\s*defaultValue:\s*([^,\n]+)", source)
+    require(default_region is not None and default_region.group(1) == region,
+            "app_backend.dart default functions region != release metadata backend.functionsRegion")
+    require(default_bucket is not None, "app_backend.dart default upload bucket is missing")
+    bucket_expr = default_bucket.group(1).strip()
+    resolved = LEGACY_BUCKET if bucket_expr == "BackendReleaseMetadata.legacyBucket" else bucket_expr.strip("'")
+    require(resolved == upload,
+            "app_backend.dart default upload bucket != release metadata backend.uploadStorageBucket")
+
+    # The server's own upload bucket (functions/.env) is independent: clients
+    # declare the bucket they upload to and documents record it.
+
+
 def validate_common(meta: dict, store: dict) -> None:
     version, build = pubspec_version()
     require(meta.get("versionName") == version, "release versionName != pubspec")
@@ -93,6 +131,8 @@ def validate_common(meta: dict, store: dict) -> None:
     require(isinstance(migrations, dict), "migrations must be an object")
     for schema in range(1, int(meta["cacheSchemaVersion"]) + 1):
         require(str(schema) in migrations, f"missing cache migration plan {schema}")
+
+    validate_backend(meta)
 
     durable = {"dm_messages_v1", "snack_chat_state_v1"}
     planned = {

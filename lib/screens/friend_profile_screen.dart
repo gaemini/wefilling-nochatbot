@@ -26,6 +26,7 @@ import '../models/social_profile_data.dart';
 import 'social_tag_people_screen.dart';
 import '../utils/account_status_helper.dart';
 import '../services/notification_service.dart';
+import '../services/active_content_registry.dart';
 import '../l10n/ui_locale.dart';
 import '../ui/widgets/motion_press.dart';
 
@@ -91,6 +92,7 @@ class _FriendProfileScreenState extends State<FriendProfileScreen>
 
   @override
   void dispose() {
+    ActiveContentRegistry.unregister(this);
     WidgetsBinding.instance.removeObserver(this);
     super.dispose();
   }
@@ -222,6 +224,9 @@ class _FriendProfileScreenState extends State<FriendProfileScreen>
           readContext: readContext,
           targets: {'actorId': widget.userId},
         ));
+        ActiveContentRegistry.register(this,
+            types: const {'friend_request_accepted'},
+            targets: {'actorId': widget.userId});
         setState(() {
           _userData = targetData;
           _isDeletedAccount = false;
@@ -633,52 +638,52 @@ class _FriendProfileScreenState extends State<FriendProfileScreen>
             crossAxisAlignment: CrossAxisAlignment.center,
             children: [
               // 프로필 이미지 (88px) - 탭 가능
-              GestureDetector(
-                onTap: photoURL != null && photoURL.isNotEmpty
-                    ? () => _openProfileImageViewer(photoURL)
-                    : null,
-                child: Hero(
-                  tag: 'profile_image_${widget.userId}',
-                  child: Container(
-                    decoration: BoxDecoration(
-                      shape: BoxShape.circle,
-                      // 사진이 있을 때만 탭 가능한 느낌을 주는 그림자 추가
-                      boxShadow: photoURL != null && photoURL.isNotEmpty
-                          ? [
-                              BoxShadow(
-                                color: Colors.black.withOpacity(0.1),
-                                blurRadius: 8,
-                                offset: const Offset(0, 2),
-                              ),
-                            ]
-                          : null,
-                    ),
+              MotionPress(
+                enabled: photoURL != null && photoURL.isNotEmpty,
+                pressedScale: .985,
+                child: GestureDetector(
+                  onTap: photoURL != null && photoURL.isNotEmpty
+                      ? () => _openProfileImageViewer(photoURL)
+                      : null,
+                  child: Hero(
+                    tag: 'profile_image_${widget.userId}',
                     child: Container(
-                      width: 88,
-                      height: 88,
-                      decoration: const BoxDecoration(
+                      decoration: BoxDecoration(
                         shape: BoxShape.circle,
-                        color: Color(0xFFE5E7EB),
-                      ),
-                      child: photoURL != null && photoURL.isNotEmpty
-                          ? ClipOval(
-                              child: Image.network(
-                                photoURL,
-                                width: 88,
-                                height: 88,
-                                fit: BoxFit.cover,
-                                errorBuilder: (_, __, ___) => const Icon(
-                                  Icons.person,
-                                  size: 44,
-                                  color: Color(0xFF6B7280),
+                        // 사진이 있을 때만 탭 가능한 느낌을 주는 그림자 추가
+                        boxShadow: photoURL != null && photoURL.isNotEmpty
+                            ? [
+                                BoxShadow(
+                                  color: Colors.black.withOpacity(0.1),
+                                  blurRadius: 8,
+                                  offset: const Offset(0, 2),
                                 ),
-                              ),
-                            )
-                          : const Icon(
-                              Icons.person,
-                              size: 44,
-                              color: Color(0xFF6B7280),
-                            ),
+                              ]
+                            : null,
+                      ),
+                      child: Container(
+                        width: 88,
+                        height: 88,
+                        decoration: const BoxDecoration(
+                          shape: BoxShape.circle,
+                          color: Color(0xFFE5E7EB),
+                        ),
+                        child: photoURL != null && photoURL.isNotEmpty
+                            ? ClipOval(
+                                child: Image.network(
+                                  photoURL,
+                                  width: 88,
+                                  height: 88,
+                                  fit: BoxFit.cover,
+                                  errorBuilder: (_, __, ___) => const Icon(
+                                    Icons.person,
+                                    size: 44,
+                                    color: Color(0xFF6B7280),
+                                  ),
+                                ),
+                              )
+                            : const Icon(Icons.person, size: 44, color: Color(0xFF6B7280)),
+                      ),
                     ),
                   ),
                 ),
@@ -1592,78 +1597,81 @@ class _FriendProfileScreenState extends State<FriendProfileScreen>
   }
 
   Widget _buildReviewGridItem(ReviewPost review) {
-    return GestureDetector(
-      onTap: () {
-        // 후기 상세 화면으로 이동 (댓글, 좋아요 기능 포함)
-        Navigator.push(
-          context,
-          MaterialPageRoute(
-            builder: (context) => ReviewDetailScreen(review: review),
-          ),
-        );
-      },
-      child: Container(
-        decoration: BoxDecoration(
-          color: Colors.grey[200],
-          borderRadius: BorderRadius.circular(4),
-        ),
-        child: Stack(
-          children: [
-            // 이미지 또는 플레이스홀더
-            Positioned.fill(
-              child: review.imageUrls.isNotEmpty
-                  ? ClipRRect(
-                      borderRadius: BorderRadius.circular(4),
-                      child: Image.network(
-                        review.imageUrls.first,
-                        fit: BoxFit.contain,
-                        errorBuilder: (context, error, stackTrace) {
-                          return _buildReviewPlaceholder(review);
-                        },
-                      ),
-                    )
-                  : _buildReviewPlaceholder(review),
+    return MotionPress(
+      pressedScale: .985,
+      child: GestureDetector(
+        onTap: () {
+          // 후기 상세 화면으로 이동 (댓글, 좋아요 기능 포함)
+          Navigator.push(
+            context,
+            MaterialPageRoute(
+              builder: (context) => ReviewDetailScreen(review: review),
             ),
+          );
+        },
+        child: Container(
+          decoration: BoxDecoration(
+            color: Colors.grey[200],
+            borderRadius: BorderRadius.circular(4),
+          ),
+          child: Stack(
+            children: [
+              // 이미지 또는 플레이스홀더
+              Positioned.fill(
+                child: review.imageUrls.isNotEmpty
+                    ? ClipRRect(
+                        borderRadius: BorderRadius.circular(4),
+                        child: Image.network(
+                          review.imageUrls.first,
+                          fit: BoxFit.contain,
+                          errorBuilder: (context, error, stackTrace) {
+                            return _buildReviewPlaceholder(review);
+                          },
+                        ),
+                      )
+                    : _buildReviewPlaceholder(review),
+              ),
 
-            // 좋아요 및 댓글 수 표시
-            Positioned(
-              bottom: 4,
-              right: 4,
-              child: Container(
-                padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 3),
-                decoration: BoxDecoration(
-                  color: Colors.black.withOpacity(0.6),
-                  borderRadius: BorderRadius.circular(12),
-                ),
-                child: Row(
-                  mainAxisSize: MainAxisSize.min,
-                  children: [
-                    const Icon(Icons.favorite, color: Colors.white, size: 12),
-                    const SizedBox(width: 3),
-                    Text(
-                      '${review.likeCount}',
-                      style: const TextStyle(
-                        color: Colors.white,
-                        fontSize: 11,
-                        fontWeight: FontWeight.w600,
+              // 좋아요 및 댓글 수 표시
+              Positioned(
+                bottom: 4,
+                right: 4,
+                child: Container(
+                  padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 3),
+                  decoration: BoxDecoration(
+                    color: Colors.black.withOpacity(0.6),
+                    borderRadius: BorderRadius.circular(12),
+                  ),
+                  child: Row(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      const Icon(Icons.favorite, color: Colors.white, size: 12),
+                      const SizedBox(width: 3),
+                      Text(
+                        '${review.likeCount}',
+                        style: const TextStyle(
+                          color: Colors.white,
+                          fontSize: 11,
+                          fontWeight: FontWeight.w600,
+                        ),
                       ),
-                    ),
-                    const SizedBox(width: 6),
-                    const Icon(Icons.comment, color: Colors.white, size: 12),
-                    const SizedBox(width: 3),
-                    Text(
-                      '${review.commentCount}',
-                      style: const TextStyle(
-                        color: Colors.white,
-                        fontSize: 11,
-                        fontWeight: FontWeight.w600,
+                      const SizedBox(width: 6),
+                      const Icon(Icons.comment, color: Colors.white, size: 12),
+                      const SizedBox(width: 3),
+                      Text(
+                        '${review.commentCount}',
+                        style: const TextStyle(
+                          color: Colors.white,
+                          fontSize: 11,
+                          fontWeight: FontWeight.w600,
+                        ),
                       ),
-                    ),
-                  ],
+                    ],
+                  ),
                 ),
               ),
-            ),
-          ],
+            ],
+          ),
         ),
       ),
     );

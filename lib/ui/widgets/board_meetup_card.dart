@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'motion_press.dart';
 import 'package:intl/intl.dart';
 
 import '../../l10n/app_localizations.dart';
@@ -404,10 +405,13 @@ class _InlineMeta extends StatelessWidget {
       ],
     );
     if (onTap == null) return content;
-    return GestureDetector(
-      behavior: HitTestBehavior.opaque,
-      onTap: onTap,
-      child: content,
+    return MotionPress(
+      pressedScale: .99,
+      child: GestureDetector(
+        behavior: HitTestBehavior.opaque,
+        onTap: onTap,
+        child: content,
+      ),
     );
   }
 }

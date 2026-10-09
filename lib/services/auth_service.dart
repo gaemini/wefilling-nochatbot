@@ -8,6 +8,8 @@ import 'package:firebase_auth/firebase_auth.dart';
 import 'package:google_sign_in/google_sign_in.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:cloud_functions/cloud_functions.dart';
+
+import '../config/app_backend.dart';
 import 'package:firebase_storage/firebase_storage.dart';
 import 'package:flutter/foundation.dart';
 import 'fcm_service.dart';
@@ -19,7 +21,7 @@ class AuthService {
   final GoogleSignIn _googleSignIn = GoogleSignIn.instance;
   final FirebaseFirestore _firestore = FirebaseFirestore.instance;
   final FirebaseFunctions _functions =
-      FirebaseFunctions.instanceFor(region: 'us-central1');
+      AppFunctions.instance;
 
   // 현재 로그인된 사용자
   User? get currentUser => _auth.currentUser;
@@ -461,8 +463,17 @@ class AuthService {
 
   /// Storage의 사용자 파일 삭제
   Future<void> _deleteStorageFiles(String userId) async {
+    // 사용자 객체는 레거시 버킷과 현재 업로드 버킷 어디에나 있을 수 있다.
+    for (final storage in AppStorage.allKnown) {
+      await _deleteStorageFilesIn(storage, userId);
+    }
+  }
+
+  Future<void> _deleteStorageFilesIn(
+    FirebaseStorage storage,
+    String userId,
+  ) async {
     try {
-      final storage = FirebaseStorage.instance;
 
       // 프로필 이미지 삭제
       try {

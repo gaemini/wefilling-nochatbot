@@ -5,6 +5,7 @@ import 'package:flutter/services.dart';
 import '../constants/app_constants.dart';
 import '../utils/responsive_helper.dart';
 import '../l10n/ui_locale.dart';
+import '../ui/widgets/motion_press.dart';
 
 class SnackChatPollScheduleScreen extends StatefulWidget {
   const SnackChatPollScheduleScreen({
@@ -177,7 +178,8 @@ class _SnackChatPollScheduleScreenState
       toolbarHeight: context.rh(56, min: 54, max: 60),
       automaticallyImplyLeading: false,
       leadingWidth: 48,
-      leading: IconButton(
+      leading: MotionPress(
+pressedScale: .92, child: IconButton(
         onPressed: () => Navigator.of(context).pop(),
         tooltip: MaterialLocalizations.of(context).backButtonTooltip,
         icon: Icon(
@@ -185,7 +187,7 @@ class _SnackChatPollScheduleScreenState
           size: context.ri(22).clamp(21, 24).toDouble(),
           color: const Color(0xFF111827),
         ),
-      ),
+      )),
       flexibleSpace: SafeArea(
         bottom: false,
         child: IgnorePointer(
@@ -213,16 +215,18 @@ class _SnackChatPollScheduleScreenState
         if (compactAction)
           SizedBox.square(
             dimension: 48,
-            child: IconButton(
+            child: MotionPress(
+enabled: _canComplete,pressedScale: .92, child: IconButton(
               onPressed: _canComplete ? _complete : null,
               tooltip: (isChineseUi(context) ? '完成' : _isKo ? '완료' : 'Done'),
               icon: const Icon(Icons.check_rounded, size: 22),
               color: const Color(0xFF111827),
               disabledColor: const Color(0xFFD1D5DB),
-            ),
+            )),
           )
         else
-          TextButton(
+          MotionPress(
+enabled: _canComplete,pressedScale: .985, child: TextButton(
             onPressed: _canComplete ? _complete : null,
             style: TextButton.styleFrom(
               foregroundColor: const Color(0xFF111827),
@@ -239,7 +243,7 @@ class _SnackChatPollScheduleScreenState
                 fontWeight: FontWeight.w700,
               ),
             ),
-          ),
+          )),
         const SizedBox(width: 4),
       ],
     );

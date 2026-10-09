@@ -6,6 +6,8 @@
 
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:cloud_functions/cloud_functions.dart';
+
+import '../config/app_backend.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:firebase_storage/firebase_storage.dart';
 import 'package:flutter/foundation.dart';
@@ -28,7 +30,7 @@ class MeetupService {
   final FirebaseFirestore _firestore = FirebaseFirestore.instance;
   final FirebaseAuth _auth = FirebaseAuth.instance;
   final FirebaseFunctions _functions =
-      FirebaseFunctions.instanceFor(region: 'us-central1');
+      AppFunctions.instance;
   final NotificationService _notificationService = NotificationService();
   final ParticipationCacheService _cacheService = ParticipationCacheService();
   final ViewHistoryService _viewHistory = ViewHistoryService();
@@ -386,7 +388,7 @@ class MeetupService {
       // 클라이언트가 임의 UID 배열을 주입하지 못하며 재시도 시 같은 ID를 쓴다.
       final docRef = _firestore.collection('meetups').doc();
       try {
-        await FirebaseFunctions.instance
+        await AppFunctions.instance
             .httpsCallable('createMeetupSecure')
             .call(<String, dynamic>{
           'meetupId': docRef.id,
@@ -423,7 +425,7 @@ class MeetupService {
       // 이미지 업로드 처리(최대 3장)
       if (uploadFiles.isNotEmpty) {
         try {
-          final storage = FirebaseStorage.instance;
+          final storage = AppStorage.uploads;
           final uploadedUrls = <String>[];
 
           for (var i = 0; i < uploadFiles.length; i++) {
@@ -1410,7 +1412,7 @@ class MeetupService {
         return false;
       }
       final callable =
-          FirebaseFunctions.instance.httpsCallable('joinMeetupSecure');
+          AppFunctions.instance.httpsCallable('joinMeetupSecure');
       final response = await callable.call<Map<String, dynamic>>({
         'meetupId': meetupId,
       });
@@ -2059,7 +2061,7 @@ class MeetupService {
     try {
       final user = _auth.currentUser;
       if (user == null) return false;
-      final response = await FirebaseFunctions.instance
+      final response = await AppFunctions.instance
           .httpsCallable('confirmMeetupSecure')
           .call(<String, dynamic>{'meetupId': meetupId}).timeout(
               const Duration(seconds: 20));
@@ -2980,7 +2982,7 @@ class MeetupService {
   // 모임 이미지 업로드
   Future<String> uploadMeetupImage(File imageFile, String meetupId) async {
     try {
-      final storage = FirebaseStorage.instance;
+      final storage = AppStorage.uploads;
       final Reference storageRef = storage.ref().child(
             'meetup_images/$meetupId/${DateTime.now().millisecondsSinceEpoch}',
           );

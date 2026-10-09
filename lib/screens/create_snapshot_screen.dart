@@ -15,6 +15,7 @@ import 'package:video_player/video_player.dart';
 import 'package:wechat_assets_picker/wechat_assets_picker.dart';
 
 import '../constants/app_constants.dart';
+import '../design/tokens.dart';
 import '../models/friend_category.dart';
 import '../models/snapshot.dart';
 import '../models/user_profile.dart';
@@ -30,6 +31,7 @@ import '../ui/widgets/group_audience_preview.dart';
 import '../utils/logger.dart';
 import '../utils/responsive_helper.dart';
 import '../l10n/ui_locale.dart';
+import '../ui/widgets/motion_state_icon.dart';
 
 // Short AVC/AAC clips can be uploaded as muxed. Keep the existing encoder for
 // HEVC, large clips, and other formats, but run it only after Publish is tapped.
@@ -43,6 +45,10 @@ bool shouldCompressAndroidSnapshotVideo({
       videoMime != 'video/avc' ||
       (audioMime != null && audioMime != 'audio/mp4a-latm');
 }
+
+/// Do not retain an outgoing editor canvas or media player during a fade.
+Widget snapshotEditorMotionLayout(Widget? current, List<Widget> previous) =>
+    current ?? const SizedBox.shrink();
 
 class CreateSnapshotScreen extends StatefulWidget {
   const CreateSnapshotScreen({super.key, this.onCreated});
@@ -1793,50 +1799,58 @@ class _CreateSnapshotScreenState extends State<CreateSnapshotScreen>
           flexibleSpace: _buildCenteredSnapshotTitle(strings.createSnapshot),
           actions: [
             if (_step == 1 && compactUploadAction)
-              SizedBox.square(
-                dimension: 48,
-                child: IconButton(
-                  onPressed: _uploading ? null : _upload,
-                  tooltip: strings.upload,
-                  icon: _uploading
-                      ? const SizedBox.square(
-                          dimension: 15,
-                          child: CircularProgressIndicator(strokeWidth: 2),
-                        )
-                      : Icon(
-                          Icons.check_rounded,
-                          size: context.ri(21).clamp(20, 23).toDouble(),
-                        ),
+              MotionPress(
+                enabled: !_uploading,
+                pressedScale: .94,
+                child: SizedBox.square(
+                  dimension: 48,
+                  child: IconButton(
+                    onPressed: _uploading ? null : _upload,
+                    tooltip: strings.upload,
+                    icon: _uploading
+                        ? const SizedBox.square(
+                            dimension: 15,
+                            child: CircularProgressIndicator(strokeWidth: 2),
+                          )
+                        : Icon(
+                            Icons.check_rounded,
+                            size: context.ri(21).clamp(20, 23).toDouble(),
+                          ),
+                  ),
                 ),
               )
             else if (_step == 1)
               MediaQuery.withClampedTextScaling(
                 maxScaleFactor: 1.15,
-                child: TextButton.icon(
-                  onPressed: _uploading ? null : _upload,
-                  icon: _uploading
-                      ? const SizedBox.square(
-                          dimension: 15,
-                          child: CircularProgressIndicator(strokeWidth: 2),
-                        )
-                      : Icon(
-                          Icons.check_rounded,
-                          size: context.ri(18).clamp(17, 20).toDouble(),
-                        ),
-                  label: Text(
-                    strings.upload,
-                    style: TextStyle(
-                      fontFamily: uiFontFamily(context, 'Inter'),
-                      fontFamilyFallback: const ['NotoSansKR'],
-                      fontSize: context.rf(14).clamp(13, 15).toDouble(),
-                      fontWeight: FontWeight.w700,
+                child: MotionPress(
+                  enabled: !_uploading,
+                  pressedScale: .94,
+                  child: TextButton.icon(
+                    onPressed: _uploading ? null : _upload,
+                    icon: _uploading
+                        ? const SizedBox.square(
+                            dimension: 15,
+                            child: CircularProgressIndicator(strokeWidth: 2),
+                          )
+                        : Icon(
+                            Icons.check_rounded,
+                            size: context.ri(18).clamp(17, 20).toDouble(),
+                          ),
+                    label: Text(
+                      strings.upload,
+                      style: TextStyle(
+                        fontFamily: uiFontFamily(context, 'Inter'),
+                        fontFamilyFallback: const ['NotoSansKR'],
+                        fontSize: context.rf(14).clamp(13, 15).toDouble(),
+                        fontWeight: FontWeight.w700,
+                      ),
                     ),
-                  ),
-                  style: TextButton.styleFrom(
-                    foregroundColor: const Color(0xFF111827),
-                    disabledForegroundColor: const Color(0xFF9CA3AF),
-                    padding: const EdgeInsets.symmetric(horizontal: 8),
-                    minimumSize: const Size(44, 44),
+                    style: TextButton.styleFrom(
+                      foregroundColor: const Color(0xFF111827),
+                      disabledForegroundColor: const Color(0xFF9CA3AF),
+                      padding: const EdgeInsets.symmetric(horizontal: 8),
+                      minimumSize: const Size(44, 44),
+                    ),
                   ),
                 ),
               ),
@@ -1847,7 +1861,27 @@ class _CreateSnapshotScreenState extends State<CreateSnapshotScreen>
           top: false,
           minimum: const EdgeInsets.only(bottom: 8),
           child: AnimatedSwitcher(
-            duration: const Duration(milliseconds: 180),
+            // One canvas/player owns its GlobalKey at a time, including a
+            // rapid preview -> editor reversal before the fade completes.
+            layoutBuilder: snapshotEditorMotionLayout,
+            duration: MotionTokens.reduceMotion(context)
+                ? MotionTokens.instant
+                : MotionTokens.state,
+            transitionBuilder: (child, animation) => FadeTransition(
+              opacity: animation,
+              child: AnimatedBuilder(
+                animation: animation,
+                child: child,
+                builder: (context, child) => Transform.translate(
+                  offset: Offset(
+                      0,
+                      MotionTokens.reduceMotion(context)
+                          ? 0
+                          : 6 * (1 - animation.value)),
+                  child: child,
+                ),
+              ),
+            ),
             child: _step == 0 ? _buildEditor(strings) : _buildPreview(strings),
           ),
         ),
@@ -2344,15 +2378,19 @@ class _CreateSnapshotScreenState extends State<CreateSnapshotScreen>
       required String tooltip,
       required VoidCallback? onPressed,
     }) {
-      return iconSurface(
-        IconButton(
-          tooltip: tooltip,
-          padding: EdgeInsets.zero,
-          onPressed: onPressed,
-          icon: Icon(
-            icon,
-            size: iconSize,
-            color: onPressed == null ? const Color(0xFF98A2B3) : iconColor,
+      return MotionPress(
+        enabled: onPressed != null,
+        pressedScale: .9,
+        child: iconSurface(
+          IconButton(
+            tooltip: tooltip,
+            padding: EdgeInsets.zero,
+            onPressed: onPressed,
+            icon: Icon(
+              icon,
+              size: iconSize,
+              color: onPressed == null ? const Color(0xFF98A2B3) : iconColor,
+            ),
           ),
         ),
       );
@@ -2709,31 +2747,35 @@ class _CreateSnapshotScreenState extends State<CreateSnapshotScreen>
                             const SizedBox(width: 12),
                             Expanded(
                               child: MotionPress(
-                              enabled: !_composing,
-                              child: FilledButton(
-                                onPressed:
-                                    _composing ? null : _continueFromEditor,
-                                style: FilledButton.styleFrom(
-                                  backgroundColor: AppColors.pointColor,
-                                  foregroundColor: Colors.white,
-                                  textStyle: TextStyle(
-                                    fontFamily: uiFontFamily(context, 'Inter'),
-                                    fontFamilyFallback: const ['NotoSansKR'],
-                                    fontSize:
-                                        context.rf(15).clamp(14, 16).toDouble(),
-                                    fontWeight: FontWeight.w700,
+                                enabled: !_composing,
+                                pressedScale: .94,
+                                child: FilledButton(
+                                  onPressed:
+                                      _composing ? null : _continueFromEditor,
+                                  style: FilledButton.styleFrom(
+                                    backgroundColor: AppColors.pointColor,
+                                    foregroundColor: Colors.white,
+                                    textStyle: TextStyle(
+                                      fontFamily:
+                                          uiFontFamily(context, 'Inter'),
+                                      fontFamilyFallback: const ['NotoSansKR'],
+                                      fontSize: context
+                                          .rf(15)
+                                          .clamp(14, 16)
+                                          .toDouble(),
+                                      fontWeight: FontWeight.w700,
+                                    ),
                                   ),
+                                  child: _composing
+                                      ? const SizedBox.square(
+                                          dimension: 18,
+                                          child: CircularProgressIndicator(
+                                            strokeWidth: 2,
+                                            color: Colors.white,
+                                          ),
+                                        )
+                                      : Text(strings.next),
                                 ),
-                                child: _composing
-                                    ? const SizedBox.square(
-                                        dimension: 18,
-                                        child: CircularProgressIndicator(
-                                          strokeWidth: 2,
-                                          color: Colors.white,
-                                        ),
-                                      )
-                                    : Text(strings.next),
-                              ),
                               ),
                             ),
                           ],
@@ -3341,8 +3383,9 @@ class _VisibilityRow extends StatelessWidget {
                     crossAxisAlignment: CrossAxisAlignment.start,
                     mainAxisSize: MainAxisSize.min,
                     children: [
-                      Text(
-                        title,
+                      AnimatedDefaultTextStyle(
+                        duration: MotionTokens.of(context, MotionTokens.state),
+                        curve: MotionTokens.curve,
                         style: TextStyle(
                           fontFamily: uiFontFamily(context, 'Inter'),
                           fontFamilyFallback: const ['NotoSansKR'],
@@ -3351,6 +3394,7 @@ class _VisibilityRow extends StatelessWidget {
                               selected ? FontWeight.w800 : FontWeight.w700,
                           color: const Color(0xFF111827),
                         ),
+                        child: Text(title),
                       ),
                       const SizedBox(height: 3),
                       Text(
@@ -3368,10 +3412,10 @@ class _VisibilityRow extends StatelessWidget {
                     ],
                   ),
                 ),
-                Icon(
-                  selected
-                      ? Icons.radio_button_checked_rounded
-                      : Icons.radio_button_unchecked_rounded,
+                MotionStateIcon(
+                  selected: selected,
+                  inactiveIcon: Icons.radio_button_unchecked_rounded,
+                  activeIcon: Icons.radio_button_checked_rounded,
                   size: context.ri(23).clamp(22, 25).toDouble(),
                   color: selected
                       ? const Color(0xFF344054)
@@ -3422,10 +3466,9 @@ class _CategoryRow extends StatelessWidget {
               child: Row(
                 children: [
                   Expanded(
-                    child: Text(
-                      category.name,
-                      maxLines: 1,
-                      overflow: TextOverflow.ellipsis,
+                    child: AnimatedDefaultTextStyle(
+                      duration: MotionTokens.of(context, MotionTokens.state),
+                      curve: MotionTokens.curve,
                       style: TextStyle(
                         fontFamily: uiFontFamily(context, 'Inter'),
                         fontFamilyFallback: const ['NotoSansKR'],
@@ -3434,13 +3477,18 @@ class _CategoryRow extends StatelessWidget {
                             selected ? FontWeight.w800 : FontWeight.w600,
                         color: const Color(0xFF111827),
                       ),
+                      child: Text(
+                        category.name,
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                      ),
                     ),
                   ),
                   const SizedBox(width: 8),
-                  Icon(
-                    selected
-                        ? Icons.check_circle_rounded
-                        : Icons.circle_outlined,
+                  MotionStateIcon(
+                    selected: selected,
+                    inactiveIcon: Icons.circle_outlined,
+                    activeIcon: Icons.check_circle_rounded,
                     size: context.ri(21).clamp(20, 23).toDouble(),
                     color: selected
                         ? const Color(0xFF475467)

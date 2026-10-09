@@ -1,5 +1,6 @@
 import * as admin from 'firebase-admin';
 import * as functions from 'firebase-functions';
+import {callables} from './backend';
 import * as crypto from 'crypto';
 import {requireUid, requireActiveUser, activeUserData, sequenceIsInMembership} from './snack_chat';
 import {normalizeSnackSearch, validSnackMentions, pollSummarySnapshot} from './snack_chat_discovery_policy';
@@ -55,8 +56,9 @@ function wire(document: admin.firestore.QueryDocumentSnapshot | admin.firestore.
   const data = document.data()!;
   // No read receipts, private ballots, recipient list or unvalidated quote snapshots.
   const result: Record<string, unknown> = {id: document.id};
-  for (const key of ['senderId', 'senderName', 'type', 'text', 'sequence', 'imagePath', 'imageUrl',
-    'originalFileName', 'fileSize', 'fileExtension', 'mimeType', 'storagePath', 'retentionMode', 'uploadId', 'fileStatus', 'linkPreviewRemoved', 'linkPreview']) {
+  for (const key of ['senderId', 'senderName', 'type', 'text', 'sequence', 'imagePath', 'storageBucket', 'imageUrl',
+    'originalFileName', 'fileSize', 'fileExtension', 'mimeType', 'storagePath', 'retentionMode', 'uploadId', 'fileStatus', 'linkPreviewRemoved', 'linkPreview',
+    'videoDurationMs', 'videoWidth', 'videoHeight', 'videoThumbnail']) {
     if (data[key] != null) result[key] = data[key];
   }
   for (const key of ['createdAt', 'expiresAt', 'deleteAt']) result[key] = ms(data[key]);
@@ -87,7 +89,7 @@ async function hydrateSenderNames(results: Record<string, unknown>[]) {
  * server-side, at most 600 raw reads and 25 returned rows per request. The
  * wider batch avoids several callable/App Check round trips for sparse media;
  * the client persists the completed result and later syncs only new sequence. */
-export const querySnackChatMessages = functions.runWith({timeoutSeconds: 30, memory: '256MB'})
+export const querySnackChatMessages = callables().runWith({timeoutSeconds: 30, memory: '256MB'})
   .https.onCall(async (raw, context) => {
     const roomId = id(raw?.snackChatId);
     const access = await snackReadAccess(context, roomId);
@@ -184,7 +186,7 @@ export const querySnackChatMessages = functions.runWith({timeoutSeconds: 30, mem
 
 /** Legacy callable retained for installed app versions that still open the
  * context view. The current client no longer exposes or calls that page. */
-export const getSnackChatMessageContext = functions.runWith({timeoutSeconds: 30, memory: '256MB'})
+export const getSnackChatMessageContext = callables().runWith({timeoutSeconds: 30, memory: '256MB'})
   .https.onCall(async (raw, context) => {
     const access = await snackReadAccess(context, id(raw?.snackChatId));
     const target = await access.ref.collection('messages').doc(id(raw?.messageId)).get();
@@ -205,7 +207,7 @@ export const getSnackChatMessageContext = functions.runWith({timeoutSeconds: 30,
     return {results, targetMessageId: target.id, limited: true};
   });
 
-export const getSnackChatMentionCandidates = functions.runWith({timeoutSeconds: 30, memory: '256MB'})
+export const getSnackChatMentionCandidates = callables().runWith({timeoutSeconds: 30, memory: '256MB'})
   .https.onCall(async (raw, context) => {
     const access = await snackReadAccess(context, id(raw?.snackChatId));
     const candidates = strings(access.room.get('participantIds')).slice(0, 50).filter(uid => (raw?.includeSelf === true || uid !== access.uid) && !access.blocked.has(uid));
@@ -223,7 +225,7 @@ export const getSnackChatMentionCandidates = functions.runWith({timeoutSeconds: 
 
 /** Short-lived proof used by Rules; the existing client transaction continues
  * to assign sequence and store the message/room metadata atomically. */
-export const validateSnackChatMentions = functions.runWith({timeoutSeconds: 30, memory: '256MB'})
+export const validateSnackChatMentions = callables().runWith({timeoutSeconds: 30, memory: '256MB'})
   .https.onCall(async (raw, context) => {
     const access = await snackReadAccess(context, id(raw?.snackChatId));
     const text = typeof raw?.text === 'string' ? raw.text : '';

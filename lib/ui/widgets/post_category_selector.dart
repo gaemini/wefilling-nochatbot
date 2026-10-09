@@ -4,6 +4,10 @@ import '../../l10n/app_localizations.dart';
 import '../../models/post_category.dart';
 import '../../utils/responsive_helper.dart';
 import '../../l10n/ui_locale.dart';
+import '../../design/tokens.dart';
+import 'motion_press.dart';
+import 'motion_selectable.dart';
+import 'motion_state_icon.dart';
 
 bool _isKorean(BuildContext context) =>
     Localizations.localeOf(context).languageCode.toLowerCase() == 'ko';
@@ -117,6 +121,7 @@ class PostCategoryTagChip extends StatelessWidget {
     required this.maxWidth,
     required this.onTap,
     this.showHash = false,
+    this.navigates = false,
   });
 
   final String label;
@@ -125,6 +130,11 @@ class PostCategoryTagChip extends StatelessWidget {
   final double maxWidth;
   final VoidCallback onTap;
   final bool showHash;
+
+  /// True for chips that open another screen (board rail): basic press only,
+  /// no selection pulse or selected colour is ever left behind. False for the
+  /// post-tag selector where the chip is a real multi-select toggle.
+  final bool navigates;
 
   @override
   Widget build(BuildContext context) {
@@ -139,8 +149,16 @@ class PostCategoryTagChip extends StatelessWidget {
       selected: selected,
       enabled: enabled,
       label: '#$label',
-      child: Material(
-        color: selected ? const Color(0xFFEAF6FC) : const Color(0xFFF5F6F8),
+      child: _chipMotion(
+        child: AnimatedContainer(
+          duration: MotionTokens.of(context, MotionTokens.state),
+          curve: MotionTokens.curve,
+          decoration: BoxDecoration(
+            color: selected ? const Color(0xFFEAF6FC) : const Color(0xFFF5F6F8),
+            borderRadius: BorderRadius.circular(18),
+          ),
+          child: Material(
+        color: Colors.transparent,
         borderRadius: BorderRadius.circular(18),
         child: InkWell(
           onTap: enabled ? onTap : null,
@@ -153,18 +171,19 @@ class PostCategoryTagChip extends StatelessWidget {
                 mainAxisSize: MainAxisSize.min,
                 children: [
                   if (!showHash || selected) ...[
-                    Icon(
-                      selected ? Icons.check_circle_rounded : Icons.tag_rounded,
+                    MotionStateIcon(
+                      selected: selected,
+                      inactiveIcon: Icons.tag_rounded,
+                      activeIcon: Icons.check_circle_rounded,
                       size: context.ri(17).clamp(16, 18).toDouble(),
                       color: foreground,
                     ),
                     const SizedBox(width: 6),
                   ],
                   Flexible(
-                    child: Text(
-                      showHash ? '#$label' : label,
-                      maxLines: 1,
-                      overflow: TextOverflow.ellipsis,
+                    child: AnimatedDefaultTextStyle(
+                      duration: MotionTokens.of(context, MotionTokens.state),
+                      curve: MotionTokens.curve,
                       style: TextStyle(
                         fontFamily: uiFontFamily(context, 'Inter'),
                         fontFamilyFallback: const ['NotoSansKR'],
@@ -173,6 +192,11 @@ class PostCategoryTagChip extends StatelessWidget {
                             selected ? FontWeight.w800 : FontWeight.w600,
                         color: foreground,
                       ),
+                      child: Text(
+                        showHash ? '#$label' : label,
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                      ),
                     ),
                   ),
                 ],
@@ -180,7 +204,26 @@ class PostCategoryTagChip extends StatelessWidget {
             ),
           ),
         ),
+          ),
+        ),
       ),
+    );
+  }
+
+  Widget _chipMotion({required Widget child}) {
+    if (navigates) {
+      return MotionPress(
+        enabled: enabled,
+        pressedScale: MotionSelectable.chipScale,
+        child: child,
+      );
+    }
+    return MotionSelectable(
+      selected: selected,
+      enabled: enabled,
+      pulse: true,
+      pressedScale: MotionSelectable.chipScale,
+      child: child,
     );
   }
 }

@@ -198,6 +198,42 @@ AppEmptyState.noSearchResults(
 )
 ```
 
+## Motion / 버튼 반응
+
+버튼을 눌렀을 때의 반응은 아래 프리미티브의 **조합**으로만 만든다. 새 press/pulse
+위젯을 추가하지 않는다. 자세한 규약은 `docs/ui_motion_coverage.md`의
+"버튼 인터랙션 6유형" 절을 따른다.
+
+| 상황 | 사용 |
+|---|---|
+| 이동·검색·더보기 등 기본 눌림 | `MotionPress(pressedScale: .985)` / `AppIconButton` / `AppFab` |
+| 탭·필터·관심사·공개범위·라디오 | `MotionSelectable(selected:, pressedScale: chipScale|segmentScale, pulse: 칩만)` + `AnimatedContainer`/`AnimatedDefaultTextStyle`/`MotionStateIcon`에 `MotionTokens.of(context, MotionTokens.state)` |
+| 좋아요·저장·체크 | `MotionPress(resetToken: selected, .88~.9)` + `MotionSelectionPulse` + `MotionStateIcon` |
+| 저장·업로드·생성·참여·로그인 | `MotionProcessingButton(busy: 기존 플래그, feedback: 실제 결과를 받을 수 있을 때만)` 또는 `AppButton(isLoading:, feedback:)` |
+| 메시지 전송 | `MotionPress(enabled: canSend, .90)`, 새 대기 조건 금지 |
+| 로그아웃·나가기·삭제·취소 | `MotionPress(.99)` 또는 `MotionProcessingButton(pressedScale: cautiousScale, feedback: null)`, 기존 확인 절차 유지 |
+
+```dart
+// 처리형: 실제 성공 뒤에만 success()
+final _feedback = ProcessingFeedback(); // dispose 필요
+MotionProcessingButton(
+  busy: _isSaving,
+  onPressed: _save,
+  feedback: _feedback,
+  label: const Text('저장'),
+  builder: (context, onPressed, child) =>
+      FilledButton(onPressed: onPressed, child: child),
+);
+// ...
+final ok = await service.save();
+if (ok) _feedback.success();
+```
+
+햅틱은 `MotionHaptics.fire(context, MotionHapticEvent.x)`로만, 좋아요 선택·할 일 완료·
+처리 성공 세 경우에 한해 실제 결과 뒤에 호출한다. 감소 동작(iOS Reduce Motion 포함)은
+`MotionTokens.reduceMotion(context)`가 자동으로 처리하므로 색·체크·문구만으로 상태가
+보이도록 설계한다. 개발용 비교 화면: 계정 설정 → 버튼 랩(디버그 빌드).
+
 ## 체크리스트
 
 ### 새 파일 생성 시

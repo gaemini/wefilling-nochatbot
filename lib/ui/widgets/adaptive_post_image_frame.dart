@@ -16,11 +16,16 @@ class AdaptivePostImageFrame extends StatefulWidget {
     required this.imageUrl,
     required this.child,
     this.cacheWidth = defaultCacheWidth,
+    this.knownAspectRatio,
   });
 
   final String imageUrl;
   final Widget child;
   final int cacheWidth;
+
+  /// 비율을 이미 알 때(영상 메타데이터) 이미지를 디코드하지 않고 바로 쓴다.
+  /// null이면 [imageUrl]을 읽어 비율을 구한다(기존 동작).
+  final double? knownAspectRatio;
 
   @override
   State<AdaptivePostImageFrame> createState() => _AdaptivePostImageFrameState();
@@ -61,6 +66,7 @@ class _AdaptivePostImageFrameState extends State<AdaptivePostImageFrame> {
   }
 
   void _resolveAspectRatio() {
+    if (widget.knownAspectRatio != null) return;
     final url = widget.imageUrl.trim();
     if (url.isEmpty || _resolvedUrl == url) return;
     _resolvedUrl = url;
@@ -135,7 +141,10 @@ class _AdaptivePostImageFrameState extends State<AdaptivePostImageFrame> {
         final availableWidth = constraints.maxWidth.isFinite
             ? constraints.maxWidth
             : MediaQuery.sizeOf(context).width;
-        final aspectRatio = (_sourceAspectRatio ?? _fallbackAspectRatio).clamp(
+        final aspectRatio = (widget.knownAspectRatio ??
+                _sourceAspectRatio ??
+                _fallbackAspectRatio)
+            .clamp(
           _minimumAspectRatio,
           _maximumAspectRatio,
         );

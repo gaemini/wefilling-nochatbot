@@ -1,7 +1,9 @@
 import * as admin from 'firebase-admin';
 import * as functions from 'firebase-functions';
+import {bucketFor, callables, isKnownStorageBucket, triggers} from './backend';
 import {FieldValue, Timestamp} from 'firebase-admin/firestore';
 import {dmCovered, dmTimeCompare, dmNotificationBoundary, nextDMReceiptToken} from './dm_read_policy';
+import {chatHotRunWithOptions} from './runtime_scaling';
 
 const MAX_RECEIPT_PAGES_PER_CALL = 25;
 const RECEIPT_PAGE_SIZE = 400;
@@ -46,7 +48,7 @@ function timestampMillis(value: unknown): number {
  * documents. Trigger retries and out-of-order rapid taps therefore converge
  * without touching room ordering, unread counters, receipts, or push paths.
  */
-export const onDMReactionWritten = functions
+export const onDMReactionWritten = triggers()
   .runWith({timeoutSeconds: 60, memory: '256MB', failurePolicy: true})
   .firestore
   .document(
@@ -112,7 +114,7 @@ function roomUnreadForUser(
  * serializable transaction and stamps a schema version; no message collection
  * is scanned and later launches use users.dmUnreadTotal directly.
  */
-export const reconcileDMUnreadTotalSecure = functions
+export const reconcileDMUnreadTotalSecure = callables()
   .runWith({timeoutSeconds: 60, memory: '512MB'})
   .https.onCall(async (_raw, context) => {
     const userId = requireUid(context);
@@ -252,7 +254,7 @@ async function materializeDMReceipts(
 }
 
 // Deploy this worker BEFORE enabling deferred receipts in the callable/client.
-export const onDMReceiptCleanupRequested = functions
+export const onDMReceiptCleanupRequested = triggers()
   .runWith({timeoutSeconds: 120, memory: '512MB', failurePolicy: true})
   .firestore.document('conversations/{conversationId}')
   .onUpdate(async (change) => {
@@ -367,10 +369,22 @@ async function markDMConversationRead(
         typeof data.lastReadAtBy === 'object' &&
         !Array.isArray(data.lastReadAtBy) ?
         {...data.lastReadAtBy} as Record<string, unknown> : {};
+      let watermarkAdvanced = false;
       if (!dmCovered(readThroughAt, lastReadAtBy[userId])) {
         lastReadAtBy[userId] = readThroughAt;
+        watermarkAdvanced = true;
       }
       readThroughAt = lastReadAtBy[userId] as Timestamp;
+      // The read-through message id lets new senders resolve "read" by list
+      // order without waiting for the trigger-written receiptCreatedAt. It is
+      // only written when the watermark actually advanced, so a stale or
+      // out-of-order bounded request never regresses it. Old clients ignore it.
+      const lastReadMessageIdBy = data.lastReadMessageIdBy &&
+        typeof data.lastReadMessageIdBy === 'object' &&
+        !Array.isArray(data.lastReadMessageIdBy) ?
+        {...data.lastReadMessageIdBy} as Record<string, unknown> : {};
+      const writeReadMessageId = watermarkAdvanced && !!throughMessageId;
+      if (writeReadMessageId) lastReadMessageIdBy[userId] = throughMessageId;
       const unreadClearedAtBy = {...(data.unreadClearedAtBy ?? data.lastReadAtBy ?? {})};
       if (clearCounters) unreadClearedAtBy[userId] = readThroughAt;
       const readReceiptCursorBy = data.readReceiptCursorBy &&
@@ -388,6 +402,7 @@ async function markDMConversationRead(
         unreadClearedAtBy,
         readReceiptCursorBy: {...readReceiptCursorBy, [userId]: null},
         updatedAt: FieldValue.serverTimestamp(),
+        ...(writeReadMessageId ? {lastReadMessageIdBy} : {}),
         ...(raw?.deferReceipts === true ? {
           receiptCleanupRequestedAtBy: {
             ...(data.receiptCleanupRequestedAtBy ?? {}),
@@ -439,21 +454,23 @@ async function markDMConversationRead(
       boundedRead: !!throughMessageId, ...receipts};
 }
 
-export const markDMConversationReadSecure = functions
+export const markDMConversationReadSecure = callables()
   .runWith({timeoutSeconds: 120, memory: '512MB'})
   .https.onCall(markDMConversationRead);
 
 // Distinct endpoint: an old deployment would silently ignore throughMessageId
 // and mark through server-now. A missing v2 endpoint must instead fail closed.
-export const markDMConversationReadBoundedSecure = functions
-  .runWith({timeoutSeconds: 120, memory: '512MB'})
+export const markDMConversationReadBoundedSecure = callables()
+  // The bounded path returns after one O(1) counter transaction (receipts are
+  // deferred to the worker), so it does not need the legacy 512MB/120s budget.
+  .runWith({timeoutSeconds: 60, memory: '256MB', ...chatHotRunWithOptions()})
   .https.onCall((raw, context) => {
     firestoreId(raw?.throughMessageId);
     return markDMConversationRead(raw, context);
   });
 
 /** A leave is one server-owned read boundary, archive, and unread adjustment. */
-export const leaveDMConversationSecure = functions
+export const leaveDMConversationSecure = callables()
   .runWith({timeoutSeconds: 60, memory: '256MB'})
   .https.onCall(async (raw, context) => {
     const userId = requireUid(context);
@@ -512,4 +529,48 @@ export const leaveDMConversationSecure = functions
       readThroughAtMillis: dmNotificationBoundary(readThrough),
       clearedCount: result.clearedCount,
     };
+  });
+
+/**
+ * DM attachments (dm_files/ documents and videos, dm_images/ photos) are
+ * create-only for clients. When a message document is deleted the object
+ * is removed here so leaving/deleting a conversation frees storage.
+ */
+export const onDMMessageDeletedStorageCleanup = triggers().firestore
+  .document('conversations/{conversationId}/messages/{messageId}')
+  .onDelete(async (snapshot, context) => {
+    const data = snapshot.data() ?? {};
+    const conversationId = String(context.params.conversationId);
+    const messageId = String(context.params.messageId);
+    const senderId = String(data.senderId ?? '');
+    const targets: Array<{path: string; bucket?: string}> = [];
+    const filePath = String(data.fileStoragePath ?? '');
+    if (filePath.startsWith(`dm_files/${senderId}/${conversationId}/${messageId}/`) && !filePath.includes('..')) {
+      targets.push({path: filePath, bucket: String(data.storageBucket ?? '') || undefined});
+    }
+    const imageUrl = String(data.imageUrl ?? '');
+    try {
+      const url = new URL(imageUrl);
+      const match = url.hostname === 'firebasestorage.googleapis.com'
+        ? url.pathname.match(/^\/v0\/b\/([^/]+)\/o\/(.+)$/)
+        : null;
+      if (match) {
+        const bucket = decodeURIComponent(match[1]);
+        const objectPath = decodeURIComponent(match[2]);
+        if (isKnownStorageBucket(bucket) &&
+            objectPath.startsWith(`dm_images/${senderId}/${conversationId}/`) &&
+            !objectPath.includes('..')) {
+          targets.push({path: objectPath, bucket});
+        }
+      }
+    } catch (_) {
+      // not a storage URL
+    }
+    await Promise.all(targets.map(async (target) => {
+      try {
+        await bucketFor(target.bucket).file(target.path).delete({ignoreNotFound: true});
+      } catch (error) {
+        console.warn('dm attachment cleanup failed', {path: target.path, message: (error as Error)?.message});
+      }
+    }));
   });

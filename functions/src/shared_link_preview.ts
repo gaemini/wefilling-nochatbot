@@ -1,5 +1,6 @@
 import * as admin from 'firebase-admin';
 import * as functions from 'firebase-functions';
+import {allKnownBuckets, callables, uploadBucket} from './backend';
 import * as https from 'https';
 import * as dns from 'dns';
 import * as net from 'net';
@@ -905,6 +906,7 @@ type InstagramImageDownload = {
 type PersistedInstagramThumbnail = {
   thumbnailUrl: string;
   thumbnailStoragePath: string;
+  thumbnailStorageBucket: string;
   thumbnailSource: 'remote_resolver';
   aspectRatio: number;
   width: number;
@@ -1140,8 +1142,7 @@ async function existingPersistedInstagramThumbnail(
   ownerUid: string,
   postId: string,
 ): Promise<PersistedInstagramThumbnail | null> {
-  const bucket = admin.storage().bucket();
-  for (const extension of ['jpg', 'png', 'webp']) {
+  for (const bucket of allKnownBuckets()) for (const extension of ['jpg', 'png', 'webp']) {
     const storagePath = `post_link_previews/${ownerUid}/${postId}/instagram.${extension}`;
     const file = bucket.file(storagePath);
     const [exists] = await file.exists();
@@ -1157,6 +1158,7 @@ async function existingPersistedInstagramThumbnail(
     return {
       thumbnailUrl: firebaseDownloadUrl(bucket.name, storagePath, token),
       thumbnailStoragePath: storagePath,
+      thumbnailStorageBucket: bucket.name,
       thumbnailSource: 'remote_resolver',
       aspectRatio: Math.min(2.4, Math.max(0.5, width / height)),
       width,
@@ -1227,7 +1229,7 @@ async function persistInstagramThumbnailForOwner(
   const storagePath =
     `post_link_previews/${ownerUid}/${postId}/instagram.${extension}`;
   const token = crypto.randomUUID();
-  const bucket = admin.storage().bucket();
+  const bucket = uploadBucket();
   await bucket.file(storagePath).save(downloaded.bytes, {
     resumable: false,
     contentType: downloaded.contentType,
@@ -1247,6 +1249,7 @@ async function persistInstagramThumbnailForOwner(
   return {
     thumbnailUrl: firebaseDownloadUrl(bucket.name, storagePath, token),
     thumbnailStoragePath: storagePath,
+    thumbnailStorageBucket: bucket.name,
     thumbnailSource: 'remote_resolver',
     aspectRatio: Math.min(2.4, Math.max(0.5, downloaded.width / downloaded.height)),
     width: downloaded.width,
@@ -1255,7 +1258,7 @@ async function persistInstagramThumbnailForOwner(
   };
 }
 
-export const persistInstagramPreviewThumbnail = functions.runWith({
+export const persistInstagramPreviewThumbnail = callables().runWith({
   timeoutSeconds: 45,
   memory: '512MB',
 }).https.onCall(async (raw, context): Promise<PersistedInstagramThumbnail> => {
@@ -1285,7 +1288,7 @@ export const persistInstagramPreviewThumbnail = functions.runWith({
   return persistInstagramThumbnailForOwner(uid, postId, parsed);
 });
 
-export const backfillInstagramPreviewThumbnails = functions.runWith({
+export const backfillInstagramPreviewThumbnails = callables().runWith({
   timeoutSeconds: 300,
   memory: '512MB',
 }).https.onCall(async (raw, context) => {
@@ -1366,7 +1369,7 @@ export const backfillInstagramPreviewThumbnails = functions.runWith({
   };
 });
 
-export const resolveSharedLink = functions.runWith({
+export const resolveSharedLink = callables().runWith({
   timeoutSeconds: 15,
   memory: '256MB',
   secrets: ['YOUTUBE_API_KEY'],

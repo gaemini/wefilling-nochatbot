@@ -3,6 +3,16 @@
 // 친구요청 관련 함수들을 export
 
 import * as functions from 'firebase-functions';
+import {
+  allKnownBuckets,
+  backendSummary,
+  callables,
+  gmailPassword,
+  gmailUser,
+  triggers,
+  triggersIn,
+  withMailSecrets,
+} from './backend';
 import * as admin from 'firebase-admin';
 import {decorateChatPush} from './chat_push_presentation';
 export {querySnackChatMessages, getSnackChatMessageContext, getSnackChatMentionCandidates, validateSnackChatMentions} from './snack_chat_discovery';
@@ -11,6 +21,12 @@ import * as crypto from 'crypto';
 import {isDeepStrictEqual} from 'util';
 import { COL } from './firestore_paths';
 import {runtimeInfo, runtimeLogsEnabled} from './runtime_logging';
+import {chatHotRunWithOptions} from './runtime_scaling';
+import {CHAT_PUSH_COPY, notificationUnreadForBadge, pushLanguage} from './badge_policy';
+import {
+  emailVerificationSendGate,
+  evaluateEmailVerificationAttempt,
+} from './email_verification_policy';
 import {resolveFriendNotificationAudience} from './frozen_audience';
 import {
   deleteMeetupSnackChats,
@@ -67,6 +83,8 @@ export {
   createMeetupSecure,
   confirmMeetupSecure,
   expireTimedMeetups,
+  onPostDeletedStorageCleanup,
+  onPostUpdatedStorageCleanup,
 } from './content_creation';
 export {
   onPostSearchSourceWritten,
@@ -82,6 +100,7 @@ export {
   onDMReceiptCleanupRequested,
   onDMReactionWritten,
   reconcileDMUnreadTotalSecure,
+  onDMMessageDeletedStorageCleanup,
 } from './dm_chat';
 
 export {
@@ -157,6 +176,7 @@ export {
 
 // Firebase Admin 초기화
 admin.initializeApp();
+runtimeLogsEnabled && runtimeInfo(`[Backend] ${backendSummary()}`);
 
 // Firestore 인스턴스
 const db = admin.firestore();
@@ -174,7 +194,7 @@ function toStr(v: unknown): string {
  * 클라이언트가 세 컬렉션을 제각각 읽지 않고 Admin SDK가 동일 시점의 최신
  * aggregate count만 반환한다.
  */
-export const getUserProfileStats = functions
+export const getUserProfileStats = callables()
   .runWith({timeoutSeconds: 30, memory: '256MB'})
   .https.onCall(async (raw, context) => {
     if (!context.auth?.uid) {
@@ -501,7 +521,7 @@ async function reconcileNotificationUnreadCounterForUser(
  * with block relationships deliberately keep the exact document fallback,
  * because old notifications can become visible again after an unblock.
  */
-export const reconcileNotificationUnreadTotalSecure = functions
+export const reconcileNotificationUnreadTotalSecure = callables()
   .runWith({timeoutSeconds: 60, memory: '512MB'})
   .https.onCall(async (_data, context) => {
     const userId = normalizeUidLoose(context.auth?.uid);
@@ -567,7 +587,7 @@ async function filterTargetUserIdsByBlockRelationship(
   return visibleTargets;
 }
 
-export const onUserProfileUpdatedPropagateAuthorInfo = functions
+export const onUserProfileUpdatedPropagateAuthorInfo = triggers()
   .runWith({ timeoutSeconds: 540, memory: '1GB' })
   .firestore.document('users/{userId}')
   .onUpdate(async (change, context) => {
@@ -905,14 +925,11 @@ const DEFAULT_GMAIL_USER = 'wefilling@gmail.com';
 const PLACEHOLDER_GMAIL_PASSWORD = '여기에16자리앱비밀번호입력';
 
 function getGmailUser(): string {
-  const user = (functions.config().gmail?.user || process.env.GMAIL_USER || DEFAULT_GMAIL_USER).toString().trim();
-  return user || DEFAULT_GMAIL_USER;
+  return gmailUser(DEFAULT_GMAIL_USER);
 }
 
 function getGmailPasswordSanitized(): string | null {
-  const raw = functions.config().gmail?.password || process.env.GMAIL_PASSWORD;
-  if (!raw) return null;
-  const sanitized = raw.toString().replace(/\s+/g, '');
+  const sanitized = gmailPassword();
   if (!sanitized) return null;
   // 레포/문서에 남아있는 placeholder 값이 설정된 경우, 실제 미설정으로 취급
   if (sanitized === PLACEHOLDER_GMAIL_PASSWORD) return null;
@@ -1190,6 +1207,8 @@ function buildPasswordResetMessage(
 const PASSWORD_RESET_EXPIRY_MS = 10 * 60 * 1000;
 const PASSWORD_RESET_RESEND_MS = 60 * 1000;
 const PASSWORD_RESET_MAX_ATTEMPTS = 5;
+// 5회 오답 잠금이 유지되는 시간. 이 동안은 새 코드 재발급으로 초기화되지 않는다.
+const PASSWORD_RESET_LOCK_MS = 5 * 60 * 1000;
 
 function passwordResetEmailKey(email: string): string {
   return crypto.createHash('sha256').update(normalizeEmail(email)).digest('hex');
@@ -1379,7 +1398,7 @@ function isHanyangEmailVerifiedData(data: any): boolean {
  * completion. Repeating the request for the same uid only resumes the same
  * document; it never reserves a nickname or creates another account.
  */
-export const ensureRegistrationProgress = functions
+export const ensureRegistrationProgress = callables()
   .runWith({enforceAppCheck: true})
   .https.onCall(async (data, context) => {
     if (!context.auth) {
@@ -1503,7 +1522,7 @@ export const ensureRegistrationProgress = functions
   });
 
 /** Completes any authenticated pending registration with one atomic profile write. */
-export const finalizePendingRegistration = functions
+export const finalizePendingRegistration = callables()
   .runWith({enforceAppCheck: true})
   .https.onCall(async (data, context) => {
     if (!context.auth) {
@@ -1623,7 +1642,7 @@ export const finalizePendingRegistration = functions
   });
 
 // 한양메일 인증 최종 확정(유니크 점유) - 탈퇴 시 released 되면 재사용 가능
-export const finalizeHanyangEmailVerification = functions
+export const finalizeHanyangEmailVerification = callables()
   .runWith({enforceAppCheck: true})
   .https.onCall(async (data, context) => {
   try {
@@ -1825,7 +1844,7 @@ export const finalizeHanyangEmailVerification = functions
 
 // 가입 완료 계정이 프로필에서 한양메일 소속 인증만 추가하는 경로입니다.
 // 로그인 이메일 인증/가입 완료 상태는 변경하지 않습니다.
-export const completeHanyangProfileVerification = functions.https.onCall(async (data, context) => {
+export const completeHanyangProfileVerification = callables().https.onCall(async (data, context) => {
   if (!context.auth) {
     throw new functions.https.HttpsError('unauthenticated', '로그인이 필요합니다.');
   }
@@ -1940,7 +1959,7 @@ export const completeHanyangProfileVerification = functions.https.onCall(async (
 // 일반 소셜 회원가입 승인(한양메일 인증 없이 가입 가능)
 // - Google/Apple 로그인 사용자만 허용
 // - users/{uid}.emailVerified=true 를 서버에서 확정 저장
-export const finalizeEnglishSocialSignup = functions
+export const finalizeEnglishSocialSignup = callables()
   .runWith({enforceAppCheck: true})
   .https.onCall(async (data, context) => {
   try {
@@ -2061,7 +2080,7 @@ export const finalizeEnglishSocialSignup = functions
 
 /// 가입 완료 전 사용자가 흐름을 명시적으로 중단했을 때 임시 인증 상태를
 /// 정리합니다. 완성된 사용자 문서는 절대 삭제하지 않습니다.
-export const discardIncompleteRegistration = functions.https.onCall(async (data, context) => {
+export const discardIncompleteRegistration = callables().https.onCall(async (data, context) => {
   if (!context.auth) {
     throw new functions.https.HttpsError('unauthenticated', '로그인이 필요합니다.');
   }
@@ -2120,7 +2139,7 @@ export const discardIncompleteRegistration = functions.https.onCall(async (data,
 
 /// Auth 계정이 아직 생성되지 않은 이메일 가입 흐름의 일회성 인증 토큰을
 /// 취소합니다. 토큰 소유권이 일치할 때만 임시 문서를 삭제합니다.
-export const cancelPendingEmailSignup = functions.https.onCall(async (data) => {
+export const cancelPendingEmailSignup = callables().https.onCall(async (data) => {
   const email = typeof data?.email === 'string' ? normalizeEmail(data.email) : '';
   const token = typeof data?.verificationToken === 'string'
     ? data.verificationToken.trim()
@@ -2159,7 +2178,7 @@ export const cancelPendingEmailSignup = functions.https.onCall(async (data) => {
 });
 
 // 기존 사용자 백필: emailVerified==true 인 사용자들의 email_claims 생성/정합성 보정 (관리자 전용)
-export const backfillEmailClaims = functions.https.onCall(async (data, context) => {
+export const backfillEmailClaims = callables().runWith(withMailSecrets()).https.onCall(async (data, context) => {
   try {
     if (!context.auth) {
       throw new functions.https.HttpsError('unauthenticated', '로그인이 필요합니다.');
@@ -2419,7 +2438,7 @@ async function sendCompletedRegistrationAdminNotification(
 
 // users 문서가 이미 완성된 상태로 생성되는 이메일 가입 등을 처리한다.
 // 기존 배포 함수의 트리거 종류를 유지해 배포 중 교체 오류를 방지한다.
-export const onUserCreated = functions.firestore
+export const onUserCreated = triggers().runWith(withMailSecrets()).firestore
   .document('users/{userId}')
   .onCreate((snapshot, context) =>
     sendCompletedRegistrationAdminNotification(
@@ -2432,7 +2451,7 @@ export const onUserCreated = functions.firestore
 
 // Google·Apple 등 Auth 직후의 임시 문서가 프로필 제출로 완료 상태가
 // 되는 경로를 처리한다. 이후 프로필 수정은 before도 완료라 발송하지 않는다.
-export const onUserRegistrationCompleted = functions.firestore
+export const onUserRegistrationCompleted = triggers().runWith(withMailSecrets()).firestore
   .document('users/{userId}')
   .onUpdate((change, context) =>
     sendCompletedRegistrationAdminNotification(
@@ -2505,7 +2524,7 @@ async function commitNotificationCreates(
 
 // 포스트 생성 시 생성 당시 공개 범위 안에 있는 친구에게만 알림 생성.
 // public은 생성 시점 친구 snapshot, category는 선택 그룹의 frozen audience를 쓴다.
-export const onPrivatePostCreated = functions.firestore
+export const onPrivatePostCreated = triggers().firestore
   .document('posts/{postId}')
   .onCreate(async (snapshot, context) => {
     try {
@@ -2681,7 +2700,7 @@ function canReadStoredMeetup(
  * deleted server-side. Records for an existing but currently unreadable
  * meetup are left untouched so validation cannot mutate participation state.
  */
-export const resolveMyReadableJoinedMeetupIds = functions
+export const resolveMyReadableJoinedMeetupIds = callables()
   .runWith({timeoutSeconds: 30, memory: '256MB'})
   .https.onCall(async (_raw, context) => {
     const userId = context.auth?.uid;
@@ -2774,7 +2793,7 @@ function meetupPublicationExpired(meetup: Record<string, any>): boolean {
  * 밋업 참여의 최종 권한 판정은 생성 시 저장된 frozen audience로 수행한다.
  * 현재 친구/그룹 원본은 과거 콘텐츠 권한 계산에 사용하지 않는다.
  */
-export const joinMeetupSecure = functions.https.onCall(async (data, context) => {
+export const joinMeetupSecure = callables().https.onCall(async (data, context) => {
   if (!context.auth) {
     throw new functions.https.HttpsError('unauthenticated', '로그인이 필요합니다.');
   }
@@ -2928,7 +2947,7 @@ export const joinMeetupSecure = functions.https.onCall(async (data, context) => 
 // 친구요청이 PENDING으로 전이될 때 수신자에게 알림 생성.
 // 거절/취소된 결정적 friend_requests 문서를 다시 사용해도 onCreate는
 // 발생하지 않으므로 onWrite에서 상태 전이를 감지한다.
-export const onFriendRequestCreated = functions
+export const onFriendRequestCreated = triggers()
   .runWith({timeoutSeconds: 60, memory: '256MB'})
   .firestore
   .document('friend_requests/{requestId}')
@@ -3096,7 +3115,7 @@ export const onFriendRequestCreated = functions
   });
 
 // 광고 배너 업데이트 시 ads 토픽으로 브로드캐스트
-export const onAdBannerChanged = functions.firestore
+export const onAdBannerChanged = triggers().firestore
   .document('ad_banners/{bannerId}')
   .onWrite(async (change, context) => {
     try {
@@ -3168,7 +3187,7 @@ export const onAdBannerChanged = functions.firestore
   });
 
 // 모임 업데이트: 정원 마감 시 호스트에게 알림 (meetup_full)
-export const onMeetupUpdated = functions.firestore
+export const onMeetupUpdated = triggers().firestore
   .document('meetups/{meetupId}')
   .onUpdate(async (change, context) => {
     try {
@@ -3253,7 +3272,7 @@ export const onMeetupUpdated = functions.firestore
   });
 
 // 모임 삭제 시 참가자들에게 취소 알림 (meetup_cancelled)
-export const onMeetupDeleted = functions
+export const onMeetupDeleted = triggers()
   .runWith({timeoutSeconds: 300, memory: '512MB', failurePolicy: true})
   .firestore
   .document('meetups/{meetupId}')
@@ -3505,7 +3524,7 @@ async function adjustCommentTargetCount(
 }
 
 // 댓글 생성 시 게시글 작성자에게 알림 (new_comment)
-export const onCommentCreated = functions.firestore
+export const onCommentCreated = triggers().firestore
   .document('comments/{commentId}')
   .onCreate(async (snapshot, context) => {
     try {
@@ -3699,7 +3718,7 @@ export const onCommentCreated = functions.firestore
   });
 
 // 댓글 삭제 시 게시글/모임 댓글 수 감소
-export const onCommentDeleted = functions.firestore
+export const onCommentDeleted = triggers().firestore
   .document('comments/{commentId}')
   .onDelete(async (snapshot, context) => {
     try {
@@ -3746,7 +3765,7 @@ export const onCommentDeleted = functions.firestore
 
 // 댓글을 문서 삭제 대신 tombstone으로 전환할 때 활성 댓글 수를 한 번만 감소시킨다.
 // ID와 parentCommentId를 보존하므로 중간 대댓글 삭제 후에도 스레드 순서가 유지된다.
-export const onCommentSoftDeleted = functions.firestore
+export const onCommentSoftDeleted = triggers().firestore
   .document('comments/{commentId}')
   .onUpdate(async (change, context) => {
     try {
@@ -3766,7 +3785,7 @@ export const onCommentSoftDeleted = functions.firestore
   });
 
 // 댓글 좋아요 변화 감지 → 댓글 작성자에게 알림
-export const onCommentLiked = functions.firestore
+export const onCommentLiked = triggers().firestore
   .document('comments/{commentId}')
   .onUpdate(async (change, context) => {
     try {
@@ -3873,7 +3892,7 @@ export const onCommentLiked = functions.firestore
   });
 
 // 게시글 좋아요 변화 감지 (likedBy 증가 시) → 작성자에게 알림 (new_like)
-export const onPostLiked = functions.firestore
+export const onPostLiked = triggers().firestore
   .document('posts/{postId}')
   .onUpdate(async (change, context) => {
     try {
@@ -3965,11 +3984,11 @@ export const onPostLiked = functions.firestore
     }
   });
 
-const passwordResetCallable = functions.runWith({
+const passwordResetCallable = callables().runWith(withMailSecrets({
   enforceAppCheck: true,
   timeoutSeconds: 30,
   memory: '256MB',
-});
+}));
 
 /**
  * 로그인 전 이메일/비밀번호 계정의 6자리 비밀번호 재설정 코드를 발급한다.
@@ -4040,6 +4059,26 @@ export const requestPasswordResetCode = passwordResetCallable.https.onCall(
             'resource-exhausted',
             'Please wait before requesting another code.',
             {status: 'rateLimited', retryAfterSeconds},
+          );
+        }
+      }
+
+      // 잠긴 코드는 잠금 시간 동안 새 코드 발급으로 초기화할 수 없다.
+      // 60초마다 재발급해 5회 제한을 우회하던 추측 경로를 막는다.
+      const lockedAt = timestampLikeToDate(previousData?.lockedAt);
+      if (previousData?.status === 'locked' && lockedAt) {
+        const lockedForMs = nowMs - lockedAt.getTime();
+        if (lockedForMs < PASSWORD_RESET_LOCK_MS) {
+          throw new functions.https.HttpsError(
+            'resource-exhausted',
+            'Please wait before requesting another code.',
+            {
+              status: 'rateLimited',
+              retryAfterSeconds: Math.max(
+                1,
+                Math.ceil((PASSWORD_RESET_LOCK_MS - lockedForMs) / 1000),
+              ),
+            },
           );
         }
       }
@@ -4191,6 +4230,9 @@ export const resetPasswordWithCode = passwordResetCallable.https.onCall(
             status: nextAttempts >= PASSWORD_RESET_MAX_ATTEMPTS
               ? 'locked'
               : 'active',
+            ...(nextAttempts >= PASSWORD_RESET_MAX_ATTEMPTS
+              ? {lockedAt: admin.firestore.Timestamp.fromMillis(Date.now())}
+              : {}),
           });
           return nextAttempts >= PASSWORD_RESET_MAX_ATTEMPTS
             ? {status: 'tooManyAttempts'}
@@ -4272,7 +4314,7 @@ export const resetPasswordWithCode = passwordResetCallable.https.onCall(
 );
 
 // 이메일 인증번호 전송 함수
-export const sendEmailVerificationCode = functions.https.onCall(async (data, context) => {
+export const sendEmailVerificationCode = callables().runWith(withMailSecrets()).https.onCall(async (data, context) => {
   try {
     const { email, locale } = data;
     const requestedPurpose = data?.purpose;
@@ -4413,9 +4455,24 @@ export const sendEmailVerificationCode = functions.https.onCall(async (data, con
     const expiresAt = new Date();
     expiresAt.setMinutes(expiresAt.getMinutes() + 5);
 
+    const sendNowMs = Date.now();
     await db.runTransaction(async (transaction) => {
       const previous = await transaction.get(verificationRef);
-      verificationCode = createEmailVerificationCode(previous.data()?.code);
+      const previousData = previous.exists ?
+        (previous.data() as Record<string, unknown>) : undefined;
+      // 같은 주소에 대한 재발급 쿨다운·시간당 상한. 발급마다 attempts가 0으로
+      // 돌아가므로 재발급 자체를 제한해야 4자리 코드 추측을 막을 수 있다.
+      const gate = emailVerificationSendGate(previousData, sendNowMs);
+      if (!gate.allowed) {
+        throw new functions.https.HttpsError(
+          'resource-exhausted',
+          gate.reason === 'cooldown' ?
+            `인증번호를 이미 보냈습니다. ${gate.retryAfterSeconds}초 후 다시 요청해주세요.` :
+            '인증번호 요청이 너무 많습니다. 잠시 후 다시 시도해주세요.',
+          {status: 'rateLimited', reason: gate.reason, retryAfterSeconds: gate.retryAfterSeconds},
+        );
+      }
+      verificationCode = createEmailVerificationCode(previousData?.code);
       transaction.set(verificationRef, {
         code: verificationCode,
         email: emailTrimmed, // 원본 이메일(표시/메일 발송용)
@@ -4426,6 +4483,9 @@ export const sendEmailVerificationCode = functions.https.onCall(async (data, con
         expiresAt: admin.firestore.Timestamp.fromDate(expiresAt),
         createdAt: admin.firestore.FieldValue.serverTimestamp(),
         attempts: 0, // 시도 횟수
+        lastSentAt: admin.firestore.Timestamp.fromMillis(sendNowMs),
+        sendWindowStartedAt: admin.firestore.Timestamp.fromMillis(gate.windowStartedAtMs),
+        sendCountInWindow: gate.sendCount,
       });
     });
 
@@ -4449,7 +4509,15 @@ export const sendEmailVerificationCode = functions.https.onCall(async (data, con
       html: emailMessage.html,
     };
 
-    await mailTransporter.sendMail(mailOptions);
+    try {
+      await mailTransporter.sendMail(mailOptions);
+    } catch (mailError) {
+      // 발송 실패 시 재요청 쿨다운을 풀어 사용자가 곧바로 다시 시도할 수 있게 한다.
+      await verificationRef.update({
+        lastSentAt: admin.firestore.FieldValue.delete(),
+      }).catch(() => undefined);
+      throw mailError;
+    }
     runtimeLogsEnabled && runtimeInfo(`email verification sent purpose=${purpose}`);
 
     return {
@@ -4482,7 +4550,7 @@ export const sendEmailVerificationCode = functions.https.onCall(async (data, con
 });
 
 // 이메일 인증번호 검증 함수
-export const verifyEmailCode = functions.https.onCall(async (data, context) => {
+export const verifyEmailCode = callables().https.onCall(async (data, context) => {
   try {
     const { email, code } = data;
     const requestedPurpose = data?.purpose;
@@ -4637,46 +4705,58 @@ export const verifyEmailCode = functions.https.onCall(async (data, context) => {
       );
     }
 
-    // 시도 횟수 확인
-    const attemptsRaw = verificationData?.attempts;
-    const attempts = typeof attemptsRaw === 'number' ? attemptsRaw : parseInt(String(attemptsRaw ?? '0'), 10) || 0;
-    if (attempts >= 3) {
-      // 시도 횟수 초과 시 인증번호 삭제
-      await db.collection(COL.emailVerifications).doc(verificationDocId).delete();
+    // 시도 횟수 확인·코드 비교·시도 증가·검증 완료를 한 트랜잭션에서 처리한다.
+    // 병렬 요청이 같은 attempts 값을 읽고 모두 통과하던 경쟁을 막는다.
+    const verificationRef = db.collection(COL.emailVerifications).doc(verificationDocId);
+    const verificationToken = crypto.randomBytes(32).toString('hex');
+    const verifiedExpiresAt = new Date(Date.now() + 2 * 60 * 60 * 1000);
+    const outcome = await db.runTransaction(async (transaction) => {
+      const latestSnap = await transaction.get(verificationRef);
+      const latest = latestSnap.exists ?
+        (latestSnap.data() as Record<string, unknown>) : undefined;
+      const evaluated = evaluateEmailVerificationAttempt(latest, code);
+      if (evaluated.kind === 'exhausted') {
+        // 시도 횟수 초과 시 인증번호 삭제
+        transaction.delete(verificationRef);
+      } else if (evaluated.kind === 'mismatch') {
+        transaction.update(verificationRef, {
+          attempts: evaluated.attempts,
+          lastAttemptAt: admin.firestore.FieldValue.serverTimestamp(),
+        });
+      } else if (evaluated.kind === 'verified') {
+        // 인증 성공만으로 계정/사용자 문서/메일 점유를 만들지 않는다. 두 가입
+        // 경로 모두 짧게 유효한 일회성 토큰만 발급하고 마지막 프로필 제출에서
+        // 토큰을 소비한다.
+        transaction.update(verificationRef, {
+          code: admin.firestore.FieldValue.delete(),
+          status: 'verified',
+          verificationTokenHash: hashEmailVerificationToken(verificationToken),
+          verifiedAt: admin.firestore.FieldValue.serverTimestamp(),
+          verifiedExpiresAt: admin.firestore.Timestamp.fromDate(verifiedExpiresAt),
+          expiresAt: admin.firestore.Timestamp.fromDate(verifiedExpiresAt),
+          attempts: 0,
+        });
+      }
+      return evaluated;
+    });
+    if (outcome.kind === 'missing') {
+      throw new functions.https.HttpsError(
+        'failed-precondition',
+        '인증 요청이 현재 가입 방식과 일치하지 않습니다. 인증번호를 다시 요청해주세요.'
+      );
+    }
+    if (outcome.kind === 'exhausted') {
       throw new functions.https.HttpsError(
         'resource-exhausted',
         '인증번호 입력 횟수를 초과했습니다. 다시 요청해주세요.'
       );
     }
-
-    // 인증번호 확인
-    if (String(verificationData?.code ?? '') !== String(code)) {
-      // 시도 횟수 증가
-      await db.collection(COL.emailVerifications).doc(verificationDocId).update({
-        attempts: admin.firestore.FieldValue.increment(1),
-      });
-
-      const remainingAttempts = 3 - (attempts + 1);
+    if (outcome.kind === 'mismatch') {
       throw new functions.https.HttpsError(
         'invalid-argument',
-        `인증번호가 일치하지 않습니다. (남은 시도: ${remainingAttempts}회)`
+        `인증번호가 일치하지 않습니다. (남은 시도: ${outcome.remaining}회)`
       );
     }
-
-    // 인증 성공만으로 계정/사용자 문서/메일 점유를 만들지 않는다. 두 가입
-    // 경로 모두 짧게 유효한 일회성 토큰만 발급하고 마지막 프로필 제출에서
-    // 토큰을 소비한다.
-    const verificationToken = crypto.randomBytes(32).toString('hex');
-    const verifiedExpiresAt = new Date(Date.now() + 2 * 60 * 60 * 1000);
-    await db.collection(COL.emailVerifications).doc(verificationDocId).update({
-      code: admin.firestore.FieldValue.delete(),
-      status: 'verified',
-      verificationTokenHash: hashEmailVerificationToken(verificationToken),
-      verifiedAt: admin.firestore.FieldValue.serverTimestamp(),
-      verifiedExpiresAt: admin.firestore.Timestamp.fromDate(verifiedExpiresAt),
-      expiresAt: admin.firestore.Timestamp.fromDate(verifiedExpiresAt),
-      attempts: 0,
-    });
     return { success: true, verificationToken };
 
   } catch (error) {
@@ -4699,7 +4779,7 @@ export const verifyEmailCode = functions.https.onCall(async (data, context) => {
  * Auth 레코드만 생긴 채 가입이 중단된 경우 새 UID를 만들지 않고 기존 계정을
  * 복구한다. 반대로 프로필 가입까지 완료된 계정은 명확히 차단한다.
  */
-export const createGeneralEmailSignup = functions
+export const createGeneralEmailSignup = callables()
   .runWith({enforceAppCheck: true})
   .https.onCall(async (data, context) => {
   const email = typeof data?.email === 'string' ? data.email.trim() : '';
@@ -5012,7 +5092,7 @@ export const createGeneralEmailSignup = functions
  *   네트워크/예외 등으로 잔존할 수 있어 스케줄로 보강합니다.
  * - 비용/부하를 줄이기 위해 "만료된 문서만" 배치 삭제합니다.
  */
-export const cleanupExpiredEmailVerifications = functions.pubsub
+export const cleanupExpiredEmailVerifications = triggers().pubsub
   .schedule('every 1 hours')
   .timeZone('Asia/Seoul')
   .onRun(async () => {
@@ -5171,7 +5251,7 @@ function isActiveCompletedUserProfile(data: any, uid: string): boolean {
  * 유지하며, Google/Apple/password 같은 제공자 필드는 조건에 사용하지
  * 않는다.
  */
-export const searchSocialUsers = functions
+export const searchSocialUsers = callables()
   .runWith({timeoutSeconds: 20, memory: '256MB', enforceAppCheck: true})
   .https.onCall(async (raw, context) => {
     const requesterId = normalizeUidLoose(context.auth?.uid);
@@ -5279,7 +5359,7 @@ export const searchSocialUsers = functions
  * 피하고, 이름 검색과 동일하게 계정 상태와 양방향 차단을 서버에서
  * fail-closed 방식으로 검증한다.
  */
-export const searchSocialUsersByInterest = functions
+export const searchSocialUsersByInterest = callables()
   .runWith({timeoutSeconds: 20, memory: '256MB', enforceAppCheck: true})
   .https.onCall(async (raw, context) => {
     const requesterId = normalizeUidLoose(context.auth?.uid);
@@ -5404,7 +5484,7 @@ export const searchSocialUsersByInterest = functions
  * - 친구 목록과 숫자가 달라지지 않도록 활성 프로필을 먼저 확정한 뒤
  *   동일한 목록을 기준으로 카운트와 페이지네이션을 수행한다.
  */
-export const getProfileFriendNetwork = functions
+export const getProfileFriendNetwork = callables()
   .runWith({enforceAppCheck: true})
   .https.onCall(async (raw, context) => {
     if (!context.auth) {
@@ -5568,7 +5648,7 @@ export const getProfileFriendNetwork = functions
  * 기존 앱의 Firestore 쿼리 호환성을 유지하면서 신규 앱에는 검증된 최소
  * 데이터만 반환한다.
  */
-export const getPublicProfileReviewPreview = functions
+export const getPublicProfileReviewPreview = callables()
   .runWith({enforceAppCheck: true})
   .https.onCall(async (raw, context) => {
     if (!context.auth) {
@@ -5723,7 +5803,7 @@ function friendshipParticipantUids(
  * 친구 목록에 실제 노출되는 활성 프로필 수로 수렴시킨다. 절대값 집계이므로
  * 트리거 재시도에도 중복 증감되지 않고, 탈퇴 중인 문서를 재생성하지 않는다.
  */
-export const onFriendshipWrittenReconcileCounts = functions
+export const onFriendshipWrittenReconcileCounts = triggers()
   .runWith({timeoutSeconds: 60, memory: '256MB'})
   .firestore.document('friendships/{friendshipId}')
   .onWrite(async (change) => {
@@ -5755,7 +5835,7 @@ export const onFriendshipWrittenReconcileCounts = functions
 /** Auth 계정이 관리 콘솔 등 앱 밖에서 삭제된 경우에도 고아 친구 관계를
  * 남기지 않는다. 일반 앱 탈퇴 경로에서 이미 지워졌다면 읽기 결과가 0건인
  * 멱등성 보조 장치다. */
-export const onDeletedAuthUserFriendshipCleanup = functions
+export const onDeletedAuthUserFriendshipCleanup = triggers()
   .runWith({timeoutSeconds: 120, memory: '256MB'})
   .auth.user()
   .onDelete(async (user) => {
@@ -5771,7 +5851,7 @@ export const onDeletedAuthUserFriendshipCleanup = functions
     return null;
   });
 
-export const sendFriendRequest = functions.https.onCall(async (data, context) => {
+export const sendFriendRequest = callables().https.onCall(async (data, context) => {
   try {
     // 인증 확인
     if (!context.auth) {
@@ -5915,7 +5995,7 @@ export const sendFriendRequest = functions.https.onCall(async (data, context) =>
 });
 
 // 친구요청 취소
-export const cancelFriendRequest = functions.https.onCall(async (data, context) => {
+export const cancelFriendRequest = callables().https.onCall(async (data, context) => {
   try {
     // 인증 확인
     if (!context.auth) {
@@ -6007,7 +6087,7 @@ export const cancelFriendRequest = functions.https.onCall(async (data, context) 
 });
 
 // 친구요청 수락
-export const acceptFriendRequest = functions.https.onCall(async (data, context) => {
+export const acceptFriendRequest = callables().https.onCall(async (data, context) => {
   try {
     // 인증 확인
     if (!context.auth) {
@@ -6234,7 +6314,7 @@ export const acceptFriendRequest = functions.https.onCall(async (data, context) 
 });
 
 // 친구요청 거절
-export const rejectFriendRequest = functions.https.onCall(async (data, context) => {
+export const rejectFriendRequest = callables().https.onCall(async (data, context) => {
   try {
     // 인증 확인
     if (!context.auth) {
@@ -6326,7 +6406,7 @@ export const rejectFriendRequest = functions.https.onCall(async (data, context) 
 });
 
 // 친구 삭제
-export const unfriend = functions.https.onCall(async (data, context) => {
+export const unfriend = callables().https.onCall(async (data, context) => {
   try {
     // 인증 확인
     if (!context.auth) {
@@ -6424,7 +6504,7 @@ export const unfriend = functions.https.onCall(async (data, context) => {
 });
 
 // 사용자 차단
-export const blockUser = functions.https.onCall(async (data, context) => {
+export const blockUser = callables().https.onCall(async (data, context) => {
   try {
     // 인증 확인
     if (!context.auth) {
@@ -6542,7 +6622,7 @@ export const blockUser = functions.https.onCall(async (data, context) => {
 });
 
 // 사용자 차단 해제
-export const unblockUser = functions.https.onCall(async (data, context) => {
+export const unblockUser = callables().https.onCall(async (data, context) => {
   try {
     // 인증 확인
     if (!context.auth) {
@@ -6630,7 +6710,7 @@ export const unblockUser = functions.https.onCall(async (data, context) => {
 });
 
 // 익명 게시글 단위 차단(숨김)
-export const blockAnonymousPost = functions.https.onCall(async (data, context) => {
+export const blockAnonymousPost = callables().https.onCall(async (data, context) => {
   try {
     if (!context.auth?.uid) {
       throw new functions.https.HttpsError('unauthenticated', '로그인이 필요합니다.');
@@ -6681,7 +6761,7 @@ export const blockAnonymousPost = functions.https.onCall(async (data, context) =
 });
 
 // 익명 게시글 단위 차단 해제(복구)
-export const unblockAnonymousPost = functions.https.onCall(async (data, context) => {
+export const unblockAnonymousPost = callables().https.onCall(async (data, context) => {
   try {
     if (!context.auth?.uid) {
       throw new functions.https.HttpsError('unauthenticated', '로그인이 필요합니다.');
@@ -6704,7 +6784,7 @@ export const unblockAnonymousPost = functions.https.onCall(async (data, context)
 });
 
 // 익명 댓글 숨김 (차단 목록에는 노출하지 않음)
-export const hideAnonymousComment = functions.https.onCall(async (data, context) => {
+export const hideAnonymousComment = callables().https.onCall(async (data, context) => {
   try {
     if (!context.auth?.uid) {
       throw new functions.https.HttpsError('unauthenticated', '로그인이 필요합니다.');
@@ -6761,7 +6841,7 @@ export const hideAnonymousComment = functions.https.onCall(async (data, context)
 });
 
 // 익명 댓글 숨김 해제
-export const unhideAnonymousComment = functions.https.onCall(async (data, context) => {
+export const unhideAnonymousComment = callables().https.onCall(async (data, context) => {
   try {
     if (!context.auth?.uid) {
       throw new functions.https.HttpsError('unauthenticated', '로그인이 필요합니다.');
@@ -6784,7 +6864,7 @@ export const unhideAnonymousComment = functions.https.onCall(async (data, contex
 });
 
 // 신고하기 기능
-export const reportUser = functions.https.onCall(async (data, context) => {
+export const reportUser = callables().runWith(withMailSecrets()).https.onCall(async (data, context) => {
   try {
     // 인증 확인
     if (!context.auth) {
@@ -6897,7 +6977,7 @@ export const reportUser = functions.https.onCall(async (data, context) => {
 });
 
 // 신고 데이터 생성 시 관리자에게 이메일 알림 (Firestore Trigger)
-export const onReportCreated = functions.region('asia-northeast3').firestore
+export const onReportCreated = triggersIn('asia-northeast3').runWith(withMailSecrets()).firestore
   .document('reports/{reportId}')
   .onCreate(async (snapshot, context) => {
     try {
@@ -6975,7 +7055,7 @@ export const onReportCreated = functions.region('asia-northeast3').firestore
   });
 
 // 계정 즉시 삭제(관리자 권한으로 실행) - 게시글/댓글은 익명 처리
-export const deleteAccountImmediately = functions.https.onCall(async (data, context) => {
+export const deleteAccountImmediately = callables().runWith(withMailSecrets()).https.onCall(async (data, context) => {
   try {
     if (!context.auth) {
       throw new functions.https.HttpsError('unauthenticated', '로그인이 필요합니다.');
@@ -7211,11 +7291,12 @@ export const deleteAccountImmediately = functions.https.onCall(async (data, cont
 
     // 2) Storage 정리 (best-effort)
     try {
-      const bucket = admin.storage().bucket();
       // Keep the trailing slash: Cloud Storage prefix matching is textual, so
       // omitting it could also match a different custom UID that merely starts
-      // with the deleted account's UID.
-      await bucket.deleteFiles({ prefix: `profile_images/${uid}/` });
+      // with the deleted account's UID. Profile photos may live in the legacy
+      // or the current upload bucket, so both are swept.
+      await Promise.all(allKnownBuckets().map((bucket) =>
+        bucket.deleteFiles({prefix: `profile_images/${uid}/`})));
       // 게시글/DM/Snack Chat 미디어는 작성 내용의 일부이므로
       // 역사 보존 정책에 따라 유지한다.
     } catch (e) {
@@ -7322,19 +7403,19 @@ export const deleteAccountImmediately = functions.https.onCall(async (data, cont
               <p>Wefilling 회원이 탈퇴했습니다.</p>
               <div class="info-row">
                 <span class="label">닉네임:</span>
-                <span class="value">${userInfo.nickname}</span>
+                <span class="value">${escapeHtml(userInfo.nickname)}</span>
               </div>
               <div class="info-row">
                 <span class="label">Google 계정:</span>
-                <span class="value">${userInfo.email}</span>
+                <span class="value">${escapeHtml(userInfo.email)}</span>
               </div>
               <div class="info-row">
                 <span class="label">한양메일:</span>
-                <span class="value">${userInfo.hanyangEmail}</span>
+                <span class="value">${escapeHtml(userInfo.hanyangEmail)}</span>
               </div>
               <div class="info-row">
                 <span class="label">가입일:</span>
-                <span class="value">${userInfo.createdAt}</span>
+                <span class="value">${escapeHtml(userInfo.createdAt)}</span>
               </div>
               <div class="info-row">
                 <span class="label">탈퇴일:</span>
@@ -7346,7 +7427,7 @@ export const deleteAccountImmediately = functions.https.onCall(async (data, cont
               </div>
               <div class="reason-box">
                 <div class="reason-title">탈퇴 사유:</div>
-                <div class="reason-text">${reasonText}</div>
+                <div class="reason-text">${escapeHtml(reasonText)}</div>
               </div>
               <p><strong>처리 내용:</strong></p>
               <ul>
@@ -7748,7 +7829,7 @@ function buildLocalizedNotificationText(params: {
  * - fcm_tokens/{token}: { userId, lang, locale, platform, updatedAt }
  * - users/{uid}: fcmToken, fcmTokens(레거시 호환), fcmTokenUpdatedAt
  */
-export const registerFcmToken = functions.https.onCall(async (data, context) => {
+export const registerFcmToken = callables().https.onCall(async (data, context) => {
   if (!context.auth?.uid) {
     throw new functions.https.HttpsError('unauthenticated', 'Authentication required.');
   }
@@ -7875,7 +7956,7 @@ export const registerFcmToken = functions.https.onCall(async (data, context) => 
  * FCM 토큰 등록 해제
  * - fcm_tokens/{token}이 현재 사용자 소유일 때만 삭제
  */
-export const unregisterFcmToken = functions.https.onCall(async (data, context) => {
+export const unregisterFcmToken = callables().https.onCall(async (data, context) => {
   if (!context.auth?.uid) {
     throw new functions.https.HttpsError('unauthenticated', 'Authentication required.');
   }
@@ -8123,7 +8204,7 @@ async function isVerifiedSnapshotReactionRecipient(
     normalizeUidLoose(reaction.get('userId')) === actorId;
 }
 
-export const onNotificationCreated = functions
+export const onNotificationCreated = triggers()
   .runWith({failurePolicy: true, timeoutSeconds: 120, memory: '512MB'})
   .firestore
   .document('notifications/{notificationId}')
@@ -8677,7 +8758,7 @@ export const onNotificationCreated = functions
 
 // 알림 읽음/안읽음 변경 시 users.notificationUnreadTotal 동기화
 // - dm_received는 일반 알림 카운트에서 제외
-export const onNotificationUpdatedSyncUnreadCounter = functions
+export const onNotificationUpdatedSyncUnreadCounter = triggers()
   .runWith({failurePolicy: true, timeoutSeconds: 60, memory: '256MB'})
   .firestore
   .document('notifications/{notificationId}')
@@ -8784,7 +8865,7 @@ export const onNotificationUpdatedSyncUnreadCounter = functions
   });
 
 // 알림 삭제 시 users.notificationUnreadTotal 동기화
-export const onNotificationDeletedSyncUnreadCounter = functions
+export const onNotificationDeletedSyncUnreadCounter = triggers()
   .runWith({failurePolicy: true, timeoutSeconds: 60, memory: '256MB'})
   .firestore
   .document('notifications/{notificationId}')
@@ -8869,7 +8950,7 @@ export const onNotificationDeletedSyncUnreadCounter = functions
   });
 
 // 모임 참여 시 주최자에게 알림 전송
-export const onMeetupParticipantJoined = functions.firestore
+export const onMeetupParticipantJoined = triggers().firestore
   .document('meetup_participants/{participantId}')
   .onCreate(async (snapshot, context) => {
     try {
@@ -8954,7 +9035,7 @@ export const onMeetupParticipantJoined = functions.firestore
   });
 
 // 모임 생성 시 친구들에게 알림 전송
-export const onMeetupCreated = functions.firestore
+export const onMeetupCreated = triggers().firestore
   .document('meetups/{meetupId}')
   .onCreate(async (snapshot, context) => {
     try {
@@ -9198,7 +9279,7 @@ async function ensureMeetupReviewProfilePosts(
  * 현재 사용자의 수락 완료 후기가 프로필 투영 문서에서 누락되었을 때 복구한다.
  * 결정적 문서 ID(reviewId)와 버전 검사를 사용해 중복 후기나 반복 쓰기를 막는다.
  */
-export const reconcileMyAcceptedReviewProfiles = functions
+export const reconcileMyAcceptedReviewProfiles = callables()
   .runWith({enforceAppCheck: true, timeoutSeconds: 30, memory: '256MB'})
   .https.onCall(async (_raw, context) => {
     const userId = normalizeUidLoose(context.auth?.uid);
@@ -9272,7 +9353,7 @@ export const reconcileMyAcceptedReviewProfiles = functions
   });
 
 /** 후기 작성 직후 주최자 프로필 투영을 서버에서 보장한다. */
-export const onMeetupReviewCreatedEnsureProfile = functions.firestore
+export const onMeetupReviewCreatedEnsureProfile = triggers().firestore
   .document('meetup_reviews/{reviewId}')
   .onCreate(async (snapshot, context) => {
     const reviewId = context.params.reviewId;
@@ -9293,7 +9374,7 @@ export const onMeetupReviewCreatedEnsureProfile = functions.firestore
  * 원본 후기와 수락 상태는 남아 있는데 프로필 투영만 삭제된 경우 복구한다.
  * 작성자가 원본을 먼저 삭제했거나 계정이 삭제 중이면 복원하지 않는다.
  */
-export const onMeetupReviewProfilePostDeletedRestore = functions.firestore
+export const onMeetupReviewProfilePostDeletedRestore = triggers().firestore
   .document('users/{userId}/posts/{postId}')
   .onDelete(async (snapshot, context) => {
     if (snapshot.data()?.type !== 'meetup_review') return null;
@@ -9327,7 +9408,7 @@ export const onMeetupReviewProfilePostDeletedRestore = functions.firestore
  * 후기 수락 요청 생성 시 알림 전송
  * review_requests 컬렉션에 새 문서 생성 시 트리거
  */
-export const onReviewRequestCreated = functions.firestore
+export const onReviewRequestCreated = triggers().firestore
   .document('review_requests/{requestId}')
   .onCreate(async (snapshot, context) => {
     try {
@@ -9392,7 +9473,7 @@ export const onReviewRequestCreated = functions.firestore
  * review_requests 업데이트 시 트리거되어 모든 참가자가 응답했는지 확인하고
  * 완료되면 reviews 컬렉션에 개별 문서 생성
  */
-export const onReviewRequestUpdated = functions.firestore
+export const onReviewRequestUpdated = triggers().firestore
   .document('review_requests/{requestId}')
   .onUpdate(async (change, context) => {
     try {
@@ -9488,7 +9569,7 @@ export const onReviewRequestUpdated = functions.firestore
 /**
  * meetup_reviews 업데이트 시 연관된 사용자 프로필 posts 업데이트
  */
-export const onMeetupReviewUpdated = functions.firestore
+export const onMeetupReviewUpdated = triggers().firestore
   .document('meetup_reviews/{reviewId}')
   .onUpdate(async (change, context) => {
     const reviewId = context.params.reviewId;
@@ -9523,7 +9604,7 @@ export const onMeetupReviewUpdated = functions.firestore
 /**
  * meetup_reviews 삭제 시 연관된 reviews 문서 일괄 삭제
  */
-export const onMeetupReviewDeleted = functions.firestore
+export const onMeetupReviewDeleted = triggers().firestore
   .document('meetup_reviews/{reviewId}')
   .onDelete(async (snapshot, context) => {
     try {
@@ -9564,7 +9645,7 @@ export const onMeetupReviewDeleted = functions.firestore
  * - 요구사항: 모임이 확정(완료)되고 호스트가 후기를 작성하면 대화방은 자동으로 없어짐
  * - 구현: meetup_reviews/{reviewId} onCreate 트리거에서 meetup_chats/{meetupId} 및 messages 서브컬렉션 삭제
  */
-export const onMeetupReviewCreatedDeleteMeetupChat = functions.firestore
+export const onMeetupReviewCreatedDeleteMeetupChat = triggers().firestore
   .document('meetup_reviews/{reviewId}')
   .onCreate(async (snapshot, context) => {
     try {
@@ -9647,8 +9728,9 @@ export const onMeetupReviewCreatedDeleteMeetupChat = functions.firestore
   });
 
 // DM 메시지 생성 시 푸시 알림 전송
-export const onDMMessageCreated = functions
-  .runWith({failurePolicy: true, timeoutSeconds: 120, memory: '512MB'})
+export const onDMMessageCreated = triggers()
+  .runWith({failurePolicy: true, timeoutSeconds: 120, memory: '512MB',
+    ...chatHotRunWithOptions()})
   .firestore
   .document('conversations/{conversationId}/messages/{messageId}')
   .onCreate(async (snapshot, context) => {
@@ -9659,6 +9741,13 @@ export const onDMMessageCreated = functions
       const senderId = messageData.senderId;
       const text = messageData.text || '';
       const imageUrl = messageData.imageUrl;
+      const dmFunctionStartedAt = Date.now();
+      const dmCommitMillis = snapshot.createTime ? snapshot.createTime.toMillis() : 0;
+      runtimeLogsEnabled && runtimeInfo(
+        `[DMChatTiming] stage=cloudFunctionStartedAt at=${dmFunctionStartedAt} ` +
+        `conversationId=${conversationId} messageId=${messageId} ` +
+        `commitAgeMs=${dmCommitMillis > 0 ? Math.max(0, dmFunctionStartedAt - dmCommitMillis) : 0}`,
+      );
 
       runtimeLogsEnabled && runtimeInfo('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━');
       runtimeLogsEnabled && runtimeInfo('🔍 [FCM 진단 - Functions] 새 DM 메시지 감지');
@@ -9701,19 +9790,37 @@ export const onDMMessageCreated = functions
         return null;
       }
 
-      // 발신자 정보 조회
-      const senderDoc = await db.collection('users').doc(senderId).get();
+      // 발신자/수신자/설정/토큰 레지스트리 조회 — 서로 독립적인 읽기이므로 한 번에
+      // 병렬로 수행한다(이전에는 3회 직렬 왕복). 토큰 레지스트리 조회 실패는
+      // 기존처럼 레거시 토큰만 사용한다.
+      const recipientRef = db.collection('users').doc(recipientId);
+      const [senderDoc, recipientDoc, recipientSettingsDoc, registeredTokenDocs] =
+        await Promise.all([
+          db.collection('users').doc(senderId).get(),
+          recipientRef.get(),
+          db.collection('user_settings').doc(recipientId).get(),
+          db.collection('fcm_tokens')
+            .where('userId', '==', recipientId).limit(500).get()
+            .catch((error) => {
+              console.warn('DM token registry lookup failed; retaining legacy tokens.', error);
+              return null;
+            }),
+        ]);
       const senderData = senderDoc.data();
       const isAnonymous = convData.isAnonymous?.[senderId] || false;
-      const senderName = isAnonymous ? '익명' : (senderData?.nickname || senderData?.name || '익명');
+      // Push copy follows the recipient's app language (ko/en/zh) so the card
+      // never mixes languages with the UI that opens it.
+      const dmLanguage = pushLanguage(
+        recipientSettingsDoc.data()?.locale,
+        recipientDoc.data()?.preferredLanguage,
+        recipientDoc.data()?.locale,
+        recipientDoc.data()?.language,
+      );
+      const dmCopy = CHAT_PUSH_COPY[dmLanguage];
+      const senderName = isAnonymous
+        ? dmCopy.anonymous
+        : (senderData?.nickname || senderData?.name || dmCopy.anonymous);
       runtimeLogsEnabled && runtimeInfo(`  - 발신자 이름: ${senderName}`);
-
-      // 수신자 정보(토큰/총 DM 안읽음) 조회
-      const recipientRef = db.collection('users').doc(recipientId);
-      const [recipientDoc, recipientSettingsDoc] = await Promise.all([
-        recipientRef.get(),
-        db.collection('user_settings').doc(recipientId).get(),
-      ]);
       if (!recipientDoc.exists) {
         runtimeLogsEnabled && runtimeInfo('⚠️ 수신자 문서를 찾을 수 없음');
         runtimeLogsEnabled && runtimeInfo('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━');
@@ -9746,36 +9853,11 @@ export const onDMMessageCreated = functions
         });
       }
 
-      if (dmPushEnabled) {
-        try {
-          const registered = await db.collection('fcm_tokens')
-            .where('userId', '==', recipientId).limit(500).get();
-          registered.docs.forEach((document) => tokenSet.add(document.id));
-        } catch (error) {
-          console.warn('DM token registry lookup failed; retaining legacy tokens.', error);
-        }
+      if (dmPushEnabled && registeredTokenDocs) {
+        registeredTokenDocs.docs.forEach((document) => tokenSet.add(document.id));
       }
-
-      const tokens = await filterPushTokensOwnedByUser(
-        recipientId,
-        Array.from(tokenSet)
-      );
-      const hasTokens = tokens.length > 0;
       if (!dmPushEnabled) {
         runtimeLogsEnabled && runtimeInfo('⏭️ 수신자가 DM 푸시 알림을 꺼놓음 (미읽음 카운터는 유지)');
-      }
-      
-      runtimeLogsEnabled && runtimeInfo('🔍 [FCM 진단 - Functions] 수신자 토큰 확인:');
-      runtimeLogsEnabled && runtimeInfo(`  - fcmToken: ${recipientData?.fcmToken ? '있음' : '없음'}`);
-      runtimeLogsEnabled && runtimeInfo(`  - fcmTokens 길이: ${Array.isArray(recipientData?.fcmTokens) ? recipientData.fcmTokens.length : 0}`);
-      runtimeLogsEnabled && runtimeInfo(`  - 유효한 토큰 수: ${tokens.length}`);
-      
-      if (!hasTokens) {
-        // 토큰이 없어도 unreadCount는 반드시 증가해야 한다.
-        // push는 optional 기능이므로 토큰 없이도 unreadCount 트랜잭션은 계속 진행한다.
-        runtimeLogsEnabled && runtimeInfo('⚠️ 수신자의 FCM 토큰이 없음 - unreadCount 증분은 정상 진행, push만 스킵');
-      } else {
-        runtimeLogsEnabled && runtimeInfo(`  - FCM 토큰: ${tokens.length}개`);
       }
 
       // -----------------------------------------------------------------------
@@ -9977,6 +10059,11 @@ export const onDMMessageCreated = functions
         });
         shouldSendNotification = transactionResult.shouldSend;
         newDmUnreadTotal = transactionResult.dmUnreadTotal;
+        runtimeLogsEnabled && runtimeInfo(
+          `[DMChatTiming] stage=unreadTransactionCommitted at=${Date.now()} ` +
+          `conversationId=${conversationId} messageId=${messageId} ` +
+          `durationMs=${Date.now() - dmFunctionStartedAt}`,
+        );
         if ('displayRoomUnread' in transactionResult &&
             typeof transactionResult.displayRoomUnread === 'number') {
           displayRoomUnread = transactionResult.displayRoomUnread;
@@ -9992,6 +10079,17 @@ export const onDMMessageCreated = functions
         runtimeLogsEnabled && runtimeInfo('⏭️ 이미 읽음 처리되었거나 처리 완료된 DM 이벤트 - 증분/푸시 스킵');
         return null;
       }
+
+      // 토큰 소유권 검증은 푸시에만 필요하므로 카운터 트랜잭션 뒤에서 수행한다.
+      const tokens = await filterPushTokensOwnedByUser(
+        recipientId,
+        Array.from(tokenSet)
+      );
+      const hasTokens = tokens.length > 0;
+      runtimeLogsEnabled && runtimeInfo('🔍 [FCM 진단 - Functions] 수신자 토큰 확인:');
+      runtimeLogsEnabled && runtimeInfo(`  - fcmToken: ${recipientData?.fcmToken ? '있음' : '없음'}`);
+      runtimeLogsEnabled && runtimeInfo(`  - fcmTokens 길이: ${Array.isArray(recipientData?.fcmTokens) ? recipientData.fcmTokens.length : 0}`);
+      runtimeLogsEnabled && runtimeInfo(`  - 유효한 토큰 수: ${tokens.length}`);
 
       // unreadCount 증분 완료 로그
       runtimeLogsEnabled && runtimeInfo('🔍 [FCM 진단 - Functions] unreadCount 증분 완료:');
@@ -10016,7 +10114,7 @@ export const onDMMessageCreated = functions
       for (let attempt = 0; attempt < 2; attempt++) {
         try {
           let notificationCount = 0;
-          const vNoti = (recipientData as any)?.notificationUnreadTotal;
+          const vNoti = await notificationUnreadForBadge(recipientId, recipientData as any);
           if (typeof vNoti === 'number' && Number.isFinite(vNoti)) {
             notificationCount = Math.max(0, Math.trunc(vNoti));
           }
@@ -10047,9 +10145,9 @@ export const onDMMessageCreated = functions
       if (text && text.trim().length > 0) {
         messagePreview = text.trim().substring(0, 100);
       } else if (imageUrl) {
-        messagePreview = '📷 사진';
+        messagePreview = dmCopy.photo;
       } else {
-        messagePreview = '메시지';
+        messagePreview = dmCopy.message;
       }
 
       // badge 값: 계산된 실제 값 사용 (0이면 0으로, null이면 badge 필드 생략)
@@ -10059,6 +10157,7 @@ export const onDMMessageCreated = functions
       runtimeLogsEnabled && runtimeInfo(`  📊 최종 badge = ${finalBadge} (raw badgeCount = ${badgeCount})`);
 
       // FCM 메시지 구성
+      const roomUnreadForPush = Math.max(0, displayRoomUnread ?? 0);
       const dmNotificationTag = 'dm_' + crypto
         .createHash('sha256')
         .update(`${recipientId}:${conversationId}`)
@@ -10067,7 +10166,9 @@ export const onDMMessageCreated = functions
       const pushMessage: admin.messaging.MulticastMessage = {
         tokens,
         notification: {
-          title: `From '${senderName}'`,
+          // Sender as the title, like every messenger; the legacy "From 'x'"
+          // wording was English regardless of the recipient's language.
+          title: senderName,
           body: messagePreview,
         },
         data: {
@@ -10075,6 +10176,8 @@ export const onDMMessageCreated = functions
           recipientUserId: recipientId,
           conversationId: conversationId,
           messageId: messageId,
+          unreadCount: String(roomUnreadForPush),
+          language: dmLanguage,
           sentAtMillis: String(snapshot.createTime.toMillis()),
           sentAtSeconds: String(snapshot.createTime.seconds),
           sentAtNanos: String(snapshot.createTime.nanoseconds),
@@ -10089,21 +10192,27 @@ export const onDMMessageCreated = functions
           headers: {
             'apns-push-type': 'alert',
             'apns-priority': '10',
+            // One card per conversation on iOS, replaced by the newest message
+            // (the same behaviour Snack Chat already has).
+            'apns-collapse-id': dmNotificationTag,
           },
           payload: {
             aps: {
               sound: 'default',
+              threadId: dmNotificationTag,
               ...(hasBadge && { badge: finalBadge }),
             },
           },
         },
         android: {
           priority: 'high',
+          collapseKey: dmNotificationTag,
             notification: {
               sound: 'default',
               channelId: 'high_importance_channel',
               tag: dmNotificationTag,
               eventTimestamp: snapshot.createTime.toDate(),
+              ...(roomUnreadForPush > 0 && {notificationCount: roomUnreadForPush}),
             },
         },
       };
@@ -10137,12 +10246,17 @@ export const onDMMessageCreated = functions
         return null;
       }
       pushMessage.tokens = pendingTokens;
+      const dmPushSendStartedAt = Date.now();
+      runtimeLogsEnabled && runtimeInfo(
+        `[DMChatTiming] stage=pushSendStartedAt at=${dmPushSendStartedAt} ` +
+        `conversationId=${conversationId} messageId=${messageId} ` +
+        `tokenCount=${pendingTokens.length}`,
+      );
       let response: admin.messaging.BatchResponse;
       try {
         response = await admin.messaging().sendEachForMulticast(decorateChatPush(pushMessage, {
         kind: 'dm', title: senderName, sender: senderName, message: messageData,
-        language: recipientSettingsDoc.data()?.locale ?? recipientData?.preferredLanguage ??
-          recipientData?.language ?? 'ko', unreadCount: displayRoomUnread,
+        language: dmLanguage, unreadCount: displayRoomUnread,
         threadKey: dmNotificationTag, messageId,
         // Commit time is server-owned; legacy client createdAt may be skewed.
         sentAtMillis: snapshot.createTime.toMillis(),
@@ -10155,6 +10269,12 @@ export const onDMMessageCreated = functions
         return null;
       }
       runtimeLogsEnabled && runtimeInfo(`✅ DM 푸시 전송 완료: ${response.successCount}/${pendingTokens.length}`);
+      runtimeLogsEnabled && runtimeInfo(
+        `[DMChatTiming] stage=pushSendCompletedAt at=${Date.now()} ` +
+        `conversationId=${conversationId} messageId=${messageId} ` +
+        `durationMs=${Date.now() - dmPushSendStartedAt} ` +
+        `totalDurationMs=${Date.now() - dmFunctionStartedAt}`,
+      );
 
       // 실패 토큰 정리
       const successfulTokens: string[] = [];
@@ -10220,7 +10340,7 @@ export const onDMMessageCreated = functions
 // 카운터의 단일 감소 소스로 사용한다. message-created 트리거가
 // 늦게 실행되더라도 현재 message.isRead를 확인하므로 카운터 1이
 // 다시 살아나지 않는다.
-export const onDMMessageRead = functions
+export const onDMMessageRead = triggers()
   .runWith({failurePolicy: true, timeoutSeconds: 120, memory: '512MB'})
   .firestore
   .document('conversations/{conversationId}/messages/{messageId}')
@@ -10345,7 +10465,7 @@ export const onDMMessageRead = functions
 // Legacy SnackChat trigger implementation retained as a non-exported
 // deployment artifact reference. The exported onSnackChatMessageCreated at
 // the top of this file is the idempotent implementation in snack_chat.ts.
-void functions.firestore
+void triggers().firestore
   .document('snack_chats/{snackChatId}/messages/{messageId}')
   .onCreate(async (snapshot, context) => {
     try {

@@ -3,6 +3,8 @@ import 'dart:convert';
 
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:cloud_functions/cloud_functions.dart';
+
+import '../config/app_backend.dart';
 import 'package:crypto/crypto.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/foundation.dart';
@@ -179,7 +181,7 @@ class ContentTranslationService extends ChangeNotifier {
   // Firebase 초기화 환경에 따라 기본 region이 달라져도 같은 함수를
   // 호출하도록 명시한다.
   final FirebaseFunctions _functions =
-      FirebaseFunctions.instanceFor(region: 'us-central1');
+      AppFunctions.instance;
   final FirebaseAuth _auth = FirebaseAuth.instance;
   final FirebaseFirestore _firestore = FirebaseFirestore.instance;
   final Map<String, ContentTranslationResult> _memory =
@@ -197,6 +199,10 @@ class ContentTranslationService extends ChangeNotifier {
   final Map<String, Map<Object, _ScopeTranslationState>> _scopeItemStates =
       <String, Map<Object, _ScopeTranslationState>>{};
   final Set<String> _loadedRoomScopes = <String>{};
+  // Conversation scopes whose stored preference has been read. Until then a
+  // chat scope reports the chat default (original text), so a room never
+  // flashes translated text before its preference is known.
+  final Set<String> _conversationModeResolved = <String>{};
   final Map<String, Map<Object, ScopeTranslationLoader>> _scopeLoaders =
       <String, Map<Object, ScopeTranslationLoader>>{};
   final Map<String, Set<Object>> _scopeLoadingTokens = <String, Set<Object>>{};
@@ -269,6 +275,7 @@ class ContentTranslationService extends ChangeNotifier {
     _scopeSourceLanguages.clear();
     _scopeItemStates.clear();
     _loadedRoomScopes.clear();
+    _conversationModeResolved.clear();
     _scopeLoadingTokens.clear();
     notifyListeners();
   }
@@ -880,6 +887,7 @@ class ContentTranslationService extends ChangeNotifier {
     _scopeSourceLanguages.clear();
     _scopeItemStates.clear();
     _loadedRoomScopes.clear();
+    _conversationModeResolved.clear();
     _scopeLoadingTokens.clear();
     notifyListeners();
   }
@@ -933,7 +941,16 @@ class ContentTranslationService extends ChangeNotifier {
     return code.isEmpty ? null : code;
   }
 
-  bool showsOriginal(String scope) => _showOriginalScopes.contains(scope);
+  /// Snack Chat rooms and DM conversations show the original text unless the
+  /// user switched that room to translations (stored per room). Other scopes
+  /// (posts, comments, …) keep translating by default.
+  bool showsOriginal(String scope) =>
+      _showOriginalScopes.contains(scope) ||
+      (_isConversationScope(scope) &&
+          !_conversationModeResolved.contains(scope));
+
+  static bool _isConversationScope(String scope) =>
+      scope.startsWith('snack-room:') || scope.startsWith('dm-conversation:');
 
   bool canToggleScope(String scope) =>
       _translatableScopes.contains(scope) ||
@@ -1270,23 +1287,39 @@ class ContentTranslationService extends ChangeNotifier {
 
   /// 한 번의 사용자 동작으로 실패한 항목 하나만 재시도한다. 성공한 항목이나
   /// 같은 scope의 나머지 댓글/메시지를 다시 순회하지 않아 비용을 제한한다.
+  /// Whether the current call runs inside a user-initiated scope retry.
+  bool get inManualRetryZone => Zone.current[_manualRetryZoneKey] == true;
+
+  /// User-initiated retry of a scope (post, comments, meetup…). Retries
+  /// every failed item, not only the first one, and does not wait for
+  /// unrelated items of the same scope that are still loading: a tap on
+  /// "다시 번역" must always do visible work.
   Future<void> retryOneFailedScopeItem(String scope) async {
-    if (!canRetryScope(scope) || isScopeLoading(scope)) return;
     final states = _scopeItemStates[scope];
     final loaders = _scopeLoaders[scope];
     if (states == null || loaders == null) return;
 
-    ScopeTranslationLoader? failedLoader;
+    final failedLoaders = <ScopeTranslationLoader>[];
     for (final entry in states.entries) {
       if (entry.value != _ScopeTranslationState.failed) continue;
-      failedLoader = loaders[entry.key];
-      if (failedLoader != null) break;
+      final loader = loaders[entry.key];
+      if (loader != null) failedLoaders.add(loader);
     }
-    if (failedLoader == null) return;
+    if (failedLoaders.isEmpty) {
+      // No widget reports a failure but the scope is still marked blocked
+      // (e.g. the failure came from a prefetch): clear the block so the next
+      // load goes to the network instead of replaying it.
+      for (final failure in _blockedFailures.values) {
+        failure.scopes.remove(scope);
+      }
+      _blockedFailures.removeWhere((_, failure) => failure.scopes.isEmpty);
+      notifyListeners();
+      return;
+    }
 
     await runZoned<Future<void>>(
       () async {
-        await failedLoader!();
+        await Future.wait(failedLoaders.map((loader) => loader()));
       },
       zoneValues: <Object?, Object?>{_manualRetryZoneKey: true},
     );
@@ -1313,10 +1346,14 @@ class ContentTranslationService extends ChangeNotifier {
     final uid = _auth.currentUser?.uid;
     if (uid == null || !_loadedRoomScopes.add(scope)) return;
     final prefs = await SharedPreferences.getInstance();
-    if (prefs.getBool('translation_original:$uid:$preferenceId') == true) {
-      _showOriginalScopes.add(scope);
-      notifyListeners();
-    }
+    // Chat default is the original text; a stored `false` means the user
+    // chose translations for this room. Membership in _showOriginalScopes is
+    // made explicit so toggleScope flips from the real current state.
+    final showOriginal =
+        prefs.getBool('translation_original:$uid:$preferenceId') ?? true;
+    if (showOriginal) _showOriginalScopes.add(scope);
+    _conversationModeResolved.add(scope);
+    notifyListeners();
   }
 
   Future<void> toggleSnackRoom(String roomId) async {
@@ -1450,7 +1487,10 @@ class ContentTranslationService extends ChangeNotifier {
 
     // 확실한 same-language만 로컬에서 종결한다. 원문은 그대로 사용하고
     // 동일한 버전 메타데이터로 캐시하여 다음 화면에서는 언어 판정조차 생략한다.
-    if (_looksObviouslySameLanguage(request.sourceFields, target)) {
+    // A forced user retry skips the client guess so a wrongly classified
+    // "same language" item can still be re-translated by the server.
+    if (!(forceRefresh && retryFromUserAction) &&
+        _looksObviouslySameLanguage(request.sourceFields, target)) {
       final result = _clientSameLanguageResult(request, target, hash);
       _blockedFailures.remove(key);
       _putMemory(key, result);
@@ -1467,11 +1507,24 @@ class ContentTranslationService extends ChangeNotifier {
         existing.priority = priority;
       }
       if (scope != null && scope.isNotEmpty) existing.scopes.add(scope);
+      // A user tap that lands on an item still waiting in the queue must not
+      // lose its force flags to the earlier automatic request.
+      if (retryFromUserAction) {
+        existing.forceRetry = true;
+        if (forceRefresh) existing.forceRegenerate = true;
+      }
       _debugTranslationState('inFlight', request, hash, target);
       return existing.completer.future;
     }
 
-    final blockedFailure = _blockedFailures[key];
+    var blockedFailure = _blockedFailures[key];
+    if (blockedFailure != null &&
+        DateTime.now().isAfter(blockedFailure.expiresAt)) {
+      // Failures are not permanent facts: after the hold-down an automatic
+      // request may try again (screen remount, app resume, scrolling back).
+      _blockedFailures.remove(key);
+      blockedFailure = null;
+    }
     if (blockedFailure != null) {
       if (scope != null && scope.isNotEmpty) {
         blockedFailure.scopes.add(scope);
@@ -1549,9 +1602,11 @@ class ContentTranslationService extends ChangeNotifier {
     ContentTranslationResult result,
   ) {
     for (final source in request.sourceFields.entries) {
-      if (!result.translatedFields.containsKey(source.key)) return false;
-      if (source.value.trim().isNotEmpty &&
-          (result.translatedFields[source.key] ?? '').trim().isEmpty) {
+      // The server drops empty source fields from the translated map while
+      // still hashing them (meetups with no location/description). An empty
+      // source has nothing to translate, so its absence is not a failure.
+      if (source.value.trim().isEmpty) continue;
+      if ((result.translatedFields[source.key] ?? '').trim().isEmpty) {
         return false;
       }
     }
@@ -2022,22 +2077,27 @@ class _QueuedTranslation {
   int failureRetryCount = 0;
   int batchId = 0;
   bool forceSingleItemRetry = false;
-  final bool forceRetry;
-  final bool forceRegenerate;
+  bool forceRetry;
+  bool forceRegenerate;
   final Completer<ContentTranslationResult?> completer =
       Completer<ContentTranslationResult?>();
 }
 
 class _BlockedTranslationFailure {
-  const _BlockedTranslationFailure({
+  _BlockedTranslationFailure({
     required this.result,
     required this.manualRetryAt,
     required this.scopes,
     required this.requestIdentity,
-  });
+  }) : expiresAt = DateTime.now().add(_automaticRetryHoldDown);
+
+  /// How long an automatic request keeps replaying a failure before it is
+  /// allowed to hit the network again. User taps are never held down.
+  static const Duration _automaticRetryHoldDown = Duration(minutes: 2);
 
   final ContentTranslationResult result;
   final DateTime manualRetryAt;
+  final DateTime expiresAt;
   final Set<String> scopes;
   final String requestIdentity;
 }

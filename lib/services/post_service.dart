@@ -8,9 +8,13 @@ import 'dart:io';
 import 'dart:async';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:cloud_functions/cloud_functions.dart';
+
+import '../config/app_backend.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/foundation.dart';
 import '../models/post.dart';
+import '../models/post_video.dart';
+import 'media/video_prepare_service.dart';
 import '../models/post_category.dart';
 import '../models/shared_link_preview.dart';
 import '../security/frozen_audience_policy.dart';
@@ -127,7 +131,7 @@ class PostService {
   final FirebaseFirestore _firestore = FirebaseFirestore.instance;
   final FirebaseAuth _auth = FirebaseAuth.instance;
   final FirebaseFunctions _functions =
-      FirebaseFunctions.instanceFor(region: 'us-central1');
+      AppFunctions.instance;
   final NotificationService _notificationService = NotificationService();
   final StorageService _storageService = StorageService();
   final InstagramPreviewPersistenceService _instagramPreviewPersistence =
@@ -150,6 +154,15 @@ class PostService {
   final Set<String> _postViewMutationsInFlight = {};
   static const Duration _postEngagementListenerGrace = Duration(seconds: 12);
   static const int _maxRetainedPostEngagements = 240;
+  // 상세 화면을 닫은 직후 서버 값을 다시 읽는 시점. 첫 번째는 피드가 돌아오며
+  // 오래된 모델로 덮어썼을 수 있는 값을 바로잡고, 두 번째는 댓글 수를 갱신하는
+  // 서버 트리거가 늦게 끝난 경우를 받아낸다.
+  static const List<Duration> _postEngagementExitReconcileDelays = [
+    Duration(seconds: 2),
+    Duration(seconds: 10),
+  ];
+  final Map<String, int> _postEngagementCachedListenerCounts = {};
+  final Map<String, List<Timer>> _postEngagementExitReconcileTimers = {};
 
   // Feed stream caching:
   // BoardScreen uses the same PostService instance for multiple tabs.
@@ -229,6 +242,7 @@ class PostService {
       'authorName': limited(preview.authorName, 160),
       'thumbnailUrl': preview.thumbnailUrl.trim(),
       'thumbnailStoragePath': preview.thumbnailStoragePath.trim(),
+      'thumbnailStorageBucket': preview.thumbnailStorageBucket.trim(),
       'thumbnailSource': preview.thumbnailSource.trim(),
       if (preview.thumbnailWidth > 0) 'thumbnailWidth': preview.thumbnailWidth,
       if (preview.thumbnailHeight > 0)
@@ -490,6 +504,7 @@ class PostService {
       likedBy: _parseStringList(data['likedBy']),
       imageUrls: _parseStringList(data['imageUrls']),
       linkPreview: parsedLinkPreview,
+      video: PostVideo.fromMap(data['video']),
       visibility: data['visibilityMode'] ?? data['visibility'] ?? 'public',
       isAnonymous: data['isAnonymous'] ?? false,
       visibleToCategoryIds: _parseStringList(
@@ -520,6 +535,8 @@ class PostService {
     String content, {
     required List<String> categoryKeys,
     List<File>? imageFiles,
+    PreparedVideo? video,
+    void Function(double progress)? onVideoUploadProgress,
     String visibility = 'public', // 공개 범위
     bool isAnonymous = false, // 익명 여부
     List<String> visibleToCategoryIds = const [], // 공개할 카테고리 ID 목록
@@ -643,6 +660,27 @@ class PostService {
         }
       }
 
+      // 영상은 이미지 뒤에 올린다. 서버가 길이·크기를 다시 검증한다.
+      PostVideoUpload? videoUpload;
+      if (video != null && !isExternalSocialShare) {
+        try {
+          videoUpload = await _storageService.uploadPostVideo(
+            video,
+            ownerUid: user.uid,
+            postId: postId,
+            onProgress: onVideoUploadProgress,
+          );
+        } catch (e) {
+          Logger.error('포스트 영상 업로드 오류: $e');
+          for (final url in imageUrls) {
+            try {
+              await _storageService.deleteImage(url);
+            } catch (_) {}
+          }
+          rethrow;
+        }
+      }
+
       InstagramPreviewPersistenceResult? previewPersistence;
       var persistedLinkPreview = linkPreview;
       if (linkPreview?.provider == 'instagram') {
@@ -696,13 +734,16 @@ class PostService {
         'pollOptions': cleanedPollOptions,
         if (persistedLinkPreview != null)
           'linkPreview': _createPostLinkPreviewPayload(persistedLinkPreview),
+        if (videoUpload != null) 'video': videoUpload.toPayload(),
       };
       final createPostCallable =
-          FirebaseFunctions.instance.httpsCallable('createPostSecure');
+          AppFunctions.instance.httpsCallable('createPostSecure');
+      // 영상 포스트는 서버가 파일을 내려받아 길이를 검증하므로 더 기다린다
+      // (콜러블 자체 한도 120초). 같은 postId 재호출은 서버가 멱등 처리한다.
+      final createTimeout =
+          videoUpload != null ? const Duration(seconds: 125) : const Duration(seconds: 30);
       Future<void> createSecurePost() async {
-        await createPostCallable
-            .call(createPostPayload)
-            .timeout(const Duration(seconds: 30));
+        await createPostCallable.call(createPostPayload).timeout(createTimeout);
       }
 
       try {
@@ -750,6 +791,9 @@ class PostService {
             try {
               await _storageService.deleteImage(url);
             } catch (_) {}
+          }
+          if (videoUpload != null) {
+            await _storageService.deletePostVideo(videoUpload);
           }
           if (previewPersistence?.createdStorageObject == true &&
               persistedLinkPreview != null) {
@@ -1044,6 +1088,8 @@ class PostService {
       if (_postEngagementCache.length <= _maxRetainedPostEngagements) break;
       if (candidate == protectedPostId ||
           (_postEngagementListenerCounts[candidate] ?? 0) > 0 ||
+          // 카드가 구독 중인 채널을 닫으면 그 카드는 이후 갱신을 영영 받지 못한다.
+          (_postEngagementCachedListenerCounts[candidate] ?? 0) > 0 ||
           _postEngagementRemoteSubscriptions.containsKey(candidate) ||
           _postLikeMutationsInFlight.containsKey(candidate) ||
           _postViewMutationsInFlight.contains(candidate)) {
@@ -1151,6 +1197,7 @@ class PostService {
       return;
     }
     _postEngagementListenerCounts.remove(postId);
+    _scheduleExitReconcile(postId);
     _postEngagementReleaseTimers.remove(postId)?.cancel();
     _postEngagementReleaseTimers[postId] = Timer(
       _postEngagementListenerGrace,
@@ -1161,6 +1208,35 @@ class PostService {
         _trimPostEngagementCache();
       },
     );
+  }
+
+  /// 상세 화면이 닫힌 뒤 카드가 보여줄 값을 서버 기준으로 한 번 더 맞춘다.
+  /// 상세가 열려 있던 동안의 변경은 원격 listener가 전달하지만, 피드가 돌아오며
+  /// 오래된 모델을 다시 넘기거나 댓글 수 트리거가 늦게 끝나면 카드와 상세가
+  /// 달라 보일 수 있다. 서버 읽기 두 번으로 그 창을 닫는다.
+  void _scheduleExitReconcile(String postId) {
+    for (final timer in _postEngagementExitReconcileTimers.remove(postId) ??
+        const <Timer>[]) {
+      timer.cancel();
+    }
+    _postEngagementExitReconcileTimers[postId] = [
+      for (final delay in _postEngagementExitReconcileDelays)
+        Timer(delay, () {
+          if (!_postEngagementCache.containsKey(postId)) return;
+          unawaited(_reconcilePostEngagementFromServer(postId));
+        }),
+    ];
+  }
+
+  /// 상세 화면에서 댓글을 쓰거나 지운 직후 공통 댓글 수를 즉시 반영한다.
+  /// 실제 집계는 서버 트리거가 posts.commentCount에 쓰고, 그 값이 원격
+  /// listener/종료 보정으로 도착하면 이 낙관적 값을 대체한다.
+  void adjustCachedCommentCount(String postId, int delta) {
+    final current = _postEngagementCache[postId];
+    if (current == null || delta == 0) return;
+    final next = (current.commentCount + delta).clamp(0, 1 << 30).toInt();
+    if (next == current.commentCount) return;
+    _publishPostEngagement(postId, current.copyWith(commentCount: next));
   }
 
   /// 카드와 상세 화면은 같은 postId 채널을 구독한다. 각 구독자는 현재 캐시를
@@ -1210,6 +1286,8 @@ class PostService {
     relay = StreamController<PostEngagement>(
       sync: true,
       onListen: () {
+        _postEngagementCachedListenerCounts[postId] =
+            (_postEngagementCachedListenerCounts[postId] ?? 0) + 1;
         subscription = sharedController.stream.listen(
           relay.add,
           onError: relay.addError,
@@ -1218,6 +1296,12 @@ class PostService {
         if (cached != null) relay.add(cached);
       },
       onCancel: () async {
+        final remaining = (_postEngagementCachedListenerCounts[postId] ?? 1) - 1;
+        if (remaining > 0) {
+          _postEngagementCachedListenerCounts[postId] = remaining;
+        } else {
+          _postEngagementCachedListenerCounts.remove(postId);
+        }
         await subscription?.cancel();
       },
     );

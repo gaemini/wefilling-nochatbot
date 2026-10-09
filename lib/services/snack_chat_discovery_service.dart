@@ -1,4 +1,5 @@
-import 'package:cloud_functions/cloud_functions.dart';
+
+import '../config/app_backend.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import '../models/snack_chat_message.dart';
@@ -22,7 +23,7 @@ class SnackChatDiscoveryService {
     // token whenever one is available. Do not make these read-only views wait
     // for a forced token refresh: a device in App Check backoff used to fail
     // before the authenticated, membership-checked callable was even invoked.
-    final result = await FirebaseFunctions.instance
+    final result = await AppFunctions.instance
         .httpsCallable(name)
         .call(payload)
         .timeout(const Duration(seconds: 35));

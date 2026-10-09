@@ -6,7 +6,6 @@ import 'dart:async';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/rendering.dart';
-import 'package:flutter/services.dart';
 import '../models/post.dart';
 import '../models/post_category.dart';
 import '../models/meetup.dart';
@@ -21,6 +20,7 @@ import '../ui/widgets/post_loading_transition.dart';
 import '../ui/widgets/skeletons.dart';
 import '../ui/widgets/optimized_post_card.dart';
 import '../ui/widgets/board_meetup_card.dart';
+import '../ui/widgets/app_fab.dart';
 import '../ui/widgets/post_category_selector.dart';
 import '../ui/snackbar/app_snackbar.dart';
 import '../snapshot/snapshot_today_section.dart';
@@ -50,8 +50,8 @@ class BoardScreen extends StatefulWidget {
 }
 
 class BoardScreenState extends State<BoardScreen> {
-  // Keep the existing sections available for a later display-only re-enable.
-  static const bool _showTodayAdBanner = false;
+  // Show the existing banner directly after the Snack tray in Today's feed.
+  static const bool _showTodayAdBanner = true;
   static const bool _showTodayMeetupsSection = true;
   final PostService _postService = PostService();
   final PostMediaPrefetchService _postMediaPrefetch =
@@ -847,24 +847,17 @@ class BoardScreenState extends State<BoardScreen> {
         minimum: const EdgeInsets.only(bottom: 8),
         child: _ScrollAwareCreateButton(
           visible: _showCreateButton,
-          child: FloatingActionButton.extended(
-            onPressed: () {
-              HapticFeedback.lightImpact();
-              _openCreatePost();
-            },
-            label: Text(
-              isChineseUi(context)
-                  ? '分享'
-                  : Localizations.localeOf(context).languageCode == 'ko'
-                      ? '공유하기'
-                      : 'Share',
-              style: const TextStyle(fontSize: 15, fontWeight: FontWeight.w700),
-            ),
+          child: AppFab.extended(
+            onPressed: _openCreatePost,
+            icon: Icons.add_rounded,
+            showIcon: false,
+            label: isChineseUi(context)
+                ? '分享'
+                : Localizations.localeOf(context).languageCode == 'ko'
+                    ? '공유하기'
+                    : 'Share',
+            semanticLabel: AppLocalizations.of(context)!.createPost,
             tooltip: AppLocalizations.of(context)!.createPost,
-            backgroundColor: AppColors.pointColor,
-            foregroundColor: Colors.white,
-            elevation: 3,
-            shape: const StadiumBorder(),
             heroTag: 'board_write_fab',
           ),
         ),
@@ -1379,6 +1372,7 @@ class BoardScreenState extends State<BoardScreen> {
                 selected: false,
                 enabled: true,
                 showHash: true,
+                navigates: true,
                 maxWidth: MediaQuery.sizeOf(context).width -
                     2 * _sectionHorizontalPadding,
                 onTap: () => _openPostCategory(category),

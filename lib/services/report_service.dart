@@ -5,6 +5,8 @@ import 'dart:async';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:cloud_functions/cloud_functions.dart';
+
+import '../config/app_backend.dart';
 import 'content_filter_service.dart';
 import 'content_hide_service.dart';
 import 'post_service.dart';
@@ -14,7 +16,7 @@ import '../utils/logger.dart';
 class ReportService {
   static final FirebaseFirestore _firestore = FirebaseFirestore.instance;
   static final FirebaseAuth _auth = FirebaseAuth.instance;
-  static final FirebaseFunctions _functions = FirebaseFunctions.instance;
+  static final FirebaseFunctions _functions = AppFunctions.instance;
 
   static Future<bool> _reportSnackChatMessage({
     required String reportedUserId,

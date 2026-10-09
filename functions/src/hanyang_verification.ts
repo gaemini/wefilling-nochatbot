@@ -1,4 +1,5 @@
 import * as functions from 'firebase-functions';
+import {callables} from './backend';
 import * as admin from 'firebase-admin';
 import {COL} from './firestore_paths';
 import {runtimeInfo, runtimeLogsEnabled} from './runtime_logging';
@@ -146,7 +147,7 @@ export async function hasActiveHanyangClaim(uid: string): Promise<boolean> {
   return (await reconcileHanyangVerificationForUid(uid)).verified;
 }
 
-export const reconcileMyHanyangVerificationStatus = functions
+export const reconcileMyHanyangVerificationStatus = callables()
   .runWith({timeoutSeconds: 30, memory: '256MB'})
   .https.onCall(async (_data, context) => {
     if (!context.auth?.uid) {
@@ -167,7 +168,7 @@ export const reconcileMyHanyangVerificationStatus = functions
   });
 
 /** Admin-only, paginated repair for pre-boolean user documents. */
-export const backfillHanyangVerificationStates = functions
+export const backfillHanyangVerificationStates = callables()
   .runWith({timeoutSeconds: 540, memory: '512MB'})
   .https.onCall(async (raw, context) => {
     if (!context.auth?.uid) {

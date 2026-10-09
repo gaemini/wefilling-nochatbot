@@ -21,6 +21,8 @@ import '../l10n/app_localizations.dart';
 import '../utils/logger.dart';
 import '../utils/responsive_helper.dart';
 import '../l10n/ui_locale.dart';
+import '../ui/widgets/motion_press.dart';
+import '../ui/widgets/motion_selectable.dart';
 
 /// Stable internal tab mapping used by direct-entry routes.
 const int snackChatTabIndex = 0;
@@ -152,22 +154,28 @@ class _FriendCategoriesScreenState extends State<FriendCategoriesScreen>
               tabs: [
                 Tab(
                   height: 46,
-                  child: Semantics(
-                    label: l10n.snackChatTabSemantic,
-                    selected: _tabController.index == snackChatTabIndex,
-                    button: true,
-                    excludeSemantics: true,
-                    child: Text(l10n.snackChat),
+                  child: MotionPress(
+                    pressedScale: MotionSelectable.segmentScale,
+                    child: Semantics(
+                      label: l10n.snackChatTabSemantic,
+                      selected: _tabController.index == snackChatTabIndex,
+                      button: true,
+                      excludeSemantics: true,
+                      child: Text(l10n.snackChat),
+                    ),
                   ),
                 ),
                 Tab(
                   height: 46,
-                  child: Semantics(
-                    label: l10n.groupsTabSemantic,
-                    selected: _tabController.index == groupsTabIndex,
-                    button: true,
-                    excludeSemantics: true,
-                    child: Text(l10n.groups),
+                  child: MotionPress(
+                    pressedScale: MotionSelectable.segmentScale,
+                    child: Semantics(
+                      label: l10n.groupsTabSemantic,
+                      selected: _tabController.index == groupsTabIndex,
+                      button: true,
+                      excludeSemantics: true,
+                      child: Text(l10n.groups),
+                    ),
                   ),
                 ),
               ],
@@ -278,7 +286,9 @@ class _FriendCategoriesScreenState extends State<FriendCategoriesScreen>
             : 'Choose friends and give it a name';
     final isCompact = MediaQuery.sizeOf(context).width < 360;
 
-    return Material(
+    return MotionPress(
+      pressedScale: .99,
+      child: Material(
       key: const ValueKey('groups_create_row'),
       color: BrandColors.surface,
       child: InkWell(
@@ -323,6 +333,7 @@ class _FriendCategoriesScreenState extends State<FriendCategoriesScreen>
             ),
           ),
         ),
+      ),
       ),
     );
   }
@@ -447,7 +458,9 @@ class _FriendCategoriesScreenState extends State<FriendCategoriesScreen>
                         ),
                         SizedBox(
                           height: context.rh(48, min: 46, max: 52),
-                          child: FilledButton.icon(
+                          child: MotionPress(
+                            pressedScale: .975,
+                            child: FilledButton.icon(
                             key: const Key('groups_empty_create_button'),
                             onPressed: _handleCreateCategory,
                             icon: Icon(
@@ -477,6 +490,7 @@ class _FriendCategoriesScreenState extends State<FriendCategoriesScreen>
                               ),
                             ),
                           ),
+                          ),
                         ),
                       ],
                     ),
@@ -499,15 +513,16 @@ class _FriendCategoriesScreenState extends State<FriendCategoriesScreen>
     final horizontalPadding = _responsiveHorizontalPadding(context);
     final isCompact = MediaQuery.sizeOf(context).width < 360;
 
-    return DecoratedBox(
+    return Material(
       key: ValueKey('friend-category-${category.id}'),
-      decoration: const BoxDecoration(
-        color: BrandColors.surface,
-        border: Border(
-          bottom: BorderSide(color: BrandColors.divider),
+      color: BrandColors.surface,
+      child: DecoratedBox(
+        decoration: const BoxDecoration(
+          border: Border(
+            bottom: BorderSide(color: BrandColors.divider),
+          ),
         ),
-      ),
-      child: ListTile(
+        child: ListTile(
         minTileHeight: 68,
         minLeadingWidth: 40,
         horizontalTitleGap: isCompact ? 8 : 10,
@@ -638,6 +653,7 @@ class _FriendCategoriesScreenState extends State<FriendCategoriesScreen>
           // 카테고리 상세 화면으로 이동 (친구 목록 표시)
           _navigateToCategoryDetail(category);
         },
+        ),
       ),
     );
   }

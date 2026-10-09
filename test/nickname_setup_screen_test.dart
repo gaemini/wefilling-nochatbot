@@ -1,19 +1,27 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:shared_preferences/shared_preferences.dart';
+import 'package:wefilling/l10n/app_localizations.dart';
 import 'package:wefilling/screens/nickname_setup_screen.dart';
 
 void main() {
+  setUp(() => SharedPreferences.setMockInitialValues({}));
   testWidgets('signup profile flow keeps photo and only required profile data',
       (tester) async {
     await tester.pumpWidget(
       const MaterialApp(
+        locale: Locale('en'),
+        localizationsDelegates: AppLocalizations.localizationsDelegates,
+        supportedLocales: AppLocalizations.supportedLocales,
         home: NicknameSetupScreen(),
       ),
     );
 
+    await tester.pumpAndSettle(); // Finish the local draft restoration first.
     expect(find.text('Just the essentials'), findsOneWidget);
     expect(find.byType(TextFormField), findsOneWidget);
-    expect(find.byType(DropdownButtonFormField<String>), findsOneWidget);
+    expect(find.byKey(const ValueKey('signup_nationality_한국')), findsOneWidget);
+    expect(find.byIcon(Icons.keyboard_arrow_down_rounded), findsOneWidget);
     expect(find.text('Profile photo'), findsOneWidget);
     expect(find.byIcon(Icons.camera_alt_outlined), findsOneWidget);
 
@@ -42,6 +50,9 @@ void main() {
 
     await tester.pumpWidget(
       const MaterialApp(
+        locale: Locale('en'),
+        localizationsDelegates: AppLocalizations.localizationsDelegates,
+        supportedLocales: AppLocalizations.supportedLocales,
         home: MediaQuery(
           data: MediaQueryData(
             size: size,
@@ -55,6 +66,7 @@ void main() {
       ),
     );
 
+    await tester.pumpAndSettle(); // Draft restore must not race the page jump.
     expect(tester.takeException(), isNull);
     expect(find.text('Nickname'), findsOneWidget);
     expect(find.text('Nationality'), findsOneWidget);

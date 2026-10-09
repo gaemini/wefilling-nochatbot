@@ -1,4 +1,12 @@
 import * as functions from 'firebase-functions';
+import {
+  allKnownBuckets,
+  bucketFor,
+  callables,
+  isKnownStorageBucket,
+  resolveStorageBucketName,
+  triggers,
+} from './backend';
 import * as admin from 'firebase-admin';
 import * as fs from 'fs';
 import * as os from 'os';
@@ -159,8 +167,17 @@ function db(): FirebaseFirestore.Firestore {
   return admin.firestore();
 }
 
-function snapshotBucket() {
-  return admin.storage().bucket();
+/** Bucket that holds a snapshot object; documents without the field are legacy US objects. */
+function snapshotBucket(storageBucket?: unknown) {
+  return bucketFor(storageBucket);
+}
+
+/** Client-supplied bucket name: empty means legacy, anything unknown is rejected. */
+function validatedStorageBucket(value: unknown): string {
+  if (text(value) && !isKnownStorageBucket(value)) {
+    throw new functions.https.HttpsError('invalid-argument', 'Invalid storage bucket.');
+  }
+  return resolveStorageBucketName(value);
 }
 
 function requireUid(context: functions.https.CallableContext): string {
@@ -487,6 +504,7 @@ function snapshotFeedData(
     authorNationality: text(data.authorNationality),
     university: text(data.university),
     storagePath: text(data.storagePath),
+    storageBucket: text(data.storageBucket),
     imageStoragePath: text(data.imageStoragePath ?? data.storagePath),
     videoStoragePath: text(data.videoStoragePath),
     thumbnailStoragePath: text(data.thumbnailStoragePath),
@@ -703,10 +721,12 @@ async function deleteSnapshotNotifications(snapshotId: string): Promise<void> {
 }
 
 async function deleteSnapshotStoragePrefix(snapshotId: string): Promise<void> {
-  const [files] = await snapshotBucket().getFiles({
-    prefix: `snapshots/${snapshotId}/`,
-  });
-  await Promise.all(files.map((file) => file.delete({ignoreNotFound: true})));
+  // A snapshot's objects all live in one bucket, but the prefix sweep covers
+  // every known bucket so a document without `storageBucket` is still cleaned.
+  await Promise.all(allKnownBuckets().map(async (bucket) => {
+    const [files] = await bucket.getFiles({prefix: `snapshots/${snapshotId}/`});
+    await Promise.all(files.map((file) => file.delete({ignoreNotFound: true})));
+  }));
 }
 
 async function deleteSnapshotResources(
@@ -747,12 +767,12 @@ async function deleteSnapshotResources(
   await snapshotRef.delete();
 }
 
-export const getSnapshotServerTime = functions.https.onCall(async (_data, context) => {
+export const getSnapshotServerTime = callables().https.onCall(async (_data, context) => {
   requireUid(context);
   return {nowMillis: Date.now()};
 });
 
-export const createSnapshot = functions.runWith({timeoutSeconds: 120, memory: '512MB'})
+export const createSnapshot = callables().runWith({timeoutSeconds: 120, memory: '512MB'})
   .https.onCall(async (raw, context) => {
     const uid = requireUid(context);
     const data = raw && typeof raw === 'object' ? raw as Record<string, unknown> : {};
@@ -761,6 +781,7 @@ export const createSnapshot = functions.runWith({timeoutSeconds: 120, memory: '5
     const selectedCategoryIds = categoryIds(data.visibleToCategoryIds);
     const mediaType = validMediaType(data.mediaType);
     const storagePath = text(data.storagePath);
+    const storageBucket = validatedStorageBucket(data.storageBucket);
     const expectedPath = mediaType === 'video'
       ? `snapshots/${snapshotId}/final.mp4`
       : `snapshots/${snapshotId}/final.jpg`;
@@ -783,7 +804,7 @@ export const createSnapshot = functions.runWith({timeoutSeconds: 120, memory: '5
     const frozen = await resolveFrozenAudience(uid, visibility, selectedCategoryIds);
     const allowedUserIds = frozen.audienceUserIdsFrozen;
 
-    const file = snapshotBucket().file(storagePath);
+    const file = snapshotBucket(storageBucket).file(storagePath);
     const [exists] = await file.exists();
     if (!exists) throw new functions.https.HttpsError('failed-precondition', 'Image is missing.');
     const [metadata] = await file.getMetadata();
@@ -804,7 +825,7 @@ export const createSnapshot = functions.runWith({timeoutSeconds: 120, memory: '5
     let thumbnailStoragePath = '';
     if (mediaType === 'video') {
       thumbnailStoragePath = `snapshots/${snapshotId}/thumbnail.jpg`;
-      const thumbnail = snapshotBucket().file(thumbnailStoragePath);
+      const thumbnail = snapshotBucket(storageBucket).file(thumbnailStoragePath);
       const [thumbnailExists] = await thumbnail.exists();
       if (!thumbnailExists) {
         throw new functions.https.HttpsError('failed-precondition', 'Video thumbnail is missing.');
@@ -854,6 +875,7 @@ export const createSnapshot = functions.runWith({timeoutSeconds: 120, memory: '5
       university,
       schoolId: university,
       storagePath,
+      storageBucket,
       imageStoragePath: mediaType === 'photo' ? storagePath : thumbnailStoragePath,
       videoStoragePath: mediaType === 'video' ? storagePath : '',
       thumbnailStoragePath,
@@ -939,7 +961,7 @@ export const createSnapshot = functions.runWith({timeoutSeconds: 120, memory: '5
     };
   });
 
-export const syncMySnapshotFeed = functions.runWith({timeoutSeconds: 120, memory: '512MB'})
+export const syncMySnapshotFeed = callables().runWith({timeoutSeconds: 120, memory: '512MB'})
   .https.onCall(async (_raw, context) => {
     const uid = requireUid(context);
     const store = db();
@@ -1020,7 +1042,7 @@ export const syncMySnapshotFeed = functions.runWith({timeoutSeconds: 120, memory
     return {count: allowed.length};
   });
 
-export const updateSnapshotVisibility = functions.runWith({timeoutSeconds: 120, memory: '512MB'})
+export const updateSnapshotVisibility = callables().runWith({timeoutSeconds: 120, memory: '512MB'})
   .https.onCall(async (_raw, context) => {
     requireUid(context);
     // 스낵의 공개범위는 업로드 시 확정되며 이후에는 변경할 수 없다.
@@ -1031,7 +1053,7 @@ export const updateSnapshotVisibility = functions.runWith({timeoutSeconds: 120, 
     );
   });
 
-export const recordSnapshotView = functions.https.onCall(async (raw, context) => {
+export const recordSnapshotView = callables().https.onCall(async (raw, context) => {
   const uid = requireUid(context);
   const data = raw && typeof raw === 'object' ? raw as Record<string, unknown> : {};
   const snapshotId = validSnapshotId(data.snapshotId);
@@ -1093,7 +1115,7 @@ export const recordSnapshotView = functions.https.onCall(async (raw, context) =>
   return {success: true, recorded: true, created};
 });
 
-export const getSnapshotViewers = functions.https.onCall(async (raw, context) => {
+export const getSnapshotViewers = callables().https.onCall(async (raw, context) => {
   const uid = requireUid(context);
   const data = raw && typeof raw === 'object' ? raw as Record<string, unknown> : {};
   const snapshotId = validSnapshotId(data.snapshotId);
@@ -1155,7 +1177,7 @@ export const getSnapshotViewers = functions.https.onCall(async (raw, context) =>
   };
 });
 
-export const getSnapshotReactionStatus = functions.https.onCall(async (raw, context) => {
+export const getSnapshotReactionStatus = callables().https.onCall(async (raw, context) => {
   const uid = requireUid(context);
   const data = raw && typeof raw === 'object' ? raw as Record<string, unknown> : {};
   const snapshotId = validSnapshotId(data.snapshotId);
@@ -1171,7 +1193,7 @@ export const getSnapshotReactionStatus = functions.https.onCall(async (raw, cont
   };
 });
 
-export const getSnapshotCommentStatus = functions.https.onCall(async (raw, context) => {
+export const getSnapshotCommentStatus = callables().https.onCall(async (raw, context) => {
   const uid = requireUid(context);
   const data = raw && typeof raw === 'object' ? raw as Record<string, unknown> : {};
   const snapshotId = validSnapshotId(data.snapshotId);
@@ -1194,7 +1216,7 @@ export const getSnapshotCommentStatus = functions.https.onCall(async (raw, conte
   return {commented: !legacy.empty};
 });
 
-export const toggleSnapshotReaction = functions.https.onCall(async (raw, context) => {
+export const toggleSnapshotReaction = callables().https.onCall(async (raw, context) => {
   const uid = requireUid(context);
   const data = raw && typeof raw === 'object' ? raw as Record<string, unknown> : {};
   const snapshotId = validSnapshotId(data.snapshotId);
@@ -1316,7 +1338,7 @@ export const toggleSnapshotReaction = functions.https.onCall(async (raw, context
   };
 });
 
-export const sendSnapshotComment = functions.https.onCall(async (raw, context) => {
+export const sendSnapshotComment = callables().https.onCall(async (raw, context) => {
   const uid = requireUid(context);
   const data = raw && typeof raw === 'object' ? raw as Record<string, unknown> : {};
   const snapshotId = validSnapshotId(data.snapshotId);
@@ -1360,6 +1382,7 @@ export const sendSnapshotComment = functions.https.onCall(async (raw, context) =
   const sourceImageStoragePath = text(
     snapshotData.imageStoragePath ?? snapshotData.storagePath,
   );
+  const sourceImageStorageBucket = text(snapshotData.storageBucket);
   const sourceImageUrl = text(snapshotData.imageUrl);
   const sourceAspectRatio = Number(snapshotData.aspectRatio) || .8;
   const sourceExpiresAt = snapshotData.expiresAt;
@@ -1407,6 +1430,7 @@ export const sendSnapshotComment = functions.https.onCall(async (raw, context) =
       sourceText,
       sourceCreatedAt,
       sourceImageStoragePath,
+      sourceImageStorageBucket,
       sourceImageUrl,
       sourceAspectRatio,
       sourceExpiresAt,
@@ -1422,6 +1446,7 @@ export const sendSnapshotComment = functions.https.onCall(async (raw, context) =
         sourceText,
         sourceCreatedAt,
         sourceImageStoragePath,
+        sourceImageStorageBucket,
         sourceImageUrl,
         sourceAspectRatio,
         sourceExpiresAt,
@@ -1455,7 +1480,7 @@ async function snapshotCommentNotificationAllowed(userId: string): Promise<boole
  * Public Snack feed comment/reply. This intentionally uses a separate callable
  * and notification type from the existing one-to-one Snack letter feature.
  */
-export const createSnapshotFeedComment = functions.https.onCall(async (raw, context) => {
+export const createSnapshotFeedComment = callables().https.onCall(async (raw, context) => {
   const uid = requireUid(context);
   const data = raw && typeof raw === 'object' ? raw as Record<string, unknown> : {};
   const snapshotId = validSnapshotId(data.snapshotId);
@@ -1464,6 +1489,7 @@ export const createSnapshotFeedComment = functions.https.onCall(async (raw, cont
     snapshotId, commentId, data.gifStoragePath,
   );
   const expectedGifPath = `snapshots/${snapshotId}/comment_gifs/${commentId}.gif`;
+  const gifStorageBucket = validatedStorageBucket(data.storageBucket);
   const content = validSnapshotFeedComment(data.content ?? data.message, !!gifStoragePath);
   if (!content && !gifStoragePath) {
     throw new functions.https.HttpsError('invalid-argument', 'Empty comment.');
@@ -1489,7 +1515,7 @@ export const createSnapshotFeedComment = functions.https.onCall(async (raw, cont
   }
 
   if (gifStoragePath) {
-    const gif = snapshotBucket().file(expectedGifPath);
+    const gif = snapshotBucket(gifStorageBucket).file(expectedGifPath);
     const [exists] = await gif.exists();
     if (!exists) {
       throw new functions.https.HttpsError('failed-precondition', 'GIF is missing.');
@@ -1597,6 +1623,7 @@ export const createSnapshotFeedComment = functions.https.onCall(async (raw, cont
       authorPhotoUrl,
       content,
       gifStoragePath,
+      ...(gifStoragePath ? {storageBucket: gifStorageBucket} : {}),
       parentCommentId: parentCommentId || null,
       replyToCommentId: replyToCommentId || null,
       replyToUserId: replyTargetData == null ? null : text(replyTargetData.userId),
@@ -1643,7 +1670,7 @@ export const createSnapshotFeedComment = functions.https.onCall(async (raw, cont
   return {success: true, created: result.created, commentId};
 });
 
-export const deleteSnapshotFeedComment = functions.https.onCall(async (raw, context) => {
+export const deleteSnapshotFeedComment = callables().https.onCall(async (raw, context) => {
   const uid = requireUid(context);
   const data = raw && typeof raw === 'object' ? raw as Record<string, unknown> : {};
   const snapshotId = validSnapshotId(data.snapshotId);
@@ -1651,6 +1678,7 @@ export const deleteSnapshotFeedComment = functions.https.onCall(async (raw, cont
   const snapshotRef = db().collection(COL.snapshots).doc(snapshotId);
   const commentRef = snapshotRef.collection('feed_comments').doc(commentId);
 
+  let gifStorageBucket: unknown;
   const gifStoragePath = await db().runTransaction(async (transaction) => {
     const transactionNow = admin.firestore.Timestamp.now();
     const [snapshot, comment] = await Promise.all([
@@ -1668,6 +1696,7 @@ export const deleteSnapshotFeedComment = functions.https.onCall(async (raw, cont
     const gifPath = validatedSnapshotCommentGifPath(
       snapshotId, commentId, comment.get('gifStoragePath'),
     );
+    gifStorageBucket = comment.get('storageBucket');
     if (comment.get('isDeleted') === true) return gifPath;
     transaction.update(commentRef, {
       isDeleted: true,
@@ -1683,7 +1712,7 @@ export const deleteSnapshotFeedComment = functions.https.onCall(async (raw, cont
     return gifPath;
   });
   if (gifStoragePath) {
-    await snapshotBucket().file(gifStoragePath).delete({ignoreNotFound: true});
+    await snapshotBucket(gifStorageBucket).file(gifStoragePath).delete({ignoreNotFound: true});
   }
   return {success: true};
 });
@@ -1695,7 +1724,7 @@ export const deleteSnapshotFeedComment = functions.https.onCall(async (raw, cont
  * 편지 원본을 알림 문서로 삼아 스냅샷 만료 후에도 당사자 두 명만 코멘트와
  * 답장을 확인할 수 있게 한다.
  */
-export const getSnapshotCommentLetter = functions.https.onCall(async (raw, context) => {
+export const getSnapshotCommentLetter = callables().https.onCall(async (raw, context) => {
   const uid = requireUid(context);
   const data = raw && typeof raw === 'object' ? raw as Record<string, unknown> : {};
   const notificationId = validNotificationId(data.notificationId);
@@ -1791,6 +1820,10 @@ export const getSnapshotCommentLetter = functions.https.onCall(async (raw, conte
       tappedNested.sourceImageStoragePath ?? sourceSnapshotData.imageStoragePath ??
       sourceSnapshotData.storagePath,
   );
+  const sourceImageStorageBucket = text(
+    originalData.sourceImageStorageBucket ?? originalNested.sourceImageStorageBucket ??
+      tappedNested.sourceImageStorageBucket ?? sourceSnapshotData.storageBucket,
+  );
   const sourceImageUrl = text(
     originalData.sourceImageUrl ?? originalNested.sourceImageUrl ??
       tappedNested.sourceImageUrl ?? sourceSnapshotData.imageUrl,
@@ -1830,6 +1863,7 @@ export const getSnapshotCommentLetter = functions.https.onCall(async (raw, conte
     sourceAuthorPhotoUrl,
     sourceText,
     sourceImageStoragePath,
+    sourceImageStorageBucket,
     sourceImageUrl,
     sourceAspectRatio,
     sourceExpiresAtMillis: timestampMillis(sourceExpiresAt),
@@ -1844,7 +1878,7 @@ export const getSnapshotCommentLetter = functions.https.onCall(async (raw, conte
 });
 
 /** 스낵 작성자가 코멘트 한 건에 정확히 한 번만 답장한다. */
-export const replySnapshotComment = functions.https.onCall(async (raw, context) => {
+export const replySnapshotComment = callables().https.onCall(async (raw, context) => {
   const uid = requireUid(context);
   const data = raw && typeof raw === 'object' ? raw as Record<string, unknown> : {};
   const notificationId = validNotificationId(data.notificationId);
@@ -1908,6 +1942,10 @@ export const replySnapshotComment = functions.https.onCall(async (raw, context) 
     initialData.sourceImageStoragePath ?? initialNested.sourceImageStoragePath ??
       sourceSnapshotData.imageStoragePath ?? sourceSnapshotData.storagePath,
   );
+  const sourceImageStorageBucket = text(
+    initialData.sourceImageStorageBucket ?? initialNested.sourceImageStorageBucket ??
+      sourceSnapshotData.storageBucket,
+  );
   const sourceImageUrl = text(
     initialData.sourceImageUrl ?? initialNested.sourceImageUrl ??
       sourceSnapshotData.imageUrl,
@@ -1966,6 +2004,7 @@ export const replySnapshotComment = functions.https.onCall(async (raw, context) 
       sourceText,
       sourceCreatedAt,
       sourceImageStoragePath,
+      sourceImageStorageBucket,
       sourceImageUrl,
       sourceAspectRatio,
       sourceExpiresAt,
@@ -2008,6 +2047,7 @@ export const replySnapshotComment = functions.https.onCall(async (raw, context) 
         sourceText,
         sourceCreatedAt,
         sourceImageStoragePath,
+        sourceImageStorageBucket,
         sourceImageUrl,
         sourceAspectRatio,
         sourceExpiresAt,
@@ -2024,7 +2064,7 @@ export const replySnapshotComment = functions.https.onCall(async (raw, context) 
   return {success: true, created: result.created};
 });
 
-export const deleteSnapshot = functions.runWith({timeoutSeconds: 120, memory: '512MB'})
+export const deleteSnapshot = callables().runWith({timeoutSeconds: 120, memory: '512MB'})
   .https.onCall(async (raw, context) => {
     const uid = requireUid(context);
     const data = raw && typeof raw === 'object' ? raw as Record<string, unknown> : {};
@@ -2039,7 +2079,7 @@ export const deleteSnapshot = functions.runWith({timeoutSeconds: 120, memory: '5
     return {success: true};
   });
 
-export const cleanupExpiredSnapshots = functions.runWith({timeoutSeconds: 540, memory: '1GB'})
+export const cleanupExpiredSnapshots = triggers().runWith({timeoutSeconds: 540, memory: '1GB'})
   .pubsub.schedule('every 10 minutes')
   .timeZone('UTC')
   .onRun(async () => {
@@ -2093,17 +2133,21 @@ export const cleanupExpiredSnapshots = functions.runWith({timeoutSeconds: 540, m
 // 클라이언트가 이미지를 올린 직후 종료되면 Callable이 실행되지 않아 문서 없는
 // 파일이 남을 수 있다. 2시간의 안전 유예 후 문서가 없는 완성 이미지만 제거한다.
 // 한 실행에서 최대 500개만 검사해 Storage 전체 스캔 비용이 무한히 커지지 않게 한다.
-export const cleanupOrphanSnapshotUploads = functions.runWith({
+export const cleanupOrphanSnapshotUploads = triggers().runWith({
   timeoutSeconds: 540,
   memory: '1GB',
 }).pubsub.schedule('every 6 hours')
   .timeZone('UTC')
   .onRun(async () => {
-    const [files] = await snapshotBucket().getFiles({
-      prefix: 'snapshots/',
-      maxResults: 500,
-      autoPaginate: false,
-    });
+    const bucketFiles = await Promise.all(allKnownBuckets().map(async (bucket) => {
+      const [files] = await bucket.getFiles({
+        prefix: 'snapshots/',
+        maxResults: 500,
+        autoPaginate: false,
+      });
+      return files;
+    }));
+    const files = bucketFiles.flat();
     const cutoff = Date.now() - ORPHAN_UPLOAD_GRACE_MS;
     let deleted = 0;
     let inspected = 0;
@@ -2132,7 +2176,7 @@ export const cleanupOrphanSnapshotUploads = functions.runWith({
     return null;
   });
 
-export const onSnapshotBlockChanged = functions.runWith({
+export const onSnapshotBlockChanged = triggers().runWith({
   timeoutSeconds: 120,
   memory: '512MB',
 }).firestore.document(`${COL.blocks}/{blockId}`).onWrite(async (change) => {

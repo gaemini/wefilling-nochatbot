@@ -98,8 +98,9 @@ class NavigationService {
 
   static void _holdPushUntilReady(Map<String, dynamic> data) {
     final recipient = _stringValue(data, 'recipientUserId');
-    // Old payloads without an account must not be replayed after a new login.
-    if (recipient.isEmpty) return;
+    // Account-bound payloads are replayed only for that account (see the auth
+    // listener below). Account-less payloads (topic pushes such as ad updates,
+    // To-do reminders) are kept for whoever signs in next.
     final key = '$recipient:${destinationKey(data)}';
     if (_pendingPushes.length >= 20 && !_pendingPushes.containsKey(key)) {
       _pendingPushes.remove(_pendingPushes.keys.first);
@@ -113,8 +114,10 @@ class NavigationService {
       } else {
         if (_pendingAuthenticatedOwner != null &&
             _pendingAuthenticatedOwner != uid) _pendingPushes.clear();
-        _pendingPushes.removeWhere((_, payload) =>
-            _stringValue(payload, 'recipientUserId') != uid);
+        _pendingPushes.removeWhere((_, payload) {
+          final recipient = _stringValue(payload, 'recipientUserId');
+          return recipient.isNotEmpty && recipient != uid;
+        });
       }
       _pendingAuthenticatedOwner = uid;
       unawaited(flushPendingPushes());
@@ -232,7 +235,11 @@ class NavigationService {
           {
             final postId = _stringValue(data, 'postId');
             if (postId.isEmpty) break;
-            final Post? post = await PostService().getPostById(postId);
+            // Bounded: a stalled read must not pin this destination in
+            // _openPushDestinations and swallow every later tap.
+            final Post? post = await PostService()
+                .getPostById(postId)
+                .timeout(const Duration(seconds: 12), onTimeout: () => null);
             if (post != null) {
               await nav.push(MaterialPageRoute(
                   builder: (_) => PostDetailScreen(post: post)));

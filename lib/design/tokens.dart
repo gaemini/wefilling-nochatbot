@@ -136,6 +136,12 @@ class MotionTokens {
     return media?.disableAnimations == true ||
         media?.accessibleNavigation == true;
   }
+
+  /// [duration] under normal motion, zero under reduced motion. Use for every
+  /// implicit animation (AnimatedContainer, AnimatedSwitcher, ...) so a state
+  /// is still conveyed by colour, check or text when motion is off.
+  static Duration of(BuildContext context, Duration duration) =>
+      reduceMotion(context) ? Duration.zero : duration;
 }
 
 /// 반응형 토큰 유틸: 고정 토큰값을 화면/글꼴에 맞춰 보정한다.

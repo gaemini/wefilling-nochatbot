@@ -4,8 +4,10 @@
 
 import 'dart:io';
 import 'package:flutter/material.dart';
+import '../ui/widgets/motion_press.dart';
 import 'package:image_picker/image_picker.dart';
 import 'package:firebase_storage/firebase_storage.dart';
+import '../config/app_backend.dart';
 import '../models/meetup.dart';
 import '../services/meetup_service.dart';
 import '../l10n/app_localizations.dart';
@@ -153,12 +155,16 @@ class _CreateMeetupReviewScreenState extends State<CreateMeetupReviewScreen> {
         final file = _selectedImages[i];
         final fileName =
             'review_${widget.meetup.id}_${DateTime.now().millisecondsSinceEpoch}_$i.jpg';
-        final storageRef = FirebaseStorage.instance
+        final storageRef = AppStorage.uploads
             .ref()
             .child('meetup_reviews')
             .child(fileName);
 
-        await storageRef.putFile(file);
+        // Storage 규칙이 이미지 타입만 받으므로 추정에 맡기지 않고 명시한다.
+        await storageRef.putFile(
+          file,
+          SettableMetadata(contentType: 'image/jpeg'),
+        );
         final downloadUrl = await storageRef.getDownloadURL();
         uploadedUrls.add(downloadUrl);
       }
@@ -386,19 +392,18 @@ class _CreateMeetupReviewScreenState extends State<CreateMeetupReviewScreen> {
           right: 4,
           child: Semantics(
             button: true,
-            child: GestureDetector(
-              onTap: onRemove,
-              child: Container(
-                width: 24,
-                height: 24,
-                decoration: const BoxDecoration(
-                  color: Color(0xCC111827),
-                  shape: BoxShape.circle,
-                ),
-                child: const Icon(
-                  Icons.close_rounded,
-                  color: Colors.white,
-                  size: 15,
+            child: MotionPress(
+              pressedScale: .92,
+              child: GestureDetector(
+                onTap: onRemove,
+                child: Container(
+                  width: 24,
+                  height: 24,
+                  decoration: const BoxDecoration(
+                    color: Color(0xCC111827),
+                    shape: BoxShape.circle,
+                  ),
+                  child: const Icon(Icons.close_rounded, color: Colors.white, size: 15),
                 ),
               ),
             ),

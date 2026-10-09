@@ -42,6 +42,53 @@ class PlatformReleaseMetadata {
   }
 }
 
+/// Backend selection shipped with the artifact (Cloud Functions region and
+/// Storage buckets). See `lib/config/app_backend.dart`.
+class BackendReleaseMetadata {
+  const BackendReleaseMetadata({
+    required this.functionsRegion,
+    required this.uploadStorageBucket,
+    required this.legacyStorageBucket,
+  });
+
+  static const String legacyBucket = 'flutterproject3-af322.firebasestorage.app';
+  static final RegExp _regionPattern = RegExp(r'^[a-z]+-[a-z]+[0-9]$');
+  static final RegExp _bucketPattern = RegExp(r'^[a-z0-9][a-z0-9._-]{1,220}[a-z0-9]$');
+
+  final String functionsRegion;
+  final String uploadStorageBucket;
+  final String legacyStorageBucket;
+
+  Set<String> get knownBuckets => <String>{legacyStorageBucket, uploadStorageBucket};
+
+  bool get isValid =>
+      _regionPattern.hasMatch(functionsRegion) &&
+      _bucketPattern.hasMatch(uploadStorageBucket) &&
+      _bucketPattern.hasMatch(legacyStorageBucket);
+
+  static BackendReleaseMetadata? fromJson(Map<String, dynamic>? json) {
+    if (json == null) return null;
+    String field(String key) => (json[key] ?? '').toString().trim();
+    final parsed = BackendReleaseMetadata(
+      functionsRegion: field('functionsRegion'),
+      uploadStorageBucket: field('uploadStorageBucket'),
+      legacyStorageBucket: field('legacyStorageBucket').isEmpty
+          ? legacyBucket
+          : field('legacyStorageBucket'),
+    );
+    return parsed.isValid ? parsed : null;
+  }
+
+  Map<String, String> toJson() => <String, String>{
+        'functionsRegion': functionsRegion,
+        'uploadStorageBucket': uploadStorageBucket,
+        'legacyStorageBucket': legacyStorageBucket,
+      };
+
+  @override
+  String toString() => 'BackendReleaseMetadata(${toJson()})';
+}
+
 class ReleaseMetadata {
   const ReleaseMetadata({
     required this.schemaVersion,
@@ -54,6 +101,7 @@ class ReleaseMetadata {
     required this.android,
     required this.ios,
     required this.migrations,
+    this.backend,
   });
 
   final int schemaVersion;
@@ -66,6 +114,7 @@ class ReleaseMetadata {
   final PlatformReleaseMetadata android;
   final PlatformReleaseMetadata ios;
   final Map<int, List<String>> migrations;
+  final BackendReleaseMetadata? backend;
 
   factory ReleaseMetadata.decode(String source) {
     final json = jsonDecode(source) as Map<String, dynamic>;
@@ -97,6 +146,9 @@ class ReleaseMetadata {
         ios: true,
       ),
       migrations: migrations,
+      backend: BackendReleaseMetadata.fromJson(
+        (json['backend'] as Map?)?.cast<String, dynamic>(),
+      ),
     );
   }
 

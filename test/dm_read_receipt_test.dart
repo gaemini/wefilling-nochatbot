@@ -12,6 +12,62 @@ DMMessage message(String id, {Timestamp? committed, bool read = false,
 );
 
 void main() {
+  group('lastReadMessageIdBy list-order rule', () {
+    // Own messages ordered by server commit time; none has the trigger-written
+    // receiptCreatedAt yet, which is exactly when the old rule showed "1".
+    DMMessage own(String id, int seconds) => DMMessage(
+      id: id, senderId: 'me', text: id,
+      createdAt: DateTime.fromMillisecondsSinceEpoch(seconds * 1000),
+      serverCreatedAt: Timestamp(seconds, 0), isRead: false,
+      deliveryState: DMDeliveryState.sent,
+    );
+    final older = own('older', 100);
+    final boundary = own('boundary', 200);
+    final newer = own('newer', 300);
+
+    test('messages at or before the read-through message are read', () {
+      expect(older.isReadThrough(null, watermarkMessage: boundary), isTrue);
+      expect(boundary.isReadThrough(null, watermarkMessage: boundary), isTrue);
+      expect(newer.isReadThrough(null, watermarkMessage: boundary), isFalse);
+    });
+
+    test('an unresolved id falls back to the timestamp rule only', () {
+      expect(older.isReadThrough(Timestamp(250, 0)), isFalse);
+      expect(older.isReadThrough(Timestamp(250, 0), watermarkMessage: null),
+          isFalse);
+      final withReceipt = older.copyWith(receiptCreatedAt: Timestamp(100, 5));
+      expect(withReceipt.isReadThrough(Timestamp(250, 0)), isTrue);
+    });
+
+    test('serverCreatedAt is never compared with lastReadAtBy directly', () {
+      // A watermark later than this message's commit time is not enough on its
+      // own: serverTimestamp() and createTime may differ sub-millisecond and a
+      // "읽음" that flips back to "1" must never happen.
+      expect(older.isReadThrough(Timestamp(999, 0)), isFalse);
+    });
+
+    test('pending or unordered watermark messages are ignored', () {
+      final pendingBoundary = own('pending', 200)
+          .copyWith(deliveryState: DMDeliveryState.sending);
+      expect(older.isReadThrough(null, watermarkMessage: pendingBoundary),
+          isFalse);
+      final pendingSelf = own('self', 100)
+          .copyWith(deliveryState: DMDeliveryState.sending);
+      expect(pendingSelf.isReadThrough(null, watermarkMessage: boundary),
+          isFalse);
+    });
+
+    test('equal commit time orders by id like the message list', () {
+      final a = own('a', 200);
+      final b = own('b', 200);
+      // compareDescending puts 'b' before 'a' (newer first by id); reading
+      // through 'a' therefore does not cover 'b'.
+      expect(a.isReadThrough(null, watermarkMessage: a), isTrue);
+      expect(b.isReadThrough(null, watermarkMessage: a), isFalse);
+      expect(a.isReadThrough(null, watermarkMessage: b), isTrue);
+    });
+  });
+
   test('room watermark renders receipts outside the recent 40 without worker', () {
     final loaded = List.generate(90,
         (i) => message('$i', committed: Timestamp(100, i * 1000)));

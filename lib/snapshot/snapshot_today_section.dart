@@ -10,6 +10,7 @@ import '../screens/snapshot_detail_screen.dart';
 import '../services/snapshot_service.dart';
 import '../services/user_info_cache_service.dart';
 import '../ui/widgets/user_avatar.dart';
+import '../ui/widgets/motion_press.dart';
 import '../utils/logger.dart';
 import 'snapshot_author_profile_image.dart';
 import 'snapshot_storage_image.dart';
@@ -451,11 +452,9 @@ class _SnapshotTodaySectionState extends State<SnapshotTodaySection>
     );
     try {
       await Navigator.of(context).push<void>(
-        MaterialPageRoute(
-          builder: (_) => SnapshotDetailScreen(
-            snapshots: snapshots,
-            initialIndex: index,
-          ),
+        SnapshotDetailMotionRoute(
+          snapshots: snapshots,
+          initialIndex: index,
         ),
       );
     } finally {
@@ -973,23 +972,26 @@ class _MySnackTile extends StatelessWidget {
             child: Semantics(
               button: true,
               label: SnapshotStrings.of(context).createSnapshot,
-              child: GestureDetector(
-                behavior: HitTestBehavior.opaque,
-                onTap: onAdd,
-                child: SizedBox.square(
-                  dimension: 48,
-                  child: Center(
-                    child: Container(
-                      width: 34,
-                      height: 34,
-                      decoration: const BoxDecoration(
-                        color: Color(0xFF344054),
-                        shape: BoxShape.circle,
-                      ),
-                      child: const Icon(
-                        Icons.add_rounded,
-                        size: 22,
-                        color: Colors.white,
+              child: MotionPress(
+                pressedScale: .91,
+                child: GestureDetector(
+                  behavior: HitTestBehavior.opaque,
+                  onTap: onAdd,
+                  child: SizedBox.square(
+                    dimension: 48,
+                    child: Center(
+                      child: Container(
+                        width: 34,
+                        height: 34,
+                        decoration: const BoxDecoration(
+                          color: Color(0xFF344054),
+                          shape: BoxShape.circle,
+                        ),
+                        child: const Icon(
+                          Icons.add_rounded,
+                          size: 22,
+                          color: Colors.white,
+                        ),
                       ),
                     ),
                   ),
@@ -1087,14 +1089,17 @@ class _SnackTileShell extends StatelessWidget {
       child: SizedBox(
         width: layout.cardWidth,
         height: layout.cardHeight,
-        child: Material(
-          color: _snackNeutralBackground,
-          borderRadius: _snackCardRadius,
-          clipBehavior: Clip.antiAlias,
-          child: InkWell(
-            onTap: onTap,
-            excludeFromSemantics: true,
-            child: child,
+        child: MotionPress(
+          pressedScale: .975,
+          child: Material(
+            color: _snackNeutralBackground,
+            borderRadius: _snackCardRadius,
+            clipBehavior: Clip.antiAlias,
+            child: InkWell(
+              onTap: onTap,
+              excludeFromSemantics: true,
+              child: child,
+            ),
           ),
         ),
       ),

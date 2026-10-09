@@ -29,7 +29,8 @@ class PostLoadingTransition extends StatelessWidget {
       layoutBuilder: (currentChild, previousChildren) => Stack(
         alignment: Alignment.topCenter,
         children: [
-          ...previousChildren,
+          for (final previous in previousChildren)
+            IgnorePointer(child: ExcludeSemantics(child: previous)),
           if (currentChild != null) currentChild,
         ],
       ),

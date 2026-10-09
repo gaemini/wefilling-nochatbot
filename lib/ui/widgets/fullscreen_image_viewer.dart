@@ -8,6 +8,7 @@ import 'package:firebase_auth/firebase_auth.dart';
 import 'package:firebase_storage/firebase_storage.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
+import '../../config/app_backend.dart';
 import 'package:http/http.dart' as http;
 import 'package:permission_handler/permission_handler.dart' as permissions;
 
@@ -18,6 +19,8 @@ import '../../l10n/ui_locale.dart';
 class FullscreenImageViewer extends StatefulWidget {
   final List<String> imageUrls;
   final List<String?>? storagePaths;
+  /// Parallel to [storagePaths]; null entries mean "bucket not recorded".
+  final List<String?>? storageBuckets;
   final int initialIndex;
   final String? heroTag;
 
@@ -25,6 +28,7 @@ class FullscreenImageViewer extends StatefulWidget {
     Key? key,
     this.imageUrls = const <String>[],
     this.storagePaths,
+    this.storageBuckets,
     this.initialIndex = 0,
     this.heroTag,
   })  : assert(
@@ -101,6 +105,33 @@ class _FullscreenImageViewerState extends State<FullscreenImageViewer>
     final paths = widget.storagePaths;
     if (paths == null || index < 0 || index >= paths.length) return '';
     return (paths[index] ?? '').trim();
+  }
+
+  String? _storageBucketAt(int index) {
+    final buckets = widget.storageBuckets;
+    if (buckets == null || index < 0 || index >= buckets.length) return null;
+    final bucket = (buckets[index] ?? '').trim();
+    return bucket.isEmpty ? null : bucket;
+  }
+
+  /// Legacy bucket first, upload bucket second when no bucket was recorded.
+  Future<Uint8List?> _downloadStorageBytes(int index, String storagePath) async {
+    final bucket = _storageBucketAt(index);
+    try {
+      return await AppStorage.ref(storagePath, storageBucket: bucket)
+          .getData(_maxImageBytes)
+          .timeout(const Duration(seconds: 15));
+    } on FirebaseException catch (error) {
+      if (bucket != null ||
+          error.code != 'object-not-found' ||
+          AppStorage.uploadsToLegacyBucket) {
+        rethrow;
+      }
+    }
+    return AppStorage.uploads
+        .ref(storagePath)
+        .getData(_maxImageBytes)
+        .timeout(const Duration(seconds: 15));
   }
 
   void _syncZoomStateForIndex(int index) {
@@ -338,10 +369,7 @@ class _FullscreenImageViewerState extends State<FullscreenImageViewer>
         storagePath: storagePath,
       );
       if (cached != null && cached.isNotEmpty) return cached;
-      final bytes = await FirebaseStorage.instance
-          .ref(storagePath)
-          .getData(_maxImageBytes)
-          .timeout(const Duration(seconds: 15));
+      final bytes = await _downloadStorageBytes(index, storagePath);
       if (bytes == null || bytes.isEmpty) return null;
       // Show the downloaded image as soon as its bytes arrive. Persisting the
       // private cache must not hold the full-screen viewer on a spinner.
@@ -801,6 +829,7 @@ Future<void> showFullscreenImageViewer(
   BuildContext context, {
   List<String> imageUrls = const <String>[],
   List<String?>? storagePaths,
+  List<String?>? storageBuckets,
   int initialIndex = 0,
   String? heroTag,
 }) {
@@ -809,6 +838,7 @@ Future<void> showFullscreenImageViewer(
       builder: (context) => FullscreenImageViewer(
         imageUrls: imageUrls,
         storagePaths: storagePaths,
+        storageBuckets: storageBuckets,
         initialIndex: initialIndex,
         heroTag: heroTag,
       ),

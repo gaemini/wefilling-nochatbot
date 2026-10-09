@@ -16,3 +16,6 @@ lib/
 .DS_Store
 .idea/
 .vscode/
+
+# compare_databases.js snapshots
+out/

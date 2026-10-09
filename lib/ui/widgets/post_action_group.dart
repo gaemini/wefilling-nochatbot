@@ -5,6 +5,8 @@ import 'package:flutter/material.dart';
 import '../../design/tokens.dart';
 import '../../l10n/ui_locale.dart';
 import 'motion_press.dart';
+import 'motion_selection_pulse.dart';
+import 'motion_state_icon.dart';
 
 /// 피드 카드와 게시글 상세가 공유하는 반응형 액션 그룹.
 ///
@@ -108,29 +110,20 @@ class PostActionGroup extends StatelessWidget {
       child: _PostActionItem(
         icon: animateLike ? null : likeIcon,
         iconWidget: animateLike
-            ? _PostSelectionPulse(
+            ? MotionSelectionPulse(
+                key: const ValueKey('post_selection_pulse'),
                 selected: isLiked,
                 activePeak: 1.28,
                 activeDip: .96,
                 inactiveDip: .88,
                 child: SizedBox.square(
                   dimension: responsiveIconSize,
-                  child: AnimatedSwitcher(
-                    duration: MotionTokens.reduceMotion(context)
-                        ? Duration.zero
-                        : MotionTokens.fast,
-                    switchInCurve: MotionTokens.curve,
-                    switchOutCurve: MotionTokens.curve,
-                    transitionBuilder: (child, animation) => FadeTransition(
-                      opacity: animation,
-                      child: child,
-                    ),
-                    child: Icon(
-                      likeIcon,
-                      key: ValueKey<bool>(isLiked),
-                      color: likeIconColor,
-                      size: responsiveIconSize,
-                    ),
+                  child: MotionStateIcon(
+                    selected: isLiked,
+                    inactiveIcon: Icons.favorite_border_rounded,
+                    activeIcon: Icons.favorite_rounded,
+                    color: likeIconColor,
+                    size: responsiveIconSize,
                   ),
                 ),
               )
@@ -152,6 +145,7 @@ class PostActionGroup extends StatelessWidget {
       child: animateLike
           ? MotionPress(
               enabled: onLikeTapUp != null,
+              resetToken: isLiked,
               pressedScale: .88,
               child: likeButton,
             )
@@ -247,11 +241,13 @@ class PostActionGroup extends StatelessWidget {
           excludeSemantics: true,
           child: MotionPress(
             enabled: !isSaving && onSaveTap != null,
+            resetToken: isSaved,
             pressedScale: .9,
             child: GestureDetector(
               behavior: HitTestBehavior.opaque,
               onTap: isSaving ? null : onSaveTap,
-              child: _PostSelectionPulse(
+              child: MotionSelectionPulse(
+                key: const ValueKey('post_selection_pulse'),
                 selected: isSaved,
                 activePeak: 1.18,
                 activeDip: 1,
@@ -308,89 +304,6 @@ class PostActionGroup extends StatelessWidget {
   }
 }
 
-/// Only the changed action runs an implicit animation; idle feed rows have no
-/// ticker. The selected value still comes exclusively from the post state.
-class _PostSelectionPulse extends StatefulWidget {
-  const _PostSelectionPulse({
-    required this.selected,
-    required this.activePeak,
-    required this.activeDip,
-    required this.inactiveDip,
-    required this.child,
-  });
-
-  final bool selected;
-  final double activePeak;
-  final double activeDip;
-  final double inactiveDip;
-  final Widget child;
-
-  @override
-  State<_PostSelectionPulse> createState() => _PostSelectionPulseState();
-}
-
-class _PostSelectionPulseState extends State<_PostSelectionPulse> {
-  int _phase = 0;
-  double _from = 1;
-  double _target = 1;
-  Duration _duration = MotionTokens.press;
-
-  @override
-  void didUpdateWidget(covariant _PostSelectionPulse oldWidget) {
-    super.didUpdateWidget(oldWidget);
-    if (oldWidget.selected == widget.selected) return;
-    _phase = 1;
-    _from = 1;
-    _target = widget.selected ? widget.activePeak : widget.inactiveDip;
-    _duration =
-        widget.selected ? const Duration(milliseconds: 95) : MotionTokens.press;
-  }
-
-  void _advance() {
-    if (!mounted) return;
-    if (_phase == 1 && widget.selected && widget.activeDip != 1) {
-      setState(() {
-        _phase = 2;
-        _from = widget.activePeak;
-        _target = widget.activeDip;
-        _duration = const Duration(milliseconds: 75);
-      });
-    } else if (_phase == 1 || _phase == 2) {
-      setState(() {
-        _phase = 3;
-        _from = _target;
-        _target = 1;
-        _duration = MotionTokens.press;
-      });
-    } else if (_phase == 3) {
-      setState(() => _phase = 0);
-    }
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    final reducedMotion = MotionTokens.reduceMotion(context);
-    if (reducedMotion) {
-      _phase = 0;
-    }
-    return TweenAnimationBuilder<double>(
-      key: const ValueKey('post_selection_pulse'),
-      tween: Tween<double>(
-        begin: _phase == 0 ? 1 : _from,
-        end: _phase == 0 ? 1 : _target,
-      ),
-      duration: reducedMotion || _phase == 0 ? Duration.zero : _duration,
-      curve: MotionTokens.curve,
-      onEnd: _phase == 0 ? null : _advance,
-      builder: (context, scale, child) => Transform.scale(
-        scale: scale,
-        transformHitTests: false,
-        child: child,
-      ),
-      child: widget.child,
-    );
-  }
-}
 
 class _PostActionItem extends StatelessWidget {
   final IconData? icon;

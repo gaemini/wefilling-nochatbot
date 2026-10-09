@@ -1,6 +1,8 @@
 import 'dart:async';
 
 import 'package:cloud_functions/cloud_functions.dart';
+
+import '../config/app_backend.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 
@@ -28,7 +30,7 @@ class _PasswordResetScreenState extends State<PasswordResetScreen> {
   final _passwordController = TextEditingController();
   final _confirmPasswordController = TextEditingController();
   final FirebaseFunctions _functions =
-      FirebaseFunctions.instanceFor(region: 'us-central1');
+      AppFunctions.instance;
 
   Timer? _resendTimer;
   int _resendSeconds = 0;

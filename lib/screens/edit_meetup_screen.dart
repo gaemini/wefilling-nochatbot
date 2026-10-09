@@ -9,6 +9,7 @@ import 'package:firebase_auth/firebase_auth.dart';
 import 'package:firebase_storage/firebase_storage.dart';
 import 'package:image_picker/image_picker.dart';
 import 'package:intl/intl.dart';
+import '../config/app_backend.dart';
 import '../models/meetup.dart';
 import '../constants/app_constants.dart';
 import '../constants/meetup_limits.dart';
@@ -214,7 +215,7 @@ class _EditMeetupScreenState extends State<EditMeetupScreen> {
       final String fileName =
           'meetup_${widget.meetup.id}_${DateTime.now().millisecondsSinceEpoch}.jpg';
       final Reference storageRef =
-          FirebaseStorage.instance.ref().child('meetup_images').child(fileName);
+          AppStorage.uploads.ref().child('meetup_images').child(fileName);
 
       final UploadTask uploadTask = storageRef.putFile(_selectedImage!);
       final TaskSnapshot snapshot = await uploadTask;

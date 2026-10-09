@@ -6,6 +6,8 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import '../../design/tokens.dart';
 import '../../constants/app_constants.dart';
+import '../../l10n/ui_locale.dart';
+import 'motion_press.dart';
 
 /// 통일된 디자인 시스템을 적용한 FAB
 /// - 일관된 브랜드 컬러 사용 (Primary Blue)
@@ -39,6 +41,9 @@ class AppFab extends StatelessWidget {
   /// 확장형 FAB 여부
   final bool extended;
 
+  /// 확장형 버튼에서 아이콘 없이 문구만 표시할지 여부
+  final bool showIcon;
+
   const AppFab({
     super.key,
     required this.icon,
@@ -50,6 +55,7 @@ class AppFab extends StatelessWidget {
     this.enabled = true,
     this.mini = false,
     this.extended = false,
+    this.showIcon = true,
   }) : assert(!extended || label != null, 'Extended FAB requires a label');
 
   /// 글쓰기 FAB
@@ -72,16 +78,19 @@ class AppFab extends StatelessWidget {
   /// 새 모임 만들기 FAB
   factory AppFab.createMeetup({
     required VoidCallback onPressed,
+    required String label,
     Object? heroTag,
     bool enabled = true,
   }) {
     return AppFab(
       icon: IconStyles.add,
       onPressed: onPressed,
-      semanticLabel: '새 모임 만들기',
-      tooltip: '모임 만들기',
+      semanticLabel: label,
+      tooltip: label,
+      label: label,
       heroTag: heroTag ?? 'create_meetup_fab',
       enabled: enabled,
+      extended: true,
     );
   }
 
@@ -107,17 +116,21 @@ class AppFab extends StatelessWidget {
     required String label,
     required VoidCallback onPressed,
     required String semanticLabel,
+    String? tooltip,
     Object? heroTag,
     bool enabled = true,
+    bool showIcon = true,
   }) {
     return AppFab(
       icon: icon,
       label: label,
       onPressed: onPressed,
       semanticLabel: semanticLabel,
+      tooltip: tooltip,
       heroTag: heroTag,
       enabled: enabled,
       extended: true,
+      showIcon: showIcon,
     );
   }
 
@@ -133,43 +146,70 @@ class AppFab extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final effectiveEnabled = enabled && onPressed != null;
     if (extended) {
       // 확장형 FAB
-      return FloatingActionButton.extended(
-        onPressed: enabled ? _handleTap : null,
-        icon: Icon(
-          icon,
-          size: DesignTokens.icon,
-        ),
-        label: Text(
-          label!,
-          style: const TextStyle(
-            fontWeight: FontWeight.w600,
-          ),
-        ),
-        backgroundColor: AppColors.pointColor,
-        foregroundColor: Colors.white,
-        elevation: DesignTokens.elevation3,
-        heroTag: heroTag,
-        tooltip: tooltip,
-        shape: RoundedRectangleBorder(
-          borderRadius: DesignTokens.radiusL,
-        ),
-      );
+      return Semantics(
+          button: true,
+          enabled: effectiveEnabled,
+          label: semanticLabel,
+          child: MotionPress(
+            enabled: effectiveEnabled,
+            pressedScale: .975,
+            child: FloatingActionButton.extended(
+              onPressed: effectiveEnabled ? _handleTap : null,
+              icon: showIcon ? Icon(icon, size: 21) : null,
+              label: Text(
+                label!,
+                style: TextStyle(
+                  fontFamily: uiFontFamily(context, 'Inter'),
+                  fontFamilyFallback: const ['NotoSansKR'],
+                  fontSize: 15,
+                  fontWeight: FontWeight.w800,
+                  letterSpacing: 0.1,
+                  shadows: const [
+                    Shadow(
+                      color: Color(0x330B335D),
+                      offset: Offset(0, 1),
+                      blurRadius: 1,
+                    ),
+                  ],
+                ),
+              ),
+              backgroundColor: const Color(0xFF2D74C4),
+              foregroundColor: Colors.white,
+              elevation: DesignTokens.elevation4,
+              highlightElevation: DesignTokens.elevation2,
+              heroTag: heroTag,
+              tooltip: tooltip,
+              shape: const StadiumBorder(
+                side: BorderSide(color: Color(0x66FFFFFF), width: 1),
+              ),
+            ),
+          ));
     } else {
       // 일반 FAB
-      return FloatingActionButton(
-        onPressed: enabled ? _handleTap : null,
-        backgroundColor: AppColors.pointColor,
-        foregroundColor: Colors.white,
-        elevation: DesignTokens.elevation3,
-        mini: mini,
-        heroTag: heroTag,
-        tooltip: tooltip,
-        shape: const CircleBorder(),
-        child: Icon(
-          icon,
-          size: mini ? 20 : DesignTokens.icon,
+      return Semantics(
+        button: true,
+        enabled: effectiveEnabled,
+        label: semanticLabel,
+        child: MotionPress(
+          enabled: effectiveEnabled,
+          pressedScale: .92,
+          child: FloatingActionButton(
+            onPressed: effectiveEnabled ? _handleTap : null,
+            backgroundColor: AppColors.pointColor,
+            foregroundColor: Colors.white,
+            elevation: DesignTokens.elevation3,
+            mini: mini,
+            heroTag: heroTag,
+            tooltip: tooltip,
+            shape: const CircleBorder(),
+            child: Icon(
+              icon,
+              size: mini ? 20 : DesignTokens.icon,
+            ),
+          ),
         ),
       );
     }

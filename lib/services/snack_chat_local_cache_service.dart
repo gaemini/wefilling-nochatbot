@@ -46,6 +46,15 @@ class SnackChatLocalCacheService {
   SnackChatLocalCacheService._();
 
   static const String _boxName = 'snack_chat_state_v1';
+
+  /// Receive-path relief (`SNACK_CHAT_CACHE_OFFLOAD`): when the in-memory
+  /// snapshot for a room is complete, a message upsert encodes from memory
+  /// instead of decoding the whole stored list (up to 2000 maps) on the UI
+  /// isolate first. The on-disk format is unchanged.
+  static const bool cacheOffloadEnabled = bool.fromEnvironment(
+    'SNACK_CHAT_CACHE_OFFLOAD',
+    defaultValue: true,
+  );
   // Keep previously loaded history available offline. This is metadata/text,
   // while large media bytes remain in their separate bounded disk cache.
   static const int _maxMessagesPerRoom = 2000;
@@ -149,20 +158,29 @@ class SnackChatLocalCacheService {
     final key = '$baseKey::messages';
     try {
       await _serializeMessageWrite(key, () async {
-        final existing = box.get(key);
-        final byId = <String, SnackChatMessage>{};
-        if (existing is List) {
-          for (final raw in existing) {
-            final message = _decodeMessage(raw);
-            if (message != null) byId[message.id] = message;
+        // A complete memory snapshot already equals stored ∪ incoming (the
+        // merge above ran before this serialized write), so the stored list
+        // does not need to be decoded again.
+        final memory = cacheOffloadEnabled ? _touchMemory(baseKey) : null;
+        final List<SnackChatMessage> bounded;
+        if (memory != null && memory.complete) {
+          bounded = _takeMessages(memory.messages, _maxMessagesPerRoom);
+        } else {
+          final existing = box.get(key);
+          final byId = <String, SnackChatMessage>{};
+          if (existing is List) {
+            for (final raw in existing) {
+              final message = _decodeMessage(raw);
+              if (message != null) byId[message.id] = message;
+            }
           }
+          for (final message in incoming) {
+            if (message.id.isNotEmpty) byId[message.id] = message;
+          }
+          final ordered = byId.values.toList(growable: true)
+            ..sort(_compareMessagesDescending);
+          bounded = _takeMessages(ordered, _maxMessagesPerRoom);
         }
-        for (final message in incoming) {
-          if (message.id.isNotEmpty) byId[message.id] = message;
-        }
-        final ordered = byId.values.toList(growable: true)
-          ..sort(_compareMessagesDescending);
-        final bounded = _takeMessages(ordered, _maxMessagesPerRoom);
         _storeMemory(baseKey, bounded, complete: true);
         final limited = bounded.map(_encodeMessage);
         try {
@@ -606,6 +624,7 @@ class SnackChatLocalCacheService {
       if (message.mimeType != null) 'mimeType': message.mimeType,
       if (message.fileSize != null) 'fileSize': message.fileSize,
       if (message.storagePath != null) 'storagePath': message.storagePath,
+      if (message.storageBucket != null) 'storageBucket': message.storageBucket,
       if (message.retentionMode != null) 'retentionMode': message.retentionMode,
       if (message.expiresAt != null)
         'expiresAtMs': message.expiresAt!.millisecondsSinceEpoch,
@@ -713,6 +732,9 @@ class SnackChatLocalCacheService {
         storagePath: (map['storagePath'] ?? '').toString().trim().isEmpty
             ? null
             : map['storagePath'].toString(),
+        storageBucket: (map['storageBucket'] ?? '').toString().trim().isEmpty
+            ? null
+            : map['storageBucket'].toString(),
         retentionMode: (map['retentionMode'] ?? '').toString().trim().isEmpty
             ? null
             : map['retentionMode'].toString(),

@@ -16,6 +16,7 @@ import '../screens/password_reset_screen.dart';
 import '../utils/logger.dart';
 import '../utils/responsive_helper.dart';
 import '../l10n/ui_locale.dart';
+import '../ui/widgets/motion_press.dart';
 
 class EmailLoginScreen extends StatefulWidget {
   const EmailLoginScreen({super.key});
@@ -42,6 +43,7 @@ class _EmailLoginScreenState extends State<EmailLoginScreen> {
 
   // 로그인 처리
   Future<void> _handleLogin() async {
+    if (_isLoading) return;
     if (!_formKey.currentState!.validate()) {
       return;
     }
@@ -392,20 +394,23 @@ class _EmailLoginScreenState extends State<EmailLoginScreen> {
                         decoration: fieldDecoration(
                           hintText: l10n.passwordPlaceholder,
                           prefixIcon: Icons.lock_outline_rounded,
-                          suffixIcon: IconButton(
-                            visualDensity: VisualDensity.compact,
-                            icon: Icon(
-                              _obscurePassword
-                                  ? Icons.visibility_off_outlined
-                                  : Icons.visibility_outlined,
-                              color: secondary,
-                              size: context.ri(21).clamp(20.0, 23.0).toDouble(),
+                          suffixIcon: MotionPress(
+                            pressedScale: .92,
+                            child: IconButton(
+                              visualDensity: VisualDensity.compact,
+                              icon: Icon(
+                                _obscurePassword
+                                    ? Icons.visibility_off_outlined
+                                    : Icons.visibility_outlined,
+                                color: secondary,
+                                size: context.ri(21).clamp(20.0, 23.0).toDouble(),
+                              ),
+                              onPressed: () {
+                                setState(() {
+                                  _obscurePassword = !_obscurePassword;
+                                });
+                              },
                             ),
-                            onPressed: () {
-                              setState(() {
-                                _obscurePassword = !_obscurePassword;
-                              });
-                            },
                           ),
                         ),
                         style: TextStyle(
@@ -485,40 +490,37 @@ class _EmailLoginScreenState extends State<EmailLoginScreen> {
                       ),
                       SizedBox(
                         height: context.rh(52, min: 50, max: 54),
-                        child: FilledButton(
-                          onPressed: _isLoading ? null : _handleLogin,
-                          style: FilledButton.styleFrom(
-                            backgroundColor: AppColors.pointColor,
-                            foregroundColor: Colors.white,
-                            disabledBackgroundColor: const Color(0xFFD7E1EC),
-                            elevation: 0,
-                            shape: RoundedRectangleBorder(
-                              borderRadius: BorderRadius.circular(12),
+                        child: MotionPress(
+                          enabled: !_isLoading,
+                          pressedScale: .975,
+                          child: FilledButton(
+                            onPressed: _isLoading ? null : _handleLogin,
+                            style: FilledButton.styleFrom(
+                              backgroundColor: AppColors.pointColor,
+                              foregroundColor: Colors.white,
+                              disabledBackgroundColor: const Color(0xFFD7E1EC),
+                              elevation: 0,
+                              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
                             ),
-                          ),
-                          child: _isLoading
-                              ? const SizedBox(
-                                  width: 22,
-                                  height: 22,
-                                  child: CircularProgressIndicator(
-                                    strokeWidth: 2.2,
-                                    valueColor: AlwaysStoppedAnimation<Color>(
-                                      Colors.white,
+                            child: _isLoading
+                                ? const SizedBox(
+                                    width: 22,
+                                    height: 22,
+                                    child: CircularProgressIndicator(
+                                      strokeWidth: 2.2,
+                                      valueColor: AlwaysStoppedAnimation<Color>(Colors.white),
+                                    ),
+                                  )
+                                : Text(
+                                    l10n.login,
+                                    style: TextStyle(
+                                      fontFamily: uiFontFamily(context, 'Inter'),
+                                      fontFamilyFallback: const ['NotoSansKR'],
+                                      fontSize: context.rf(16).clamp(15.0, 17.0).toDouble(),
+                                      fontWeight: FontWeight.w600,
                                     ),
                                   ),
-                                )
-                              : Text(
-                                  l10n.login,
-                                  style: TextStyle(
-                                    fontFamily: uiFontFamily(context, 'Inter'),
-                                    fontFamilyFallback: const ['NotoSansKR'],
-                                    fontSize: context
-                                        .rf(16)
-                                        .clamp(15.0, 17.0)
-                                        .toDouble(),
-                                    fontWeight: FontWeight.w600,
-                                  ),
-                                ),
+                          ),
                         ),
                       ),
                     ],

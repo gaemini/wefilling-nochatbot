@@ -5,6 +5,8 @@
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:cloud_functions/cloud_functions.dart';
+
+import '../config/app_backend.dart';
 import 'package:flutter/foundation.dart';
 import '../utils/profile_photo_policy.dart';
 import '../models/review_post.dart';
@@ -14,7 +16,7 @@ import '../utils/logger.dart';
 class ReviewService {
   final FirebaseFirestore _firestore = FirebaseFirestore.instance;
   final FirebaseAuth _auth = FirebaseAuth.instance;
-  final FirebaseFunctions _functions = FirebaseFunctions.instance;
+  final FirebaseFunctions _functions = AppFunctions.instance;
   String? _reconciledProfileUserId;
 
   /// 수락 완료된 원본 후기와 마이페이지 프로필 문서를 서버에서 대조한다.

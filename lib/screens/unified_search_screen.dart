@@ -5,6 +5,7 @@ import 'dart:async';
 
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/material.dart';
+import '../ui/widgets/motion_press.dart';
 import 'package:provider/provider.dart';
 
 import '../constants/app_constants.dart';
@@ -30,6 +31,7 @@ import '../utils/responsive_helper.dart';
 import '../utils/latest_request_guard.dart';
 import '../l10n/ui_locale.dart';
 import 'organization_profile_screen.dart';
+import '../ui/widgets/motion_selectable.dart';
 
 class UnifiedSearchScreen extends StatefulWidget {
   /// 0: 이름(유저), 1: 게시글, 2: 모임
@@ -651,7 +653,9 @@ class _UnifiedSearchScreenState extends State<UnifiedSearchScreen>
                   SizedBox(
                     width: compact ? 40 : 44,
                     child: _searchController.text.isNotEmpty
-                        ? GestureDetector(
+                        ? MotionPress(
+                          pressedScale: .92,
+                          child: GestureDetector(
                             onTap: () {
                               _searchController.clear();
                               _clearAllResults();
@@ -662,7 +666,8 @@ class _UnifiedSearchScreenState extends State<UnifiedSearchScreen>
                               color: Color(0xFF667085),
                               size: 19,
                             ),
-                          )
+                          ),
+                        )
                         : const SizedBox.shrink(),
                   ),
                 ],
@@ -1220,7 +1225,10 @@ class _UnifiedSearchScreenState extends State<UnifiedSearchScreen>
             runSpacing: compact ? 6 : 8,
             children: _featuredInterests.map((option) {
               final isSelected = option.id == selected?.id;
-              return ChoiceChip(
+              return MotionSelectable(
+                selected: isSelected,
+                pressedScale: MotionSelectable.chipScale,
+                child: ChoiceChip(
                 selected: isSelected,
                 showCheckmark: false,
                 label: Text('#${option.label(languageCode)}'),
@@ -1241,6 +1249,7 @@ class _UnifiedSearchScreenState extends State<UnifiedSearchScreen>
                 ),
                 materialTapTargetSize: MaterialTapTargetSize.shrinkWrap,
                 visualDensity: VisualDensity.compact,
+              ),
               );
             }).toList(growable: false),
           ),

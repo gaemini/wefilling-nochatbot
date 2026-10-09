@@ -4,6 +4,14 @@ import {isSummaryAnnouncement, pollSummarySnapshot, selectedSummaryCategories, v
 import * as crypto from 'crypto';
 import * as dns from 'dns';
 import * as functions from 'firebase-functions';
+import {
+  bucketFor,
+  callables,
+  isKnownStorageBucket,
+  resolveStorageBucketName,
+  triggers,
+} from './backend';
+import {CHAT_PUSH_COPY, notificationUnreadForBadge} from './badge_policy';
 import {FieldValue, Timestamp} from 'firebase-admin/firestore';
 import * as http from 'http';
 import * as https from 'https';
@@ -19,8 +27,13 @@ import {
   translatePlainTextsWithExistingPipeline,
 } from './content_translation';
 import {runtimeInfo, runtimeLogsEnabled} from './runtime_logging';
+import {chatHotRunWithOptions} from './runtime_scaling';
 import {isSearchableUser} from './searchable_user_policy';
-import {snackChatUnreadReadFloor} from './snack_chat_unread_boundary';
+import {
+  snackChatMessageCountsForUnread,
+  snackChatReconcileFloor,
+  snackChatUnreadReadFloor,
+} from './snack_chat_unread_boundary';
 
 const SNACK_CHATS = 'snack_chats';
 const USERS = 'users';
@@ -152,7 +165,41 @@ const SNACK_CHAT_FILE_MIME_BY_EXTENSION: Record<string, string> = {
   xlsx: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
   txt: 'text/plain',
   csv: 'text/csv',
+  // 채팅 영상: MP4만. 길이·해상도·썸네일은 commit 요청의 videoMeta로 받는다.
+  mp4: 'video/mp4',
 };
+const SNACK_CHAT_VIDEO_MIME = 'video/mp4';
+const SNACK_CHAT_VIDEO_MAX_DURATION_MS = 60_500;
+const SNACK_CHAT_VIDEO_THUMBNAIL_MAX_CHARS = 16_384;
+const SNACK_CHAT_VIDEO_THUMBNAIL_PATTERN = /^data:image\/jpeg;base64,[A-Za-z0-9+/=]+$/;
+
+type SnackChatVideoMeta = {
+  durationMs: number;
+  width: number;
+  height: number;
+  thumbnailDataUrl: string;
+};
+
+/** Validates client video metadata; throws on anything out of range. */
+function snackChatVideoMeta(raw: unknown): SnackChatVideoMeta {
+  const data = objectValue(raw);
+  const durationMs = Number(data.durationMs);
+  const width = Number(data.width);
+  const height = Number(data.height);
+  const thumbnailDataUrl = stringValue(data.thumbnailDataUrl);
+  if (!Number.isInteger(durationMs) || durationMs < 0 ||
+      durationMs > SNACK_CHAT_VIDEO_MAX_DURATION_MS ||
+      !Number.isInteger(width) || width < 0 || width > 4096 ||
+      !Number.isInteger(height) || height < 0 || height > 4096 ||
+      thumbnailDataUrl.length > SNACK_CHAT_VIDEO_THUMBNAIL_MAX_CHARS ||
+      (thumbnailDataUrl && !SNACK_CHAT_VIDEO_THUMBNAIL_PATTERN.test(thumbnailDataUrl))) {
+    throw new functions.https.HttpsError(
+      'invalid-argument',
+      'Invalid Snack Chat video metadata.',
+    );
+  }
+  return {durationMs, width, height, thumbnailDataUrl};
+}
 
 type Data = FirebaseFirestore.DocumentData;
 type SupportedLang = 'ko' | 'en';
@@ -291,7 +338,7 @@ export async function requireActiveUser(uid: string): Promise<Data> {
 }
 
 /** Resolves one active, non-blocked Snack Chat invite target by unique ID. */
-export const searchSnackChatInviteUserById = functions
+export const searchSnackChatInviteUserById = callables()
   .runWith({timeoutSeconds: 20, memory: '256MB', enforceAppCheck: true})
   .https.onCall(async (raw, context) => {
     const requesterId = requireUid(context);
@@ -371,7 +418,7 @@ const SNACK_CHAT_USER_SEARCH_MAX_SCANS = 3;
  * deliberately limited to ten per request; only the fields needed by the
  * participant picker leave the server.
  */
-export const searchSnackChatInviteUsers = functions
+export const searchSnackChatInviteUsers = callables()
   .runWith({timeoutSeconds: 20, memory: '256MB', enforceAppCheck: true})
   .https.onCall(async (raw, context) => {
     const requesterId = requireUid(context);
@@ -1192,6 +1239,10 @@ type SnackChatFileRequest = {
   mimeType: string;
   fileSize: number;
   replyToMessageId: string;
+  /** Bucket the client will upload to; legacy when the client sends none. */
+  storageBucket: string;
+  /** Present only for MP4 uploads. */
+  videoMeta: SnackChatVideoMeta | null;
 };
 
 function containsAsciiControlCharacter(value: string): boolean {
@@ -1235,7 +1286,20 @@ function snackChatFileRequest(raw: unknown): SnackChatFileRequest {
     replyToMessageId: stringValue(data.replyToMessageId)
       ? firestoreId(data.replyToMessageId, 'reply message id')
       : '',
+    storageBucket: clientStorageBucket(data.storageBucket),
+    videoMeta: mimeType === SNACK_CHAT_VIDEO_MIME
+      ? (data.videoMeta == null ? {durationMs: 0, width: 0, height: 0, thumbnailDataUrl: ''} : snackChatVideoMeta(data.videoMeta))
+      : null,
   };
+}
+
+/** Validates a client-declared upload bucket; empty means the legacy bucket. */
+function clientStorageBucket(value: unknown): string {
+  const bucket = stringValue(value);
+  if (bucket && !isKnownStorageBucket(bucket)) {
+    throw new functions.https.HttpsError('invalid-argument', 'Invalid storage bucket.');
+  }
+  return resolveStorageBucketName(bucket);
 }
 
 function fileJobMatches(
@@ -1315,6 +1379,7 @@ function isKnownBlockedFileSignature(head: Buffer): boolean {
 async function snackChatFileContentMatches(
   storagePath: string,
   extension: string,
+  storageBucket: unknown,
 ): Promise<boolean> {
   const markerGroups: Buffer[][] = [];
   if (['doc', 'xls', 'ppt', 'hwp'].includes(extension)) {
@@ -1362,7 +1427,7 @@ async function snackChatFileContentMatches(
   let suspiciousControls = 0;
   let hasNonWhitespace = false;
 
-  const stream = admin.storage().bucket().file(storagePath).createReadStream();
+  const stream = bucketFor(storageBucket).file(storagePath).createReadStream();
   await new Promise<void>((resolve, reject) => {
     stream.on('data', (rawChunk: Buffer | Uint8Array) => {
       const chunk = Buffer.isBuffer(rawChunk) ? rawChunk : Buffer.from(rawChunk);
@@ -1409,6 +1474,11 @@ async function snackChatFileContentMatches(
     stream.once('error', reject);
   });
 
+  if (extension === 'mp4') {
+    // ISO BMFF: 4~8바이트가 'ftyp'. 다른 바이너리 서명은 거부한다.
+    return totalBytes > 0 && head.length >= 12 &&
+      head.subarray(4, 8).toString('ascii') === 'ftyp';
+  }
   if (totalBytes <= 0 || isKnownBlockedFileSignature(head)) return false;
   if (extension === 'pdf') {
     return startsWithBytes(head, Buffer.from('%PDF-', 'ascii'));
@@ -1438,7 +1508,7 @@ async function snackChatFileContentMatches(
 }
 
 /** Creates one idempotent, server-authorized Storage upload job. */
-export const prepareSnackChatFileUpload = functions
+export const prepareSnackChatFileUpload = callables()
   .runWith({timeoutSeconds: 20, memory: '256MB'})
   .https.onCall(async (raw, context) => {
     const uid = requireUid(context);
@@ -1473,6 +1543,7 @@ export const prepareSnackChatFileUpload = functions
         return {
           committed: true,
           storagePath: stringValue(messageData.storagePath),
+          storageBucket: resolveStorageBucketName(messageData.storageBucket),
           retentionMode: stringValue(messageData.retentionMode),
         };
       }
@@ -1484,9 +1555,19 @@ export const prepareSnackChatFileUpload = functions
             'The upload job does not belong to this request.',
           );
         }
+        const committed = stringValue(jobData.status) === 'committed';
+        let storageBucket = resolveStorageBucketName(jobData.storageBucket);
+        if (!committed && storageBucket !== request.storageBucket) {
+          // The client always uploads to the bucket it declares. A pending job
+          // that recorded another bucket (e.g. created before the client could
+          // declare one) is repointed so the commit looks in the right place.
+          storageBucket = request.storageBucket;
+          transaction.update(jobRef, {storageBucket});
+        }
         return {
-          committed: stringValue(jobData.status) === 'committed',
+          committed,
           storagePath: stringValue(jobData.storagePath),
+          storageBucket,
           retentionMode: stringValue(jobData.retentionMode),
         };
       }
@@ -1522,6 +1603,7 @@ export const prepareSnackChatFileUpload = functions
         senderId: uid,
         fileId: request.fileId,
         storagePath,
+        storageBucket: request.storageBucket,
         retentionMode,
         originalFileName: request.originalFileName,
         fileExtension: request.fileExtension,
@@ -1536,13 +1618,18 @@ export const prepareSnackChatFileUpload = functions
           now.toMillis() + SNACK_CHAT_FILE_JOB_TTL_MS,
         ),
       });
-      return {committed: false, storagePath, retentionMode};
+      return {
+        committed: false,
+        storagePath,
+        storageBucket: request.storageBucket,
+        retentionMode,
+      };
     });
     return {success: true, ...result};
   });
 
 /** Atomically publishes the final file message after verifying the object. */
-export const commitSnackChatFileUpload = functions
+export const commitSnackChatFileUpload = callables()
   .runWith({timeoutSeconds: 30, memory: '256MB'})
   .https.onCall(async (raw, context) => {
     const uid = requireUid(context);
@@ -1561,9 +1648,10 @@ export const commitSnackChatFileUpload = functions
     }
     const initialJobData = initialJob.data() ?? {};
     const storagePath = stringValue(initialJobData.storagePath);
+    const storageBucket = resolveStorageBucketName(initialJobData.storageBucket);
     let objectMetadata: Record<string, unknown>;
     try {
-      const metadataResult = await admin.storage().bucket()
+      const metadataResult = await bucketFor(storageBucket)
         .file(storagePath).getMetadata();
       objectMetadata = objectValue(metadataResult[0]);
     } catch (error) {
@@ -1596,8 +1684,9 @@ export const commitSnackChatFileUpload = functions
     if (!await snackChatFileContentMatches(
       storagePath,
       request.fileExtension,
+      storageBucket,
     )) {
-      await admin.storage().bucket().file(storagePath)
+      await bucketFor(storageBucket).file(storagePath)
         .delete({ignoreNotFound: true});
       throw new functions.https.HttpsError(
         'failed-precondition',
@@ -1681,11 +1770,20 @@ export const commitSnackChatFileUpload = functions
         mimeType: request.mimeType,
         fileSize: request.fileSize,
         storagePath,
+        storageBucket,
         retentionMode,
         createdAt,
         expiresAt,
         deleteAt: expiresAt,
         uploadId: request.uploadId,
+        ...(request.videoMeta ? {
+          videoDurationMs: request.videoMeta.durationMs,
+          videoWidth: request.videoMeta.width,
+          videoHeight: request.videoMeta.height,
+          ...(request.videoMeta.thumbnailDataUrl
+            ? {videoThumbnail: request.videoMeta.thumbnailDataUrl}
+            : {}),
+        } : {}),
         ...(replyTarget?.exists ? {
           replyToMessageId: request.replyToMessageId,
           replyPreview: fileReplyPreview(
@@ -1702,7 +1800,7 @@ export const commitSnackChatFileUpload = functions
       });
       const previewName = boundedString(request.originalFileName, 120);
       transaction.update(roomRef, {
-        lastMessage: '📎 ' + previewName,
+        lastMessage: (request.videoMeta ? '🎬 ' : '📎 ') + previewName,
         lastMessageId: request.messageId,
         lastMessageTime: createdAt,
         lastMessageSenderId: uid,
@@ -1723,7 +1821,7 @@ export const commitSnackChatFileUpload = functions
   });
 
 /** Cancels an unfinished upload and removes any partially-created object. */
-export const cancelSnackChatFileUpload = functions
+export const cancelSnackChatFileUpload = callables()
   .runWith({timeoutSeconds: 20, memory: '256MB'})
   .https.onCall(async (raw, context) => {
     const uid = requireUid(context);
@@ -1736,6 +1834,7 @@ export const cancelSnackChatFileUpload = functions
     const jobRef = db().collection(SNACK_CHATS).doc(roomId)
       .collection('fileUploadJobs').doc(uploadId);
     let storagePath = '';
+    let storageBucket: unknown;
     await db().runTransaction(async (transaction) => {
       const job = await transaction.get(jobRef);
       if (!job.exists) return;
@@ -1752,13 +1851,14 @@ export const cancelSnackChatFileUpload = functions
         );
       }
       storagePath = stringValue(job.get('storagePath'));
+      storageBucket = job.get('storageBucket');
       transaction.update(jobRef, {
         status: 'canceled',
         cleanupAt: Timestamp.fromMillis(Date.now() + 60 * 60 * 1000),
       });
     });
     if (storagePath.startsWith('snack_chat_files/')) {
-      await admin.storage().bucket().file(storagePath)
+      await bucketFor(storageBucket).file(storagePath)
         .delete({ignoreNotFound: true});
     }
     return {success: true};
@@ -1768,7 +1868,7 @@ export const cancelSnackChatFileUpload = functions
  * Creates a normal Snack Chat after authoritatively validating active accounts
  * and ensuring no bilateral block exists with an invited participant.
  */
-export const createSnackChatSecure = functions
+export const createSnackChatSecure = callables()
   .runWith({timeoutSeconds: 30, memory: '256MB'})
   .https.onCall(async (raw, context) => {
     const creatorId = requireUid(context);
@@ -1902,7 +2002,7 @@ export const createSnackChatSecure = functions
  * authority for ownership, title, and frozen visibility; client display data
  * is deliberately ignored so it cannot widen or rename the linked room.
  */
-export const createMeetupSnackChatSecure = functions
+export const createMeetupSnackChatSecure = callables()
   .runWith({timeoutSeconds: 30, memory: '256MB'})
   .https.onCall(async (raw, context) => {
     const creatorId = requireUid(context);
@@ -2191,7 +2291,7 @@ export const createMeetupSnackChatSecure = functions
   });
 
 /** Adds active, non-blocked users to a room the caller currently belongs to. */
-export const inviteSnackChatParticipants = functions
+export const inviteSnackChatParticipants = callables()
   .runWith({timeoutSeconds: 30, memory: '256MB'})
   .https.onCall(async (raw, context) => {
     const inviterId = requireUid(context);
@@ -2299,7 +2399,7 @@ export const inviteSnackChatParticipants = functions
  * Joins a Meetup-linked room without exposing its participant/unread metadata
  * to a non-participant. Meetup visibility and the room link are checked here.
  */
-export const joinMeetupSnackChatSecure = functions
+export const joinMeetupSnackChatSecure = callables()
   .runWith({timeoutSeconds: 30, memory: '256MB'})
   .https.onCall(async (raw, context) => {
     const userId = requireUid(context);
@@ -2431,16 +2531,78 @@ export const joinMeetupSnackChatSecure = functions
  * is still an authoritative room participant. The deterministic repair event
  * prevents repeated screen opens from creating duplicate membership periods.
  */
-export const ensureSnackChatMembershipSecure = functions
+function requireActiveUserSnapshot(
+  user: FirebaseFirestore.DocumentSnapshot,
+  userId: string,
+): void {
+  if (!user.exists || !activeUserData(user.data() ?? {}, userId)) {
+    throw new functions.https.HttpsError(
+      'failed-precondition',
+      'An active account is required.',
+    );
+  }
+}
+
+/**
+ * Repairs a missing/stale materialized member document for a current room
+ * participant. Returns false when the member is already active with an open
+ * period. The deterministic repair event prevents duplicate periods.
+ */
+async function repairSnackChatMembershipIfNeeded(args: {
+  roomRef: FirebaseFirestore.DocumentReference;
+  room: FirebaseFirestore.DocumentSnapshot;
+  member: FirebaseFirestore.DocumentSnapshot;
+  userId: string;
+}): Promise<boolean> {
+  const memberData = args.member.data() ?? {};
+  const hasOpenPeriod = periodsFrom(memberData.periods)
+    .some((period) => period.leftAfterSequence == null);
+  if (args.member.exists &&
+      stringValue(memberData.status) === 'active' &&
+      hasOpenPeriod) {
+    return false;
+  }
+  const boundary = nonNegativeInteger(args.room.get('lastMessageSequence'));
+  const roomUpdatedAt = args.room.get('updatedAt');
+  const revision = roomUpdatedAt instanceof Timestamp
+    ? roomUpdatedAt.seconds + ':' + roomUpdatedAt.nanoseconds
+    : String(timestampMillis(roomUpdatedAt));
+  const occurredAt = roomUpdatedAt instanceof Timestamp
+    ? roomUpdatedAt
+    : Timestamp.now();
+  await recordMembershipEvent({
+    roomRef: args.roomRef,
+    userId: args.userId,
+    kind: 'join',
+    boundary,
+    sourceEventId: [
+      'membership-repair',
+      args.roomRef.id,
+      args.userId,
+      String(boundary),
+      revision,
+    ].join(':'),
+    occurredAt,
+    requireCurrentParticipant: true,
+  });
+  return true;
+}
+
+export const ensureSnackChatMembershipSecure = callables()
   .runWith({timeoutSeconds: 30, memory: '256MB'})
   .https.onCall(async (raw, context) => {
     const userId = requireUid(context);
-    await requireActiveUser(userId);
     const request = objectValue(raw);
     const snackChatId = firestoreId(request.snackChatId, 'Snack Chat id');
     const roomRef = db().collection(SNACK_CHATS).doc(snackChatId);
     const memberRef = roomRef.collection('members').doc(userId);
-    const [room, member] = await db().getAll(roomRef, memberRef);
+    // One round trip: the active-account check reads with the room/member.
+    const [room, member, user] = await db().getAll(
+      roomRef,
+      memberRef,
+      db().collection(USERS).doc(userId),
+    );
+    requireActiveUserSnapshot(user, userId);
     if (!room.exists) {
       throw new functions.https.HttpsError(
         'not-found',
@@ -2453,39 +2615,7 @@ export const ensureSnackChatMembershipSecure = functions
         'Only a current participant can repair membership.',
       );
     }
-
-    const memberData = member.data() ?? {};
-    const hasOpenPeriod = periodsFrom(memberData.periods)
-      .some((period) => period.leftAfterSequence == null);
-    if (member.exists &&
-        stringValue(memberData.status) === 'active' &&
-        hasOpenPeriod) {
-      return {success: true};
-    }
-
-    const boundary = nonNegativeInteger(room.get('lastMessageSequence'));
-    const roomUpdatedAt = room.get('updatedAt');
-    const revision = roomUpdatedAt instanceof Timestamp
-      ? roomUpdatedAt.seconds + ':' + roomUpdatedAt.nanoseconds
-      : String(timestampMillis(roomUpdatedAt));
-    const occurredAt = roomUpdatedAt instanceof Timestamp
-      ? roomUpdatedAt
-      : Timestamp.now();
-    await recordMembershipEvent({
-      roomRef,
-      userId,
-      kind: 'join',
-      boundary,
-      sourceEventId: [
-        'membership-repair',
-        snackChatId,
-        userId,
-        String(boundary),
-        revision,
-      ].join(':'),
-      occurredAt,
-      requireCurrentParticipant: true,
-    });
+    await repairSnackChatMembershipIfNeeded({roomRef, room, member, userId});
     return {success: true};
   });
 
@@ -2494,16 +2624,22 @@ export const ensureSnackChatMembershipSecure = functions
  * read cursor. The unread divider is anchored to a message sequence, never to
  * a mutable list index or to `roomUnreadCount` arithmetic on the device.
  */
-export const getSnackChatEntryContext = functions
+export const getSnackChatEntryContext = callables()
   .runWith({timeoutSeconds: 30, memory: '256MB'})
   .https.onCall(async (raw, context) => {
     const userId = requireUid(context);
-    await requireActiveUser(userId);
     const request = objectValue(raw);
     const snackChatId = firestoreId(request.snackChatId, 'Snack Chat id');
     const roomRef = db().collection(SNACK_CHATS).doc(snackChatId);
     const memberRef = roomRef.collection('members').doc(userId);
-    const [room, member] = await db().getAll(roomRef, memberRef);
+    // One round trip: the active-account check reads with the room/member.
+    const [room, loadedMember, user] = await db().getAll(
+      roomRef,
+      memberRef,
+      db().collection(USERS).doc(userId),
+    );
+    requireActiveUserSnapshot(user, userId);
+    let member = loadedMember;
     if (!room.exists) {
       throw new functions.https.HttpsError(
         'not-found',
@@ -2517,10 +2653,17 @@ export const getSnackChatEntryContext = functions
       );
     }
     if (!member.exists || stringValue(member.get('status')) !== 'active') {
-      throw new functions.https.HttpsError(
-        'failed-precondition',
-        'Snack Chat membership is not ready.',
-      );
+      // A current participant with a missing/stale member doc is repaired
+      // here (same idempotent event as ensureSnackChatMembershipSecure), so
+      // new clients can skip the separate membership callable on entry.
+      await repairSnackChatMembershipIfNeeded({roomRef, room, member, userId});
+      member = await memberRef.get();
+      if (!member.exists || stringValue(member.get('status')) !== 'active') {
+        throw new functions.https.HttpsError(
+          'failed-precondition',
+          'Snack Chat membership is not ready.',
+        );
+      }
     }
 
     const roomLastSequence = nonNegativeInteger(
@@ -4414,7 +4557,7 @@ async function consumeUnreadSummaryQuota(userId: string): Promise<void> {
  * authoritative messages itself; clients never send message bodies and the
  * read cursor is neither readjusted nor advanced here.
  */
-export const summarizeSnackChatUnread = functions
+export const summarizeSnackChatUnread = callables()
   .runWith({secrets: ['GEMINI_API_KEY'], timeoutSeconds: 60, memory: '512MB'})
   .https.onCall(async (raw, context) => {
     const progress: Record<string, unknown> = {};
@@ -5688,19 +5831,31 @@ async function summarizeSnackChatRange(raw: any, context: functions.https.Callab
  * marker; an onCreate trigger that is still pending will observe the advanced
  * cursor and will not increment the message afterwards.
  */
-export const markSnackChatReadSecure = functions
+export const markSnackChatReadSecure = callables()
   .runWith({timeoutSeconds: 30, memory: '256MB'})
   .https.onCall(async (raw, context) => {
     const userId = requireUid(context);
-    await requireActiveUser(userId);
     const request = objectValue(raw);
     const snackChatId = firestoreId(request.snackChatId, 'Snack Chat id');
     const requestedThrough = nonNegativeInteger(request.throughSequence);
     const roomRef = db().collection(SNACK_CHATS).doc(snackChatId);
     const memberRef = roomRef.collection('members').doc(userId);
+    const userRef = db().collection(USERS).doc(userId);
 
     return db().runTransaction(async (transaction) => {
-      const [room, member] = await transaction.getAll(roomRef, memberRef);
+      // The active-account check shares the transaction read instead of a
+      // separate round trip. Error code and message are unchanged.
+      const [room, member, user] = await transaction.getAll(
+        roomRef,
+        memberRef,
+        userRef,
+      );
+      if (!user.exists || !activeUserData(user.data() ?? {}, userId)) {
+        throw new functions.https.HttpsError(
+          'failed-precondition',
+          'An active account is required.',
+        );
+      }
       if (!room.exists) {
         throw new functions.https.HttpsError(
           'not-found',
@@ -5726,6 +5881,10 @@ export const markSnackChatReadSecure = functions
       const previousSequence = nonNegativeInteger(
         member.get('lastReadSequence'),
       );
+      const reconciledRaw = member.get('unreadReconciledThroughSequence');
+      const reconciledThrough = reconciledRaw == null
+        ? null
+        : nonNegativeInteger(reconciledRaw);
       const unreadStartSequence = nonNegativeInteger(
         objectValue(room.get('unreadStartSequenceBy'))[userId],
       );
@@ -5736,22 +5895,28 @@ export const markSnackChatReadSecure = functions
       const unreadBefore = normalizedCountMap(room.get('unreadCount'));
       const currentUnread = unreadBefore[userId] ?? 0;
 
+      // New clients may already have advanced lastReadSequence directly
+      // (Rules allow the monotonic self-write), so the unread reconcile floor
+      // is tracked separately from the display cursor. Legacy member docs
+      // without the field behave exactly as before.
+      const reconcileFloor = snackChatReconcileFloor(
+        previousSequence,
+        reconciledThrough,
+        unreadStartSequence,
+      );
       let canonicalReadCount = 0;
-      if (readThroughSequence > snackChatUnreadReadFloor(previousSequence, unreadStartSequence) &&
+      if (readThroughSequence > reconcileFloor &&
           readThroughSequence < roomLastSequence &&
           currentUnread > 0) {
         const readMessages = await transaction.get(
           roomRef.collection('messages')
-            .where('sequence', '>', snackChatUnreadReadFloor(previousSequence, unreadStartSequence))
+            .where('sequence', '>', reconcileFloor)
             .where('sequence', '<=', readThroughSequence),
         );
         canonicalReadCount = readMessages.docs.reduce((count, document) => {
-          const message = document.data();
-          if (stringValue(message.senderId) === userId) return count;
-          const delivered = Array.isArray(message.deliveryRecipientIds)
-            ? uniqueStrings(message.deliveryRecipientIds)
-            : [];
-          return delivered.includes(userId) ? count + 1 : count;
+          return snackChatMessageCountsForUnread(document.data(), userId)
+            ? count + 1
+            : count;
         }, 0);
       }
 
@@ -5764,11 +5929,16 @@ export const markSnackChatReadSecure = functions
           unreadCount: nextUnread,
         });
       }
+      const memberUpdate: Data = {};
       if (readThroughSequence > previousSequence) {
-        transaction.update(memberRef, {
-          lastReadSequence: readThroughSequence,
-          lastReadAt: FieldValue.serverTimestamp(),
-        });
+        memberUpdate.lastReadSequence = readThroughSequence;
+        memberUpdate.lastReadAt = FieldValue.serverTimestamp();
+      }
+      if (reconciledThrough == null || readThroughSequence > reconciledThrough) {
+        memberUpdate.unreadReconciledThroughSequence = readThroughSequence;
+      }
+      if (Object.keys(memberUpdate).length > 0) {
+        transaction.update(memberRef, memberUpdate);
       }
 
       return {
@@ -5807,7 +5977,7 @@ function removeMeetupParticipantFromRoom(
  * change in the same transaction so a removed participant cannot retain an
  * older linked room or race a rejoin.
  */
-export const kickMeetupParticipantSecure = functions
+export const kickMeetupParticipantSecure = callables()
   .runWith({timeoutSeconds: 30, memory: '256MB'})
   .https.onCall(async (raw, context) => {
     const hostId = requireUid(context);
@@ -5906,7 +6076,7 @@ export const kickMeetupParticipantSecure = functions
  * This prevents somebody who is no longer an approved participant from
  * keeping access through a previously joined Meetup Snack Chat.
  */
-export const leaveMeetupParticipationSecure = functions
+export const leaveMeetupParticipationSecure = callables()
   .runWith({timeoutSeconds: 30, memory: '256MB'})
   .https.onCall(async (raw, context) => {
     const userId = requireUid(context);
@@ -5971,7 +6141,7 @@ export const leaveMeetupParticipationSecure = functions
  * Meetup host leaving a Meetup-created room deletes that complete room and
  * clears only the matching Meetup link, allowing a fresh room to be created.
  */
-export const leaveSnackChatSecure = functions
+export const leaveSnackChatSecure = callables()
   .runWith({timeoutSeconds: 30, memory: '256MB'})
   .https.onCall(async (raw, context) => {
     const userId = requireUid(context);
@@ -6034,7 +6204,7 @@ export const leaveSnackChatSecure = functions
  * gone. This retryable trigger then removes every nested message, member,
  * reaction, vote, and upload job without keeping the client request open.
  */
-export const onSnackChatRoomDeletedCascade = functions
+export const onSnackChatRoomDeletedCascade = triggers()
   .runWith({timeoutSeconds: 300, memory: '512MB', failurePolicy: true})
   .firestore
   .document('snack_chats/{snackChatId}')
@@ -6125,7 +6295,7 @@ export async function deleteMeetupSnackChats(
  * participant document directly. New clients use the atomic callable, while
  * this trigger still revokes access to every Meetup-linked room.
  */
-export const onMeetupParticipantDeletedSnackChatCleanup = functions
+export const onMeetupParticipantDeletedSnackChatCleanup = triggers()
   .runWith({timeoutSeconds: 120, memory: '256MB', failurePolicy: true})
   .firestore
   .document('meetup_participants/{participantId}')
@@ -6204,7 +6374,7 @@ export async function removeUserFromAllSnackChats(
  * already authoritative; the persisted version prevents recurring profile
  * reads after this one-time repair has completed.
  */
-export const reconcileSnackChatParticipantsSecure = functions
+export const reconcileSnackChatParticipantsSecure = callables()
   .runWith({timeoutSeconds: 30, memory: '256MB'})
   .https.onCall(async (raw, context) => {
     const callerId = requireUid(context);
@@ -6287,7 +6457,7 @@ export const reconcileSnackChatParticipantsSecure = functions
  * cleanup is idempotent, so the normal pre-delete cleanup and this Auth event
  * may safely overlap or retry.
  */
-export const onDeletedAuthUserSnackChatCleanup = functions
+export const onDeletedAuthUserSnackChatCleanup = triggers()
   .runWith({
     timeoutSeconds: 300,
     memory: '512MB',
@@ -6308,7 +6478,7 @@ export const onDeletedAuthUserSnackChatCleanup = functions
  * helper is shared with the callable and Auth trigger, so concurrent retries
  * cannot double-decrement a room.
  */
-export const onDeletedUserDocumentSnackChatCleanup = functions
+export const onDeletedUserDocumentSnackChatCleanup = triggers()
   .runWith({
     timeoutSeconds: 300,
     memory: '512MB',
@@ -6333,7 +6503,7 @@ export const onDeletedUserDocumentSnackChatCleanup = functions
 
 /** Creator-only title update. The existing room-write trigger emits the
  * localized title_changed system event after the transaction commits. */
-export const updateSnackChatTitleSecure = functions
+export const updateSnackChatTitleSecure = callables()
   .runWith({timeoutSeconds: 15, memory: '256MB'})
   .https.onCall(async (raw, context) => {
     const creatorId = requireUid(context);
@@ -6385,7 +6555,7 @@ export const updateSnackChatTitleSecure = functions
  * Creator-only announcement. A client-generated event id maps to one stable
  * message document so callable retries cannot append the announcement twice.
  */
-export const createSnackChatAnnouncementSecure = functions
+export const createSnackChatAnnouncementSecure = callables()
   .runWith({timeoutSeconds: 20, memory: '256MB'})
   .https.onCall(async (raw, context) => {
     const creatorId = requireUid(context);
@@ -6514,7 +6684,7 @@ export const createSnackChatAnnouncementSecure = functions
  * own Firestore transaction so the existing room +1 sequence contract and
  * onCreate unread/push trigger remain unchanged.
  */
-export const sendSnackChatTextMessagesSecure = functions
+export const sendSnackChatTextMessagesSecure = callables()
   .runWith({
     timeoutSeconds: 30,
     memory: '256MB',
@@ -6716,7 +6886,7 @@ export const sendSnackChatTextMessagesSecure = functions
     return {success: true, snackChatId, results};
   });
 
-export const fetchSnackChatLinkPreview = functions
+export const fetchSnackChatLinkPreview = callables()
   .runWith({timeoutSeconds: 20, memory: '256MB'})
   .https.onCall(async (raw, context) => {
     const uid = requireUid(context);
@@ -6919,7 +7089,7 @@ function reportMessageSnapshot(data: Data): Data {
  * Report content is copied from the server snapshot. The caller cannot
  * substitute a different author, message body, or room for moderator review.
  */
-export const reportSnackChatMessage = functions
+export const reportSnackChatMessage = callables()
   .runWith({timeoutSeconds: 15, memory: '256MB'})
   .https.onCall(async (raw, context) => {
     const reporterId = requireUid(context);
@@ -7270,12 +7440,10 @@ async function recordMembershipEvent(args: {
 async function userDisplayName(userId: string): Promise<string> {
   try {
     const user = await db().collection(USERS).doc(userId).get();
-    return boundedString(
-      user.get('nickname') ?? user.get('name') ?? 'Someone',
-      80,
-    ) || 'Someone';
+    // Empty means unknown; the push copy localizes the fallback per language.
+    return boundedString(user.get('nickname') ?? user.get('name') ?? '', 80);
   } catch (_) {
-    return 'Someone';
+    return '';
   }
 }
 
@@ -7486,7 +7654,7 @@ function contextTimestamp(raw: string): Timestamp {
  * every participant; later diffs append join/leave periods and emit one
  * deterministic system message per event.
  */
-export const onSnackChatRoomWrittenSecure = functions
+export const onSnackChatRoomWrittenSecure = triggers()
   .runWith({
     timeoutSeconds: 300,
     memory: '512MB',
@@ -7652,7 +7820,13 @@ async function applySnackChatUnreadOnce(args: {
         : delivered;
       // Repair messages processed before deliveryRecipientIds was
       // materialized. The marker is the immutable source of truth.
-      transaction.update(messageRef, {deliveryRecipientIds: delivered});
+      const markerUnread = marker.get('unreadRecipientIds');
+      transaction.update(messageRef, {
+        deliveryRecipientIds: delivered,
+        ...(Array.isArray(markerUnread)
+          ? {unreadRecipientIds: uniqueStrings(markerUnread)}
+          : {}),
+      });
       return pushRecipients;
     }
     const room = await transaction.get(args.roomRef);
@@ -7663,12 +7837,16 @@ async function applySnackChatUnreadOnce(args: {
         messageId: args.messageId,
         sourceEventId: args.eventId,
         deliveryRecipientIds: [],
+        unreadRecipientIds: [],
         pushRecipientIds: [],
         pushAttemptedRecipientIds: [],
         createdAt: FieldValue.serverTimestamp(),
         expiresAt: eventExpiry(),
       });
-      transaction.update(messageRef, {deliveryRecipientIds: []});
+      transaction.update(messageRef, {
+        deliveryRecipientIds: [],
+        unreadRecipientIds: [],
+      });
       return [];
     }
 
@@ -7759,8 +7937,12 @@ async function applySnackChatUnreadOnce(args: {
         updatedAt: FieldValue.serverTimestamp(),
       });
     }
+    // unreadRecipientIds records exactly who was incremented. A recipient
+    // whose read cursor was already ahead (direct client write) is delivered
+    // but not counted, so the read callable must not decrement for them.
     transaction.update(messageRef, {
       deliveryRecipientIds: deliveryRecipients,
+      unreadRecipientIds: unreadRecipients,
     });
     transaction.create(eventRef, {
       type: 'snack_chat_message_created',
@@ -7770,6 +7952,7 @@ async function applySnackChatUnreadOnce(args: {
       sequence,
       senderId,
       deliveryRecipientIds: deliveryRecipients,
+      unreadRecipientIds: unreadRecipients,
       pushRecipientIds: notificationRecipients,
       pushAttemptedRecipientIds: [],
       createdAt: FieldValue.serverTimestamp(),
@@ -7858,33 +8041,47 @@ async function hasBlockBetween(userA: string, userB: string): Promise<boolean> {
   return documents.some((document) => document.exists);
 }
 
-async function claimPushAttempt(
+/**
+ * Claims one bounded delivery attempt per eligible recipient in a single
+ * transaction on the event marker (previously one transaction per recipient,
+ * which made up to 5 concurrent workers contend on the same document).
+ * Per-recipient state and the 3-attempt limit are unchanged; recipients that
+ * are settled, exhausted or legacy-attempted are simply omitted.
+ */
+async function claimPushAttempts(
   eventRef: FirebaseFirestore.DocumentReference,
-  recipientId: string,
-): Promise<Data | null> {
+  recipientIds: string[],
+): Promise<Map<string, Data>> {
+  const claims = new Map<string, Data>();
+  if (recipientIds.length === 0) return claims;
   return db().runTransaction(async (transaction) => {
+    claims.clear();
     const event = await transaction.get(eventRef);
-    if (!event.exists) return null;
+    if (!event.exists) return claims;
     const attempted = uniqueStrings(event.get('pushAttemptedRecipientIds'));
-    const previous = objectValue(objectValue(event.get('pushDeliveryBy'))[recipientId]);
-    if (attempted.includes(recipientId) &&
-        (previous.status !== 'pending' ||
-          nonNegativeInteger(previous.attempts) >= 3)) return null;
-    const next = {
-      status: 'pending',
-      attempts: nonNegativeInteger(previous.attempts) + 1,
-      succeededTokens: uniqueStrings(previous.succeededTokens),
-      terminalTokens: uniqueStrings(previous.terminalTokens),
-    };
+    const deliveryBy = objectValue(event.get('pushDeliveryBy'));
+    const nextDeliveryBy: Data = {...deliveryBy};
+    for (const recipientId of recipientIds) {
+      const previous = objectValue(deliveryBy[recipientId]);
+      if (attempted.includes(recipientId) &&
+          (previous.status !== 'pending' ||
+            nonNegativeInteger(previous.attempts) >= 3)) continue;
+      const next: Data = {
+        status: 'pending',
+        attempts: nonNegativeInteger(previous.attempts) + 1,
+        succeededTokens: uniqueStrings(previous.succeededTokens),
+        terminalTokens: uniqueStrings(previous.terminalTokens),
+      };
+      nextDeliveryBy[recipientId] = next;
+      claims.set(recipientId, next);
+    }
+    if (claims.size === 0) return claims;
     transaction.update(eventRef, {
-      pushDeliveryBy: {
-        ...objectValue(event.get('pushDeliveryBy')),
-        [recipientId]: next,
-      },
-      pushAttemptedRecipientIds: FieldValue.arrayUnion(recipientId),
+      pushDeliveryBy: nextDeliveryBy,
+      pushAttemptedRecipientIds: FieldValue.arrayUnion(...claims.keys()),
       lastPushAttemptAt: FieldValue.serverTimestamp(),
     });
-    return next;
+    return claims;
   });
 }
 
@@ -7973,16 +8170,27 @@ function shouldAlertSnackChatPush(notificationGroupKey: string): boolean {
   return shouldAlert;
 }
 
-async function sendSnackChatPush(args: {
+type PreparedSnackChatPush = {
+  recipientId: string;
+  roomData: Data;
+  userData: Data;
+  currentRoomUnread: number;
+  tokenGroups: {ko: string[]; en: string[]};
+  /** Badge total, resolved in parallel with the token lookup; null on error. */
+  badge: Promise<number | null>;
+};
+
+/**
+ * Eligibility, settings and token lookup for one recipient. Returns null when
+ * no push is due (read already, muted, blocked, disabled, no tokens). Does not
+ * claim an attempt; see claimPushAttempts.
+ */
+async function prepareSnackChatPush(args: {
   roomRef: FirebaseFirestore.DocumentReference;
-  eventRef: FirebaseFirestore.DocumentReference;
-  messageId: string;
   recipientId: string;
   senderId: string;
-  senderName: string;
   message: Data;
-  commitTime: FirebaseFirestore.Timestamp;
-}): Promise<void> {
+}): Promise<PreparedSnackChatPush | null> {
   try {
     const [room, member, recipient, settings, blocked] = await Promise.all([
       args.roomRef.get(),
@@ -8004,7 +8212,7 @@ async function sendSnackChatPush(args: {
         nonNegativeInteger(memberData.lastReadSequence) >= messageSequence ||
         !uniqueStrings(roomData.participantIds).includes(args.recipientId) ||
         uniqueStrings(userData.mutedSnackChatIds).includes(args.roomRef.id)) {
-      return;
+      return null;
     }
     const notificationSettings = settings.exists &&
         settings.data()?.notifications &&
@@ -8014,7 +8222,7 @@ async function sendSnackChatPush(args: {
     if (notificationSettings.all_notifications === false ||
         notificationSettings.dm_messages === false ||
         notificationSettings.snack_chat_invite === false) {
-      return;
+      return null;
     }
     const fallbackLanguage = supportedLanguage(
       settings.data()?.locale ??
@@ -8024,24 +8232,67 @@ async function sendSnackChatPush(args: {
       userData.locale ??
       userData.language,
     ) ?? 'ko';
+    // Badge and token lookup are independent reads; run them together.
+    const badge: Promise<number | null> = Promise.all([
+      snackChatUnreadTotal(args.recipientId),
+      notificationUnreadForBadge(args.recipientId, userData),
+    ])
+      .then(([snackTotal, notificationTotal]) =>
+        notificationTotal +
+        nonNegativeInteger(userData.dmUnreadTotal) +
+        snackTotal)
+      .catch((error) => {
+        console.warn('Snack Chat badge calculation failed.', error);
+        return null;
+      });
     const tokenGroups = await pushTokensOwnedByUser(args.recipientId, [
       userData.fcmToken,
       ...(Array.isArray(userData.fcmTokens) ? userData.fcmTokens : []),
     ], fallbackLanguage);
     const tokenCount = tokenGroups.ko.length + tokenGroups.en.length;
-    if (tokenCount === 0) return;
-    // The existing event marker owns both the one-time unread update and a
-    // separate bounded delivery state. Legacy attempted markers stay final.
-    const delivery = await claimPushAttempt(args.eventRef, args.recipientId);
-    if (!delivery) return;
+    if (tokenCount === 0) return null;
+    return {
+      recipientId: args.recipientId,
+      roomData,
+      userData,
+      currentRoomUnread,
+      tokenGroups,
+      badge,
+    };
+  } catch (error) {
+    console.error(
+      'Snack Chat push preparation failed for recipient=' + args.recipientId,
+      error,
+    );
+    throw error;
+  }
+}
+
+/** Sends the already-claimed delivery attempt for one prepared recipient. */
+async function deliverSnackChatPush(args: {
+  roomRef: FirebaseFirestore.DocumentReference;
+  eventRef: FirebaseFirestore.DocumentReference;
+  messageId: string;
+  recipientId: string;
+  senderId: string;
+  senderName: string;
+  message: Data;
+  commitTime: FirebaseFirestore.Timestamp;
+  prepared: PreparedSnackChatPush;
+  delivery: Data;
+}): Promise<void> {
+  const prepared = args.prepared;
+  const delivery = args.delivery;
+  try {
+    const messageSequence = nonNegativeInteger(args.message.sequence);
     const succeeded = new Set(uniqueStrings(delivery.succeededTokens));
     const terminal = new Set(uniqueStrings(delivery.terminalTokens));
     let transientFailure = false;
 
     const messageType = stringValue(args.message.type);
     const rawText = boundedString(args.message.text, 100);
-    const roomTitle = boundedString(roomData.title, 80) || 'Snack Chat';
-    const roomUnreadCount = currentRoomUnread;
+    const customRoomTitle = boundedString(prepared.roomData.title, 80);
+    const roomUnreadCount = prepared.currentRoomUnread;
     // Android replaces notifications with the same tag and APNs collapses
     // deliveries with the same collapse id. Hashing keeps the APNs header
     // below its 64-byte limit even when a custom room id is unusually long.
@@ -8051,29 +8302,25 @@ async function sendSnackChatPush(args: {
       .digest('hex')
       .slice(0, 40);
     const shouldAlert = shouldAlertSnackChatPush(notificationGroupKey);
-    let badge: number | null = null;
-    try {
-      badge = nonNegativeInteger(userData.notificationUnreadTotal) +
-        nonNegativeInteger(userData.dmUnreadTotal) +
-        await snackChatUnreadTotal(args.recipientId);
-    } catch (error) {
-      console.warn('Snack Chat badge calculation failed.', error);
-    }
+    const badge = await prepared.badge;
 
     const invalid: string[] = [];
     for (const language of ['ko', 'en'] as const) {
-      const tokens = tokenGroups[language].filter((token) =>
+      const tokens = prepared.tokenGroups[language].filter((token) =>
         !succeeded.has(token) && !terminal.has(token));
       const isKorean = language === 'ko';
+      const copy = CHAT_PUSH_COPY[language];
+      const roomTitle = customRoomTitle || copy.snackRoom;
+      const senderName = args.senderName || copy.someone;
       const preview = messageType === 'image'
-        ? (rawText || (isKorean ? '📷 사진' : '📷 Photo'))
+        ? (rawText || copy.photo)
         : messageType === 'file'
-          ? '📎 ' + (boundedString(args.message.originalFileName, 80) ||
-            (isKorean ? '파일' : 'File'))
+          ? (args.message.mimeType === SNACK_CHAT_VIDEO_MIME ? '🎬 ' : '📎 ') +
+            (boundedString(args.message.originalFileName, 80) || copy.file)
           : messageType === 'poll'
-            ? '📊 ' + (rawText || (isKorean ? '투표' : 'Poll'))
-            : (rawText || (isKorean ? '메시지' : 'Message'));
-      const body = args.senderName + ': ' + preview;
+            ? '📊 ' + (rawText || copy.poll)
+            : (rawText || copy.message);
+      const body = senderName + ': ' + preview;
       const groupedTitle = isKorean
         ? `${roomTitle} · 안 읽은 메시지 ${roomUnreadCount}개`
         : `${roomTitle} · ${roomUnreadCount} unread`;
@@ -8094,7 +8341,7 @@ async function sendSnackChatPush(args: {
             notificationMetadataVersion: '2',
             notificationCommitMillis: String(Math.floor(args.commitTime.toMillis())),
             senderId: args.senderId,
-            senderName: args.senderName,
+            senderName,
             roomTitle,
             latestMessage: preview,
             messagePreview: preview,
@@ -8135,7 +8382,7 @@ async function sendSnackChatPush(args: {
             },
           },
         }, {
-          kind: 'snack', title: roomTitle, sender: args.senderName,
+          kind: 'snack', title: roomTitle, sender: senderName,
           message: args.message, language, unreadCount: roomUnreadCount,
           threadKey: notificationGroupKey, messageId: args.messageId,
           sentAtMillis: timestampMillis(args.message.createdAt) || Date.now(),
@@ -8170,7 +8417,7 @@ async function sendSnackChatPush(args: {
         await savePushDelivery(args.eventRef, args.recipientId, delivery);
       }
     }
-    await cleanInvalidPushTokens(args.recipientId, userData, invalid)
+    await cleanInvalidPushTokens(args.recipientId, prepared.userData, invalid)
       .catch((error) => console.warn('Snack Chat invalid token cleanup failed.', error));
     delivery.status = transientFailure && nonNegativeInteger(delivery.attempts) < 3 ?
       'pending' : transientFailure ? 'exhausted' : 'settled';
@@ -8208,11 +8455,12 @@ async function runWithConcurrency<T>(
  * Applies unread counters and push delivery once per Firestore event. System
  * messages intentionally bypass both behaviors.
  */
-export const onSnackChatMessageCreatedSecure = functions
+export const onSnackChatMessageCreatedSecure = triggers()
   .runWith({
     timeoutSeconds: 180,
     memory: '512MB',
     failurePolicy: true,
+    ...chatHotRunWithOptions(),
   })
   .firestore
   .document('snack_chats/{snackChatId}/messages/{messageId}')
@@ -8259,6 +8507,14 @@ export const onSnackChatMessageCreatedSecure = functions
         transaction.update(snapshot.ref, {pollCloseNotifiedAt: null});
       });
     }
+    // The sender's display name (server-resolved; never trusted from the
+    // client payload for push text) is fetched alongside the unread
+    // transaction instead of after it.
+    const clientSenderName = boundedString(message.senderName, 80);
+    const senderNamePromise: Promise<string> = clientSenderName
+      ? Promise.resolve(clientSenderName)
+      : userDisplayName(senderId);
+    senderNamePromise.catch(() => undefined);
     const applied = await applySnackChatUnreadOnce({
       roomRef,
       message,
@@ -8272,8 +8528,7 @@ export const onSnackChatMessageCreatedSecure = functions
       `recipientCount=${applied.recipientIds.length} ` +
       `durationMs=${Date.now() - functionStartedAt}`,
     );
-    let senderName = boundedString(message.senderName, 80);
-    if (!senderName) senderName = await userDisplayName(senderId);
+    const senderName = await senderNamePromise;
     if (stringValue(message.type) === 'poll') {
       const poll = objectValue(message.poll);
       const question = boundedString(
@@ -8301,16 +8556,37 @@ export const onSnackChatMessageCreatedSecure = functions
       `sequence=${nonNegativeInteger(message.sequence)} ` +
       `recipientCount=${applied.recipientIds.length}`,
     );
-    await runWithConcurrency(applied.recipientIds, 5, (recipientId) =>
-      sendSnackChatPush({
+    // Phase 1: eligibility/tokens per recipient in parallel. Phase 2: one
+    // claim transaction for every eligible recipient (no per-recipient
+    // contention on the event marker). Phase 3: deliver in parallel.
+    const prepared: PreparedSnackChatPush[] = [];
+    await runWithConcurrency(applied.recipientIds, 5, async (recipientId) => {
+      const result = await prepareSnackChatPush({
+        roomRef,
+        recipientId,
+        senderId,
+        message,
+      });
+      if (result) prepared.push(result);
+    });
+    const claims = await claimPushAttempts(
+      applied.eventRef,
+      prepared.map((entry) => entry.recipientId),
+    );
+    await runWithConcurrency(
+      prepared.filter((entry) => claims.has(entry.recipientId)),
+      5,
+      (entry) => deliverSnackChatPush({
         roomRef,
         eventRef: applied.eventRef,
         messageId,
-        recipientId,
+        recipientId: entry.recipientId,
         senderId,
         senderName,
         message,
         commitTime: snapshot.createTime,
+        prepared: entry,
+        delivery: claims.get(entry.recipientId)!,
       }));
     runtimeLogsEnabled && runtimeInfo(
       `[SnackChatTiming] stage=pushSendCompletedAt at=${Date.now()} ` +
@@ -8358,7 +8634,7 @@ function expectedSnackChatImagePath(roomId: string, data: Data): string {
 }
 
 /** Removes private media after its message TTL or a server-side hard delete. */
-export const onSnackChatFileMessageDeleted = functions
+export const onSnackChatFileMessageDeleted = triggers()
   .runWith({timeoutSeconds: 60, memory: '256MB', failurePolicy: true})
   .firestore
   .document('snack_chats/{snackChatId}/messages/{messageId}')
@@ -8376,13 +8652,13 @@ export const onSnackChatFileMessageDeleted = functions
         ? expectedSnackChatImagePath(roomId, data)
         : '';
     if (!storagePath) return null;
-    await admin.storage().bucket().file(storagePath)
+    await bucketFor(data.storageBucket).file(storagePath)
       .delete({ignoreNotFound: true});
     return null;
   });
 
 /** A TTL-deleted unfinished job owns only an orphan object, never a message. */
-export const onSnackChatFileUploadJobDeleted = functions
+export const onSnackChatFileUploadJobDeleted = triggers()
   .runWith({timeoutSeconds: 60, memory: '256MB', failurePolicy: true})
   .firestore
   .document('snack_chats/{snackChatId}/fileUploadJobs/{uploadId}')
@@ -8396,7 +8672,7 @@ export const onSnackChatFileUploadJobDeleted = functions
       data,
     );
     if (!storagePath) return null;
-    await admin.storage().bucket().file(storagePath)
+    await bucketFor(data.storageBucket).file(storagePath)
       .delete({ignoreNotFound: true});
     return null;
   });
@@ -8406,7 +8682,7 @@ export const onSnackChatFileUploadJobDeleted = functions
  * delivery lag and also removes legacy `permanent` file messages and image
  * messages after the 30-day maximum retention period.
  */
-export const cleanupExpiredSnackChatFiles = functions
+export const cleanupExpiredSnackChatFiles = triggers()
   .runWith({timeoutSeconds: 300, memory: '512MB', failurePolicy: true})
   .pubsub.schedule('every 60 minutes')
   .timeZone('UTC')
@@ -8448,7 +8724,7 @@ export const cleanupExpiredSnackChatFiles = functions
  * within the one-minute schedule interval; bursts above the page size drain
  * over subsequent invocations without an unbounded scan loop.
  */
-export const notifyClosedSnackChatPolls = functions
+export const notifyClosedSnackChatPolls = triggers()
   .runWith({
     timeoutSeconds: 300,
     memory: '512MB',
@@ -8522,7 +8798,7 @@ export const notifyClosedSnackChatPolls = functions
   });
 
 /** Maintains list-view counts; participant-only detail reads remain on demand. */
-export const onSnackChatReactionWritten = functions
+export const onSnackChatReactionWritten = triggers()
   .runWith({
     timeoutSeconds: 60,
     memory: '256MB',
@@ -8572,7 +8848,7 @@ export const onSnackChatReactionWritten = functions
   });
 
 /** Maintains poll aggregates while each participant can read only their vote. */
-export const onSnackChatVoteWritten = functions
+export const onSnackChatVoteWritten = triggers()
   .runWith({
     timeoutSeconds: 60,
     memory: '256MB',

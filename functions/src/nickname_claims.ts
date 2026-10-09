@@ -1,5 +1,6 @@
 import * as admin from 'firebase-admin';
 import * as functions from 'firebase-functions';
+import {callables, triggers} from './backend';
 import * as crypto from 'crypto';
 
 import {COL} from './firestore_paths';
@@ -325,7 +326,7 @@ export async function releaseAllNicknameClaimsOwnedByUid(uid: string): Promise<n
   return deleted;
 }
 
-export const checkNicknameAvailability = functions
+export const checkNicknameAvailability = callables()
   .runWith({timeoutSeconds: 15, memory: '256MB', enforceAppCheck: true})
   .https.onCall(async (data, context) => {
     const startedAt = Date.now();
@@ -384,7 +385,7 @@ export const checkNicknameAvailability = functions
     }
   });
 
-export const updateMyNicknameSecure = functions
+export const updateMyNicknameSecure = callables()
   .runWith({enforceAppCheck: true})
   .https.onCall(
   async (data, context) => {
@@ -513,7 +514,7 @@ export const updateMyNicknameSecure = functions
 );
 
 /** Event-driven fallback for a rare Firestore failure after Auth deletion. */
-export const onDeletedAuthUserNicknameCleanup = functions.auth.user().onDelete(
+export const onDeletedAuthUserNicknameCleanup = triggers().auth.user().onDelete(
   async (user) => {
     const userRef = admin.firestore().collection(COL.users).doc(user.uid);
     const userSnap = await userRef.get();

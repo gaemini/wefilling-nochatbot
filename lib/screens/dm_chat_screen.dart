@@ -13,6 +13,7 @@ import 'package:linkify/linkify.dart' as linkify;
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:image_picker/image_picker.dart';
+import 'package:path/path.dart' as p;
 import 'package:file_picker/file_picker.dart';
 import 'package:cached_network_image/cached_network_image.dart';
 import 'package:open_filex/open_filex.dart';
@@ -28,6 +29,8 @@ import '../services/chat_outbox_store.dart';
 import '../utils/chat_work_queue.dart';
 import '../ui/widgets/snack_chat_outgoing_entrance.dart';
 import '../ui/widgets/chat_reaction_widgets.dart';
+import '../ui/widgets/motion_press.dart';
+import '../ui/widgets/chat_reply_reveal.dart';
 import '../ui/widgets/soft_translate_reveal.dart';
 import '../ui/widgets/retryable_chat_network_image.dart';
 import '../services/dm_active_conversation.dart';
@@ -56,8 +59,14 @@ import '../utils/chat_timing.dart';
 import '../ui/snackbar/app_snackbar.dart';
 import '../ui/sheets/translation_language_sheet.dart';
 import '../ui/sheets/snack_chat_attachment_sheet.dart';
+import '../ui/widgets/chat_video_tile.dart';
+import '../ui/widgets/video_preparing_dialog.dart';
+import '../services/media/video_prepare_service.dart';
+import '../services/media/video_upload_policy.dart';
+import 'video_playback_screen.dart';
 import '../ui/sheets/snack_chat_file_confirmation_sheet.dart';
 import '../config/snack_chat_file_policy.dart';
+import '../config/app_backend.dart';
 import '../utils/responsive_helper.dart';
 import '../l10n/ui_locale.dart';
 
@@ -161,8 +170,7 @@ class _DMChatScreenState extends State<DMChatScreen>
       <String, _DmTranslationOutcome>{};
   static const Duration _translationMicroBatchWindow =
       Duration(milliseconds: 70);
-  static const Duration _translationStyleAnimationDuration =
-      Duration(milliseconds: 150);
+  static const Duration _translationStyleAnimationDuration = MotionTokens.fast;
   static const int _translationBatchSize = 5;
   static const int _translationAdjacentPrefetchLimit = 2;
   Timer? _translationMicroBatchTimer;
@@ -186,7 +194,15 @@ class _DMChatScreenState extends State<DMChatScreen>
   bool _autoMarkReadInFlight = false;
   int _readGeneration = 0;
   Timestamp? _peerReadThrough;
+  // The peer's server-written read-through message id. Resolved against the
+  // loaded list so own messages flip to "읽음" by exact order without waiting
+  // for the trigger-written receiptCreatedAt.
+  String? _peerReadMessageId;
   Timestamp? _confirmedReadThrough;
+  // The newest incoming message this reader has confirmed on the server. Older
+  // incoming messages without receiptCreatedAt are covered by list order and
+  // must not be re-targeted (each retarget is a callable round trip).
+  DMMessage? _confirmedReadTargetMessage;
   DMMessage? _pendingReadTarget;
   final Set<String> _confirmedLegacyReadIds = {};
   int _autoMarkReadRetryAttempt = 0;
@@ -202,6 +218,7 @@ class _DMChatScreenState extends State<DMChatScreen>
   StreamSubscription<List<DMMessage>>? _recentMessagesSub;
   StreamSubscription<List<DMReaction>>? _reactionSub;
   final Map<String, String> _myReactions = <String, String>{};
+  final _reactionMotionEvents = ChatReactionMotionEvents();
   final Map<String, String?> _confirmedReactions = <String, String?>{};
   final Map<String, String?> _pendingReactionTargets = <String, String?>{};
   final Set<String> _reactionMutationsInFlight = <String>{};
@@ -270,6 +287,8 @@ class _DMChatScreenState extends State<DMChatScreen>
   bool get _directInteractionRestricted =>
       !_blockStatusReady || _isBlocked || _isBlockedBy;
   File? _pendingImage; // 첨부 대기 이미지 (1장 제한)
+  // Images compressed while the preview screen was open, keyed by picked path.
+  final Map<String, PreparedChatImage> _preparedImages = <String, PreparedChatImage>{};
   SnackChatSelectedFile? _pendingFile;
   DMMessage? _replyingTo;
   double? _uploadProgress; // 이미지 업로드 진행률 (0~1)
@@ -284,7 +303,9 @@ class _DMChatScreenState extends State<DMChatScreen>
     if (translationConversationChanged) {
       _readGeneration++;
       _peerReadThrough = null;
+      _peerReadMessageId = null;
       _confirmedReadThrough = null;
+      _confirmedReadTargetMessage = null;
       _confirmedLegacyReadIds.clear();
       _pendingReadTarget = null;
       _autoMarkReadInFlight = false;
@@ -294,6 +315,7 @@ class _DMChatScreenState extends State<DMChatScreen>
       _autoMarkReadRetryAttempt = 0;
       _exitReadFlushStarted = false;
       _myReactions.clear();
+      _reactionMotionEvents.clear();
       _confirmedReactions.clear();
       _pendingReactionTargets.clear();
       _reactionMutationsInFlight.clear();
@@ -363,6 +385,16 @@ class _DMChatScreenState extends State<DMChatScreen>
         setState(() => _peerReadThrough = peer);
       }
     }).catchError((Object error) => Logger.error('DM read cache failed', error)));
+    unawaited(DMMessageCacheService()
+        .peerReadMessageId(me.uid, conversationId, widget.otherUserId)
+        .then<void>((cachedId) {
+      if (!mounted || generation != _readGeneration ||
+          !_canSendFor(me.uid, conversationId)) return;
+      if (cachedId != null && _peerReadMessageId == null) {
+        setState(() => _peerReadMessageId = cachedId);
+      }
+    }).catchError(
+        (Object error) => Logger.error('DM read id cache failed', error)));
     _conversationReadSub = FirebaseFirestore.instance
         .collection('conversations')
         .doc(conversationId)
@@ -373,13 +405,31 @@ class _DMChatScreenState extends State<DMChatScreen>
       if (!snapshot.metadata.hasPendingWrites) {
         final reads = snapshot.data()?['lastReadAtBy'];
         final peer = reads is Map ? reads[widget.otherUserId] : null;
-        if (peer is Timestamp &&
-            (_peerReadThrough == null || peer.compareTo(_peerReadThrough!) > 0)) {
+        final readIds = snapshot.data()?['lastReadMessageIdBy'];
+        final peerIdRaw = readIds is Map ? readIds[widget.otherUserId] : null;
+        final peerId =
+            peerIdRaw is String && peerIdRaw.isNotEmpty ? peerIdRaw : null;
+        final watermarkAdvanced = peer is Timestamp &&
+            (_peerReadThrough == null || peer.compareTo(_peerReadThrough!) > 0);
+        if (watermarkAdvanced) {
           setState(() => _peerReadThrough = peer);
           unawaited(DMMessageCacheService().peerReadThrough(
               me.uid, conversationId, widget.otherUserId, confirmed: peer)
               .then<void>((_) {}).catchError((Object error) =>
                   Logger.error('DM read cache write failed', error)));
+        }
+        // The server only rewrites the id when the watermark advanced, so a
+        // server snapshot's value is authoritative for the current watermark.
+        if (peerId != null &&
+            (watermarkAdvanced || _peerReadMessageId == null) &&
+            peerId != _peerReadMessageId) {
+          setState(() => _peerReadMessageId = peerId);
+          unawaited(DMMessageCacheService()
+              .peerReadMessageId(me.uid, conversationId, widget.otherUserId,
+                  confirmed: peerId)
+              .then<void>((_) {})
+              .catchError((Object error) =>
+                  Logger.error('DM read id cache write failed', error)));
         }
       }
       final raw = snapshot.data()?['unreadCount'];
@@ -419,6 +469,7 @@ class _DMChatScreenState extends State<DMChatScreen>
         unawaited(_reactionSub?.cancel());
         _reactionSub = null;
         _myReactions.clear();
+        _reactionMotionEvents.clear();
         _confirmedReactions.clear();
         _pendingReactionTargets.clear();
       }
@@ -1041,6 +1092,7 @@ class _DMChatScreenState extends State<DMChatScreen>
   Future<void> _translateVisibleMessages(
     List<DMMessage> messages, {
     bool userInitiatedRetry = false,
+    bool forceRefresh = false,
   }) async {
     if (!(ModalRoute.of(context)?.isCurrent ?? false)) return;
     final generation = _translationStateGeneration;
@@ -1075,6 +1127,7 @@ class _DMChatScreenState extends State<DMChatScreen>
             scope: _translationScope,
             manualRetry: failureCount > 0 || userInitiatedRetry,
             userInitiatedRetry: userInitiatedRetry,
+            forceRefresh: forceRefresh,
           );
         } catch (_) {
           result = null;
@@ -1172,8 +1225,10 @@ class _DMChatScreenState extends State<DMChatScreen>
       return;
     }
     final key = _translationRequestKey(message);
-    if ((_translationFailures[key] ?? 0) < 2 ||
-        _translationRequestsInFlight.contains(key) ||
+    // A deferred (uncommitted) outcome for this message is stale once the
+    // user asks again; drop it so it cannot overwrite the fresh result.
+    _deferredTranslationOutcomes.remove(key);
+    if (_translationRequestsInFlight.contains(key) ||
         _translationCacheLookupsInFlight.contains(key)) {
       return;
     }
@@ -1182,6 +1237,8 @@ class _DMChatScreenState extends State<DMChatScreen>
       _translateVisibleMessages(
         <DMMessage>[message],
         userInitiatedRetry: true,
+        // Explicit tap: regenerate instead of replaying a cached failure.
+        forceRefresh: true,
       ),
     );
   }
@@ -1591,6 +1648,7 @@ class _DMChatScreenState extends State<DMChatScreen>
 
       // 0) Firestore 로컬 캐시 우선으로 빠르게 존재 여부를 판단 (재진입 UX 개선)
       DocumentSnapshot<Map<String, dynamic>>? cachedConv;
+      var conversationLoadStarted = false;
       try {
         cachedConv = await convRef.get(const GetOptions(source: Source.cache));
       } catch (_) {
@@ -1610,13 +1668,17 @@ class _DMChatScreenState extends State<DMChatScreen>
         unawaited(
             _initializeMessagesStream(conversationId: _activeConversationId));
         unawaited(_loadConversation());
+        conversationLoadStarted = true;
         _scheduleAutoMarkAsRead(
           _messages,
         );
       }
 
-      // 1) 서버로 최종 확인 (권한/참여자 검증 포함)
-      final conv = await convRef.get(const GetOptions(source: Source.server));
+      // 1) 서버로 최종 확인 (권한/참여자 검증 포함). Bounded: offline with no
+      // cached room previously left the skeleton up forever.
+      final conv = await convRef
+          .get(const GetOptions(source: Source.server))
+          .timeout(const Duration(seconds: 12));
       if (!current()) return;
 
       _conversationExists = conv.exists;
@@ -1700,7 +1762,9 @@ class _DMChatScreenState extends State<DMChatScreen>
           unawaited(
               _initializeMessagesStream(conversationId: _activeConversationId));
         }
-        unawaited(_loadConversation());
+        // The cache branch already fetched the conversation (server-first
+        // get); a second identical read only adds a round trip.
+        if (!conversationLoadStarted) unawaited(_loadConversation());
         _scheduleAutoMarkAsRead(
           _messages,
         );
@@ -1709,6 +1773,14 @@ class _DMChatScreenState extends State<DMChatScreen>
       Logger.error('대화 초기화 오류: $e');
       if (!current()) return;
       Logger.error('오류 상세: ${e.runtimeType} - ${e.toString()}');
+      // Not reachable (offline/timeout) and nothing cached: surface the error
+      // with a retry instead of an endless skeleton.
+      if (_conversationExists == null &&
+          _messages.isEmpty &&
+          !e.toString().contains('permission-denied') &&
+          mounted) {
+        setState(() => _messagesError = e);
+      }
       // 권한 오류인 경우 뒤로가기
       if (e.toString().contains('permission-denied')) {
         if (mounted) {
@@ -1783,14 +1855,17 @@ class _DMChatScreenState extends State<DMChatScreen>
     if (me == null) return;
     if (_isLeaving || _accountInvalidated || _exitReadFlushStarted ||
         !_canSendFor(me.uid, _activeConversationId)) return;
+    _reconcileConversationNotifications(messages, me.uid);
     DMMessage? target;
     for (final message in messages) {
       if (message.senderId == me.uid || message.deliveryState != DMDeliveryState.sent ||
-          message.isReadThrough(_confirmedReadThrough) ||
+          message.isReadThrough(_confirmedReadThrough,
+              watermarkMessage: _confirmedReadTargetMessage) ||
           _confirmedLegacyReadIds.contains(message.id)) continue;
-      final at = message.receiptCreatedAt;
-      if (target == null || (at != null &&
-          (target.receiptCreatedAt == null || at.compareTo(target.receiptCreatedAt!) > 0))) {
+      // Newest by canonical list order. A message whose receiptCreatedAt has
+      // not been written by the trigger yet is still a valid boundary: the
+      // server resolves its createTime from the document itself.
+      if (target == null || DMMessage.compareDescending(message, target) < 0) {
         target = message;
       }
     }
@@ -1799,6 +1874,43 @@ class _DMChatScreenState extends State<DMChatScreen>
     if (_autoMarkReadInFlight) return;
     _autoMarkReadDebounce?.cancel();
     unawaited(_performAutoMarkAsRead());
+  }
+
+  int _notificationReconcileMillis = 0;
+
+  /// Newest incoming message on screen → every OS card for this conversation
+  /// is covered. Remove them and recount the badge from the server, without
+  /// depending on the read callable (which is skipped when the watermark is
+  /// already current, e.g. after reading on another device).
+  void _reconcileConversationNotifications(
+    List<DMMessage> messages,
+    String owner,
+  ) {
+    var latest = 0;
+    for (final message in messages) {
+      if (message.senderId == owner ||
+          message.deliveryState != DMDeliveryState.sent) continue;
+      final millis = message.serverCreatedAt?.millisecondsSinceEpoch ??
+          message.createdAt.millisecondsSinceEpoch;
+      if (millis > latest) latest = millis;
+    }
+    if (latest <= 0 || latest <= _notificationReconcileMillis) return;
+    _notificationReconcileMillis = latest;
+    final conversationId = _activeConversationId;
+    if (conversationId.isEmpty) return;
+    unawaited(FCMService()
+        .cancelDmNotification(
+          conversationId,
+          throughSentAtMillis: latest,
+          coversLatestVisible: true,
+          expectedOwner: owner,
+        )
+        .catchError((Object error) {
+      Logger.error('DM 화면 기준 알림 정리 실패', error);
+    }));
+    unawaited(BadgeService.refreshNow(fresh: true).catchError((Object error) {
+      Logger.error('DM 화면 기준 배지 갱신 실패', error);
+    }));
   }
 
   Future<void> _performAutoMarkAsRead() async {
@@ -1819,9 +1931,20 @@ class _DMChatScreenState extends State<DMChatScreen>
       _scheduleDmReadPostProcessing(conversationId, result, owner);
       if (generation != _readGeneration || !mounted ||
           !_canSendFor(owner, conversationId)) return;
-      final at = target.receiptCreatedAt;
-      if (at != null && (_confirmedReadThrough == null ||
-          at.compareTo(_confirmedReadThrough!) > 0)) _confirmedReadThrough = at;
+      // Prefer the exact boundary the server confirmed (seconds + nanos); the
+      // target's receiptCreatedAt may not have been written yet.
+      final confirmed = result.readThroughAtSeconds > 0
+          ? Timestamp(result.readThroughAtSeconds, result.readThroughAtNanos)
+          : target.receiptCreatedAt;
+      if (confirmed != null && (_confirmedReadThrough == null ||
+          confirmed.compareTo(_confirmedReadThrough!) > 0)) {
+        _confirmedReadThrough = confirmed;
+      }
+      final previousTarget = _confirmedReadTargetMessage;
+      if (previousTarget == null ||
+          DMMessage.compareDescending(target, previousTarget) < 0) {
+        _confirmedReadTargetMessage = target;
+      }
       _confirmedLegacyReadIds.add(target.id);
       if (_pendingReadTarget?.id == target.id) _pendingReadTarget = null;
     }();
@@ -1867,7 +1990,7 @@ class _DMChatScreenState extends State<DMChatScreen>
   ) {
     if (_accountInvalidated || FirebaseAuth.instance.currentUser?.uid != owner) return;
     unawaited(
-      BadgeService.refreshNow().catchError(
+      BadgeService.refreshNow(fresh: true).catchError(
         (Object error) => Logger.error('DM 읽음 배지 갱신 실패', error),
       ),
     );
@@ -1930,6 +2053,39 @@ class _DMChatScreenState extends State<DMChatScreen>
     }
   }
 
+  /// Fast-entry follow-up: fetch the server-owned leave boundary and, when it
+  /// differs from the one already in use, resubscribe with the authoritative
+  /// value. A later boundary (a leave performed on another device) hides the
+  /// older rows; an earlier or absent one reveals history that the hint hid.
+  Future<void> _reconcileVisibilityBoundary(
+      String room, int generation, DateTime? used) async {
+    try {
+      final server = await _dmService.getUserMessageVisibilityStartTime(room);
+      if (!mounted ||
+          generation != _messageGeneration ||
+          room != _activeConversationId) {
+        return;
+      }
+      if (server == used) return;
+      _visibilityStartTime = server;
+      if (server != null && mounted) {
+        setState(() {
+          _messages = _messages.where((message) {
+            final committed = message.serverCreatedAt;
+            // Local pending packets stay; only committed rows older than the
+            // server boundary are hidden.
+            return committed == null || !committed.toDate().isBefore(server);
+          }).toList();
+        });
+      }
+      // Resubscribes with _visibilityStartTime already set, so the nested
+      // reconcile sees an equal boundary and stops.
+      unawaited(_initializeMessagesStream(conversationId: room));
+    } catch (error) {
+      Logger.error('DM 가시성 경계 재확인 실패', error);
+    }
+  }
+
   /// 메시지 스트림 초기화
   /// - 기본: 전체 대화 표시(일반 진입)
   /// - 예외: 사용자가 실제로 '채팅방 나가기'를 한 기록이 있으면, 그 시점 이후만 표시
@@ -1946,9 +2102,20 @@ class _DMChatScreenState extends State<DMChatScreen>
     _recentMessagesSub = null;
     await previous?.cancel();
     try {
-      final visibility =
-          await _dmService.getUserMessageVisibilityStartTime(room);
-      if (!current()) return;
+      DateTime? visibility;
+      if (DMService.fastEntryEnabled) {
+        // Fast entry: cached history and the live listener start with the
+        // best-known boundary (previous resolution or the local cache hint).
+        // The server-only boundary is reconciled below without blocking the
+        // first paint; a later server boundary drops the older rows again.
+        visibility = _visibilityStartTime ??
+            await _dmService.getCachedVisibilityStartTime(room);
+        if (!current()) return;
+        unawaited(_reconcileVisibilityBoundary(room, generation, visibility));
+      } else {
+        visibility = await _dmService.getUserMessageVisibilityStartTime(room);
+        if (!current()) return;
+      }
       _visibilityStartTime = visibility;
       unawaited(_restoreOutbox(room));
       // Start cache read and live subscription together. Live objects win every
@@ -2362,7 +2529,9 @@ class _DMChatScreenState extends State<DMChatScreen>
             maxScaleFactor: 1.15,
             child: TweenAnimationBuilder<double>(
               tween: Tween<double>(end: _translationShowsOriginal ? 0 : 1),
-              duration: _translationStyleAnimationDuration,
+              duration: MotionTokens.reduceMotion(context)
+                  ? Duration.zero
+                  : _translationStyleAnimationDuration,
               curve: Curves.easeOut,
               builder: (context, value, _) {
                 const pointColor = Color(0xFF087BB5);
@@ -2519,22 +2688,26 @@ class _DMChatScreenState extends State<DMChatScreen>
               label: !_isAnonymous && !_isPeerDeleted
                   ? AppLocalizations.of(context)!.viewProfile
                   : null,
-              child: GestureDetector(
-                behavior: HitTestBehavior.opaque,
-                onTap: _isAnonymous || _isPeerDeleted
-                    ? null
-                    : () => _openOtherUserProfile(
+              child: MotionPress(
+                enabled: !_isAnonymous && !_isPeerDeleted,
+                pressedScale: .99,
+                child: GestureDetector(
+                  behavior: HitTestBehavior.opaque,
+                  onTap: _isAnonymous || _isPeerDeleted
+                      ? null
+                      : () => _openOtherUserProfile(
                           nickname: resolvedName,
                           photoURL: resolvedPhotoUrl,
                         ),
-                child: UserAvatar(
-                  uid: otherUserId,
-                  photoUrl: resolvedPhotoUrl,
-                  photoVersion: resolvedPhotoVersion,
-                  isAnonymous: _isAnonymous,
-                  size: 36,
-                  placeholderColor: const Color(0xFFE5E7EB),
-                  placeholderIconSize: 20,
+                  child: UserAvatar(
+                    uid: otherUserId,
+                    photoUrl: resolvedPhotoUrl,
+                    photoVersion: resolvedPhotoVersion,
+                    isAnonymous: _isAnonymous,
+                    size: 36,
+                    placeholderColor: const Color(0xFFE5E7EB),
+                    placeholderIconSize: 20,
+                  ),
                 ),
               ),
             ),
@@ -2780,22 +2953,26 @@ class _DMChatScreenState extends State<DMChatScreen>
                   label: !_isAnonymous && !isCachedDeleted
                       ? AppLocalizations.of(context)!.viewProfile
                       : null,
-                  child: GestureDetector(
-                    behavior: HitTestBehavior.opaque,
-                    onTap: _isAnonymous || isCachedDeleted
-                        ? null
-                        : () => _openOtherUserProfile(
+                  child: MotionPress(
+                    enabled: !_isAnonymous && !isCachedDeleted,
+                    pressedScale: .99,
+                    child: GestureDetector(
+                      behavior: HitTestBehavior.opaque,
+                      onTap: _isAnonymous || isCachedDeleted
+                          ? null
+                          : () => _openOtherUserProfile(
                               nickname: otherUserName,
                               photoURL: otherUserPhoto,
                             ),
-                    child: UserAvatar(
-                      uid: otherUserId,
-                      photoUrl: otherUserPhoto,
-                      photoVersion: otherUserPhotoVersion,
-                      isAnonymous: _isAnonymous,
-                      size: 36,
-                      placeholderColor: const Color(0xFFE5E7EB),
-                      placeholderIconSize: 20,
+                      child: UserAvatar(
+                        uid: otherUserId,
+                        photoUrl: otherUserPhoto,
+                        photoVersion: otherUserPhotoVersion,
+                        isAnonymous: _isAnonymous,
+                        size: 36,
+                        placeholderColor: const Color(0xFFE5E7EB),
+                        placeholderIconSize: 20,
+                      ),
                     ),
                   ),
                 ),
@@ -3237,10 +3414,37 @@ class _DMChatScreenState extends State<DMChatScreen>
         );
       }
 
+      // Transient failure (offline, timeout): offer a retry that re-runs the
+      // whole room check instead of leaving a dead end.
       return Center(
-        child: Text(
-          '${AppLocalizations.of(context)!.error}: $_messagesError',
-          style: const TextStyle(color: Colors.red),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Padding(
+              padding: const EdgeInsets.symmetric(horizontal: 24),
+              child: Text(
+                '${AppLocalizations.of(context)!.error}: $_messagesError',
+                style: const TextStyle(color: Colors.red),
+                textAlign: TextAlign.center,
+              ),
+            ),
+            const SizedBox(height: 12),
+            TextButton.icon(
+              onPressed: () {
+                setState(() {
+                  _messagesError = null;
+                  _isConversationInitializing = true;
+                });
+                unawaited(_initConversationState());
+              },
+              icon: const Icon(Icons.refresh),
+              label: Text(isChineseUi(context)
+                  ? '重试'
+                  : Localizations.localeOf(context).languageCode == 'ko'
+                      ? '다시 시도'
+                      : 'Retry'),
+            ),
+          ],
         ),
       );
     }
@@ -3264,10 +3468,21 @@ class _DMChatScreenState extends State<DMChatScreen>
     final myUid = _currentUser!.uid;
     String? latestMyUnreadMessageId;
     String? latestMyReadMessageId;
+    DMMessage? peerReadMessage;
+    final peerReadMessageId = _peerReadMessageId;
+    if (peerReadMessageId != null) {
+      for (final m in messages) {
+        if (m.id == peerReadMessageId) {
+          peerReadMessage = m;
+          break;
+        }
+      }
+    }
     for (final m in messages) {
       if (m.senderId != myUid || m.deliveryState != DMDeliveryState.sent)
         continue;
-      final isRead = m.isReadThrough(_peerReadThrough);
+      final isRead = m.isReadThrough(_peerReadThrough,
+          watermarkMessage: peerReadMessage);
       if (!isRead && latestMyUnreadMessageId == null) {
         latestMyUnreadMessageId = m.id;
       } else if (isRead && latestMyReadMessageId == null) {
@@ -3351,8 +3566,8 @@ class _DMChatScreenState extends State<DMChatScreen>
                   onLongPress: _canReplyToMessage(message)
                       ? () => _showMessageActions(message)
                       : message.type == 'file'
-                          ? () => _showPendingFileActions(message)
-                          : null,
+                      ? () => _showPendingFileActions(message)
+                      : null,
                   child: Column(
                     crossAxisAlignment: isMine
                         ? CrossAxisAlignment.end
@@ -3611,20 +3826,23 @@ class _DMChatScreenState extends State<DMChatScreen>
           label: semanticLabel,
           child: Tooltip(
             message: semanticLabel,
-            child: Material(
-              color: Colors.transparent,
-              child: InkWell(
-                onTap: onTap,
-                borderRadius: BorderRadius.circular(14),
-                child: Container(
-                  height: 48,
-                  margin: const EdgeInsets.symmetric(horizontal: 1),
-                  alignment: Alignment.center,
-                  decoration: BoxDecoration(
-                    color: backgroundColor,
-                    borderRadius: BorderRadius.circular(14),
+            child: MotionPress(
+              pressedScale: .9,
+              child: Material(
+                color: Colors.transparent,
+                child: InkWell(
+                  onTap: onTap,
+                  borderRadius: BorderRadius.circular(14),
+                  child: Container(
+                    height: 48,
+                    margin: const EdgeInsets.symmetric(horizontal: 1),
+                    alignment: Alignment.center,
+                    decoration: BoxDecoration(
+                      color: backgroundColor,
+                      borderRadius: BorderRadius.circular(14),
+                    ),
+                    child: child,
                   ),
-                  child: child,
                 ),
               ),
             ),
@@ -3681,6 +3899,7 @@ class _DMChatScreenState extends State<DMChatScreen>
     }
     final previous = _myReactions[message.id];
     final target = previous == emoji ? null : emoji;
+    if (target != null) _reactionMotionEvents.record(message.id, target);
     if (!_reactionMutationsInFlight.contains(message.id) &&
         !_pendingReactionTargets.containsKey(message.id)) {
       _confirmedReactions[message.id] = previous;
@@ -4126,17 +4345,21 @@ class _DMChatScreenState extends State<DMChatScreen>
             label: label,
             child: Tooltip(
               message: label,
-              child: InkResponse(
-                onTap: !_sendingIds.contains(message.id)
-                    ? () => _queueOutgoing(_activeConversationId, message)
-                    : null,
-                radius: 20,
-                child: ConstrainedBox(
-                  constraints: const BoxConstraints(
-                    minWidth: 32,
-                    minHeight: 30,
+              child: MotionPress(
+                enabled: !_sendingIds.contains(message.id),
+                pressedScale: .9,
+                child: InkResponse(
+                  onTap: !_sendingIds.contains(message.id)
+                      ? () => _queueOutgoing(_activeConversationId, message)
+                      : null,
+                  radius: 20,
+                  child: ConstrainedBox(
+                    constraints: const BoxConstraints(
+                      minWidth: 32,
+                      minHeight: 30,
+                    ),
+                    child: Center(child: indicator),
                   ),
-                  child: Center(child: indicator),
                 ),
               ),
             ),
@@ -4153,6 +4376,7 @@ class _DMChatScreenState extends State<DMChatScreen>
       child: ChatReactionBar(
         counts: message.reactionCounts,
         myReaction: _myReactions[message.id],
+        animateLocalSelectionOnMount: _reactionMotionEvents.claim(message.id, _myReactions[message.id]),
         // The reaction lives beside, rather than inside, both bubble colors.
         isOutgoing: false,
         addLabel: AppLocalizations.of(context)!.chatReactionAdd,
@@ -4188,6 +4412,24 @@ class _DMChatScreenState extends State<DMChatScreen>
     final hasLocalImage = !hasImage && message.localImagePath != null;
     final isImageOnly =
         hasImage && !hasText && !hasPostContext && !hasReply && !hasFile;
+    // 보내는 중인 로컬 사진과 영상도 말풍선 배경 없이 미디어만 보여준다.
+    final isLocalImageOnly =
+        hasLocalImage && !hasText && !hasPostContext && !hasReply && !hasFile;
+    final isVideoOnly = hasFile &&
+        SnackChatFilePolicy.isVideoMime(message.fileMimeType) &&
+        !hasPostContext &&
+        !hasReply;
+    Widget bareLocalImage() => ClipRRect(
+          borderRadius: BorderRadius.circular(14),
+          child: Image.file(File(message.localImagePath!),
+              width: 220,
+              height: 160,
+              fit: BoxFit.cover,
+              errorBuilder: (_, __, ___) => const SizedBox(
+                  width: 140,
+                  height: 100,
+                  child: Icon(Icons.broken_image_outlined))),
+        );
 
     if (isMine) {
       final bubbleChild = isImageOnly
@@ -4196,7 +4438,11 @@ class _DMChatScreenState extends State<DMChatScreen>
               isMine: true,
               heroTag: 'dm_image_${widget.conversationId}_${message.id}',
             )
-          : Container(
+          : isVideoOnly
+              ? _buildFileBubble(message, isMine: true)
+              : isLocalImageOnly
+                  ? bareLocalImage()
+                  : Container(
               padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 9),
               decoration: const BoxDecoration(
                 color: DMColors.myMessageBg,
@@ -4307,9 +4553,13 @@ class _DMChatScreenState extends State<DMChatScreen>
             const SizedBox(width: 6),
             // 메시지 버블 (이미지만 있으면 테두리 없음)
             Flexible(
-              child: Container(
-                key: ValueKey('dm_bubble_${message.id}'),
-                child: bubbleChild,
+              child: MotionPress(
+                enabled: _canReplyToMessage(message) || message.type == 'file' || message.type == 'image',
+                pressedScale: .985,
+                child: Container(
+                  key: ValueKey('dm_bubble_${message.id}'),
+                  child: bubbleChild,
+                ),
               ),
             ),
             if (message.reactionCounts.isNotEmpty) ...[
@@ -4326,7 +4576,9 @@ class _DMChatScreenState extends State<DMChatScreen>
               isMine: false,
               heroTag: 'dm_image_${widget.conversationId}_${message.id}',
             )
-          : Container(
+          : isVideoOnly
+              ? _buildFileBubble(message, isMine: false)
+              : Container(
               padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 9),
               decoration: const BoxDecoration(
                 color: DMColors.otherMessageBg,
@@ -4377,9 +4629,13 @@ class _DMChatScreenState extends State<DMChatScreen>
           children: [
             // 메시지 버블 (이미지만 있으면 테두리 없음)
             Flexible(
-              child: Container(
-                key: ValueKey('dm_bubble_${message.id}'),
-                child: bubbleChild,
+              child: MotionPress(
+                enabled: _canReplyToMessage(message) || message.type == 'file' || message.type == 'image',
+                pressedScale: .985,
+                child: Container(
+                  key: ValueKey('dm_bubble_${message.id}'),
+                  child: bubbleChild,
+                ),
               ),
             ),
             if (message.reactionCounts.isNotEmpty) ...[
@@ -4436,90 +4692,98 @@ class _DMChatScreenState extends State<DMChatScreen>
         : Localizations.localeOf(context).languageCode == 'ko'
             ? '원본 메시지로 이동'
             : 'Go to original message';
-    return Semantics(
-      button: messageId.isNotEmpty && !unavailable,
-      label: '$sender, $preview${unavailable ? '' : ', $jumpLabel'}',
-      child: Tooltip(
-        message: unavailable ? unavailableLabel : jumpLabel,
-        child: InkWell(
-          onTap: messageId.isEmpty || unavailable
-              ? null
-              : () => _jumpToMessage(messageId),
-          borderRadius: BorderRadius.circular(9),
-          child: Container(
-            constraints: const BoxConstraints(minWidth: 120, maxWidth: 250),
-            padding: const EdgeInsets.fromLTRB(9, 7, 9, 7),
-            decoration: BoxDecoration(
-              color: isMine
-                  ? Colors.white.withValues(alpha: .10)
-                  : const Color(0xFFF2F4F7),
-              borderRadius: BorderRadius.circular(9),
-            ),
-            child: Row(
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                Container(
-                  width: 2.5,
-                  height: 34,
-                  decoration: BoxDecoration(
-                    color: isMine ? Colors.white70 : const Color(0xFF2D9CDB),
-                    borderRadius: BorderRadius.circular(4),
-                  ),
-                ),
-                const SizedBox(width: 8),
-                if (imageUrl.isNotEmpty) ...[
-                  ClipRRect(
-                    borderRadius: BorderRadius.circular(5),
-                    child: CachedNetworkImage(
-                      imageUrl: imageUrl,
-                      width: 34,
-                      height: 34,
-                      fit: BoxFit.cover,
-                      placeholder: (_, __) => SizedBox.square(
-                        dimension: 34,
-                        child: Icon(Icons.image_outlined,
-                            size: 18, color: secondary),
-                      ),
-                      errorWidget: (_, __, ___) => SizedBox.square(
-                        dimension: 34,
-                        child: Icon(Icons.image_outlined,
-                            size: 18, color: secondary),
-                      ),
+    return MotionPressBoundary(
+      child: Semantics(
+        button: messageId.isNotEmpty && !unavailable,
+        label: '$sender, $preview${unavailable ? '' : ', $jumpLabel'}',
+        child: Tooltip(
+          message: unavailable ? unavailableLabel : jumpLabel,
+          child: InkWell(
+            onTap: messageId.isEmpty || unavailable
+                ? null
+                : () => _jumpToMessage(messageId),
+            borderRadius: BorderRadius.circular(9),
+            child: Container(
+              constraints: const BoxConstraints(minWidth: 120, maxWidth: 250),
+              padding: const EdgeInsets.fromLTRB(9, 7, 9, 7),
+              decoration: BoxDecoration(
+                color: isMine
+                    ? Colors.white.withValues(alpha: .10)
+                    : const Color(0xFFF2F4F7),
+                borderRadius: BorderRadius.circular(9),
+              ),
+              child: Row(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  Container(
+                    width: 2.5,
+                    height: 34,
+                    decoration: BoxDecoration(
+                      color: isMine ? Colors.white70 : const Color(0xFF2D9CDB),
+                      borderRadius: BorderRadius.circular(4),
                     ),
                   ),
                   const SizedBox(width: 8),
-                ],
-                Flexible(
-                  child: Column(
-                    mainAxisSize: MainAxisSize.min,
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Text(
-                        sender,
-                        maxLines: 1,
-                        overflow: TextOverflow.ellipsis,
-                        style: TextStyle(
-                          fontSize: 11.5,
-                          fontWeight: FontWeight.w700,
-                          color: secondary,
+                  if (imageUrl.isNotEmpty) ...[
+                    ClipRRect(
+                      borderRadius: BorderRadius.circular(5),
+                      child: CachedNetworkImage(
+                        imageUrl: imageUrl,
+                        width: 34,
+                        height: 34,
+                        fit: BoxFit.cover,
+                        placeholder: (_, __) => SizedBox.square(
+                          dimension: 34,
+                          child: Icon(
+                            Icons.image_outlined,
+                            size: 18,
+                            color: secondary,
+                          ),
+                        ),
+                        errorWidget: (_, __, ___) => SizedBox.square(
+                          dimension: 34,
+                          child: Icon(
+                            Icons.image_outlined,
+                            size: 18,
+                            color: secondary,
+                          ),
                         ),
                       ),
-                      const SizedBox(height: 2),
-                      Text(
-                        preview,
-                        maxLines: 2,
-                        overflow: TextOverflow.ellipsis,
-                        style: TextStyle(
-                          fontSize: 12.5,
-                          height: 1.25,
-                          fontWeight: FontWeight.w600,
-                          color: foreground,
+                    ),
+                    const SizedBox(width: 8),
+                  ],
+                  Flexible(
+                    child: Column(
+                      mainAxisSize: MainAxisSize.min,
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text(
+                          sender,
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                          style: TextStyle(
+                            fontSize: 11.5,
+                            fontWeight: FontWeight.w700,
+                            color: secondary,
+                          ),
                         ),
-                      ),
-                    ],
+                        const SizedBox(height: 2),
+                        Text(
+                          preview,
+                          maxLines: 2,
+                          overflow: TextOverflow.ellipsis,
+                          style: TextStyle(
+                            fontSize: 12.5,
+                            height: 1.25,
+                            fontWeight: FontWeight.w600,
+                            color: foreground,
+                          ),
+                        ),
+                      ],
+                    ),
                   ),
-                ),
-              ],
+                ],
+              ),
             ),
           ),
         ),
@@ -4528,6 +4792,20 @@ class _DMChatScreenState extends State<DMChatScreen>
   }
 
   Widget _buildFileBubble(DMMessage message, {required bool isMine}) {
+    if (SnackChatFilePolicy.isVideoMime(message.fileMimeType)) {
+      final progress = _uploadById[message.id] ?? _downloadById[message.id];
+      return ChatVideoTile(
+        thumbnailDataUrl: message.videoThumbnail,
+        durationMs: message.videoDurationMs ?? 0,
+        width: message.videoWidth ?? 0,
+        height: message.videoHeight ?? 0,
+        progress: progress,
+        failed: message.deliveryState == DMDeliveryState.failed,
+        onTap: _openingFileIds.contains(message.id)
+            ? null
+            : () => _openDmFile(message),
+      );
+    }
     final name = message.fileName?.trim().isNotEmpty == true
         ? message.fileName!.trim()
         : message.text.replaceFirst('📎', '').trim();
@@ -4630,9 +4908,19 @@ class _DMChatScreenState extends State<DMChatScreen>
   Future<void> _openDmFile(DMMessage message) async {
     if (!_openingFileIds.add(message.id)) return;
     if (mounted) setState(() {});
+    final isVideo = SnackChatFilePolicy.isVideoMime(message.fileMimeType);
     try {
       final localPath = message.localFilePath?.trim() ?? '';
       if (localPath.isNotEmpty && await File(localPath).exists()) {
+        if (isVideo) {
+          if (!mounted) return;
+          await VideoPlaybackScreen.open(
+            context,
+            localFile: File(localPath),
+            title: message.fileName,
+          );
+          return;
+        }
         final result = await OpenFilex.open(localPath);
         if (result.type != ResultType.done) throw StateError(result.message);
         return;
@@ -4647,11 +4935,24 @@ class _DMChatScreenState extends State<DMChatScreen>
           !storagePath.startsWith(expectedPrefix)) {
         throw StateError('invalid-dm-file');
       }
+      if (isVideo) {
+        if (!mounted) return;
+        await VideoPlaybackScreen.open(
+          context,
+          reference: AppStorage.ref(
+            storagePath,
+            storageBucket: message.storageBucket,
+          ),
+          title: message.fileName,
+        );
+        return;
+      }
       final local = await _storageService.downloadDmFile(
         ownerUid: owner,
         conversationId: room,
         messageId: message.id,
         storagePath: storagePath,
+        storageBucket: message.storageBucket,
         fileName: message.fileName ?? 'file',
         fileSize: message.fileSize ?? 0,
         onProgress: (progress) {
@@ -4689,115 +4990,125 @@ class _DMChatScreenState extends State<DMChatScreen>
         : '';
     final preview = (message.postPreview ?? '').trim();
     final isKo = Localizations.localeOf(context).languageCode == 'ko';
-    return GestureDetector(
-      onTap: postId.isEmpty ? null : () => _navigateToPost(postId),
-      child: Container(
-        decoration: BoxDecoration(
-          color:
-              isMine ? Colors.white.withOpacity(0.10) : const Color(0xFFF2F4F7),
-          borderRadius: BorderRadius.circular(12),
-        ),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            if (img.isNotEmpty)
-              ClipRRect(
-                borderRadius:
-                    const BorderRadius.vertical(top: Radius.circular(12)),
-                child: AspectRatio(
-                  aspectRatio: 16 / 9,
-                  child: CachedNetworkImage(
-                    imageUrl: img,
-                    fit: BoxFit.cover,
-                    fadeInDuration: const Duration(milliseconds: 150),
-                    fadeOutDuration: const Duration(milliseconds: 150),
-                    placeholder: (_, __) => _buildMediaPlaceholder(
-                      isMine: isMine,
-                      borderRadius:
-                          const BorderRadius.vertical(top: Radius.circular(12)),
-                      child: const SizedBox(
-                        width: 18,
-                        height: 18,
-                        child: CircularProgressIndicator(strokeWidth: 2),
+    return MotionPress(
+      enabled: postId.isNotEmpty,
+      pressedScale: .985,
+      child: GestureDetector(
+        onTap: postId.isEmpty ? null : () => _navigateToPost(postId),
+        child: Container(
+          decoration: BoxDecoration(
+            color: isMine
+                ? Colors.white.withOpacity(0.10)
+                : const Color(0xFFF2F4F7),
+            borderRadius: BorderRadius.circular(12),
+          ),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              if (img.isNotEmpty)
+                ClipRRect(
+                  borderRadius: const BorderRadius.vertical(
+                    top: Radius.circular(12),
+                  ),
+                  child: AspectRatio(
+                    aspectRatio: 16 / 9,
+                    child: CachedNetworkImage(
+                      imageUrl: img,
+                      fit: BoxFit.cover,
+                      fadeInDuration: const Duration(milliseconds: 150),
+                      fadeOutDuration: const Duration(milliseconds: 150),
+                      placeholder: (_, __) => _buildMediaPlaceholder(
+                        isMine: isMine,
+                        borderRadius: const BorderRadius.vertical(
+                          top: Radius.circular(12),
+                        ),
+                        child: const SizedBox(
+                          width: 18,
+                          height: 18,
+                          child: CircularProgressIndicator(strokeWidth: 2),
+                        ),
                       ),
-                    ),
-                    errorWidget: (_, __, ___) => _buildMediaPlaceholder(
-                      isMine: isMine,
-                      borderRadius:
-                          const BorderRadius.vertical(top: Radius.circular(12)),
-                      child: Icon(
-                        Icons.image_outlined,
-                        size: 20,
-                        color: isMine ? Colors.white70 : Colors.grey.shade600,
+                      errorWidget: (_, __, ___) => _buildMediaPlaceholder(
+                        isMine: isMine,
+                        borderRadius: const BorderRadius.vertical(
+                          top: Radius.circular(12),
+                        ),
+                        child: Icon(
+                          Icons.image_outlined,
+                          size: 20,
+                          color: isMine ? Colors.white70 : Colors.grey.shade600,
+                        ),
                       ),
                     ),
                   ),
                 ),
-              ),
-            Padding(
-              padding: const EdgeInsets.fromLTRB(12, 10, 12, 10),
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Row(
-                    children: [
-                      Icon(
-                        Icons.article_outlined,
-                        size: 16,
-                        color: isMine ? Colors.white70 : Colors.grey.shade700,
-                      ),
-                      const SizedBox(width: 6),
-                      Expanded(
-                        child: Text(
-                          (isChineseUi(context)
-                              ? '来自一条动态'
-                              : isKo
-                                  ? '포스트에서 보낸 메시지'
-                                  : 'Sent from a post'),
-                          style: TextStyle(
-                            fontSize: 12,
-                            fontWeight: FontWeight.w700,
-                            color:
-                                isMine ? Colors.white70 : Colors.grey.shade800,
-                          ),
-                          maxLines: 1,
-                          overflow: TextOverflow.ellipsis,
+              Padding(
+                padding: const EdgeInsets.fromLTRB(12, 10, 12, 10),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Row(
+                      children: [
+                        Icon(
+                          Icons.article_outlined,
+                          size: 16,
+                          color: isMine ? Colors.white70 : Colors.grey.shade700,
                         ),
-                      ),
-                      if (postId.isNotEmpty)
-                        Text(
-                          (isChineseUi(context)
-                              ? '查看'
-                              : isKo
-                                  ? '보기'
-                                  : 'View'),
-                          style: TextStyle(
-                            fontSize: 12,
-                            fontWeight: FontWeight.w700,
-                            color:
-                                isMine ? Colors.white : DMColors.textSecondary,
+                        const SizedBox(width: 6),
+                        Expanded(
+                          child: Text(
+                            (isChineseUi(context)
+                                ? '来自一条动态'
+                                : isKo
+                                ? '포스트에서 보낸 메시지'
+                                : 'Sent from a post'),
+                            style: TextStyle(
+                              fontSize: 12,
+                              fontWeight: FontWeight.w700,
+                              color: isMine
+                                  ? Colors.white70
+                                  : Colors.grey.shade800,
+                            ),
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis,
                           ),
                         ),
-                    ],
-                  ),
-                  if (preview.isNotEmpty) ...[
-                    const SizedBox(height: 6),
-                    Text(
-                      preview,
-                      style: TextStyle(
-                        fontSize: 13,
-                        height: 1.3,
-                        fontWeight: FontWeight.w600,
-                        color: isMine ? Colors.white : Colors.grey.shade800,
-                      ),
-                      maxLines: 2,
-                      overflow: TextOverflow.ellipsis,
+                        if (postId.isNotEmpty)
+                          Text(
+                            (isChineseUi(context)
+                                ? '查看'
+                                : isKo
+                                ? '보기'
+                                : 'View'),
+                            style: TextStyle(
+                              fontSize: 12,
+                              fontWeight: FontWeight.w700,
+                              color: isMine
+                                  ? Colors.white
+                                  : DMColors.textSecondary,
+                            ),
+                          ),
+                      ],
                     ),
+                    if (preview.isNotEmpty) ...[
+                      const SizedBox(height: 6),
+                      Text(
+                        preview,
+                        style: TextStyle(
+                          fontSize: 13,
+                          height: 1.3,
+                          fontWeight: FontWeight.w600,
+                          color: isMine ? Colors.white : Colors.grey.shade800,
+                        ),
+                        maxLines: 2,
+                        overflow: TextOverflow.ellipsis,
+                      ),
+                    ],
                   ],
-                ],
+                ),
               ),
-            ),
-          ],
+            ],
+          ),
         ),
       ),
     );
@@ -4812,62 +5123,63 @@ class _DMChatScreenState extends State<DMChatScreen>
     final maxWidth = screenWidth < 400 ? screenWidth * 0.62 : 240.0;
     const maxHeight = 240.0;
 
-    return GestureDetector(
-      onTap: () => _openImageViewer(imageUrl, heroTag: heroTag),
-      child: ClipRRect(
-        borderRadius: BorderRadius.circular(14),
-        child: ConstrainedBox(
-          constraints: BoxConstraints(
-            maxWidth: maxWidth,
-            maxHeight: maxHeight,
-          ),
-          child: Hero(
-            tag: heroTag,
-            child: RetryableChatNetworkImage(
-              imageUrl: imageUrl,
-              fit: BoxFit.cover,
-              fadeInDuration: const Duration(milliseconds: 150),
-              fadeOutDuration: const Duration(milliseconds: 150),
-              placeholder: (_, __) => _buildMediaPlaceholder(
-                isMine: isMine,
-                borderRadius: BorderRadius.circular(14),
-                child: const SizedBox(
-                  width: 18,
-                  height: 18,
-                  child: CircularProgressIndicator(strokeWidth: 2),
+    return MotionPress(
+      pressedScale: .985,
+      child: GestureDetector(
+        onTap: () => _openImageViewer(imageUrl, heroTag: heroTag),
+        child: ClipRRect(
+          borderRadius: BorderRadius.circular(14),
+          child: ConstrainedBox(
+            constraints: BoxConstraints(maxWidth: maxWidth, maxHeight: maxHeight),
+            child: Hero(
+              tag: heroTag,
+              child: RetryableChatNetworkImage(
+                imageUrl: imageUrl,
+                fit: BoxFit.cover,
+                fadeInDuration: const Duration(milliseconds: 150),
+                fadeOutDuration: const Duration(milliseconds: 150),
+                placeholder: (_, __) => _buildMediaPlaceholder(
+                  isMine: isMine,
+                  borderRadius: BorderRadius.circular(14),
+                  child: const SizedBox(
+                    width: 18,
+                    height: 18,
+                    child: CircularProgressIndicator(strokeWidth: 2),
+                  ),
                 ),
-              ),
-              errorBuilder: (_, __, ___, retry) => _buildMediaPlaceholder(
-                isMine: isMine,
-                borderRadius: BorderRadius.circular(14),
-                child: Semantics(
-                  button: true,
-                  label: (isChineseUi(context)
-                      ? '重新加载图片'
-                      : Localizations.localeOf(context).languageCode == 'ko'
-                          ? '이미지 다시 불러오기'
-                          : 'Retry image'),
-                  child: TextButton.icon(
-                    onPressed: retry,
-                    style: TextButton.styleFrom(
-                      foregroundColor:
-                          isMine ? Colors.white70 : Colors.grey[700],
-                      padding: const EdgeInsets.symmetric(
-                        horizontal: 10,
-                        vertical: 8,
+                errorBuilder: (_, __, ___, retry) => _buildMediaPlaceholder(
+                  isMine: isMine,
+                  borderRadius: BorderRadius.circular(14),
+                  child: Semantics(
+                    button: true,
+                    label: (isChineseUi(context)
+                        ? '重新加载图片'
+                        : Localizations.localeOf(context).languageCode == 'ko'
+                        ? '이미지 다시 불러오기'
+                        : 'Retry image'),
+                    child: TextButton.icon(
+                      onPressed: retry,
+                      style: TextButton.styleFrom(
+                        foregroundColor: isMine
+                            ? Colors.white70
+                            : Colors.grey[700],
+                        padding: const EdgeInsets.symmetric(
+                          horizontal: 10,
+                          vertical: 8,
+                        ),
+                        minimumSize: const Size(44, 44),
                       ),
-                      minimumSize: const Size(44, 44),
-                    ),
-                    icon: const Icon(Icons.refresh_rounded, size: 18),
-                    label: Text(
-                      (isChineseUi(context)
-                          ? '重新加载'
-                          : Localizations.localeOf(context).languageCode == 'ko'
-                              ? '다시 불러오기'
-                              : 'Retry'),
-                      style: const TextStyle(
-                        fontSize: 12,
-                        fontWeight: FontWeight.w600,
+                      icon: const Icon(Icons.refresh_rounded, size: 18),
+                      label: Text(
+                        (isChineseUi(context)
+                            ? '重新加载'
+                            : Localizations.localeOf(context).languageCode == 'ko'
+                            ? '다시 불러오기'
+                            : 'Retry'),
+                        style: const TextStyle(
+                          fontSize: 12,
+                          fontWeight: FontWeight.w600,
+                        ),
                       ),
                     ),
                   ),
@@ -4943,10 +5255,15 @@ class _DMChatScreenState extends State<DMChatScreen>
           child: Column(
             mainAxisSize: MainAxisSize.min,
             children: [
-              if (_replyingTo != null) ...[
-                _buildComposerReplyPreview(_replyingTo!),
-                const SizedBox(height: 8),
-              ],
+              ChatReplyReveal(
+                replyId: _replyingTo?.id,
+                child: _replyingTo == null
+                    ? null
+                    : Padding(
+                        padding: const EdgeInsets.only(bottom: 8),
+                        child: _buildComposerReplyPreview(_replyingTo!),
+                      ),
+              ),
               // ✅ 게시글에서 DM으로 진입한 경우: "보내기 전" 컨텍스트 미리보기 카드
               // - 사용자는 메시지를 입력한 뒤 전송할 수 있고,
               // - 첫 전송 시에만 실제 메시지에 post_context로 부착된다.
@@ -4991,25 +5308,30 @@ class _DMChatScreenState extends State<DMChatScreen>
                   crossAxisAlignment: CrossAxisAlignment.end,
                   children: [
                     // 첨부 버튼 (+)
-                    InkWell(
-                      onTap: (peerDeleted || _directInteractionRestricted)
-                          ? null
-                          : _showAttachmentOptions,
-                      customBorder: const CircleBorder(),
-                      child: Container(
-                        width: MediaQuery.sizeOf(context).width < 360 ? 38 : 40,
-                        height:
-                            MediaQuery.sizeOf(context).width < 360 ? 38 : 40,
-                        decoration: BoxDecoration(
-                          color: DMColors.composerActionBg,
-                          shape: BoxShape.circle,
-                        ),
-                        child: Icon(
-                          Icons.add,
-                          color: (peerDeleted || _directInteractionRestricted)
-                              ? const Color(0xFF667085)
-                              : Colors.white,
-                          size: 22,
+                    MotionPress(
+                      enabled: !peerDeleted && !_directInteractionRestricted,
+                      pressedScale: .9,
+                      child: InkWell(
+                        onTap: (peerDeleted || _directInteractionRestricted)
+                            ? null
+                            : _showAttachmentOptions,
+                        customBorder: const CircleBorder(),
+                        child: Container(
+                          width:
+                              MediaQuery.sizeOf(context).width < 360 ? 38 : 40,
+                          height:
+                              MediaQuery.sizeOf(context).width < 360 ? 38 : 40,
+                          decoration: BoxDecoration(
+                            color: DMColors.composerActionBg,
+                            shape: BoxShape.circle,
+                          ),
+                          child: Icon(
+                            Icons.add,
+                            color: (peerDeleted || _directInteractionRestricted)
+                                ? const Color(0xFF667085)
+                                : Colors.white,
+                            size: 22,
+                          ),
                         ),
                       ),
                     ),
@@ -5070,26 +5392,33 @@ class _DMChatScreenState extends State<DMChatScreen>
                     ),
                     const SizedBox(width: 8),
                     // 전송 버튼 - DM 아이콘과 구분되는 상향 화살표 버튼
-                    InkWell(
-                      onTap: canSend ? _sendMessage : null,
-                      customBorder: const CircleBorder(),
-                      child: Container(
-                        width: MediaQuery.sizeOf(context).width < 360 ? 38 : 40,
-                        height:
-                            MediaQuery.sizeOf(context).width < 360 ? 38 : 40,
-                        decoration: BoxDecoration(
-                          color: canSend
-                              ? const Color(0xFFF2F4F7)
-                              : DMColors.composerActionBg,
-                          shape: BoxShape.circle,
-                        ),
-                        child: Center(
-                          child: Icon(
-                            Icons.arrow_upward_rounded,
+                    MotionPress(
+                      enabled: canSend,
+                      pressedScale: .90,
+                      child: InkWell(
+                        onTap: canSend ? _sendMessage : null,
+                        customBorder: const CircleBorder(),
+                        child: AnimatedContainer(
+                          duration: MotionTokens.of(context, MotionTokens.fast),
+                          curve: MotionTokens.curve,
+                          width:
+                              MediaQuery.sizeOf(context).width < 360 ? 38 : 40,
+                          height:
+                              MediaQuery.sizeOf(context).width < 360 ? 38 : 40,
+                          decoration: BoxDecoration(
                             color: canSend
-                                ? DMColors.textPrimary
-                                : DMColors.textTertiary,
-                            size: 21,
+                                ? const Color(0xFFF2F4F7)
+                                : DMColors.composerActionBg,
+                            shape: BoxShape.circle,
+                          ),
+                          child: Center(
+                            child: Icon(
+                              Icons.arrow_upward_rounded,
+                              color: canSend
+                                  ? DMColors.textPrimary
+                                  : DMColors.textTertiary,
+                              size: 21,
+                            ),
                           ),
                         ),
                       ),
@@ -5189,16 +5518,20 @@ class _DMChatScreenState extends State<DMChatScreen>
                 : Localizations.localeOf(context).languageCode == 'ko'
                     ? '답장 취소'
                     : 'Cancel reply',
-            child: IconButton(
-              tooltip: isChineseUi(context)
-                  ? '取消回复'
-                  : Localizations.localeOf(context).languageCode == 'ko'
-                      ? '답장 취소'
-                      : 'Cancel reply',
-              onPressed: () => setState(() => _replyingTo = null),
-              icon: const Icon(Icons.close_rounded, size: 19),
-              color: const Color(0xFF667085),
-              constraints: const BoxConstraints.tightFor(width: 42, height: 42),
+            child: MotionPress(
+              pressedScale: .9,
+              child: IconButton(
+                tooltip: isChineseUi(context)
+                    ? '取消回复'
+                    : Localizations.localeOf(context).languageCode == 'ko'
+                        ? '답장 취소'
+                        : 'Cancel reply',
+                onPressed: () => setState(() => _replyingTo = null),
+                icon: const Icon(Icons.close_rounded, size: 19),
+                color: const Color(0xFF667085),
+                constraints:
+                    const BoxConstraints.tightFor(width: 42, height: 42),
+              ),
             ),
           ),
         ],
@@ -5212,129 +5545,133 @@ class _DMChatScreenState extends State<DMChatScreen>
     final preview = (widget.originPostPreview ?? '').trim();
     final isKo = Localizations.localeOf(context).languageCode == 'ko';
 
-    return GestureDetector(
-      onTap: postId.isEmpty ? null : () => _navigateToPost(postId),
-      child: Container(
-        padding: const EdgeInsets.all(10),
-        decoration: BoxDecoration(
-          color: Colors.white,
-          borderRadius: BorderRadius.circular(12),
-        ),
-        child: Row(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            // 썸네일 (있으면)
-            if (img.isNotEmpty)
-              ClipRRect(
-                borderRadius: BorderRadius.circular(10),
-                child: CachedNetworkImage(
-                  imageUrl: img,
+    return MotionPress(
+      enabled: postId.isNotEmpty,
+      pressedScale: .985,
+      child: GestureDetector(
+        onTap: postId.isEmpty ? null : () => _navigateToPost(postId),
+        child: Container(
+          padding: const EdgeInsets.all(10),
+          decoration: BoxDecoration(
+            color: Colors.white,
+            borderRadius: BorderRadius.circular(12),
+          ),
+          child: Row(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              // 썸네일 (있으면)
+              if (img.isNotEmpty)
+                ClipRRect(
+                  borderRadius: BorderRadius.circular(10),
+                  child: CachedNetworkImage(
+                    imageUrl: img,
+                    width: 56,
+                    height: 56,
+                    fit: BoxFit.cover,
+                    placeholder: (_, __) => Container(
+                      width: 56,
+                      height: 56,
+                      color: Colors.grey[200],
+                      alignment: Alignment.center,
+                      child: const SizedBox(
+                        width: 18,
+                        height: 18,
+                        child: CircularProgressIndicator(strokeWidth: 2),
+                      ),
+                    ),
+                    errorWidget: (_, __, ___) => Container(
+                      width: 56,
+                      height: 56,
+                      color: Colors.grey[200],
+                      alignment: Alignment.center,
+                      child: Icon(
+                        Icons.article_outlined,
+                        size: 22,
+                        color: Colors.grey[600],
+                      ),
+                    ),
+                  ),
+                )
+              else
+                Container(
                   width: 56,
                   height: 56,
-                  fit: BoxFit.cover,
-                  placeholder: (_, __) => Container(
-                    width: 56,
-                    height: 56,
-                    color: Colors.grey[200],
-                    alignment: Alignment.center,
-                    child: const SizedBox(
-                      width: 18,
-                      height: 18,
-                      child: CircularProgressIndicator(strokeWidth: 2),
-                    ),
+                  decoration: BoxDecoration(
+                    color: const Color(0xFFF3F4F6),
+                    borderRadius: BorderRadius.circular(10),
                   ),
-                  errorWidget: (_, __, ___) => Container(
-                    width: 56,
-                    height: 56,
-                    color: Colors.grey[200],
-                    alignment: Alignment.center,
-                    child: Icon(
-                      Icons.article_outlined,
-                      size: 22,
-                      color: Colors.grey[600],
-                    ),
+                  alignment: Alignment.center,
+                  child: const Icon(
+                    Icons.article_outlined,
+                    size: 22,
+                    color: Color(0xFF6B7280),
                   ),
                 ),
-              )
-            else
-              Container(
-                width: 56,
-                height: 56,
-                decoration: BoxDecoration(
-                  color: const Color(0xFFF3F4F6),
-                  borderRadius: BorderRadius.circular(10),
-                ),
-                alignment: Alignment.center,
-                child: const Icon(
-                  Icons.article_outlined,
-                  size: 22,
-                  color: Color(0xFF6B7280),
-                ),
-              ),
-            const SizedBox(width: 10),
-            Expanded(
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Row(
-                    children: [
-                      Expanded(
-                        child: Text(
-                          (isChineseUi(context)
-                              ? '聊聊这条动态'
-                              : isKo
-                                  ? '이 게시글에 대해 DM 보내기'
-                                  : 'Message about this post'),
-                          style: TextStyle(
-                            fontFamily: uiFontFamily(context, 'Inter'),
-                            fontFamilyFallback: const ['NotoSansKR'],
-                            fontSize: 13,
-                            fontWeight: FontWeight.w700,
-                            color: Color(0xFF111827),
-                          ),
-                          maxLines: 1,
-                          overflow: TextOverflow.ellipsis,
-                        ),
-                      ),
-                      const SizedBox(width: 8),
-                      InkWell(
-                        onTap: () {
-                          setState(() {
-                            _composerPostContextDismissed = true;
-                          });
-                        },
-                        customBorder: const CircleBorder(),
-                        child: const Padding(
-                          padding: EdgeInsets.all(4),
-                          child: Icon(
-                            Icons.close,
-                            size: 18,
-                            color: Color(0xFF9CA3AF),
+              const SizedBox(width: 10),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Row(
+                      children: [
+                        Expanded(
+                          child: Text(
+                            (isChineseUi(context)
+                                ? '聊聊这条动态'
+                                : isKo
+                                ? '이 게시글에 대해 DM 보내기'
+                                : 'Message about this post'),
+                            style: TextStyle(
+                              fontFamily: uiFontFamily(context, 'Inter'),
+                              fontFamilyFallback: const ['NotoSansKR'],
+                              fontSize: 13,
+                              fontWeight: FontWeight.w700,
+                              color: Color(0xFF111827),
+                            ),
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis,
                           ),
                         ),
+                        const SizedBox(width: 8),
+                        InkWell(
+                          onTap: () {
+                            setState(() {
+                              _composerPostContextDismissed = true;
+                            });
+                          },
+                          customBorder: const CircleBorder(),
+                          child: const Padding(
+                            padding: EdgeInsets.all(4),
+                            child: Icon(
+                              Icons.close,
+                              size: 18,
+                              color: Color(0xFF9CA3AF),
+                            ),
+                          ),
+                        ),
+                      ],
+                    ),
+                    if (preview.isNotEmpty) ...[
+                      const SizedBox(height: 6),
+                      Text(
+                        preview,
+                        style: TextStyle(
+                          fontFamily: uiFontFamily(context, 'Inter'),
+                          fontFamilyFallback: const ['NotoSansKR'],
+                          fontSize: 12,
+                          fontWeight: FontWeight.w600,
+                          color: Color(0xFF4B5563),
+                          height: 1.35,
+                        ),
+                        maxLines: 2,
+                        overflow: TextOverflow.ellipsis,
                       ),
                     ],
-                  ),
-                  if (preview.isNotEmpty) ...[
-                    const SizedBox(height: 6),
-                    Text(
-                      preview,
-                      style: TextStyle(
-                        fontFamily: uiFontFamily(context, 'Inter'),
-                        fontFamilyFallback: const ['NotoSansKR'],
-                        fontSize: 12,
-                        fontWeight: FontWeight.w600,
-                        color: Color(0xFF4B5563),
-                        height: 1.35,
-                      ),
-                      maxLines: 2,
-                      overflow: TextOverflow.ellipsis,
-                    ),
                   ],
-                ],
+                ),
               ),
-            ),
-          ],
+            ],
+          ),
         ),
       ),
     );
@@ -5450,6 +5787,8 @@ class _DMChatScreenState extends State<DMChatScreen>
   }
 
   Future<void> _showAttachmentOptions() async {
+    // 키보드가 첨부 시트·갤러리와 겹쳐 보이지 않도록 먼저 포커스를 내린다.
+    FocusManager.instance.primaryFocus?.unfocus();
     final action = await showSnackChatAttachmentSheet(
       context,
       showPoll: false,
@@ -5607,12 +5946,22 @@ class _DMChatScreenState extends State<DMChatScreen>
 
   Future<void> _pickImageFrom(ImageSource source) async {
     try {
-      final xfile = await _imagePicker.pickImage(source: source);
+      // 갤러리는 사진과 영상을 한 화면에서 고른다(시스템 포토 피커).
+      final xfile = source == ImageSource.gallery
+          ? await _imagePicker.pickMedia()
+          : await _imagePicker.pickImage(source: source);
       if (xfile == null) return;
 
       if (!mounted) return;
 
+      if (_looksLikeVideo(xfile)) {
+        await _sendPickedVideo(File(xfile.path));
+        return;
+      }
       final pickedFile = File(xfile.path);
+      // Compress and measure while the preview screen is open so the send
+      // itself only has to upload.
+      final preparing = _storageService.prepareChatImage(pickedFile);
       final shouldSend = await Navigator.push<bool>(
         context,
         MaterialPageRoute(
@@ -5621,9 +5970,15 @@ class _DMChatScreenState extends State<DMChatScreen>
         ),
       );
 
-      if (!mounted) return;
-      if (shouldSend != true) return;
+      if (!mounted || shouldSend != true) {
+        unawaited(preparing.then((prepared) => prepared?.dispose()));
+        return;
+      }
 
+      final prepared = await preparing;
+      if (prepared != null) {
+        _preparedImages[pickedFile.path] = prepared;
+      }
       setState(() {
         _pendingImage = pickedFile;
         _uploadProgress = null;
@@ -5647,6 +6002,85 @@ class _DMChatScreenState extends State<DMChatScreen>
     }
   }
 
+  static const Set<String> _videoExtensions = {
+    'mp4', 'mov', 'm4v', '3gp', 'mkv', 'webm', 'avi', 'mpeg', 'mpg',
+  };
+
+  bool _looksLikeVideo(XFile file) {
+    final mime = (file.mimeType ?? '').toLowerCase();
+    if (mime.startsWith('video/')) return true;
+    if (mime.startsWith('image/')) return false;
+    final extension = SnackChatFilePolicy.extensionOf(file.name.isNotEmpty
+        ? file.name
+        : file.path);
+    return _videoExtensions.contains(extension);
+  }
+
+  /// 갤러리에서 고른 영상: 540p로 압축하고 썸네일을 만든 뒤 파일 메시지로 보낸다.
+  Future<void> _sendPickedVideo(File source) async {
+    if (_pendingFile != null || _pendingImage != null) return;
+    final limits = VideoUploadPolicy.dm;
+    File? staged;
+    try {
+      final file = await runWithVideoPreparingDialog<SnackChatSelectedFile>(
+        context,
+        () async {
+          final prepared = await VideoPrepareService.instance
+              .prepare(source, limits: limits);
+          final meta =
+              await VideoPrepareService.instance.chatVideoMeta(prepared);
+          final stem = p.basenameWithoutExtension(source.path);
+          staged = await VideoPrepareService.instance
+              .stageForSend(prepared, stem: stem);
+          final validated = await SnackChatFilePolicy.validatePath(
+            staged!.path,
+            displayName: '${stem.isEmpty ? 'video' : stem}.mp4',
+          );
+          return validated.withVideoMeta(meta);
+        },
+      );
+      if (!mounted) return;
+      final confirmed = await showSnackChatFileConfirmationSheet(
+        context,
+        files: <SnackChatSelectedFile>[file],
+        temporary24h: false,
+        retentionDescription: isChineseUi(context)
+            ? '视频将保存在此私信中。'
+            : Localizations.localeOf(context).languageCode == 'ko'
+                ? '영상은 이 DM 대화에 보관됩니다.'
+                : 'The video remains available in this DM.',
+      );
+      if (!mounted || confirmed == null || confirmed.isEmpty) return;
+      setState(() => _pendingFile = confirmed.first);
+      await _sendMessage(preserveDraft: true);
+    } on SnackChatFileValidationException catch (error) {
+      if (!mounted) return;
+      AppSnackBar.show(
+        context,
+        message: error.message,
+        type: AppSnackBarType.error,
+      );
+    } catch (error, stackTrace) {
+      Logger.error('DM 영상 준비 실패', error, stackTrace);
+      if (!mounted) return;
+      AppSnackBar.show(
+        context,
+        message: videoPrepareErrorMessage(context, error, limits),
+        type: AppSnackBarType.error,
+      );
+    } finally {
+      // 전송 큐가 자기 저장소로 복사한 뒤이므로 임시 사본은 지운다.
+      final temp = staged;
+      if (temp != null) {
+        unawaited(Future<void>.delayed(const Duration(seconds: 30), () async {
+          try {
+            if (await temp.exists()) await temp.delete();
+          } catch (_) {}
+        }));
+      }
+    }
+  }
+
   Future<void> _sendMessage({bool preserveDraft = false}) async {
     final owner = _currentUser?.uid;
     final room = _activeConversationId;
@@ -5659,7 +6093,7 @@ class _DMChatScreenState extends State<DMChatScreen>
     final selectedFile = _pendingFile;
     final text = selectedFile == null
         ? typedText
-        : '📎 ${selectedFile.originalFileName}';
+        : '${selectedFile.isVideo ? '🎬' : '📎'} ${selectedFile.originalFileName}';
     if ((text.isEmpty && image == null && selectedFile == null) ||
         typedText.length > 500) return;
     final replyTarget = _replyingTo;
@@ -5686,6 +6120,10 @@ class _DMChatScreenState extends State<DMChatScreen>
       fileExtension: selectedFile?.fileExtension,
       fileMimeType: selectedFile?.mimeType,
       fileSize: selectedFile?.fileSize,
+      videoDurationMs: selectedFile?.videoMeta?.durationMs,
+      videoWidth: selectedFile?.videoMeta?.width,
+      videoHeight: selectedFile?.videoMeta?.height,
+      videoThumbnail: selectedFile?.videoMeta?.thumbnailDataUrl,
       replyToMessageId: replyTarget?.id,
       replyToSenderId: replyTarget?.senderId,
       replyToText: replyTarget == null ? null : _replySnapshotText(replyTarget),
@@ -5767,12 +6205,24 @@ class _DMChatScreenState extends State<DMChatScreen>
             await _outbox.put(owner, room, message.id, message.toLocalMap());
             if (!_canSendFor(owner, room))
               throw StateError('account-or-room-changed');
-            final url = await _storageService.uploadDmImage(File(path),
-                userId: owner, conversationId: room, onProgress: (progress) {
-              if (mounted && _canSendFor(owner, room)) {
-                setState(() => _uploadById[message.id] = progress);
-              }
-            });
+            // Prepared bytes (if the picker flow produced them) are keyed by the
+            // originally picked path; retries after a restart simply prepare
+            // again inside uploadDmImage.
+            final prepared = _preparedImages.remove(message.localImagePath) ??
+                _preparedImages.remove(path);
+            final String? url;
+            try {
+              url = await _storageService.uploadDmImage(File(path),
+                  userId: owner,
+                  conversationId: room,
+                  prepared: prepared, onProgress: (progress) {
+                if (mounted && _canSendFor(owner, room)) {
+                  setState(() => _uploadById[message.id] = progress);
+                }
+              });
+            } finally {
+              unawaited(prepared?.dispose());
+            }
             if (url == null || url.isEmpty) throw StateError('upload-failed');
             final uploaded = message.copyWith(imageUrl: url);
             await _outbox.put(owner, room, uploaded.id, uploaded.toLocalMap());
@@ -5837,6 +6287,7 @@ class _DMChatScreenState extends State<DMChatScreen>
             if (result == null) throw StateError('file-upload-failed');
             final uploaded = message.copyWith(
               fileStoragePath: result.storagePath,
+              storageBucket: result.storageBucket,
             );
             await _outbox.put(owner, room, uploaded.id, uploaded.toLocalMap());
             return uploaded;

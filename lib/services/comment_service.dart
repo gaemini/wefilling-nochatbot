@@ -8,6 +8,7 @@ import 'dart:typed_data';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:firebase_storage/firebase_storage.dart';
+import '../config/app_backend.dart';
 import '../models/comment.dart';
 import '../models/snapshot.dart' show isValidSnapshotCommentGifHeader;
 import 'notification_service.dart';
@@ -182,6 +183,7 @@ class CommentService {
         'content': content,
         if (gifBytes != null)
           'gifStoragePath': 'post_comment_gifs/$postId/$gifCommentId.gif',
+        if (gifBytes != null) 'storageBucket': AppStorage.uploadBucketName,
         'createdAt': FieldValue.serverTimestamp(),
         'parentCommentId': parentCommentId,
         'depth': parentCommentId != null ? 1 : 0,
@@ -202,7 +204,7 @@ class CommentService {
       } else {
         await FirebaseAppCheckService.instance.ensureReady();
         final gifPath = commentData['gifStoragePath']! as String;
-        final gifRef = FirebaseStorage.instance.ref(gifPath);
+        final gifRef = AppStorage.uploads.ref(gifPath);
         Future<bool> matchesExistingGif() async {
           final metadata = await gifRef.getMetadata();
           final custom = metadata.customMetadata ?? const <String, String>{};
@@ -720,7 +722,10 @@ class CommentService {
     if (path != 'post_comment_gifs/$postId/$commentId.gif' ||
         _auth.currentUser?.uid != uid) return;
     try {
-      await FirebaseStorage.instance.ref(path as String).delete();
+      await AppStorage.ref(
+        path as String,
+        storageBucket: (data['storageBucket'] ?? '').toString(),
+      ).delete();
     } on FirebaseException catch (error) {
       if (error.code != 'object-not-found') {
         Logger.warning('댓글 GIF 정리 실패: ${error.code}');

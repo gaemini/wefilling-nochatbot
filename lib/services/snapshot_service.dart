@@ -5,6 +5,8 @@ import 'dart:typed_data';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_app_check/firebase_app_check.dart';
 import 'package:cloud_functions/cloud_functions.dart';
+
+import '../config/app_backend.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:firebase_storage/firebase_storage.dart';
 import 'package:path/path.dart' as path;
@@ -95,8 +97,7 @@ class SnapshotService {
 
   final FirebaseFirestore _firestore = FirebaseFirestore.instance;
   final FirebaseAuth _auth = FirebaseAuth.instance;
-  final FirebaseStorage _storage = FirebaseStorage.instance;
-  final FirebaseFunctions _functions = FirebaseFunctions.instance;
+  final FirebaseFunctions _functions = AppFunctions.instance;
   final Uuid _uuid = const Uuid();
   final SnapshotMediaCacheService _mediaCache =
       SnapshotMediaCacheService.instance;
@@ -529,9 +530,11 @@ class SnapshotService {
     final storagePath = mediaType == SnapshotMediaType.video
         ? 'snapshots/$resolvedSnapshotId/final.mp4'
         : 'snapshots/$resolvedSnapshotId/final.jpg';
-    final ref = _storage.ref(storagePath);
+    final storageBucket = AppStorage.uploadBucketName;
+    final uploads = AppStorage.uploads;
+    final ref = uploads.ref(storagePath);
     final thumbnailPath = 'snapshots/$resolvedSnapshotId/thumbnail.jpg';
-    final thumbnailRef = _storage.ref(thumbnailPath);
+    final thumbnailRef = uploads.ref(thumbnailPath);
     var uploaded = false;
     var thumbnailUploaded = false;
     var stage = 'orphan-cleanup';
@@ -603,6 +606,7 @@ class SnapshotService {
           .call(<String, dynamic>{
         'snapshotId': resolvedSnapshotId,
         'storagePath': storagePath,
+        'storageBucket': storageBucket,
         'mediaType': mediaType.value,
         'visibility': visibility.value,
         'visibleToCategoryIds': visibleToCategoryIds,
@@ -641,6 +645,7 @@ class SnapshotService {
         authorNationality: '',
         university: '',
         storagePath: storagePath,
+        storageBucket: storageBucket,
         mediaType: mediaType,
         thumbnailStoragePath:
             mediaType == SnapshotMediaType.video ? thumbnailPath : '',
@@ -1508,7 +1513,7 @@ class SnapshotService {
       }
       gifStoragePath =
           'snapshots/$snapshotId/comment_gifs/$resolvedRequestId.gif';
-      final reference = _storage.ref(gifStoragePath);
+      final reference = AppStorage.uploads.ref(gifStoragePath);
       await FirebaseAppCheckService.instance.ensureReady();
       Future<bool> matchesExistingGif() async {
         final metadata = await reference.getMetadata();
@@ -1548,6 +1553,7 @@ class SnapshotService {
       'snapshotId': snapshotId,
       'content': normalized,
       if (gifStoragePath != null) 'gifStoragePath': gifStoragePath,
+      if (gifStoragePath != null) 'storageBucket': AppStorage.uploadBucketName,
       'requestId': resolvedRequestId,
       if (parentCommentId?.trim().isNotEmpty == true)
         'parentCommentId': parentCommentId!.trim(),
@@ -1584,7 +1590,10 @@ class SnapshotService {
         comment.gifStoragePath != expectedPath) {
       throw StateError('snapshot-comment-gif-unavailable');
     }
-    final bytes = await _storage.ref(expectedPath)
+    final bytes = await AppStorage.ref(
+      expectedPath,
+      storageBucket: comment.storageBucket,
+    )
         .getData(5 * 1024 * 1024)
         .timeout(const Duration(seconds: 20));
     if (bytes == null || bytes.isEmpty || _auth.currentUser?.uid != uid) {
@@ -1742,7 +1751,7 @@ class SnapshotService {
         _auth.currentUser?.uid != uid) {
       throw StateError('snapshot-video-auth-unavailable');
     }
-    final bucket = _storage.ref().bucket;
+    final bucket = AppStorage.resolveBucketName(item.storageBucket);
     final objectPath = Uri.encodeComponent(item.videoStoragePath.trim());
     final uri = Uri.parse(
       'https://firebasestorage.googleapis.com/v0/b/'
@@ -1905,7 +1914,10 @@ class SnapshotService {
           );
         }
         final task =
-            _storage.ref(item.videoStoragePath.trim()).writeToFile(partial);
+            AppStorage.ref(
+              item.videoStoragePath.trim(),
+              storageBucket: item.storageBucket,
+            ).writeToFile(partial);
         operation.task = task;
         await operation.progressSubscription?.cancel();
         operation.progressSubscription = task.snapshotEvents.listen((event) {
@@ -2043,11 +2055,14 @@ class SnapshotService {
     var source = 'none';
     if (item.imageStoragePath.trim().isNotEmpty) {
       source = 'imageStoragePath';
-      reference = _storage.ref(item.imageStoragePath.trim());
+      reference = AppStorage.ref(
+        item.imageStoragePath.trim(),
+        storageBucket: item.storageBucket,
+      );
     } else if (item.imageUrl.trim().isNotEmpty) {
       source = 'legacy-imageUrl';
       try {
-        reference = _storage.refFromURL(item.imageUrl.trim());
+        reference = AppStorage.refFromUrl(item.imageUrl.trim());
       } catch (error, stackTrace) {
         Logger.error(
           '스낵 이미지 reference 생성 실패 '

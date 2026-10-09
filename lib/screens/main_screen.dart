@@ -3,9 +3,12 @@
 // 하단 탭 네비게이션 제공
 // 게시판, 모임, 마이페이지 화면 통합
 
+import 'package:firebase_auth/firebase_auth.dart' hide AuthProvider;
 import 'dart:math' as math;
 
 import 'package:flutter/material.dart';
+import '../ui/widgets/motion_press.dart';
+import '../ui/widgets/app_start_motion.dart';
 import 'package:provider/provider.dart';
 
 import '../constants/app_constants.dart';
@@ -16,6 +19,7 @@ import '../services/external_share_service.dart';
 import '../services/notification_service.dart';
 import '../services/snack_chat_service.dart';
 import '../services/badge_service.dart';
+import '../services/navigation_service.dart';
 import '../ui/widgets/app_icon_button.dart';
 import '../utils/logger.dart';
 import '../widgets/adaptive_bottom_navigation.dart';
@@ -129,6 +133,12 @@ class _MainScreenState extends State<MainScreen>
       BadgeService.startRealtimeBadgeSync().catchError((e) {
         Logger.error('실시간 배지 동기화 시작 실패', e);
       });
+      // Login flows that pushReplacement(MainScreen) bypass the auth gate in
+      // main.dart, which is the only other place that arms push routing. Without
+      // this, every notification tap after logout → login in the same process
+      // stayed queued until the app restarted.
+      final uid = FirebaseAuth.instance.currentUser?.uid;
+      if (uid != null) NavigationService.setRoutingReady(true, uid);
     });
   }
 
@@ -327,40 +337,41 @@ class _MainScreenState extends State<MainScreen>
   Widget _buildAppBarTitle() {
     return Row(
       children: [
-        GestureDetector(
-          onTap: () {
-            Navigator.push(
-              context,
-              MaterialPageRoute(
-                builder: (context) => const AdShowcaseScreen(),
-              ),
-            );
-          },
-          behavior: HitTestBehavior.opaque,
-          child: Row(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              SizedBox(width: 24, height: 24, child: _buildLogo()),
-              const SizedBox(width: 8),
-              Text(
-                AppLocalizations.of(context)!.appName,
-                style: TextStyle(
-                  fontFamily: uiFontFamily(context, 'Inter'),
-                  fontFamilyFallback: const ['NotoSansKR'],
-                  fontSize: 17,
-                  fontWeight: FontWeight.w700,
-                  color: AppColors.pointColor,
-                  letterSpacing: -0.5,
-                  shadows: [
-                    Shadow(
-                      offset: Offset(0.5, 0.5),
-                      blurRadius: 0.5,
-                      color: AppColors.pointColor,
-                    ),
-                  ],
+        MotionPress(
+          pressedScale: .99,
+          child: GestureDetector(
+            onTap: () {
+              Navigator.push(
+                context,
+                MaterialPageRoute(builder: (context) => const AdShowcaseScreen()),
+              );
+            },
+            behavior: HitTestBehavior.opaque,
+            child: Row(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                SizedBox(width: 24, height: 24, child: _buildLogo()),
+                const SizedBox(width: 8),
+                Text(
+                  AppLocalizations.of(context)!.appName,
+                  style: TextStyle(
+                    fontFamily: uiFontFamily(context, 'Inter'),
+                    fontFamilyFallback: const ['NotoSansKR'],
+                    fontSize: 17,
+                    fontWeight: FontWeight.w700,
+                    color: AppColors.pointColor,
+                    letterSpacing: -0.5,
+                    shadows: [
+                      Shadow(
+                        offset: Offset(0.5, 0.5),
+                        blurRadius: 0.5,
+                        color: AppColors.pointColor,
+                      ),
+                    ],
+                  ),
                 ),
-              ),
-            ],
+              ],
+            ),
           ),
         ),
         const Spacer(),
@@ -506,7 +517,7 @@ class _MainScreenState extends State<MainScreen>
             factor,
             title: appBarTitle,
           ),
-          body: body,
+          body: AppEntryFade(child: body),
           bottomNavigationBar: _buildAnimatedBottomNavigation(
             factor,
             child: bottomNavigation,

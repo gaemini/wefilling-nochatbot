@@ -5887,7 +5887,7 @@ abstract class AppLocalizations {
   /// No description provided for @postComposeImageRequired.
   ///
   /// In ko, this message translates to:
-  /// **'이미지 첨부'**
+  /// **'이미지/동영상 첨부하기'**
   String get postComposeImageRequired;
 
   /// No description provided for @postComposeImageHelper.

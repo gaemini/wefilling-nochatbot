@@ -1,6 +1,7 @@
 import 'dart:async';
 
 import 'package:flutter/material.dart';
+import 'package:flutter/gestures.dart';
 
 import '../../design/tokens.dart';
 
@@ -13,6 +14,7 @@ class MotionPress extends StatefulWidget {
     this.enabled = true,
     this.pressedScale = .97,
     this.pressedOpacity = 1,
+    this.resetToken,
   })  : assert(pressedScale > 0 && pressedScale <= 1),
         assert(pressedOpacity > 0 && pressedOpacity <= 1);
 
@@ -21,17 +23,64 @@ class MotionPress extends StatefulWidget {
   final double pressedScale;
   final double pressedOpacity;
 
+  /// A selection change ends pressing before the selection pulse begins.
+  final Object? resetToken;
+
   @override
   State<MotionPress> createState() => _MotionPressState();
 }
 
-class _MotionPressState extends State<MotionPress> {
+class _MotionPressState extends State<MotionPress> with WidgetsBindingObserver {
   int? _pointer;
   Offset? _origin;
   bool _pressed = false;
   Timer? _minimumPressTimer;
+  final Set<int> _suppressedPointers = <int>{};
+  bool _immediateReset = false;
+
+  @override
+  void initState() {
+    super.initState();
+    WidgetsBinding.instance.addObserver(this);
+  }
+
+  void _reset() {
+    _minimumPressTimer?.cancel();
+    _minimumPressTimer = null;
+    _pointer = null;
+    _origin = null;
+    _pressed = false;
+    _immediateReset = true;
+  }
+
+  void _suppress(int pointer) {
+    if (!mounted) return;
+    _suppressedPointers.add(pointer);
+    if (_pressed) setState(_reset);
+  }
+
+  static void _suppressAncestors(BuildContext context, int pointer) {
+    context.visitAncestorElements((element) {
+      if (element is StatefulElement && element.state is _MotionPressState) {
+        (element.state as _MotionPressState)._suppress(pointer);
+      }
+      return true;
+    });
+  }
+
+  @override
+  void didChangeAppLifecycleState(AppLifecycleState state) {
+    if (state != AppLifecycleState.resumed && mounted) {
+      setState(() {
+        _reset();
+        _suppressedPointers.clear();
+      });
+    }
+  }
 
   void _release(int pointer) {
+    if (!mounted) return;
+    _suppressedPointers.remove(pointer);
     if (_pointer != pointer) return;
     _pointer = null;
     _origin = null;
@@ -43,58 +92,74 @@ class _MotionPressState extends State<MotionPress> {
   @override
   void didUpdateWidget(covariant MotionPress oldWidget) {
     super.didUpdateWidget(oldWidget);
-    if (!widget.enabled && oldWidget.enabled) {
-      _minimumPressTimer?.cancel();
-      _pointer = null;
-      _origin = null;
-      _pressed = false;
+    if ((!widget.enabled && oldWidget.enabled) ||
+        widget.resetToken != oldWidget.resetToken) {
+      _reset();
     }
   }
 
   @override
   void dispose() {
-    _minimumPressTimer?.cancel();
+    _reset();
+    _suppressedPointers.clear();
+    WidgetsBinding.instance.removeObserver(this);
     super.dispose();
   }
 
   @override
   Widget build(BuildContext context) {
-    final motionEnabled = widget.enabled && !MotionTokens.reduceMotion(context);
+    final motionEnabled = widget.enabled &&
+        (ModalRoute.isCurrentOf(context) ?? true) &&
+        !MotionTokens.reduceMotion(context);
+    if (!motionEnabled && _pressed) {
+      _reset();
+    }
     return Listener(
-      onPointerDown: motionEnabled
-          ? (event) {
-              if (_pointer != null) return;
-              _minimumPressTimer?.cancel();
-              _pointer = event.pointer;
-              _origin = event.position;
-              setState(() => _pressed = true);
-              _minimumPressTimer = Timer(MotionTokens.press, () {
-                _minimumPressTimer = null;
-                if (mounted && _pointer == null && _pressed) {
-                  setState(() => _pressed = false);
-                }
-              });
-            }
-          : null,
+      onPointerDown: (event) {
+        if (!mounted) return;
+        _suppressAncestors(context, event.pointer);
+        if (!motionEnabled ||
+            event.buttons != kPrimaryButton ||
+            _suppressedPointers.contains(event.pointer)) {
+          return;
+        }
+        if (_pointer != null) {
+          setState(_reset);
+          return;
+        }
+        _immediateReset = false;
+        _minimumPressTimer?.cancel();
+        _pointer = event.pointer;
+        _origin = event.position;
+        setState(() => _pressed = true);
+        _minimumPressTimer = Timer(MotionTokens.press, () {
+          _minimumPressTimer = null;
+          if (mounted && _pointer == null && _pressed) {
+            setState(() => _pressed = false);
+          }
+        });
+      },
       onPointerMove: motionEnabled
           ? (event) {
+              if (!mounted) return;
               if (_pointer != event.pointer || _origin == null) return;
               if ((event.position - _origin!).distance > 10) {
-                _origin = null;
-                _minimumPressTimer?.cancel();
-                _minimumPressTimer = null;
-                if (_pressed) setState(() => _pressed = false);
+                setState(_reset);
               }
             }
           : null,
       onPointerUp: (event) => _release(event.pointer),
-      onPointerCancel: (event) => _release(event.pointer),
+      onPointerCancel: (event) {
+        if (!mounted) return;
+        _suppressedPointers.remove(event.pointer);
+        if (_pointer == event.pointer) setState(_reset);
+      },
       child: TweenAnimationBuilder<double>(
         tween: Tween<double>(
           begin: 1,
           end: motionEnabled && _pressed ? widget.pressedScale : 1,
         ),
-        duration: !motionEnabled
+        duration: !motionEnabled || _immediateReset
             ? Duration.zero
             : _pressed
                 ? MotionTokens.press
@@ -117,6 +182,63 @@ class _MotionPressState extends State<MotionPress> {
         },
         child: widget.child,
       ),
+    );
+  }
+}
+
+/// Excludes a nested native control, link or drag surface from ancestor press
+/// feedback without owning its gesture recognizers or changing its callbacks.
+class MotionPressBoundary extends StatelessWidget {
+  const MotionPressBoundary({super.key, required this.child});
+  final Widget child;
+
+  @override
+  Widget build(BuildContext context) => Listener(
+        onPointerDown: (event) =>
+            _MotionPressState._suppressAncestors(context, event.pointer),
+        child: child,
+      );
+}
+
+/// Bridges the separate iOS Reduce Motion flag into the existing MediaQuery
+/// contract, including live system changes. No gestures or navigation owned.
+class MotionAccessibility extends StatefulWidget {
+  const MotionAccessibility({super.key, required this.child});
+  final Widget child;
+  @override
+  State<MotionAccessibility> createState() => _MotionAccessibilityState();
+}
+
+class _MotionAccessibilityState extends State<MotionAccessibility>
+    with WidgetsBindingObserver {
+  @override
+  void initState() {
+    super.initState();
+    WidgetsBinding.instance.addObserver(this);
+  }
+
+  @override
+  void didChangeAccessibilityFeatures() {
+    if (mounted) setState(() {});
+  }
+
+  @override
+  void dispose() {
+    WidgetsBinding.instance.removeObserver(this);
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final media = MediaQuery.of(context);
+    return MediaQuery(
+      data: media.copyWith(
+          disableAnimations: media.disableAnimations ||
+              View.of(context)
+                  .platformDispatcher
+                  .accessibilityFeatures
+                  .reduceMotion),
+      child: widget.child,
     );
   }
 }

@@ -2,8 +2,10 @@ import 'notification_delivery_policy.dart';
 import 'snack_chat_notification_policy.dart';
 import 'package:flutter_local_notifications/flutter_local_notifications.dart';
 
+// Default ON since 1.3.24, mirrored by CHAT_PUSH_PRESENTATION_V2=true in
+// functions/.env. `--dart-define=CHAT_PUSH_PRESENTATION_V2=false` disables.
 const chatPushPresentationV2 =
-    bool.fromEnvironment('CHAT_PUSH_PRESENTATION_V2', defaultValue: false);
+    bool.fromEnvironment('CHAT_PUSH_PRESENTATION_V2', defaultValue: true);
 
 // iOS has no Android-style tag namespace. Keep NEW stable DM IDs separate
 // from the existing non-negative Snack and scheduled To-do IDs.

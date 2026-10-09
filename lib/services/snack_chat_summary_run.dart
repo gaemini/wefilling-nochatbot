@@ -1,6 +1,8 @@
 import 'dart:async';
 import 'dart:convert';
 import 'package:cloud_functions/cloud_functions.dart';
+
+import '../config/app_backend.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/foundation.dart';
 import 'package:shared_preferences/shared_preferences.dart';
@@ -29,7 +31,7 @@ class SnackChatSummaryRun extends ChangeNotifier {
   final Duration pageDelay;
   static Future<Map<String, dynamic>> _serverPage(
       Map<String, dynamic> payload) async {
-    final result = await FirebaseFunctions.instance
+    final result = await AppFunctions.instance
         .httpsCallable('summarizeSnackChatUnread',
             options: HttpsCallableOptions(timeout: const Duration(seconds: 65)))
         .call(payload)

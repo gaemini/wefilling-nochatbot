@@ -9,6 +9,8 @@ import '../models/user_profile.dart';
 import '../services/cache/app_image_cache_manager.dart';
 import '../ui/widgets/user_avatar.dart';
 import '../utils/responsive_helper.dart';
+import '../ui/widgets/motion_press.dart';
+import '../ui/widgets/motion_selectable.dart';
 
 typedef DmRecipientSearch = Future<List<UserProfile>> Function(String query);
 
@@ -334,8 +336,18 @@ class _DmRecipientSelectionScreenState extends State<DmRecipientSelectionScreen>
                           fontWeight: FontWeight.w600,
                         ),
                         tabs: <Widget>[
-                          Tab(text: l10n.dmRecipientFriendsTab),
-                          Tab(text: l10n.dmRecipientIdSearchTab),
+                          Tab(
+                            child: MotionPress(
+                              pressedScale: MotionSelectable.segmentScale,
+                              child: Text(l10n.dmRecipientFriendsTab),
+                            ),
+                          ),
+                          Tab(
+                            child: MotionPress(
+                              pressedScale: MotionSelectable.segmentScale,
+                              child: Text(l10n.dmRecipientIdSearchTab),
+                            ),
+                          ),
                         ],
                       ),
                     ),

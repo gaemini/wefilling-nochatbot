@@ -7,6 +7,7 @@ import 'dart:async';
 import 'dart:math' as math;
 
 import 'package:flutter/material.dart';
+import '../ui/widgets/motion_press.dart';
 import 'package:flutter/rendering.dart' show ScrollCacheExtent;
 import 'package:flutter/services.dart';
 import 'package:cached_network_image/cached_network_image.dart';
@@ -42,6 +43,7 @@ import 'semester_todo_admin_screen.dart';
 import '../ui/widgets/profile_image_viewer.dart';
 import '../utils/profile_photo_policy.dart';
 import '../l10n/ui_locale.dart';
+import '../ui/widgets/motion_selectable.dart';
 
 class MyPageScreen extends StatefulWidget {
   const MyPageScreen({Key? key}) : super(key: key);
@@ -351,7 +353,9 @@ class _MyPageScreenState extends State<MyPageScreen>
   Widget _buildProfileTab(String label, {required String sizingLabel}) {
     return Tab(
       height: 46,
-      child: Padding(
+      child: MotionPress(
+        pressedScale: MotionSelectable.segmentScale,
+        child: Padding(
         padding: const EdgeInsets.symmetric(horizontal: 4),
         child: FittedBox(
           fit: BoxFit.scaleDown,
@@ -376,6 +380,7 @@ class _MyPageScreenState extends State<MyPageScreen>
             ],
           ),
         ),
+      ),
       ),
     );
   }
@@ -411,57 +416,61 @@ class _MyPageScreenState extends State<MyPageScreen>
             crossAxisAlignment: CrossAxisAlignment.center,
             children: [
               // 프로필 사진 - 탭 가능
-              GestureDetector(
-                onTap: photoUrl.isNotEmpty
-                    ? () => _openProfileImageViewer(photoUrl)
-                    : null,
-                child: Hero(
-                  tag: 'profile_image_${user?.uid ?? 'me'}',
-                  child: Container(
-                    width: profileSize,
-                    height: profileSize,
-                    decoration: BoxDecoration(
-                      shape: BoxShape.circle,
-                      color: const Color(0xFFE5E7EB),
-                      // 사진이 있을 때만 탭 가능한 느낌을 주는 그림자 추가
-                      boxShadow: photoUrl.isNotEmpty
-                          ? [
-                              BoxShadow(
-                                color: Colors.black.withValues(alpha: 0.1),
-                                blurRadius: 8,
-                                offset: const Offset(0, 2),
-                              ),
-                            ]
-                          : null,
-                    ),
-                    child: photoUrl.isNotEmpty
-                        ? ClipOval(
-                            child: _buildCachedImage(
-                              photoUrl,
-                              fit: BoxFit.cover,
-                              errorWidget: ColoredBox(
-                                color: const Color(0xFFE5E7EB),
-                                child: Icon(
-                                  Icons.person,
-                                  size: profileIconSize,
-                                  color: const Color(0xFF6B7280),
+              MotionPress(
+                enabled: photoUrl.isNotEmpty,
+                pressedScale: .985,
+                child: GestureDetector(
+                  onTap: photoUrl.isNotEmpty
+                      ? () => _openProfileImageViewer(photoUrl)
+                      : null,
+                  child: Hero(
+                    tag: 'profile_image_${user?.uid ?? 'me'}',
+                    child: Container(
+                      width: profileSize,
+                      height: profileSize,
+                      decoration: BoxDecoration(
+                        shape: BoxShape.circle,
+                        color: const Color(0xFFE5E7EB),
+                        // 사진이 있을 때만 탭 가능한 느낌을 주는 그림자 추가
+                        boxShadow: photoUrl.isNotEmpty
+                            ? [
+                                BoxShadow(
+                                  color: Colors.black.withValues(alpha: 0.1),
+                                  blurRadius: 8,
+                                  offset: const Offset(0, 2),
+                                ),
+                              ]
+                            : null,
+                      ),
+                      child: photoUrl.isNotEmpty
+                          ? ClipOval(
+                              child: _buildCachedImage(
+                                photoUrl,
+                                fit: BoxFit.cover,
+                                errorWidget: ColoredBox(
+                                  color: const Color(0xFFE5E7EB),
+                                  child: Icon(
+                                    Icons.person,
+                                    size: profileIconSize,
+                                    color: const Color(0xFF6B7280),
+                                  ),
+                                ),
+                                placeholder: ColoredBox(
+                                  color: const Color(0xFFE5E7EB),
+                                  child: Icon(
+                                    Icons.person,
+                                    size: profileIconSize,
+                                    color: const Color(0xFF6B7280),
+                                  ),
                                 ),
                               ),
-                              placeholder: ColoredBox(
-                                color: const Color(0xFFE5E7EB),
-                                child: Icon(
-                                  Icons.person,
-                                  size: profileIconSize,
-                                  color: const Color(0xFF6B7280),
-                                ),
-                              ),
+                            )
+                          : Icon(
+                              Icons.person,
+                              size: profileIconSize,
+                              color: const Color(0xFF6B7280),
                             ),
-                          )
-                        : Icon(
-                            Icons.person,
-                            size: profileIconSize,
-                            color: const Color(0xFF6B7280),
-                          ),
+                    ),
                   ),
                 ),
               ),
@@ -855,120 +864,124 @@ class _MyPageScreenState extends State<MyPageScreen>
       itemCount: reviews.length,
       itemBuilder: (context, index) {
         final review = reviews[index];
-        return GestureDetector(
-          onTap: () => _openReviewDetail(review),
-          onLongPress: () => _showReviewOptions(review),
-          child: Container(
-            color: AppTheme.backgroundSecondary,
-            child: Stack(
-              fit: StackFit.expand,
-              children: [
-                if (review.imageUrls.isNotEmpty)
-                  _buildCachedImage(
-                    review.imageUrls.first,
-                    fit: BoxFit.cover,
-                    placeholder: ColoredBox(
-                      color: AppTheme.backgroundSecondary,
-                    ),
-                    errorWidget: ColoredBox(
-                      color: AppTheme.backgroundSecondary,
-                      child: Center(
-                        child: Icon(
-                          Icons.image_not_supported_rounded,
-                          color: Colors.grey[400],
-                          size: 32,
+        return MotionPress(
+          pressedScale: .985,
+          child: GestureDetector(
+            onTap: () => _openReviewDetail(review),
+            onLongPress: () => _showReviewOptions(review),
+            child: Container(
+              color: AppTheme.backgroundSecondary,
+              child: Stack(
+                fit: StackFit.expand,
+                children: [
+                  if (review.imageUrls.isNotEmpty)
+                    _buildCachedImage(
+                      review.imageUrls.first,
+                      fit: BoxFit.cover,
+                      placeholder: ColoredBox(color: AppTheme.backgroundSecondary),
+                      errorWidget: ColoredBox(
+                        color: AppTheme.backgroundSecondary,
+                        child: Center(
+                          child: Icon(
+                            Icons.image_not_supported_rounded,
+                            color: Colors.grey[400],
+                            size: 32,
+                          ),
                         ),
                       ),
                     ),
-                  ),
-                // 이미지가 없을 때 플레이스홀더
-                if (review.imageUrls.isEmpty)
-                  Center(
-                    child: Icon(
-                      Icons.image_not_supported_rounded,
-                      color: Colors.grey[400],
-                      size: 32,
-                    ),
-                  ),
-
-                // 숨김 표시 오버레이
-                if (review.hidden)
-                  Container(
-                    color: Colors.black54,
-                    child: Center(
-                      child: Column(
-                        mainAxisSize: MainAxisSize.min,
-                        children: [
-                          Icon(
-                            Icons.visibility_off_rounded,
-                            color: Colors.white,
-                            size: 24,
-                          ),
-                          SizedBox(height: 4),
-                          Text(
-                            AppLocalizations.of(context)!.hideReview,
-                            style: TextStyle(
-                              color: Colors.white,
-                              fontSize: 10,
-                              fontWeight: FontWeight.w500,
-                            ),
-                          ),
-                        ],
-                      ),
-                    ),
-                  ),
-
-                // 다중 이미지 표시
-                if (review.imageUrls.length > 1)
-                  Positioned(
-                    top: 4,
-                    right: 4,
-                    child: Container(
-                      padding: EdgeInsets.all(4),
-                      decoration: BoxDecoration(
-                        color: Colors.black54,
-                        borderRadius: BorderRadius.circular(12),
-                      ),
+                  // 이미지가 없을 때 플레이스홀더
+                  if (review.imageUrls.isEmpty)
+                    Center(
                       child: Icon(
-                        Icons.collections_rounded,
-                        color: Colors.white,
-                        size: 16,
+                        Icons.image_not_supported_rounded,
+                        color: Colors.grey[400],
+                        size: 32,
                       ),
                     ),
-                  ),
 
-                // 좋아요 수 표시
-                if (review.likedBy.isNotEmpty && !review.hidden)
-                  Positioned(
-                    bottom: 4,
-                    right: 4,
-                    child: Container(
-                      padding: EdgeInsets.symmetric(horizontal: 6, vertical: 2),
-                      decoration: BoxDecoration(
-                        color: Colors.black54,
-                        borderRadius: BorderRadius.circular(8),
-                      ),
-                      child: Row(
-                        mainAxisSize: MainAxisSize.min,
-                        children: [
-                          Icon(
-                            Icons.favorite_rounded,
-                            color: BrandColors.textSecondary,
-                            size: 12,
-                          ),
-                          SizedBox(width: 2),
-                          Text(
-                            '${review.likedBy.length}',
-                            style: uiTextStyle(context, AppTheme.labelSmall.copyWith(
+                  // 숨김 표시 오버레이
+                  if (review.hidden)
+                    Container(
+                      color: Colors.black54,
+                      child: Center(
+                        child: Column(
+                          mainAxisSize: MainAxisSize.min,
+                          children: [
+                            Icon(
+                              Icons.visibility_off_rounded,
                               color: Colors.white,
-                              fontWeight: FontWeight.w500,
-                            )),
-                          ),
-                        ],
+                              size: 24,
+                            ),
+                            SizedBox(height: 4),
+                            Text(
+                              AppLocalizations.of(context)!.hideReview,
+                              style: TextStyle(
+                                color: Colors.white,
+                                fontSize: 10,
+                                fontWeight: FontWeight.w500,
+                              ),
+                            ),
+                          ],
+                        ),
                       ),
                     ),
-                  ),
-              ],
+
+                  // 다중 이미지 표시
+                  if (review.imageUrls.length > 1)
+                    Positioned(
+                      top: 4,
+                      right: 4,
+                      child: Container(
+                        padding: EdgeInsets.all(4),
+                        decoration: BoxDecoration(
+                          color: Colors.black54,
+                          borderRadius: BorderRadius.circular(12),
+                        ),
+                        child: Icon(
+                          Icons.collections_rounded,
+                          color: Colors.white,
+                          size: 16,
+                        ),
+                      ),
+                    ),
+
+                  // 좋아요 수 표시
+                  if (review.likedBy.isNotEmpty && !review.hidden)
+                    Positioned(
+                      bottom: 4,
+                      right: 4,
+                      child: Container(
+                        padding: EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                        decoration: BoxDecoration(
+                          color: Colors.black54,
+                          borderRadius: BorderRadius.circular(8),
+                        ),
+                        child: Row(
+                          mainAxisSize: MainAxisSize.min,
+                          children: [
+                            Icon(
+                              Icons.favorite_rounded,
+                              color: BrandColors.textSecondary,
+                              size: 12,
+                            ),
+                            SizedBox(width: 2),
+                            Text(
+                              '${review.likedBy.length}',
+                              style: uiTextStyle(
+                                context,
+                                AppTheme.labelSmall.copyWith(
+                                  color: Colors.white,
+                                  fontWeight: FontWeight.w500,
+                                ),
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
+                    ),
+                ],
+              ),
             ),
           ),
         );
@@ -1175,32 +1188,42 @@ class _MyPageScreenState extends State<MyPageScreen>
               ),
             ),
           ),
-          IconButton(
-            key: const ValueKey('mypage_posts_grid_toggle'),
-            tooltip: 'Grid',
-            onPressed: () => setState(() => _showPostsAsGrid = true),
-            iconSize: 19,
-            padding: const EdgeInsets.all(6),
-            constraints: const BoxConstraints.tightFor(width: 36, height: 36),
-            icon: Icon(
-              Icons.grid_view_rounded,
-              color: _showPostsAsGrid
-                  ? AppColors.pointColor
-                  : const Color(0xFF9CA3AF),
+          MotionSelectable(
+            selected: _showPostsAsGrid,
+            pressedScale: .92,
+            child: IconButton(
+              key: const ValueKey('mypage_posts_grid_toggle'),
+              tooltip: 'Grid',
+              onPressed: () => setState(() => _showPostsAsGrid = true),
+              iconSize: 19,
+              padding: const EdgeInsets.all(6),
+              constraints:
+                  const BoxConstraints.tightFor(width: 36, height: 36),
+              icon: Icon(
+                Icons.grid_view_rounded,
+                color: _showPostsAsGrid
+                    ? AppColors.pointColor
+                    : const Color(0xFF9CA3AF),
+              ),
             ),
           ),
-          IconButton(
-            key: const ValueKey('mypage_posts_list_toggle'),
-            tooltip: 'List',
-            onPressed: () => setState(() => _showPostsAsGrid = false),
-            iconSize: 19,
-            padding: const EdgeInsets.all(6),
-            constraints: const BoxConstraints.tightFor(width: 36, height: 36),
-            icon: Icon(
-              Icons.format_list_bulleted_rounded,
-              color: !_showPostsAsGrid
-                  ? AppColors.pointColor
-                  : const Color(0xFF9CA3AF),
+          MotionSelectable(
+            selected: !_showPostsAsGrid,
+            pressedScale: .92,
+            child: IconButton(
+              key: const ValueKey('mypage_posts_list_toggle'),
+              tooltip: 'List',
+              onPressed: () => setState(() => _showPostsAsGrid = false),
+              iconSize: 19,
+              padding: const EdgeInsets.all(6),
+              constraints:
+                  const BoxConstraints.tightFor(width: 36, height: 36),
+              icon: Icon(
+                Icons.format_list_bulleted_rounded,
+                color: !_showPostsAsGrid
+                    ? AppColors.pointColor
+                    : const Color(0xFF9CA3AF),
+              ),
             ),
           ),
         ],
@@ -2192,7 +2215,9 @@ class MyPageSettingsSheet {
     VoidCallback onTap, {
     Color? color,
   }) {
-    return InkWell(
+    return MotionPress(
+      pressedScale: .99,
+      child: InkWell(
       onTap: onTap,
       borderRadius: BorderRadius.circular(12),
       child: Padding(
@@ -2223,6 +2248,7 @@ class MyPageSettingsSheet {
             ),
           ],
         ),
+      ),
       ),
     );
   }

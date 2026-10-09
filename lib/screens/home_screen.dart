@@ -31,6 +31,8 @@ import 'create_meetup_screen.dart';
 import 'meetup_detail_screen.dart';
 import 'review_approval_screen.dart';
 import '../l10n/ui_locale.dart';
+import '../design/tokens.dart';
+import '../ui/widgets/motion_selectable.dart';
 
 class MeetupHomePage extends StatefulWidget {
   final String? initialMeetupId; // 알림에서 전달받은 모임 ID
@@ -1433,6 +1435,7 @@ class MeetupHomePageState extends State<MeetupHomePage> with PreloadMixin {
         minimum: const EdgeInsets.only(bottom: 8),
         child: AppFab.createMeetup(
           onPressed: _navigateToCreateMeetup,
+          label: AppLocalizations.of(context)!.createMeetup,
           heroTag: 'meetup_home_create_fab',
         ),
       ),
@@ -1737,6 +1740,7 @@ class _AllMeetupsScreenState extends State<_AllMeetupsScreen> {
         minimum: const EdgeInsets.only(bottom: 8),
         child: AppFab.createMeetup(
           onPressed: widget.onCreateMeetup,
+          label: AppLocalizations.of(context)!.createMeetup,
           heroTag: 'all_meetups_create_fab',
         ),
       ),
@@ -1847,15 +1851,18 @@ class _CategoryTabItem extends StatelessWidget {
     const selectedText = Color(0xFF111827);
     const unselectedText = Color(0xFF667085);
 
-    return Material(
+    return MotionSelectable(
+      selected: selected,
+      pressedScale: MotionSelectable.segmentScale,
+      child: Material(
       color: Colors.transparent,
       child: InkWell(
         onTap: onTap,
         borderRadius: BorderRadius.circular(4),
         child: AnimatedContainer(
           height: height,
-          duration: const Duration(milliseconds: 160),
-          curve: Curves.easeOut,
+          duration: MotionTokens.of(context, MotionTokens.state),
+          curve: MotionTokens.curve,
           padding: EdgeInsets.symmetric(horizontal: horizontalPadding),
           alignment: Alignment.center,
           decoration: BoxDecoration(
@@ -1867,8 +1874,9 @@ class _CategoryTabItem extends StatelessWidget {
           ),
           child: MediaQuery.withClampedTextScaling(
             maxScaleFactor: 1.2,
-            child: Text(
-              label,
+            child: AnimatedDefaultTextStyle(
+              duration: MotionTokens.of(context, MotionTokens.state),
+              curve: MotionTokens.curve,
               style: TextStyle(
                 fontFamily: uiFontFamily(context, 'Inter'),
                 fontFamilyFallback: const ['NotoSansKR'],
@@ -1877,12 +1885,16 @@ class _CategoryTabItem extends StatelessWidget {
                 color: selected ? selectedText : unselectedText,
                 height: isChineseUi(context) ? 1.3 : 1.1,
               ),
-              maxLines: 1,
-              softWrap: false,
-              overflow: TextOverflow.fade,
+              child: Text(
+                label,
+                maxLines: 1,
+                softWrap: false,
+                overflow: TextOverflow.fade,
+              ),
             ),
           ),
         ),
+      ),
       ),
     );
   }

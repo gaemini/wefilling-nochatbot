@@ -854,7 +854,7 @@ class OrganizationInviteSceneDelegate: FlutterSceneDelegate {
           guard type == "dm_received",
                 !roomId.isEmpty,
                 self.notificationString(payload, "conversationId") == roomId,
-                exactRead || (throughSentAtMillis > 0 && sentAtMillis > 0 &&
+                removeAllInRoom || exactRead || (throughSentAtMillis > 0 && sentAtMillis > 0 &&
                 sentAtMillis <= throughSentAtMillis) else {
             return nil
           }

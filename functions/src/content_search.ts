@@ -1,5 +1,6 @@
 import * as crypto from 'crypto';
 import * as functions from 'firebase-functions';
+import {callables, triggers} from './backend';
 import * as admin from 'firebase-admin';
 import {COL} from './firestore_paths';
 
@@ -271,7 +272,7 @@ async function synchronizeIndex(
   });
 }
 
-export const onPostSearchSourceWritten = functions.firestore
+export const onPostSearchSourceWritten = triggers().firestore
   .document(`${COL.posts}/{postId}`)
   .onWrite(async (change, context) => {
     const before = change.before.exists ? change.before.data() : undefined;
@@ -283,7 +284,7 @@ export const onPostSearchSourceWritten = functions.firestore
     return null;
   });
 
-export const onMeetupSearchSourceWritten = functions.firestore
+export const onMeetupSearchSourceWritten = triggers().firestore
   .document(`${COL.meetups}/{meetupId}`)
   .onWrite(async (change, context) => {
     const before = change.before.exists ? change.before.data() : undefined;
@@ -464,6 +465,9 @@ function postResult(id: string, data: SourceData): Record<string, unknown> {
     likes: finiteInteger(data.likes),
     likedBy: stringList(data.likedBy),
     imageUrls: stringList(data.imageUrls),
+    ...(data.video && typeof data.video === 'object'
+      ? {video: recursiveMillis(data.video)}
+      : {}),
     ...(data.linkPreview && typeof data.linkPreview === 'object'
       ? {linkPreview: recursiveMillis(data.linkPreview)}
       : {}),
@@ -661,7 +665,7 @@ async function candidateIds(
   };
 }
 
-export const searchPostsSecure = functions
+export const searchPostsSecure = callables()
   .runWith({timeoutSeconds: 30, memory: '512MB', enforceAppCheck: true})
   .https.onCall(async (raw, context) => {
     const request = callableRequest(raw);
@@ -708,7 +712,7 @@ export const searchPostsSecure = functions
     return {posts, exhaustive: !candidates.exhausted};
   });
 
-export const searchMeetupsSecure = functions
+export const searchMeetupsSecure = callables()
   .runWith({timeoutSeconds: 30, memory: '512MB', enforceAppCheck: true})
   .https.onCall(async (raw, context) => {
     const request = callableRequest(raw);

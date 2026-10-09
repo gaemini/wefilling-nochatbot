@@ -1,5 +1,7 @@
 import 'dart:async';
 import 'package:cloud_functions/cloud_functions.dart';
+
+import '../config/app_backend.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:google_sign_in/google_sign_in.dart';
 import '../config/app_config.dart';
@@ -9,7 +11,7 @@ import 'user_info_cache_service.dart';
 
 class AccountDeletionService {
   final FirebaseFunctions _functions =
-      FirebaseFunctions.instanceFor(region: 'us-central1');
+      AppFunctions.instance;
   final FirebaseAuth _auth = FirebaseAuth.instance;
 
   /// Google 계정으로 재인증

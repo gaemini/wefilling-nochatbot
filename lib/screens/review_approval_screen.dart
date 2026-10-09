@@ -5,12 +5,14 @@
 import 'dart:async';
 
 import 'package:flutter/material.dart';
+import '../ui/widgets/motion_press.dart';
 import '../services/meetup_service.dart';
 import '../l10n/app_localizations.dart';
 import '../utils/logger.dart';
 import '../ui/widgets/fullscreen_image_viewer.dart';
 import '../utils/responsive_helper.dart';
 import '../services/notification_service.dart';
+import '../services/active_content_registry.dart';
 import '../l10n/ui_locale.dart';
 
 class ReviewApprovalScreen extends StatefulWidget {
@@ -57,6 +59,7 @@ class _ReviewApprovalScreenState extends State<ReviewApprovalScreen> {
 
   @override
   void dispose() {
+    ActiveContentRegistry.unregister(this);
     _pageController.dispose();
     super.dispose();
   }
@@ -75,6 +78,9 @@ class _ReviewApprovalScreenState extends State<ReviewApprovalScreen> {
             targets: {'requestId': widget.requestId},
             readContext: readContext,
           ));
+          ActiveContentRegistry.register(this,
+              types: const {'review_approval_request'},
+              targets: {'requestId': widget.requestId});
         }
         setState(() {
           _currentStatus = requestDoc?['status'] as String?;
@@ -346,42 +352,45 @@ class _ReviewApprovalScreenState extends State<ReviewApprovalScreen> {
               _currentImageIndex = index;
             }),
             itemBuilder: (context, index) {
-              return GestureDetector(
-                onTap: () => showFullscreenImageViewer(
-                  context,
-                  imageUrls: _imageUrls,
-                  initialIndex: index,
-                  heroTag: 'review_approval_image_$index',
-                ),
-                child: Hero(
-                  tag: 'review_approval_image_$index',
-                  child: Image.network(
-                    _imageUrls[index],
-                    fit: BoxFit.cover,
-                    loadingBuilder: (context, child, progress) {
-                      if (progress == null) return child;
-                      return const ColoredBox(
-                        color: Color(0xFFF2F4F7),
-                        child: Center(
-                          child: CircularProgressIndicator(
-                            color: Color(0xFF2E90FA),
-                            strokeWidth: 2,
+              return MotionPress(
+                pressedScale: .985,
+                child: GestureDetector(
+                  onTap: () => showFullscreenImageViewer(
+                    context,
+                    imageUrls: _imageUrls,
+                    initialIndex: index,
+                    heroTag: 'review_approval_image_$index',
+                  ),
+                  child: Hero(
+                    tag: 'review_approval_image_$index',
+                    child: Image.network(
+                      _imageUrls[index],
+                      fit: BoxFit.cover,
+                      loadingBuilder: (context, child, progress) {
+                        if (progress == null) return child;
+                        return const ColoredBox(
+                          color: Color(0xFFF2F4F7),
+                          child: Center(
+                            child: CircularProgressIndicator(
+                              color: Color(0xFF2E90FA),
+                              strokeWidth: 2,
+                            ),
                           ),
-                        ),
-                      );
-                    },
-                    errorBuilder: (context, error, stackTrace) {
-                      return const ColoredBox(
-                        color: Color(0xFFF2F4F7),
-                        child: Center(
-                          child: Icon(
-                            Icons.broken_image_outlined,
-                            size: 42,
-                            color: Color(0xFF98A2B3),
+                        );
+                      },
+                      errorBuilder: (context, error, stackTrace) {
+                        return const ColoredBox(
+                          color: Color(0xFFF2F4F7),
+                          child: Center(
+                            child: Icon(
+                              Icons.broken_image_outlined,
+                              size: 42,
+                              color: Color(0xFF98A2B3),
+                            ),
                           ),
-                        ),
-                      );
-                    },
+                        );
+                      },
+                    ),
                   ),
                 ),
               );

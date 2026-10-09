@@ -1,6 +1,8 @@
 import 'dart:async';
 
 import 'package:cloud_functions/cloud_functions.dart';
+
+import '../config/app_backend.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 
 import '../utils/logger.dart';
@@ -17,7 +19,7 @@ class JoinedMeetupAccessService {
   static const Duration _cacheLifetime = Duration(seconds: 20);
 
   final FirebaseAuth _auth = FirebaseAuth.instance;
-  final FirebaseFunctions _functions = FirebaseFunctions.instance;
+  final FirebaseFunctions _functions = AppFunctions.instance;
 
   String? _cachedKey;
   Set<String>? _cachedIds;

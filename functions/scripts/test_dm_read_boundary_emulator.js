@@ -60,6 +60,7 @@ async function main() {
   assert.equal(first.result.readThroughAtSeconds, old.createTime.seconds);
   assert.equal(first.result.readThroughAtNanos, old.createTime.nanoseconds);
   assert(first.after.get(`lastReadAtBy.${bob}`).isEqual(old.createTime));
+  assert.equal(first.after.get(`lastReadMessageIdBy.${bob}`), 'old');
   assert.equal((await old.ref.get()).get('isRead'), false); // deliberately delay worker
   await counts(2, 9); // newer boundary cannot be cleared by old request
   await cleanup(first);
@@ -75,6 +76,7 @@ async function main() {
   // A second room update never changes A's watermark/counter.
   const second = await flush('newer');
   await counts(0, 7);
+  assert.equal(second.after.get(`lastReadMessageIdBy.${bob}`), 'newer');
   const afterExit = await send('after-exit');
   await counts(1, 8);
   await cleanup(second);
@@ -82,6 +84,7 @@ async function main() {
   await counts(1, 8); // old receipt must not subtract after-exit
   await flush('old'); // late older request cannot move watermark backward
   assert((await room.get()).get(`lastReadAtBy.${bob}`).isEqual(newer.createTime));
+  assert.equal((await room.get()).get(`lastReadMessageIdBy.${bob}`), 'newer');
   assert.equal((await afterExit.ref.get()).get('isRead'), false);
   await counts(1, 8);
   await assert.rejects(mark({conversationId: room.id, throughMessageId: 'absent'},

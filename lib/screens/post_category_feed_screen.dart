@@ -19,6 +19,7 @@ import '../utils/responsive_helper.dart';
 import 'create_post_screen.dart';
 import 'post_detail_screen.dart';
 import '../l10n/ui_locale.dart';
+import '../ui/widgets/motion_press.dart';
 
 typedef PostCategoryPageLoader = Future<PostCategoryPage> Function({
   required PostCategory category,
@@ -275,12 +276,15 @@ class _PostCategoryFeedScreenState extends State<PostCategoryFeedScreen> {
       ),
       floatingActionButton: _CategoryCreateButton(
         visible: _showCreateButton,
-        child: FloatingActionButton(
-          heroTag: 'category_post_fab_${widget.category.key}',
-          onPressed: _openCreatePost,
-          backgroundColor: AppColors.pointColor,
-          foregroundColor: Colors.white,
-          child: const Icon(Icons.add_rounded),
+        child: MotionPress(
+          pressedScale: .92,
+          child: FloatingActionButton(
+            heroTag: 'category_post_fab_${widget.category.key}',
+            onPressed: _openCreatePost,
+            backgroundColor: AppColors.pointColor,
+            foregroundColor: Colors.white,
+            child: const Icon(Icons.add_rounded),
+          ),
         ),
       ),
       body: RefreshIndicator(

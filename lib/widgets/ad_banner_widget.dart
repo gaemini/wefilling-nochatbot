@@ -3,6 +3,7 @@
 
 import 'dart:async';
 import 'package:flutter/material.dart';
+import '../ui/widgets/motion_press.dart';
 import 'package:cached_network_image/cached_network_image.dart';
 import '../models/ad_banner.dart';
 import '../services/ad_banner_service.dart';
@@ -250,138 +251,138 @@ class _AdBannerWidgetState extends State<AdBannerWidget> {
     required double descriptionSize,
     required bool compact,
   }) {
-    return GestureDetector(
-      key: ValueKey('banner_$index'), // AnimatedSwitcher를 위한 고유 키
-      onTap: () {
-        // 광고 목록 페이지에서 사용자가 누른 광고 위치로 바로 이동한다.
-        Navigator.push(
-          context,
-          MaterialPageRoute(
-            builder: (context) => AdShowcaseScreen(
-              initialBannerId: banner.id,
+    return MotionPress(
+      key: ValueKey('banner_$index'),
+      pressedScale: .985,
+      child: GestureDetector(
+        key: ValueKey('banner_$index'), // AnimatedSwitcher를 위한 고유 키
+        onTap: () {
+          // 광고 목록 페이지에서 사용자가 누른 광고 위치로 바로 이동한다.
+          Navigator.push(
+            context,
+            MaterialPageRoute(
+              builder: (context) => AdShowcaseScreen(initialBannerId: banner.id),
             ),
-          ),
-        );
-      },
-      child: Row(
-        children: [
-          // 이미지 또는 아이콘
-          banner.imageUrl != null && banner.imageUrl!.isNotEmpty
-              ? ClipRRect(
-                  borderRadius: BorderRadius.circular(compact ? 10 : 12),
-                  child: CachedNetworkImage(
-                    imageUrl: banner.imageUrl!,
-                    cacheManager: AppImageCacheManager.instance,
-                    width: imageSize,
-                    height: imageSize,
-                    fit: BoxFit.cover,
-                    placeholder: (context, url) => Container(
+          );
+        },
+        child: Row(
+          children: [
+            // 이미지 또는 아이콘
+            banner.imageUrl != null && banner.imageUrl!.isNotEmpty
+                ? ClipRRect(
+                    borderRadius: BorderRadius.circular(compact ? 10 : 12),
+                    child: CachedNetworkImage(
+                      imageUrl: banner.imageUrl!,
+                      cacheManager: AppImageCacheManager.instance,
                       width: imageSize,
                       height: imageSize,
-                      decoration: BoxDecoration(
-                        color: Colors.grey.shade200,
-                        borderRadius: BorderRadius.circular(compact ? 10 : 12),
-                      ),
-                      child: const Center(
-                        child: CircularProgressIndicator(
-                          strokeWidth: 2,
+                      fit: BoxFit.cover,
+                      placeholder: (context, url) => Container(
+                        width: imageSize,
+                        height: imageSize,
+                        decoration: BoxDecoration(
+                          color: Colors.grey.shade200,
+                          borderRadius: BorderRadius.circular(compact ? 10 : 12),
+                        ),
+                        child: const Center(
+                          child: CircularProgressIndicator(strokeWidth: 2),
                         ),
                       ),
+                      errorWidget: (context, url, error) {
+                        Logger.error(
+                          '광고 이미지 로드 실패: ${banner.id} '
+                          '(${error.runtimeType}: $error)',
+                        );
+                        return _buildIconPlaceholder(imageSize);
+                      },
+                      memCacheWidth: 200,
+                      memCacheHeight: 200,
+                      maxWidthDiskCache: 400,
+                      maxHeightDiskCache: 400,
                     ),
-                    errorWidget: (context, url, error) {
-                      Logger.error(
-                        '광고 이미지 로드 실패: ${banner.id} '
-                        '(${error.runtimeType}: $error)',
-                      );
-                      return _buildIconPlaceholder(imageSize);
-                    },
-                    memCacheWidth: 200,
-                    memCacheHeight: 200,
-                    maxWidthDiskCache: 400,
-                    maxHeightDiskCache: 400,
+                  )
+                : _buildIconPlaceholder(imageSize),
+
+            SizedBox(width: compact ? 10 : 12),
+
+            // 텍스트 영역
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                mainAxisAlignment: MainAxisAlignment.center,
+                children: [
+                  // 타이틀 + AD 배지
+                  Row(
+                    children: [
+                      Flexible(
+                        child: Text(
+                          banner.title,
+                          style: TextStyle(
+                            fontFamily: uiFontFamily(context, 'Inter'),
+                            fontFamilyFallback: const ['NotoSansKR'],
+                            fontSize: titleSize,
+                            fontWeight: FontWeight.w800,
+                            color: Colors.black,
+                            height: isChineseUi(context) ? 1.3 : 1.2,
+                          ),
+                          maxLines: compact ? 1 : 2,
+                          overflow: TextOverflow.ellipsis,
+                        ),
+                      ),
+                      SizedBox(width: compact ? 4 : 6),
+                      Container(
+                        padding: EdgeInsets.symmetric(
+                          horizontal: compact ? 5 : 6,
+                          vertical: 2,
+                        ),
+                        decoration: BoxDecoration(
+                          color: Colors.white,
+                          border: Border.all(color: Colors.black, width: 1),
+                          borderRadius: BorderRadius.circular(4),
+                        ),
+                        child: Text(
+                          'AD',
+                          style: TextStyle(
+                            fontFamily: uiFontFamily(context, 'Inter'),
+                            fontFamilyFallback: const ['NotoSansKR'],
+                            fontSize: compact ? 8 : 9,
+                            fontWeight: FontWeight.w800,
+                            color: Colors.black,
+                            letterSpacing: 0.5,
+                          ),
+                        ),
+                      ),
+                    ],
                   ),
-                )
-              : _buildIconPlaceholder(imageSize),
 
-          SizedBox(width: compact ? 10 : 12),
+                  SizedBox(height: compact ? 3 : 4),
 
-          // 텍스트 영역
-          Expanded(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              mainAxisAlignment: MainAxisAlignment.center,
-              children: [
-                // 타이틀 + AD 배지
-                Row(
-                  children: [
-                    Flexible(
-                      child: Text(
-                        banner.title,
-                        style: TextStyle(
-                          fontFamily: uiFontFamily(context, 'Inter'),
-                          fontFamilyFallback: const ['NotoSansKR'],
-                          fontSize: titleSize,
-                          fontWeight: FontWeight.w800,
-                          color: Colors.black,
-                          height: isChineseUi(context) ? 1.3 : 1.2,
-                        ),
-                        maxLines: compact ? 1 : 2,
-                        overflow: TextOverflow.ellipsis,
-                      ),
+                  Text(
+                    banner.description,
+                    style: TextStyle(
+                      fontFamily: uiFontFamily(context, 'Inter'),
+                      fontFamilyFallback: const ['NotoSansKR'],
+                      fontSize: descriptionSize,
+                      fontWeight: FontWeight.w600,
+                      color: Colors.grey[600],
+                      height: 1.35,
                     ),
-                    SizedBox(width: compact ? 4 : 6),
-                    Container(
-                      padding: EdgeInsets.symmetric(
-                        horizontal: compact ? 5 : 6,
-                        vertical: 2,
-                      ),
-                      decoration: BoxDecoration(
-                        color: Colors.white,
-                        border: Border.all(color: Colors.black, width: 1),
-                        borderRadius: BorderRadius.circular(4),
-                      ),
-                      child: Text(
-                        'AD',
-                        style: TextStyle(
-                          fontFamily: uiFontFamily(context, 'Inter'),
-                          fontFamilyFallback: const ['NotoSansKR'],
-                          fontSize: compact ? 8 : 9,
-                          fontWeight: FontWeight.w800,
-                          color: Colors.black,
-                          letterSpacing: 0.5,
-                        ),
-                      ),
-                    ),
-                  ],
-                ),
-
-                SizedBox(height: compact ? 3 : 4),
-
-                Text(
-                  banner.description,
-                  style: TextStyle(
-                    fontFamily: uiFontFamily(context, 'Inter'),
-                    fontFamilyFallback: const ['NotoSansKR'],
-                    fontSize: descriptionSize,
-                    fontWeight: FontWeight.w600,
-                    color: Colors.grey[600],
-                    height: 1.35,
+                    maxLines: compact ? 1 : 2,
+                    overflow: TextOverflow.ellipsis,
                   ),
-                  maxLines: compact ? 1 : 2,
-                  overflow: TextOverflow.ellipsis,
-                ),
-              ],
+                ],
+              ),
             ),
-          ),
 
-          SizedBox(width: compact ? 6 : 8),
+            SizedBox(width: compact ? 6 : 8),
 
-          Icon(
-            Icons.arrow_forward_ios,
-            color: Colors.grey[400],
-            size: compact ? 14 : 16,
-          ),
-        ],
+            Icon(
+              Icons.arrow_forward_ios,
+              color: Colors.grey[400],
+              size: compact ? 14 : 16,
+            ),
+          ],
+        ),
       ),
     );
   }

@@ -86,6 +86,7 @@ class SnapshotItem {
     required this.authorNationality,
     required this.university,
     required this.storagePath,
+    this.storageBucket = '',
     this.imageUrl = '',
     this.mediaType = SnapshotMediaType.photo,
     this.thumbnailStoragePath = '',
@@ -112,6 +113,8 @@ class SnapshotItem {
   final String authorNationality;
   final String university;
   final String storagePath;
+  /// Bucket holding every object of this snapshot; empty means legacy.
+  final String storageBucket;
   final String imageUrl;
   final SnapshotMediaType mediaType;
   final String thumbnailStoragePath;
@@ -184,6 +187,7 @@ class SnapshotItem {
       authorNationality: (map['authorNationality'] ?? '').toString(),
       university: (map['university'] ?? '').toString(),
       storagePath: primaryStoragePath,
+      storageBucket: (map['storageBucket'] ?? '').toString(),
       imageUrl: (map['imageUrl'] ?? '').toString(),
       mediaType: mediaType,
       thumbnailStoragePath: (map['thumbnailStoragePath'] ?? '').toString(),
@@ -231,6 +235,7 @@ class SnapshotComment {
     required this.content,
     required this.createdAt,
     this.gifStoragePath = '',
+    this.storageBucket = '',
     this.parentCommentId,
     this.replyToCommentId,
     this.replyToUserId,
@@ -245,6 +250,8 @@ class SnapshotComment {
   final String authorPhotoUrl;
   final String content;
   final String gifStoragePath;
+  /// Bucket holding [gifStoragePath]; empty means legacy.
+  final String storageBucket;
   final DateTime createdAt;
   final String? parentCommentId;
   final String? replyToCommentId;
@@ -283,6 +290,7 @@ class SnapshotComment {
       authorPhotoUrl: (data['authorPhotoUrl'] ?? '').toString(),
       content: (data['content'] ?? '').toString(),
       gifStoragePath: (data['gifStoragePath'] ?? '').toString(),
+      storageBucket: (data['storageBucket'] ?? '').toString(),
       createdAt: _asDateTime(data['createdAt'] ?? data['createdAtMs']),
       parentCommentId: optionalString(data['parentCommentId']),
       replyToCommentId: optionalString(data['replyToCommentId']),
@@ -300,6 +308,7 @@ class SnapshotComment {
         'authorPhotoUrl': authorPhotoUrl,
         'content': content,
         'gifStoragePath': gifStoragePath,
+        'storageBucket': storageBucket,
         'createdAtMs': createdAt.millisecondsSinceEpoch,
         'parentCommentId': parentCommentId,
         'replyToCommentId': replyToCommentId,

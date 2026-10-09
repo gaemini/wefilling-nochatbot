@@ -3,6 +3,8 @@ import 'dart:convert';
 import 'dart:io';
 
 import 'package:cloud_functions/cloud_functions.dart';
+
+import '../config/app_backend.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:firebase_storage/firebase_storage.dart';
 import 'package:open_filex/open_filex.dart';
@@ -41,9 +43,8 @@ class SnackChatFileStorageGateway {
   static final SnackChatFileStorageGateway instance =
       SnackChatFileStorageGateway._();
 
-  FirebaseStorage get _storage => FirebaseStorage.instance;
-
-  Reference reference(String storagePath) => _storage.ref(storagePath);
+  Reference reference(String storagePath, {String? storageBucket}) =>
+      AppStorage.ref(storagePath, storageBucket: storageBucket);
 }
 
 class SnackChatFileTransferService {
@@ -58,7 +59,7 @@ class SnackChatFileTransferService {
   static const String _cacheIndexKeyPrefix = 'snack_chat_file_cache_v1';
 
   final FirebaseAuth _auth = FirebaseAuth.instance;
-  final FirebaseFunctions _functions = FirebaseFunctions.instance;
+  final FirebaseFunctions _functions = AppFunctions.instance;
   final SnackChatService _chatService = SnackChatService();
   final SnackChatLocalCacheService _localChatCache =
       SnackChatLocalCacheService();
@@ -147,6 +148,7 @@ class SnackChatFileTransferService {
           uploadId: _uuid.v4(),
           fileId: _uuid.v4(),
           originalFileName: selected.originalFileName,
+          videoMeta: selected.videoMeta,
           fileExtension: selected.fileExtension,
           mimeType: selected.mimeType,
           fileSize: selected.fileSize,
@@ -295,7 +297,9 @@ class SnackChatFileTransferService {
     await destination.parent.create(recursive: true);
     final partial = File('${destination.path}.part');
     if (await partial.exists()) await partial.delete();
-    final download = _storage.reference(storagePath).writeToFile(partial);
+    final download = _storage
+        .reference(storagePath, storageBucket: message.storageBucket)
+        .writeToFile(partial);
     _activeDownloadTasks[message.id] = download;
     _events.add(SnackChatFileTransferEvent(
       roomId: roomId,
@@ -442,6 +446,7 @@ class SnackChatFileTransferService {
       final prepared = await _prepare(record);
       record
         ..storagePath = prepared.storagePath
+        ..storageBucket = prepared.storageBucket
         ..retentionMode = prepared.retentionMode;
       if (prepared.committed) {
         await _finishCommitted(record);
@@ -468,7 +473,9 @@ class SnackChatFileTransferService {
         ..errorMessage = null;
       await _persistQueue();
       _emit(record);
-      final upload = _storage.reference(record.storagePath!).putFile(
+      final upload = _storage
+          .reference(record.storagePath!, storageBucket: record.storageBucket)
+          .putFile(
             File(record.localPath),
             SettableMetadata(
               contentType: record.mimeType,
@@ -552,6 +559,7 @@ class SnackChatFileTransferService {
         .timeout(const Duration(seconds: 20));
     final data = result.data;
     final storagePath = (data['storagePath'] ?? '').toString();
+    final storageBucket = (data['storageBucket'] ?? '').toString().trim();
     final retentionMode = (data['retentionMode'] ?? '').toString();
     if (storagePath.isEmpty ||
         !<String>{'temporary24h', 'temporary30d', 'permanent'}
@@ -560,6 +568,8 @@ class SnackChatFileTransferService {
     }
     return _PreparedUpload(
       storagePath: storagePath,
+      // Older servers do not return the bucket; null resolves to legacy.
+      storageBucket: storageBucket.isEmpty ? null : storageBucket,
       retentionMode: retentionMode,
       committed: data['committed'] == true,
     );
@@ -892,11 +902,13 @@ class SnackChatFileTransferService {
 class _PreparedUpload {
   const _PreparedUpload({
     required this.storagePath,
+    required this.storageBucket,
     required this.retentionMode,
     required this.committed,
   });
 
   final String storagePath;
+  final String? storageBucket;
   final String retentionMode;
   final bool committed;
 }
@@ -916,7 +928,9 @@ class _UploadRecord {
     required this.retentionMode,
     required this.createdAt,
     this.replyPreview,
+    this.videoMeta,
     this.storagePath,
+    this.storageBucket,
     this.status = SnackChatFileTransferStatus.queued,
     this.progress = 0,
     this.uploadStarted = false,
@@ -936,7 +950,10 @@ class _UploadRecord {
   String retentionMode;
   final DateTime createdAt;
   final ReplyMessagePreview? replyPreview;
+  /// MP4 메시지의 길이·해상도·썸네일. commit 요청과 로컬 말풍선에 쓴다.
+  final SnackChatVideoMeta? videoMeta;
   String? storagePath;
+  String? storageBucket;
   SnackChatFileTransferStatus status;
   double progress;
   bool uploadStarted;
@@ -952,6 +969,10 @@ class _UploadRecord {
         'mimeType': mimeType,
         'fileSize': fileSize,
         if (replyPreview != null) 'replyToMessageId': replyPreview!.messageId,
+        if (videoMeta != null) 'videoMeta': videoMeta!.toJson(),
+        // The bucket this client uploads to. The server records it on the job
+        // and returns it, so old clients (no field) keep the legacy bucket.
+        'storageBucket': AppStorage.uploadBucketName,
       };
 
   SnackChatMessage toMessage() => SnackChatMessage(
@@ -964,6 +985,11 @@ class _UploadRecord {
         mimeType: mimeType,
         fileSize: fileSize,
         storagePath: storagePath,
+        storageBucket: storageBucket,
+        videoDurationMs: videoMeta?.durationMs,
+        videoWidth: videoMeta?.width,
+        videoHeight: videoMeta?.height,
+        videoThumbnail: videoMeta?.thumbnailDataUrl,
         retentionMode: retentionMode,
         uploadId: uploadId,
         createdAt: createdAt,
@@ -996,7 +1022,9 @@ class _UploadRecord {
         'retentionMode': retentionMode,
         'createdAtUs': createdAt.microsecondsSinceEpoch,
         if (replyPreview != null) 'replyPreview': _replyJson(replyPreview!),
+        if (videoMeta != null) 'videoMeta': videoMeta!.toJson(),
         if (storagePath != null) 'storagePath': storagePath,
+        if (storageBucket != null) 'storageBucket': storageBucket,
         'status': status.name,
         'progress': progress,
         'uploadStarted': uploadStarted,
@@ -1049,6 +1077,10 @@ class _UploadRecord {
         storagePath: (map['storagePath'] ?? '').toString().isEmpty
             ? null
             : map['storagePath'].toString(),
+        videoMeta: SnackChatVideoMeta.fromJson(map['videoMeta']),
+        storageBucket: (map['storageBucket'] ?? '').toString().isEmpty
+            ? null
+            : map['storageBucket'].toString(),
         status: status,
         progress:
             map['progress'] is num ? (map['progress'] as num).toDouble() : 0,

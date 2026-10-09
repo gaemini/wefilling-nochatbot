@@ -27,6 +27,10 @@ import '../ui/widgets/instagram_embed_preview.dart';
 import '../ui/widgets/motion_press.dart';
 import '../ui/widgets/post_category_selector.dart';
 import '../ui/widgets/shared_link_preview_card.dart';
+import '../ui/widgets/chat_video_tile.dart';
+import '../ui/widgets/video_preparing_dialog.dart';
+import '../services/media/video_prepare_service.dart';
+import '../services/media/video_upload_policy.dart';
 import '../utils/logger.dart';
 import '../utils/responsive_helper.dart';
 import 'post_detail_screen.dart';
@@ -85,6 +89,10 @@ class _CreatePostScreenState extends State<CreatePostScreen> {
   bool _isForwardTransition = true;
   bool _canProceed = false;
   bool _isResolvingSelectedImages = false;
+  // 첨부 영상(최대 1개). 압축본은 video_compress 캐시에 있다가 제출 뒤 정리된다.
+  PreparedVideo? _selectedVideo;
+  // 제출 중 영상 업로드 진행률(0~1). 영상이 없으면 null.
+  double? _videoUploadProgress;
   int _stepIndex = 0;
 
   String _visibility = 'public';
@@ -313,6 +321,7 @@ class _CreatePostScreenState extends State<CreatePostScreen> {
 
   @override
   void dispose() {
+    unawaited(VideoPrepareService.instance.cleanupCompressionCache());
     _contentController.dispose();
     _contentFocusNode.dispose();
     _composeScrollController.dispose();
@@ -344,7 +353,8 @@ class _CreatePostScreenState extends State<CreatePostScreen> {
 
   void _checkCanProceed() {
     final contentNotEmpty = _contentController.text.trim().isNotEmpty;
-    final hasImages = !_isExternalSocialShare && _selectedImages.isNotEmpty;
+    final hasImages = !_isExternalSocialShare &&
+        (_selectedImages.isNotEmpty || _selectedVideo != null);
     final hasSharedLink = _sharedLinkPreview != null && !_sharedLinkRemoved;
     final canProceed = _selectedPostTags.isNotEmpty &&
         (contentNotEmpty || hasImages || hasSharedLink);
@@ -441,13 +451,14 @@ class _CreatePostScreenState extends State<CreatePostScreen> {
     // Instagram/YouTube 공유 포스트는 링크 미리보기가 미디어 역할을 한다.
     // 외부 앱이 함께 전달한 이미지는 Instagram 썸네일 후보로만 사용하며,
     // 일반 포스트 첨부 이미지 목록에는 추가하지 않는다.
-    if (_isExternalSocialShare || _selectedImages.length >= _maxPostImages) {
+    if (_isExternalSocialShare ||
+        (_selectedImages.length >= _maxPostImages && _selectedVideo != null)) {
       return;
     }
 
     _dismissKeyboard();
     final l10n = AppLocalizations.of(context)!;
-    final source = await showModalBottomSheet<ImageSource>(
+    final source = await showModalBottomSheet<_PostMediaSource>(
       context: context,
       useSafeArea: true,
       backgroundColor: Colors.white,
@@ -475,7 +486,7 @@ class _CreatePostScreenState extends State<CreatePostScreen> {
                   children: [
                     Expanded(
                       child: Text(
-                        l10n.imageAttachment,
+                        l10n.postComposeImageRequired,
                         maxLines: 1,
                         overflow: TextOverflow.ellipsis,
                         style: TextStyle(
@@ -503,13 +514,24 @@ class _CreatePostScreenState extends State<CreatePostScreen> {
                   icon: Icons.photo_library_outlined,
                   label: l10n.selectFromGallery,
                   onTap: () =>
-                      Navigator.of(sheetContext).pop(ImageSource.gallery),
+                      Navigator.of(sheetContext).pop(_PostMediaSource.gallery),
                 ),
+                if (_selectedVideo == null)
+                  _buildImageSourceOption(
+                    icon: Icons.videocam_outlined,
+                    label: isChineseUi(context)
+                        ? '选择视频'
+                        : Localizations.localeOf(context).languageCode == 'ko'
+                            ? '동영상 선택'
+                            : 'Choose a video',
+                    onTap: () =>
+                        Navigator.of(sheetContext).pop(_PostMediaSource.video),
+                  ),
                 _buildImageSourceOption(
                   icon: Icons.photo_camera_outlined,
                   label: l10n.takePhoto,
                   onTap: () =>
-                      Navigator.of(sheetContext).pop(ImageSource.camera),
+                      Navigator.of(sheetContext).pop(_PostMediaSource.camera),
                 ),
               ],
             ),
@@ -519,11 +541,41 @@ class _CreatePostScreenState extends State<CreatePostScreen> {
     );
 
     if (!mounted || source == null) return;
-    if (source == ImageSource.camera) {
+    if (source == _PostMediaSource.camera) {
       await _takePhoto();
       return;
     }
+    if (source == _PostMediaSource.video) {
+      await _selectVideoFromGallery();
+      return;
+    }
     await _selectImagesFromGallery();
+  }
+
+  /// 갤러리의 영상만 보여주는 시스템 피커. 사진·영상 혼합 피커가 기기에서
+  /// 영상을 보여주지 않는 경우를 위한 명시적 진입점이다.
+  Future<void> _selectVideoFromGallery() async {
+    if (_isExternalSocialShare || _selectedVideo != null) return;
+    try {
+      final picked = await _imagePicker.pickVideo(
+        source: ImageSource.gallery,
+        maxDuration: VideoUploadPolicy.post.maxDuration,
+      );
+      if (!mounted || picked == null) return;
+      await _attachVideo(File(picked.path));
+    } on PlatformException catch (error, stackTrace) {
+      Logger.error('포스트 영상 선택 실패', error, stackTrace);
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(videoPrepareErrorMessage(
+            context,
+            const VideoPrepareException(VideoRejection.unreadable),
+            VideoUploadPolicy.post,
+          )),
+        ),
+      );
+    }
   }
 
   Widget _buildImageSourceOption({
@@ -593,19 +645,19 @@ class _CreatePostScreenState extends State<CreatePostScreen> {
     if (Platform.isAndroid) {
       final remaining = _maxPostImages - _selectedImages.length;
       if (remaining <= 0) return;
+      // 시스템 포토 피커에서 사진과 영상을 함께 고른다. 영상은 1개만 첨부된다.
       final picked = remaining == 1
           ? <XFile>[
-              if (await _imagePicker.pickImage(
-                source: ImageSource.gallery,
+              if (await _imagePicker.pickMedia(
                 imageQuality: _pickedImageQuality,
                 maxWidth: _pickedImageMaxDimension,
                 maxHeight: _pickedImageMaxDimension,
                 requestFullMetadata: false,
               )
-                  case final image?)
-                image,
+                  case final media?)
+                media,
             ]
-          : await _imagePicker.pickMultiImage(
+          : await _imagePicker.pickMultipleMedia(
               limit: remaining,
               imageQuality: _pickedImageQuality,
               maxWidth: _pickedImageMaxDimension,
@@ -613,14 +665,21 @@ class _CreatePostScreenState extends State<CreatePostScreen> {
               requestFullMetadata: false,
             );
       if (!mounted || picked.isEmpty) return;
+      final videos = picked.where(_looksLikeVideo).toList(growable: false);
       final files = picked
+          .where((media) => !_looksLikeVideo(media))
           .take(remaining)
           .map((image) => File(image.path))
           .toList(growable: false);
-      setState(() {
-        _standaloneImages.addAll(files);
-        _selectedImages.addAll(files);
-      });
+      if (files.isNotEmpty) {
+        setState(() {
+          _standaloneImages.addAll(files);
+          _selectedImages.addAll(files);
+        });
+      }
+      if (videos.isNotEmpty) {
+        await _attachVideo(File(videos.first.path));
+      }
       _checkCanProceed();
       return;
     }
@@ -630,7 +689,7 @@ class _CreatePostScreenState extends State<CreatePostScreen> {
     final pickedAssets = await AssetPicker.pickAssets(
       context,
       pickerConfig: AssetPickerConfig(
-        requestType: RequestType.image,
+        requestType: RequestType.common,
         selectedAssets: _selectedAssets,
         maxAssets: maxAssets,
         dragToSelect: false,
@@ -639,14 +698,149 @@ class _CreatePostScreenState extends State<CreatePostScreen> {
 
     if (!mounted || pickedAssets == null) return;
 
+    final videoAssets = pickedAssets
+        .where((asset) => asset.type == AssetType.video)
+        .toList(growable: false);
     setState(() {
       _selectedAssets
         ..clear()
-        ..addAll(pickedAssets.take(maxAssets));
+        ..addAll(pickedAssets
+            .where((asset) => asset.type != AssetType.video)
+            .take(maxAssets));
     });
 
     await _syncSelectedImagesFromAssets();
+    if (videoAssets.isNotEmpty) {
+      File? source;
+      try {
+        // iCloud에만 있는 영상은 여기서 내려받는다(네트워크가 없으면 null).
+        source = await videoAssets.first.originFile ?? await videoAssets.first.file;
+      } catch (error) {
+        Logger.warning('갤러리 영상 파일 읽기 실패: $error');
+        source = null;
+      }
+      if (!mounted) return;
+      if (source != null) {
+        await _attachVideo(source);
+      } else {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text(videoPrepareErrorMessage(
+              context,
+              const VideoPrepareException(VideoRejection.unreadable),
+              VideoUploadPolicy.post,
+            )),
+          ),
+        );
+      }
+    }
     _checkCanProceed();
+  }
+
+  static const Set<String> _videoExtensions = {
+    'mp4', 'mov', 'm4v', '3gp', 'mkv', 'webm', 'avi', 'mpeg', 'mpg',
+  };
+
+  bool _looksLikeVideo(XFile file) {
+    final mime = (file.mimeType ?? '').toLowerCase();
+    if (mime.startsWith('video/')) return true;
+    if (mime.startsWith('image/')) return false;
+    final name = file.name.isNotEmpty ? file.name : file.path;
+    final dot = name.lastIndexOf('.');
+    final extension = dot >= 0 ? name.substring(dot + 1).toLowerCase() : '';
+    return _videoExtensions.contains(extension);
+  }
+
+  /// 최대 720p로 압축하고(긴 iOS 클립은 540p 이하) 썸네일을 만든다. 한도(60초·40MB)를 넘으면 안내만 한다.
+  Future<void> _attachVideo(File source) async {
+    if (_isExternalSocialShare) return;
+    final limits = VideoUploadPolicy.post;
+    try {
+      final prepared = await runWithVideoPreparingDialog<PreparedVideo>(
+        context,
+        () => VideoPrepareService.instance.prepare(source, limits: limits),
+      );
+      if (!mounted) return;
+      setState(() => _selectedVideo = prepared);
+      _checkCanProceed();
+    } catch (error, stackTrace) {
+      Logger.error('포스트 영상 준비 실패', error, stackTrace);
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text(videoPrepareErrorMessage(context, error, limits))),
+      );
+    }
+  }
+
+  void _removeVideo() {
+    setState(() => _selectedVideo = null);
+    _checkCanProceed();
+  }
+
+  /// 선택한 영상 미리보기(썸네일·길이·용량)와 제거 버튼, 한도 안내.
+  Widget _buildSelectedVideoTile() {
+    final video = _selectedVideo;
+    if (video == null) return const SizedBox.shrink();
+    final isKo = Localizations.localeOf(context).languageCode == 'ko';
+    final limits = VideoUploadPolicy.post;
+    final sizeLabel = '${(video.bytes / (1024 * 1024)).toStringAsFixed(1)}MB';
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Stack(
+          children: [
+            ChatVideoTile(
+              thumbnailDataUrl: null,
+              thumbnailFile: video.thumbnail,
+              durationMs: video.duration.inMilliseconds,
+              width: video.width,
+              height: video.height,
+              onTap: null,
+              maxWidth: 220,
+              statusText: sizeLabel,
+            ),
+            Positioned(
+              top: 6,
+              right: 6,
+              child: MotionPress(
+                pressedScale: .92,
+                child: GestureDetector(
+                  onTap: _removeVideo,
+                  child: Container(
+                    width: 26,
+                    height: 26,
+                    decoration: const BoxDecoration(
+                      color: Color(0xCC111827),
+                      shape: BoxShape.circle,
+                    ),
+                    child: const Icon(
+                      Icons.close_rounded,
+                      color: Colors.white,
+                      size: 16,
+                    ),
+                  ),
+                ),
+              ),
+            ),
+          ],
+        ),
+        const SizedBox(height: 6),
+        Text(
+          isChineseUi(context)
+              ? '视频最长 ${limits.maxDurationSeconds} 秒、${limits.maxUploadMegabytes}MB，最高压缩为 720p'
+              : isKo
+                  ? '영상은 ${limits.maxDurationSeconds}초·${limits.maxUploadMegabytes}MB까지, 최대 720p로 압축돼 올라가요'
+                  : 'Up to ${limits.maxDurationSeconds}s and ${limits.maxUploadMegabytes}MB, compressed to up to 720p',
+          style: TextStyle(
+            fontFamily: uiFontFamily(context, 'Inter'),
+            fontFamilyFallback: const ['NotoSansKR'],
+            fontSize: context.rf(12).clamp(11, 13).toDouble(),
+            fontWeight: FontWeight.w500,
+            color: const Color(0xFF6B7280),
+          ),
+        ),
+      ],
+    );
   }
 
   Future<void> _takePhoto() async {
@@ -1054,6 +1248,11 @@ class _CreatePostScreenState extends State<CreatePostScreen> {
         imageFiles: !_isExternalSocialShare && _selectedImages.isNotEmpty
             ? _selectedImages
             : null,
+        video: _isExternalSocialShare ? null : _selectedVideo,
+        onVideoUploadProgress: (progress) {
+          if (!mounted) return;
+          setState(() => _videoUploadProgress = progress);
+        },
         visibility: _visibility,
         isAnonymous: _isAnonymous,
         requiresHanyangVerification: _requiresHanyangVerification,
@@ -1109,6 +1308,7 @@ class _CreatePostScreenState extends State<CreatePostScreen> {
       if (!mounted) return;
       setState(() {
         _isSubmitting = false;
+        _videoUploadProgress = null;
       });
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
@@ -1217,7 +1417,9 @@ class _CreatePostScreenState extends State<CreatePostScreen> {
                     size: context.ri(18).clamp(17, 20).toDouble(),
                   ),
             label: Text(
-              l10n.share,
+              _isSubmitting && _videoUploadProgress != null
+                  ? '${(_videoUploadProgress! * 100).clamp(0, 100).round()}%'
+                  : l10n.share,
               style: TextStyle(
                 fontFamily: uiFontFamily(context, 'Inter'),
                 fontFamilyFallback: const ['NotoSansKR'],
@@ -1306,7 +1508,9 @@ class _CreatePostScreenState extends State<CreatePostScreen> {
   }
 
   Widget _buildAddImageButton(AppLocalizations l10n) {
-    final canAddImage = _selectedImages.length < _maxPostImages;
+    final canAddImage = _selectedImages.length < _maxPostImages ||
+        (_selectedVideo == null && !_isExternalSocialShare);
+    final isKo = Localizations.localeOf(context).languageCode == 'ko';
     return Align(
       alignment: Alignment.centerLeft,
       child: TextButton.icon(
@@ -1323,7 +1527,11 @@ class _CreatePostScreenState extends State<CreatePostScreen> {
           size: context.ri(21).clamp(20, 23).toDouble(),
         ),
         label: Text(
-          l10n.addImage,
+          isChineseUi(context)
+              ? '添加照片·视频'
+              : isKo
+                  ? '사진·동영상 추가'
+                  : 'Add photo or video',
           style: TextStyle(
             fontFamily: uiFontFamily(context, 'Inter'),
             fontFamilyFallback: const ['NotoSansKR'],
@@ -1345,40 +1553,46 @@ class _CreatePostScreenState extends State<CreatePostScreen> {
         separatorBuilder: (_, __) => SizedBox(width: context.rs(8)),
         itemBuilder: (context, index) {
           final image = _selectedImages[index];
-          return GestureDetector(
-            onTap: () => _previewSelectedImages(initialIndex: index),
-            child: Stack(
-              children: [
-                ClipRRect(
-                  borderRadius: BorderRadius.circular(10),
-                  child: Image.file(
-                    image,
-                    width: thumbnailExtent,
-                    height: thumbnailExtent,
-                    fit: BoxFit.cover,
+          return MotionPress(
+            pressedScale: .985,
+            child: GestureDetector(
+              onTap: () => _previewSelectedImages(initialIndex: index),
+              child: Stack(
+                children: [
+                  ClipRRect(
+                    borderRadius: BorderRadius.circular(10),
+                    child: Image.file(
+                      image,
+                      width: thumbnailExtent,
+                      height: thumbnailExtent,
+                      fit: BoxFit.cover,
+                    ),
                   ),
-                ),
-                Positioned(
-                  top: 4,
-                  right: 4,
-                  child: GestureDetector(
-                    onTap: () => _removeImage(index),
-                    child: Container(
-                      width: 24,
-                      height: 24,
-                      decoration: const BoxDecoration(
-                        color: Color(0xCC111827),
-                        shape: BoxShape.circle,
-                      ),
-                      child: const Icon(
-                        Icons.close_rounded,
-                        color: Colors.white,
-                        size: 15,
+                  Positioned(
+                    top: 4,
+                    right: 4,
+                    child: MotionPress(
+                      pressedScale: .92,
+                      child: GestureDetector(
+                        onTap: () => _removeImage(index),
+                        child: Container(
+                          width: 24,
+                          height: 24,
+                          decoration: const BoxDecoration(
+                            color: Color(0xCC111827),
+                            shape: BoxShape.circle,
+                          ),
+                          child: const Icon(
+                            Icons.close_rounded,
+                            color: Colors.white,
+                            size: 15,
+                          ),
+                        ),
                       ),
                     ),
                   ),
-                ),
-              ],
+                ],
+              ),
             ),
           );
         },
@@ -1388,7 +1602,7 @@ class _CreatePostScreenState extends State<CreatePostScreen> {
 
   Widget _buildComposeBody() {
     final l10n = AppLocalizations.of(context)!;
-    final imageLabel = l10n.imageAttachment;
+    final imageLabel = l10n.postComposeImageRequired;
     final screenSize = MediaQuery.sizeOf(context);
     final systemBottomInset = MediaQuery.viewPaddingOf(context).bottom;
     final horizontalPadding = screenSize.width < 360
@@ -1434,6 +1648,10 @@ class _CreatePostScreenState extends State<CreatePostScreen> {
                   trailing: '${_selectedImages.length}/$_maxPostImages',
                 ),
                 _buildAddImageButton(l10n),
+                if (_selectedVideo != null) ...[
+                  SizedBox(height: context.rs(8)),
+                  _buildSelectedVideoTile(),
+                ],
                 if (_selectedImages.isNotEmpty) ...[
                   SizedBox(height: context.rs(4)),
                   _buildSelectedImagesStrip(),
@@ -1896,3 +2114,5 @@ class _CreatePostScreenState extends State<CreatePostScreen> {
     );
   }
 }
+
+enum _PostMediaSource { gallery, video, camera }

@@ -17,6 +17,8 @@ class Comment {
   final String authorPhotoUrl;
   final String content;
   final String gifStoragePath;
+  /// Bucket holding [gifStoragePath]; empty means the legacy bucket.
+  final String storageBucket;
   final DateTime createdAt;
   final bool isDeleted;
   final DateTime? deletedAt;
@@ -43,6 +45,7 @@ class Comment {
     required this.authorPhotoUrl,
     required this.content,
     this.gifStoragePath = '',
+    this.storageBucket = '',
     required this.createdAt,
     this.isDeleted = false,
     this.deletedAt,
@@ -67,6 +70,7 @@ class Comment {
       authorPhotoUrl: data['authorPhotoUrl'] ?? '',
       content: data['content'] ?? '',
       gifStoragePath: (data['gifStoragePath'] ?? '').toString(),
+      storageBucket: (data['storageBucket'] ?? '').toString(),
       createdAt: data['createdAt'] != null
           ? (data['createdAt'] as Timestamp).toDate()
           : DateTime.now(),
@@ -112,6 +116,7 @@ class Comment {
       'authorPhotoUrl': authorPhotoUrl,
       'content': content,
       'gifStoragePath': gifStoragePath,
+      'storageBucket': storageBucket,
       'createdAt': createdAt.millisecondsSinceEpoch,
       'isDeleted': isDeleted,
       'deletedAt': deletedAt?.millisecondsSinceEpoch,
@@ -135,6 +140,7 @@ class Comment {
       authorPhotoUrl: map['authorPhotoUrl'] ?? '',
       content: map['content'] ?? '',
       gifStoragePath: (map['gifStoragePath'] ?? '').toString(),
+      storageBucket: (map['storageBucket'] ?? '').toString(),
       createdAt: map['createdAt'] is int
           ? DateTime.fromMillisecondsSinceEpoch(map['createdAt'])
           : DateTime.now(),
@@ -170,6 +176,7 @@ class Comment {
     String? authorPhotoUrl,
     String? content,
     String? gifStoragePath,
+    String? storageBucket,
     DateTime? createdAt,
     bool? isDeleted,
     DateTime? deletedAt,
@@ -189,6 +196,7 @@ class Comment {
       authorPhotoUrl: authorPhotoUrl ?? this.authorPhotoUrl,
       content: content ?? this.content,
       gifStoragePath: gifStoragePath ?? this.gifStoragePath,
+      storageBucket: storageBucket ?? this.storageBucket,
       createdAt: createdAt ?? this.createdAt,
       isDeleted: isDeleted ?? this.isDeleted,
       deletedAt: deletedAt ?? this.deletedAt,

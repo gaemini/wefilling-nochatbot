@@ -1,4 +1,11 @@
 import * as functions from 'firebase-functions';
+import {allKnownBuckets, bucketFor, callables, downloadUrlFor, isKnownStorageBucket, triggers, uploadBucket} from './backend';
+import {
+  POST_VIDEO_LIMITS,
+  deleteStorageObjectQuietly,
+  validateUploadedThumbnail,
+  validateUploadedVideo,
+} from './video_policy';
 import * as admin from 'firebase-admin';
 import * as crypto from 'crypto';
 import {COL} from './firestore_paths';
@@ -161,6 +168,14 @@ function sharedLinkPreview(
     'linkPreview.thumbnailStoragePath',
   );
   let thumbnailSource = text(value.thumbnailSource, 40, 'linkPreview.thumbnailSource');
+  let thumbnailStorageBucket = text(
+    value.thumbnailStorageBucket,
+    230,
+    'linkPreview.thumbnailStorageBucket',
+  );
+  if (thumbnailStorageBucket && !isKnownStorageBucket(thumbnailStorageBucket)) {
+    throw new functions.https.HttpsError('invalid-argument', 'Invalid thumbnail bucket.');
+  }
   let thumbnailWidth = integer(
     value.thumbnailWidth ?? 0,
     0,
@@ -206,6 +221,7 @@ function sharedLinkPreview(
       // thumbnailUrl로 저장하지 않는다.
       thumbnailUrl = '';
       thumbnailStoragePath = '';
+      thumbnailStorageBucket = '';
       thumbnailSource = '';
       thumbnailWidth = 0;
       thumbnailHeight = 0;
@@ -242,6 +258,7 @@ function sharedLinkPreview(
     thumbnailUrl,
     ...(thumbnailUrl ? {
       thumbnailStoragePath,
+      thumbnailStorageBucket,
       thumbnailSource: ['share_payload', 'local_preview', 'remote_resolver']
         .includes(thumbnailSource)
         ? thumbnailSource
@@ -249,7 +266,7 @@ function sharedLinkPreview(
       ...(thumbnailWidth > 0 ? {thumbnailWidth} : {}),
       ...(thumbnailHeight > 0 ? {thumbnailHeight} : {}),
       previewVersion: Math.max(previewVersion, 4),
-    } : {thumbnailStoragePath: '', thumbnailSource: '', previewVersion}),
+    } : {thumbnailStoragePath: '', thumbnailStorageBucket: '', thumbnailSource: '', previewVersion}),
     aspectRatio,
     previewMode,
     fetchedAt: now,
@@ -283,13 +300,14 @@ async function verifiedPersistedLinkPreview(
       ...preview,
       thumbnailUrl: '',
       thumbnailStoragePath: '',
+      thumbnailStorageBucket: '',
       thumbnailSource: '',
       previewMode: 'link',
       previewStatus: 'unavailable',
     };
   }
   try {
-    const file = admin.storage().bucket().file(storagePath);
+    const file = bucketFor(preview.thumbnailStorageBucket).file(storagePath);
     const [exists] = await file.exists();
     if (!exists) throw new Error('storage-object-not-found');
     const [metadata] = await file.getMetadata();
@@ -305,6 +323,7 @@ async function verifiedPersistedLinkPreview(
       ...preview,
       thumbnailUrl: '',
       thumbnailStoragePath: '',
+      thumbnailStorageBucket: '',
       thumbnailSource: '',
       previewMode: 'link',
       previewStatus: 'unavailable',
@@ -374,7 +393,7 @@ function jpegImageDimensions(bytes: Buffer): {width: number; height: number} | n
  * Authentication still comes from Firebase Auth's shared Apple Keychain; the
  * response contains display-only group metadata and never returns credentials.
  */
-export const getExternalShareComposerContext = functions
+export const getExternalShareComposerContext = callables()
   .runWith({timeoutSeconds: 30, memory: '256MB'})
   .https.onCall(async (_raw, context) => {
     const uid = requireUid(context);
@@ -400,7 +419,109 @@ export const getExternalShareComposerContext = functions
   });
 
 /** 서버가 source group/current friends를 한 번 읽고 immutable audience를 저장한다. */
-export const createPostSecure = functions.runWith({timeoutSeconds: 120, memory: '512MB'})
+function firebaseStorageBucketFromUrl(raw: string): string {
+  try {
+    const url = new URL(raw);
+    if (url.protocol !== 'https:' || url.hostname !== 'firebasestorage.googleapis.com') return '';
+    const match = url.pathname.match(/^\/v0\/b\/([^/]+)\/o\//);
+    return match ? decodeURIComponent(match[1]) : '';
+  } catch (_) {
+    return '';
+  }
+}
+
+/** Deletes a post-owned image object referenced by a download URL. */
+async function deletePostImageByUrl(rawUrl: string): Promise<void> {
+  const objectPath = firebaseStorageObjectPath(rawUrl);
+  const bucket = firebaseStorageBucketFromUrl(rawUrl);
+  // 게시글 이미지는 posts/{uuid}.jpg 또는 posts/external-{postId}.jpg 뿐이다.
+  if (!objectPath.startsWith('posts/') || objectPath.includes('..') ||
+      !bucket || !isKnownStorageBucket(bucket)) {
+    return;
+  }
+  await deleteStorageObjectQuietly(objectPath, bucket);
+}
+
+type PostVideoDocument = {
+  url: string;
+  storagePath: string;
+  storageBucket: string;
+  thumbnailUrl: string;
+  thumbnailPath: string;
+  durationMs: number;
+  width: number;
+  height: number;
+  bytes: number;
+};
+
+/**
+ * Verifies a client-uploaded post video (+thumbnail) and mints download
+ * tokens for both objects. Invalid uploads are deleted so they never linger.
+ */
+async function verifiedPostVideo(
+  raw: unknown,
+  uid: string,
+  postId: string,
+): Promise<PostVideoDocument | null> {
+  if (raw == null) return null;
+  const data = object(raw);
+  const prefix = `post_videos/${uid}/${postId}/`;
+  const storagePath = text(data.storagePath, 300, 'video.storagePath');
+  const thumbnailPath = text(data.thumbnailPath, 300, 'video.thumbnailPath');
+  const storageBucket = text(data.storageBucket, 120, 'video.storageBucket') || null;
+  if (storagePath !== `${prefix}video.mp4` || thumbnailPath !== `${prefix}thumbnail.jpg`) {
+    throw new functions.https.HttpsError('invalid-argument', 'Invalid post video path.');
+  }
+  if (storageBucket && !isKnownStorageBucket(storageBucket)) {
+    throw new functions.https.HttpsError('invalid-argument', 'Invalid storage bucket.');
+  }
+  try {
+    const video = await validateUploadedVideo({
+      storagePath,
+      storageBucket,
+      ownerUid: uid,
+      limits: POST_VIDEO_LIMITS,
+      expectedPathPrefix: prefix,
+    });
+    await validateUploadedThumbnail({
+      storagePath: thumbnailPath,
+      storageBucket,
+      ownerUid: uid,
+      expectedPathPrefix: prefix,
+    });
+    const bucket = bucketFor(storageBucket ?? undefined);
+    const tokens: string[] = [];
+    for (const objectPath of [storagePath, thumbnailPath]) {
+      const file = bucket.file(objectPath);
+      const [metadata] = await file.getMetadata();
+      const existing = String((metadata.metadata ?? {}).firebaseStorageDownloadTokens ?? '')
+        .split(',')[0].trim();
+      const token = existing || crypto.randomUUID();
+      if (!existing) {
+        await file.setMetadata({metadata: {firebaseStorageDownloadTokens: token}});
+      }
+      tokens.push(token);
+    }
+    return {
+      url: downloadUrlFor(bucket.name, storagePath, tokens[0]),
+      storagePath,
+      storageBucket: bucket.name,
+      thumbnailUrl: downloadUrlFor(bucket.name, thumbnailPath, tokens[1]),
+      thumbnailPath,
+      durationMs: Math.round(video.durationSeconds * 1000),
+      width: video.width,
+      height: video.height,
+      bytes: video.bytes,
+    };
+  } catch (error) {
+    // 검증에 실패한 업로드는 남기지 않는다(존재하지 않으면 무시).
+    await deleteStorageObjectQuietly(storagePath, storageBucket);
+    await deleteStorageObjectQuietly(thumbnailPath, storageBucket);
+    throw error;
+  }
+}
+
+export const createPostSecure = callables().runWith({timeoutSeconds: 120, memory: '512MB'})
   .https.onCall(async (raw, context) => {
     const uid = requireUid(context);
     const data = object(raw);
@@ -455,13 +576,29 @@ export const createPostSecure = functions.runWith({timeoutSeconds: 120, memory: 
       uid,
       postId,
     );
-    const imageUrls = stringList(data.imageUrls, 15);
     const type = text(data.type, 20, 'type') || 'text';
     const content = text(data.content, 10000, 'content');
     const pollOptions = stringList(data.pollOptions, 2, 200);
     if (type === 'poll' && (content.length === 0 || pollOptions.length !== 2)) {
       throw new functions.https.HttpsError('invalid-argument', 'A poll needs a question and two options.');
     }
+    if (data.video != null && type !== 'text') {
+      throw new functions.https.HttpsError('invalid-argument', 'Only text posts can carry a video.');
+    }
+    // 같은 postId 재시도는 이미 연결된 영상 객체를 다시 검증하지 않는다.
+    const ref = admin.firestore().collection(COL.posts).doc(postId);
+    const existing = await ref.get();
+    if (existing.exists) {
+      if (existing.get('ownerId') === uid || existing.get('userId') === uid) return {postId};
+      throw new functions.https.HttpsError('already-exists', 'Post already exists.');
+    }
+    const video = await verifiedPostVideo(data.video, uid, postId);
+    const rawImageUrls = stringList(data.imageUrls, 15);
+    // 영상 썸네일을 imageUrls[0]에도 넣어 목록·알림·프로필 그리드의 기존
+    // 썸네일 경로가 그대로 동작하게 한다. 카드/상세는 video를 우선 렌더링한다.
+    const imageUrls = video
+      ? [video.thumbnailUrl, ...rawImageUrls.filter((url) => url !== video.thumbnailUrl)]
+      : rawImageUrls;
 
     const document: FirebaseFirestore.DocumentData = {
       userId: uid,
@@ -493,24 +630,34 @@ export const createPostSecure = functions.runWith({timeoutSeconds: 120, memory: 
       viewCount: 0,
       type,
       ...(linkPreview ? {linkPreview} : {}),
+      ...(video ? {video} : {}),
       ...(type === 'poll' ? {
         pollOptions: pollOptions.map((option, index) => ({id: `${index}`, text: option, votes: 0})),
         pollTotalVotes: 0,
       } : {}),
     };
-    const ref = admin.firestore().collection(COL.posts).doc(postId);
-    const existing = await ref.get();
-    if (existing.exists) {
-      if (existing.get('ownerId') === uid || existing.get('userId') === uid) return {postId};
-      throw new functions.https.HttpsError('already-exists', 'Post already exists.');
-    }
     const batch = admin.firestore().batch();
     batch.create(ref, document);
     batch.set(
       postSearchIndexRef(postId),
       buildPostSearchIndexDocument(document, now),
     );
-    await batch.commit();
+    try {
+      await batch.commit();
+    } catch (error) {
+      // 클라이언트 타임아웃 재시도가 첫 요청과 겹치면 create가 이미 성공해
+      // 있을 수 있다. 같은 작성자의 문서면 성공으로 돌려 중복 생성·실패
+      // 표시를 막는다.
+      const code = Number((error as {code?: unknown})?.code);
+      if (code === 6) {
+        const duplicate = await ref.get();
+        if (duplicate.exists &&
+            (duplicate.get('ownerId') === uid || duplicate.get('userId') === uid)) {
+          return {postId};
+        }
+      }
+      throw error;
+    }
     runtimeLogsEnabled && runtimeInfo(
       `content-created type=post id=${postId} owner=${uid} ` +
       `visibility=${frozen.visibilityMode} schema=2 ` +
@@ -527,7 +674,7 @@ export const createPostSecure = functions.runWith({timeoutSeconds: 120, memory: 
  * creating a duplicate post. The optional single JPEG is uploaded by Admin SDK
  * only after authentication, profile, visibility, and category validation.
  */
-export const createExternalSharePost = functions
+export const createExternalSharePost = callables()
   .runWith({timeoutSeconds: 120, memory: '512MB'})
   .https.onCall(async (raw, context) => {
     const uid = requireUid(context);
@@ -602,7 +749,7 @@ export const createExternalSharePost = functions
     let imageUrls: string[] = [];
     if (image) {
       const token = crypto.randomUUID();
-      const bucket = admin.storage().bucket();
+      const bucket = uploadBucket();
       if (linkPreview?.provider === 'instagram') {
         uploadedPreviewPath = `post_link_previews/${uid}/${postId}/instagram.jpg`;
         const dimensions = jpegImageDimensions(image);
@@ -629,6 +776,7 @@ export const createExternalSharePost = functions
           ...linkPreview,
           thumbnailUrl,
           thumbnailStoragePath: uploadedPreviewPath,
+          thumbnailStorageBucket: bucket.name,
           thumbnailSource: 'share_payload',
           ...(dimensions ? {
             thumbnailWidth: dimensions.width,
@@ -703,11 +851,11 @@ export const createExternalSharePost = functions
         return {postId, duplicate: true};
       }
       if (uploadedPath) {
-        await admin.storage().bucket().file(uploadedPath).delete({ignoreNotFound: true})
+        await uploadBucket().file(uploadedPath).delete({ignoreNotFound: true})
           .catch(() => undefined);
       }
       if (uploadedPreviewPath) {
-        await admin.storage().bucket().file(uploadedPreviewPath).delete({ignoreNotFound: true})
+        await uploadBucket().file(uploadedPreviewPath).delete({ignoreNotFound: true})
           .catch(() => undefined);
       }
       throw error;
@@ -720,7 +868,7 @@ export const createExternalSharePost = functions
     return {postId, duplicate: false};
   });
 
-export const createMeetupSecure = functions.runWith({timeoutSeconds: 120, memory: '512MB'})
+export const createMeetupSecure = callables().runWith({timeoutSeconds: 120, memory: '512MB'})
   .https.onCall(async (raw, context) => {
     const uid = requireUid(context);
     const data = object(raw);
@@ -825,7 +973,7 @@ export const createMeetupSecure = functions.runWith({timeoutSeconds: 120, memory
   });
 
 /** 공개 제한시간과 확정이 경합해도 서버 트랜잭션에서 한 상태만 선택한다. */
-export const confirmMeetupSecure = functions
+export const confirmMeetupSecure = callables()
   .runWith({timeoutSeconds: 30, memory: '256MB'})
   .https.onCall(async (raw, context) => {
     const uid = requireUid(context);
@@ -875,7 +1023,7 @@ export const confirmMeetupSecure = functions
  * 제한시간이 지난 미확정 밋업을 매분 비공개 상태로 전환한다.
  * 문서를 삭제하지 않아 경합/연관 데이터 손실을 피하고 모든 앱 목록에서 숨긴다.
  */
-export const expireTimedMeetups = functions.pubsub
+export const expireTimedMeetups = triggers().pubsub
   .schedule('* * * * *')
   .timeZone('Asia/Seoul')
   .onRun(async () => {
@@ -923,4 +1071,59 @@ export const expireTimedMeetups = functions.pubsub
     }
     runtimeLogsEnabled && runtimeInfo(`expireTimedMeetups: scanned=${snapshot.size} expired=${expired}`);
     return null;
+  });
+
+/**
+ * Post media lives in Storage objects the client can no longer delete (posts/
+ * objects are create-only; post_videos/ is owner-deletable only before the
+ * document exists). Server-side cleanup keeps storage cost bounded.
+ */
+async function deletePostMedia(data: FirebaseFirestore.DocumentData | undefined, postId: string) {
+  if (!data) return;
+  const video = data.video && typeof data.video === 'object' ? data.video as Record<string, unknown> : null;
+  const thumbnailUrl = video ? String(video.thumbnailUrl ?? '') : '';
+  const imageUrls: string[] = Array.isArray(data.imageUrls)
+    ? data.imageUrls.filter((url: unknown): url is string => typeof url === 'string')
+    : [];
+  await Promise.all(imageUrls
+    .filter((url) => url !== thumbnailUrl)
+    .map((url) => deletePostImageByUrl(url)));
+  const ownerUid = String(data.ownerId ?? data.userId ?? '');
+  if (ownerUid && ownerUid !== 'deleted') {
+    await Promise.all(allKnownBuckets().map((bucket) =>
+      bucket.deleteFiles({prefix: `post_videos/${ownerUid}/${postId}/`}).catch(() => undefined)));
+    await Promise.all(allKnownBuckets().map((bucket) =>
+      bucket.deleteFiles({prefix: `post_link_previews/${ownerUid}/${postId}/`}).catch(() => undefined)));
+  } else if (video) {
+    await deleteStorageObjectQuietly(String(video.storagePath ?? ''), String(video.storageBucket ?? '') || null);
+    await deleteStorageObjectQuietly(String(video.thumbnailPath ?? ''), String(video.storageBucket ?? '') || null);
+  }
+}
+
+export const onPostDeletedStorageCleanup = triggers().firestore
+  .document('posts/{postId}')
+  .onDelete(async (snapshot, context) => {
+    try {
+      await deletePostMedia(snapshot.data(), String(context.params.postId));
+    } catch (error) {
+      console.warn('post media cleanup failed', {postId: context.params.postId, message: (error as Error)?.message});
+    }
+  });
+
+/** Images removed while editing a post are deleted once the edit is saved. */
+export const onPostUpdatedStorageCleanup = triggers().firestore
+  .document('posts/{postId}')
+  .onUpdate(async (change) => {
+    try {
+      const before = change.before.data() ?? {};
+      const after = change.after.data() ?? {};
+      const afterUrls = new Set<string>(Array.isArray(after.imageUrls) ? after.imageUrls : []);
+      const video = after.video && typeof after.video === 'object' ? after.video as Record<string, unknown> : null;
+      const thumbnailUrl = video ? String(video.thumbnailUrl ?? '') : '';
+      const removed: string[] = (Array.isArray(before.imageUrls) ? before.imageUrls : [])
+        .filter((url: unknown): url is string => typeof url === 'string' && !afterUrls.has(url) && url !== thumbnailUrl);
+      await Promise.all(removed.map((url) => deletePostImageByUrl(url)));
+    } catch (error) {
+      console.warn('post image cleanup failed', {message: (error as Error)?.message});
+    }
   });

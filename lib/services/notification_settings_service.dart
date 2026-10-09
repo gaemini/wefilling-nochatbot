@@ -5,6 +5,7 @@
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import '../utils/logger.dart';
+import 'fcm_service.dart';
 
 // 알림 설정 키 상수 (통합된 구조)
 class NotificationSettingKeys {
@@ -211,11 +212,10 @@ class NotificationSettingsService {
       }
 
       // 광고 토픽 구독/해제 처리 (marketing 키 사용)
+      // 토픽 처리 실패는 설정 저장 실패로 취급하지 않는다.
       if (key == NotificationSettingKeys.marketing) {
         try {
-          // 지연 import 방지 (순환참조 회피)
-          // ignore: avoid_dynamic_calls
-          final dynamic fcm = await _loadFCMService();
+          final fcm = FCMService();
           if (value) {
             await fcm.subscribeToTopic('ads');
           } else {
@@ -247,29 +247,5 @@ class NotificationSettingsService {
     
     // 통합 키로 확인
     return settings[unifiedKey] ?? true;
-  }
-
-  // 지연 로딩으로 FCMService 인스턴스 획득 (순환 의존성 회피용)
-  Future<dynamic> _loadFCMService() async {
-    // ignore: avoid_dynamic_calls
-    final fcm = (await Future.microtask(() => null));
-    // 실제 앱에서는 DI 컨테이너를 사용하거나, FCMService를 상위에서 주입받도록 개선 가능
-    // 여기서는 전역 싱글턴 패턴 대신 간단히 import하여 생성
-    // late import 방지: 직접 new FCMService() 생성
-    // ignore: prefer_const_constructors
-    return new _FCMServiceShim();
-  }
-}
-
-// 간단한 셈플 shim: subscribe/unsubscribe만 사용
-class _FCMServiceShim {
-  Future<void> subscribeToTopic(String topic) async {
-    // 지연 import로 실제 FCMService 사용
-    // ignore: avoid_print
-    if (Logger.isVerboseEnabled) Logger.log('Shim subscribeToTopic($topic) 호출 - 실제 런타임에서는 FCMService로 대체');
-  }
-  Future<void> unsubscribeFromTopic(String topic) async {
-    // ignore: avoid_print
-    if (Logger.isVerboseEnabled) Logger.log('Shim unsubscribeFromTopic($topic) 호출 - 실제 런타임에서는 FCMService로 대체');
   }
 }

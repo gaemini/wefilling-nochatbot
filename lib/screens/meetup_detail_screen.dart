@@ -37,9 +37,12 @@ import '../utils/responsive_helper.dart';
 import '../ui/widgets/translatable_content.dart';
 import '../ui/snackbar/app_snackbar.dart';
 import '../ui/widgets/motion_press.dart';
+import '../utils/motion_haptics.dart';
+import '../ui/widgets/motion_processing_button.dart';
 import 'snack_chat_screen.dart';
 import '../ui/widgets/hanyang_verification_gate.dart';
 import '../services/notification_service.dart';
+import '../services/active_content_registry.dart';
 import '../l10n/ui_locale.dart';
 // NOTE: 단체 톡방(확성기) 기능 제거됨
 
@@ -86,6 +89,9 @@ class _MeetupDetailScreenState extends State<MeetupDetailScreen>
   final SnackChatService _snackChatService = SnackChatService();
   final UsersRepository _usersRepository = UsersRepository();
   bool _isLoading = false;
+  // Visual-only: shows a short check on the primary action after a real
+  // server success (join/confirm). Destructive actions never use it.
+  final ProcessingFeedback _actionFeedback = ProcessingFeedback();
   bool _isSnackChatActionLoading = false;
   bool _isHost = false;
   bool _isParticipant = false; // 현재 사용자가 승인된 참여자인지
@@ -164,6 +170,10 @@ class _MeetupDetailScreenState extends State<MeetupDetailScreen>
           targets: {'meetupId': widget.meetupId},
           readContext: readContext,
         ));
+        ActiveContentRegistry.register(this,
+            types: const {'meetup_full', 'meetup_cancelled', 'meetup_created',
+              'meetup_participant_joined', 'meetup_participant_left'},
+            targets: {'meetupId': widget.meetupId});
       }
     } catch (error) {
       // 확정 여부를 검증하지 못한 상태에서는 나가기 같은 되돌리기 어려운
@@ -246,6 +256,8 @@ class _MeetupDetailScreenState extends State<MeetupDetailScreen>
 
   @override
   void dispose() {
+    _actionFeedback.dispose();
+    ActiveContentRegistry.unregister(this);
     WidgetsBinding.instance.removeObserver(this);
     super.dispose();
   }
@@ -1284,12 +1296,15 @@ class _MeetupDetailScreenState extends State<MeetupDetailScreen>
               WidgetSpan(
                 alignment: PlaceholderAlignment.baseline,
                 baseline: TextBaseline.alphabetic,
-                child: GestureDetector(
-                  behavior: HitTestBehavior.opaque,
-                  onTap: () => _openExternalLink(e.url),
-                  child: Text(
-                    e is UrlElement ? _displayUrlLabel(e.url) : e.text,
-                    style: linkStyle,
+                child: MotionPress(
+                  pressedScale: .99,
+                  child: GestureDetector(
+                    behavior: HitTestBehavior.opaque,
+                    onTap: () => _openExternalLink(e.url),
+                    child: Text(
+                      e is UrlElement ? _displayUrlLabel(e.url) : e.text,
+                      style: linkStyle,
+                    ),
                   ),
                 ),
               )
@@ -1513,18 +1528,21 @@ class _MeetupDetailScreenState extends State<MeetupDetailScreen>
                 ? _buildDefaultImage(displayImageUrl, imageHeight)
                 : Stack(
                     children: [
-                      GestureDetector(
-                        onTap: () {
-                          showFullscreenImageViewer(
-                            context,
-                            imageUrls: gallery,
-                            initialIndex: 0,
-                            heroTag: 'meetup_image',
-                          );
-                        },
-                        child: Hero(
-                          tag: 'meetup_image',
-                          child: _buildNetworkImage(gallery.first, imageHeight),
+                      MotionPress(
+                        pressedScale: .985,
+                        child: GestureDetector(
+                          onTap: () {
+                            showFullscreenImageViewer(
+                              context,
+                              imageUrls: gallery,
+                              initialIndex: 0,
+                              heroTag: 'meetup_image',
+                            );
+                          },
+                          child: Hero(
+                            tag: 'meetup_image',
+                            child: _buildNetworkImage(gallery.first, imageHeight),
+                          ),
                         ),
                       ),
 
@@ -1572,44 +1590,47 @@ class _MeetupDetailScreenState extends State<MeetupDetailScreen>
               separatorBuilder: (_, __) => const SizedBox(width: 10),
               itemBuilder: (context, index) {
                 final url = gallery[index];
-                return GestureDetector(
-                  onTap: () {
-                    showFullscreenImageViewer(
-                      context,
-                      imageUrls: gallery,
-                      initialIndex: index,
-                      heroTag: 'meetup_image',
-                    );
-                  },
-                  child: ClipRRect(
-                    borderRadius: BorderRadius.circular(12),
-                    child: Container(
-                      width: 74,
-                      height: 74,
-                      decoration: BoxDecoration(
-                        color: const Color(0xFFF3F4F6),
-                        border: Border.all(color: const Color(0xFFE5E7EB)),
-                        borderRadius: BorderRadius.circular(12),
-                      ),
-                      child: Image.network(
-                        url,
-                        fit: BoxFit.cover,
-                        errorBuilder: (_, __, ___) => const Center(
-                          child: Icon(
-                            Icons.image_not_supported_outlined,
-                            color: Color(0xFF9CA3AF),
-                          ),
+                return MotionPress(
+                  pressedScale: .985,
+                  child: GestureDetector(
+                    onTap: () {
+                      showFullscreenImageViewer(
+                        context,
+                        imageUrls: gallery,
+                        initialIndex: index,
+                        heroTag: 'meetup_image',
+                      );
+                    },
+                    child: ClipRRect(
+                      borderRadius: BorderRadius.circular(12),
+                      child: Container(
+                        width: 74,
+                        height: 74,
+                        decoration: BoxDecoration(
+                          color: const Color(0xFFF3F4F6),
+                          border: Border.all(color: const Color(0xFFE5E7EB)),
+                          borderRadius: BorderRadius.circular(12),
                         ),
-                        loadingBuilder: (context, child, progress) {
-                          if (progress == null) return child;
-                          return const Center(
-                            child: SizedBox(
-                              width: 16,
-                              height: 16,
-                              child: CircularProgressIndicator(strokeWidth: 2),
+                        child: Image.network(
+                          url,
+                          fit: BoxFit.cover,
+                          errorBuilder: (_, __, ___) => const Center(
+                            child: Icon(
+                              Icons.image_not_supported_outlined,
+                              color: Color(0xFF9CA3AF),
                             ),
-                          );
-                        },
+                          ),
+                          loadingBuilder: (context, child, progress) {
+                            if (progress == null) return child;
+                            return const Center(
+                              child: SizedBox(
+                                width: 16,
+                                height: 16,
+                                child: CircularProgressIndicator(strokeWidth: 2),
+                              ),
+                            );
+                          },
+                        ),
                       ),
                     ),
                   ),
@@ -2096,6 +2117,7 @@ class _MeetupDetailScreenState extends State<MeetupDetailScreen>
     setState(() => _isLoading = true);
     final success = await _meetupService.confirmMeetup(widget.meetupId);
     if (!mounted) return;
+    if (success) _actionFeedback.success();
     setState(() {
       _isLoading = false;
       if (success) {
@@ -2278,44 +2300,67 @@ class _MeetupDetailScreenState extends State<MeetupDetailScreen>
   }) {
     final foreground = destructive ? const Color(0xFFB42318) : Colors.white;
     final busy = _isLoading || loading;
-    return MotionPress(
-      enabled: !busy && enabled,
-      child: SizedBox(
-      width: double.infinity,
-      height: context.rh(52, min: 48, max: 56),
-      child: destructive
-          ? TextButton(
-              onPressed: busy || !enabled ? null : onPressed,
-              style: TextButton.styleFrom(
-                foregroundColor: foreground,
-                shape: RoundedRectangleBorder(
-                  borderRadius: BorderRadius.circular(8),
-                ),
-              ),
-              child: _buildBottomButtonContent(
-                label,
-                icon,
-                foreground,
-                loading: busy,
-              ),
-            )
-          : FilledButton(
-              onPressed: busy || !enabled ? null : onPressed,
-              style: FilledButton.styleFrom(
-                backgroundColor: const Color(0xFF111827),
-                foregroundColor: foreground,
-                elevation: 0,
-                shape: RoundedRectangleBorder(
-                  borderRadius: BorderRadius.circular(8),
-                ),
-              ),
-              child: _buildBottomButtonContent(
-                label,
-                icon,
-                foreground,
-                loading: busy,
+    if (destructive) {
+      // Cautious type: restrained press, existing confirmation flow, and no
+      // success phase.
+      return MotionPress(
+        enabled: !busy && enabled,
+        pressedScale: MotionProcessingButton.cautiousScale,
+        child: SizedBox(
+          width: double.infinity,
+          height: context.rh(52, min: 48, max: 56),
+          child: TextButton(
+            onPressed: busy || !enabled ? null : onPressed,
+            style: TextButton.styleFrom(
+              foregroundColor: foreground,
+              shape: RoundedRectangleBorder(
+                borderRadius: BorderRadius.circular(8),
               ),
             ),
+            child: _buildBottomButtonContent(
+              label,
+              icon,
+              foreground,
+              loading: busy,
+            ),
+          ),
+        ),
+      );
+    }
+    // Processing type: busy comes from the existing flag; the check shows
+    // only after _actionFeedback.success() is called on a real result.
+    return MotionProcessingButton(
+      busy: busy,
+      onPressed: enabled ? onPressed : null,
+      feedback: _actionFeedback,
+      foreground: foreground,
+      pressedScale: .975,
+      spinner: SizedBox(
+        width: 19,
+        height: 19,
+        child: CircularProgressIndicator(strokeWidth: 2, color: foreground),
+      ),
+      label: _buildBottomButtonContent(
+        label,
+        icon,
+        foreground,
+        loading: false,
+      ),
+      builder: (context, callback, child) => SizedBox(
+        width: double.infinity,
+        height: context.rh(52, min: 48, max: 56),
+        child: FilledButton(
+          onPressed: callback,
+          style: FilledButton.styleFrom(
+            backgroundColor: const Color(0xFF111827),
+            foregroundColor: foreground,
+            elevation: 0,
+            shape: RoundedRectangleBorder(
+              borderRadius: BorderRadius.circular(8),
+            ),
+          ),
+          child: child,
+        ),
       ),
     );
   }
@@ -2426,6 +2471,11 @@ class _MeetupDetailScreenState extends State<MeetupDetailScreen>
       });
 
       if (success) {
+        // Real server success only: short check + one light haptic.
+        _actionFeedback.success();
+        if (mounted) {
+          MotionHaptics.fire(context, MotionHapticEvent.processingSuccess);
+        }
         // 백그라운드에서 참여자 목록 새로고침
         Future.microtask(() async {
           await _loadParticipants();

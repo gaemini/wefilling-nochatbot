@@ -162,4 +162,25 @@ void main() {
     expect(animatedOpacity(), findsNothing);
     expect(find.text('existing message'), findsOneWidget);
   });
+
+  testWidgets('restoring motion does not replay a previously skipped entrance',
+      (tester) async {
+    var claims = 0;
+    Widget view(bool reduced) => MaterialApp(
+          home: MediaQuery(
+            data: MediaQueryData(disableAnimations: reduced),
+            child: Scaffold(
+                body: SnackChatOutgoingEntrance(
+              animateOnMount: true,
+              onAnimationClaimed: () => claims++,
+              child: const Text('confirmed'),
+            )),
+          ),
+        );
+    await tester.pumpWidget(view(true));
+    await tester.pumpWidget(view(false));
+    expect(claims, 1);
+    expect(animatedOpacity(), findsNothing);
+    await tester.pumpAndSettle();
+  });
 }

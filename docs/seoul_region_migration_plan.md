@@ -131,3 +131,14 @@ the one-authoritative-write-source gate is not yet satisfied.
 References: Firebase Firestore locations and manage-databases, Functions
 Firestore triggers and locations, Firebase CLI multiple-database configuration,
 and Firestore managed export/import documentation.
+
+
+## 2026-10-05 상태
+
+- 방식 확정: `(default)` 삭제 후 asia-northeast3에 `(default)` 재생성(named DB는 Storage 규칙이
+  기본 DB만 읽을 수 있어 제외). 실행 절차·검증 기준은 `docs/seoul_cutover_runbook.md`.
+- P0(코드 준비) 완료: `functions/src/backend.ts`(`callables`/`triggers` 리전 분리, 버킷 접근자,
+  메일 secret), `lib/config/app_backend.dart`(`AppFunctions`/`AppStorage`), 릴리스 메타데이터
+  `backend` 블록 + 가드, 문서별 `storageBucket` 기록. 현재 값은 모두 기존(us-central1·US 버킷)으로
+  동작 변화 없음.
+- 다음: 런북 P1-0(`gcloud auth login`, `firebase functions:secrets:set GMAIL_PASSWORD`)부터.

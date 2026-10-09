@@ -124,10 +124,10 @@ class SnackChatAttachmentSheet extends StatelessWidget {
                           ? '이미지'
                           : 'Image'),
                   description: (isChineseUi(context)
-                      ? '选择要发送到群聊的照片'
+                      ? '选择要发送的照片或视频'
                       : isKorean
-                          ? '사진을 선택해 대화에 보내기'
-                          : 'Choose a photo to send in this chat'),
+                          ? '사진이나 동영상을 골라 보내기'
+                          : 'Choose a photo or video to send'),
                   compact: isCompact,
                   onTap: () => Navigator.of(context).pop(
                     SnackChatAttachmentAction.image,

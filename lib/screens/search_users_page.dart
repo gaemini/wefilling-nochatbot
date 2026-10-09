@@ -327,7 +327,7 @@ class _SearchUsersPageState extends State<SearchUsersPage> {
                     return const Center(child: CircularProgressIndicator());
                   }
 
-                  if (provider.isLoading) {
+                  if (provider.isSearchLoading) {
                     return const Center(child: CircularProgressIndicator());
                   }
 

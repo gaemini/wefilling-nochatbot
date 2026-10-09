@@ -6,6 +6,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import '../../design/tokens.dart';
 import '../../utils/accessibility_utils.dart';
+import 'motion_press.dart';
 
 /// 앱 전체에서 사용하는 표준화된 아이콘 버튼
 ///
@@ -68,6 +69,7 @@ class AppIconButton extends StatelessWidget {
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
     final colorScheme = theme.colorScheme;
+    final effectiveEnabled = enabled && onPressed != null;
 
     // 접근성을 고려한 색상 선택
     final baseIconColor = iconColor ?? colorScheme.onSurface;
@@ -95,14 +97,13 @@ class AppIconButton extends StatelessWidget {
         color: effectiveBackgroundColor,
         borderRadius: BorderRadius.circular(DesignTokens.r12),
         child: InkWell(
-          onTap:
-              enabled
-                  ? () {
-                    // 접근성 햅틱 피드백
-                    context.accessibleFeedback(HapticFeedbackType.lightImpact);
-                    onPressed?.call();
-                  }
-                  : null,
+          onTap: effectiveEnabled
+              ? () {
+                  // 접근성 햅틱 피드백
+                  context.accessibleFeedback(HapticFeedbackType.lightImpact);
+                  onPressed?.call();
+                }
+              : null,
           borderRadius: BorderRadius.circular(DesignTokens.r12),
           focusNode: focusNode,
           autofocus: autofocus,
@@ -114,10 +115,9 @@ class AppIconButton extends StatelessWidget {
             child: Icon(
               icon,
               size: adjustedIconSize, // 텍스트 스케일에 따라 조정된 아이콘 크기
-              color:
-                  enabled
-                      ? effectiveIconColor
-                      : effectiveIconColor.withOpacity(0.38), // 비활성화 상태
+              color: effectiveEnabled
+                  ? effectiveIconColor
+                  : effectiveIconColor.withOpacity(0.38), // 비활성화 상태
             ),
           ),
         ),
@@ -129,9 +129,9 @@ class AppIconButton extends StatelessWidget {
       label: semanticLabel,
       hint: tooltip != null ? '두 번 탭하여 $tooltip' : null,
       button: true,
-      enabled: enabled,
+      enabled: effectiveEnabled,
       focusable: true,
-      onTapHint: enabled ? '활성화하려면 두 번 탭하세요' : null,
+      onTapHint: effectiveEnabled ? '활성화하려면 두 번 탭하세요' : null,
       child: iconButton,
     );
 
@@ -140,7 +140,8 @@ class AppIconButton extends StatelessWidget {
       iconButton = Tooltip(message: tooltip!, child: iconButton);
     }
 
-    return iconButton;
+    return MotionPress(
+        enabled: effectiveEnabled, pressedScale: .92, child: iconButton);
   }
 }
 
@@ -207,10 +208,9 @@ class _AppLikeButtonState extends State<AppLikeButton>
       icon: widget.isLiked ? Icons.favorite : Icons.favorite_border,
       onPressed: _handleTap,
       iconColor: widget.isLiked ? colorScheme.secondary : null,
-      semanticLabel:
-          widget.isLiked
-              ? '좋아요 취소 ${widget.likeCount != null ? ", ${widget.likeCount}개" : ""}'
-              : '좋아요 ${widget.likeCount != null ? ", ${widget.likeCount}개" : ""}',
+      semanticLabel: widget.isLiked
+          ? '좋아요 취소 ${widget.likeCount != null ? ", ${widget.likeCount}개" : ""}'
+          : '좋아요 ${widget.likeCount != null ? ", ${widget.likeCount}개" : ""}',
       tooltip: widget.isLiked ? '좋아요 취소' : '좋아요',
       enabled: widget.enabled,
     );
@@ -300,20 +300,19 @@ class AppActionBar extends StatelessWidget {
 
     return Row(
       mainAxisAlignment: alignment,
-      children:
-          actions.asMap().entries.map((entry) {
-            final index = entry.key;
-            final action = entry.value;
+      children: actions.asMap().entries.map((entry) {
+        final index = entry.key;
+        final action = entry.value;
 
-            return Row(
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                action,
-                // 마지막 아이템이 아니면 간격 추가
-                if (index < actions.length - 1) SizedBox(width: spacing),
-              ],
-            );
-          }).toList(),
+        return Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            action,
+            // 마지막 아이템이 아니면 간격 추가
+            if (index < actions.length - 1) SizedBox(width: spacing),
+          ],
+        );
+      }).toList(),
     );
   }
 }
@@ -367,32 +366,30 @@ class AppBottomNavItem extends StatelessWidget {
         child: Material(
           color: Colors.transparent,
           child: InkWell(
-            onTap:
-                enabled
-                    ? () {
-                      context.accessibleFeedback(
-                        HapticFeedbackType.selectionClick,
-                      );
-                      onTap?.call();
-                    }
-                    : null,
+            onTap: enabled
+                ? () {
+                    context.accessibleFeedback(
+                      HapticFeedbackType.selectionClick,
+                    );
+                    onTap?.call();
+                  }
+                : null,
             borderRadius: BorderRadius.circular(DesignTokens.r12),
             splashColor: colorScheme.primary.withOpacity(0.12),
             highlightColor: colorScheme.primary.withOpacity(0.08),
-            child:
-                context.isLargeTextScale
-                    ? _buildLargeTextLayout(
-                      effectiveIcon,
-                      effectiveColor,
-                      adjustedIconSize,
-                      theme,
-                    )
-                    : _buildNormalLayout(
-                      effectiveIcon,
-                      effectiveColor,
-                      adjustedIconSize,
-                      theme,
-                    ),
+            child: context.isLargeTextScale
+                ? _buildLargeTextLayout(
+                    effectiveIcon,
+                    effectiveColor,
+                    adjustedIconSize,
+                    theme,
+                  )
+                : _buildNormalLayout(
+                    effectiveIcon,
+                    effectiveColor,
+                    adjustedIconSize,
+                    theme,
+                  ),
           ),
         ),
       ),

@@ -41,6 +41,7 @@
         android:label="${appLabel}"
         android:name="${applicationName}"
         android:icon="@mipmap/launcher_icon"
+        android:allowBackup="false"
         android:usesCleartextTraffic="true">
         <!-- Saves receipt identifiers only; does not consume or render FCM. -->
         <receiver
@@ -55,6 +56,14 @@
         <meta-data
             android:name="com.google.firebase.messaging.default_notification_channel_id"
             android:value="high_importance_channel" />
+        <!-- Monochrome status-bar icon + accent for pushes that FCM renders
+             itself. Without these the opaque launcher icon shows as a white square. -->
+        <meta-data
+            android:name="com.google.firebase.messaging.default_notification_icon"
+            android:resource="@drawable/ic_notification" />
+        <meta-data
+            android:name="com.google.firebase.messaging.default_notification_color"
+            android:resource="@color/notification_accent" />
         <activity
             android:name=".MainActivity"
             android:exported="true"

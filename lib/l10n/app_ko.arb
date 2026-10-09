@@ -1397,7 +1397,7 @@
   "categorySelectAtLeastOne": "카테고리를 최소 1개 이상 선택해주세요.",
   "groupSelectAtLeastOne": "그룹을 최소 1개 이상 선택해주세요.",
   "postImageUploading": "이미지를 업로드 중입니다. 잠시만 기다려주세요...",
-  "postComposeImageRequired": "이미지 첨부",
+  "postComposeImageRequired": "이미지/동영상 첨부하기",
   "postComposeImageHelper": "최대 15장까지 첨부할 수 있어요.",
   "addImage": "추가하기",
   "postComposeVisibilityPrompt": "공개 대상을 선택해주세요.",

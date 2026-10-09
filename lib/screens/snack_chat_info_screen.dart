@@ -20,6 +20,8 @@ import '../utils/country_flag_helper.dart';
 import '../utils/responsive_helper.dart';
 import 'friend_profile_screen.dart';
 import '../l10n/ui_locale.dart';
+import '../ui/widgets/motion_selectable.dart';
+import '../ui/widgets/motion_press.dart';
 
 class SnackChatInfoScreen extends StatefulWidget {
   final String snackChatId;
@@ -877,7 +879,11 @@ class _SnackChatInfoScreenState extends State<SnackChatInfoScreen> {
     return Semantics(
       toggled: active,
       label: tooltip,
-      child: IconButton(
+      child: MotionSelectable(
+        selected: active,
+        enabled: !busy,
+        pressedScale: .92,
+        child: IconButton(
         onPressed: busy ? null : onPressed,
         tooltip: tooltip,
         color: active ? AppColors.pointColor : const Color(0xFF475569),
@@ -894,7 +900,7 @@ class _SnackChatInfoScreenState extends State<SnackChatInfoScreen> {
                 active ? activeIcon : inactiveIcon,
                 size: context.ri(22).clamp(21, 24).toDouble(),
               ),
-      ),
+      )),
     );
   }
 
@@ -917,7 +923,8 @@ class _SnackChatInfoScreenState extends State<SnackChatInfoScreen> {
     required String kind,
   }) {
     return Expanded(
-      child: InkWell(
+      child: MotionPress(
+pressedScale: .99, child: InkWell(
         onTap: () => _openDiscovery(initialKind: kind),
         borderRadius: BorderRadius.circular(10),
         child: ConstrainedBox(
@@ -946,7 +953,7 @@ class _SnackChatInfoScreenState extends State<SnackChatInfoScreen> {
             ],
           ),
         ),
-      ),
+      )),
     );
   }
 
@@ -993,7 +1000,8 @@ class _SnackChatInfoScreenState extends State<SnackChatInfoScreen> {
                     ),
                     if (snap.hasError) ...[
                       const SizedBox(height: 8),
-                      TextButton.icon(
+                      MotionPress(
+pressedScale: .985, child: TextButton.icon(
                         onPressed: _retryRoomStream,
                         icon: const Icon(Icons.refresh_rounded),
                         label: Text((isChineseUi(context)
@@ -1001,7 +1009,7 @@ class _SnackChatInfoScreenState extends State<SnackChatInfoScreen> {
                             : isKo
                                 ? '다시 시도'
                                 : 'Retry')),
-                      ),
+                      )),
                     ],
                   ],
                 ),
@@ -1026,14 +1034,15 @@ class _SnackChatInfoScreenState extends State<SnackChatInfoScreen> {
               elevation: 0,
               toolbarHeight: context.rh(54, min: 52, max: 58),
               leadingWidth: 48,
-              leading: IconButton(
+              leading: MotionPress(
+pressedScale: .92, child: IconButton(
                 onPressed: () => Navigator.maybePop(context),
                 icon: Icon(
                   Icons.arrow_back_rounded,
                   size: context.ri(22).clamp(21, 24).toDouble(),
                 ),
                 tooltip: MaterialLocalizations.of(context).backButtonTooltip,
-              ),
+              )),
               titleSpacing: 0,
               title: MediaQuery.withClampedTextScaling(
                 maxScaleFactor: 1.2,
@@ -1340,7 +1349,8 @@ class _SnackChatInfoScreenState extends State<SnackChatInfoScreen> {
                         SizedBox(height: context.rs(14)),
                         Align(
                           alignment: Alignment.centerLeft,
-                          child: TextButton.icon(
+                          child: MotionPress(
+pressedScale: .99, child: TextButton.icon(
                             onPressed: _leaveRoom,
                             style: TextButton.styleFrom(
                               foregroundColor: const Color(0xFF667085),
@@ -1363,7 +1373,7 @@ class _SnackChatInfoScreenState extends State<SnackChatInfoScreen> {
                                 fontWeight: FontWeight.w600,
                               ),
                             ),
-                          ),
+                          )),
                         ),
                       ],
                     );
@@ -1536,7 +1546,8 @@ class _MemberTile extends StatelessWidget {
         Semantics(
           button: canOpenProfile,
           label: user.displayNameOrNickname,
-          child: InkWell(
+          child: MotionPress(
+enabled: canOpenProfile,pressedScale: .99, child: InkWell(
             onTap: canOpenProfile
                 ? () {
                     Navigator.push(
@@ -1624,7 +1635,7 @@ class _MemberTile extends StatelessWidget {
                 ),
               ),
             ),
-          ),
+          )),
         ),
         if (showDivider)
           const Divider(

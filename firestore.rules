@@ -85,6 +85,71 @@ service cloud.firestore {
         || blockRelationshipFree(request.auth.uid, ownerId);
     }
 
+    // 클라이언트가 직접 바꾸는 집계 필드 보호. 좋아요 목록은 본인 uid 하나만
+    // 추가/제거할 수 있고, 조회수는 +1 증가만 허용한다. 레거시 문서의 비정수
+    // 값은 기존 쓰기를 막지 않도록 통과시킨다.
+    function listDiffOnlySelf(before, after) {
+      return before is list
+        && after is list
+        && after.toSet().difference(before.toSet()).hasOnly([request.auth.uid])
+        && before.toSet().difference(after.toSet()).hasOnly([request.auth.uid]);
+    }
+    function selfOnlyLikeToggle(before, after, listKey, countKey, exactCount) {
+      let oldList = before.get(listKey, []);
+      let newList = after.get(listKey, []);
+      let oldCount = before.get(countKey, 0);
+      let newCount = after.get(countKey, 0);
+      return listDiffOnlySelf(oldList, newList)
+        && newCount is int
+        && newCount >= 0
+        && (
+          exactCount
+            ? newCount == newList.size()
+            : (!(oldCount is int) || (newCount - oldCount) in [-1, 0, 1])
+        );
+    }
+    function counterIncrementedByOne(before, after, key) {
+      let oldValue = before.get(key, 0);
+      return after.get(key, 0) is int
+        && (!(oldValue is int) || after.get(key, 0) == oldValue + 1);
+    }
+    // 투표 집계: 선택지의 id/text는 그대로, 각 votes는 0 또는 +1만, 총합은 +1만.
+    function pollOptionPreserved(before, after, i) {
+      return after.size() <= i
+        || (
+          after[i] is map
+          && before[i] is map
+          && after[i].get('id', '') == before[i].get('id', '')
+          && after[i].get('text', '') == before[i].get('text', '')
+          && after[i].get('votes', 0) is int
+          && after[i].get('votes', 0) >= before[i].get('votes', 0)
+          && after[i].get('votes', 0) <= before[i].get('votes', 0) + 1
+        );
+    }
+    function validPollVoteIncrement(postId, before, after) {
+      let oldOptions = before.get('pollOptions', []);
+      let newOptions = after.get('pollOptions', []);
+      return newOptions is list
+        && oldOptions is list
+        && newOptions.size() == oldOptions.size()
+        && newOptions.size() <= 10
+        && after.get('pollTotalVotes', 0) is int
+        && after.get('pollTotalVotes', 0) == before.get('pollTotalVotes', 0) + 1
+        // 같은 쓰기(트랜잭션)에서 본인의 pollVotes 문서가 처음 만들어질 때만 허용
+        && !exists(/databases/$(database)/documents/posts/$(postId)/pollVotes/$(request.auth.uid))
+        && existsAfter(/databases/$(database)/documents/posts/$(postId)/pollVotes/$(request.auth.uid))
+        && pollOptionPreserved(oldOptions, newOptions, 0)
+        && pollOptionPreserved(oldOptions, newOptions, 1)
+        && pollOptionPreserved(oldOptions, newOptions, 2)
+        && pollOptionPreserved(oldOptions, newOptions, 3)
+        && pollOptionPreserved(oldOptions, newOptions, 4)
+        && pollOptionPreserved(oldOptions, newOptions, 5)
+        && pollOptionPreserved(oldOptions, newOptions, 6)
+        && pollOptionPreserved(oldOptions, newOptions, 7)
+        && pollOptionPreserved(oldOptions, newOptions, 8)
+        && pollOptionPreserved(oldOptions, newOptions, 9);
+    }
+
     // Firebase Auth 비활성화와 별개로 Firestore에 기록된 정지/탈퇴 상태도
     // 콘텐츠 공개범위보다 우선한다. 삭제 후 지연된 merge로 uid/token만 남은
     // 껍데기 문서도 활성 계정으로 인정하지 않는다.
@@ -130,7 +195,8 @@ service cloud.firestore {
         'searchable', 'isSearchable', 'allowUserSearch', 'deleting',
         'pendingHanyangEmail', 'pendingHanyangVerificationLinked',
         'pendingHanyangVerifiedAt',
-        'signupState', 'registrationStatus', 'registrationCompletedAt'
+        'signupState', 'registrationStatus', 'registrationCompletedAt',
+        'accountStatus', 'deletedAt'
       ]);
     }
 
@@ -532,11 +598,14 @@ service cloud.firestore {
             // 모든 사용자: 좋아요 토글. 작성자와 차단 관계인 사용자는
             // 프로필 후기에서 새 직접 상호작용을 만들 수 없다.
             (blockRelationshipFree(request.auth.uid, userId) &&
-             request.resource.data.diff(resource.data).affectedKeys().hasOnly(['likedBy', 'likeCount'])) ||
+             request.resource.data.diff(resource.data).affectedKeys().hasOnly(['likedBy', 'likeCount']) &&
+             selfOnlyLikeToggle(resource.data, request.resource.data, 'likedBy', 'likeCount', false)) ||
             
             // 모든 사용자: 댓글 수 업데이트
             (blockRelationshipFree(request.auth.uid, userId) &&
-             request.resource.data.diff(resource.data).affectedKeys().hasOnly(['commentCount']))
+             request.resource.data.diff(resource.data).affectedKeys().hasOnly(['commentCount']) &&
+             request.resource.data.commentCount is int &&
+             request.resource.data.commentCount >= 0)
           );
         
         // 삭제: 본인만 가능 (후기 삭제 시)
@@ -657,17 +726,9 @@ service cloud.firestore {
     
     // ===== 친구 요청 컬렉션 =====
     match /friend_requests/{requestId} {
-      // 요청 생성: 발신자만 가능, 자기 자신에게 요청 금지
-      allow create: if 
-        currentUserAccountAllowed() &&
-        request.auth.uid == request.resource.data.fromUid &&
-        request.auth.uid != request.resource.data.toUid &&
-        blockRelationshipFree(
-          request.resource.data.fromUid,
-          request.resource.data.toUid
-        ) &&
-        activeUserAccount(request.resource.data.toUid) &&
-        request.resource.data.status == 'PENDING';
+      // 요청 생성: sendFriendRequest 콜러블(Admin SDK)만 수행한다. 직접 생성은
+      // 임의 문서 ID·추가 필드·푸시 스팸 경로가 되므로 차단한다.
+      allow create: if false;
       
       // 요청 읽기: 발신자 또는 수신자만 가능
       // requestId 형식: {fromUid}_{toUid}
@@ -687,6 +748,10 @@ service cloud.firestore {
       // 요청 업데이트: 상태 전이 규칙 적용
       allow update: if 
         request.auth != null &&
+        // 상태 전이 중 fromUid/toUid 등 당사자 정보를 바꿀 수 없다.
+        request.resource.data.diff(resource.data).affectedKeys().hasOnly([
+          'status', 'updatedAt', 'respondedAt', 'acceptedAt', 'rejectedAt', 'canceledAt'
+        ]) &&
         (
           // PENDING → CANCELED: 발신자만 가능
           (resource.data.status == 'PENDING' && 
@@ -745,22 +810,10 @@ service cloud.firestore {
         (request.auth.uid == resource.data.userId || 
          request.auth.uid == resource.data.friendId);
       
-      // 생성: 본인이 userId인 경우만 가능
-      allow create: if 
-        request.auth != null &&
-        request.auth.uid == request.resource.data.userId;
-      
-      // 업데이트: 본인과 관련된 관계만 수정 가능
-      allow update: if 
-        request.auth != null &&
-        (request.auth.uid == resource.data.userId || 
-         request.auth.uid == resource.data.friendId);
-      
-      // 삭제: 본인과 관련된 관계만 삭제 가능
-      allow delete: if 
-        request.auth != null &&
-        (request.auth.uid == resource.data.userId || 
-         request.auth.uid == resource.data.friendId);
+      // 쓰기: 클라이언트 쓰기 경로 없음. 친구 관계는 friendships 컬렉션과
+      // Cloud Functions가 관리하며, reviews의 friends 공개범위 판정이 이 컬렉션을
+      // 참조하므로 위조 생성/수정을 막는다.
+      allow create, update, delete: if false;
     }
     
     // ===== 친구 카테고리 컬렉션 =====
@@ -816,18 +869,22 @@ service cloud.firestore {
           request.resource.data.categoryKey == request.resource.data.categoryKeys[0])) &&
         // createdAt 필드는 절대 수정 불가
         (!request.resource.data.diff(resource.data).affectedKeys().hasAny(['createdAt'])) &&
-        // 외부 링크 미리보기는 createPostSecure가 검증해 저장하며 클라이언트가
-        // 게시 후 임의 URL/썸네일로 교체할 수 없다.
-        (!request.resource.data.diff(resource.data).affectedKeys().hasAny(['linkPreview'])) &&
+        // 외부 링크 미리보기와 영상은 createPostSecure가 검증해 저장하며
+        // 클라이언트가 게시 후 임의 URL/썸네일로 교체할 수 없다.
+        (!request.resource.data.diff(resource.data).affectedKeys().hasAny(['linkPreview', 'video'])) &&
         visibilityFieldsUnchanged() &&
         (request.auth.uid == resource.data.userId ||
          (directContentOwnerBlockFree(resource.data.get('userId', '')) && (
-           // 좋아요 필드만 변경하는 경우 누구나 가능 (읽기 권한이 있으면)
-           request.resource.data.diff(resource.data).affectedKeys().hasOnly(['likes', 'likedBy']) ||
-           // 조회수 필드만 변경하는 경우 누구나 가능 (읽기 권한이 있으면)
-           request.resource.data.diff(resource.data).affectedKeys().hasOnly(['viewCount']) ||
-           // 투표 카운트 업데이트 (1인 1표 로직은 앱/트랜잭션에서 처리)
-           request.resource.data.diff(resource.data).affectedKeys().hasOnly(['pollOptions', 'pollTotalVotes'])
+           // 좋아요: 본인 uid 하나만 추가/제거할 수 있고 likes는 likedBy 길이와 같아야 한다.
+           (request.resource.data.diff(resource.data).affectedKeys().hasOnly(['likes', 'likedBy'])
+             && selfOnlyLikeToggle(resource.data, request.resource.data, 'likedBy', 'likes', true)) ||
+           // 조회수: +1 증가만 허용한다.
+           (request.resource.data.diff(resource.data).affectedKeys().hasOnly(['viewCount'])
+             && counterIncrementedByOne(resource.data, request.resource.data, 'viewCount')) ||
+           // 투표: 같은 트랜잭션에서 본인의 pollVotes 문서가 처음 생길 때만 집계 +1,
+           // 선택지 id/text는 바꿀 수 없다.
+           (request.resource.data.diff(resource.data).affectedKeys().hasOnly(['pollOptions', 'pollTotalVotes'])
+             && validPollVoteIncrement(postId, resource.data, request.resource.data))
          )));
       
       // 게시글 삭제: 작성자만 가능 (userId='deleted'는 삭제 불가)
@@ -845,6 +902,7 @@ service cloud.firestore {
         allow read: if canReadParentPost();
         allow create: if request.auth != null
           && canReadParentPost()
+          && request.resource.data.get('userId', request.auth.uid) == request.auth.uid
           && exists(/databases/$(database)/documents/users/$(request.auth.uid))
           && get(/databases/$(database)/documents/users/$(request.auth.uid)).data.emailVerified == true;
         allow update: if request.auth != null 
@@ -944,16 +1002,11 @@ service cloud.firestore {
           && request.resource.data.diff(resource.data).affectedKeys().hasOnly([
             'commentCount', 'updatedAt'
           ])) ||
-        // 참여자는 currentParticipants만 수정 가능 (참여/취소 시)
-        (request.resource.data.diff(resource.data).affectedKeys().hasOnly(['currentParticipants', 'updatedAt']) &&
-         canReadMeetupData(resource.data) &&
-         meetupNotExpired(resource) &&
-         request.resource.data.currentParticipants is int &&
-         request.resource.data.currentParticipants >= 1 &&
-         request.resource.data.currentParticipants <= resource.data.maxParticipants + 1) ||
-        // 조회수 필드만 변경하는 경우 누구나 가능
+        // 조회수 필드만 변경하는 경우 누구나 가능 (+1 증가만). 참여자 수는
+        // joinMeetupSecure/leave 콜러블(Admin SDK)만 갱신한다.
         (canReadMeetupData(resource.data)
-          && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['viewCount', 'updatedAt']))
+          && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['viewCount', 'updatedAt'])
+          && counterIncrementedByOne(resource.data, request.resource.data, 'viewCount'))
       );
       
       allow delete: if request.auth != null && 
@@ -970,6 +1023,7 @@ service cloud.firestore {
         allow read: if canReadParentMeetup();
         allow create: if request.auth != null
           && canReadParentMeetup()
+          && request.resource.data.get('userId', request.auth.uid) == request.auth.uid
           && meetupPublicationWindowOpen(
             get(/databases/$(database)/documents/meetups/$(meetupId)).data
           )
@@ -1029,7 +1083,13 @@ service cloud.firestore {
         (
           get(/databases/$(database)/documents/meetups/$(request.resource.data.meetupId)).data.get('isConfirmed', false) == true ||
           get(/databases/$(database)/documents/meetups/$(request.resource.data.meetupId)).data.get('isCompleted', false) == true
-        );
+        ) &&
+        // 수락/거절 목록은 참여자 본인만 채울 수 있다(서버가 이 목록으로 타인 프로필에 게시).
+        request.resource.data.get('approvedParticipants', []) is list &&
+        request.resource.data.get('approvedParticipants', []).size() == 0 &&
+        request.resource.data.get('rejectedParticipants', []) is list &&
+        request.resource.data.get('rejectedParticipants', []).size() == 0 &&
+        request.resource.data.get('pendingParticipants', []) is list;
       
       // 수정: 
       //  1) 모임장은 모든 필드 수정 가능
@@ -1038,8 +1098,12 @@ service cloud.firestore {
       allow update: if 
         request.auth != null &&
         (
-          // 모임장: 모든 수정 가능
-          request.auth.uid == resource.data.authorId ||
+          // 모임장: 후기 내용·이미지만 수정 가능. 참여자 목록(대기/수락/거절)은
+          // 참여자 본인만 바꿀 수 있어 서버가 타인 프로필에 후기를 게시할 때 동의가 보장된다.
+          (request.auth.uid == resource.data.authorId &&
+           request.resource.data.diff(resource.data).affectedKeys().hasOnly([
+             'imageUrls', 'imageUrl', 'content', 'updatedAt', 'meetupTitle'
+           ])) ||
           
           // 참여자: 자신의 수락/거절 처리만 가능
           (
@@ -1055,11 +1119,24 @@ service cloud.firestore {
               (request.resource.data.keys().hasAny(['rejectedParticipants']) && request.auth.uid in request.resource.data.rejectedParticipants)
             ) &&
             
-            // 다른 필드는 변경하지 않음 (authorId, content, imageUrl 등)
-            request.resource.data.authorId == resource.data.authorId &&
-            request.resource.data.meetupId == resource.data.meetupId &&
-            request.resource.data.content == resource.data.content &&
-            request.resource.data.imageUrl == resource.data.imageUrl
+            // 참여자 목록 외 다른 필드는 변경하지 않으며, 추가/제거되는 uid는 본인뿐이다.
+            request.resource.data.diff(resource.data).affectedKeys().hasOnly([
+              'approvedParticipants', 'pendingParticipants', 'rejectedParticipants'
+            ]) &&
+            request.resource.data.get('approvedParticipants', []) is list &&
+            request.resource.data.get('rejectedParticipants', []) is list &&
+            request.resource.data.get('approvedParticipants', []).toSet()
+              .difference(resource.data.get('approvedParticipants', []).toSet()).hasOnly([request.auth.uid]) &&
+            resource.data.get('approvedParticipants', []).toSet()
+              .difference(request.resource.data.get('approvedParticipants', []).toSet()).size() == 0 &&
+            request.resource.data.get('rejectedParticipants', []).toSet()
+              .difference(resource.data.get('rejectedParticipants', []).toSet()).hasOnly([request.auth.uid]) &&
+            resource.data.get('rejectedParticipants', []).toSet()
+              .difference(request.resource.data.get('rejectedParticipants', []).toSet()).size() == 0 &&
+            resource.data.pendingParticipants.toSet()
+              .difference(request.resource.data.pendingParticipants.toSet()).hasOnly([request.auth.uid]) &&
+            request.resource.data.pendingParticipants.toSet()
+              .difference(resource.data.pendingParticipants.toSet()).size() == 0
           )
         );
       
@@ -1152,7 +1229,8 @@ service cloud.firestore {
       // allowedUserIds가 오래되었거나 클라이언트가 변조되어도 직접 참여할 수 없습니다.
       allow create: if false;
       
-      // 업데이트: 본인 또는 모임 주최자만 수정 가능
+      // 업데이트: 주최자만 참여 상태(status)를 바꿀 수 있다. 참여자 본인은
+      // 삭제(신청 취소/정리)만 가능하며 meetupId·userId·status를 직접 바꿀 수 없다.
       allow update: if 
         request.auth != null &&
         resource.data.meetupId is string &&
@@ -1161,10 +1239,11 @@ service cloud.firestore {
           get(/databases/$(database)/documents/meetups/$(resource.data.meetupId)).data
         ) &&
         meetupNotExpired(get(/databases/$(database)/documents/meetups/$(resource.data.meetupId))) &&
-        (request.auth.uid == resource.data.userId ||
-         request.auth.uid == get(
-           /databases/$(database)/documents/meetups/$(resource.data.meetupId)
-         ).data.userId);
+        request.auth.uid == get(
+          /databases/$(database)/documents/meetups/$(resource.data.meetupId)
+        ).data.userId &&
+        request.resource.data.diff(resource.data).affectedKeys().hasOnly(['status', 'updatedAt']) &&
+        request.resource.data.status in ['pending', 'approved', 'rejected'];
       
       // 본인은 언제든 자신의 잘못된/만료된 참여를 정리할 수 있고,
       // 주최자는 공개 대상에서 제외된 기존 참여자를 정리할 수 있습니다.
@@ -1259,8 +1338,75 @@ service cloud.firestore {
         request.auth != null && 
         request.auth.uid == resource.data.userId;
       
-      // 알림 생성: 인증된 사용자만 생성 가능
-      allow create: if request.auth != null;
+      // 알림 생성: 클라이언트가 직접 만드는 알림은 좋아요·모임 나가기·후기 합의
+      // 유형뿐이다. 행위자는 요청자 본인이어야 하고 수신자는 해당 콘텐츠의 실제
+      // 당사자(게시글 작성자, 모임장, 모임 구성원)여야 한다. 댓글·친구·DM·스낵챗
+      // 등 나머지 유형은 Cloud Functions(Admin SDK)만 생성한다.
+      function notifData() {
+        return request.resource.data;
+      }
+      function notifActorIsSelf() {
+        return !('actorId' in notifData().keys())
+          || notifData().actorId == null
+          || notifData().actorId == request.auth.uid;
+      }
+      function notifMeetupPath() {
+        return /databases/$(database)/documents/meetups/$(notifData().meetupId);
+      }
+      function notifMeetupExists() {
+        return notifData().meetupId is string
+          && notifData().meetupId.size() > 0
+          && exists(notifMeetupPath());
+      }
+      function notifMeetupMember(uid) {
+        let meetup = get(notifMeetupPath()).data;
+        return uid == meetup.get('userId', '')
+          || (meetup.get('participants', []) is list && uid in meetup.get('participants', []))
+          || exists(/databases/$(database)/documents/meetup_participants/$(notifData().meetupId + '_' + uid));
+      }
+      function validLikeNotification() {
+        let postId = notifData().postId;
+        return postId is string
+          && postId.size() > 0
+          && exists(/databases/$(database)/documents/posts/$(postId))
+          && get(/databases/$(database)/documents/posts/$(postId)).data.get('userId', '') == notifData().userId
+          && request.auth.uid in get(/databases/$(database)/documents/posts/$(postId)).data.get('likedBy', []);
+      }
+      function validMeetupHostNotification() {
+        return notifMeetupExists()
+          && get(notifMeetupPath()).data.get('userId', '') == notifData().userId
+          && notifData().userId != request.auth.uid;
+      }
+      function validReviewNotification() {
+        return notifMeetupExists()
+          && notifMeetupMember(request.auth.uid)
+          && notifMeetupMember(notifData().userId);
+      }
+      function validClientNotificationCreate() {
+        let d = notifData();
+        return d.keys().hasOnly([
+            'userId', 'title', 'message', 'type', 'meetupId', 'postId',
+            'actorId', 'actorName', 'data', 'createdAt', 'isRead'
+          ])
+          && d.userId is string
+          && d.userId.size() > 0
+          && d.type is string
+          && d.title is string
+          && d.title.size() <= 300
+          && d.message is string
+          && d.message.size() <= 1000
+          && d.isRead == false
+          && d.createdAt == request.time
+          && notifActorIsSelf()
+          && blockRelationshipFree(request.auth.uid, d.userId)
+          && (
+            (d.type == 'new_like' && d.userId != request.auth.uid && validLikeNotification())
+            || (d.type == 'meetup_participant_left' && validMeetupHostNotification())
+            || (d.type in ['review_requested', 'review_accepted', 'review_rejected', 'review_completed']
+                && validReviewNotification())
+          );
+      }
+      allow create: if currentUserAccountAllowed() && validClientNotificationCreate();
       
       // 알림 업데이트: 본인만 읽음 상태 변경 가능
       allow update: if 
@@ -1623,7 +1769,8 @@ service cloud.firestore {
           && lastMessageId is string
           && lastMessageId.size() > 0
           && lastMessageId != resource.data.get('lastMessageId', '')
-          && existsAfter(messagePath)
+          // messageAfter above is null when the message is not in this
+          // request; the .get below then errors, which denies the update.
           // The paired message create rule validates type-specific payload,
           // recipients, reply/poll/image data, and the same room sequence/id/
           // sender/time linkage. Repeating those checks here pushes the second
@@ -1663,12 +1810,20 @@ service cloud.firestore {
       // 수정: 참여자만 + 허용 필드만 변경. 새 참여자 초대는 직접 update가
       // 아니라 현재 참여자 여부, 활성 계정, 양방향 차단 상태를 검증하는
       // inviteSnackChatParticipants callable에서만 처리한다.
-      allow update: if isParticipant() && (
-        validClientMessageMetadataUpdate()
-        || onlyOwnUnreadReset()
-        || onlyOwnFavoriteToggle()
-        || isSelfLeaveUpdate()
-      );
+      // The message-preview update only exists inside the same atomic request
+      // as a message create, whose rule already runs the full active-account
+      // check. Re-running it here pushed image sends past Firestore's
+      // 1,000-expression limit, so this path checks membership only; the
+      // request still fails as a whole if the paired create is denied.
+      allow update: if (
+          request.auth != null
+          && request.auth.uid in resource.data.participantIds
+          && validClientMessageMetadataUpdate()
+        ) || (isParticipant() && (
+          onlyOwnUnreadReset()
+          || onlyOwnFavoriteToggle()
+          || isSelfLeaveUpdate()
+        ));
 
       allow delete: if false;
 
@@ -1859,27 +2014,32 @@ service cloud.firestore {
           );
         }
 
+        // Called only from the image branch of validTypeSpecificPayload, which
+        // already established type == 'image' and the absence of imageUrl.
+        // Kept deliberately small: an image send with a room preview update
+        // sits close to Firestore's 1,000-expression limit per request.
+        // storageBucket names the bucket holding imagePath (Seoul migration);
+        // clients that omit it mean the legacy bucket.
         function validImage(data) {
-          return clientMessageType(data) != 'image' || (
-            data.keys().hasAll(['imagePath'])
-            && !data.keys().hasAny(['imageUrl'])
-            && data.imagePath is string
+          return data.imagePath is string
             && data.imagePath.matches(
               'snack_chat_images/' + request.auth.uid + '/' + chatId + '/[^/]+'
             )
+            && data.get('storageBucket', 'flutterproject3-af322.firebasestorage.app') in [
+              'flutterproject3-af322.firebasestorage.app',
+              'flutterproject3-af322-kr'
+            ]
             && (
               !data.keys().hasAny(['imageWidth', 'imageHeight'])
               || (
-                data.keys().hasAll(['imageWidth', 'imageHeight'])
-                && data.imageWidth is int
+                data.imageWidth is int
                 && data.imageHeight is int
                 && data.imageWidth > 0
                 && data.imageWidth <= 20000
                 && data.imageHeight > 0
                 && data.imageHeight <= 20000
               )
-            )
-          );
+            );
         }
 
         function validTypeSpecificPayload(data) {
@@ -1888,7 +2048,8 @@ service cloud.firestore {
           return (
               type == 'text'
               && !data.keys().hasAny([
-                'poll', 'imageUrl', 'imagePath', 'imageWidth', 'imageHeight'
+                'poll', 'imageUrl', 'imagePath', 'imageWidth', 'imageHeight',
+                'storageBucket'
               ])
             )
             || (
@@ -1900,7 +2061,7 @@ service cloud.firestore {
               type == 'poll'
               && !data.keys().hasAny([
                 'imageUrl', 'imagePath', 'imageWidth', 'imageHeight',
-                'replyToMessageId', 'replyPreview'
+                'storageBucket', 'replyToMessageId', 'replyPreview'
               ])
               && validPoll(data)
             );
@@ -1926,10 +2087,14 @@ service cloud.firestore {
           let roomPath = /databases/$(database)/documents/snack_chats/$(chatId);
           let roomBefore = get(roomPath).data;
           let roomAfter = getAfter(roomPath).data;
-          return data.keys().hasOnly([
+          // Participant check reuses roomBefore instead of isChatParticipant()
+          // (a second room get) to stay under the expression limit.
+          return currentUserAccountAllowed()
+            && request.auth.uid in roomBefore.participantIds
+            && data.keys().hasOnly([
               'senderId', 'senderName', 'messageScope', 'chatId',
               'type', 'text', 'imageUrl',
-              'imagePath', 'imageWidth', 'imageHeight',
+              'imagePath', 'imageWidth', 'imageHeight', 'storageBucket',
               'createdAt', 'sequence', 'recipientIds', 'readBy',
               'replyToMessageId', 'replyPreview', 'isDeleted',
               'linkPreviewRemoved', 'poll', 'reactionCounts', 'mentions', 'mentionTargetIds'
@@ -1975,9 +2140,8 @@ service cloud.firestore {
         // 읽기: 참여자만
         allow read: if isChatParticipant();
 
-        // 생성: 참여자만, senderId는 본인
-        allow create: if isChatParticipant()
-          && validClientMessageCreate(request.resource.data);
+        // 생성: 참여자만(validClientMessageCreate 안에서 확인), senderId는 본인
+        allow create: if validClientMessageCreate(request.resource.data);
 
         // A sender may only opt out of an already-generated preview. Preview
         // creation and all reaction/poll aggregates are Admin SDK writes.
@@ -2249,13 +2413,30 @@ service cloud.firestore {
           isMyConversationId()
         );
       
+      // 대화방 ID는 정렬된 두 참여자 uid(또는 anon_ 접두사 + 접미사)로만 만들 수
+      // 있다. ID에 제3자의 uid를 넣어 그 사용자에게 접근 권한을 주는 것을 막는다.
+      function validDmConversationId(id, participants) {
+        let a = participants[0];
+        let b = participants[1];
+        return a is string && b is string && a != b
+          && (
+            id == a + '_' + b
+            || id == b + '_' + a
+            || id.matches('^anon_(' + a + '_' + b + '|' + b + '_' + a + ')_.+$')
+          );
+      }
+
       // 생성: 참여자만 가능 + participants가 2명인 신규 대화방만 허용
       // (나가기는 update 규칙에서 처리)
       allow create: if request.auth != null &&
         isMyConversationId() &&
+        request.resource.data.participants is list &&
+        request.resource.data.participants.size() == 2 &&
+        validDmConversationId(conversationId, request.resource.data.participants) &&
         !request.resource.data.keys().hasAny([
           'lastReadAtBy', 'unreadClearedAtBy', 'lastUnreadCreatedAtBy',
-          'receiptCleanupRequestedAtBy', 'readReceiptCursorBy'
+          'receiptCleanupRequestedAtBy', 'readReceiptCursorBy',
+          'lastReadMessageIdBy'
         ]) &&
         request.resource.data.participants is list &&
         request.resource.data.participants.size() == 2 &&
@@ -2351,7 +2532,32 @@ service cloud.firestore {
             || (extension == 'xls' && mimeType == 'application/vnd.ms-excel')
             || (extension == 'xlsx' && mimeType == 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet')
             || (extension == 'txt' && mimeType == 'text/plain')
-            || (extension == 'csv' && mimeType == 'text/csv');
+            || (extension == 'csv' && mimeType == 'text/csv')
+            || (extension == 'mp4' && mimeType == 'video/mp4');
+        }
+
+        // 영상 파일 메시지는 길이(60초)·해상도·작은 썸네일(data URL, 16KB)을
+        // 함께 보낸다. 문서 파일에는 이 키가 없어야 한다.
+        function validDmVideoMeta(data) {
+          return data.get('fileMimeType', '') != 'video/mp4'
+            ? !data.keys().hasAny(['videoDurationMs', 'videoWidth', 'videoHeight', 'videoThumbnail'])
+            : (
+              data.videoDurationMs is int
+              && data.videoDurationMs >= 0
+              && data.videoDurationMs <= 60500
+              && data.videoWidth is int
+              && data.videoWidth >= 0
+              && data.videoWidth <= 4096
+              && data.videoHeight is int
+              && data.videoHeight >= 0
+              && data.videoHeight <= 4096
+              && (
+                !data.keys().hasAny(['videoThumbnail'])
+                || (data.videoThumbnail is string
+                  && data.videoThumbnail.size() <= 16384
+                  && data.videoThumbnail.matches('^data:image/jpeg;base64,[A-Za-z0-9+/=]+$'))
+              )
+            );
         }
 
         function validDmFile(data) {
@@ -2374,6 +2580,7 @@ service cloud.firestore {
             && data.fileStoragePath == 'dm_files/' + request.auth.uid + '/'
               + conversationId + '/' + messageId + '/file.'
               + data.fileExtension
+            && validDmVideoMeta(data)
             && !data.keys().hasAny(['imageUrl']);
         }
 
@@ -2450,6 +2657,20 @@ service cloud.firestore {
           roomBlockFree() &&
           // 발신자는 본인
           request.auth.uid == request.resource.data.senderId &&
+          // 클라이언트 DMMessage.toFirestore() 키만 허용한다. 생성 시각은 현재
+          // 클라이언트의 serverTimestamp(= request.time)이거나, 기기 시각을 쓰던
+          // 구버전 클라이언트를 위해 서버 시각 ±10분 안의 timestamp여야 한다.
+          // 과거·미래로 멀리 조작한 createdAt으로 정렬/읽음 경계를 흔들 수 없다.
+          request.resource.data.keys().hasOnly([
+            'senderId', 'text', 'imageUrl', 'fileName', 'fileExtension',
+            'fileMimeType', 'fileSize', 'fileStoragePath', 'storageBucket',
+            'replyToMessageId', 'replyToSenderId', 'replyToText', 'replyToImageUrl',
+            'type', 'postId', 'postImageUrl', 'postPreview', 'createdAt', 'isRead',
+            'videoDurationMs', 'videoWidth', 'videoHeight', 'videoThumbnail'
+          ]) &&
+          request.resource.data.createdAt is timestamp &&
+          request.resource.data.createdAt >= request.time - duration.value(10, 'm') &&
+          request.resource.data.createdAt <= request.time + duration.value(10, 'm') &&
           // DM은 기존 post_context와 선택적인 file 타입만 사용한다.
           // Snack Chat의 투표/시스템
           // 수명주기 필드를 주입해 전역 messages collection-group 작업을

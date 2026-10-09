@@ -12,6 +12,9 @@ import '../utils/logger.dart';
 import '../utils/responsive_helper.dart';
 import 'snack_chat_screen.dart';
 import '../l10n/ui_locale.dart';
+import '../ui/widgets/motion_press.dart';
+import '../ui/widgets/motion_selectable.dart';
+import '../design/tokens.dart';
 
 class CreateSnackChatScreen extends StatefulWidget {
   final FriendCategory? initialAudienceCategory;
@@ -188,7 +191,8 @@ class _CreateSnackChatScreenState extends State<CreateSnackChatScreen> {
           toolbarHeight: _toolbarHeight,
           automaticallyImplyLeading: false,
           leadingWidth: 48,
-          leading: IconButton(
+          leading: MotionPress(
+enabled: !_isSubmitting,pressedScale: .92, child: IconButton(
             iconSize: context.ri(22).clamp(21, 24).toDouble(),
             onPressed: _isSubmitting
                 ? null
@@ -200,11 +204,12 @@ class _CreateSnackChatScreenState extends State<CreateSnackChatScreen> {
                     }
                   },
             icon: const Icon(Icons.arrow_back_rounded),
-          ),
+          )),
           flexibleSpace: _buildCenteredTitle(pageTitle),
           actions: [
             if (_stepIndex == 0)
-              TextButton(
+              MotionPress(
+enabled: canContinue,pressedScale: .985, child: TextButton(
                 onPressed:
                     canContinue ? () => setState(() => _stepIndex = 1) : null,
                 style: TextButton.styleFrom(
@@ -238,9 +243,10 @@ class _CreateSnackChatScreenState extends State<CreateSnackChatScreen> {
                     ),
                   ],
                 ),
-              )
+              ))
             else
-              TextButton(
+              MotionPress(
+enabled: !_isSubmitting && canCreate,pressedScale: .985, child: TextButton(
                 onPressed: _isSubmitting || !canCreate
                     ? null
                     : () {
@@ -271,7 +277,7 @@ class _CreateSnackChatScreenState extends State<CreateSnackChatScreen> {
                           fontWeight: FontWeight.w800,
                         ),
                       ),
-              ),
+              )),
           ],
         ),
         body: SafeArea(
@@ -485,10 +491,14 @@ class _CreateSnackChatScreenState extends State<CreateSnackChatScreen> {
       selected: selected,
       child: Material(
         color: Colors.transparent,
-        child: InkWell(
+        child: MotionSelectable(
+          selected: _activeDurationHours == hours,
+          pressedScale: MotionSelectable.segmentScale,
+          child: InkWell(
           onTap: () => setState(() => _activeDurationHours = hours),
           child: AnimatedContainer(
-            duration: const Duration(milliseconds: 160),
+            duration: MotionTokens.of(context, MotionTokens.state),
+            curve: MotionTokens.curve,
             constraints: BoxConstraints(
               minHeight: context.rh(48, min: 46, max: 52),
             ),
@@ -542,7 +552,7 @@ class _CreateSnackChatScreenState extends State<CreateSnackChatScreen> {
               ],
             ),
           ),
-        ),
+        )),
       ),
     );
   }

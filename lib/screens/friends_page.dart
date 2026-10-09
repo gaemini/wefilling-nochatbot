@@ -32,6 +32,7 @@ import 'requests_page.dart';
 import 'social_tag_explorer_screen.dart';
 import '../widgets/user_tile.dart';
 import '../l10n/ui_locale.dart';
+import '../ui/widgets/motion_press.dart';
 
 class FriendsPage extends StatefulWidget {
   const FriendsPage({super.key});
@@ -224,7 +225,7 @@ class _FriendsPageState extends State<FriendsPage> {
 
   Widget _buildUserSearchResults(RelationshipProvider provider, String query) {
     // 로딩
-    if (provider.isLoading) {
+    if (provider.isSearchLoading) {
       return const Center(
           child: CircularProgressIndicator(color: AppColors.pointColor));
     }
@@ -1157,6 +1158,7 @@ class _FriendsPageState extends State<FriendsPage> {
             Expanded(
               child: Consumer<RelationshipProvider>(
                 builder: (context, provider, child) {
+                  final q = _searchController.text.trim();
                   // 로딩 중일 때 스켈레톤 표시
                   if (provider.isLoading && !_isInitialized) {
                     return AppSkeletonList.listItems(
@@ -1165,22 +1167,21 @@ class _FriendsPageState extends State<FriendsPage> {
                     );
                   }
 
-                  if (provider.errorMessage != null) {
+                  if (q.isNotEmpty) {
+                    // ✅ 친구 탭에서도 전체 유저 검색 결과 표시 (비친구 포함)
+                    return _buildUserSearchResults(provider, q);
+                  }
+
+                  if (provider.errorMessage != null && provider.friends.isEmpty) {
                     return _buildErrorState(provider.errorMessage!);
                   }
 
-                  // 로딩이 끝났고 친구 목록이 비어있을 때만 빈 상태 표시
+                  // 검색과 관계없이 실제 친구 목록만 빈 상태로 판정한다.
                   if (!provider.isLoading && provider.friends.isEmpty) {
                     return AppEmptyState.noFriends(
                       context: context,
                       onSearchFriends: _openTagFriendFinder,
                     );
-                  }
-
-                  final q = _searchController.text.trim();
-                  if (q.isNotEmpty) {
-                    // ✅ 친구 탭에서도 전체 유저 검색 결과 표시 (비친구 포함)
-                    return _buildUserSearchResults(provider, q);
                   }
 
                   return _buildFriendsList();
@@ -1292,7 +1293,9 @@ class _FriendsPageState extends State<FriendsPage> {
     final horizontalPadding = width < 360 ? 12.0 : (width < 600 ? 16.0 : 24.0);
     final isKorean = Localizations.localeOf(context).languageCode == 'ko';
 
-    return Material(
+    return MotionPress(
+      pressedScale: .99,
+      child: Material(
       color: Colors.white,
       child: InkWell(
         onTap: _openTagFriendFinder,
@@ -1344,6 +1347,7 @@ class _FriendsPageState extends State<FriendsPage> {
           ),
         ),
       ),
+      ),
     );
   }
 
@@ -1355,7 +1359,9 @@ class _FriendsPageState extends State<FriendsPage> {
       builder: (context, provider, child) {
         final incomingCount = provider.incomingRequests.length;
         final hasIncoming = incomingCount > 0;
-        return Material(
+        return MotionPress(
+          pressedScale: .99,
+          child: Material(
           color: Colors.white,
           child: InkWell(
             onTap: () {
@@ -1437,6 +1443,7 @@ class _FriendsPageState extends State<FriendsPage> {
               ),
             ),
           ),
+          ),
         );
       },
     );
@@ -1447,7 +1454,9 @@ class _FriendsPageState extends State<FriendsPage> {
     final horizontalPadding = width < 360 ? 12.0 : (width < 600 ? 16.0 : 24.0);
     final isKorean = Localizations.localeOf(context).languageCode == 'ko';
 
-    return Material(
+    return MotionPress(
+      pressedScale: .99,
+      child: Material(
       color: Colors.white,
       child: InkWell(
         onTap: _openCreateGroup,
@@ -1493,6 +1502,7 @@ class _FriendsPageState extends State<FriendsPage> {
             ),
           ),
         ),
+      ),
       ),
     );
   }

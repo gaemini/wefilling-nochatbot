@@ -6,6 +6,8 @@ import '../repositories/users_repository.dart';
 import '../ui/widgets/group_audience_preview.dart';
 import '../utils/responsive_helper.dart';
 import '../l10n/ui_locale.dart';
+import '../design/tokens.dart';
+import '../ui/widgets/motion_state_icon.dart';
 
 class MeetupVisibilityGroupSelectScreen extends StatefulWidget {
   final List<FriendCategory> categories;
@@ -125,10 +127,10 @@ class _MeetupVisibilityGroupSelectScreenState
                   child: Row(
                     children: [
                       Expanded(
-                        child: Text(
-                          category.name,
-                          maxLines: 1,
-                          overflow: TextOverflow.ellipsis,
+                        child: AnimatedDefaultTextStyle(
+                          duration:
+                              MotionTokens.of(context, MotionTokens.state),
+                          curve: MotionTokens.curve,
                           style: TextStyle(
                             fontFamily: uiFontFamily(context, 'Inter'),
                             fontFamilyFallback: const ['NotoSansKR'],
@@ -137,13 +139,18 @@ class _MeetupVisibilityGroupSelectScreenState
                                 isSelected ? FontWeight.w800 : FontWeight.w600,
                             color: const Color(0xFF111827),
                           ),
+                          child: Text(
+                            category.name,
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis,
+                          ),
                         ),
                       ),
                       const SizedBox(width: 8),
-                      Icon(
-                        isSelected
-                            ? Icons.check_circle_rounded
-                            : Icons.circle_outlined,
+                      MotionStateIcon(
+                        selected: isSelected,
+                        inactiveIcon: Icons.circle_outlined,
+                        activeIcon: Icons.check_circle_rounded,
                         size: context.ri(21).clamp(20, 23).toDouble(),
                         color: isSelected
                             ? const Color(0xFF475467)

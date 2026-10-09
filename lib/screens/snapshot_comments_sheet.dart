@@ -2,6 +2,7 @@ import 'dart:async';
 
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/material.dart';
+import '../ui/widgets/motion_press.dart';
 import 'package:flutter/services.dart';
 
 import '../constants/app_constants.dart';
@@ -548,39 +549,39 @@ class _SnapshotCommentsSheetState extends State<SnapshotCommentsSheet> {
                                       _selectedGif != null);
                               final buttonSize =
                                   context.rh(48, min: 48, max: 52).toDouble();
-                              return Semantics(
-                                button: true,
+                              return MotionPress(
                                 enabled: canSend,
-                                label: strings.sendComment,
-                                child: Tooltip(
-                                  message: strings.sendComment,
-                                  child: Material(
-                                    color: Colors.transparent,
-                                    child: InkResponse(
-                                      onTap: canSend ? _send : null,
-                                      radius: buttonSize / 2,
-                                      child: SizedBox.square(
-                                        dimension: buttonSize,
-                                        child: Center(
-                                          child: _sending
-                                              ? const SizedBox.square(
-                                                  dimension: 19,
-                                                  child:
-                                                      CircularProgressIndicator(
-                                                    strokeWidth: 2,
-                                                    color: AppColors.pointColor,
+                                pressedScale: .90,
+                                child: Semantics(
+                                  button: true,
+                                  enabled: canSend,
+                                  label: strings.sendComment,
+                                  child: Tooltip(
+                                    message: strings.sendComment,
+                                    child: Material(
+                                      color: Colors.transparent,
+                                      child: InkResponse(
+                                        onTap: canSend ? _send : null,
+                                        radius: buttonSize / 2,
+                                        child: SizedBox.square(
+                                          dimension: buttonSize,
+                                          child: Center(
+                                            child: _sending
+                                                ? const SizedBox.square(
+                                                    dimension: 19,
+                                                    child: CircularProgressIndicator(
+                                                      strokeWidth: 2,
+                                                      color: AppColors.pointColor,
+                                                    ),
+                                                  )
+                                                : Icon(
+                                                    Icons.arrow_upward_rounded,
+                                                    size: context.ri(25).clamp(24, 27).toDouble(),
+                                                    color: canSend
+                                                        ? AppColors.pointColor
+                                                        : const Color(0xFFB8C0CC),
                                                   ),
-                                                )
-                                              : Icon(
-                                                  Icons.arrow_upward_rounded,
-                                                  size: context
-                                                      .ri(25)
-                                                      .clamp(24, 27)
-                                                      .toDouble(),
-                                                  color: canSend
-                                                      ? AppColors.pointColor
-                                                      : const Color(0xFFB8C0CC),
-                                                ),
+                                          ),
                                         ),
                                       ),
                                     ),

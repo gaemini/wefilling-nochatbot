@@ -4,6 +4,8 @@ import '../constants/app_constants.dart';
 import '../models/student_type.dart';
 import '../services/semester_todo_service.dart';
 import '../l10n/ui_locale.dart';
+import '../design/tokens.dart';
+import '../ui/widgets/motion_press.dart';
 
 class StudentTypeSelectionScreen extends StatefulWidget {
   const StudentTypeSelectionScreen({
@@ -123,7 +125,10 @@ class _StudentTypeSelectionScreenState
                     SizedBox(
                       width: double.infinity,
                       height: 52,
-                      child: ElevatedButton(
+                      child: MotionPress(
+                        enabled: _selected != null && !_saving,
+                        pressedScale: .975,
+                        child: ElevatedButton(
                         onPressed: _selected == null || _saving ? null : _save,
                         style: ElevatedButton.styleFrom(
                           elevation: 0,
@@ -153,6 +158,7 @@ class _StudentTypeSelectionScreenState
                                 ),
                               ),
                       ),
+                        ),
                     ),
                   ],
                 ),
@@ -190,8 +196,9 @@ class _StudentTypeSelectionScreenState
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    Text(
-                      type.title(context),
+                    AnimatedDefaultTextStyle(
+                      duration: MotionTokens.of(context, MotionTokens.state),
+                      curve: MotionTokens.curve,
                       style: TextStyle(
                         fontFamily: uiFontFamily(context, 'Inter'),
                         fontFamilyFallback: const ['NotoSansKR'],
@@ -201,6 +208,7 @@ class _StudentTypeSelectionScreenState
                             ? AppColors.pointColor
                             : const Color(0xFF0F172A),
                       ),
+                      child: Text(type.title(context)),
                     ),
                     const SizedBox(height: 5),
                     Text(
@@ -218,7 +226,8 @@ class _StudentTypeSelectionScreenState
               ),
               const SizedBox(width: 10),
               AnimatedContainer(
-                duration: const Duration(milliseconds: 150),
+                duration: MotionTokens.of(context, MotionTokens.state),
+                curve: MotionTokens.curve,
                 width: 22,
                 height: 22,
                 decoration: BoxDecoration(

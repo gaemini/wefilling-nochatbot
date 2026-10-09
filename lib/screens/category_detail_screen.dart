@@ -2,6 +2,7 @@
 // 카테고리 상세 화면 - 전체 친구 목록에서 그룹 포함 여부를 편집 후 저장
 
 import 'package:flutter/material.dart';
+import '../ui/widgets/motion_press.dart';
 import '../models/friend_category.dart';
 import '../models/user_profile.dart';
 import '../design/tokens.dart';
@@ -569,57 +570,56 @@ class _CategoryDetailScreenState extends State<CategoryDetailScreen> {
       hint: AppLocalizations.of(context)!.groupRemoveFriendHint,
       onTap: () => _toggleFriend(friend.uid),
       excludeSemantics: true,
-      child: GestureDetector(
-        onTap: () => _toggleFriend(friend.uid),
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            Stack(
-              clipBehavior: Clip.none,
-              children: [
-                _buildAvatar(
-                  size: 52,
-                  photoUrl: friend.photoURL,
-                  fallbackLabel: friend.displayNameOrNickname,
-                ),
-                Positioned(
-                  right: -2,
-                  top: -2,
-                  child: Container(
-                    width: 16,
-                    height: 16,
-                    decoration: BoxDecoration(
-                      color: const Color(0xFF111827),
-                      shape: BoxShape.circle,
-                      border: Border.all(color: Colors.white, width: 1.25),
-                    ),
-                    child: const Icon(
-                      Icons.close,
-                      size: 10,
-                      color: Colors.white,
+      child: MotionPress(
+        pressedScale: .99,
+        child: GestureDetector(
+          onTap: () => _toggleFriend(friend.uid),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Stack(
+                clipBehavior: Clip.none,
+                children: [
+                  _buildAvatar(
+                    size: 52,
+                    photoUrl: friend.photoURL,
+                    fallbackLabel: friend.displayNameOrNickname,
+                  ),
+                  Positioned(
+                    right: -2,
+                    top: -2,
+                    child: Container(
+                      width: 16,
+                      height: 16,
+                      decoration: BoxDecoration(
+                        color: const Color(0xFF111827),
+                        shape: BoxShape.circle,
+                        border: Border.all(color: Colors.white, width: 1.25),
+                      ),
+                      child: const Icon(Icons.close, size: 10, color: Colors.white),
                     ),
                   ),
-                ),
-              ],
-            ),
-            const SizedBox(height: 5),
-            SizedBox(
-              width: 62,
-              child: Text(
-                friend.displayNameOrNickname,
-                maxLines: 1,
-                overflow: TextOverflow.ellipsis,
-                textAlign: TextAlign.center,
-                style: TextStyle(
-                  fontFamily: uiFontFamily(context, 'Inter'),
-                  fontFamilyFallback: const ['NotoSansKR'],
-                  fontSize: 12,
-                  fontWeight: FontWeight.w600,
-                  color: Color(0xFF374151),
+                ],
+              ),
+              const SizedBox(height: 5),
+              SizedBox(
+                width: 62,
+                child: Text(
+                  friend.displayNameOrNickname,
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  textAlign: TextAlign.center,
+                  style: TextStyle(
+                    fontFamily: uiFontFamily(context, 'Inter'),
+                    fontFamilyFallback: const ['NotoSansKR'],
+                    fontSize: 12,
+                    fontWeight: FontWeight.w600,
+                    color: Color(0xFF374151),
+                  ),
                 ),
               ),
-            ),
-          ],
+            ],
+          ),
         ),
       ),
     );

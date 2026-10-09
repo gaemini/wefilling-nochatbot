@@ -1,8 +1,12 @@
 import 'dart:async';
 import 'dart:io';
 
+import 'package:flutter/foundation.dart';
+
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:cloud_functions/cloud_functions.dart';
+
+import '../config/app_backend.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:app_badge_plus/app_badge_plus.dart';
 import 'package:flutter_local_notifications/flutter_local_notifications.dart';
@@ -19,7 +23,7 @@ import '../utils/logger.dart';
 class BadgeService {
   static final FirebaseFirestore _firestore = FirebaseFirestore.instance;
   static final FirebaseAuth _auth = FirebaseAuth.instance;
-  static final FirebaseFunctions _functions = FirebaseFunctions.instance;
+  static final FirebaseFunctions _functions = AppFunctions.instance;
 
   static StreamSubscription<DocumentSnapshot<Map<String, dynamic>>>?
       _userDocSubscription;
@@ -588,11 +592,33 @@ class BadgeService {
   }
 
   /// 읽음 트랜잭션 직후 리스너 전달 순서와 무관하게 아이콘 배지를 다시 계산한다.
-  static Future<void> refreshNow() async {
+  /// [fresh]: re-read users/{uid} from the server first. Right after a read
+  /// callable the realtime user listener may not have delivered the lowered
+  /// counters yet, and recomputing from the cached snapshot kept the old
+  /// badge on the icon.
+  static Future<void> refreshNow({bool fresh = false}) async {
     final userId = _auth.currentUser?.uid;
     final generation = _sessionGeneration;
     if (userId == null || !_isCurrentAccountContext(userId, generation)) {
       return;
+    }
+    if (fresh) {
+      try {
+        final snapshot = await _firestore
+            .collection('users')
+            .doc(userId)
+            .get(const GetOptions(source: Source.server))
+            .timeout(const Duration(seconds: 5));
+        if (_isCurrentAccountContext(userId, generation) &&
+            _activeUserId == userId &&
+            snapshot.exists) {
+          _latestUserSnapshot = snapshot;
+        }
+      } catch (error) {
+        if (Logger.isVerboseEnabled) {
+          Logger.warning('배지 서버 재조회 실패, 캐시 사용: $error');
+        }
+      }
     }
     await _updateBadge(
       expectedUserId: userId,
@@ -636,12 +662,14 @@ class BadgeService {
   }
 
   static Future<void> _clearAndroidNotificationTray() async {
-    if (!Platform.isAndroid) return;
+    // Delivered cards of the previous account must not survive a logout on
+    // either platform (iOS: removeAllDeliveredNotifications via the plugin).
+    if (kIsWeb) return;
     try {
       final plugin = FlutterLocalNotificationsPlugin();
       await plugin.cancelAll();
     } catch (e) {
-      Logger.error('Android 알림 트레이 정리 실패', e);
+      Logger.error('알림 트레이 정리 실패', e);
     }
   }
 
@@ -679,17 +707,13 @@ class BadgeService {
   }
 
   /// 앱 포그라운드 진입 시 Android 배지를 실제 값으로 강제 동기화
+  /// Resume hook for every platform. iOS keeps the system badge off while
+  /// the app is in the foreground, so the app itself must recompute the icon
+  /// number when it comes back; reads made on another device are only
+  /// visible after this server-fresh recount.
   static Future<void> syncAndroidBadgeOnResume() async {
-    if (!Platform.isAndroid) return;
-    final userId = _auth.currentUser?.uid;
-    final generation = _sessionGeneration;
-    if (userId == null || !_isCurrentAccountContext(userId, generation)) {
-      return;
-    }
-    await _updateBadge(
-      expectedUserId: userId,
-      expectedGeneration: generation,
-    );
+    if (kIsWeb) return;
+    await refreshNow(fresh: true);
   }
 }
 

@@ -15,6 +15,7 @@ import '../utils/responsive_helper.dart';
 import 'meetup_category_select_screen.dart';
 import 'meetup_visibility_group_select_screen.dart';
 import '../l10n/ui_locale.dart';
+import '../ui/widgets/motion_press.dart';
 
 class MeetupFavoriteEditorScreen extends StatefulWidget {
   final MeetupFavoriteTemplate? template;
@@ -715,7 +716,10 @@ class _MeetupFavoriteEditorScreenState
           ),
           child: SizedBox(
             height: context.rh(48, min: 46, max: 50),
-            child: ElevatedButton(
+            child: MotionPress(
+              enabled: !_isSaving,
+              pressedScale: .975,
+              child: ElevatedButton(
               onPressed: _isSaving ? null : _save,
               style: ElevatedButton.styleFrom(
                 elevation: 0,
@@ -744,6 +748,7 @@ class _MeetupFavoriteEditorScreenState
                       ),
                     ),
             ),
+              ),
           ),
         ),
       ),

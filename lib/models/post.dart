@@ -9,6 +9,7 @@ import 'package:intl/intl.dart';
 import '../providers/settings_provider.dart';
 import '../l10n/app_localizations.dart';
 import 'post_category.dart';
+import 'post_video.dart';
 import 'shared_link_preview.dart';
 
 List<String> _normalizePostCategoryKeys(
@@ -91,6 +92,9 @@ class Post {
   final List<String> likedBy; // 좋아요 누른 사용자 ID 목록
   final List<String> imageUrls; // 이미지 URL 목록
   final SharedLinkPreview? linkPreview;
+  /// 첨부 영상(최대 1개). 썸네일 URL은 imageUrls[0]에도 넣어 목록·알림
+  /// 썸네일 경로가 그대로 동작한다.
+  final PostVideo? video;
 
   // 게시글 타입 (기본: text)
   final String type; // 'text' | 'poll'
@@ -135,6 +139,7 @@ class Post {
     this.likedBy = const [],
     this.imageUrls = const [], // URL 변환 제거 - 원본 URL 그대로 사용
     this.linkPreview,
+    this.video,
     this.type = 'text',
     this.pollOptions = const [],
     this.pollTotalVotes = 0,
@@ -181,6 +186,13 @@ class Post {
   /// 첫 첨부 이미지를 링크 카드가 대신 표시하는 경우 본문 갤러리에서는
   /// 중복 노출하지 않는다. 나머지 사용자가 추가한 이미지는 그대로 유지한다.
   List<String> get standaloneImageUrls {
+    final attachedVideo = video;
+    if (attachedVideo != null) {
+      // 영상 썸네일은 영상 플레이어가 대신 보여준다.
+      final thumbnail = attachedVideo.thumbnailUrl.trim();
+      final rest = imageUrls.where((url) => url.trim() != thumbnail).toList();
+      return List<String>.unmodifiable(rest);
+    }
     final preview = linkPreview;
     if (preview == null || imageUrls.isEmpty) return imageUrls;
     if (preview.provider != 'youtube' && preview.provider != 'instagram') {
@@ -281,6 +293,7 @@ class Post {
     List<String>? likedBy,
     List<String>? imageUrls,
     SharedLinkPreview? linkPreview,
+    PostVideo? video,
     String? type,
     List<PollOption>? pollOptions,
     int? pollTotalVotes,
@@ -311,6 +324,7 @@ class Post {
       likedBy: likedBy ?? this.likedBy,
       imageUrls: imageUrls ?? this.imageUrls,
       linkPreview: linkPreview ?? this.linkPreview,
+      video: video ?? this.video,
       type: type ?? this.type,
       pollOptions: pollOptions ?? this.pollOptions,
       pollTotalVotes: pollTotalVotes ?? this.pollTotalVotes,
@@ -346,6 +360,7 @@ class Post {
       'likedBy': likedBy,
       'imageUrls': imageUrls,
       if (linkPreview != null) 'linkPreview': linkPreview!.toMap(),
+      if (video != null) 'video': video!.toMap(),
       'type': type,
       'pollOptions': pollOptions.map((o) => o.toMap()).toList(),
       'pollTotalVotes': pollTotalVotes,
@@ -400,6 +415,7 @@ class Post {
               Map<String, dynamic>.from(map['linkPreview'] as Map),
             )
           : null,
+      video: PostVideo.fromMap(map['video']),
       type: map['type'] ?? 'text',
       pollOptions: parsedPollOptions,
       pollTotalVotes: map['pollTotalVotes'] ?? 0,

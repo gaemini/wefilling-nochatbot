@@ -4,6 +4,9 @@ import '../constants/app_constants.dart';
 import '../models/social_profile_data.dart';
 import '../utils/responsive_helper.dart';
 import '../l10n/ui_locale.dart';
+import '../design/tokens.dart';
+import '../ui/widgets/motion_selectable.dart';
+import '../ui/widgets/motion_state_icon.dart';
 
 class ProfileSectionHeading extends StatelessWidget {
   const ProfileSectionHeading({
@@ -94,9 +97,21 @@ class SocialProfileTagSelector extends StatelessWidget {
             button: true,
             selected: selected,
             label: option.label(languageCode),
-            child: Material(
-              color:
-                  selected ? const Color(0xFFEAF6FC) : const Color(0xFFF5F6F8),
+            child: MotionSelectable(
+              selected: selected,
+              pulse: true,
+              pressedScale: MotionSelectable.chipScale,
+              child: AnimatedContainer(
+                duration: MotionTokens.of(context, MotionTokens.state),
+                curve: MotionTokens.curve,
+                decoration: BoxDecoration(
+                  color: selected
+                      ? const Color(0xFFEAF6FC)
+                      : const Color(0xFFF5F6F8),
+                  borderRadius: BorderRadius.circular(18),
+                ),
+                child: Material(
+              color: Colors.transparent,
               borderRadius: BorderRadius.circular(18),
               child: InkWell(
                 borderRadius: BorderRadius.circular(18),
@@ -134,19 +149,19 @@ class SocialProfileTagSelector extends StatelessWidget {
                     child: Row(
                       mainAxisSize: MainAxisSize.min,
                       children: [
-                        Icon(
-                          selected
-                              ? Icons.check_circle_rounded
-                              : Icons.tag_rounded,
+                        MotionStateIcon(
+                          selected: selected,
+                          inactiveIcon: Icons.tag_rounded,
+                          activeIcon: Icons.check_circle_rounded,
                           size: context.ri(17).clamp(16, 18).toDouble(),
                           color: foreground,
                         ),
                         SizedBox(width: context.rs(6).clamp(5, 7).toDouble()),
                         Flexible(
-                          child: Text(
-                            option.label(languageCode),
-                            maxLines: 1,
-                            overflow: TextOverflow.ellipsis,
+                          child: AnimatedDefaultTextStyle(
+                            duration:
+                                MotionTokens.of(context, MotionTokens.state),
+                            curve: MotionTokens.curve,
                             style: TextStyle(
                               fontFamily: uiFontFamily(context, 'Inter'),
                               fontFamilyFallback: const <String>['NotoSansKR'],
@@ -155,11 +170,18 @@ class SocialProfileTagSelector extends StatelessWidget {
                                   selected ? FontWeight.w800 : FontWeight.w600,
                               color: foreground,
                             ),
+                            child: Text(
+                              option.label(languageCode),
+                              maxLines: 1,
+                              overflow: TextOverflow.ellipsis,
+                            ),
                           ),
                         ),
                       ],
                     ),
                   ),
+                ),
+              ),
                 ),
               ),
             ),

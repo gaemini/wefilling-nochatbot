@@ -37,6 +37,39 @@ bool isUnavailableUserAccountData(Map<String, dynamic>? data) {
   return nickname.isEmpty && email.isEmpty && hanyangEmail.isEmpty;
 }
 
+/// 이미 관계가 있는 사용자(친구, 대화 참여자)를 목록에 보여 줄 수 있는지
+/// 판정합니다. 검색 노출 조건([isSearchableUserAccountData])과 다르게
+/// 닉네임 문자 종류·길이, 검색 비공개 설정, 프로필 비공개 설정은 보지 않습니다.
+/// 친구는 상대가 검색을 꺼 두었거나 중국어·공백이 들어간 닉네임을 써도
+/// 여전히 친구이기 때문입니다. 탈퇴·정지·미완료 가입 계정만 제외합니다.
+bool isVisibleUserAccountData(
+  Map<String, dynamic>? data, {
+  required String uid,
+}) {
+  if (data == null || uid.trim().isEmpty || uid.contains('/')) return false;
+  if (isUnavailableUserAccountData(data)) return false;
+  if (const <String>{
+    'anonymous',
+    'deleted',
+    'deleted_account',
+    'unknown',
+    'system',
+  }.contains(uid.trim().toLowerCase())) {
+    return false;
+  }
+  if (data['deleting'] == true) return false;
+
+  final registrationStatus =
+      (data['registrationStatus'] ?? '').toString().trim().toLowerCase();
+  final signupState =
+      (data['signupState'] ?? '').toString().trim().toLowerCase();
+  return registrationStatus == 'complete' ||
+      (registrationStatus.isEmpty &&
+          data['emailVerified'] == true &&
+          signupState != 'authcreated' &&
+          signupState != 'profilepending');
+}
+
 /// 이름/관심사/초대처럼 실제 사람을 찾는 화면의 엄격한 공개 조건입니다.
 ///
 /// 콘텐츠의 익명 표시 정책과 분리되어 있으므로 이 함수는 `UserProfile`의

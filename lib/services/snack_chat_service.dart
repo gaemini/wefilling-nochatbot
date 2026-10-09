@@ -2,6 +2,8 @@ import 'dart:async';
 
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:cloud_functions/cloud_functions.dart';
+
+import '../config/app_backend.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 
 import '../models/snack_chat.dart';
@@ -15,6 +17,7 @@ import '../utils/logger.dart';
 import '../utils/chat_timing.dart';
 import 'snack_chat_active_conversation.dart';
 import '../utils/snack_chat_list_policy.dart';
+import '../utils/snack_chat_read_policy.dart';
 
 const Duration _snackChatFirstEventDeadline = Duration(seconds: 12);
 
@@ -580,6 +583,26 @@ class _SnackChatSummaryMemoryCacheRecord {
 }
 
 class SnackChatService {
+  /// Read fast path: advance the own member read cursor with a direct Firestore
+  /// write (Rules-validated) so other participants see the receipt after one
+  /// round trip; the read callable reconciles room.unreadCount afterwards.
+  static const bool directReadEnabled = bool.fromEnvironment(
+    'SNACK_CHAT_DIRECT_READ',
+    defaultValue: false,
+  );
+
+  /// Room list projection after an accepted direct read, keyed `uid::roomId`.
+  /// The server unreadCount stays stale until the reconcile callable runs.
+  final Map<String, int> _directReadProjection = <String, int>{};
+
+  /// Room entry fast path: call the entry-context callable first (the new
+  /// server repairs a missing member doc itself) instead of a serial
+  /// membership callable before it. `failed-precondition` falls back.
+  static const bool fastEntryEnabled = bool.fromEnvironment(
+    'SNACK_CHAT_FAST_ENTRY',
+    defaultValue: true,
+  );
+
   static const bool secureTextSendEnabled = bool.fromEnvironment(
     'SNACK_CHAT_SECURE_TEXT_SEND',
     defaultValue: false,
@@ -592,7 +615,7 @@ class SnackChatService {
 
   final FirebaseFirestore _firestore = FirebaseFirestore.instance;
   final FirebaseAuth _auth = FirebaseAuth.instance;
-  final FirebaseFunctions _functions = FirebaseFunctions.instance;
+  final FirebaseFunctions _functions = AppFunctions.instance;
   // Only authoritative rejections are terminal; timeouts remain uncertain.
   final Set<String> _definitiveSendRejections = {};
   bool wasSendRejected(String owner, String room, String id) =>
@@ -963,7 +986,10 @@ class SnackChatService {
             );
         }
       }
-      return orderSnackChatsForCurrentUser(items, currentUserId: uid);
+      return orderSnackChatsForCurrentUser(
+        _projectDirectReads(items, uid),
+        currentUserId: uid,
+      );
     }).transform(
       StreamTransformer<List<SnackChat>, List<SnackChat>>.fromHandlers(
         handleError: (error, stackTrace, sink) {
@@ -2150,6 +2176,7 @@ class SnackChatService {
     String snackChatId, {
     String? imageUrl,
     String? imagePath,
+    String? storageBucket,
     String text = '',
     String? messageId,
     ReplyMessagePreview? replyPreview,
@@ -2167,6 +2194,7 @@ class SnackChatService {
       text: text.trim(),
       imageUrl: normalizedUrl.isEmpty ? null : normalizedUrl,
       imagePath: normalizedPath.isEmpty ? null : normalizedPath,
+      storageBucket: normalizedPath.isEmpty ? null : storageBucket?.trim(),
       imageWidth: imageWidth,
       imageHeight: imageHeight,
       replyPreview: replyPreview,
@@ -2202,6 +2230,7 @@ class SnackChatService {
     required String text,
     required String? imageUrl,
     String? imagePath,
+    String? storageBucket,
     int? imageWidth,
     int? imageHeight,
     ReplyMessagePreview? replyPreview,
@@ -2338,6 +2367,13 @@ class SnackChatService {
             // Storage path. The upload URL remains local preview state only, so
             if (imagePath != null && imagePath.isNotEmpty)
               'imagePath': imagePath,
+            // Which bucket holds imagePath. Omitted for legacy readers that
+            // resolve paths against the default bucket.
+            if (imagePath != null &&
+                imagePath.isNotEmpty &&
+                storageBucket != null &&
+                storageBucket.isNotEmpty)
+              'storageBucket': storageBucket,
             if (hasImageDimensions) ...<String, dynamic>{
               'imageWidth': imageWidth,
               'imageHeight': imageHeight,
@@ -2575,6 +2611,86 @@ class SnackChatService {
     return operation;
   }
 
+  /// Read fast path. Writes `members/{uid}.lastReadSequence` directly so other
+  /// participants' receipt counts update after one round trip.
+  ///
+  /// Returns the accepted sequence, or null when Rules rejected the write
+  /// (legacy member doc without the field, another device already ahead, or
+  /// the room's canonical sequence is behind the request). The caller then
+  /// falls back to the callable. Room `unreadCount` is NOT changed here; the
+  /// reconcile callable owns it. The local room list is projected to zero only
+  /// when the read covers the room's latest sequence.
+  Future<int?> advanceReadCursorDirect(
+    String snackChatId, {
+    required int throughSequence,
+  }) async {
+    final uid = _uid;
+    if (uid == null || throughSequence <= 0) return null;
+    final memberRef = _collection
+        .doc(snackChatId)
+        .collection('members')
+        .doc(uid);
+    try {
+      await memberRef.update(<String, dynamic>{
+        'lastReadSequence': throughSequence,
+        'lastReadAt': FieldValue.serverTimestamp(),
+      }).timeout(const Duration(seconds: 15));
+    } on FirebaseException catch (error) {
+      if (error.code == 'permission-denied' ||
+          error.code == 'not-found' ||
+          error.code == 'failed-precondition') {
+        if (Logger.isVerboseEnabled) {
+          Logger.log(
+            '📖 [SnackChat] direct read rejected (${error.code}) '
+            'room=$snackChatId through=$throughSequence',
+          );
+        }
+        return null;
+      }
+      rethrow;
+    }
+    if (_uid != uid) return null;
+    final key = '$uid::$snackChatId';
+    if ((_directReadProjection[key] ?? 0) < throughSequence) {
+      _directReadProjection[key] = throughSequence;
+    }
+    // The entry boundary captured before this read is stale now.
+    _entryContextCache.remove(key);
+    unawaited(_localCache.clearEntryState(snackChatId));
+    _applyReadProjectionToCachedRooms(
+      snackChatId: snackChatId,
+      userId: uid,
+      unreadCount: 0,
+      readThroughSequence: throughSequence,
+    );
+    return throughSequence;
+  }
+
+  List<SnackChat> _projectDirectReads(List<SnackChat> rooms, String uid) {
+    if (_directReadProjection.isEmpty) return rooms;
+    return rooms.map((room) {
+      final key = '$uid::${room.id}';
+      final through = _directReadProjection[key];
+      if (through == null) return room;
+      if ((room.unreadCount[uid] ?? 0) == 0 &&
+          room.lastMessageSequence <= through) {
+        // The server caught up; the projection is no longer needed.
+        _directReadProjection.remove(key);
+        return room;
+      }
+      final projected = SnackChatReadPolicy.projectedUnread(
+        room: room,
+        userId: uid,
+        readThroughSequence: through,
+      );
+      if (projected == null) return room;
+      return room.copyWith(
+        unreadCount: Map<String, int>.from(room.unreadCount)
+          ..[uid] = projected,
+      );
+    }).toList(growable: false);
+  }
+
   /// 화면이 활성 상태일 때 확보한 서버 확정 [throughSequence]까지만 읽는다.
   ///
   /// 최신 방 sequence를 클라이언트에서 다시 조회하지 않고 서버에 경계를
@@ -2719,7 +2835,11 @@ class SnackChatService {
 
       // The room list will publish the new unread aggregate shortly. Until
       // then, never reuse the entry boundary captured before this read.
-      _entryContextCache.remove('$ownerUid::$snackChatId');
+      final projectionKey = '$ownerUid::$snackChatId';
+      if (readThroughSequence >= (_directReadProjection[projectionKey] ?? 0)) {
+        _directReadProjection.remove(projectionKey);
+      }
+      _entryContextCache.remove(projectionKey);
       unawaited(_localCache.clearEntryState(snackChatId));
       _applyReadProjectionToCachedRooms(
         snackChatId: snackChatId,

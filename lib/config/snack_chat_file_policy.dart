@@ -29,10 +29,19 @@ class SnackChatFilePolicy {
     'xlsx': 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
     'txt': 'text/plain',
     'csv': 'text/csv',
+    // 영상은 MP4(H.264/AAC)만. 선택 즉시 VideoPrepareService가 540p로
+    // 압축하므로 다른 컨테이너는 그 단계에서 mp4로 바뀐다.
+    'mp4': 'video/mp4',
   };
 
+  static const String videoMimeType = 'video/mp4';
+
+  static bool isVideoExtension(String extension) =>
+      extension.toLowerCase() == 'mp4';
+
+  static bool isVideoMime(String? mimeType) => mimeType == videoMimeType;
+
   static const Set<String> blockedExtensions = <String>{
-    'mp4',
     'mov',
     'avi',
     'mkv',
@@ -123,7 +132,7 @@ class SnackChatFilePolicy {
     final canonicalMime = allowedMimeByExtension[extension];
     if (canonicalMime == null) {
       throw const SnackChatFileValidationException(
-        '문서 파일만 전송할 수 있습니다.',
+        '문서 또는 MP4 영상만 전송할 수 있습니다.',
       );
     }
 
@@ -163,6 +172,11 @@ class SnackChatFilePolicy {
 
   static Future<bool> _contentMatches(File file, String extension) async {
     final head = await _readHead(file, 32);
+    if (isVideoExtension(extension)) {
+      // ISO BMFF: 4~8바이트가 'ftyp'. 다른 바이너리 서명은 거부.
+      return head.length >= 12 &&
+          latin1.decode(head.sublist(4, 8), allowInvalid: true) == 'ftyp';
+    }
     if (_isKnownBlockedBinary(head)) return false;
     if (extension == 'pdf') {
       return head.length >= 5 && ascii.decode(head.sublist(0, 5)) == '%PDF-';
@@ -312,6 +326,7 @@ class SnackChatSelectedFile {
     required this.fileExtension,
     required this.mimeType,
     required this.fileSize,
+    this.videoMeta,
   });
 
   final String path;
@@ -319,6 +334,54 @@ class SnackChatSelectedFile {
   final String fileExtension;
   final String mimeType;
   final int fileSize;
+
+  /// MP4 영상에만 있다. 서버 commit과 DM 메시지에 그대로 실린다.
+  final SnackChatVideoMeta? videoMeta;
+
+  bool get isVideo => SnackChatFilePolicy.isVideoMime(mimeType);
+
+  SnackChatSelectedFile withVideoMeta(SnackChatVideoMeta meta) =>
+      SnackChatSelectedFile(
+        path: path,
+        originalFileName: originalFileName,
+        fileExtension: fileExtension,
+        mimeType: mimeType,
+        fileSize: fileSize,
+        videoMeta: meta,
+      );
+}
+
+/// 채팅 영상의 길이·해상도·작은 JPEG 썸네일(data URL, 16KB 이하).
+class SnackChatVideoMeta {
+  const SnackChatVideoMeta({
+    required this.durationMs,
+    required this.width,
+    required this.height,
+    required this.thumbnailDataUrl,
+  });
+
+  final int durationMs;
+  final int width;
+  final int height;
+  final String thumbnailDataUrl;
+
+  Map<String, dynamic> toJson() => <String, dynamic>{
+        'durationMs': durationMs,
+        'width': width,
+        'height': height,
+        'thumbnailDataUrl': thumbnailDataUrl,
+      };
+
+  static SnackChatVideoMeta? fromJson(dynamic raw) {
+    if (raw is! Map) return null;
+    int intOf(dynamic v) => v is num ? v.toInt() : 0;
+    return SnackChatVideoMeta(
+      durationMs: intOf(raw['durationMs']),
+      width: intOf(raw['width']),
+      height: intOf(raw['height']),
+      thumbnailDataUrl: (raw['thumbnailDataUrl'] ?? '').toString(),
+    );
+  }
 }
 
 class SnackChatFileValidationException implements Exception {

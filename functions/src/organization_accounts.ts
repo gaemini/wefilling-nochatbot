@@ -1,6 +1,7 @@
 import * as admin from 'firebase-admin';
 import * as crypto from 'crypto';
 import * as functions from 'firebase-functions';
+import {callables, triggers, withMailSecrets, gmailUser, gmailPassword} from './backend';
 import * as nodemailer from 'nodemailer';
 
 import {COL} from './firestore_paths';
@@ -461,7 +462,7 @@ function validatePendingInvite(
   return value;
 }
 
-export const previewOrganizationInvite = functions
+export const previewOrganizationInvite = callables()
   .runWith({timeoutSeconds: 15, memory: '256MB', enforceAppCheck: true})
   .https.onCall(async (raw) => {
     const identity = invitationIdentity(asString(raw?.token, 180));
@@ -545,7 +546,7 @@ type InviteAcceptanceTransactionDecision = InviteAcceptanceDecision | {
   organizationName: string;
 };
 
-export const acceptOrganizationInvite = functions
+export const acceptOrganizationInvite = callables()
   .runWith({timeoutSeconds: 30, memory: '256MB', enforceAppCheck: true})
   .https.onCall(async (raw, context): Promise<InviteAcceptanceDecision> => {
     const uid = asString(context.auth?.uid, 128);
@@ -824,12 +825,8 @@ export const acceptOrganizationInvite = functions
   });
 
 function configuredMailTransport(): nodemailer.Transporter | null {
-  const config = functions.config().gmail ?? {};
-  const user = asString(config.user || process.env.GMAIL_USER, 320);
-  const password = asString(
-    config.password || process.env.GMAIL_PASSWORD,
-    300,
-  ).replace(/\s+/g, '');
+  const user = asString(gmailUser(), 320);
+  const password = asString(gmailPassword(), 300);
   if (!user || !password || password === '여기에16자리앱비밀번호입력') {
     return null;
   }
@@ -841,8 +838,8 @@ function configuredMailTransport(): nodemailer.Transporter | null {
   });
 }
 
-export const prepareOrganizationPasswordInvite = functions
-  .runWith({timeoutSeconds: 30, memory: '256MB', enforceAppCheck: true})
+export const prepareOrganizationPasswordInvite = callables()
+  .runWith(withMailSecrets({timeoutSeconds: 30, memory: '256MB', enforceAppCheck: true}))
   .https.onCall(async (raw) => {
     const token = asString(raw?.token, 180);
     const identity = invitationIdentity(token);
@@ -920,7 +917,7 @@ export const prepareOrganizationPasswordInvite = functions
       .get();
     const organizationName = asString(organization.get('name'), 100);
     const fromAddress = asString(
-      functions.config().gmail?.user || process.env.GMAIL_USER,
+      gmailUser(),
       320,
     );
     await transporter.sendMail({
@@ -949,7 +946,7 @@ export const prepareOrganizationPasswordInvite = functions
     return {emailSent: true};
   });
 
-export const getMyOrganizationAccess = functions
+export const getMyOrganizationAccess = callables()
   .runWith({timeoutSeconds: 20, memory: '256MB', enforceAppCheck: true})
   .https.onCall(async (_raw, context) => {
     const uid = asString(context.auth?.uid, 128);
@@ -1057,7 +1054,7 @@ function editableOrganizationFields(raw: unknown): Record<string, unknown> {
   return result;
 }
 
-export const updateMyOrganizationProfile = functions
+export const updateMyOrganizationProfile = callables()
   .runWith({timeoutSeconds: 20, memory: '256MB', enforceAppCheck: true})
   .https.onCall(async (raw, context) => {
     const uid = asString(context.auth?.uid, 128);
@@ -1151,7 +1148,7 @@ export const updateMyOrganizationProfile = functions
     return {success: true};
   });
 
-export const searchOrganizationsSecure = functions
+export const searchOrganizationsSecure = callables()
   .runWith({timeoutSeconds: 20, memory: '256MB', enforceAppCheck: true})
   .https.onCall(async (raw, context) => {
     if (!context.auth?.uid) {
@@ -1212,7 +1209,7 @@ export const searchOrganizationsSecure = functions
     return {organizations};
   });
 
-export const onOrganizationManagerAuthDeleted = functions.auth.user()
+export const onOrganizationManagerAuthDeleted = triggers().auth.user()
   .onDelete(async (user) => {
     const memberships = await db().collection(COL.organizationMemberships)
       .where('uid', '==', user.uid)

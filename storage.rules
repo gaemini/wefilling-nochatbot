@@ -92,7 +92,9 @@ service firebase.storage {
         || (extension == 'xls' && mimeType == 'application/vnd.ms-excel')
         || (extension == 'xlsx' && mimeType == 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet')
         || (extension == 'txt' && mimeType == 'text/plain')
-        || (extension == 'csv' && mimeType == 'text/csv');
+        || (extension == 'csv' && mimeType == 'text/csv')
+        // 채팅 영상(MP4). 길이·크기·썸네일은 서버 commit/DM 규칙이 검증한다.
+        || (extension == 'mp4' && mimeType == 'video/mp4');
     }
 
     function canCreateSnackChatFile(retentionMode, snackChatId, messageId, fileId) {
@@ -218,7 +220,10 @@ service firebase.storage {
     // - 읽기는 공개(프로필/게시글/댓글 등에서 표시)
     match /profile_images/{userId}/{fileName} {
       allow read: if true;
-      allow write: if isSignedIn() && request.auth.uid == userId;
+      allow write: if isSignedIn() && request.auth.uid == userId
+        && (request.resource == null
+          || (request.resource.contentType.matches('image/.*')
+            && request.resource.size <= 10 * 1024 * 1024));
     }
 
     // 단체는 Auth 사용자가 아니므로 실제 담당자의 활성 membership을
@@ -260,10 +265,43 @@ service firebase.storage {
       allow write: if isSignedIn() && request.auth.uid == userId;
     }
 
+    // 게시글 영상과 썸네일: post_videos/{uid}/{postId}/video.mp4, thumbnail.jpg
+    // 읽기는 게시글 이미지와 같이 공개(다운로드 URL). 생성은 본인 폴더에만,
+    // MP4 40MB·JPEG 2MB 한도와 ownerUid/postId metadata를 요구한다. 길이 검증과
+    // 게시글 연결은 createPostSecure가 한다. 삭제는 게시글 문서가 아직 없을 때
+    // (생성 실패 롤백)만 업로더가 할 수 있고, 게시 후에는 서버 트리거가 지운다.
+    match /post_videos/{userId}/{postId}/{fileName} {
+      allow read: if true;
+      allow create: if currentUserAccountAllowed()
+        && request.auth.uid == userId
+        && request.resource.metadata.ownerUid == request.auth.uid
+        && request.resource.metadata.postId == postId
+        && (
+          (fileName == 'video.mp4'
+            && request.resource.contentType == 'video/mp4'
+            && request.resource.size > 0
+            && request.resource.size <= 40 * 1024 * 1024)
+          || (fileName == 'thumbnail.jpg'
+            && request.resource.contentType == 'image/jpeg'
+            && request.resource.size > 0
+            && request.resource.size <= 2 * 1024 * 1024)
+        );
+      allow update: if false;
+      allow delete: if isSignedIn()
+        && request.auth.uid == userId
+        && resource.metadata.ownerUid == request.auth.uid
+        && !firestore.exists(/databases/(default)/documents/posts/$(postId));
+    }
+
     // 게시글 이미지 (uuid 파일명)
     match /posts/{fileName} {
       allow read: if true;
-      allow write: if isSignedIn();
+      // uuid 파일명은 쓰기 소유자를 알 수 없으므로 새 이미지 생성만 허용하고
+      // 다른 사용자의 파일 덮어쓰기·삭제는 막는다. 크기·타입도 제한한다.
+      allow create: if isSignedIn()
+        && request.resource.contentType.matches('image/.*')
+        && request.resource.size <= 15 * 1024 * 1024;
+      allow update, delete: if false;
     }
 
     // 키보드 GIF 댓글은 본문 문서가 생기기 전 업로드한다. 읽기는 실제
@@ -337,13 +375,17 @@ service firebase.storage {
       allow read: if canReadMeetup(meetupId);
       allow write: if currentUserAccountAllowed()
         && firestore.exists(/databases/(default)/documents/meetups/$(meetupId))
-        && firestore.get(/databases/(default)/documents/meetups/$(meetupId)).data.userId == request.auth.uid;
+        && firestore.get(/databases/(default)/documents/meetups/$(meetupId)).data.userId == request.auth.uid
+        && (request.resource == null || request.resource.size <= 15 * 1024 * 1024);
     }
 
     // 모임 후기 이미지 (리뷰 작성 시 업로드)
     match /meetup_reviews/{fileName} {
       allow read: if true;
-      allow write: if isSignedIn();
+      allow create: if isSignedIn()
+        && request.resource.contentType.matches('image/.*')
+        && request.resource.size <= 15 * 1024 * 1024;
+      allow update, delete: if false;
     }
 
     // 스낵샷은 다운로드 URL을 공개하지 않고 인증 기반 getData로만 읽는다.
@@ -411,7 +453,10 @@ service firebase.storage {
     // DM 이미지: 대화 참여자만 읽기, 업로더(경로의 userId)만 쓰기
     match /dm_images/{userId}/{conversationId}/{fileName} {
       allow read: if isSignedIn() && isConversationParticipant(conversationId);
-      allow write: if isSignedIn() && request.auth.uid == userId && isConversationParticipant(conversationId);
+      allow write: if isSignedIn() && request.auth.uid == userId && isConversationParticipant(conversationId)
+        && (request.resource == null
+          || (request.resource.contentType.matches('image/.*')
+            && request.resource.size <= 15 * 1024 * 1024));
     }
 
     // Immutable DM documents. The deterministic message path makes retries

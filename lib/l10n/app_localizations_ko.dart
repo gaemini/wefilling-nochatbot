@@ -3073,7 +3073,7 @@ class AppLocalizationsKo extends AppLocalizations {
   String get postImageUploading => '이미지를 업로드 중입니다. 잠시만 기다려주세요...';
 
   @override
-  String get postComposeImageRequired => '이미지 첨부';
+  String get postComposeImageRequired => '이미지/동영상 첨부하기';
 
   @override
   String get postComposeImageHelper => '최대 15장까지 첨부할 수 있어요.';

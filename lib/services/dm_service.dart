@@ -6,6 +6,8 @@ import 'dart:async';
 
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:cloud_functions/cloud_functions.dart';
+
+import '../config/app_backend.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import '../models/conversation.dart';
 import '../models/dm_message.dart';
@@ -26,7 +28,7 @@ class DMService {
       .id;
 
   final FirebaseFirestore _firestore = FirebaseFirestore.instance;
-  final FirebaseFunctions _functions = FirebaseFunctions.instance;
+  final FirebaseFunctions _functions = AppFunctions.instance;
   final FirebaseAuth _auth = FirebaseAuth.instance;
   final DMMessageCacheService _localMessageCache = DMMessageCacheService();
   static const String _imageLastMessageFallback = '📷 Photo';
@@ -977,6 +979,34 @@ class DMService {
     return message;
   }
 
+  /// Room entry fast path (`DM_FAST_ENTRY`): paint cached history and attach
+  /// the live listener with the best-known leave boundary instead of waiting
+  /// for a server-only read of the conversation document first.
+  static const bool fastEntryEnabled = bool.fromEnvironment(
+    'DM_FAST_ENTRY',
+    defaultValue: true,
+  );
+
+  /// Best-known leave boundary from the Firestore local cache only. Returns
+  /// null on a cache miss. Never a substitute for the server boundary: the
+  /// caller reconciles with [getUserMessageVisibilityStartTime] afterwards.
+  Future<DateTime?> getCachedVisibilityStartTime(String conversationId) async {
+    final currentUser = _auth.currentUser;
+    if (currentUser == null) return null;
+    try {
+      final snapshot = await _firestore
+          .collection('conversations')
+          .doc(conversationId)
+          .get(const GetOptions(source: Source.cache));
+      if (_auth.currentUser?.uid != currentUser.uid) return null;
+      final leftMap = snapshot.data()?['userLeftAt'];
+      final left = leftMap is Map ? leftMap[currentUser.uid] : null;
+      return left is Timestamp ? left.toDate() : null;
+    } catch (_) {
+      return null; // cache miss
+    }
+  }
+
   /// 사용자의 메시지 가시성 시작 시간 계산
   Future<DateTime?> getUserMessageVisibilityStartTime(
       String conversationId) async {
@@ -1243,7 +1273,9 @@ class DMService {
           'readerId': currentUser.uid,
           if (throughMessageId != null) 'throughMessageId': throughMessageId,
           'deferReceipts': true
-        }).timeout(const Duration(seconds: 120));
+          // The bounded path is one O(1) counter transaction. A long wait only
+          // delays the screen's existing 2-30s backoff retry.
+        }).timeout(const Duration(seconds: 20));
         final data = response.data;
         if (data is! Map || data['success'] != true) {
           throw StateError('DM 읽음 상태를 동기화하지 못했습니다.');

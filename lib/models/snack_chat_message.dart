@@ -376,12 +376,19 @@ class SnackChatMember {
   final DateTime? lastReadAt;
   final List<SnackChatMembershipPeriod> periods;
 
+  /// Server-stamped boundary through which `room.unreadCount` was reconciled
+  /// by the read callable. Its presence proves the deployed server tracks the
+  /// reconcile floor separately from [lastReadSequence], which gates the
+  /// client's direct cursor write. Null on legacy member docs.
+  final int? unreadReconciledThroughSequence;
+
   const SnackChatMember({
     required this.userId,
     required this.status,
     required this.lastReadSequence,
     required this.lastReadAt,
     required this.periods,
+    this.unreadReconciledThroughSequence,
   });
 
   factory SnackChatMember.fromFirestore(DocumentSnapshot doc) {
@@ -410,6 +417,7 @@ class SnackChatMember {
       );
     }
     final read = data['lastReadSequence'];
+    final reconciled = data['unreadReconciledThroughSequence'];
     return SnackChatMember(
       userId: (data['userId'] ?? doc.id).toString(),
       status: status,
@@ -417,6 +425,9 @@ class SnackChatMember {
           read is num ? read.toInt().clamp(0, 1 << 30).toInt() : 0,
       lastReadAt: _optionalDate(data['lastReadAt']),
       periods: periods,
+      unreadReconciledThroughSequence: reconciled is num
+          ? reconciled.toInt().clamp(0, 1 << 30).toInt()
+          : null,
     );
   }
 
@@ -456,6 +467,13 @@ class SnackChatMessage {
   final String? mimeType;
   final int? fileSize;
   final String? storagePath;
+  /// MP4 파일 메시지의 길이·해상도·작은 썸네일(data URL). 문서 파일은 null.
+  final int? videoDurationMs;
+  final int? videoWidth;
+  final int? videoHeight;
+  final String? videoThumbnail;
+  /// Bucket holding [imagePath] or [storagePath]; null means legacy.
+  final String? storageBucket;
   final String? retentionMode;
   final DateTime? expiresAt;
   final DateTime? deleteAt;
@@ -500,6 +518,11 @@ class SnackChatMessage {
     this.mimeType,
     this.fileSize,
     this.storagePath,
+    this.videoDurationMs,
+    this.videoWidth,
+    this.videoHeight,
+    this.videoThumbnail,
+    this.storageBucket,
     this.retentionMode,
     this.expiresAt,
     this.deleteAt,
@@ -567,6 +590,7 @@ class SnackChatMessage {
     final fileExtension = (data['fileExtension'] ?? '').toString().trim();
     final mimeType = (data['mimeType'] ?? '').toString().trim();
     final storagePath = (data['storagePath'] ?? '').toString().trim();
+    final storageBucket = (data['storageBucket'] ?? '').toString().trim();
     final retentionMode = (data['retentionMode'] ?? '').toString().trim();
     final uploadId = (data['uploadId'] ?? '').toString().trim();
     final rawSequence = data['sequence'];
@@ -597,6 +621,19 @@ class SnackChatMessage {
       fileSize:
           data['fileSize'] is num ? (data['fileSize'] as num).toInt() : null,
       storagePath: storagePath.isEmpty ? null : storagePath,
+      videoDurationMs: data['videoDurationMs'] is num
+          ? (data['videoDurationMs'] as num).toInt()
+          : null,
+      videoWidth:
+          data['videoWidth'] is num ? (data['videoWidth'] as num).toInt() : null,
+      videoHeight: data['videoHeight'] is num
+          ? (data['videoHeight'] as num).toInt()
+          : null,
+      videoThumbnail: data['videoThumbnail'] is String &&
+              (data['videoThumbnail'] as String).isNotEmpty
+          ? data['videoThumbnail'] as String
+          : null,
+      storageBucket: storageBucket.isEmpty ? null : storageBucket,
       retentionMode: retentionMode.isEmpty ? null : retentionMode,
       expiresAt: _optionalDate(data['expiresAt']),
       deleteAt: _optionalDate(data['deleteAt']),
@@ -669,6 +706,13 @@ class SnackChatMessage {
       if (fileSize != null) 'fileSize': fileSize,
       if (storagePath != null && storagePath!.isNotEmpty)
         'storagePath': storagePath,
+      if (videoDurationMs != null) 'videoDurationMs': videoDurationMs,
+      if (videoWidth != null) 'videoWidth': videoWidth,
+      if (videoHeight != null) 'videoHeight': videoHeight,
+      if (videoThumbnail != null && videoThumbnail!.isNotEmpty)
+        'videoThumbnail': videoThumbnail,
+      if (storageBucket != null && storageBucket!.isNotEmpty)
+        'storageBucket': storageBucket,
       if (retentionMode != null && retentionMode!.isNotEmpty)
         'retentionMode': retentionMode,
       if (expiresAt != null) 'expiresAt': Timestamp.fromDate(expiresAt!),
@@ -705,6 +749,11 @@ class SnackChatMessage {
     String? mimeType,
     int? fileSize,
     String? storagePath,
+    int? videoDurationMs,
+    int? videoWidth,
+    int? videoHeight,
+    String? videoThumbnail,
+    String? storageBucket,
     String? retentionMode,
     DateTime? expiresAt,
     DateTime? deleteAt,
@@ -761,6 +810,11 @@ class SnackChatMessage {
       mimeType: mimeType ?? this.mimeType,
       fileSize: fileSize ?? this.fileSize,
       storagePath: storagePath ?? this.storagePath,
+      videoDurationMs: videoDurationMs ?? this.videoDurationMs,
+      videoWidth: videoWidth ?? this.videoWidth,
+      videoHeight: videoHeight ?? this.videoHeight,
+      videoThumbnail: videoThumbnail ?? this.videoThumbnail,
+      storageBucket: storageBucket ?? this.storageBucket,
       retentionMode: retentionMode ?? this.retentionMode,
       expiresAt: expiresAt ?? this.expiresAt,
       deleteAt: deleteAt ?? this.deleteAt,

@@ -3,6 +3,7 @@
 
 
 import 'package:flutter/material.dart';
+import '../ui/widgets/motion_press.dart';
 import 'package:cached_network_image/cached_network_image.dart';
 import 'package:intl/intl.dart';
 import '../models/review_post.dart';
@@ -509,36 +510,37 @@ class _ReviewDetailScreenState extends State<ReviewDetailScreen> {
                           (isChineseUi(context) ? '查看回顾图片' : Localizations.localeOf(context).languageCode == 'ko'
                               ? '리뷰 이미지 확대'
                               : 'Open review image'),
-                      child: GestureDetector(
-                        behavior: HitTestBehavior.opaque,
-                        onTap: () {
-                          showFullscreenImageViewer(
-                            context,
-                            imageUrls: review.imageUrls,
-                            initialIndex: index,
-                            heroTag: 'review_image_$index',
-                          );
-                        },
-                        child: Hero(
-                          tag: 'review_image_$index',
-                          child: ColoredBox(
-                            color: const Color(0xFFF2F4F7),
-                            child: CachedNetworkImage(
-                              imageUrl: imageUrl,
-                              cacheManager: AppImageCacheManager.instance,
-                              memCacheWidth: 1000,
-                              maxWidthDiskCache: 1600,
-                              fit: BoxFit.cover,
-                              fadeInDuration: Duration.zero,
-                              fadeOutDuration: Duration.zero,
-                              placeholder: (_, __) => const ColoredBox(
-                                color: Color(0xFFF2F4F7),
-                              ),
-                              errorWidget: (_, __, ___) => Center(
-                                child: Icon(
-                                  Icons.broken_image_outlined,
-                                  color: const Color(0xFF98A2B3),
-                                  size: context.ri(38).clamp(34, 42).toDouble(),
+                      child: MotionPress(
+                        pressedScale: .985,
+                        child: GestureDetector(
+                          behavior: HitTestBehavior.opaque,
+                          onTap: () {
+                            showFullscreenImageViewer(
+                              context,
+                              imageUrls: review.imageUrls,
+                              initialIndex: index,
+                              heroTag: 'review_image_$index',
+                            );
+                          },
+                          child: Hero(
+                            tag: 'review_image_$index',
+                            child: ColoredBox(
+                              color: const Color(0xFFF2F4F7),
+                              child: CachedNetworkImage(
+                                imageUrl: imageUrl,
+                                cacheManager: AppImageCacheManager.instance,
+                                memCacheWidth: 1000,
+                                maxWidthDiskCache: 1600,
+                                fit: BoxFit.cover,
+                                fadeInDuration: Duration.zero,
+                                fadeOutDuration: Duration.zero,
+                                placeholder: (_, __) => const ColoredBox(color: Color(0xFFF2F4F7)),
+                                errorWidget: (_, __, ___) => Center(
+                                  child: Icon(
+                                    Icons.broken_image_outlined,
+                                    color: const Color(0xFF98A2B3),
+                                    size: context.ri(38).clamp(34, 42).toDouble(),
+                                  ),
                                 ),
                               ),
                             ),

@@ -3,6 +3,8 @@ import 'dart:typed_data';
 import 'dart:ui' as ui;
 
 import 'package:cloud_functions/cloud_functions.dart';
+
+import '../config/app_backend.dart';
 import 'package:firebase_storage/firebase_storage.dart';
 import 'package:flutter_image_compress/flutter_image_compress.dart';
 
@@ -30,7 +32,7 @@ class InstagramPreviewPersistenceService {
   static const int _maximumLongEdge = 1280;
   static const int _jpegQuality = 85;
 
-  final FirebaseStorage _storage = FirebaseStorage.instance;
+  FirebaseStorage get _storage => AppStorage.uploads;
 
   Future<InstagramPreviewPersistenceResult> persist({
     required SharedLinkPreview preview,
@@ -109,7 +111,9 @@ class InstagramPreviewPersistenceService {
     final path = preview.thumbnailStoragePath.trim();
     if (path.isEmpty || !path.startsWith('post_link_previews/')) return;
     try {
-      await _storage.ref(path).delete().timeout(const Duration(seconds: 12));
+      await AppStorage.ref(path, storageBucket: preview.thumbnailStorageBucket)
+          .delete()
+          .timeout(const Duration(seconds: 12));
     } on FirebaseException catch (error) {
       if (error.code != 'object-not-found') rethrow;
     }
@@ -252,7 +256,7 @@ class InstagramPreviewPersistenceService {
     if (canonicalUrl.isEmpty || shortcode.isEmpty) return null;
 
     try {
-      final response = await FirebaseFunctions.instance
+      final response = await AppFunctions.instance
           .httpsCallable('persistInstagramPreviewThumbnail')
           .call(<String, dynamic>{
         'postId': postId,
@@ -264,6 +268,7 @@ class InstagramPreviewPersistenceService {
       final data = Map<String, dynamic>.from(response.data as Map);
       final downloadUrl = (data['thumbnailUrl'] ?? '').toString();
       final storagePath = (data['thumbnailStoragePath'] ?? '').toString();
+      final storageBucket = (data['thumbnailStorageBucket'] ?? '').toString();
       final width = (data['width'] as num?)?.toInt() ?? 0;
       final height = (data['height'] as num?)?.toInt() ?? 0;
       if (downloadUrl.isEmpty ||
@@ -277,6 +282,7 @@ class InstagramPreviewPersistenceService {
           preview: preview,
           downloadUrl: downloadUrl,
           storagePath: storagePath,
+          storageBucket: storageBucket,
           source: (data['thumbnailSource'] ?? 'remote_resolver').toString(),
           width: width,
           height: height,
@@ -304,6 +310,7 @@ class InstagramPreviewPersistenceService {
     required SharedLinkPreview preview,
     required String downloadUrl,
     required String storagePath,
+    String? storageBucket,
     required String source,
     required int width,
     required int height,
@@ -311,6 +318,11 @@ class InstagramPreviewPersistenceService {
     return preview.copyWith(
       thumbnailUrl: downloadUrl,
       thumbnailStoragePath: storagePath,
+      // Client uploads always target AppStorage.uploads; the server reports
+      // its bucket explicitly.
+      thumbnailStorageBucket: (storageBucket ?? '').trim().isNotEmpty
+          ? storageBucket!.trim()
+          : AppStorage.uploadBucketName,
       thumbnailSource: source,
       thumbnailWidth: width,
       thumbnailHeight: height,

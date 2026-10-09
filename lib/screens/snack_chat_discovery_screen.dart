@@ -15,6 +15,7 @@ import '../services/snack_chat_file_transfer_service.dart';
 import '../services/snack_chat_local_cache_service.dart';
 import '../ui/widgets/fullscreen_image_viewer.dart';
 import '../ui/widgets/snack_chat_message_extras.dart';
+import '../ui/widgets/motion_press.dart';
 
 String snackDiscoveryText(
         BuildContext context, String ko, String en, String zh) =>
@@ -181,6 +182,8 @@ class _SnackChatDiscoveryScreenState extends State<SnackChatDiscoveryScreen> {
         'text': message.text,
         if (message.imagePath?.isNotEmpty == true)
           'imagePath': message.imagePath,
+        if (message.storageBucket?.isNotEmpty == true)
+          'storageBucket': message.storageBucket,
         if (message.imageUrl?.isNotEmpty == true) 'imageUrl': message.imageUrl,
         if (message.originalFileName?.isNotEmpty == true)
           'originalFileName': message.originalFileName,
@@ -435,6 +438,9 @@ class _SnackChatDiscoveryScreenState extends State<SnackChatDiscoveryScreen> {
       storagePaths: photos
           .map((item) => item['imagePath']?.toString())
           .toList(growable: false),
+      storageBuckets: photos
+          .map((item) => item['storageBucket']?.toString())
+          .toList(growable: false),
       initialIndex: index,
     );
   }
@@ -510,6 +516,7 @@ class _SnackChatDiscoveryScreenState extends State<SnackChatDiscoveryScreen> {
     final date = DateTime.fromMillisecondsSinceEpoch(millis);
     final messageId = (row['id'] ?? '').toString();
     final storagePath = (row['imagePath'] ?? '').toString().trim();
+    final storageBucket = (row['storageBucket'] ?? '').toString().trim();
     final imageUrl = (row['imageUrl'] ?? '').toString().trim();
     return Semantics(
       button: true,
@@ -518,7 +525,8 @@ class _SnackChatDiscoveryScreenState extends State<SnackChatDiscoveryScreen> {
         color: const Color(0xFFF2F4F7),
         borderRadius: BorderRadius.circular(8),
         clipBehavior: Clip.antiAlias,
-        child: InkWell(
+        child: MotionPress(
+pressedScale: .985, child: InkWell(
           onTap: () => _openPhoto(row),
           child: Stack(
             fit: StackFit.expand,
@@ -576,7 +584,7 @@ class _SnackChatDiscoveryScreenState extends State<SnackChatDiscoveryScreen> {
               ),
             ],
           ),
-        ),
+        )),
       ),
     );
   }
@@ -673,13 +681,14 @@ class _SnackChatDiscoveryScreenState extends State<SnackChatDiscoveryScreen> {
               ),
             ),
           if (_error != null)
-            TextButton(
+            MotionPress(
+pressedScale: .985, child: TextButton(
               style: TextButton.styleFrom(
                 foregroundColor: AppColors.pointColor,
               ),
               onPressed: () => _load(reset: _rows.isEmpty),
               child: Text(t('다시 시도', 'Retry', '重试')),
-            ),
+            )),
           if (!_loading && _error == null && _rows.isEmpty && !_hasMore)
             Text(
               t(
@@ -694,13 +703,14 @@ class _SnackChatDiscoveryScreenState extends State<SnackChatDiscoveryScreen> {
               ),
             ),
           if (_hasMore && !_loading)
-            TextButton(
+            MotionPress(
+pressedScale: .985, child: TextButton(
               style: TextButton.styleFrom(
                 foregroundColor: AppColors.pointColor,
               ),
               onPressed: _load,
               child: Text(t('더 보기', 'Load more', '加载更多')),
-            ),
+            )),
         ],
       ),
     );
@@ -791,8 +801,14 @@ class _SnackChatDiscoveryScreenState extends State<SnackChatDiscoveryScreen> {
 /// Uses the same authenticated Storage loader and account-scoped cache as the
 /// chat bubble, while retaining URL-only legacy image compatibility.
 class _CachedPhotoThumbnail extends StatelessWidget {
-  const _CachedPhotoThumbnail({super.key, this.storagePath, this.imageUrl});
+  const _CachedPhotoThumbnail({
+    super.key,
+    this.storagePath,
+    this.storageBucket,
+    this.imageUrl,
+  });
   final String? storagePath;
+  final String? storageBucket;
   final String? imageUrl;
 
   Widget _placeholder() => const ColoredBox(
@@ -808,6 +824,7 @@ class _CachedPhotoThumbnail extends StatelessWidget {
     if (path.isNotEmpty) {
       return SnackChatStorageImage(
         storagePath: path,
+        storageBucket: storageBucket,
         fit: BoxFit.cover,
         imageBuilder: (context, provider) => Image(
           image: ResizeImage(provider, width: 480),
@@ -859,7 +876,8 @@ class _FileLibraryRow extends StatelessWidget {
       if (size != null) _fileSize(size),
       sender,
     ].join(' · ');
-    return InkWell(
+    return MotionPress(
+enabled: !expired,pressedScale: .99, child: InkWell(
       onTap: expired ? null : onTap,
       borderRadius: BorderRadius.circular(8),
       child: Padding(
@@ -903,7 +921,7 @@ class _FileLibraryRow extends StatelessWidget {
           ],
         ),
       ),
-    );
+    ));
   }
 
   static String _fileSize(int bytes) {
@@ -937,7 +955,8 @@ class _LinkLibraryRow extends StatelessWidget {
     return Column(
       children: [
         for (final link in links)
-          InkWell(
+          MotionPress(
+pressedScale: .99, child: InkWell(
             onTap: () => onOpen(link),
             borderRadius: BorderRadius.circular(8),
             child: Padding(
@@ -981,7 +1000,7 @@ class _LinkLibraryRow extends StatelessWidget {
                 ],
               ),
             ),
-          ),
+          )),
       ],
     );
   }

@@ -1,11 +1,19 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:wefilling/models/meetup.dart';
+import 'package:wefilling/l10n/app_localizations.dart';
 import 'package:wefilling/ui/widgets/audience_ring.dart';
 import 'package:wefilling/ui/widgets/board_meetup_card.dart';
 import 'package:wefilling/ui/widgets/meetup_public_countdown.dart';
+import 'package:wefilling/ui/widgets/motion_press.dart';
+import 'support/translation_test_backend.dart';
 
 void main() {
+  TestWidgetsFlutterBinding.ensureInitialized();
+  final backend = TranslationTestBackend();
+  setUpAll(backend.initialize);
+  tearDownAll(backend.close);
+
   Meetup buildMeetup({
     String visibility = 'category',
     DateTime? publicExpiresAt,
@@ -41,6 +49,9 @@ void main() {
 
     await tester.pumpWidget(
       MaterialApp(
+        localizationsDelegates: AppLocalizations.localizationsDelegates,
+        supportedLocales: AppLocalizations.supportedLocales,
+        locale: const Locale('en'),
         home: MediaQuery(
           data: MediaQueryData(
             size: surfaceSize,
@@ -158,6 +169,40 @@ void main() {
       tester.getSize(find.byKey(const Key('meetup-card'))).height,
       lessThanOrEqualTo(110),
     );
+    expect(tester.takeException(), isNull);
+  });
+
+  testWidgets('location press keeps card navigation independent',
+      (tester) async {
+    var locationTaps = 0;
+    var cardTaps = 0;
+    await tester.pumpWidget(MaterialApp(
+      localizationsDelegates: AppLocalizations.localizationsDelegates,
+      supportedLocales: AppLocalizations.supportedLocales,
+      locale: const Locale('en'),
+      home: Scaffold(
+          body: BoardMeetupCard(
+        meetup: buildMeetup(),
+        onTap: () => cardTaps++,
+        onLocationTap: () => locationTaps++,
+      )),
+    ));
+    await tester.pumpAndSettle();
+    final gesture = await tester.startGesture(tester.getCenter(
+        find.text('A deliberately long location that must use an ellipsis')));
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 100));
+    final scale = tester
+        .widget<Transform>(find.descendant(
+            of: find.byType(MotionPress), matching: find.byType(Transform)))
+        .transform
+        .storage[0];
+    expect(scale, closeTo(.99, .001));
+    expect(locationTaps, 0);
+    await gesture.up();
+    expect(locationTaps, 1);
+    expect(cardTaps, 0);
+    await tester.pumpAndSettle();
     expect(tester.takeException(), isNull);
   });
 

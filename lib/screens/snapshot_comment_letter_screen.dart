@@ -455,6 +455,7 @@ class _SnapshotCommentLetterScreenState
       authorNationality: '',
       university: '',
       storagePath: storagePath,
+      storageBucket: letter.sourceImageStorageBucket,
       imageUrl: imageUrl,
       visibility: SnapshotVisibility.friends,
       createdAt: letter.sourceCreatedAt ?? DateTime.now(),

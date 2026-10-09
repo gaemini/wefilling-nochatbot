@@ -6,6 +6,7 @@ import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:visibility_detector/visibility_detector.dart';
 
+import '../services/active_content_registry.dart';
 import '../services/fcm_service.dart';
 import '../services/notification_service.dart';
 
@@ -50,8 +51,21 @@ class _NotificationReadObserverState extends State<NotificationReadObserver>
 
   @override
   void dispose() {
+    ActiveContentRegistry.unregister(this);
     WidgetsBinding.instance.removeObserver(this);
     super.dispose();
+  }
+
+  /// While this content is actually visible, pushes and unread documents
+  /// matching it are auto-read (see [ActiveContentRegistry]). Visibility is
+  /// the same evidence the one-shot read below relies on.
+  void _syncActiveScope() {
+    if (_visible && mounted && _owner != null) {
+      ActiveContentRegistry.register(this,
+          types: widget.types, targets: widget.targets);
+    } else {
+      ActiveContentRegistry.unregister(this);
+    }
   }
 
   @override
@@ -63,6 +77,7 @@ class _NotificationReadObserverState extends State<NotificationReadObserver>
       _requestGeneration++;
       _completed = false;
       _failures = 0;
+      _syncActiveScope();
       if (!_inFlight) _requestRead();
     }
   }
@@ -110,6 +125,7 @@ class _NotificationReadObserverState extends State<NotificationReadObserver>
           key: _visibilityKey,
           onVisibilityChanged: (visibility) {
             _visible = visibility.visibleFraction > 0;
+            _syncActiveScope();
             _requestRead();
           },
           child: widget.child,

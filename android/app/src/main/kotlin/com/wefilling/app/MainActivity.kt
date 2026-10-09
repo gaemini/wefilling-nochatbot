@@ -166,6 +166,8 @@ class MainActivity : FlutterActivity() {
                     recordLocalNotificationMetadata(call.arguments as? Map<*, *>, result)
                 "registerTodoNotificationMetadata" ->
                     registerTodoNotificationMetadata(call.arguments as? Map<*, *>, result)
+                "cancelNotificationSlot" ->
+                    cancelNotificationSlot(call.arguments as? Map<*, *>, result)
                 else -> result.notImplemented()
             }
         }
@@ -279,6 +281,31 @@ class MainActivity : FlutterActivity() {
         }
     }
 
+    /**
+     * Cancels exactly one notification slot (tag + id). Used before a local
+     * chat card is posted so the card FCM rendered for the same room (always
+     * id 0) does not remain next to it.
+     */
+    private fun cancelNotificationSlot(
+        rawArguments: Map<*, *>?,
+        result: MethodChannel.Result,
+    ) {
+        val arguments = rawArguments ?: emptyMap<Any, Any>()
+        val tag = arguments["tag"]?.toString()?.trim().orEmpty()
+        val id = arguments["id"]?.toString()?.toIntOrNull() ?: 0
+        if (tag.isEmpty()) {
+            result.success(false)
+            return
+        }
+        try {
+            val manager = getSystemService(NOTIFICATION_SERVICE) as android.app.NotificationManager
+            manager.cancel(tag, id)
+            result.success(true)
+        } catch (error: Exception) {
+            result.success(false)
+        }
+    }
+
     private fun removeDeliveredNotifications(
         rawArguments: Map<*, *>?,
         result: MethodChannel.Result,
@@ -377,10 +404,11 @@ class MainActivity : FlutterActivity() {
                         val exactRead = seconds > 0L && nanos in 0..999999999L &&
                             throughSeconds > 0L && throughNanos in 0..999999999L &&
                             (seconds < throughSeconds || (seconds == throughSeconds && nanos <= throughNanos))
+                        (removeAllInRoom && exactTag && roomId.isNotEmpty()) ||
                         (payload["type"] == "dm_received" &&
                             roomId.isNotEmpty() &&
                             payload["conversationId"] == roomId &&
-                            (exactRead || (throughSentAtMillis > 0L &&
+                            (removeAllInRoom || exactRead || (throughSentAtMillis > 0L &&
                             sentAtMillis in 1..throughSentAtMillis)))
                     }
                     else -> false

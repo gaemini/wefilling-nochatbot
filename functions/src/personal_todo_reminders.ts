@@ -1,6 +1,6 @@
 import * as admin from 'firebase-admin';
 import * as crypto from 'crypto';
-import * as functions from 'firebase-functions';
+import {triggers} from './backend';
 import {runtimeInfo, runtimeLogsEnabled} from './runtime_logging';
 
 type SupportedLanguage = 'ko' | 'en';
@@ -224,7 +224,7 @@ async function removeInvalidTokens(
   await batch.commit();
 }
 
-export const sendDailyPersonalTodoReminders = functions
+export const sendDailyPersonalTodoReminders = triggers()
   .runWith({timeoutSeconds: 540, memory: '1GB'})
   // 사용자 지정 시각을 분 단위로 정확히 적용한다. 알림 설정 문서가 없는
   // 레거시 사용자는 기존과 동일하게 오전 8시(KST)에 처리한다.

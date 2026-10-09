@@ -5,11 +5,13 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 
 import '../constants/app_constants.dart';
+import '../design/tokens.dart';
 import '../models/snapshot.dart';
 import '../services/dm_service.dart';
 import '../services/report_service.dart';
 import '../services/snapshot_service.dart';
 import '../services/notification_service.dart';
+import '../services/active_content_registry.dart';
 import '../snapshot/snapshot_storage_image.dart';
 import '../snapshot/snapshot_storage_video.dart';
 import '../snapshot/snapshot_author_profile_image.dart';
@@ -17,6 +19,7 @@ import '../snapshot/snapshot_strings.dart';
 import '../ui/snackbar/app_snackbar.dart';
 import '../ui/widgets/motion_press.dart';
 import '../ui/widgets/motion_state_icon.dart';
+import '../ui/widgets/motion_selection_pulse.dart';
 import '../utils/responsive_helper.dart';
 import 'dm_chat_screen.dart';
 import 'friend_profile_screen.dart';
@@ -26,6 +29,69 @@ import '../l10n/ui_locale.dart';
 
 /// 상세 화면에서도 작성 화면에서 합성한 전체 프레임을 보존한다.
 const BoxFit snapshotDetailImageFit = BoxFit.contain;
+
+class SnapshotDetailMotionRoute extends MaterialPageRoute<void> {
+  SnapshotDetailMotionRoute({
+    required List<SnapshotItem> snapshots,
+    required int initialIndex,
+  }) : super(
+            builder: (_) => SnapshotDetailScreen(
+                snapshots: snapshots, initialIndex: initialIndex));
+
+  @override
+  Duration get transitionDuration => MotionTokens.medium;
+
+  @override
+  Duration get reverseTransitionDuration => MotionTokens.state;
+
+  @override
+  Widget buildTransitions(BuildContext context, Animation<double> animation,
+      Animation<double> secondaryAnimation, Widget child) {
+    // Keep the platform's interactive back transition, not just its recognizer.
+    if (!MotionTokens.reduceMotion(context) &&
+        (Theme.of(context).platform == TargetPlatform.iOS ||
+            navigator?.userGestureInProgress == true)) {
+      return super.buildTransitions(
+          context, animation, secondaryAnimation, child);
+    }
+    final curved = animation.drive(CurveTween(curve: MotionTokens.decelerate));
+    return FadeTransition(
+      opacity: curved,
+      child: MotionTokens.reduceMotion(context)
+          ? child
+          : SlideTransition(
+              position: curved
+                  .drive(Tween(begin: const Offset(0, .015), end: Offset.zero)),
+              child: child,
+            ),
+    );
+  }
+}
+
+/// Paint-only page motion. It does not create or control the media player.
+class SnapshotPageTransition extends StatelessWidget {
+  const SnapshotPageTransition(
+      {super.key,
+      required this.progress,
+      required this.direction,
+      required this.child});
+  final double progress;
+  final int direction;
+  final Widget child;
+
+  @override
+  Widget build(BuildContext context) => Opacity(
+        opacity: progress,
+        child: Transform.translate(
+          offset: Offset(
+              MotionTokens.reduceMotion(context)
+                  ? 0
+                  : direction * 12 * (1 - progress),
+              0),
+          child: child,
+        ),
+      );
+}
 
 class SnapshotDetailScreen extends StatefulWidget {
   const SnapshotDetailScreen({
@@ -47,7 +113,9 @@ class SnapshotDetailScreen extends StatefulWidget {
 
 class _SnapshotDetailScreenState extends State<SnapshotDetailScreen>
     with WidgetsBindingObserver {
-  static const Duration _switchDuration = Duration(milliseconds: 240);
+  Duration get _switchDuration => MotionTokens.reduceMotion(context)
+      ? MotionTokens.instant
+      : MotionTokens.state;
 
   final SnapshotService _service = SnapshotService.instance;
   final DMService _dmService = DMService();
@@ -56,6 +124,7 @@ class _SnapshotDetailScreenState extends State<SnapshotDetailScreen>
   Timer? _ticker;
   Timer? _switchTimer;
   bool _isSwitching = false;
+  int _pageTransitionDirection = 0;
   bool _isHolding = false;
   bool _isAppInactive = false;
   bool _isComposingComment = false;
@@ -140,6 +209,7 @@ class _SnapshotDetailScreenState extends State<SnapshotDetailScreen>
 
   @override
   void dispose() {
+    ActiveContentRegistry.unregister(this);
     WidgetsBinding.instance.removeObserver(this);
     unawaited(_service.cancelVideoPreloads());
     _ticker?.cancel();
@@ -221,14 +291,20 @@ class _SnapshotDetailScreenState extends State<SnapshotDetailScreen>
         _isAppInactive ||
         _isModalPaused) return;
     final item = _current;
+    // Capture owner/session now, like the other destination screens, so a
+    // sign-out during the request can never confirm a read for a new account.
     unawaited(
       NotificationService().markRelatedNotificationsAsRead(
         types: const <String>{
           'snapshot_reaction',
         },
         targets: <String, String>{'snapshotId': item.id},
+        readContext: NotificationService.captureReadContext(),
       ),
     );
+    ActiveContentRegistry.register(this,
+        types: const <String>{'snapshot_reaction'},
+        targets: <String, String>{'snapshotId': item.id});
   }
 
   Future<void> _openComments({String? focusCommentId, bool focusInput = false}) async {
@@ -394,6 +470,7 @@ class _SnapshotDetailScreenState extends State<SnapshotDetailScreen>
     _switchTimer?.cancel();
     if (haptic) HapticFeedback.selectionClick();
     setState(() {
+      _pageTransitionDirection = targetIndex > _index ? 1 : -1;
       _index = targetIndex;
       _isSwitching = true;
       _mediaReadyId = null;
@@ -700,9 +777,13 @@ class _SnapshotDetailScreenState extends State<SnapshotDetailScreen>
                       key: ValueKey<String>('snapshot-page-${_current.id}'),
                       tween: Tween<double>(begin: 0, end: 1),
                       duration: _switchDuration,
-                      curve: Curves.easeOutCubic,
+                      curve: MotionTokens.curve,
                       builder: (context, opacity, child) =>
-                          Opacity(opacity: opacity, child: child),
+                          SnapshotPageTransition(
+                        progress: opacity,
+                        direction: _pageTransitionDirection,
+                        child: child!,
+                      ),
                       child: _SnapshotDetailPage(
                         snapshot: _current,
                         service: _service,
@@ -1141,6 +1222,7 @@ class _SnapshotCommentEntry extends StatelessWidget {
   Widget build(BuildContext context) {
     final safeCount = count.clamp(0, 1 << 30);
     return MotionPress(
+      pressedScale: .975,
       child: Semantics(
         button: true,
         label: '${strings.comments} $safeCount',
@@ -1179,14 +1261,17 @@ class _SnapshotCommentEntry extends StatelessWidget {
                       ),
                     ),
                     const SizedBox(width: 4),
-                    Text(
-                      _compactCount(safeCount),
-                      style: TextStyle(
-                        fontFamily: uiFontFamily(context, 'Inter'),
-                        fontFamilyFallback: const ['NotoSansKR'],
-                        fontSize: context.rf(12).clamp(11, 13).toDouble(),
-                        fontWeight: FontWeight.w700,
-                        color: const Color(0xFF475467),
+                    _SnapshotCountTransition(
+                      count: safeCount,
+                      child: Text(
+                        _compactCount(safeCount),
+                        style: TextStyle(
+                          fontFamily: uiFontFamily(context, 'Inter'),
+                          fontFamilyFallback: const ['NotoSansKR'],
+                          fontSize: context.rf(12).clamp(11, 13).toDouble(),
+                          fontWeight: FontWeight.w700,
+                          color: const Color(0xFF475467),
+                        ),
                       ),
                     ),
                   ],
@@ -1225,6 +1310,8 @@ class _SnapshotBottomAction extends StatelessWidget {
     final semanticsLabel = safeCount == null ? label : '$label $safeCount';
     return MotionPress(
       enabled: onTap != null,
+      resetToken: selected,
+      pressedScale: animateSelection ? .88 : .9,
       child: Semantics(
         button: onTap != null,
         enabled: onTap != null,
@@ -1245,12 +1332,15 @@ class _SnapshotBottomAction extends StatelessWidget {
                   mainAxisAlignment: MainAxisAlignment.center,
                   children: [
                     if (animateSelection)
-                      MotionStateIcon(
+                      MotionSelectionPulse(
                         selected: selected,
-                        inactiveIcon: Icons.favorite_border_rounded,
-                        activeIcon: Icons.favorite_rounded,
-                        color: iconColor,
-                        size: context.ri(25).clamp(23, 27).toDouble(),
+                        child: MotionStateIcon(
+                          selected: selected,
+                          inactiveIcon: Icons.favorite_border_rounded,
+                          activeIcon: Icons.favorite_rounded,
+                          color: iconColor,
+                          size: context.ri(25).clamp(23, 27).toDouble(),
+                        ),
                       )
                     else
                       Icon(
@@ -1260,15 +1350,18 @@ class _SnapshotBottomAction extends StatelessWidget {
                       ),
                     if (safeCount != null) ...[
                       const SizedBox(width: 4),
-                      Text(
-                        _compactCount(safeCount),
-                        maxLines: 1,
-                        style: TextStyle(
-                          fontFamily: uiFontFamily(context, 'Inter'),
-                          fontFamilyFallback: const ['NotoSansKR'],
-                          color: const Color(0xFF475467),
-                          fontSize: context.rf(12).clamp(11.5, 13).toDouble(),
-                          fontWeight: FontWeight.w700,
+                      _SnapshotCountTransition(
+                        count: safeCount,
+                        child: Text(
+                          _compactCount(safeCount),
+                          maxLines: 1,
+                          style: TextStyle(
+                            fontFamily: uiFontFamily(context, 'Inter'),
+                            fontFamilyFallback: const ['NotoSansKR'],
+                            color: const Color(0xFF475467),
+                            fontSize: context.rf(12).clamp(11.5, 13).toDouble(),
+                            fontWeight: FontWeight.w700,
+                          ),
                         ),
                       ),
                     ],
@@ -1281,6 +1374,22 @@ class _SnapshotBottomAction extends StatelessWidget {
       ),
     );
   }
+}
+
+class _SnapshotCountTransition extends StatelessWidget {
+  const _SnapshotCountTransition({required this.count, required this.child});
+  final int count;
+  final Widget child;
+
+  @override
+  Widget build(BuildContext context) => AnimatedSwitcher(
+        duration: MotionTokens.reduceMotion(context)
+            ? Duration.zero
+            : MotionTokens.state,
+        transitionBuilder: (child, animation) =>
+            FadeTransition(opacity: animation, child: child),
+        child: KeyedSubtree(key: ValueKey(count), child: child),
+      );
 }
 
 class _SnapshotViewerCountAction extends StatefulWidget {
@@ -1670,16 +1779,19 @@ class _SnapshotTopRegion extends StatelessWidget {
               children: [
                 SizedBox.square(
                   dimension: 48,
-                  child: IconButton(
-                    onPressed: onBack,
-                    icon: Icon(
-                      Icons.arrow_back_rounded,
-                      size: context.ri(22).clamp(21, 24).toDouble(),
-                      color: const Color(0xFF111827),
+                  child: MotionPress(
+                    pressedScale: .9,
+                    child: IconButton(
+                      onPressed: onBack,
+                      icon: Icon(
+                        Icons.arrow_back_rounded,
+                        size: context.ri(22).clamp(21, 24).toDouble(),
+                        color: const Color(0xFF111827),
+                      ),
+                      tooltip: MaterialLocalizations.of(
+                        context,
+                      ).backButtonTooltip,
                     ),
-                    tooltip: MaterialLocalizations.of(
-                      context,
-                    ).backButtonTooltip,
                   ),
                 ),
                 Expanded(
@@ -1687,14 +1799,18 @@ class _SnapshotTopRegion extends StatelessWidget {
                     button: true,
                     enabled: onAuthorTap != null,
                     label: snapshot.authorName,
-                    child: GestureDetector(
-                      behavior: HitTestBehavior.opaque,
-                      onTap: onAuthorTap,
-                      child: Padding(
-                        padding: const EdgeInsets.symmetric(horizontal: 4),
-                        child: _SnapshotAuthorHeader(
-                          snapshot: snapshot,
-                          createdLabel: createdLabel,
+                    child: MotionPress(
+                      enabled: onAuthorTap != null,
+                      pressedScale: .99,
+                      child: GestureDetector(
+                        behavior: HitTestBehavior.opaque,
+                        onTap: onAuthorTap,
+                        child: Padding(
+                          padding: const EdgeInsets.symmetric(horizontal: 4),
+                          child: _SnapshotAuthorHeader(
+                            snapshot: snapshot,
+                            createdLabel: createdLabel,
+                          ),
                         ),
                       ),
                     ),
@@ -1702,14 +1818,19 @@ class _SnapshotTopRegion extends StatelessWidget {
                 ),
                 SizedBox.square(
                   dimension: 48,
-                  child: IconButton(
-                    onPressed: onMore,
-                    icon: Icon(
-                      Icons.more_horiz_rounded,
-                      size: context.ri(23).clamp(21, 25).toDouble(),
-                      color: const Color(0xFF111827),
+                  child: MotionPress(
+                    enabled: onMore != null,
+                    pressedScale: .9,
+                    child: IconButton(
+                      onPressed: onMore,
+                      icon: Icon(
+                        Icons.more_horiz_rounded,
+                        size: context.ri(23).clamp(21, 25).toDouble(),
+                        color: const Color(0xFF111827),
+                      ),
+                      tooltip:
+                          MaterialLocalizations.of(context).showMenuTooltip,
                     ),
-                    tooltip: MaterialLocalizations.of(context).showMenuTooltip,
                   ),
                 ),
               ],

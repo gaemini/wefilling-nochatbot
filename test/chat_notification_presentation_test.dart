@@ -30,8 +30,8 @@ ChatNotificationPresentation preview({
     }, owner: owner, fallbackTitle: 'Legacy', fallbackBody: 'Legacy body')!;
 
 void main() {
-  test('rollout is opt-in by default', () {
-    expect(chatPushPresentationV2, isFalse);
+  test('v2 presentation ships on by default since 1.3.24 (kill switch is the dart-define)', () {
+    expect(chatPushPresentationV2, isTrue);
   });
   test('Snack room title and sender are separate, new preview takes priority',
       () {

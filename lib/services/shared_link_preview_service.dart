@@ -1,6 +1,7 @@
 import 'dart:async';
 
-import 'package:cloud_functions/cloud_functions.dart';
+
+import '../config/app_backend.dart';
 
 import '../models/shared_link_preview.dart';
 
@@ -26,7 +27,7 @@ class SharedLinkPreviewService {
   Future<SharedLinkPreview> resolve(String url) async {
     final provider = providerForUrl(url);
     try {
-      final result = await FirebaseFunctions.instance
+      final result = await AppFunctions.instance
           .httpsCallable('resolveSharedLink')
           .call(<String, dynamic>{'url': url}).timeout(
               const Duration(seconds: 12));

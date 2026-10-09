@@ -2,6 +2,7 @@ import 'dart:async';
 import 'dart:io';
 import 'package:flutter/cupertino.dart';
 import 'package:flutter/material.dart';
+import '../ui/widgets/motion_press.dart';
 import 'package:flutter/services.dart';
 import 'package:provider/provider.dart';
 import 'package:table_calendar/table_calendar.dart';
@@ -21,6 +22,9 @@ import '../ui/snackbar/app_snackbar.dart';
 import '../ui/sheets/participant_count_sheet.dart';
 import '../utils/responsive_helper.dart';
 import '../l10n/ui_locale.dart';
+import '../design/tokens.dart';
+import '../ui/widgets/motion_selectable.dart';
+import '../ui/widgets/motion_processing_button.dart';
 
 // 모임 생성화면
 // 모임 정보 입력 및 저장
@@ -1207,25 +1211,17 @@ class _CreateMeetupScreenState extends State<CreateMeetupScreen> {
                                                   Positioned(
                                                     top: 10,
                                                     right: 10,
-                                                    child: GestureDetector(
-                                                      onTap: () =>
-                                                          _removeMeetupImageAt(
-                                                              0),
-                                                      child: Container(
-                                                        padding:
-                                                            const EdgeInsets
-                                                                .all(6),
-                                                        decoration:
-                                                            const BoxDecoration(
-                                                          color:
-                                                              Color(0xCC111827),
-                                                          shape:
-                                                              BoxShape.circle,
-                                                        ),
-                                                        child: const Icon(
-                                                          Icons.close_rounded,
-                                                          color: Colors.white,
-                                                          size: 18,
+                                                    child: MotionPress(
+                                                      pressedScale: .92,
+                                                      child: GestureDetector(
+                                                        onTap: () => _removeMeetupImageAt(0),
+                                                        child: Container(
+                                                          padding: const EdgeInsets.all(6),
+                                                          decoration: const BoxDecoration(
+                                                            color: Color(0xCC111827),
+                                                            shape: BoxShape.circle,
+                                                          ),
+                                                          child: const Icon(Icons.close_rounded, color: Colors.white, size: 18),
                                                         ),
                                                       ),
                                                     ),
@@ -1641,39 +1637,46 @@ class _CreateMeetupScreenState extends State<CreateMeetupScreen> {
         ? Colors.white
         : (isDisabled ? const Color(0xFFB0B7C3) : const Color(0xFF475467));
 
-    return SizedBox(
-      height: context.rh(48, min: 44, max: 50),
-      child: Material(
-        color: backgroundColor,
-        borderRadius: BorderRadius.circular(12),
-        child: InkWell(
-          onTap: isDisabled ? null : onPressed,
+    // Primary = processing type (press + existing busy spinner; success pops
+    // the screen so no success phase). Secondary (cancel) = cautious type.
+    return MotionProcessingButton(
+      busy: isLoading,
+      onPressed: onPressed,
+      pressedScale:
+          isPrimary ? .975 : MotionProcessingButton.cautiousScale,
+      foreground: textColor,
+      spinner: const SizedBox(
+        width: 18,
+        height: 18,
+        child: CircularProgressIndicator(
+          strokeWidth: 2.2,
+          color: Colors.white,
+        ),
+      ),
+      label: Text(
+        label,
+        style: TextStyle(
+          fontFamily: uiFontFamily(context, 'Inter'),
+          fontFamilyFallback: const ['NotoSansKR'],
+          fontSize: context.rf(15).clamp(14, 16).toDouble(),
+          fontWeight: FontWeight.w700,
+          color: textColor,
+        ),
+      ),
+      builder: (context, callback, child) => SizedBox(
+        height: context.rh(48, min: 44, max: 50),
+        child: Material(
+          color: backgroundColor,
           borderRadius: BorderRadius.circular(12),
-          child: Ink(
-            decoration: BoxDecoration(
-              color: backgroundColor,
-              borderRadius: BorderRadius.circular(12),
-            ),
-            child: Center(
-              child: isLoading
-                  ? const SizedBox(
-                      width: 18,
-                      height: 18,
-                      child: CircularProgressIndicator(
-                        strokeWidth: 2.2,
-                        color: Colors.white,
-                      ),
-                    )
-                  : Text(
-                      label,
-                      style: TextStyle(
-                        fontFamily: uiFontFamily(context, 'Inter'),
-                        fontFamilyFallback: const ['NotoSansKR'],
-                        fontSize: context.rf(15).clamp(14, 16).toDouble(),
-                        fontWeight: FontWeight.w700,
-                        color: textColor,
-                      ),
-                    ),
+          child: InkWell(
+            onTap: callback,
+            borderRadius: BorderRadius.circular(12),
+            child: Ink(
+              decoration: BoxDecoration(
+                color: backgroundColor,
+                borderRadius: BorderRadius.circular(12),
+              ),
+              child: Center(child: child),
             ),
           ),
         ),
@@ -2453,13 +2456,16 @@ class _VisibilitySegmentedControl extends StatelessWidget {
       required VoidCallback onTap,
     }) {
       return Expanded(
-        child: Material(
+        child: MotionSelectable(
+          selected: isSelected,
+          pressedScale: MotionSelectable.segmentScale,
+          child: Material(
           color: Colors.transparent,
           child: InkWell(
             onTap: onTap,
             child: AnimatedContainer(
-              duration: const Duration(milliseconds: 160),
-              curve: Curves.easeOut,
+              duration: MotionTokens.of(context, MotionTokens.state),
+              curve: MotionTokens.curve,
               constraints: const BoxConstraints(minHeight: 44),
               padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 9),
               alignment: Alignment.center,
@@ -2473,7 +2479,9 @@ class _VisibilitySegmentedControl extends StatelessWidget {
                   ),
                 ),
               ),
-              child: DefaultTextStyle(
+              child: AnimatedDefaultTextStyle(
+                duration: MotionTokens.of(context, MotionTokens.state),
+                curve: MotionTokens.curve,
                 style: TextStyle(
                   fontFamily: uiFontFamily(context, 'Inter'),
                   fontFamilyFallback: const ['NotoSansKR'],
@@ -2491,6 +2499,7 @@ class _VisibilitySegmentedControl extends StatelessWidget {
               ),
             ),
           ),
+        ),
         ),
       );
     }
@@ -2670,18 +2679,17 @@ class _MiniImageThumb extends StatelessWidget {
           Positioned(
             top: 6,
             right: 6,
-            child: GestureDetector(
-              onTap: onRemove,
-              child: Container(
-                padding: const EdgeInsets.all(4),
-                decoration: const BoxDecoration(
-                  color: Color(0xCC111827),
-                  shape: BoxShape.circle,
-                ),
-                child: const Icon(
-                  Icons.close_rounded,
-                  color: Colors.white,
-                  size: 14,
+            child: MotionPress(
+              pressedScale: .92,
+              child: GestureDetector(
+                onTap: onRemove,
+                child: Container(
+                  padding: const EdgeInsets.all(4),
+                  decoration: const BoxDecoration(
+                    color: Color(0xCC111827),
+                    shape: BoxShape.circle,
+                  ),
+                  child: const Icon(Icons.close_rounded, color: Colors.white, size: 14),
                 ),
               ),
             ),

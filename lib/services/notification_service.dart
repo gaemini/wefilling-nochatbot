@@ -554,6 +554,42 @@ class NotificationService {
     return 0;
   }
 
+  /// Marks already-fetched unread documents read and runs the shared
+  /// confirmed-read post-processing (OS card removal, badge refresh). Used by
+  /// the active-content feed; the caller has already matched each document
+  /// against a visible, target-bound scope.
+  Future<int> markNotificationDocumentsAsRead(
+    List<QueryDocumentSnapshot<Map<String, dynamic>>> documents, {
+    required String owner,
+    required int session,
+  }) async {
+    var count = 0;
+    for (var offset = 0; offset < documents.length; offset += 450) {
+      if (!FCMService().isNotificationSession(owner, session)) break;
+      final portion = documents.sublist(
+          offset, (offset + 450).clamp(0, documents.length).toInt());
+      final batch = _firestore.batch();
+      var pending = 0;
+      for (final document in portion) {
+        final data = document.data();
+        if (data['userId'] != owner || data['isRead'] == true) continue;
+        batch.update(document.reference, {'isRead': true});
+        pending++;
+      }
+      if (pending == 0) continue;
+      await batch.commit();
+      count += pending;
+      _afterConfirmedRead(
+          portion
+              .where((doc) =>
+                  doc.data()['userId'] == owner && doc.data()['isRead'] != true)
+              .map((doc) => doc.id),
+          owner,
+          session);
+    }
+    return count;
+  }
+
   void _afterConfirmedRead(Iterable<String> ids, String owner, int session) {
     if (!FCMService().isNotificationSession(owner, session)) return;
     unawaited(FCMService().cancelAppNotifications(ids,

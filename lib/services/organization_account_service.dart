@@ -2,6 +2,8 @@ import 'dart:async';
 import 'dart:io';
 
 import 'package:cloud_functions/cloud_functions.dart';
+
+import '../config/app_backend.dart';
 import 'package:flutter/foundation.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter/widgets.dart';
@@ -44,7 +46,7 @@ class OrganizationAccountService extends ChangeNotifier
   static const MethodChannel _channel =
       MethodChannel('com.wefilling.app/organization_invite');
 
-  final FirebaseFunctions _functions = FirebaseFunctions.instance;
+  final FirebaseFunctions _functions = AppFunctions.instance;
   OrganizationInviteState _state = OrganizationInviteState.idle;
   OrganizationInvitePreview? _preview;
   String? _token;

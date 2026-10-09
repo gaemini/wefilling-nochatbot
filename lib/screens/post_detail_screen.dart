@@ -46,6 +46,7 @@ import '../ui/widgets/post_action_group.dart';
 import '../ui/widgets/post_friend_request_button.dart';
 import '../ui/widgets/motion_press.dart';
 import '../ui/widgets/adaptive_post_image_frame.dart';
+import '../ui/widgets/feed_video_player.dart';
 import '../ui/widgets/instagram_embed_preview.dart';
 import '../ui/widgets/translatable_content.dart';
 import '../ui/widgets/shared_link_preview_card.dart';
@@ -55,6 +56,7 @@ import '../ui/widgets/hanyang_verification_gate.dart';
 import '../services/user_info_cache_service.dart';
 import '../services/cache/app_image_cache_manager.dart';
 import '../services/notification_service.dart';
+import '../services/active_content_registry.dart';
 import '../l10n/ui_locale.dart';
 import '../snapshot/snapshot_strings.dart';
 import '../utils/comment_gif_input.dart';
@@ -81,6 +83,11 @@ class PostDetailMotionRoute extends MaterialPageRoute<bool> {
     final opacity = animation.drive(CurveTween(curve: MotionTokens.decelerate));
     if (MotionTokens.reduceMotion(context)) {
       return FadeTransition(opacity: opacity, child: child);
+    }
+    if (Theme.of(context).platform == TargetPlatform.iOS ||
+        navigator?.userGestureInProgress == true) {
+      return super.buildTransitions(
+          context, animation, secondaryAnimation, child);
     }
     return FadeTransition(
       opacity: opacity,
@@ -309,6 +316,10 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
         readContext: readContext,
         targets: {'postId': refreshed.id},
       ));
+      // Likes arriving while this post stays open are auto-read as well.
+      ActiveContentRegistry.register(this,
+          types: const {'post_created', 'post_private', 'new_like'},
+          targets: {'postId': refreshed.id});
 
       // 작성자 글에는 북마크 UI가 없으므로 저장 상태 조회 불필요
       if (!_isAuthor) {
@@ -692,6 +703,7 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
 
   @override
   void dispose() {
+    ActiveContentRegistry.unregister(this);
     _engagementSubscription?.cancel();
     _likeHoldTimer?.cancel();
     _commentController.dispose();
@@ -1444,43 +1456,46 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
       button: true,
       label: user.nickname,
       excludeSemantics: true,
-      child: GestureDetector(
-        behavior: HitTestBehavior.opaque,
-        onTap: () => _openUserProfile(
-          userId: user.uid,
-          nickname: user.nickname,
-          photoURL: user.photoURL,
-        ),
-        child: SizedBox(
-          width: isCompact ? 55 : 58,
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              UserAvatar(
-                uid: user.uid,
-                photoUrl: user.photoURL,
-                photoVersion: user.photoVersion,
-                isAnonymous: false,
-                size: avatarSize,
-              ),
-              SizedBox(height: isCompact ? 5 : 6),
-              MediaQuery.withClampedTextScaling(
-                maxScaleFactor: 1.2,
-                child: Text(
-                  user.nickname,
-                  maxLines: 1,
-                  overflow: TextOverflow.ellipsis,
-                  textAlign: TextAlign.center,
-                  style: TextStyle(
-                    fontFamily: uiFontFamily(context, 'Inter'),
-                    fontFamilyFallback: const ['NotoSansKR'],
-                    fontSize: isCompact ? 12 : 13,
-                    fontWeight: FontWeight.w500,
-                    color: const Color(0xFF111827),
+      child: MotionPress(
+        pressedScale: .99,
+        child: GestureDetector(
+          behavior: HitTestBehavior.opaque,
+          onTap: () => _openUserProfile(
+            userId: user.uid,
+            nickname: user.nickname,
+            photoURL: user.photoURL,
+          ),
+          child: SizedBox(
+            width: isCompact ? 55 : 58,
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                UserAvatar(
+                  uid: user.uid,
+                  photoUrl: user.photoURL,
+                  photoVersion: user.photoVersion,
+                  isAnonymous: false,
+                  size: avatarSize,
+                ),
+                SizedBox(height: isCompact ? 5 : 6),
+                MediaQuery.withClampedTextScaling(
+                  maxScaleFactor: 1.2,
+                  child: Text(
+                    user.nickname,
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    textAlign: TextAlign.center,
+                    style: TextStyle(
+                      fontFamily: uiFontFamily(context, 'Inter'),
+                      fontFamilyFallback: const ['NotoSansKR'],
+                      fontSize: isCompact ? 12 : 13,
+                      fontWeight: FontWeight.w500,
+                      color: const Color(0xFF111827),
+                    ),
                   ),
                 ),
-              ),
-            ],
+              ],
+            ),
           ),
         ),
       ),
@@ -2211,6 +2226,8 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
       if (Logger.isVerboseEnabled) Logger.log('💬 댓글 작성 성공: $success');
 
       if (success && mounted) {
+        // 카드/상세가 공유하는 댓글 수를 즉시 올린다(서버 집계가 뒤이어 확정).
+        _postService.adjustCachedCommentCount(widget.post.id, 1);
         _commentController.clear();
         setState(() {
           _commentGif = null;
@@ -2276,6 +2293,8 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
       );
 
       if (success && mounted) {
+        // 대댓글까지 함께 지워지는 경우의 정확한 수는 서버 집계가 뒤이어 확정한다.
+        _postService.adjustCachedCommentCount(widget.post.id, -1);
         ScaffoldMessenger.of(
           context,
         ).showSnackBar(SnackBar(
@@ -2626,6 +2645,11 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
     final horizontalPadding = context.rs(8).clamp(7.0, 9.0).toDouble();
     final tagHorizontalInset = context.rs(8).clamp(6.0, 10.0).toDouble();
     final standaloneImageUrls = _currentPost.standaloneImageUrls;
+    // 영상+사진 포스트는 영상을 캐러셀 첫 장으로 둔다(사진만 있으면 null).
+    final carouselVideo =
+        standaloneImageUrls.isNotEmpty ? _currentPost.video : null;
+    final carouselVideoPages = carouselVideo == null ? 0 : 1;
+    final carouselPageCount = standaloneImageUrls.length + carouselVideoPages;
 
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
@@ -2667,6 +2691,30 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
             ),
           ),
         ),
+        // 영상만 있는 포스트. 영상+사진이면 아래 캐러셀의 첫 장으로 들어간다.
+        if (_currentPost.video case final video?
+            when standaloneImageUrls.isEmpty) ...[
+          Padding(
+            padding: EdgeInsets.fromLTRB(
+              horizontalPadding,
+              DesignTokens.s8,
+              horizontalPadding,
+              0,
+            ),
+            child: Center(
+              child: ConstrainedBox(
+                constraints: const BoxConstraints(maxWidth: 640),
+                child: FeedVideoPlayer(
+                  videoKey: 'post-detail:${_currentPost.id}',
+                  videoUrl: video.url,
+                  thumbnailUrl: video.thumbnailUrl,
+                  aspectRatio: video.aspectRatio,
+                  borderRadius: BorderRadius.circular(DesignTokens.r12),
+                ),
+              ),
+            ),
+          ),
+        ],
         if (standaloneImageUrls.isNotEmpty) ...[
           Padding(
             padding: EdgeInsets.fromLTRB(
@@ -2681,7 +2729,9 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
                 child: ClipRRect(
                   borderRadius: BorderRadius.circular(DesignTokens.r12),
                   child: AdaptivePostImageFrame(
-                    imageUrl: standaloneImageUrls.first,
+                    imageUrl: carouselVideo?.thumbnailUrl ??
+                        standaloneImageUrls.first,
+                    knownAspectRatio: carouselVideo?.aspectRatio,
                     cacheWidth: _detailImageCacheWidth,
                     child: Stack(
                       fit: StackFit.expand,
@@ -2695,9 +2745,18 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
                               aroundIndex: index,
                             );
                           },
-                          itemCount: standaloneImageUrls.length,
+                          itemCount: carouselPageCount,
                           itemBuilder: (context, index) {
-                            final imageUrl = standaloneImageUrls[index];
+                            if (carouselVideo != null && index == 0) {
+                              return FeedVideoPlayer(
+                                videoKey: 'post-detail:${_currentPost.id}',
+                                videoUrl: carouselVideo.url,
+                                thumbnailUrl: carouselVideo.thumbnailUrl,
+                                aspectRatio: carouselVideo.aspectRatio,
+                              );
+                            }
+                            final imageIndex = index - carouselVideoPages;
+                            final imageUrl = standaloneImageUrls[imageIndex];
                             return Semantics(
                               button: true,
                               label: (isChineseUi(context)
@@ -2715,12 +2774,12 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
                                   showFullscreenImageViewer(
                                     context,
                                     imageUrls: standaloneImageUrls,
-                                    initialIndex: index,
-                                    heroTag: 'post_image_$index',
+                                    initialIndex: imageIndex,
+                                    heroTag: 'post_image_$imageIndex',
                                   );
                                 },
                                 child: Hero(
-                                  tag: 'post_image_$index',
+                                  tag: 'post_image_$imageIndex',
                                   child: ColoredBox(
                                     color: index == 0
                                         ? BrandColors.imagePlaceholder
@@ -2741,7 +2800,7 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
                             );
                           },
                         ),
-                        if (standaloneImageUrls.length > 1)
+                        if (carouselPageCount > 1)
                           Positioned(
                             top: DesignTokens.s8,
                             right: DesignTokens.s8,
@@ -2756,7 +2815,7 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
                                     BorderRadius.circular(DesignTokens.r12),
                               ),
                               child: Text(
-                                '${_currentImageIndex + 1}/${standaloneImageUrls.length}',
+                                '${_currentImageIndex + 1}/$carouselPageCount',
                                 style: TextStyle(
                                   fontFamily: uiFontFamily(context, 'Inter'),
                                   fontFamilyFallback: const ['NotoSansKR'],
@@ -2775,11 +2834,11 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
               ),
             ),
           ),
-          if (standaloneImageUrls.length > 1)
+          if (carouselPageCount > 1)
             Padding(
               padding: const EdgeInsets.only(top: DesignTokens.s4),
               child: _buildImageDotsIndicator(
-                count: standaloneImageUrls.length,
+                count: carouselPageCount,
               ),
             ),
           Padding(
@@ -2873,28 +2932,32 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
             Semantics(
               button: canOpenProfile,
               label: authorName,
-              child: GestureDetector(
-                behavior: HitTestBehavior.opaque,
-                onTap: canOpenProfile ? _openAuthorProfile : null,
-                child: SizedBox.square(
-                  dimension: avatarSize,
-                  child: Center(
-                    child: AudienceRing(
-                      restricted: _currentPost.visibility == 'category',
-                      size: avatarSize,
-                      ringWidth: 1.5,
-                      innerGap: 0.5,
-                      semanticLabel: (isChineseUi(context)
-                          ? '已分享给所选分组'
-                          : Localizations.localeOf(context).languageCode == 'ko'
-                              ? '선택한 그룹에 공개된 포스트'
-                              : 'Post shared with selected groups'),
-                      child: UserAvatar(
-                        uid: _currentPost.userId,
-                        photoUrl: _currentPost.authorPhotoURL,
-                        photoVersion: 0,
-                        isAnonymous: isAnonymous,
+              child: MotionPress(
+                enabled: canOpenProfile,
+                pressedScale: .99,
+                child: GestureDetector(
+                  behavior: HitTestBehavior.opaque,
+                  onTap: canOpenProfile ? _openAuthorProfile : null,
+                  child: SizedBox.square(
+                    dimension: avatarSize,
+                    child: Center(
+                      child: AudienceRing(
+                        restricted: _currentPost.visibility == 'category',
                         size: avatarSize,
+                        ringWidth: 1.5,
+                        innerGap: 0.5,
+                        semanticLabel: (isChineseUi(context)
+                            ? '已分享给所选分组'
+                            : Localizations.localeOf(context).languageCode == 'ko'
+                            ? '선택한 그룹에 공개된 포스트'
+                            : 'Post shared with selected groups'),
+                        child: UserAvatar(
+                          uid: _currentPost.userId,
+                          photoUrl: _currentPost.authorPhotoURL,
+                          photoVersion: 0,
+                          isAnonymous: isAnonymous,
+                          size: avatarSize,
+                        ),
                       ),
                     ),
                   ),
@@ -2907,20 +2970,24 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
                 crossAxisAlignment: CrossAxisAlignment.center,
                 children: [
                   Flexible(
-                    child: GestureDetector(
-                      onTap: canOpenProfile ? _openAuthorProfile : null,
-                      child: Text(
-                        authorName,
-                        maxLines: 1,
-                        overflow: TextOverflow.ellipsis,
-                        style: TextStyle(
-                          fontFamily: uiFontFamily(context, 'Inter'),
-                          fontFamilyFallback: const ['NotoSansKR'],
-                          fontSize: context.rf(16).clamp(14.5, 16.0).toDouble(),
-                          fontWeight: FontWeight.w700,
-                          color: BrandColors.textPrimary,
-                          height: isChineseUi(context) ? 1.3 : 1.2,
-                          letterSpacing: -0.25,
+                    child: MotionPress(
+                      enabled: canOpenProfile,
+                      pressedScale: .99,
+                      child: GestureDetector(
+                        onTap: canOpenProfile ? _openAuthorProfile : null,
+                        child: Text(
+                          authorName,
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                          style: TextStyle(
+                            fontFamily: uiFontFamily(context, 'Inter'),
+                            fontFamilyFallback: const ['NotoSansKR'],
+                            fontSize: context.rf(16).clamp(14.5, 16.0).toDouble(),
+                            fontWeight: FontWeight.w700,
+                            color: BrandColors.textPrimary,
+                            height: isChineseUi(context) ? 1.3 : 1.2,
+                            letterSpacing: -0.25,
+                          ),
                         ),
                       ),
                     ),
@@ -3323,14 +3390,13 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
                                 overflow: TextOverflow.ellipsis,
                               ),
                             ),
-                            GestureDetector(
-                              onTap: _exitReplyMode,
-                              child: Container(
-                                padding: const EdgeInsets.all(4),
-                                child: Icon(
-                                  Icons.close,
-                                  size: 18,
-                                  color: Colors.grey[600],
+                            MotionPress(
+                              pressedScale: .92,
+                              child: GestureDetector(
+                                onTap: _exitReplyMode,
+                                child: Container(
+                                  padding: const EdgeInsets.all(4),
+                                  child: Icon(Icons.close, size: 18, color: Colors.grey[600]),
                                 ),
                               ),
                             ),

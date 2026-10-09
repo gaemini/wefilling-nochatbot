@@ -3,6 +3,7 @@
 // const 생성자, 메모이제이션, 이미지 최적화
 
 import 'package:flutter/material.dart';
+import 'motion_press.dart';
 import 'package:flutter/foundation.dart' show listEquals;
 import 'dart:async';
 import 'dart:collection';
@@ -10,6 +11,8 @@ import 'dart:math' as math;
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:cached_network_image/cached_network_image.dart';
 import '../../models/post.dart';
+import 'feed_video_player.dart';
+import '../../models/post_video.dart';
 import '../../models/content_translation.dart';
 import '../../models/post_category.dart';
 import '../../design/tokens.dart';
@@ -596,6 +599,11 @@ class _OptimizedPostCardState extends State<OptimizedPostCard> {
     if (_didPrecache) return;
     if (!widget.preloadImage) return;
     final post = widget.post;
+    // 영상 포스트는 플레이어가 썸네일/파일을 직접 준비한다.
+    if (post.video != null) {
+      _didPrecache = true;
+      return;
+    }
 
     // 상단 카드의 첫 이미지만 미리 준비한다. 여러 장 포스트의 모든 원본을
     // 동시에 받으면 빠른 세로 스크롤 중 네트워크/디코더가 포화되므로 나머지는
@@ -785,7 +793,21 @@ class _OptimizedPostCardState extends State<OptimizedPostCard> {
                               compact: true,
                             ),
                           ],
-                          if (standaloneImageUrls.isNotEmpty) ...[
+                          if (post.video case final video?
+                              when standaloneImageUrls.isNotEmpty) ...[
+                            // 영상+사진: 인스타그램처럼 한 캐러셀에서 넘겨 본다.
+                            SizedBox(height: imageGap),
+                            _ImageSlider(
+                              imageUrls: standaloneImageUrls,
+                              imageRadius: _imageRadius,
+                              preloadAdjacent: widget.preloadImage,
+                              video: video,
+                              videoKey: 'post:${post.id}',
+                            ),
+                          ] else if (post.video case final video?) ...[
+                            SizedBox(height: imageGap),
+                            _buildPostVideo(post, video),
+                          ] else if (standaloneImageUrls.isNotEmpty) ...[
                             SizedBox(height: imageGap),
                             _buildPostImages(standaloneImageUrls),
                           ],
@@ -994,55 +1016,59 @@ class _OptimizedPostCardState extends State<OptimizedPostCard> {
               Semantics(
                 button: canOpenProfile,
                 label: displayNickname,
-                child: GestureDetector(
-                  behavior: HitTestBehavior.opaque,
-                  onTap: canOpenProfile
-                      ? () {
-                          _openProfileOrMyPage(
-                            userId: post.userId,
-                            nickname: displayNickname,
-                            photoURL: resolvedPhotoURL,
-                          );
-                        }
-                      : null,
-                  child: SizedBox.square(
-                    dimension: 40,
-                    child: Center(
-                      child: AudienceRing(
-                        restricted: usesLimitedAudienceIdentity,
-                        size: 40,
-                        ringWidth: usesLimitedAudienceIdentity ? 4 : 1.5,
-                        innerGap: usesLimitedAudienceIdentity ? 0.75 : 0.5,
-                        emphasized: usesLimitedAudienceIdentity,
-                        semanticLabel:
-                            (isChineseUi(context) ? '部分人可见的动态' : Localizations.localeOf(context).languageCode == 'ko'
-                                ? '공개 범위가 제한된 포스트'
-                                : 'Limited audience post'),
-                        child: ColoredBox(
-                          color: Colors.grey.shade300,
-                          child: (resolvedImageUrl != null && !isAnonymous)
-                              ? CachedNetworkImage(
-                                  imageUrl: resolvedImageUrl,
-                                  cacheManager: AppImageCacheManager.instance,
-                                  memCacheWidth: _avatarCacheWidth,
-                                  fit: BoxFit.cover,
-                                  useOldImageOnUrlChange: true,
-                                  fadeInDuration: Duration.zero,
-                                  fadeOutDuration: Duration.zero,
-                                  placeholder: (_, __) => ColoredBox(
-                                    color: Colors.grey.shade300,
-                                  ),
-                                  errorWidget: (_, __, ___) => const Icon(
+                child: MotionPress(
+                  enabled: canOpenProfile,
+                  pressedScale: .99,
+                  child: GestureDetector(
+                    behavior: HitTestBehavior.opaque,
+                    onTap: canOpenProfile
+                        ? () {
+                            _openProfileOrMyPage(
+                              userId: post.userId,
+                              nickname: displayNickname,
+                              photoURL: resolvedPhotoURL,
+                            );
+                          }
+                        : null,
+                    child: SizedBox.square(
+                      dimension: 40,
+                      child: Center(
+                        child: AudienceRing(
+                          restricted: usesLimitedAudienceIdentity,
+                          size: 40,
+                          ringWidth: usesLimitedAudienceIdentity ? 4 : 1.5,
+                          innerGap: usesLimitedAudienceIdentity ? 0.75 : 0.5,
+                          emphasized: usesLimitedAudienceIdentity,
+                          semanticLabel: (isChineseUi(context)
+                              ? '部分人可见的动态'
+                              : Localizations.localeOf(context).languageCode == 'ko'
+                              ? '공개 범위가 제한된 포스트'
+                              : 'Limited audience post'),
+                          child: ColoredBox(
+                            color: Colors.grey.shade300,
+                            child: (resolvedImageUrl != null && !isAnonymous)
+                                ? CachedNetworkImage(
+                                    imageUrl: resolvedImageUrl,
+                                    cacheManager: AppImageCacheManager.instance,
+                                    memCacheWidth: _avatarCacheWidth,
+                                    fit: BoxFit.cover,
+                                    useOldImageOnUrlChange: true,
+                                    fadeInDuration: Duration.zero,
+                                    fadeOutDuration: Duration.zero,
+                                    placeholder: (_, __) =>
+                                        ColoredBox(color: Colors.grey.shade300),
+                                    errorWidget: (_, __, ___) => const Icon(
+                                      Icons.person_outline_rounded,
+                                      size: 20,
+                                      color: BrandColors.iconDefault,
+                                    ),
+                                  )
+                                : const Icon(
                                     Icons.person_outline_rounded,
                                     size: 20,
                                     color: BrandColors.iconDefault,
                                   ),
-                                )
-                              : const Icon(
-                                  Icons.person_outline_rounded,
-                                  size: 20,
-                                  color: BrandColors.iconDefault,
-                                ),
+                          ),
                         ),
                       ),
                     ),
@@ -1064,27 +1090,30 @@ class _OptimizedPostCardState extends State<OptimizedPostCard> {
                       crossAxisAlignment: CrossAxisAlignment.center,
                       children: [
                         Flexible(
-                          child: GestureDetector(
-                            onTap: canOpenProfile
-                                ? () => _openProfileOrMyPage(
+                          child: MotionPress(
+                            enabled: canOpenProfile,
+                            pressedScale: .99,
+                            child: GestureDetector(
+                              onTap: canOpenProfile
+                                  ? () => _openProfileOrMyPage(
                                       userId: post.userId,
                                       nickname: displayNickname,
                                       photoURL: resolvedPhotoURL,
                                     )
-                                : null,
-                            child: Text(
-                              displayNickname,
-                              maxLines: 1,
-                              overflow: TextOverflow.ellipsis,
-                              style: TextStyle(
-                                fontFamily: uiFontFamily(context, 'Inter'),
-                                fontFamilyFallback: const ['NotoSansKR'],
-                                fontSize:
-                                    context.rf(15).clamp(14.0, 15.5).toDouble(),
-                                fontWeight: FontWeight.w700,
-                                color: BrandColors.textPrimary,
-                                height: isChineseUi(context) ? 1.3 : 1.22,
-                                letterSpacing: -0.25,
+                                  : null,
+                              child: Text(
+                                displayNickname,
+                                maxLines: 1,
+                                overflow: TextOverflow.ellipsis,
+                                style: TextStyle(
+                                  fontFamily: uiFontFamily(context, 'Inter'),
+                                  fontFamilyFallback: const ['NotoSansKR'],
+                                  fontSize: context.rf(15).clamp(14.0, 15.5).toDouble(),
+                                  fontWeight: FontWeight.w700,
+                                  color: BrandColors.textPrimary,
+                                  height: isChineseUi(context) ? 1.3 : 1.22,
+                                  letterSpacing: -0.25,
+                                ),
                               ),
                             ),
                           ),
@@ -1199,6 +1228,17 @@ class _OptimizedPostCardState extends State<OptimizedPostCard> {
     );
   }
 
+  /// 게시글 영상: 보이면 무음 자동 재생, 탭하면 소리 토글(세션 공유).
+  Widget _buildPostVideo(Post post, PostVideo video) {
+    return FeedVideoPlayer(
+      videoKey: 'post:${post.id}',
+      videoUrl: video.url,
+      thumbnailUrl: video.thumbnailUrl,
+      aspectRatio: video.aspectRatio,
+      borderRadius: BorderRadius.circular(_imageRadius),
+    );
+  }
+
   /// 게시글 이미지들 빌드
   Widget _buildPostImages(List<String> imageUrls) {
     if (imageUrls.isEmpty) return const SizedBox.shrink();
@@ -1243,22 +1283,26 @@ class _OptimizedPostCardState extends State<OptimizedPostCard> {
           Semantics(
             button: widget.onCategoryTap != null,
             label: category.label(l10n),
-            child: GestureDetector(
-              behavior: HitTestBehavior.opaque,
-              onTap: widget.onCategoryTap == null
-                  ? null
-                  : () => widget.onCategoryTap!(category),
-              child: Text(
-                '#${category.label(l10n)}',
-                textAlign: TextAlign.right,
-                style: TextStyle(
-                  fontFamily: uiFontFamily(context, 'Inter'),
-                  fontFamilyFallback: const ['NotoSansKR'],
-                  fontSize: 12.5,
-                  fontWeight: FontWeight.w600,
-                  color: BrandColors.info,
-                  height: isChineseUi(context) ? 1.3 : 1.2,
-                  letterSpacing: -0.2,
+            child: MotionPress(
+              enabled: widget.onCategoryTap != null,
+              pressedScale: .99,
+              child: GestureDetector(
+                behavior: HitTestBehavior.opaque,
+                onTap: widget.onCategoryTap == null
+                    ? null
+                    : () => widget.onCategoryTap!(category),
+                child: Text(
+                  '#${category.label(l10n)}',
+                  textAlign: TextAlign.right,
+                  style: TextStyle(
+                    fontFamily: uiFontFamily(context, 'Inter'),
+                    fontFamilyFallback: const ['NotoSansKR'],
+                    fontSize: 12.5,
+                    fontWeight: FontWeight.w600,
+                    color: BrandColors.info,
+                    height: isChineseUi(context) ? 1.3 : 1.2,
+                    letterSpacing: -0.2,
+                  ),
                 ),
               ),
             ),
@@ -1835,10 +1879,17 @@ class _ImageSlider extends StatefulWidget {
   final double imageRadius;
   final bool preloadAdjacent;
 
+  /// 첫 장으로 보여줄 영상. null이면 사진만 넘기는 기존 슬라이더와 같다.
+  /// 영상이 있으면 캐러셀 높이는 영상 비율을 따르고 사진은 그 안에 맞춘다.
+  final PostVideo? video;
+  final String? videoKey;
+
   const _ImageSlider({
     required this.imageUrls,
     required this.imageRadius,
     required this.preloadAdjacent,
+    this.video,
+    this.videoKey,
   });
 
   @override
@@ -1860,7 +1911,8 @@ class _ImageSliderState extends State<_ImageSlider> {
   @override
   void didUpdateWidget(covariant _ImageSlider oldWidget) {
     super.didUpdateWidget(oldWidget);
-    if (!_listEquals(oldWidget.imageUrls, widget.imageUrls)) {
+    if (!_listEquals(oldWidget.imageUrls, widget.imageUrls) ||
+        oldWidget.video?.url != widget.video?.url) {
       _currentPage = 0;
       _precacheRequested.clear();
       _pageController.dispose();
@@ -1877,8 +1929,9 @@ class _ImageSliderState extends State<_ImageSlider> {
   void _scheduleAdjacentImagePrecache(int currentIndex) {
     WidgetsBinding.instance.addPostFrameCallback((_) {
       if (!mounted) return;
-      final nextIndex = currentIndex + 1;
-      if (nextIndex >= widget.imageUrls.length) return;
+      // 영상이 첫 장이면 페이지 번호가 사진 번호보다 하나 크다.
+      final nextIndex = currentIndex + 1 - _videoPageCount;
+      if (nextIndex < 0 || nextIndex >= widget.imageUrls.length) return;
       final pendingUrls = <String>[widget.imageUrls[nextIndex]]
           .map((url) => url.trim())
           .where((url) => url.isNotEmpty && _precacheRequested.add(url))
@@ -1914,6 +1967,10 @@ class _ImageSliderState extends State<_ImageSlider> {
     return true;
   }
 
+  int get _videoPageCount => widget.video == null ? 0 : 1;
+
+  int get _pageCount => widget.imageUrls.length + _videoPageCount;
+
   @override
   void dispose() {
     _pageController.dispose();
@@ -1922,15 +1979,18 @@ class _ImageSliderState extends State<_ImageSlider> {
 
   @override
   Widget build(BuildContext context) {
+    final video = widget.video;
+    final pageCount = _pageCount;
     return ClipRRect(
       borderRadius: BorderRadius.circular(widget.imageRadius),
       child: Stack(
         children: [
           AdaptivePostImageFrame(
-            imageUrl: widget.imageUrls.first,
+            imageUrl: video?.thumbnailUrl ?? widget.imageUrls.first,
+            knownAspectRatio: video?.aspectRatio,
             child: PageView.builder(
               controller: _pageController,
-              itemCount: widget.imageUrls.length,
+              itemCount: pageCount,
               onPageChanged: (index) {
                 setState(() {
                   _currentPage = index;
@@ -1938,10 +1998,19 @@ class _ImageSliderState extends State<_ImageSlider> {
                 _scheduleAdjacentImagePrecache(index);
               },
               itemBuilder: (context, index) {
+                if (video != null && index == 0) {
+                  return FeedVideoPlayer(
+                    videoKey: widget.videoKey ?? video.storagePath,
+                    videoUrl: video.url,
+                    thumbnailUrl: video.thumbnailUrl,
+                    aspectRatio: video.aspectRatio,
+                  );
+                }
+                final imageIndex = index - _videoPageCount;
                 return ColoredBox(
                   color: Colors.white,
                   child: CachedNetworkImage(
-                    imageUrl: widget.imageUrls[index],
+                    imageUrl: widget.imageUrls[imageIndex],
                     cacheManager: AppImageCacheManager.instance,
                     memCacheWidth: _OptimizedPostCardState._feedImageCacheWidth,
                     fit: index == 0 ? BoxFit.cover : BoxFit.contain,
@@ -1966,7 +2035,7 @@ class _ImageSliderState extends State<_ImageSlider> {
                 borderRadius: BorderRadius.circular(12),
               ),
               child: Text(
-                '${_currentPage + 1}/${widget.imageUrls.length}',
+                '${_currentPage + 1}/$pageCount',
                 style: TextStyle(
                   fontFamily: uiFontFamily(context, 'Inter'),
                   fontFamilyFallback: const ['NotoSansKR'],
@@ -1979,7 +2048,7 @@ class _ImageSliderState extends State<_ImageSlider> {
             ),
           ),
           // 페이지 점 인디케이터 (하단 중앙)
-          if (widget.imageUrls.length > 1)
+          if (pageCount > 1)
             Positioned(
               bottom: 8,
               left: 0,
@@ -1987,7 +2056,7 @@ class _ImageSliderState extends State<_ImageSlider> {
               child: Row(
                 mainAxisAlignment: MainAxisAlignment.center,
                 children: List.generate(
-                  widget.imageUrls.length,
+                  pageCount,
                   (index) => AnimatedContainer(
                     duration: MotionTokens.reduceMotion(context)
                         ? Duration.zero

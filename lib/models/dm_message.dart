@@ -47,6 +47,13 @@ class DMMessage {
   final String? fileMimeType;
   final int? fileSize;
   final String? fileStoragePath;
+  /// MP4 파일 메시지의 길이·해상도·작은 썸네일(data URL). 문서 파일은 null.
+  final int? videoDurationMs;
+  final int? videoWidth;
+  final int? videoHeight;
+  final String? videoThumbnail;
+  /// Bucket holding [fileStoragePath]; null means legacy.
+  final String? storageBucket;
 
   /// 답장(Reply) 컨텍스트 (선택)
   /// - 원본 메시지를 재조회하지 않아도 UI에서 인용 표시를 할 수 있게,
@@ -86,6 +93,11 @@ class DMMessage {
     this.fileMimeType,
     this.fileSize,
     this.fileStoragePath,
+    this.videoDurationMs,
+    this.videoWidth,
+    this.videoHeight,
+    this.videoThumbnail,
+    this.storageBucket,
     this.replyToMessageId,
     this.replyToSenderId,
     this.replyToText,
@@ -126,6 +138,22 @@ class DMMessage {
           data['fileSize'] is num ? (data['fileSize'] as num).toInt() : null,
       fileStoragePath: data['fileStoragePath'] is String
           ? data['fileStoragePath'] as String
+          : null,
+      videoDurationMs: data['videoDurationMs'] is num
+          ? (data['videoDurationMs'] as num).toInt()
+          : null,
+      videoWidth:
+          data['videoWidth'] is num ? (data['videoWidth'] as num).toInt() : null,
+      videoHeight: data['videoHeight'] is num
+          ? (data['videoHeight'] as num).toInt()
+          : null,
+      videoThumbnail: data['videoThumbnail'] is String &&
+              (data['videoThumbnail'] as String).isNotEmpty
+          ? data['videoThumbnail'] as String
+          : null,
+      storageBucket: data['storageBucket'] is String &&
+              (data['storageBucket'] as String).trim().isNotEmpty
+          ? (data['storageBucket'] as String).trim()
           : null,
       replyToMessageId: (data['replyToMessageId'] is String)
           ? data['replyToMessageId'] as String
@@ -184,6 +212,22 @@ class DMMessage {
       if (fileSize != null && fileSize! > 0) 'fileSize': fileSize,
       if (fileStoragePath != null && fileStoragePath!.isNotEmpty)
         'fileStoragePath': fileStoragePath,
+      // 영상 메타는 파일 메시지(video/mp4)에만 싣는다(Rules validDmVideoMeta).
+      if (fileMimeType == 'video/mp4' && videoDurationMs != null)
+        'videoDurationMs': videoDurationMs,
+      if (fileMimeType == 'video/mp4' && videoWidth != null)
+        'videoWidth': videoWidth,
+      if (fileMimeType == 'video/mp4' && videoHeight != null)
+        'videoHeight': videoHeight,
+      if (fileMimeType == 'video/mp4' &&
+          videoThumbnail != null &&
+          videoThumbnail!.isNotEmpty)
+        'videoThumbnail': videoThumbnail,
+      if (fileStoragePath != null &&
+          fileStoragePath!.isNotEmpty &&
+          storageBucket != null &&
+          storageBucket!.isNotEmpty)
+        'storageBucket': storageBucket,
       if (replyToMessageId != null && replyToMessageId!.isNotEmpty)
         'replyToMessageId': replyToMessageId,
       if (replyToSenderId != null && replyToSenderId!.isNotEmpty)
@@ -220,6 +264,11 @@ class DMMessage {
     String? fileMimeType,
     int? fileSize,
     String? fileStoragePath,
+    int? videoDurationMs,
+    int? videoWidth,
+    int? videoHeight,
+    String? videoThumbnail,
+    String? storageBucket,
     String? replyToMessageId,
     String? replyToSenderId,
     String? replyToText,
@@ -248,6 +297,11 @@ class DMMessage {
       fileMimeType: fileMimeType ?? this.fileMimeType,
       fileSize: fileSize ?? this.fileSize,
       fileStoragePath: fileStoragePath ?? this.fileStoragePath,
+      videoDurationMs: videoDurationMs ?? this.videoDurationMs,
+      videoWidth: videoWidth ?? this.videoWidth,
+      videoHeight: videoHeight ?? this.videoHeight,
+      videoThumbnail: videoThumbnail ?? this.videoThumbnail,
+      storageBucket: storageBucket ?? this.storageBucket,
       replyToMessageId: replyToMessageId ?? this.replyToMessageId,
       replyToSenderId: replyToSenderId ?? this.replyToSenderId,
       replyToText: replyToText ?? this.replyToText,
@@ -268,9 +322,33 @@ class DMMessage {
     );
   }
 
-  bool isReadThrough(Timestamp? watermark) => isRead ||
-      (deliveryState == DMDeliveryState.sent && receiptCreatedAt != null &&
-          watermark != null && receiptCreatedAt!.compareTo(watermark) <= 0);
+  /// Whether the peer has read this message.
+  ///
+  /// [watermark] is the peer's `lastReadAtBy` (server createTime precision).
+  /// [watermarkMessage] is the peer's `lastReadMessageIdBy` resolved in the
+  /// loaded list; when present, read state follows the exact list order and
+  /// does not wait for the trigger-written [receiptCreatedAt]. The pending
+  /// [serverCreatedAt] is never compared with the watermark directly because
+  /// serverTimestamp() and createTime can differ by sub-millisecond amounts
+  /// and a "읽음" that flips back to "1" is worse than a short delay.
+  bool isReadThrough(Timestamp? watermark, {DMMessage? watermarkMessage}) {
+    if (isRead) return true;
+    if (deliveryState != DMDeliveryState.sent) return false;
+    if (receiptCreatedAt != null &&
+        watermark != null &&
+        receiptCreatedAt!.compareTo(watermark) <= 0) {
+      return true;
+    }
+    if (watermarkMessage != null &&
+        watermarkMessage.deliveryState == DMDeliveryState.sent &&
+        serverCreatedAt != null &&
+        watermarkMessage.serverCreatedAt != null) {
+      // Descending order: a non-negative result means this message sorts at
+      // or after (older than or equal to) the read-through message.
+      return compareDescending(this, watermarkMessage) >= 0;
+    }
+    return false;
+  }
 
   DMMessage preserveConfirmedReceipt(DMMessage? previous) {
     if (previous == null ||
@@ -312,6 +390,10 @@ class DMMessage {
         'deliveryState': deliveryState.name,
         if (localImagePath != null) 'localImagePath': localImagePath,
         if (localFilePath != null) 'localFilePath': localFilePath,
+        if (videoDurationMs != null) 'videoDurationMs': videoDurationMs,
+        if (videoWidth != null) 'videoWidth': videoWidth,
+        if (videoHeight != null) 'videoHeight': videoHeight,
+        if (videoThumbnail != null) 'videoThumbnail': videoThumbnail,
         if (reactionCounts.isNotEmpty) 'reactionCounts': reactionCounts,
       };
 
@@ -326,6 +408,16 @@ class DMMessage {
         fileSize:
             raw['fileSize'] is num ? (raw['fileSize'] as num).toInt() : null,
         fileStoragePath: raw['fileStoragePath'] as String?,
+        videoDurationMs: raw['videoDurationMs'] is num
+            ? (raw['videoDurationMs'] as num).toInt()
+            : null,
+        videoWidth:
+            raw['videoWidth'] is num ? (raw['videoWidth'] as num).toInt() : null,
+        videoHeight: raw['videoHeight'] is num
+            ? (raw['videoHeight'] as num).toInt()
+            : null,
+        videoThumbnail: raw['videoThumbnail'] as String?,
+        storageBucket: raw['storageBucket'] as String?,
         type: raw['type'] as String? ?? 'text',
         postId: raw['postId'] as String?,
         postImageUrl: raw['postImageUrl'] as String?,

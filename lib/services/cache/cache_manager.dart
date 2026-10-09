@@ -7,6 +7,7 @@ import '../../models/cache/cache_metadata.dart';
 import '../../models/cache/cached_post.dart';
 import '../../models/cache/cached_comment.dart';
 import 'my_page_cache_service.dart';
+import 'app_video_cache_manager.dart';
 import '../../models/release_metadata.dart';
 import 'cache_migration_service.dart';
 
@@ -89,6 +90,8 @@ class CacheManager {
     try {
       if (Logger.isVerboseEnabled) Logger.log('🗑️ 모든 캐시 삭제 시작...');
       MyPageCacheService.clearMemory();
+      // 영상 파일 캐시도 계정과 함께 비운다(재생 중인 파일만 남긴다).
+      await AppVideoCacheManager.instance.clear();
 
       await Hive.deleteBoxFromDisk('metadata');
       await Hive.deleteBoxFromDisk('posts');

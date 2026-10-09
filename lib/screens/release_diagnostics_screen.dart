@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import '../config/app_backend.dart';
 
 import '../services/app_update_service.dart';
 import '../services/cache/cache_migration_service.dart';
@@ -14,6 +15,7 @@ class ReleaseDiagnosticsScreen extends StatelessWidget {
       'appCheckProvider': FirebaseAppCheckService.instance.providerName,
       'appCheckState': FirebaseAppCheckService.instance.readiness.name,
       'appCheckError': FirebaseAppCheckService.instance.lastErrorCode,
+      'backend': AppBackend.summary,
     };
     final migration = CacheMigrationService.instance.lastResult;
     if (migration != null) {

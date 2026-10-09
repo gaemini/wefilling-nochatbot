@@ -294,6 +294,10 @@ class _TranslatableContentState extends State<TranslatableContent> {
         scope: scope,
         manualRetry: manualRetry,
         userInitiatedRetry: manualRetry,
+        // An explicit tap (per-item link or the scope toggle's retry) must
+        // never be answered from a cached failure or an earlier result:
+        // regenerate on the server.
+        forceRefresh: manualRetry || _service.inManualRetryZone,
         priority: request.contentType == 'post'
             ? TranslationRequestPriority.visible
             : TranslationRequestPriority.interactive,
@@ -367,8 +371,16 @@ class _TranslatableContentState extends State<TranslatableContent> {
     final fields = showOriginal ? original : result.translatedFields;
     final isKo = Localizations.localeOf(context).languageCode == 'ko';
     final loading = _service.isScopeLoading(widget.scope);
-    final retryExhausted = result?.automaticRetryExhausted == true;
-    final retryAvailable = _service.canRetryScope(widget.scope);
+    // A failed result, or a request that produced no result at all (thrown
+    // error, cancelled generation), both need a visible retry.
+    final retryExhausted = result?.automaticRetryExhausted == true ||
+        (_requested && !loading && result == null && !canToggle);
+    // The tap works whenever a retry is needed. It used to require the
+    // service to still hold a "blocked failure" for this scope, which is
+    // cleared on language change / other scopes succeeding, leaving a
+    // "다시 번역" label whose tap did nothing.
+    final retryAvailable =
+        !loading && (retryExhausted || _service.canRetryScope(widget.scope));
 
     return AnimatedSize(
       duration: const Duration(milliseconds: 190),

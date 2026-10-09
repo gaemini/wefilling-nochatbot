@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 
 import '../../l10n/ui_locale.dart';
 import '../../utils/responsive_helper.dart';
+import '../widgets/motion_selectable.dart';
 
 enum SnackChatTodaySummaryCategory {
   highlights,
@@ -250,7 +251,10 @@ class _TodaySummaryPickerSheetState extends State<_TodaySummaryPickerSheet> {
                   children:
                       SnackChatTodaySummaryCategory.values.map((category) {
                     final selected = _categories.contains(category);
-                    return FilterChip(
+                    return MotionSelectable(
+                      selected: selected,
+                      pressedScale: MotionSelectable.chipScale,
+                      child: FilterChip(
                       selected: selected,
                       showCheckmark: false,
                       label: Text(_categoryLabel(category), maxLines: 1),
@@ -278,6 +282,7 @@ class _TodaySummaryPickerSheetState extends State<_TodaySummaryPickerSheet> {
                             ? _categories.add(category)
                             : _categories.remove(category);
                       }),
+                      ),
                     );
                   }).toList(growable: false),
                 ),
@@ -307,7 +312,11 @@ class _TodaySummaryPickerSheetState extends State<_TodaySummaryPickerSheet> {
                     final disabled =
                         scope == SnackChatTodaySummaryScope.unread &&
                             !widget.hasUnreadMessages;
-                    return ChoiceChip(
+                    return MotionSelectable(
+                      selected: _scope == scope,
+                      enabled: !disabled,
+                      pressedScale: MotionSelectable.chipScale,
+                      child: ChoiceChip(
                       selected: _scope == scope,
                       showCheckmark: false,
                       label: Text(_scopeLabel(scope), maxLines: 1),
@@ -332,6 +341,7 @@ class _TodaySummaryPickerSheetState extends State<_TodaySummaryPickerSheet> {
                             : _scope == scope
                                 ? const Color(0xFF087BB5)
                                 : const Color(0xFF475467),
+                      ),
                       ),
                     );
                   }).toList(growable: false),

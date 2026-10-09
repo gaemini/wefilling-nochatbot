@@ -6,6 +6,8 @@ import 'package:cached_network_image/cached_network_image.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:firebase_storage/firebase_storage.dart';
 import 'package:flutter/material.dart';
+import '../../config/app_backend.dart';
+import 'motion_press.dart';
 
 import '../../models/snack_chat_message.dart';
 import '../../services/cache/app_image_cache_manager.dart';
@@ -18,6 +20,7 @@ class SnackChatStorageImage extends StatefulWidget {
   const SnackChatStorageImage({
     super.key,
     required this.storagePath,
+    this.storageBucket,
     this.fit = BoxFit.contain,
     this.imageBuilder,
     this.loading,
@@ -25,6 +28,8 @@ class SnackChatStorageImage extends StatefulWidget {
   });
 
   final String storagePath;
+  /// Bucket holding [storagePath]; null means "not recorded" (legacy first).
+  final String? storageBucket;
   final BoxFit fit;
   final ImageWidgetBuilder? imageBuilder;
   final Widget? loading;
@@ -54,18 +59,41 @@ class _SnackChatStorageImageState extends State<SnackChatStorageImage> {
   @override
   void initState() {
     super.initState();
-    _bytes = _load(widget.storagePath);
+    _bytes = _load(widget.storagePath, widget.storageBucket);
   }
 
   @override
   void didUpdateWidget(covariant SnackChatStorageImage oldWidget) {
     super.didUpdateWidget(oldWidget);
-    if (oldWidget.storagePath != widget.storagePath) {
-      _bytes = _load(widget.storagePath);
+    if (oldWidget.storagePath != widget.storagePath ||
+        oldWidget.storageBucket != widget.storageBucket) {
+      _bytes = _load(widget.storagePath, widget.storageBucket);
     }
   }
 
-  Future<Uint8List?> _load(String path) {
+  /// Downloads [path]. When no bucket was recorded (reply previews, legacy
+  /// rows) the legacy bucket is tried first and the upload bucket second, so
+  /// a path-only reference keeps working after uploads moved buckets.
+  static Future<Uint8List?> _download(String path, String? bucket) async {
+    final primary = AppStorage.forObject(bucket);
+    try {
+      return await primary.ref(path).getData(_maxBytes).timeout(
+            const Duration(seconds: 15),
+          );
+    } on FirebaseException catch (error) {
+      final recorded = AppStorage.normalizeBucketName(bucket).isNotEmpty;
+      if (recorded ||
+          error.code != 'object-not-found' ||
+          AppStorage.uploadsToLegacyBucket) {
+        rethrow;
+      }
+    }
+    return AppStorage.uploads.ref(path).getData(_maxBytes).timeout(
+          const Duration(seconds: 15),
+        );
+  }
+
+  Future<Uint8List?> _load(String path, String? bucket) {
     final viewerId = FirebaseAuth.instance.currentUser?.uid;
     final normalizedPath = path.trim();
     if (viewerId == null || viewerId.isEmpty || normalizedPath.isEmpty) {
@@ -90,10 +118,7 @@ class _SnackChatStorageImageState extends State<SnackChatStorageImage> {
         var downloaded = false;
         if (data == null || data.isEmpty) {
           data = await _withDownloadSlot(
-            () => FirebaseStorage.instance
-                .ref(normalizedPath)
-                .getData(_maxBytes)
-                .timeout(const Duration(seconds: 15)),
+            () => _download(normalizedPath, bucket),
           );
           if (data == null || data.isEmpty) return null;
           downloaded = true;
@@ -172,7 +197,7 @@ class _SnackChatStorageImageState extends State<SnackChatStorageImage> {
           storagePath: normalizedPath,
         );
       }
-      return _load(normalizedPath);
+      return _load(normalizedPath, widget.storageBucket);
     }();
     setState(() {
       _retrying = true;
@@ -444,85 +469,87 @@ class SnackChatReplyPreviewView extends StatelessWidget {
                         preview.textPreview.trim().isEmpty
                     ? '사진'
                     : preview.textPreview.trim();
-    return Semantics(
-      button: onTap != null,
-      label: '${preview.senderName}, $summary',
-      child: InkWell(
-        onTap: onTap,
-        borderRadius: BorderRadius.circular(8),
-        child: Padding(
-          padding: const EdgeInsets.only(bottom: 7),
-          child: Row(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              Container(
-                width: 2,
-                height: 34,
-                color: foreground.withValues(alpha: 0.55),
-              ),
-              const SizedBox(width: 8),
-              if (preview.imagePath?.isNotEmpty == true ||
-                  preview.imageUrl?.isNotEmpty == true) ...[
-                ClipRRect(
-                  borderRadius: BorderRadius.circular(5),
-                  child: SizedBox.square(
-                    dimension: 34,
-                    child: preview.imagePath?.isNotEmpty == true
-                        ? SnackChatStorageImage(
-                            storagePath: preview.imagePath!,
-                            fit: BoxFit.cover,
-                            loading: const SizedBox.shrink(),
-                            error: const Icon(
-                              Icons.image_not_supported_outlined,
-                              size: 17,
-                            ),
-                          )
-                        : CachedNetworkImage(
-                            imageUrl: preview.imageUrl!,
-                            cacheManager: AppImageCacheManager.instance,
-                            fit: BoxFit.cover,
-                            errorWidget: (_, __, ___) => const Icon(
-                              Icons.image_not_supported_outlined,
-                              size: 17,
-                            ),
-                          ),
-                  ),
+    return MotionPressBoundary(
+      child: Semantics(
+        button: onTap != null,
+        label: '${preview.senderName}, $summary',
+        child: InkWell(
+          onTap: onTap,
+          borderRadius: BorderRadius.circular(8),
+          child: Padding(
+            padding: const EdgeInsets.only(bottom: 7),
+            child: Row(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Container(
+                  width: 2,
+                  height: 34,
+                  color: foreground.withValues(alpha: 0.55),
                 ),
                 const SizedBox(width: 8),
-              ],
-              Flexible(
-                child: Column(
-                  mainAxisSize: MainAxisSize.min,
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Text(
-                      preview.senderName.isEmpty ? '사용자' : preview.senderName,
-                      maxLines: 1,
-                      overflow: TextOverflow.ellipsis,
-                      style: TextStyle(
-                        fontFamily: uiFontFamily(context, 'Inter'),
-                        fontFamilyFallback: const ['NotoSansKR'],
-                        fontSize: 11.5,
-                        fontWeight: FontWeight.w700,
-                        color: foreground,
-                      ),
+                if (preview.imagePath?.isNotEmpty == true ||
+                    preview.imageUrl?.isNotEmpty == true) ...[
+                  ClipRRect(
+                    borderRadius: BorderRadius.circular(5),
+                    child: SizedBox.square(
+                      dimension: 34,
+                      child: preview.imagePath?.isNotEmpty == true
+                          ? SnackChatStorageImage(
+                              storagePath: preview.imagePath!,
+                              fit: BoxFit.cover,
+                              loading: const SizedBox.shrink(),
+                              error: const Icon(
+                                Icons.image_not_supported_outlined,
+                                size: 17,
+                              ),
+                            )
+                          : CachedNetworkImage(
+                              imageUrl: preview.imageUrl!,
+                              cacheManager: AppImageCacheManager.instance,
+                              fit: BoxFit.cover,
+                              errorWidget: (_, __, ___) => const Icon(
+                                Icons.image_not_supported_outlined,
+                                size: 17,
+                              ),
+                            ),
                     ),
-                    Text(
-                      summary.isEmpty ? '메시지' : summary,
-                      maxLines: 1,
-                      overflow: TextOverflow.ellipsis,
-                      style: TextStyle(
-                        fontFamily: uiFontFamily(context, 'Inter'),
-                        fontFamilyFallback: const ['NotoSansKR'],
-                        fontSize: 11.5,
-                        fontWeight: FontWeight.w500,
-                        color: foreground.withValues(alpha: 0.86),
+                  ),
+                  const SizedBox(width: 8),
+                ],
+                Flexible(
+                  child: Column(
+                    mainAxisSize: MainAxisSize.min,
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(
+                        preview.senderName.isEmpty ? '사용자' : preview.senderName,
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                        style: TextStyle(
+                          fontFamily: uiFontFamily(context, 'Inter'),
+                          fontFamilyFallback: const ['NotoSansKR'],
+                          fontSize: 11.5,
+                          fontWeight: FontWeight.w700,
+                          color: foreground,
+                        ),
                       ),
-                    ),
-                  ],
+                      Text(
+                        summary.isEmpty ? '메시지' : summary,
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                        style: TextStyle(
+                          fontFamily: uiFontFamily(context, 'Inter'),
+                          fontFamilyFallback: const ['NotoSansKR'],
+                          fontSize: 11.5,
+                          fontWeight: FontWeight.w500,
+                          color: foreground.withValues(alpha: 0.86),
+                        ),
+                      ),
+                    ],
+                  ),
                 ),
-              ),
-            ],
+              ],
+            ),
           ),
         ),
       ),
@@ -538,6 +565,7 @@ class SnackChatReactionBar extends StatelessWidget {
     required this.onToggle,
     required this.onShowUsers,
     required this.isOutgoing,
+    this.animateLocalSelectionOnMount = false,
   });
 
   final Map<String, int> counts;
@@ -545,6 +573,7 @@ class SnackChatReactionBar extends StatelessWidget {
   final ValueChanged<String> onToggle;
   final ValueChanged<String> onShowUsers;
   final bool isOutgoing;
+  final bool animateLocalSelectionOnMount;
 
   @override
   Widget build(BuildContext context) {
@@ -552,6 +581,7 @@ class SnackChatReactionBar extends StatelessWidget {
     return ChatReactionBar(
       counts: counts,
       myReaction: myReaction,
+      animateLocalSelectionOnMount: animateLocalSelectionOnMount,
       onToggle: onToggle,
       onShowUsers: onShowUsers,
       isOutgoing: isOutgoing,
@@ -801,89 +831,93 @@ class SnackChatLinkPreviewCard extends StatelessWidget {
         : const Color(0xFF667085);
     return Padding(
       padding: const EdgeInsets.only(top: 9),
-      child: Semantics(
-        button: true,
-        link: true,
-        label: '${preview.domain}, ${preview.title}',
-        child: InkWell(
-          onTap: onOpen,
-          borderRadius: BorderRadius.circular(8),
-          child: Padding(
-            padding: const EdgeInsets.symmetric(vertical: 3),
-            child: Row(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                if (preview.imageUrl?.isNotEmpty == true) ...[
-                  ClipRRect(
-                    borderRadius: BorderRadius.circular(7),
-                    child: CachedNetworkImage(
-                      imageUrl: preview.imageUrl!,
-                      cacheManager: AppImageCacheManager.instance,
-                      width: 54,
-                      height: 54,
-                      fit: BoxFit.cover,
-                      errorWidget: (_, __, ___) => const SizedBox.shrink(),
-                    ),
-                  ),
-                  const SizedBox(width: 9),
-                ],
-                Expanded(
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Text(
-                        preview.domain,
-                        maxLines: 1,
-                        overflow: TextOverflow.ellipsis,
-                        style: TextStyle(
-                          fontFamily: uiFontFamily(context, 'Inter'),
-                          fontFamilyFallback: const ['NotoSansKR'],
-                          fontSize: 10.5,
-                          fontWeight: FontWeight.w600,
-                          color: secondary,
-                        ),
+      child: MotionPressBoundary(
+        child: Semantics(
+          button: true,
+          link: true,
+          label: '${preview.domain}, ${preview.title}',
+          child: InkWell(
+            onTap: onOpen,
+            borderRadius: BorderRadius.circular(8),
+            child: Padding(
+              padding: const EdgeInsets.symmetric(vertical: 3),
+              child: Row(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  if (preview.imageUrl?.isNotEmpty == true) ...[
+                    ClipRRect(
+                      borderRadius: BorderRadius.circular(7),
+                      child: CachedNetworkImage(
+                        imageUrl: preview.imageUrl!,
+                        cacheManager: AppImageCacheManager.instance,
+                        width: 54,
+                        height: 54,
+                        fit: BoxFit.cover,
+                        errorWidget: (_, __, ___) => const SizedBox.shrink(),
                       ),
-                      if (preview.title.trim().isNotEmpty)
+                    ),
+                    const SizedBox(width: 9),
+                  ],
+                  Expanded(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
                         Text(
-                          preview.title,
-                          maxLines: 2,
+                          preview.domain,
+                          maxLines: 1,
                           overflow: TextOverflow.ellipsis,
                           style: TextStyle(
                             fontFamily: uiFontFamily(context, 'Inter'),
                             fontFamilyFallback: const ['NotoSansKR'],
-                            fontSize: 12.5,
-                            height: 1.3,
-                            fontWeight: FontWeight.w700,
-                            color: foreground,
-                          ),
-                        ),
-                      if (preview.description.trim().isNotEmpty)
-                        Text(
-                          preview.description,
-                          maxLines: 2,
-                          overflow: TextOverflow.ellipsis,
-                          style: TextStyle(
-                            fontFamily: uiFontFamily(context, 'Inter'),
-                            fontFamilyFallback: const ['NotoSansKR'],
-                            fontSize: 11,
-                            height: 1.3,
+                            fontSize: 10.5,
+                            fontWeight: FontWeight.w600,
                             color: secondary,
                           ),
                         ),
-                    ],
+                        if (preview.title.trim().isNotEmpty)
+                          Text(
+                            preview.title,
+                            maxLines: 2,
+                            overflow: TextOverflow.ellipsis,
+                            style: TextStyle(
+                              fontFamily: uiFontFamily(context, 'Inter'),
+                              fontFamilyFallback: const ['NotoSansKR'],
+                              fontSize: 12.5,
+                              height: 1.3,
+                              fontWeight: FontWeight.w700,
+                              color: foreground,
+                            ),
+                          ),
+                        if (preview.description.trim().isNotEmpty)
+                          Text(
+                            preview.description,
+                            maxLines: 2,
+                            overflow: TextOverflow.ellipsis,
+                            style: TextStyle(
+                              fontFamily: uiFontFamily(context, 'Inter'),
+                              fontFamilyFallback: const ['NotoSansKR'],
+                              fontSize: 11,
+                              height: 1.3,
+                              color: secondary,
+                            ),
+                          ),
+                      ],
+                    ),
                   ),
-                ),
-                if (onRemove != null)
-                  IconButton(
-                    onPressed: onRemove,
-                    tooltip: '미리보기 제거',
-                    visualDensity: VisualDensity.compact,
-                    constraints:
-                        const BoxConstraints.tightFor(width: 32, height: 32),
-                    padding: EdgeInsets.zero,
-                    icon: Icon(Icons.close_rounded, size: 16, color: secondary),
-                  ),
-              ],
+                  if (onRemove != null)
+                    IconButton(
+                      onPressed: onRemove,
+                      tooltip: '미리보기 제거',
+                      visualDensity: VisualDensity.compact,
+                      constraints: const BoxConstraints.tightFor(
+                        width: 32,
+                        height: 32,
+                      ),
+                      padding: EdgeInsets.zero,
+                      icon: Icon(Icons.close_rounded, size: 16, color: secondary),
+                    ),
+                ],
+              ),
             ),
           ),
         ),

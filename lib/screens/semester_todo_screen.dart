@@ -21,6 +21,9 @@ import '../ui/widgets/post_linkified_text.dart';
 import '../ui/widgets/motion_press.dart';
 import '../utils/responsive_helper.dart';
 import 'student_type_selection_screen.dart';
+import '../ui/widgets/motion_selectable.dart';
+import '../ui/widgets/motion_selection_pulse.dart';
+import '../utils/motion_haptics.dart';
 
 // Match the compact compose-screen scale without suppressing accessibility text
 // scaling or changing the shared theme used by the rest of the app.
@@ -428,12 +431,16 @@ class _SemesterTodoScreenState extends State<SemesterTodoScreen>
             label: isCurrent
                 ? '$weekLabel, ${_copy('이번 주', 'This week', '本周')}'
                 : weekLabel,
-            child: InkWell(
+            child: MotionSelectable(
+              selected: selected,
+              pressedScale: MotionSelectable.segmentScale,
+              child: InkWell(
               key: _weekKeys[index],
               onTap: () => _goToWeek(controller, index),
               borderRadius: BorderRadius.circular(8),
               child: AnimatedContainer(
-                duration: const Duration(milliseconds: 180),
+                duration: MotionTokens.of(context, MotionTokens.state),
+                curve: MotionTokens.curve,
                 padding: const EdgeInsets.symmetric(horizontal: 12),
                 alignment: Alignment.center,
                 decoration: BoxDecoration(
@@ -465,6 +472,7 @@ class _SemesterTodoScreenState extends State<SemesterTodoScreen>
                   ),
                 ),
               ),
+            ),
             ),
           );
         },
@@ -881,6 +889,8 @@ class _SemesterTodoScreenState extends State<SemesterTodoScreen>
                   : _copy('완료', 'Mark complete', '标为已完成'),
               child: MotionPress(
                   enabled: !busy,
+                  pressedScale: .9,
+                  resetToken: entry.completed,
                   child: InkResponse(
                   onTap: busy
                       ? null
@@ -893,8 +903,13 @@ class _SemesterTodoScreenState extends State<SemesterTodoScreen>
                       height: 48,
                       child: Align(
                           alignment: Alignment.centerLeft,
-                          child:
-                              _CompletionCircle(completed: entry.completed)))))),
+                          child: MotionSelectionPulse(
+                              selected: entry.completed,
+                              activePeak: 1.12,
+                              activeDip: 1,
+                              inactiveDip: .92,
+                              child: _CompletionCircle(
+                                  completed: entry.completed))))))),
         if (!entry.actionable)
           SizedBox(
               width: 48,
@@ -1476,6 +1491,8 @@ class _SemesterTodoScreenState extends State<SemesterTodoScreen>
     }
     if (!mounted) return;
     if (completed) {
+      // Only after the server accepted the completion; never on tap.
+      MotionHaptics.fire(context, MotionHapticEvent.checkCompleted);
       _showCompletionNotice(() async {
         try {
           await controller.setPersonalTodoCompleted(todo, false);
@@ -1818,7 +1835,10 @@ class _PersonalTodoEditorPageState extends State<_PersonalTodoEditorPage> {
                 ),
               ),
             ),
-          TextButton(
+          MotionPress(
+            enabled: canSave,
+            pressedScale: .975,
+            child: TextButton(
             onPressed: canSave ? _save : null,
             style: TextButton.styleFrom(
               foregroundColor: AppColors.pointColor,
@@ -1838,6 +1858,7 @@ class _PersonalTodoEditorPageState extends State<_PersonalTodoEditorPage> {
                 fontWeight: FontWeight.w700,
               ),
             ),
+          ),
           ),
         ],
       ),
@@ -2293,9 +2314,8 @@ class _CompletionCircle extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) => AnimatedContainer(
-        duration: MotionTokens.reduceMotion(context)
-            ? Duration.zero
-            : MotionTokens.release,
+        duration: MotionTokens.of(context, MotionTokens.release),
+        curve: MotionTokens.curve,
         width: 20,
         height: 20,
         decoration: BoxDecoration(

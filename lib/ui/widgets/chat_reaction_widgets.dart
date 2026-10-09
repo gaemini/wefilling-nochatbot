@@ -2,6 +2,9 @@ import 'package:flutter/material.dart';
 
 import '../../constants/app_constants.dart';
 import '../../l10n/ui_locale.dart';
+import '../../design/tokens.dart';
+import 'motion_press.dart';
+import 'motion_selection_pulse.dart';
 
 const List<String> chatReactionEmojis = <String>[
   '👍',
@@ -11,6 +14,26 @@ const List<String> chatReactionEmojis = <String>[
   '😢',
   '🙏',
 ];
+
+/// Short-lived visual intentions, owned and cleared by each chat screen.
+/// They are not receipts, pending mutations or persisted reaction state.
+class ChatReactionMotionEvents {
+  final Map<String, DateTime> _events = {};
+  static const _window = Duration(milliseconds: 400);
+  void record(String messageId, String emoji) {
+    final now = DateTime.now();
+    _events.removeWhere((_, at) => now.difference(at) > _window);
+    if (_events.length >= 64) _events.remove(_events.keys.first);
+    _events['$messageId:$emoji'] = now;
+  }
+
+  bool claim(String messageId, String? emoji) {
+    final at = _events.remove('$messageId:$emoji');
+    return at != null && DateTime.now().difference(at) <= _window;
+  }
+
+  void clear() => _events.clear();
+}
 
 class ChatReactionIcon extends StatelessWidget {
   const ChatReactionIcon(
@@ -77,25 +100,30 @@ class ChatReactionPickerRow extends StatelessWidget {
               label: semanticLabel,
               child: Tooltip(
                 message: semanticLabel,
-                child: InkResponse(
-                  onTap: () => onSelected(emoji),
-                  radius: 24,
-                  child: ConstrainedBox(
-                    constraints: const BoxConstraints(
-                      minWidth: 44,
-                      minHeight: 44,
-                    ),
-                    child: AnimatedContainer(
-                      duration: const Duration(milliseconds: 120),
-                      margin: const EdgeInsets.symmetric(horizontal: 2),
-                      alignment: Alignment.center,
-                      decoration: BoxDecoration(
-                        color: selected
-                            ? AppColors.pointColor.withValues(alpha: .10)
-                            : Colors.transparent,
-                        borderRadius: BorderRadius.circular(14),
+                child: MotionPress(
+                  pressedScale: .9,
+                  child: InkResponse(
+                    onTap: () => onSelected(emoji),
+                    radius: 24,
+                    child: ConstrainedBox(
+                      constraints: const BoxConstraints(
+                        minWidth: 44,
+                        minHeight: 44,
                       ),
-                      child: ChatReactionIcon(emoji),
+                      child: AnimatedContainer(
+                        duration: MotionTokens.reduceMotion(context)
+                            ? Duration.zero
+                            : MotionTokens.fast,
+                        margin: const EdgeInsets.symmetric(horizontal: 2),
+                        alignment: Alignment.center,
+                        decoration: BoxDecoration(
+                          color: selected
+                              ? AppColors.pointColor.withValues(alpha: .10)
+                              : Colors.transparent,
+                          borderRadius: BorderRadius.circular(14),
+                        ),
+                        child: ChatReactionIcon(emoji),
+                      ),
                     ),
                   ),
                 ),
@@ -120,6 +148,7 @@ class ChatReactionBar extends StatelessWidget {
     required this.removeLabel,
     required this.peopleLabel,
     this.showCount = true,
+    this.animateLocalSelectionOnMount = false,
   });
 
   final Map<String, int> counts;
@@ -131,6 +160,7 @@ class ChatReactionBar extends StatelessWidget {
   final String removeLabel;
   final String peopleLabel;
   final bool showCount;
+  final bool animateLocalSelectionOnMount;
 
   @override
   Widget build(BuildContext context) {
@@ -147,48 +177,73 @@ class ChatReactionBar extends StatelessWidget {
           final count = counts[emoji] ?? 0;
           final selected = myReaction == emoji;
           final action = selected ? removeLabel : addLabel;
-          return Semantics(
-            button: true,
-            selected: selected,
-            label: '$action $emoji, $peopleLabel $count',
-            onLongPressHint: peopleLabel,
-            child: Material(
-              color: selected
-                  ? AppColors.pointColor.withValues(alpha: .12)
-                  : (isOutgoing
-                      ? Colors.white.withValues(alpha: .12)
-                      : const Color(0x0D344054)),
-              borderRadius: BorderRadius.circular(14),
-              child: InkWell(
-                onTap: () => onToggle(emoji),
-                onLongPress: () => onShowUsers(emoji),
+          return MotionPress(
+            key: ValueKey(emoji),
+            resetToken: selected,
+            pressedScale: .9,
+            child: Semantics(
+              button: true,
+              selected: selected,
+              label: '$action $emoji, $peopleLabel $count',
+              onLongPressHint: peopleLabel,
+              child: Material(
+                color: selected
+                    ? AppColors.pointColor.withValues(alpha: .12)
+                    : (isOutgoing
+                        ? Colors.white.withValues(alpha: .12)
+                        : const Color(0x0D344054)),
                 borderRadius: BorderRadius.circular(14),
-                child: ConstrainedBox(
-                  constraints: const BoxConstraints(minHeight: 30),
-                  child: Padding(
-                    padding:
-                        const EdgeInsets.symmetric(horizontal: 7, vertical: 3),
-                    child: Row(
-                      mainAxisSize: MainAxisSize.min,
-                      children: [
-                        ChatReactionIcon(emoji, size: 17),
-                        if (showCount) ...[
-                          const SizedBox(width: 4),
-                          Text(
-                            '$count',
-                            style: TextStyle(
-                              fontFamily: uiFontFamily(context, 'Inter'),
-                              fontFamilyFallback: const ['NotoSansKR'],
-                              fontSize: 11.5,
-                              fontWeight:
-                                  selected ? FontWeight.w700 : FontWeight.w600,
-                              color: isOutgoing
-                                  ? Colors.white
-                                  : const Color(0xFF344054),
-                            ),
+                child: InkWell(
+                  onTap: () => onToggle(emoji),
+                  onLongPress: () => onShowUsers(emoji),
+                  borderRadius: BorderRadius.circular(14),
+                  child: ConstrainedBox(
+                    constraints: const BoxConstraints(minHeight: 30),
+                    child: Padding(
+                      padding: const EdgeInsets.symmetric(
+                          horizontal: 7, vertical: 3),
+                      child: Row(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          MotionSelectionPulse(
+                            selected: selected,
+                            pulseOnMount:
+                                selected && animateLocalSelectionOnMount,
+                            animateSelectionChanges:
+                                animateLocalSelectionOnMount,
+                            activePeak: 1.15,
+                            activeDip: 1,
+                            inactiveDip: 1,
+                            child: ChatReactionIcon(emoji, size: 17),
                           ),
+                          if (showCount) ...[
+                            const SizedBox(width: 4),
+                            AnimatedSwitcher(
+                              duration: MotionTokens.reduceMotion(context)
+                                  ? Duration.zero
+                                  : MotionTokens.state,
+                              transitionBuilder: (child, animation) =>
+                                  FadeTransition(
+                                      opacity: animation, child: child),
+                              child: Text(
+                                '$count',
+                                key: ValueKey(count),
+                                style: TextStyle(
+                                  fontFamily: uiFontFamily(context, 'Inter'),
+                                  fontFamilyFallback: const ['NotoSansKR'],
+                                  fontSize: 11.5,
+                                  fontWeight: selected
+                                      ? FontWeight.w700
+                                      : FontWeight.w600,
+                                  color: isOutgoing
+                                      ? Colors.white
+                                      : const Color(0xFF344054),
+                                ),
+                              ),
+                            ),
+                          ],
                         ],
-                      ],
+                      ),
                     ),
                   ),
                 ),

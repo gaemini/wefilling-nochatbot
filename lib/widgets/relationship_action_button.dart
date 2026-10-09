@@ -3,6 +3,7 @@ import 'package:flutter/material.dart';
 import '../constants/app_constants.dart';
 import '../utils/responsive_helper.dart';
 import '../l10n/ui_locale.dart';
+import '../ui/widgets/motion_press.dart';
 
 enum RelationshipActionButtonTone { primary, neutral }
 
@@ -26,37 +27,42 @@ class RelationshipActionButton extends StatelessWidget {
   Widget build(BuildContext context) {
     final isPrimary = tone == RelationshipActionButtonTone.primary;
 
-    return Semantics(
-      button: true,
-      label: label,
-      child: FilledButton(
-        onPressed: onPressed,
-        style: FilledButton.styleFrom(
-          backgroundColor:
-              isPrimary ? AppColors.pointColor : const Color(0xFFF2F4F7),
-          foregroundColor: isPrimary ? Colors.white : const Color(0xFF344054),
-          disabledBackgroundColor: const Color(0xFFF2F4F7),
-          disabledForegroundColor: const Color(0xFF98A2B3),
-          elevation: 0,
-          minimumSize: const Size(0, 38),
-          padding: const EdgeInsets.symmetric(horizontal: 11, vertical: 7),
-          tapTargetSize: MaterialTapTargetSize.padded,
-          shape: RoundedRectangleBorder(
-            borderRadius: BorderRadius.circular(12),
+    return MotionPress(
+      enabled: onPressed != null,
+      pressedScale: .975,
+      child: Semantics(
+        button: true,
+        enabled: onPressed != null,
+        label: label,
+        child: FilledButton(
+          onPressed: onPressed,
+          style: FilledButton.styleFrom(
+            backgroundColor:
+                isPrimary ? AppColors.pointColor : const Color(0xFFF2F4F7),
+            foregroundColor: isPrimary ? Colors.white : const Color(0xFF344054),
+            disabledBackgroundColor: const Color(0xFFF2F4F7),
+            disabledForegroundColor: const Color(0xFF98A2B3),
+            elevation: 0,
+            minimumSize: const Size(0, 38),
+            padding: const EdgeInsets.symmetric(horizontal: 11, vertical: 7),
+            tapTargetSize: MaterialTapTargetSize.padded,
+            shape: RoundedRectangleBorder(
+              borderRadius: BorderRadius.circular(12),
+            ),
           ),
-        ),
-        child: Text(
-          label,
-          maxLines: 2,
-          softWrap: true,
-          textAlign: TextAlign.center,
-          overflow: TextOverflow.visible,
-          style: TextStyle(
-            fontFamily: uiFontFamily(context, 'Inter'),
-            fontFamilyFallback: const ['NotoSansKR'],
-            fontSize: context.rf(12.5).clamp(11.5, 13).toDouble(),
-            fontWeight: FontWeight.w700,
-            height: isChineseUi(context) ? 1.3 : 1.15,
+          child: Text(
+            label,
+            maxLines: 2,
+            softWrap: true,
+            textAlign: TextAlign.center,
+            overflow: TextOverflow.visible,
+            style: TextStyle(
+              fontFamily: uiFontFamily(context, 'Inter'),
+              fontFamilyFallback: const ['NotoSansKR'],
+              fontSize: context.rf(12.5).clamp(11.5, 13).toDouble(),
+              fontWeight: FontWeight.w700,
+              height: isChineseUi(context) ? 1.3 : 1.15,
+            ),
           ),
         ),
       ),

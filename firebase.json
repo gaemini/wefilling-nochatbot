@@ -44,7 +44,14 @@
     "rules": "firestore.rules",
     "indexes": "firestore.indexes.json"
   },
-  "storage": {
-    "rules": "storage.rules"
-  }
+  "storage": [
+    {
+      "bucket": "flutterproject3-af322.firebasestorage.app",
+      "rules": "storage.rules"
+    },
+    {
+      "bucket": "flutterproject3-af322-kr",
+      "rules": "storage.rules"
+    }
+  ]
 }

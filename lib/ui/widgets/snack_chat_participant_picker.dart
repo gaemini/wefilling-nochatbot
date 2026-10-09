@@ -1,6 +1,7 @@
 import 'dart:async';
 
 import 'package:flutter/material.dart';
+import 'motion_press.dart';
 
 import '../../models/user_profile.dart';
 import '../../repositories/users_repository.dart';
@@ -480,7 +481,8 @@ class _SnackChatParticipantPickerState extends State<SnackChatParticipantPicker>
                       dimension: 22,
                       child: CircularProgressIndicator(strokeWidth: 2),
                     )
-                  : TextButton(
+                  : MotionPress(
+pressedScale: .985, child: TextButton(
                       key: const Key('snack_chat_load_more_users'),
                       onPressed: () => _searchDirectory(
                         _query,
@@ -491,7 +493,7 @@ class _SnackChatParticipantPickerState extends State<SnackChatParticipantPicker>
                         minimumSize: const Size(44, 40),
                       ),
                       child: Text((isChineseUi(context) ? '再加载10人' : _isKo ? '10명 더 보기' : 'Load 10 more')),
-                    ),
+                    )),
             ),
           );
         }
@@ -585,54 +587,54 @@ class _SelectedParticipantStrip extends StatelessWidget {
               SizedBox(width: context.rs(8).clamp(6, 10).toDouble()),
           itemBuilder: (_, index) {
             final profile = profiles[index];
-            return GestureDetector(
-              onTap: () => onRemove(profile),
-              child: SizedBox(
-                width: itemWidth,
-                child: Column(
-                  mainAxisSize: MainAxisSize.min,
-                  children: [
-                    Stack(
-                      clipBehavior: Clip.none,
-                      children: [
-                        _ParticipantAvatar(
-                          profile: profile,
-                          size: avatarSize,
-                        ),
-                        Positioned(
-                          right: -2,
-                          top: -2,
-                          child: Container(
-                            width: 18,
-                            height: 18,
-                            decoration: const BoxDecoration(
-                              color: Color(0xFF111827),
-                              shape: BoxShape.circle,
-                            ),
-                            child: const Icon(
-                              Icons.close_rounded,
-                              size: 12,
-                              color: Colors.white,
+            return MotionPress(
+              pressedScale: .99,
+              child: GestureDetector(
+                onTap: () => onRemove(profile),
+                child: SizedBox(
+                  width: itemWidth,
+                  child: Column(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      Stack(
+                        clipBehavior: Clip.none,
+                        children: [
+                          _ParticipantAvatar(profile: profile, size: avatarSize),
+                          Positioned(
+                            right: -2,
+                            top: -2,
+                            child: Container(
+                              width: 18,
+                              height: 18,
+                              decoration: const BoxDecoration(
+                                color: Color(0xFF111827),
+                                shape: BoxShape.circle,
+                              ),
+                              child: const Icon(
+                                Icons.close_rounded,
+                                size: 12,
+                                color: Colors.white,
+                              ),
                             ),
                           ),
-                        ),
-                      ],
-                    ),
-                    SizedBox(height: nameGap),
-                    Text(
-                      profile.displayNameOrNickname,
-                      maxLines: 1,
-                      overflow: TextOverflow.ellipsis,
-                      style: TextStyle(
-                        fontFamily: uiFontFamily(context, 'Inter'),
-                        fontFamilyFallback: const ['NotoSansKR'],
-                        fontSize: nameFontSize,
-                        fontWeight: FontWeight.w600,
-                        height: isChineseUi(context) ? 1.3 : 1.15,
-                        color: const Color(0xFF374151),
+                        ],
                       ),
-                    ),
-                  ],
+                      SizedBox(height: nameGap),
+                      Text(
+                        profile.displayNameOrNickname,
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                        style: TextStyle(
+                          fontFamily: uiFontFamily(context, 'Inter'),
+                          fontFamilyFallback: const ['NotoSansKR'],
+                          fontSize: nameFontSize,
+                          fontWeight: FontWeight.w600,
+                          height: isChineseUi(context) ? 1.3 : 1.15,
+                          color: const Color(0xFF374151),
+                        ),
+                      ),
+                    ],
+                  ),
                 ),
               ),
             );
@@ -667,7 +669,8 @@ class _ParticipantTile extends StatelessWidget {
       excludeSemantics: true,
       child: Material(
         color: Colors.transparent,
-        child: InkWell(
+        child: MotionPress(
+pressedScale: .99, child: InkWell(
           onTap: onTap,
           child: Padding(
             padding: EdgeInsets.symmetric(
@@ -721,7 +724,7 @@ class _ParticipantTile extends StatelessWidget {
               ],
             ),
           ),
-        ),
+        )),
       ),
     );
   }
@@ -861,14 +864,15 @@ class _PickerMessage extends StatelessWidget {
                   ),
                   if (actionLabel != null && onAction != null) ...[
                     SizedBox(height: context.rs(8).clamp(6, 10).toDouble()),
-                    TextButton(
+                    MotionPress(
+pressedScale: .985, child: TextButton(
                       onPressed: onAction,
                       style: TextButton.styleFrom(
                         foregroundColor: const Color(0xFF344054),
                         minimumSize: const Size(44, 40),
                       ),
                       child: Text(actionLabel!),
-                    ),
+                    )),
                   ],
                 ],
               ),

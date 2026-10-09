@@ -13,12 +13,14 @@ import 'package:flutter/rendering.dart' show ScrollCacheExtent;
 import 'package:flutter/services.dart';
 import 'package:flutter_linkify/flutter_linkify.dart';
 import 'package:image_picker/image_picker.dart';
+import 'package:path/path.dart' as p;
 import 'package:url_launcher/url_launcher.dart';
 
 import '../models/snack_chat.dart';
 import '../models/snack_chat_message.dart';
 import '../models/content_translation.dart';
 import '../config/snack_chat_file_policy.dart';
+import '../config/app_backend.dart';
 import '../l10n/app_localizations.dart';
 import '../repositories/users_repository.dart';
 import '../services/cache/app_image_cache_manager.dart';
@@ -38,6 +40,9 @@ import '../services/user_info_cache_service.dart';
 import '../ui/widgets/fullscreen_image_viewer.dart';
 import '../ui/widgets/snack_chat_message_extras.dart';
 import '../ui/widgets/chat_reaction_widgets.dart';
+import '../design/tokens.dart';
+import '../ui/widgets/motion_press.dart';
+import '../ui/widgets/chat_reply_reveal.dart';
 import '../ui/widgets/snack_chat_chrome.dart';
 import '../ui/widgets/snack_chat_outgoing_entrance.dart';
 import '../ui/widgets/soft_translate_reveal.dart';
@@ -48,6 +53,11 @@ import '../ui/dialogs/block_dialog.dart';
 import '../ui/dialogs/report_dialog.dart';
 import '../ui/dialogs/snack_chat_poll_dialog.dart';
 import '../ui/sheets/snack_chat_attachment_sheet.dart';
+import '../ui/widgets/chat_video_tile.dart';
+import '../ui/widgets/video_preparing_dialog.dart';
+import '../services/media/video_prepare_service.dart';
+import '../services/media/video_upload_policy.dart';
+import 'video_playback_screen.dart';
 import '../ui/sheets/snack_chat_file_confirmation_sheet.dart';
 import '../ui/sheets/snack_chat_image_confirmation_sheet.dart';
 import '../ui/sheets/snack_chat_people_sheet.dart';
@@ -61,6 +71,8 @@ import '../utils/snack_chat_message_grouping.dart';
 import '../utils/snack_chat_translation_policy.dart';
 import '../utils/snack_chat_unread_summary_policy.dart';
 import '../utils/snack_chat_mentions.dart';
+import '../utils/snack_chat_read_policy.dart';
+import 'package:cloud_functions/cloud_functions.dart';
 import '../ui/widgets/snack_chat_mention_picker.dart';
 import 'friend_categories_screen.dart';
 import 'main_screen.dart';
@@ -239,8 +251,7 @@ class _SnackChatScreenState extends State<SnackChatScreen>
   static const Duration _translationMicroBatchWindow =
       Duration(milliseconds: 70);
   static const Duration _toolbarAnimationDuration = Duration(milliseconds: 190);
-  static const Duration _translationStyleAnimationDuration =
-      Duration(milliseconds: 150);
+  static const Duration _translationStyleAnimationDuration = MotionTokens.fast;
   static const double _senderAvatarSize = 34;
   static const double _senderAvatarGap = 8;
 
@@ -291,6 +302,14 @@ class _SnackChatScreenState extends State<SnackChatScreen>
   Stopwatch? _readRequestIntervalWatch;
   static const Duration _activeReadRequestInterval =
       Duration(milliseconds: 1500);
+  // Direct read fast path (SNACK_CHAT_DIRECT_READ): the highest sequence the
+  // Rules-validated member write accepted, and the coalesced reconcile timer
+  // that lets the callable settle room.unreadCount afterwards.
+  int _directReadAcceptedSequence = 0;
+  Timer? _readReconcileTimer;
+  // Phase 0 measurement (ChatTiming only): entry → first painted history.
+  final Stopwatch _entryWatch = Stopwatch()..start();
+  bool _entryFirstPaintRecorded = false;
   int _pendingReadSequence = 0;
   int _confirmedReadSequence = 0;
   int _highestConfirmedReadSequence = 0;
@@ -319,6 +338,7 @@ class _SnackChatScreenState extends State<SnackChatScreen>
   Object? _messageStreamError;
   Object? _loadMoreError;
   final Map<String, String> _myReactions = <String, String>{};
+  final _reactionMotionEvents = ChatReactionMotionEvents();
   final Map<String, Set<String>> _myVotes = <String, Set<String>>{};
   final Map<String, String?> _confirmedReactions = <String, String?>{};
   final Map<String, Set<String>> _confirmedVotes = <String, Set<String>>{};
@@ -327,6 +347,11 @@ class _SnackChatScreenState extends State<SnackChatScreen>
   final Set<String> _reactionMutationsInFlight = <String>{};
   final Set<String> _voteMutationsInFlight = <String>{};
   final Set<String> _retryingMessageIds = <String>{};
+  // Messages whose last send was rejected outright (Rules/validation). They
+  // stay visible as failed but are excluded from automatic outbox recovery:
+  // retrying the same payload cannot succeed, and looping would hammer the
+  // room while every participant is chatting. A manual retry clears the flag.
+  final Set<String> _definitivelyRejectedIds = <String>{};
   final Set<String> _sendingTextMessageIds = <String>{};
   static final Map<String, _SnackChatOutboundLane> _outboundLanes =
       <String, _SnackChatOutboundLane>{};
@@ -422,7 +447,8 @@ class _SnackChatScreenState extends State<SnackChatScreen>
   int _translationBatchesInFlight = 0;
   bool _translationModeReady = false;
   bool _translationLanguageSheetOpen = false;
-  bool _manualTranslationRetryInFlight = false;
+  // Per-message: one bubble's long retry must not disable retry on others.
+  final Set<String> _manualTranslationRetryKeys = <String>{};
   bool _isUserScrolling = false;
   bool _translationRestoreScheduled = false;
   int _translationRestoreGeneration = 0;
@@ -557,7 +583,7 @@ class _SnackChatScreenState extends State<SnackChatScreen>
     _translationScanScheduled = false;
     _translationBatchesInFlight = 0;
     _translationModeReady = false;
-    _manualTranslationRetryInFlight = false;
+    _manualTranslationRetryKeys.clear();
     _isUserScrolling = false;
     _toolbarScrollTracker.resetRoom();
     _toolbarVisible.value = true;
@@ -637,7 +663,7 @@ class _SnackChatScreenState extends State<SnackChatScreen>
         _translationMicroBatchTimer = null;
         _translationBatchesInFlight = 0;
         _translationModeReady = false;
-        _manualTranslationRetryInFlight = false;
+        _manualTranslationRetryKeys.clear();
         _messageTranslations.clear();
         _translationSourceSignatures.clear();
         _translationRequestsInFlight.clear();
@@ -704,8 +730,10 @@ class _SnackChatScreenState extends State<SnackChatScreen>
           : <String, String>{'text': message.text};
     }
 
-    final fields = <String, String>{};
-    if (poll.question.trim().isNotEmpty) fields['text'] = poll.question;
+    // The server hashes `text` for every poll (empty question included); an
+    // omitted key made the hashes differ and every retry end in
+    // stale_translation_result.
+    final fields = <String, String>{'text': poll.question};
     for (var index = 0; index < poll.options.length; index++) {
       final optionText = poll.options[index].text;
       if (optionText.trim().isNotEmpty) {
@@ -1519,9 +1547,12 @@ class _SnackChatScreenState extends State<SnackChatScreen>
     }
   }
 
+  /// User-initiated retry. Every explicit tap regenerates on the server
+  /// ([forceRefresh] default true): a cached failure or an earlier result for
+  /// the same text must not be served back as "the retry".
   Future<void> _retryFailedTranslation(
     SnackChatMessage message, {
-    bool forceRefresh = false,
+    bool forceRefresh = true,
   }) async {
     if (!_translationModeReady ||
         _translationShowsOriginal ||
@@ -1530,27 +1561,31 @@ class _SnackChatScreenState extends State<SnackChatScreen>
       return;
     }
     final requestKey = _translationRequestKey(message);
+    // Stale local bookkeeping (a queued micro-batch slot or a deferred
+    // outcome that never got committed) must not veto the tap. Only a request
+    // that is really on the wire counts as pending.
+    _translationMicroBatchCandidates.remove(requestKey);
+    _deferredTranslationOutcomes.remove(requestKey);
+    final networkPending = _translationRequestsInFlight.contains(requestKey) ||
+        _translationCacheLookupsInFlight.contains(requestKey);
     if (!canStartUserSnackTranslationRetry(
-      retryInFlight: _manualTranslationRetryInFlight,
-      messageWorkPending: _isTranslationWorkPending(requestKey),
+      retryInFlight: _manualTranslationRetryKeys.contains(requestKey),
+      messageWorkPending: networkPending,
       lifecycleResumed: _appLifecycleState == AppLifecycleState.resumed,
       isLeavingRoom: _isLeavingRoom,
       roomAccessTerminated: _roomAccessTerminated,
     )) {
       return;
     }
-    if ((!forceRefresh && (_translationFailures[requestKey] ?? 0) < 2) ||
-        _translationRequestsInFlight.contains(requestKey)) {
+    if (!forceRefresh && (_translationFailures[requestKey] ?? 0) < 2) {
       return;
     }
     setState(() {
-      _manualTranslationRetryInFlight = true;
+      _manualTranslationRetryKeys.add(requestKey);
       // 이 메시지에 남아 있던 로컬 실패/대기 상태를 제거해 로딩 표시와
       // 표준 자동 재시도 파이프라인이 새 요청 결과를 기준으로 다시 시작한다.
       _translationFailures.remove(requestKey);
       _translationRetryAfter.remove(requestKey);
-      _translationMicroBatchCandidates.remove(requestKey);
-      _deferredTranslationOutcomes.remove(requestKey);
     });
     try {
       // 사용자가 누를 때마다 실패한 메시지 하나만 재시도한다. 기존 배치 크기나
@@ -1562,7 +1597,9 @@ class _SnackChatScreenState extends State<SnackChatScreen>
         forceRefresh: forceRefresh,
       );
     } finally {
-      if (mounted) setState(() => _manualTranslationRetryInFlight = false);
+      if (mounted) {
+        setState(() => _manualTranslationRetryKeys.remove(requestKey));
+      }
     }
   }
 
@@ -1653,12 +1690,14 @@ class _SnackChatScreenState extends State<SnackChatScreen>
       }
     });
     _myReactions.clear();
+    _reactionMotionEvents.clear();
     _myVotes.clear();
     _confirmedReactions.clear();
     _confirmedVotes.clear();
     _pendingReactionTargets.clear();
     _pendingVoteTargets.clear();
     _retryingMessageIds.clear();
+    _definitivelyRejectedIds.clear();
     _removingFailedMessageIds.clear();
     _clearReplyState();
     _oldestMessage = null;
@@ -1688,6 +1727,9 @@ class _SnackChatScreenState extends State<SnackChatScreen>
     _pendingReadSequence = 0;
     _confirmedReadSequence = 0;
     _highestConfirmedReadSequence = 0;
+    _directReadAcceptedSequence = 0;
+    _readReconcileTimer?.cancel();
+    _readReconcileTimer = null;
     _readSyncGeneration++;
     _isNearLatest = true;
     _outboxRetryAttempt = 0;
@@ -1852,6 +1894,7 @@ class _SnackChatScreenState extends State<SnackChatScreen>
         _sortMessages();
         _updateOldestMessageCursor(cachedMessages);
         _isInitialLoading = false;
+        _markEntryFirstPaint('cache');
       }
     });
     if (_entryContextResolved &&
@@ -1910,6 +1953,7 @@ class _SnackChatScreenState extends State<SnackChatScreen>
           cachedRoom.lastMessageId.isEmpty &&
           cachedRoom.lastMessage.isEmpty) {
         _isInitialLoading = false;
+        _markEntryFirstPaint('firstPage');
       }
       if (!_draftTouched &&
           _messageController.text.isEmpty &&
@@ -2198,7 +2242,11 @@ class _SnackChatScreenState extends State<SnackChatScreen>
     _messageCacheDebounce?.cancel();
     final owner = _uid;
     final roomId = widget.snackChatId;
-    _messageCacheDebounce = Timer(const Duration(milliseconds: 180), () {
+    // A longer window during bursts means fewer full-list encodes per second.
+    _messageCacheDebounce = Timer(
+        SnackChatLocalCacheService.cacheOffloadEnabled
+            ? const Duration(milliseconds: 400)
+            : const Duration(milliseconds: 180), () {
       if (!_isLeavingRoom &&
           owner != null &&
           _uid == owner &&
@@ -2296,17 +2344,42 @@ class _SnackChatScreenState extends State<SnackChatScreen>
     var membershipPrepared = false;
     SnackChatEntryContext? resolvedEntry;
     try {
-      await _ensureMyMembershipReady();
+      SnackChatEntryContext entry;
+      if (SnackChatService.fastEntryEnabled) {
+        // Entry context first: the new server repairs a missing member doc
+        // inside getSnackChatEntryContext, so the serial membership callable
+        // is skipped. Only failed-precondition (older server, or a member doc
+        // it could not repair) runs the explicit repair and retries once.
+        try {
+          entry = await _snackChatService.getEntryContext(roomId);
+        } on FirebaseFunctionsException catch (error) {
+          if (error.code != 'failed-precondition') rethrow;
+          await _ensureMyMembershipReady(force: true);
+          entry = await _snackChatService.getEntryContext(roomId);
+        }
+      } else {
+        await _ensureMyMembershipReady();
+        membershipPrepared = true;
+        _membershipPreparationPending = false;
+        if (_messageStreamError != null) _subscribeToMessages();
+        entry = await _snackChatService.getEntryContext(roomId);
+      }
       membershipPrepared = true;
       _membershipPreparationPending = false;
       if (_messageStreamError != null) _subscribeToMessages();
-      final entry = await _snackChatService.getEntryContext(roomId);
       if (!mounted ||
           generation != _entryBootstrapGeneration ||
           roomId != widget.snackChatId) {
         return;
       }
       resolvedEntry = entry;
+      if (ChatTiming.enabled) {
+        ChatTiming.record(
+          '[SnackChatTiming] stage=entryContextResolved roomId=$roomId '
+          'durationMs=${_entryWatch.elapsedMilliseconds} '
+          'fastEntry=${SnackChatService.fastEntryEnabled}',
+        );
+      }
       if (entry.canAdvanceReadCursor && !_accountInvalidated) {
         unawaited(NotificationService().markRelatedNotificationsAsRead(
           types: const {'snack_chat_invite'},
@@ -2635,6 +2708,19 @@ class _SnackChatScreenState extends State<SnackChatScreen>
     });
   }
 
+  /// Phase 0 measurement: entry → first frame with history on screen.
+  void _markEntryFirstPaint(String source) {
+    if (_entryFirstPaintRecorded || !ChatTiming.enabled) return;
+    _entryFirstPaintRecorded = true;
+    final roomId = widget.snackChatId;
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      ChatTiming.record(
+        '[SnackChatTiming] stage=roomEntryFirstPaint roomId=$roomId '
+        'source=$source durationMs=${_entryWatch.elapsedMilliseconds}',
+      );
+    });
+  }
+
   int _latestConfirmedSequence() {
     var latest = _highestConfirmedReadSequence;
     final roomSequence = _lastRoom?.lastMessageSequence ?? 0;
@@ -2664,9 +2750,17 @@ class _SnackChatScreenState extends State<SnackChatScreen>
         if (!FCMService().isNotificationSession(owner, notificationSession)) {
           throw StateError('Snack Chat read session changed');
         }
+        final readWatch = Stopwatch()..start();
         final readResult = await _snackChatService
             .markAsRead(roomId, throughSequence: throughSequence)
             .timeout(const Duration(seconds: 16));
+        if (ChatTiming.enabled) {
+          ChatTiming.record(
+            '[SnackChatTiming] stage=readCallDuration roomId=$roomId '
+            'path=callable durationMs=${readWatch.elapsedMilliseconds} '
+            'through=$throughSequence',
+          );
+        }
         if (FCMService().isNotificationSession(owner, notificationSession)) {
           _scheduleReadPostProcessing(roomId, readResult);
         }
@@ -2688,13 +2782,14 @@ class _SnackChatScreenState extends State<SnackChatScreen>
   ) {
     final owner = FirebaseAuth.instance.currentUser?.uid ?? '';
     if (owner.isEmpty) return;
-    if (result.clearedCount > 0) {
-      unawaited(
-        BadgeService.refreshNow().catchError((Object error) {
-          Logger.error('Snack Chat 읽음 배지 갱신 실패', error);
-        }),
-      );
-    }
+    // Always recount: the server counter may already have been lowered by
+    // another device (clearedCount 0) while this icon still shows the old
+    // number from the last push.
+    unawaited(
+      BadgeService.refreshNow(fresh: true).catchError((Object error) {
+        Logger.error('Snack Chat 읽음 배지 갱신 실패', error);
+      }),
+    );
     if (result.readThroughSequence > 0) {
       unawaited(
         FCMService()
@@ -2755,6 +2850,7 @@ class _SnackChatScreenState extends State<SnackChatScreen>
       return;
     }
     final latest = _latestConfirmedSequence();
+    _reconcileRoomNotifications(latest);
     if (latest <= _confirmedReadSequence) return;
     if (latest > _highestConfirmedReadSequence) {
       _highestConfirmedReadSequence = latest;
@@ -2768,6 +2864,37 @@ class _SnackChatScreenState extends State<SnackChatScreen>
     unawaited(_drainActiveReadSync(roomId, generation));
   }
 
+  int _notificationReconcileSequence = 0;
+
+  /// The newest server-committed message is on screen (this runs only while
+  /// the room is current, resumed and active), so every OS card for this
+  /// room is covered: remove them and recount the badge from the server.
+  /// Independent of the read callable, which may be skipped (already read on
+  /// another device) or fail transiently.
+  void _reconcileRoomNotifications(int latestVisibleSequence) {
+    if (latestVisibleSequence <= 0 ||
+        latestVisibleSequence <= _notificationReconcileSequence) {
+      return;
+    }
+    _notificationReconcileSequence = latestVisibleSequence;
+    final owner = _uid;
+    final roomId = widget.snackChatId;
+    if (owner == null) return;
+    unawaited(FCMService()
+        .cancelSnackChatNotification(
+          roomId,
+          throughSequence: latestVisibleSequence,
+          coversLatestVisible: true,
+          expectedOwner: owner,
+        )
+        .catchError((Object error) {
+      Logger.error('Snack Chat 화면 기준 알림 정리 실패', error);
+    }));
+    unawaited(BadgeService.refreshNow(fresh: true).catchError((Object error) {
+      Logger.error('Snack Chat 화면 기준 배지 갱신 실패', error);
+    }));
+  }
+
   Future<void> _drainActiveReadSync(String roomId, int generation) async {
     var retryDeferred = false;
     try {
@@ -2778,8 +2905,16 @@ class _SnackChatScreenState extends State<SnackChatScreen>
           SnackChatActiveConversation.isActive(roomId) &&
           _appLifecycleState == AppLifecycleState.resumed &&
           _pendingReadSequence > _confirmedReadSequence) {
+        final useDirectRead = SnackChatService.directReadEnabled &&
+            SnackChatReadPolicy.canDirectWrite(
+              myMember: _uid == null ? null : _members[_uid],
+              entryContextResolved: _entryContextResolved,
+              canAdvanceReadCursor: _entryReadSyncAllowed,
+            );
         final intervalWatch = _readRequestIntervalWatch;
-        if (!_immediateReadSyncRequested && intervalWatch != null) {
+        if (!useDirectRead &&
+            !_immediateReadSyncRequested &&
+            intervalWatch != null) {
           final remaining = _activeReadRequestInterval - intervalWatch.elapsed;
           if (remaining > Duration.zero) {
             await Future<void>.delayed(remaining);
@@ -2790,6 +2925,52 @@ class _SnackChatScreenState extends State<SnackChatScreen>
         }
         final target = _pendingReadSequence;
         _immediateReadSyncRequested = false;
+        if (useDirectRead) {
+          // One Rules-validated write; no callable, no cold start. Other
+          // participants' receipt counts update from their members listener.
+          int? accepted;
+          final directWatch = Stopwatch()..start();
+          try {
+            accepted = await _snackChatService.advanceReadCursorDirect(
+              roomId,
+              throughSequence: target,
+            );
+            if (ChatTiming.enabled) {
+              ChatTiming.record(
+                '[SnackChatTiming] stage=readCallDuration roomId=$roomId '
+                'path=direct accepted=${accepted != null} '
+                'durationMs=${directWatch.elapsedMilliseconds} through=$target',
+              );
+            }
+          } catch (error) {
+            retryDeferred = true;
+            Logger.error('Snack Chat 직접 읽음 커서 쓰기 실패', error);
+            return;
+          }
+          if (generation != _readSyncGeneration) return;
+          if (accepted != null) {
+            if (accepted > _confirmedReadSequence) {
+              _confirmedReadSequence = accepted;
+            }
+            if (accepted > _directReadAcceptedSequence) {
+              _directReadAcceptedSequence = accepted;
+            }
+            // Rules accepted the boundary against the room's canonical
+            // sequence, so OS cards through it can be removed now.
+            _scheduleReadPostProcessing(
+              roomId,
+              SnackChatReadResult(
+                clearedCount: 0,
+                unreadCount: 0,
+                readThroughSequence: accepted,
+              ),
+            );
+            _scheduleReadReconcile(roomId);
+            continue;
+          }
+          // Rejected (legacy member doc or another device ahead): the callable
+          // path below remains the authoritative fallback.
+        }
         _readRequestIntervalWatch ??= Stopwatch();
         _readRequestIntervalWatch!
           ..reset()
@@ -2828,7 +3009,37 @@ class _SnackChatScreenState extends State<SnackChatScreen>
     }
   }
 
+  /// After direct cursor writes, run the read callable once (coalesced) so the
+  /// server reconciles room.unreadCount and the durable badge. The receipt is
+  /// already visible to others, so this is off the user-visible path.
+  void _scheduleReadReconcile(String roomId) {
+    _readReconcileTimer?.cancel();
+    final generation = _readSyncGeneration;
+    _readReconcileTimer = Timer(SnackChatReadPolicy.reconcileDelay, () {
+      _readReconcileTimer = null;
+      if (!mounted ||
+          generation != _readSyncGeneration ||
+          roomId != widget.snackChatId ||
+          _uid == null ||
+          _exitReadFlushStarted) {
+        return;
+      }
+      final through = _directReadAcceptedSequence;
+      if (through <= 0) return;
+      unawaited(
+        _flushReadBoundary(roomId: roomId, throughSequence: through).then<void>(
+          (_) {},
+          onError: (Object error, StackTrace _) {
+            Logger.error('Snack Chat 읽음 정합화 실패', error);
+          },
+        ),
+      );
+    });
+  }
+
   void _startBackgroundReadFlush() {
+    _readReconcileTimer?.cancel();
+    _readReconcileTimer = null;
     if (!_entryContextResolved ||
         _uid == null ||
         !_entryReadSyncAllowed ||
@@ -2948,6 +3159,7 @@ class _SnackChatScreenState extends State<SnackChatScreen>
         if (needsUiUpdate) {
           setState(() {
             _isInitialLoading = false;
+            _markEntryFirstPaint('live');
             _messageStreamError = null;
             _messageRetryAttempt = 0;
             // UI는 sequence 우선으로 정렬하지만 Firestore 페이지 커서는
@@ -3172,11 +3384,29 @@ class _SnackChatScreenState extends State<SnackChatScreen>
                   lastReadSequence: previous.lastReadSequence,
                   lastReadAt: previous.lastReadAt ?? member.lastReadAt,
                   periods: member.periods,
+                  unreadReconciledThroughSequence:
+                      member.unreadReconciledThroughSequence ??
+                          previous.unreadReconciledThroughSequence,
                 )
               : member;
         }
         markReady('members');
         final currentUserId = _uid;
+        if (ChatTiming.enabled) {
+          for (final member in nextMembers.values) {
+            final previous = _members[member.userId];
+            if (member.userId != currentUserId &&
+                previous != null &&
+                member.lastReadSequence > previous.lastReadSequence) {
+              ChatTiming.record(
+                '[SnackChatTiming] stage=memberReadObserved '
+                'roomId=${widget.snackChatId} '
+                'at=${DateTime.now().millisecondsSinceEpoch} '
+                'sequence=${member.lastReadSequence}',
+              );
+            }
+          }
+        }
         final mine = currentUserId == null ? null : nextMembers[currentUserId];
         setState(() {
           _members
@@ -4558,7 +4788,120 @@ class _SnackChatScreenState extends State<SnackChatScreen>
     );
   }
 
-  Future<void> _pickAndSendImage() async {
+  static const Set<String> _videoExtensions = {
+    'mp4', 'mov', 'm4v', '3gp', 'mkv', 'webm', 'avi', 'mpeg', 'mpg',
+  };
+
+  bool _looksLikeVideo(XFile file) {
+    final mime = (file.mimeType ?? '').toLowerCase();
+    if (mime.startsWith('video/')) return true;
+    if (mime.startsWith('image/')) return false;
+    final extension = SnackChatFilePolicy.extensionOf(
+      file.name.isNotEmpty ? file.name : file.path,
+    );
+    return _videoExtensions.contains(extension);
+  }
+
+  /// 갤러리에서 사진과 영상을 한 화면에서 고른다. 영상은 파일 전송 경로로,
+  /// 사진은 기존 이미지 경로로 보낸다.
+  Future<void> _pickAndSendMedia() async {
+    if (_isUploadingImage || _isLeavingRoom) return;
+    final roomId = widget.snackChatId;
+    final picked = await _imagePicker.pickMedia(
+      maxWidth: 1800,
+      maxHeight: 1800,
+      imageQuality: 88,
+    );
+    if (picked == null || !mounted || roomId != widget.snackChatId) return;
+    if (_looksLikeVideo(picked)) {
+      await _sendPickedVideo(File(picked.path));
+      return;
+    }
+    await _pickAndSendImage(preselected: picked);
+  }
+
+  /// 540p로 압축하고 썸네일을 만든 뒤 기존 파일 전송 큐로 보낸다.
+  Future<void> _sendPickedVideo(File source) async {
+    final roomId = widget.snackChatId;
+    final room = _lastRoom;
+    if (room == null || _uid == null) {
+      _showNotice('채팅방 정보를 확인한 뒤 다시 시도해 주세요.');
+      return;
+    }
+    final limits = VideoUploadPolicy.snackChat;
+    File? staged;
+    try {
+      final file = await runWithVideoPreparingDialog<SnackChatSelectedFile>(
+        context,
+        () async {
+          final prepared = await VideoPrepareService.instance
+              .prepare(source, limits: limits);
+          final meta =
+              await VideoPrepareService.instance.chatVideoMeta(prepared);
+          final stem = p.basenameWithoutExtension(source.path);
+          staged = await VideoPrepareService.instance
+              .stageForSend(prepared, stem: stem);
+          final validated = await SnackChatFilePolicy.validatePath(
+            staged!.path,
+            displayName: '${stem.isEmpty ? 'video' : stem}.mp4',
+          );
+          return validated.withVideoMeta(meta);
+        },
+      );
+      if (!mounted || roomId != widget.snackChatId) return;
+      final confirmed = await showSnackChatFileConfirmationSheet(
+        context,
+        files: <SnackChatSelectedFile>[file],
+        temporary24h: room.activeDurationHours != 0,
+      );
+      if (!mounted ||
+          confirmed == null ||
+          confirmed.isEmpty ||
+          roomId != widget.snackChatId) {
+        return;
+      }
+      final reply = _replyPreviewForCurrentTarget();
+      late final List<SnackChatMessage> pending;
+      try {
+        pending = await _fileTransfer.enqueueFiles(
+          room: room,
+          files: confirmed,
+          replyPreview: reply,
+        );
+      } catch (_) {
+        if (mounted) _showNotice('영상 전송을 시작하지 못했습니다.');
+        return;
+      }
+      if (!mounted || roomId != widget.snackChatId) return;
+      for (final message in pending) {
+        _stageOutboundEntrance(message.id);
+      }
+      setState(() {
+        for (final message in pending) {
+          _insertLocalMessage(message);
+        }
+        _clearReplyState();
+      });
+      if (_isNearLatest) _scrollToLatest(animated: true);
+    } on SnackChatFileValidationException catch (error) {
+      if (mounted) _showNotice(error.message);
+    } catch (error, stackTrace) {
+      Logger.error('Snack Chat 영상 준비 실패', error, stackTrace);
+      if (mounted) {
+        _showNotice(videoPrepareErrorMessage(context, error, limits));
+      }
+    } finally {
+      // 전송 큐가 자기 저장소로 복사를 마친 뒤이므로 임시 사본은 지운다.
+      final temp = staged;
+      if (temp != null) {
+        try {
+          if (await temp.exists()) await temp.delete();
+        } catch (_) {}
+      }
+    }
+  }
+
+  Future<void> _pickAndSendImage({XFile? preselected}) async {
     if (_isUploadingImage || _isLeavingRoom) return;
     final roomId = widget.snackChatId;
     final uid = _uid;
@@ -4567,22 +4910,30 @@ class _SnackChatScreenState extends State<SnackChatScreen>
     String? pendingMessageId;
     setState(() => _isUploadingImage = true);
     try {
-      final picked = await _imagePicker.pickImage(
-        source: ImageSource.gallery,
-        maxWidth: 1800,
-        maxHeight: 1800,
-        imageQuality: 88,
-      );
+      final picked = preselected ??
+          await _imagePicker.pickImage(
+            source: ImageSource.gallery,
+            maxWidth: 1800,
+            maxHeight: 1800,
+            imageQuality: 88,
+          );
       if (picked == null) return;
       if (!mounted || roomId != widget.snackChatId) return;
 
       final imageFile = File(picked.path);
+      // Compress and measure while the user is still looking at the
+      // confirmation sheet, so tapping "send" goes straight to the upload.
+      final preparing = _storageService.prepareChatImage(imageFile);
       final confirmed = await showSnackChatImageConfirmationSheet(
         context,
         imageFile: imageFile,
       );
-      if (!confirmed || !mounted || roomId != widget.snackChatId) return;
+      if (!confirmed || !mounted || roomId != widget.snackChatId) {
+        unawaited(preparing.then((prepared) => prepared?.dispose()));
+        return;
+      }
       unawaited(HapticFeedback.selectionClick());
+      final prepared = await preparing;
 
       final messageId = _snackChatService.createMessageId(roomId);
       pendingMessageId = messageId;
@@ -4613,17 +4964,22 @@ class _SnackChatScreenState extends State<SnackChatScreen>
           _updateLocalMessage(
               messageId, (m) => m.copyWith(localImagePath: path));
         }
-        return _storageService.uploadPrivateSnackChatImage(
-          File(path),
-          userId: uid,
-          snackChatId: roomId,
-          onProgress: (progress) {
-            if (mounted && _uid == uid && roomId == widget.snackChatId) {
-              _updateLocalMessage(
-                  messageId, (m) => m.copyWith(transferProgress: progress));
-            }
-          },
-        );
+        try {
+          return await _storageService.uploadPrivateSnackChatImage(
+            File(path),
+            userId: uid,
+            snackChatId: roomId,
+            prepared: prepared,
+            onProgress: (progress) {
+              if (mounted && _uid == uid && roomId == widget.snackChatId) {
+                _updateLocalMessage(
+                    messageId, (m) => m.copyWith(transferProgress: progress));
+              }
+            },
+          );
+        } finally {
+          unawaited(prepared?.dispose());
+        }
       });
       if (upload == null || upload.storagePath.isEmpty || _uid != uid) {
         if (mounted && roomId == widget.snackChatId && _uid == uid) {
@@ -4635,12 +4991,14 @@ class _SnackChatScreenState extends State<SnackChatScreen>
         if (_uid != uid) return false;
         final imageUrl = upload.imageUrl;
         final imagePath = upload.storagePath;
+        final storageBucket = upload.storageBucket;
         if (mounted && roomId == widget.snackChatId) {
           _updateLocalMessage(
             messageId,
             (message) => message.copyWith(
               imageUrl: imageUrl,
               imagePath: imagePath,
+              storageBucket: storageBucket,
               imageWidth: upload.imageWidth,
               imageHeight: upload.imageHeight,
             ),
@@ -4651,6 +5009,7 @@ class _SnackChatScreenState extends State<SnackChatScreen>
           roomId,
           imageUrl: imageUrl,
           imagePath: imagePath,
+          storageBucket: storageBucket,
           imageWidth: upload.imageWidth,
           imageHeight: upload.imageHeight,
           messageId: messageId,
@@ -4760,10 +5119,7 @@ class _SnackChatScreenState extends State<SnackChatScreen>
       return;
     }
     final uid = _uid;
-    if (uid == null ||
-        !_messages.any(
-          (message) => message.senderId == uid && message.needsRetry,
-        )) {
+    if (uid == null || !_messages.any((m) => _autoRetryable(m, uid))) {
       _outboxRetryAttempt = 0;
       return;
     }
@@ -4777,10 +5133,10 @@ class _SnackChatScreenState extends State<SnackChatScreen>
           _appLifecycleState != AppLifecycleState.resumed) {
         return;
       }
+      final owner = _uid;
+      if (owner == null) return;
       final pending = _messages
-          .where(
-            (message) => message.senderId == _uid && message.needsRetry,
-          )
+          .where((message) => _autoRetryable(message, owner))
           .toList(growable: false)
           .reversed
           .toList(growable: false);
@@ -4794,15 +5150,18 @@ class _SnackChatScreenState extends State<SnackChatScreen>
         if (current != null && current.needsRetry) break;
       }
       if (!mounted) return;
-      if (_messages.any(
-        (message) => message.senderId == _uid && message.needsRetry,
-      )) {
+      if (_messages.any((m) => _autoRetryable(m, owner))) {
         _scheduleOutboxRecovery();
       } else {
         _outboxRetryAttempt = 0;
       }
     });
   }
+
+  bool _autoRetryable(SnackChatMessage message, String owner) =>
+      message.senderId == owner &&
+      message.needsRetry &&
+      !_definitivelyRejectedIds.contains(message.id);
 
   Future<bool> _resolveSendOutcome(
     String messageId,
@@ -4831,6 +5190,7 @@ class _SnackChatScreenState extends State<SnackChatScreen>
       return true;
     }
     if (_snackChatService.wasSendRejected(owner, targetRoomId, messageId)) {
+      _definitivelyRejectedIds.add(messageId);
       _markMessageFailed(messageId, '전송 요청이 거절되었습니다. 다시 확인해 주세요.');
       return true;
     }
@@ -4880,6 +5240,9 @@ class _SnackChatScreenState extends State<SnackChatScreen>
     }
     if (!_sendRecoveryV2 ||
         _snackChatService.wasSendRejected(owner, targetRoomId, messageId)) {
+      if (_snackChatService.wasSendRejected(owner, targetRoomId, messageId)) {
+        _definitivelyRejectedIds.add(messageId);
+      }
       _markMessageFailed(messageId, '전송 요청이 거절되었습니다. 다시 확인해 주세요.');
       return true;
     }
@@ -4893,9 +5256,17 @@ class _SnackChatScreenState extends State<SnackChatScreen>
     return false;
   }
 
-  Future<void> _retryMessage(SnackChatMessage message) async {
+  Future<void> _retryMessage(
+    SnackChatMessage message, {
+    bool manual = false,
+  }) async {
     final owner = _uid;
     if (owner == null || message.senderId != owner) return;
+    if (manual) {
+      _definitivelyRejectedIds.remove(message.id);
+    } else if (_definitivelyRejectedIds.contains(message.id)) {
+      return;
+    }
     final roomId = widget.snackChatId;
     // The automatic retry list is a snapshot. A live ack may have committed
     // this stable ID before its turn reaches the queue.
@@ -4954,6 +5325,7 @@ class _SnackChatScreenState extends State<SnackChatScreen>
       );
       var imageUrl = message.imageUrl;
       var imagePath = message.imagePath;
+      var storageBucket = message.storageBucket;
       var imageWidth = message.imageWidth;
       var imageHeight = message.imageHeight;
       if (message.type == SnackChatMessageType.image &&
@@ -4975,6 +5347,7 @@ class _SnackChatScreenState extends State<SnackChatScreen>
               roomId != widget.snackChatId) return;
           imageUrl = upload.imageUrl;
           imagePath = upload.storagePath;
+          storageBucket = upload.storageBucket;
           imageWidth = upload.imageWidth;
           imageHeight = upload.imageHeight;
           _updateLocalMessage(
@@ -4984,6 +5357,7 @@ class _SnackChatScreenState extends State<SnackChatScreen>
                 : m.copyWith(
                     imageUrl: imageUrl,
                     imagePath: imagePath,
+                    storageBucket: storageBucket,
                     imageWidth: imageWidth,
                     imageHeight: imageHeight,
                   ),
@@ -5014,6 +5388,7 @@ class _SnackChatScreenState extends State<SnackChatScreen>
               messageId: message.id,
               imageUrl: imageUrl,
               imagePath: imagePath,
+              storageBucket: storageBucket,
               imageWidth: imageWidth,
               imageHeight: imageHeight,
               text: message.text,
@@ -5147,6 +5522,7 @@ class _SnackChatScreenState extends State<SnackChatScreen>
             storagePath,
             userId: uid,
             snackChatId: widget.snackChatId,
+            storageBucket: message.storageBucket,
           );
         } catch (_) {
           _showNotice('업로드된 이미지를 정리하지 못했습니다. 다시 시도해 주세요.');
@@ -5221,12 +5597,16 @@ class _SnackChatScreenState extends State<SnackChatScreen>
 
   Future<void> _showAttachmentOptions() async {
     if (_isAttachmentFlowOpen) return;
+    // 첨부 시트·갤러리가 열려 있는 동안 키보드가 함께 떠서 겹쳐 보이지 않도록
+    // 먼저 입력창 포커스를 내린다(시트는 requestFocus:false라 스스로 닫지 않는다).
+    _messageFocusNode.unfocus();
+    FocusManager.instance.primaryFocus?.unfocus();
     setState(() => _isAttachmentFlowOpen = true);
     try {
       final action = await showSnackChatAttachmentSheet(context);
       if (!mounted) return;
       if (action == SnackChatAttachmentAction.image) {
-        await _pickAndSendImage();
+        await _pickAndSendMedia();
       } else if (action == SnackChatAttachmentAction.file) {
         await _pickAndQueueFiles();
       } else if (action == SnackChatAttachmentAction.poll) {
@@ -5574,6 +5954,7 @@ class _SnackChatScreenState extends State<SnackChatScreen>
     if (message.isDeleted || message.isPending || message.hasFailed) return;
     final oldEmoji = _myReactions[message.id];
     final nextEmoji = oldEmoji == emoji ? null : emoji;
+    if (nextEmoji != null) _reactionMotionEvents.record(message.id, nextEmoji);
     if (!_reactionMutationsInFlight.contains(message.id) &&
         !_pendingReactionTargets.containsKey(message.id)) {
       _confirmedReactions[message.id] = oldEmoji;
@@ -6009,7 +6390,7 @@ class _SnackChatScreenState extends State<SnackChatScreen>
         !_translationShowsOriginal &&
         _canTranslateMessage(message) &&
         currentTranslation?.isSameLanguage != true &&
-        !_manualTranslationRetryInFlight &&
+        !_manualTranslationRetryKeys.contains(_translationRequestKey(message)) &&
         !_isTranslationWorkPending(_translationRequestKey(message));
     final action = await showModalBottomSheet<_MessageAction>(
       context: context,
@@ -6144,7 +6525,7 @@ class _SnackChatScreenState extends State<SnackChatScreen>
         await _retryFailedTranslation(message, forceRefresh: true);
         break;
       case _MessageActionType.retry:
-        await _retryMessage(message);
+        await _retryMessage(message, manual: true);
         break;
       case _MessageActionType.removeFailed:
         await _removeFailedMessage(message);
@@ -6180,37 +6561,40 @@ class _SnackChatScreenState extends State<SnackChatScreen>
   }) {
     final color =
         destructive ? const Color(0xFFD92D20) : const Color(0xFF111827);
-    return Material(
-      color: Colors.transparent,
-      child: InkWell(
-        onTap: onTap,
-        child: ConstrainedBox(
-          constraints: const BoxConstraints(minHeight: 52),
-          child: Padding(
-            padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 8),
-            child: Row(
-              children: [
-                SizedBox(
-                  width: 34,
-                  child: Icon(icon, size: 22, color: color),
-                ),
-                const SizedBox(width: 8),
-                Expanded(
-                  child: Text(
-                    label,
-                    maxLines: 1,
-                    overflow: TextOverflow.ellipsis,
-                    style: TextStyle(
-                      fontFamily: uiFontFamily(context, 'Inter'),
-                      fontFamilyFallback: const ['NotoSansKR'],
-                      fontSize: 15,
-                      fontWeight: FontWeight.w600,
-                      color: color,
-                      height: isChineseUi(context) ? 1.3 : 1.25,
+    return MotionPress(
+      pressedScale: .99,
+      child: Material(
+        color: Colors.transparent,
+        child: InkWell(
+          onTap: onTap,
+          child: ConstrainedBox(
+            constraints: const BoxConstraints(minHeight: 52),
+            child: Padding(
+              padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 8),
+              child: Row(
+                children: [
+                  SizedBox(
+                    width: 34,
+                    child: Icon(icon, size: 22, color: color),
+                  ),
+                  const SizedBox(width: 8),
+                  Expanded(
+                    child: Text(
+                      label,
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      style: TextStyle(
+                        fontFamily: uiFontFamily(context, 'Inter'),
+                        fontFamilyFallback: const ['NotoSansKR'],
+                        fontSize: 15,
+                        fontWeight: FontWeight.w600,
+                        color: color,
+                        height: isChineseUi(context) ? 1.3 : 1.25,
+                      ),
                     ),
                   ),
-                ),
-              ],
+                ],
+              ),
             ),
           ),
         ),
@@ -6725,7 +7109,9 @@ class _SnackChatScreenState extends State<SnackChatScreen>
   }) {
     return TweenAnimationBuilder<double>(
       tween: Tween<double>(end: showingOriginal ? 0 : 1),
-      duration: _translationStyleAnimationDuration,
+      duration: MotionTokens.reduceMotion(context)
+          ? Duration.zero
+          : _translationStyleAnimationDuration,
       curve: Curves.easeOut,
       builder: (context, value, _) {
         const pointColor = Color(0xFF087BB5);
@@ -7147,6 +7533,7 @@ class _SnackChatScreenState extends State<SnackChatScreen>
     final sendWidth = actionExtent;
     final itemGap = isNarrow ? 6.0 : 8.0;
     final composerRadius = isNarrow ? 26.0 : 30.0;
+    final replyingTo = _replyingTo;
 
     return Material(
       color: Colors.transparent,
@@ -7182,32 +7569,40 @@ class _SnackChatScreenState extends State<SnackChatScreen>
                         for (final id in room.participantIds)
                           id: _senderProfileNotifier(id),
                       }),
-                  if (_replyingTo != null)
-                    Padding(
-                      padding: const EdgeInsets.fromLTRB(8, 0, 4, 6),
-                      child: Row(
-                        children: [
-                          Expanded(
-                            child: SnackChatReplyPreviewView(
-                              preview: _replyPreviewForCurrentTarget(
-                                forDisplay: true,
-                              )!,
-                              isOutgoing: false,
-                              onTap: () => _jumpToMessage(_replyingTo!.id),
+                  ChatReplyReveal(
+                    replyId: replyingTo?.id,
+                    child: replyingTo == null
+                        ? null
+                        : Padding(
+                            padding: const EdgeInsets.fromLTRB(8, 0, 4, 6),
+                            child: Row(
+                              children: [
+                                Expanded(
+                                  child: SnackChatReplyPreviewView(
+                                    preview: _replyPreviewForCurrentTarget(
+                                      forDisplay: true,
+                                    )!,
+                                    isOutgoing: false,
+                                    onTap: () => _jumpToMessage(replyingTo.id),
+                                  ),
+                                ),
+                                MotionPress(
+                                  pressedScale: .9,
+                                  child: IconButton(
+                                    onPressed: () => setState(_clearReplyState),
+                                    tooltip: (isChineseUi(context)
+                                        ? '取消回复'
+                                        : isKo
+                                            ? '답장 취소'
+                                            : 'Cancel reply'),
+                                    icon: const Icon(Icons.close_rounded,
+                                        size: 19),
+                                  ),
+                                ),
+                              ],
                             ),
                           ),
-                          IconButton(
-                            onPressed: () => setState(_clearReplyState),
-                            tooltip: (isChineseUi(context)
-                                ? '取消回复'
-                                : isKo
-                                    ? '답장 취소'
-                                    : 'Cancel reply'),
-                            icon: const Icon(Icons.close_rounded, size: 19),
-                          ),
-                        ],
-                      ),
-                    ),
+                  ),
                   DecoratedBox(
                     decoration: BoxDecoration(
                       color: _composerBackground,
@@ -7307,7 +7702,9 @@ class _SnackChatScreenState extends State<SnackChatScreen>
                               final canSend = value.text.trim().isNotEmpty;
                               return AnimatedOpacity(
                                 opacity: canSend ? 1 : 0.45,
-                                duration: const Duration(milliseconds: 150),
+                                duration: MotionTokens.reduceMotion(context)
+                                    ? Duration.zero
+                                    : MotionTokens.fast,
                                 child: _buildComposerButton(
                                   width: sendWidth,
                                   height: actionExtent,
@@ -7360,16 +7757,20 @@ class _SnackChatScreenState extends State<SnackChatScreen>
       label: tooltip,
       child: Tooltip(
         message: tooltip,
-        child: Material(
-          color: enabled ? enabledColor : disabledColor,
-          borderRadius: BorderRadius.circular(radius),
-          clipBehavior: Clip.antiAlias,
-          child: InkWell(
-            onTap: onPressed,
-            child: SizedBox(
-              width: width,
-              height: height,
-              child: Center(child: child),
+        child: MotionPress(
+          enabled: enabled,
+          pressedScale: .90,
+          child: Material(
+            color: enabled ? enabledColor : disabledColor,
+            borderRadius: BorderRadius.circular(radius),
+            clipBehavior: Clip.antiAlias,
+            child: InkWell(
+              onTap: onPressed,
+              child: SizedBox(
+                width: width,
+                height: height,
+                child: Center(child: child),
+              ),
             ),
           ),
         ),
@@ -7405,7 +7806,7 @@ class _SnackChatScreenState extends State<SnackChatScreen>
         !translationFailed &&
         translationWorkPending;
     final retryAvailable = canStartUserSnackTranslationRetry(
-      retryInFlight: _manualTranslationRetryInFlight,
+      retryInFlight: _manualTranslationRetryKeys.contains(requestKey),
       messageWorkPending: translationWorkPending,
       lifecycleResumed: _appLifecycleState == AppLifecycleState.resumed,
       isLeavingRoom: _isLeavingRoom,
@@ -7458,7 +7859,7 @@ class _SnackChatScreenState extends State<SnackChatScreen>
         (_translationFailures[requestKey] ?? 0) >= 2 &&
         !_isTranslationWorkPending(requestKey);
     final retryAvailable = canStartUserSnackTranslationRetry(
-      retryInFlight: _manualTranslationRetryInFlight,
+      retryInFlight: _manualTranslationRetryKeys.contains(requestKey),
       messageWorkPending: _isTranslationWorkPending(requestKey),
       lifecycleResumed: _appLifecycleState == AppLifecycleState.resumed,
       isLeavingRoom: _isLeavingRoom,
@@ -7599,110 +8000,125 @@ class _SnackChatScreenState extends State<SnackChatScreen>
         !message.isPending &&
         !message.hasFailed &&
         message.sequence != null;
-    final bubble = GestureDetector(
-      onTap: hasFile
-          ? () => _handleFileTap(message)
-          : canOpenReadReceipt
-              ? () => _showReadReceiptDetails(message)
-              : null,
-      onLongPress:
-          message.isPending ? null : () => _showMessageActions(message),
-      child: Container(
-        padding: bubblePadding,
-        constraints: BoxConstraints(maxWidth: maxBubbleWidth),
-        decoration: BoxDecoration(
-          color: isMe ? _outgoingBubble : _incomingBubble,
-          borderRadius: bubbleRadius,
-        ),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            if (replyPreview != null)
-              SnackChatReplyPreviewView(
-                preview: replyPreview,
-                isOutgoing: isMe,
-                onTap: replyPreview.isDeleted
-                    ? null
-                    : () => _jumpToMessage(
-                          replyPreview.messageId,
-                          replyingMessageId: message.id,
-                        ),
-              ),
-            if (message.isDeleted)
-              Text(
-                '삭제된 메시지',
-                style: textStyle.copyWith(fontStyle: FontStyle.italic),
-              )
-            else ...[
-              if (hasImage) _buildImageBubble(message: message, isMe: isMe),
-              if (hasFile) _buildFileBubble(message: message, isMe: isMe),
-              if (hasImage && (hasText || message.poll != null))
-                const SizedBox(height: 8),
-              if (message.poll != null)
-                _buildTranslatedPoll(message: message, isMe: isMe)
-              else if (hasText)
-                _buildTranslatedMessageText(
-                  message: message,
-                  isMe: isMe,
-                  textStyle: textStyle,
-                )
-              else if (!hasImage && !hasFile)
-                Text(
-                  message.type == SnackChatMessageType.unknown
-                      ? '지원하지 않는 메시지입니다.'
-                      : '메시지',
-                  style: textStyle,
+    // 사진·영상만 있는 메시지는 말풍선 배경 없이 미디어만 보여준다.
+    final mediaOnly = !message.isDeleted &&
+        (hasImage ||
+            (hasFile && SnackChatFilePolicy.isVideoMime(message.mimeType))) &&
+        !hasText &&
+        message.poll == null &&
+        replyPreview == null &&
+        (message.linkPreview == null || message.linkPreviewRemoved);
+    final bubble = MotionPress(
+      enabled: hasFile || hasImage || canOpenReadReceipt || !message.isPending,
+      pressedScale: .985,
+      child: GestureDetector(
+        onTap: hasFile
+            ? () => _handleFileTap(message)
+            : canOpenReadReceipt
+                ? () => _showReadReceiptDetails(message)
+                : null,
+        onLongPress:
+            message.isPending ? null : () => _showMessageActions(message),
+        child: Container(
+          padding: mediaOnly ? EdgeInsets.zero : bubblePadding,
+          constraints: BoxConstraints(maxWidth: maxBubbleWidth),
+          decoration: mediaOnly
+              ? null
+              : BoxDecoration(
+                  color: isMe ? _outgoingBubble : _incomingBubble,
+                  borderRadius: bubbleRadius,
                 ),
-              if (message.linkPreview != null && !message.linkPreviewRemoved)
-                SnackChatLinkPreviewCard(
-                  preview: message.linkPreview!,
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              if (replyPreview != null)
+                SnackChatReplyPreviewView(
+                  preview: replyPreview,
                   isOutgoing: isMe,
-                  onOpen: () => _openExternalUrl(message.linkPreview!.url),
-                  onRemove: isMe
-                      ? () async {
-                          final previousPreview = message.linkPreview;
-                          final previousRemoved = message.linkPreviewRemoved;
-                          _updateLocalMessage(
-                            message.id,
-                            (value) => value.copyWith(
-                              clearLinkPreview: true,
-                              linkPreviewRemoved: true,
-                            ),
-                          );
-                          try {
-                            await _snackChatService.removeLinkPreview(
-                              widget.snackChatId,
-                              message.id,
-                            );
-                          } on TimeoutException {
-                            // Firestore keeps the queued write after the
-                            // Future timeout, so retaining the explicit local
-                            // target avoids flicker and late state reversal.
-                            _showNotice('네트워크 연결 후 미리보기가 제거됩니다.');
-                          } catch (_) {
-                            if (previousPreview != null) {
-                              _updateLocalMessage(
-                                message.id,
-                                (value) => value.copyWith(
-                                  linkPreview: previousPreview,
-                                  linkPreviewRemoved: previousRemoved,
-                                ),
-                              );
-                            }
-                            _showNotice('미리보기를 제거하지 못했습니다.');
-                          }
-                        }
-                      : null,
+                  onTap: replyPreview.isDeleted
+                      ? null
+                      : () => _jumpToMessage(
+                            replyPreview.messageId,
+                            replyingMessageId: message.id,
+                          ),
                 ),
-            ],
-            SnackChatReactionBar(
-              counts: message.reactionCounts,
+              if (message.isDeleted)
+                Text(
+                  '삭제된 메시지',
+                  style: textStyle.copyWith(fontStyle: FontStyle.italic),
+                )
+              else ...[
+                if (hasImage) _buildImageBubble(message: message, isMe: isMe),
+                if (hasFile) _buildFileBubble(message: message, isMe: isMe),
+                if (hasImage && (hasText || message.poll != null))
+                  const SizedBox(height: 8),
+                if (message.poll != null)
+                  _buildTranslatedPoll(message: message, isMe: isMe)
+                else if (hasText)
+                  _buildTranslatedMessageText(
+                    message: message,
+                    isMe: isMe,
+                    textStyle: textStyle,
+                  )
+                else if (!hasImage && !hasFile)
+                  Text(
+                    message.type == SnackChatMessageType.unknown
+                        ? '지원하지 않는 메시지입니다.'
+                        : '메시지',
+                    style: textStyle,
+                  ),
+                if (message.linkPreview != null && !message.linkPreviewRemoved)
+                  SnackChatLinkPreviewCard(
+                    preview: message.linkPreview!,
+                    isOutgoing: isMe,
+                    onOpen: () => _openExternalUrl(message.linkPreview!.url),
+                    onRemove: isMe
+                        ? () async {
+                            final previousPreview = message.linkPreview;
+                            final previousRemoved = message.linkPreviewRemoved;
+                            _updateLocalMessage(
+                              message.id,
+                              (value) => value.copyWith(
+                                clearLinkPreview: true,
+                                linkPreviewRemoved: true,
+                              ),
+                            );
+                            try {
+                              await _snackChatService.removeLinkPreview(
+                                widget.snackChatId,
+                                message.id,
+                              );
+                            } on TimeoutException {
+                              // Firestore keeps the queued write after the
+                              // Future timeout, so retaining the explicit local
+                              // target avoids flicker and late state reversal.
+                              _showNotice('네트워크 연결 후 미리보기가 제거됩니다.');
+                            } catch (_) {
+                              if (previousPreview != null) {
+                                _updateLocalMessage(
+                                  message.id,
+                                  (value) => value.copyWith(
+                                    linkPreview: previousPreview,
+                                    linkPreviewRemoved: previousRemoved,
+                                  ),
+                                );
+                              }
+                              _showNotice('미리보기를 제거하지 못했습니다.');
+                            }
+                          }
+                        : null,
+                  ),
+              ],
+              SnackChatReactionBar(
+                counts: message.reactionCounts,
               myReaction: _myReactions[message.id],
-              isOutgoing: isMe,
-              onToggle: (emoji) => _toggleReaction(message, emoji),
-              onShowUsers: (emoji) => _showReactionUsers(message, emoji),
-            ),
-          ],
+              animateLocalSelectionOnMount: _reactionMotionEvents.claim(message.id, _myReactions[message.id]),
+                isOutgoing: isMe,
+                onToggle: (emoji) => _toggleReaction(message, emoji),
+                onShowUsers: (emoji) => _showReactionUsers(message, emoji),
+              ),
+            ],
+          ),
         ),
       ),
     );
@@ -7806,10 +8222,37 @@ class _SnackChatScreenState extends State<SnackChatScreen>
 
   Future<void> _handleFileTap(SnackChatMessage message) async {
     if (message.hasFailed) {
-      await _retryMessage(message);
+      await _retryMessage(message, manual: true);
       return;
     }
     if (message.isPending) return;
+    if (SnackChatFilePolicy.isVideoMime(message.mimeType)) {
+      if (message.isFileExpired) {
+        _showNotice('만료된 영상입니다.');
+        return;
+      }
+      final localPath = message.localFilePath?.trim() ?? '';
+      final storagePath = message.storagePath?.trim() ?? '';
+      if (localPath.isNotEmpty && await File(localPath).exists()) {
+        await VideoPlaybackScreen.open(
+          context,
+          localFile: File(localPath),
+          title: message.originalFileName,
+        );
+      } else if (storagePath.isNotEmpty) {
+        await VideoPlaybackScreen.open(
+          context,
+          reference: AppStorage.ref(
+            storagePath,
+            storageBucket: message.storageBucket,
+          ),
+          title: message.originalFileName,
+        );
+      } else {
+        _showNotice('영상을 열 수 없습니다.');
+      }
+      return;
+    }
     try {
       await _fileTransfer.openFile(message, roomId: widget.snackChatId);
     } catch (error) {
@@ -7827,6 +8270,23 @@ class _SnackChatScreenState extends State<SnackChatScreen>
     final expired = message.isFileExpired;
     final status = message.fileTransferStatus;
     final progress = (message.transferProgress ?? 0).clamp(0.0, 1.0).toDouble();
+    if (SnackChatFilePolicy.isVideoMime(message.mimeType)) {
+      final uploading = status == SnackChatFileTransferStatus.uploading ||
+          status == SnackChatFileTransferStatus.downloading;
+      return ChatVideoTile(
+        thumbnailDataUrl: message.videoThumbnail,
+        durationMs: message.videoDurationMs ?? 0,
+        width: message.videoWidth ?? 0,
+        height: message.videoHeight ?? 0,
+        progress: uploading ? progress : null,
+        expired: expired,
+        failed: message.hasFailed,
+        statusText: expired
+            ? (isChineseUi(context) ? '已过期' : isKo ? '만료됨' : 'Expired')
+            : null,
+        onTap: () => _handleFileTap(message),
+      );
+    }
     String statusText;
     if (expired) {
       statusText = (isChineseUi(context)
@@ -8240,7 +8700,7 @@ class _SnackChatScreenState extends State<SnackChatScreen>
         padding: EdgeInsets.zero,
         tooltip: snackDiscoveryText(context, '전송 확인 중 · 다시 확인',
             'Confirming delivery · Check again', '正在确认发送 · 再次检查'),
-        onPressed: () => _retryMessage(message),
+        onPressed: () => _retryMessage(message, manual: true),
         icon: const Icon(Icons.schedule, size: 15, color: Color(0xFF667085)),
       );
     }
@@ -8258,7 +8718,7 @@ class _SnackChatScreenState extends State<SnackChatScreen>
             Tooltip(
               message: failureReason.isEmpty ? failureLabel : failureReason,
               child: InkWell(
-                onTap: () => _retryMessage(message),
+                onTap: () => _retryMessage(message, manual: true),
                 borderRadius: BorderRadius.circular(14),
                 child: const SizedBox.square(
                   dimension: 28,
@@ -8376,6 +8836,7 @@ class _SnackChatScreenState extends State<SnackChatScreen>
         : storagePath?.isNotEmpty == true
             ? SnackChatStorageImage(
                 storagePath: storagePath!,
+                storageBucket: message.storageBucket,
                 imageBuilder: (_, imageProvider) =>
                     adaptiveImage(imageProvider),
                 loading: loadingFrame(),
@@ -8401,37 +8862,42 @@ class _SnackChatScreenState extends State<SnackChatScreen>
                 ),
               );
 
-    return GestureDetector(
-      onTap: message.isPending && imageUrl == null && storagePath == null
-          ? null
-          : () => _openImageViewer(
+    return MotionPress(
+      enabled: !(message.isPending && imageUrl == null && storagePath == null),
+      pressedScale: .985,
+      child: GestureDetector(
+        onTap: message.isPending && imageUrl == null && storagePath == null
+            ? null
+            : () => _openImageViewer(
                 imageUrl,
                 storagePath: storagePath,
+                storageBucket: message.storageBucket,
                 heroTag: heroTag,
               ),
-      child: ConstrainedBox(
-        constraints: BoxConstraints(
-          maxWidth: maxImageWidth,
-          maxHeight: maxImageHeight,
-        ),
-        child: ClipRRect(
-          borderRadius: BorderRadius.circular(11),
-          child: Stack(
-            children: [
-              Hero(tag: heroTag, child: image),
-              if (showUploadProgress)
-                Positioned(
-                  left: 0,
-                  right: 0,
-                  bottom: 0,
-                  child: LinearProgressIndicator(
-                    minHeight: 3,
-                    value: uploadProgress,
-                    backgroundColor: Colors.white.withValues(alpha: 0.35),
-                    color: const Color(0xFF2A9DEB),
+        child: ConstrainedBox(
+          constraints: BoxConstraints(
+            maxWidth: maxImageWidth,
+            maxHeight: maxImageHeight,
+          ),
+          child: ClipRRect(
+            borderRadius: BorderRadius.circular(11),
+            child: Stack(
+              children: [
+                Hero(tag: heroTag, child: image),
+                if (showUploadProgress)
+                  Positioned(
+                    left: 0,
+                    right: 0,
+                    bottom: 0,
+                    child: LinearProgressIndicator(
+                      minHeight: 3,
+                      value: uploadProgress,
+                      backgroundColor: Colors.white.withValues(alpha: 0.35),
+                      color: const Color(0xFF2A9DEB),
+                    ),
                   ),
-                ),
-            ],
+              ],
+            ),
           ),
         ),
       ),
@@ -8506,12 +8972,14 @@ class _SnackChatScreenState extends State<SnackChatScreen>
   Future<void> _openImageViewer(
     String? imageUrl, {
     String? storagePath,
+    String? storageBucket,
     required String heroTag,
   }) async {
     await showFullscreenImageViewer(
       context,
       imageUrls: [imageUrl ?? ''],
       storagePaths: [storagePath],
+      storageBuckets: [storageBucket],
       initialIndex: 0,
       heroTag: heroTag,
     );

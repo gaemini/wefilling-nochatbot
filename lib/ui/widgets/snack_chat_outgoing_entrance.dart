@@ -1,5 +1,7 @@
 import 'package:flutter/material.dart';
 
+import '../../design/tokens.dart';
+
 /// Paint-only entrance motion for a message created by the local sender.
 ///
 /// The widget deliberately owns no delivery state. A Firestore commit can
@@ -43,16 +45,17 @@ class _SnackChatOutgoingEntranceState extends State<SnackChatOutgoingEntrance> {
   Widget build(BuildContext context) {
     if (!_animate || _completed) return widget.child;
 
-    final mediaQuery = MediaQuery.of(context);
-    final reduceMotion =
-        mediaQuery.disableAnimations || mediaQuery.accessibleNavigation;
-    if (reduceMotion) return widget.child;
+    if (MotionTokens.reduceMotion(context)) {
+      // Restoring the accessibility setting must not replay an old message.
+      _completed = true;
+      return widget.child;
+    }
 
     return RepaintBoundary(
       child: TweenAnimationBuilder<double>(
         tween: Tween<double>(begin: 0, end: 1),
-        duration: const Duration(milliseconds: 140),
-        curve: Curves.easeOutCubic,
+        duration: MotionTokens.fast,
+        curve: MotionTokens.curve,
         onEnd: () {
           if (mounted) setState(() => _completed = true);
         },

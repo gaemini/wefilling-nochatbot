@@ -106,15 +106,21 @@ async function snackChecks() {
     : typeof v === 'number' ? {integerValue: String(v)}
     : Array.isArray(v) ? {arrayValue: {values: v.map(value)}}
     : {mapValue: {fields: Object.fromEntries(Object.entries(v).map(([k,v]) => [k,value(v)]))}};
-  async function snackSend(id, uid) {
+  async function snackSend(id, uid, overrides = {}) {
     for (let attempt = 0; attempt < 12; attempt++) {
       const current = await request(`${base}/snack_chats/${snackId}`, null, uid, 'GET');
       const sequence = Number(current.fields.lastMessageSequence.integerValue)+1;
       const message = {senderId: uid, messageScope: 'snack_chat', chatId: snackId,
         type: 'text', text: id, sequence, recipientIds: [uid === alice ? bob : alice],
-        readBy: [uid], isDeleted: false, linkPreviewRemoved: false, reactionCounts: {}};
-      const preview = {lastMessage: id, lastMessageId: id, lastMessageSenderId: uid,
-        lastMessageType: 'text', lastMessageSequence: sequence};
+        readBy: [uid], isDeleted: false, linkPreviewRemoved: false, reactionCounts: {},
+        ...overrides};
+      // Room preview must mirror what Rules derive from the message
+      // (validClientMessageMetadataUpdate): '[이미지]' for captionless images.
+      const lastMessage = message.type === 'image'
+        ? (message.text.length > 0 ? message.text : '[이미지]')
+        : message.type === 'poll' ? `📊 ${message.text}` : message.text;
+      const preview = {lastMessage, lastMessageId: id, lastMessageSenderId: uid,
+        lastMessageType: message.type, lastMessageSequence: sequence};
       try {
         await request(`${base}:commit`, {writes: [
           {update: {name: `${root}/snack_chats/${snackId}/messages/${id}`,
@@ -212,7 +218,140 @@ async function snackChecks() {
   } finally {
     messaging.sendEachForMulticast = originalSend;
   }
+  await snackDirectReadChecks(roomRef, snackId, snackSend, created);
+  await snackImageBucketRulesChecks(roomRef, snackId, snackSend);
   console.log('PASS: Snack concurrent Rules commits preserve sequence/audience; duplicate and late unread delivery is idempotent');
+}
+
+// Read fast path (SNACK_CHAT_DIRECT_READ): a client advances its own
+// members/{uid}.lastReadSequence directly; the callable reconciles unreadCount
+// from a separate floor using the trigger's unreadRecipientIds stamp.
+async function snackDirectReadChecks(roomRef, snackId, snackSend, created) {
+  const members = roomRef.collection('members');
+  const markRead = ft.wrap(require('../lib/snack_chat').markSnackChatReadSecure);
+  const readAs = (uid, throughSequence) => markRead(
+    {snackChatId: snackId, throughSequence}, {auth: {uid, token: {}}});
+  const directRead = (uid, sequence, fields = {}, mask = [], asUid = uid) =>
+    request(`${base}:commit`, {writes: [{
+      update: {name: `${root}/snack_chats/${snackId}/members/${uid}`,
+        fields: {lastReadSequence: {integerValue: String(sequence)}, ...fields}},
+      updateMask: {fieldPaths: ['lastReadSequence', ...mask]},
+      updateTransforms: [timestamp('lastReadAt')],
+    }]}, asUid);
+  const trigger = (snap) => created(snap,
+    {eventId: snap.id, params: {snackChatId: snackId, messageId: snap.id}});
+  const message = (id) => roomRef.collection('messages').doc(id).get();
+  const unread = async (uid) => (await roomRef.get()).get(`unreadCount.${uid}`);
+  const S0 = (await roomRef.get()).get('lastMessageSequence');
+  // Server-created member docs carry userId/status (the Rules self-write needs them).
+  await members.doc(bob).set({userId: bob, status: 'active', joinedAfterSequence: 0,
+    lastReadSequence: S0, unreadReconciledThroughSequence: S0});
+  await roomRef.update({[`unreadCount.${bob}`]: 0});
+
+  // C -> T -> K: Bob reads direct-1 before its trigger runs. The trigger
+  // delivers but does not increment; the stamp records that exactly.
+  await snackSend('direct-1', alice);
+  await directRead(bob, S0 + 1);
+  await trigger(await message('direct-1'));
+  const m1 = await message('direct-1');
+  assert.deepEqual(m1.get('deliveryRecipientIds'), [bob]);
+  assert.deepEqual(m1.get('unreadRecipientIds'), []);
+  assert.equal(await unread(bob), 0);
+  // T -> C -> K for direct-2 and direct-3.
+  await snackSend('direct-2', alice);
+  await trigger(await message('direct-2'));
+  await snackSend('direct-3', alice);
+  await trigger(await message('direct-3'));
+  assert.deepEqual((await message('direct-2')).get('unreadRecipientIds'), [bob]);
+  assert.equal(await unread(bob), 2);
+  // Partial direct read through direct-2, then reconcile: only direct-2 counts
+  // (direct-1 was never incremented, so the old delivered-based count would
+  // have over-decremented to 0 here).
+  await directRead(bob, S0 + 2);
+  assert.equal((await members.doc(bob).get()).get('lastReadSequence'), S0 + 2);
+  const partial = await readAs(bob, S0 + 2);
+  assert.equal(partial.clearedCount, 1);
+  assert.equal(partial.unreadCount, 1);
+  assert.equal(partial.readThroughSequence, S0 + 2);
+  assert.equal(await unread(bob), 1);
+  let bobMember = await members.doc(bob).get();
+  assert.equal(bobMember.get('lastReadSequence'), S0 + 2);
+  assert.equal(bobMember.get('unreadReconciledThroughSequence'), S0 + 2);
+  // Reading to the end clears to zero; a repeated reconcile is a no-op.
+  await directRead(bob, S0 + 3);
+  const full = await readAs(bob, S0 + 3);
+  assert.equal(full.clearedCount, 1);
+  assert.equal(full.unreadCount, 0);
+  assert.equal(await unread(bob), 0);
+  bobMember = await members.doc(bob).get();
+  assert.equal(bobMember.get('unreadReconciledThroughSequence'), S0 + 3);
+  const again = await readAs(bob, S0 + 3);
+  assert.equal(again.clearedCount, 0);
+  assert.equal(again.readThroughSequence, S0 + 3);
+  // C -> K -> T: direct read and reconcile land before the trigger. The late
+  // trigger must not increment for a cursor already past the message.
+  await snackSend('direct-4', alice);
+  await directRead(bob, S0 + 4);
+  const early = await readAs(bob, S0 + 4);
+  assert.equal(early.clearedCount, 0);
+  assert.equal(await unread(bob), 0);
+  await trigger(await message('direct-4'));
+  assert.deepEqual((await message('direct-4')).get('unreadRecipientIds'), []);
+  assert.equal(await unread(bob), 0);
+  // Rules: backwards, beyond the canonical sequence, extra keys, and another
+  // user's cursor are all rejected.
+  await assert.rejects(directRead(bob, S0 + 1), {code: 'PERMISSION_DENIED'});
+  await assert.rejects(directRead(bob, S0 + 99), {code: 'PERMISSION_DENIED'});
+  await assert.rejects(directRead(bob, S0 + 4,
+    {unreadReconciledThroughSequence: {integerValue: '0'}},
+    ['unreadReconciledThroughSequence']), {code: 'PERMISSION_DENIED'});
+  await assert.rejects(directRead(bob, S0 + 4, {}, [], alice), {code: 'PERMISSION_DENIED'});
+  // Legacy lockstep: without the stamp the callable derives the floor from the
+  // previous lastReadSequence exactly as before, then stamps the member doc.
+  await members.doc(bob).update({
+    unreadReconciledThroughSequence: admin.firestore.FieldValue.delete()});
+  await snackSend('legacy-1', alice);
+  await trigger(await message('legacy-1'));
+  await snackSend('legacy-2', alice);
+  await trigger(await message('legacy-2'));
+  assert.equal(await unread(bob), 2);
+  const legacy = await readAs(bob, S0 + 5);
+  assert.equal(legacy.clearedCount, 1);
+  assert.equal(legacy.unreadCount, 1);
+  bobMember = await members.doc(bob).get();
+  assert.equal(bobMember.get('lastReadSequence'), S0 + 5);
+  assert.equal(bobMember.get('unreadReconciledThroughSequence'), S0 + 5);
+  console.log('PASS: Snack direct read cursor fast path (C/T/K orders, Rules, legacy floor)');
+}
+
+/**
+ * Image messages may record which Storage bucket holds imagePath (Seoul
+ * migration). Rules must accept the legacy and the Seoul bucket, reject any
+ * other bucket, and reject the field on non-image messages. A regression here
+ * makes the client's image send fail on every retry.
+ */
+async function snackImageBucketRulesChecks(roomRef, snackId, snackSend) {
+  const imagePath = (uid) => `snack_chat_images/${uid}/${snackId}/img.jpg`;
+  const step = async (name, run) => {
+    try { await run(); } catch (e) { console.error(`[image-bucket-rules] step "${name}" failed: ${e.message}`); throw e; }
+  };
+  await step('img-legacy', () => snackSend('img-legacy', alice, {type: 'image', text: '', imagePath: imagePath(alice)}));
+  await step('img-seoul', () => snackSend('img-seoul', alice, {type: 'image', text: '', imagePath: imagePath(alice),
+    storageBucket: 'flutterproject3-af322-kr', imageWidth: 800, imageHeight: 600}));
+  await step('img-us', () => snackSend('img-us', bob, {type: 'image', text: '', imagePath: imagePath(bob),
+    storageBucket: 'flutterproject3-af322.firebasestorage.app'}));
+  assert.equal((await roomRef.collection('messages').doc('img-seoul').get()).get('storageBucket'),
+    'flutterproject3-af322-kr');
+  await assert.rejects(snackSend('img-foreign', alice, {type: 'image', text: '',
+    imagePath: imagePath(alice), storageBucket: 'evil-bucket'}), {code: 'PERMISSION_DENIED'});
+  await assert.rejects(snackSend('img-bucket-type', alice, {type: 'image', text: '',
+    imagePath: imagePath(alice), storageBucket: 7}), {code: 'PERMISSION_DENIED'});
+  await assert.rejects(snackSend('text-bucket', alice, {storageBucket: 'flutterproject3-af322-kr'}),
+    {code: 'PERMISSION_DENIED'});
+  for (const id of ['img-foreign', 'img-bucket-type', 'text-bucket']) {
+    assert.equal((await roomRef.collection('messages').doc(id).get()).exists, false);
+  }
+  console.log('PASS: Snack image storageBucket Rules (legacy/Seoul accepted, foreign and non-image rejected)');
 }
 
 async function main() {
@@ -335,7 +474,10 @@ async function main() {
   const latest = (await ref.get()).get(`lastReadAtBy.${bob}`);
   await cleanup({before, after});
   assert.equal((await ref.get()).get(`lastReadAtBy.${bob}`).toMillis(), latest.toMillis());
-  const securityRoom = `${room}_security`;
+  // Rules now bind a conversation ID to its two participants (sorted uids,
+  // or anon_<a>_<b>_<suffix>), exactly what dm_service generates. Use the
+  // anonymous form so this synthetic room keeps a valid ID.
+  const securityRoom = `anon_${room}_security`;
   const createRoom = (aliceUnread) => ({writes: [{
     update: {name: `${root}/conversations/${securityRoom}`, fields: {
       participants: {arrayValue: {values: [alice, bob].map(stringValue => ({stringValue}))}},

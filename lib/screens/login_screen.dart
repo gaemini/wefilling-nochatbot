@@ -13,9 +13,12 @@ import '../screens/signup_method_selection_screen.dart';
 import '../main.dart';
 import '../l10n/app_localizations.dart';
 import '../ui/widgets/app_button.dart';
+import '../ui/widgets/motion_press.dart';
+import '../design/tokens.dart';
 import '../utils/logger.dart';
 import '../ui/snackbar/app_snackbar.dart';
 import '../l10n/ui_locale.dart';
+import '../ui/widgets/motion_selectable.dart';
 
 class LoginScreen extends StatefulWidget {
   final bool showLogoutSuccess;
@@ -31,30 +34,21 @@ class _LoginScreenState extends State<LoginScreen>
     with SingleTickerProviderStateMixin {
   late AnimationController _animationController;
   late Animation<double> _fadeInAnimation;
-  late Animation<Offset> _slideAnimation;
+  final Animation<Offset> _slideAnimation =
+      const AlwaysStoppedAnimation<Offset>(Offset.zero);
 
   @override
   void initState() {
     super.initState();
     _animationController = AnimationController(
       vsync: this,
-      duration: const Duration(milliseconds: 1200),
+      duration: MotionTokens.medium,
     );
 
     _fadeInAnimation = Tween<double>(begin: 0.0, end: 1.0).animate(
       CurvedAnimation(
         parent: _animationController,
-        curve: const Interval(0.0, 0.7, curve: Curves.easeInOut),
-      ),
-    );
-
-    _slideAnimation = Tween<Offset>(
-      begin: const Offset(0, 0.2),
-      end: Offset.zero,
-    ).animate(
-      CurvedAnimation(
-        parent: _animationController,
-        curve: const Interval(0.2, 0.8, curve: Curves.easeInOut),
+        curve: MotionTokens.decelerate,
       ),
     );
 
@@ -78,6 +72,14 @@ class _LoginScreenState extends State<LoginScreen>
         _showRegistrationRequiredDialog();
       }
     });
+  }
+
+  @override
+  void didChangeDependencies() {
+    super.didChangeDependencies();
+    if (MotionTokens.reduceMotion(context)) {
+      _animationController.value = 1;
+    }
   }
 
   @override
@@ -608,6 +610,7 @@ class _LoginScreenState extends State<LoginScreen>
     BuildContext context,
     AuthProvider authProvider,
   ) async {
+    if (authProvider.isLoading) return;
     try {
       // Google 로그인 처리
       final success = await authProvider.signInWithGoogle();
@@ -674,6 +677,7 @@ class _LoginScreenState extends State<LoginScreen>
     BuildContext context,
     AuthProvider authProvider,
   ) async {
+    if (authProvider.isLoading) return;
     try {
       // Apple 로그인 처리
       final success = await authProvider.signInWithApple();
@@ -860,43 +864,42 @@ class _LoginMethodButton extends StatelessWidget {
     return SizedBox(
       width: double.infinity,
       height: 48,
-      child: FilledButton(
-        onPressed: onPressed,
-        style: FilledButton.styleFrom(
-          elevation: 0,
-          shadowColor: Colors.transparent,
-          backgroundColor: backgroundColor,
-          foregroundColor: foregroundColor,
-          disabledBackgroundColor: backgroundColor.withValues(alpha: 0.45),
-          disabledForegroundColor: foregroundColor.withValues(alpha: 0.55),
-          padding: const EdgeInsets.symmetric(horizontal: 18),
-          shape: RoundedRectangleBorder(
-            borderRadius: BorderRadius.circular(14),
+      child: MotionPress(
+        enabled: onPressed != null,
+        pressedScale: .975,
+        child: FilledButton(
+          onPressed: onPressed,
+          style: FilledButton.styleFrom(
+            elevation: 0,
+            shadowColor: Colors.transparent,
+            backgroundColor: backgroundColor,
+            foregroundColor: foregroundColor,
+            disabledBackgroundColor: backgroundColor.withValues(alpha: 0.45),
+            disabledForegroundColor: foregroundColor.withValues(alpha: 0.55),
+            padding: const EdgeInsets.symmetric(horizontal: 18),
+            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
           ),
-        ),
-        child: Row(
-          mainAxisAlignment: MainAxisAlignment.center,
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            if (leading != null) ...[
-              leading!,
-              const SizedBox(width: 10),
-            ],
-            Flexible(
-              child: Text(
-                label,
-                maxLines: 1,
-                overflow: TextOverflow.ellipsis,
-                style: TextStyle(
-                  fontFamily: 'Inter',
-                  fontFamilyFallback: _loginFontFallback(context),
-                  fontSize: 15,
-                  fontWeight: FontWeight.w700,
-                  height: 1.2,
+          child: Row(
+            mainAxisAlignment: MainAxisAlignment.center,
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              if (leading != null) ...[leading!, const SizedBox(width: 10)],
+              Flexible(
+                child: Text(
+                  label,
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: TextStyle(
+                    fontFamily: 'Inter',
+                    fontFamilyFallback: _loginFontFallback(context),
+                    fontSize: 15,
+                    fontWeight: FontWeight.w700,
+                    height: 1.2,
+                  ),
                 ),
               ),
-            ),
-          ],
+            ],
+          ),
         ),
       ),
     );
@@ -998,7 +1001,10 @@ class _LoginLanguageChoice extends StatelessWidget {
       button: true,
       selected: isSelected,
       label: semanticsLabel,
-      child: InkResponse(
+      child: MotionSelectable(
+        selected: isSelected,
+        pressedScale: MotionSelectable.segmentScale,
+        child: InkResponse(
         onTap: onTap,
         radius: 28,
         child: ConstrainedBox(
@@ -1013,7 +1019,8 @@ class _LoginLanguageChoice extends StatelessWidget {
               mainAxisSize: MainAxisSize.min,
               children: [
                 AnimatedDefaultTextStyle(
-                  duration: const Duration(milliseconds: 160),
+                  duration: MotionTokens.of(context, MotionTokens.state),
+                  curve: MotionTokens.curve,
                   style: TextStyle(
                     fontFamily: label == '简体中文' ? 'NotoSansSC' : 'Inter',
                     fontSize: isCompact ? 13 : 14,
@@ -1025,7 +1032,8 @@ class _LoginLanguageChoice extends StatelessWidget {
                 ),
                 const SizedBox(height: 4),
                 AnimatedContainer(
-                  duration: const Duration(milliseconds: 160),
+                  duration: MotionTokens.of(context, MotionTokens.state),
+                  curve: MotionTokens.curve,
                   width: isSelected ? 18 : 0,
                   height: 2,
                   decoration: BoxDecoration(
@@ -1036,6 +1044,7 @@ class _LoginLanguageChoice extends StatelessWidget {
               ],
             ),
           ),
+        ),
         ),
       ),
     );

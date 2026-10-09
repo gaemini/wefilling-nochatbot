@@ -3,6 +3,7 @@ import 'dart:io';
 
 import 'package:cached_network_image/cached_network_image.dart';
 import 'package:flutter/material.dart';
+import '../ui/widgets/motion_press.dart';
 import 'package:image_picker/image_picker.dart';
 import 'package:wechat_assets_picker/wechat_assets_picker.dart';
 
@@ -44,7 +45,10 @@ class _EditPostScreenState extends State<EditPostScreen> {
   @override
   void initState() {
     super.initState();
-    _keptImageUrls = List<String>.from(widget.post.imageUrls);
+    // 영상 포스트의 썸네일(imageUrls[0])은 플레이어가 쓰므로 편집 목록에서 뺀다.
+    final videoThumbnail = widget.post.video?.thumbnailUrl.trim();
+    _keptImageUrls = List<String>.from(widget.post.imageUrls)
+      ..removeWhere((url) => videoThumbnail != null && url.trim() == videoThumbnail);
     _selectedPostTags = widget.post.postCategories.toSet();
     _contentController.text = widget.post.displayText;
     _contentController.addListener(_checkCanSubmit);
@@ -205,7 +209,10 @@ class _EditPostScreenState extends State<EditPostScreen> {
         content: _contentController.text.trim(),
         categoryKeys:
             _selectedPostTags.map((category) => category.key).toList(),
-        keptImageUrls: List<String>.from(_keptImageUrls),
+        keptImageUrls: <String>[
+          if (widget.post.video case final video?) video.thumbnailUrl,
+          ..._keptImageUrls,
+        ],
         newImageFiles: _selectedImages.isNotEmpty
             ? List<File>.from(_selectedImages)
             : null,
@@ -283,21 +290,19 @@ class _EditPostScreenState extends State<EditPostScreen> {
                     Positioned(
                       top: 6,
                       right: 6,
-                      child: GestureDetector(
-                        behavior: HitTestBehavior.opaque,
-                        onTap: _isSubmitting
-                            ? null
-                            : () => _removeExistingUrl(index),
-                        child: Container(
-                          padding: const EdgeInsets.all(5),
-                          decoration: const BoxDecoration(
-                            color: Color(0xCC111827),
-                            shape: BoxShape.circle,
-                          ),
-                          child: const Icon(
-                            Icons.close_rounded,
-                            color: Colors.white,
-                            size: 16,
+                      child: MotionPress(
+                        enabled: !_isSubmitting,
+                        pressedScale: .92,
+                        child: GestureDetector(
+                          behavior: HitTestBehavior.opaque,
+                          onTap: _isSubmitting ? null : () => _removeExistingUrl(index),
+                          child: Container(
+                            padding: const EdgeInsets.all(5),
+                            decoration: const BoxDecoration(
+                              color: Color(0xCC111827),
+                              shape: BoxShape.circle,
+                            ),
+                            child: const Icon(Icons.close_rounded, color: Colors.white, size: 16),
                           ),
                         ),
                       ),
@@ -347,20 +352,19 @@ class _EditPostScreenState extends State<EditPostScreen> {
                     Positioned(
                       top: 6,
                       right: 6,
-                      child: GestureDetector(
-                        behavior: HitTestBehavior.opaque,
-                        onTap:
-                            _isSubmitting ? null : () => _removeNewAsset(index),
-                        child: Container(
-                          padding: const EdgeInsets.all(5),
-                          decoration: const BoxDecoration(
-                            color: Color(0xCC111827),
-                            shape: BoxShape.circle,
-                          ),
-                          child: const Icon(
-                            Icons.close_rounded,
-                            color: Colors.white,
-                            size: 16,
+                      child: MotionPress(
+                        enabled: !_isSubmitting,
+                        pressedScale: .92,
+                        child: GestureDetector(
+                          behavior: HitTestBehavior.opaque,
+                          onTap: _isSubmitting ? null : () => _removeNewAsset(index),
+                          child: Container(
+                            padding: const EdgeInsets.all(5),
+                            decoration: const BoxDecoration(
+                              color: Color(0xCC111827),
+                              shape: BoxShape.circle,
+                            ),
+                            child: const Icon(Icons.close_rounded, color: Colors.white, size: 16),
                           ),
                         ),
                       ),

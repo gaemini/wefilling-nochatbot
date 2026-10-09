@@ -6,6 +6,8 @@ import 'dart:async';
 
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:cloud_functions/cloud_functions.dart';
+
+import '../config/app_backend.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/foundation.dart';
 import '../models/user_profile.dart';
@@ -217,7 +219,7 @@ class UsersRepository {
   final FirebaseFirestore _firestore = FirebaseFirestore.instance;
   final FirebaseAuth _auth = FirebaseAuth.instance;
   final FirebaseFunctions _functions =
-      FirebaseFunctions.instanceFor(region: 'us-central1');
+      AppFunctions.instance;
 
   // 컬렉션 이름 상수
   static const String _usersCollection = 'users';
@@ -454,8 +456,13 @@ class UsersRepository {
           _profileCacheGeneration == generation;
       final cachedAt = DateTime.now();
       for (final doc in snapshot.docs) {
+        // Batched profile loads back existing relationships (friend list, chat
+        // participants). Only unavailable accounts are dropped here: applying
+        // the stricter *search* visibility rule hid real friends whose
+        // nickname contained Chinese characters or spaces, or who had turned
+        // off search visibility.
         if (!doc.exists ||
-            !isSearchableUserAccountData(doc.data(), uid: doc.id)) {
+            !isVisibleUserAccountData(doc.data(), uid: doc.id)) {
           continue;
         }
         final profile = UserProfile.fromFirestore(doc);
@@ -1289,8 +1296,22 @@ class UsersRepository {
 
         // 친구 화면을 열 때는 서버 프로필 상태를 한 번 확정한다. 이전 캐시에
         // 남은 탈퇴/비활성 사용자가 실제 목록과 숫자를 부풀리지 않게 한다.
-        final profiles = await getFreshUserProfilesBatch(friendIds);
-        return profiles;
+        try {
+          return await _getUserProfilesBatch(
+            friendIds,
+            forceRefresh: true,
+            rethrowOnError: true,
+          );
+        } catch (error) {
+          // 오프라인/일시적 DNS 실패를 탈퇴로 오인해 친구 목록을 빈 배열로
+          // 덮지 않는다. 캐시에 있는 해당 친구만 임시로 보여 주고,
+          // 다음 서버 스냅샷 또는 화면 재진입에서 다시 확정한다.
+          Logger.error('친구 프로필 서버 확인 실패, 캐시 확인: $error');
+          final cached = await getUserProfilesBatch(friendIds);
+          if (currentUserId != currentUid) return <UserProfile>[];
+          if (cached.isNotEmpty) return cached;
+          rethrow;
+        }
       });
     } catch (e) {
       Logger.error('친구 목록 조회 오류: $e');

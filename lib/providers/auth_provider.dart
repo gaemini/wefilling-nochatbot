@@ -15,6 +15,8 @@ import 'package:google_sign_in/google_sign_in.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_storage/firebase_storage.dart';
 import 'package:cloud_functions/cloud_functions.dart';
+
+import '../config/app_backend.dart';
 import 'package:firebase_crashlytics/firebase_crashlytics.dart';
 import 'package:cached_network_image/cached_network_image.dart';
 import '../services/fcm_service.dart';
@@ -138,7 +140,7 @@ class AuthProvider with ChangeNotifier implements WidgetsBindingObserver {
   final FirebaseFirestore _firestore = FirebaseFirestore.instance;
   // 배포된 callable은 기본 region(us-central1)을 사용합니다.
   final FirebaseFunctions _functions =
-      FirebaseFunctions.instanceFor(region: 'us-central1');
+      AppFunctions.instance;
   final AuthService _authService = AuthService();
 
   User? _user;
@@ -997,7 +999,8 @@ class AuthProvider with ChangeNotifier implements WidgetsBindingObserver {
           // 회원가입 필요 플래그 설정
           _signupRequired = true;
 
-          // Firebase 로그아웃
+          // Firebase 로그아웃 (이 기기 토큰이 미완료 계정에 남지 않도록 먼저 해제)
+          await _releaseDeviceTokenBeforeSignOut();
           await _auth.signOut();
           _user = null;
           _userData = null;
@@ -1200,6 +1203,7 @@ class AuthProvider with ChangeNotifier implements WidgetsBindingObserver {
         final documentUpdate = await _updateExistingUserDocument();
         if (documentUpdate == _ExistingUserDocumentUpdateResult.missing) {
           Logger.error('❌ 탈퇴한 계정: 사용자 문서가 존재하지 않습니다.');
+          await _releaseDeviceTokenBeforeSignOut();
           await _auth.signOut();
           _user = null;
           _userData = null;
@@ -1396,6 +1400,7 @@ class AuthProvider with ChangeNotifier implements WidgetsBindingObserver {
 
       if (documentUpdate == _ExistingUserDocumentUpdateResult.missing) {
         Logger.error('❌ 탈퇴한 계정: 사용자 문서가 존재하지 않습니다.');
+        await _releaseDeviceTokenBeforeSignOut();
         await _auth.signOut();
         _user = null;
         _userData = null;
@@ -2091,15 +2096,15 @@ class AuthProvider with ChangeNotifier implements WidgetsBindingObserver {
       // - 레거시(uuid 파일)도 정리하기 위해 profile_images/{uid}/ 아래를 전부 삭제(best-effort)
       try {
         final uid = _user!.uid;
-        final storage = FirebaseStorage.instanceFor(
-          bucket: 'gs://${ProfilePhotoPolicy.bucket}',
-        );
-        final dirRef = storage.ref().child('profile_images/$uid');
-        final list = await dirRef.listAll();
-        for (final item in list.items) {
-          try {
-            await item.delete();
-          } catch (_) {}
+        // 프로필 사진은 레거시 버킷 또는 현재 업로드 버킷에 있을 수 있다.
+        for (final storage in AppStorage.allKnown) {
+          final dirRef = storage.ref().child('profile_images/$uid');
+          final list = await dirRef.listAll();
+          for (final item in list.items) {
+            try {
+              await item.delete();
+            } catch (_) {}
+          }
         }
         if (Logger.isVerboseEnabled)
           Logger.log("✅ Storage 프로필 이미지 정리 완료 (profile_images/$uid/*)");
@@ -3076,6 +3081,7 @@ class AuthProvider with ChangeNotifier implements WidgetsBindingObserver {
       }
 
       // 서버에서 users/점유/Auth 정리가 끝난 뒤에만 로컬 세션을 비운다.
+      await _releaseDeviceTokenBeforeSignOut();
       try {
         await _auth.signOut();
       } catch (_) {}
@@ -3248,6 +3254,26 @@ class AuthProvider with ChangeNotifier implements WidgetsBindingObserver {
       _fcmInitializedUserId = null;
       if (Logger.isVerboseEnabled) Logger.log('✅ 로그아웃 상태 초기화 완료');
       notifyListeners();
+    }
+  }
+
+  /// Best-effort FCM token release for sign-out paths that do not go through
+  /// [_performSignOut] (deleted or unfinished accounts). Without it the device
+  /// token stays registered to the abandoned account and the next account on
+  /// this device can keep receiving its pushes in the background.
+  Future<void> _releaseDeviceTokenBeforeSignOut() async {
+    final uid = _auth.currentUser?.uid;
+    if (uid == null) return;
+    try {
+      await _fcmService.reset();
+    } catch (_) {}
+    try {
+      await _fcmService.deleteFCMToken(uid).timeout(
+        const Duration(seconds: 3),
+        onTimeout: () {},
+      );
+    } catch (e) {
+      Logger.error('⚠️ FCM 토큰 해제 실패 (계속 진행): $e');
     }
   }
 

@@ -27,6 +27,7 @@ class DMMessageCacheService {
   final Map<String, Map<String, DMMessage>> _memory = {};
   final Set<String> _loaded = {};
   final Map<String, Timestamp> _peerReads = {};
+  final Map<String, String> _peerReadMessageIds = {};
   static const _maxMessages = 400;
   final FirebaseAuth _auth = FirebaseAuth.instance;
 
@@ -167,5 +168,28 @@ class DMMessageCacheService {
       });
     }
     return _peerReads[key];
+  }
+
+  /// The peer's server-written `lastReadMessageIdBy` for this conversation.
+  /// Ids are not orderable, so the caller only passes [confirmed] when the
+  /// paired `lastReadAtBy` watermark advanced; the latest value wins.
+  Future<String?> peerReadMessageId(String owner, String room, String peer,
+      {String? confirmed}) async {
+    final key = '$owner::dm::$room::readId::$peer';
+    if (confirmed != null && confirmed.isNotEmpty) {
+      _peerReadMessageIds[key] = confirmed;
+    }
+    final box = await _box();
+    if (_peerReadMessageIds[key] == null) {
+      final raw = box?.get(key);
+      if (raw is String && raw.isNotEmpty) _peerReadMessageIds[key] = raw;
+    }
+    if (confirmed != null && confirmed.isNotEmpty && box != null) {
+      await _writer.schedule(key, () async {
+        final value = _peerReadMessageIds[key];
+        if (value != null) await box.put(key, value);
+      });
+    }
+    return _peerReadMessageIds[key];
   }
 }

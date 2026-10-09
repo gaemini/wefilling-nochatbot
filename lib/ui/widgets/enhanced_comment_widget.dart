@@ -4,10 +4,11 @@
 
 import 'package:flutter/gestures.dart';
 import 'package:flutter/material.dart';
+import 'motion_press.dart';
 import 'package:flutter/services.dart';
 import 'package:firebase_auth/firebase_auth.dart';
-import 'package:firebase_storage/firebase_storage.dart';
 import 'package:url_launcher/url_launcher.dart';
+import '../../config/app_backend.dart';
 import 'package:linkify/linkify.dart' as linkify;
 import '../../models/comment.dart';
 import '../../widgets/notification_read_observer.dart';
@@ -644,52 +645,52 @@ class _EnhancedCommentWidgetState extends State<EnhancedCommentWidget> {
   }
 
   Widget _buildHiddenCommentPlaceholder() {
-    return GestureDetector(
-      behavior: HitTestBehavior.translucent,
-      onLongPress: _confirmUnhideAnonymousComment,
-      child: Container(
-        margin: EdgeInsets.only(
-          left: 16.0 + (widget.comment.depth * 20.0),
-          right: widget.comment.depth == 0 ? 16.0 : 0.0,
-          bottom: 16,
-        ),
-        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
-        decoration: BoxDecoration(
-          color: const Color(0xFFF3F4F6),
-          borderRadius: BorderRadius.circular(10),
-          border: Border.all(color: const Color(0xFFE5E7EB)),
-        ),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Text(
-              _localizedText(
-                ko: '차단한 댓글입니다.',
-                en: 'Blocked comment.',
+    return MotionPress(
+      pressedScale: .99,
+      child: GestureDetector(
+        behavior: HitTestBehavior.translucent,
+        onLongPress: _confirmUnhideAnonymousComment,
+        child: Container(
+          margin: EdgeInsets.only(
+            left: 16.0 + (widget.comment.depth * 20.0),
+            right: widget.comment.depth == 0 ? 16.0 : 0.0,
+            bottom: 16,
+          ),
+          padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+          decoration: BoxDecoration(
+            color: const Color(0xFFF3F4F6),
+            borderRadius: BorderRadius.circular(10),
+            border: Border.all(color: const Color(0xFFE5E7EB)),
+          ),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text(
+                _localizedText(ko: '차단한 댓글입니다.', en: 'Blocked comment.'),
+                style: TextStyle(
+                  fontFamily: uiFontFamily(context, 'Inter'),
+                  fontFamilyFallback: const ['NotoSansKR'],
+                  fontSize: 13,
+                  fontWeight: FontWeight.w700,
+                  color: Color(0xFF6B7280),
+                ),
               ),
-              style: TextStyle(
-                fontFamily: uiFontFamily(context, 'Inter'),
-                fontFamilyFallback: const ['NotoSansKR'],
-                fontSize: 13,
-                fontWeight: FontWeight.w700,
-                color: Color(0xFF6B7280),
+              const SizedBox(height: 4),
+              Text(
+                _localizedText(
+                  ko: '길게 눌러 차단을 해제할 수 있어요.',
+                  en: 'Long press to unblock.',
+                ),
+                style: TextStyle(
+                  fontFamily: uiFontFamily(context, 'Inter'),
+                  fontFamilyFallback: const ['NotoSansKR'],
+                  fontSize: 12,
+                  fontWeight: FontWeight.w500,
+                  color: Color(0xFF9CA3AF),
+                ),
               ),
-            ),
-            const SizedBox(height: 4),
-            Text(
-              _localizedText(
-                ko: '길게 눌러 차단을 해제할 수 있어요.',
-                en: 'Long press to unblock.',
-              ),
-              style: TextStyle(
-                fontFamily: uiFontFamily(context, 'Inter'),
-                fontFamilyFallback: const ['NotoSansKR'],
-                fontSize: 12,
-                fontWeight: FontWeight.w500,
-                color: Color(0xFF9CA3AF),
-              ),
-            ),
-          ],
+            ],
+          ),
         ),
       ),
     );
@@ -1128,37 +1129,34 @@ class _EnhancedCommentWidgetState extends State<EnhancedCommentWidget> {
                 children: [
                   // 익명 게시글이 아닐 때만 프로필 이미지 표시
                   if (!widget.isAnonymousPost) ...[
-                    GestureDetector(
-                      onTap: isDeletedAccount || widget.directInteractionBlocked
-                          ? null
-                          : _openCommentAuthorProfile,
-                      child: Container(
-                        width: 32,
-                        height: 32,
-                        margin: const EdgeInsets.only(top: 2),
-                        decoration: BoxDecoration(
-                          shape: BoxShape.circle,
-                          color: Colors.grey[200],
-                        ),
-                        child: photoUrl.trim().isNotEmpty
-                            ? ClipOval(
-                                child: Image.network(
-                                  photoUrl.trim(),
-                                  width: 32,
-                                  height: 32,
-                                  fit: BoxFit.cover,
-                                  errorBuilder: (_, __, ___) => Icon(
-                                    Icons.person,
-                                    size: 18,
-                                    color: Colors.grey[500],
+                    MotionPress(
+                      enabled: !isDeletedAccount && !widget.directInteractionBlocked,
+                      pressedScale: .99,
+                      child: GestureDetector(
+                        onTap: isDeletedAccount || widget.directInteractionBlocked
+                            ? null
+                            : _openCommentAuthorProfile,
+                        child: Container(
+                          width: 32,
+                          height: 32,
+                          margin: const EdgeInsets.only(top: 2),
+                          decoration: BoxDecoration(
+                            shape: BoxShape.circle,
+                            color: Colors.grey[200],
+                          ),
+                          child: photoUrl.trim().isNotEmpty
+                              ? ClipOval(
+                                  child: Image.network(
+                                    photoUrl.trim(),
+                                    width: 32,
+                                    height: 32,
+                                    fit: BoxFit.cover,
+                                    errorBuilder: (_, __, ___) =>
+                                        Icon(Icons.person, size: 18, color: Colors.grey[500]),
                                   ),
-                                ),
-                              )
-                            : Icon(
-                                Icons.person,
-                                size: 18,
-                                color: Colors.grey[500],
-                              ),
+                                )
+                              : Icon(Icons.person, size: 18, color: Colors.grey[500]),
+                        ),
                       ),
                     ),
                     const SizedBox(width: 10),
@@ -1188,25 +1186,25 @@ class _EnhancedCommentWidgetState extends State<EnhancedCommentWidget> {
                                       color: Color(0xFF111827),
                                     ),
                                   )
-                                : GestureDetector(
-                                    onTap: isDeletedAccount ||
-                                            widget.directInteractionBlocked
+                                : MotionPress(
+                                  enabled: !isDeletedAccount && !widget.directInteractionBlocked,
+                                  pressedScale: .99,
+                                  child: GestureDetector(
+                                    onTap: isDeletedAccount || widget.directInteractionBlocked
                                         ? null
                                         : _openCommentAuthorProfile,
                                     child: Text(
                                       effectiveDisplayName,
                                       style: TextStyle(
-                                        fontFamily:
-                                            uiFontFamily(context, 'Inter'),
-                                        fontFamilyFallback: const [
-                                          'NotoSansKR'
-                                        ],
+                                        fontFamily: uiFontFamily(context, 'Inter'),
+                                        fontFamilyFallback: const ['NotoSansKR'],
                                         fontSize: 14,
                                         fontWeight: FontWeight.w700,
                                         color: Color(0xFF111827),
                                       ),
                                     ),
                                   ),
+                                ),
                             const SizedBox(width: 6),
                             Text(
                               widget.comment.getFormattedTime(context),
@@ -1279,6 +1277,7 @@ class _EnhancedCommentWidgetState extends State<EnhancedCommentWidget> {
                             child: _PostCommentGif(
                               key: ValueKey('post-gif:${widget.comment.id}'),
                               storagePath: widget.comment.gifStoragePath,
+                              storageBucket: widget.comment.storageBucket,
                             ),
                           ),
 
@@ -1466,8 +1465,13 @@ class _ActionDivider extends StatelessWidget {
 }
 
 class _PostCommentGif extends StatefulWidget {
-  const _PostCommentGif({super.key, required this.storagePath});
+  const _PostCommentGif({
+    super.key,
+    required this.storagePath,
+    this.storageBucket = '',
+  });
   final String storagePath;
+  final String storageBucket;
 
   @override
   State<_PostCommentGif> createState() => _PostCommentGifState();
@@ -1486,12 +1490,15 @@ class _PostCommentGifState extends State<_PostCommentGif> {
   @override
   void didUpdateWidget(covariant _PostCommentGif oldWidget) {
     super.didUpdateWidget(oldWidget);
-    if (oldWidget.storagePath != widget.storagePath) _load();
+    if (oldWidget.storagePath != widget.storagePath ||
+        oldWidget.storageBucket != widget.storageBucket) {
+      _load();
+    }
   }
 
   void _load() {
     _viewerId = FirebaseAuth.instance.currentUser?.uid;
-    _bytes = FirebaseStorage.instance.ref(widget.storagePath)
+    _bytes = AppStorage.ref(widget.storagePath, storageBucket: widget.storageBucket)
         .getData(maxCommentGifBytes)
         .then((data) {
       if (data == null || FirebaseAuth.instance.currentUser?.uid != _viewerId) {

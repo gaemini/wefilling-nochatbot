@@ -11,6 +11,7 @@ class SharedLinkPreview {
     this.authorName = '',
     this.thumbnailUrl = '',
     this.thumbnailStoragePath = '',
+    this.thumbnailStorageBucket = '',
     this.thumbnailSource = '',
     this.thumbnailWidth = 0,
     this.thumbnailHeight = 0,
@@ -32,6 +33,8 @@ class SharedLinkPreview {
   final String authorName;
   final String thumbnailUrl;
   final String thumbnailStoragePath;
+  /// Bucket holding [thumbnailStoragePath]; empty means legacy.
+  final String thumbnailStorageBucket;
   final String thumbnailSource;
   final int thumbnailWidth;
   final int thumbnailHeight;
@@ -72,6 +75,7 @@ class SharedLinkPreview {
     String? authorName,
     String? thumbnailUrl,
     String? thumbnailStoragePath,
+    String? thumbnailStorageBucket,
     String? thumbnailSource,
     int? thumbnailWidth,
     int? thumbnailHeight,
@@ -94,6 +98,8 @@ class SharedLinkPreview {
       authorName: authorName ?? this.authorName,
       thumbnailUrl: thumbnailUrl ?? this.thumbnailUrl,
       thumbnailStoragePath: thumbnailStoragePath ?? this.thumbnailStoragePath,
+      thumbnailStorageBucket:
+          thumbnailStorageBucket ?? this.thumbnailStorageBucket,
       thumbnailSource: thumbnailSource ?? this.thumbnailSource,
       thumbnailWidth: thumbnailWidth ?? this.thumbnailWidth,
       thumbnailHeight: thumbnailHeight ?? this.thumbnailHeight,
@@ -119,6 +125,8 @@ class SharedLinkPreview {
       'authorName': authorName,
       'thumbnailUrl': thumbnailUrl,
       'thumbnailStoragePath': thumbnailStoragePath,
+      if (thumbnailStorageBucket.isNotEmpty)
+        'thumbnailStorageBucket': thumbnailStorageBucket,
       'thumbnailSource': thumbnailSource,
       if (thumbnailWidth > 0) 'thumbnailWidth': thumbnailWidth,
       if (thumbnailHeight > 0) 'thumbnailHeight': thumbnailHeight,
@@ -181,6 +189,7 @@ class SharedLinkPreview {
       authorName: (map['authorName'] ?? '').toString(),
       thumbnailUrl: (map['thumbnailUrl'] ?? '').toString(),
       thumbnailStoragePath: (map['thumbnailStoragePath'] ?? '').toString(),
+      thumbnailStorageBucket: (map['thumbnailStorageBucket'] ?? '').toString(),
       thumbnailSource: (map['thumbnailSource'] ?? '').toString(),
       thumbnailWidth: readInt(map['thumbnailWidth']),
       thumbnailHeight: readInt(map['thumbnailHeight']),

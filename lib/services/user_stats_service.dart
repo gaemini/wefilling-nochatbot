@@ -4,7 +4,8 @@
 // 사용자별 콘텐츠 필터링 및 조회
 
 import 'package:cloud_firestore/cloud_firestore.dart';
-import 'package:cloud_functions/cloud_functions.dart';
+
+import '../config/app_backend.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import '../models/post.dart';
 import '../models/meetup.dart';
@@ -51,7 +52,7 @@ class UserStatsService {
     if (normalizedUserId.isEmpty) {
       throw ArgumentError.value(userId, 'userId');
     }
-    final response = await FirebaseFunctions.instance
+    final response = await AppFunctions.instance
         .httpsCallable('getUserProfileStats')
         .call(<String, dynamic>{'userId': normalizedUserId}).timeout(
             const Duration(seconds: 15));

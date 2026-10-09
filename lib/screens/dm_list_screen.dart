@@ -1,6 +1,7 @@
 import 'dart:async';
 
 import 'package:flutter/material.dart';
+import '../ui/widgets/motion_press.dart';
 import 'package:flutter/foundation.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
@@ -17,7 +18,10 @@ import 'friend_profile_screen.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import '../utils/logger.dart';
 import '../ui/widgets/user_avatar.dart';
+import '../ui/widgets/app_fab.dart';
 import '../l10n/ui_locale.dart';
+import '../design/tokens.dart';
+import '../ui/widgets/motion_selectable.dart';
 
 // DM 목록 필터: 친구 / 익명
 enum DMFilter { friends, anonymous }
@@ -235,13 +239,17 @@ class _DMListScreenState extends State<DMListScreen> {
   /// FloatingActionButton 빌드
   Widget? _buildFloatingActionButtons() {
     if (_filter == DMFilter.friends) {
-      return FloatingActionButton(
-        onPressed: _openRecipientSelection,
-        backgroundColor: const Color(0xFF344054),
-        foregroundColor: Colors.white,
-        elevation: 3,
-        highlightElevation: 4,
-        child: const Icon(Icons.add, color: Colors.white),
+      return SafeArea(
+        top: false,
+        minimum: const EdgeInsets.only(bottom: 8),
+        child: AppFab.extended(
+          onPressed: _openRecipientSelection,
+          icon: Icons.add_rounded,
+          label: AppLocalizations.of(context)!.newMessage,
+          semanticLabel: AppLocalizations.of(context)!.newMessage,
+          tooltip: AppLocalizations.of(context)!.newMessage,
+          heroTag: 'create_dm_fab',
+        ),
       );
     }
 
@@ -571,7 +579,10 @@ class _DMListScreenState extends State<DMListScreen> {
               Row(
                 children: [
                   Expanded(
-                    child: InkWell(
+                    child: MotionSelectable(
+                      selected: _filter == DMFilter.friends,
+                      pressedScale: MotionSelectable.segmentScale,
+                      child: InkWell(
                       onTap: () {
                         if (_filter != DMFilter.friends)
                           setState(() => _filter = DMFilter.friends);
@@ -579,8 +590,10 @@ class _DMListScreenState extends State<DMListScreen> {
                       child: Container(
                         height: compact ? 44 : 48,
                         alignment: Alignment.center,
-                        child: Text(
-                          AppLocalizations.of(context)!.friends,
+                        child: AnimatedDefaultTextStyle(
+                          duration:
+                              MotionTokens.of(context, MotionTokens.state),
+                          curve: MotionTokens.curve,
                           style: TextStyle(
                             fontFamily: uiFontFamily(context, 'Inter'),
                             fontFamilyFallback: const ['NotoSansKR'],
@@ -590,12 +603,17 @@ class _DMListScreenState extends State<DMListScreen> {
                                 ? activeColor
                                 : inactiveColor,
                           ),
+                          child: Text(AppLocalizations.of(context)!.friends),
                         ),
                       ),
                     ),
+                    ),
                   ),
                   Expanded(
-                    child: InkWell(
+                    child: MotionSelectable(
+                      selected: _filter == DMFilter.anonymous,
+                      pressedScale: MotionSelectable.segmentScale,
+                      child: InkWell(
                       onTap: () {
                         if (_filter != DMFilter.anonymous)
                           setState(() => _filter = DMFilter.anonymous);
@@ -603,8 +621,10 @@ class _DMListScreenState extends State<DMListScreen> {
                       child: Container(
                         height: compact ? 44 : 48,
                         alignment: Alignment.center,
-                        child: Text(
-                          AppLocalizations.of(context)!.anonymous,
+                        child: AnimatedDefaultTextStyle(
+                          duration:
+                              MotionTokens.of(context, MotionTokens.state),
+                          curve: MotionTokens.curve,
                           style: TextStyle(
                             fontFamily: uiFontFamily(context, 'Inter'),
                             fontFamilyFallback: const ['NotoSansKR'],
@@ -614,8 +634,10 @@ class _DMListScreenState extends State<DMListScreen> {
                                 ? activeColor
                                 : inactiveColor,
                           ),
+                          child: Text(AppLocalizations.of(context)!.anonymous),
                         ),
                       ),
+                    ),
                     ),
                   ),
                 ],
@@ -855,22 +877,26 @@ class _DMListScreenState extends State<DMListScreen> {
                   label: canOpenProfile
                       ? AppLocalizations.of(context)!.viewProfile
                       : null,
-                  child: GestureDetector(
-                    behavior: HitTestBehavior.opaque,
-                    onTap: canOpenProfile
-                        ? () => _openUserProfile(
+                  child: MotionPress(
+                    enabled: canOpenProfile,
+                    pressedScale: .99,
+                    child: GestureDetector(
+                      behavior: HitTestBehavior.opaque,
+                      onTap: canOpenProfile
+                          ? () => _openUserProfile(
                               userId: otherUserId,
                               nickname: displayName,
                               photoURL: otherUserPhoto,
                             )
-                        : null,
-                    child: UserAvatar(
-                      uid: otherUserId,
-                      photoUrl: otherUserPhoto,
-                      photoVersion: otherUserPhotoVersion,
-                      isAnonymous: isAnonymous,
-                      size: 44,
-                      placeholderIconSize: 22,
+                          : null,
+                      child: UserAvatar(
+                        uid: otherUserId,
+                        photoUrl: otherUserPhoto,
+                        photoVersion: otherUserPhotoVersion,
+                        isAnonymous: isAnonymous,
+                        size: 44,
+                        placeholderIconSize: 22,
+                      ),
                     ),
                   ),
                 ),

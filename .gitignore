@@ -78,3 +78,14 @@ release/remoteconfig.candidate.json
 # Release binaries
 /dist/ios/*.ipa
 /dist/android/*.aab
+
+# Secrets and credentials (never commit)
+**/serviceAccountKey*.json
+**/*-firebase-adminsdk-*.json
+*.p8
+*.p12
+*.pem
+.env.local
+.env.*.local
+functions/.env.local
+functions/.secret.local

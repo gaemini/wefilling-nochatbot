@@ -4,6 +4,8 @@
 
 import 'dart:async';
 import 'package:cloud_functions/cloud_functions.dart';
+
+import '../config/app_backend.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/foundation.dart';
 import 'content_filter_service.dart';
@@ -16,9 +18,7 @@ import '../repositories/users_repository.dart';
 import '../utils/logger.dart';
 
 class RelationshipService {
-  final FirebaseFunctions _functions = FirebaseFunctions.instanceFor(
-    region: 'us-central1',
-  );
+  final FirebaseFunctions _functions = AppFunctions.instance;
   final FirebaseAuth _auth = FirebaseAuth.instance;
   final UsersRepository _usersRepository = UsersRepository();
   final MyPageCacheService _myPageCacheService = MyPageCacheService();

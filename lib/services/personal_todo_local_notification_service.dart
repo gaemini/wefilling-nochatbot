@@ -35,7 +35,7 @@ class PersonalTodoLocalNotificationService {
     tz.setLocalLocation(tz.getLocation('Asia/Seoul'));
 
     const settings = InitializationSettings(
-      android: AndroidInitializationSettings('@mipmap/launcher_icon'),
+      android: AndroidInitializationSettings('@drawable/ic_notification'),
       iOS: DarwinInitializationSettings(
         requestAlertPermission: false,
         requestBadgePermission: false,

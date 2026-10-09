@@ -5,6 +5,7 @@ import 'package:firebase_storage/firebase_storage.dart';
 import 'package:flutter/material.dart';
 import 'package:image_picker/image_picker.dart';
 import 'package:uuid/uuid.dart';
+import '../config/app_backend.dart';
 
 import '../constants/app_constants.dart';
 import '../models/organization_profile.dart';
@@ -89,7 +90,7 @@ class _OrganizationProfileEditScreenState
     setState(() => _uploading = true);
     try {
       final kind = cover ? 'cover' : 'logo';
-      final object = FirebaseStorage.instance.ref(
+      final object = AppStorage.uploads.ref(
         'organization_profile_images/${widget.access.organizationId}/'
         '${kind}_${const Uuid().v4()}.jpg',
       );

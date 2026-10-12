@@ -57,6 +57,7 @@ import '../services/content_translation_service.dart';
 import '../ui/sheets/translation_language_sheet.dart';
 import '../ui/widgets/post_chat_translated_text.dart';
 import '../ui/widgets/snack_chat_translation_split_button.dart';
+import '../ui/widgets/swipe_to_reply.dart';
 import '../ui/widgets/shared_link_preview_card.dart';
 import '../utils/responsive_helper.dart';
 import '../utils/post_translation_policy.dart';
@@ -2936,43 +2937,55 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
                 : (_commentHasMedia(comment) ? l10n.commentPhotoLabel : null),
           );
 
+      // 밀어서 답장: 지금 답글이 가능한 경우와 같은 조건(남의 글, 삭제·숨김
+      // 아님, 차단 아님). 익명 포스트도 시트의 canReply와 같은 조건이다.
+      final canSwipeReply = currentUserId != null &&
+          comment.userId != currentUserId &&
+          !comment.isDeleted &&
+          !hidden(comment) &&
+          !_blockedCommentAuthorIds.contains(comment.userId);
       children.add(KeyedSubtree(
         key: _commentKeys.putIfAbsent(comment.id, GlobalKey.new),
-        child: EnhancedCommentWidget(
-          key: ValueKey<String>(commentTranslationItemKey(
-            comment,
+        child: SwipeToReply(
+          enabled: canSwipeReply,
+          onReply: comment.isDeleted ? null : enterReply,
+          semanticsLabel: l10n.reply,
+          child: EnhancedCommentWidget(
+            key: ValueKey<String>(commentTranslationItemKey(
+              comment,
+              postId: _currentPost.id,
+            )),
+            comment: comment,
             postId: _currentPost.id,
-          )),
-          comment: comment,
-          postId: _currentPost.id,
-          onDeleteComment: _deleteCommentWithReplies,
-          onBlockApplied: () {
-            if (!mounted) return;
-            setState(() {});
-          },
-          isAnonymousPost: _currentPost.isAnonymous,
-          getDisplayName: (c) => getCommentAuthorName(c, currentUserId),
-          isReplyTarget: _replyTargetCommentId == comment.id,
-          onReplyTap: comment.isDeleted ? null : enterReply,
-          parentTopLevelCommentId: parentTopId,
-          watchAuthorProfile: false,
-          directInteractionBlocked:
-              _blockedCommentAuthorIds.contains(comment.userId),
-          showHeader: !groupedWithPrevious,
-          groupedWithPrevious: groupedWithPrevious,
-          groupedWithNext: groupedWithNext,
-          quote: quote,
-          onQuoteTap: quote == null || quote.isDeleted
-              ? null
-              : () => _jumpToComment(quote!.targetId),
-          highlighted: _highlightedCommentId == comment.id,
-          perItemShowTranslation: _itemShowTranslation.contains(comment.id),
-          perItemShowOriginal: _itemShowOriginal.contains(comment.id),
-          onTranslationPreference: (translate) =>
-              _setItemTranslationPreference(
-            comment.id,
-            scope: _commentsScope,
-            translate: translate,
+            onDeleteComment: _deleteCommentWithReplies,
+            onBlockApplied: () {
+              if (!mounted) return;
+              setState(() {});
+            },
+            isAnonymousPost: _currentPost.isAnonymous,
+            getDisplayName: (c) => getCommentAuthorName(c, currentUserId),
+            isReplyTarget: _replyTargetCommentId == comment.id,
+            onReplyTap: comment.isDeleted ? null : enterReply,
+            parentTopLevelCommentId: parentTopId,
+            watchAuthorProfile: false,
+            directInteractionBlocked:
+                _blockedCommentAuthorIds.contains(comment.userId),
+            showHeader: !groupedWithPrevious,
+            groupedWithPrevious: groupedWithPrevious,
+            groupedWithNext: groupedWithNext,
+            quote: quote,
+            onQuoteTap: quote == null || quote.isDeleted
+                ? null
+                : () => _jumpToComment(quote!.targetId),
+            highlighted: _highlightedCommentId == comment.id,
+            perItemShowTranslation: _itemShowTranslation.contains(comment.id),
+            perItemShowOriginal: _itemShowOriginal.contains(comment.id),
+            onTranslationPreference: (translate) =>
+                _setItemTranslationPreference(
+              comment.id,
+              scope: _commentsScope,
+              translate: translate,
+            ),
           ),
         ),
       ));

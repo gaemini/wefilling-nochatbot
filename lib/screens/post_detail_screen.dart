@@ -305,10 +305,7 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
   late final String _commentsScope;
   late final String _postScope;
 
-  // 번역 개별 전환(화면 상태, 저장하지 않음). 스코프 토글·언어 변경 때 비운다.
-  static const String _postBodyItemKey = 'post-body';
-  final Set<String> _itemShowTranslation = <String>{};
-  final Set<String> _itemShowOriginal = <String>{};
+  // 번역은 상단 분할 버튼(스코프)으로만 켜고 끈다. 항목별 전환은 없다.
   final ContentTranslationService _translationService =
       ContentTranslationService.instance;
   String? _translationLanguageCode;
@@ -2661,8 +2658,6 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
       _translationLanguageRevision = revision;
       _postScopeShowsOriginal = postOriginal;
       _commentsScopeShowsOriginal = commentsOriginal;
-      _itemShowTranslation.clear();
-      _itemShowOriginal.clear();
     });
     if (languageChanged) unawaited(_refreshTranslationLanguageLabel());
   }
@@ -2676,25 +2671,6 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
     if (code != _translationLanguageCode) {
       setState(() => _translationLanguageCode = code);
     }
-  }
-
-  void _setItemTranslationPreference(
-    String itemKey, {
-    required String scope,
-    required bool translate,
-  }) {
-    final scopeOn = !_translationService.showsOriginal(scope);
-    setState(() {
-      if (scopeOn) {
-        translate
-            ? _itemShowOriginal.remove(itemKey)
-            : _itemShowOriginal.add(itemKey);
-      } else {
-        translate
-            ? _itemShowTranslation.add(itemKey)
-            : _itemShowTranslation.remove(itemKey);
-      }
-    });
   }
 
   Widget _buildTranslationSplitButton() {
@@ -2978,14 +2954,6 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
                 ? null
                 : () => _jumpToComment(quote!.targetId),
             highlighted: _highlightedCommentId == comment.id,
-            perItemShowTranslation: _itemShowTranslation.contains(comment.id),
-            perItemShowOriginal: _itemShowOriginal.contains(comment.id),
-            onTranslationPreference: (translate) =>
-                _setItemTranslationPreference(
-              comment.id,
-              scope: _commentsScope,
-              translate: translate,
-            ),
           ),
         ),
       ));
@@ -3975,14 +3943,6 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
               sourceFields: postTranslationSourceFields(_currentPost),
             ),
             scope: _postScope,
-            perItemShowTranslation:
-                _itemShowTranslation.contains(_postBodyItemKey),
-            perItemShowOriginal: _itemShowOriginal.contains(_postBodyItemKey),
-            onPreferenceChanged: (translate) => _setItemTranslationPreference(
-              _postBodyItemKey,
-              scope: _postScope,
-              translate: translate,
-            ),
             builder: (context, fields) => PostLinkifiedText(
               text: fields['content'] ?? content,
               textAlign: TextAlign.left,

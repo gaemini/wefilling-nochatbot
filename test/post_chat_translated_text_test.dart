@@ -47,16 +47,14 @@ void main() {
     );
   }
 
-  Future<List<bool>> pump(
+  Future<void> pump(
     WidgetTester tester,
     ContentTranslationRequest request,
     String scope, {
     bool isCandidate = true,
-    bool perItemShowTranslation = false,
     double width = 375,
     double scale = 1,
   }) async {
-    final prefs = <bool>[];
     await tester.binding.setSurfaceSize(Size(width, 600));
     addTearDown(() => tester.binding.setSurfaceSize(null));
     await tester.pumpWidget(MaterialApp(
@@ -77,8 +75,6 @@ void main() {
                 request: request,
                 scope: scope,
                 isCandidate: isCandidate,
-                perItemShowTranslation: perItemShowTranslation,
-                onPreferenceChanged: prefs.add,
                 builder: (context, fields) => Text(fields['content']!),
               ),
             ),
@@ -86,7 +82,6 @@ void main() {
         ),
       ),
     ));
-    return prefs;
   }
 
   Future<void> settle(WidgetTester tester) async {
@@ -100,40 +95,28 @@ void main() {
     expect(find.text(hidden), findsNothing);
   }
 
-  testWidgets('번역됨: 번역문만, 원문 언어 · 원문 보기', (tester) async {
+  testWidgets('번역됨: 번역문만, 발 줄은 원문 언어만(원문 보기 링크 없음)',
+      (tester) async {
     final item = fresh();
     final translated = 'Translated ${item.request.contentId}';
-    final prefs = await pump(tester, item.request, item.scope);
+    await pump(tester, item.request, item.scope);
     await waitFor(tester, () => find.text(translated).evaluate().isNotEmpty);
     expectOnly(translated, _original);
-    expect(find.textContaining('원문 보기'), findsOneWidget);
-    await tester.tap(find.textContaining('원문 보기'));
-    expect(prefs, [false]);
+    expect(find.textContaining('원문 언어'), findsOneWidget);
+    expect(find.textContaining('원문 보기'), findsNothing);
     await settle(tester);
   });
 
-  testWidgets('원문(스코프 꺼짐): 원문만, 번역 보기', (tester) async {
+  testWidgets('스코프 꺼짐: 원문만, 번역 보기 링크·발 줄 없음', (tester) async {
     final item = fresh();
     service.toggleScope(item.scope);
     addTearDown(() => service.toggleScope(item.scope));
-    final prefs = await pump(tester, item.request, item.scope);
+    await pump(tester, item.request, item.scope);
     await waitFor(
         tester, () => service.latestOutcomeFor(item.request) != null);
     expectOnly(_original, 'Translated ${item.request.contentId}');
-    expect(find.text('번역 보기'), findsOneWidget);
-    await tester.tap(find.text('번역 보기'));
-    expect(prefs, [true]);
-    await settle(tester);
-  });
-
-  testWidgets('스코프 꺼짐 + 개별 번역 보기면 그 항목만 번역문', (tester) async {
-    final item = fresh();
-    service.toggleScope(item.scope);
-    addTearDown(() => service.toggleScope(item.scope));
-    await pump(tester, item.request, item.scope, perItemShowTranslation: true);
-    final translated = 'Translated ${item.request.contentId}';
-    await waitFor(tester, () => find.text(translated).evaluate().isNotEmpty);
-    expectOnly(translated, _original);
+    expect(find.text('번역 보기'), findsNothing);
+    expect(find.byIcon(Icons.translate_rounded), findsNothing);
     await settle(tester);
   });
 

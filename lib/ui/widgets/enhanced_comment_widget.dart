@@ -83,11 +83,6 @@ class EnhancedCommentWidget extends StatefulWidget {
   /// 인용 탭으로 이동해 온 대상이면 잠시 강조한다.
   final bool highlighted;
 
-  /// 번역 개별 전환(화면 상태, 저장하지 않음). PostChatTranslatedText 참고.
-  final bool perItemShowTranslation;
-  final bool perItemShowOriginal;
-  final ValueChanged<bool>? onTranslationPreference;
-
   const EnhancedCommentWidget({
     super.key,
     required this.comment,
@@ -108,9 +103,6 @@ class EnhancedCommentWidget extends StatefulWidget {
     this.quote,
     this.onQuoteTap,
     this.highlighted = false,
-    this.perItemShowTranslation = false,
-    this.perItemShowOriginal = false,
-    this.onTranslationPreference,
   });
 
   @override
@@ -1356,9 +1348,6 @@ class _EnhancedCommentWidgetState extends State<EnhancedCommentWidget> {
                       widget.comment,
                       currentUser?.uid,
                     ),
-                    perItemShowTranslation: widget.perItemShowTranslation,
-                    perItemShowOriginal: widget.perItemShowOriginal,
-                    onPreferenceChanged: widget.onTranslationPreference,
                     builder: (context, fields) =>
                         richBody(fields['content'] ?? widget.comment.content),
                   );

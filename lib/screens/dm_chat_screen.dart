@@ -32,6 +32,7 @@ import '../ui/widgets/chat_reaction_widgets.dart';
 import '../ui/widgets/motion_press.dart';
 import '../ui/widgets/chat_reply_reveal.dart';
 import '../ui/widgets/soft_translate_reveal.dart';
+import '../ui/widgets/swipe_to_reply.dart';
 import '../ui/widgets/retryable_chat_network_image.dart';
 import '../services/dm_active_conversation.dart';
 import '../services/navigation_service.dart';
@@ -3575,31 +3576,37 @@ class _DMChatScreenState extends State<DMChatScreen>
             child: Column(
               children: [
                 if (showDateSeparator) _buildDateSeparator(message.createdAt),
-                GestureDetector(
-                  behavior: HitTestBehavior.translucent,
-                  onLongPress: _canReplyToMessage(message)
-                      ? () => _showMessageActions(message)
-                      : message.type == 'file'
-                      ? () => _showPendingFileActions(message)
-                      : null,
-                  child: Column(
-                    crossAxisAlignment: isMine
-                        ? CrossAxisAlignment.end
-                        : CrossAxisAlignment.start,
-                    children: [
-                      _buildOutgoingPresentation(
-                        message,
-                        _buildMessageBubble(
+                // 밀어서 답장: 메뉴에 '답장'이 보이는 조건(_canReplyToMessage)과 같다.
+                SwipeToReply(
+                  enabled: _canReplyToMessage(message),
+                  onReply: () => _beginReply(message),
+                  semanticsLabel: AppLocalizations.of(context)!.chatReply,
+                  child: GestureDetector(
+                    behavior: HitTestBehavior.translucent,
+                    onLongPress: _canReplyToMessage(message)
+                        ? () => _showMessageActions(message)
+                        : message.type == 'file'
+                        ? () => _showPendingFileActions(message)
+                        : null,
+                    child: Column(
+                      crossAxisAlignment: isMine
+                          ? CrossAxisAlignment.end
+                          : CrossAxisAlignment.start,
+                      children: [
+                        _buildOutgoingPresentation(
                           message,
-                          isMine,
-                          isConsecutive,
-                          timeText: timeText,
-                          showTimeText: showTimeText,
-                          statusText: statusText,
-                          showStatusText: showStatusText,
+                          _buildMessageBubble(
+                            message,
+                            isMine,
+                            isConsecutive,
+                            timeText: timeText,
+                            showTimeText: showTimeText,
+                            statusText: statusText,
+                            showStatusText: showStatusText,
+                          ),
                         ),
-                      ),
-                    ],
+                      ],
+                    ),
                   ),
                 ),
               ],
@@ -3815,6 +3822,12 @@ class _DMChatScreenState extends State<DMChatScreen>
       return;
     }
     if (selected != 'reply') return;
+    _beginReply(message);
+  }
+
+  /// 답장 모드 진입. 길게 누르기 메뉴의 '답장'과 밀어서 답장이 함께 쓴다.
+  void _beginReply(DMMessage message) {
+    if (!_canReplyToMessage(message)) return;
     setState(() => _replyingTo = message);
     WidgetsBinding.instance.addPostFrameCallback((_) {
       if (mounted) _messageFocusNode.requestFocus();

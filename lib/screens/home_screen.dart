@@ -21,7 +21,6 @@ import '../services/meetup_calendar_cache_service.dart';
 import '../services/preload_service.dart';
 import '../ui/snackbar/app_snackbar.dart';
 import '../ui/widgets/app_fab.dart';
-import '../ui/widgets/empty_state.dart';
 import '../ui/widgets/meetup_calendar_day_ring.dart';
 import '../ui/widgets/meetup_home_card.dart';
 import '../ui/widgets/skeletons.dart';
@@ -55,10 +54,8 @@ class MeetupHomePageState extends State<MeetupHomePage> with PreloadMixin {
   DateTime _selectedDay = DateTime.now();
   String _selectedCategoryKey = 'all';
 
-  // PageView 컨트롤러 (날짜 슬라이드용)
-  late PageController _pageController;
-  static const int _initialPageIndex = 10000; // 충분히 큰 초기 인덱스 (과거/미래로 이동 가능)
-  late DateTime _baseDate; // PageView 계산을 위한 기준 날짜 (고정)
+  // 선택한 날짜와 다가오는 밋업을 한 줄기로 보여 주는 목록.
+  final ScrollController _agendaController = ScrollController();
 
   // ✅ 월 스트림 캐시(리빌드마다 재구독 방지 → 깜빡임 감소)
   late Stream<List<Meetup>> _calendarArchiveStream;
@@ -93,10 +90,6 @@ class MeetupHomePageState extends State<MeetupHomePage> with PreloadMixin {
     final now = DateTime.now().toLocal();
     _selectedDay = DateTime(now.year, now.month, now.day);
     _focusedMonth = _selectedDay;
-    _baseDate = _selectedDay; // 기준 날짜 고정 (PageView 계산용)
-
-    // PageController 초기화
-    _pageController = PageController(initialPage: _initialPageIndex);
 
     _ensureMonthStreams(_focusedMonth);
     // 전체 목록은 화면 진입 때 한 번만 스트림을 만들고 재사용한다. 빌드마다
@@ -110,7 +103,8 @@ class MeetupHomePageState extends State<MeetupHomePage> with PreloadMixin {
     // 모임 일정이 지나면 Firestore 변경이 없어도 테두리가 사라져야 한다.
     _calendarMarkerRefreshTimer =
         Timer.periodic(const Duration(seconds: 30), (_) {
-      if (mounted && _isCalendarExpanded) setState(() {});
+      // 주간 날짜 줄이 항상 보이므로 접힘 여부와 무관하게 갱신한다.
+      if (mounted) setState(() {});
     });
 
     WidgetsBinding.instance.addPostFrameCallback((_) {
@@ -123,7 +117,7 @@ class MeetupHomePageState extends State<MeetupHomePage> with PreloadMixin {
 
   @override
   void dispose() {
-    _pageController.dispose();
+    _agendaController.dispose();
     _calendarMarkerRefreshTimer?.cancel();
     _calendarCache.removeListener(_onCalendarCacheChanged);
     _meetupCardRevision.dispose();
@@ -194,33 +188,48 @@ class MeetupHomePageState extends State<MeetupHomePage> with PreloadMixin {
           ...?_archiveMeetupMonthCache[month],
       ];
 
-  /// 포스트의 `오늘의 밋업`에서 진입할 때 기존 탭 상태와 무관하게 오늘을 연다.
+  /// 다른 화면에서 밋업 탭으로 진입할 때 기존 탭 상태와 무관하게 오늘을 연다.
   void showToday() {
     if (!mounted) return;
+    _selectDay(DateTime.now(), collapseCalendar: true);
+  }
 
-    final today = _dayKey(DateTime.now());
-    final targetPage =
-        _initialPageIndex + today.difference(_dayKey(_baseDate)).inDays;
-
+  /// 날짜를 고르면 그 날짜의 주/월 데이터를 준비하고 목록을 맨 위로 올린다.
+  void _selectDay(DateTime day, {bool collapseCalendar = false}) {
+    final key = _dayKey(day);
     setState(() {
-      _selectedDay = today;
-      _focusedMonth = DateTime(today.year, today.month);
+      _selectedDay = key;
+      _focusedMonth = DateTime(key.year, key.month);
       _ensureMonthStreams(_focusedMonth);
+      if (collapseCalendar) _isCalendarExpanded = false;
     });
-
-    void moveToToday() {
-      if (!mounted || !_pageController.hasClients) return;
-      _pageController.jumpToPage(targetPage);
-    }
-
-    if (_pageController.hasClients) {
-      moveToToday();
-    } else {
-      WidgetsBinding.instance.addPostFrameCallback((_) => moveToToday());
-    }
-
     unawaited(_calendarCache.warmMonth(_focusedMonth));
-    unawaited(_calendarCache.warmDay(today));
+    unawaited(_calendarCache.warmDay(key));
+    if (_agendaController.hasClients) {
+      if (MotionTokens.reduceMotion(context)) {
+        _agendaController.jumpTo(0);
+      } else {
+        unawaited(_agendaController.animateTo(
+          0,
+          duration: MotionTokens.medium,
+          curve: MotionTokens.curve,
+        ));
+      }
+    }
+  }
+
+  /// 접힌 상태에서는 한 주, 펼친 상태에서는 한 달씩 이동한다.
+  void _shiftPeriod(int delta) {
+    if (_isCalendarExpanded) {
+      final month = DateTime(_focusedMonth.year, _focusedMonth.month + delta);
+      setState(() {
+        _focusedMonth = month;
+        _ensureMonthStreams(month);
+      });
+      unawaited(_calendarCache.warmMonth(month));
+      return;
+    }
+    _selectDay(_selectedDay.add(Duration(days: 7 * delta)));
   }
 
   // ===== 날짜/포맷 유틸 =====
@@ -317,17 +326,6 @@ class MeetupHomePageState extends State<MeetupHomePage> with PreloadMixin {
       });
     }
     return map;
-  }
-
-  String _collapsedHeaderLabel(BuildContext context, DateTime selected) {
-    final code = Localizations.localeOf(context).languageCode;
-    final locale = code == 'ko' ? 'ko_KR' : 'en_US';
-    final local = selected.toLocal();
-    if (code == 'zh') return DateFormat('M月d日 EEEE', 'zh_CN').format(local);
-    if (code == 'ko') {
-      return DateFormat('MM. dd EEEE', locale).format(local);
-    }
-    return DateFormat('MMM d, EEEE', locale).format(local);
   }
 
   String _expandedHeaderLabel(BuildContext context, DateTime focusedMonth) {
@@ -514,24 +512,6 @@ class MeetupHomePageState extends State<MeetupHomePage> with PreloadMixin {
         ),
       ),
     );
-  }
-
-  Future<void> _navigateToAllMeetups() async {
-    await Navigator.push(
-      context,
-      MaterialPageRoute(
-        builder: (_) => _AllMeetupsScreen(
-          meetupsStream: _allUpcomingMeetupsStream,
-          categoryKeyOf: (meetup) => _normalizeCategoryKey(meetup.category),
-          meetupCardBuilder: _buildMeetupCard,
-          meetupSkeletonBuilder: _buildMeetupSkeleton,
-          meetupCardRevision: _meetupCardRevision,
-          onCreateMeetup: _navigateToCreateMeetup,
-        ),
-      ),
-    );
-
-    if (mounted) setState(() {});
   }
 
   // ===== 후기 확인/수락 화면 =====
@@ -902,87 +882,92 @@ class MeetupHomePageState extends State<MeetupHomePage> with PreloadMixin {
     );
   }
 
-  Widget _buildCalendarHeader() {
+  // ===== 날짜 바: 월 이름(달력 펼침), 오늘, 이전/다음 =====
+  Widget _buildDateBar() {
+    final strings = _MeetupAgendaStrings.of(context);
     final screenWidth = MediaQuery.sizeOf(context).width;
     final isCompact = screenWidth < 360;
     final isExpanded = screenWidth >= 600;
-    final useShortAllLabel =
-        screenWidth < 370 || MediaQuery.textScalerOf(context).scale(14) > 17;
-    final headerHeight = isCompact ? 48.0 : (isExpanded ? 54.0 : 52.0);
-    final labelSize = isCompact ? 14.0 : (isExpanded ? 16.0 : 15.0);
-    final iconSize = isCompact ? 20.0 : 22.0;
-    final label = _isCalendarExpanded
-        ? _expandedHeaderLabel(context, _focusedMonth)
-        : _collapsedHeaderLabel(context, _selectedDay);
-    final l10n = AppLocalizations.of(context)!;
+    final today = _dayKey(DateTime.now());
+    final showTodayButton = !isSameDay(_selectedDay, today) ||
+        (_isCalendarExpanded &&
+            (_focusedMonth.year != today.year ||
+                _focusedMonth.month != today.month));
+    final monthSource = _isCalendarExpanded ? _focusedMonth : _selectedDay;
+    final monthLabel = monthSource.year == today.year
+        ? _expandedHeaderLabel(context, monthSource)
+        : strings.yearMonth(monthSource, _expandedHeaderLabel(context, monthSource));
+    final previousLabel =
+        _isCalendarExpanded ? strings.previousMonth : strings.previousWeek;
+    final nextLabel = _isCalendarExpanded ? strings.nextMonth : strings.nextWeek;
 
     return ColoredBox(
       color: Colors.white,
       child: Center(
         child: ConstrainedBox(
           constraints: const BoxConstraints(maxWidth: 720),
-          child: SizedBox(
-            height: headerHeight,
-            child: Padding(
-              padding: EdgeInsets.only(
-                left: isCompact ? 12 : (isExpanded ? 22 : 16),
-                right: isCompact ? 4 : (isExpanded ? 12 : 8),
-              ),
+          child: Padding(
+            padding: EdgeInsets.only(
+              left: isCompact ? 8 : (isExpanded ? 18 : 12),
+              right: isCompact ? 2 : (isExpanded ? 10 : 4),
+            ),
+            child: SizedBox(
+              height: isCompact ? 46 : 50,
               child: MediaQuery.withClampedTextScaling(
                 maxScaleFactor: 1.2,
                 child: Row(
                   children: [
-                    Expanded(
-                      child: Align(
-                        alignment: Alignment.centerLeft,
-                        child: Material(
-                          color: Colors.transparent,
-                          child: InkWell(
-                            key: const Key('meetup_date_selector'),
-                            onTap: () {
-                              setState(() {
-                                _isCalendarExpanded = !_isCalendarExpanded;
-                              });
-                            },
-                            borderRadius: BorderRadius.circular(6),
-                            child: ConstrainedBox(
-                              constraints: const BoxConstraints(minHeight: 44),
+                    Material(
+                      color: Colors.transparent,
+                      child: InkWell(
+                        key: const Key('meetup_date_selector'),
+                        borderRadius: BorderRadius.circular(8),
+                        onTap: () => setState(() {
+                          _isCalendarExpanded = !_isCalendarExpanded;
+                          if (_isCalendarExpanded) {
+                            _focusedMonth = DateTime(
+                              _selectedDay.year,
+                              _selectedDay.month,
+                            );
+                            _ensureMonthStreams(_focusedMonth);
+                          }
+                        }),
+                        child: Semantics(
+                          button: true,
+                          expanded: _isCalendarExpanded,
+                          label: _isCalendarExpanded
+                              ? strings.collapseCalendar
+                              : strings.expandCalendar,
+                          child: ConstrainedBox(
+                            constraints: const BoxConstraints(minHeight: 44),
+                            child: Padding(
+                              padding: const EdgeInsets.symmetric(horizontal: 4),
                               child: Row(
                                 mainAxisSize: MainAxisSize.min,
                                 children: [
-                                  Icon(
-                                    Icons.calendar_today_outlined,
-                                    size: isCompact ? 17 : 18,
-                                    color: const Color(0xFF475467),
-                                  ),
-                                  SizedBox(width: isCompact ? 7 : 8),
-                                  Flexible(
-                                    child: Text(
-                                      label,
-                                      maxLines: 1,
-                                      overflow: TextOverflow.ellipsis,
-                                      style: TextStyle(
-                                        fontFamily:
-                                            uiFontFamily(context, 'Inter'),
-                                        fontFamilyFallback: const [
-                                          'NotoSansKR'
-                                        ],
-                                        fontSize: labelSize,
-                                        fontWeight: FontWeight.w800,
-                                        color: const Color(0xFF111827),
-                                        height:
-                                            isChineseUi(context) ? 1.3 : 1.15,
-                                        letterSpacing: -0.15,
-                                      ),
+                                  Text(
+                                    monthLabel,
+                                    style: TextStyle(
+                                      fontFamily: uiFontFamily(context, 'Inter'),
+                                      fontFamilyFallback: const ['NotoSansKR'],
+                                      fontSize: isCompact ? 18 : 20,
+                                      fontWeight: FontWeight.w800,
+                                      color: const Color(0xFF111827),
+                                      letterSpacing: -0.3,
                                     ),
                                   ),
                                   const SizedBox(width: 2),
-                                  Icon(
-                                    _isCalendarExpanded
-                                        ? Icons.arrow_drop_up_rounded
-                                        : Icons.arrow_drop_down_rounded,
-                                    size: iconSize,
-                                    color: const Color(0xFF475467),
+                                  AnimatedRotation(
+                                    turns: _isCalendarExpanded ? .5 : 0,
+                                    duration: MotionTokens.of(
+                                      context,
+                                      MotionTokens.state,
+                                    ),
+                                    child: const Icon(
+                                      Icons.keyboard_arrow_down_rounded,
+                                      size: 22,
+                                      color: Color(0xFF475467),
+                                    ),
                                   ),
                                 ],
                               ),
@@ -991,33 +976,51 @@ class MeetupHomePageState extends State<MeetupHomePage> with PreloadMixin {
                         ),
                       ),
                     ),
-                    const SizedBox(width: 8),
-                    TextButton.icon(
-                      key: const Key('all_meetups_button'),
-                      onPressed: _navigateToAllMeetups,
-                      style: TextButton.styleFrom(
-                        foregroundColor: const Color(0xFF475467),
-                        minimumSize: const Size(44, 44),
-                        padding: EdgeInsets.symmetric(
-                          horizontal: isCompact ? 6 : 8,
+                    const Spacer(),
+                    if (showTodayButton)
+                      Padding(
+                        padding: const EdgeInsets.only(right: 2),
+                        child: TextButton(
+                          key: const Key('meetup_today_button'),
+                          onPressed: () =>
+                              _selectDay(today, collapseCalendar: true),
+                          style: TextButton.styleFrom(
+                            foregroundColor: AppColors.pointColor,
+                            minimumSize: const Size(44, 36),
+                            padding: const EdgeInsets.symmetric(horizontal: 10),
+                            shape: RoundedRectangleBorder(
+                              borderRadius: BorderRadius.circular(18),
+                              side: const BorderSide(color: Color(0xFFD0D5DD)),
+                            ),
+                            tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                          ),
+                          child: Text(
+                            strings.today,
+                            style: TextStyle(
+                              fontFamily: uiFontFamily(context, 'Inter'),
+                              fontFamilyFallback: const ['NotoSansKR'],
+                              fontSize: 13,
+                              fontWeight: FontWeight.w700,
+                            ),
+                          ),
                         ),
-                        tapTargetSize: MaterialTapTargetSize.padded,
                       ),
-                      icon: Icon(
-                        Icons.format_list_bulleted_rounded,
-                        size: isCompact ? 18 : 19,
+                    IconButton(
+                      key: const Key('meetup_previous_period'),
+                      onPressed: () => _shiftPeriod(-1),
+                      tooltip: previousLabel,
+                      icon: const Icon(
+                        Icons.chevron_left_rounded,
+                        color: Color(0xFF344054),
                       ),
-                      label: Text(
-                        useShortAllLabel ? l10n.all : l10n.allMeetups,
-                        maxLines: 1,
-                        overflow: TextOverflow.fade,
-                        softWrap: false,
-                        style: TextStyle(
-                          fontFamily: uiFontFamily(context, 'Inter'),
-                          fontFamilyFallback: const ['NotoSansKR'],
-                          fontSize: isCompact ? 12.5 : 13,
-                          fontWeight: FontWeight.w700,
-                        ),
+                    ),
+                    IconButton(
+                      key: const Key('meetup_next_period'),
+                      onPressed: () => _shiftPeriod(1),
+                      tooltip: nextLabel,
+                      icon: const Icon(
+                        Icons.chevron_right_rounded,
+                        color: Color(0xFF344054),
                       ),
                     ),
                   ],
@@ -1028,6 +1031,135 @@ class MeetupHomePageState extends State<MeetupHomePage> with PreloadMixin {
         ),
       ),
     );
+  }
+
+  // ===== 주간 날짜 줄: 월 달력과 같은 표시를 한 주만 보여 준다 =====
+  Widget _buildWeekStrip({
+    required Map<DateTime, List<Meetup>> displayByDay,
+    required Map<DateTime, List<Meetup>> myRelevantByDay,
+  }) {
+    final today = _dayKey(DateTime.now());
+    final selected = _dayKey(_selectedDay);
+    final weekStart = selected.subtract(Duration(days: selected.weekday % 7));
+    final strings = _MeetupAgendaStrings.of(context);
+    final screenWidth = MediaQuery.sizeOf(context).width;
+    final isCompact = screenWidth < 360;
+
+    return ColoredBox(
+      color: Colors.white,
+      child: Center(
+        child: ConstrainedBox(
+          constraints: const BoxConstraints(maxWidth: 720),
+          child: GestureDetector(
+            behavior: HitTestBehavior.translucent,
+            // 좌우로 밀어 이전/다음 주로 이동한다.
+            onHorizontalDragEnd: (details) {
+              final velocity = details.primaryVelocity ?? 0;
+              if (velocity.abs() < 200) return;
+              _shiftPeriod(velocity < 0 ? 1 : -1);
+            },
+            child: Padding(
+              padding: EdgeInsets.fromLTRB(isCompact ? 4 : 8, 0, isCompact ? 4 : 8, 6),
+              child: MediaQuery.withClampedTextScaling(
+                maxScaleFactor: 1.15,
+                child: Row(
+                  children: [
+                    for (var i = 0; i < 7; i++)
+                      Expanded(
+                        child: Builder(builder: (context) {
+                          final day = weekStart.add(Duration(days: i));
+                          final isToday = isSameDay(day, today);
+                          final isSelected = isSameDay(day, selected);
+                          final weekdayColor = day.weekday == DateTime.sunday
+                              ? const Color(0xFFEF4444)
+                              : day.weekday == DateTime.saturday
+                                  ? const Color(0xFF3B82F6)
+                                  : const Color(0xFF6B7280);
+                          return Semantics(
+                            button: true,
+                            selected: isSelected,
+                            label: _dayHeaderLabel(day),
+                            excludeSemantics: true,
+                            child: InkWell(
+                              key: ValueKey<String>(
+                                'meetup_week_day_${day.year}_${day.month}_${day.day}',
+                              ),
+                              borderRadius: BorderRadius.circular(12),
+                              onTap: () => _selectDay(day),
+                              child: Padding(
+                                padding: const EdgeInsets.symmetric(vertical: 4),
+                                child: Column(
+                                  mainAxisSize: MainAxisSize.min,
+                                  children: [
+                                    Text(
+                                      strings.weekdayShort(day),
+                                      style: TextStyle(
+                                        fontFamily:
+                                            uiFontFamily(context, 'Inter'),
+                                        fontFamilyFallback: const [
+                                          'NotoSansKR'
+                                        ],
+                                        fontSize: 11.5,
+                                        fontWeight: FontWeight.w700,
+                                        color: weekdayColor,
+                                      ),
+                                    ),
+                                    const SizedBox(height: 4),
+                                    _CalendarDayCell(
+                                      day: day,
+                                      isSelected: isSelected,
+                                      isToday: isToday,
+                                      showCheck: !isToday &&
+                                          shouldShowPastParticipationCheck(
+                                            day: day,
+                                            myRelevantByDay: myRelevantByDay,
+                                            today: today,
+                                          ),
+                                      showMeetupBorder:
+                                          shouldShowActiveMeetupRing(
+                                        day: day,
+                                        displayByDay: displayByDay,
+                                        today: today,
+                                      ),
+                                      showFriendMeetupBorder:
+                                          !_dayKey(day).isBefore(today) &&
+                                              (displayByDay[_dayKey(day)]?.any(
+                                                    _calendarCache
+                                                        .isVisibleFriendMeetup,
+                                                  ) ??
+                                                  false),
+                                    ),
+                                  ],
+                                ),
+                              ),
+                            ),
+                          );
+                        }),
+                      ),
+                  ],
+                ),
+              ),
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+
+  /// '오늘 · 10월 10일 (금)'처럼 상대 날짜와 실제 날짜를 함께 쓴다.
+  String _dayHeaderLabel(DateTime day) {
+    final strings = _MeetupAgendaStrings.of(context);
+    final key = _dayKey(day);
+    final today = _dayKey(DateTime.now());
+    final diff = key.difference(today).inDays;
+    final relative = switch (diff) {
+      0 => strings.today,
+      1 => strings.tomorrow,
+      -1 => strings.yesterday,
+      _ => null,
+    };
+    final date = strings.date(key);
+    return relative == null ? date : '$relative · $date';
   }
 
   Widget _buildCalendar({
@@ -1104,20 +1236,9 @@ class MeetupHomePageState extends State<MeetupHomePage> with PreloadMixin {
                           selectedDayPredicate: (day) =>
                               isSameDay(_selectedDay, day),
                           onDaySelected: (selectedDay, focusedDay) {
-                            final newDateKey = _dayKey(selectedDay);
-                            setState(() {
-                              _selectedDay = newDateKey;
-                              _focusedMonth = focusedDay;
-                              _ensureMonthStreams(focusedDay);
-                            });
-
-                            // PageView도 선택된 날짜로 이동
-                            final daysDiff =
-                                newDateKey.difference(_baseDate).inDays;
-                            final targetPage = _initialPageIndex + daysDiff;
-                            _pageController.jumpToPage(targetPage);
-
-                            unawaited(_calendarCache.warmDay(selectedDay));
+                            // 월 달력에서 날짜를 고르면 주간 보기로 접고
+                            // 아래 목록이 그 날짜부터 보이게 한다.
+                            _selectDay(selectedDay, collapseCalendar: true);
                           },
                           // 마커는 직접 그릴 것이므로 비활성
                           eventLoader: (_) => const <Meetup>[],
@@ -1224,29 +1345,142 @@ class MeetupHomePageState extends State<MeetupHomePage> with PreloadMixin {
     );
   }
 
-  // 날짜 변경 (PageView 인덱스 기반)
-  DateTime _getDateFromPageIndex(int pageIndex) {
-    final offset = pageIndex - _initialPageIndex;
-    return _baseDate.add(Duration(days: offset));
-  }
+  // ===== 목록: 선택한 날짜 + 다가오는 모든 밋업 =====
+  Widget _buildAgenda({
+    required Map<DateTime, List<Meetup>> displayByDay,
+    required bool archiveLoading,
+  }) {
+    return StreamBuilder<List<Meetup>>(
+      stream: _allUpcomingMeetupsStream,
+      builder: (context, allSnap) {
+        final strings = _MeetupAgendaStrings.of(context);
+        final selectedKey = _dayKey(_selectedDay);
+        final isSelectedPast = _isPastDay(selectedKey);
+        // 과거 날짜는 읽을 수 있는 전체 아카이브(공개 시간 만료 포함),
+        // 오늘·미래는 활성 모임을 쓴다. 카테고리는 양쪽에 같이 적용된다.
+        final dayMeetups =
+            (displayByDay[selectedKey] ?? const <Meetup>[]).toList();
 
-  void _onPageChanged(int pageIndex) {
-    final newDate = _getDateFromPageIndex(pageIndex);
-    final newDateKey = _dayKey(newDate);
+        final upcomingLoading =
+            allSnap.connectionState == ConnectionState.waiting &&
+                !allSnap.hasData;
+        final upcoming = _applyCategoryFilter(
+          allSnap.data ?? const <Meetup>[],
+        )
+            .where((meetup) {
+              final key = _dayKey(meetup.date);
+              return !_isPastDay(key) && key != selectedKey;
+            })
+            .toList()
+          ..sort((a, b) {
+            final byDate = a.date.toLocal().compareTo(b.date.toLocal());
+            if (byDate != 0) return byDate;
+            return a.time.compareTo(b.time);
+          });
 
-    // 선택 날짜가 실제로 바뀐 경우에만 setState
-    if (newDateKey != _dayKey(_selectedDay)) {
-      setState(() {
-        _selectedDay = newDateKey;
-        // 월이 바뀌면 focusedMonth도 업데이트
-        if (_selectedDay.year != _focusedMonth.year ||
-            _selectedDay.month != _focusedMonth.month) {
-          _focusedMonth = DateTime(_selectedDay.year, _selectedDay.month);
-          _ensureMonthStreams(_focusedMonth);
-          unawaited(_calendarCache.warmMonth(_focusedMonth));
+        final items = <Widget>[
+          _AgendaSectionHeader(
+            key: const ValueKey<String>('agenda_selected_day_header'),
+            icon: Icons.event_available_rounded,
+            title: _dayHeaderLabel(selectedKey),
+            count: archiveLoading ? null : dayMeetups.length,
+          ),
+          if (archiveLoading)
+            for (var i = 0; i < 2; i++)
+              Padding(
+                padding: const EdgeInsets.only(bottom: 4),
+                child: _buildMeetupSkeleton(),
+              )
+          else if (dayMeetups.isEmpty)
+            _AgendaMessage(
+              text: isSelectedPast ? strings.pastDayEmpty : strings.dayEmpty,
+            )
+          else
+            for (final meetup in dayMeetups)
+              Padding(
+                key: ValueKey<String>('agenda_day_${meetup.id}'),
+                padding: const EdgeInsets.only(bottom: 4),
+                child: _buildMeetupCard(
+                  meetup,
+                  forceIsParticipating: isSelectedPast ? false : null,
+                  disableParticipationLookup: isSelectedPast,
+                ),
+              ),
+          const SizedBox(height: 10),
+          _AgendaSectionHeader(
+            key: const ValueKey<String>('agenda_upcoming_header'),
+            icon: Icons.format_list_bulleted_rounded,
+            title: strings.upcomingTitle,
+            count: upcomingLoading || allSnap.hasError ? null : upcoming.length,
+          ),
+        ];
+
+        if (upcomingLoading) {
+          for (var i = 0; i < 3; i++) {
+            items.add(Padding(
+              padding: const EdgeInsets.only(bottom: 4),
+              child: _buildMeetupSkeleton(),
+            ));
+          }
+        } else if (allSnap.hasError) {
+          items.add(_AgendaMessage(
+            text: AppLocalizations.of(context)!.meetupLoadError,
+          ));
+        } else if (upcoming.isEmpty) {
+          items.add(_AgendaMessage(text: strings.upcomingEmpty));
+        } else {
+          DateTime? lastDay;
+          for (final meetup in upcoming) {
+            final key = _dayKey(meetup.date);
+            if (lastDay == null || key != lastDay) {
+              lastDay = key;
+              items.add(_AgendaDateLabel(
+                key: ValueKey<String>(
+                  'agenda_date_${key.year}_${key.month}_${key.day}',
+                ),
+                text: _dayHeaderLabel(key),
+                onTap: () => _selectDay(key),
+              ));
+            }
+            items.add(Padding(
+              key: ValueKey<String>('agenda_upcoming_${meetup.id}'),
+              padding: const EdgeInsets.only(bottom: 4),
+              child: _buildMeetupCard(meetup),
+            ));
+          }
         }
-      });
-    }
+
+        return ValueListenableBuilder<int>(
+          valueListenable: _meetupCardRevision,
+          builder: (context, _, __) => RefreshIndicator(
+            color: AppColors.pointColor,
+            backgroundColor: Colors.white,
+            onRefresh: () async {
+              setState(() {});
+              await Future.delayed(const Duration(milliseconds: 350));
+            },
+            child: Center(
+              child: ConstrainedBox(
+                constraints: const BoxConstraints(maxWidth: 720),
+                child: ListView.builder(
+                  key: const PageStorageKey<String>('meetup_agenda_list'),
+                  controller: _agendaController,
+                  physics: const AlwaysScrollableScrollPhysics(),
+                  padding: EdgeInsets.fromLTRB(
+                    0,
+                    4,
+                    0,
+                    88 + MediaQuery.paddingOf(context).bottom,
+                  ),
+                  itemCount: items.length,
+                  itemBuilder: (context, index) => items[index],
+                ),
+              ),
+            ),
+          ),
+        );
+      },
+    );
   }
 
   @override
@@ -1325,100 +1559,33 @@ class MeetupHomePageState extends State<MeetupHomePage> with PreloadMixin {
                       children: [
                         // 상단 고정: 카테고리 칩
                         _buildCategoryChips(),
-                        // 상단 고정: 달력 헤더 + (펼침 시) 달력
-                        _buildCalendarHeader(),
+                        // 날짜 바 + 주간 날짜 줄(접힘) 또는 월 달력(펼침)
+                        _buildDateBar(),
                         _buildCalendar(
                           displayByDay: displayByDay,
                           myRelevantByDay: myByDay,
                           maxHeight: calendarMaxHeight,
                         ),
-                        const SizedBox(height: 4),
-                        // PageView로 날짜별 리스트 슬라이드
+                        if (!_isCalendarExpanded)
+                          _buildWeekStrip(
+                            displayByDay: displayByDay,
+                            myRelevantByDay: myByDay,
+                          ),
+                        const Divider(
+                          height: 1,
+                          thickness: 1,
+                          color: Color(0xFFEAECF0),
+                        ),
+                        // 선택한 날짜의 밋업과 다가오는 모든 밋업을 첫 화면부터
+                        // 한 목록으로 보여 준다.
                         Expanded(
-                          child: PageView.builder(
-                            controller: _pageController,
-                            onPageChanged: _onPageChanged,
-                            itemBuilder: (context, pageIndex) {
-                              // 현재 페이지의 날짜 계산
-                              final pageDate = _getDateFromPageIndex(pageIndex);
-                              final pageDateKey = _dayKey(pageDate);
-                              final isPagePast = _isPastDay(pageDateKey);
-
-                              // 과거는 해당 날짜의 읽을 수 있는 전체 아카이브
-                              // (공개 시간 만료 포함), 오늘·미래는 활성 모임을
-                              // 사용한다. 선택 카테고리는 양쪽에 동일하게 적용된다.
-                              final pageMeetups = (displayByDay[pageDateKey] ??
-                                      const <Meetup>[])
-                                  .toList();
-
-                              // 스켈레톤 표시 여부
-                              final pageMonthKey = _monthKey(pageDateKey);
-                              final pageShowSkeleton =
-                                  archiveSnap.connectionState ==
-                                          ConnectionState.waiting &&
-                                      !archiveSnap.hasData &&
-                                      !_archiveMeetupMonthCache
-                                          .containsKey(pageMonthKey);
-
-                              return pageShowSkeleton
-                                  ? ListView(
-                                      padding: EdgeInsets.fromLTRB(
-                                        0,
-                                        4,
-                                        0,
-                                        88 +
-                                            MediaQuery.paddingOf(context)
-                                                .bottom,
-                                      ),
-                                      children: List.generate(
-                                        3,
-                                        (i) => Padding(
-                                          padding:
-                                              const EdgeInsets.only(bottom: 4),
-                                          child: _buildMeetupSkeleton(),
-                                        ),
-                                      ),
-                                    )
-                                  : (pageMeetups.isEmpty
-                                      ? const _MeetupEmptyContent()
-                                      : RefreshIndicator(
-                                          color: AppColors.pointColor,
-                                          backgroundColor: Colors.white,
-                                          onRefresh: () async {
-                                            setState(() {});
-                                            await Future.delayed(
-                                              const Duration(milliseconds: 350),
-                                            );
-                                          },
-                                          child: ListView.builder(
-                                            physics:
-                                                const AlwaysScrollableScrollPhysics(),
-                                            padding: EdgeInsets.fromLTRB(
-                                              0,
-                                              4,
-                                              0,
-                                              88 +
-                                                  MediaQuery.paddingOf(context)
-                                                      .bottom,
-                                            ),
-                                            itemCount: pageMeetups.length,
-                                            itemBuilder: (context, index) {
-                                              final meetup = pageMeetups[index];
-                                              return Padding(
-                                                padding: const EdgeInsets.only(
-                                                    bottom: 4),
-                                                child: _buildMeetupCard(
-                                                  meetup,
-                                                  forceIsParticipating:
-                                                      isPagePast ? false : null,
-                                                  disableParticipationLookup:
-                                                      isPagePast,
-                                                ),
-                                              );
-                                            },
-                                          ),
-                                        ));
-                            },
+                          child: _buildAgenda(
+                            displayByDay: displayByDay,
+                            archiveLoading: archiveSnap.connectionState ==
+                                    ConnectionState.waiting &&
+                                !archiveSnap.hasData &&
+                                !_archiveMeetupMonthCache
+                                    .containsKey(_monthKey(_selectedDay)),
                           ),
                         ),
                       ],
@@ -1519,312 +1686,6 @@ class MeetupHomePageState extends State<MeetupHomePage> with PreloadMixin {
           ),
         ],
       ),
-    );
-  }
-}
-
-class _AllMeetupsScreen extends StatefulWidget {
-  final Stream<List<Meetup>> meetupsStream;
-  final String Function(Meetup meetup) categoryKeyOf;
-  final Widget Function(Meetup meetup) meetupCardBuilder;
-  final Widget Function() meetupSkeletonBuilder;
-  final ValueNotifier<int> meetupCardRevision;
-  final VoidCallback onCreateMeetup;
-
-  const _AllMeetupsScreen({
-    required this.meetupsStream,
-    required this.categoryKeyOf,
-    required this.meetupCardBuilder,
-    required this.meetupSkeletonBuilder,
-    required this.meetupCardRevision,
-    required this.onCreateMeetup,
-  });
-
-  @override
-  State<_AllMeetupsScreen> createState() => _AllMeetupsScreenState();
-}
-
-class _AllMeetupsScreenState extends State<_AllMeetupsScreen> {
-  String _selectedCategoryKey = 'all';
-
-  List<Map<String, String>> _categories(BuildContext context) => [
-        {'key': 'all', 'label': AppLocalizations.of(context)!.all},
-        {'key': 'meal', 'label': AppLocalizations.of(context)!.meal},
-        {'key': 'cafe', 'label': AppLocalizations.of(context)!.cafe},
-        {'key': 'hangout', 'label': AppLocalizations.of(context)!.hangout},
-        {'key': 'trip', 'label': AppLocalizations.of(context)!.trip},
-        {'key': 'study', 'label': AppLocalizations.of(context)!.study},
-        {'key': 'culture', 'label': AppLocalizations.of(context)!.culture},
-        {'key': 'etc', 'label': AppLocalizations.of(context)!.other},
-      ];
-
-  List<Meetup> _filteredAndSorted(List<Meetup> source) {
-    final filtered = _selectedCategoryKey == 'all'
-        ? source.toList()
-        : source
-            .where((meetup) =>
-                widget.categoryKeyOf(meetup) == _selectedCategoryKey)
-            .toList();
-    filtered.sort((a, b) {
-      final byDate = a.date.toLocal().compareTo(b.date.toLocal());
-      if (byDate != 0) return byDate;
-      return a.time.compareTo(b.time);
-    });
-    return filtered;
-  }
-
-  PreferredSizeWidget _buildAppBar(BuildContext context) {
-    final width = MediaQuery.sizeOf(context).width;
-    return AppBar(
-      backgroundColor: Colors.white,
-      surfaceTintColor: Colors.white,
-      elevation: 0,
-      scrolledUnderElevation: 0,
-      toolbarHeight: width < 360 ? 52 : 56,
-      leadingWidth: 48,
-      leading: IconButton(
-        onPressed: () => Navigator.pop(context),
-        icon: const Icon(
-          Icons.arrow_back_rounded,
-          color: Color(0xFF111827),
-          size: 22,
-        ),
-        tooltip: MaterialLocalizations.of(context).backButtonTooltip,
-      ),
-      centerTitle: true,
-      title: MediaQuery.withClampedTextScaling(
-        maxScaleFactor: 1.2,
-        child: Text(
-          AppLocalizations.of(context)!.allMeetups,
-          maxLines: 1,
-          overflow: TextOverflow.ellipsis,
-          style: TextStyle(
-            fontFamily: uiFontFamily(context, 'Inter'),
-            fontFamilyFallback: const ['NotoSansKR'],
-            fontSize: width < 360 ? 17 : 18,
-            fontWeight: FontWeight.w700,
-            color: const Color(0xFF111827),
-            letterSpacing: -0.2,
-          ),
-        ),
-      ),
-    );
-  }
-
-  Widget _buildCategoryFilter(BuildContext context) {
-    final width = MediaQuery.sizeOf(context).width;
-    final isCompact = width < 360;
-    final isExpanded = width >= 600;
-    final categories = _categories(context);
-
-    return ColoredBox(
-      color: Colors.white,
-      child: Center(
-        child: ConstrainedBox(
-          constraints: const BoxConstraints(maxWidth: 720),
-          child: Padding(
-            padding: EdgeInsets.fromLTRB(
-              isCompact ? 10 : (isExpanded ? 20 : 14),
-              isCompact ? 5 : 7,
-              isCompact ? 10 : (isExpanded ? 20 : 14),
-              isCompact ? 7 : 9,
-            ),
-            child: SingleChildScrollView(
-              scrollDirection: Axis.horizontal,
-              child: SizedBox(
-                height: isCompact ? 30 : 32,
-                child: Row(
-                  children: [
-                    for (var index = 0; index < categories.length; index++) ...[
-                      if (index != 0) SizedBox(width: isCompact ? 5 : 8),
-                      _CategoryTabItem(
-                        label: categories[index]['label']!,
-                        selected:
-                            _selectedCategoryKey == categories[index]['key']!,
-                        height: isCompact ? 30 : 32,
-                        fontSize: isCompact ? 12.5 : 13,
-                        horizontalPadding: isCompact ? 8 : 10,
-                        onTap: () {
-                          setState(() {
-                            _selectedCategoryKey = categories[index]['key']!;
-                          });
-                        },
-                      ),
-                    ],
-                  ],
-                ),
-              ),
-            ),
-          ),
-        ),
-      ),
-    );
-  }
-
-  Widget _buildLoadingList(BuildContext context) {
-    return ListView.builder(
-      padding: const EdgeInsets.fromLTRB(0, 8, 0, 88),
-      itemCount: 5,
-      itemBuilder: (_, __) => Padding(
-        padding: const EdgeInsets.only(bottom: 4),
-        child: widget.meetupSkeletonBuilder(),
-      ),
-    );
-  }
-
-  Widget _buildMeetupList(BuildContext context, List<Meetup> meetups) {
-    if (meetups.isEmpty) return const _MeetupEmptyContent();
-
-    return ValueListenableBuilder<int>(
-      valueListenable: widget.meetupCardRevision,
-      builder: (context, _, __) {
-        return Center(
-          child: ConstrainedBox(
-            constraints: const BoxConstraints(maxWidth: 720),
-            child: ListView.builder(
-              key: const PageStorageKey<String>('all_meetups_list'),
-              physics: const AlwaysScrollableScrollPhysics(),
-              padding: const EdgeInsets.fromLTRB(0, 4, 0, 88),
-              itemCount: meetups.length,
-              itemBuilder: (context, index) {
-                final meetup = meetups[index];
-                return Padding(
-                  key: ValueKey<String>('all_meetup_${meetup.id}'),
-                  padding: const EdgeInsets.only(bottom: 4),
-                  child: widget.meetupCardBuilder(meetup),
-                );
-              },
-            ),
-          ),
-        );
-      },
-    );
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    return Scaffold(
-      backgroundColor: Colors.white,
-      appBar: _buildAppBar(context),
-      body: SafeArea(
-        top: false,
-        child: Column(
-          children: [
-            _buildCategoryFilter(context),
-            Expanded(
-              child: StreamBuilder<List<Meetup>>(
-                stream: widget.meetupsStream,
-                builder: (context, snapshot) {
-                  if (snapshot.connectionState == ConnectionState.waiting &&
-                      !snapshot.hasData) {
-                    return _buildLoadingList(context);
-                  }
-                  if (snapshot.hasError) {
-                    return AppErrorState(
-                      description:
-                          AppLocalizations.of(context)!.meetupLoadError,
-                    );
-                  }
-                  return _buildMeetupList(
-                    context,
-                    _filteredAndSorted(snapshot.data ?? const <Meetup>[]),
-                  );
-                },
-              ),
-            ),
-          ],
-        ),
-      ),
-      floatingActionButton: SafeArea(
-        top: false,
-        minimum: const EdgeInsets.only(bottom: 8),
-        child: AppFab.createMeetup(
-          onPressed: widget.onCreateMeetup,
-          label: AppLocalizations.of(context)!.createMeetup,
-          heroTag: 'all_meetups_create_fab',
-        ),
-      ),
-    );
-  }
-}
-
-class _MeetupEmptyContent extends StatelessWidget {
-  const _MeetupEmptyContent();
-
-  @override
-  Widget build(BuildContext context) {
-    final size = MediaQuery.sizeOf(context);
-    final compact = size.width < 360 || size.height < 650;
-    final horizontal = size.width < 360 ? 20.0 : 28.0;
-    final padding = EdgeInsets.fromLTRB(
-      horizontal,
-      compact ? 18 : 28,
-      horizontal,
-      88,
-    );
-    final l10n = AppLocalizations.of(context)!;
-
-    return LayoutBuilder(
-      builder: (context, constraints) {
-        final minHeight = constraints.hasBoundedHeight
-            ? (constraints.maxHeight - padding.vertical)
-                .clamp(0.0, double.infinity)
-                .toDouble()
-            : 0.0;
-        return SingleChildScrollView(
-          physics: const AlwaysScrollableScrollPhysics(),
-          padding: padding,
-          child: ConstrainedBox(
-            constraints: BoxConstraints(minHeight: minHeight),
-            child: Center(
-              child: ConstrainedBox(
-                constraints: const BoxConstraints(maxWidth: 520),
-                child: MediaQuery.withClampedTextScaling(
-                  maxScaleFactor: 1.2,
-                  child: Column(
-                    mainAxisSize: MainAxisSize.min,
-                    children: [
-                      Image.asset(
-                        'assets/images/wefilling_logo.png',
-                        width: compact ? 58 : 66,
-                        height: compact ? 58 : 66,
-                        fit: BoxFit.contain,
-                      ),
-                      SizedBox(height: compact ? 18 : 24),
-                      Text(
-                        l10n.meetupEmptyTitle,
-                        textAlign: TextAlign.center,
-                        style: TextStyle(
-                          fontFamily: uiFontFamily(context, 'Inter'),
-                          fontFamilyFallback: const ['NotoSansKR'],
-                          fontSize: compact ? 18 : 20,
-                          fontWeight: FontWeight.w700,
-                          color: const Color(0xFF111827),
-                          height: 1.3,
-                          letterSpacing: -0.25,
-                        ),
-                      ),
-                      SizedBox(height: compact ? 10 : 12),
-                      Text(
-                        l10n.meetupEmptyDescription,
-                        textAlign: TextAlign.center,
-                        style: TextStyle(
-                          fontFamily: uiFontFamily(context, 'Inter'),
-                          fontFamilyFallback: const ['NotoSansKR'],
-                          fontSize: compact ? 13.5 : 14.5,
-                          fontWeight: FontWeight.w400,
-                          color: const Color(0xFF667085),
-                          height: 1.5,
-                        ),
-                      ),
-                    ],
-                  ),
-                ),
-              ),
-            ),
-          ),
-        );
-      },
     );
   }
 }
@@ -2065,5 +1926,206 @@ class _MeetupCheckMarkPainter extends CustomPainter {
   @override
   bool shouldRepaint(covariant _MeetupCheckMarkPainter oldDelegate) {
     return oldDelegate.color != color || oldDelegate.strokeWidth != strokeWidth;
+  }
+}
+
+/// 목록 섹션 머리말: 아이콘, 제목, 개수.
+class _AgendaSectionHeader extends StatelessWidget {
+  const _AgendaSectionHeader({
+    super.key,
+    required this.icon,
+    required this.title,
+    required this.count,
+  });
+
+  final IconData icon;
+  final String title;
+
+  /// null이면 불러오는 중이라 개수를 숨긴다.
+  final int? count;
+
+  @override
+  Widget build(BuildContext context) {
+    final style = TextStyle(
+      fontFamily: uiFontFamily(context, 'Inter'),
+      fontFamilyFallback: const ['NotoSansKR'],
+      fontSize: 16,
+      fontWeight: FontWeight.w800,
+      color: const Color(0xFF111827),
+      letterSpacing: -0.2,
+      height: isChineseUi(context) ? 1.3 : 1.2,
+    );
+    return Semantics(
+      header: true,
+      child: Padding(
+        padding: const EdgeInsets.fromLTRB(16, 12, 16, 8),
+        child: Row(
+          children: [
+            Icon(icon, size: 18, color: const Color(0xFF111827)),
+            const SizedBox(width: 8),
+            Flexible(
+              child: Text(
+                title,
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+                style: style,
+              ),
+            ),
+            if (count != null) ...[
+              const SizedBox(width: 8),
+              Text(
+                '$count',
+                style: style.copyWith(
+                  fontSize: 13,
+                  fontWeight: FontWeight.w700,
+                  color: const Color(0xFF6B7280),
+                ),
+              ),
+            ],
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+/// '다가오는 모든 밋업' 안의 날짜 구분. 누르면 그 날짜를 선택한다.
+class _AgendaDateLabel extends StatelessWidget {
+  const _AgendaDateLabel({
+    super.key,
+    required this.text,
+    required this.onTap,
+  });
+
+  final String text;
+  final VoidCallback onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    return Semantics(
+      button: true,
+      child: InkWell(
+        onTap: onTap,
+        child: Padding(
+          padding: const EdgeInsets.fromLTRB(16, 10, 16, 6),
+          child: Text(
+            text,
+            maxLines: 1,
+            overflow: TextOverflow.ellipsis,
+            style: TextStyle(
+              fontFamily: uiFontFamily(context, 'Inter'),
+              fontFamilyFallback: const ['NotoSansKR'],
+              fontSize: 13,
+              fontWeight: FontWeight.w700,
+              color: const Color(0xFF475467),
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+/// 섹션 안의 짧은 빈 상태/오류 안내.
+class _AgendaMessage extends StatelessWidget {
+  const _AgendaMessage({required this.text});
+
+  final String text;
+
+  @override
+  Widget build(BuildContext context) {
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(16, 2, 16, 10),
+      child: Container(
+        width: double.infinity,
+        padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 14),
+        decoration: BoxDecoration(
+          color: const Color(0xFFF9FAFB),
+          borderRadius: BorderRadius.circular(12),
+        ),
+        child: Text(
+          text,
+          style: TextStyle(
+            fontFamily: uiFontFamily(context, 'Inter'),
+            fontFamilyFallback: const ['NotoSansKR'],
+            fontSize: 14,
+            fontWeight: FontWeight.w500,
+            color: const Color(0xFF667085),
+            height: 1.4,
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+/// 밋업 탭 날짜 바·목록 문구(한/영/중).
+class _MeetupAgendaStrings {
+  const _MeetupAgendaStrings._(this.code);
+
+  final String code;
+
+  static _MeetupAgendaStrings of(BuildContext context) =>
+      _MeetupAgendaStrings._(Localizations.localeOf(context).languageCode);
+
+  String _t(String ko, String en, String zh) =>
+      code == 'zh' ? zh : (code == 'ko' ? ko : en);
+
+  String get today => _t('오늘', 'Today', '今天');
+  String get tomorrow => _t('내일', 'Tomorrow', '明天');
+  String get yesterday => _t('어제', 'Yesterday', '昨天');
+  String get upcomingTitle =>
+      _t('다가오는 모든 밋업', 'All upcoming meetups', '所有即将举行的聚会');
+  String get dayEmpty =>
+      _t('이날 예정된 밋업이 없어요.', 'No meetups on this day.', '这一天没有聚会。');
+  String get pastDayEmpty =>
+      _t('이날 열린 밋업이 없어요.', 'No meetups were held this day.', '这一天没有举行聚会。');
+  String get upcomingEmpty => _t(
+        '아직 다가오는 밋업이 없어요. 첫 밋업을 열어 보세요.',
+        'No upcoming meetups yet. Start the first one.',
+        '还没有即将举行的聚会，来发起第一个吧。',
+      );
+  String get previousWeek => _t('이전 주', 'Previous week', '上一周');
+  String get nextWeek => _t('다음 주', 'Next week', '下一周');
+  String get previousMonth => _t('이전 달', 'Previous month', '上个月');
+  String get nextMonth => _t('다음 달', 'Next month', '下个月');
+  String get expandCalendar =>
+      _t('월 달력 펼치기', 'Show month calendar', '展开月历');
+  String get collapseCalendar =>
+      _t('월 달력 접기', 'Hide month calendar', '收起月历');
+
+  String yearMonth(DateTime month, String monthLabel) =>
+      code == 'en' || (code != 'ko' && code != 'zh')
+          ? '$monthLabel ${month.year}'
+          : code == 'zh'
+              ? '${month.year}年$monthLabel'
+              : '${month.year}년 $monthLabel';
+
+  static const List<String> _koWeekdays = ['일', '월', '화', '수', '목', '금', '토'];
+  static const List<String> _zhWeekdays = ['日', '一', '二', '三', '四', '五', '六'];
+  static const List<String> _enWeekdays = ['S', 'M', 'T', 'W', 'T', 'F', 'S'];
+  static const List<String> _enWeekdaysLong = [
+    'Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat',
+  ];
+  static const List<String> _enMonths = [
+    'Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun',
+    'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec',
+  ];
+
+  String weekdayShort(DateTime day) {
+    final index = day.weekday % 7;
+    return code == 'ko'
+        ? _koWeekdays[index]
+        : code == 'zh'
+            ? _zhWeekdays[index]
+            : _enWeekdays[index];
+  }
+
+  /// 10월 10일 (금) / 10月10日 周五 / Fri, Oct 10
+  String date(DateTime day) {
+    final index = day.weekday % 7;
+    if (code == 'ko') return '${day.month}월 ${day.day}일 (${_koWeekdays[index]})';
+    if (code == 'zh') return '${day.month}月${day.day}日 周${_zhWeekdays[index]}';
+    return '${_enWeekdaysLong[index]}, ${_enMonths[day.month - 1]} ${day.day}';
   }
 }

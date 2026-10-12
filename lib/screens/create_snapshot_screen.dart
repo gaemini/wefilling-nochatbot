@@ -25,6 +25,7 @@ import '../services/snapshot_archive_service.dart';
 import '../services/snapshot_service.dart';
 import '../snapshot/snapshot_storage_video.dart';
 import '../snapshot/snapshot_strings.dart';
+import '../l10n/relationship_strings.dart';
 import '../ui/snackbar/app_snackbar.dart';
 import '../ui/widgets/motion_press.dart';
 import '../ui/widgets/group_audience_preview.dart';
@@ -133,6 +134,8 @@ class _CreateSnapshotScreenState extends State<CreateSnapshotScreen>
   Completer<void>? _overlayCommitCompleter;
   String? _overlayCommitLayerId;
   SnapshotVisibility _visibility = SnapshotVisibility.public;
+  // 반응 문. 공개 범위와 분리된 설정이며 기존 동작과 같은 '답장 받기'가 기본이다.
+  SnapshotResponseMode _responseMode = SnapshotResponseMode.replies;
   List<FriendCategory> _friendCategories = const <FriendCategory>[];
   List<String> _selectedCategoryIds = const <String>[];
   List<UserProfile> _selectedAudienceUsers = const <UserProfile>[];
@@ -1584,6 +1587,7 @@ class _CreateSnapshotScreenState extends State<CreateSnapshotScreen>
         videoThumbnail: _videoThumbnail,
         overlays: _snapshotOverlays(),
         visibility: _visibility,
+        responseMode: _responseMode,
         visibleToCategoryIds: _visibility == SnapshotVisibility.category
             ? _selectedCategoryIds
             : const <String>[],
@@ -2894,10 +2898,82 @@ class _CreateSnapshotScreenState extends State<CreateSnapshotScreen>
                   ? _buildGroupSelection(strings)
                   : null,
             ),
+            SizedBox(height: context.rs(22).clamp(18, 24).toDouble()),
+            ..._buildResponseModeSection(),
           ],
         );
       },
     );
+  }
+
+  /// '보는 사람'(공개 범위)과 분리된 '반응 문'. 텍스트와 아이콘을 함께 쓰고,
+  /// 선택을 바꾸면 비친구에게 스낵이 어떻게 보이는지 바로 미리 보인다.
+  List<Widget> _buildResponseModeSection() {
+    final strings = RelationshipStrings.of(context);
+    Widget row({
+      required IconData icon,
+      required String title,
+      required String description,
+      required SnapshotResponseMode mode,
+    }) {
+      return _VisibilityRow(
+        icon: icon,
+        title: title,
+        description: description,
+        selected: _responseMode == mode,
+        onTap: () => setState(() => _responseMode = mode),
+      );
+    }
+
+    return <Widget>[
+      Text(
+        strings.responseModeTitle,
+        style: TextStyle(
+          fontFamily: uiFontFamily(context, 'Inter'),
+          fontFamilyFallback: const ['NotoSansKR'],
+          fontSize: context.rf(17).clamp(15.5, 18).toDouble(),
+          fontWeight: FontWeight.w800,
+          color: const Color(0xFF111827),
+        ),
+      ),
+      const SizedBox(height: 4),
+      Text(
+        strings.responseModeDescription,
+        style: TextStyle(
+          fontFamily: uiFontFamily(context, 'Inter'),
+          fontFamilyFallback: const ['NotoSansKR'],
+          fontSize: context.rf(12.5).clamp(12, 13.5).toDouble(),
+          fontWeight: FontWeight.w500,
+          color: const Color(0xFF667085),
+        ),
+      ),
+      SizedBox(height: context.rs(12).clamp(10, 14).toDouble()),
+      row(
+        icon: Icons.visibility_outlined,
+        title: strings.viewOnly,
+        description: strings.viewOnlyDescription,
+        mode: SnapshotResponseMode.viewOnly,
+      ),
+      const Divider(height: 1, indent: 40, color: Color(0xFFEAECF0)),
+      row(
+        icon: Icons.waves_outlined,
+        title: strings.reactionsMode,
+        description: strings.reactionsModeDescription,
+        mode: SnapshotResponseMode.reactions,
+      ),
+      const Divider(height: 1, indent: 40, color: Color(0xFFEAECF0)),
+      row(
+        icon: Icons.chat_bubble_outline_rounded,
+        title: strings.repliesMode,
+        description: strings.repliesModeDescription,
+        mode: SnapshotResponseMode.replies,
+      ),
+      SizedBox(height: context.rs(14).clamp(12, 16).toDouble()),
+      _SnackAudiencePreview(
+        visibility: _visibility,
+        responseMode: _responseMode,
+      ),
+    ];
   }
 
   Widget _buildGroupSelection(SnapshotStrings strings) {
@@ -3500,6 +3576,99 @@ class _CategoryRow extends StatelessWidget {
           ),
           if (child != null) child!,
         ],
+      ),
+    );
+  }
+}
+
+
+/// 공개 범위·반응 문을 바꿀 때 비친구에게 스낵이 어떻게 보이는지 즉시 보여 준다.
+class _SnackAudiencePreview extends StatelessWidget {
+  const _SnackAudiencePreview({
+    required this.visibility,
+    required this.responseMode,
+  });
+
+  final SnapshotVisibility visibility;
+  final SnapshotResponseMode responseMode;
+
+  @override
+  Widget build(BuildContext context) {
+    final strings = RelationshipStrings.of(context);
+    final audience = switch (visibility) {
+      SnapshotVisibility.public => strings.audiencePublic,
+      SnapshotVisibility.friends => strings.audienceFriends,
+      SnapshotVisibility.category => strings.audienceGroups,
+    };
+    final response = switch (responseMode) {
+      SnapshotResponseMode.viewOnly => strings.viewOnly,
+      SnapshotResponseMode.reactions => strings.reactionsMode,
+      SnapshotResponseMode.replies => strings.repliesMode,
+    };
+    final textStyle = TextStyle(
+      fontFamily: uiFontFamily(context, 'Inter'),
+      fontFamilyFallback: const ['NotoSansKR'],
+      fontSize: context.rf(13).clamp(12.5, 14).toDouble(),
+      fontWeight: FontWeight.w600,
+      color: const Color(0xFF344054),
+      height: 1.3,
+    );
+    return Semantics(
+      container: true,
+      label: '${strings.previewLabel}. ${strings.audienceLabel}: $audience. '
+          '${strings.responseModeTitle}: $response.',
+      child: Container(
+        padding: const EdgeInsets.fromLTRB(14, 12, 14, 12),
+        decoration: BoxDecoration(
+          color: const Color(0xFFF8FAFC),
+          borderRadius: BorderRadius.circular(16),
+          border: Border.all(color: const Color(0xFFEAECF0)),
+        ),
+        child: Row(
+          children: [
+            ExcludeSemantics(
+              child: Container(
+                width: 40,
+                height: 40,
+                decoration: const BoxDecoration(
+                  color: Color(0xFFE4E7EC),
+                  shape: BoxShape.circle,
+                ),
+                alignment: Alignment.center,
+                child: Icon(
+                  switch (responseMode) {
+                    SnapshotResponseMode.viewOnly => Icons.visibility_outlined,
+                    SnapshotResponseMode.reactions => Icons.waves_outlined,
+                    SnapshotResponseMode.replies =>
+                      Icons.chat_bubble_outline_rounded,
+                  },
+                  size: 20,
+                  color: const Color(0xFF475467),
+                ),
+              ),
+            ),
+            const SizedBox(width: 12),
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  Text(
+                    strings.previewLabel,
+                    style: textStyle.copyWith(
+                      fontSize: context.rf(12).clamp(11.5, 13).toDouble(),
+                      color: const Color(0xFF667085),
+                    ),
+                  ),
+                  const SizedBox(height: 3),
+                  Text('${strings.audienceLabel} · $audience', style: textStyle),
+                  Text('${strings.responseModeTitle} · $response',
+                      style: textStyle),
+                ],
+              ),
+            ),
+          ],
+        ),
       ),
     );
   }

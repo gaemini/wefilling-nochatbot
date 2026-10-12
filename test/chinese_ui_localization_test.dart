@@ -382,7 +382,8 @@ void main() {
       onTap: () {},
     ))));
     await tester.pumpAndSettle();
-    expect(find.text('9月 · 周六'), findsOneWidget);
+    expect(find.text('周六'), findsOneWidget);
+    expect(find.text('9/12'), findsOneWidget);
     expect(tester.takeException(), isNull);
     expect(
         SnackChatDateSeparator.formatDate(DateTime(2026, 9, 12),

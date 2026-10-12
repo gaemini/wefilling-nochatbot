@@ -760,3 +760,47 @@ extension DesignTokensX on DesignTokens {
   static const double emptyStateIconSize = 120.0;
   static const double emptyStateIllustrationSize = 64.0;
 }
+
+/// 관계 오빗(RelationshipOrbit)과 번역 글리프가 공유하는 의미 기반 토큰.
+///
+/// 상태는 색 하나로만 구분하지 않고 열린 호/점선/연속선이라는 형태 차이와
+/// 함께 쓴다. 브랜드 파랑→청록 그라데이션은 '열린 관계'에만 제한적으로 쓴다.
+class OrbitTokens {
+  const OrbitTokens._();
+
+  /// 이미 본 스낵, 낮은 대비가 필요한 기본 상태.
+  static const Color neutral = Color(0xFFD0D5DD);
+
+  /// 열린 관계/답장 가능 상태의 짧은 호 (브랜드 파랑 → 청록).
+  static const Color openStart = Color(0xFF4978E8);
+  static const Color openEnd = Color(0xFF20B8E5);
+  static const List<Color> openGradient = <Color>[openStart, openEnd];
+
+  /// 요청 대기(친구 요청/첫 응답 요청)의 낮은 채도 점선.
+  static const Color pending = Color(0xFFB2BCC9);
+
+  /// 친구 상태의 단색 연속 링.
+  static const Color linked = Color(0xFF344054);
+
+  /// `+` 노드 배경과 글리프.
+  static const Color nodeBackground = Color(0xFF344054);
+  static const Color nodeForeground = Colors.white;
+  static const Color nodeHalo = Colors.white;
+
+  /// 공통 맥락 조각(최대 3개) 색. 국기/국가가 아닌 의미 단위 색이다.
+  static const Color contextInterest = Color(0xFFF59E0B);
+  static const Color contextCommunity = Color(0xFF10B981);
+  static const Color contextMeetup = Color(0xFF4978E8);
+  static const Color contextLanguage = Color(0xFF8B5CF6);
+
+  /// A↔가 번역 글리프 기본 색.
+  static const Color translationGlyph = Color(0xFF1F2937);
+  static const Color translationGlyphMuted = Color(0xFF98A2B3);
+
+  /// 미디어 위 반투명 답장 도크.
+  static const Color replyDock = Color(0xB3FFFFFF);
+  static const Color replyDockBorder = Color(0x1F101828);
+
+  /// 열린 호에만 허용하는 매우 느린 단발성 pulse.
+  static const Duration pulse = Duration(milliseconds: 2000);
+}

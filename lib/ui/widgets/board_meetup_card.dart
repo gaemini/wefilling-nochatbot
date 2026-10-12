@@ -34,14 +34,12 @@ class BoardMeetupCard extends StatelessWidget {
   bool _isKorean(BuildContext context) =>
       Localizations.localeOf(context).languageCode == 'ko';
 
-  String _monthLabel(BuildContext context) {
-    final localDate = meetup.date.toLocal();
-    if (isChineseUi(context)) return '${localDate.month}月';
-    if (_isKorean(context)) return '${localDate.month}월';
-    return DateFormat('MMM', 'en_US').format(localDate).toUpperCase();
-  }
 
-  String _dayLabel() => '${meetup.date.toLocal().day}';
+  /// 날짜는 언어와 상관없이 '월/일'로 짧게 쓴다. 예: 10월 7일 → 10/7
+  String _dateLabel() {
+    final localDate = meetup.date.toLocal();
+    return '${localDate.month}/${localDate.day}';
+  }
 
   String _weekdayLabel(BuildContext context) {
     final localDate = meetup.date.toLocal();
@@ -130,7 +128,7 @@ class BoardMeetupCard extends StatelessWidget {
                           mainAxisAlignment: MainAxisAlignment.center,
                           children: [
                             Text(
-                              '${_monthLabel(context)} · ${_weekdayLabel(context)}',
+                              _weekdayLabel(context),
                               maxLines: 1,
                               overflow: TextOverflow.ellipsis,
                               textAlign: TextAlign.center,
@@ -146,18 +144,30 @@ class BoardMeetupCard extends StatelessWidget {
                               ),
                             ),
                             const SizedBox(height: 2),
-                            Text(
-                              _dayLabel(),
-                              maxLines: 1,
-                              style: TextStyle(
-                                fontFamily: uiFontFamily(context, 'Inter'),
-                                fontFamilyFallback: const ['NotoSansKR'],
-                                fontSize:
-                                    context.rf(23).clamp(21.0, 24.0).toDouble(),
-                                fontWeight: FontWeight.w800,
-                                height: 1,
-                                letterSpacing: -0.5,
-                                color: const Color(0xFF101828),
+                            // '12/31'처럼 긴 날짜도 칸을 넘지 않도록 칸 너비에
+                            // 맞춰 줄인다(짧은 날짜는 원래 크기 그대로).
+                            Padding(
+                              padding:
+                                  const EdgeInsets.symmetric(horizontal: 4),
+                              child: FittedBox(
+                                fit: BoxFit.scaleDown,
+                                child: Text(
+                                  _dateLabel(),
+                                  maxLines: 1,
+                                  softWrap: false,
+                                  style: TextStyle(
+                                    fontFamily: uiFontFamily(context, 'Inter'),
+                                    fontFamilyFallback: const ['NotoSansKR'],
+                                    fontSize: context
+                                        .rf(21)
+                                        .clamp(19.0, 22.0)
+                                        .toDouble(),
+                                    fontWeight: FontWeight.w800,
+                                    height: 1,
+                                    letterSpacing: -0.6,
+                                    color: const Color(0xFF101828),
+                                  ),
+                                ),
                               ),
                             ),
                             const SizedBox(height: 4),

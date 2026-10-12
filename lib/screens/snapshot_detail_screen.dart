@@ -26,6 +26,15 @@ import 'friend_profile_screen.dart';
 import 'snapshot_viewers_screen.dart';
 import 'snapshot_comments_sheet.dart';
 import '../l10n/ui_locale.dart';
+import '../l10n/relationship_strings.dart';
+import '../services/first_response_request_service.dart';
+import '../snapshot/snack_response_policy.dart';
+import '../ui/sheets/snack_reply_sheet.dart';
+import '../providers/relationship_provider.dart';
+import 'package:provider/provider.dart';
+import '../services/relationship_state_watcher.dart';
+import '../ui/widgets/user_avatar.dart';
+import 'create_meetup_screen.dart';
 
 /// 상세 화면에서도 작성 화면에서 합성한 전체 프레임을 보존한다.
 const BoxFit snapshotDetailImageFit = BoxFit.contain;
@@ -160,6 +169,7 @@ class _SnapshotDetailScreenState extends State<SnapshotDetailScreen>
         _manualResumeSnapshotId = _current.id;
       }
     }
+    FirstResponseRequestService.instance.ensureStarted();
     _ticker = Timer.periodic(
       const Duration(seconds: 20),
       (_) => _recheckExpiry(),
@@ -280,8 +290,124 @@ class _SnapshotDetailScreenState extends State<SnapshotDetailScreen>
 
   void _recordCurrentView() {
     if (!mounted || _items.isEmpty) return;
-    if (FirebaseAuth.instance.currentUser?.uid == _current.authorId) return;
+    final uid = FirebaseAuth.instance.currentUser?.uid;
+    if (uid == null || uid == _current.authorId) return;
     unawaited(_service.recordView(_current.id));
+  }
+
+  /// 스낵 답장. 친구에게는 3~5초 영상/사진을 DM으로 바로 보내고,
+  /// 비친구에게는 친구 요청을 안내한다.
+  Future<void> _openSnackReplyComposer() async {
+    if (!mounted || _items.isEmpty || _isModalPaused) return;
+    final item = _current;
+    if (!item.responseMode.allowsSnackReply) return;
+    setState(() => _isModalPaused = true);
+    SnackReplyAction? action;
+    try {
+      final watcher = RelationshipStateWatcher.instance;
+      final relationship = await watcher.resolve(item.authorId);
+      if (!mounted) return;
+      action = await showSnackReplySheet(
+        context,
+        relationship: relationship,
+        friendRequestPending: watcher.friendRequestPendingTo(item.authorId),
+      );
+      if (!mounted || action == null) return;
+      switch (action) {
+        case SnackReplyAction.friendRequest:
+          await _sendFriendRequestTo(item.authorId);
+        case SnackReplyAction.recordVideo:
+        case SnackReplyAction.takePhoto:
+        case SnackReplyAction.pickFromGallery:
+          final media = await pickSnackReplyMedia(context, action);
+          if (!mounted || media == null) return;
+          await _sendSnackReplyMedia(item, media);
+      }
+    } finally {
+      if (mounted) setState(() => _isModalPaused = false);
+    }
+  }
+
+  Future<void> _sendFriendRequestTo(String userId) async {
+    final relationshipProvider = context.read<RelationshipProvider>();
+    final success = await relationshipProvider.sendFriendRequest(userId);
+    if (!mounted) return;
+    if (success) RelationshipStateWatcher.instance.markRequestSent(userId);
+    final strings = RelationshipStrings.of(context);
+    AppSnackBar.show(
+      context,
+      message: success
+          ? strings.friendRequestSentLocalized
+          : strings.friendRequestError(relationshipProvider.actionErrorMessage),
+      type: success ? AppSnackBarType.success : AppSnackBarType.error,
+    );
+  }
+
+  /// 친구 DM 대화방을 열고, 기존 사진 미리보기/영상 확인 단계를 거쳐 보낸다.
+  Future<void> _sendSnackReplyMedia(
+    SnapshotItem item,
+    SnackReplyMedia media,
+  ) async {
+    final relationshipStrings = RelationshipStrings.of(context);
+    String? room;
+    try {
+      room = await _dmService.getOrCreateConversation(
+        item.authorId,
+        isFriend: true,
+      );
+    } catch (_) {
+      room = null;
+    }
+    if (!mounted) return;
+    if (room == null) {
+      AppSnackBar.show(
+        context,
+        message: relationshipStrings.openConversationFailed,
+        type: AppSnackBarType.error,
+      );
+      return;
+    }
+    await Navigator.of(context).push<void>(
+      MaterialPageRoute(
+        builder: (_) => DMChatScreen(
+          conversationId: room!,
+          otherUserId: item.authorId,
+          initialReplyMedia: media.file,
+          initialReplyIsVideo: media.isVideo,
+          initialReplyContext:
+              relationshipStrings.snackReplyQuote(item.displayCaption),
+        ),
+      ),
+    );
+  }
+
+  /// 조건부 밋업 초안. 제목만 미리 채워 기존 밋업 생성 화면을 재사용한다.
+  Future<void> _openMeetupDraft() async {
+    if (!mounted || _items.isEmpty) return;
+    final item = _current;
+    setState(() => _isModalPaused = true);
+    await Navigator.of(context).push<void>(
+      MaterialPageRoute(
+        builder: (_) => CreateMeetupScreen(
+          initialDayIndex: 0,
+          initialDate: DateTime.now(),
+          onCreateMeetup: (_, __) {},
+          initialTitle: item.displayCaption,
+        ),
+      ),
+    );
+    if (mounted) setState(() => _isModalPaused = false);
+  }
+
+  void _hideCurrent() {
+    if (_items.isEmpty) return;
+    _service.hideSnapshotLocally(_current.id);
+    Navigator.of(context).pop();
+    AppSnackBar.show(
+      context,
+      message: RelationshipStrings.of(context).hidden,
+      type: AppSnackBarType.info,
+    );
   }
 
   void _confirmCurrentNotification() {
@@ -538,6 +664,17 @@ class _SnapshotDetailScreenState extends State<SnapshotDetailScreen>
     final strings = SnapshotStrings.of(context);
     final item = _current;
     final isOwner = FirebaseAuth.instance.currentUser?.uid == item.authorId;
+    final relationshipStrings = RelationshipStrings.of(context);
+    final audienceLabel = switch (item.visibility) {
+      SnapshotVisibility.public => relationshipStrings.audiencePublic,
+      SnapshotVisibility.friends => relationshipStrings.audienceFriends,
+      SnapshotVisibility.category => relationshipStrings.audienceGroups,
+    };
+    final responseLabel = switch (item.responseMode) {
+      SnapshotResponseMode.viewOnly => relationshipStrings.viewOnly,
+      SnapshotResponseMode.reactions => relationshipStrings.reactionsMode,
+      SnapshotResponseMode.replies => relationshipStrings.repliesMode,
+    };
     final action = await showModalBottomSheet<String>(
       context: context,
       backgroundColor: Colors.white,
@@ -552,6 +689,31 @@ class _SnapshotDetailScreenState extends State<SnapshotDetailScreen>
         child: Column(
           mainAxisSize: MainAxisSize.min,
           children: [
+            // 공개 범위와 반응 문은 아이콘만으로 숨기지 않고 텍스트로 확인한다.
+            Padding(
+              padding: const EdgeInsets.fromLTRB(4, 2, 4, 10),
+              child: Row(
+                children: [
+                  const Icon(Icons.visibility_outlined,
+                      size: 20, color: Color(0xFF667085)),
+                  const SizedBox(width: 12),
+                  Expanded(
+                    child: Text(
+                      '${relationshipStrings.audienceLabel} · $audienceLabel\n'
+                      '${relationshipStrings.responseModeTitle} · $responseLabel',
+                      style: TextStyle(
+                        fontFamily: uiFontFamily(sheetContext, 'Inter'),
+                        fontFamilyFallback: const ['NotoSansKR'],
+                        fontSize: 13.5,
+                        fontWeight: FontWeight.w600,
+                        color: const Color(0xFF475467),
+                        height: 1.45,
+                      ),
+                    ),
+                  ),
+                ],
+              ),
+            ),
             if (isOwner) ...[
               _ActionRow(
                 icon: Icons.delete_outline_rounded,
@@ -563,6 +725,22 @@ class _SnapshotDetailScreenState extends State<SnapshotDetailScreen>
                 icon: Icons.send_outlined,
                 label: strings.message,
                 onTap: () => Navigator.pop(sheetContext, 'message'),
+              ),
+              _ActionRow(
+                icon: Icons.mail_outline_rounded,
+                label: strings.snackLetter,
+                onTap: () => Navigator.pop(sheetContext, 'letter'),
+              ),
+              if (item.responseMode.allowsSnackReply)
+                _ActionRow(
+                  icon: Icons.videocam_outlined,
+                  label: relationshipStrings.snackReply,
+                  onTap: () => Navigator.pop(sheetContext, 'snackReply'),
+                ),
+              _ActionRow(
+                icon: Icons.visibility_off_outlined,
+                label: relationshipStrings.hide,
+                onTap: () => Navigator.pop(sheetContext, 'hide'),
               ),
               _ActionRow(
                 icon: Icons.flag_outlined,
@@ -589,6 +767,17 @@ class _SnapshotDetailScreenState extends State<SnapshotDetailScreen>
         await _deleteCurrent();
       case 'message':
         await _openMessage();
+      case 'letter':
+        if (mounted) setState(() => _isModalPaused = false);
+        await _openLetterComposer();
+        return;
+      case 'snackReply':
+        if (mounted) setState(() => _isModalPaused = false);
+        await _openSnackReplyComposer();
+        return;
+      case 'hide':
+        _hideCurrent();
+        return;
       case 'report':
         await _report();
       case 'block':
@@ -799,6 +988,9 @@ class _SnapshotDetailScreenState extends State<SnapshotDetailScreen>
                         onComments: () => _openComments(focusInput: true),
                         onLetter: _openLetterComposer,
                         onViewers: _openViewers,
+                        onSnackReply: _openSnackReplyComposer,
+                        onThread: () => _openComments(),
+                        onMeetupDraft: _openMeetupDraft,
                         playing: _currentVideoCanPlay,
                       ),
                     ),
@@ -828,6 +1020,9 @@ class _SnapshotDetailPage extends StatefulWidget {
     required this.onComments,
     required this.onLetter,
     required this.onViewers,
+    required this.onSnackReply,
+    required this.onThread,
+    required this.onMeetupDraft,
     required this.playing,
   });
   final SnapshotItem snapshot;
@@ -843,6 +1038,9 @@ class _SnapshotDetailPage extends StatefulWidget {
   final VoidCallback onComments;
   final VoidCallback onLetter;
   final VoidCallback onViewers;
+  final VoidCallback onSnackReply;
+  final VoidCallback onThread;
+  final VoidCallback onMeetupDraft;
   final bool playing;
 
   @override
@@ -1072,6 +1270,14 @@ class _SnapshotDetailPageState extends State<_SnapshotDetailPage> {
                     onVideoPlayRequested: () =>
                         widget.onVideoPlayRequested(current.id),
                   ),
+                  if (!widget.deleting)
+                    _SnapshotMediaFooter(
+                      snapshot: current,
+                      service: widget.service,
+                      isOwner: isOwner,
+                      onThread: widget.onThread,
+                      onMeetupDraft: widget.onMeetupDraft,
+                    ),
                   if (widget.deleting)
                     Positioned.fill(
                       child: IgnorePointer(
@@ -1105,8 +1311,9 @@ class _SnapshotDetailPageState extends State<_SnapshotDetailPage> {
                 submittingReaction: _submittingReaction,
                 onReact: _submitReaction,
                 onComments: widget.onComments,
-                onLetter: widget.onLetter,
                 onViewers: widget.onViewers,
+                responseMode: current.responseMode,
+                onSnackReply: widget.onSnackReply,
               ),
           ],
         );
@@ -1128,8 +1335,9 @@ class _SnapshotBottomControls extends StatelessWidget {
     required this.submittingReaction,
     required this.onReact,
     required this.onComments,
-    required this.onLetter,
     required this.onViewers,
+    required this.responseMode,
+    required this.onSnackReply,
   });
 
   final String snapshotId;
@@ -1143,14 +1351,18 @@ class _SnapshotBottomControls extends StatelessWidget {
   final bool submittingReaction;
   final Future<void> Function(String) onReact;
   final VoidCallback onComments;
-  final VoidCallback onLetter;
   final VoidCallback onViewers;
+  final SnapshotResponseMode responseMode;
+  final VoidCallback onSnackReply;
 
   @override
   Widget build(BuildContext context) {
+    final relationshipStrings = RelationshipStrings.of(context);
     final selected = reactedLocally || (reactionStatusResolved && hasReacted);
     final canReact =
         reactionStatusResolved && !selected && !submittingReaction;
+    // 도크 순서: 가벼운 반응(댓글·하트) / A↔가 번역 답장(중앙) / 카메라 길게 누르기.
+    // 일반 댓글 입력창은 두지 않고, 공개 댓글은 작은 진입 버튼으로만 남긴다.
     return MediaQuery.withClampedTextScaling(
       maxScaleFactor: 1.2,
       child: SizedBox(
@@ -1163,11 +1375,9 @@ class _SnapshotBottomControls extends StatelessWidget {
             child: Row(
               mainAxisAlignment: MainAxisAlignment.center,
               children: [
-                _SnapshotCommentEntry(
-                  width: (MediaQuery.sizeOf(context).width - 164)
-                      .clamp(128.0, 240.0)
-                      .toDouble(),
-                  strings: strings,
+                _SnapshotBottomAction(
+                  icon: Icons.chat_bubble_outline_rounded,
+                  label: strings.comments,
                   count: commentCount,
                   onTap: onComments,
                 ),
@@ -1182,6 +1392,12 @@ class _SnapshotBottomControls extends StatelessWidget {
                   animateSelection: true,
                   onTap: canReact ? () => onReact('❤️') : null,
                 ),
+                if (!isOwner && showSnackReplyEntry(responseMode))
+                  _SnapshotCameraAction(
+                    label: relationshipStrings.snackReply,
+                    hint: relationshipStrings.snackReplyHint,
+                    onLongPress: onSnackReply,
+                  ),
                 if (isOwner)
                   _SnapshotViewerCountAction(
                     key: ValueKey<String>('snapshot-viewers-$snapshotId'),
@@ -1189,12 +1405,6 @@ class _SnapshotBottomControls extends StatelessWidget {
                     service: service,
                     strings: strings,
                     onTap: onViewers,
-                  )
-                else
-                  _SnapshotBottomAction(
-                    icon: Icons.mail_outline_rounded,
-                    label: strings.snackLetter,
-                    onTap: onLetter,
                   ),
               ],
             ),
@@ -1205,75 +1415,140 @@ class _SnapshotBottomControls extends StatelessWidget {
   }
 }
 
-class _SnapshotCommentEntry extends StatelessWidget {
-  const _SnapshotCommentEntry({
-    required this.width,
-    required this.strings,
-    required this.count,
-    required this.onTap,
+/// 카메라 길게 누르기로 스낵 답장을 시작한다. 짧게 누르면 사용법만 알려 주고,
+/// 길게 누르기가 어려운 사용자는 더보기 메뉴의 같은 항목으로 들어간다.
+class _SnapshotCameraAction extends StatelessWidget {
+  const _SnapshotCameraAction({
+    required this.label,
+    required this.hint,
+    required this.onLongPress,
   });
 
-  final double width;
-  final SnapshotStrings strings;
-  final int count;
-  final VoidCallback onTap;
+  final String label;
+  final String hint;
+  final VoidCallback onLongPress;
 
   @override
   Widget build(BuildContext context) {
-    final safeCount = count.clamp(0, 1 << 30);
-    return MotionPress(
-      pressedScale: .975,
-      child: Semantics(
-        button: true,
-        label: '${strings.comments} $safeCount',
-        excludeSemantics: true,
+    return Semantics(
+      button: true,
+      label: label,
+      hint: hint,
+      onLongPress: onLongPress,
+      excludeSemantics: true,
+      child: MotionPress(
+        pressedScale: .9,
         child: Material(
-          color: const Color(0xFFF2F4F7),
-          borderRadius: BorderRadius.circular(24),
-          clipBehavior: Clip.antiAlias,
-          child: InkWell(
-            onTap: onTap,
-            child: SizedBox(
-              width: width,
-              height: 48,
+          color: Colors.transparent,
+          child: InkResponse(
+            radius: 26,
+            onTap: () => AppSnackBar.show(
+              context,
+              message: hint,
+              type: AppSnackBarType.info,
+              duration: const Duration(seconds: 2),
+            ),
+            onLongPress: onLongPress,
+            child: ConstrainedBox(
+              constraints: const BoxConstraints(minWidth: 52, minHeight: 48),
+              child: Center(
+                child: Icon(
+                  Icons.videocam_outlined,
+                  color: const Color(0xFF111827),
+                  size: context.ri(25).clamp(23, 27).toDouble(),
+                ),
+              ),
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+/// 미디어 하단: 캡션/번역 캡션, 겹친 답장 아바타 스택, 조건부 밋업 초안 아이콘.
+/// 보일 것이 없으면 그래디언트도 그리지 않는다.
+class _SnapshotMediaFooter extends StatelessWidget {
+  const _SnapshotMediaFooter({
+    required this.snapshot,
+    required this.service,
+    required this.isOwner,
+    required this.onThread,
+    required this.onMeetupDraft,
+  });
+
+  final SnapshotItem snapshot;
+  final SnapshotService service;
+  final bool isOwner;
+  final VoidCallback onThread;
+  final VoidCallback onMeetupDraft;
+
+  @override
+  Widget build(BuildContext context) {
+    final showCaption = snapshot.hasTranslatedCaption;
+    final showReplies =
+        snapshot.responseMode.allowsSnackReply && snapshot.commentCount > 0;
+    final showMeetupDraft = canOfferMeetupDraft(
+      responseMode: snapshot.responseMode,
+      replyCount: snapshot.commentCount,
+      // 스낵에는 아직 시간·넓은 장소 메타데이터가 없어 기본적으로 숨긴다.
+      hasTimeOrPlaceContext: false,
+      canCreateMeetup: !isOwner,
+    );
+    if (!showCaption && !showReplies && !showMeetupDraft) {
+      return const SizedBox.shrink();
+    }
+    return Positioned.fill(
+      child: Align(
+        alignment: Alignment.bottomCenter,
+        child: FractionallySizedBox(
+          heightFactor: .22,
+          widthFactor: 1,
+          child: DecoratedBox(
+            decoration: const BoxDecoration(
+              gradient: LinearGradient(
+                begin: Alignment.topCenter,
+                end: Alignment.bottomCenter,
+                colors: [Colors.transparent, Color(0x8A000000)],
+              ),
+            ),
+            child: Align(
+              alignment: Alignment.bottomCenter,
               child: Padding(
-                padding: const EdgeInsets.symmetric(horizontal: 12),
-                child: Row(
+                padding: const EdgeInsets.fromLTRB(16, 0, 16, 12),
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  crossAxisAlignment: CrossAxisAlignment.center,
                   children: [
-                    const Icon(
-                      Icons.chat_bubble_outline_rounded,
-                      size: 21,
-                      color: Color(0xFF475467),
-                    ),
-                    const SizedBox(width: 8),
-                    Expanded(
-                      child: Text(
-                        strings.publicCommentHint,
-                        maxLines: 1,
-                        overflow: TextOverflow.ellipsis,
-                        style: TextStyle(
-                          fontFamily: uiFontFamily(context, 'Inter'),
-                          fontFamilyFallback: const ['NotoSansKR'],
-                          fontSize: context.rf(13).clamp(12, 14).toDouble(),
-                          fontWeight: FontWeight.w500,
-                          color: const Color(0xFF667085),
+                    if (showCaption) _SnapshotCaptionBar(snapshot: snapshot),
+                    if (showReplies || showMeetupDraft)
+                      Padding(
+                        padding: EdgeInsets.only(top: showCaption ? 8 : 0),
+                        child: Row(
+                          mainAxisAlignment: MainAxisAlignment.center,
+                          children: [
+                            if (showReplies)
+                              _SnapshotReplyAvatarStack(
+                                snapshot: snapshot,
+                                service: service,
+                                onTap: onThread,
+                              ),
+                            if (showMeetupDraft) ...[
+                              const SizedBox(width: 10),
+                              IconButton(
+                                onPressed: onMeetupDraft,
+                                tooltip:
+                                    RelationshipStrings.of(context).meetupDraft,
+                                icon: const Icon(
+                                  Icons.event_available_outlined,
+                                  color: Colors.white,
+                                  size: 20,
+                                ),
+                              ),
+                            ],
+                          ],
                         ),
                       ),
-                    ),
-                    const SizedBox(width: 4),
-                    _SnapshotCountTransition(
-                      count: safeCount,
-                      child: Text(
-                        _compactCount(safeCount),
-                        style: TextStyle(
-                          fontFamily: uiFontFamily(context, 'Inter'),
-                          fontFamilyFallback: const ['NotoSansKR'],
-                          fontSize: context.rf(12).clamp(11, 13).toDouble(),
-                          fontWeight: FontWeight.w700,
-                          color: const Color(0xFF475467),
-                        ),
-                      ),
-                    ),
                   ],
                 ),
               ),
@@ -1281,6 +1556,149 @@ class _SnapshotCommentEntry extends StatelessWidget {
           ),
         ),
       ),
+    );
+  }
+}
+
+/// 최대 2줄 캡션. 번역문이 본문이며 원문보다 작게 만들지 않는다.
+class _SnapshotCaptionBar extends StatefulWidget {
+  const _SnapshotCaptionBar({required this.snapshot});
+
+  final SnapshotItem snapshot;
+
+  @override
+  State<_SnapshotCaptionBar> createState() => _SnapshotCaptionBarState();
+}
+
+class _SnapshotCaptionBarState extends State<_SnapshotCaptionBar> {
+  bool _showOriginal = false;
+
+  @override
+  Widget build(BuildContext context) {
+    final strings = RelationshipStrings.of(context);
+    final original = widget.snapshot.displayCaption;
+    final translated = widget.snapshot.translatedCaption.trim();
+    final style = TextStyle(
+      fontFamily: uiFontFamily(context, 'Inter'),
+      fontFamilyFallback: const ['NotoSansKR'],
+      fontSize: context.rf(15).clamp(14, 16).toDouble(),
+      fontWeight: FontWeight.w600,
+      color: Colors.white,
+      height: 1.3,
+      shadows: const [Shadow(color: Color(0x80000000), blurRadius: 6)],
+    );
+    return Column(
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        if (_showOriginal && original.isNotEmpty) ...[
+          Text(translated, maxLines: 1, overflow: TextOverflow.ellipsis,
+              textAlign: TextAlign.center, style: style),
+          Text(original, maxLines: 1, overflow: TextOverflow.ellipsis,
+              textAlign: TextAlign.center,
+              style: style.copyWith(color: const Color(0xFFE4E7EC))),
+        ] else
+          Text(translated, maxLines: 2, overflow: TextOverflow.ellipsis,
+              textAlign: TextAlign.center, style: style),
+        if (original.isNotEmpty)
+          TextButton(
+            onPressed: () => setState(() => _showOriginal = !_showOriginal),
+            style: TextButton.styleFrom(
+              foregroundColor: Colors.white,
+              minimumSize: const Size(44, 32),
+              padding: const EdgeInsets.symmetric(horizontal: 8),
+            ),
+            child: Text(
+              _showOriginal ? strings.showTranslation : strings.showOriginal,
+              style: TextStyle(
+                fontFamily: uiFontFamily(context, 'Inter'),
+                fontFamilyFallback: const ['NotoSansKR'],
+                fontSize: 12.5,
+                fontWeight: FontWeight.w700,
+              ),
+            ),
+          ),
+      ],
+    );
+  }
+}
+
+/// 겹친 답장 아바타 스택. 숫자 대신 겹침으로 밀도를 보이고, 스레드를 열기
+/// 전에는 답장 내용을 노출하지 않는다.
+class _SnapshotReplyAvatarStack extends StatelessWidget {
+  const _SnapshotReplyAvatarStack({
+    required this.snapshot,
+    required this.service,
+    required this.onTap,
+  });
+
+  final SnapshotItem snapshot;
+  final SnapshotService service;
+  final VoidCallback onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    final strings = RelationshipStrings.of(context);
+    return StreamBuilder<List<SnapshotComment>>(
+      stream: service.watchFeedComments(snapshot.id),
+      builder: (context, result) {
+        final seen = <String>{};
+        final authors = <SnapshotComment>[];
+        for (final comment in result.data ?? const <SnapshotComment>[]) {
+          if (comment.isDeleted || comment.userId.isEmpty) continue;
+          if (seen.add(comment.userId)) authors.add(comment);
+          if (authors.length == 3) break;
+        }
+        if (authors.isEmpty) return const SizedBox.shrink();
+        const avatar = 26.0;
+        const overlap = 9.0;
+        final width = avatar + (authors.length - 1) * (avatar - overlap);
+        return Semantics(
+          button: true,
+          label: '${strings.replies}, ${strings.openThread}',
+          excludeSemantics: true,
+          child: MotionPress(
+            pressedScale: .94,
+            child: GestureDetector(
+              behavior: HitTestBehavior.opaque,
+              onTap: onTap,
+              child: Container(
+                padding: const EdgeInsets.symmetric(horizontal: 9, vertical: 7),
+                decoration: BoxDecoration(
+                  color: OrbitTokens.replyDock,
+                  borderRadius: BorderRadius.circular(22),
+                  border: Border.all(color: OrbitTokens.replyDockBorder),
+                ),
+                child: SizedBox(
+                  width: width,
+                  height: avatar,
+                  child: Stack(
+                    children: [
+                      for (var i = 0; i < authors.length; i++)
+                        Positioned(
+                          left: i * (avatar - overlap),
+                          child: Container(
+                            padding: const EdgeInsets.all(1.5),
+                            decoration: const BoxDecoration(
+                              color: Colors.white,
+                              shape: BoxShape.circle,
+                            ),
+                            child: UserAvatar(
+                              uid: authors[i].userId,
+                              photoUrl: authors[i].authorPhotoUrl,
+                              photoVersion: 0,
+                              isAnonymous: false,
+                              size: avatar - 3,
+                            ),
+                          ),
+                        ),
+                    ],
+                  ),
+                ),
+              ),
+            ),
+          ),
+        );
+      },
     );
   }
 }

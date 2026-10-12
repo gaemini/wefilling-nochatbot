@@ -30,9 +30,14 @@ const SNAPSHOT_LIFETIME_MS = 24 * 60 * 60 * 1000;
 const ORPHAN_UPLOAD_GRACE_MS = 2 * 60 * 60 * 1000;
 const ALLOWED_VISIBILITIES = new Set(['public', 'friends', 'category']);
 const ALLOWED_REACTIONS = new Set(['❤️']);
+// 스낵의 '반응 문'. 공개 범위(보는 사람)와 별개의 권한이며, 값이 없는
+// 기존 스낵은 현재 동작(댓글·레터 허용)을 유지하도록 replies로 해석한다.
+const ALLOWED_RESPONSE_MODES = new Set(['view_only', 'reactions', 'replies']);
+const DEFAULT_RESPONSE_MODE = 'replies';
 
 type SnapshotVisibility = 'public' | 'friends' | 'category';
 type SnapshotMediaType = 'photo' | 'video';
+type SnapshotResponseMode = 'view_only' | 'reactions' | 'replies';
 
 type Mp4TrackInfo = {
   codec?: string;
@@ -264,6 +269,15 @@ function validVisibility(value: unknown): SnapshotVisibility {
   return visibility as SnapshotVisibility;
 }
 
+function validResponseMode(value: unknown): SnapshotResponseMode {
+  const mode = text(value);
+  if (!mode) return DEFAULT_RESPONSE_MODE;
+  if (!ALLOWED_RESPONSE_MODES.has(mode)) {
+    throw new functions.https.HttpsError('invalid-argument', 'Invalid responseMode.');
+  }
+  return mode as SnapshotResponseMode;
+}
+
 function categoryIds(value: unknown): string[] {
   if (!Array.isArray(value)) return [];
   const ids = Array.from(new Set(value.map(text).filter(Boolean)));
@@ -481,7 +495,7 @@ function hasSnapshotDocumentAccess(
   return false;
 }
 
-async function canAccessSnapshot(
+export async function canAccessSnapshot(
   viewerUid: string,
   data: FirebaseFirestore.DocumentData,
   now = admin.firestore.Timestamp.now(),
@@ -512,6 +526,9 @@ function snapshotFeedData(
     durationMs: Number(data.durationMs ?? 0),
     imageUrl: text(data.imageUrl),
     visibility: data.visibility,
+    responseMode: ALLOWED_RESPONSE_MODES.has(text(data.responseMode))
+      ? text(data.responseMode)
+      : DEFAULT_RESPONSE_MODE,
     ownerId: text(data.ownerId ?? data.authorId),
     visibilityMode: data.visibilityMode ?? data.visibility,
     audienceUserIdsFrozen: Array.isArray(data.audienceUserIdsFrozen)
@@ -778,6 +795,7 @@ export const createSnapshot = callables().runWith({timeoutSeconds: 120, memory: 
     const data = raw && typeof raw === 'object' ? raw as Record<string, unknown> : {};
     const snapshotId = validSnapshotId(data.snapshotId);
     const visibility = validVisibility(data.visibility);
+    const responseMode = validResponseMode(data.responseMode);
     const selectedCategoryIds = categoryIds(data.visibleToCategoryIds);
     const mediaType = validMediaType(data.mediaType);
     const storagePath = text(data.storagePath);
@@ -883,6 +901,7 @@ export const createSnapshot = callables().runWith({timeoutSeconds: 120, memory: 
       durationMs: verifiedDurationMs,
       videoCodec: verifiedCodec,
       visibility,
+      responseMode,
       visibleToCategoryIds: visibility === 'category' ? selectedCategoryIds : [],
       allowedUserIds,
       ownerId: uid,

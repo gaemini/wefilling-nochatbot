@@ -344,9 +344,30 @@ class SnackChatCard extends StatelessWidget {
                                   : isKo
                                       ? '읽지 않은 메시지 $unreadCount개'
                                       : '$unreadCount unread messages'),
-                              child: const CircleAvatar(
-                                radius: 4,
-                                backgroundColor: BrandColors.info,
+                              excludeSemantics: true,
+                              child: Container(
+                                constraints: const BoxConstraints(
+                                  minWidth: 18,
+                                  minHeight: 18,
+                                ),
+                                padding:
+                                    const EdgeInsets.symmetric(horizontal: 5),
+                                alignment: Alignment.center,
+                                decoration: BoxDecoration(
+                                  color: BrandColors.info,
+                                  borderRadius: BorderRadius.circular(9),
+                                ),
+                                child: Text(
+                                  unreadCount > 99 ? '99+' : '$unreadCount',
+                                  style: TextStyle(
+                                    fontFamily:
+                                        uiFontFamily(context, 'Inter'),
+                                    fontSize: 11,
+                                    height: 1.2,
+                                    fontWeight: FontWeight.w700,
+                                    color: Colors.white,
+                                  ),
+                                ),
                               ),
                             ),
                             const SizedBox(width: 4),

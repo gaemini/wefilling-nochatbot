@@ -7,14 +7,40 @@ import 'package:flutter/services.dart';
 
 import '../constants/app_constants.dart';
 import '../l10n/ui_locale.dart';
+import '../models/content_translation.dart';
 import '../models/snapshot.dart';
 import '../services/report_service.dart';
 import '../services/snapshot_service.dart';
 import '../snapshot/snapshot_strings.dart';
 import '../ui/snackbar/app_snackbar.dart';
+import '../ui/widgets/translatable_content.dart';
 import '../utils/comment_gif_input.dart';
 import '../utils/responsive_helper.dart';
 import '../widgets/notification_read_observer.dart';
+
+/// 스낵 댓글 번역 범위. 포스트 댓글('post-comments:')과 같은 방식으로
+/// 시트 상단 토글 하나가 이 스낵의 댓글 전체를 원문/번역으로 전환한다.
+String snapshotCommentTranslationScope(String snapshotId) =>
+    'snapshot-comments:$snapshotId';
+
+/// 다른 사람이 쓴, 삭제되지 않은 텍스트 댓글만 번역 대상이다.
+bool isSnapshotCommentTranslationCandidate(
+  SnapshotComment comment,
+  String? currentUserId,
+) =>
+    !comment.isDeleted &&
+    comment.content.trim().isNotEmpty &&
+    comment.userId != currentUserId;
+
+ContentTranslationRequest snapshotCommentTranslationRequest(
+  SnapshotComment comment,
+) =>
+    ContentTranslationRequest(
+      contentType: 'snapshot_comment',
+      contentId: comment.id,
+      parentId: comment.snapshotId,
+      sourceFields: <String, String>{'content': comment.content},
+    );
 
 class SnapshotCommentsSheet extends StatefulWidget {
   const SnapshotCommentsSheet({
@@ -63,6 +89,19 @@ class _SnapshotCommentsSheetState extends State<SnapshotCommentsSheet> {
   bool _sending = false;
   final Set<String> _locallyHiddenCommentIds = <String>{};
   final Set<String> _locallyHiddenUserIds = <String>{};
+  bool _hasTranslatableComments = false;
+
+  /// 번역할 다른 사람의 댓글이 있을 때만 상단 번역 토글을 보인다.
+  void _syncTranslatableComments(List<SnapshotComment> comments) {
+    final uid = FirebaseAuth.instance.currentUser?.uid;
+    final hasCandidates = comments
+        .any((comment) => isSnapshotCommentTranslationCandidate(comment, uid));
+    if (_hasTranslatableComments == hasCandidates) return;
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!mounted || _hasTranslatableComments == hasCandidates) return;
+      setState(() => _hasTranslatableComments = hasCandidates);
+    });
+  }
 
   @override
   void initState() {
@@ -273,6 +312,13 @@ class _SnapshotCommentsSheetState extends State<SnapshotCommentsSheet> {
                           ),
                         ),
                       ),
+                      if (_hasTranslatableComments)
+                        TranslationScopeToggle(
+                          scope: snapshotCommentTranslationScope(
+                            widget.snapshot.id,
+                          ),
+                          postCardHeader: true,
+                        ),
                       IconButton(
                         onPressed: () => Navigator.pop(context),
                         tooltip: MaterialLocalizations.of(context)
@@ -335,6 +381,7 @@ class _SnapshotCommentsSheetState extends State<SnapshotCommentsSheet> {
                         );
                       }
                       final comments = _orderedComments(snapshot.data!);
+                      _syncTranslatableComments(comments);
                       if (comments.isEmpty) {
                         return _CommentsMessage(
                           icon: Icons.chat_bubble_outline_rounded,
@@ -352,6 +399,10 @@ class _SnapshotCommentsSheetState extends State<SnapshotCommentsSheet> {
                           final row = _CommentRow(
                             key: ValueKey(comment.id),
                             comment: comment,
+                            translatable: isSnapshotCommentTranslationCandidate(
+                              comment,
+                              FirebaseAuth.instance.currentUser?.uid,
+                            ),
                             highlighted: widget.focusCommentId == comment.id,
                             onReply: comment.isDeleted
                                 ? null
@@ -630,14 +681,35 @@ class _CommentRow extends StatelessWidget {
     required this.onMore,
     required this.replyLabel,
     required this.deletedLabel,
+    this.translatable = false,
   });
 
+  /// 다른 사람의 텍스트 댓글이면 포스트 댓글처럼 번역해 보여 준다.
+  final bool translatable;
   final SnapshotComment comment;
   final bool highlighted;
   final VoidCallback? onReply;
   final VoidCallback onMore;
   final String replyLabel;
   final String deletedLabel;
+
+  Widget _contentText(BuildContext context, String? translated) {
+    final text = comment.isDeleted
+        ? deletedLabel
+        : ((translated ?? '').trim().isNotEmpty ? translated! : comment.content);
+    return Text(
+      text,
+      style: TextStyle(
+        fontFamily: uiFontFamily(context, 'Inter'),
+        fontFamilyFallback: const ['NotoSansKR'],
+        fontSize: context.rf(14).clamp(13.5, 15).toDouble(),
+        height: isChineseUi(context) ? 1.4 : 1.32,
+        color: comment.isDeleted
+            ? const Color(0xFF98A2B3)
+            : const Color(0xFF111827),
+      ),
+    );
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -647,9 +719,9 @@ class _CommentRow extends StatelessWidget {
       child: Padding(
         padding: EdgeInsets.fromLTRB(
           comment.isReply ? horizontal + 32 : horizontal,
-          8,
+          5,
           4,
-          8,
+          onReply != null ? 0 : 5,
         ),
         child: Row(
           crossAxisAlignment: CrossAxisAlignment.start,
@@ -686,20 +758,23 @@ class _CommentRow extends StatelessWidget {
                       height: isChineseUi(context) ? 1.35 : 1.2,
                     ),
                   ),
-                  const SizedBox(height: 3),
+                  const SizedBox(height: 2),
                   if (comment.isDeleted || comment.content.isNotEmpty)
-                  Text(
-                    comment.isDeleted ? deletedLabel : comment.content,
-                    style: TextStyle(
-                      fontFamily: uiFontFamily(context, 'Inter'),
-                      fontFamilyFallback: const ['NotoSansKR'],
-                      fontSize: context.rf(14).clamp(13.5, 15).toDouble(),
-                      height: isChineseUi(context) ? 1.45 : 1.38,
-                      color: comment.isDeleted
-                          ? const Color(0xFF98A2B3)
-                          : const Color(0xFF111827),
-                    ),
-                  ),
+                    if (translatable)
+                      TranslatableContent(
+                        key: ValueKey<String>(
+                          'snapshot-comment-translation:${comment.id}',
+                        ),
+                        request: snapshotCommentTranslationRequest(comment),
+                        scope: snapshotCommentTranslationScope(
+                          comment.snapshotId,
+                        ),
+                        showToggle: false,
+                        builder: (context, fields) =>
+                            _contentText(context, fields['content']),
+                      )
+                    else
+                      _contentText(context, null),
                   if (!comment.isDeleted && comment.gifStoragePath.isNotEmpty)
                     Padding(
                       padding: const EdgeInsets.only(top: 6),
@@ -712,7 +787,11 @@ class _CommentRow extends StatelessWidget {
                     TextButton(
                       onPressed: onReply,
                       style: TextButton.styleFrom(
-                        minimumSize: const Size(44, 32),
+                        // 기본 48dp 확장 탭 영역이 댓글 사이 간격을 크게 벌려
+                        // 버튼 자체 높이로만 레이아웃한다.
+                        minimumSize: const Size(44, 28),
+                        tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                        visualDensity: VisualDensity.compact,
                         padding: EdgeInsets.zero,
                         alignment: Alignment.centerLeft,
                         foregroundColor: const Color(0xFF667085),
@@ -732,6 +811,9 @@ class _CommentRow extends StatelessWidget {
               onPressed: onMore,
               tooltip: MaterialLocalizations.of(context).showMenuTooltip,
               color: const Color(0xFF667085),
+              visualDensity: VisualDensity.compact,
+              constraints: const BoxConstraints(minWidth: 40, minHeight: 36),
+              padding: EdgeInsets.zero,
               icon: const Icon(Icons.more_horiz_rounded, size: 20),
             ),
           ],

@@ -17,6 +17,7 @@ void main() {
   Meetup buildMeetup({
     String visibility = 'category',
     DateTime? publicExpiresAt,
+    DateTime? date,
   }) =>
       Meetup(
         id: 'meetup-1',
@@ -29,7 +30,7 @@ void main() {
         host: 'host-1',
         hostNickname: 'A host with a long display name',
         imageUrl: '',
-        date: DateTime(2026, 7, 26),
+        date: date ?? DateTime(2026, 7, 26),
         visibility: visibility,
         publicDurationHours: publicExpiresAt == null ? null : 8,
         publicExpiresAt: publicExpiresAt,
@@ -43,6 +44,8 @@ void main() {
     String visibility = 'category',
     bool showAction = false,
     DateTime? publicExpiresAt,
+    DateTime? date,
+    Locale locale = const Locale('en'),
   }) async {
     await tester.binding.setSurfaceSize(surfaceSize);
     addTearDown(() => tester.binding.setSurfaceSize(null));
@@ -51,7 +54,7 @@ void main() {
       MaterialApp(
         localizationsDelegates: AppLocalizations.localizationsDelegates,
         supportedLocales: AppLocalizations.supportedLocales,
-        locale: const Locale('en'),
+        locale: locale,
         home: MediaQuery(
           data: MediaQueryData(
             size: surfaceSize,
@@ -67,6 +70,7 @@ void main() {
                     meetup: buildMeetup(
                       visibility: visibility,
                       publicExpiresAt: publicExpiresAt,
+                      date: date,
                     ),
                     onTap: () {},
                     trailingAction: showAction
@@ -83,6 +87,28 @@ void main() {
     await tester.pump();
   }
 
+  testWidgets('long month/day dates shrink to fit instead of overflowing',
+      (tester) async {
+    for (final locale in const [Locale('en'), Locale('ko'), Locale('zh')]) {
+      for (final publicExpiresAt in <DateTime?>[
+        null,
+        DateTime.now().add(const Duration(hours: 5)),
+      ]) {
+        await pumpCard(
+          tester,
+          surfaceSize: const Size(320, 640),
+          textScale: 1.3,
+          date: DateTime(2026, 12, 31),
+          locale: locale,
+          publicExpiresAt: publicExpiresAt,
+        );
+        expect(find.text('12/31'), findsOneWidget);
+        expect(tester.takeException(), isNull,
+            reason: '${locale.languageCode} timed=${publicExpiresAt != null}');
+      }
+    }
+  });
+
   testWidgets('stays compact without overflow on a narrow phone',
       (tester) async {
     await pumpCard(
@@ -93,7 +119,8 @@ void main() {
 
     final size = tester.getSize(find.byKey(const Key('meetup-card')));
     expect(size.height, lessThanOrEqualTo(110));
-    expect(find.text('JUL · SUN'), findsOneWidget);
+    expect(find.text('SUN'), findsOneWidget);
+    expect(find.text('7/26'), findsOneWidget);
     expect(find.text('20:30'), findsOneWidget);
     final audienceRing = tester.widget<AudienceRing>(find.byType(AudienceRing));
     expect(audienceRing.restricted, isTrue);

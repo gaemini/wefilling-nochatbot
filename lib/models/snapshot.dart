@@ -19,6 +19,39 @@ enum SnapshotVisibility {
   }
 }
 
+/// 스낵의 '반응 문'. 공개 범위(보는 사람)와는 별개의 권한이다.
+///
+/// - [viewOnly]: 미니 반응만
+/// - [reactions]: 미니 반응 + 한 줄 번역 텍스트
+/// - [replies]: 미니 반응 + 번역 텍스트 + 스낵 답장
+enum SnapshotResponseMode {
+  viewOnly('view_only'),
+  reactions('reactions'),
+  replies('replies');
+
+  const SnapshotResponseMode(this.value);
+  final String value;
+
+  /// 저장된 값이 없는 기존 스낵은 현재 동작(댓글·레터 허용)을 유지하기 위해
+  /// [replies]로 해석한다.
+  static SnapshotResponseMode fromValue(Object? value) {
+    return switch (value?.toString()) {
+      'view_only' => viewOnly,
+      'reactions' => reactions,
+      _ => replies,
+    };
+  }
+
+  /// 미니 반응은 모든 반응 문에서 허용된다.
+  bool get allowsReaction => true;
+
+  /// 한 줄 번역 텍스트(첫 응답 요청/DM) 허용 여부.
+  bool get allowsTextReply => this != viewOnly;
+
+  /// 스낵 답장(세로 스레드) 허용 여부.
+  bool get allowsSnackReply => this == replies;
+}
+
 enum SnapshotMediaType {
   photo('photo'),
   video('video');
@@ -103,6 +136,11 @@ class SnapshotItem {
     this.visibilitySchemaVersion = 0,
     this.reactionCounts = const <String, int>{},
     this.commentCount = 0,
+    this.responseMode = SnapshotResponseMode.replies,
+    this.caption = '',
+    this.translatedCaption = '',
+    this.sourceLanguage = '',
+    this.replyToSnapshotId = '',
   });
 
   final String id;
@@ -132,7 +170,36 @@ class SnapshotItem {
   final Map<String, int> reactionCounts;
   final int commentCount;
 
+  /// 반응 문. 공개 범위와 분리된 권한이다.
+  final SnapshotResponseMode responseMode;
+
+  /// 캡션 원문. 저장된 값이 없으면 첫 텍스트 오버레이를 대신 쓴다.
+  final String caption;
+
+  /// 서버가 제공한 번역 캡션. 비어 있으면 원문/번역 전환을 보이지 않는다.
+  final String translatedCaption;
+
+  /// 캡션 원문 언어 코드(없으면 빈 문자열).
+  final String sourceLanguage;
+
+  /// 스낵 답장이면 원본 스낵 id. 스레드 슬롯용이며 비어 있으면 일반 스낵.
+  final String replyToSnapshotId;
+
   bool get hasFrozenAudience => visibilitySchemaVersion >= 2;
+
+  bool get hasTranslatedCaption => translatedCaption.trim().isNotEmpty;
+
+  bool get isSnackReply => replyToSnapshotId.isNotEmpty;
+
+  /// 캡션으로 보여 줄 텍스트. 저장된 캡션이 없으면 첫 오버레이 텍스트.
+  String get displayCaption {
+    final stored = caption.trim();
+    if (stored.isNotEmpty) return stored;
+    for (final item in overlays) {
+      if (!item.isEmpty) return item.text.trim();
+    }
+    return overlay.text.trim();
+  }
 
   bool get isVideo => mediaType == SnapshotMediaType.video;
 
@@ -212,6 +279,11 @@ class SnapshotItem {
       visibilitySchemaVersion: _asInt(map['visibilitySchemaVersion']),
       reactionCounts: reactionCounts,
       commentCount: _asInt(map['commentCount']),
+      responseMode: SnapshotResponseMode.fromValue(map['responseMode']),
+      caption: (map['caption'] ?? '').toString(),
+      translatedCaption: (map['translatedCaption'] ?? '').toString(),
+      sourceLanguage: (map['sourceLanguage'] ?? '').toString(),
+      replyToSnapshotId: (map['replyToSnapshotId'] ?? '').toString(),
     );
   }
 }

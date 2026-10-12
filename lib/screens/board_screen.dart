@@ -52,7 +52,8 @@ class BoardScreen extends StatefulWidget {
 class BoardScreenState extends State<BoardScreen> {
   // Show the existing banner directly after the Snack tray in Today's feed.
   static const bool _showTodayAdBanner = true;
-  static const bool _showTodayMeetupsSection = true;
+  // 오늘의 밋업은 밋업 탭 첫 화면(선택한 날짜 + 다가오는 모든 밋업)으로 옮겼다.
+  static const bool _showTodayMeetupsSection = false;
   final PostService _postService = PostService();
   final PostMediaPrefetchService _postMediaPrefetch =
       PostMediaPrefetchService.instance;
@@ -976,8 +977,44 @@ class BoardScreenState extends State<BoardScreen> {
     bool isLoading = false,
     String? actionLabel,
     VoidCallback? onAction,
+    bool centered = false,
   }) {
     final horizontal = _sectionHorizontalPadding;
+    if (centered) {
+      // 아이콘과 제목을 한 덩어리로 화면 가운데에 둔다.
+      return MediaQuery.withClampedTextScaling(
+        maxScaleFactor: 1.3,
+        child: Padding(
+          padding: EdgeInsets.fromLTRB(horizontal, 6, horizontal, 4),
+          child: Row(
+            mainAxisAlignment: MainAxisAlignment.center,
+            children: [
+              Icon(
+                icon,
+                size: context.ri(18).clamp(17.0, 19.0).toDouble(),
+                color: const Color(0xFF111827),
+              ),
+              SizedBox(width: context.rs(7).clamp(6.0, 8.0).toDouble()),
+              Flexible(
+                child: Text(
+                  title,
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  textAlign: TextAlign.center,
+                  style: TextStyle(
+                    fontFamily: uiFontFamily(context, 'Inter'),
+                    fontFamilyFallback: const ['NotoSansKR'],
+                    fontSize: _sectionTitleSize,
+                    fontWeight: FontWeight.w800,
+                    color: const Color(0xFF111827),
+                  ),
+                ),
+              ),
+            ],
+          ),
+        ),
+      );
+    }
     final iconSize = context.ri(18).clamp(17.0, 19.0).toDouble();
     final gap = context.rs(7).clamp(6.0, 8.0).toDouble();
 
@@ -1588,6 +1625,7 @@ class BoardScreenState extends State<BoardScreen> {
                 return _buildTodaySectionHeader(
                   icon: Icons.article_rounded,
                   title: todayPostsTitle,
+                  centered: true,
                 );
               }
               i -= 1;

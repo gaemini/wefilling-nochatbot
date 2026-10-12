@@ -58,6 +58,7 @@ import {
 } from './registration_progress';
 import {
   isSearchableUser,
+  evaluateRelationshipUser,
 } from './searchable_user_policy';
 
 export {
@@ -5924,11 +5925,17 @@ export const sendFriendRequest = callables().https.onCall(async (data, context) 
         transaction.get(toUserRef),
       ]);
 
-      if (!isSearchableUser(fromUid, fromUserDoc.data()) ||
-          !isSearchableUser(toUid, toUserDoc.data())) {
+      const fromCheck = evaluateRelationshipUser(fromUid, fromUserDoc.data());
+      const toCheck = evaluateRelationshipUser(toUid, toUserDoc.data());
+      if (!fromCheck.allowed || !toCheck.allowed) {
+        console.warn('friend_request_account_rejected', {
+          side: !fromCheck.allowed ? 'sender' : 'recipient',
+          reason: !fromCheck.allowed ? fromCheck.reason : toCheck.reason,
+        });
         throw new functions.https.HttpsError(
           'failed-precondition',
-          '탈퇴했거나 이용할 수 없는 계정입니다.'
+          '탈퇴했거나 이용할 수 없는 계정입니다.',
+          {reason: 'account-unavailable'}
         );
       }
 

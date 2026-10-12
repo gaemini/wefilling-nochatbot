@@ -125,6 +125,12 @@ class DMChatScreen extends StatefulWidget {
   final String? originPostImageUrl;
   final String? originPostPreview;
 
+  /// 스낵 답장: 대화방을 열자마자 보낼 사진/영상과 출처 한 줄.
+  /// 기존 사진 미리보기·영상 확인 단계를 그대로 거친다.
+  final File? initialReplyMedia;
+  final bool initialReplyIsVideo;
+  final String? initialReplyContext;
+
   const DMChatScreen({
     super.key,
     required this.conversationId,
@@ -132,6 +138,9 @@ class DMChatScreen extends StatefulWidget {
     this.originPostId,
     this.originPostImageUrl,
     this.originPostPreview,
+    this.initialReplyMedia,
+    this.initialReplyIsVideo = false,
+    this.initialReplyContext,
   });
 
   @override
@@ -491,6 +500,11 @@ class _DMChatScreenState extends State<DMChatScreen>
 
     // ✅ 현재 보고 있는 DM 대화방 추적 (포그라운드 DM 알림 억제에 사용)
     _setActiveConversationId(widget.conversationId);
+    if (widget.initialReplyMedia != null) {
+      WidgetsBinding.instance.addPostFrameCallback(
+        (_) => unawaited(_sendInitialSnackReply()),
+      );
+    }
     _translationLanguageRevision = _translationService.languageRevision;
     _translationShowsOriginal =
         _translationService.showsOriginal(_translationScope);
@@ -5869,6 +5883,41 @@ class _DMChatScreenState extends State<DMChatScreen>
     }
   }
 
+  bool _initialReplyHandled = false;
+
+  /// 스낵 답장 미디어를 대화방 진입 직후 한 번 보낸다.
+  /// 사진은 출처 한 줄을 캡션으로 함께, 영상은 확인 직후 출처 한 줄을 먼저 보낸다.
+  Future<void> _sendInitialSnackReply() async {
+    if (_initialReplyHandled) return;
+    _initialReplyHandled = true;
+    final media = widget.initialReplyMedia;
+    if (media == null) return;
+    // 상대 계정 상태 등 첫 로딩이 자리 잡을 시간을 준다.
+    await Future<void>.delayed(const Duration(milliseconds: 450));
+    if (!mounted) return;
+    final contextLine = (widget.initialReplyContext ?? '').trim();
+    void fillContext() {
+      if (contextLine.isEmpty) return;
+      if (_messageController.text.trim().isEmpty) {
+        _messageController.text = contextLine;
+      }
+    }
+
+    if (widget.initialReplyIsVideo) {
+      await _sendPickedVideo(
+        media,
+        beforeSend: contextLine.isEmpty
+            ? null
+            : () async {
+                fillContext();
+                await _sendMessage();
+              },
+      );
+    } else {
+      await _sendPickedImageFile(media, beforeSend: fillContext);
+    }
+  }
+
   Future<void> _pickImage() async {
     if (_pendingImage != null) {
       // 1장 제한: 이미 선택되어 있으면 안내
@@ -5958,7 +6007,32 @@ class _DMChatScreenState extends State<DMChatScreen>
         await _sendPickedVideo(File(xfile.path));
         return;
       }
-      final pickedFile = File(xfile.path);
+      await _sendPickedImageFile(File(xfile.path));
+    } catch (e) {
+      Logger.error('이미지 선택 오류: $e');
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(
+            (isChineseUi(context)
+                ? '无法选择图片'
+                : Localizations.localeOf(context).languageCode == 'ko'
+                    ? '이미지를 불러올 수 없습니다'
+                    : 'Unable to pick an image'),
+          ),
+          duration: const Duration(seconds: 2),
+        ),
+      );
+    }
+  }
+
+  /// 사진 한 장을 미리보기에서 확인받고 보낸다. [beforeSend]는 확인 직후,
+  /// 전송 직전에 호출된다(예: 캡션 채우기).
+  Future<void> _sendPickedImageFile(
+    File pickedFile, {
+    VoidCallback? beforeSend,
+  }) async {
+    try {
       // Compress and measure while the preview screen is open so the send
       // itself only has to upload.
       final preparing = _storageService.prepareChatImage(pickedFile);
@@ -5979,6 +6053,7 @@ class _DMChatScreenState extends State<DMChatScreen>
       if (prepared != null) {
         _preparedImages[pickedFile.path] = prepared;
       }
+      beforeSend?.call();
       setState(() {
         _pendingImage = pickedFile;
         _uploadProgress = null;
@@ -6017,7 +6092,10 @@ class _DMChatScreenState extends State<DMChatScreen>
   }
 
   /// 갤러리에서 고른 영상: 540p로 압축하고 썸네일을 만든 뒤 파일 메시지로 보낸다.
-  Future<void> _sendPickedVideo(File source) async {
+  Future<void> _sendPickedVideo(
+    File source, {
+    Future<void> Function()? beforeSend,
+  }) async {
     if (_pendingFile != null || _pendingImage != null) return;
     final limits = VideoUploadPolicy.dm;
     File? staged;
@@ -6051,6 +6129,10 @@ class _DMChatScreenState extends State<DMChatScreen>
                 : 'The video remains available in this DM.',
       );
       if (!mounted || confirmed == null || confirmed.isEmpty) return;
+      if (beforeSend != null) {
+        await beforeSend();
+        if (!mounted) return;
+      }
       setState(() => _pendingFile = confirmed.first);
       await _sendMessage(preserveDraft: true);
     } on SnackChatFileValidationException catch (error) {

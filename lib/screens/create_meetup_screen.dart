@@ -35,12 +35,18 @@ class CreateMeetupScreen extends StatefulWidget {
   final Function(int, Meetup) onCreateMeetup;
   final FriendCategory? initialAudienceCategory;
 
+  /// 스낵 스레드 등에서 넘어온 초안. 제목·설명만 미리 채우고 나머지는 그대로다.
+  final String? initialTitle;
+  final String? initialDescription;
+
   const CreateMeetupScreen({
     super.key,
     required this.initialDayIndex,
     this.initialDate, // 옵셔널로 추가
     required this.onCreateMeetup,
     this.initialAudienceCategory,
+    this.initialTitle,
+    this.initialDescription,
   });
 
   @override
@@ -685,6 +691,13 @@ class _CreateMeetupScreenState extends State<CreateMeetupScreen> {
     final initial = (widget.initialDate ?? DateTime.now()).toLocal();
     _selectedDay = DateTime(initial.year, initial.month, initial.day);
     _focusedDay = _selectedDay;
+
+    final draftTitle = (widget.initialTitle ?? '').trim();
+    if (draftTitle.isNotEmpty) _titleController.text = draftTitle;
+    final draftDescription = (widget.initialDescription ?? '').trim();
+    if (draftDescription.isNotEmpty) {
+      _descriptionController.text = draftDescription;
+    }
 
     final initialAudienceCategory = widget.initialAudienceCategory;
     if (initialAudienceCategory != null) {

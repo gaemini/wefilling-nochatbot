@@ -17,6 +17,7 @@ import {
   restoreImmutableText,
   validateTemporalTranslation,
 } from './content_translation_policy';
+import {canAccessSnapshot} from './snapshot';
 
 const GEMINI_API_VERSION = 'v1beta';
 const GEMINI_MODEL = 'gemini-3.5-flash-lite';
@@ -129,6 +130,8 @@ const SUPPORTED_TYPES = new Set([
   'meetup',
   'snack_chat_message',
   'dm',
+  // 스낵 공개 댓글: snapshots/{parentId}/feed_comments/{contentId}
+  'snapshot_comment',
 ]);
 
 type TranslationRequest = {
@@ -657,6 +660,35 @@ async function resolveContent(
       createdAt: data.createdAt,
     };
     request.parentId = parentId;
+  } else if (contentType === 'snapshot_comment') {
+    // 스낵 공개 댓글은 부모 스낵을 지금 볼 수 있는 사용자만 번역한다
+    // (만료·공개 범위·차단은 스낵 상세와 같은 canAccessSnapshot 기준).
+    const snapshotId = safeId(request.parentId, 'parentId');
+    const [snapshot, comment] = await Promise.all([
+      readTranslationDocument(`${COL.snapshots}/${snapshotId}`, resolutionCache),
+      readTranslationDocument(
+        `${COL.snapshots}/${snapshotId}/feed_comments/${contentId}`,
+        resolutionCache,
+      ),
+    ]);
+    if (!snapshot.exists || !comment.exists) {
+      throw new functions.https.HttpsError('not-found', 'Snack comment not found.');
+    }
+    const snapshotData = snapshot.data() as Record<string, unknown>;
+    if (!(await canAccessSnapshot(uid, snapshotData))) {
+      throw new functions.https.HttpsError('permission-denied', 'Snack is not accessible.');
+    }
+    const data = comment.data() as Record<string, unknown>;
+    if (data.isDeleted === true) {
+      throw new functions.https.HttpsError('failed-precondition', 'Deleted comment.');
+    }
+    fields = {content: stringValue(data.content)};
+    contextSeed = {
+      parentType: 'snapshot',
+      parentBody: stringValue(snapshotData.overlayText),
+      createdAt: data.createdAt,
+    };
+    request.parentId = snapshotId;
   } else if (contentType === 'snack_chat_message') {
     const roomId = safeId(request.parentId, 'parentId');
     const roomRef = db.collection(COL.snackChats).doc(roomId);
@@ -830,6 +862,9 @@ async function buildTranslationContext(
   } else if (item.contentType === 'meetup') {
     addContextField(context, 'category', seed.category);
     addContextField(context, 'meetupType', seed.type);
+  } else if (item.contentType === 'snapshot_comment') {
+    addContextField(context, 'parentContentType', seed.parentType);
+    addContextField(context, 'parentExcerpt', seed.parentBody);
   } else if (item.contentType === 'comment') {
     addContextField(context, 'parentContentType', seed.parentType);
     addContextField(context, 'parentTitle', seed.parentTitle);
@@ -1342,20 +1377,14 @@ async function callGeminiModel(
  * when deterministic output would otherwise be empty because source and
  * target languages differ.
  */
-export async function translatePlainTextsWithExistingPipeline(
-  texts: string[],
-  targetLanguage: string,
-  options?: {canaryModel?: 'primary' | 'fallback'},
-): Promise<string[]> {
-  const target = normalizeLanguageCode(targetLanguage);
-  const bounded = texts
-    .map((value) => stringValue(value).trim().slice(0, 4000))
-    .filter(Boolean)
-    .slice(0, MAX_BATCH_SIZE);
-  if (bounded.length === 0) return [];
-  const items: ResolvedContent[] = bounded.map((value, index) => ({
+/**
+ * 저장된 문서가 없는 일반 텍스트를 기존 Gemini 파이프라인 입력으로 만든다.
+ * 용어집·오타 힌트·고유어 보존 규칙을 콘텐츠 번역과 똑같이 적용한다.
+ */
+function plainTextItems(texts: string[], idPrefix: string): ResolvedContent[] {
+  return texts.map((value, index) => ({
     contentType: 'snack_chat_message',
-    contentId: `summary-fallback-${index}`,
+    contentId: `${idPrefix}-${index}`,
     fields: {text: value},
     context: {},
     contextHash: sha256(''),
@@ -1370,6 +1399,20 @@ export async function translatePlainTextsWithExistingPipeline(
     contextSeed: {},
     sourceHash: sha256(value),
   }));
+}
+
+export async function translatePlainTextsWithExistingPipeline(
+  texts: string[],
+  targetLanguage: string,
+  options?: {canaryModel?: 'primary' | 'fallback'},
+): Promise<string[]> {
+  const target = normalizeLanguageCode(targetLanguage);
+  const bounded = texts
+    .map((value) => stringValue(value).trim().slice(0, 4000))
+    .filter(Boolean)
+    .slice(0, MAX_BATCH_SIZE);
+  if (bounded.length === 0) return [];
+  const items = plainTextItems(bounded, 'summary-fallback');
   if (options?.canaryModel) {
     const model = options.canaryModel === 'fallback' ?
       GEMINI_FALLBACK_MODEL : GEMINI_MODEL;

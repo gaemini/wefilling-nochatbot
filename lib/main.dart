@@ -51,6 +51,7 @@ import 'services/release_metadata_service.dart';
 import 'services/app_update_service.dart';
 import 'screens/release_diagnostics_screen.dart';
 import 'screens/button_lab_screen.dart';
+import 'screens/relationship_orbit_preview_screen.dart';
 import 'screens/organization_home_screen.dart';
 import 'screens/organization_invite_screen.dart';
 import 'services/organization_account_service.dart';
@@ -554,6 +555,8 @@ class _MeetupAppState extends State<MeetupApp> {
         if (kDebugMode)
           '/release-diagnostics': (context) => const ReleaseDiagnosticsScreen(),
         if (kDebugMode) '/button-lab': (context) => const ButtonLabScreen(),
+        if (kDebugMode)
+          '/orbit-lab': (context) => const RelationshipOrbitPreviewScreen(),
       },
       navigatorKey: NavigationService.navigatorKey,
       navigatorObservers: [NavigationService.routeObserver],

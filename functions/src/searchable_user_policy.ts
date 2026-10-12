@@ -125,3 +125,27 @@ export function isSearchableUser(
 ): boolean {
   return evaluateSearchableUser(uid, data).searchable;
 }
+
+/**
+ * 친구 요청·수락처럼 '실제 사람과의 관계'에 쓰는 계정 판정.
+ *
+ * 검색 노출 기준(evaluateSearchableUser)과 달리 검색용 파생 데이터
+ * (nicknameKey 불일치, 레거시 닉네임 형식)만으로는 막지 않는다. 그런 계정도
+ * 포스트를 쓰고 앱에 `+` 버튼이 보이는 정상 활성 계정이기 때문이다.
+ * 탈퇴·정지·가입 미완료·닉네임 없음·명시적 비공개는 그대로 거절한다.
+ */
+export function evaluateRelationshipUser(
+  uid: unknown,
+  data: Record<string, unknown> | undefined,
+): {allowed: boolean; reason: SearchableUserReason} {
+  const decision = evaluateSearchableUser(uid, data);
+  if (decision.searchable) return {allowed: true, reason: 'ok'};
+  const tolerated: SearchableUserReason[] = [
+    'nickname_key_mismatch',
+    'invalid_nickname',
+  ];
+  return {
+    allowed: tolerated.includes(decision.reason),
+    reason: decision.reason,
+  };
+}

@@ -43,7 +43,7 @@ import '../ui/dialogs/block_dialog.dart';
 import '../ui/dialogs/report_dialog.dart';
 import '../ui/snackbar/app_snackbar.dart';
 import '../ui/widgets/post_action_group.dart';
-import '../ui/widgets/post_friend_request_button.dart';
+import '../ui/widgets/relationship_orbit_for_user.dart';
 import '../ui/widgets/motion_press.dart';
 import '../ui/widgets/adaptive_post_image_frame.dart';
 import '../ui/widgets/feed_video_player.dart';
@@ -2929,7 +2929,11 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
         Row(
           crossAxisAlignment: CrossAxisAlignment.center,
           children: [
-            Semantics(
+            RelationshipOrbitForUser(
+              userId: _currentPost.userId,
+              size: avatarSize,
+              allowRequest: canOpenProfile,
+              child: Semantics(
               button: canOpenProfile,
               label: authorName,
               child: MotionPress(
@@ -2938,10 +2942,7 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
                 child: GestureDetector(
                   behavior: HitTestBehavior.opaque,
                   onTap: canOpenProfile ? _openAuthorProfile : null,
-                  child: SizedBox.square(
-                    dimension: avatarSize,
-                    child: Center(
-                      child: AudienceRing(
+                    child: AudienceRing(
                         restricted: _currentPost.visibility == 'category',
                         size: avatarSize,
                         ringWidth: 1.5,
@@ -2959,10 +2960,9 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
                           size: avatarSize,
                         ),
                       ),
-                    ),
-                  ),
                 ),
               ),
+            ),
             ),
             SizedBox(width: authorGap),
             Expanded(
@@ -3028,11 +3028,6 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
                 ],
               ),
             ),
-            if (canOpenProfile &&
-                _currentPost.userId != FirebaseAuth.instance.currentUser?.uid) ...[
-              const SizedBox(width: 6),
-              PostFriendRequestButton(authorId: _currentPost.userId),
-            ],
           ],
         ),
         if (content.trim().isNotEmpty) ...[

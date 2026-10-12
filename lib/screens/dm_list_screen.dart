@@ -22,9 +22,13 @@ import '../ui/widgets/app_fab.dart';
 import '../l10n/ui_locale.dart';
 import '../design/tokens.dart';
 import '../ui/widgets/motion_selectable.dart';
+import '../l10n/relationship_strings.dart';
+import '../models/first_response_request.dart';
+import '../services/first_response_request_service.dart';
+import 'first_response_requests_screen.dart';
 
 // DM 목록 필터: 친구 / 익명
-enum DMFilter { friends, anonymous }
+enum DMFilter { friends, anonymous, requests }
 
 class DMListScreen extends StatefulWidget {
   const DMListScreen({super.key});
@@ -187,6 +191,7 @@ class _DMListScreenState extends State<DMListScreen> {
   @override
   void initState() {
     super.initState();
+    FirstResponseRequestService.instance.ensureStarted();
     final currentUserId = _currentUser?.uid;
     if (currentUserId != null) {
       _lastNonEmptyConversations = List<Conversation>.unmodifiable(
@@ -238,6 +243,7 @@ class _DMListScreenState extends State<DMListScreen> {
 
   /// FloatingActionButton 빌드
   Widget? _buildFloatingActionButtons() {
+    if (_filter == DMFilter.requests) return null;
     if (_filter == DMFilter.friends) {
       return SafeArea(
         top: false,
@@ -278,6 +284,13 @@ class _DMListScreenState extends State<DMListScreen> {
     return Column(
       children: [
         _buildFilterBanners(),
+        if (_filter == DMFilter.requests)
+          Expanded(
+            child: FirstResponseInboxView(
+              bottomPadding: MediaQuery.paddingOf(context).bottom + 24,
+            ),
+          )
+        else
         Expanded(
           child: StreamBuilder<
               ({
@@ -550,20 +563,27 @@ class _DMListScreenState extends State<DMListScreen> {
     );
   }
 
-  /// 상단 필터 탭(친구 / 익명) - 밑줄 인디케이터 스타일
+  /// 상단 필터 탭(친구 / 익명 / 요청) - 밑줄 인디케이터 스타일
   Widget _buildFilterBanners() {
     const activeColor = Color(0xFF111827);
     const inactiveColor = Color(0xFF98A2B3);
+    final l10n = AppLocalizations.of(context)!;
+    final relationshipStrings = RelationshipStrings.of(context);
+    final tabs = <(DMFilter, String)>[
+      (DMFilter.friends, l10n.friends),
+      (DMFilter.anonymous, l10n.anonymous),
+      (DMFilter.requests, relationshipStrings.requestsTab),
+    ];
 
     return Container(
       color: Colors.white,
       child: LayoutBuilder(
         builder: (context, constraints) {
           final compact = constraints.maxWidth < 360;
-          final tabWidth = constraints.maxWidth / 2;
+          final tabWidth = constraints.maxWidth / tabs.length;
           final indicatorWidth = compact ? 36.0 : 42.0;
-          final leftForFriends = (tabWidth - indicatorWidth) / 2;
-          final leftForAnonymous = tabWidth + (tabWidth - indicatorWidth) / 2;
+          final selectedIndex =
+              tabs.indexWhere((tab) => tab.$1 == _filter).clamp(0, tabs.length - 1);
 
           return Stack(
             children: [
@@ -578,78 +598,59 @@ class _DMListScreenState extends State<DMListScreen> {
               // 탭 텍스트 영역
               Row(
                 children: [
-                  Expanded(
-                    child: MotionSelectable(
-                      selected: _filter == DMFilter.friends,
-                      pressedScale: MotionSelectable.segmentScale,
-                      child: InkWell(
-                      onTap: () {
-                        if (_filter != DMFilter.friends)
-                          setState(() => _filter = DMFilter.friends);
-                      },
-                      child: Container(
-                        height: compact ? 44 : 48,
-                        alignment: Alignment.center,
-                        child: AnimatedDefaultTextStyle(
-                          duration:
-                              MotionTokens.of(context, MotionTokens.state),
-                          curve: MotionTokens.curve,
-                          style: TextStyle(
-                            fontFamily: uiFontFamily(context, 'Inter'),
-                            fontFamilyFallback: const ['NotoSansKR'],
-                            fontSize: compact ? 14 : 15,
-                            fontWeight: FontWeight.w600,
-                            color: _filter == DMFilter.friends
-                                ? activeColor
-                                : inactiveColor,
+                  for (final tab in tabs)
+                    Expanded(
+                      child: MotionSelectable(
+                        selected: _filter == tab.$1,
+                        pressedScale: MotionSelectable.segmentScale,
+                        child: InkWell(
+                          onTap: () {
+                            if (_filter != tab.$1) {
+                              setState(() => _filter = tab.$1);
+                            }
+                          },
+                          child: Container(
+                            height: compact ? 44 : 48,
+                            alignment: Alignment.center,
+                            child: Row(
+                              mainAxisSize: MainAxisSize.min,
+                              children: [
+                                AnimatedDefaultTextStyle(
+                                  duration: MotionTokens.of(
+                                      context, MotionTokens.state),
+                                  curve: MotionTokens.curve,
+                                  style: TextStyle(
+                                    fontFamily: uiFontFamily(context, 'Inter'),
+                                    fontFamilyFallback: const ['NotoSansKR'],
+                                    fontSize: compact ? 14 : 15,
+                                    fontWeight: FontWeight.w600,
+                                    color: _filter == tab.$1
+                                        ? activeColor
+                                        : inactiveColor,
+                                  ),
+                                  child: Text(tab.$2),
+                                ),
+                                if (tab.$1 == DMFilter.requests)
+                                  _FirstResponseCountBadge(
+                                    selected: _filter == tab.$1,
+                                  ),
+                              ],
+                            ),
                           ),
-                          child: Text(AppLocalizations.of(context)!.friends),
                         ),
                       ),
                     ),
-                    ),
-                  ),
-                  Expanded(
-                    child: MotionSelectable(
-                      selected: _filter == DMFilter.anonymous,
-                      pressedScale: MotionSelectable.segmentScale,
-                      child: InkWell(
-                      onTap: () {
-                        if (_filter != DMFilter.anonymous)
-                          setState(() => _filter = DMFilter.anonymous);
-                      },
-                      child: Container(
-                        height: compact ? 44 : 48,
-                        alignment: Alignment.center,
-                        child: AnimatedDefaultTextStyle(
-                          duration:
-                              MotionTokens.of(context, MotionTokens.state),
-                          curve: MotionTokens.curve,
-                          style: TextStyle(
-                            fontFamily: uiFontFamily(context, 'Inter'),
-                            fontFamilyFallback: const ['NotoSansKR'],
-                            fontSize: compact ? 14 : 15,
-                            fontWeight: FontWeight.w600,
-                            color: _filter == DMFilter.anonymous
-                                ? activeColor
-                                : inactiveColor,
-                          ),
-                          child: Text(AppLocalizations.of(context)!.anonymous),
-                        ),
-                      ),
-                    ),
-                    ),
-                  ),
                 ],
               ),
 
               // 인디케이터
               AnimatedPositioned(
-                duration: const Duration(milliseconds: 220),
+                duration: MotionTokens.of(
+                  context,
+                  const Duration(milliseconds: 220),
+                ),
                 curve: Curves.easeOut,
-                left: _filter == DMFilter.friends
-                    ? leftForFriends
-                    : leftForAnonymous,
+                left: tabWidth * selectedIndex + (tabWidth - indicatorWidth) / 2,
                 bottom: 0,
                 child: Container(
                   width: indicatorWidth,
@@ -1276,5 +1277,47 @@ class _DMListScreenState extends State<DMListScreen> {
         );
       }
     }
+  }
+}
+
+
+/// 요청 탭 라벨 옆의 작은 수 표식. 사람을 점수화하지 않도록 대기 중인
+/// 요청이 있을 때만 조용히 보인다.
+class _FirstResponseCountBadge extends StatelessWidget {
+  const _FirstResponseCountBadge({required this.selected});
+
+  final bool selected;
+
+  @override
+  Widget build(BuildContext context) {
+    return StreamBuilder<List<FirstResponseRequest>>(
+      stream: FirstResponseRequestService.instance.watchIncomingPending(),
+      builder: (context, snapshot) {
+        final count = snapshot.data?.length ?? 0;
+        if (count <= 0) return const SizedBox.shrink();
+        return Padding(
+          padding: const EdgeInsets.only(left: 5),
+          child: Container(
+            constraints: const BoxConstraints(minWidth: 18),
+            height: 18,
+            padding: const EdgeInsets.symmetric(horizontal: 5),
+            alignment: Alignment.center,
+            decoration: BoxDecoration(
+              color: selected ? const Color(0xFF344054) : const Color(0xFFD0D5DD),
+              borderRadius: BorderRadius.circular(9),
+            ),
+            child: Text(
+              count > 99 ? '99+' : '$count',
+              style: const TextStyle(
+                fontSize: 11,
+                fontWeight: FontWeight.w700,
+                color: Colors.white,
+                height: 1,
+              ),
+            ),
+          ),
+        );
+      },
+    );
   }
 }

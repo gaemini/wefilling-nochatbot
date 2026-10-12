@@ -514,6 +514,7 @@ class SnapshotService {
     File? videoThumbnail,
     List<SnapshotOverlay> overlays = const <SnapshotOverlay>[],
     required SnapshotVisibility visibility,
+    SnapshotResponseMode responseMode = SnapshotResponseMode.replies,
     required List<String> visibleToCategoryIds,
     required SnapshotOverlay overlay,
     required double aspectRatio,
@@ -609,6 +610,8 @@ class SnapshotService {
         'storageBucket': storageBucket,
         'mediaType': mediaType.value,
         'visibility': visibility.value,
+        // 배포 전 서버는 이 필드를 무시하고, 배포 후 서버는 검증해 저장한다.
+        'responseMode': responseMode.value,
         'visibleToCategoryIds': visibleToCategoryIds,
         'overlay': overlay.toMap(),
         'overlays': overlays.take(5).map((item) => item.toMap()).toList(),
@@ -651,6 +654,7 @@ class SnapshotService {
             mediaType == SnapshotMediaType.video ? thumbnailPath : '',
         durationMs: durationMs.clamp(0, 12000).toInt(),
         visibility: visibility,
+        responseMode: responseMode,
         createdAt: DateTime.fromMillisecondsSinceEpoch(
           createdAtMillis,
           isUtc: true,

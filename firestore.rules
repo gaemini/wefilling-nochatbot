@@ -724,6 +724,85 @@ service cloud.firestore {
       }
     }
     
+    // ===== 첫 응답 요청(비친구의 번역 답장) =====
+    // 일반 DM과 분리된 요청 1건. 수신자가 수락하기 전에는 발신자가 추가
+    // 메시지를 보낼 수 없고, 수락 시 발신자 클라이언트가 원문을 DM 첫
+    // 메시지로 1회 전달한다. 발신자→수신자 쌍당 문서 하나만 존재한다.
+    match /first_response_requests/{requestId} {
+      function frParty(data) {
+        return request.auth.uid == data.senderId
+          || request.auth.uid == data.recipientId;
+      }
+
+      function frFriendshipPairId(a, b) {
+        return a < b ? a + '__' + b : b + '__' + a;
+      }
+
+      allow get, list: if request.auth != null
+        && resource != null
+        && frParty(resource.data);
+
+      allow create: if currentUserAccountAllowed()
+        && request.resource.data.senderId == request.auth.uid
+        && request.resource.data.recipientId is string
+        && request.resource.data.recipientId.size() > 0
+        && request.resource.data.recipientId != request.auth.uid
+        && requestId == request.auth.uid + '_' + request.resource.data.recipientId
+        && activeUserAccount(request.resource.data.recipientId)
+        && blockRelationshipFree(request.auth.uid, request.resource.data.recipientId)
+        // 친구 사이에는 요청이 아니라 기존 DM을 쓴다.
+        && !exists(/databases/$(database)/documents/friendships/$(frFriendshipPairId(request.auth.uid, request.resource.data.recipientId)))
+        && request.resource.data.status == 'pending'
+        && request.resource.data.message is string
+        && request.resource.data.message.size() > 0
+        && request.resource.data.message.size() <= 300
+        && request.resource.data.get('translatedMessage', '') is string
+        && request.resource.data.get('translatedMessage', '').size() <= 600
+        && request.resource.data.sourceType in ['post', 'snapshot']
+        && request.resource.data.sourceId is string
+        && request.resource.data.sourceId.size() > 0
+        && request.resource.data.conversationId == ''
+        && request.resource.data.deliveredMessageId == ''
+        && request.resource.data.createdAt == request.time
+        && request.resource.data.keys().hasOnly([
+          'senderId', 'recipientId', 'senderName', 'senderPhotoUrl',
+          'senderPhotoVersion', 'recipientName', 'message',
+          'translatedMessage', 'sourceLanguage', 'sourceType', 'sourceId',
+          'sourcePreview', 'sourceImageUrl', 'status', 'conversationId',
+          'deliveredMessageId', 'createdAt'
+        ]);
+
+      allow update: if request.auth != null && (
+          // 수신자: 대기 → 수락/거절/차단. 수락은 차단 관계가 없고
+          // 연결할 대화 id가 있을 때만 가능하다.
+          (request.auth.uid == resource.data.recipientId
+            && resource.data.status == 'pending'
+            && request.resource.data.status in ['accepted', 'declined', 'blocked']
+            && request.resource.data.diff(resource.data).affectedKeys().hasOnly([
+              'status', 'respondedAt', 'conversationId'
+            ])
+            && (request.resource.data.status != 'accepted'
+              || (blockRelationshipFree(resource.data.senderId, resource.data.recipientId)
+                && request.resource.data.conversationId is string
+                && request.resource.data.conversationId.size() > 0)))
+          // 발신자: 대기 → 취소
+          || (request.auth.uid == resource.data.senderId
+            && resource.data.status == 'pending'
+            && request.resource.data.status == 'canceled'
+            && request.resource.data.diff(resource.data).affectedKeys().hasOnly([
+              'status', 'respondedAt'
+            ]))
+          // 발신자: 수락 뒤 첫 메시지 전달 표식만 기록
+          || (request.auth.uid == resource.data.senderId
+            && resource.data.status == 'accepted'
+            && request.resource.data.diff(resource.data).affectedKeys().hasOnly([
+              'deliveredMessageId', 'deliveredAt'
+            ]))
+        );
+
+      allow delete: if false;
+    }
+
     // ===== 친구 요청 컬렉션 =====
     match /friend_requests/{requestId} {
       // 요청 생성: sendFriendRequest 콜러블(Admin SDK)만 수행한다. 직접 생성은

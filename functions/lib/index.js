@@ -5049,9 +5049,14 @@ exports.sendFriendRequest = (0, backend_1.callables)().https.onCall(async (data,
                 transaction.get(fromUserRef),
                 transaction.get(toUserRef),
             ]);
-            if (!(0, searchable_user_policy_1.isSearchableUser)(fromUid, fromUserDoc.data()) ||
-                !(0, searchable_user_policy_1.isSearchableUser)(toUid, toUserDoc.data())) {
-                throw new functions.https.HttpsError('failed-precondition', '탈퇴했거나 이용할 수 없는 계정입니다.');
+            const fromCheck = (0, searchable_user_policy_1.evaluateRelationshipUser)(fromUid, fromUserDoc.data());
+            const toCheck = (0, searchable_user_policy_1.evaluateRelationshipUser)(toUid, toUserDoc.data());
+            if (!fromCheck.allowed || !toCheck.allowed) {
+                console.warn('friend_request_account_rejected', {
+                    side: !fromCheck.allowed ? 'sender' : 'recipient',
+                    reason: !fromCheck.allowed ? fromCheck.reason : toCheck.reason,
+                });
+                throw new functions.https.HttpsError('failed-precondition', '탈퇴했거나 이용할 수 없는 계정입니다.', { reason: 'account-unavailable' });
             }
             if (friendshipDoc.exists) {
                 return { success: true, alreadyFriends: true };

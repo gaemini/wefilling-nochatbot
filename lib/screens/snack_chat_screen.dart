@@ -44,7 +44,6 @@ import '../ui/widgets/motion_press.dart';
 import '../ui/widgets/chat_reply_reveal.dart';
 import '../ui/widgets/snack_chat_chrome.dart';
 import '../ui/widgets/snack_chat_outgoing_entrance.dart';
-import '../ui/widgets/soft_translate_reveal.dart';
 import '../ui/widgets/retryable_chat_network_image.dart';
 import '../ui/widgets/user_avatar.dart';
 import '../services/content_translation_service.dart';
@@ -75,6 +74,8 @@ import 'main_screen.dart';
 import 'snack_chat_info_screen.dart';
 import '../ui/widgets/pinned_post_card.dart';
 import '../ui/widgets/snack_chat_translation_split_button.dart';
+import '../ui/widgets/snack_chat_translated_text.dart';
+import '../l10n/translation_source_language.dart';
 import '../l10n/ui_locale.dart';
 
 @visibleForTesting
@@ -272,6 +273,9 @@ class _SnackChatScreenState extends State<SnackChatScreen>
   final ScrollController _scrollController = ScrollController();
   final ImagePicker _imagePicker = ImagePicker();
   String? _targetLanguageCode;
+  // 메시지별 전환(저장하지 않음). 방 번역 켜기/끄기·언어 변경 때 비운다.
+  final Set<String> _perMessageShowTranslation = <String>{};
+  final Set<String> _perMessageShowOriginal = <String>{};
 
   bool _isUploadingImage = false;
   static final _imageUploadQueue = ChatWorkQueue();
@@ -575,6 +579,8 @@ class _SnackChatScreenState extends State<SnackChatScreen>
     _translationBatchesInFlight = 0;
     _translationModeReady = false;
     _manualTranslationRetryKeys.clear();
+    _perMessageShowTranslation.clear();
+    _perMessageShowOriginal.clear();
     _isUserScrolling = false;
     _cancelPendingTranslationRestore();
     _messageTranslations.clear();
@@ -643,6 +649,8 @@ class _SnackChatScreenState extends State<SnackChatScreen>
     final anchor =
         canRestoreScroll && !keepAtLatest ? _captureScrollAnchor() : null;
     setState(() {
+      _perMessageShowTranslation.clear();
+      _perMessageShowOriginal.clear();
       _translationLanguageRevision = revision;
       _translationShowsOriginal = showingOriginal;
       _translationProviderRetryExhausted = retryExhausted;
@@ -7497,62 +7505,242 @@ class _SnackChatScreenState extends State<SnackChatScreen>
     );
   }
 
+  /// 방 번역 모드와 메시지별 전환을 합친 최종 표시 규칙.
+  /// roomOn ? !원문보기집합 : 번역보기집합. 결과가 있을 때만 번역문을 쓴다.
+  bool _wantsTranslation(SnackChatMessage message) {
+    final roomOn = _translationModeReady && !_translationShowsOriginal;
+    return roomOn
+        ? !_perMessageShowOriginal.contains(message.id)
+        : _perMessageShowTranslation.contains(message.id);
+  }
+
+  _SnackTranslationView _translationViewFor(
+    SnackChatMessage message, {
+    required bool isMe,
+    required bool Function(ContentTranslationResult result) hasDisplayable,
+  }) {
+    if (isMe || !_translationModeReady || !_canTranslateMessage(message)) {
+      return const _SnackTranslationView.none();
+    }
+    final result = _currentTranslationForMessage(message);
+    if (result?.isSameLanguage == true) {
+      return const _SnackTranslationView.none();
+    }
+    final requestKey = _translationRequestKey(message);
+    final pending = _isTranslationWorkPending(requestKey);
+    final ready = result != null && result.isReady && hasDisplayable(result);
+    final wants = _wantsTranslation(message);
+    if (wants && ready) {
+      return _SnackTranslationView(
+        state: SnackChatTranslationState.translated,
+        result: result,
+      );
+    }
+    if (wants && pending) {
+      return const _SnackTranslationView(
+        state: SnackChatTranslationState.pending,
+      );
+    }
+    final failed = (_translationFailures[requestKey] ?? 0) >= 2 &&
+        result == null &&
+        !pending;
+    if (wants && failed) {
+      final retryAvailable = canStartUserSnackTranslationRetry(
+        retryInFlight: _manualTranslationRetryKeys.contains(requestKey),
+        messageWorkPending: pending,
+        lifecycleResumed: _appLifecycleState == AppLifecycleState.resumed,
+        isLeavingRoom: _isLeavingRoom,
+        roomAccessTerminated: _roomAccessTerminated,
+      );
+      return _SnackTranslationView(
+        state: SnackChatTranslationState.failed,
+        canRetry: retryAvailable,
+      );
+    }
+    final roomOn = !_translationShowsOriginal;
+    // 방 번역이 켜져 있고 아직 결과·요청이 없으면 원문으로 번쩍이지 않도록
+    // 발 줄 없이 기다린다. 원문 보기를 고른 메시지만 '번역 보기'를 준다.
+    if (roomOn && wants) return const _SnackTranslationView.none();
+    return const _SnackTranslationView(
+      state: SnackChatTranslationState.original,
+    );
+  }
+
+  /// 말풍선 높이가 바뀌는 표시 전환. 맨 아래면 아래 기준을, 위쪽을 읽는
+  /// 중이면 보던 위치를 기존 앵커 헬퍼로 유지한다(reverse 목록).
+  void _changeTranslationPresentation(VoidCallback change) {
+    _cancelPendingTranslationRestore();
+    final canRestoreScroll = !_isUserScrolling;
+    final keepAtLatest = canRestoreScroll && _isNearLatest;
+    final anchor =
+        canRestoreScroll && !keepAtLatest ? _captureScrollAnchor() : null;
+    setState(change);
+    if (canRestoreScroll) {
+      _restoreAfterTranslationChange(anchor, keepAtLatest: keepAtLatest);
+    }
+  }
+
+  void _showMessageTranslation(SnackChatMessage message) {
+    final roomOn = _translationModeReady && !_translationShowsOriginal;
+    _changeTranslationPresentation(() {
+      if (roomOn) {
+        _perMessageShowOriginal.remove(message.id);
+      } else {
+        _perMessageShowTranslation.add(message.id);
+      }
+    });
+    if (roomOn) {
+      _scheduleVisibleTranslations();
+    } else if (!_hasCurrentTranslation(message)) {
+      unawaited(_translateMessageOnDemand(message));
+    }
+  }
+
+  void _showMessageOriginal(SnackChatMessage message) {
+    final roomOn = _translationModeReady && !_translationShowsOriginal;
+    _changeTranslationPresentation(() {
+      if (roomOn) {
+        _perMessageShowOriginal.add(message.id);
+      } else {
+        _perMessageShowTranslation.remove(message.id);
+      }
+    });
+  }
+
+  /// 방 번역이 꺼진 상태에서 '번역 보기'를 누른 메시지 한 건만 요청한다.
+  /// 배치 경로(_translateMessageBatch)는 방 번역이 켜져 있을 때만 돌기 때문에,
+  /// 같은 단건 요청 헬퍼와 결과 반영 함수를 그대로 쓴다.
+  Future<void> _translateMessageOnDemand(
+    SnackChatMessage message, {
+    bool forceRefresh = false,
+  }) async {
+    if (!_translationModeReady ||
+        !_canTranslateMessage(message) ||
+        _appLifecycleState != AppLifecycleState.resumed ||
+        _isLeavingRoom ||
+        _roomAccessTerminated) {
+      return;
+    }
+    final requestKey = _translationRequestKey(message);
+    if (_isTranslationWorkPending(requestKey)) return;
+    final generation = _translationStateGeneration;
+    final languageRevision = _translationLanguageRevision;
+    final roomId = widget.snackChatId;
+    setState(() {
+      _translationRequestsInFlight.add(requestKey);
+      if (forceRefresh) {
+        _translationFailures.remove(requestKey);
+        _translationRetryAfter.remove(requestKey);
+      }
+    });
+    final outcome = await _loadVisibleMessageTranslation(
+      message,
+      roomId: roomId,
+      uiLanguageCode: Localizations.localeOf(context).languageCode,
+      manualRetry: forceRefresh,
+      userInitiatedRetry: true,
+      forceRefresh: forceRefresh,
+    );
+    if (!mounted) return;
+    if (generation != _translationStateGeneration ||
+        languageRevision != _translationLanguageRevision ||
+        roomId != widget.snackChatId) {
+      setState(() => _translationRequestsInFlight.remove(requestKey));
+      return;
+    }
+    final keepAtLatest = !_isUserScrolling && _isNearLatest;
+    final anchor =
+        !_isUserScrolling && !keepAtLatest ? _captureScrollAnchor() : null;
+    _commitTranslationOutcomes(
+      <_SnackTranslationOutcome>[outcome],
+      completesBatch: false,
+      scheduleNextBatch: false,
+    );
+    // 방 번역이 꺼져 있으면 _commitTranslationOutcomes가 위치를 복원하지 않는다.
+    if (_translationShowsOriginal && !_isUserScrolling) {
+      _restoreAfterTranslationChange(anchor, keepAtLatest: keepAtLatest);
+    }
+  }
+
+  void _retryMessageTranslation(SnackChatMessage message) {
+    if (_translationShowsOriginal) {
+      unawaited(_translateMessageOnDemand(message, forceRefresh: true));
+    } else {
+      unawaited(_retryFailedTranslation(message));
+    }
+  }
+
+  Widget _buildSnackTranslatedContent({
+    required SnackChatMessage message,
+    required _SnackTranslationView view,
+    required Widget original,
+    Widget? translated,
+    bool preserveChildState = false,
+  }) {
+    final isKo = Localizations.localeOf(context).languageCode == 'ko';
+    final zh = isChineseUi(context);
+    final l10n = AppLocalizations.of(context)!;
+    final result = view.result;
+    return SnackChatTranslatedText(
+      key: ValueKey<String>('message-translation:${message.id}'),
+      state: view.state,
+      presentationKey: result == null
+          ? 'original:${_translationSourceSignature(message)}'
+          : '${result.sourceHash}:${result.targetLanguage}:'
+              '${result.translatedAt ?? 0}',
+      original: original,
+      translated: translated,
+      sourceLanguageLabel: result == null
+          ? ''
+          : translationSourceLanguageLabel(context, result.sourceLanguage),
+      showTranslationLabel:
+          zh ? '查看译文' : (isKo ? '번역 보기' : 'View translation'),
+      showOriginalLabel: zh ? '查看原文' : (isKo ? '원문 보기' : 'View original'),
+      translatingLabel: l10n.chatTranslationTranslating,
+      retryLabel: l10n.chatTranslationRetry,
+      // 방 번역이 꺼진 상태에서만 '번역 보기' 줄(유예 중 자리 유지 포함)을 둔다.
+      onShowTranslation: view.state == SnackChatTranslationState.original ||
+              (view.state == SnackChatTranslationState.pending &&
+                  _translationShowsOriginal)
+          ? () => _showMessageTranslation(message)
+          : null,
+      onShowOriginal: () => _showMessageOriginal(message),
+      onRetry: view.canRetry ? () => _retryMessageTranslation(message) : null,
+      preserveChildState: preserveChildState,
+    );
+  }
+
   Widget _buildTranslatedMessageText({
     required SnackChatMessage message,
     required bool isMe,
     required TextStyle textStyle,
   }) {
-    final result = _currentTranslationForMessage(message);
-    final translatedText = result?.translatedFields['text'] ?? '';
-    final canShowTranslation = !isMe &&
-        _translationModeReady &&
-        !_translationShowsOriginal &&
-        result?.isReady == true &&
-        result?.isSameLanguage != true &&
-        translatedText.trim().isNotEmpty;
-    final displayText = canShowTranslation ? translatedText : message.text;
-
-    final requestKey = _translationRequestKey(message);
-    final translationWorkPending = _isTranslationWorkPending(requestKey);
-    final translationFailed = !isMe &&
-        !_translationShowsOriginal &&
-        (_translationFailures[requestKey] ?? 0) >= 2 &&
-        result == null &&
-        !translationWorkPending;
-    final initialTranslationInFlight = !isMe &&
-        _translationModeReady &&
-        !_translationShowsOriginal &&
-        !translationFailed &&
-        translationWorkPending;
-    final retryAvailable = canStartUserSnackTranslationRetry(
-      retryInFlight: _manualTranslationRetryKeys.contains(requestKey),
-      messageWorkPending: translationWorkPending,
-      lifecycleResumed: _appLifecycleState == AppLifecycleState.resumed,
-      isLeavingRoom: _isLeavingRoom,
-      roomAccessTerminated: _roomAccessTerminated,
+    final view = _translationViewFor(
+      message,
+      isMe: isMe,
+      hasDisplayable: (result) =>
+          (result.translatedFields['text'] ?? '').trim().isNotEmpty,
     );
-    final presentationKey = canShowTranslation
-        ? 'translated:${result!.sourceHash}:${result.targetLanguage}:'
-            '${result.translatedAt ?? 0}'
-        : 'original:${_translationSourceSignature(message)}';
-
-    return SoftTranslateReveal(
-      key: ValueKey<String>('message-text:${message.id}'),
-      presentationKey: presentationKey,
-      isPending: initialTranslationInFlight,
-      isTranslated: canShowTranslation,
-      translationFailed: translationFailed,
-      onRetry: retryAvailable ? () => _retryFailedTranslation(message) : null,
-      statusColor: isMe ? Colors.white70 : const Color(0xFF667085),
-      child: Linkify(
-        text: displayText,
-        onOpen: (link) => _openExternalUrl(link.url),
-        style: textStyle,
-        linkStyle: textStyle.copyWith(
-          decoration: TextDecoration.underline,
-          decorationColor: textStyle.color,
-        ),
-      ),
+    final linkStyle = textStyle.copyWith(
+      color: isMe ? textStyle.color : SnackChatPalette.pointStrong,
+      decoration: TextDecoration.underline,
+      decorationColor: isMe ? textStyle.color : SnackChatPalette.pointStrong,
+    );
+    Widget linkified(String text) => Linkify(
+          text: text,
+          onOpen: (link) => _openExternalUrl(link.url),
+          style: textStyle,
+          linkStyle: linkStyle,
+        );
+    final original = linkified(message.text);
+    if (view.state == SnackChatTranslationState.none && isMe) return original;
+    return _buildSnackTranslatedContent(
+      message: message,
+      view: view,
+      original: original,
+      translated: view.result == null
+          ? null
+          : linkified(view.result!.translatedFields['text']!),
     );
   }
 
@@ -7560,51 +7748,28 @@ class _SnackChatScreenState extends State<SnackChatScreen>
     required SnackChatMessage message,
     required bool isMe,
   }) {
-    final result = _currentTranslationForMessage(message);
-    final canShowTranslation = !isMe &&
-        _translationModeReady &&
-        !_translationShowsOriginal &&
-        result?.isReady == true &&
-        result?.isSameLanguage != true;
-    final requestKey = _translationRequestKey(message);
-    final pending = !isMe &&
-        _translationModeReady &&
-        !_translationShowsOriginal &&
-        (_translationFailures[requestKey] ?? 0) < 2 &&
-        _isTranslationWorkPending(requestKey);
-    final failed = !isMe &&
-        !_translationShowsOriginal &&
-        result == null &&
-        (_translationFailures[requestKey] ?? 0) >= 2 &&
-        !_isTranslationWorkPending(requestKey);
-    final retryAvailable = canStartUserSnackTranslationRetry(
-      retryInFlight: _manualTranslationRetryKeys.contains(requestKey),
-      messageWorkPending: _isTranslationWorkPending(requestKey),
-      lifecycleResumed: _appLifecycleState == AppLifecycleState.resumed,
-      isLeavingRoom: _isLeavingRoom,
-      roomAccessTerminated: _roomAccessTerminated,
+    final view = _translationViewFor(
+      message,
+      isMe: isMe,
+      hasDisplayable: (_) => true,
     );
-    final presentationKey = canShowTranslation
-        ? 'translated:${result!.sourceHash}:${result.targetLanguage}:'
-            '${result.translatedAt ?? 0}'
-        : 'original:${_translationSourceSignature(message)}';
-
-    return SoftTranslateReveal(
-      key: ValueKey<String>('message-poll:${message.id}'),
-      presentationKey: presentationKey,
-      isPending: pending,
-      isTranslated: canShowTranslation,
-      translationFailed: failed,
-      onRetry: retryAvailable ? () => _retryFailedTranslation(message) : null,
+    Widget card(SnackChatPoll poll) => SnackChatPollCard(
+          poll: poll,
+          myOptionIds: _myVotes[message.id] ?? const <String>{},
+          isOutgoing: isMe,
+          enabled:
+              !message.isPending && !message.hasFailed && !message.isDeleted,
+          onVote: (ids) => _castVote(message, ids),
+        );
+    final showTranslated = view.state == SnackChatTranslationState.translated;
+    // 투표 카드는 내부 상태가 있어 같은 위젯을 유지하고 내용만 바꾼다.
+    final poll = card(_displayPollForMessage(message, isMe: isMe));
+    return _buildSnackTranslatedContent(
+      message: message,
+      view: view,
+      original: poll,
+      translated: showTranslated ? poll : null,
       preserveChildState: true,
-      statusColor: isMe ? Colors.white70 : const Color(0xFF667085),
-      child: SnackChatPollCard(
-        poll: _displayPollForMessage(message, isMe: isMe),
-        myOptionIds: _myVotes[message.id] ?? const <String>{},
-        isOutgoing: isMe,
-        enabled: !message.isPending && !message.hasFailed && !message.isDeleted,
-        onVote: (ids) => _castVote(message, ids),
-      ),
     );
   }
 
@@ -7616,7 +7781,7 @@ class _SnackChatScreenState extends State<SnackChatScreen>
     final result = _currentTranslationForMessage(message);
     if (isMe ||
         !_translationModeReady ||
-        _translationShowsOriginal ||
+        !_wantsTranslation(message) ||
         result == null ||
         result.isSameLanguage) {
       return poll;
@@ -8762,4 +8927,22 @@ class _SnackChatScreenState extends State<SnackChatScreen>
       );
     }
   }
+}
+
+/// 한 메시지의 번역 표시 상태(화면 state에서 계산한 값).
+class _SnackTranslationView {
+  const _SnackTranslationView({
+    required this.state,
+    this.result,
+    this.canRetry = false,
+  });
+
+  const _SnackTranslationView.none()
+      : state = SnackChatTranslationState.none,
+        result = null,
+        canRetry = false;
+
+  final SnackChatTranslationState state;
+  final ContentTranslationResult? result;
+  final bool canRetry;
 }

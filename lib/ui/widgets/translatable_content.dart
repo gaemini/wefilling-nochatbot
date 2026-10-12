@@ -5,6 +5,7 @@ import 'package:flutter/material.dart';
 import '../../models/content_translation.dart';
 import '../../services/content_translation_service.dart';
 import '../../l10n/ui_locale.dart';
+import '../../l10n/translation_source_language.dart';
 import '../../utils/logger.dart';
 
 typedef TranslatedContentBuilder = Widget Function(
@@ -12,61 +13,6 @@ typedef TranslatedContentBuilder = Widget Function(
   Map<String, String> fields,
 );
 
-String _sourceLanguageLabel(BuildContext context, String? code) {
-  final normalized = (code ?? '').trim().toLowerCase().split('-').first;
-  if (normalized.isEmpty) return '';
-  final isKo = Localizations.localeOf(context).languageCode == 'ko';
-  const koreanNames = <String, String>{
-    'ko': '한국어',
-    'en': '영어',
-    'ja': '일본어',
-    'zh': '중국어',
-    'es': '스페인어',
-    'fr': '프랑스어',
-    'de': '독일어',
-    'ru': '러시아어',
-    'pt': '포르투갈어',
-    'it': '이탈리아어',
-    'ar': '아랍어',
-    'hi': '힌디어',
-    'th': '태국어',
-    'vi': '베트남어',
-    'id': '인도네시아어',
-    'ms': '말레이어',
-    'tr': '튀르키예어',
-    'nl': '네덜란드어',
-    'pl': '폴란드어',
-    'uk': '우크라이나어',
-    'mn': '몽골어',
-  };
-  const englishNames = <String, String>{
-    'ko': 'Korean',
-    'en': 'English',
-    'ja': 'Japanese',
-    'zh': 'Chinese',
-    'es': 'Spanish',
-    'fr': 'French',
-    'de': 'German',
-    'ru': 'Russian',
-    'pt': 'Portuguese',
-    'it': 'Italian',
-    'ar': 'Arabic',
-    'hi': 'Hindi',
-    'th': 'Thai',
-    'vi': 'Vietnamese',
-    'id': 'Indonesian',
-    'ms': 'Malay',
-    'tr': 'Turkish',
-    'nl': 'Dutch',
-    'pl': 'Polish',
-    'uk': 'Ukrainian',
-    'mn': 'Mongolian',
-  };
-  final language =
-      (isKo ? koreanNames[normalized] : englishNames[normalized]) ??
-          normalized.toUpperCase();
-  return (isChineseUi(context) ? '来自${language}' : isKo ? '원문 언어 $language' : 'From $language');
-}
 
 class TranslatableContent extends StatefulWidget {
   const TranslatableContent({
@@ -552,7 +498,7 @@ class _TranslationScopeToggleState extends State<TranslationScopeToggle> {
     final showingOriginal = _presentation.showingOriginal;
     final loading = _presentation.loading;
     final sourceLanguage =
-        _sourceLanguageLabel(context, _presentation.sourceLanguage);
+        translationSourceLanguageLabel(context, _presentation.sourceLanguage);
     if (_presentation.sameLanguage ||
         (!canToggle && !retryExhausted && !loading)) {
       return const SizedBox.shrink();

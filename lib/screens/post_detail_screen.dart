@@ -72,6 +72,7 @@ import '../utils/comment_gif_input.dart';
 import '../utils/chat_date_label.dart';
 import '../utils/post_comment_conversation.dart';
 import '../services/comment_image_upload.dart';
+import '../utils/avatar_image.dart';
 
 /// Keeps Material route behavior (including back navigation) while making the
 /// feed-to-detail change perceptible without waiting for an animation.
@@ -744,16 +745,15 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
         color: _kDetailFillSubtle,
         border: Border.all(color: Colors.white, width: 1.5),
       ),
-      child: photo.startsWith('http')
-          ? ClipOval(
-              child: CachedNetworkImage(
-                imageUrl: photo,
-                cacheManager: AppImageCacheManager.instance,
-                width: size,
-                height: size,
-                fit: BoxFit.cover,
-                errorWidget: (_, __, ___) => const SizedBox.shrink(),
-              ),
+      child: photo.startsWith('http') && info != null
+          ? UserAvatar(
+              uid: info.uid,
+              photoUrl: photo,
+              photoVersion: info.photoVersion,
+              isAnonymous: false,
+              size: size,
+              placeholderColor: Colors.transparent,
+              placeholderIconSize: 0,
             )
           : Text(
               name.isEmpty ? '' : name.characters.first.toUpperCase(),
@@ -987,32 +987,25 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
           .getUserInfoBatch(pending)
           .timeout(const Duration(seconds: 10));
       if (!mounted) return;
-      final imageProviders = profiles.values
+      // 댓글 아바타(UserAvatar 28)와 같은 provider로 디코딩까지 데운다. 댓글
+      // 목록이 사진 때문에 오래 멈추지 않도록 짧게만 기다리고(0.7초), 못 받은
+      // 사진은 백그라운드에서 계속 받아 도착하는 대로 그려진다.
+      final targets = profiles.values
           .whereType<DMUserInfo>()
-          .where((profile) =>
-              !profile.isDeletedAccount &&
-              profile.photoURL.trim().startsWith('http'))
-          .map((profile) => CachedNetworkImageProvider(
-                profile.photoURL.trim(),
-                cacheManager: AppImageCacheManager.instance,
+          .where((profile) => !profile.isDeletedAccount)
+          .map((profile) => AvatarWarmTarget(
+                uid: profile.uid,
+                photoVersion: profile.photoVersion,
+                photoUrl: profile.photoURL.trim(),
+                logicalSize: 28,
               ))
           .toList(growable: false);
-      const concurrency = 6;
-      var nextImage = 0;
-      Future<void> preloadWorker() async {
-        while (nextImage < imageProviders.length && mounted) {
-          final provider = imageProviders[nextImage++];
-          await precacheImage(provider, context)
-              .timeout(const Duration(seconds: 3))
-              .catchError((_) => null);
-        }
-      }
-
-      await Future.wait<void>([
-        for (var i = 0; i < concurrency && i < imageProviders.length; i++)
-          preloadWorker(),
-      ], eagerError: false)
-          .timeout(const Duration(seconds: 7));
+      unawaited(warmAvatarFiles(targets, maxItems: 30));
+      await precacheAvatarImages(
+        context,
+        targets,
+        maxItems: 30,
+      ).timeout(const Duration(milliseconds: 700), onTimeout: () {});
     } catch (error) {
       if (Logger.isVerboseEnabled) {
         Logger.warning('댓글 작성자 일괄 조회 실패(문서 정보 사용): $error');

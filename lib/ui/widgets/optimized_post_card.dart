@@ -50,6 +50,7 @@ import 'package:provider/provider.dart';
 import '../../providers/relationship_provider.dart';
 import '../../models/relationship_status.dart';
 import '../../services/content_filter_service.dart';
+import '../../utils/avatar_image.dart';
 
 /// Board/Home 피드에서 사용하는 content-first 일반 게시글 카드.
 class OptimizedPostCard extends StatefulWidget {
@@ -127,7 +128,6 @@ class _OptimizedPostCardState extends State<OptimizedPostCard> {
   // 같은 provider key를 사용해야 스크롤로 카드가 다시 만들어져도 재디코딩과
   // 중복 파일 변환 없이 즉시 재사용된다.
   static const int _feedImageCacheWidth = 800;
-  static const int _avatarCacheWidth = 160;
 
   @override
   void initState() {
@@ -659,23 +659,31 @@ class _OptimizedPostCardState extends State<OptimizedPostCard> {
     }
 
     // 작성자 프로필 이미지도 프리캐시 (탭 전환 시 깜빡임 감소)
+    // 화면에 그리는 이미지(_buildAuthorAvatar)와 같은 provider라 첫 프레임에
+    // 동기적으로 그려진다.
     final authorPhoto = post.authorPhotoURL.trim();
     if (!post.isAnonymous && authorPhoto.isNotEmpty) {
       try {
-        final provider = ResizeImage.resizeIfNeeded(
-          _avatarCacheWidth,
-          null,
-          CachedNetworkImageProvider(
-            authorPhoto,
-            cacheManager: AppImageCacheManager.instance,
-          ),
+        precacheImage(
+          _authorAvatarProvider(post.userId, authorPhoto),
+          context,
+          onError: (_, __) {},
         );
-        precacheImage(provider, context).catchError((_) {});
       } catch (_) {}
     }
 
     _didPrecache = true;
   }
+
+  /// 작성자 사진 provider. 화면 이미지와 미리 데우는 쪽이 함께 쓴다.
+  ImageProvider _authorAvatarProvider(String userId, String url) =>
+      avatarImageProvider(
+        uid: userId,
+        photoVersion: 0,
+        photoUrl: url,
+        logicalSize: 40,
+        devicePixelRatio: MediaQuery.devicePixelRatioOf(context),
+      );
 
   void _openProfileOrMyPage({
     required String userId,
@@ -1085,17 +1093,17 @@ class _OptimizedPostCardState extends State<OptimizedPostCard> {
                         child: ColoredBox(
                           color: Colors.grey.shade300,
                           child: (resolvedImageUrl != null && !isAnonymous)
-                              ? CachedNetworkImage(
-                                  imageUrl: resolvedImageUrl,
-                                  cacheManager: AppImageCacheManager.instance,
-                                  memCacheWidth: _avatarCacheWidth,
+                              ? Image(
+                                  image: _authorAvatarProvider(
+                                    post.userId,
+                                    resolvedImageUrl,
+                                  ),
                                   fit: BoxFit.cover,
-                                  useOldImageOnUrlChange: true,
-                                  fadeInDuration: Duration.zero,
-                                  fadeOutDuration: Duration.zero,
-                                  placeholder: (_, __) =>
-                                      ColoredBox(color: Colors.grey.shade300),
-                                  errorWidget: (_, __, ___) => const Icon(
+                                  // 사진이 바뀌어도 새 사진이 준비될 때까지
+                                  // 이전 사진을 유지한다(깜빡임 방지).
+                                  gaplessPlayback: true,
+                                  filterQuality: FilterQuality.low,
+                                  errorBuilder: (_, __, ___) => const Icon(
                                     Icons.person_outline_rounded,
                                     size: 20,
                                     color: BrandColors.iconDefault,

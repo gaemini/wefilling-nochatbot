@@ -32,6 +32,7 @@ import '../../l10n/ui_locale.dart';
 import '../../snapshot/snapshot_strings.dart';
 import '../../utils/comment_gif_input.dart';
 import '../../utils/chat_message_typography.dart';
+import 'user_avatar.dart';
 
 // 포스트 상세 v2 댓글 스레드 값. 위필링 디자인 시스템 토큰을 이 화면용 이름으로 모은다.
 const Color _kInk = Color(0xFF000000);
@@ -1156,6 +1157,13 @@ class _EnhancedCommentWidgetState extends State<EnhancedCommentWidget> {
   }
 
   /// 말풍선 + (좋아요가 있으면) 아래 모서리에 걸친 배지.
+  int _avatarVersionFor(String photoUrl) {
+    final cached =
+        UserInfoCacheService().getCachedUserInfo(widget.comment.userId);
+    if (cached == null || cached.isDeletedAccount) return 0;
+    return cached.photoURL.trim() == photoUrl.trim() ? cached.photoVersion : 0;
+  }
+
   Widget _buildBubble(
     BuildContext context, {
     required Widget text,
@@ -1447,33 +1455,16 @@ class _EnhancedCommentWidgetState extends State<EnhancedCommentWidget> {
                 pressedScale: .99,
                 child: GestureDetector(
                   onTap: canOpenProfile ? _openCommentAuthorProfile : null,
-                  child: Container(
-                    width: avatarSize,
-                    height: avatarSize,
-                    alignment: Alignment.center,
-                    decoration: const BoxDecoration(
-                      shape: BoxShape.circle,
-                      color: _kFillSubtle,
-                    ),
-                    child: photoUrl.trim().isNotEmpty
-                        ? ClipOval(
-                            child: Image.network(
-                              photoUrl.trim(),
-                              width: avatarSize,
-                              height: avatarSize,
-                              fit: BoxFit.cover,
-                              errorBuilder: (_, __, ___) => const Icon(
-                                Icons.person,
-                                size: avatarSize * .6,
-                                color: _kInkTertiary,
-                              ),
-                            ),
-                          )
-                        : const Icon(
-                            Icons.person,
-                            size: avatarSize * .6,
-                            color: _kInkTertiary,
-                          ),
+                  child: UserAvatar(
+                    uid: widget.comment.userId,
+                    photoUrl: photoUrl,
+                    // 캐시된 프로필의 사진과 같은 주소일 때만 버전을 써서 다른
+                    // 화면(DM·스낵챗)과 같은 캐시 파일을 공유한다.
+                    photoVersion: _avatarVersionFor(photoUrl),
+                    isAnonymous: widget.isAnonymousPost || isDeletedAccount,
+                    size: avatarSize,
+                    placeholderColor: _kFillSubtle,
+                    placeholderIconSize: avatarSize * .6,
                   ),
                 ),
               ),

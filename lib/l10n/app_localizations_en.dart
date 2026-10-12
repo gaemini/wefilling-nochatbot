@@ -3549,4 +3549,33 @@ class AppLocalizationsEn extends AppLocalizations {
     );
     return '$_temp0';
   }
+
+  @override
+  String postViewCountMeta(int count) {
+    return '$count views';
+  }
+
+  @override
+  String postSnackChatTalking(int count) {
+    return '$count people talking';
+  }
+
+  @override
+  String get postSnackChatContinue => 'Continue in Snack Chat';
+
+  @override
+  String get postSnackChatOpen => 'Open Snack Chat';
+
+  @override
+  String get postSnackChatSheetSubtitle => 'This post stays pinned at the top';
+
+  @override
+  String get postSnackChatNoInvite =>
+      'People who commented won\'t be invited. They\'ll just see that a Snack Chat is open and can join if they want.';
+
+  @override
+  String get commentLikeAction => 'Like';
+
+  @override
+  String get commentUnlikeAction => 'Unlike';
 }

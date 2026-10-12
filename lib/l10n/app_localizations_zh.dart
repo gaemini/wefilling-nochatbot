@@ -3356,4 +3356,32 @@ class AppLocalizationsZh extends AppLocalizations {
     );
     return '$_temp0';
   }
+
+  @override
+  String postViewCountMeta(int count) {
+    return '浏览 $count';
+  }
+
+  @override
+  String postSnackChatTalking(int count) {
+    return '$count人正在聊';
+  }
+
+  @override
+  String get postSnackChatContinue => '到群聊继续聊';
+
+  @override
+  String get postSnackChatOpen => '打开群聊';
+
+  @override
+  String get postSnackChatSheetSubtitle => '这条帖子会固定在群聊顶部';
+
+  @override
+  String get postSnackChatNoInvite => '评论过的人不会收到邀请，只会看到“群聊已开启”的提示。是否加入由各自决定。';
+
+  @override
+  String get commentLikeAction => '点赞';
+
+  @override
+  String get commentUnlikeAction => '取消点赞';
 }

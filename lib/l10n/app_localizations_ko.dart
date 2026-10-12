@@ -3407,4 +3407,33 @@ class AppLocalizationsKo extends AppLocalizations {
     );
     return '$_temp0';
   }
+
+  @override
+  String postViewCountMeta(int count) {
+    return '조회 $count';
+  }
+
+  @override
+  String postSnackChatTalking(int count) {
+    return '$count명이 이야기 중';
+  }
+
+  @override
+  String get postSnackChatContinue => '스낵챗에서 이어가기';
+
+  @override
+  String get postSnackChatOpen => '스낵챗 열기';
+
+  @override
+  String get postSnackChatSheetSubtitle => '이 포스트가 채팅방 위에 고정돼요';
+
+  @override
+  String get postSnackChatNoInvite =>
+      '댓글 단 사람에게는 초대 대신 ‘열린 스낵챗’ 표시만 보여요. 들어올지는 각자 정해요.';
+
+  @override
+  String get commentLikeAction => '좋아요';
+
+  @override
+  String get commentUnlikeAction => '좋아요 취소';
 }

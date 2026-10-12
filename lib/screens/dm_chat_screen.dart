@@ -71,6 +71,7 @@ import '../l10n/ui_locale.dart';
 import '../ui/widgets/chat_pill_composer.dart';
 import '../utils/chat_message_typography.dart';
 import '../ui/widgets/snack_chat_translation_split_button.dart';
+import '../ui/widgets/dm_header_identity.dart';
 
 // DM 전용 색상
 class DMColors {
@@ -2483,7 +2484,6 @@ class _DMChatScreenState extends State<DMChatScreen>
     final code = _targetLanguageCode;
     return <Widget>[
       SnackChatTranslationSplitButton(
-        key: const ValueKey('dm_translation_split_button'),
         translationOn: translationOn,
         enabled: _translationModeReady,
         languageLabel: code == null
@@ -2496,6 +2496,9 @@ class _DMChatScreenState extends State<DMChatScreen>
             zh ? '翻译语言' : (isKo ? '번역 언어 설정' : 'Translation language'),
         onToggle: _toggleDmTranslation,
         onOpenLanguage: _openDmTranslationLanguageSettings,
+        toggleKey: const ValueKey('dm_translation_toggle'),
+        languageKey: const ValueKey('dm_translation_language_settings'),
+        languageMaxWidth: 96,
       ),
       const SizedBox(width: 2),
     ];
@@ -2517,6 +2520,38 @@ class _DMChatScreenState extends State<DMChatScreen>
   }
 
   /// AppBar 빌드
+  static const double _dmToolbarHeight = 56;
+
+  /// 세 갈래(로딩·익명 게시글·일반)가 함께 쓰는 상단바 틀.
+  /// 높이 56, 흰색, 아래 1px #EBEBEB, 그림자 없음.
+  AppBar _buildDmAppBar({
+    required Widget identity,
+    required List<Widget> actions,
+  }) {
+    return AppBar(
+      elevation: 0,
+      backgroundColor: Colors.white,
+      surfaceTintColor: Colors.white,
+      scrolledUnderElevation: 0,
+      toolbarHeight: _dmToolbarHeight,
+      titleSpacing: 0,
+      shape: const Border(bottom: BorderSide(color: Color(0xFFEBEBEB))),
+      leading: IconButton(
+        icon: const Icon(Icons.arrow_back, color: Colors.black87),
+        constraints: const BoxConstraints(minWidth: 44, minHeight: 48),
+        onPressed: () => Navigator.pop(context),
+      ),
+      title: identity,
+      actions: actions,
+    );
+  }
+
+  String _formatHeaderDate() {
+    final date = _conversation?.lastMessageTime ?? _conversation?.createdAt;
+    if (date == null) return '';
+    return DateFormat('yyyy.MM.dd').format(date);
+  }
+
   PreferredSizeWidget _buildAppBar() {
     final otherUserId = widget.otherUserId;
     final dmContent = (_conversation?.dmContent ?? _preloadedDmContent)?.trim();
@@ -2536,74 +2571,30 @@ class _DMChatScreenState extends State<DMChatScreen>
       final resolvedPhotoVersion =
           _isAnonymous ? 0 : (_serverOtherUserInfo?.photoVersion ?? 0);
 
-      return AppBar(
-        elevation: 0,
-        backgroundColor: Colors.white,
-        surfaceTintColor: Colors.white,
-        scrolledUnderElevation: 0,
-        toolbarHeight: 58,
-        titleSpacing: 0,
-        leading: IconButton(
-          icon: const Icon(Icons.arrow_back, color: Colors.black87),
-          onPressed: () => Navigator.pop(context),
-        ),
-        title: Row(
-          children: [
-            // 대화방이 없어도 상대 프로필을 먼저 보여준다(오류 오해 방지)
-            Semantics(
-              button: !_isAnonymous && !_isPeerDeleted,
-              label: !_isAnonymous && !_isPeerDeleted
-                  ? AppLocalizations.of(context)!.viewProfile
-                  : null,
-              child: MotionPress(
-                enabled: !_isAnonymous && !_isPeerDeleted,
-                pressedScale: .99,
-                child: GestureDetector(
-                  behavior: HitTestBehavior.opaque,
-                  onTap: _isAnonymous || _isPeerDeleted
-                      ? null
-                      : () => _openOtherUserProfile(
-                          nickname: resolvedName,
-                          photoURL: resolvedPhotoUrl,
-                        ),
-                  child: UserAvatar(
-                    uid: otherUserId,
-                    photoUrl: resolvedPhotoUrl,
-                    photoVersion: resolvedPhotoVersion,
-                    isAnonymous: _isAnonymous,
-                    size: 36,
-                    placeholderColor: const Color(0xFFE5E7EB),
-                    placeholderIconSize: 20,
+      // 대화방이 없어도 상대 프로필을 먼저 보여준다(오류 오해 방지)
+      return _buildDmAppBar(
+        identity: DmHeaderIdentity(
+          avatar: UserAvatar(
+            uid: otherUserId,
+            photoUrl: resolvedPhotoUrl,
+            photoVersion: resolvedPhotoVersion,
+            isAnonymous: _isAnonymous,
+            size: 36,
+            placeholderColor: const Color(0xFFE5E7EB),
+            placeholderIconSize: 20,
+          ),
+          title: resolvedName.trim(),
+          subtitle: null,
+          showSkeleton: resolvedName.trim().isEmpty,
+          semanticsLabel: AppLocalizations.of(context)!.viewProfile,
+          onTap: _isAnonymous || _isPeerDeleted
+              ? null
+              : () => _openOtherUserProfile(
+                    nickname: resolvedName,
+                    photoURL: resolvedPhotoUrl,
                   ),
-                ),
-              ),
-            ),
-            const SizedBox(width: 12),
-            Expanded(
-              child: resolvedName.trim().isNotEmpty
-                  ? Text(
-                      resolvedName.trim(),
-                      style: TextStyle(
-                        fontFamily: uiFontFamily(context, 'Inter'),
-                        fontFamilyFallback: const ['NotoSansKR'],
-                        fontSize: 16,
-                        fontWeight: FontWeight.w700,
-                        color: DMColors.textPrimary,
-                      ),
-                      maxLines: 1,
-                      overflow: TextOverflow.ellipsis,
-                    )
-                  : Container(
-                      width: 120,
-                      height: 16,
-                      decoration: BoxDecoration(
-                        color: Colors.grey[200],
-                        borderRadius: BorderRadius.circular(6),
-                      ),
-                    ),
-            ),
-          ],
         ),
+        actions: _buildDmTranslationActions(),
       );
     }
 
@@ -2613,83 +2604,32 @@ class _DMChatScreenState extends State<DMChatScreen>
           ? dmContent
           : AppLocalizations.of(context)!.anonymous;
       final secondaryTitle = AppLocalizations.of(context)!.anonymous;
+      final headerDate = _formatHeaderDate();
 
-      String _formatHeaderDate() {
-        final date = _conversation?.lastMessageTime ?? _conversation?.createdAt;
-        if (date == null) return '';
-        return DateFormat('yyyy.MM.dd').format(date);
-      }
-
-      return AppBar(
-        elevation: 0,
-        backgroundColor: Colors.white,
-        surfaceTintColor: Colors.white,
-        scrolledUnderElevation: 0,
-        toolbarHeight: 58,
-        titleSpacing: 0,
-        leading: IconButton(
-          icon: const Icon(Icons.arrow_back, color: Colors.black87),
-          onPressed: () => Navigator.pop(context),
-        ),
-        title: Row(
-          children: [
-            CircleAvatar(
-              radius: 17,
-              backgroundColor: const Color(0xFFEAECF0),
-              child: const Icon(
-                Icons.person_outline_rounded,
-                size: 19,
-                color: DMColors.textSecondary,
-              ),
+      return _buildDmAppBar(
+        identity: DmHeaderIdentity(
+          avatar: const CircleAvatar(
+            radius: 18,
+            backgroundColor: Color(0xFFEAECF0),
+            child: Icon(
+              Icons.person_outline_rounded,
+              size: 19,
+              color: DMColors.textSecondary,
             ),
-            const SizedBox(width: 12),
-            Expanded(
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                mainAxisSize: MainAxisSize.min,
-                children: [
-                  Text(
-                    primaryTitle,
-                    style: TextStyle(
-                      fontFamily: uiFontFamily(context, 'Inter'),
-                      fontFamilyFallback: const ['NotoSansKR'],
-                      fontSize: 16,
-                      fontWeight: FontWeight.w700,
-                      color: DMColors.textPrimary,
-                    ),
-                    maxLines: 1,
-                    overflow: TextOverflow.ellipsis,
-                  ),
-                  const SizedBox(height: 2),
-                  Text(
-                    secondaryTitle,
-                    style: TextStyle(
-                      fontFamily: uiFontFamily(context, 'Inter'),
-                      fontFamilyFallback: const ['NotoSansKR'],
-                      fontSize: 12,
-                      color: DMColors.textSecondary,
-                    ),
-                    maxLines: 1,
-                    overflow: TextOverflow.ellipsis,
-                  ),
-                ],
-              ),
-            ),
-            Text(
-              _formatHeaderDate(),
-              style: TextStyle(
-                fontFamily: uiFontFamily(context, 'Inter'),
-                fontFamilyFallback: const ['NotoSansKR'],
-                fontSize: 12,
-                color: DMColors.textTertiary,
-              ),
-            ),
-          ],
+          ),
+          title: primaryTitle,
+          // 익명 · 날짜(날짜가 없으면 익명만)
+          subtitle: headerDate.isEmpty
+              ? secondaryTitle
+              : '$secondaryTitle · $headerDate',
+          semanticsLabel: AppLocalizations.of(context)!.viewProfile,
+          onTap: null,
         ),
         actions: [
           ..._buildDmTranslationActions(),
           PopupMenuButton<String>(
             icon: const Icon(Icons.more_vert, color: Colors.black87),
+            constraints: const BoxConstraints(minWidth: 44),
             padding: EdgeInsets.zero,
             shape:
                 RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
@@ -2767,7 +2707,7 @@ class _DMChatScreenState extends State<DMChatScreen>
 
     // 실시간으로 사용자 정보 조회 (일반 DM만)
     return PreferredSize(
-      preferredSize: const Size.fromHeight(kToolbarHeight),
+      preferredSize: const Size.fromHeight(_dmToolbarHeight + 1),
       child: StreamBuilder<DMUserInfo?>(
         stream: (_isAnonymous || isCachedDeleted) ? null : _otherUserInfoStream,
         // 캐시 기반 초기값을 UI에 노출하지 않는다(플리커 방지)
@@ -2794,122 +2734,38 @@ class _DMChatScreenState extends State<DMChatScreen>
           final primaryTitle = _isAnonymous
               ? AppLocalizations.of(context)!.anonymous
               : otherUserName;
-          final secondaryTitle = null;
+          // 날짜는 이름 아래 보조 줄. 대화방이 없으면 보조 줄을 숨긴다.
+          final headerDate =
+              _conversation == null ? '' : _formatHeaderDate();
 
-          String _formatHeaderDate() {
-            final date =
-                _conversation?.lastMessageTime ?? _conversation?.createdAt;
-            if (date == null) return '';
-            return DateFormat('yyyy.MM.dd').format(date);
-          }
-
-          return AppBar(
-            elevation: 0,
-            backgroundColor: Colors.white,
-            surfaceTintColor: Colors.white,
-            scrolledUnderElevation: 0,
-            toolbarHeight: 58,
-            titleSpacing: 0,
-            leading: IconButton(
-              icon: const Icon(Icons.arrow_back, color: Colors.black87),
-              onPressed: () => Navigator.pop(context),
-            ),
-            title: Row(
-              children: [
-                Semantics(
-                  button: !_isAnonymous && !isCachedDeleted,
-                  label: !_isAnonymous && !isCachedDeleted
-                      ? AppLocalizations.of(context)!.viewProfile
-                      : null,
-                  child: MotionPress(
-                    enabled: !_isAnonymous && !isCachedDeleted,
-                    pressedScale: .99,
-                    child: GestureDetector(
-                      behavior: HitTestBehavior.opaque,
-                      onTap: _isAnonymous || isCachedDeleted
-                          ? null
-                          : () => _openOtherUserProfile(
-                              nickname: otherUserName,
-                              photoURL: otherUserPhoto,
-                            ),
-                      child: UserAvatar(
-                        uid: otherUserId,
-                        photoUrl: otherUserPhoto,
-                        photoVersion: otherUserPhotoVersion,
-                        isAnonymous: _isAnonymous,
-                        size: 36,
-                        placeholderColor: const Color(0xFFE5E7EB),
-                        placeholderIconSize: 20,
+          return _buildDmAppBar(
+            identity: DmHeaderIdentity(
+              avatar: UserAvatar(
+                uid: otherUserId,
+                photoUrl: otherUserPhoto,
+                photoVersion: otherUserPhotoVersion,
+                isAnonymous: _isAnonymous,
+                size: 36,
+                placeholderColor: const Color(0xFFE5E7EB),
+                placeholderIconSize: 20,
+              ),
+              title: primaryTitle,
+              subtitle: headerDate.isEmpty ? null : headerDate,
+              showSkeleton:
+                  !_isAnonymous && !isCachedDeleted && !isUserInfoReady,
+              semanticsLabel: AppLocalizations.of(context)!.viewProfile,
+              onTap: _isAnonymous || isCachedDeleted
+                  ? null
+                  : () => _openOtherUserProfile(
+                        nickname: otherUserName,
+                        photoURL: otherUserPhoto,
                       ),
-                    ),
-                  ),
-                ),
-                const SizedBox(width: 12),
-                Expanded(
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    mainAxisSize: MainAxisSize.min,
-                    children: [
-                      if (!_isAnonymous && !isCachedDeleted && !isUserInfoReady)
-                        Container(
-                          width: 140,
-                          height: 14,
-                          decoration: BoxDecoration(
-                            color: const Color(0xFFE5E7EB),
-                            borderRadius: BorderRadius.circular(6),
-                          ),
-                        )
-                      else
-                        Text(
-                          primaryTitle,
-                          style: TextStyle(
-                            fontFamily: uiFontFamily(context, 'Inter'),
-                            fontFamilyFallback: const ['NotoSansKR'],
-                            fontSize: 16,
-                            fontWeight: FontWeight.w700,
-                            color: DMColors.textPrimary,
-                          ),
-                          maxLines: 1,
-                          overflow: TextOverflow.ellipsis,
-                        ),
-                      if (secondaryTitle != null) ...[
-                        const SizedBox(height: 2),
-                        Text(
-                          secondaryTitle,
-                          style: const TextStyle(
-                            fontSize: 12,
-                            color: Colors.black54,
-                            fontWeight: FontWeight.w500,
-                          ),
-                          maxLines: 1,
-                          overflow: TextOverflow.ellipsis,
-                        ),
-                      ],
-                    ],
-                  ),
-                ),
-              ],
             ),
             actions: [
               ..._buildDmTranslationActions(),
-              if (_conversation != null) ...[
-                Center(
-                  child: Padding(
-                    padding: const EdgeInsets.only(right: 8.0),
-                    child: Text(
-                      _formatHeaderDate(),
-                      style: TextStyle(
-                        fontFamily: uiFontFamily(context, 'Inter'),
-                        fontFamilyFallback: const ['NotoSansKR'],
-                        color: DMColors.textTertiary,
-                        fontSize: 12,
-                      ),
-                    ),
-                  ),
-                ),
-              ],
               PopupMenuButton<String>(
                 icon: const Icon(Icons.more_vert, color: Colors.black87),
+                constraints: const BoxConstraints(minWidth: 44),
                 padding: EdgeInsets.zero,
                 shape: RoundedRectangleBorder(
                     borderRadius: BorderRadius.circular(12)),

@@ -31,7 +31,6 @@ import '../ui/widgets/snack_chat_outgoing_entrance.dart';
 import '../ui/widgets/chat_reaction_widgets.dart';
 import '../ui/widgets/motion_press.dart';
 import '../ui/widgets/chat_reply_reveal.dart';
-import '../ui/widgets/soft_translate_reveal.dart';
 import '../ui/widgets/swipe_to_reply.dart';
 import '../ui/widgets/retryable_chat_network_image.dart';
 import '../services/dm_active_conversation.dart';
@@ -72,6 +71,8 @@ import '../ui/widgets/chat_pill_composer.dart';
 import '../utils/chat_message_typography.dart';
 import '../ui/widgets/snack_chat_translation_split_button.dart';
 import '../ui/widgets/dm_header_identity.dart';
+import '../ui/widgets/snack_chat_translated_text.dart';
+import '../l10n/translation_source_language.dart';
 
 // DM 전용 색상
 class DMColors {
@@ -784,18 +785,35 @@ class _DMChatScreenState extends State<DMChatScreen>
         ? 'translated:${result!.sourceHash}:${result.targetLanguage}'
         : 'original:${_translationSourceSignature(message)}';
 
-    return SoftTranslateReveal(
+    // 스낵챗과 같은 표시: 같은 자리에서 원문/번역 교차 페이드, 번역 중에는 300ms 뒤
+    // 원문이 옅게 깜빡이고, 발 줄은 상태(번역 중 / 원문 언어 / 다시 번역)만 알린다.
+    final l10n = AppLocalizations.of(context)!;
+    final style = chatMessageTextStyle(context, color: DMColors.otherMessageText);
+    final state = result?.isSameLanguage == true || !_translationModeReady
+        ? SnackChatTranslationState.none
+        : canShowTranslation
+            ? SnackChatTranslationState.translated
+            : pending
+                ? SnackChatTranslationState.pending
+                : failed
+                    ? SnackChatTranslationState.failed
+                    : SnackChatTranslationState.none;
+    return SnackChatTranslatedText(
       key: ValueKey<String>('dm-message-text:${message.id}'),
+      state: state,
       presentationKey: presentationKey,
-      isPending: pending,
-      isTranslated: canShowTranslation,
-      translationFailed: failed,
+      original: _buildDmLinkifiedText(message.text, style),
+      translated: canShowTranslation
+          ? _buildDmLinkifiedText(translatedText, style)
+          : null,
+      sourceLanguageLabel: canShowTranslation
+          ? translationSourceLanguageLabel(context, result!.sourceLanguage)
+          : '',
+      showTranslationLabel: '',
+      showOriginalLabel: '',
+      translatingLabel: l10n.chatTranslationTranslating,
+      retryLabel: l10n.chatTranslationRetry,
       onRetry: failed ? () => _retryFailedDmTranslation(message) : null,
-      statusColor: DMColors.textSecondary,
-      child: _buildDmLinkifiedText(
-        canShowTranslation ? translatedText : message.text,
-        chatMessageTextStyle(context, color: DMColors.otherMessageText),
-      ),
     );
   }
 

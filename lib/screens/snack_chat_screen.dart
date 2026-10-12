@@ -33,7 +33,6 @@ import '../services/snack_chat_document_import_service.dart';
 import '../services/snack_chat_local_cache_service.dart';
 import '../services/snack_chat_file_transfer_service.dart';
 import '../services/snack_chat_service.dart';
-import '../services/snack_chat_summary_run.dart';
 import 'snack_chat_discovery_screen.dart';
 import '../services/storage_service.dart';
 import '../services/user_info_cache_service.dart';
@@ -61,15 +60,12 @@ import 'video_playback_screen.dart';
 import '../ui/sheets/snack_chat_file_confirmation_sheet.dart';
 import '../ui/sheets/snack_chat_image_confirmation_sheet.dart';
 import '../ui/sheets/snack_chat_people_sheet.dart';
-import '../ui/sheets/snack_chat_today_summary_picker_sheet.dart';
-import '../ui/sheets/snack_chat_unread_summary_sheet.dart';
 import '../ui/sheets/translation_language_sheet.dart';
 import '../utils/responsive_helper.dart';
 import '../utils/logger.dart';
 import '../utils/chat_timing.dart';
 import '../utils/snack_chat_message_grouping.dart';
 import '../utils/snack_chat_translation_policy.dart';
-import '../utils/snack_chat_unread_summary_policy.dart';
 import '../utils/snack_chat_mentions.dart';
 import '../utils/snack_chat_read_policy.dart';
 import 'package:cloud_functions/cloud_functions.dart';
@@ -416,12 +412,7 @@ class _SnackChatScreenState extends State<SnackChatScreen>
   String? _firstUnreadMessageId;
   int? _firstUnreadSequence;
   bool _entryUnreadHapticPlayed = false;
-  int _entryUnreadCount = 0;
   int _entryLatestSequence = 0;
-  SnackChatSummaryRun? _summaryRun;
-  bool _summaryResultOpen = false;
-  bool _todaySummaryLoading = false;
-  int _todaySummaryRequestGeneration = 0;
   bool _entryContextResolved = false;
   bool _entryPositionSettled = false;
   bool _entryReadSyncAllowed = false;
@@ -501,8 +492,6 @@ class _SnackChatScreenState extends State<SnackChatScreen>
           _outboundLanes.remove(key);
         }
       }
-      _summaryRun?.dispose();
-      _summaryRun = null;
       _cacheHydrationGeneration++;
       _readSyncGeneration++;
       _immediateReadSyncRequested = false;
@@ -1746,10 +1735,6 @@ class _SnackChatScreenState extends State<SnackChatScreen>
     _firstUnreadMessageId = null;
     _firstUnreadSequence = null;
     _entryUnreadHapticPlayed = false;
-    _summaryRun?.dispose();
-    _summaryRun = null;
-    _todaySummaryLoading = false;
-    _todaySummaryRequestGeneration++;
     _entryContextResolved = false;
     _entryPositionSettled = false;
     _entryReadSyncAllowed = false;
@@ -2220,7 +2205,6 @@ class _SnackChatScreenState extends State<SnackChatScreen>
     }
     _firstUnreadMessageId = entry.firstUnreadMessageId;
     _firstUnreadSequence = entry.firstUnreadSequence;
-    _entryUnreadCount = entry.roomUnreadCount;
     _entryLatestSequence = entry.roomLastSequence;
     _isNearLatest = !entry.hasUnreadAnchor;
     _entryPositionSettled = !entry.hasUnreadAnchor;
@@ -2409,7 +2393,6 @@ class _SnackChatScreenState extends State<SnackChatScreen>
         }
         _firstUnreadMessageId = entry.firstUnreadMessageId;
         _firstUnreadSequence = entry.firstUnreadSequence;
-        _entryUnreadCount = entry.roomUnreadCount;
         _entryLatestSequence = entry.roomLastSequence;
         _isNearLatest = !entry.hasUnreadAnchor;
         _entryPositionSettled = !entry.hasUnreadAnchor;
@@ -2506,12 +2489,7 @@ class _SnackChatScreenState extends State<SnackChatScreen>
           _entryReadSyncAllowed = false;
           _firstUnreadMessageId = null;
           _firstUnreadSequence = null;
-          _entryUnreadCount = 0;
           _entryLatestSequence = 0;
-          _summaryRun?.dispose();
-          _summaryRun = null;
-          _todaySummaryLoading = false;
-          _todaySummaryRequestGeneration++;
           _isNearLatest = true;
         });
       }
@@ -4084,12 +4062,10 @@ class _SnackChatScreenState extends State<SnackChatScreen>
   @override
   void dispose() {
     NavigationService.routeObserver.unsubscribe(this);
-    _summaryRun?.dispose();
     unawaited(_accountSubscription?.cancel());
     // 화면 이동은 막지 않고, 읽음 동기화 Future만 백그라운드에서 완료한다.
     _startBackgroundReadFlush();
     _readSyncGeneration++;
-    _todaySummaryRequestGeneration++;
     _isLeavingRoom = true;
     final outboundOwner = _uid;
     if (outboundOwner != null) {
@@ -6931,7 +6907,6 @@ class _SnackChatScreenState extends State<SnackChatScreen>
                     ],
                   ),
                 ),
-                if (_summaryRun != null) _buildSummaryRunProgress(_summaryRun!),
                 _buildMessageComposer(isKo: isKo, room: room),
               ],
             ),
@@ -6953,11 +6928,6 @@ class _SnackChatScreenState extends State<SnackChatScreen>
         : isKo
             ? '원문 보기'
             : 'View original');
-    final recapActionLabel = (isChineseUi(context)
-        ? '今日总结'
-        : isKo
-            ? '오늘 정리'
-            : 'Today recap');
     final toggleLabel =
         showingOriginal ? translationActionLabel : originalActionLabel;
     final toggleTooltip = showingOriginal
@@ -7003,18 +6973,6 @@ class _SnackChatScreenState extends State<SnackChatScreen>
       }
       painter.dispose();
     }
-    final recapPainter = TextPainter(
-      text: TextSpan(text: recapActionLabel, style: controlTextStyle),
-      maxLines: 1,
-      textDirection: Directionality.of(context),
-      textScaler: MediaQuery.textScalerOf(context).clamp(
-        maxScaleFactor: 1.15,
-      ),
-    )..layout();
-    // 이전의 넓은 여백과 직전의 촘촘한 여백 사이에서 균형을 맞춘다.
-    final recapControlWidth = (recapPainter.width + 16).ceilToDouble();
-    recapPainter.dispose();
-
     // Keep a stable width while switching translation/original labels. The
     // 양쪽 경계와 아이콘/문자 사이에 중간 단계의 여백을 유지한다.
     final translationControlWidth =
@@ -7042,50 +7000,6 @@ class _SnackChatScreenState extends State<SnackChatScreen>
                   spacing: 7,
                   runSpacing: 4,
                   children: [
-                    Tooltip(
-                      message: (isChineseUi(context)
-                          ? '今日总结'
-                          : isKo
-                              ? '오늘 대화 정리'
-                              : "Today's recap"),
-                      child: SizedBox(
-                        width: recapControlWidth,
-                        height: 28,
-                        child: TextButton(
-                          key: const ValueKey('snack_today_recap_button'),
-                          onPressed:
-                              _todaySummaryLoading ? null : _openTodaySummary,
-                          style: TextButton.styleFrom(
-                            foregroundColor: Colors.white,
-                            disabledForegroundColor: const Color(0xFFD6EBF5),
-                            backgroundColor: const Color(0xFF087BB5),
-                            disabledBackgroundColor: const Color(0xFF76AFCB),
-                            minimumSize: const Size(0, 28),
-                            maximumSize: const Size(double.infinity, 28),
-                            padding: const EdgeInsets.symmetric(horizontal: 8),
-                            tapTargetSize: MaterialTapTargetSize.shrinkWrap,
-                            visualDensity: VisualDensity.compact,
-                            shape: const StadiumBorder(),
-                          ),
-                          child: _todaySummaryLoading
-                              ? const SizedBox.square(
-                                  dimension: 14,
-                                  child: CircularProgressIndicator(
-                                    strokeWidth: 1.8,
-                                    color: Color(0xFFD6EBF5),
-                                  ),
-                                )
-                              : Text(
-                                  recapActionLabel,
-                                  maxLines: 1,
-                                  overflow: TextOverflow.ellipsis,
-                                  softWrap: false,
-                                  textAlign: TextAlign.center,
-                                  style: controlTextStyle,
-                                ),
-                        ),
-                      ),
-                    ),
                     _buildTranslationActionControl(
                       showingOriginal: showingOriginal,
                       toggleLabel: toggleLabel,
@@ -9031,792 +8945,6 @@ class _SnackChatScreenState extends State<SnackChatScreen>
     if (firstSequence == null || secondSequence == null) return false;
     return (firstSequence >= boundary && secondSequence < boundary) ||
         (secondSequence >= boundary && firstSequence < boundary);
-  }
-
-  SnackChatUnreadSummaryPlan _currentUnreadSummaryPlan() {
-    final firstUnreadSequence = _firstUnreadSequence;
-    final uid = _uid;
-    if (firstUnreadSequence == null || uid == null) {
-      return const SnackChatUnreadSummaryPlan(
-        messages: <SnackChatMessage>[],
-        declaredUnreadCount: 0,
-        shouldShowButton: false,
-        useLocalSummary: false,
-      );
-    }
-    return buildSnackChatUnreadSummaryPlan(
-      messages: _messages,
-      currentUserId: uid,
-      firstUnreadSequence: firstUnreadSequence,
-      latestSequence: _currentUnreadSummaryLatestSequence(),
-      declaredUnreadCount: _entryUnreadCount,
-    );
-  }
-
-  int _currentUnreadSummaryLatestSequence() {
-    var latest = _entryLatestSequence;
-    final uid = _uid;
-    for (final message in _messages) {
-      final sequence = message.sequence;
-      final delivered = message.deliveryRecipientIds;
-      if (sequence == null ||
-          message.senderId == uid ||
-          message.isDeleted ||
-          message.type == SnackChatMessageType.system ||
-          (delivered != null &&
-              delivered.isNotEmpty &&
-              uid != null &&
-              !delivered.contains(uid))) {
-        continue;
-      }
-      if (sequence > latest) latest = sequence;
-    }
-    return latest;
-  }
-
-  int _currentRoomLatestSequence() {
-    var latest = _lastRoom?.lastMessageSequence ?? _entryLatestSequence;
-    for (final message in _messages) {
-      final sequence = message.sequence;
-      if (sequence != null && sequence > latest) latest = sequence;
-    }
-    return latest;
-  }
-
-  String _localUnreadSummaryText(
-    SnackChatMessage message, {
-    required bool isKo,
-    required String targetLanguage,
-  }) {
-    final translation = _currentTranslationForMessage(message);
-    if (translation?.isReady == true &&
-        translation!.targetLanguage == targetLanguage &&
-        !translation.isSameLanguage) {
-      if (message.type == SnackChatMessageType.poll) {
-        final question = translation.translatedFields['text']?.trim() ?? '';
-        if (question.isNotEmpty) return snackChatLocalSummaryPreview(question);
-      }
-      final translatedText = translation.translatedFields['text']?.trim() ?? '';
-      if (translatedText.isNotEmpty) {
-        return snackChatLocalSummaryPreview(translatedText);
-      }
-    }
-    return snackChatLocalSummaryText(message, isKorean: isKo);
-  }
-
-  List<SnackChatUnreadSummaryItem> _localUnreadSummaryItems(
-    SnackChatUnreadSummaryPlan plan, {
-    required bool isKo,
-    required String targetLanguage,
-    int maximumItems = maximumUnreadSummaryItems,
-  }) {
-    return selectSnackChatLocalFallbackMessages(
-      plan.messages,
-      maximumItems: maximumItems,
-    )
-        .map(
-          (message) => SnackChatUnreadSummaryItem(
-            text: _localUnreadSummaryText(
-              message,
-              isKo: isKo,
-              targetLanguage: targetLanguage,
-            ),
-            sourceMessageIds: <String>[message.id],
-            representativeMessageId: message.id,
-            sourceSequences: <int>[
-              if (message.sequence != null) message.sequence!,
-            ],
-          ),
-        )
-        .where((item) => item.text.trim().isNotEmpty)
-        .toList(growable: false);
-  }
-
-  Future<void> _openSummarySource(String messageId) async {
-    if (!mounted || messageId.isEmpty) return;
-    await _jumpToMessage(messageId);
-  }
-
-  String _summaryCategoryTitle(SnackChatTodaySummaryCategory category) {
-    final isKo = Localizations.localeOf(context).languageCode == 'ko';
-    switch (category) {
-      case SnackChatTodaySummaryCategory.highlights:
-        return isChineseUi(context)
-            ? '核心内容'
-            : isKo
-                ? '핵심 내용'
-                : 'Highlights';
-      case SnackChatTodaySummaryCategory.schedule:
-        return isChineseUi(context)
-            ? '日程·约定'
-            : isKo
-                ? '일정·약속'
-                : 'Plans';
-      case SnackChatTodaySummaryCategory.tasks:
-        return isChineseUi(context)
-            ? '待办事项'
-            : isKo
-                ? '해야 할 일'
-                : 'Tasks';
-      case SnackChatTodaySummaryCategory.decisions:
-        return isChineseUi(context)
-            ? '决定·通知'
-            : isKo
-                ? '결정·공지'
-                : 'Decisions';
-      case SnackChatTodaySummaryCategory.questions:
-        return isChineseUi(context)
-            ? '问答'
-            : isKo
-                ? '질문·답변'
-                : 'Q&A';
-      case SnackChatTodaySummaryCategory.information:
-        return isChineseUi(context)
-            ? '资料·信息'
-            : isKo
-                ? '자료·정보'
-                : 'Resources';
-      case SnackChatTodaySummaryCategory.people:
-        return isChineseUi(context)
-            ? '人员·参与'
-            : isKo
-                ? '사람·참여'
-                : 'People';
-      case SnackChatTodaySummaryCategory.casual:
-        return isChineseUi(context)
-            ? '有趣的话题'
-            : isKo
-                ? '재밌었던 이야기'
-                : 'Fun chat';
-    }
-  }
-
-  List<SnackChatMessage> _summaryItemMessages(
-    SnackChatUnreadSummaryItem item,
-  ) {
-    final ids = item.sourceMessageIds.toSet();
-    final sequences = item.sourceSequences.toSet();
-    return _messages
-        .where((message) =>
-            ids.contains(message.id) ||
-            (message.sequence != null && sequences.contains(message.sequence)))
-        .toList(growable: false);
-  }
-
-  bool _summaryItemIsRelatedToMe(
-    SnackChatSummarySectionType sectionType,
-    SnackChatUnreadSummaryItem item,
-  ) {
-    // The server assigns these two sections only when a request or unanswered
-    // question is grounded as belonging to the requester. Keep the remaining
-    // checks deliberately strict to avoid pulling unrelated group discussion.
-    if (sectionType == SnackChatSummarySectionType.mustKnow ||
-        sectionType == SnackChatSummarySectionType.responseRequired) {
-      return true;
-    }
-    final uid = _uid;
-    if (uid == null) return false;
-    final ownNames = _messages
-        .where((message) => message.senderId == uid)
-        .map((message) => message.senderName?.trim() ?? '')
-        .where((name) => name.isNotEmpty)
-        .toSet();
-    for (final message in _summaryItemMessages(item)) {
-      if (message.senderId == uid || message.replyPreview?.senderId == uid) {
-        return true;
-      }
-      final text = message.text;
-      if (ownNames
-          .any((name) => text.contains('@$name') || text.contains('＠$name'))) {
-        return true;
-      }
-    }
-    return false;
-  }
-
-  List<SnackChatUnreadSummarySection> _selectedSummarySections(
-    SnackChatUnreadSummaryResult result,
-    Set<SnackChatTodaySummaryCategory> categories, {
-    required bool relatedOnly,
-  }) {
-    final sourceSections = result.sections
-        .map((section) => SnackChatUnreadSummarySection(
-              type: section.type,
-              title: section.title,
-              items: relatedOnly
-                  ? section.items
-                      .where((item) =>
-                          _summaryItemIsRelatedToMe(section.type, item))
-                      .toList(growable: false)
-                  : section.items,
-            ))
-        .where((section) => section.items.isNotEmpty)
-        .toList(growable: false);
-    final output = <SnackChatUnreadSummarySection>[];
-    final emitted = <String>{};
-
-    List<SnackChatUnreadSummaryItem> itemsForTypes(
-      Set<SnackChatSummarySectionType> types,
-    ) =>
-        sourceSections
-            .where((section) => types.contains(section.type))
-            .expand((section) => section.items)
-            .where((item) {
-              final key = item.representativeMessageId.isNotEmpty
-                  ? item.representativeMessageId
-                  : item.sourceSequences.join(',');
-              return emitted.add(key);
-            })
-            .take(5)
-            .toList(growable: false);
-
-    void add(
-      SnackChatTodaySummaryCategory category,
-      Set<SnackChatSummarySectionType> types,
-    ) {
-      if (!categories.contains(category)) return;
-      final items = itemsForTypes(types);
-      if (items.isEmpty) return;
-      output.add(SnackChatUnreadSummarySection(
-        type: types.first,
-        title: _summaryCategoryTitle(category),
-        items: items,
-      ));
-    }
-
-    add(SnackChatTodaySummaryCategory.schedule,
-        {SnackChatSummarySectionType.scheduleAndPlace});
-    add(SnackChatTodaySummaryCategory.tasks,
-        {SnackChatSummarySectionType.mustKnow});
-    add(SnackChatTodaySummaryCategory.decisions,
-        {SnackChatSummarySectionType.decisionsAndChanges});
-    if (categories.contains(SnackChatTodaySummaryCategory.questions)) {
-      final questionItems = sourceSections
-          .expand((section) => section.items.map((item) => (section, item)))
-          .where((entry) =>
-              entry.$1.type == SnackChatSummarySectionType.responseRequired ||
-              entry.$1.type == SnackChatSummarySectionType.unresolved ||
-              (entry.$1.type == SnackChatSummarySectionType.sharedInformation &&
-                  _summaryItemMessages(entry.$2).any(
-                      (message) => RegExp(r'[?？]').hasMatch(message.text))))
-          .map((entry) => entry.$2)
-          .where((item) {
-            final key = item.representativeMessageId.isNotEmpty
-                ? item.representativeMessageId
-                : item.sourceSequences.join(',');
-            return emitted.add(key);
-          })
-          .take(5)
-          .toList(growable: false);
-      if (questionItems.isNotEmpty) {
-        output.add(SnackChatUnreadSummarySection(
-          type: SnackChatSummarySectionType.responseRequired,
-          title: _summaryCategoryTitle(
-            SnackChatTodaySummaryCategory.questions,
-          ),
-          items: questionItems,
-        ));
-      }
-    }
-    add(SnackChatTodaySummaryCategory.information,
-        {SnackChatSummarySectionType.sharedInformation});
-
-    if (categories.contains(SnackChatTodaySummaryCategory.people)) {
-      final peopleItems = sourceSections
-          .expand((section) => section.items)
-          .where((item) {
-            final messages = _summaryItemMessages(item);
-            final participants =
-                messages.map((message) => message.senderId).toSet();
-            return participants.length > 1 ||
-                messages.any((message) => message.text.contains('@'));
-          })
-          .where((item) {
-            final key = item.representativeMessageId.isNotEmpty
-                ? item.representativeMessageId
-                : item.sourceSequences.join(',');
-            return emitted.add(key);
-          })
-          .take(5)
-          .toList(growable: false);
-      if (peopleItems.isNotEmpty) {
-        output.add(SnackChatUnreadSummarySection(
-          type: SnackChatSummarySectionType.sharedInformation,
-          title: _summaryCategoryTitle(SnackChatTodaySummaryCategory.people),
-          items: peopleItems,
-        ));
-      }
-    }
-    if (categories.contains(SnackChatTodaySummaryCategory.highlights)) {
-      final important = sourceSections
-          .expand((section) => section.items)
-          .where((item) => item.importance != 'general')
-          .where((item) {
-            final key = item.representativeMessageId.isNotEmpty
-                ? item.representativeMessageId
-                : item.sourceSequences.join(',');
-            return emitted.add(key);
-          })
-          .take(5)
-          .toList(growable: false);
-      if (important.isNotEmpty) {
-        output.insert(
-          0,
-          SnackChatUnreadSummarySection(
-            type: SnackChatSummarySectionType.mustKnow,
-            title: _summaryCategoryTitle(
-              SnackChatTodaySummaryCategory.highlights,
-            ),
-            items: important,
-          ),
-        );
-      }
-    }
-    return output;
-  }
-
-  Widget _buildSummaryRunProgress(SnackChatSummaryRun run) {
-    return AnimatedBuilder(
-      animation: run,
-      builder: (context, _) {
-        String tr(String ko, String en, String zh) =>
-            snackDiscoveryText(context, ko, en, zh);
-        final failure = switch (run.error) {
-          'server-update-required' =>
-            tr('정리 서버 업데이트가 필요해요', 'Recap server update needed', '总结服务需要更新'),
-          'unauthenticated' =>
-            tr('다시 로그인해 주세요', 'Please sign in again', '请重新登录'),
-          'permission-denied' =>
-            tr('대화방 접근 권한을 확인해 주세요', 'Check access to this room', '请确认聊天室访问权限'),
-          'resource-exhausted' => tr('요청 한도에 도달했어요. 잠시 후 다시 시도해 주세요',
-              'Request limit reached. Try again later', '请求已达上限，请稍后重试'),
-          'deadline-exceeded' || 'unavailable' => tr(
-              '일시적으로 정리하지 못했어요. 다시 시도해 주세요',
-              'Recap temporarily unavailable. Please retry',
-              '暂时无法总结，请重试'),
-          'invalid-argument' || 'failed-precondition' => tr(
-              '오늘 정리를 다시 열어 범위를 선택해 주세요',
-              'Reopen recap and select a range',
-              '请重新打开总结并选择范围'),
-          'work_limit' || 'reconciliation_limit' => tr('정리 범위를 줄여 다시 시도해 주세요',
-              'Select a smaller range and retry', '请缩小范围后重试'),
-          _ => tr('정리를 완료하지 못했어요. 다시 시도해 주세요',
-              'Could not finish recap. Please retry', '总结未完成，请重试'),
-        };
-        final progress = run.progressValue;
-        final percent = progress == null ? null : (progress * 100).round();
-        final state = run.error != null
-            ? failure
-            : run.complete
-                ? tr('정리 완료', 'Recap ready', '总结完成')
-                : run.finalizing
-                    ? tr('핵심 내용 정리 중', 'Organizing key points', '正在整理重点')
-                    : run.running && run.total > 0
-                        ? tr(
-                            '원문 확인 중 · ${run.scanned}/${run.total}개',
-                            'Reviewing · ${run.scanned}/${run.total} messages',
-                            '正在查看原文 · ${run.scanned}/${run.total} 条')
-                        : run.running && run.scanned > 0
-                            ? tr(
-                                '원문 ${run.scanned}개 확인 중',
-                                'Reviewing ${run.scanned} messages',
-                                '正在查看 ${run.scanned} 条原文')
-                            : run.running
-                                ? tr('정리할 대화 확인 중', 'Preparing messages',
-                                    '正在确认对话范围')
-                                : tr('정리 일시중지', 'Recap paused', '总结已暂停');
-        final textStyle = TextStyle(
-          fontFamily: uiFontFamily(context, 'Inter'),
-          fontFamilyFallback: const ['NotoSansKR', 'NotoSansSC'],
-          fontSize: context.rf(12).clamp(11.5, 12.5).toDouble(),
-          height: 1.35,
-          fontWeight: FontWeight.w500,
-          color: const Color(0xFF334155),
-        );
-        return Material(
-          color: Colors.white,
-          child: Container(
-            decoration: const BoxDecoration(
-              border: Border(top: BorderSide(color: Color(0xFFE5E7EB))),
-            ),
-            padding: const EdgeInsets.fromLTRB(16, 7, 10, 7),
-            child: Column(mainAxisSize: MainAxisSize.min, children: [
-              Row(children: [
-                Expanded(
-                  child: Semantics(
-                    liveRegion: true,
-                    value: percent == null ? null : '$percent%',
-                    child: Text(
-                      run.complete && run.scanned > 0
-                          ? '$state · ${run.scanned}${tr('개 원문', ' messages', ' 条原文')}'
-                          : state,
-                      maxLines: 2,
-                      overflow: TextOverflow.ellipsis,
-                      style: textStyle,
-                    ),
-                  ),
-                ),
-                if (percent != null && !run.complete && run.error == null)
-                  Padding(
-                    padding: const EdgeInsets.only(left: 8),
-                    child: Text('$percent%',
-                        style: textStyle.copyWith(
-                            fontWeight: FontWeight.w700,
-                            color: const Color(0xFF0F172A))),
-                  ),
-                if (run.running)
-                  TextButton(
-                    onPressed: run.pause,
-                    style: TextButton.styleFrom(
-                      foregroundColor: const Color(0xFF334155),
-                      minimumSize: const Size(48, 44),
-                      padding: const EdgeInsets.symmetric(horizontal: 10),
-                    ),
-                    child: Text(tr('중단', 'Pause', '暂停')),
-                  )
-                else if (!run.complete)
-                  TextButton(
-                    onPressed: () async {
-                      await run.start();
-                      if (mounted && _summaryRun == run && run.complete) {
-                        await _showSummaryRunResult(run);
-                      }
-                    },
-                    style: TextButton.styleFrom(
-                      foregroundColor: const Color(0xFF087BB5),
-                      minimumSize: const Size(48, 44),
-                    ),
-                    child: Text(tr('재개', 'Resume', '继续')),
-                  ),
-                if (run.items.isNotEmpty && !run.running)
-                  TextButton(
-                    onPressed: () => _showSummaryRunResult(run),
-                    style: TextButton.styleFrom(
-                        foregroundColor: const Color(0xFF087BB5),
-                        minimumSize: const Size(48, 44)),
-                    child: Text(tr('결과', 'Results', '结果')),
-                  ),
-                if (!run.running)
-                  IconButton(
-                    tooltip: tr('닫기', 'Close', '关闭'),
-                    icon: const Icon(Icons.close_rounded, size: 19),
-                    color: const Color(0xFF64748B),
-                    onPressed: () {
-                      run.dispose();
-                      setState(() => _summaryRun = null);
-                    },
-                  ),
-              ]),
-              ClipRRect(
-                borderRadius: BorderRadius.circular(2),
-                child: LinearProgressIndicator(
-                  value: progress ??
-                      ((run.error != null ||
-                              MediaQuery.disableAnimationsOf(context))
-                          ? 0
-                          : null),
-                  minHeight: 3,
-                  color: const Color(0xFF087BB5),
-                  backgroundColor: const Color(0xFFE5E7EB),
-                ),
-              ),
-            ]),
-          ),
-        );
-      },
-    );
-  }
-
-  Future<void> _showSummaryRunResult(SnackChatSummaryRun run) async {
-    if (!mounted ||
-        _summaryResultOpen ||
-        _summaryRun != run ||
-        FirebaseAuth.instance.currentUser?.uid != run.owner) return;
-    String tr(String ko, String en, String zh) =>
-        snackDiscoveryText(context, ko, en, zh);
-    if (run.items.isEmpty) {
-      _showNotice(run.messageCount == 0
-          ? tr('선택한 범위에 확인할 대화가 없어요.', 'No messages in this range.',
-              '所选范围内没有消息。')
-          : tr('선택한 내용이 없어요.', 'No matching content.', '没有找到所选内容。'));
-      return;
-    }
-    _summaryResultOpen = true;
-    try {
-      await showSnackChatUnreadSummarySheet(
-        context,
-        items: run.items,
-        sections: run.sections,
-        messageCount: run.messageCount,
-        rangeType: run.rangeType,
-        titleOverride: run.complete
-            ? run.hasLimitedContext
-                ? tr(
-                    '대화 정리 · 문맥 일부 제한', 'Recap · limited context', '总结 · 上下文有限')
-                : tr('대화 정리', 'Conversation recap', '对话总结')
-            : tr('처리한 구간 · 전체 아님', 'Processed segments · partial',
-                '已处理片段 · 非全部'),
-        overview: run.hasRawSources
-            ? tr(
-                '내용이 적은 구간은 요약 대신 원문을 표시합니다. 선택 카테고리로 추론하지 않았어요.',
-                'Short segments show original messages, not category-inferred summaries.',
-                '内容较少的片段显示原文，而非按类别推断的总结。')
-            : tr(
-                '요청 시점의 원문을 기준으로 정리했어요. 중요한 내용은 원문에서 확인하세요.',
-                'Based on the request snapshot. Check original messages for important details.',
-                '根据请求时的原文整理。重要内容请查看原文确认。'),
-        onOpenSource: _openSummarySource,
-        useProvidedSectionTitles: false,
-        keepOpenOnSource: false,
-        includeOtherConversation: true,
-        accountOwnerUid: run.owner,
-      );
-    } finally {
-      _summaryResultOpen = false;
-    }
-  }
-
-  Future<void> _openTodaySummary() async {
-    if (_todaySummaryLoading || _summaryRun?.running == true) return;
-    final unreadPlan = _currentUnreadSummaryPlan();
-    final request = await showSnackChatTodaySummaryPickerSheet(
-      context,
-      hasUnreadMessages:
-          _entryUnreadCount > 0 || (_lastRoom?.unreadCount[_uid] ?? 0) > 0,
-    );
-    if (!mounted || request == null) return;
-    final roomId = widget.snackChatId;
-    final isKo = Localizations.localeOf(context).languageCode == 'ko';
-    final uiLanguageCode = Localizations.localeOf(context).languageCode;
-    final targetLanguage = uiLanguageCode == 'zh'
-        ? 'zh'
-        : uiLanguageCode == 'en'
-            ? 'en'
-            : 'ko';
-    final requestedAt = DateTime.now();
-    final latestSequence = _currentRoomLatestSequence();
-    final requestGeneration = ++_todaySummaryRequestGeneration;
-    setState(() => _todaySummaryLoading = true);
-    try {
-      if (snackChatPagedSummaryEnabled) {
-        final window = buildSnackChatTodaySummaryWindow(requestedAt);
-        _summaryRun?.dispose();
-        final run = SnackChatSummaryRun(roomId: roomId, request: {
-          'summaryRangeType': !request.isDirectSearch &&
-                  request.scope == SnackChatTodaySummaryScope.unread
-              ? 'unread'
-              : 'today',
-          if (request.isDirectSearch) ...{
-            'summaryMode': 'question',
-            'directQuestion': request.question
-          },
-          'categories': request.categories.map((c) => c.name).toList()..sort(),
-          'relatedToMe': !request.isDirectSearch &&
-              (request.relatedToMe ||
-                  request.scope == SnackChatTodaySummaryScope.relatedToMe),
-          'targetLanguage': targetLanguage,
-          'localDate': window.localDate,
-          'timezoneOffsetMinutes': window.timezoneOffsetMinutes,
-          'timezoneName': window.timezoneName,
-          'todayStartUtc': window.start.toUtc().toIso8601String(),
-          'tomorrowStartUtc': window.nextStart.toUtc().toIso8601String(),
-        });
-        setState(() => _summaryRun = run);
-        await run.start();
-        if (!mounted ||
-            roomId != widget.snackChatId ||
-            requestGeneration != _todaySummaryRequestGeneration ||
-            _summaryRun != run) return;
-        if (run.complete) await _showSummaryRunResult(run);
-        return;
-      }
-      if (request.isDirectSearch) {
-        final search = await _snackChatService.searchTodayMessages(
-          snackChatId: roomId,
-          latestSequence: latestSequence,
-          targetLanguage: targetLanguage,
-          question: request.question,
-          requestedAt: requestedAt,
-        );
-        if (!mounted || requestGeneration != _todaySummaryRequestGeneration) {
-          return;
-        }
-        setState(() => _todaySummaryLoading = false);
-        final item = SnackChatUnreadSummaryItem(
-          content: search.answer,
-          label: search.found
-              ? (isChineseUi(context)
-                  ? '查找结果'
-                  : isKo
-                      ? '찾은 내용'
-                      : 'Result')
-              : (isChineseUi(context)
-                  ? '未找到'
-                  : isKo
-                      ? '찾지 못했어요'
-                      : 'Not found'),
-          importance: search.found ? 'important' : 'general',
-          sourceMessageIds: search.sourceMessageIds,
-          representativeMessageId: search.representativeMessageId,
-          sourceSequences: search.sourceSequences,
-        );
-        await showSnackChatUnreadSummarySheet(
-          context,
-          items: <SnackChatUnreadSummaryItem>[item],
-          messageCount: search.messageCount,
-          sections: <SnackChatUnreadSummarySection>[
-            SnackChatUnreadSummarySection(
-              type: SnackChatSummarySectionType.sharedInformation,
-              title: request.question,
-              items: <SnackChatUnreadSummaryItem>[item],
-            ),
-          ],
-          rangeType: SnackChatSummaryRangeType.today,
-          titleOverride: isChineseUi(context)
-              ? '直接查找'
-              : isKo
-                  ? '직접 찾기'
-                  : 'Direct search',
-          onOpenSource: _openSummarySource,
-          useProvidedSectionTitles: true,
-        );
-        return;
-      }
-
-      late final SnackChatUnreadSummaryResult result;
-      if (request.scope == SnackChatTodaySummaryScope.unread) {
-        final firstUnread = _firstUnreadSequence;
-        final unreadLatest = _currentUnreadSummaryLatestSequence();
-        if (firstUnread == null || unreadLatest < firstUnread) {
-          throw const SnackChatSummaryNotEnoughContentException();
-        }
-        if (unreadPlan.useLocalSummary) {
-          final localItems = _localUnreadSummaryItems(
-            unreadPlan,
-            isKo: isKo,
-            targetLanguage: targetLanguage,
-            maximumItems: maximumLocalSummaryMessages,
-          );
-          result = SnackChatUnreadSummaryResult(
-            items: localItems,
-            sections: <SnackChatUnreadSummarySection>[
-              SnackChatUnreadSummarySection(
-                type: SnackChatSummarySectionType.mustKnow,
-                title: '',
-                items: localItems,
-              ),
-            ],
-            messageCount: unreadPlan.declaredUnreadCount,
-            rangeHash: '',
-            cacheSource: 'local',
-            summarySource: 'fallback',
-            firstUnreadSequence: firstUnread,
-            latestSequence: unreadLatest,
-            targetLanguage: targetLanguage,
-          );
-        } else {
-          result = await _snackChatService.summarizeUnreadRange(
-            snackChatId: roomId,
-            firstUnreadSequence: firstUnread,
-            latestSequence: unreadLatest,
-            targetLanguage: targetLanguage,
-          );
-        }
-      } else {
-        result = await _snackChatService.summarizeTodayRange(
-          snackChatId: roomId,
-          latestSequence: latestSequence,
-          targetLanguage: targetLanguage,
-          requestedAt: requestedAt,
-        );
-      }
-      if (!mounted ||
-          requestGeneration != _todaySummaryRequestGeneration ||
-          roomId != widget.snackChatId ||
-          result.items.isEmpty) {
-        return;
-      }
-      setState(() => _todaySummaryLoading = false);
-      final relatedOnly = request.relatedToMe ||
-          request.scope == SnackChatTodaySummaryScope.relatedToMe;
-      final selectedSections = _selectedSummarySections(
-        result,
-        request.categories,
-        relatedOnly: relatedOnly,
-      );
-      final includeCasual = request.categories.contains(
-        SnackChatTodaySummaryCategory.casual,
-      );
-      final includeOverview = request.categories.contains(
-            SnackChatTodaySummaryCategory.highlights,
-          ) &&
-          !relatedOnly;
-      if (selectedSections.isEmpty &&
-          !(includeCasual && result.otherConversationSummary.isNotEmpty) &&
-          !(includeOverview && result.overview.isNotEmpty)) {
-        _showNotice(
-          isChineseUi(context)
-              ? '今天的对话中没有找到所选内容。'
-              : isKo
-                  ? '오늘 대화에서 선택한 내용을 찾지 못했어요.'
-                  : 'No matching content was found in today’s chat.',
-        );
-        return;
-      }
-      await showSnackChatUnreadSummarySheet(
-        context,
-        items: selectedSections.expand((section) => section.items).toList(),
-        messageCount: result.messageCount,
-        sections: selectedSections,
-        sourceStartedAt: result.sourceStartedAt,
-        sourceEndedAt: result.sourceEndedAt,
-        overview: includeOverview && !result.isFallback ? result.overview : '',
-        otherConversationSummary:
-            includeCasual ? result.otherConversationSummary : '',
-        rangeType: request.scope == SnackChatTodaySummaryScope.unread
-            ? SnackChatSummaryRangeType.unread
-            : SnackChatSummaryRangeType.today,
-        onOpenSource: _openSummarySource,
-        useProvidedSectionTitles: true,
-      );
-    } on SnackChatNoMessagesTodayException {
-      if (mounted && requestGeneration == _todaySummaryRequestGeneration) {
-        _showNotice(
-          (isChineseUi(context)
-              ? '今天还没有消息。'
-              : isKo
-                  ? '오늘 대화가 아직 없어요.'
-                  : 'No messages today yet.'),
-        );
-      }
-    } on SnackChatSummaryNotEnoughContentException {
-      if (mounted && requestGeneration == _todaySummaryRequestGeneration) {
-        _showNotice(
-          (isChineseUi(context)
-              ? '今日可总结的有效内容不足。'
-              : isKo
-                  ? '오늘 대화에서 정리할 핵심 내용이 충분하지 않아요.'
-                  : 'There is not enough meaningful content to recap today.'),
-        );
-      }
-    } catch (error, stackTrace) {
-      Logger.error('스낵챗 오늘 대화 정리 실패', error, stackTrace);
-      if (mounted && requestGeneration == _todaySummaryRequestGeneration) {
-        _showNotice(
-          (isChineseUi(context)
-              ? '今日总结加载失败，请重试。'
-              : isKo
-                  ? '오늘 대화 정리를 불러오지 못했어요. 다시 시도해 주세요.'
-                  : "Could not load today's recap. Please try again."),
-        );
-      }
-    } finally {
-      if (mounted &&
-          requestGeneration == _todaySummaryRequestGeneration &&
-          _todaySummaryLoading) {
-        setState(() => _todaySummaryLoading = false);
-      }
-    }
   }
 
   void _handleRoutePop(SnackChat room) {

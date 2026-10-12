@@ -59,7 +59,6 @@ import '../utils/logger.dart';
 import '../utils/chat_timing.dart';
 import '../ui/snackbar/app_snackbar.dart';
 import '../ui/sheets/translation_language_sheet.dart';
-import '../ui/sheets/snack_chat_attachment_sheet.dart';
 import '../ui/widgets/chat_video_tile.dart';
 import '../ui/widgets/video_preparing_dialog.dart';
 import '../services/media/video_prepare_service.dart';
@@ -68,10 +67,10 @@ import 'video_playback_screen.dart';
 import '../ui/sheets/snack_chat_file_confirmation_sheet.dart';
 import '../config/snack_chat_file_policy.dart';
 import '../config/app_backend.dart';
-import '../utils/responsive_helper.dart';
 import '../l10n/ui_locale.dart';
 import '../ui/widgets/chat_pill_composer.dart';
 import '../utils/chat_message_typography.dart';
+import '../ui/widgets/snack_chat_translation_split_button.dart';
 
 // DM 전용 색상
 class DMColors {
@@ -182,13 +181,13 @@ class _DMChatScreenState extends State<DMChatScreen>
       <String, _DmTranslationOutcome>{};
   static const Duration _translationMicroBatchWindow =
       Duration(milliseconds: 70);
-  static const Duration _translationStyleAnimationDuration = MotionTokens.fast;
   static const int _translationBatchSize = 5;
   static const int _translationAdjacentPrefetchLimit = 2;
   Timer? _translationMicroBatchTimer;
   Timer? _translationRetryTimer;
   bool _translationScanScheduled = false;
   bool _translationModeReady = false;
+  String? _targetLanguageCode;
   bool _translationLanguageSheetOpen = false;
   bool _translationLifecycleInitialized = false;
   bool _isUserScrolling = false;
@@ -643,6 +642,7 @@ class _DMChatScreenState extends State<DMChatScreen>
           _translationService.showsOriginal(_translationScope);
     });
     _scheduleVisibleTranslations();
+    unawaited(_refreshTargetLanguageLabel());
   }
 
   void _handleTranslationServiceChange() {
@@ -653,6 +653,7 @@ class _DMChatScreenState extends State<DMChatScreen>
     final languageChanged = languageRevision != _translationLanguageRevision;
     final modeChanged = showingOriginal != _translationShowsOriginal;
     if (!languageChanged && !modeChanged) return;
+    if (languageChanged) unawaited(_refreshTargetLanguageLabel());
 
     setState(() {
       _translationLanguageRevision = languageRevision;
@@ -792,11 +793,7 @@ class _DMChatScreenState extends State<DMChatScreen>
       statusColor: DMColors.textSecondary,
       child: _buildDmLinkifiedText(
         canShowTranslation ? translatedText : message.text,
-        chatMessageTextStyle(
-          context,
-          color: DMColors.otherMessageText,
-          fontWeight: FontWeight.w500,
-        ),
+        chatMessageTextStyle(context, color: DMColors.otherMessageText),
       ),
     );
   }
@@ -2465,13 +2462,6 @@ class _DMChatScreenState extends State<DMChatScreen>
                       child: _buildMessageList(),
                     ),
                   ),
-                  if (_conversationExists == true || _messages.isNotEmpty)
-                    Positioned(
-                      top: 0,
-                      left: 0,
-                      right: 0,
-                      child: _buildDmTranslationControl(),
-                    ),
                 ],
               ),
             ),
@@ -2482,180 +2472,43 @@ class _DMChatScreenState extends State<DMChatScreen>
     );
   }
 
-  Widget _buildDmTranslationControl() {
-    final isKo = Localizations.localeOf(context).languageCode == 'ko';
-    final translationActionLabel = (isChineseUi(context)
-        ? '查看译文'
-        : isKo
-            ? '번역 보기'
-            : 'View translation');
-    final originalActionLabel = (isChineseUi(context)
-        ? '查看原文'
-        : isKo
-            ? '원문 보기'
-            : 'View original');
-    final label = _translationShowsOriginal
-        ? translationActionLabel
-        : originalActionLabel;
-    final settingsLabel = (isChineseUi(context)
-        ? '翻译语言'
-        : isKo
-            ? '번역 언어 설정'
-            : 'Translation language');
-    final controlTextStyle = TextStyle(
-      fontFamily: uiFontFamily(context, 'Inter'),
-      fontFamilyFallback: const ['NotoSansKR'],
-      fontSize: context.rf(11).clamp(10.5, 12).toDouble(),
-      fontWeight: FontWeight.w700,
-      height: 1,
-      letterSpacing: -0.1,
-    );
-    var widestLabel = 0.0;
-    for (final candidate in <String>[
-      translationActionLabel,
-      originalActionLabel,
-    ]) {
-      final painter = TextPainter(
-        text: TextSpan(text: candidate, style: controlTextStyle),
-        maxLines: 1,
-        textDirection: Directionality.of(context),
-        textScaler: MediaQuery.textScalerOf(context).clamp(
-          maxScaleFactor: 1.15,
-        ),
-      )..layout();
-      if (painter.width > widestLabel) widestLabel = painter.width;
-      painter.dispose();
+  /// 스낵챗과 같은 [文A | 언어 ⌄] 분할 버튼(상단 바). 대화가 있을 때만 보인다.
+  List<Widget> _buildDmTranslationActions() {
+    if (!(_conversationExists == true || _messages.isNotEmpty)) {
+      return const <Widget>[];
     }
-    final toggleWidth = (6 + 15 + 4 + widestLabel + 2).ceilToDouble();
-
-    return Material(
-      color: Colors.transparent,
-      child: Align(
-        alignment: Alignment.centerRight,
-        child: Padding(
-          padding: EdgeInsets.fromLTRB(
-            12,
-            context.rs(6).clamp(5, 8).toDouble(),
-            12,
-            4,
-          ),
-          child: MediaQuery.withClampedTextScaling(
-            maxScaleFactor: 1.15,
-            child: TweenAnimationBuilder<double>(
-              tween: Tween<double>(end: _translationShowsOriginal ? 0 : 1),
-              duration: MotionTokens.reduceMotion(context)
-                  ? Duration.zero
-                  : _translationStyleAnimationDuration,
-              curve: Curves.easeOut,
-              builder: (context, value, _) {
-                const pointColor = Color(0xFF087BB5);
-                final background = Color.lerp(pointColor, Colors.white, value)!;
-                final foreground = Color.lerp(Colors.white, pointColor, value)!;
-                final disabledForeground = Color.lerp(
-                  const Color(0xFFD6EBF5),
-                  const Color(0xFF76AFCB),
-                  value,
-                )!;
-                return DecoratedBox(
-                  decoration: BoxDecoration(
-                    color: background,
-                    borderRadius: BorderRadius.circular(14),
-                    border: Border.all(
-                      color: Color.lerp(Colors.transparent, pointColor, value)!,
-                      width: .8,
-                    ),
-                  ),
-                  child: Row(
-                    mainAxisSize: MainAxisSize.min,
-                    children: [
-                      Semantics(
-                        button: true,
-                        label: label,
-                        child: Tooltip(
-                          message: label,
-                          child: SizedBox(
-                            width: toggleWidth,
-                            height: 28,
-                            child: TextButton(
-                              key: const ValueKey('dm_translation_toggle'),
-                              onPressed: _translationModeReady
-                                  ? _toggleDmTranslation
-                                  : null,
-                              style: TextButton.styleFrom(
-                                foregroundColor: foreground,
-                                disabledForegroundColor: disabledForeground,
-                                minimumSize: const Size(0, 28),
-                                maximumSize: const Size(double.infinity, 28),
-                                padding: const EdgeInsets.fromLTRB(6, 0, 2, 0),
-                                tapTargetSize: MaterialTapTargetSize.shrinkWrap,
-                                shape: const StadiumBorder(),
-                              ),
-                              child: Row(
-                                mainAxisAlignment: MainAxisAlignment.center,
-                                children: [
-                                  if (!_translationModeReady)
-                                    SizedBox.square(
-                                      dimension: 14,
-                                      child: CircularProgressIndicator(
-                                        strokeWidth: 1.8,
-                                        color: disabledForeground,
-                                      ),
-                                    )
-                                  else
-                                    Icon(
-                                      Icons.translate_rounded,
-                                      size: 15,
-                                      color: foreground,
-                                    ),
-                                  const SizedBox(width: 4),
-                                  Flexible(
-                                    child: Text(
-                                      label,
-                                      maxLines: 1,
-                                      overflow: TextOverflow.ellipsis,
-                                      softWrap: false,
-                                      style: controlTextStyle,
-                                    ),
-                                  ),
-                                ],
-                              ),
-                            ),
-                          ),
-                        ),
-                      ),
-                      Semantics(
-                        button: true,
-                        label: settingsLabel,
-                        child: Tooltip(
-                          message: settingsLabel,
-                          child: IconButton(
-                            key: const ValueKey(
-                              'dm_translation_language_settings',
-                            ),
-                            onPressed: _openDmTranslationLanguageSettings,
-                            icon: const Icon(Icons.settings_outlined),
-                            color: foreground,
-                            iconSize: 15,
-                            padding: const EdgeInsets.only(right: 7),
-                            style: IconButton.styleFrom(
-                              minimumSize: const Size(31, 28),
-                              maximumSize: const Size(31, 28),
-                              padding: const EdgeInsets.only(right: 7),
-                              tapTargetSize: MaterialTapTargetSize.shrinkWrap,
-                              visualDensity: VisualDensity.compact,
-                            ),
-                          ),
-                        ),
-                      ),
-                    ],
-                  ),
-                );
-              },
-            ),
-          ),
-        ),
+    final isKo = Localizations.localeOf(context).languageCode == 'ko';
+    final zh = isChineseUi(context);
+    final translationOn = !_translationShowsOriginal;
+    final code = _targetLanguageCode;
+    return <Widget>[
+      SnackChatTranslationSplitButton(
+        key: const ValueKey('dm_translation_split_button'),
+        translationOn: translationOn,
+        enabled: _translationModeReady,
+        languageLabel: code == null
+            ? ''
+            : ContentTranslationService.supportedLanguages[code] ?? '',
+        toggleSemanticLabel: translationOn
+            ? (zh ? '查看原文' : (isKo ? '원문 보기' : 'View original'))
+            : (zh ? '查看译文' : (isKo ? '번역 보기' : 'View translation')),
+        languageSemanticLabel:
+            zh ? '翻译语言' : (isKo ? '번역 언어 설정' : 'Translation language'),
+        onToggle: _toggleDmTranslation,
+        onOpenLanguage: _openDmTranslationLanguageSettings,
       ),
+      const SizedBox(width: 2),
+    ];
+  }
+
+  /// 상단 바 언어 이름. targetLanguage는 비동기라 state에 보관한다.
+  Future<void> _refreshTargetLanguageLabel() async {
+    final revision = _translationService.languageRevision;
+    final code = await _translationService.targetLanguage(
+      uiLanguageCode: Localizations.localeOf(context).languageCode,
     );
+    if (!mounted || revision != _translationService.languageRevision) return;
+    if (code != _targetLanguageCode) setState(() => _targetLanguageCode = code);
   }
 
   bool get _isAnonymous {
@@ -2834,6 +2687,7 @@ class _DMChatScreenState extends State<DMChatScreen>
           ],
         ),
         actions: [
+          ..._buildDmTranslationActions(),
           PopupMenuButton<String>(
             icon: const Icon(Icons.more_vert, color: Colors.black87),
             padding: EdgeInsets.zero,
@@ -3037,6 +2891,7 @@ class _DMChatScreenState extends State<DMChatScreen>
               ],
             ),
             actions: [
+              ..._buildDmTranslationActions(),
               if (_conversation != null) ...[
                 Center(
                   child: Padding(
@@ -3535,7 +3390,8 @@ class _DMChatScreenState extends State<DMChatScreen>
         controller: _scrollController,
         padding: EdgeInsets.fromLTRB(
           MediaQuery.sizeOf(context).width < 360 ? 10 : 14,
-          46,
+          // 번역 버튼을 상단 바로 옮겨 목록 위에 떠 있는 요소가 없다.
+          12,
           MediaQuery.sizeOf(context).width < 360 ? 10 : 14,
           14,
         ),
@@ -4521,7 +4377,6 @@ class _DMChatScreenState extends State<DMChatScreen>
                       chatMessageTextStyle(
                         context,
                         color: DMColors.myMessageText,
-                        fontWeight: FontWeight.w500,
                       ),
                     ),
                 ],
@@ -5333,12 +5188,14 @@ class _DMChatScreenState extends State<DMChatScreen>
                     canSend: !disabled && hasDraft,
                     onCamera: () => _pickImageFrom(ImageSource.camera),
                     onGallery: () => _pickImageFrom(ImageSource.gallery),
-                    onAttach: _showAttachmentOptions,
+                    // 사진·영상은 사진 버튼에 있으니 +는 파일 첨부만 남는다.
+                    onAttach: _pickFile,
+                    attachIcon: Icons.attach_file_rounded,
                     onSend: _sendMessage,
                     cameraLabel: zh ? '相机' : (isKo ? '카메라' : 'Camera'),
                     galleryLabel:
                         zh ? '相册' : (isKo ? '사진 보관함' : 'Photo library'),
-                    attachLabel: zh ? '添加附件' : (isKo ? '첨부' : 'Attach'),
+                    attachLabel: zh ? '文件' : (isKo ? '파일' : 'File'),
                     sendLabel: zh ? '发送' : (isKo ? '전송' : 'Send'),
                     textField: ConstrainedBox(
                       constraints: const BoxConstraints(maxHeight: 120),
@@ -5740,21 +5597,6 @@ class _DMChatScreenState extends State<DMChatScreen>
     );
   }
 
-  Future<void> _showAttachmentOptions() async {
-    // 키보드가 첨부 시트·갤러리와 겹쳐 보이지 않도록 먼저 포커스를 내린다.
-    FocusManager.instance.primaryFocus?.unfocus();
-    final action = await showSnackChatAttachmentSheet(
-      context,
-      showPoll: false,
-    );
-    if (!mounted || action == null) return;
-    if (action == SnackChatAttachmentAction.image) {
-      await _pickImage();
-    } else if (action == SnackChatAttachmentAction.file) {
-      await _pickFile();
-    }
-  }
-
   Future<void> _pickFile() async {
     try {
       final picked = await FilePicker.pickFiles(
@@ -5856,81 +5698,6 @@ class _DMChatScreenState extends State<DMChatScreen>
     } else {
       await _sendPickedImageFile(media, beforeSend: fillContext);
     }
-  }
-
-  Future<void> _pickImage() async {
-    if (_pendingImage != null) {
-      // 1장 제한: 이미 선택되어 있으면 안내
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          content: Text(
-            (isChineseUi(context)
-                ? '每次只能添加1张图片'
-                : Localizations.localeOf(context).languageCode == 'ko'
-                    ? '이미지는 한 번에 1장만 첨부할 수 있어요'
-                    : 'You can attach only 1 image at a time'),
-          ),
-          duration: const Duration(seconds: 2),
-        ),
-      );
-      return;
-    }
-
-    final isKorean = Localizations.localeOf(context).languageCode == 'ko';
-    showModalBottomSheet<void>(
-      context: context,
-      backgroundColor: Colors.transparent,
-      builder: (context) {
-        return SafeArea(
-          child: Container(
-            margin: const EdgeInsets.all(12),
-            decoration: BoxDecoration(
-              color: Colors.white,
-              borderRadius: BorderRadius.circular(16),
-            ),
-            child: Column(
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                Container(
-                  margin: const EdgeInsets.only(top: 10, bottom: 6),
-                  width: 40,
-                  height: 4,
-                  decoration: BoxDecoration(
-                    color: const Color(0xFFD1D5DB),
-                    borderRadius: BorderRadius.circular(2),
-                  ),
-                ),
-                ListTile(
-                  leading: const Icon(Icons.photo_library_outlined),
-                  title: Text((isChineseUi(context)
-                      ? '从相册选择'
-                      : isKorean
-                          ? '사진 선택'
-                          : 'Choose from library')),
-                  onTap: () async {
-                    Navigator.pop(context);
-                    await _pickImageFrom(ImageSource.gallery);
-                  },
-                ),
-                ListTile(
-                  leading: const Icon(Icons.photo_camera_outlined),
-                  title: Text((isChineseUi(context)
-                      ? '拍照'
-                      : isKorean
-                          ? '카메라 촬영'
-                          : 'Take a photo')),
-                  onTap: () async {
-                    Navigator.pop(context);
-                    await _pickImageFrom(ImageSource.camera);
-                  },
-                ),
-                const SizedBox(height: 6),
-              ],
-            ),
-          ),
-        );
-      },
-    );
   }
 
   Future<void> _pickImageFrom(ImageSource source) async {

@@ -21,6 +21,7 @@ class ChatPillComposer extends StatelessWidget {
     this.onGallery,
     this.onAttach,
     this.onSend,
+    this.attachIcon = Icons.add_circle_outline_rounded,
     required this.cameraLabel,
     required this.galleryLabel,
     required this.attachLabel,
@@ -41,6 +42,9 @@ class ChatPillComposer extends StatelessWidget {
   final VoidCallback? onGallery;
   final VoidCallback? onAttach;
   final VoidCallback? onSend;
+
+  /// 오른쪽 첨부 버튼 아이콘(DM은 파일 첨부만 있어 클립 아이콘).
+  final IconData attachIcon;
   final String cameraLabel;
   final String galleryLabel;
   final String attachLabel;
@@ -80,7 +84,7 @@ class ChatPillComposer extends StatelessWidget {
               _CircleButton(
                 key: const ValueKey('chat-composer-attach'),
                 label: attachLabel,
-                icon: Icons.add_circle_outline_rounded,
+                icon: attachIcon,
                 iconSize: 24,
                 onTap: enabled ? onAttach : null,
               ),
